@@ -109,6 +109,8 @@ const stmtKvSet    = db.prepare(`INSERT OR REPLACE INTO kv (key, value, updated_
 const stmtKvDel    = db.prepare(`DELETE FROM kv WHERE key = ?`);
 const stmtKvList   = db.prepare(`SELECT key FROM kv`);
 const stmtKvPrefix = db.prepare(`SELECT key FROM kv WHERE key LIKE ? ESCAPE '\\'`);
+const stmtKvPrefixSizes = db.prepare(`SELECT key, LENGTH(value) as size FROM kv WHERE key LIKE ? ESCAPE '\\'`);
+const stmtKvDelPrefix = db.prepare(`DELETE FROM kv WHERE key LIKE ? ESCAPE '\\'`);
 
 function kvGet(key) {
     const row = stmtKvGet.get(key);
@@ -123,12 +125,22 @@ function kvDel(key) {
     stmtKvDel.run(key);
 }
 
+function kvDelPrefix(prefix) {
+    const escaped = prefix.replace(/[\\%_]/g, '\\$&');
+    stmtKvDelPrefix.run(`${escaped}%`);
+}
+
 function kvList(prefix) {
     if (prefix) {
         const escaped = prefix.replace(/[\\%_]/g, '\\$&');
         return stmtKvPrefix.all(`${escaped}%`).map(r => r.key);
     }
     return stmtKvList.all().map(r => r.key);
+}
+
+function kvListWithSizes(prefix) {
+    const escaped = prefix.replace(/[\\%_]/g, '\\$&');
+    return stmtKvPrefixSizes.all(`${escaped}%`).map(r => ({ key: r.key, size: r.size }));
 }
 
 // ─── Entity operations (Phase 3-2) ───────────────────────────────────────────
@@ -155,11 +167,28 @@ const stmtModGet     = db.prepare(`SELECT data FROM modules WHERE id = ?`);
 const stmtModSet     = db.prepare(`INSERT OR REPLACE INTO modules (id, data, updated_at) VALUES (?, ?, ?)`);
 const stmtModDel     = db.prepare(`DELETE FROM modules WHERE id = ?`);
 const stmtModList    = db.prepare(`SELECT id FROM modules`);
+const stmtClearCharacters = db.prepare(`DELETE FROM characters`);
+const stmtClearChats = db.prepare(`DELETE FROM chats`);
+const stmtClearSettings = db.prepare(`DELETE FROM settings`);
+const stmtClearPresets = db.prepare(`DELETE FROM presets`);
+const stmtClearModules = db.prepare(`DELETE FROM modules`);
+
+function checkpointWal(mode = 'TRUNCATE') {
+    return db.pragma(`wal_checkpoint(${mode})`);
+}
+
+function clearEntities() {
+    stmtClearCharacters.run();
+    stmtClearChats.run();
+    stmtClearSettings.run();
+    stmtClearPresets.run();
+    stmtClearModules.run();
+}
 
 module.exports = {
     db,
     // KV
-    kvGet, kvSet, kvDel, kvList,
+    kvGet, kvSet, kvDel, kvList, kvDelPrefix, kvListWithSizes,
     // Characters
     charGet:  (id) => { const r = stmtCharGet.get(id); return r ? r.data : null; },
     charSet:  (id, data) => stmtCharSet.run(id, data, Date.now()),
@@ -183,4 +212,6 @@ module.exports = {
     moduleSet:  (id, data) => stmtModSet.run(id, data, Date.now()),
     moduleDel:  (id) => stmtModDel.run(id),
     moduleList: () => stmtModList.all().map(r => r.id),
+    clearEntities,
+    checkpointWal,
 };
