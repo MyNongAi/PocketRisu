@@ -12,6 +12,15 @@ const unpackr = new Unpackr({
     useRecords:false
 })
 
+/** Encode a single entity to Uint8Array (used by entity API saves) */
+export function encodeEntity(data: unknown): Uint8Array {
+    return packr.encode(data)
+}
+/** Decode a single entity from Uint8Array (used by entity API loads) */
+export function decodeEntity<T>(data: Uint8Array | Buffer): T {
+    return unpackr.unpack(data) as T
+}
+
 const disableRemoteSaving = () => {
     try {
         const db = getDatabase()

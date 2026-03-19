@@ -192,6 +192,139 @@ export class NodeStorage{
     }
 
     listItem = this.keys
+
+    // ── Bulk asset operations (3-2-B) ──────────────────────────────────────────
+    async getItems(keys: string[]): Promise<{key: string, value: Buffer}[]> {
+        await this.checkAuth()
+        const da = await fetch('/api/assets/bulk-read', {
+            method: 'POST',
+            body: JSON.stringify(keys),
+            headers: {
+                'content-type': 'application/json',
+                'risu-auth': await this.createAuth()
+            }
+        })
+        if (da.status < 200 || da.status >= 300) throw 'getItems Error'
+        const results: {key: string, value: string}[] = await da.json()
+        return results.map(r => ({ key: r.key, value: Buffer.from(r.value, 'base64') }))
+    }
+
+    async setItems(entries: {key: string, value: Uint8Array}[]) {
+        await this.checkAuth()
+        const body = entries.map(e => ({
+            key: e.key,
+            value: Buffer.from(e.value).toString('base64')
+        }))
+        const da = await fetch('/api/assets/bulk-write', {
+            method: 'POST',
+            body: JSON.stringify(body),
+            headers: {
+                'content-type': 'application/json',
+                'risu-auth': await this.createAuth()
+            }
+        })
+        if (da.status < 200 || da.status >= 300) throw 'setItems Error'
+    }
+
+    // ── Entity API methods (3-2) ───────────────────────────────────────────────
+    private async entityFetch(path: string, method: string, body?: Uint8Array): Promise<Buffer | null> {
+        const headers: Record<string, string> = { 'risu-auth': await this.createAuth() }
+        if (body) headers['content-type'] = 'application/octet-stream'
+        const da = await fetch(path, { method, headers, body: body as any })
+        if (da.status === 404) return null
+        if (da.status < 200 || da.status >= 300) throw `entityFetch Error: ${da.status}`
+        if (method === 'DELETE' || da.headers.get('content-type')?.includes('application/json')) return null
+        return Buffer.from(await da.arrayBuffer())
+    }
+
+    async saveCharacter(id: string, data: Uint8Array) {
+        await this.checkAuth()
+        await this.entityFetch(`/api/db/characters/${encodeURIComponent(id)}`, 'POST', data)
+    }
+    async loadCharacter(id: string): Promise<Buffer | null> {
+        await this.checkAuth()
+        return this.entityFetch(`/api/db/characters/${encodeURIComponent(id)}`, 'GET')
+    }
+    async listCharacters(): Promise<{id: string, updated_at: number}[]> {
+        await this.checkAuth()
+        const da = await fetch('/api/db/characters', { headers: { 'risu-auth': await this.createAuth() } })
+        return da.json()
+    }
+    async deleteCharacter(id: string) {
+        await this.checkAuth()
+        await this.entityFetch(`/api/db/characters/${encodeURIComponent(id)}`, 'DELETE')
+    }
+
+    async saveChat(charId: string, chatId: string, data: Uint8Array) {
+        await this.checkAuth()
+        await this.entityFetch(`/api/db/chats/${encodeURIComponent(charId)}/${encodeURIComponent(chatId)}`, 'POST', data)
+    }
+    async loadChat(charId: string, chatId: string): Promise<Buffer | null> {
+        await this.checkAuth()
+        return this.entityFetch(`/api/db/chats/${encodeURIComponent(charId)}/${encodeURIComponent(chatId)}`, 'GET')
+    }
+    async listChats(charId: string): Promise<string[]> {
+        await this.checkAuth()
+        const da = await fetch(`/api/db/chats/${encodeURIComponent(charId)}`, { headers: { 'risu-auth': await this.createAuth() } })
+        return da.json()
+    }
+    async deleteChat(charId: string, chatId: string) {
+        await this.checkAuth()
+        await this.entityFetch(`/api/db/chats/${encodeURIComponent(charId)}/${encodeURIComponent(chatId)}`, 'DELETE')
+    }
+
+    async saveSettings(data: Uint8Array) {
+        await this.checkAuth()
+        await this.entityFetch('/api/db/settings', 'POST', data)
+    }
+    async loadSettings(): Promise<Buffer | null> {
+        await this.checkAuth()
+        return this.entityFetch('/api/db/settings', 'GET')
+    }
+
+    async savePreset(id: string, data: Uint8Array) {
+        await this.checkAuth()
+        await this.entityFetch(`/api/db/presets/${encodeURIComponent(id)}`, 'POST', data)
+    }
+    async loadPreset(id: string): Promise<Buffer | null> {
+        await this.checkAuth()
+        return this.entityFetch(`/api/db/presets/${encodeURIComponent(id)}`, 'GET')
+    }
+    async listPresets(): Promise<string[]> {
+        await this.checkAuth()
+        const da = await fetch('/api/db/presets', { headers: { 'risu-auth': await this.createAuth() } })
+        return da.json()
+    }
+    async deletePreset(id: string) {
+        await this.checkAuth()
+        await this.entityFetch(`/api/db/presets/${encodeURIComponent(id)}`, 'DELETE')
+    }
+
+    async saveModule(id: string, data: Uint8Array) {
+        await this.checkAuth()
+        await this.entityFetch(`/api/db/modules/${encodeURIComponent(id)}`, 'POST', data)
+    }
+    async loadModule(id: string): Promise<Buffer | null> {
+        await this.checkAuth()
+        return this.entityFetch(`/api/db/modules/${encodeURIComponent(id)}`, 'GET')
+    }
+    async listModules(): Promise<string[]> {
+        await this.checkAuth()
+        const da = await fetch('/api/db/modules', { headers: { 'risu-auth': await this.createAuth() } })
+        return da.json()
+    }
+    async deleteModule(id: string) {
+        await this.checkAuth()
+        await this.entityFetch(`/api/db/modules/${encodeURIComponent(id)}`, 'DELETE')
+    }
+
+    subscribeEvents(callback: (ev: {type: string, id: string, updated_at: number}) => void): () => void {
+        const source = new EventSource('/api/events')
+        source.onmessage = (e) => {
+            try { callback(JSON.parse(e.data)) } catch {}
+        }
+        return () => source.close()
+    }
 }
 
 async function digestPassword(message:string) {

@@ -10,7 +10,7 @@ import { checkDriverInit, syncDrive } from "./drive/drive";
 import { hasher } from "./parser/parser.svelte";
 import { characterURLImport, hubURL } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
-import { decodeRisuSave, encodeRisuSaveLegacy, RisuSaveEncoder, type toSaveType } from "./storage/risuSave";
+import { decodeRisuSave, encodeRisuSaveLegacy, encodeEntity, RisuSaveEncoder, type toSaveType } from "./storage/risuSave";
 import { AutoStorage } from "./storage/autoStorage";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
@@ -354,6 +354,49 @@ export async function saveDb() {
                 continue
             }
             const dbData = new Uint8Array(encoded)
+
+            // ── Entity API saves (3-2) ──────────────────────────────────────
+            const entitySaves: Promise<unknown>[] = []
+
+            // Settings (root) — always sync
+            {
+                const rootObj: Record<string, unknown> = {}
+                for (const key of Object.keys(db)) {
+                    if (key !== 'characters' && key !== 'botPresets' && key !== 'modules') {
+                        rootObj[key] = (db as any)[key]
+                    }
+                }
+                entitySaves.push(forageStorage.saveSettings(encodeEntity(rootObj)))
+            }
+
+            // Changed characters
+            for (const chaId of toSave.character) {
+                const char = db.characters.find(c => c.chaId === chaId)
+                if (char) {
+                    entitySaves.push(forageStorage.saveCharacter(chaId, encodeEntity(char)))
+                } else {
+                    entitySaves.push(forageStorage.deleteCharacter(chaId))
+                }
+            }
+
+            // Presets
+            if (toSave.botPreset) {
+                for (const preset of db.botPresets) {
+                    const id = String(preset.name ?? db.botPresets.indexOf(preset))
+                    entitySaves.push(forageStorage.savePreset(id, encodeEntity(preset)))
+                }
+            }
+
+            // Modules
+            if (toSave.modules) {
+                for (const mod of db.modules) {
+                    entitySaves.push(forageStorage.saveModule(mod.id, encodeEntity(mod)))
+                }
+            }
+
+            await Promise.all(entitySaves)
+            // ── End entity API saves ────────────────────────────────────────
+
             await forageStorage.setItem('database/database.bin', dbData)
             await forageStorage.setItem(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, dbData)
             await getDbBackups()

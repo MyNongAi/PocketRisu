@@ -5,6 +5,13 @@ const htmlparser = require('node-html-parser');
 const { existsSync, mkdirSync, readFileSync, writeFileSync } = require('fs');
 const fs = require('fs/promises')
 const nodeCrypto = require('crypto')
+const { kvGet, kvSet, kvDel, kvList,
+        charGet, charSet, charDel, charList,
+        chatGet, chatSet, chatDel, chatList,
+        settingsGet, settingsSet,
+        presetGet, presetSet, presetDel, presetList,
+        moduleGet, moduleSet, moduleDel, moduleList,
+        db: sqliteDb } = require('./db.cjs');
 app.use(express.static(path.join(process.cwd(), 'dist'), {index: false}));
 app.use(express.json({ limit: '100mb' }));
 app.use(express.raw({ type: 'application/octet-stream', limit: '100mb' }));
@@ -12,11 +19,12 @@ app.use(express.text({ limit: '100mb' }));
 const {pipeline} = require('stream/promises')
 const https = require('https');
 const sslPath = path.join(process.cwd(), 'server/node/ssl/certificate');
-const hubURL = 'https://sv.risuai.xyz'; 
+const hubURL = 'https://sv.risuai.xyz';
 
 let password = ''
 let knownPublicKeysHashes = []
 
+// Ensure /save/ exists for password file and migration source
 const savePath = path.join(process.cwd(), "save")
 if(!existsSync(savePath)){
     mkdirSync(savePath)
@@ -541,25 +549,21 @@ app.get('/api/read', async (req, res, next) => {
     const filePath = req.headers['file-path'];
     if (!filePath) {
         console.log('no path')
-        res.status(400).send({
-            error:'File path required'
-        });
+        res.status(400).send({ error:'File path required' });
         return;
     }
-
     if(!isHex(filePath)){
-        res.status(400).send({
-            error:'Invaild Path'
-        });
+        res.status(400).send({ error:'Invaild Path' });
         return;
     }
     try {
-        if(!existsSync(path.join(savePath, filePath))){
+        const key = Buffer.from(filePath, 'hex').toString('utf-8');
+        const value = kvGet(key);
+        if(value === null){
             res.send();
-        }
-        else{
-            res.setHeader('Content-Type','application/octet-stream');
-            res.sendFile(path.join(savePath, filePath));
+        } else {
+            res.setHeader('Content-Type', 'application/octet-stream');
+            res.send(value);
         }
     } catch (error) {
         next(error);
@@ -572,23 +576,17 @@ app.get('/api/remove', async (req, res, next) => {
     }
     const filePath = req.headers['file-path'];
     if (!filePath) {
-        res.status(400).send({
-            error:'File path required'
-        });
+        res.status(400).send({ error:'File path required' });
         return;
     }
     if(!isHex(filePath)){
-        res.status(400).send({
-            error:'Invaild Path'
-        });
+        res.status(400).send({ error:'Invaild Path' });
         return;
     }
-
     try {
-        await fs.rm(path.join(savePath, filePath));
-        res.send({
-            success: true,
-        });
+        const key = Buffer.from(filePath, 'hex').toString('utf-8');
+        kvDel(key);
+        res.send({ success: true });
     } catch (error) {
         next(error);
     }
@@ -600,14 +598,8 @@ app.get('/api/list', async (req, res, next) => {
     }
     try {
         const keyPrefix = req.headers['key-prefix'] || '';
-        const allKeys = (await fs.readdir(path.join(savePath))).map((v) => {
-            return Buffer.from(v, 'hex').toString('utf-8')
-        })
-        const data = keyPrefix ? allKeys.filter(k => k.startsWith(keyPrefix)) : allKeys;
-        res.send({
-            success: true,
-            content: data
-        });
+        const data = kvList(keyPrefix || undefined);
+        res.send({ success: true, content: data });
     } catch (error) {
         next(error);
     }
@@ -618,28 +610,249 @@ app.post('/api/write', async (req, res, next) => {
         return;
     }
     const filePath = req.headers['file-path'];
-    const fileContent = req.body
+    const fileContent = req.body;
     if (!filePath || !fileContent) {
-        res.status(400).send({
-            error:'File path required'
-        });
+        res.status(400).send({ error:'File path required' });
         return;
     }
     if(!isHex(filePath)){
-        res.status(400).send({
-            error:'Invaild Path'
-        });
+        res.status(400).send({ error:'Invaild Path' });
         return;
     }
-
     try {
-        await fs.writeFile(path.join(savePath, filePath), fileContent);
-        res.send({
-            success: true
-        });
+        const key = Buffer.from(filePath, 'hex').toString('utf-8');
+        kvSet(key, fileContent);
+        res.send({ success: true });
     } catch (error) {
         next(error);
     }
+});
+
+// ─── Bulk asset endpoints (3-2-B) ─────────────────────────────────────────────
+const BULK_BATCH = 50;
+
+app.post('/api/assets/bulk-read', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        const keys = req.body; // string[] — decoded key strings
+        if(!Array.isArray(keys)){
+            res.status(400).send({ error: 'Body must be a JSON array of keys' });
+            return;
+        }
+        const results = [];
+        for(let i = 0; i < keys.length; i += BULK_BATCH){
+            const batch = keys.slice(i, i + BULK_BATCH);
+            for(const key of batch){
+                const value = kvGet(key);
+                if(value !== null){
+                    results.push({ key, value: Buffer.from(value).toString('base64') });
+                }
+            }
+        }
+        res.json(results);
+    } catch(error){ next(error); }
+});
+
+app.post('/api/assets/bulk-write', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        const entries = req.body; // {key: string, value: base64}[]
+        if(!Array.isArray(entries)){
+            res.status(400).send({ error: 'Body must be a JSON array of {key, value}' });
+            return;
+        }
+        for(let i = 0; i < entries.length; i += BULK_BATCH){
+            const batch = entries.slice(i, i + BULK_BATCH);
+            const writeBatch = sqliteDb.transaction(() => {
+                for(const { key, value } of batch){
+                    kvSet(key, Buffer.from(value, 'base64'));
+                }
+            });
+            writeBatch();
+        }
+        res.json({ success: true, count: entries.length });
+    } catch(error){ next(error); }
+});
+
+// ─── Entity API endpoints (3-2) ───────────────────────────────────────────────
+
+// SSE clients for 3-3
+const sseClients = new Set();
+
+function broadcastEvent(type, id) {
+    const data = JSON.stringify({ type, id, updated_at: Date.now() });
+    for(const res of sseClients){
+        res.write(`data: ${data}\n\n`);
+    }
+}
+
+app.get('/api/events', (req, res) => {
+    // No auth required for SSE — same-origin browser context
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    sseClients.add(res);
+    req.on('close', () => sseClients.delete(res));
+});
+
+// Characters
+app.get('/api/db/characters', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        res.json(charList());
+    } catch(e){ next(e); }
+});
+
+app.get('/api/db/characters/:id', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        const data = charGet(req.params.id);
+        if(data === null){ res.status(404).send({ error: 'Not found' }); return; }
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.send(data);
+    } catch(e){ next(e); }
+});
+
+app.post('/api/db/characters/:id', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        charSet(req.params.id, req.body);
+        broadcastEvent('character', req.params.id);
+        res.json({ success: true });
+    } catch(e){ next(e); }
+});
+
+app.delete('/api/db/characters/:id', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        charDel(req.params.id);
+        broadcastEvent('character', req.params.id);
+        res.json({ success: true });
+    } catch(e){ next(e); }
+});
+
+// Chats
+app.get('/api/db/chats/:charId', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        res.json(chatList(req.params.charId));
+    } catch(e){ next(e); }
+});
+
+app.get('/api/db/chats/:charId/:chatId', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        const data = chatGet(req.params.charId, req.params.chatId);
+        if(data === null){ res.status(404).send({ error: 'Not found' }); return; }
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.send(data);
+    } catch(e){ next(e); }
+});
+
+app.post('/api/db/chats/:charId/:chatId', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        chatSet(req.params.charId, req.params.chatId, req.body);
+        broadcastEvent('chat', `${req.params.charId}/${req.params.chatId}`);
+        res.json({ success: true });
+    } catch(e){ next(e); }
+});
+
+app.delete('/api/db/chats/:charId/:chatId', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        chatDel(req.params.charId, req.params.chatId);
+        res.json({ success: true });
+    } catch(e){ next(e); }
+});
+
+// Settings
+app.get('/api/db/settings', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        const data = settingsGet();
+        if(data === null){ res.status(404).send({ error: 'Not found' }); return; }
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.send(data);
+    } catch(e){ next(e); }
+});
+
+app.post('/api/db/settings', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        settingsSet(req.body);
+        broadcastEvent('settings', 'root');
+        res.json({ success: true });
+    } catch(e){ next(e); }
+});
+
+// Presets
+app.get('/api/db/presets', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try { res.json(presetList()); } catch(e){ next(e); }
+});
+
+app.get('/api/db/presets/:id', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        const data = presetGet(req.params.id);
+        if(data === null){ res.status(404).send({ error: 'Not found' }); return; }
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.send(data);
+    } catch(e){ next(e); }
+});
+
+app.post('/api/db/presets/:id', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        presetSet(req.params.id, req.body);
+        broadcastEvent('preset', req.params.id);
+        res.json({ success: true });
+    } catch(e){ next(e); }
+});
+
+app.delete('/api/db/presets/:id', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        presetDel(req.params.id);
+        broadcastEvent('preset', req.params.id);
+        res.json({ success: true });
+    } catch(e){ next(e); }
+});
+
+// Modules
+app.get('/api/db/modules', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try { res.json(moduleList()); } catch(e){ next(e); }
+});
+
+app.get('/api/db/modules/:id', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        const data = moduleGet(req.params.id);
+        if(data === null){ res.status(404).send({ error: 'Not found' }); return; }
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.send(data);
+    } catch(e){ next(e); }
+});
+
+app.post('/api/db/modules/:id', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        moduleSet(req.params.id, req.body);
+        broadcastEvent('module', req.params.id);
+        res.json({ success: true });
+    } catch(e){ next(e); }
+});
+
+app.delete('/api/db/modules/:id', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        moduleDel(req.params.id);
+        broadcastEvent('module', req.params.id);
+        res.json({ success: true });
+    } catch(e){ next(e); }
 });
 
 

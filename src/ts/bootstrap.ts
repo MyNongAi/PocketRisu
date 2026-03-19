@@ -8,7 +8,7 @@ import { loadPlugins } from "./plugins/plugins.svelte";
 import { alertError, alertMd, alertTOS, waitAlert, alertConfirm, alertInput } from "./alert";
 import { characterURLImport } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
-import { decodeRisuSave, encodeRisuSaveLegacy } from "./storage/risuSave";
+import { decodeRisuSave, encodeRisuSaveLegacy, encodeEntity } from "./storage/risuSave";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
 import { autoServerBackup } from "./kei/backup";
@@ -75,6 +75,43 @@ export async function loadData() {
                     characterURLImport()
                 }
             }
+            // ── Entity API initial migration (3-2) ─────────────────────────
+            // If entity settings table is empty, populate all entity tables
+            // from the just-loaded in-memory database.
+            LoadingStatusState.text = "Initializing Entity Storage..."
+            try {
+                const existingSettings = await forageStorage.loadSettings()
+                if (!existingSettings) {
+                    const db = getDatabase()
+                    const saves: Promise<unknown>[] = []
+                    // Settings (root)
+                    const rootObj: Record<string, unknown> = {}
+                    for (const key of Object.keys(db)) {
+                        if (key !== 'characters' && key !== 'botPresets' && key !== 'modules') {
+                            rootObj[key] = (db as any)[key]
+                        }
+                    }
+                    saves.push(forageStorage.saveSettings(encodeEntity(rootObj)))
+                    // Characters
+                    for (const char of db.characters) {
+                        saves.push(forageStorage.saveCharacter(char.chaId, encodeEntity(char)))
+                    }
+                    // Presets
+                    for (const preset of db.botPresets) {
+                        const id = String(preset.name ?? db.botPresets.indexOf(preset))
+                        saves.push(forageStorage.savePreset(id, encodeEntity(preset)))
+                    }
+                    // Modules
+                    for (const mod of db.modules ?? []) {
+                        saves.push(forageStorage.saveModule(mod.id, encodeEntity(mod)))
+                    }
+                    await Promise.all(saves)
+                    console.log('[Bootstrap] Entity API migration complete')
+                }
+            } catch (e) {
+                console.warn('[Bootstrap] Entity API migration failed (non-fatal):', e)
+            }
+            // ── End entity migration ────────────────────────────────────────
             LoadingStatusState.text = "Checking Unnecessary Files..."
             try {
                 await cleanChunks()
