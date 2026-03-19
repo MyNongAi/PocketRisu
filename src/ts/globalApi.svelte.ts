@@ -82,6 +82,12 @@ let checkedPaths: string[] = []
  * @returns {Promise<string>} - A promise that resolves to the source URL of the file.
  */
 export async function getFileSrc(loc: string) {
+    // NodeOnly: return a direct server URL instead of fetching + base64-encoding.
+    // The browser will cache the response using HTTP Cache-Control headers,
+    // so repeated renders (sidebar, chat) cost zero network after first load.
+    if ((globalThis as any).__NODE__) {
+        return `/api/asset/${Buffer.from(loc, 'utf-8').toString('hex')}`
+    }
     try {
         if (usingSw) {
             const encoded = Buffer.from(loc, 'utf-8').toString('hex')

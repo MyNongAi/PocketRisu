@@ -29,7 +29,12 @@ function shouldCompress(req, res) {
 app.use(compression({
     filter: shouldCompress,
 }));
-app.use(express.static(path.join(process.cwd(), 'dist'), {index: false}));
+// Vite 산출물은 해시 파일명이므로 /assets는 장기 캐시 안전
+app.use('/assets', express.static(path.join(process.cwd(), 'dist/assets'), {
+    maxAge: '1y',
+    immutable: true,
+}));
+app.use(express.static(path.join(process.cwd(), 'dist'), {index: false, maxAge: 0}));
 app.use(express.json({ limit: '100mb' }));
 app.use(express.raw({ type: 'application/octet-stream', limit: '100mb' }));
 app.use(express.text({ limit: '100mb' }));
@@ -60,6 +65,46 @@ const BACKUP_ENTRY_NAME_MAX_BYTES = 1024;
 const BACKUP_DISK_HEADROOM = 2;
 
 let importInProgress = false;
+
+// ── Session store for direct asset URL auth (F-0) ──────────────────────────
+// <img src="/api/asset/..."> cannot send custom headers, so we use a session
+// cookie issued after initial JWT auth. Single-user environment: Map is fine.
+const sessions = new Map() // token → expiresAt (ms)
+
+function parseSessionCookie(req) {
+    const cookieHeader = req.headers.cookie || ''
+    for (const part of cookieHeader.split(';')) {
+        const eq = part.indexOf('=')
+        if (eq === -1) continue
+        if (part.slice(0, eq).trim() === 'risu-session') return part.slice(eq + 1).trim()
+    }
+    return null
+}
+
+function sessionAuthMiddleware(req, res, next) {
+    const token = parseSessionCookie(req)
+    if (token && (sessions.get(token) ?? 0) > Date.now()) return next()
+    res.status(401).end()
+}
+
+// MIME detection by magic bytes (fallback when key has no extension)
+function detectMime(buf) {
+    if (!buf || buf.length < 12) return 'application/octet-stream'
+    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'image/png'
+    if (buf[0] === 0xff && buf[1] === 0xd8) return 'image/jpeg'
+    if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'image/gif'
+    if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+        buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return 'image/webp'
+    if (buf[0] === 0x1a && buf[1] === 0x45) return 'video/webm'
+    if (buf.length >= 8 && buf[4] === 0x66 && buf[5] === 0x74 && buf[6] === 0x79 && buf[7] === 0x70) return 'video/mp4'
+    return 'application/octet-stream'
+}
+const ASSET_EXT_MIME = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    gif: 'image/gif', webp: 'image/webp',
+    mp4: 'video/mp4', webm: 'video/webm',
+    mp3: 'audio/mpeg', ogg: 'audio/ogg', wav: 'audio/wav',
+}
 
 async function checkDiskSpace(requiredBytes) {
     try {
@@ -652,6 +697,47 @@ app.post('/api/login', async (req, res) => {
     }
     else{
         res.status(400).send({error: 'Password incorrect'})
+    }
+})
+
+// ── Session cookie issuance (F-0) ──────────────────────────────────────────
+// Called once after JWT auth succeeds. Issues a long-lived cookie so that
+// <img src="/api/asset/..."> requests can be authenticated without JS.
+app.post('/api/session', async (req, res) => {
+    if (!await checkAuth(req, res)) return
+    const token = nodeCrypto.randomBytes(32).toString('hex')
+    const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000
+    sessions.set(token, expiresAt)
+    // Prune stale sessions (bounded by single-user usage, safe to do inline)
+    for (const [t, exp] of sessions) {
+        if (exp < Date.now()) sessions.delete(t)
+    }
+    const maxAge = 7 * 24 * 60 * 60 // seconds
+    res.setHeader('Set-Cookie', `risu-session=${token}; HttpOnly; SameSite=Strict; Max-Age=${maxAge}; Path=/`)
+    res.json({ ok: true })
+})
+
+// ── Direct asset serving (F-1) ─────────────────────────────────────────────
+// Serves KV-stored assets as proper HTTP responses with long-term caching.
+// Key is hex-encoded to safely pass through URL. Auth via session cookie.
+app.get('/api/asset/:hexKey', sessionAuthMiddleware, (req, res) => {
+    try {
+        const key = Buffer.from(req.params.hexKey, 'hex').toString('utf-8')
+        const data = kvGet(key)
+        if (!data) return res.status(404).end()
+
+        const ext = key.split('.').pop()?.toLowerCase()
+        const contentType = ASSET_EXT_MIME[ext] || detectMime(data)
+        const etag = `"${nodeCrypto.createHash('md5').update(data).digest('hex')}"`
+
+        res.set({
+            'Content-Type': contentType,
+            'Cache-Control': 'public, max-age=31536000, immutable',
+            'ETag': etag,
+        })
+        res.send(data)
+    } catch (e) {
+        res.status(500).end()
     }
 })
 
