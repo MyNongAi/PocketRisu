@@ -83,6 +83,7 @@ export async function loadData() {
                 const existingSettings = await forageStorage.loadSettings()
                 if (!existingSettings) {
                     const db = getDatabase()
+                    const migStart = performance.now()
                     const saves: Promise<unknown>[] = []
                     // Settings (root)
                     const rootObj: Record<string, unknown> = {}
@@ -105,19 +106,19 @@ export async function loadData() {
                     for (const mod of db.modules ?? []) {
                         saves.push(forageStorage.saveModule(mod.id, encodeEntity(mod)))
                     }
+                    console.log('[Bootstrap] entity migration start', {
+                        characters: db.characters.length,
+                        chats: db.characters.reduce((a, c) => a + (c.chats?.length ?? 0), 0),
+                        presets: db.botPresets.length,
+                        modules: db.modules?.length ?? 0,
+                    })
                     await Promise.all(saves)
-                    console.log('[Bootstrap] Entity API migration complete')
+                    console.log('[Bootstrap] entity migration done', (performance.now() - migStart).toFixed(0), 'ms')
                 }
             } catch (e) {
                 console.warn('[Bootstrap] Entity API migration failed (non-fatal):', e)
             }
             // ── End entity migration ────────────────────────────────────────
-            LoadingStatusState.text = "Checking Unnecessary Files..."
-            try {
-                await cleanChunks()
-            } catch (error) {
-                console.error(error)
-            }
             LoadingStatusState.text = "Loading Plugins..."
             try {
                 await loadPlugins()
@@ -157,6 +158,10 @@ export async function loadData() {
             registerModelDynamic()
             saveDb()
             moduleUpdate()
+            // cleanChunks는 화면 진입 후 유휴 시간에 실행 (부트 블로킹 제거)
+            setTimeout(() => {
+                cleanChunks().catch(console.error)
+            }, 5_000)
             if (import.meta.env.VITE_RISU_TOS === 'TRUE') {
                 alertTOS().then((a) => {
                     if (a === false) {
@@ -400,6 +405,7 @@ async function cleanChunks() {
     const db = getDatabase()
     const uncleanable = new Set(getUncleanables(db))
     const indexes = await forageStorage.keys()
+    const allKeys = new Set(indexes)
     const characterIds = new Set<string>(
         db.characters.map((v) => v.chaId)
     )
@@ -417,7 +423,7 @@ async function cleanChunks() {
                 let okayToDelete = false
                 try {
                     const metaPath = asset + '.meta'
-                    const metaExists = (await forageStorage.keys()).includes(metaPath)
+                    const metaExists = allKeys.has(metaPath)
                     if (metaExists) {
                         const metaData: Uint8Array = await forageStorage.getItem(metaPath) as unknown as Uint8Array
                         const metaJson = JSON.parse(new TextDecoder().decode(metaData))
