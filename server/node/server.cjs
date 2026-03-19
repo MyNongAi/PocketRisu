@@ -1,6 +1,7 @@
 const express = require('express');
 const app = express();
 const path = require('path');
+const compression = require('compression');
 const htmlparser = require('node-html-parser');
 const { existsSync, mkdirSync, readFileSync, writeFileSync } = require('fs');
 const fs = require('fs/promises')
@@ -13,6 +14,21 @@ const { kvGet, kvSet, kvDel, kvList,
         moduleGet, moduleSet, moduleDel, moduleList,
         kvDelPrefix, kvListWithSizes, clearEntities, checkpointWal,
         db: sqliteDb } = require('./db.cjs');
+
+function shouldCompress(req, res) {
+    const contentType = String(res.getHeader('Content-Type') || '').toLowerCase();
+    if (contentType.includes('text/event-stream')) {
+        return false;
+    }
+    if (contentType.includes('application/octet-stream')) {
+        return true;
+    }
+    return compression.filter(req, res);
+}
+
+app.use(compression({
+    filter: shouldCompress,
+}));
 app.use(express.static(path.join(process.cwd(), 'dist'), {index: false}));
 app.use(express.json({ limit: '100mb' }));
 app.use(express.raw({ type: 'application/octet-stream', limit: '100mb' }));
