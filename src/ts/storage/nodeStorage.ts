@@ -7,17 +7,28 @@ export class NodeStorage{
     private static readonly BULK_WRITE_CLIENT_BATCH = 20
 
     authChecked = false
+    private cachedJwt: { token: string; expiresAt: number } | null = null
     JSONStringlifyAndbase64Url(obj:any){
         return base64url(Buffer.from(JSON.stringify(obj), 'utf-8'))
     }
 
     async createAuth(){
+        const now = Date.now()
+        if (this.cachedJwt && this.cachedJwt.expiresAt - now > 30_000) {
+            return this.cachedJwt.token
+        }
+        const token = await this._createFreshAuth()
+        this.cachedJwt = { token, expiresAt: now + 5 * 60 * 1000 }
+        return token
+    }
+
+    private async _createFreshAuth(){
         const keyPair = await this.getKeyPair()
         const date = Math.floor(Date.now() / 1000)
-        
+
         const header = {
             alg: "ES256",
-            typ: "JWT",   
+            typ: "JWT",
         }
         const payload = {
             iat: date,
@@ -125,6 +136,7 @@ export class NodeStorage{
 
         if(retry && await this.shouldRetryAuth(response)){
             this.authChecked = false
+            this.cachedJwt = null
             await this.checkAuth()
             return this.authFetch(input, init, false)
         }
