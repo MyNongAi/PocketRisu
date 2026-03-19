@@ -1,9 +1,7 @@
-import localforage from "localforage";
 import { alertError, alertNormal, alertStore, alertWait, alertMd, alertConfirm } from "../alert";
 import { LocalWriter, forageStorage, requiresFullEncoderReload } from "../globalApi.svelte";
 import { decodeRisuSave, encodeRisuSaveLegacy } from "../storage/risuSave";
 import { getDatabase, setDatabaseLite } from "../storage/database.svelte";
-import { sleep } from "../util";
 import { hubURL } from "../characterCards";
 import { language } from "src/lang";
 
@@ -67,43 +65,18 @@ export async function SaveLocalBackup(){
     const missingAssets: string[] = []
 
     const keys = await forageStorage.keys()
+    const pngKeys = keys.filter(k => k && k.endsWith('.png'))
 
-    for(let i=0;i<keys.length;i++){
-        const key = keys[i]
-        let message = `Saving local Backup... (${i + 1} / ${keys.length})`
-        if (missingAssets.length > 0) {
-            const skippedItems = missingAssets.map(key => {
-                const assetInfo = assetMap.get(key);
-                return assetInfo ? `'${assetInfo.assetName}' from ${assetInfo.charName}` : `'${key}'`;
-            }).join(', ');
-            message += `\n(Skipping... ${skippedItems})`;
-        }
-        alertWait(message)
+    alertWait(`Saving local Backup... (Reading ${pngKeys.length} assets)`)
+    const fetched = await forageStorage.getItems(pngKeys)
+    const fetchedMap = new Map(fetched.map(r => [r.key, r.value]))
 
-        if(!key || !key.endsWith('.png')){
-            continue
-        }
-        let data: Uint8Array | undefined;
-        let isCached = false;
-        if(forageStorage.isAccount && key.startsWith('assets/')){
-            const cached = await localforage.getItem(key) as ArrayBuffer;
-            if(cached) {
-                isCached = true;
-                data = new Uint8Array(cached);
-            }
-        }
-
-        if (!data) {
-            data = await forageStorage.getItem(key) as unknown as Uint8Array
-        }
-
+    for (const key of pngKeys) {
+        const data = fetchedMap.get(key)
         if (data) {
             await writer.writeBackup(key, data)
         } else {
             missingAssets.push(key)
-        }
-        if(forageStorage.isAccount && !isCached){
-            await sleep(1000)
         }
     }
 
@@ -241,27 +214,12 @@ export async function SavePartialLocalBackup(){
             continue
         }
 
-        let data: Uint8Array | undefined;
-        let isCached = false;
-        if(forageStorage.isAccount && key.startsWith('assets/')){
-            const cached = await localforage.getItem(key) as ArrayBuffer;
-            if(cached) {
-                isCached = true;
-                data = new Uint8Array(cached);
-            }
-        }
-
-        if (!data) {
-            data = await forageStorage.getItem(key) as unknown as Uint8Array
-        }
+        const data = await forageStorage.getItem(key) as unknown as Uint8Array
 
         if (data) {
             await writer.writeBackup(key, data)
         } else {
             missingAssets.push(key)
-        }
-        if(forageStorage.isAccount && !isCached){
-            await sleep(100)
         }
     }
 
@@ -303,9 +261,11 @@ export function LoadLocalBackup(){
             input.remove();
 
             const reader = file.stream().getReader();
-            const CHUNK_SIZE = 1024 * 1024; // 1MB chunk size
             let bytesRead = 0;
             let remainingBuffer = new Uint8Array();
+            // Accumulate asset entries for bulk write
+            const assetEntries: {key: string, value: Uint8Array}[] = []
+            let dbBlock: Uint8Array | null = null
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -343,27 +303,33 @@ export function LoadLocalBackup(){
                     const data = remainingBuffer.slice(offset + 4 + nameLength + 4, offset + 4 + nameLength + 4 + dataLength);
 
                     if (name === 'database.risudat') {
-                        const db = new Uint8Array(data);
-                        const dbData = await decodeRisuSave(db);
-                        setDatabaseLite(dbData);
-                        requiresFullEncoderReload.state = true;
-                        await forageStorage.setItem('database/database.bin', db);
-                        location.search = '';
-                        alertStore.set({
-                            type: "wait",
-                            msg: "Success, Refreshing your app."
-                        });
+                        dbBlock = new Uint8Array(data)
                     } else {
-                        await forageStorage.setItem('assets/' + name, data);
-                    }
-                    await sleep(10);
-                    if (forageStorage.isAccount) {
-                        await sleep(1000);
+                        assetEntries.push({ key: 'assets/' + name, value: data })
                     }
 
                     offset += 4 + nameLength + 4 + dataLength;
                 }
                 remainingBuffer = remainingBuffer.slice(offset);
+            }
+
+            // Bulk write assets (replaces sequential setItem + sleep loop)
+            if (assetEntries.length > 0) {
+                alertWait(`Loading local Backup... (Writing ${assetEntries.length} assets)`)
+                await forageStorage.setItems(assetEntries)
+            }
+
+            // Restore database
+            if (dbBlock) {
+                const dbData = await decodeRisuSave(dbBlock);
+                setDatabaseLite(dbData);
+                requiresFullEncoderReload.state = true;
+                await forageStorage.setItem('database/database.bin', dbBlock);
+                location.search = '';
+                alertStore.set({
+                    type: "wait",
+                    msg: "Success, Refreshing your app."
+                });
             }
 
             alertNormal('Success');

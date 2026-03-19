@@ -1,4 +1,4 @@
-import { changeFullscreen, checkNullish, sleep } from "./util"
+import { changeFullscreen, checkNullish } from "./util"
 import { v4 as uuidv4 } from 'uuid';
 import { get } from "svelte/store";
 import { setDatabase, defaultSdDataFunc, getDatabase } from "./storage/database.svelte";
@@ -6,11 +6,9 @@ import { checkRisuUpdate } from "./update";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState } from "./stores.svelte";
 import { loadPlugins } from "./plugins/plugins.svelte";
 import { alertError, alertMd, alertTOS, waitAlert, alertConfirm, alertInput } from "./alert";
-import { checkDriverInit } from "./drive/drive";
 import { characterURLImport } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
-import { loadRisuAccountData } from "./drive/accounter";
-import { decodeRisuSave, encodeRisuSaveLegacy } from "./storage/risuSave";
+import { decodeRisuSave, encodeRisuSaveLegacy, encodeEntity } from "./storage/risuSave";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
 import { autoServerBackup } from "./kei/backup";
@@ -20,7 +18,6 @@ import { updateGuisize } from "./gui/guisize";
 import { updateLorebooks } from "./characters";
 import { initMobileGesture } from "./hotkey";
 import { moduleUpdate } from "./process/modules";
-import type { AccountStorage } from "./storage/accountStorage";
 import { makeColdData } from "./process/coldstorage.svelte";
 import {
     forageStorage,
@@ -28,7 +25,6 @@ import {
     getDbBackups,
     getUncleanables,
     getBasename,
-    setUsingSw,
     checkCharOrder
 } from "./globalApi.svelte";
 import { registerModelDynamic } from "./model/modellist";
@@ -75,74 +71,58 @@ export async function loadData() {
                     }
                 }
 
-                if (await forageStorage.checkAccountSync()) {
-                    LoadingStatusState.text = "Checking Account Sync..."
-                    let gotStorage: Uint8Array = await (forageStorage.realStorage as AccountStorage).getItem('database/database.bin', (v) => {
-                        LoadingStatusState.text = `Loading Remote Save File ${(v * 100).toFixed(2)}%`
-                    })
-                    if (checkNullish(gotStorage)) {
-                        gotStorage = encodeRisuSaveLegacy({})
-                        await forageStorage.setItem('database/database.bin', gotStorage)
-                    }
-                    try {
-                        setDatabase(
-                            await decodeRisuSave(gotStorage)
-                        )
-                    } catch (error) {
-                        const backups = await getDbBackups()
-                        let backupLoaded = false
-                        for (const backup of backups) {
-                            try {
-                                LoadingStatusState.text = `Reading Backup File ${backup}...`
-                                const backupData: Uint8Array = await forageStorage.getItem(`database/dbbackup-${backup}.bin`) as unknown as Uint8Array
-                                setDatabase(
-                                    await decodeRisuSave(backupData)
-                                )
-                                backupLoaded = true
-                            } catch (error) { }
-                        }
-                        if (!backupLoaded) {
-                            // throw "Your save file is corrupted"
-                            await autoServerBackup()
-                            await sleep(10000)
-                        }
-                    }
-                }
-                LoadingStatusState.text = "Rechecking Account Sync..."
-                await forageStorage.checkAccountSync()
-                LoadingStatusState.text = "Checking Drive Sync..."
-                const isDriverMode = await checkDriverInit()
-                if (isDriverMode) {
-                    return
-                }
-                LoadingStatusState.text = "Checking Service Worker..."
-                if (navigator.serviceWorker) {
-                    setUsingSw(true)
-                    await registerSw()
-                }
-                else {
-                    setUsingSw(false)
-                }
                 if (getDatabase().didFirstSetup) {
                     characterURLImport()
                 }
             }
-            LoadingStatusState.text = "Checking Unnecessary Files..."
+            // ── Entity API initial migration (3-2) ─────────────────────────
+            // If entity settings table is empty, populate all entity tables
+            // from the just-loaded in-memory database.
+            LoadingStatusState.text = "Initializing Entity Storage..."
             try {
-                await cleanChunks()
-            } catch (error) {
-                console.error(error)
+                const existingSettings = await forageStorage.loadSettings()
+                if (!existingSettings) {
+                    const db = getDatabase()
+                    const migStart = performance.now()
+                    const saves: Promise<unknown>[] = []
+                    // Settings (root)
+                    const rootObj: Record<string, unknown> = {}
+                    for (const key of Object.keys(db)) {
+                        if (key !== 'characters' && key !== 'botPresets' && key !== 'modules') {
+                            rootObj[key] = (db as any)[key]
+                        }
+                    }
+                    saves.push(forageStorage.saveSettings(encodeEntity(rootObj)))
+                    // Characters
+                    for (const char of db.characters) {
+                        saves.push(forageStorage.saveCharacter(char.chaId, encodeEntity(char)))
+                    }
+                    // Presets
+                    for (const preset of db.botPresets) {
+                        const id = String(preset.name ?? db.botPresets.indexOf(preset))
+                        saves.push(forageStorage.savePreset(id, encodeEntity(preset)))
+                    }
+                    // Modules
+                    for (const mod of db.modules ?? []) {
+                        saves.push(forageStorage.saveModule(mod.id, encodeEntity(mod)))
+                    }
+                    console.log('[Bootstrap] entity migration start', {
+                        characters: db.characters.length,
+                        chats: db.characters.reduce((a, c) => a + (c.chats?.length ?? 0), 0),
+                        presets: db.botPresets.length,
+                        modules: db.modules?.length ?? 0,
+                    })
+                    await Promise.all(saves)
+                    console.log('[Bootstrap] entity migration done', (performance.now() - migStart).toFixed(0), 'ms')
+                }
+            } catch (e) {
+                console.warn('[Bootstrap] Entity API migration failed (non-fatal):', e)
             }
+            // ── End entity migration ────────────────────────────────────────
             LoadingStatusState.text = "Loading Plugins..."
             try {
                 await loadPlugins()
             } catch (error) { }
-            if (getDatabase().account) {
-                LoadingStatusState.text = "Checking Account Data..."
-                try {
-                    await loadRisuAccountData()
-                } catch (error) { }
-            }
             try {
                 //@ts-expect-error navigator.standalone is iOS Safari non-standard property, not in Navigator interface
                 const isInStandaloneMode = (window.matchMedia('(display-mode: standalone)').matches) || (window.navigator.standalone) || document.referrer.includes('android-app://');
@@ -163,12 +143,6 @@ export async function loadData() {
             updateHeightMode()
             updateErrorHandling()
             updateGuisize()
-            if (!localStorage.getItem('nightlyWarned') && window.location.hostname === 'nightly.risuai.xyz') {
-                alertMd(language.nightlyWarning)
-                await waitAlert()
-                //for testing, leave empty
-                localStorage.setItem('nightlyWarned', '')
-            }
             if (db.botSettingAtStart) {
                 botMakerMode.set(true)
             }
@@ -184,6 +158,10 @@ export async function loadData() {
             registerModelDynamic()
             saveDb()
             moduleUpdate()
+            // cleanChunks는 화면 진입 후 유휴 시간에 실행 (부트 블로킹 제거)
+            setTimeout(() => {
+                cleanChunks().catch(console.error)
+            }, 5_000)
             if (import.meta.env.VITE_RISU_TOS === 'TRUE') {
                 alertTOS().then((a) => {
                     if (a === false) {
@@ -198,19 +176,6 @@ export async function loadData() {
 }
 
 
-/**
- * Registers the service worker and initializes it.
- */
-async function registerSw() {
-    await navigator.serviceWorker.register("/sw.js", {
-        scope: "/"
-    });
-    await sleep(100);
-    const da = await fetch('/sw/init');
-    if (!(da.status >= 200 && da.status < 300)) {
-        location.reload();
-    }
-}
 
 /**
  * Updates the error handling by adding custom handlers for errors and unhandled promise rejections.
@@ -438,12 +403,9 @@ async function checkNewFormat(): Promise<void> {
  */
 async function cleanChunks() {
     const db = getDatabase()
-    if (db.account?.useSync) {
-        return
-    }
-
     const uncleanable = new Set(getUncleanables(db))
     const indexes = await forageStorage.keys()
+    const allKeys = new Set(indexes)
     const characterIds = new Set<string>(
         db.characters.map((v) => v.chaId)
     )
@@ -461,7 +423,7 @@ async function cleanChunks() {
                 let okayToDelete = false
                 try {
                     const metaPath = asset + '.meta'
-                    const metaExists = (await forageStorage.keys()).includes(metaPath)
+                    const metaExists = allKeys.has(metaPath)
                     if (metaExists) {
                         const metaData: Uint8Array = await forageStorage.getItem(metaPath) as unknown as Uint8Array
                         const metaJson = JSON.parse(new TextDecoder().decode(metaData))

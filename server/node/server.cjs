@@ -5,6 +5,13 @@ const htmlparser = require('node-html-parser');
 const { existsSync, mkdirSync, readFileSync, writeFileSync } = require('fs');
 const fs = require('fs/promises')
 const nodeCrypto = require('crypto')
+const { kvGet, kvSet, kvDel, kvList,
+        charGet, charSet, charDel, charList,
+        chatGet, chatSet, chatDel, chatList,
+        settingsGet, settingsSet,
+        presetGet, presetSet, presetDel, presetList,
+        moduleGet, moduleSet, moduleDel, moduleList,
+        db: sqliteDb } = require('./db.cjs');
 app.use(express.static(path.join(process.cwd(), 'dist'), {index: false}));
 app.use(express.json({ limit: '100mb' }));
 app.use(express.raw({ type: 'application/octet-stream', limit: '100mb' }));
@@ -12,12 +19,12 @@ app.use(express.text({ limit: '100mb' }));
 const {pipeline} = require('stream/promises')
 const https = require('https');
 const sslPath = path.join(process.cwd(), 'server/node/ssl/certificate');
-const hubURL = 'https://sv.risuai.xyz'; 
-const openid = require('openid-client');
+const hubURL = 'https://sv.risuai.xyz';
 
 let password = ''
 let knownPublicKeysHashes = []
 
+// Ensure /save/ exists for password file and migration source
 const savePath = path.join(process.cwd(), "save")
 if(!existsSync(savePath)){
     mkdirSync(savePath)
@@ -30,6 +37,24 @@ if(existsSync(passwordPath)){
 
 const authCodePath = path.join(process.cwd(), 'save', '__authcode')
 const hexRegex = /^[0-9a-fA-F]+$/;
+const BACKUP_IMPORT_MAX_BYTES = Number(process.env.RISU_BACKUP_IMPORT_MAX_BYTES ?? '0');
+const BACKUP_ENTRY_NAME_MAX_BYTES = 1024;
+// Minimum free disk space headroom multiplier: require 2× the backup size to be free
+const BACKUP_DISK_HEADROOM = 2;
+
+let importInProgress = false;
+
+async function checkDiskSpace(requiredBytes) {
+    try {
+        const saveDir = path.join(process.cwd(), 'save');
+        const stats = await fs.statfs(saveDir);
+        const availableBytes = stats.bavail * stats.bsize;
+        return { ok: availableBytes >= requiredBytes, available: availableBytes };
+    } catch {
+        // statfs unavailable on this platform — skip check
+        return { ok: true, available: -1 };
+    }
+}
 
 function isHex(str) {
     return hexRegex.test(str.toUpperCase().trim()) || str === '__password';
@@ -542,25 +567,21 @@ app.get('/api/read', async (req, res, next) => {
     const filePath = req.headers['file-path'];
     if (!filePath) {
         console.log('no path')
-        res.status(400).send({
-            error:'File path required'
-        });
+        res.status(400).send({ error:'File path required' });
         return;
     }
-
     if(!isHex(filePath)){
-        res.status(400).send({
-            error:'Invaild Path'
-        });
+        res.status(400).send({ error:'Invaild Path' });
         return;
     }
     try {
-        if(!existsSync(path.join(savePath, filePath))){
+        const key = Buffer.from(filePath, 'hex').toString('utf-8');
+        const value = kvGet(key);
+        if(value === null){
             res.send();
-        }
-        else{
-            res.setHeader('Content-Type','application/octet-stream');
-            res.sendFile(path.join(savePath, filePath));
+        } else {
+            res.setHeader('Content-Type', 'application/octet-stream');
+            res.send(value);
         }
     } catch (error) {
         next(error);
@@ -573,23 +594,17 @@ app.get('/api/remove', async (req, res, next) => {
     }
     const filePath = req.headers['file-path'];
     if (!filePath) {
-        res.status(400).send({
-            error:'File path required'
-        });
+        res.status(400).send({ error:'File path required' });
         return;
     }
     if(!isHex(filePath)){
-        res.status(400).send({
-            error:'Invaild Path'
-        });
+        res.status(400).send({ error:'Invaild Path' });
         return;
     }
-
     try {
-        await fs.rm(path.join(savePath, filePath));
-        res.send({
-            success: true,
-        });
+        const key = Buffer.from(filePath, 'hex').toString('utf-8');
+        kvDel(key);
+        res.send({ success: true });
     } catch (error) {
         next(error);
     }
@@ -600,13 +615,9 @@ app.get('/api/list', async (req, res, next) => {
         return;
     }
     try {
-        const data = (await fs.readdir(path.join(savePath))).map((v) => {
-            return Buffer.from(v, 'hex').toString('utf-8')
-        })
-        res.send({
-            success: true,
-            content: data
-        });
+        const keyPrefix = req.headers['key-prefix'] || '';
+        const data = kvList(keyPrefix || undefined);
+        res.send({ success: true, content: data });
     } catch (error) {
         next(error);
     }
@@ -617,136 +628,426 @@ app.post('/api/write', async (req, res, next) => {
         return;
     }
     const filePath = req.headers['file-path'];
-    const fileContent = req.body
+    const fileContent = req.body;
     if (!filePath || !fileContent) {
-        res.status(400).send({
-            error:'File path required'
-        });
+        res.status(400).send({ error:'File path required' });
         return;
     }
     if(!isHex(filePath)){
-        res.status(400).send({
-            error:'Invaild Path'
-        });
+        res.status(400).send({ error:'Invaild Path' });
         return;
     }
-
     try {
-        await fs.writeFile(path.join(savePath, filePath), fileContent);
-        res.send({
-            success: true
-        });
+        const key = Buffer.from(filePath, 'hex').toString('utf-8');
+        kvSet(key, fileContent);
+        res.send({ success: true });
     } catch (error) {
         next(error);
     }
 });
 
-const oauthData = {
-    client_id: '',
-    client_secret: '',
-    config: {},
-    code_verifier: ''
+// ─── Bulk asset endpoints (3-2-B) ─────────────────────────────────────────────
+const BULK_BATCH = 50;
 
-}
-app.get('/api/oauth_login', async (req, res) => {
-    const redirect_uri = (new URL (req.url)).host + '/api/oauth_callback'
-
-    if(!redirect_uri){
-        res.status(400).send({ error: 'redirect_uri is required' });
-        return
-    }
-    if(!oauthData.client_id || !oauthData.client_secret){
-        const discovery = await openid.discovery('https://account.sionyw.com/','','');
-        oauthData.config = discovery;
-
-        //oauth dynamic client registration
-        //https://datatracker.ietf.org/doc/html/rfc7591
-
-        const serverMeta = discovery.serverMetadata()
-        //since we can't find a good library to do this, we will do it manually
-        const registrationResponse = await fetch(serverMeta.registration_endpoint, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': 'Bearer ' + (serverMeta.registration_access_token || '')
-            },
-            body: JSON.stringify({
-                client_id: oauthData.client_id,
-                client_secret: oauthData.client_secret,
-                redirect_uris: [redirect_uri],
-                response_types: ['code'],
-                grant_types: ['authorization_code'],
-                scope: 'risuai',
-                token_endpoint_auth_method: 'client_secret_basic',
-                client_name: 'Risuai Node Server',
-            })
-        });
-
-        if(registrationResponse.status === 201 || registrationResponse.status === 200){
-            const registrationData = await registrationResponse.json();
-            oauthData.client_id = registrationData.client_id;
-            oauthData.client_secret = registrationData.client_secret;
-            discovery.clientMetadata().client_id = oauthData.client_id;
-            discovery.clientMetadata().client_secret = oauthData.client_secret;
+app.post('/api/assets/bulk-read', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        const keys = req.body; // string[] — decoded key strings
+        if(!Array.isArray(keys)){
+            res.status(400).send({ error: 'Body must be a JSON array of keys' });
+            return;
         }
-        else{
-            console.error('[Server] OAuth2 dynamic client registration failed:', registrationResponse.statusText);
-            res.status(500).send({ error: 'OAuth2 client registration failed' });
-            return
+        const results = [];
+        for(let i = 0; i < keys.length; i += BULK_BATCH){
+            const batch = keys.slice(i, i + BULK_BATCH);
+            for(const key of batch){
+                const value = kvGet(key);
+                if(value !== null){
+                    results.push({ key, value: Buffer.from(value).toString('base64') });
+                }
+            }
         }
-
-
-        //now lets request
-
-        let code_verifier = openid.randomPKCECodeVerifier();
-        let code_challenge = await openid.calculatePKCECodeChallenge(code_verifier);
-
-        oauthData.code_verifier = code_verifier;
-        let redirectTo = openid.buildAuthorizationUrl(oauthData.config, {
-            redirect_uri,
-            code_challenge,
-            code_challenge_method: 'S256',
-            scope: 'risuai',
-        })
-
-        res.redirect(redirectTo.toString());
-
-        return;
-
-    }
-    
-    res.status(500).send({ error: 'OAuth2 login failed' });
+        res.json(results);
+    } catch(error){ next(error); }
 });
 
-app.get('/api/oauth_callback', async (req, res) => {
+app.post('/api/assets/bulk-write', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        const entries = req.body; // {key: string, value: base64}[]
+        if(!Array.isArray(entries)){
+            res.status(400).send({ error: 'Body must be a JSON array of {key, value}' });
+            return;
+        }
+        for(let i = 0; i < entries.length; i += BULK_BATCH){
+            const batch = entries.slice(i, i + BULK_BATCH);
+            const writeBatch = sqliteDb.transaction(() => {
+                for(const { key, value } of batch){
+                    kvSet(key, Buffer.from(value, 'base64'));
+                }
+            });
+            writeBatch();
+        }
+        res.json({ success: true, count: entries.length });
+    } catch(error){ next(error); }
+});
 
-    //since this is a callback we don't need to check password
+app.get('/api/backup/export', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        const namespacedEntries = [
+            ...kvListWithSizes('assets/').map((entry) => ({
+                key: entry.key,
+                backupName: path.basename(entry.key),
+                size: entry.size,
+            })),
+            ...kvListWithSizes('inlay/').map((entry) => ({
+                key: entry.key,
+                backupName: entry.key,
+                size: entry.size,
+            })),
+            ...kvListWithSizes('inlay_thumb/').map((entry) => ({
+                key: entry.key,
+                backupName: entry.key,
+                size: entry.size,
+            })),
+            ...kvListWithSizes('inlay_meta/').map((entry) => ({
+                key: entry.key,
+                backupName: entry.key,
+                size: entry.size,
+            })),
+        ].sort((a, b) => a.key.localeCompare(b.key));
+        const dbValue = kvGet('database/database.bin');
+        const totalBytes = namespacedEntries.reduce((sum, entry) => {
+            return sum + 8 + Buffer.byteLength(entry.backupName, 'utf-8') + entry.size;
+        }, 0) + (dbValue ? 8 + Buffer.byteLength('database.risudat', 'utf-8') + dbValue.length : 0);
 
-    const params = (new URL(req.url, `http://${req.headers.host}`)).searchParams;
-    const code = params.get('code');
+        res.setHeader('content-type', 'application/octet-stream');
+        res.setHeader('content-disposition', `attachment; filename="risu-backup-${Date.now()}.bin"`);
+        res.setHeader('content-length', totalBytes);
+        res.setHeader('x-risu-backup-assets', namespacedEntries.length);
 
-    if(!code){
-        res.status(400).send({ error: 'code is required' });
-        return
+        for (const entry of namespacedEntries) {
+            const value = kvGet(entry.key);
+            if (value) {
+                res.write(encodeBackupEntry(entry.backupName, value));
+            }
+        }
+
+        if (dbValue) {
+            res.write(encodeBackupEntry('database.risudat', dbValue));
+        }
+        res.end();
+    } catch (error) {
+        next(error);
     }
-    if(!oauthData.client_id || !oauthData.client_secret || !oauthData.code_verifier){
-        res.status(400).send({ error: 'OAuth2 not initialized' });
-        return
+});
+
+// Pre-flight check: auth + size + disk space before client starts uploading
+app.post('/api/backup/import/prepare', async (req, res, next) => {
+    if (!await checkAuth(req, res)) { return; }
+    try {
+        if (importInProgress) {
+            res.status(409).json({ error: 'Another import is already in progress' });
+            return;
+        }
+
+        const size = Number(req.body?.size ?? 0);
+        if (BACKUP_IMPORT_MAX_BYTES > 0 && size > BACKUP_IMPORT_MAX_BYTES) {
+            res.status(413).json({ error: `Backup exceeds max allowed size (${BACKUP_IMPORT_MAX_BYTES} bytes)` });
+            return;
+        }
+
+        if (size > 0) {
+            const disk = await checkDiskSpace(size * BACKUP_DISK_HEADROOM);
+            if (!disk.ok) {
+                res.status(507).json({
+                    error: 'Insufficient disk space',
+                    available: disk.available,
+                    required: size * BACKUP_DISK_HEADROOM,
+                });
+                return;
+            }
+        }
+
+        res.json({ ok: true });
+    } catch (error) {
+        next(error);
     }
+});
 
-    let tokens = await openid.authorizationCodeGrant(
-        oauthData.config,   
-        getCurrentUrl(),
-        {
-            pkceCodeVerifier: oauthData.code_verifier,
-        },
-    )
+app.post('/api/backup/import', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
 
-    fs.writeFileSync(authCodePath, tokens.access_token, 'utf-8')
+    if (importInProgress) {
+        res.status(409).json({ error: 'Another import is already in progress' });
+        return;
+    }
+    importInProgress = true;
 
-    res.send(tokens)
-            
-})
+    try {
+        const contentType = String(req.headers['content-type'] ?? '');
+        if (contentType && !contentType.includes('application/x-risu-backup') && !contentType.includes('application/octet-stream')) {
+            res.status(415).json({ error: 'Unsupported backup content-type' });
+            return;
+        }
+
+        const contentLength = Number(req.headers['content-length'] ?? '0');
+        if (BACKUP_IMPORT_MAX_BYTES > 0 && Number.isFinite(contentLength) && contentLength > BACKUP_IMPORT_MAX_BYTES) {
+            res.status(413).json({ error: `Backup exceeds max allowed size (${BACKUP_IMPORT_MAX_BYTES} bytes)` });
+            return;
+        }
+
+        let remainingBuffer = Buffer.alloc(0);
+        let hasDatabase = false;
+        let assetsRestored = 0;
+        let bytesReceived = 0;
+        const seenEntryNames = new Set();
+
+        sqliteDb.exec('BEGIN');
+        try {
+            kvDelPrefix('assets/');
+            kvDelPrefix('inlay/');
+            kvDelPrefix('inlay_thumb/');
+            kvDelPrefix('inlay_meta/');
+            clearEntities();
+
+            for await (const chunk of req) {
+                bytesReceived += chunk.length;
+                if (BACKUP_IMPORT_MAX_BYTES > 0 && bytesReceived > BACKUP_IMPORT_MAX_BYTES) {
+                    throw new Error(`Backup exceeds max allowed size (${BACKUP_IMPORT_MAX_BYTES} bytes)`);
+                }
+
+                remainingBuffer = remainingBuffer.length === 0
+                    ? Buffer.from(chunk)
+                    : Buffer.concat([remainingBuffer, Buffer.from(chunk)]);
+                remainingBuffer = parseBackupChunk(remainingBuffer, (name, data) => {
+                    if (seenEntryNames.has(name)) {
+                        throw new Error(`Duplicate backup entry: ${name}`);
+                    }
+                    seenEntryNames.add(name);
+
+                    const storageKey = resolveBackupStorageKey(name);
+                    if (storageKey === 'database/database.bin') {
+                        kvSet(storageKey, Buffer.from(data));
+                        hasDatabase = true;
+                    } else {
+                        kvSet(storageKey, Buffer.from(data));
+                        assetsRestored += 1;
+                    }
+                });
+            }
+
+            if (remainingBuffer.length > 0) {
+                throw new Error('Backup stream ended with incomplete entry');
+            }
+            if (!hasDatabase) {
+                throw new Error('Backup does not contain database.risudat');
+            }
+            sqliteDb.exec('COMMIT');
+        } catch (error) {
+            sqliteDb.exec('ROLLBACK');
+            throw error;
+        }
+
+        try {
+            checkpointWal('TRUNCATE');
+        } catch (checkpointError) {
+            console.warn('[Backup Import] WAL checkpoint after import failed:', checkpointError);
+        }
+
+        res.json({
+            ok: true,
+            assetsRestored,
+        });
+    } catch (error) {
+        next(error);
+    } finally {
+        importInProgress = false;
+    }
+});
+
+// ─── Entity API endpoints (3-2) ───────────────────────────────────────────────
+
+// SSE clients for 3-3
+const sseClients = new Set();
+
+function broadcastEvent(type, id) {
+    const data = JSON.stringify({ type, id, updated_at: Date.now() });
+    for(const res of sseClients){
+        res.write(`data: ${data}\n\n`);
+    }
+}
+
+app.get('/api/events', (req, res) => {
+    // No auth required for SSE — same-origin browser context
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+    sseClients.add(res);
+    req.on('close', () => sseClients.delete(res));
+});
+
+// Characters
+app.get('/api/db/characters', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        res.json(charList());
+    } catch(e){ next(e); }
+});
+
+app.get('/api/db/characters/:id', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        const data = charGet(req.params.id);
+        if(data === null){ res.status(404).send({ error: 'Not found' }); return; }
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.send(data);
+    } catch(e){ next(e); }
+});
+
+app.post('/api/db/characters/:id', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        charSet(req.params.id, req.body);
+        broadcastEvent('character', req.params.id);
+        res.json({ success: true });
+    } catch(e){ next(e); }
+});
+
+app.delete('/api/db/characters/:id', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        charDel(req.params.id);
+        broadcastEvent('character', req.params.id);
+        res.json({ success: true });
+    } catch(e){ next(e); }
+});
+
+// Chats
+app.get('/api/db/chats/:charId', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        res.json(chatList(req.params.charId));
+    } catch(e){ next(e); }
+});
+
+app.get('/api/db/chats/:charId/:chatId', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        const data = chatGet(req.params.charId, req.params.chatId);
+        if(data === null){ res.status(404).send({ error: 'Not found' }); return; }
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.send(data);
+    } catch(e){ next(e); }
+});
+
+app.post('/api/db/chats/:charId/:chatId', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        chatSet(req.params.charId, req.params.chatId, req.body);
+        broadcastEvent('chat', `${req.params.charId}/${req.params.chatId}`);
+        res.json({ success: true });
+    } catch(e){ next(e); }
+});
+
+app.delete('/api/db/chats/:charId/:chatId', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        chatDel(req.params.charId, req.params.chatId);
+        res.json({ success: true });
+    } catch(e){ next(e); }
+});
+
+// Settings
+app.get('/api/db/settings', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        const data = settingsGet();
+        if(data === null){ res.status(404).send({ error: 'Not found' }); return; }
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.send(data);
+    } catch(e){ next(e); }
+});
+
+app.post('/api/db/settings', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        settingsSet(req.body);
+        broadcastEvent('settings', 'root');
+        res.json({ success: true });
+    } catch(e){ next(e); }
+});
+
+// Presets
+app.get('/api/db/presets', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try { res.json(presetList()); } catch(e){ next(e); }
+});
+
+app.get('/api/db/presets/:id', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        const data = presetGet(req.params.id);
+        if(data === null){ res.status(404).send({ error: 'Not found' }); return; }
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.send(data);
+    } catch(e){ next(e); }
+});
+
+app.post('/api/db/presets/:id', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        presetSet(req.params.id, req.body);
+        broadcastEvent('preset', req.params.id);
+        res.json({ success: true });
+    } catch(e){ next(e); }
+});
+
+app.delete('/api/db/presets/:id', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        presetDel(req.params.id);
+        broadcastEvent('preset', req.params.id);
+        res.json({ success: true });
+    } catch(e){ next(e); }
+});
+
+// Modules
+app.get('/api/db/modules', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try { res.json(moduleList()); } catch(e){ next(e); }
+});
+
+app.get('/api/db/modules/:id', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        const data = moduleGet(req.params.id);
+        if(data === null){ res.status(404).send({ error: 'Not found' }); return; }
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.send(data);
+    } catch(e){ next(e); }
+});
+
+app.post('/api/db/modules/:id', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        moduleSet(req.params.id, req.body);
+        broadcastEvent('module', req.params.id);
+        res.json({ success: true });
+    } catch(e){ next(e); }
+});
+
+app.delete('/api/db/modules/:id', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        moduleDel(req.params.id);
+        broadcastEvent('module', req.params.id);
+        res.json({ success: true });
+    } catch(e){ next(e); }
+});
+
 
 async function getHttpsOptions() {
 
