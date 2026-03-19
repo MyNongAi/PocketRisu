@@ -1,6 +1,7 @@
 const express = require('express');
 const app = express();
 const path = require('path');
+const compression = require('compression');
 const htmlparser = require('node-html-parser');
 const { existsSync, mkdirSync, readFileSync, writeFileSync } = require('fs');
 const fs = require('fs/promises')
@@ -11,7 +12,23 @@ const { kvGet, kvSet, kvDel, kvList,
         settingsGet, settingsSet,
         presetGet, presetSet, presetDel, presetList,
         moduleGet, moduleSet, moduleDel, moduleList,
+        kvDelPrefix, kvListWithSizes, clearEntities, checkpointWal,
         db: sqliteDb } = require('./db.cjs');
+
+function shouldCompress(req, res) {
+    const contentType = String(res.getHeader('Content-Type') || '').toLowerCase();
+    if (contentType.includes('text/event-stream')) {
+        return false;
+    }
+    if (contentType.includes('application/octet-stream')) {
+        return true;
+    }
+    return compression.filter(req, res);
+}
+
+app.use(compression({
+    filter: shouldCompress,
+}));
 app.use(express.static(path.join(process.cwd(), 'dist'), {index: false}));
 app.use(express.json({ limit: '100mb' }));
 app.use(express.raw({ type: 'application/octet-stream', limit: '100mb' }));
@@ -64,6 +81,80 @@ async function hashJSON(json){
     const hash = nodeCrypto.createHash('sha256');
     hash.update(JSON.stringify(json));
     return hash.digest('hex');
+}
+
+function encodeBackupEntry(name, data) {
+    const encodedName = Buffer.from(name, 'utf-8');
+    const nameLength = Buffer.allocUnsafe(4);
+    nameLength.writeUInt32LE(encodedName.length, 0);
+    const dataLength = Buffer.allocUnsafe(4);
+    dataLength.writeUInt32LE(data.length, 0);
+    return Buffer.concat([nameLength, encodedName, dataLength, data]);
+}
+
+function isInvalidBackupPathSegment(name) {
+    return (
+        !name ||
+        name.includes('\0') ||
+        name.includes('\\') ||
+        name.startsWith('/') ||
+        name.includes('../') ||
+        name.includes('/..') ||
+        name === '.' ||
+        name === '..'
+    );
+}
+
+function resolveBackupStorageKey(name) {
+    if (Buffer.byteLength(name, 'utf-8') > BACKUP_ENTRY_NAME_MAX_BYTES) {
+        throw new Error(`Backup entry name too long: ${name.slice(0, 64)}`);
+    }
+
+    if (name === 'database.risudat') {
+        return 'database/database.bin';
+    }
+
+    if (
+        name.startsWith('inlay/') ||
+        name.startsWith('inlay_thumb/') ||
+        name.startsWith('inlay_meta/')
+    ) {
+        if (isInvalidBackupPathSegment(name)) {
+            throw new Error(`Invalid backup entry name: ${name}`);
+        }
+        return name;
+    }
+
+    if (isInvalidBackupPathSegment(name) || name !== path.basename(name)) {
+        throw new Error(`Invalid asset backup entry name: ${name}`);
+    }
+
+    return `assets/${name}`;
+}
+
+function parseBackupChunk(buffer, onEntry) {
+    let offset = 0;
+    while (offset + 4 <= buffer.length) {
+        const nameLength = buffer.readUInt32LE(offset);
+        if (offset + 4 + nameLength > buffer.length) {
+            break;
+        }
+        const nameStart = offset + 4;
+        const nameEnd = nameStart + nameLength;
+        const name = buffer.subarray(nameStart, nameEnd).toString('utf-8');
+        if (nameEnd + 4 > buffer.length) {
+            break;
+        }
+        const dataLength = buffer.readUInt32LE(nameEnd);
+        const dataStart = nameEnd + 4;
+        const dataEnd = dataStart + dataLength;
+        if (dataEnd > buffer.length) {
+            break;
+        }
+        onEntry(name, buffer.subarray(dataStart, dataEnd));
+        offset = dataEnd;
+    }
+    return buffer.subarray(offset);
 }
 
 app.get('/', async (req, res, next) => {
@@ -214,6 +305,12 @@ const reverseProxyFunc = async (req, res, next) => {
         return;
     }
     const header = req.headers['risu-header'] ? JSON.parse(decodeURIComponent(req.headers['risu-header'])) : req.headers;
+    if (req.headers['x-risu-tk'] && !header['x-risu-tk']) {
+        header['x-risu-tk'] = req.headers['x-risu-tk'];
+    }
+    if (req.headers['risu-location'] && !header['risu-location']) {
+        header['risu-location'] = req.headers['risu-location'];
+    }
     if(!header['x-forwarded-for']){
         header['x-forwarded-for'] = req.ip
     }
@@ -231,11 +328,21 @@ const reverseProxyFunc = async (req, res, next) => {
     }
     let originalResponse;
     try {
+        let requestBody = undefined;
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+            if (Buffer.isBuffer(req.body) || typeof req.body === 'string') {
+                requestBody = req.body;
+            }
+            else if (req.body !== undefined) {
+                requestBody = JSON.stringify(req.body);
+            }
+        }
         // make request to original server
         originalResponse = await fetch(urlParam, {
             method: req.method,
             headers: header,
-            body: JSON.stringify(req.body)
+            body: requestBody,
+            duplex: requestBody ? 'half' : undefined
         });
         // get response body as stream
         const originalBody = originalResponse.body;
@@ -279,6 +386,12 @@ const reverseProxyFunc_get = async (req, res, next) => {
         return;
     }
     const header = req.headers['risu-header'] ? JSON.parse(decodeURIComponent(req.headers['risu-header'])) : req.headers;
+    if (req.headers['x-risu-tk'] && !header['x-risu-tk']) {
+        header['x-risu-tk'] = req.headers['x-risu-tk'];
+    }
+    if (req.headers['risu-location'] && !header['risu-location']) {
+        header['risu-location'] = req.headers['risu-location'];
+    }
     if(!header['x-forwarded-for']){
         header['x-forwarded-for'] = req.ip
     }
@@ -481,6 +594,10 @@ app.get('/hub-proxy/*', hubProxyFunc);
 
 app.post('/proxy', reverseProxyFunc);
 app.post('/proxy2', reverseProxyFunc);
+app.put('/proxy', reverseProxyFunc);
+app.put('/proxy2', reverseProxyFunc);
+app.delete('/proxy', reverseProxyFunc);
+app.delete('/proxy2', reverseProxyFunc);
 app.post('/hub-proxy/*', hubProxyFunc);
 
 // app.get('/api/password', async(req, res)=> {

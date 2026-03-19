@@ -1,106 +1,47 @@
 import { alertError, alertNormal, alertStore, alertWait, alertMd, alertConfirm } from "../alert";
-import { LocalWriter, forageStorage, requiresFullEncoderReload } from "../globalApi.svelte";
-import { decodeRisuSave, encodeRisuSaveLegacy } from "../storage/risuSave";
-import { getDatabase, setDatabaseLite } from "../storage/database.svelte";
-import { hubURL } from "../characterCards";
+import { downloadFile, LocalWriter, forageStorage } from "../globalApi.svelte";
+import { encodeRisuSaveLegacy } from "../storage/risuSave";
+import { getDatabase } from "../storage/database.svelte";
 import { language } from "src/lang";
 
-function getBasename(data:string){
-    const baseNameRegex = /\\/g
-    const splited = data.replace(baseNameRegex, '/').split('/')
-    const lasts = splited[splited.length-1]
-    return lasts
-}
-
 export async function SaveLocalBackup(){
-    alertWait("Saving local backup...")
-    const writer = new LocalWriter()
-    const r = await writer.init()
-    if(!r){
-        alertError('Failed')
-        return
-    }
+    try {
+        alertWait("Saving local backup...")
+        const response = await forageStorage.exportBackup()
+        const disposition = response.headers.get('content-disposition') ?? ''
+        const fileName = disposition.match(/filename=\"?([^"]+)\"?/)?.[1] ?? `risu-backup-${Date.now()}.bin`
+        const totalBytes = Number(response.headers.get('content-length') ?? '0')
 
-    const db = getDatabase()
-    const assetMap = new Map<string, { charName: string, assetName: string }>()
-    if (db.characters) {
-        for (const char of db.characters) {
-            if (!char) continue
-            const charName = char.name ?? 'Unknown Character'
-            
-            if (char.image) assetMap.set(char.image, { charName: charName, assetName: 'Main Image' })
-            
-            if (char.emotionImages) {
-                for (const em of char.emotionImages) {
-                    if (em && em[1]) assetMap.set(em[1], { charName: charName, assetName: em[0] })
+        if (response.body) {
+            const streamSaver = await import('streamsaver')
+            const writableStream = streamSaver.createWriteStream(fileName)
+            const writer = writableStream.getWriter()
+            const reader = response.body.getReader()
+            let downloadedBytes = 0
+
+            while (true) {
+                const { done, value } = await reader.read()
+                if (done) {
+                    break
                 }
+                downloadedBytes += value.length
+                if (totalBytes > 0) {
+                    const progress = ((downloadedBytes / totalBytes) * 100).toFixed(2)
+                    alertWait(`Saving local backup... (${progress}%)`)
+                } else {
+                    alertWait(`Saving local backup... (${(downloadedBytes / (1024 * 1024)).toFixed(1)} MB)`)
+                }
+                await writer.write(value)
             }
-            if (char.type !== 'group') {
-                if (char.additionalAssets) {
-                    for (const em of char.additionalAssets) {
-                        if (em && em[1]) assetMap.set(em[1], { charName: charName, assetName: em[0] })
-                    }
-                }
-                if (char.vits) {
-                    const keys = Object.keys(char.vits.files)
-                    for (const key of keys) {
-                        const vit = char.vits.files[key]
-                        if (vit) assetMap.set(vit, { charName: charName, assetName: key })
-                    }
-                }
-                if (char.ccAssets) {
-                    for (const asset of char.ccAssets) {
-                        if (asset && asset.uri) assetMap.set(asset.uri, { charName: charName, assetName: asset.name })
-                    }
-                }
-            }
-        }
-    }
-    if (db.userIcon) {
-        assetMap.set(db.userIcon, { charName: 'User Settings', assetName: 'User Icon' })
-    }
-    if (db.customBackground) {
-        assetMap.set(db.customBackground, { charName: 'User Settings', assetName: 'Custom Background' })
-    }
-    const missingAssets: string[] = []
-
-    const keys = await forageStorage.keys()
-    const pngKeys = keys.filter(k => k && k.endsWith('.png'))
-
-    alertWait(`Saving local Backup... (Reading ${pngKeys.length} assets)`)
-    const fetched = await forageStorage.getItems(pngKeys)
-    const fetchedMap = new Map(fetched.map(r => [r.key, r.value]))
-
-    for (const key of pngKeys) {
-        const data = fetchedMap.get(key)
-        if (data) {
-            await writer.writeBackup(key, data)
+            await writer.close()
         } else {
-            missingAssets.push(key)
+            await downloadFile(fileName, new Uint8Array(await response.arrayBuffer()))
         }
-    }
 
-    const dbWithoutAccount = { ...db, account: undefined }
-    const dbData = encodeRisuSaveLegacy(dbWithoutAccount, 'compression')
-
-    alertWait(`Saving local Backup... (Saving database)`) 
-
-    await writer.writeBackup('database.risudat', dbData)
-    await writer.close()
-
-    if (missingAssets.length > 0) {
-        let message = 'Backup Successful, but the following assets were missing and skipped:\n\n'
-        for (const key of missingAssets) {
-            const assetInfo = assetMap.get(key)
-            if (assetInfo) {
-                message += `* **${assetInfo.assetName}** (from *${assetInfo.charName}*)  \n  *File: ${key}*\n`
-            } else {
-                message += `* **Unknown Asset**  \n  *File: ${key}*\n`
-            }
-        }
-        alertMd(message)
-    } else {
         alertNormal('Success')
+    } catch (error) {
+        console.error(error)
+        alertError('Failed')
     }
 }
 
@@ -259,80 +200,17 @@ export function LoadLocalBackup(){
             }
             const file = input.files[0];
             input.remove();
-
-            const reader = file.stream().getReader();
-            let bytesRead = 0;
-            let remainingBuffer = new Uint8Array();
-            // Accumulate asset entries for bulk write
-            const assetEntries: {key: string, value: Uint8Array}[] = []
-            let dbBlock: Uint8Array | null = null
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) {
-                    break;
-                }
-
-                bytesRead += value.length;
-                const progress = ((bytesRead / file.size) * 100).toFixed(2);
-                alertWait(`Loading local Backup... (${progress}%)`);
-
-                const newBuffer = new Uint8Array(remainingBuffer.length + value.length);
-                newBuffer.set(remainingBuffer);
-                newBuffer.set(value, remainingBuffer.length);
-                remainingBuffer = newBuffer;
-
-                let offset = 0;
-                while (offset + 4 <= remainingBuffer.length) {
-                    const nameLength = new Uint32Array(remainingBuffer.slice(offset, offset + 4).buffer)[0];
-
-                    if (offset + 4 + nameLength > remainingBuffer.length) {
-                        break;
-                    }
-                    const nameBuffer = remainingBuffer.slice(offset + 4, offset + 4 + nameLength);
-                    const name = new TextDecoder().decode(nameBuffer);
-
-                    if (offset + 4 + nameLength + 4 > remainingBuffer.length) {
-                        break;
-                    }
-                    const dataLength = new Uint32Array(remainingBuffer.slice(offset + 4 + nameLength, offset + 4 + nameLength + 4).buffer)[0];
-
-                    if (offset + 4 + nameLength + 4 + dataLength > remainingBuffer.length) {
-                        break;
-                    }
-                    const data = remainingBuffer.slice(offset + 4 + nameLength + 4, offset + 4 + nameLength + 4 + dataLength);
-
-                    if (name === 'database.risudat') {
-                        dbBlock = new Uint8Array(data)
-                    } else {
-                        assetEntries.push({ key: 'assets/' + name, value: data })
-                    }
-
-                    offset += 4 + nameLength + 4 + dataLength;
-                }
-                remainingBuffer = remainingBuffer.slice(offset);
-            }
-
-            // Bulk write assets (replaces sequential setItem + sleep loop)
-            if (assetEntries.length > 0) {
-                alertWait(`Loading local Backup... (Writing ${assetEntries.length} assets)`)
-                await forageStorage.setItems(assetEntries)
-            }
-
-            // Restore database
-            if (dbBlock) {
-                const dbData = await decodeRisuSave(dbBlock);
-                setDatabaseLite(dbData);
-                requiresFullEncoderReload.state = true;
-                await forageStorage.setItem('database/database.bin', dbBlock);
-                location.search = '';
-                alertStore.set({
-                    type: "wait",
-                    msg: "Success, Refreshing your app."
-                });
-            }
-
-            alertNormal('Success');
+            alertWait(`Loading local Backup... (Uploading ${file.name})`);
+            await forageStorage.importBackup(file, (loaded, total) => {
+                const progress = total > 0 ? ((loaded / total) * 100).toFixed(2) : '0.00'
+                alertWait(`Loading local Backup... (${progress}%)`)
+            })
+            alertStore.set({
+                type: "wait",
+                msg: "Success, Refreshing your app."
+            });
+            location.search = ''
+            location.reload()
         };
 
         input.click();

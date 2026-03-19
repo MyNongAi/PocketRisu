@@ -6,7 +6,6 @@ import { checkRisuUpdate } from "./update";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore } from "./stores.svelte";
 import { loadPlugins } from "./plugins/plugins.svelte";
 import { alertConfirm, alertError, alertMd, alertNormal, alertNormalWait, alertSelect, alertTOS, waitAlert } from "./alert";
-import { checkDriverInit, syncDrive } from "./drive/drive";
 import { hasher } from "./parser/parser.svelte";
 import { characterURLImport, hubURL } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
@@ -214,8 +213,23 @@ export let requiresFullEncoderReload = $state({
     state: false
 })
 export async function saveDb() {
+    const getPresetEntityIds = () => {
+        const db = getDatabase()
+        return new Set(db.botPresets.map((preset, index) => String(preset.name ?? index)))
+    }
+    const getModuleEntityIds = () => {
+        const db = getDatabase()
+        return new Set((db.modules ?? []).map(mod => mod.id))
+    }
+    const getCharacterChatIds = () => {
+        const db = getDatabase()
+        return new Map(db.characters.map(char => [
+            char.chaId,
+            new Set((char.chats ?? []).map(chat => chat.id))
+        ]))
+    }
+
     let changed = false
-    syncDrive()
     let gotChannel = false
     const sessionID = v4()
     let channel: BroadcastChannel
@@ -247,6 +261,9 @@ export async function saveDb() {
     await encoder.init(getDatabase(), {
         compression: false
     })
+    let previousPresetIds = getPresetEntityIds()
+    let previousModuleIds = getModuleEntityIds()
+    let previousCharacterChatIds = getCharacterChatIds()
 
     $effect.root(() => {
 
@@ -357,6 +374,9 @@ export async function saveDb() {
 
             // ── Entity API saves (3-2) ──────────────────────────────────────
             const entitySaves: Promise<unknown>[] = []
+            const nextPresetIds = getPresetEntityIds()
+            const nextModuleIds = getModuleEntityIds()
+            const nextCharacterChatIds = getCharacterChatIds()
 
             // Settings (root) — always sync
             {
@@ -374,6 +394,16 @@ export async function saveDb() {
                 const char = db.characters.find(c => c.chaId === chaId)
                 if (char) {
                     entitySaves.push(forageStorage.saveCharacter(chaId, encodeEntity(char)))
+                    const previousChatIds = previousCharacterChatIds.get(chaId) ?? new Set<string>()
+                    const nextChatIds = nextCharacterChatIds.get(chaId) ?? new Set<string>()
+                    for (const chatId of previousChatIds) {
+                        if (!nextChatIds.has(chatId)) {
+                            entitySaves.push(forageStorage.deleteChat(chaId, chatId))
+                        }
+                    }
+                    for (const chat of char.chats ?? []) {
+                        entitySaves.push(forageStorage.saveChat(chaId, chat.id, encodeEntity(chat)))
+                    }
                 } else {
                     entitySaves.push(forageStorage.deleteCharacter(chaId))
                 }
@@ -381,6 +411,11 @@ export async function saveDb() {
 
             // Presets
             if (toSave.botPreset) {
+                for (const id of previousPresetIds) {
+                    if (!nextPresetIds.has(id)) {
+                        entitySaves.push(forageStorage.deletePreset(id))
+                    }
+                }
                 for (const preset of db.botPresets) {
                     const id = String(preset.name ?? db.botPresets.indexOf(preset))
                     entitySaves.push(forageStorage.savePreset(id, encodeEntity(preset)))
@@ -389,12 +424,20 @@ export async function saveDb() {
 
             // Modules
             if (toSave.modules) {
+                for (const id of previousModuleIds) {
+                    if (!nextModuleIds.has(id)) {
+                        entitySaves.push(forageStorage.deleteModule(id))
+                    }
+                }
                 for (const mod of db.modules) {
                     entitySaves.push(forageStorage.saveModule(mod.id, encodeEntity(mod)))
                 }
             }
 
             await Promise.all(entitySaves)
+            previousPresetIds = nextPresetIds
+            previousModuleIds = nextModuleIds
+            previousCharacterChatIds = nextCharacterChatIds
             // ── End entity API saves ────────────────────────────────────────
 
             await forageStorage.setItem('database/database.bin', dbData)
@@ -1260,17 +1303,15 @@ export async function fetchNative(url: string, arg: {
     chatId?: string
     interceptor?: string
 }): Promise<Response> {
-
     const useInterceptor = !!arg.interceptor
-    console.log(arg.body, 'body')
     if (arg.body === undefined && (arg.method === 'POST' || arg.method === 'PUT')) {
         throw new Error('Body is required for POST and PUT requests')
     }
 
     arg.method = arg.method ?? 'POST'
 
-    let headers = arg.headers ?? {}
-    let realBody: Uint8Array
+    const headers = arg.headers ?? {}
+    let realBody: Uint8Array | undefined
 
     if (arg.method === 'GET' || arg.method === 'DELETE') {
         realBody = undefined
@@ -1299,10 +1340,8 @@ export async function fetchNative(url: string, arg: {
         throw new Error('Invalid body type')
     }
 
-    const db = getDatabase()
-    let throughProxy = false
-    let fetchLogIndex = addFetchLog({
-        body: new TextDecoder().decode(realBody),
+    addFetchLog({
+        body: realBody ? new TextDecoder().decode(realBody) : '',
         headers: arg.headers,
         response: 'Streamed Fetch',
         success: true,
@@ -1318,39 +1357,30 @@ export async function fetchNative(url: string, arg: {
             signal: arg.signal
         })
     }
-    else if (throughProxy) {
 
-        const r = await fetch(hubURL + `/proxy2`, {
-            body: realBody as any,
-            headers: arg.useRisuTk ? {
-                "risu-header": encodeURIComponent(JSON.stringify(headers)),
-                "risu-url": encodeURIComponent(url),
-                "Content-Type": "application/json",
-                "x-risu-tk": "use",
-                ...(DBState?.db?.requestLocation && { "risu-location": DBState.db.requestLocation }),
-            } : {
-                "risu-header": encodeURIComponent(JSON.stringify(headers)),
-                "risu-url": encodeURIComponent(url),
-                "Content-Type": "application/json",
-                ...(DBState?.db?.requestLocation && { "risu-location": DBState.db.requestLocation }),
-            },
-            method: arg.method,
-            signal: arg.signal
-        })
+    const proxyHeaders: Record<string, string> = {
+        "risu-header": encodeURIComponent(JSON.stringify(headers)),
+        "risu-url": encodeURIComponent(url),
+        "risu-auth": await forageStorage.createAuth(),
+        ...(arg.useRisuTk ? { "x-risu-tk": "use" } : {}),
+        ...(DBState?.db?.requestLocation ? { "risu-location": DBState.db.requestLocation } : {}),
+    }
 
-        return new Response(r.body, {
-            headers: r.headers,
-            status: r.status
-        })
+    if (realBody) {
+        proxyHeaders["Content-Type"] = headers["Content-Type"] ?? headers["content-type"] ?? "application/octet-stream"
     }
-    else {
-        return await fetch(url, {
-            body: realBody as any,
-            headers: headers,
-            method: arg.method,
-            signal: arg.signal,
-        })
-    }
+
+    const r = await fetch(`/proxy2`, {
+        body: realBody as any,
+        headers: proxyHeaders,
+        method: arg.method,
+        signal: arg.signal
+    })
+
+    return new Response(r.body, {
+        headers: r.headers,
+        status: r.status
+    })
 }
 
 /**
@@ -1430,12 +1460,13 @@ export class BlankWriter {
 export async function loadInternalBackup() {
 
     const keys = await forageStorage.keys()
-    let internalBackups: string[] = []
-    for (const key of keys) {
-        if (key.includes('dbbackup-')) {
-            internalBackups.push(key)
-        }
-    }
+    const internalBackups = keys
+        .filter((key) => key.startsWith('database/dbbackup-'))
+        .sort((a, b) => {
+            const aTs = parseInt(a.replace('database/dbbackup-', '').replace('.bin', ''))
+            const bTs = parseInt(b.replace('database/dbbackup-', '').replace('.bin', ''))
+            return bTs - aTs
+        })
 
     const selectOptions = [
         'Cancel',

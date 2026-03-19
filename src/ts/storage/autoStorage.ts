@@ -37,6 +37,16 @@ export class AutoStorage{
         return this.realStorage.createAuth()
     }
 
+    async exportBackup() {
+        await this.Init()
+        return this.realStorage.exportBackup()
+    }
+
+    async importBackup(file: Blob) {
+        await this.Init()
+        return this.realStorage.importBackup(file)
+    }
+
     listItem = this.keys
 
     // ── Bulk asset operations (3-2-B) ──────────────────────────────────────────

@@ -4,19 +4,31 @@ import { base64url, getKeypairStore, saveKeypairStore } from "../util"
 
 
 export class NodeStorage{
+    private static readonly BULK_WRITE_CLIENT_BATCH = 20
 
     authChecked = false
+    private cachedJwt: { token: string; expiresAt: number } | null = null
     JSONStringlifyAndbase64Url(obj:any){
         return base64url(Buffer.from(JSON.stringify(obj), 'utf-8'))
     }
 
     async createAuth(){
+        const now = Date.now()
+        if (this.cachedJwt && this.cachedJwt.expiresAt - now > 30_000) {
+            return this.cachedJwt.token
+        }
+        const token = await this._createFreshAuth()
+        this.cachedJwt = { token, expiresAt: now + 5 * 60 * 1000 }
+        return token
+    }
+
+    private async _createFreshAuth(){
         const keyPair = await this.getKeyPair()
         const date = Math.floor(Date.now() / 1000)
-        
+
         const header = {
             alg: "ES256",
-            typ: "JWT",   
+            typ: "JWT",
         }
         const payload = {
             iat: date,
@@ -60,15 +72,85 @@ export class NodeStorage{
 
     }
 
-    async setItem(key:string, value:Uint8Array) {
+    private async loginWithPassword(password: string) {
+        const keypair = await this.getKeyPair()
+        const publicKey = await crypto.subtle.exportKey('jwk', keypair.publicKey)
+        const response = await fetch('/api/login', {
+            method: "POST",
+            body: JSON.stringify({
+                password,
+                publicKey
+            }),
+            headers: {
+                'content-type': 'application/json'
+            }
+        })
+
+        if(response.status === 429){
+            alertError(`Too many attempts. Please wait and try again later.`)
+            await waitAlert()
+            throw new Error('Too many login attempts')
+        }
+
+        if(response.status < 200 || response.status >= 300){
+            let message = 'Node login failed'
+            try {
+                const data = await response.json()
+                message = data.error ?? message
+            } catch {
+                // noop
+            }
+            throw new Error(message)
+        }
+
+        this.authChecked = true
+    }
+
+    private async shouldRetryAuth(response: Response) {
+        if(response.status !== 400 && response.status !== 401){
+            return false
+        }
+
+        try {
+            const data = await response.clone().json()
+            return [
+                'No auth header',
+                'Unknown Public Key',
+                'Invalid Signature',
+                'Token Expired'
+            ].includes(data?.error)
+        } catch {
+            return false
+        }
+    }
+
+    private async authFetch(input: RequestInfo | URL, init: RequestInit = {}, retry = true) {
         await this.checkAuth()
-        const da = await fetch('/api/write', {
+        const headers = new Headers(init.headers)
+        headers.set('risu-auth', await this.createAuth())
+
+        const response = await fetch(input, {
+            ...init,
+            headers
+        })
+
+        if(retry && await this.shouldRetryAuth(response)){
+            this.authChecked = false
+            this.cachedJwt = null
+            await this.checkAuth()
+            return this.authFetch(input, init, false)
+        }
+
+        return response
+    }
+
+    async setItem(key:string, value:Uint8Array) {
+        const da = await this.authFetch('/api/write', {
             method: "POST",
             body: value as any,
             headers: {
                 'content-type': 'application/octet-stream',
-                'file-path': Buffer.from(key, 'utf-8').toString('hex'),
-                'risu-auth': await this.createAuth()
+                'file-path': Buffer.from(key, 'utf-8').toString('hex')
             }
         })
         if(da.status < 200 || da.status >= 300){
@@ -80,12 +162,10 @@ export class NodeStorage{
         }
     }
     async getItem(key:string):Promise<Buffer> {
-        await this.checkAuth()
-        const da = await fetch('/api/read', {
+        const da = await this.authFetch('/api/read', {
             method: "GET",
             headers: {
-                'file-path': Buffer.from(key, 'utf-8').toString('hex'),
-                'risu-auth': await this.createAuth()
+                'file-path': Buffer.from(key, 'utf-8').toString('hex')
             }
         })
         if(da.status < 200 || da.status >= 300){
@@ -99,14 +179,12 @@ export class NodeStorage{
         return data
     }
     async keys(prefix: string = ''):Promise<string[]>{
-        await this.checkAuth()
         const headers: Record<string, string> = {
-            'risu-auth': await this.createAuth()
         }
         if (prefix) {
             headers['key-prefix'] = prefix
         }
-        const da = await fetch('/api/list', {
+        const da = await this.authFetch('/api/list', {
             method: "GET",
             headers
         })
@@ -120,12 +198,10 @@ export class NodeStorage{
         return data.content
     }
     async removeItem(key:string){
-        await this.checkAuth()
-        const da = await fetch('/api/remove', {
+        const da = await this.authFetch('/api/remove', {
             method: "GET",
             headers: {
-                'file-path': Buffer.from(key, 'utf-8').toString('hex'),
-                'risu-auth': await this.createAuth()
+                'file-path': Buffer.from(key, 'utf-8').toString('hex')
             }
         })
         if(da.status < 200 || da.status >= 300){
@@ -148,7 +224,7 @@ export class NodeStorage{
 
             if(data.status === 'unset'){
                 const input = await digestPassword(await alertInput(language.setNodePassword))
-                await fetch('/api/set_password',{
+                const response = await fetch('/api/set_password',{
                     method: "POST",
                     body:JSON.stringify({
                         password: input 
@@ -157,33 +233,18 @@ export class NodeStorage{
                         'content-type': 'application/json'
                     }
                 })
-                return await this.createAuth()
+
+                if(response.status < 200 || response.status >= 300){
+                    throw new Error('Failed to set node password')
+                }
+
+                await this.loginWithPassword(input)
+                return
             }
             else if(data.status === 'incorrect'){
-                const keypair = await this.getKeyPair()
-                const publicKey = await crypto.subtle.exportKey('jwk', keypair.publicKey)
                 const input = await digestPassword(await alertInput(language.inputNodePassword))
-
-                const s = await fetch('/api/login',{
-                    method: "POST",
-                    body: JSON.stringify({
-                        password: input,
-                        publicKey: publicKey
-                    }),
-                    headers: {
-                        'content-type': 'application/json'
-                    }
-                })
-
-                //too many requests
-                if(s.status === 429){
-                    alertError(`Too many attempts. Please wait and try again later.`)
-                    await waitAlert()
-                }
-                
-
-                return await this.createAuth()
-            
+                await this.loginWithPassword(input)
+                return
             }
             else{
                 this.authChecked = true
@@ -195,13 +256,11 @@ export class NodeStorage{
 
     // ── Bulk asset operations (3-2-B) ──────────────────────────────────────────
     async getItems(keys: string[]): Promise<{key: string, value: Buffer}[]> {
-        await this.checkAuth()
-        const da = await fetch('/api/assets/bulk-read', {
+        const da = await this.authFetch('/api/assets/bulk-read', {
             method: 'POST',
             body: JSON.stringify(keys),
             headers: {
-                'content-type': 'application/json',
-                'risu-auth': await this.createAuth()
+                'content-type': 'application/json'
             }
         })
         if (da.status < 200 || da.status >= 300) throw 'getItems Error'
@@ -287,9 +346,9 @@ export class NodeStorage{
 
     // ── Entity API methods (3-2) ───────────────────────────────────────────────
     private async entityFetch(path: string, method: string, body?: Uint8Array): Promise<Buffer | null> {
-        const headers: Record<string, string> = { 'risu-auth': await this.createAuth() }
+        const headers: Record<string, string> = {}
         if (body) headers['content-type'] = 'application/octet-stream'
-        const da = await fetch(path, { method, headers, body: body as any })
+        const da = await this.authFetch(path, { method, headers, body: body as any })
         if (da.status === 404) return null
         if (da.status < 200 || da.status >= 300) throw `entityFetch Error: ${da.status}`
         if (method === 'DELETE' || da.headers.get('content-type')?.includes('application/json')) return null
@@ -297,83 +356,65 @@ export class NodeStorage{
     }
 
     async saveCharacter(id: string, data: Uint8Array) {
-        await this.checkAuth()
         await this.entityFetch(`/api/db/characters/${encodeURIComponent(id)}`, 'POST', data)
     }
     async loadCharacter(id: string): Promise<Buffer | null> {
-        await this.checkAuth()
         return this.entityFetch(`/api/db/characters/${encodeURIComponent(id)}`, 'GET')
     }
     async listCharacters(): Promise<{id: string, updated_at: number}[]> {
-        await this.checkAuth()
-        const da = await fetch('/api/db/characters', { headers: { 'risu-auth': await this.createAuth() } })
+        const da = await this.authFetch('/api/db/characters')
         return da.json()
     }
     async deleteCharacter(id: string) {
-        await this.checkAuth()
         await this.entityFetch(`/api/db/characters/${encodeURIComponent(id)}`, 'DELETE')
     }
 
     async saveChat(charId: string, chatId: string, data: Uint8Array) {
-        await this.checkAuth()
         await this.entityFetch(`/api/db/chats/${encodeURIComponent(charId)}/${encodeURIComponent(chatId)}`, 'POST', data)
     }
     async loadChat(charId: string, chatId: string): Promise<Buffer | null> {
-        await this.checkAuth()
         return this.entityFetch(`/api/db/chats/${encodeURIComponent(charId)}/${encodeURIComponent(chatId)}`, 'GET')
     }
     async listChats(charId: string): Promise<string[]> {
-        await this.checkAuth()
-        const da = await fetch(`/api/db/chats/${encodeURIComponent(charId)}`, { headers: { 'risu-auth': await this.createAuth() } })
+        const da = await this.authFetch(`/api/db/chats/${encodeURIComponent(charId)}`)
         return da.json()
     }
     async deleteChat(charId: string, chatId: string) {
-        await this.checkAuth()
         await this.entityFetch(`/api/db/chats/${encodeURIComponent(charId)}/${encodeURIComponent(chatId)}`, 'DELETE')
     }
 
     async saveSettings(data: Uint8Array) {
-        await this.checkAuth()
         await this.entityFetch('/api/db/settings', 'POST', data)
     }
     async loadSettings(): Promise<Buffer | null> {
-        await this.checkAuth()
         return this.entityFetch('/api/db/settings', 'GET')
     }
 
     async savePreset(id: string, data: Uint8Array) {
-        await this.checkAuth()
         await this.entityFetch(`/api/db/presets/${encodeURIComponent(id)}`, 'POST', data)
     }
     async loadPreset(id: string): Promise<Buffer | null> {
-        await this.checkAuth()
         return this.entityFetch(`/api/db/presets/${encodeURIComponent(id)}`, 'GET')
     }
     async listPresets(): Promise<string[]> {
-        await this.checkAuth()
-        const da = await fetch('/api/db/presets', { headers: { 'risu-auth': await this.createAuth() } })
+        const da = await this.authFetch('/api/db/presets')
         return da.json()
     }
     async deletePreset(id: string) {
-        await this.checkAuth()
         await this.entityFetch(`/api/db/presets/${encodeURIComponent(id)}`, 'DELETE')
     }
 
     async saveModule(id: string, data: Uint8Array) {
-        await this.checkAuth()
         await this.entityFetch(`/api/db/modules/${encodeURIComponent(id)}`, 'POST', data)
     }
     async loadModule(id: string): Promise<Buffer | null> {
-        await this.checkAuth()
         return this.entityFetch(`/api/db/modules/${encodeURIComponent(id)}`, 'GET')
     }
     async listModules(): Promise<string[]> {
-        await this.checkAuth()
-        const da = await fetch('/api/db/modules', { headers: { 'risu-auth': await this.createAuth() } })
+        const da = await this.authFetch('/api/db/modules')
         return da.json()
     }
     async deleteModule(id: string) {
-        await this.checkAuth()
         await this.entityFetch(`/api/db/modules/${encodeURIComponent(id)}`, 'DELETE')
     }
 
