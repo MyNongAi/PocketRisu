@@ -37,6 +37,24 @@ if(existsSync(passwordPath)){
 
 const authCodePath = path.join(process.cwd(), 'save', '__authcode')
 const hexRegex = /^[0-9a-fA-F]+$/;
+const BACKUP_IMPORT_MAX_BYTES = Number(process.env.RISU_BACKUP_IMPORT_MAX_BYTES ?? '0');
+const BACKUP_ENTRY_NAME_MAX_BYTES = 1024;
+// Minimum free disk space headroom multiplier: require 2× the backup size to be free
+const BACKUP_DISK_HEADROOM = 2;
+
+let importInProgress = false;
+
+async function checkDiskSpace(requiredBytes) {
+    try {
+        const saveDir = path.join(process.cwd(), 'save');
+        const stats = await fs.statfs(saveDir);
+        const availableBytes = stats.bavail * stats.bsize;
+        return { ok: availableBytes >= requiredBytes, available: availableBytes };
+    } catch {
+        // statfs unavailable on this platform — skip check
+        return { ok: true, available: -1 };
+    }
+}
 
 function isHex(str) {
     return hexRegex.test(str.toUpperCase().trim()) || str === '__password';
@@ -672,6 +690,181 @@ app.post('/api/assets/bulk-write', async (req, res, next) => {
         }
         res.json({ success: true, count: entries.length });
     } catch(error){ next(error); }
+});
+
+app.get('/api/backup/export', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+    try {
+        const namespacedEntries = [
+            ...kvListWithSizes('assets/').map((entry) => ({
+                key: entry.key,
+                backupName: path.basename(entry.key),
+                size: entry.size,
+            })),
+            ...kvListWithSizes('inlay/').map((entry) => ({
+                key: entry.key,
+                backupName: entry.key,
+                size: entry.size,
+            })),
+            ...kvListWithSizes('inlay_thumb/').map((entry) => ({
+                key: entry.key,
+                backupName: entry.key,
+                size: entry.size,
+            })),
+            ...kvListWithSizes('inlay_meta/').map((entry) => ({
+                key: entry.key,
+                backupName: entry.key,
+                size: entry.size,
+            })),
+        ].sort((a, b) => a.key.localeCompare(b.key));
+        const dbValue = kvGet('database/database.bin');
+        const totalBytes = namespacedEntries.reduce((sum, entry) => {
+            return sum + 8 + Buffer.byteLength(entry.backupName, 'utf-8') + entry.size;
+        }, 0) + (dbValue ? 8 + Buffer.byteLength('database.risudat', 'utf-8') + dbValue.length : 0);
+
+        res.setHeader('content-type', 'application/octet-stream');
+        res.setHeader('content-disposition', `attachment; filename="risu-backup-${Date.now()}.bin"`);
+        res.setHeader('content-length', totalBytes);
+        res.setHeader('x-risu-backup-assets', namespacedEntries.length);
+
+        for (const entry of namespacedEntries) {
+            const value = kvGet(entry.key);
+            if (value) {
+                res.write(encodeBackupEntry(entry.backupName, value));
+            }
+        }
+
+        if (dbValue) {
+            res.write(encodeBackupEntry('database.risudat', dbValue));
+        }
+        res.end();
+    } catch (error) {
+        next(error);
+    }
+});
+
+// Pre-flight check: auth + size + disk space before client starts uploading
+app.post('/api/backup/import/prepare', async (req, res, next) => {
+    if (!await checkAuth(req, res)) { return; }
+    try {
+        if (importInProgress) {
+            res.status(409).json({ error: 'Another import is already in progress' });
+            return;
+        }
+
+        const size = Number(req.body?.size ?? 0);
+        if (BACKUP_IMPORT_MAX_BYTES > 0 && size > BACKUP_IMPORT_MAX_BYTES) {
+            res.status(413).json({ error: `Backup exceeds max allowed size (${BACKUP_IMPORT_MAX_BYTES} bytes)` });
+            return;
+        }
+
+        if (size > 0) {
+            const disk = await checkDiskSpace(size * BACKUP_DISK_HEADROOM);
+            if (!disk.ok) {
+                res.status(507).json({
+                    error: 'Insufficient disk space',
+                    available: disk.available,
+                    required: size * BACKUP_DISK_HEADROOM,
+                });
+                return;
+            }
+        }
+
+        res.json({ ok: true });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.post('/api/backup/import', async (req, res, next) => {
+    if(!await checkAuth(req, res)){ return; }
+
+    if (importInProgress) {
+        res.status(409).json({ error: 'Another import is already in progress' });
+        return;
+    }
+    importInProgress = true;
+
+    try {
+        const contentType = String(req.headers['content-type'] ?? '');
+        if (contentType && !contentType.includes('application/x-risu-backup') && !contentType.includes('application/octet-stream')) {
+            res.status(415).json({ error: 'Unsupported backup content-type' });
+            return;
+        }
+
+        const contentLength = Number(req.headers['content-length'] ?? '0');
+        if (BACKUP_IMPORT_MAX_BYTES > 0 && Number.isFinite(contentLength) && contentLength > BACKUP_IMPORT_MAX_BYTES) {
+            res.status(413).json({ error: `Backup exceeds max allowed size (${BACKUP_IMPORT_MAX_BYTES} bytes)` });
+            return;
+        }
+
+        let remainingBuffer = Buffer.alloc(0);
+        let hasDatabase = false;
+        let assetsRestored = 0;
+        let bytesReceived = 0;
+        const seenEntryNames = new Set();
+
+        sqliteDb.exec('BEGIN');
+        try {
+            kvDelPrefix('assets/');
+            kvDelPrefix('inlay/');
+            kvDelPrefix('inlay_thumb/');
+            kvDelPrefix('inlay_meta/');
+            clearEntities();
+
+            for await (const chunk of req) {
+                bytesReceived += chunk.length;
+                if (BACKUP_IMPORT_MAX_BYTES > 0 && bytesReceived > BACKUP_IMPORT_MAX_BYTES) {
+                    throw new Error(`Backup exceeds max allowed size (${BACKUP_IMPORT_MAX_BYTES} bytes)`);
+                }
+
+                remainingBuffer = remainingBuffer.length === 0
+                    ? Buffer.from(chunk)
+                    : Buffer.concat([remainingBuffer, Buffer.from(chunk)]);
+                remainingBuffer = parseBackupChunk(remainingBuffer, (name, data) => {
+                    if (seenEntryNames.has(name)) {
+                        throw new Error(`Duplicate backup entry: ${name}`);
+                    }
+                    seenEntryNames.add(name);
+
+                    const storageKey = resolveBackupStorageKey(name);
+                    if (storageKey === 'database/database.bin') {
+                        kvSet(storageKey, Buffer.from(data));
+                        hasDatabase = true;
+                    } else {
+                        kvSet(storageKey, Buffer.from(data));
+                        assetsRestored += 1;
+                    }
+                });
+            }
+
+            if (remainingBuffer.length > 0) {
+                throw new Error('Backup stream ended with incomplete entry');
+            }
+            if (!hasDatabase) {
+                throw new Error('Backup does not contain database.risudat');
+            }
+            sqliteDb.exec('COMMIT');
+        } catch (error) {
+            sqliteDb.exec('ROLLBACK');
+            throw error;
+        }
+
+        try {
+            checkpointWal('TRUNCATE');
+        } catch (checkpointError) {
+            console.warn('[Backup Import] WAL checkpoint after import failed:', checkpointError);
+        }
+
+        res.json({
+            ok: true,
+            assetsRestored,
+        });
+    } catch (error) {
+        next(error);
+    } finally {
+        importInProgress = false;
+    }
 });
 
 // ─── Entity API endpoints (3-2) ───────────────────────────────────────────────

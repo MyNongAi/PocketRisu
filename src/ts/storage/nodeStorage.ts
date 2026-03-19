@@ -210,20 +210,79 @@ export class NodeStorage{
     }
 
     async setItems(entries: {key: string, value: Uint8Array}[]) {
-        await this.checkAuth()
-        const body = entries.map(e => ({
-            key: e.key,
-            value: Buffer.from(e.value).toString('base64')
-        }))
-        const da = await fetch('/api/assets/bulk-write', {
+        for (let i = 0; i < entries.length; i += NodeStorage.BULK_WRITE_CLIENT_BATCH) {
+            const batch = entries.slice(i, i + NodeStorage.BULK_WRITE_CLIENT_BATCH)
+            const body = batch.map(e => ({
+                key: e.key,
+                value: Buffer.from(e.value).toString('base64')
+            }))
+            const da = await this.authFetch('/api/assets/bulk-write', {
+                method: 'POST',
+                body: JSON.stringify(body),
+                headers: {
+                    'content-type': 'application/json'
+                }
+            })
+            if (da.status < 200 || da.status >= 300) throw 'setItems Error'
+        }
+    }
+
+    async exportBackup(): Promise<Response> {
+        const da = await this.authFetch('/api/backup/export')
+        if (da.status < 200 || da.status >= 300) throw `backup export error: ${da.status}`
+        return da
+    }
+
+    async prepareImport(size: number): Promise<void> {
+        const da = await this.authFetch('/api/backup/import/prepare', {
             method: 'POST',
-            body: JSON.stringify(body),
-            headers: {
-                'content-type': 'application/json',
-                'risu-auth': await this.createAuth()
-            }
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ size }),
         })
-        if (da.status < 200 || da.status >= 300) throw 'setItems Error'
+        if (da.status === 409) throw new Error('Another import is already in progress')
+        if (da.status === 413) throw new Error('Backup file is too large')
+        if (da.status === 507) {
+            const body = await da.json().catch(() => ({}))
+            const avail = body.available != null ? ` (available: ${Math.round(body.available / 1024 / 1024)} MB)` : ''
+            throw new Error(`Insufficient disk space${avail}`)
+        }
+        if (da.status < 200 || da.status >= 300) throw new Error(`backup prepare error: ${da.status}`)
+    }
+
+    async importBackup(
+        file: Blob,
+        onProgress?: (loaded: number, total: number) => void
+    ): Promise<{ok: boolean, assetsRestored: number}> {
+        await this.prepareImport(file.size)
+        const authHeader = await this.createAuth()
+
+        return await new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest()
+            xhr.open('POST', '/api/backup/import')
+            xhr.setRequestHeader('content-type', 'application/x-risu-backup')
+            xhr.setRequestHeader('risu-auth', authHeader)
+
+            xhr.upload.onprogress = (event) => {
+                if (event.lengthComputable) {
+                    onProgress?.(event.loaded, event.total)
+                }
+            }
+
+            xhr.onerror = () => reject(new Error('backup import request failed'))
+            xhr.onload = () => {
+                if (xhr.status < 200 || xhr.status >= 300) {
+                    reject(new Error(`backup import error: ${xhr.status}`))
+                    return
+                }
+                try {
+                    resolve(JSON.parse(xhr.responseText))
+                } catch (error) {
+                    reject(error)
+                }
+            }
+
+            xhr.send(file)
+        })
     }
 
     // ── Entity API methods (3-2) ───────────────────────────────────────────────
