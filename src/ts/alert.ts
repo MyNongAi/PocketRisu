@@ -1,7 +1,6 @@
 import { get, writable } from "svelte/store"
 import { sleep } from "./util"
 import { language } from "../lang"
-import { isTauri, isNodeServer } from "src/ts/platform"
 import { getDatabase, type MessageGenerationInfo } from "./storage/database.svelte"
 import { alertStore as alertStoreImported } from "./stores.svelte"
 
@@ -27,6 +26,9 @@ export const alertStore = {
         alertStoreImported.set(d)
     }
 }
+
+// Shared acceptance cache for both global startup TOS and Realm download confirmation.
+const TOS_ACCEPTANCE_STORAGE_KEY = 'tos2'
 
 export function alertError(msg: string | Error) {
     console.error(msg)
@@ -61,8 +63,7 @@ export function alertError(msg: string | Error) {
 
     //check if it's a known error
     if(msg.includes('Failed to fetch') || msg.includes("NetworkError when attempting to fetch resource.")){
-        submsg =    db.usePlainFetch ? language.errors.networkFetchPlain :
-                    (!isTauri && !isNodeServer) ? language.errors.networkFetchWeb : language.errors.networkFetch
+        submsg =    db.usePlainFetch ? language.errors.networkFetchPlain : language.errors.networkFetch
     }
 
     alertStoreImported.set({
@@ -234,7 +235,7 @@ export async function alertCardExport(type:string = ''){
 
 export async function alertTOS(){
 
-    if(localStorage.getItem('tos2') === 'true'){
+    if(localStorage.getItem(TOS_ACCEPTANCE_STORAGE_KEY) === 'true'){
         return true
     }
 
@@ -246,7 +247,7 @@ export async function alertTOS(){
     await waitAlert()
 
     if(get(alertStoreImported).msg === 'yes'){
-        localStorage.setItem('tos2', 'true')
+        localStorage.setItem(TOS_ACCEPTANCE_STORAGE_KEY, 'true')
         return true
     }
 

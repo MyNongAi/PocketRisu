@@ -43,7 +43,6 @@ export const ReloadChatPointer = writable({} as Record<number, number>)
 export const ScrollToMessageStore = $state({ value: -1 })
 export const OpenRealmStore = writable(false)
 export const RealmInitialOpenChar = writable<null | hubType>(null)
-export const ShowRealmFrameStore = writable('')
 export const PlaygroundStore = writable(0)
 export const HideIconStore = writable(false)
 export const CustomCSSStore = writable('')
@@ -162,7 +161,10 @@ $effect.root(() => {
 
         if (DBState?.db?.characters?.[selIdState.selId]) {
             if (DBState.db.hypaV3 && DBState.db.hypaV3Presets?.[DBState.db.hypaV3PresetId]?.settings?.alwaysToggleOn) {
-                DBState.db.characters[selIdState.selId].supaMemory = true;
+                const char = DBState.db.characters[selIdState.selId]
+                if (char?.chats?.[char.chatPage]) {
+                    char.chats[char.chatPage].supaMemory = true
+                }
             }
         }
     })

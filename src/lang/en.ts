@@ -122,6 +122,7 @@ export const languageEnglish = {
         openAIFixer: "OpenAI Fixer is a plugin that fixes some of the problems of OpenAI.",
         sayNothing: "If enabled, it will input 'say nothing' when no string inputed.",
         showUnrecommended: "If enabled, it will show unrecommended, deprecated settings. it is NOT RECOMMENDED to use these settings.",
+        allowV2Plugin: "Warning: This enables deprecated V2.0 plugin execution. V2.0 plugins bypass the V2.1 safety check and may be unsafe. Leave this disabled unless you explicitly trust the plugin and cannot migrate it to V3 yet.",
         imageCompression: "If enabled, it will compress images when exporting character. if animated images doesn't works, try disabling this option.",
         useExperimental: "If enabled, it will show some experimental features.",
         forceProxyAsOpenAI: "If enabled, it will force to use OpenAI format when using reverse proxy.",
@@ -203,7 +204,7 @@ export const languageEnglish = {
         systemContentReplacement: "The prompt format that replaces system prompt if the model doesn't support system prompt.",
         systemRoleReplacement: "The role that replaces system role if the model doesn't support system role.",
         summarizationPrompt:
-            "The prompt that is used for summarization. if it is blank, it will use the default prompt. you can also use ChatML formating with {{slot}} for the chat data.",
+            "The prompt that is used for summarization. if it is blank, it will use the default prompt. you can also use ChatML formating with {{slot}} for the chat data. The summary output is split by double newlines (\\n\\n) into chunks for similarity search.",
         translatorPrompt:
             "The prompt that is used for translation. if it is blank, it will use the default prompt. you can also use ChatML formating with {{slot}} for the dest language, {{solt::content}} for the content, and {{slot::tnote}} for the translator note.",
         translateBeforeHTMLFormatting:
@@ -244,10 +245,45 @@ export const languageEnglish = {
             "- **Long Term Memory**: HypaV2, HypaV3, Hanurai Memory, and SupaMemory (with HypaMemory enabled)\n" +
             "- **Additional Text**: Matching character additional info based on context\n" +
             "- **Dynamic Assets**: Finding similar asset names when exact match is not found\n" +
-            "- **Emotion Images**: When Emotion method is set to 'embedding'\n" +
             "- **Trigger Scripts**: Similarity conditions in trigger scripts\n" +
-            "- **File Attachments**: Searching within PDF/TXT/XML attachments\n" +
-            "- **Playground**: Embedding testing in Playground",
+            "- **File Attachments**: Searching within PDF/TXT/XML attachments",
+        keepSessionAlive:
+            "Keeps the tab active and prevents the session from expiring due to inactivity in browsers. This may require refresh to take effect.\n\n" +
+            "- **Via Sound**: Plays a silent audio at regular intervals to keep the session alive. This method is known as most compatible and effective in most browsers.\n",
+        reSummarizationPrompt:
+            "The prompt used when merging multiple selected summaries into one via bulk edit. If blank, the default prompt is used. The summary output is split by double newlines (\\n\\n) into chunks for similarity search.",
+        hypaV3MemoryTokensRatio:
+            "The fraction of the max context size allocated to the long-term memory block {{slot}} in the prompt.",
+        hypaV3ExtraSummarizationRatio:
+            "Lowers the threshold at which summarization stops. At 0, summarization stops as soon as tokens fall below the max context. Higher values cause more summarization before stopping.",
+        hypaV3MaxChatsPerSummary:
+            "Maximum number of chat messages to include when creating a single summary.",
+        hypaV3RecentMemoryRatio:
+            "The fraction of memory tokens allocated to recent memory. Automatically filled with the most recently created summaries until the allocated tokens are full.",
+        hypaV3SimilarMemoryRatio:
+            "The fraction of memory tokens allocated to similar memory. Automatically filled with summaries that have the highest similarity scores to recent chats until the allocated tokens are full.",
+        hypaV3RandomMemoryRatio:
+            "Randomly filled from summaries not already selected by other categories.",
+        hypaV3PreserveOrphanedMemory:
+            "If enabled, summaries that reference deleted chat messages will be preserved. If disabled, summaries whose source messages no longer exist are automatically removed.",
+        hypaV3ProcessRegexScript:
+            "If enabled, regex scripts will be applied to the input chat messages when regenerating summaries in the HypaV3 modal.",
+        hypaV3DoNotSummarizeUserMessage:
+            "If enabled, user messages are excluded from the max messages per summary count.",
+        hypaV3EnableSimilarityCorrection:
+            "If enabled, a summary of recent chats is additionally used as a query. Does not work with the experimental HypaMemory V3.",
+        hypaV3UseExperimentalImpl:
+            "Switches to the experimental HypaMemory V3 implementation. Enables rate limit settings and changes the query method.",
+        hypaV3AlwaysToggleOn:
+            "If enabled, the HypaMemory toggle is automatically activated when selecting a character.",
+        hypaV3SummarizationRequestsPerMinute:
+            "Maximum SuperMemory model requests per minute for summarization. Only applies when the SuperMemory model is set to Auxiliary Model.",
+        hypaV3SummarizationMaxConcurrent:
+            "Maximum concurrent SuperMemory model requests for summarization. Only applies when the SuperMemory model is set to Auxiliary Model.",
+        hypaV3EmbeddingRequestsPerMinute:
+            "Maximum embedding model requests per minute for similarity search.",
+        hypaV3EmbeddingMaxConcurrent:
+            "Maximum concurrent embedding model requests for similarity search.",
     },
     setup: {
         chooseProvider: "Choose AI Provider",
@@ -629,10 +665,40 @@ export const languageEnglish = {
         inlayEmpty: "No saved inlay assets",
         inlayEmptyDesc: "Images, audio, and videos attached or generated in chats will appear here",
         inlayExplorer: "Inlay Assets Explorer",
+        inlayImageGallery: "Inlay Image Gallery",
+        inlayImageGalleryEmptyDesc: "Images attached or generated in chats will appear here",
         inlaySelectAll: "Select All",
         inlayDeleteConfirm: "Are you sure you want to delete {name}?",
         inlayDeleteMultipleConfirm: "Are you sure you want to delete the selected {count} assets?",
         inlayTotalAssets: "Total {count} assets",
+        inlayDelete: "Delete",
+        inlayLoadingMore: "Loading...",
+        inlayCreatedAt: "Created:",
+        inlayUpdatedAt: "Updated:",
+        inlaySort: "Sort",
+        inlaySortUpdatedDesc: "Updated ↓",
+        inlaySortUpdatedAsc: "Updated ↑",
+        inlaySortCreatedDesc: "Created ↓",
+        inlaySortCreatedAsc: "Created ↑",
+        inlayFilter: "Filter",
+        inlayFilterAll: "All",
+        inlayFilterMetaMissing: "Meta Missing",
+        inlayFilterOrphanCharacter: "Orphan Character",
+        inlayFilterOrphanChat: "Orphan Chat",
+        inlayOriginalLoadNeeded: "Original Load Needed",
+        inlayAudioAsset: "Audio Asset",
+        inlayVideoAsset: "Video Asset",
+        inlaySignatureAsset: "Signature Asset",
+        inlayInfo: "Info",
+        inlayManualMapping: "Manual Mapping",
+        inlayActions: "Actions",
+        inlayLoadingOriginal: "Loading original image...",
+        inlaySave: "Save",
+        inlaySaved: "Saved!",
+        inlayFilterOrphanMessage: "Not in Messages",
+        inlayScanMessages: "Scan Messages",
+        inlayScanning: "Scanning...",
+        inlayScanDone: "Scanned {count} messages",
     },
     confirm: "Confirm",
     goback: "Go Back",
@@ -716,6 +782,15 @@ export const languageEnglish = {
     text: "Text",
     UISize: "Chat Text Size",
     newVersion: "Update found, do you want to install?",
+    updateAvailable: "v{{version}} update available",
+    updateRequired: "v{{version}} required update available",
+    updateOutdated: "v{{version}} — your version is too old",
+    updatePopupTitle: "Update Available",
+    updatePopupTitleRequired: "Required Update",
+    updatePopupTitleOutdated: "Version Too Old",
+    updatePopupDesc: "A new version <b>v{{latest}}</b> is available. (current: v{{current}})",
+    updatePopupViewRelease: "View Release",
+    updatePopupLater: "Later",
     remindLaterQuestion: "When should I remind you?",
     remindIgnore: "Ignore",
     remindLater1Day: "Remind in 1 day",
@@ -751,13 +826,10 @@ export const languageEnglish = {
     pluginContainsExternalJS: "This plugin contains external Javascript.",
     createGroupImg: "Generate group icon",
     waifuWidth: "Waifu Chat Width",
-    savebackup: "Save Backup to google",
-    loadbackup: "Load Backup from google",
     files: "Files",
     backupConfirm: "Do you really want to save backup?",
     backupLoadConfirm: "Do you really want to load backup? All datas will be lost!",
     backupLoadConfirm2: "Do you really, really want to load backup? All datas will be lost!",
-    pasteAuthCode: "Please copy the auth code from popup and paste it in here:",
     others: "Others",
     presets: "Presets",
     imageGeneration: "Image Generation",
@@ -795,6 +867,7 @@ export const languageEnglish = {
     unrecommended: "Not Recommended",
     chatNotes: "Chat Notes",
     showUnrecommended: "Show Unrecommended Settings",
+    allowV2Plugin: "Allow Deprecated V2.0 Plugins",
     altGreet: "Alternative First Messages",
     scripts: "Scripts",
     settings: "Settings",
@@ -847,7 +920,6 @@ export const languageEnglish = {
     active: "Active",
     loreRandomActivation: "Use Probability Condition",
     activationProbability: "Probability",
-    shareCloud: "Share to RisuRealm",
     hub: "RisuRealm",
     tags: "Tags",
     backgroundHTML: "Background Embedding",
@@ -862,9 +934,6 @@ export const languageEnglish = {
     trending: "Trending",
     imageCompression: "Image Compression",
     notLoggedIn: "Not Logged in to Risu Account",
-    googleDriveInfo: "Connect to google drive to sync your data.",
-    googleDriveConnection: "Google Drive Connection",
-    googleDriveConnected: "Google Drive Connected",
     SaveDataInAccount: "Save Data in Account",
     dataSavingInAccount: "Saving Data in Account",
     logout: "Logout",
@@ -1029,7 +1098,6 @@ export const languageEnglish = {
     inputCardPassword: "Input Card Password",
     ccv2Desc: "Character Card V2 is a format widely used in chatbot programs.",
     ccv3Desc: "Character Card V3 is a next generation format that is used in chatbot programs.",
-    realmDesc: "RisuRealm is a content sharing platform for Risuai. you can share your character to other users.",
     rccDesc: "Risu Refined Character Card is a format with additional features like password, integrity check and etc.",
     password: "Password",
     license: "License",
@@ -1067,8 +1135,6 @@ export const languageEnglish = {
     heightMode: "Height Mode",
     useAdvancedEditor: "Use Advanced Editor",
     noWaitForTranslate: "No Wait for Translate",
-    updateRealm: "Update to RisuRealm",
-    updateRealmDesc: "You are trying to update your character to RisuRealm. this will update your character to RisuRealm, and you can't revert it back.",
     antiClaudeOverload: "Anti-Claude Overload",
     activeTabChange: "Current tab is inactivated since other tab is active. to activate this tab, click OK",
     maxSupaChunkSize: "Max SupaMemory Chunk Size",
@@ -1550,6 +1616,9 @@ export const languageEnglish = {
     epRequirementsNotMet: "Easy Panel requirements not met. Click the button below to automatically adjust your settings for optimal Easy Panel settings.",
     seperateParametersByModel: "Separate Parameters by Model",
     disableSeperateParameterChangeOnPresetChange: "Disable Separate Parameter Change on Preset Change",
+    keepSessionAlive: "Keep Session Alive",
+    keepSessionAlivePip: "Via PIP",
+    keepSessionAliveSound: "Via Sound",
 } satisfies I18nTranslation;
 
 type I18nTranslationFunction = (...args: any[]) => string;

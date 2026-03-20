@@ -1,16 +1,7 @@
 import { Packr, Unpackr, decode } from "msgpackr/index-no-eval";
 import * as fflate from "fflate";
 import { getDatabase, presetTemplate, type Database } from "./database.svelte";
-import localforage from "localforage";
 import { forageStorage } from "../globalApi.svelte";
-import { isNodeServer, isTauri } from "src/ts/platform"
-import {
-    writeFile,
-    BaseDirectory,
-    exists,
-    mkdir,
-    readFile,
-} from "@tauri-apps/plugin-fs"
 
 const packr = new Packr({
     useRecords:false
@@ -20,6 +11,15 @@ const unpackr = new Unpackr({
     int64AsType: 'number',
     useRecords:false
 })
+
+/** Encode a single entity to Uint8Array (used by entity API saves) */
+export function encodeEntity(data: unknown): Uint8Array {
+    return packr.encode(data)
+}
+/** Decode a single entity from Uint8Array (used by entity API loads) */
+export function decodeEntity<T>(data: Uint8Array | Buffer): T {
+    return unpackr.unpack(data) as T
+}
 
 const disableRemoteSaving = () => {
     try {
@@ -112,9 +112,7 @@ type EncodeBlockOption = {
     remote: 'none'|'prefer'|'force'
 }
 
-const risuSaveCacheForage = localforage.createInstance({
-    name: 'risuSaveCache'
-});
+const risuSaveCacheMap = new Map<string, {type: RisuSaveType, data: string, name: string}>();
 export class RisuSaveEncoder {
 
     private blocks: { [key: string]: Uint8Array } = {};
@@ -274,14 +272,7 @@ export class RisuSaveEncoder {
     async encodeBlock(arg:EncodeBlockArg, option:EncodeBlockOption = { remote: 'none' }){
         if(
             option.remote === 'force' ||
-            (
-                option.remote === 'prefer' &&
-                (
-                    isTauri ||
-                    isNodeServer
-                )
-            ) &&
-            !disableRemoteSaving()
+            (option.remote === 'prefer' && !disableRemoteSaving())
         ){
             return await this.encodeRemoteBlock(arg);
         }
@@ -313,7 +304,7 @@ export class RisuSaveEncoder {
         buf.set(nameBuf, 3);
         buf.set(new Uint8Array(lengthBuf), 3 + nameBuf.length);
         buf.set(databuf, 7 + nameBuf.length);
-        await risuSaveCacheForage.setItem(`risuSaveBlock_${arg.name}`, {
+        risuSaveCacheMap.set(`risuSaveBlock_${arg.name}`, {
             type: arg.type,
             data: arg.data,
             name: arg.name,
@@ -328,14 +319,9 @@ export class RisuSaveEncoder {
 
         if(arg.skipRemoteSaving && checkedRemoteExistence.has(arg.name) === false){
             let fileExists = false;
-            if(isTauri){
-                fileExists = await exists(fileName, { baseDir: BaseDirectory.AppData });
-            }
-            else{
-                const stored = await forageStorage.keys();
-                if(stored.includes(fileName)){
-                    fileExists = true;
-                }
+            const stored = await forageStorage.keys();
+            if(stored.includes(fileName)){
+                fileExists = true;
             }
             if(!fileExists){
                 console.log(`Remote file ${fileName} does not exist, disabling skipRemoteSaving for this block.`);
@@ -345,15 +331,7 @@ export class RisuSaveEncoder {
         }
 
         if(!arg.skipRemoteSaving){
-            if(isTauri){
-                if(!(await exists('remotes', { baseDir: BaseDirectory.AppData }))){
-                    await mkdir('remotes', { recursive: true, baseDir: BaseDirectory.AppData });
-                }
-                await writeFile(fileName, encoded!, { baseDir: BaseDirectory.AppData });
-            }
-            else{
-                await forageStorage.setItem(fileName, encoded);
-            }
+            await forageStorage.setItem(fileName, encoded);
         }
         return await this.encodeBlock({
             compression: false,
@@ -445,7 +423,7 @@ export class RisuSaveDecoder {
                                             type:RisuSaveType
                                             data:string
                                             name:string
-                                        } = await risuSaveCacheForage.getItem(`risuSaveBlock_${dirKey}`) as any;
+                                        } = risuSaveCacheMap.get(`risuSaveBlock_${dirKey}`) ?? null;
 
                                         if(dirData){
                                             this.blocks.push({
@@ -492,20 +470,9 @@ export class RisuSaveDecoder {
                     } = JSON.parse(this.blocks[key].content);
                     const fileName = `remotes/${remoteInfo.name}.local.bin`
                     let remoteData:Uint8Array|null = null
-                    if(isTauri){
-                        try {
-                            if(await exists(fileName, { baseDir: BaseDirectory.AppData })){
-                                remoteData = await readFile(fileName, { baseDir: BaseDirectory.AppData });
-                            }
-                        } catch (error) {
-                            console.error(`Error reading remote file ${fileName} in Tauri:`, error);
-                        }
-                    }
-                    else{
-                        const stored = await forageStorage.getItem(fileName);
-                        if(stored){
-                            remoteData = stored as Uint8Array;
-                        }
+                    const stored = await forageStorage.getItem(fileName);
+                    if(stored){
+                        remoteData = stored as Uint8Array;
                     }
 
                     if(!remoteData){

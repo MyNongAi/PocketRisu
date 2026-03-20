@@ -1,12 +1,11 @@
 <script lang="ts">
-    import { DynamicGUI, settingsOpen, sideBarStore, ShowRealmFrameStore, openPresetList, openPersonaList, MobileGUI, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore } from './ts/stores.svelte';
+    import { DynamicGUI, settingsOpen, sideBarStore, openPresetList, openPersonaList, MobileGUI, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore } from './ts/stores.svelte';
     import Sidebar from './lib/SideBars/Sidebar.svelte';
     import { DBState } from './ts/stores.svelte';
     import ChatScreen from './lib/ChatScreens/ChatScreen.svelte';
     import AlertComp from './lib/Others/AlertComp.svelte';
     import RealmPopUp from './lib/UI/Realm/RealmPopUp.svelte';
     import GridChars from './lib/Others/GridCatalog.svelte';
-    import WelcomeRisu from './lib/Others/WelcomeRisu.svelte';
     import BookmarkList from './lib/Others/BookmarkList.svelte';
     import Settings from './lib/Setting/Settings.svelte';
     import { showRealmInfoStore, importCharacterProcess } from './ts/characterCards';
@@ -14,7 +13,6 @@
     import { readModule } from './ts/process/modules';
     import { alertNormal } from './ts/alert';
     import { language } from './lang';
-    import RealmFrame from './lib/UI/Realm/RealmFrame.svelte';
     import SavePopupIconComp from './lib/Others/SavePopupIcon.svelte';
     import Botpreset from './lib/Setting/botpreset.svelte';
     import ListedPersona from './lib/Setting/listedPersona.svelte';
@@ -28,16 +26,19 @@
     import HypaV3Modal from './lib/Others/HypaV3Modal.svelte';
     import HypaV3Progress from './lib/Others/HypaV3Progress.svelte';
     import PluginAlertModal from './lib/Others/PluginAlertModal.svelte';
+    import UpdatePopup from './lib/Others/UpdatePopup.svelte';
     import PopupList from './lib/UI/PopupList.svelte';
     import EasyPanel from './lib/Others/ProTools/EasyPanel.svelte';
+    import sendSound from './etc/send.mp3'
 
-  
-    let didFirstSetup: boolean  = $derived(DBState.db?.didFirstSetup)
     let gridOpen = $state(false)
     let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
     let aprilFoolsPage = $state(0)
+    let keepingSessionAlive = $state(false)
 </script>
 
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <main class="flex bg-bg w-full h-full max-w-100vw text-textcolor" ondragover={(e) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'link'
@@ -69,6 +70,28 @@
             checkCharOrder()
         }
     }
+}} onclick={() => {
+    if(keepingSessionAlive){
+        return
+    }
+
+    const aliveMode = DBState?.db?.keepSessionAlive
+    switch(aliveMode){
+        case 'pip':{
+
+            break
+        }
+        case 'sound':{
+            console.log("Starting silent audio to keep session alive")
+            const silentAudio = new Audio(sendSound);
+            silentAudio.loop = true;
+            silentAudio.volume = 0.001;
+            silentAudio.play();
+            keepingSessionAlive = true;
+            break
+        }
+    }
+
 }}>
     {#if aprilFools}
 
@@ -153,8 +176,6 @@
         </div>
     {:else if $CustomGUISettingMenuStore}
         <CustomGUISettingMenu />
-    {:else if !didFirstSetup}
-        <WelcomeRisu />
     {:else if $settingsOpen}
         <Settings />
     {:else if $MobileGUI}
@@ -187,9 +208,6 @@
     {#if $showRealmInfoStore}
         <RealmPopUp bind:openedData={$showRealmInfoStore} />
     {/if}
-    {#if $ShowRealmFrameStore}
-        <RealmFrame />
-    {/if}
     {#if $openPresetList}
         <Botpreset close={() => {$openPresetList = false}} />
     {/if}
@@ -207,6 +225,7 @@
         <HypaV3Progress />
     {/if}
     <PluginAlertModal />
+    <UpdatePopup />
     {#if popupStore.children}
         <PopupList />
     {/if}

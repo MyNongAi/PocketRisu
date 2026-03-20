@@ -8,11 +8,29 @@
     import { getRisuHub, hubAdditionalHTML } from "src/ts/characterCards";
     import RisuHubIcon from "./Realm/RealmHubIcon.svelte";
     import Title from "./Title.svelte";
+    import { updateInfoStore } from "src/ts/update";
 </script>
 <div class="h-full w-full flex flex-col overflow-y-auto items-center">
     {#if !$OpenRealmStore}
       <Title />
-      <h3 class="text-textcolor2 mt-1">Version {getVersionString()}</h3>
+      <h3 class="text-textcolor2 mt-1">📦 NodeOnly v{getVersionString()}</h3>
+      {#if $updateInfoStore?.hasUpdate}
+        <button
+          class="mt-1.5 px-3 py-1 rounded-full text-sm font-medium transition-colors
+            {$updateInfoStore.severity === 'optional'
+              ? 'bg-green-900/30 text-green-400 border border-green-800/50 hover:bg-green-900/50'
+              : 'bg-red-900/30 text-red-400 border border-red-800/50 hover:bg-red-900/50'}"
+          onclick={() => openURL($updateInfoStore.releaseUrl)}
+        >
+          {#if $updateInfoStore.severity === 'outdated'}
+            ⚠ {language.updateOutdated.replace('{{version}}', $updateInfoStore.latestVersion)}
+          {:else if $updateInfoStore.severity === 'required'}
+            ⚠ {language.updateRequired.replace('{{version}}', $updateInfoStore.latestVersion)}
+          {:else}
+            {language.updateAvailable.replace('{{version}}', $updateInfoStore.latestVersion)}
+          {/if}
+        </button>
+      {/if}
     {/if}
     <div class="w-full flex p-4 flex-col text-textcolor max-w-4xl">
       {#if !$OpenRealmStore}

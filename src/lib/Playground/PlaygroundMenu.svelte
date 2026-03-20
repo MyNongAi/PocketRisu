@@ -13,13 +13,14 @@
     import PlaygroundImageGen from "./PlaygroundImageGen.svelte";
     import PlaygroundParser from "./PlaygroundParser.svelte";
     import ToolConversion from "./ToolConversion.svelte";
-    import { joinMultiuserRoom } from "src/ts/sync/multiuser";
+
     import PlaygroundSubtitle from "./PlaygroundSubtitle.svelte";
     import PlaygroundImageTrans from "./PlaygroundImageTrans.svelte";
     import PlaygroundTranslation from "./PlaygroundTranslation.svelte";
     import PlaygroundMcp from "./PlaygroundMCP.svelte";
     import PlaygroundDocs from "./PlaygroundDocs.svelte";
     import PlaygroundInlayExplorer from './PlaygroundInlayExplorer.svelte';
+    import InlayImageGallery from './InlayImageGallery.svelte';
 
     let easterEggTouch = $state(0)
 
@@ -120,15 +121,16 @@
                 <h1 class="text-2xl font-bold text-start">{language.playground.inlayExplorer}</h1>
             </button>
             <button class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1" onclick={() => {
+                PlaygroundStore.set(15)
+            }}>
+                <h1 class="text-2xl font-bold text-start">{language.playground.inlayImageGallery}</h1>
+            </button>
+            <button class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1" onclick={() => {
                 PlaygroundStore.set(101)
             }}>
                 <h1 class="text-2xl font-bold text-start">{language.promptConvertion}</h1>
             </button>
-            <button class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1" onclick={() => {
-                joinMultiuserRoom()
-            }}>
-                <h1 class="text-2xl font-bold text-start">{language.joinMultiUserRoom}</h1>
-            </button>
+
             <button class="bg-darkbg rounded-md p-6 flex flex-col transition-shadow hover:ring-1" onclick={() => {
                 easterEggTouch += 1
             }}>
@@ -192,6 +194,9 @@
             {/if}
             {#if $PlaygroundStore === 14}
                 <PlaygroundInlayExplorer/>
+            {/if}
+            {#if $PlaygroundStore === 15}
+                <InlayImageGallery/>
             {/if}
             {#if $PlaygroundStore === 101}
                 <ToolConversion/>

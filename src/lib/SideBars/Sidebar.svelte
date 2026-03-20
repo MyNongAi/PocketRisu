@@ -28,6 +28,7 @@
     FolderIcon,
     FolderOpenIcon,
     HomeIcon,
+    ImageIcon,
     WrenchIcon,
     User2Icon,
   } from "@lucide/svelte";
@@ -46,7 +47,7 @@
     import { checkCharOrder, getFileSrc, saveAsset } from "src/ts/globalApi.svelte";
     import { alertInput, alertSelect } from "src/ts/alert";
     import SideChatList from "./SideChatList.svelte";
-    import { ConnectionIsHost, ConnectionOpenStore, RoomIdStore } from "src/ts/sync/multiuser";
+
   import { sideBarSize } from "src/ts/gui/guisize";
   import DevTool from "./DevTool.svelte";
     import QuickSettingsGui from "../Others/QuickSettingsGUI.svelte";
@@ -475,6 +476,14 @@
           PlaygroundStore.set(1)
         }}
       ><ShellIcon /></BarIcon>
+      <div class="mt-2"></div>
+      <BarIcon
+        onClick={() => {
+          reseter()
+          selectedCharID.set(-1)
+          PlaygroundStore.set(15)
+        }}
+      ><ImageIcon /></BarIcon>
       {#each additionalHamburgerMenu as menu}
         <div class="mt-2"></div>
         <BarIcon
@@ -792,6 +801,14 @@
           PlaygroundStore.set(1)
         }}
       ><ShellIcon /></BarIcon>
+      <div class="mt-2"></div>
+      <BarIcon
+        onClick={() => {
+          reseter()
+          selectedCharID.set(-1)
+          PlaygroundStore.set(15)
+        }}
+      ><ImageIcon /></BarIcon>
       {#each additionalHamburgerMenu as menu}
         <div class="mt-2"></div>
         <BarIcon
@@ -865,22 +882,6 @@
       </div>
     {:else if DBState.db.characters[$selectedCharID]?.chaId === '§playground'}
       <SideChatList bind:chara={ DBState.db.characters[$selectedCharID]} />
-    {:else if $ConnectionOpenStore}
-      <div class="flex flex-col">
-        <h1 class="text-xl">{language.connectionOpen}</h1>
-        <span class="text-textcolor2 mb-4">{language.connectionOpenInfo}</span>
-        <div class="flex">
-          <span>ID: </span>
-          <span class="text-blue-600">{$RoomIdStore}</span>
-        </div>
-        <div>
-          {#if $ConnectionIsHost}
-            <span class="text-emerald-600">{language.connectionHost}</span>
-          {:else}
-            <span class="text-gray-500">{language.connectionGuest}</span>
-          {/if}
-        </div>
-      </div>
     {:else}
       <div class="w-full h-8 min-h-8 border-l border-b border-r border-selected relative bottom-6 rounded-b-md flex">
         <button onclick={() => {

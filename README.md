@@ -1,60 +1,322 @@
-# Risuai
+> 🔗 **원본 프로젝트**: [kwaroran/RisuAI](https://github.com/kwaroran/RisuAI) — 이 프로젝트는 RisuAI를 기반으로 한 커뮤니티 개조 버전입니다.
 
-<picture>
-  <img alt="text" src="https://raw.githubusercontent.com/kwaroran/Risuai/refs/heads/main/public/logo_typo_small.avif" width="400"/>
-</picture>
+> [!CAUTION]
+> 🚧 이 프로젝트는 아직 충분히 테스트되지 않은 버전입니다. **불안정할 수 있습니다.**
+> 기존 RisuAI에서 이 버전으로 이사할 경우, 반드시 **기존 데이터를 백업**한 뒤에 진행하세요.
+> 백업 없이 데이터를 옮기면 복구가 어려울 수 있습니다.
 
-[![Svelte](https://img.shields.io/badge/svelte-5-red?logo=svelte)](https://svelte.dev/) [![Typescript](https://img.shields.io/badge/typescript-5.9-blue?logo=typescript)](https://www.typescriptlang.org/) [![Tauri](https://img.shields.io/badge/tauri-2.5-%2324C8D8?logo=tauri)](https://tauri.app/) [![Vite](https://img.shields.io/badge/vite-7-%23646CFF?logo=vite)](https://vite.dev/) [![Tailwind CSS](https://img.shields.io/badge/tailwindcss-4-%2306B6D4?logo=tailwindcss)](https://tailwindcss.com/)
+---
 
-Risuai, or Risu for short, is a cross platform AI chatting software / web application with powerful features such as multiple API support, assets in the chat, regex functions and much more.
+# 📦 RisuAI NodeOnly
 
-# Screenshots
+**RisuAI의 모든 기능 + 전용 편의기능, Node.js 서버 하나로.**
 
-|         Screenshot 1         |         Screenshot 2         |
-| :--------------------------: | :--------------------------: |
-| ![Screenshot 1][screenshot1] | ![Screenshot 2][screenshot2] |
-| ![Screenshot 3][screenshot3] | ![Screenshot 4][screenshot4] |
+RisuAI NodeOnly는 원본 [RisuAI](https://github.com/kwaroran/RisuAI)를 **Node.js 로컬 서버** 전용으로 단순화 및 개조한 버전입니다.
 
-[screenshot1]: https://github.com/kwaroran/Risuai/assets/116663078/cccb9b33-5dbd-47d7-9c85-61464790aafe
-[screenshot2]: https://github.com/kwaroran/Risuai/assets/116663078/30d29f85-1380-4c73-9b82-1a40f2c5d2ea
-[screenshot3]: https://github.com/kwaroran/Risuai/assets/116663078/faad0de5-56f3-4176-b38e-61c2d3a8698e
-[screenshot4]: https://github.com/kwaroran/Risuai/assets/116663078/ef946882-2311-43e7-81e7-5ca2d484fa90
+PC에서 실행하면 브라우저로 바로 사용하고, 간단한 설정 하나면 스마트폰에서도 접속할 수 있습니다.
 
-## Features
+---
 
-- **Multiple API Supports**: Supports OpenAI, Claude, Gemini, DeepInfra, Ooba, OpenRouter... and More!
-- **Emotion Images**: Display the image of the current character, according to his/her expressions!
-- **Group Chats**: Multiple characters in one chat.
-- **Plugins**: Add your features and providers, and simply share.
-- **Regex Script**: Modify model's output by regex, to make a custom GUI and others
-- **Powerful Translators**: Automatically translate the input/output, so you can roleplay without knowing model's language.
-- **Lorebook**: Also known as world infos or memory book, which can make character memorize more. 
-- **Themes**: Choose it from 3 themes, Classic, WaifuLike, WaifuCut.
-- **Powerful Prompting**: Change the prompting order easily, Impersonate inside prompts, Use conditions, variables... and more!
-- **Customizable, Friendly UI**: Great Accessibility and mobile friendly
-- **TTS**: Use TTS to make the output text into voice.
-- **Additional Assets**: Embed your images, audios and videos to bot, and make it display at chat or background!
-- **Long-term Memory**: Advanced memory systems including HypaMemoryV2/V3 memory compression, SupaMemory for context management to maintain long-term conversation context.
-- And More!
+## 🔍 일반 RisuAI와 뭐가 다른가요?
 
-You can get detailed information on https://github.com/kwaroran/Risuai/wiki (Work in Progress)
+원본 RisuAI는 **웹사이트**, **데스크톱 앱(Tauri)**, **모바일 앱(Capacitor)** 등 여러 환경을 동시에 지원합니다. 이를 위해 데이터 저장, 네트워크 처리, 파일 관리 등에서 환경별로 다른 코드가 실행됩니다.
 
-## Community
+NodeOnly는 이 모든 분기를 걷어내고 **Node.js 서버 하나**만을 전제로 단순화했습니다.
 
-- [Discord Server](https://discord.gg/JzP8tB9ZK8)
+그 결과:
 
-## Installation
+- 🗄️ **데이터가 서버에 통합 저장됩니다.** 캐릭터, 채팅, 설정, 삽화(인레이) 등 모든 데이터가 서버의 SQLite DB 하나에 담깁니다. 브라우저를 바꾸거나 다른 기기에서 접속해도 항상 같은 데이터를 볼 수 있습니다.
+- 🖥️ **브라우저는 화면만 담당합니다.** 데이터 저장이나 파일 관리를 브라우저가 하지 않으므로, 브라우저 종류나 설정에 따라 데이터가 날아가는 문제가 없습니다.
+- ⚡ **서버가 직접 파일을 서빙합니다.** 이미지, 오디오 등의 에셋을 서버가 최적화된 방식으로 직접 전달하므로 로딩이 빠릅니다.
 
-- [Risuai Website](https://risuai.net) (Recommended)
-- [Github Releases](https://github.com/kwaroran/Risuai/releases)
+한마디로, **"내 PC(또는 서버)에서 돌아가는 나만의 RisuAI"** 입니다.
 
-### Docker Installation
+> 💡 **Node.js 설치가 어렵지 않나요?**
+> 걱정하지 마세요. 포터블 패키지를 사용하면 Node.js를 직접 설치할 필요가 없습니다.
+> 압축 파일을 풀고 더블클릭하면 바로 실행됩니다. Docker를 사용해도 마찬가지입니다.
+> 자세한 내용은 아래 [설치 방법](#-설치-방법)을 참고하세요.
 
-You can also run Risuai using Docker. This method is particularly useful for web hosting.
+---
 
-1. Run the Docker container:
-   ```
-   curl -L https://raw.githubusercontent.com/kwaroran/Risuai/refs/heads/main/docker-compose.yml | docker compose -f - up -d
-   ```
+## 🙋 이런 분들에게 추천합니다
 
-2. Access Risuai at `http://localhost:6001` in your web browser.
+- 💻 **로컬에서 가볍게** AI 채팅을 즐기고 싶은 분
+- 📱 서버에 설치해서 PC, 스마트폰 등 **여러 기기에서 접속**하고 싶은 분
+- ✨ 채팅별 프리셋/프롬프트 바인딩, 삽화 갤러리, 업데이트 알림 등 **전용 편의기능**이 마음에 드는 분
+- 🚀 데이터 로딩 최적화, 서버 직접 서빙 등 **성능 개선**에 관심 있는 분
+
+---
+
+## ⭐ 주요 특징
+
+### NodeOnly 전용 기능
+
+| 기능 | 설명 |
+|------|------|
+| 🗄️ **SQLite 기반 저장소** | 캐릭터, 채팅, 설정, 에셋 등 모든 데이터를 서버의 SQLite DB 하나에 저장합니다. 어떤 브라우저, 어떤 기기에서 접속해도 동일한 데이터를 볼 수 있습니다. |
+| 💾 **서버 주도 백업** | `.risusave` 형식의 로컬 백업을 서버에서 직접 처리합니다. 브라우저 메모리 제한 없이 대용량 데이터도 백업/복원 가능합니다. |
+| ⚡ **에셋 직접 서빙 + 캐시** | 이미지, 오디오, 비디오 등의 에셋을 서버가 직접 서빙하며, 캐시를 적용하여 동일 에셋을 반복 로딩하지 않습니다. 채팅 화면이 빠르게 로드됩니다. |
+| 🖼️ **삽화(인레이) 서버 통합** | 삽화 모듈 등에서 사용하는 인레이 에셋이 서버 DB에 저장됩니다. PC에서 만든 삽화를 스마트폰에서도 그대로 볼 수 있고, 기기 간 동기화가 필요 없습니다. |
+| 🎨 **삽화 갤러리** | 저장된 삽화(인레이)를 한눈에 관리할 수 있는 갤러리입니다. 사용하지 않는 고아 파일 탐지, 이미지 lazy loading을 지원합니다. |
+| 🎛️ **채팅별 프리셋 & 프롬프트 관리** | 프롬프트 옵션(토글)을 채팅별로 독립 저장하고, 프리셋마다 토글 값을 따로 관리합니다. 특정 채팅에 프리셋을 바인딩하면 해당 채팅 진입 시 자동으로 프리셋이 적용됩니다. 채팅을 전환해도 각각의 설정이 그대로 유지됩니다. |
+| 🔔 **업데이트 알림** | 새 버전이 출시되면 홈 화면과 팝업으로 자동 알림합니다. 필수 업데이트 여부도 구분하여 안내합니다. |
+| 📦 **GZIP 압축** | HTTP 응답을 자동 압축하여 네트워크 전송량을 줄입니다. 특히 모바일 접속 시 체감됩니다. |
+
+---
+
+## 🛠️ 설치 방법
+
+난이도가 쉬운 순서대로 정렬했습니다. 자신에게 맞는 방법을 선택하세요.
+
+---
+
+### 1. 📦 포터블 패키지 (⭐ 추천 — 가장 쉬움)
+
+> 압축 파일을 풀고 **더블클릭**하면 바로 실행됩니다.
+> Node.js, Docker 같은 것을 따로 설치할 필요가 없습니다.
+
+#### 설치 순서
+
+**1단계: 다운로드**
+
+[📥 Releases 페이지](https://github.com/mrbart3885/Risuai-NodeOnly/releases)에서 자신의 운영체제에 맞는 파일을 다운로드하세요:
+
+| 운영체제 | 파일명 |
+|----------|--------|
+| 🪟 Windows | `RisuAI-NodeOnly-vX.X.X-win-x64.zip` |
+| 🍎 macOS (Apple Silicon) | `RisuAI-NodeOnly-vX.X.X-macos-arm64.tar.gz` |
+| 🐧 Linux | `RisuAI-NodeOnly-vX.X.X-linux-x64.tar.gz` |
+
+**2단계: 압축 해제**
+
+다운로드한 파일의 압축을 원하는 위치에 풀어주세요.
+
+**3단계: 실행**
+
+- 🪟 **Windows**: `RisuAI.bat` 더블클릭
+- 🍎🐧 **Mac/Linux**: 터미널에서 `./start.sh` 실행
+
+브라우저가 자동으로 열리며, `http://localhost:6001`로 접속됩니다.
+
+#### 🔄 업데이트 방법
+
+- 🪟 **Windows**: `update.bat` 더블클릭
+- 🍎🐧 **Mac/Linux**: `./update.sh` 실행 (포터블 디렉토리 안의 update.sh)
+
+자동으로 최신 버전을 다운로드하고 파일을 교체합니다.
+채팅, 캐릭터 등의 데이터(`save/` 폴더)는 그대로 보존됩니다.
+
+---
+
+### 2. 🐳 Docker
+
+> Docker만 설치되어 있으면 **한 줄**로 끝납니다.
+
+#### Docker가 뭔가요?
+
+Docker는 프로그램을 "컨테이너"라는 독립된 공간에서 실행해주는 도구입니다. Node.js 같은 것을 직접 설치할 필요 없이, 모든 것이 컨테이너 안에 포함되어 있습니다.
+
+#### 설치 순서
+
+**1단계: Docker 설치**
+
+- 🪟🍎 **Windows/Mac**: [Docker Desktop](https://www.docker.com/products/docker-desktop/) 다운로드 후 설치
+- 🐧 **Linux**: 터미널에서 실행
+  ```bash
+  curl -fsSL https://get.docker.com | sh
+  ```
+
+**2단계: RisuAI 실행**
+
+터미널(Windows: PowerShell, Mac/Linux: Terminal)을 열고 아래 명령어를 붙여넣으세요:
+
+```bash
+curl -L https://raw.githubusercontent.com/mrbart3885/Risuai-NodeOnly/main/docker-compose.yml | docker compose -f - up -d
+```
+
+**3단계: 접속**
+
+브라우저를 열고 주소창에 입력:
+
+```
+http://localhost:6001
+```
+
+#### 🔄 업데이트 방법
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+#### 💾 데이터 위치
+
+채팅, 캐릭터 등 모든 데이터는 Docker 볼륨(`risuai-save`)에 안전하게 저장됩니다.
+업데이트해도 데이터는 그대로 유지됩니다.
+
+---
+
+### 3. 📜 설치 스크립트 (Linux/macOS 서버용)
+
+> 서버에 상시 구동하고 싶을 때 사용합니다. Node.js가 필요합니다.
+
+#### 사전 준비
+
+Node.js 20 이상이 설치되어 있어야 합니다.
+
+```bash
+# Node.js 버전 확인
+node --version
+# v20.0.0 이상이면 OK
+```
+
+Node.js가 없다면: [Node.js 공식 사이트](https://nodejs.org/)에서 설치하세요.
+
+#### 설치 순서
+
+터미널에서 아래 명령어 한 줄을 실행하세요:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/mrbart3885/Risuai-NodeOnly/main/install.sh | bash
+```
+
+설치가 완료되면 안내 메시지가 표시됩니다.
+
+#### ▶️ 서버 시작
+
+```bash
+cd ~/risuai-nodeonly
+pnpm runserver
+```
+
+브라우저에서 `http://localhost:6001`로 접속합니다.
+
+#### 🔄 업데이트 방법
+
+```bash
+cd ~/risuai-nodeonly
+./update.sh
+```
+
+---
+
+### 4. 🧑‍💻 Git Clone (개발자/고급 사용자)
+
+> 소스 코드를 직접 관리하고 싶은 분을 위한 방법입니다.
+
+```bash
+git clone https://github.com/mrbart3885/Risuai-NodeOnly.git
+cd Risuai-NodeOnly
+pnpm install
+pnpm build
+pnpm runserver
+```
+
+브라우저에서 `http://localhost:6001`로 접속합니다.
+
+#### 🔄 업데이트 방법
+
+```bash
+git pull
+pnpm install
+pnpm build
+# 서버 재시작
+pnpm runserver
+```
+
+---
+
+## 📱 모바일에서 접속하기 (Tailscale)
+
+PC에서 실행 중인 RisuAI에 스마트폰으로 접속하고 싶다면 **Tailscale**을 추천합니다.
+
+### Tailscale이 뭔가요?
+
+Tailscale은 내 기기들끼리 안전한 사설 네트워크를 만들어주는 앱입니다.
+같은 계정으로 로그인한 기기끼리만 접속할 수 있어서, 채팅 데이터가 외부로 노출될 걱정이 없습니다.
+
+### 설정 순서
+
+**1단계: Tailscale 설치**
+
+- 🖥️ PC: [tailscale.com](https://tailscale.com/) 에서 다운로드
+- 📱 스마트폰: App Store 또는 Google Play에서 "Tailscale" 검색 후 설치
+
+**2단계: 같은 계정으로 로그인**
+
+PC와 스마트폰 모두 동일한 계정(Google, Microsoft 등)으로 로그인합니다.
+
+**3단계: PC에서 HTTPS 공유 설정**
+
+PC 터미널에서 아래 명령어를 한 번만 실행하면 됩니다:
+
+```bash
+tailscale serve --bg https / http://localhost:6001
+```
+
+**4단계: 스마트폰에서 접속**
+
+스마트폰 브라우저에서 아래 형태의 주소로 접속합니다:
+
+```
+https://내PC이름.tail어쩌구.ts.net
+```
+
+정확한 주소는 Tailscale 앱의 기기 목록에서 PC 이름을 확인하세요.
+
+> 💡 한 번 설정하면 이후에는 PC에서 서버만 실행하면 스마트폰에서 바로 접속할 수 있습니다.
+> URL이 항상 같으므로 브라우저 즐겨찾기에 추가해두면 편리합니다.
+
+---
+
+## 📊 원본 RisuAI와의 차이점
+
+| 항목 | 원본 RisuAI | NodeOnly |
+|------|-------------|----------|
+| 실행 방식 | 웹사이트 / 데스크톱 앱 / 모바일 앱 | Node.js 서버 (브라우저 접속) |
+| 데이터 저장 | 환경별로 다름 (localStorage, 파일 등) | SQLite 단일 DB |
+| 백업 | Google Drive + 로컬 | 서버 주도 로컬 백업 |
+| 에셋 로딩 | API 호출 | 서버 직접 서빙 + 캐시 |
+| 삽화(인레이) | 브라우저 로컬 저장 | 서버 DB 통합 (기기 간 공유) |
+| 코드 구조 | 멀티 플랫폼 분기 | 단일 코드 경로 |
+
+---
+
+## ⚠️ 주의사항 및 한계점
+
+> [!WARNING]
+> 사용 전에 반드시 읽어주세요.
+
+### 🧪 안정성
+
+- 이 프로젝트는 **개인이 관리하는 커뮤니티 수정 버전**이며, 아직 충분한 테스트를 거치지 못했습니다. 예기치 않은 오류가 발생할 수 있습니다.
+- 문제가 발생하면 [Issues](https://github.com/mrbart3885/Risuai-NodeOnly/issues)에 보고해주세요.
+
+### 💾 데이터 보호
+
+- **백업을 반드시 생활화하세요.** 설정 > 백업에서 `.risusave` 파일로 정기적으로 백업하는 것을 권장합니다.
+- 기존 RisuAI에서 이 버전으로 이사할 때는 **원본 데이터 백업을 먼저** 만들어두세요. 되돌리기 어려울 수 있습니다.
+- 업데이트 전에도 백업을 권장합니다.
+
+### 🖥️ 서버 실행 관련
+
+- RisuAI NodeOnly는 **서버 프로그램**입니다. 서버가 실행 중인 PC(또는 서버)를 끄거나 프로그램을 종료하면, 스마트폰 등 다른 기기에서 접속할 수 없습니다.
+- 같은 PC의 브라우저에서 접속하는 경우에도 서버가 실행 중이어야 합니다.
+
+### 🚫 사용 불가 기능
+
+| 기능 | 상태 | 이유 |
+|------|------|------|
+| **RisuRealm 업로드** | 사용 불가 | 원본과 내부 구조가 다르기 때문에, Realm에 비정상적인 데이터가 올라가는 것을 방지하기 위해 업로드 기능을 제거했습니다. Realm에서 캐릭터를 **다운로드**하는 것은 정상 동작합니다. |
+| **Google Drive 백업** | 사용 불가 | 로컬 서버 환경에서 Google OAuth 인증이 안정적으로 동작하지 않아 제거했습니다. 대신 서버 주도 로컬 백업(`.risusave`)을 사용합니다. |
+| **초기 설정 튜토리얼** | 제거됨 | 로컬 서버 환경에서는 불필요하여 제거했습니다. 처음 실행하면 바로 메인 화면이 표시됩니다. |
+
+### 📌 기타
+
+- 원본 RisuAI의 업데이트가 자동으로 반영되지 않습니다. 원본의 새 기능이나 수정 사항은 수동으로 포팅해야 하므로 반영에 시간이 걸릴 수 있습니다.
+- 웹 브라우저에서 접속하는 방식이므로, 브라우저 알림(푸시 알림)은 지원되지 않습니다.
+
+---
+
+## 📄 라이선스
+
+이 프로젝트는 원본 RisuAI와 동일한 [GPL-3.0](LICENSE) 라이선스를 따릅니다.

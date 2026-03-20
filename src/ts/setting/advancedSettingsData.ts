@@ -1,7 +1,6 @@
 
 import type { SettingItem } from './types';
-import { isNodeServer, isTauri } from '../platform';
-
+import { loadPlugins } from '../plugins/plugins.svelte';
 export const advancedSettingsItems: SettingItem[] = [
     { type: 'header', id: 'adv.header', labelKey: 'advancedSettings', options: { level: 'h2' }, classes: '!mb-0' },
     { type: 'header', id: 'adv.warn', labelKey: 'advancedSettingsWarn', options: { level: 'warning' } },
@@ -67,6 +66,18 @@ export const advancedSettingsItems: SettingItem[] = [
         }
     },
 
+    // Keep Session alive
+    {
+        id: 'adv.keepSessionAlive', type: 'select', labelKey: 'keepSessionAlive', bindKey: 'keepSessionAlive', helpKey: 'keepSessionAlive',
+        options: {
+            selectOptions: [
+                { value: 'off', label: 'Off' },
+                { value: 'sound', label: 'Via Sound' },
+            ]
+        }
+    },
+    
+
     // Height Mode
     {
         id: 'adv.heightMode', type: 'select', labelKey: 'heightMode', bindKey: 'heightMode',
@@ -85,7 +96,7 @@ export const advancedSettingsItems: SettingItem[] = [
     // Request Location (Non-Node/Tauri)
     {
         id: 'adv.reqLoc', type: 'segmented', labelKey: 'requestLocation', bindKey: 'requestLocation',
-        condition: () => !isNodeServer && !isTauri,
+        condition: () => false,
         options: {
             segmentOptions: [
                 { value: '', label: 'Default' },
@@ -131,6 +142,13 @@ export const advancedSettingsItems: SettingItem[] = [
         id: 'adv.cot', type: 'check', labelKey: 'cot', bindKey: 'chainOfThought',
         condition: (ctx) => ctx.db.showUnrecommended, helpKey: 'customChainOfThought', helpUnrecommended: true, classes: 'mt-4'
     },
+    {
+        id: 'adv.allowV2Plugin', type: 'check', labelKey: 'allowV2Plugin', bindKey: 'allowV2Plugin',
+        condition: (ctx) => ctx.db.showUnrecommended, helpKey: 'allowV2Plugin', helpUnrecommended: true, classes: 'mt-4',
+        onChange: () => {
+            void loadPlugins();
+        }
+    },
 
     // More Toggles
     { id: 'adv.remPunc', type: 'check', labelKey: 'removePunctuationHypa', bindKey: 'removePunctuationHypa', helpKey: 'removePunctuationHypa', classes: 'mt-4' },
@@ -140,11 +158,11 @@ export const advancedSettingsItems: SettingItem[] = [
     // Node/Tauri Specific
     {
         id: 'adv.promptInfo', type: 'check', labelKey: 'promptInfoInsideChat', bindKey: 'promptInfoInsideChat',
-        condition: () => isNodeServer || isTauri, helpKey: 'promptInfoInsideChatDesc', classes: 'mt-4'
+        helpKey: 'promptInfoInsideChatDesc', classes: 'mt-4'
     },
     {
         id: 'adv.promptTextInfo', type: 'check', labelKey: 'promptTextInfoInsideChat', bindKey: 'promptTextInfoInsideChat',
-        condition: (ctx) => (isNodeServer || isTauri) && ctx.db.promptInfoInsideChat, classes: 'mt-4'
+        condition: (ctx) => ctx.db.promptInfoInsideChat, classes: 'mt-4'
     },
     {
         id: 'adv.remoteSave', type: 'check', labelKey: 'enableRemoteSaving', bindKey: 'enableRemoteSaving',

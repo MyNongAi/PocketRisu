@@ -1,14 +1,13 @@
 import { writable, type Writable } from "svelte/store"
-import { alertCardExport, alertConfirm, alertError, alertInput, alertMd, alertNormal, alertStore, alertTOS, alertWait } from "./alert"
-import { defaultSdDataFunc, type character, setDatabase, type customscript, type loreSettings, type loreBook, type triggerscript, importPreset, type groupChat, setCurrentCharacter, getCurrentCharacter, getDatabase, setDatabaseLite, appVer } from "./storage/database.svelte"
+import { alertCardExport, alertConfirm, alertError, alertInput, alertNormal, alertStore, alertTOS, alertWait } from "./alert"
+import { defaultSdDataFunc, type character, setDatabase, type customscript, type loreSettings, type loreBook, type triggerscript, importPreset, type groupChat, getDatabase, setDatabaseLite, appVer } from "./storage/database.svelte"
 import { checkNullish, decryptBuffer, isKnownUri, selectFileByDom, sleep } from "./util"
 import { language } from "src/lang"
 import { v4 as uuidv4, v4 } from 'uuid';
 import { characterFormatUpdate } from "./characters"
-import { AppendableBuffer, BlankWriter, checkCharOrder, downloadFile, forageStorage, loadAsset, LocalWriter, openURL, readImage, saveAsset, VirtualWriter } from "./globalApi.svelte"
-import { isTauri, isNodeServer } from "src/ts/platform"
+import { AppendableBuffer, BlankWriter, checkCharOrder, downloadFile, forageStorage, loadAsset, LocalWriter, readImage, saveAsset, VirtualWriter } from "./globalApi.svelte"
 import { compressImage, getImageType } from "./media"
-import { SettingsMenuIndex, ShowRealmFrameStore, selectedCharID, settingsOpen } from "./stores.svelte"
+import { SettingsMenuIndex, selectedCharID, settingsOpen } from "./stores.svelte"
 import { hasher } from "./parser/parser.svelte"
 import { type CharacterCardV3, type LorebookEntry } from '@risuai/ccardlib'
 import { reencodeImage } from "./process/files/inlays"
@@ -16,18 +15,11 @@ import { PngChunk } from "./pngChunk"
 import type { OnnxModelFiles } from "./process/transformers"
 import { CharXImporter, CharXSkippableChecker, CharXWriter } from "./process/processzip"
 import { exportModule, readModule, type RisuModule } from "./process/modules"
-import { readFile } from "@tauri-apps/plugin-fs"
-import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
-import { AccountStorage } from "./storage/accountStorage"
 
 
 const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz';
 const NIGHTLY_HUB_URL = 'https://nightly.sv.risuai.xyz'
-export const hubURL = isNodeServer
-    ? '/hub-proxy'
-    : (window.location.hostname === 'nightly.risuai.xyz' || localStorage.getItem('hub') === 'nightly')
-    ? NIGHTLY_HUB_URL 
-    : EXTERNAL_HUB_URL;
+export const hubURL = '/hub-proxy';
 
 export async function importCharacter() {
     try {
@@ -88,44 +80,6 @@ export async function importCharacterProcess(f:{
 
         let charXMode:'normal'|'skippable'|'signal' = 'normal'
         let signal = ''
-        if(forageStorage.realStorage instanceof AccountStorage){
-
-            if(f.data instanceof ReadableStream){
-                const tee = f.data.tee()
-                const reader =tee[0].getReader()
-                f.data = tee[1]
-                const chunks:Uint8Array[] = []
-                let done = false
-                let readedBytes = 0
-                while(!done){
-                    const r = await reader.read()
-                    readedBytes += r.value ? r.value.length : 0
-                    if(r.done){
-                        done = true
-                    }
-                    else{
-                        chunks.push(r.value)
-                    }
-                    alertWait(`Loading... (Reading) ${readedBytes} Bytes`)
-                }
-                let offset = 0
-                const uint8 = new Uint8Array(readedBytes)
-                for(const chunk of chunks){
-                    uint8.set(chunk, offset)
-                    offset += chunk.length
-                }
-                const v = await CharXSkippableChecker(uint8)
-                signal = v.hash
-                charXMode = v.success ? 'skippable' : 'signal'
-            }
-            else{
-                const rsp = new Response(f.data as any)
-                f.data = new Uint8Array(await rsp.arrayBuffer())
-                const v = await CharXSkippableChecker(f.data)
-                signal = v.hash
-                charXMode = v.success ? 'skippable' : 'signal'
-            }
-        }
         
         const importer = new CharXImporter()
         importer.alertInfo = true
@@ -545,32 +499,6 @@ export async function characterURLImport() {
         });
     }
 
-    if("tauriOpenedFiles" in window){
-        //@ts-expect-error tauriOpenedFiles is custom Tauri property, not defined in Window interface
-        const files:string[] = window.tauriOpenedFiles
-        if(files){
-            for(const file of files){
-                const data = await readFile(file)
-                await importFile(file, data)
-            }
-        }
-    }
-    
-    if(isTauri){
-        await onOpenUrl((urls) => {
-            for(const url of urls){
-                const splited = url.split('/')
-                const id = splited[splited.length - 1]
-                const type = splited[splited.length - 2]
-                switch(type){
-                    case 'realm':{
-                        downloadRisuHub(id)
-                    }
-                }
-            }
-        })
-    }
-
     async function importFile(name:string, data:Uint8Array) {
         if(name.endsWith('.charx') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png')){
             await importCharacterProcess({
@@ -713,10 +641,7 @@ export async function exportChar(charaID:number):Promise<string> {
     else if(option.type === 'ccv2'){
         exportCharacterCard(char,'png', {spec: 'v2'})
     }
-    else if(option.type === 'realm'){
-        ShowRealmFrameStore.set("character")
-    }
-    else{
+    else if(option.type !== ''){
         return option.type
     }
     return ''
@@ -1677,78 +1602,6 @@ export function createBaseV3(char:character){
     return card
 }
 
-
-export async function shareRisuHub2(char:character, arg:{
-    nsfw: boolean,
-    tag:string
-    license: string
-    anon: boolean,
-    update: boolean
-}) {
-    try {
-        char = safeStructuredClone(char)
-        char.license = arg.license
-        let tagList = arg.tag.split(',')
-        
-        if(arg.nsfw){
-            tagList.push("nsfw")
-        }
-    
-        alertWait("Uploading...")
-        
-    
-        let tags = tagList.filter((v, i) => {
-            return (!!v) && (tagList.indexOf(v) === i)
-        })
-        char.tags = tags
-    
-    
-        const writer = new VirtualWriter()
-        await exportCharacterCard(char, 'png', {writer: writer})
-        const dat = Buffer.from(writer.buf.buffer).toString('base64') + '&' + 'rt.png'
-
-        openURL(`https://realm.risuai.net/hub/realm/upload#filedata=${encodeURIComponent(dat)}`)
-
-        let testMode = true
-        if(testMode){
-            return
-        }
-    
-        const fetchPromise = fetch(hubURL + '/hub/realm/upload', {
-            method: "POST",
-            body: writer.buf.buffer as any,
-            headers: {
-                "Content-Type": 'image/png',
-                "x-risu-api-version": "4",
-                "x-risu-token": getDatabase()?.account?.token,
-                'x-risu-username': arg.anon ? '' : (getDatabase()?.account?.id),
-                'x-risu-debug': 'true',
-                'x-risu-update-id': arg.update ? (char.realmId ?? 'null') : 'null'
-            }
-        })
-    
-    
-        const res = await fetchPromise
-    
-        if(res.status !== 200){
-            alertError(await res.text())
-        }
-        else{
-            const resJSON = await res.json()
-            alertMd(resJSON.message)
-            const currentChar = getCurrentCharacter()
-            if(currentChar.type === 'group'){
-                return
-            }
-            currentChar.realmId = resJSON.id
-            setCurrentCharacter(currentChar)
-        }   
-    } catch (error) {
-        alertError(error)
-    }
-
-}
-
 export type hubType = {
     name:string
     desc: string
@@ -1780,11 +1633,11 @@ export async function getRisuHub(arg:{
 }):Promise<hubType[]> {
     try {
         arg.search += ' __shared'
-        const stringArg = `search==${arg.search}&&page==${arg.page}&&nsfw==${arg.nsfw}&&sort==${arg.sort}&&web==${(!isNodeServer && !isTauri) ? 'web' : 'other'}`
+        const stringArg = `search==${arg.search}&&page==${arg.page}&&nsfw==${arg.nsfw}&&sort==${arg.sort}&&web==other`
 
         const da = await fetch(hubURL + '/realm/' + encodeURIComponent(stringArg), {
             headers: {
-                "x-risuai-info": appVer + ';' + (isNodeServer ? 'node' : (isTauri ? 'tauri' : 'web'))
+                "x-risuai-info": appVer + ';node'
             }
         })
         if(da.status !== 200){

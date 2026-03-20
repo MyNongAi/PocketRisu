@@ -21,7 +21,6 @@ import { HypaProcesser } from "./memory/hypamemory";
 import { additionalInformations } from "./embedding/addinfo";
 import { getInlayAsset } from "./files/inlays";
 import { getGenerationModelString } from "./models/modelString";
-import { connectionOpen, peerRevertChat, peerSafeCheck, peerSync } from "../sync/multiuser";
 import { runInlayScreen } from "./inlayScreen";
 import { addRerolls } from "./prereroll";
 import { runImageEmbedding } from "./transformers";
@@ -201,19 +200,6 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         else{
             changeToPreset(findId, true)
         }
-    }
-
-    if(connectionOpen){
-        chatProcessStage.set(4)
-        const peerSafe = await peerSafeCheck()
-        if(!peerSafe){
-            peerRevertChat()
-            doingChat.set(false)
-            throwError(language.otherUserRequesting)
-            return false
-        }
-        await peerSync()
-        chatProcessStage.set(0)
     }
 
     DBState.db.statics.messages += 1
@@ -980,7 +966,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         currentTokens += await tokenizer.tokenizeChat(chat)
     }
     
-    if(nowChatroom.supaMemory && (DBState.db.supaModelType !== 'none' || DBState.db.hanuraiEnable || DBState.db.hypav2 || DBState.db.hypaV3)){
+    if((currentChat.supaMemory ?? nowChatroom.supaMemory) && (DBState.db.supaModelType !== 'none' || DBState.db.hanuraiEnable || DBState.db.hypav2 || DBState.db.hypaV3)){
         stageTimings.stage1Duration = Date.now() - stageTimings.stage1Start
         chatProcessStage.set(2)
         stageTimings.stage2Start = Date.now()
@@ -1730,8 +1716,6 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             
         }
     }
-
-    peerSync()
 
     if(req.special){
         if(req.special.emotion){

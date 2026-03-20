@@ -92,7 +92,7 @@
             branchHover = null
         }
         if($alertStore.type !== 'cardexport'){
-            cardExportType = 'realm'
+            cardExportType = ''
             cardExportType2 = ''
             cardLicense = ''
         }
@@ -634,21 +634,7 @@
                             <ChevronRightIcon />
                         </div>
                     </button>
-                    {#if DBState.db.useExperimental}
-                        <button class="border-darkborderc border py-2 px-8 flex rounded-md hover:ring-2 items-center mt-2" onclick={() => {
-                            alertStore.set({
-                                type: 'none',
-                                msg: '2'
-                            })
-                        }}>
-                            <div class="flex flex-col justify-start items-start">
-                                <span>{language.createMultiuserRoom} <Help key="experimental"/></span>
-                            </div>
-                            <div class="ml-9 float-right flex-1 flex justify-end">
-                                <ChevronRightIcon />
-                            </div>
-                        </button>
-                    {/if}
+
                     <button class="border-darkborderc border py-2 px-8 flex rounded-md hover:ring-2 items-center mt-2" onclick={() => {
                         alertStore.set({
                             type: 'none',
@@ -706,19 +692,14 @@
             {:else if cardExportType === 'ccv2'}
                 <span class="text-textcolor2 text-sm">{language.ccv2Desc}</span>
                 <span class="text-red-500 text-sm">{language.v2Warning}</span>
-            {:else}
-                <span class="text-textcolor2 text-sm">{language.realmDesc}</span>
             {/if}
             <div class="flex items-center flex-wrap mt-2">
                 {#if $alertStore.submsg === 'preset'}
-                    <button class="bg-bgcolor px-2 py-4 rounded-lg flex-1" class:ring-1={cardExportType === 'realm'} onclick={() => {cardExportType = 'realm'}}>RisuRealm</button>
-                    <button class="bg-bgcolor px-2 py-4 rounded-lg ml-2 flex-1" class:ring-1={cardExportType === ''} onclick={() => {cardExportType = ''}}>Risupreset</button>
+                    <button class="bg-bgcolor px-2 py-4 rounded-lg flex-1" class:ring-1={cardExportType === ''} onclick={() => {cardExportType = ''}}>Risupreset</button>
                 {:else if $alertStore.submsg === 'module'}
-                    <button class="bg-bgcolor px-2 py-4 rounded-lg ml-2 flex-1" class:ring-1={cardExportType === 'realm'} onclick={() => {cardExportType = 'realm'}}>RisuRealm</button>
                     <button class="bg-bgcolor px-2 py-4 rounded-lg flex-1" class:ring-1={cardExportType === ''} onclick={() => {cardExportType = ''}}>RisuM</button>
                 {:else}
-                    <button class="bg-bgcolor px-2 py-4 rounded-lg flex-1" class:ring-1={cardExportType === 'realm'} onclick={() => {cardExportType = 'realm'}}>RisuRealm</button>
-                    <button class="bg-bgcolor px-2 py-4 rounded-lg ml-2 flex-1" class:ring-1={cardExportType === ''} onclick={() => {
+                    <button class="bg-bgcolor px-2 py-4 rounded-lg flex-1" class:ring-1={cardExportType === ''} onclick={() => {
                         cardExportType = ''
                         cardExportType2 = 'charxJpeg'
                     }}>Character Card V3</button>
@@ -742,7 +723,7 @@
                         type2: cardExportType2
                     })
                 })
-            }}>{cardExportType === 'realm' ? language.shareCloud : language.export}</Button>
+            }}>{language.export}</Button>
         </div>
     </div>
 
