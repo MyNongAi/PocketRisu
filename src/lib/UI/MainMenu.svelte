@@ -8,11 +8,33 @@
     import { getRisuHub, hubAdditionalHTML } from "src/ts/characterCards";
     import RisuHubIcon from "./Realm/RealmHubIcon.svelte";
     import Title from "./Title.svelte";
+    import { getUpdateInfo, type UpdateInfo } from "src/ts/update";
+
+    let updateInfo: UpdateInfo | null = $state(null);
+
+    $effect(() => {
+        // Poll cached update info on mount and when re-entering the menu
+        updateInfo = getUpdateInfo();
+    });
 </script>
 <div class="h-full w-full flex flex-col overflow-y-auto items-center">
     {#if !$OpenRealmStore}
       <Title />
       <h3 class="text-textcolor2 mt-1">RisuAI NodeOnly v{getVersionString()}</h3>
+      {#if updateInfo?.hasUpdate}
+        <button
+          class="text-xs mt-1 px-2 py-0.5 rounded transition-colors {updateInfo.severity === 'optional' ? 'text-textcolor2 hover:text-green-400' : 'text-draculared font-semibold hover:text-red-300'}"
+          onclick={() => openURL(updateInfo.releaseUrl)}
+        >
+          {#if updateInfo.severity === 'outdated'}
+            ⚠ v{updateInfo.latestVersion} — your version is too old
+          {:else if updateInfo.severity === 'required'}
+            ⚠ v{updateInfo.latestVersion} required update available
+          {:else}
+            ↳ v{updateInfo.latestVersion} update available
+          {/if}
+        </button>
+      {/if}
     {/if}
     <div class="w-full flex p-4 flex-col text-textcolor max-w-4xl">
       {#if !$OpenRealmStore}
