@@ -45,7 +45,7 @@ __pycache__/
 .tauri/
 dist.zip
 /scripts/
-!/scripts/updater.js
+!/scripts/updater.cjs
 .env
 /server/node/ssl/certificate
 
