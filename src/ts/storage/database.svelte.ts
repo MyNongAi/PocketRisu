@@ -773,7 +773,7 @@ export function applyPromptToggleValues(db:Database, values:Record<string, strin
     for(const key of keys){
         const value = values[key]
         if(value === undefined){
-            db.globalChatVariables[key] = ''
+            delete db.globalChatVariables[key]
             continue
         }
         db.globalChatVariables[key] = value
