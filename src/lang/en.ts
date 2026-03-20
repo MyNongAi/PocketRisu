@@ -247,6 +247,9 @@ export const languageEnglish = {
             "- **Dynamic Assets**: Finding similar asset names when exact match is not found\n" +
             "- **Trigger Scripts**: Similarity conditions in trigger scripts\n" +
             "- **File Attachments**: Searching within PDF/TXT/XML attachments",
+        keepSessionAlive:
+            "Keeps the tab active and prevents the session from expiring due to inactivity in browsers. This may require refresh to take effect.\n\n" +
+            "- **Via Sound**: Plays a silent audio at regular intervals to keep the session alive. This method is known as most compatible and effective in most browsers.\n",
         reSummarizationPrompt:
             "The prompt used when merging multiple selected summaries into one via bulk edit. If blank, the default prompt is used. The summary output is split by double newlines (\\n\\n) into chunks for similarity search.",
         hypaV3MemoryTokensRatio:
@@ -1604,6 +1607,9 @@ export const languageEnglish = {
     epRequirementsNotMet: "Easy Panel requirements not met. Click the button below to automatically adjust your settings for optimal Easy Panel settings.",
     seperateParametersByModel: "Separate Parameters by Model",
     disableSeperateParameterChangeOnPresetChange: "Disable Separate Parameter Change on Preset Change",
+    keepSessionAlive: "Keep Session Alive",
+    keepSessionAlivePip: "Via PIP",
+    keepSessionAliveSound: "Via Sound",
 } satisfies I18nTranslation;
 
 type I18nTranslationFunction = (...args: any[]) => string;
