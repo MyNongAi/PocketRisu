@@ -1,7 +1,7 @@
 import { changeFullscreen, checkNullish, sleep } from "./util"
 import { v4 as uuidv4, v4 } from 'uuid';
 import { get } from "svelte/store";
-import { setDatabase, type Database, defaultSdDataFunc, getDatabase, appVer, getCurrentCharacter, migratePromptOptionStates, syncCurrentChatPromptOptionState, applyCurrentChatPromptOptionState, applyBoundPreset } from "./storage/database.svelte";
+import { setDatabase, type Database, defaultSdDataFunc, getDatabase, appVer, nodeOnlyVer, getCurrentCharacter, migratePromptOptionStates, syncCurrentChatPromptOptionState, applyCurrentChatPromptOptionState, applyBoundPreset } from "./storage/database.svelte";
 import { checkRisuUpdate } from "./update";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore } from "./stores.svelte";
 import { loadPlugins } from "./plugins/plugins.svelte";
@@ -1611,14 +1611,7 @@ export function getLanguageCodes() {
 }
 
 export function getVersionString(): string {
-    let versionString = appVer
-    if (window.location.hostname === 'nightly.risuai.xyz') {
-        versionString = 'Nightly Build'
-    }
-    if (window.location.hostname === 'stable.risuai.xyz') {
-        versionString += ' (Stable)';
-    }
-    return versionString
+    return nodeOnlyVer
 }
 
 export function toGetter<T extends object>(
