@@ -1,9 +1,9 @@
-name: risuai
+name: risuai-nodeonly
 
 services:
   risuai:
-    container_name: risuai
-    image: ghcr.io/kwaroran/risuai:latest
+    container_name: risuai-nodeonly
+    image: ghcr.io/mrbart3885/risuai-nodeonly:latest
     restart: always
     ports:
       - 6001:6001
