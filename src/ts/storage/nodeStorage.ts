@@ -9,6 +9,7 @@ export class NodeStorage{
     authChecked = false
     private cachedJwt: { token: string; expiresAt: number } | null = null
     private static sessionInitialized = false
+    private static sessionPending: Promise<void> | null = null
     JSONStringlifyAndbase64Url(obj:any){
         return base64url(Buffer.from(JSON.stringify(obj), 'utf-8'))
     }
@@ -27,6 +28,12 @@ export class NodeStorage{
     // <img src="/api/asset/..."> can be served without JS-injected headers.
     private async initSession() {
         if (NodeStorage.sessionInitialized) return
+        if (NodeStorage.sessionPending) return NodeStorage.sessionPending
+        NodeStorage.sessionPending = this._doInitSession()
+        return NodeStorage.sessionPending
+    }
+
+    private async _doInitSession() {
         try {
             const res = await fetch('/api/session', {
                 method: 'POST',
@@ -38,6 +45,8 @@ export class NodeStorage{
             // Non-ok (400/401/500): will retry on next checkAuth() call.
         } catch {
             // Network error: will retry on next checkAuth() call.
+        } finally {
+            NodeStorage.sessionPending = null
         }
     }
 
