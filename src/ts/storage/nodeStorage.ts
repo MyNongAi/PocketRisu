@@ -8,6 +8,8 @@ export class NodeStorage{
 
     authChecked = false
     private cachedJwt: { token: string; expiresAt: number } | null = null
+    private static sessionInitialized = false
+    private static sessionPending: Promise<void> | null = null
     JSONStringlifyAndbase64Url(obj:any){
         return base64url(Buffer.from(JSON.stringify(obj), 'utf-8'))
     }
@@ -20,6 +22,32 @@ export class NodeStorage{
         const token = await this._createFreshAuth()
         this.cachedJwt = { token, expiresAt: now + 5 * 60 * 1000 }
         return token
+    }
+
+    // Called once after JWT auth is confirmed. Issues a session cookie so that
+    // <img src="/api/asset/..."> can be served without JS-injected headers.
+    private async initSession() {
+        if (NodeStorage.sessionInitialized) return
+        if (NodeStorage.sessionPending) return NodeStorage.sessionPending
+        NodeStorage.sessionPending = this._doInitSession()
+        return NodeStorage.sessionPending
+    }
+
+    private async _doInitSession() {
+        try {
+            const res = await fetch('/api/session', {
+                method: 'POST',
+                headers: { 'risu-auth': await this.createAuth() },
+            })
+            if (res.ok) {
+                NodeStorage.sessionInitialized = true
+            }
+            // Non-ok (400/401/500): will retry on next checkAuth() call.
+        } catch {
+            // Network error: will retry on next checkAuth() call.
+        } finally {
+            NodeStorage.sessionPending = null
+        }
     }
 
     private async _createFreshAuth(){
@@ -239,17 +267,20 @@ export class NodeStorage{
                 }
 
                 await this.loginWithPassword(input)
+                await this.initSession()
                 return
             }
             else if(data.status === 'incorrect'){
                 const input = await digestPassword(await alertInput(language.inputNodePassword))
                 await this.loginWithPassword(input)
+                await this.initSession()
                 return
             }
             else{
                 this.authChecked = true
             }
         }
+        await this.initSession()
     }
 
     listItem = this.keys
@@ -260,10 +291,30 @@ export class NodeStorage{
             method: 'POST',
             body: JSON.stringify(keys),
             headers: {
-                'content-type': 'application/json'
+                'content-type': 'application/json',
+                'accept': 'application/octet-stream'
             }
         })
         if (da.status < 200 || da.status >= 300) throw 'getItems Error'
+
+        const ct = da.headers.get('content-type') || ''
+        if (ct.includes('application/octet-stream')) {
+            // Binary protocol: [count(4)] then per entry: [keyLen(4)][key][valLen(4)][value]
+            const buf = Buffer.from(await da.arrayBuffer())
+            let offset = 0
+            const count = buf.readUInt32BE(offset); offset += 4
+            const results: {key: string, value: Buffer}[] = []
+            for (let i = 0; i < count; i++) {
+                const keyLen = buf.readUInt32BE(offset); offset += 4
+                const key = buf.subarray(offset, offset + keyLen).toString('utf-8'); offset += keyLen
+                const valLen = buf.readUInt32BE(offset); offset += 4
+                const value = buf.subarray(offset, offset + valLen) as Buffer; offset += valLen
+                results.push({ key, value })
+            }
+            return results
+        }
+
+        // Fallback: JSON+base64
         const results: {key: string, value: string}[] = await da.json()
         return results.map(r => ({ key: r.key, value: Buffer.from(r.value, 'base64') }))
     }

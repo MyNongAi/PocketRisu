@@ -12,12 +12,16 @@ const { kvGet, kvSet, kvDel, kvList,
         settingsGet, settingsSet,
         presetGet, presetSet, presetDel, presetList,
         moduleGet, moduleSet, moduleDel, moduleList,
-        kvDelPrefix, kvListWithSizes, clearEntities, checkpointWal,
+        kvDelPrefix, kvListWithSizes, kvSize, kvGetUpdatedAt, clearEntities, checkpointWal,
         db: sqliteDb } = require('./db.cjs');
 
 function shouldCompress(req, res) {
     const contentType = String(res.getHeader('Content-Type') || '').toLowerCase();
     if (contentType.includes('text/event-stream')) {
+        return false;
+    }
+    // Already-compressed media formats: gzip adds CPU cost with ~0% size gain
+    if (contentType.startsWith('image/') || contentType.startsWith('video/') || contentType.startsWith('audio/')) {
         return false;
     }
     if (contentType.includes('application/octet-stream')) {
@@ -29,7 +33,12 @@ function shouldCompress(req, res) {
 app.use(compression({
     filter: shouldCompress,
 }));
-app.use(express.static(path.join(process.cwd(), 'dist'), {index: false}));
+// Vite 산출물은 해시 파일명이므로 /assets는 장기 캐시 안전
+app.use('/assets', express.static(path.join(process.cwd(), 'dist/assets'), {
+    maxAge: '1y',
+    immutable: true,
+}));
+app.use(express.static(path.join(process.cwd(), 'dist'), {index: false, maxAge: 0}));
 app.use(express.json({ limit: '100mb' }));
 app.use(express.raw({ type: 'application/octet-stream', limit: '100mb' }));
 app.use(express.text({ limit: '100mb' }));
@@ -61,6 +70,46 @@ const BACKUP_DISK_HEADROOM = 2;
 
 let importInProgress = false;
 
+// ── Session store for direct asset URL auth (F-0) ──────────────────────────
+// <img src="/api/asset/..."> cannot send custom headers, so we use a session
+// cookie issued after initial JWT auth. Single-user environment: Map is fine.
+const sessions = new Map() // token → expiresAt (ms)
+
+function parseSessionCookie(req) {
+    const cookieHeader = req.headers.cookie || ''
+    for (const part of cookieHeader.split(';')) {
+        const eq = part.indexOf('=')
+        if (eq === -1) continue
+        if (part.slice(0, eq).trim() === 'risu-session') return part.slice(eq + 1).trim()
+    }
+    return null
+}
+
+function sessionAuthMiddleware(req, res, next) {
+    const token = parseSessionCookie(req)
+    if (token && (sessions.get(token) ?? 0) > Date.now()) return next()
+    res.status(401).end()
+}
+
+// MIME detection by magic bytes (fallback when key has no extension)
+function detectMime(buf) {
+    if (!buf || buf.length < 12) return 'application/octet-stream'
+    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return 'image/png'
+    if (buf[0] === 0xff && buf[1] === 0xd8) return 'image/jpeg'
+    if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'image/gif'
+    if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+        buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return 'image/webp'
+    if (buf[0] === 0x1a && buf[1] === 0x45) return 'video/webm'
+    if (buf.length >= 8 && buf[4] === 0x66 && buf[5] === 0x74 && buf[6] === 0x79 && buf[7] === 0x70) return 'video/mp4'
+    return 'application/octet-stream'
+}
+const ASSET_EXT_MIME = {
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    gif: 'image/gif', webp: 'image/webp',
+    mp4: 'video/mp4', webm: 'video/webm',
+    mp3: 'audio/mpeg', ogg: 'audio/ogg', wav: 'audio/wav',
+}
+
 async function checkDiskSpace(requiredBytes) {
     try {
         const saveDir = path.join(process.cwd(), 'save');
@@ -90,6 +139,17 @@ function encodeBackupEntry(name, data) {
     const dataLength = Buffer.allocUnsafe(4);
     dataLength.writeUInt32LE(data.length, 0);
     return Buffer.concat([nameLength, encodedName, dataLength, data]);
+}
+
+function writeBackupEntry(res, name, data) {
+    const encodedName = Buffer.from(name, 'utf-8');
+    const header = Buffer.allocUnsafe(4);
+    header.writeUInt32LE(encodedName.length, 0);
+    res.write(header);
+    res.write(encodedName);
+    header.writeUInt32LE(data.length, 0);
+    res.write(header);
+    res.write(data);
 }
 
 function isInvalidBackupPathSegment(name) {
@@ -655,6 +715,94 @@ app.post('/api/login', async (req, res) => {
     }
 })
 
+// ── Session cookie issuance (F-0) ──────────────────────────────────────────
+// Called once after JWT auth succeeds. Issues a long-lived cookie so that
+// <img src="/api/asset/..."> requests can be authenticated without JS.
+app.post('/api/session', async (req, res) => {
+    if (!await checkAuth(req, res)) return
+    const token = nodeCrypto.randomBytes(32).toString('hex')
+    const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000
+    sessions.set(token, expiresAt)
+    // Prune stale sessions (bounded by single-user usage, safe to do inline)
+    for (const [t, exp] of sessions) {
+        if (exp < Date.now()) sessions.delete(t)
+    }
+    const maxAge = 7 * 24 * 60 * 60 // seconds
+    res.setHeader('Set-Cookie', `risu-session=${token}; HttpOnly; SameSite=Strict; Max-Age=${maxAge}; Path=/`)
+    res.json({ ok: true })
+})
+
+// ── Direct asset serving (F-1) ─────────────────────────────────────────────
+// Serves KV-stored assets as proper HTTP responses with long-term caching.
+// Key is hex-encoded to safely pass through URL. Auth via session cookie.
+//
+// Storage formats differ by key prefix:
+//   assets/*        → raw binary (Uint8Array)
+//   inlay/*         → JSON { data: "data:<mime>;base64,...", ext, type, ... }
+//   inlay_thumb/*   → JSON { data: "data:<mime>;base64,...", ext, type, ... }
+
+/**
+ * Extract raw binary and content-type from a KV value.
+ * Handles both raw binary (assets/) and JSON+base64 wrapped (inlay/) formats.
+ */
+function resolveAssetPayload(key, rawValue) {
+    // inlay/ and inlay_thumb/ keys store JSON with base64 data URI
+    if (key.startsWith('inlay/') || key.startsWith('inlay_thumb/')) {
+        try {
+            const json = JSON.parse(rawValue.toString('utf-8'))
+            const dataUri = json.data
+            if (typeof dataUri === 'string' && dataUri.startsWith('data:')) {
+                // Parse "data:<mime>;base64,<payload>"
+                const commaIdx = dataUri.indexOf(',')
+                const meta = dataUri.substring(5, commaIdx) // after "data:"
+                const mime = meta.split(';')[0]
+                const binary = Buffer.from(dataUri.substring(commaIdx + 1), 'base64')
+                return { binary, contentType: mime || 'application/octet-stream' }
+            }
+            // Fallback: ext field
+            const ext = (json.ext || '').toLowerCase()
+            const mime = ASSET_EXT_MIME[ext] || 'application/octet-stream'
+            return { binary: rawValue, contentType: mime }
+        } catch {
+            // JSON parse failed — treat as raw binary
+        }
+    }
+
+    // assets/* and others: raw binary
+    const ext = key.split('.').pop()?.toLowerCase()
+    const contentType = ASSET_EXT_MIME[ext] || detectMime(rawValue)
+    return { binary: rawValue, contentType }
+}
+
+app.get('/api/asset/:hexKey', sessionAuthMiddleware, (req, res) => {
+    try {
+        const key = Buffer.from(req.params.hexKey, 'hex').toString('utf-8')
+
+        // Fast-path 304: check updated_at BEFORE loading the blob.
+        // Avoids full blob load + JSON parse + base64 decode + MD5 hash for cached assets.
+        const updatedAt = kvGetUpdatedAt(key)
+        if (updatedAt === null) return res.status(404).end()
+
+        const etag = `"${updatedAt}"`
+        if (req.headers['if-none-match'] === etag) {
+            return res.status(304).end()
+        }
+
+        const data = kvGet(key)
+        if (!data) return res.status(404).end()
+
+        const { binary, contentType } = resolveAssetPayload(key, data)
+        res.set({
+            'Content-Type': contentType,
+            'Cache-Control': 'public, max-age=0, must-revalidate',
+            'ETag': etag,
+        })
+        res.send(binary)
+    } catch (e) {
+        res.status(500).end()
+    }
+})
+
 app.post('/api/crypto', async (req, res) => {
     try {
         const hash = nodeCrypto.createHash('sha256')
@@ -774,17 +922,51 @@ app.post('/api/assets/bulk-read', async (req, res, next) => {
             res.status(400).send({ error: 'Body must be a JSON array of keys' });
             return;
         }
-        const results = [];
-        for(let i = 0; i < keys.length; i += BULK_BATCH){
-            const batch = keys.slice(i, i + BULK_BATCH);
-            for(const key of batch){
-                const value = kvGet(key);
-                if(value !== null){
-                    results.push({ key, value: Buffer.from(value).toString('base64') });
+
+        const acceptsBinary = (req.headers['accept'] || '').includes('application/octet-stream');
+
+        if (acceptsBinary) {
+            // Binary protocol: [count(4)] then per entry: [keyLen(4)][key][valLen(4)][value]
+            // Eliminates ~33% base64 overhead
+            const entries = [];
+            let totalSize = 4; // count header
+            for (let i = 0; i < keys.length; i += BULK_BATCH) {
+                const batch = keys.slice(i, i + BULK_BATCH);
+                for (const key of batch) {
+                    const value = kvGet(key);
+                    if (value !== null) {
+                        const keyBuf = Buffer.from(key, 'utf-8');
+                        const valBuf = Buffer.from(value);
+                        entries.push({ keyBuf, valBuf });
+                        totalSize += 4 + keyBuf.length + 4 + valBuf.length;
+                    }
                 }
             }
+            const out = Buffer.allocUnsafe(totalSize);
+            let offset = 0;
+            out.writeUInt32BE(entries.length, offset); offset += 4;
+            for (const { keyBuf, valBuf } of entries) {
+                out.writeUInt32BE(keyBuf.length, offset); offset += 4;
+                keyBuf.copy(out, offset); offset += keyBuf.length;
+                out.writeUInt32BE(valBuf.length, offset); offset += 4;
+                valBuf.copy(out, offset); offset += valBuf.length;
+            }
+            res.set('Content-Type', 'application/octet-stream');
+            res.send(out);
+        } else {
+            // Legacy JSON+base64 fallback
+            const results = [];
+            for (let i = 0; i < keys.length; i += BULK_BATCH) {
+                const batch = keys.slice(i, i + BULK_BATCH);
+                for (const key of batch) {
+                    const value = kvGet(key);
+                    if (value !== null) {
+                        results.push({ key, value: Buffer.from(value).toString('base64') });
+                    }
+                }
+            }
+            res.json(results);
         }
-        res.json(results);
     } catch(error){ next(error); }
 });
 
@@ -834,10 +1016,10 @@ app.get('/api/backup/export', async (req, res, next) => {
                 size: entry.size,
             })),
         ].sort((a, b) => a.key.localeCompare(b.key));
-        const dbValue = kvGet('database/database.bin');
+        const dbSize = kvSize('database/database.bin');
         const totalBytes = namespacedEntries.reduce((sum, entry) => {
             return sum + 8 + Buffer.byteLength(entry.backupName, 'utf-8') + entry.size;
-        }, 0) + (dbValue ? 8 + Buffer.byteLength('database.risudat', 'utf-8') + dbValue.length : 0);
+        }, 0) + (dbSize ? 8 + Buffer.byteLength('database.risudat', 'utf-8') + dbSize : 0);
 
         res.setHeader('content-type', 'application/octet-stream');
         res.setHeader('content-disposition', `attachment; filename="risu-backup-${Date.now()}.bin"`);
@@ -847,12 +1029,15 @@ app.get('/api/backup/export', async (req, res, next) => {
         for (const entry of namespacedEntries) {
             const value = kvGet(entry.key);
             if (value) {
-                res.write(encodeBackupEntry(entry.backupName, value));
+                writeBackupEntry(res, entry.backupName, value);
             }
         }
 
-        if (dbValue) {
-            res.write(encodeBackupEntry('database.risudat', dbValue));
+        if (dbSize) {
+            const dbValue = kvGet('database/database.bin');
+            if (dbValue) {
+                writeBackupEntry(res, 'database.risudat', dbValue);
+            }
         }
         res.end();
     } catch (error) {
@@ -1217,4 +1402,11 @@ async function startServer() {
 
 (async () => {
     await startServer();
+
+    // Periodically checkpoint WAL to reclaim disk space.
+    // Without this, the -wal file grows unbounded as inlay/asset writes accumulate.
+    setInterval(() => {
+        try { checkpointWal('RESTART'); }
+        catch { /* non-fatal */ }
+    }, 5 * 60 * 1000); // every 5 minutes
 })();
