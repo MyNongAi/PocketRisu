@@ -72,7 +72,7 @@ let importInProgress = false;
 
 // ── Update check ─────────────────────────────────────────────────────────────
 const UPDATE_CHECK_DISABLED = process.env.RISU_UPDATE_CHECK === 'false';
-const UPDATE_CHECK_REPO = process.env.RISU_UPDATE_REPO || '';
+const UPDATE_CHECK_REPO = process.env.RISU_UPDATE_REPO || 'mrbart3885/Risuai-NodeOnly';
 const UPDATE_CHECK_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours
 
 const currentVersion = (() => {
