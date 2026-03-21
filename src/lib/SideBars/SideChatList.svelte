@@ -389,6 +389,9 @@
                                 chara.chats.unshift(newChat)
                                 changeChatTo(0)
                                 chara.chats = chara.chats
+                                void requestImmediateSave({
+                                    skipBackups: true
+                                })
                                 break
                             }
                             case 1:{
@@ -457,6 +460,9 @@
                             let chats = chara.chats
                             chats.splice(i, 1)
                             chara.chats = chats
+                            void requestImmediateSave({
+                                skipBackups: true
+                            })
                         }
                     }}>
                         <TrashIcon size={18}/>
