@@ -1363,6 +1363,13 @@ app.post('/api/backup/import', async (req, res, next) => {
     }
     importInProgress = true;
 
+    // Disable timeouts for large backup uploads
+    const prevRequestTimeout = req.socket.server?.requestTimeout;
+    req.socket.setTimeout(0);
+    req.socket.setKeepAlive(true);
+    // Node 18+ server.requestTimeout (default 5min) aborts long uploads
+    if (req.socket.server) req.socket.server.requestTimeout = 0;
+
     try {
         const contentType = String(req.headers['content-type'] ?? '');
         if (contentType && !contentType.includes('application/x-risu-backup') && !contentType.includes('application/octet-stream')) {
@@ -1376,20 +1383,29 @@ app.post('/api/backup/import', async (req, res, next) => {
             return;
         }
 
+        const BATCH_SIZE = 5000;
         let remainingBuffer = Buffer.alloc(0);
         let hasDatabase = false;
         let assetsRestored = 0;
         let bytesReceived = 0;
+        let batchCount = 0;
         const seenEntryNames = new Set();
 
+        // Disable fsync during bulk import for speed (safe: backup file is recoverable)
+        sqliteDb.pragma('synchronous = OFF');
+
+        // Clear old data first
+        sqliteDb.exec('BEGIN');
+        kvDelPrefix('assets/');
+        kvDelPrefix('inlay/');
+        kvDelPrefix('inlay_thumb/');
+        kvDelPrefix('inlay_meta/');
+        clearEntities();
+        sqliteDb.exec('COMMIT');
+
+        // Import in batches to keep memory bounded
         sqliteDb.exec('BEGIN');
         try {
-            kvDelPrefix('assets/');
-            kvDelPrefix('inlay/');
-            kvDelPrefix('inlay_thumb/');
-            kvDelPrefix('inlay_meta/');
-            clearEntities();
-
             for await (const chunk of req) {
                 bytesReceived += chunk.length;
                 if (BACKUP_IMPORT_MAX_BYTES > 0 && bytesReceived > BACKUP_IMPORT_MAX_BYTES) {
@@ -1406,12 +1422,18 @@ app.post('/api/backup/import', async (req, res, next) => {
                     seenEntryNames.add(name);
 
                     const storageKey = resolveBackupStorageKey(name);
+                    kvSet(storageKey, data);
                     if (storageKey === 'database/database.bin') {
-                        kvSet(storageKey, Buffer.from(data));
                         hasDatabase = true;
                     } else {
-                        kvSet(storageKey, Buffer.from(data));
                         assetsRestored += 1;
+                    }
+
+                    batchCount++;
+                    if (batchCount >= BATCH_SIZE) {
+                        sqliteDb.exec('COMMIT');
+                        sqliteDb.exec('BEGIN');
+                        batchCount = 0;
                     }
                 });
             }
@@ -1424,9 +1446,13 @@ app.post('/api/backup/import', async (req, res, next) => {
             }
             sqliteDb.exec('COMMIT');
         } catch (error) {
-            sqliteDb.exec('ROLLBACK');
+            try { sqliteDb.exec('ROLLBACK'); } catch (_) {}
+            sqliteDb.pragma('synchronous = NORMAL');
             throw error;
         }
+
+        // Restore synchronous mode
+        sqliteDb.pragma('synchronous = NORMAL');
 
         // Invalidate db cache after import to prevent stale patches
         invalidateDbCache();
@@ -1437,6 +1463,7 @@ app.post('/api/backup/import', async (req, res, next) => {
             console.warn('[Backup Import] WAL checkpoint after import failed:', checkpointError);
         }
 
+        console.log(`[Backup Import] Complete: ${assetsRestored} assets restored, ${(bytesReceived / 1024 / 1024).toFixed(1)}MB processed`);
         res.json({
             ok: true,
             assetsRestored,
@@ -1445,6 +1472,9 @@ app.post('/api/backup/import', async (req, res, next) => {
         next(error);
     } finally {
         importInProgress = false;
+        if (req.socket.server && prevRequestTimeout !== undefined) {
+            req.socket.server.requestTimeout = prevRequestTimeout;
+        }
     }
 });
 
