@@ -6,6 +6,7 @@ const htmlparser = require('node-html-parser');
 const { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync } = require('fs');
 const fs = require('fs/promises')
 const nodeCrypto = require('crypto')
+const sharp = require('sharp')
 const { kvGet, kvSet, kvDel, kvList,
         kvDelPrefix, kvListWithSizes, kvSize, kvGetUpdatedAt, clearEntities, checkpointWal,
         db: sqliteDb } = require('./db.cjs');
@@ -148,18 +149,30 @@ function isSafeInlayId(id) {
 
 function normalizeInlayExt(ext) {
     if (typeof ext !== 'string') return 'bin';
-    const normalized = ext.trim().toLowerCase().replace(/^\.+/, '');
+    const normalized = ext.trim().toLowerCase().replace(/^\.+/, '').replace(/[\/\\\0]/g, '');
     return normalized || 'bin';
+}
+
+const resolvedInlayDir = path.resolve(inlayDir) + path.sep;
+
+function assertInsideInlayDir(filePath) {
+    if (!path.resolve(filePath).startsWith(resolvedInlayDir)) {
+        throw new Error(`Path escapes inlay directory: ${filePath}`);
+    }
 }
 
 function getInlayFilePath(id, ext) {
     if (!isSafeInlayId(id)) throw new Error(`Invalid inlay id: ${id}`);
-    return path.join(inlayDir, `${id}.${normalizeInlayExt(ext)}`);
+    const p = path.join(inlayDir, `${id}.${normalizeInlayExt(ext)}`);
+    assertInsideInlayDir(p);
+    return p;
 }
 
 function getInlaySidecarPath(id) {
     if (!isSafeInlayId(id)) throw new Error(`Invalid inlay id: ${id}`);
-    return path.join(inlayDir, `${id}.meta.json`);
+    const p = path.join(inlayDir, `${id}.meta.json`);
+    assertInsideInlayDir(p);
+    return p;
 }
 
 async function ensureInlayDir() {
@@ -211,39 +224,54 @@ async function readInlaySidecar(id) {
     }
 }
 
-async function findInlayFileEntry(id) {
+async function resolveInlayFilePath(id) {
     if (!isSafeInlayId(id)) return null;
+    const sidecar = await readInlaySidecar(id);
+    if (sidecar) {
+        const candidate = getInlayFilePath(id, sidecar.ext);
+        try { await fs.access(candidate); return candidate; } catch {}
+    }
+    // Fallback: scan directory (covers pre-sidecar files or mismatched ext)
     try {
         const entries = await fs.readdir(inlayDir, { withFileTypes: true });
-        return entries.find((entry) => (
+        const match = entries.find((entry) => (
             entry.isFile() &&
             entry.name.startsWith(`${id}.`) &&
             entry.name !== `${id}.meta.json`
-        )) || null;
+        ));
+        return match ? path.join(inlayDir, match.name) : null;
     } catch {
         return null;
     }
 }
 
-function findInlayFileEntrySync(id) {
+function resolveInlayFilePathSync(id) {
     if (!isSafeInlayId(id)) return null;
     try {
+        const raw = readFileSync(getInlaySidecarPath(id), 'utf-8');
+        const parsed = JSON.parse(raw);
+        const ext = normalizeInlayExt(parsed?.ext);
+        const candidate = getInlayFilePath(id, ext);
+        if (existsSync(candidate)) return candidate;
+    } catch {}
+    // Fallback: scan directory
+    try {
         const entries = readdirSync(inlayDir, { withFileTypes: true });
-        return entries.find((entry) => (
+        const match = entries.find((entry) => (
             entry.isFile() &&
             entry.name.startsWith(`${id}.`) &&
             entry.name !== `${id}.meta.json`
-        )) || null;
+        ));
+        return match ? path.join(inlayDir, match.name) : null;
     } catch {
         return null;
     }
 }
 
 async function readInlayFile(id) {
-    const entry = await findInlayFileEntry(id);
-    if (!entry) return null;
-    const ext = normalizeInlayExt(path.extname(entry.name).slice(1));
-    const filePath = path.join(inlayDir, entry.name);
+    const filePath = await resolveInlayFilePath(id);
+    if (!filePath) return null;
+    const ext = normalizeInlayExt(path.extname(filePath).slice(1));
     const buffer = await fs.readFile(filePath);
     const stat = await fs.stat(filePath);
     return {
@@ -302,16 +330,16 @@ function writeInlayFileSync(id, ext, buffer, info = null) {
 }
 
 async function deleteInlayRawFile(id) {
-    const entry = await findInlayFileEntry(id);
-    if (!entry) return;
-    await fs.unlink(path.join(inlayDir, entry.name)).catch(() => {});
+    const filePath = await resolveInlayFilePath(id);
+    if (!filePath) return;
+    await fs.unlink(filePath).catch(() => {});
 }
 
 function deleteInlayRawFileSync(id) {
-    const entry = findInlayFileEntrySync(id);
-    if (!entry) return;
+    const filePath = resolveInlayFilePathSync(id);
+    if (!filePath) return;
     try {
-        unlinkSync(path.join(inlayDir, entry.name));
+        unlinkSync(filePath);
     } catch {
         // ignore
     }
@@ -1241,8 +1269,19 @@ function resolveAssetPayload(key, rawValue) {
     return { binary: rawValue, contentType }
 }
 
-app.get('/api/asset/:hexKey', sessionAuthMiddleware, (req, res) => {
-    queueStorageOperation(async () => {
+const THUMB_MAX_SIDE = 320;
+const THUMB_QUALITY = 75;
+const THUMB_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
+
+async function generateThumbnail(buffer) {
+    return sharp(buffer)
+        .resize(THUMB_MAX_SIDE, THUMB_MAX_SIDE, { fit: 'inside', withoutEnlargement: true })
+        .webp({ quality: THUMB_QUALITY })
+        .toBuffer();
+}
+
+app.get('/api/asset/:hexKey', sessionAuthMiddleware, async (req, res) => {
+    try {
         const key = Buffer.from(req.params.hexKey, 'hex').toString('utf-8')
 
         if (key.startsWith('inlay/')) {
@@ -1260,14 +1299,31 @@ app.get('/api/asset/:hexKey', sessionAuthMiddleware, (req, res) => {
                 })
                 return res.send(file.buffer)
             }
-        }
-
-        if (key.startsWith('inlay_thumb/')) {
             return res.status(404).end()
         }
 
+        if (key.startsWith('inlay_thumb/')) {
+            const id = key.slice('inlay_thumb/'.length)
+            const sidecar = await readInlaySidecar(id);
+            if (!sidecar || sidecar.type !== 'image' || !THUMB_IMAGE_EXTS.has(sidecar.ext)) {
+                return res.status(404).end()
+            }
+            const file = await readInlayFile(id)
+            if (!file) return res.status(404).end()
+            const etag = `"thumb-${Math.floor(file.mtimeMs)}"`
+            if (req.headers['if-none-match'] === etag) {
+                return res.status(304).end()
+            }
+            const thumb = await generateThumbnail(file.buffer)
+            res.set({
+                'Content-Type': 'image/webp',
+                'Cache-Control': 'public, max-age=86400, must-revalidate',
+                'ETag': etag,
+            })
+            return res.send(thumb)
+        }
+
         // Fast-path 304: check updated_at BEFORE loading the blob.
-        // Avoids full blob load + JSON parse + base64 decode + MD5 hash for cached assets.
         const updatedAt = kvGetUpdatedAt(key)
         if (updatedAt === null) return res.status(404).end()
 
@@ -1286,10 +1342,10 @@ app.get('/api/asset/:hexKey', sessionAuthMiddleware, (req, res) => {
             'ETag': etag,
         })
         res.send(binary)
-    }).catch((error) => {
+    } catch (error) {
         console.error('[Asset] Failed to serve asset:', error);
         res.status(500).end()
-    })
+    }
 })
 
 app.post('/api/crypto', async (req, res) => {
@@ -1835,39 +1891,69 @@ app.post('/api/backup/import', async (req, res, next) => {
             return;
         }
 
-        const BATCH_SIZE = 5000;
         let remainingBuffer = Buffer.alloc(0);
         let hasDatabase = false;
         let assetsRestored = 0;
         let bytesReceived = 0;
-        let batchCount = 0;
         const seenEntryNames = new Set();
         const importedInlayIds = new Set();
         const importedSidecarIds = new Set();
         const explicitSidecarMap = new Map();
         const legacyInlayInfoMap = new Map();
 
+        // Stage inlay files in a temp directory, swap on success
+        const stagingDir = path.join(savePath, 'inlays_import_staging');
+        const backupInlayDir = path.join(savePath, 'inlays_import_backup');
+        await fs.rm(stagingDir, { recursive: true, force: true });
+        await fs.rm(backupInlayDir, { recursive: true, force: true });
+        await fs.mkdir(stagingDir, { recursive: true });
+
+        function stagingInlayFilePath(id, ext) {
+            return path.join(stagingDir, `${id}.${normalizeInlayExt(ext)}`);
+        }
+        function stagingSidecarPath(id) {
+            return path.join(stagingDir, `${id}.meta.json`);
+        }
+        function writeStagingInlayFileSync(id, ext, buffer, info) {
+            const normalizedExt = normalizeInlayExt(ext);
+            writeFileSync(stagingInlayFilePath(id, normalizedExt), Buffer.from(buffer));
+            const sidecar = {
+                ext: normalizedExt,
+                name: typeof info?.name === 'string' ? info.name : id,
+                type: typeof info?.type === 'string' ? info.type : 'image',
+                height: typeof info?.height === 'number' ? info.height : undefined,
+                width: typeof info?.width === 'number' ? info.width : undefined,
+            };
+            writeFileSync(stagingSidecarPath(id), JSON.stringify(sidecar));
+        }
+        function writeStagingSidecarSync(id, info) {
+            const sidecar = {
+                ext: normalizeInlayExt(info?.ext),
+                name: typeof info?.name === 'string' ? info.name : id,
+                type: typeof info?.type === 'string' ? info.type : 'image',
+                height: typeof info?.height === 'number' ? info.height : undefined,
+                width: typeof info?.width === 'number' ? info.width : undefined,
+            };
+            writeFileSync(stagingSidecarPath(id), JSON.stringify(sidecar));
+        }
+
         // Disable fsync during bulk import for speed (safe: backup file is recoverable)
         sqliteDb.pragma('synchronous = OFF');
 
-        // Clear old data first
-        sqliteDb.exec('BEGIN');
-        kvDelPrefix('assets/');
-        kvDelPrefix('inlay/');
-        kvDelPrefix('inlay_thumb/');
-        kvDelPrefix('inlay_meta/');
-        kvDelPrefix('inlay_info/');
-        clearEntities();
-        sqliteDb.exec('COMMIT');
-        await ensureInlayDir();
-        for (const entry of await fs.readdir(inlayDir, { withFileTypes: true })) {
-            if (!entry.isFile()) continue;
-            await fs.unlink(path.join(inlayDir, entry.name)).catch(() => {});
-        }
+        let sqliteTransactionOpen = false;
 
-        // Import in batches to keep memory bounded
+        // Import in a single rollback-able SQLite transaction.
+        // File swap happens before COMMIT so we can still abort safely on failure.
         sqliteDb.exec('BEGIN');
+        sqliteTransactionOpen = true;
         try {
+            kvDelPrefix('assets/');
+            kvDelPrefix('inlay/');
+            kvDelPrefix('inlay_thumb/');
+            kvDelPrefix('inlay_meta/');
+            kvDelPrefix('inlay_info/');
+            clearEntities();
+
             for await (const chunk of req) {
                 bytesReceived += chunk.length;
                 if (BACKUP_IMPORT_MAX_BYTES > 0 && bytesReceived > BACKUP_IMPORT_MAX_BYTES) {
@@ -1889,7 +1975,7 @@ app.post('/api/backup/import', async (req, res, next) => {
                     if (inlayRaw) {
                         importedInlayIds.add(inlayRaw.id);
                         if (inlayRaw.ext) {
-                            writeInlayFileSync(inlayRaw.id, inlayRaw.ext, data, legacyInlayInfoMap.get(inlayRaw.id) || { ext: inlayRaw.ext, name: inlayRaw.id, type: 'image' });
+                            writeStagingInlayFileSync(inlayRaw.id, inlayRaw.ext, data, legacyInlayInfoMap.get(inlayRaw.id) || { ext: inlayRaw.ext, name: inlayRaw.id, type: 'image' });
                         } else if (data.length > 0 && data[0] === 0x7b) {
                             const parsed = JSON.parse(data.toString('utf-8'));
                             const type = typeof parsed?.type === 'string' ? parsed.type : 'image';
@@ -1897,7 +1983,7 @@ app.post('/api/backup/import', async (req, res, next) => {
                             const buffer = type === 'signature'
                                 ? Buffer.from(typeof parsed?.data === 'string' ? parsed.data : '', 'utf-8')
                                 : decodeDataUri(parsed?.data).buffer;
-                            writeInlayFileSync(inlayRaw.id, ext, buffer, legacyInlayInfoMap.get(inlayRaw.id) || {
+                            writeStagingInlayFileSync(inlayRaw.id, ext, buffer, legacyInlayInfoMap.get(inlayRaw.id) || {
                                 ext,
                                 name: typeof parsed?.name === 'string' ? parsed.name : inlayRaw.id,
                                 type,
@@ -1905,25 +1991,25 @@ app.post('/api/backup/import', async (req, res, next) => {
                                 width: typeof parsed?.width === 'number' ? parsed.width : undefined,
                             });
                         } else {
-                            writeInlayFileSync(inlayRaw.id, 'bin', data, legacyInlayInfoMap.get(inlayRaw.id) || {
+                            writeStagingInlayFileSync(inlayRaw.id, 'bin', data, legacyInlayInfoMap.get(inlayRaw.id) || {
                                 ext: 'bin',
                                 name: inlayRaw.id,
                                 type: 'image',
                             });
                         }
                         if (explicitSidecarMap.has(inlayRaw.id)) {
-                            writeInlaySidecarSync(inlayRaw.id, explicitSidecarMap.get(inlayRaw.id));
+                            writeStagingSidecarSync(inlayRaw.id, explicitSidecarMap.get(inlayRaw.id));
                         } else if (!importedSidecarIds.has(inlayRaw.id)) {
                             const legacyInfo = legacyInlayInfoMap.get(inlayRaw.id);
                             if (legacyInfo) {
-                                writeInlaySidecarSync(inlayRaw.id, legacyInfo);
+                                writeStagingSidecarSync(inlayRaw.id, legacyInfo);
                             }
                         }
                         assetsRestored += 1;
                     } else if (inlaySidecar) {
                         const parsed = JSON.parse(data.toString('utf-8'));
                         explicitSidecarMap.set(inlaySidecar.id, parsed);
-                        writeInlaySidecarSync(inlaySidecar.id, parsed);
+                        writeStagingSidecarSync(inlaySidecar.id, parsed);
                         importedSidecarIds.add(inlaySidecar.id);
                     } else if (name.startsWith('inlay_info/')) {
                         const id = name.slice('inlay_info/'.length);
@@ -1939,7 +2025,7 @@ app.post('/api/backup/import', async (req, res, next) => {
                             width: typeof parsed?.width === 'number' ? parsed.width : undefined,
                         });
                         if (importedInlayIds.has(id) && !importedSidecarIds.has(id)) {
-                            writeInlaySidecarSync(id, legacyInlayInfoMap.get(id));
+                            writeStagingSidecarSync(id, legacyInlayInfoMap.get(id));
                         }
                     } else if (name.startsWith('inlay_thumb/')) {
                         // Skip deprecated thumbnail entries from legacy backups
@@ -1953,12 +2039,6 @@ app.post('/api/backup/import', async (req, res, next) => {
                         }
                     }
 
-                    batchCount++;
-                    if (batchCount >= BATCH_SIZE) {
-                        sqliteDb.exec('COMMIT');
-                        sqliteDb.exec('BEGIN');
-                        batchCount = 0;
-                    }
                 });
             }
 
@@ -1970,18 +2050,54 @@ app.post('/api/backup/import', async (req, res, next) => {
             }
             for (const [id, info] of legacyInlayInfoMap.entries()) {
                 if (importedInlayIds.has(id) && !importedSidecarIds.has(id)) {
-                    writeInlaySidecarSync(id, info);
+                    writeStagingSidecarSync(id, info);
                 }
             }
-            sqliteDb.exec('COMMIT');
+            let movedExistingDir = false;
+            let movedStagingDir = false;
+            try {
+                if (existsSync(inlayDir)) {
+                    await fs.rename(inlayDir, backupInlayDir);
+                    movedExistingDir = true;
+                }
+                await fs.rename(stagingDir, inlayDir);
+                movedStagingDir = true;
+                await fs.writeFile(inlayMigrationMarker, new Date().toISOString(), 'utf-8');
+                sqliteDb.exec('COMMIT');
+                sqliteTransactionOpen = false;
+                await fs.rm(backupInlayDir, { recursive: true, force: true }).catch(() => {});
+            } catch (swapError) {
+                if (sqliteTransactionOpen) {
+                    try {
+                        sqliteDb.exec('ROLLBACK');
+                        sqliteTransactionOpen = false;
+                    } catch (_) {}
+                }
+                if (movedStagingDir) {
+                    await fs.rm(inlayDir, { recursive: true, force: true }).catch(() => {});
+                } else {
+                    await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+                }
+                if (movedExistingDir) {
+                    await fs.rename(backupInlayDir, inlayDir).catch(() => {});
+                } else {
+                    await fs.rm(backupInlayDir, { recursive: true, force: true }).catch(() => {});
+                }
+                throw swapError;
+            }
         } catch (error) {
-            try { sqliteDb.exec('ROLLBACK'); } catch (_) {}
-            sqliteDb.pragma('synchronous = NORMAL');
+            if (sqliteTransactionOpen) {
+                try {
+                    sqliteDb.exec('ROLLBACK');
+                    sqliteTransactionOpen = false;
+                } catch (_) {}
+            }
+            await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+            await fs.rm(backupInlayDir, { recursive: true, force: true }).catch(() => {});
             throw error;
+        } finally {
+            sqliteDb.pragma('synchronous = NORMAL');
         }
-
-        // Restore synchronous mode
-        sqliteDb.pragma('synchronous = NORMAL');
 
         // Invalidate db cache after import to prevent stale patches
         invalidateDbCache();

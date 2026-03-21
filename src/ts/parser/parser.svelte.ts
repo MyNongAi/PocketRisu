@@ -669,6 +669,24 @@ function assetUrl(kvKey: string): string {
     return `/api/asset/${Buffer.from(kvKey, 'utf-8').toString('hex')}`
 }
 
+function createMissingInlayPlaceholder(id: string): HTMLDivElement {
+    const box = document.createElement('div')
+    box.className = 'risu-inlay-missing'
+    box.setAttribute('data-missing-inlay-id', id)
+
+    const title = document.createElement('div')
+    title.className = 'risu-inlay-missing-title'
+    title.textContent = 'Image unavailable'
+
+    const subtitle = document.createElement('div')
+    subtitle.className = 'risu-inlay-missing-subtitle'
+    subtitle.textContent = id
+
+    box.appendChild(title)
+    box.appendChild(subtitle)
+    return box
+}
+
 export function parseInlayAssets(data:string){
     const inlayMatch = data.match(/{{(inlay|inlayed|inlayeddata)::(.+?)}}/g)
     if(inlayMatch){
@@ -777,8 +795,12 @@ async function processInlayQueue() {
                                     src.src = url; src.type = ct
                                     audio.appendChild(src)
                                     img.replaceWith(audio)
+                                } else {
+                                    img.replaceWith(createMissingInlayPlaceholder(id))
                                 }
-                            } catch { /* give up */ }
+                            } catch {
+                                img.replaceWith(createMissingInlayPlaceholder(id))
+                            }
                         }
                         el.replaceWith(img)
                         break
@@ -805,7 +827,9 @@ async function processInlayQueue() {
                 }
             } catch (e) {
                 console.error(`[Inlay] Failed to load ${id}`, e)
-                if (el.parentNode) el.textContent = ''
+                if (el.parentNode) {
+                    el.replaceWith(createMissingInlayPlaceholder(id))
+                }
             }
         }
     }
