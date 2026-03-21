@@ -2123,6 +2123,71 @@ app.post('/api/backup/import', async (req, res, next) => {
     }
 });
 
+// ── Inlay bulk compression endpoint ──────────────────────────────────────────
+const COMPRESS_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp']);
+
+app.post('/api/inlays/compress', sessionAuthMiddleware, async (req, res) => {
+    const quality = typeof req.body?.quality === 'number' ? req.body.quality : 85;
+
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+    });
+
+    const send = (data) => {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+        const files = await listInlayFiles();
+        const imageFiles = [];
+
+        for (const entry of files) {
+            if (!COMPRESS_IMAGE_EXTS.has(entry.ext)) continue;
+            const sidecar = await readInlaySidecar(entry.id);
+            if (sidecar && sidecar.type !== 'image') continue;
+            imageFiles.push(entry);
+        }
+
+        const total = imageFiles.length;
+        let compressed = 0;
+        let skipped = 0;
+        let totalSaved = 0;
+
+        for (let i = 0; i < imageFiles.length; i++) {
+            const entry = imageFiles[i];
+            try {
+                const original = await fs.readFile(entry.filePath);
+                const webpBuf = await sharp(original).webp({ quality }).toBuffer();
+
+                if (webpBuf.length < original.length) {
+                    const sidecar = await readInlaySidecar(entry.id);
+                    const info = sidecar || {};
+                    await writeInlayFile(entry.id, 'webp', webpBuf, { ...info, ext: 'webp' });
+                    // invalidate thumbnail cache
+                    kvDel(`inlay_thumb/${entry.id}`);
+                    const saved = original.length - webpBuf.length;
+                    totalSaved += saved;
+                    compressed++;
+                } else {
+                    skipped++;
+                }
+            } catch {
+                skipped++;
+            }
+
+            send({ type: 'progress', current: i + 1, total, compressed, skipped, totalSaved });
+        }
+
+        send({ type: 'done', total, compressed, skipped, totalSaved });
+    } catch (err) {
+        send({ type: 'error', message: err?.message || 'Unknown error' });
+    }
+
+    res.end();
+});
+
 // ── Update check endpoint ────────────────────────────────────────────────────
 app.get('/api/update-check', async (req, res) => {
     if (UPDATE_CHECK_DISABLED || !UPDATE_CHECK_REPO) {
