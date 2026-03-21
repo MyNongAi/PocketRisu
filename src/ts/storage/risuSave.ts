@@ -727,6 +727,9 @@ export class RisuSavePatcher {
 
     async init(data: any) {
         this.lastSyncedDb = normalizeJSON(data);
+        if (!Array.isArray(this.lastSyncedDb.characters)) {
+            this.lastSyncedDb.characters = [];
+        }
         this.hashBlocks = {};
 
         const keys = Object.keys(this.lastSyncedDb)
@@ -748,14 +751,14 @@ export class RisuSavePatcher {
         const patch: any[] = []
 
         const {
-            characters: lastCharacters,
+            characters: lastCharacters = [],
             botPresets: lastBotPresets,
             modules: lastModules,
             ...lastRoot
         } = this.lastSyncedDb
 
         const {
-            characters: curCharacters,
+            characters: curCharacters = [],
             botPresets: curBotPresets,
             modules: curModules,
             ...curRoot
