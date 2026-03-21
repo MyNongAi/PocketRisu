@@ -91,7 +91,7 @@ fi
 # ── Rebuild ────────────────────────────────────────────────────────────────────
 
 info "Installing dependencies..."
-pnpm install --prod --frozen-lockfile 2>/dev/null || pnpm install --prod
+pnpm install --frozen-lockfile 2>/dev/null || pnpm install
 
 info "Building..."
 NODE_OPTIONS="--max-old-space-size=4096" pnpm build
