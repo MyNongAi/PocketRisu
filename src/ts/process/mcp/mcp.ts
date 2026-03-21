@@ -266,7 +266,7 @@ export async function encodeToolCall(call:toolCallData){
 export async function decodeToolCall(text:string):Promise<toolCallData|undefined> {
     text = text.trim();
     if(text.startsWith('<tool_call>')){
-        text = text.slice('<tool_call>'.length, 0).trim();
+        text = text.slice('<tool_call>'.length).trim();
     }
     if(text.endsWith('</tool_call>')){
         text = text.slice(0, -'</tool_call>'.length).trim();
