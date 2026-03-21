@@ -1137,8 +1137,17 @@ app.post('/api/patch', async (req, res, next) => {
                 return;
             }
 
-            // Apply patch to in-memory database
-            const result = applyPatch(dbCache[filePath], patch, true);
+            // Apply patch to in-memory database (clone first to prevent partial mutation on failure)
+            const snapshot = JSON.parse(JSON.stringify(dbCache[filePath]));
+            let result;
+            try {
+                result = applyPatch(snapshot, patch, true);
+            } catch (patchErr) {
+                // Invalidate corrupted cache entry to force reload on next request
+                delete dbCache[filePath];
+                throw patchErr;
+            }
+            dbCache[filePath] = snapshot;
 
             // Schedule save to KV (debounced)
             if (saveTimers[filePath]) {
@@ -1499,6 +1508,16 @@ async function startServer() {
         console.error('[Server] Failed to start server :', error);
         process.exit(1);
     }
+}
+
+// Graceful shutdown: flush pending patches and checkpoint WAL before exit
+for (const sig of ['SIGTERM', 'SIGINT']) {
+    process.on(sig, () => {
+        console.log(`[Server] Received ${sig}, flushing pending data...`);
+        try { flushPendingDb(); } catch (e) { console.error('[Server] Flush error:', e); }
+        try { checkpointWal('TRUNCATE'); } catch { /* non-fatal */ }
+        process.exit(0);
+    });
 }
 
 (async () => {
