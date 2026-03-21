@@ -95,6 +95,9 @@ importers:
       express:
         specifier: ^4.22.1
         version: 4.22.1
+      fast-json-patch:
+        specifier: ^3.1.1
+        version: 3.1.1
       fflate:
         specifier: ^0.8.2
         version: 0.8.2
@@ -1672,6 +1675,9 @@ packages:
   fast-check@4.5.3:
     resolution: {integrity: sha512-IE9csY7lnhxBnA8g/WI5eg/hygA6MGWJMSNfFRrBlXUciADEhS1EDB0SIsMSvzubzIlOBbVITSsypCsW717poA==}
     engines: {node: '>=12.17.0'}
+
+  fast-json-patch@3.1.1:
+    resolution: {integrity: sha512-vf6IHUX2SBcA+5/+4883dsIjpBTqmfBjmYiWK1savxQmFk4JfBMLa7ynTYOs1Rolp/T1betJxHiGD3g1Mn8lUQ==}
 
   fdir@6.5.0:
     resolution: {integrity: sha512-tIbYtZbucOs0BRGqPJkshJUYdL+SDH7dVM8gjy+ERp3WAUjLEFJE+02kanyHtwjWOnwrKYBiwAmM0p4kLJAnXg==}
@@ -3836,6 +3842,8 @@ snapshots:
   fast-check@4.5.3:
     dependencies:
       pure-rand: 7.0.1
+
+  fast-json-patch@3.1.1: {}
 
   fdir@6.5.0(picomatch@4.0.3):
     optionalDependencies:

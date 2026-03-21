@@ -4,7 +4,7 @@ import { getCurrentCharacter, getDatabase, setDatabase, setDatabaseLite } from "
 import { alertConfirm, alertError, alertPluginConfirm } from "../alert";
 import { selectSingleFile, sleep } from "../util";
 import type { OpenAIChat } from "../process/index.svelte";
-import { fetchNative, globalFetch, readImage, saveAsset, toGetter } from "../globalApi.svelte";
+import { fetchNative, globalFetch, readImage, requestImmediateSave, saveAsset, toGetter } from "../globalApi.svelte";
 import { DBState, hotReloading, pluginAlertModalStore, selectedCharID } from "../stores.svelte";
 import type { ScriptMode } from "../process/scripts";
 import { checkCodeSafety } from "./pluginSafety";
@@ -418,6 +418,9 @@ export async function importPlugin(code:string|null = null, argu:{
 
         console.log(`Imported plugin: ${pluginData.name} (API v${apiVersion})`)
         setDatabaseLite(db)
+        void requestImmediateSave({
+            skipBackups: true
+        })
 
         loadPlugins()
         

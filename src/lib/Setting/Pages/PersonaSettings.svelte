@@ -12,6 +12,7 @@
     import { onDestroy, onMount } from "svelte";
     import { sleep, sortableOptions } from "src/ts/util";
     import { DBState } from 'src/ts/stores.svelte';
+    import { requestImmediateSave } from "src/ts/globalApi.svelte";
     import { v4 } from "uuid"
 
     let stb: Sortable = null
@@ -44,6 +45,9 @@
                 DBState.db.personas = newValue
                 const selectedPersona = DBState.db.personas.findIndex((e) => e.id === selectedId)
                 changeUserPersona(selectedPersona !== -1 ? selectedPersona : 0, 'noSave')
+                void requestImmediateSave({
+                    skipBackups: true
+                })
                 try {
                     stb.destroy()
                 } catch (error) {}
@@ -96,8 +100,14 @@
                         note: ''
                     })
                     changeUserPersona(DBState.db.personas.length - 1)
+                    void requestImmediateSave({
+                        skipBackups: true
+                    })
                 } else if(sel === 1){
                     await importUserPersona()
+                    void requestImmediateSave({
+                        skipBackups: true
+                    })
                 }
             }}
             ><svg viewBox="0 0 24 24" width="1.2em" height="1.2em"
@@ -153,6 +163,9 @@
                     personas.splice(DBState.db.selectedPersona, 1)
                     DBState.db.personas = personas
                     changeUserPersona(0, 'noSave')
+                    void requestImmediateSave({
+                        skipBackups: true
+                    })
                 }
             }}>{language.remove}</Button>
             <Check bind:check={DBState.db.personas[DBState.db.selectedPersona].largePortrait}>{language.largePortrait}</Check>

@@ -1,5 +1,6 @@
 import { changeFullscreen, checkNullish, sleep } from "./util"
 import { v4 as uuidv4, v4 } from 'uuid';
+import { tick } from "svelte";
 import { get } from "svelte/store";
 import { setDatabase, type Database, defaultSdDataFunc, getDatabase, appVer, nodeOnlyVer, getCurrentCharacter, migratePromptOptionStates, syncCurrentChatPromptOptionState, applyCurrentChatPromptOptionState, applyBoundPreset } from "./storage/database.svelte";
 import { checkRisuUpdate } from "./update";
@@ -9,8 +10,10 @@ import { alertConfirm, alertError, alertMd, alertNormal, alertNormalWait, alertS
 import { hasher } from "./parser/parser.svelte";
 import { characterURLImport, hubURL } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
-import { decodeRisuSave, encodeRisuSaveLegacy, encodeEntity, RisuSaveEncoder, type toSaveType } from "./storage/risuSave";
+import { decodeRisuSave, encodeRisuSaveLegacy, RisuSaveEncoder, RisuSavePatcher, type toSaveType } from "./storage/risuSave";
 import { AutoStorage } from "./storage/autoStorage";
+import { ConflictError } from "./storage/nodeStorage";
+import { supportsPatchSync } from "./platform";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
 import { autoServerBackup, saveDbKei } from "./kei/backup";
@@ -218,26 +221,29 @@ export let saving = $state({
 export let requiresFullEncoderReload = $state({
     state: false
 })
-export async function saveDb() {
-    const getPresetEntityIds = () => {
-        const db = getDatabase()
-        return new Set(db.botPresets.map((preset, index) => String(preset.name ?? index)))
-    }
-    const getModuleEntityIds = () => {
-        const db = getDatabase()
-        return new Set((db.modules ?? []).map(mod => mod.id))
-    }
-    const getCharacterChatIds = () => {
-        const db = getDatabase()
-        return new Map(db.characters.map(char => [
-            char.chaId,
-            new Set((char.chats ?? []).map(chat => chat.id))
-        ]))
-    }
 
+let requestImmediateSaveImpl: ((options?: {
+    forceFullWrite?: boolean
+    skipBackups?: boolean
+}) => Promise<void> | void) = () => {}
+let patchSyncBaseline: Database | null = null
+
+export function requestImmediateSave(options?: {
+    forceFullWrite?: boolean
+    skipBackups?: boolean
+}) {
+    return requestImmediateSaveImpl(options)
+}
+
+export function setPatchSyncBaseline(data: Database | null) {
+    patchSyncBaseline = data ? safeStructuredClone(data) as Database : null
+}
+
+export async function saveDb() {
     let changed = false
     let gotChannel = false
     const sessionID = v4()
+    let saveInFlight: Promise<void> | null = null
     let channel: BroadcastChannel
     if (window.BroadcastChannel) {
         channel = new BroadcastChannel('risu-db')
@@ -259,6 +265,7 @@ export async function saveDb() {
     const changeTracker: toSaveType = {
         character: [],
         chat: [],
+        root: false,
         botPreset: false,
         modules: false
     }
@@ -267,14 +274,55 @@ export async function saveDb() {
     await encoder.init(getDatabase(), {
         compression: false
     })
-    let previousPresetIds = getPresetEntityIds()
-    let previousModuleIds = getModuleEntityIds()
-    let previousCharacterChatIds = getCharacterChatIds()
+
+    let patcher = new RisuSavePatcher()
+    if (supportsPatchSync) {
+        await patcher.init(patchSyncBaseline ?? getDatabase())
+        patchSyncBaseline = null
+    }
+
     let lastBackupTime: number | null = null
+
+    function hasTrackedChanges(toSave: toSaveType) {
+        return !!(
+            toSave.botPreset ||
+            toSave.modules ||
+            toSave.root ||
+            toSave.character.length > 0 ||
+            toSave.chat.length > 0
+        )
+    }
+
+    function takeTrackedChanges() {
+        const toSave = safeStructuredClone(changeTracker)
+        changeTracker.character = changeTracker.character.length === 0 ? [] : [changeTracker.character[0]]
+        changeTracker.chat = changeTracker.chat.length === 0 ? [] : [changeTracker.chat[0]]
+        changeTracker.root = false
+        changeTracker.botPreset = false
+        changeTracker.modules = false
+        return toSave
+    }
+
+    async function flushServerDbKeepalive() {
+        try {
+            fetch('/api/db/flush', {
+                method: 'POST',
+                keepalive: true,
+                credentials: 'same-origin'
+            }).catch(() => {})
+        } catch {
+            // ignore best-effort flush failures
+        }
+    }
 
     $effect.root(() => {
 
         let selIdState = $state(0)
+        let knownCharacterIds = new Set<string>((getDatabase()?.characters ?? []).map((character) => character?.chaId).filter(Boolean))
+        let didInitRootEffect = false
+        let didInitBotPresetEffect = false
+        let didInitModulesEffect = false
+        let didInitGeneralEffect = false
 
         const debounceTime = 500; // 500 milliseconds
         let saveTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -292,23 +340,68 @@ export async function saveDb() {
             }, debounceTime);
         }
 
-        $effect(() => {
-            DBState.db.botPresetsId
-            DBState.db.botPresets.length
-            changeTracker.botPreset = true
-            saveTimeoutExecute()
-        })
-        $effect(() => {
-            $state.snapshot(DBState.db.modules)
-            changeTracker.modules = true
-            saveTimeoutExecute()
-        })
+        // Start a best-effort save immediately when the page is hidden/unloaded.
+        function flushImmediate() {
+            if (saveTimeout) {
+                clearTimeout(saveTimeout);
+                saveTimeout = null;
+            }
+            changed = true;
+            void triggerSave({
+                skipBroadcast: true,
+                skipBackups: true,
+            })
+            void flushServerDbKeepalive()
+        }
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden') flushImmediate();
+        });
+        window.addEventListener('pagehide', flushImmediate);
+
         $effect(() => {
             for (const key in DBState.db) {
                 if (key !== 'characters' && key !== 'botPresets' && key !== 'modules') {
                     $state.snapshot(DBState.db[key])
                 }
             }
+            if (!didInitRootEffect) {
+                didInitRootEffect = true
+                return
+            }
+            changeTracker.root = true
+            saveTimeoutExecute()
+        })
+        $effect(() => {
+            DBState.db.botPresetsId
+            DBState.db.botPresets.length
+            if (!didInitBotPresetEffect) {
+                didInitBotPresetEffect = true
+                return
+            }
+            changeTracker.botPreset = true
+            saveTimeoutExecute()
+        })
+        $effect(() => {
+            $state.snapshot(DBState.db.modules)
+            if (!didInitModulesEffect) {
+                didInitModulesEffect = true
+                return
+            }
+            changeTracker.modules = true
+            saveTimeoutExecute()
+        })
+        $effect(() => {
+            const currentCharacterIds = (DBState?.db?.characters ?? []).map((character) => character?.chaId).filter(Boolean)
+            $state.snapshot(currentCharacterIds)
+
+            const currentCharacterIdSet = new Set<string>(currentCharacterIds)
+            for (const previousCharacterId of knownCharacterIds) {
+                if (!currentCharacterIdSet.has(previousCharacterId)) {
+                    changeTracker.character = [previousCharacterId, ...changeTracker.character.filter((v) => v !== previousCharacterId)]
+                }
+            }
+            knownCharacterIds = currentCharacterIdSet
+
             if (DBState?.db?.characters?.[selIdState]) {
                 for (const key in DBState.db.characters[selIdState]) {
                     if (key !== 'chats') {
@@ -326,155 +419,258 @@ export async function saveDb() {
                     changeTracker.chat.unshift([DBState.db.characters[selIdState]?.chaId, DBState.db.characters[selIdState]?.chats[DBState.db.characters[selIdState]?.chatPage].id])
                 }
             }
+            if (!didInitGeneralEffect) {
+                didInitGeneralEffect = true
+                changeTracker.character = []
+                changeTracker.chat = []
+                return
+            }
             saveTimeoutExecute()
         })
     })
 
+    function requeueTrackedChanges(toSave: toSaveType) {
+        changeTracker.character = [...new Set([...toSave.character, ...changeTracker.character])]
+        const chatSeen = new Set<string>()
+        changeTracker.chat = [...toSave.chat, ...changeTracker.chat].filter((chatPair) => {
+            const key = `${chatPair?.[0] ?? ''}|${chatPair?.[1] ?? ''}`
+            if (chatSeen.has(key)) {
+                return false
+            }
+            chatSeen.add(key)
+            return true
+        })
+        changeTracker.botPreset = changeTracker.botPreset || toSave.botPreset
+        changeTracker.modules = changeTracker.modules || toSave.modules
+        changeTracker.root = changeTracker.root || toSave.root
+    }
+
+    async function rebaseTrackedLocalChangesOnLatestServerDb(conflictEtag: string | null, db: Database, toSave: toSaveType) {
+        forageStorage.setDbEtag(conflictEtag ?? null)
+        const latestData = await forageStorage.getItem('database/database.bin') as unknown as Uint8Array
+        if (latestData && latestData.length > 0) {
+            const latestDb = await decodeRisuSave(latestData) as Database
+            const mergedDb = safeStructuredClone(latestDb) as Database
+            const localDb = safeStructuredClone(db) as Database
+
+            for (const key in localDb) {
+                if (key !== 'characters' && key !== 'botPresets' && key !== 'modules') {
+                    mergedDb[key] = safeStructuredClone(localDb[key])
+                }
+            }
+
+            if (toSave.botPreset) {
+                mergedDb.botPresets = safeStructuredClone(localDb.botPresets)
+                mergedDb.botPresetsId = localDb.botPresetsId
+            }
+            if (toSave.modules) {
+                mergedDb.modules = safeStructuredClone(localDb.modules)
+            }
+
+            const trackedCharIds = new Set<string>(toSave.character.filter(Boolean))
+            for (const trackedChat of toSave.chat) {
+                if (trackedChat?.[0]) {
+                    trackedCharIds.add(trackedChat[0])
+                }
+            }
+            const mergedCharacters = Array.isArray(mergedDb.characters) ? mergedDb.characters : []
+            const localCharacters = Array.isArray(localDb.characters) ? localDb.characters : []
+
+            for (const charId of trackedCharIds) {
+                const localChar = localCharacters.find((char) => char?.chaId === charId)
+                const mergedIndex = mergedCharacters.findIndex((char) => char?.chaId === charId)
+                if (localChar) {
+                    const clonedLocalChar = safeStructuredClone(localChar)
+                    if (mergedIndex >= 0) {
+                        mergedCharacters[mergedIndex] = clonedLocalChar
+                    }
+                    else {
+                        mergedCharacters.push(clonedLocalChar)
+                    }
+                }
+                else if (mergedIndex >= 0) {
+                    mergedCharacters.splice(mergedIndex, 1)
+                }
+            }
+            mergedDb.characters = mergedCharacters
+            const mergedBaseline = safeStructuredClone(mergedDb) as Database
+            setDatabase(mergedDb)
+
+            encoder = new RisuSaveEncoder()
+            await encoder.init(getDatabase(), {
+                compression: false
+            })
+            if (supportsPatchSync) {
+                patcher = new RisuSavePatcher()
+                await patcher.init(mergedBaseline)
+            }
+        }
+        requeueTrackedChanges(toSave)
+        changed = true
+    }
+
+    async function persistTrackedChanges(
+        toSave: toSaveType,
+        options?: {
+            forceFullWrite?: boolean
+            skipBroadcast?: boolean
+            skipBackups?: boolean
+        }
+    ): Promise<'saved' | 'retry' | 'noop'> {
+        if (gotChannel) {
+            // Data is saved in another tab.
+            await sleep(1000)
+            return 'noop'
+        }
+        if (channel && !options?.skipBroadcast) {
+            channel.postMessage(sessionID)
+        }
+
+        const db = getDatabase()
+        if (!db.characters) {
+            await sleep(1000)
+            return 'noop'
+        }
+
+        await encoder.set(db, safeStructuredClone(toSave))
+        const encoded = encoder.encode()
+        if (!encoded) {
+            await sleep(1000)
+            return 'noop'
+        }
+        const dbData = new Uint8Array(encoded)
+
+        let saved = false
+        let newEtag: string | undefined
+
+        if (supportsPatchSync && !options?.forceFullWrite) {
+            const patchData = await patcher.set(db, safeStructuredClone(toSave))
+            const patchResult = await forageStorage.patchItem('database/database.bin', patchData)
+            saved = patchResult.success
+            if (patchResult.etag) {
+                newEtag = patchResult.etag
+                forageStorage.setDbEtag(patchResult.etag)
+            }
+        }
+        if (!saved) {
+            if (supportsPatchSync && !options?.forceFullWrite) {
+                console.warn('[Save] Patch conflict, falling through to full write...')
+            }
+            try {
+                const currentEtag = forageStorage.getDbEtag()
+                await forageStorage.setItem('database/database.bin', dbData, currentEtag ?? undefined)
+            } catch (conflictErr) {
+                if (conflictErr instanceof ConflictError) {
+                    console.warn('[Save] Full-write conflict detected, rebasing tracked local changes on latest server DB...')
+                    await rebaseTrackedLocalChangesOnLatestServerDb(conflictErr.currentEtag ?? null, db, toSave)
+                    await sleep(100)
+                    return 'retry'
+                }
+                throw conflictErr
+            }
+
+            // Re-init patcher from the data we just wrote so both sides
+            // share the same baseline (including setDatabase defaults).
+            if (supportsPatchSync) {
+                const decodedDb = await decodeRisuSave(dbData)
+                await patcher.init(decodedDb)
+            }
+        }
+
+        if (newEtag) {
+            forageStorage.setDbEtag(newEtag)
+        }
+
+        if (!options?.skipBackups) {
+            const backupData = dbData.slice()
+            const shouldWriteBackup = !lastBackupTime || Date.now() - lastBackupTime >= 5 * 60 * 1000
+            if (shouldWriteBackup) {
+                lastBackupTime = Date.now()
+            }
+            void (async () => {
+                try {
+                    if (shouldWriteBackup) {
+                        await forageStorage.setItem(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, backupData)
+                        await getDbBackups()
+                    }
+                    await saveDbKei()
+                } catch (error) {
+                    console.error('[Save] Failed to write backup maintenance data', error)
+                }
+            })()
+        }
+        return 'saved'
+    }
+
+    async function triggerSave(options?: {
+        forceFullWrite?: boolean
+        skipBroadcast?: boolean
+        skipBackups?: boolean
+    }) {
+        if (saveInFlight) {
+            return saveInFlight
+        }
+
+        const toSave = takeTrackedChanges()
+        if (!hasTrackedChanges(toSave) && !options?.forceFullWrite) {
+            return
+        }
+
+        saveInFlight = (async () => {
+            saving.state = true
+            try {
+                const result = await persistTrackedChanges(toSave, options)
+                if (result === 'saved') {
+                    savetrys = 0
+                } else if (result === 'noop' && hasTrackedChanges(toSave)) {
+                    requeueTrackedChanges(toSave)
+                    changed = true
+                }
+            } catch (error) {
+                requeueTrackedChanges(toSave)
+                changed = true
+                savetrys += 1
+                if (savetrys > 4) {
+                    alertError(error)
+                }
+                else {
+                    console.error(error)
+                }
+            } finally {
+                saving.state = false
+                saveInFlight = null
+            }
+        })()
+
+        return saveInFlight
+    }
+
+    requestImmediateSaveImpl = async (options) => {
+        changed = true
+        await tick()
+        await triggerSave({
+            forceFullWrite: options?.forceFullWrite,
+            skipBackups: options?.skipBackups,
+        })
+    }
+
     let savetrys = 0
-    let lastDbData = new Uint8Array(0)
-    await sleep(1000)
     while (true) {
         if (!changed) {
-            await sleep(500)
+            await sleep(200)
             continue
         }
-
-        saving.state = true
         changed = false
-        try {
-
-            if (requiresFullEncoderReload.state) {
-                encoder = new RisuSaveEncoder()
-                await encoder.init(getDatabase(), {
-                    compression: false,
-                    skipRemoteSavingOnCharacters: false
-                })
-                requiresFullEncoderReload.state = false
-            }
-
-            let toSave = safeStructuredClone(changeTracker)
-            changeTracker.character = changeTracker.character.length === 0 ? [] : [changeTracker.character[0]]
-            changeTracker.chat = changeTracker.chat.length === 0 ? [] : [changeTracker.chat[0]]
-            changeTracker.botPreset = false
-            changeTracker.modules = false
-            if (gotChannel) {
-                //Data is saved in other tab
-                await sleep(1000)
-                continue
-            }
-            if (channel) {
-                channel.postMessage(sessionID)
-            }
-            let db = getDatabase()
-            if (!db.characters) {
-                await sleep(1000)
-                continue
-            }
-
-            await encoder.set(db, toSave)
-            const encoded = encoder.encode()
-            if (!encoded) {
-                await sleep(1000)
-                continue
-            }
-            const dbData = new Uint8Array(encoded)
-
-            // ── Entity API saves (3-2) ──────────────────────────────────────
-            const entitySaves: Promise<unknown>[] = []
-            const nextPresetIds = getPresetEntityIds()
-            const nextModuleIds = getModuleEntityIds()
-            const nextCharacterChatIds = getCharacterChatIds()
-
-            // Settings (root) — always sync
-            {
-                const rootObj: Record<string, unknown> = {}
-                for (const key of Object.keys(db)) {
-                    if (key !== 'characters' && key !== 'botPresets' && key !== 'modules') {
-                        rootObj[key] = (db as any)[key]
-                    }
-                }
-                entitySaves.push(forageStorage.saveSettings(encodeEntity(rootObj)))
-            }
-
-            // Changed characters — only save chats that actually changed or are new
-            const dirtyChatIds = new Set<string>(
-                toSave.chat.map(([, chatId]) => chatId)
-            )
-            for (const chaId of toSave.character) {
-                const char = db.characters.find(c => c.chaId === chaId)
-                if (char) {
-                    entitySaves.push(forageStorage.saveCharacter(chaId, encodeEntity(char)))
-                    const previousChatIds = previousCharacterChatIds.get(chaId) ?? new Set<string>()
-                    const nextChatIds = nextCharacterChatIds.get(chaId) ?? new Set<string>()
-                    for (const chatId of previousChatIds) {
-                        if (!nextChatIds.has(chatId)) {
-                            entitySaves.push(forageStorage.deleteChat(chaId, chatId))
-                        }
-                    }
-                    for (const chat of char.chats ?? []) {
-                        // Save only if chat was modified or is newly created
-                        if (dirtyChatIds.has(chat.id) || !previousChatIds.has(chat.id)) {
-                            entitySaves.push(forageStorage.saveChat(chaId, chat.id, encodeEntity(chat)))
-                        }
-                    }
-                } else {
-                    entitySaves.push(forageStorage.deleteCharacter(chaId))
-                }
-            }
-
-            // Presets
-            if (toSave.botPreset) {
-                for (const id of previousPresetIds) {
-                    if (!nextPresetIds.has(id)) {
-                        entitySaves.push(forageStorage.deletePreset(id))
-                    }
-                }
-                for (const preset of db.botPresets) {
-                    const id = String(preset.name ?? db.botPresets.indexOf(preset))
-                    entitySaves.push(forageStorage.savePreset(id, encodeEntity(preset)))
-                }
-            }
-
-            // Modules
-            if (toSave.modules) {
-                for (const id of previousModuleIds) {
-                    if (!nextModuleIds.has(id)) {
-                        entitySaves.push(forageStorage.deleteModule(id))
-                    }
-                }
-                for (const mod of db.modules) {
-                    entitySaves.push(forageStorage.saveModule(mod.id, encodeEntity(mod)))
-                }
-            }
-
-            await Promise.all(entitySaves)
-            previousPresetIds = nextPresetIds
-            previousModuleIds = nextModuleIds
-            previousCharacterChatIds = nextCharacterChatIds
-            // ── End entity API saves ────────────────────────────────────────
-
-            await forageStorage.setItem('database/database.bin', dbData)
-            // Backups are written at a slower cadence (5 min) to avoid
-            // doubling every 500 ms save's write volume.
-            if (!lastBackupTime || Date.now() - lastBackupTime >= 5 * 60 * 1000) {
-                lastBackupTime = Date.now()
-                await forageStorage.setItem(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, dbData)
-                await getDbBackups()
-            }
-            savetrys = 0
-            await saveDbKei()
-            await sleep(500)
-        } catch (error) {
-            savetrys += 1
-            if (savetrys > 4) {
-                alertError(error)
-            }
-            else {
-                console.error(error)
-            }
+        if (requiresFullEncoderReload.state) {
+            encoder = new RisuSaveEncoder()
+            await encoder.init(getDatabase(), {
+                compression: false,
+                skipRemoteSavingOnCharacters: false
+            })
+            requiresFullEncoderReload.state = false
         }
-
-        saving.state = false
+        await triggerSave()
+        await sleep(100)
     }
 }
 

@@ -8,7 +8,7 @@
     import { exportChat, importChat } from "../../ts/characters";
     import { findCharacterbyId } from "../../ts/util";
     import TextInput from "../UI/GUI/TextInput.svelte";
-    import { changeChatTo } from "src/ts/globalApi.svelte";
+    import { changeChatTo, requestImmediateSave } from "src/ts/globalApi.svelte";
     import { initializeChatPromptOptionState } from "../../ts/storage/database.svelte";
     import { v4 } from "uuid";
 
@@ -60,6 +60,9 @@
                             let chats = DBState.db.characters[$selectedCharID].chats
                             chats.splice(i, 1)
                             DBState.db.characters[$selectedCharID].chats = chats
+                            void requestImmediateSave({
+                                skipBackups: true
+                            })
                         }
                     }} onkeydown={() => {
                         
@@ -89,6 +92,9 @@
                 }
                 DBState.db.characters[$selectedCharID].chats = chats
                 changeChatTo(0)
+                void requestImmediateSave({
+                    skipBackups: true
+                })
                 close()
             }}>
                 <PlusIcon/>

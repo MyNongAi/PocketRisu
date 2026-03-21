@@ -12,14 +12,6 @@ const unpackr = new Unpackr({
     useRecords:false
 })
 
-/** Encode a single entity to Uint8Array (used by entity API saves) */
-export function encodeEntity(data: unknown): Uint8Array {
-    return packr.encode(data)
-}
-/** Decode a single entity from Uint8Array (used by entity API loads) */
-export function decodeEntity<T>(data: Uint8Array | Buffer): T {
-    return unpackr.unpack(data) as T
-}
 
 const disableRemoteSaving = () => {
     try {
@@ -83,6 +75,7 @@ export async function encodeRisuSaveCompressionStream(data:any) {
 export type toSaveType = {
     character: string[];
     chat: [string, string][];
+    root: boolean;
     botPreset: boolean;
     modules: boolean;
 }
@@ -117,6 +110,7 @@ export class RisuSaveEncoder {
 
     private blocks: { [key: string]: Uint8Array } = {};
     private compression: boolean = false;
+    private characterHashes: { [key: string]: number } = {};
 
     async init(data:Database,arg:{
         compression?: boolean,
@@ -152,6 +146,7 @@ export class RisuSaveEncoder {
             type: RisuSaveType.MODULES,
             name: 'modules'
         });
+        this.characterHashes = {}
         for( const character of data.characters) {
             this.blocks[character.chaId] = await this.encodeBlock({
                 compression,
@@ -162,6 +157,7 @@ export class RisuSaveEncoder {
             }, {
                 remote: 'prefer'
             });
+            this.characterHashes[character.chaId] = calculateHash(normalizeJSON(character))
         }
         this.blocks['config'] = await this.encodeBlock({
             compression,
@@ -184,20 +180,16 @@ export class RisuSaveEncoder {
 
         const savedId = new Set<string>();
         for(const character of data.characters) {
-            const index = toSave.character.indexOf(character.chaId);
-            if (index !== -1) {
-                this.blocks[character.chaId] = await this.encodeBlock({
-                    compression: this.compression,
-                    data: JSON.stringify(character),
-                    type: RisuSaveType.CHARACTER_WITH_CHAT,
-                    name: character.chaId
-                }, {
-                    remote: 'prefer'
-                });
-                savedId.add(character.chaId);
-                toSave.character.splice(index, 1);
+            if (!character?.chaId) {
+                continue
             }
-            else if(!this.blocks[character.chaId]){
+            const chaId = character.chaId
+            savedId.add(chaId)
+            const index = toSave.character.indexOf(chaId);
+            const currentHash = calculateHash(normalizeJSON(character))
+            const hasChanged = this.characterHashes[chaId] !== currentHash
+
+            if (index !== -1 || hasChanged || !this.blocks[chaId]) {
                 this.blocks[character.chaId] = await this.encodeBlock({
                     compression: this.compression,
                     data: JSON.stringify(character),
@@ -206,7 +198,10 @@ export class RisuSaveEncoder {
                 }, {
                     remote: 'prefer'
                 });
-                savedId.add(character.chaId);
+                this.characterHashes[chaId] = currentHash
+                if (index !== -1) {
+                    toSave.character.splice(index, 1);
+                }
             }
         }
         if(toSave.character.length > 0){
@@ -215,7 +210,21 @@ export class RisuSaveEncoder {
             for(const chaId of toSave.character){
                 if(!savedId.has(chaId)){
                     delete this.blocks[chaId];
+                    delete this.characterHashes[chaId];
                 }
+            }
+        }
+
+        // Ensure stale character blocks are always removed even when deletion wasn't tracked in toSave.
+        // This prevents deleted characters from being resurrected after full-write fallback.
+        const currentCharacterIds = new Set<string>((data.characters ?? []).map((character) => character?.chaId).filter(Boolean));
+        for (const key of Object.keys(this.blocks)) {
+            if (key === 'root' || key === 'preset' || key === 'modules' || key === 'config') {
+                continue;
+            }
+            if (!currentCharacterIds.has(key)) {
+                delete this.blocks[key];
+                delete this.characterHashes[key];
             }
         }
 
@@ -606,4 +615,226 @@ function checkHeader(data: Uint8Array) {
 
     // All bytes matched
     return header;
-  }
+}
+
+// --- Hash & normalization utilities for patch-based sync ---
+
+const PRIME_MULTIPLIER = 31;
+
+const SEED_OBJECT = 17;
+const SEED_ARRAY = 19;
+const SEED_STRING = 23;
+const SEED_NUMBER = 29;
+const SEED_BOOLEAN = 31;
+const SEED_NULL = 37;
+
+export function calculateHash(node: any): number {
+    if (node === null || node === undefined) return SEED_NULL;
+    switch (typeof node) {
+        case 'object':
+            if (Array.isArray(node)) {
+                let arrayHash = SEED_ARRAY;
+                for (const item of node)
+                    arrayHash = (Math.imul(arrayHash, PRIME_MULTIPLIER) + calculateHash(item)) >>> 0;
+                return arrayHash;
+            } else {
+                // Independent of key order
+                let objectHash = SEED_OBJECT;
+                for (const key in node)
+                    objectHash += (Math.imul(calculateHash(key), PRIME_MULTIPLIER) + calculateHash(node[key]));
+                return objectHash >>> 0;
+            }
+        case 'string':
+            let strHash = 2166136261;
+            for (let i = 0; i < node.length; i++)
+                strHash = Math.imul(strHash ^ node.charCodeAt(i), 16777619);
+            return Math.imul(SEED_STRING, PRIME_MULTIPLIER) + (strHash >>> 0);
+        case 'number':
+            let numHash;
+            if (Number.isInteger(node) && node >= -2147483648 && node <= 2147483647)
+                numHash = node >>> 0;
+            else {
+                const str = node.toString();
+                numHash = 2166136261;
+                for (let i = 0; i < str.length; i++)
+                    numHash = Math.imul(numHash ^ str.charCodeAt(i), 16777619);
+                numHash = numHash >>> 0;
+            }
+            return Math.imul(SEED_NUMBER, PRIME_MULTIPLIER) + numHash;
+        case 'boolean':
+            return Math.imul(SEED_BOOLEAN, PRIME_MULTIPLIER) + (node ? 1 : 0);
+
+        default:
+            return 0;
+    }
+}
+
+export function normalizeJSON(value: any): any {
+    if (value === null || value === undefined) return null;
+    if (typeof value !== 'object') {
+        if (typeof value === 'number' && !isFinite(value)) return null;
+        if (typeof value === 'function' ||
+            typeof value === 'symbol' ||
+            typeof value === 'bigint')
+            return undefined;
+        return value;
+    }
+    if (value instanceof Date) return value.toISOString();
+    if (value instanceof RegExp || value instanceof Error) return {};
+    if (Array.isArray(value)) {
+        const result: any[] = [];
+        for (const item of value) {
+            if (item === undefined) {
+                result.push(null);
+            } else {
+                const normalized = normalizeJSON(item);
+                result.push(normalized === undefined ? null : normalized);
+            }
+        }
+        return result;
+    }
+    const result: Record<string, any> = {};
+    for (const key in value) {
+        if (Object.prototype.hasOwnProperty.call(value, key)) {
+            const propValue = value[key];
+            if (propValue !== undefined) {
+                const normalized = normalizeJSON(propValue);
+                if (normalized !== undefined)
+                    result[key] = normalized;
+            }
+        }
+    }
+    return result;
+}
+
+export class RisuSavePatcher {
+    private lastSyncedDb: any;
+    private hashBlocks: { [key: string]: number } = {};
+
+    hash(): string {
+        this.hashBlocks['characters'] = SEED_ARRAY;
+        for (const character of this.lastSyncedDb.characters) {
+            this.hashBlocks['characters'] = (Math.imul(this.hashBlocks['characters'], PRIME_MULTIPLIER) + this.hashBlocks[character.chaId]) >>> 0;
+        }
+
+        const keys = Object.keys(this.lastSyncedDb)
+        let rootHash = SEED_OBJECT;
+        for (const key of keys) {
+            rootHash += (Math.imul(calculateHash(key), PRIME_MULTIPLIER) + this.hashBlocks[key])
+        }
+        return (rootHash >>> 0).toString(16);
+    }
+
+    async init(data: any) {
+        this.lastSyncedDb = normalizeJSON(data);
+        this.hashBlocks = {};
+
+        const keys = Object.keys(this.lastSyncedDb)
+
+        for (const key of keys) {
+            if (key !== 'characters') {
+                this.hashBlocks[key] = calculateHash(this.lastSyncedDb[key]);
+            }
+        }
+
+        for (const character of this.lastSyncedDb.characters) {
+            this.hashBlocks[character.chaId] = calculateHash(character);
+        }
+    }
+
+    async set(data: any, toSave: toSaveType): Promise<{ patch: any[]; expectedHash: string }> {
+        const { compare } = await import('fast-json-patch')
+        const expectedHash: string = this.hash();
+        const patch: any[] = []
+
+        const {
+            characters: lastCharacters,
+            botPresets: lastBotPresets,
+            modules: lastModules,
+            ...lastRoot
+        } = this.lastSyncedDb
+
+        const {
+            characters: curCharacters,
+            botPresets: curBotPresets,
+            modules: curModules,
+            ...curRoot
+        } = data
+
+        const normRoot = normalizeJSON(curRoot)
+        patch.push(...compare(lastRoot, normRoot))
+        const keys = Object.keys(normRoot)
+        for (const key of keys) {
+            this.hashBlocks[key] = calculateHash(normRoot[key]);
+        }
+
+        if (toSave.botPreset) {
+            const normBotPresets = normalizeJSON(curBotPresets)
+            patch.push(...compare({ botPresets: lastBotPresets }, { botPresets: normBotPresets }))
+            this.hashBlocks['botPresets'] = calculateHash(normBotPresets);
+            this.lastSyncedDb.botPresets = normBotPresets;
+        }
+
+        if (toSave.modules) {
+            const normModules = normalizeJSON(curModules)
+            patch.push(...compare({ modules: lastModules }, { modules: normModules }))
+            this.hashBlocks['modules'] = calculateHash(normModules);
+            this.lastSyncedDb.modules = normModules;
+        }
+
+        // Detect structural changes (additions, deletions, reordering)
+        const lastIds = lastCharacters.map((c: any) => c?.chaId)
+        const curIds = curCharacters.map((c: any) => c?.chaId)
+        const structuralChange = lastIds.length !== curIds.length ||
+            lastIds.some((id: string, i: number) => id !== curIds[i])
+
+        if (structuralChange) {
+            // Structural change → replace entire characters array (safe for deletions/additions)
+            const normChars = normalizeJSON(curCharacters)
+            patch.push({ op: 'replace', path: '/characters', value: normChars })
+            // Update all character hashes
+            for (const lastId of lastIds) {
+                if (lastId) delete this.hashBlocks[lastId];
+            }
+            for (const char of normChars) {
+                if (char?.chaId) {
+                    this.hashBlocks[char.chaId] = calculateHash(char);
+                }
+            }
+            this.lastSyncedDb.characters = normChars;
+        } else {
+            // Same structure → per-character field-level diff (efficient)
+            for (let i = 0; i < curCharacters.length; i++) {
+                const lastChar = lastCharacters[i]
+                const curChar = curCharacters[i]
+                const normChar = normalizeJSON(curChar)
+                const curCharId = curChar?.chaId
+                const curCharHash = curCharId ? calculateHash(normChar) : undefined
+                const trackedBySave = toSave.character.includes(curCharId ?? '')
+                const changedByHash = !!(curCharId && curCharHash !== this.hashBlocks[curCharId])
+
+                if (trackedBySave || changedByHash) {
+                    let charPatch = compare(lastChar, normChar).map((v) => {
+                        v.path = `/characters/${i}` + v.path;
+                        return v;
+                    })
+                    patch.push(...charPatch);
+                    this.hashBlocks[normChar.chaId] = curCharHash ?? calculateHash(normChar);
+                    this.lastSyncedDb.characters[i] = normChar;
+                }
+            }
+        }
+
+        this.lastSyncedDb = {
+            characters: this.lastSyncedDb.characters,
+            botPresets: this.lastSyncedDb.botPresets,
+            modules: this.lastSyncedDb.modules,
+            ...normRoot
+        }
+
+        return {
+            patch,
+            expectedHash
+        }
+    }
+}

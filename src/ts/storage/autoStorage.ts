@@ -5,8 +5,8 @@ export class AutoStorage{
 
     realStorage:NodeStorage
 
-    async setItem(key:string, value:Uint8Array):Promise<string|null> {
-        await this.realStorage.setItem(key, value)
+    async setItem(key:string, value:Uint8Array, etag?:string):Promise<string|null> {
+        await this.realStorage.setItem(key, value, etag)
         return null
     }
     async getItem(key:string):Promise<Buffer> {
@@ -47,32 +47,23 @@ export class AutoStorage{
         return this.realStorage.importBackup(file)
     }
 
+    async patchItem(key: string, patchData: { patch: any[], expectedHash: string }): Promise<{success: boolean, etag?: string}> {
+        return await this.realStorage.patchItem(key, patchData)
+    }
+
+    /** Get the last known ETag for database.bin */
+    getDbEtag(): string | null {
+        return this.realStorage._lastDbEtag
+    }
+
+    /** Update cached ETag for database.bin */
+    setDbEtag(etag: string | null) {
+        this.realStorage.setDbEtag(etag)
+    }
+
     listItem = this.keys
 
-    // ── Bulk asset operations (3-2-B) ──────────────────────────────────────────
+    // ── Bulk asset operations ──────────────────────────────────────────────────
     async getItems(keys: string[]) { return this.realStorage.getItems(keys) }
     async setItems(entries: {key: string, value: Uint8Array}[]) { return this.realStorage.setItems(entries) }
-
-    // ── Entity API operations (3-2) ────────────────────────────────────────────
-    async saveCharacter(id: string, data: Uint8Array) { return this.realStorage.saveCharacter(id, data) }
-    async loadCharacter(id: string) { return this.realStorage.loadCharacter(id) }
-    async listCharacters() { return this.realStorage.listCharacters() }
-    async deleteCharacter(id: string) { return this.realStorage.deleteCharacter(id) }
-    async saveChat(charId: string, chatId: string, data: Uint8Array) { return this.realStorage.saveChat(charId, chatId, data) }
-    async loadChat(charId: string, chatId: string) { return this.realStorage.loadChat(charId, chatId) }
-    async listChats(charId: string) { return this.realStorage.listChats(charId) }
-    async deleteChat(charId: string, chatId: string) { return this.realStorage.deleteChat(charId, chatId) }
-    async saveSettings(data: Uint8Array) { return this.realStorage.saveSettings(data) }
-    async loadSettings() { return this.realStorage.loadSettings() }
-    async savePreset(id: string, data: Uint8Array) { return this.realStorage.savePreset(id, data) }
-    async loadPreset(id: string) { return this.realStorage.loadPreset(id) }
-    async listPresets() { return this.realStorage.listPresets() }
-    async deletePreset(id: string) { return this.realStorage.deletePreset(id) }
-    async saveModule(id: string, data: Uint8Array) { return this.realStorage.saveModule(id, data) }
-    async loadModule(id: string) { return this.realStorage.loadModule(id) }
-    async listModules() { return this.realStorage.listModules() }
-    async deleteModule(id: string) { return this.realStorage.deleteModule(id) }
-    subscribeEvents(callback: (ev: {type: string, id: string, updated_at: number}) => void) {
-        return this.realStorage.subscribeEvents(callback)
-    }
 }

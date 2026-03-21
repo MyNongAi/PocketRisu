@@ -6,6 +6,7 @@
 
     import { DBState, hotReloading } from "src/ts/stores.svelte";
     import { checkPluginUpdate, createBlankPlugin, importPlugin, loadPlugins, updatePlugin } from "src/ts/plugins/plugins.svelte";
+    import { requestImmediateSave } from "src/ts/globalApi.svelte";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import NumberInput from "src/lib/UI/GUI/NumberInput.svelte";
     import SelectInput from "src/lib/UI/GUI/SelectInput.svelte";
@@ -100,6 +101,9 @@
                     plugin.enabled = !plugin.enabled
                     DBState.db.plugins[i] = plugin
                     loadPlugins()
+                    void requestImmediateSave({
+                        skipBackups: true
+                    })
                     e.preventDefault()
                 }}
             >
@@ -126,6 +130,9 @@
                         plugins.splice(i, 1);
                         DBState.db.plugins = plugins;
                         loadPlugins()
+                        void requestImmediateSave({
+                            skipBackups: true
+                        })
                     }
                 }}
             >

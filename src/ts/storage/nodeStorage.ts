@@ -2,10 +2,20 @@ import { language } from "src/lang"
 import { alertError, alertInput, waitAlert } from "../alert"
 import { base64url, getKeypairStore, saveKeypairStore } from "../util"
 
+// Custom error class for database conflict detection
+export class ConflictError extends Error {
+    currentEtag: string
+    constructor(message: string, currentEtag: string) {
+        super(message)
+        this.name = 'ConflictError'
+        this.currentEtag = currentEtag
+    }
+}
 
 export class NodeStorage{
     private static readonly BULK_WRITE_CLIENT_BATCH = 20
 
+    _lastDbEtag: string | null = null
     authChecked = false
     private cachedJwt: { token: string; expiresAt: number } | null = null
     private static sessionInitialized = false
@@ -172,21 +182,33 @@ export class NodeStorage{
         return response
     }
 
-    async setItem(key:string, value:Uint8Array) {
+    async setItem(key:string, value:Uint8Array, etag?:string) {
+        const headers: Record<string, string> = {
+            'content-type': 'application/octet-stream',
+            'file-path': Buffer.from(key, 'utf-8').toString('hex')
+        }
+        if (etag) {
+            headers['x-if-match'] = etag
+        }
         const da = await this.authFetch('/api/write', {
             method: "POST",
             body: value as any,
-            headers: {
-                'content-type': 'application/octet-stream',
-                'file-path': Buffer.from(key, 'utf-8').toString('hex')
-            }
+            headers
         })
+        if(da.status === 409){
+            const data = await da.json()
+            throw new ConflictError(data.error, data.currentEtag)
+        }
         if(da.status < 200 || da.status >= 300){
             throw "setItem Error"
         }
         const data = await da.json()
         if(data.error){
             throw data.error
+        }
+        const nextEtag = data.etag as string | undefined
+        if (key === 'database/database.bin' && nextEtag) {
+            this._lastDbEtag = nextEtag
         }
     }
     async getItem(key:string):Promise<Buffer> {
@@ -198,6 +220,12 @@ export class NodeStorage{
         })
         if(da.status < 200 || da.status >= 300){
             throw "getItem Error"
+        }
+
+        // Capture ETag for database.bin
+        const etag = da.headers.get('x-db-etag')
+        if (etag) {
+            this._lastDbEtag = etag
         }
 
         const data = Buffer.from(await da.arrayBuffer())
@@ -284,6 +312,43 @@ export class NodeStorage{
     }
 
     listItem = this.keys
+
+    /** Set cached ETag for database.bin */
+    setDbEtag(etag: string | null) {
+        this._lastDbEtag = etag
+    }
+
+    async patchItem(key: string, patchData: { patch: any[], expectedHash: string }): Promise<{success: boolean, etag?: string}> {
+        const da = await this.authFetch('/api/patch', {
+            method: "POST",
+            body: JSON.stringify(patchData),
+            headers: {
+                'content-type': 'application/json',
+                'file-path': Buffer.from(key, 'utf-8').toString('hex')
+            }
+        })
+
+        if (da.status === 409) {
+            const data = await da.json()
+            const currentEtag = data.currentEtag as string | undefined
+            if (key === 'database/database.bin' && currentEtag) {
+                this._lastDbEtag = currentEtag
+            }
+            return { success: false, etag: currentEtag }
+        }
+        if (da.status < 200 || da.status >= 300) {
+            return { success: false }
+        }
+        const data = await da.json()
+        if (data.error) {
+            return { success: false }
+        }
+        const nextEtag = data.etag as string | undefined
+        if (key === 'database/database.bin' && nextEtag) {
+            this._lastDbEtag = nextEtag
+        }
+        return { success: true, etag: nextEtag }
+    }
 
     // ── Bulk asset operations (3-2-B) ──────────────────────────────────────────
     async getItems(keys: string[]): Promise<{key: string, value: Buffer}[]> {
@@ -395,87 +460,6 @@ export class NodeStorage{
         })
     }
 
-    // ── Entity API methods (3-2) ───────────────────────────────────────────────
-    private async entityFetch(path: string, method: string, body?: Uint8Array): Promise<Buffer | null> {
-        const headers: Record<string, string> = {}
-        if (body) headers['content-type'] = 'application/octet-stream'
-        const da = await this.authFetch(path, { method, headers, body: body as any })
-        if (da.status === 404) return null
-        if (da.status < 200 || da.status >= 300) throw `entityFetch Error: ${da.status}`
-        if (method === 'DELETE' || da.headers.get('content-type')?.includes('application/json')) return null
-        return Buffer.from(await da.arrayBuffer())
-    }
-
-    async saveCharacter(id: string, data: Uint8Array) {
-        await this.entityFetch(`/api/db/characters/${encodeURIComponent(id)}`, 'POST', data)
-    }
-    async loadCharacter(id: string): Promise<Buffer | null> {
-        return this.entityFetch(`/api/db/characters/${encodeURIComponent(id)}`, 'GET')
-    }
-    async listCharacters(): Promise<{id: string, updated_at: number}[]> {
-        const da = await this.authFetch('/api/db/characters')
-        return da.json()
-    }
-    async deleteCharacter(id: string) {
-        await this.entityFetch(`/api/db/characters/${encodeURIComponent(id)}`, 'DELETE')
-    }
-
-    async saveChat(charId: string, chatId: string, data: Uint8Array) {
-        await this.entityFetch(`/api/db/chats/${encodeURIComponent(charId)}/${encodeURIComponent(chatId)}`, 'POST', data)
-    }
-    async loadChat(charId: string, chatId: string): Promise<Buffer | null> {
-        return this.entityFetch(`/api/db/chats/${encodeURIComponent(charId)}/${encodeURIComponent(chatId)}`, 'GET')
-    }
-    async listChats(charId: string): Promise<string[]> {
-        const da = await this.authFetch(`/api/db/chats/${encodeURIComponent(charId)}`)
-        return da.json()
-    }
-    async deleteChat(charId: string, chatId: string) {
-        await this.entityFetch(`/api/db/chats/${encodeURIComponent(charId)}/${encodeURIComponent(chatId)}`, 'DELETE')
-    }
-
-    async saveSettings(data: Uint8Array) {
-        await this.entityFetch('/api/db/settings', 'POST', data)
-    }
-    async loadSettings(): Promise<Buffer | null> {
-        return this.entityFetch('/api/db/settings', 'GET')
-    }
-
-    async savePreset(id: string, data: Uint8Array) {
-        await this.entityFetch(`/api/db/presets/${encodeURIComponent(id)}`, 'POST', data)
-    }
-    async loadPreset(id: string): Promise<Buffer | null> {
-        return this.entityFetch(`/api/db/presets/${encodeURIComponent(id)}`, 'GET')
-    }
-    async listPresets(): Promise<string[]> {
-        const da = await this.authFetch('/api/db/presets')
-        return da.json()
-    }
-    async deletePreset(id: string) {
-        await this.entityFetch(`/api/db/presets/${encodeURIComponent(id)}`, 'DELETE')
-    }
-
-    async saveModule(id: string, data: Uint8Array) {
-        await this.entityFetch(`/api/db/modules/${encodeURIComponent(id)}`, 'POST', data)
-    }
-    async loadModule(id: string): Promise<Buffer | null> {
-        return this.entityFetch(`/api/db/modules/${encodeURIComponent(id)}`, 'GET')
-    }
-    async listModules(): Promise<string[]> {
-        const da = await this.authFetch('/api/db/modules')
-        return da.json()
-    }
-    async deleteModule(id: string) {
-        await this.entityFetch(`/api/db/modules/${encodeURIComponent(id)}`, 'DELETE')
-    }
-
-    subscribeEvents(callback: (ev: {type: string, id: string, updated_at: number}) => void): () => void {
-        const source = new EventSource('/api/events')
-        source.onmessage = (e) => {
-            try { callback(JSON.parse(e.data)) } catch {}
-        }
-        return () => source.close()
-    }
 }
 
 async function digestPassword(message:string) {

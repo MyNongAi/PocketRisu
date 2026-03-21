@@ -7,13 +7,63 @@ const { existsSync, mkdirSync, readFileSync, writeFileSync } = require('fs');
 const fs = require('fs/promises')
 const nodeCrypto = require('crypto')
 const { kvGet, kvSet, kvDel, kvList,
-        charGet, charSet, charDel, charList,
-        chatGet, chatSet, chatDel, chatList,
-        settingsGet, settingsSet,
-        presetGet, presetSet, presetDel, presetList,
-        moduleGet, moduleSet, moduleDel, moduleList,
         kvDelPrefix, kvListWithSizes, kvSize, kvGetUpdatedAt, clearEntities, checkpointWal,
         db: sqliteDb } = require('./db.cjs');
+const { applyPatch } = require('fast-json-patch');
+const { decodeRisuSave, encodeRisuSaveLegacy, calculateHash, normalizeJSON } = require('./utils.cjs');
+
+// Configuration flags for patch-based sync
+let enablePatchSync = true;
+const [nodeMajor, nodeMinor, nodePatch_] = process.version.slice(1).split('.').map(Number);
+if (nodeMajor >= 23 || (nodeMajor === 22 && nodeMinor === 7 && nodePatch_ === 0)) {
+    console.log(`[Server] Detected problematic Node.js version ${process.version}. Disabling patch-based sync.`);
+    enablePatchSync = false;
+}
+
+// In-memory database cache for patch-based sync
+let dbCache = {};
+let saveTimers = {};
+const SAVE_INTERVAL = 5000;
+
+// ETag for database.bin
+let dbEtag = null;
+
+function computeBufferEtag(buffer) {
+    return nodeCrypto.createHash('md5').update(buffer).digest('hex');
+}
+
+function computeDatabaseEtagFromObject(databaseObject) {
+    return computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(databaseObject)));
+}
+
+let storageOperationQueue = Promise.resolve();
+function queueStorageOperation(operation) {
+    const operationRun = storageOperationQueue.then(operation, operation);
+    storageOperationQueue = operationRun.catch(() => {});
+    return operationRun;
+}
+
+const DB_HEX_KEY = Buffer.from('database/database.bin', 'utf-8').toString('hex');
+
+function flushPendingDb() {
+    if (saveTimers[DB_HEX_KEY]) {
+        clearTimeout(saveTimers[DB_HEX_KEY]);
+        delete saveTimers[DB_HEX_KEY];
+        if (dbCache[DB_HEX_KEY]) {
+            const data = Buffer.from(encodeRisuSaveLegacy(dbCache[DB_HEX_KEY]));
+            kvSet('database/database.bin', data);
+        }
+    }
+}
+
+function invalidateDbCache() {
+    delete dbCache[DB_HEX_KEY];
+    if (saveTimers[DB_HEX_KEY]) {
+        clearTimeout(saveTimers[DB_HEX_KEY]);
+        delete saveTimers[DB_HEX_KEY];
+    }
+    dbEtag = null;
+}
 
 function shouldCompress(req, res) {
     const contentType = String(res.getHeader('Content-Type') || '').toLowerCase();
@@ -303,7 +353,7 @@ app.get('/', async (req, res, next) => {
         const mainIndex = await fs.readFile(path.join(process.cwd(), 'dist', 'index.html'))
         const root = htmlparser.parse(mainIndex)
         const head = root.querySelector('head')
-        head.innerHTML = `<script>globalThis.__NODE__ = true</script>` + head.innerHTML
+        head.innerHTML = `<script>globalThis.__NODE__ = true; globalThis.__PATCH_SYNC__ = ${enablePatchSync}</script>` + head.innerHTML
         
         res.send(root.toString())
     } catch (error) {
@@ -917,11 +967,22 @@ app.get('/api/read', async (req, res, next) => {
     }
     try {
         const key = Buffer.from(filePath, 'hex').toString('utf-8');
+        // Flush pending patches before reading database.bin
+        if (key === 'database/database.bin') {
+            flushPendingDb();
+        }
         const value = kvGet(key);
         if(value === null){
             res.send();
         } else {
             res.setHeader('Content-Type', 'application/octet-stream');
+            // Return ETag for database.bin reads
+            if (key === 'database/database.bin') {
+                if (!dbEtag) {
+                    dbEtag = computeBufferEtag(value);
+                }
+                res.setHeader('x-db-etag', dbEtag);
+            }
             res.send(value);
         }
     } catch (error) {
@@ -980,10 +1041,136 @@ app.post('/api/write', async (req, res, next) => {
     }
     try {
         const key = Buffer.from(filePath, 'hex').toString('utf-8');
+
+        // ETag conflict detection for database.bin
+        if (key === 'database/database.bin') {
+            const ifMatch = req.headers['x-if-match'];
+            if (ifMatch && dbEtag && ifMatch !== dbEtag) {
+                res.status(409).send({
+                    error: 'ETag mismatch - concurrent modification detected',
+                    currentEtag: dbEtag
+                });
+                return;
+            }
+        }
+
         kvSet(key, fileContent);
-        res.send({ success: true });
+
+        // Update ETag and invalidate cache after database.bin write
+        if (key === 'database/database.bin') {
+            invalidateDbCache();
+            dbEtag = computeBufferEtag(fileContent);
+        }
+
+        res.send({
+            success: true,
+            etag: key === 'database/database.bin' ? dbEtag : undefined
+        });
     } catch (error) {
         next(error);
+    }
+});
+
+app.post('/api/db/flush', sessionAuthMiddleware, async (req, res, next) => {
+    try {
+        await queueStorageOperation(async () => {
+            flushPendingDb();
+            res.send({
+                success: true,
+                etag: dbEtag ?? undefined
+            });
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
+// ─── Patch sync endpoint ──────────────────────────────────────────────────────
+app.post('/api/patch', async (req, res, next) => {
+    if (!enablePatchSync) {
+        res.status(404).send({ error: 'Patch sync is not enabled' });
+        return;
+    }
+    if(!await checkAuth(req, res)){
+        return;
+    }
+    const filePath = req.headers['file-path'];
+    const patch = req.body.patch;
+    const expectedHash = req.body.expectedHash;
+
+    if (!filePath || !patch || !expectedHash) {
+        res.status(400).send({ error: 'File path, patch, and expected hash required' });
+        return;
+    }
+    if (!isHex(filePath)) {
+        res.status(400).send({ error: 'Invaild Path' });
+        return;
+    }
+
+    try {
+        await queueStorageOperation(async () => {
+            const decodedKey = Buffer.from(filePath, 'hex').toString('utf-8');
+
+            // Load database into memory if not already cached
+            if (!dbCache[filePath]) {
+                const fileContent = kvGet(decodedKey);
+                if (fileContent) {
+                    dbCache[filePath] = normalizeJSON(await decodeRisuSave(fileContent));
+                } else {
+                    dbCache[filePath] = {};
+                }
+            }
+
+            const serverHash = calculateHash(dbCache[filePath]).toString(16);
+
+            if (expectedHash !== serverHash) {
+                console.log(`[Patch] Hash mismatch for ${decodedKey}: expected=${expectedHash}, server=${serverHash}`);
+                let currentEtag = undefined;
+                if (decodedKey === 'database/database.bin') {
+                    currentEtag = computeDatabaseEtagFromObject(dbCache[filePath]);
+                    dbEtag = currentEtag;
+                }
+                res.status(409).send({
+                    error: 'Hash mismatch - data out of sync',
+                    currentEtag
+                });
+                return;
+            }
+
+            // Apply patch to in-memory database
+            const result = applyPatch(dbCache[filePath], patch, true);
+
+            // Schedule save to KV (debounced)
+            if (saveTimers[filePath]) {
+                clearTimeout(saveTimers[filePath]);
+            }
+            saveTimers[filePath] = setTimeout(() => {
+                try {
+                    const data = Buffer.from(encodeRisuSaveLegacy(dbCache[filePath]));
+                    kvSet(decodedKey, data);
+                } catch (error) {
+                    console.error(`[Patch] Error saving ${decodedKey}:`, error);
+                } finally {
+                    delete saveTimers[filePath];
+                }
+            }, SAVE_INTERVAL);
+
+            // Update ETag after successful patch
+            if (decodedKey === 'database/database.bin') {
+                dbEtag = computeDatabaseEtagFromObject(dbCache[filePath]);
+            }
+
+            res.send({
+                success: true,
+                appliedOperations: result.length,
+                etag: decodedKey === 'database/database.bin' ? dbEtag : undefined,
+            });
+        });
+    } catch (error) {
+        console.error(`[Patch] Error applying patch to ${filePath}:`, error.name);
+        res.status(500).send({
+            error: 'Patch application failed: ' + (error && error.message ? error.message : error)
+        });
     }
 });
 
@@ -1070,6 +1257,8 @@ app.post('/api/assets/bulk-write', async (req, res, next) => {
 app.get('/api/backup/export', async (req, res, next) => {
     if(!await checkAuth(req, res)){ return; }
     try {
+        // Flush any pending patches to ensure export includes latest data
+        flushPendingDb();
         const namespacedEntries = [
             ...kvListWithSizes('assets/').map((entry) => ({
                 key: entry.key,
@@ -1228,6 +1417,9 @@ app.post('/api/backup/import', async (req, res, next) => {
             throw error;
         }
 
+        // Invalidate db cache after import to prevent stale patches
+        invalidateDbCache();
+
         try {
             checkpointWal('TRUNCATE');
         } catch (checkpointError) {
@@ -1243,187 +1435,6 @@ app.post('/api/backup/import', async (req, res, next) => {
     } finally {
         importInProgress = false;
     }
-});
-
-// ─── Entity API endpoints (3-2) ───────────────────────────────────────────────
-
-// SSE clients for 3-3
-const sseClients = new Set();
-
-function broadcastEvent(type, id) {
-    const data = JSON.stringify({ type, id, updated_at: Date.now() });
-    for(const res of sseClients){
-        res.write(`data: ${data}\n\n`);
-    }
-}
-
-app.get('/api/events', (req, res) => {
-    // No auth required for SSE — same-origin browser context
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
-    sseClients.add(res);
-    req.on('close', () => sseClients.delete(res));
-});
-
-// Characters
-app.get('/api/db/characters', async (req, res, next) => {
-    if(!await checkAuth(req, res)){ return; }
-    try {
-        res.json(charList());
-    } catch(e){ next(e); }
-});
-
-app.get('/api/db/characters/:id', async (req, res, next) => {
-    if(!await checkAuth(req, res)){ return; }
-    try {
-        const data = charGet(req.params.id);
-        if(data === null){ res.status(404).send({ error: 'Not found' }); return; }
-        res.setHeader('Content-Type', 'application/octet-stream');
-        res.send(data);
-    } catch(e){ next(e); }
-});
-
-app.post('/api/db/characters/:id', async (req, res, next) => {
-    if(!await checkAuth(req, res)){ return; }
-    try {
-        charSet(req.params.id, req.body);
-        broadcastEvent('character', req.params.id);
-        res.json({ success: true });
-    } catch(e){ next(e); }
-});
-
-app.delete('/api/db/characters/:id', async (req, res, next) => {
-    if(!await checkAuth(req, res)){ return; }
-    try {
-        charDel(req.params.id);
-        broadcastEvent('character', req.params.id);
-        res.json({ success: true });
-    } catch(e){ next(e); }
-});
-
-// Chats
-app.get('/api/db/chats/:charId', async (req, res, next) => {
-    if(!await checkAuth(req, res)){ return; }
-    try {
-        res.json(chatList(req.params.charId));
-    } catch(e){ next(e); }
-});
-
-app.get('/api/db/chats/:charId/:chatId', async (req, res, next) => {
-    if(!await checkAuth(req, res)){ return; }
-    try {
-        const data = chatGet(req.params.charId, req.params.chatId);
-        if(data === null){ res.status(404).send({ error: 'Not found' }); return; }
-        res.setHeader('Content-Type', 'application/octet-stream');
-        res.send(data);
-    } catch(e){ next(e); }
-});
-
-app.post('/api/db/chats/:charId/:chatId', async (req, res, next) => {
-    if(!await checkAuth(req, res)){ return; }
-    try {
-        chatSet(req.params.charId, req.params.chatId, req.body);
-        broadcastEvent('chat', `${req.params.charId}/${req.params.chatId}`);
-        res.json({ success: true });
-    } catch(e){ next(e); }
-});
-
-app.delete('/api/db/chats/:charId/:chatId', async (req, res, next) => {
-    if(!await checkAuth(req, res)){ return; }
-    try {
-        chatDel(req.params.charId, req.params.chatId);
-        res.json({ success: true });
-    } catch(e){ next(e); }
-});
-
-// Settings
-app.get('/api/db/settings', async (req, res, next) => {
-    if(!await checkAuth(req, res)){ return; }
-    try {
-        const data = settingsGet();
-        if(data === null){ res.status(404).send({ error: 'Not found' }); return; }
-        res.setHeader('Content-Type', 'application/octet-stream');
-        res.send(data);
-    } catch(e){ next(e); }
-});
-
-app.post('/api/db/settings', async (req, res, next) => {
-    if(!await checkAuth(req, res)){ return; }
-    try {
-        settingsSet(req.body);
-        broadcastEvent('settings', 'root');
-        res.json({ success: true });
-    } catch(e){ next(e); }
-});
-
-// Presets
-app.get('/api/db/presets', async (req, res, next) => {
-    if(!await checkAuth(req, res)){ return; }
-    try { res.json(presetList()); } catch(e){ next(e); }
-});
-
-app.get('/api/db/presets/:id', async (req, res, next) => {
-    if(!await checkAuth(req, res)){ return; }
-    try {
-        const data = presetGet(req.params.id);
-        if(data === null){ res.status(404).send({ error: 'Not found' }); return; }
-        res.setHeader('Content-Type', 'application/octet-stream');
-        res.send(data);
-    } catch(e){ next(e); }
-});
-
-app.post('/api/db/presets/:id', async (req, res, next) => {
-    if(!await checkAuth(req, res)){ return; }
-    try {
-        presetSet(req.params.id, req.body);
-        broadcastEvent('preset', req.params.id);
-        res.json({ success: true });
-    } catch(e){ next(e); }
-});
-
-app.delete('/api/db/presets/:id', async (req, res, next) => {
-    if(!await checkAuth(req, res)){ return; }
-    try {
-        presetDel(req.params.id);
-        broadcastEvent('preset', req.params.id);
-        res.json({ success: true });
-    } catch(e){ next(e); }
-});
-
-// Modules
-app.get('/api/db/modules', async (req, res, next) => {
-    if(!await checkAuth(req, res)){ return; }
-    try { res.json(moduleList()); } catch(e){ next(e); }
-});
-
-app.get('/api/db/modules/:id', async (req, res, next) => {
-    if(!await checkAuth(req, res)){ return; }
-    try {
-        const data = moduleGet(req.params.id);
-        if(data === null){ res.status(404).send({ error: 'Not found' }); return; }
-        res.setHeader('Content-Type', 'application/octet-stream');
-        res.send(data);
-    } catch(e){ next(e); }
-});
-
-app.post('/api/db/modules/:id', async (req, res, next) => {
-    if(!await checkAuth(req, res)){ return; }
-    try {
-        moduleSet(req.params.id, req.body);
-        broadcastEvent('module', req.params.id);
-        res.json({ success: true });
-    } catch(e){ next(e); }
-});
-
-app.delete('/api/db/modules/:id', async (req, res, next) => {
-    if(!await checkAuth(req, res)){ return; }
-    try {
-        moduleDel(req.params.id);
-        broadcastEvent('module', req.params.id);
-        res.json({ success: true });
-    } catch(e){ next(e); }
 });
 
 // ── Update check endpoint ────────────────────────────────────────────────────

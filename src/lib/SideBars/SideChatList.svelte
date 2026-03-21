@@ -20,7 +20,7 @@
     import { bookmarkListOpen } from "src/ts/stores.svelte";
     import { language } from "src/lang";
     import Toggles from "./Toggles.svelte";
-    import { changeChatTo, createChatCopyName } from "src/ts/globalApi.svelte";
+    import { changeChatTo, createChatCopyName, requestImmediateSave } from "src/ts/globalApi.svelte";
 
     interface Props {
         chara: character|groupChat;
@@ -156,6 +156,9 @@
         }
         chara.chats = chats
         changeChatTo(0)
+        void requestImmediateSave({
+            skipBackups: true
+        })
         $ReloadGUIPointer += 1
     }}>{language.newChat}</Button>
 
@@ -273,6 +276,9 @@
                                         chara.chats.unshift(newChat)
                                         changeChatTo(0)
                                         chara.chats = chara.chats
+                                        void requestImmediateSave({
+                                            skipBackups: true
+                                        })
                                         break
                                     }
                                     case 1:{
@@ -336,6 +342,9 @@
                                     let chats = chara.chats
                                     chats.splice(chara.chats.indexOf(chat), 1)
                                     chara.chats = chats
+                                    void requestImmediateSave({
+                                        skipBackups: true
+                                    })
                                 }
                             }}>
                                 <TrashIcon size={18}/>
