@@ -70,6 +70,11 @@ vi.mock('src/ts/storage/nodeStorage', () => {
 
 vi.mock('src/ts/process/files/inlayMeta', () => ({
     getInlayMeta: vi.fn(async (id: string) => inlayMetaMap.get(id) ?? null),
+    getInlayMetasBatch: vi.fn(async (ids: string[]) => Object.fromEntries(
+        ids
+            .filter((id) => inlayMetaMap.has(id))
+            .map((id) => [id, inlayMetaMap.get(id)])
+    )),
     setInlayMeta: vi.fn(async (id: string, meta: any) => { inlayMetaMap.set(id, meta) }),
     removeInlayMeta: vi.fn(async (id: string) => { inlayMetaMap.delete(id) }),
     buildInlayMeta: vi.fn((existing: any) => ({
@@ -358,14 +363,6 @@ describe('listInlayExplorerItems', () => {
             type: 'image',
             width: 256,
         })
-        nodeStorageMap.set('inlay_thumb/img-1', new TextEncoder().encode(JSON.stringify({
-            data: 'data:image/png;base64,aW1n',
-            ext: 'png',
-            height: 128,
-            name: 'thumb-image.png',
-            type: 'image',
-            width: 256,
-        })))
 
         const infoOnlyValue = new TextEncoder().encode(JSON.stringify({
             ext: 'mp3',
@@ -386,20 +383,16 @@ describe('listInlayExplorerItems', () => {
         expect(byId['img-1']).toMatchObject({
             ext: 'png',
             hasMeta: true,
-            hasThumb: true,
             name: 'thumb-image.png',
             type: 'image',
         })
-        expect(byId['img-1'].thumb?.data).toMatch(/^data:image\//)
 
         expect(byId['audio-1']).toMatchObject({
             ext: 'mp3',
             hasMeta: false,
-            hasThumb: false,
             name: 'audio-file.mp3',
             type: 'audio',
         })
-        expect(byId['audio-1'].thumb).toBeNull()
     })
 })
 

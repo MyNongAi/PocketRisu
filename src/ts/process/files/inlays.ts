@@ -33,15 +33,6 @@ type SerializedInlayAsset = {
     width?: number
 }
 
-export type InlayThumbnail = {
-    data: string
-    ext: string
-    height?: number
-    name: string
-    type: 'image'
-    width?: number
-}
-
 export type InlayExplorerInfo = {
     ext: string
     height?: number
@@ -53,12 +44,10 @@ export type InlayExplorerInfo = {
 export type InlayExplorerItem = {
     ext: string
     hasMeta: boolean
-    hasThumb: boolean
     height?: number
     id: string
     meta: InlayAssetMeta | null
     name: string
-    thumb: InlayThumbnail | null
     type: InlayAsset['type'] | 'unknown'
     width?: number
 }
@@ -86,7 +75,6 @@ const inlayVideoExts = [
 
 const INLAY_PREFIX = 'inlay/'
 const INLAY_INFO_PREFIX = 'inlay_info/'
-const INLAY_THUMB_PREFIX = 'inlay_thumb/'
 
 // ── Memory LRU cache ──
 type LRUEntry = {
@@ -136,7 +124,6 @@ export function __resetInlayStorageForTest(): void {
     totalLRUSize = 0
     _nodeInlayStorage = null
     _nodeInlayInfoStorage = null
-    _nodeInlayThumbStorage = null
 }
 
 // ── NodeInlayStorage ──
@@ -242,64 +229,6 @@ class NodeInlayStorage {
     }
 }
 
-// ── NodeInlayThumbStorage ──
-
-class NodeInlayThumbStorage {
-    private nodeStorage = new NodeStorage()
-
-    private serverKey(id: string): string {
-        return `${INLAY_THUMB_PREFIX}${id}`
-    }
-
-    async setItem(id: string, thumb: InlayThumbnail): Promise<void> {
-        const bytes = new TextEncoder().encode(JSON.stringify(thumb))
-        await this.nodeStorage.setItem(this.serverKey(id), bytes)
-    }
-
-    async getItem<T>(id: string): Promise<T | null> {
-        try {
-            const buf = await this.nodeStorage.getItem(this.serverKey(id))
-            if (!buf || buf.length === 0) return null
-            return JSON.parse(new TextDecoder().decode(buf)) as T
-        } catch {
-            return null
-        }
-    }
-
-    async removeItem(id: string): Promise<void> {
-        try {
-            await this.nodeStorage.removeItem(this.serverKey(id))
-        } catch {
-            // ignore if not found
-        }
-    }
-
-    async getItems<T>(ids: string[]): Promise<Record<string, T>> {
-        const result: Record<string, T> = {}
-        if (!Array.isArray(ids) || ids.length === 0) return result
-        try {
-            const rows = await this.nodeStorage.getItems(ids.map((id) => this.serverKey(id)))
-            for (const row of rows) {
-                try {
-                    const id = row.key.replace(INLAY_THUMB_PREFIX, '')
-                    result[id] = JSON.parse(new TextDecoder().decode(row.value)) as T
-                } catch {
-                    // skip corrupt thumb entries
-                }
-            }
-        } catch {
-            // best-effort batch read
-        }
-        return result
-    }
-
-    /** Return set of IDs that have thumbnails, without downloading thumb data */
-    async existingIds(): Promise<Set<string>> {
-        const allKeys = await this.nodeStorage.keys(INLAY_THUMB_PREFIX)
-        return new Set(allKeys.map(k => k.replace(INLAY_THUMB_PREFIX, '')))
-    }
-}
-
 // ── NodeInlayInfoStorage ──
 
 class NodeInlayInfoStorage {
@@ -367,7 +296,6 @@ function toCoreInlayAsset(asset: any): InlayAsset {
 
 let _nodeInlayStorage: NodeInlayStorage | null = null
 let _nodeInlayInfoStorage: NodeInlayInfoStorage | null = null
-let _nodeInlayThumbStorage: NodeInlayThumbStorage | null = null
 
 function getInlayStorage(): NodeInlayStorage {
     if (!_nodeInlayStorage) _nodeInlayStorage = new NodeInlayStorage()
@@ -377,11 +305,6 @@ function getInlayStorage(): NodeInlayStorage {
 function getInlayInfoStorage(): NodeInlayInfoStorage {
     if (!_nodeInlayInfoStorage) _nodeInlayInfoStorage = new NodeInlayInfoStorage()
     return _nodeInlayInfoStorage
-}
-
-function getInlayThumbStorage(): NodeInlayThumbStorage {
-    if (!_nodeInlayThumbStorage) _nodeInlayThumbStorage = new NodeInlayThumbStorage()
-    return _nodeInlayThumbStorage
 }
 
 export { getInlayMeta } from "./inlayMeta";
@@ -409,60 +332,6 @@ function blobToBase64(blob: Blob): Promise<string> {
     });
 }
 
-async function buildThumbnailDataUrl(asset: InlayAsset, maxSide = 512, quality = 0.84): Promise<string | null> {
-    if (asset.type !== 'image') return null
-    let src = ''
-    let revokeUrl = ''
-    try {
-        if (asset.data instanceof Blob) {
-            revokeUrl = URL.createObjectURL(asset.data)
-            src = revokeUrl
-        } else if (typeof asset.data === 'string') {
-            src = asset.data
-        }
-        if (!src) return null
-        const img = new Image()
-        img.decoding = 'async'
-        img.src = src
-        if (img.decode) {
-            await img.decode()
-        } else {
-            await new Promise<void>((resolve, reject) => {
-                img.onload = () => resolve()
-                img.onerror = () => reject(new Error('thumbnail decode failed'))
-            })
-        }
-        const w = img.naturalWidth || img.width || 0
-        const h = img.naturalHeight || img.height || 0
-        if (!w || !h) return null
-        const ratio = Math.min(1, maxSide / Math.max(w, h))
-        const tw = Math.max(1, Math.round(w * ratio))
-        const th = Math.max(1, Math.round(h * ratio))
-        const canvas = document.createElement('canvas')
-        canvas.width = tw
-        canvas.height = th
-        const ctx = canvas.getContext('2d')
-        if (!ctx) return null
-        ctx.drawImage(img, 0, 0, tw, th)
-        try {
-            return canvas.toDataURL('image/webp', quality)
-        } catch {
-            return canvas.toDataURL('image/jpeg', quality)
-        }
-    } catch {
-        return null
-    } finally {
-        if (revokeUrl) URL.revokeObjectURL(revokeUrl)
-    }
-}
-
-async function buildInlayThumbnail(asset: InlayAsset): Promise<InlayThumbnail | null> {
-    if (asset.type !== 'image') return null
-    const data = await buildThumbnailDataUrl(asset)
-    if (!data) return null
-    return { data, ext: asset.ext, height: asset.height, name: asset.name, type: 'image', width: asset.width }
-}
-
 function buildInlayExplorerInfo(asset: InlayAsset): InlayExplorerInfo {
     return {
         ext: asset.ext,
@@ -476,18 +345,15 @@ function buildInlayExplorerInfo(asset: InlayAsset): InlayExplorerInfo {
 function buildExplorerItem(
     id: string,
     info: InlayExplorerInfo | null,
-    hasThumb: boolean,
     meta: InlayAssetMeta | null
 ): InlayExplorerItem {
     return {
         ext: info?.ext ?? '',
         hasMeta: meta !== null,
-        hasThumb,
         height: info?.height,
         id,
         meta,
         name: info?.name ?? id,
-        thumb: null, // thumb data is no longer bulk-fetched; served via /api/asset/ URL
         type: info?.type ?? 'image',
         width: info?.width,
     }
@@ -675,18 +541,14 @@ export async function listInlayExplorerItems(forceRefresh = false): Promise<Inla
         return []
     }
 
-    // Fetch info + meta + thumb key existence in parallel.
-    // Thumb DATA is NOT fetched here — gallery renders thumbs via /api/asset/ URL.
-    const [infos, thumbIds, metas] = await Promise.all([
+    const [infos, metas] = await Promise.all([
         getInlayInfoStorage().getItems<InlayExplorerInfo>(ids),
-        getInlayThumbStorage().existingIds(),
         getInlayMetas(ids),
     ])
 
     const items = ids.map((id) => buildExplorerItem(
         id,
         infos[id] ?? null,
-        thumbIds.has(id),
         metas[id] ?? null,
     ))
 
@@ -701,12 +563,6 @@ export async function setInlayAsset(id: string, img: InlayAsset) {
     await getInlayStorage().setItem(id, toCoreInlayAsset(img))
     await getInlayInfoStorage().setItem(id, buildInlayExplorerInfo(toCoreInlayAsset(img)))
     await setInlayMeta(id, nextMeta)
-    const thumb = await buildInlayThumbnail(toCoreInlayAsset(img))
-    if (thumb) {
-        await getInlayThumbStorage().setItem(id, thumb)
-    } else {
-        await getInlayThumbStorage().removeItem(id)
-    }
     _explorerItemsCache = null // invalidate gallery cache
 }
 
@@ -714,7 +570,6 @@ export async function removeInlayAsset(id: string) {
     await getInlayStorage().removeItem(id)
     await getInlayInfoStorage().removeItem(id)
     await removeInlayMeta(id)
-    await getInlayThumbStorage().removeItem(id)
     _explorerItemsCache = null // invalidate gallery cache
 }
 
@@ -758,24 +613,6 @@ export async function getInlayMetas(ids: string[]): Promise<Record<string, Inlay
 export async function getInlayInfosBatch(ids: string[]): Promise<Record<string, InlayExplorerInfo>> {
     if (!Array.isArray(ids) || ids.length === 0) return {}
     return await getInlayInfoStorage().getItems<InlayExplorerInfo>(ids)
-}
-
-export async function getInlayListItem(id: string): Promise<InlayAsset | null> {
-    const thumb = await getInlayThumbStorage().getItem<InlayThumbnail | null>(id)
-    if (thumb && typeof thumb.data === 'string' && thumb.data.startsWith('data:')) {
-        return { data: thumb.data, ext: thumb.ext, height: thumb.height, name: thumb.name || id, type: 'image', width: thumb.width }
-    }
-    const full = await getInlayAsset(id)
-    if (!full) return null
-    if (full.type === 'image') {
-        const coreFull = toCoreInlayAsset(full)
-        const generatedThumb = await buildInlayThumbnail(coreFull)
-        if (generatedThumb) {
-            await getInlayThumbStorage().setItem(id, generatedThumb)
-            return { data: generatedThumb.data, ext: generatedThumb.ext, height: generatedThumb.height, name: generatedThumb.name || id, type: 'image', width: generatedThumb.width }
-        }
-    }
-    return full
 }
 
 export type InlayScanResult = {
