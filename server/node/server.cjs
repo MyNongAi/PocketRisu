@@ -601,14 +601,10 @@ function encodeBackupEntry(name, data) {
 }
 
 function writeBackupEntry(res, name, data) {
-    const encodedName = Buffer.from(name, 'utf-8');
-    const header = Buffer.allocUnsafe(4);
-    header.writeUInt32LE(encodedName.length, 0);
-    res.write(header);
-    res.write(encodedName);
-    header.writeUInt32LE(data.length, 0);
-    res.write(header);
-    res.write(data);
+    // Do not reuse the same 4-byte buffer across multiple writes.
+    // Node may flush writes asynchronously, so mutating the buffer before the
+    // previous write is fully handed off can corrupt the backup stream header.
+    res.write(encodeBackupEntry(name, data));
 }
 
 function isInvalidBackupPathSegment(name) {
