@@ -173,7 +173,7 @@ export class RisuSaveEncoder {
         let obj:Record<any,any> = {}
         let keys = Object.keys(data)
         for(const key of keys){
-            if(key !== 'characters' && key !== 'botPresets'){
+            if(key !== 'characters' && key !== 'botPresets' && key !== 'modules'){
                 obj[key] = data[key]
             }
         }
