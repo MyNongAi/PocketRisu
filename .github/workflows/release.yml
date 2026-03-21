@@ -34,9 +34,6 @@ jobs:
         env:
           NODE_OPTIONS: '--max-old-space-size=4096'
 
-      - name: Prune dev dependencies
-        run: pnpm prune --prod
-
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -44,35 +41,14 @@ jobs:
           path: |
             dist/
             server/
-            node_modules/
             package.json
+            pnpm-lock.yaml
             update.sh
           retention-days: 1
 
   portable:
     needs: build
-    strategy:
-      matrix:
-        include:
-          - os: win-x64
-            node_platform: win
-            node_arch: x64
-            ext: zip
-            node_ext: zip
-            launcher: RisuAI.bat
-          - os: linux-x64
-            node_platform: linux
-            node_arch: x64
-            ext: tar.gz
-            node_ext: tar.xz
-            launcher: start.sh
-          - os: macos-arm64
-            node_platform: darwin
-            node_arch: arm64
-            ext: tar.gz
-            node_ext: tar.gz
-            launcher: start.sh
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -80,47 +56,48 @@ jobs:
           sparse-checkout: |
             scripts
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
           name: app-build
           path: portable/
 
+      - name: Install production dependencies for Windows
+        shell: bash
+        run: |
+          cd portable
+          pnpm install --prod --frozen-lockfile
+
       - name: Extract version
         id: version
+        shell: bash
         run: echo "version=${GITHUB_REF_NAME#v}" >> $GITHUB_OUTPUT
 
       - name: Download Node.js binary
+        shell: bash
         run: |
           NODE_VERSION="22.14.0"
-          PLATFORM="${{ matrix.node_platform }}"
-          ARCH="${{ matrix.node_arch }}"
-
           mkdir -p portable/bin
+          URL="https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-win-x64.zip"
+          curl -fsSL "$URL" -o node.zip
+          unzip -q node.zip
+          cp "node-v${NODE_VERSION}-win-x64/node.exe" portable/bin/node.exe
 
-          if [ "$PLATFORM" = "win" ]; then
-            URL="https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-${PLATFORM}-${ARCH}.zip"
-            curl -fsSL "$URL" -o node.zip
-            unzip -q node.zip
-            cp "node-v${NODE_VERSION}-${PLATFORM}-${ARCH}/node.exe" portable/bin/node.exe
-          elif [ "$PLATFORM" = "linux" ]; then
-            URL="https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-${PLATFORM}-${ARCH}.tar.xz"
-            curl -fsSL "$URL" -o node.tar.xz
-            tar -xJf node.tar.xz
-            cp "node-v${NODE_VERSION}-${PLATFORM}-${ARCH}/bin/node" portable/bin/node
-          else
-            URL="https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-${PLATFORM}-${ARCH}.tar.gz"
-            curl -fsSL "$URL" -o node.tar.gz
-            tar -xzf node.tar.gz
-            cp "node-v${NODE_VERSION}-${PLATFORM}-${ARCH}/bin/node" portable/bin/node
-          fi
-
-          chmod +x portable/bin/node* 2>/dev/null || true
-
-      - name: Add launcher script
+      - name: Add launcher scripts
+        shell: bash
         run: |
-          if [ "${{ matrix.node_platform }}" = "win" ]; then
-            cat > portable/RisuAI.bat << 'BATCH'
+          cat > portable/RisuAI.bat << 'BATCH'
           @echo off
           setlocal
           title RisuAI NodeOnly
@@ -129,41 +106,30 @@ jobs:
           "%~dp0bin\node.exe" "%~dp0server\node\server.cjs"
           pause
           BATCH
-            cat > portable/update.bat << 'BATCH'
+          cat > portable/update.bat << 'BATCH'
           @echo off
           "%~dp0bin\node.exe" "%~dp0scripts\updater.cjs"
           pause
           BATCH
-          else
-            cat > portable/start.sh << 'SHELL'
-          #!/bin/bash
-          cd "$(dirname "$0")"
-          PORT=${PORT:-6001} ./bin/node ./server/node/server.cjs
-          SHELL
-            chmod +x portable/start.sh
-          fi
 
       - name: Add updater script
+        shell: bash
         run: |
           mkdir -p portable/scripts
           cp scripts/updater.cjs portable/scripts/updater.cjs 2>/dev/null || true
 
       - name: Package portable
+        shell: bash
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          NAME="RisuAI-NodeOnly-v${VERSION}-${{ matrix.os }}"
-
+          NAME="RisuAI-NodeOnly-v${VERSION}-win-x64"
           cd portable
-          if [ "${{ matrix.ext }}" = "zip" ]; then
-            zip -rq "../${NAME}.zip" .
-          else
-            tar -czf "../${NAME}.tar.gz" .
-          fi
+          7z a -tzip "../${NAME}.zip" .
 
       - name: Upload portable artifact
         uses: actions/upload-artifact@v4
         with:
-          name: portable-${{ matrix.os }}
+          name: portable-win-x64
           path: RisuAI-NodeOnly-*
           retention-days: 1
 
