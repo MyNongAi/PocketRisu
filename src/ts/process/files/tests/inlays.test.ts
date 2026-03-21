@@ -25,8 +25,8 @@ vi.spyOn(document, 'createElement').mockImplementation((tag: string, options?: a
     const el = origCreateElement(tag, options)
     if (tag === 'canvas') {
         ;(el as HTMLCanvasElement).getContext = (() => fakeCtx) as any
-        ;(el as HTMLCanvasElement).toBlob = ((cb: BlobCallback) => {
-            cb(new Blob(['fake-png'], { type: 'image/png' }))
+        ;(el as HTMLCanvasElement).toBlob = ((cb: BlobCallback, type?: string) => {
+            cb(new Blob(['fake-image'], { type: type || 'image/png' }))
         }) as any
     }
     return el
@@ -505,6 +505,29 @@ describe('writeInlayImage', () => {
         expect(result).toBe('custom-id')
 
         const stored = await getInlayAssetBlob('custom-id')
+        expect(stored).toMatchObject({
+            data: expect.any(Blob),
+            ext: 'webp',
+            height: 100,
+            name: 'photo.jpg',
+            type: 'image',
+            width: 200,
+        })
+    })
+
+    test('stores image as lossless PNG when inlayImageLossless is true', async () => {
+        getDatabaseMock.mockReturnValue({ characters: [], inlayImageLossless: true })
+        const imgObj = makeImage(200, 100)
+
+        const result = await writeInlayImage(imgObj, {
+            name: 'photo.jpg',
+            ext: 'jpg',
+            id: 'lossless-id',
+        })
+
+        expect(result).toBe('lossless-id')
+
+        const stored = await getInlayAssetBlob('lossless-id')
         expect(stored).toMatchObject({
             data: expect.any(Blob),
             ext: 'png',
