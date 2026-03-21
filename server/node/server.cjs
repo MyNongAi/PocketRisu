@@ -1891,10 +1891,12 @@ app.post('/api/backup/import', async (req, res, next) => {
             return;
         }
 
+        const BATCH_SIZE = 5000;
         let remainingBuffer = Buffer.alloc(0);
         let hasDatabase = false;
         let assetsRestored = 0;
         let bytesReceived = 0;
+        let batchCount = 0;
         const seenEntryNames = new Set();
         const importedInlayIds = new Set();
         const importedSidecarIds = new Set();
@@ -1940,19 +1942,19 @@ app.post('/api/backup/import', async (req, res, next) => {
         // Disable fsync during bulk import for speed (safe: backup file is recoverable)
         sqliteDb.pragma('synchronous = OFF');
 
-        let sqliteTransactionOpen = false;
-
-        // Import in a single rollback-able SQLite transaction.
-        // File swap happens before COMMIT so we can still abort safely on failure.
+        // Clear old SQLite data
         sqliteDb.exec('BEGIN');
-        sqliteTransactionOpen = true;
+        kvDelPrefix('assets/');
+        kvDelPrefix('inlay/');
+        kvDelPrefix('inlay_thumb/');
+        kvDelPrefix('inlay_meta/');
+        kvDelPrefix('inlay_info/');
+        clearEntities();
+        sqliteDb.exec('COMMIT');
+
+        // Import in batches to keep WAL bounded
+        sqliteDb.exec('BEGIN');
         try {
-            kvDelPrefix('assets/');
-            kvDelPrefix('inlay/');
-            kvDelPrefix('inlay_thumb/');
-            kvDelPrefix('inlay_meta/');
-            kvDelPrefix('inlay_info/');
-            clearEntities();
 
             for await (const chunk of req) {
                 bytesReceived += chunk.length;
@@ -2039,6 +2041,12 @@ app.post('/api/backup/import', async (req, res, next) => {
                         }
                     }
 
+                    batchCount++;
+                    if (batchCount >= BATCH_SIZE) {
+                        sqliteDb.exec('COMMIT');
+                        sqliteDb.exec('BEGIN');
+                        batchCount = 0;
+                    }
                 });
             }
 
@@ -2053,50 +2061,33 @@ app.post('/api/backup/import', async (req, res, next) => {
                     writeStagingSidecarSync(id, info);
                 }
             }
-            let movedExistingDir = false;
-            let movedStagingDir = false;
-            try {
-                if (existsSync(inlayDir)) {
-                    await fs.rename(inlayDir, backupInlayDir);
-                    movedExistingDir = true;
-                }
-                await fs.rename(stagingDir, inlayDir);
-                movedStagingDir = true;
-                await fs.writeFile(inlayMigrationMarker, new Date().toISOString(), 'utf-8');
-                sqliteDb.exec('COMMIT');
-                sqliteTransactionOpen = false;
-                await fs.rm(backupInlayDir, { recursive: true, force: true }).catch(() => {});
-            } catch (swapError) {
-                if (sqliteTransactionOpen) {
-                    try {
-                        sqliteDb.exec('ROLLBACK');
-                        sqliteTransactionOpen = false;
-                    } catch (_) {}
-                }
-                if (movedStagingDir) {
-                    await fs.rm(inlayDir, { recursive: true, force: true }).catch(() => {});
-                } else {
-                    await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => {});
-                }
-                if (movedExistingDir) {
-                    await fs.rename(backupInlayDir, inlayDir).catch(() => {});
-                } else {
-                    await fs.rm(backupInlayDir, { recursive: true, force: true }).catch(() => {});
-                }
-                throw swapError;
-            }
+            sqliteDb.exec('COMMIT');
         } catch (error) {
-            if (sqliteTransactionOpen) {
-                try {
-                    sqliteDb.exec('ROLLBACK');
-                    sqliteTransactionOpen = false;
-                } catch (_) {}
-            }
+            try { sqliteDb.exec('ROLLBACK'); } catch (_) {}
             await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => {});
             await fs.rm(backupInlayDir, { recursive: true, force: true }).catch(() => {});
             throw error;
         } finally {
             sqliteDb.pragma('synchronous = NORMAL');
+        }
+
+        // Swap inlay directory: staging → live (atomic rename)
+        await ensureInlayDir();
+        try {
+            if (existsSync(inlayDir)) {
+                await fs.rename(inlayDir, backupInlayDir);
+            }
+            await fs.rename(stagingDir, inlayDir);
+            await fs.writeFile(inlayMigrationMarker, new Date().toISOString(), 'utf-8');
+            await fs.rm(backupInlayDir, { recursive: true, force: true }).catch(() => {});
+        } catch (swapError) {
+            // Restore original inlay directory if swap failed
+            if (existsSync(backupInlayDir)) {
+                await fs.rm(inlayDir, { recursive: true, force: true }).catch(() => {});
+                await fs.rename(backupInlayDir, inlayDir).catch(() => {});
+            }
+            await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+            throw swapError;
         }
 
         // Invalidate db cache after import to prevent stale patches
