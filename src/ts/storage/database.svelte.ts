@@ -345,6 +345,7 @@ export function setDatabase(data:Database){
     data.OAIPrediction ??= ''
     data.autoSuggestClean ??= true
     data.imageCompression ??= true
+    data.inlayImageLossless ??= false
     data.enableBlockPartialEdit ??= false
     data.enableDragPartialEdit ??= false
     if(!data.formatingOrder.includes('personaPrompt')){
@@ -1035,6 +1036,7 @@ export interface Database{
     novellistAPI:string,
     useAutoTranslateInput:boolean
     imageCompression:boolean
+    inlayImageLossless:boolean
     account?:{
         token:string
         id:string,

@@ -421,9 +421,13 @@ export async function writeInlayImage(imgObj: HTMLImageElement, arg: { name?: st
             resolve(null)
         }
     })
-    const imageBlob = await new Promise<Blob>(resolve => canvas.toBlob(resolve, 'image/png'))
+    const db = getDatabase()
+    const [mimeType, ext, quality]: [string, string, number?] = db.inlayImageLossless
+        ? ['image/png', 'png', undefined]
+        : ['image/webp', 'webp', 0.85]
+    const imageBlob = await new Promise<Blob>(resolve => canvas.toBlob(resolve, mimeType, quality))
     const imgid = arg.id ?? v4()
-    await setInlayAsset(imgid, { name: arg.name ?? imgid, data: imageBlob, ext: 'png', height: drawHeight, width: drawWidth, type: 'image' })
+    await setInlayAsset(imgid, { name: arg.name ?? imgid, data: imageBlob, ext, height: drawHeight, width: drawWidth, type: 'image' })
     return `${imgid}`
 }
 
