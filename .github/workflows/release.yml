@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -77,6 +78,7 @@ jobs:
         shell: bash
         run: |
           cd portable
+          echo "node-linker=hoisted" > .npmrc
           pnpm install --prod --frozen-lockfile
 
       - name: Extract version
@@ -135,6 +137,7 @@ jobs:
 
   release:
     needs: portable
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
       - name: Download all portable artifacts
