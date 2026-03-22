@@ -19,6 +19,7 @@ import SeparateParametersSection from 'src/lib/Setting/Pages/SeparateParametersS
 import BanCharacterSetSettings from 'src/lib/Setting/Pages/Advanced/BanCharacterSetSettings.svelte';
 import CustomModelsSettings from 'src/lib/Setting/Pages/Advanced/CustomModelsSettings.svelte';
 import SettingsExportButtons from 'src/lib/Setting/Pages/Advanced/SettingsExportButtons.svelte';
+import InlayCompressButton from 'src/lib/Setting/Pages/Advanced/InlayCompressButton.svelte';
 
 /**
  * Registry of custom components.
@@ -29,6 +30,7 @@ export const customComponents: Record<string, Component<any>> = {
     'BanCharacterSetSettings': BanCharacterSetSettings,
     'CustomModelsSettings': CustomModelsSettings,
     'SettingsExportButtons': SettingsExportButtons,
+    'InlayCompressButton': InlayCompressButton,
     // Add more as we migrate complex settings
 } as const;
 

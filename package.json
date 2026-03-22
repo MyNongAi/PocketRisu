@@ -1,11 +1,11 @@
 {
   "name": "risuai-nodeonly",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build --sourcemap",
+    "build": "NODE_OPTIONS='--max-old-space-size=4096' vite build --sourcemap",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
     "test": "vitest run",
@@ -32,6 +32,7 @@
     "acorn": "^8.15.0",
     "acorn-walk": "^8.3.4",
     "astring": "^1.9.0",
+    "better-sqlite3": "^11.10.0",
     "buffer": "^6.0.3",
     "codemirror": "^6.0.2",
     "compression": "^1.8.1",
@@ -40,8 +41,8 @@
     "crc": "^4.3.2",
     "diff": "^7.0.0",
     "dompurify": "^3.3.1",
-    "better-sqlite3": "^11.10.0",
     "express": "^4.22.1",
+    "fast-json-patch": "^3.1.1",
     "fflate": "^0.8.2",
     "highlight.js": "^11.11.1",
     "html-to-image": "^1.11.13",
@@ -68,7 +69,8 @@
     "uuid": "^9.0.1",
     "wasmoon": "^1.16.0",
     "wavefile": "^11.0.0",
-    "web-streams-polyfill": "^3.3.3"
+    "web-streams-polyfill": "^3.3.3",
+    "sharp": "^0.33.5"
   },
   "devDependencies": {
     "@rollup/plugin-strip": "^3.0.4",
@@ -103,8 +105,6 @@
     "vitest": "^4.0.16"
   },
   "pnpm": {
-    "neverBuiltDependencies": [
-      "sharp"
-    ]
+    "neverBuiltDependencies": []
   }
 }

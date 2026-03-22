@@ -11,6 +11,7 @@ import css, { type CssAtRuleAST } from '@adobe/css-tools'
 import { selectedCharID } from '../stores.svelte';
 import { calcString } from '../process/infunctions';
 import { findCharacterbyId, getPersonaPrompt, getUserIcon, getUserName, pickHashRand, replaceAsync} from '../util';
+
 import { getInlayInfosBatch } from '../process/files/inlays';
 import { getModuleAssets, getModuleLorebooks, getModules } from '../process/modules';
 import hljs from 'highlight.js/lib/core'
@@ -669,6 +670,24 @@ function assetUrl(kvKey: string): string {
     return `/api/asset/${Buffer.from(kvKey, 'utf-8').toString('hex')}`
 }
 
+function createMissingInlayPlaceholder(id: string): HTMLDivElement {
+    const box = document.createElement('div')
+    box.className = 'risu-inlay-missing'
+    box.setAttribute('data-missing-inlay-id', id)
+
+    const title = document.createElement('div')
+    title.className = 'risu-inlay-missing-title'
+    title.textContent = 'Image unavailable'
+
+    const subtitle = document.createElement('div')
+    subtitle.className = 'risu-inlay-missing-subtitle'
+    subtitle.textContent = id
+
+    box.appendChild(title)
+    box.appendChild(subtitle)
+    return box
+}
+
 export function parseInlayAssets(data:string){
     const inlayMatch = data.match(/{{(inlay|inlayed|inlayeddata)::(.+?)}}/g)
     if(inlayMatch){
@@ -719,23 +738,28 @@ async function processInlayQueue() {
     while (resolveQueue.length > 0) {
         const batch = resolveQueue.splice(0, 20)
 
-        // Collect IDs that need type info (not yet in blobUrlCache)
         const unknownIds = batch
             .filter(({ id }) => !blobUrlCache.has(id))
             .map(({ id }) => id)
 
-        // Single bulk-read for type info — avoids N+1
         if (unknownIds.length > 0) {
-            try {
-                const infos = await getInlayInfosBatch(unknownIds)
-                for (const id of unknownIds) {
-                    const type = infos[id]?.type ?? 'image'
-                    blobUrlCache.set(id, { url: assetUrl(`inlay/${id}`), type })
-                }
-            } catch {
-                // Fallback: default all to 'image'
+            if (DBState.db.inlayImagePriority) {
+                // Fast path: assume image, let img.onerror handle video/audio
                 for (const id of unknownIds) {
                     blobUrlCache.set(id, { url: assetUrl(`inlay/${id}`), type: 'image' })
+                }
+            } else {
+                // Accurate path: fetch type info first
+                try {
+                    const infos = await getInlayInfosBatch(unknownIds)
+                    for (const id of unknownIds) {
+                        const type = infos[id]?.type ?? 'image'
+                        blobUrlCache.set(id, { url: assetUrl(`inlay/${id}`), type })
+                    }
+                } catch {
+                    for (const id of unknownIds) {
+                        blobUrlCache.set(id, { url: assetUrl(`inlay/${id}`), type: 'image' })
+                    }
                 }
             }
         }
@@ -777,8 +801,12 @@ async function processInlayQueue() {
                                     src.src = url; src.type = ct
                                     audio.appendChild(src)
                                     img.replaceWith(audio)
+                                } else {
+                                    img.replaceWith(createMissingInlayPlaceholder(id))
                                 }
-                            } catch { /* give up */ }
+                            } catch {
+                                img.replaceWith(createMissingInlayPlaceholder(id))
+                            }
                         }
                         el.replaceWith(img)
                         break
@@ -805,7 +833,9 @@ async function processInlayQueue() {
                 }
             } catch (e) {
                 console.error(`[Inlay] Failed to load ${id}`, e)
-                if (el.parentNode) el.textContent = ''
+                if (el.parentNode) {
+                    el.replaceWith(createMissingInlayPlaceholder(id))
+                }
             }
         }
     }

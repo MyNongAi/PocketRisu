@@ -25,8 +25,8 @@ vi.spyOn(document, 'createElement').mockImplementation((tag: string, options?: a
     const el = origCreateElement(tag, options)
     if (tag === 'canvas') {
         ;(el as HTMLCanvasElement).getContext = (() => fakeCtx) as any
-        ;(el as HTMLCanvasElement).toBlob = ((cb: BlobCallback) => {
-            cb(new Blob(['fake-png'], { type: 'image/png' }))
+        ;(el as HTMLCanvasElement).toBlob = ((cb: BlobCallback, type?: string) => {
+            cb(new Blob(['fake-image'], { type: type || 'image/png' }))
         }) as any
     }
     return el
@@ -70,6 +70,11 @@ vi.mock('src/ts/storage/nodeStorage', () => {
 
 vi.mock('src/ts/process/files/inlayMeta', () => ({
     getInlayMeta: vi.fn(async (id: string) => inlayMetaMap.get(id) ?? null),
+    getInlayMetasBatch: vi.fn(async (ids: string[]) => Object.fromEntries(
+        ids
+            .filter((id) => inlayMetaMap.has(id))
+            .map((id) => [id, inlayMetaMap.get(id)])
+    )),
     setInlayMeta: vi.fn(async (id: string, meta: any) => { inlayMetaMap.set(id, meta) }),
     removeInlayMeta: vi.fn(async (id: string) => { inlayMetaMap.delete(id) }),
     buildInlayMeta: vi.fn((existing: any) => ({
@@ -358,14 +363,6 @@ describe('listInlayExplorerItems', () => {
             type: 'image',
             width: 256,
         })
-        nodeStorageMap.set('inlay_thumb/img-1', new TextEncoder().encode(JSON.stringify({
-            data: 'data:image/png;base64,aW1n',
-            ext: 'png',
-            height: 128,
-            name: 'thumb-image.png',
-            type: 'image',
-            width: 256,
-        })))
 
         const infoOnlyValue = new TextEncoder().encode(JSON.stringify({
             ext: 'mp3',
@@ -386,20 +383,16 @@ describe('listInlayExplorerItems', () => {
         expect(byId['img-1']).toMatchObject({
             ext: 'png',
             hasMeta: true,
-            hasThumb: true,
             name: 'thumb-image.png',
             type: 'image',
         })
-        expect(byId['img-1'].thumb?.data).toMatch(/^data:image\//)
 
         expect(byId['audio-1']).toMatchObject({
             ext: 'mp3',
             hasMeta: false,
-            hasThumb: false,
             name: 'audio-file.mp3',
             type: 'audio',
         })
-        expect(byId['audio-1'].thumb).toBeNull()
     })
 })
 
@@ -512,6 +505,29 @@ describe('writeInlayImage', () => {
         expect(result).toBe('custom-id')
 
         const stored = await getInlayAssetBlob('custom-id')
+        expect(stored).toMatchObject({
+            data: expect.any(Blob),
+            ext: 'webp',
+            height: 100,
+            name: 'photo.jpg',
+            type: 'image',
+            width: 200,
+        })
+    })
+
+    test('stores image as lossless PNG when inlayImageLossless is true', async () => {
+        getDatabaseMock.mockReturnValue({ characters: [], inlayImageLossless: true })
+        const imgObj = makeImage(200, 100)
+
+        const result = await writeInlayImage(imgObj, {
+            name: 'photo.jpg',
+            ext: 'jpg',
+            id: 'lossless-id',
+        })
+
+        expect(result).toBe('lossless-id')
+
+        const stored = await getInlayAssetBlob('lossless-id')
         expect(stored).toMatchObject({
             data: expect.any(Blob),
             ext: 'png',

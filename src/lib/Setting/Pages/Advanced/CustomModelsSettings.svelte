@@ -7,6 +7,7 @@
     import SelectInput from "src/lib/UI/GUI/SelectInput.svelte";
     import OptionInput from "src/lib/UI/GUI/OptionInput.svelte";
     import Accordion from "src/lib/UI/Accordion.svelte";
+    import { requestImmediateSave } from "src/ts/globalApi.svelte";
     import { PlusIcon, TrashIcon, ArrowUp, ArrowDown } from "@lucide/svelte";
     import { v4 } from "uuid";
 
@@ -55,6 +56,9 @@
                         models[index] = models[index - 1]
                         models[index - 1] = temp
                         DBState.db.customModels = models
+                        void requestImmediateSave({
+                            skipBackups: true
+                        })
                     }}>
                         <ArrowUp />
                     </Button>
@@ -66,6 +70,9 @@
                         models[index] = models[index + 1]
                         models[index + 1] = temp
                         DBState.db.customModels = models
+                        void requestImmediateSave({
+                            skipBackups: true
+                        })
                     }}>
                         <ArrowDown />
                     </Button>
@@ -76,6 +83,9 @@
                         DBState.db.customModels = models
                         openedModels.delete(model.id)
                         openedModels = new Set(openedModels)
+                        void requestImmediateSave({
+                            skipBackups: true
+                        })
                     }}>
                         <TrashIcon />
                     </Button>
@@ -172,6 +182,9 @@
                 name: "",
                 params: "",
                 flags: [],
+            })
+            void requestImmediateSave({
+                skipBackups: true
             })
         }}>
             <PlusIcon />

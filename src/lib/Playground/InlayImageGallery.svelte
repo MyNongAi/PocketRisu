@@ -388,7 +388,7 @@
         onclick={() => openViewer(item.id)}
       >
         <!-- Thumbnail: use direct /api/asset/ URL for HTTP caching -->
-        {#if item.hasThumb}
+        {#if item.type === 'image'}
           <img alt={item.name} class="w-full h-full object-cover" src={`/api/asset/${Buffer.from('inlay_thumb/' + item.id, 'utf-8').toString('hex')}`} loading="lazy" />
         {:else}
           <div class="w-full h-full flex items-center justify-center text-textcolor2/40">

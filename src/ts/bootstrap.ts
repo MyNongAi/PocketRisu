@@ -8,7 +8,7 @@ import { loadPlugins } from "./plugins/plugins.svelte";
 import { alertError, alertMd, alertTOS, waitAlert, alertConfirm, alertInput } from "./alert";
 import { characterURLImport } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
-import { decodeRisuSave, encodeRisuSaveLegacy, encodeEntity } from "./storage/risuSave";
+import { decodeRisuSave, encodeRisuSaveLegacy } from "./storage/risuSave";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
 import { autoServerBackup } from "./kei/backup";
@@ -22,6 +22,7 @@ import { makeColdData } from "./process/coldstorage.svelte";
 import {
     forageStorage,
     saveDb,
+    setPatchSyncBaseline,
     getDbBackups,
     getUncleanables,
     getBasename,
@@ -52,6 +53,7 @@ export async function loadData() {
                 }
                 try {
                     const decoded = await decodeRisuSave(gotStorage)
+                    setPatchSyncBaseline(safeStructuredClone(decoded))
                     console.log(decoded)
                     setDatabase(decoded)
                     migratePromptOptionStates(decoded)
@@ -64,6 +66,7 @@ export async function loadData() {
                             LoadingStatusState.text = `Reading Backup File ${backup}...`
                             const backupData: Uint8Array = await forageStorage.getItem(`database/dbbackup-${backup}.bin`) as unknown as Uint8Array
                             const backupDecoded = await decodeRisuSave(backupData)
+                            setPatchSyncBaseline(safeStructuredClone(backupDecoded))
                             setDatabase(backupDecoded)
                             migratePromptOptionStates(backupDecoded)
                             backupLoaded = true
@@ -97,53 +100,6 @@ export async function loadData() {
                     changeLanguage(mappedLanguage)
                 }
             }
-            // ── Entity API initial migration (3-2) ─────────────────────────
-            // If entity settings table is empty, populate all entity tables
-            // from the just-loaded in-memory database.
-            LoadingStatusState.text = "Initializing Entity Storage..."
-            try {
-                const existingSettings = await forageStorage.loadSettings()
-                if (!existingSettings) {
-                    const db = getDatabase()
-                    const migStart = performance.now()
-                    const saves: Promise<unknown>[] = []
-                    // Settings (root)
-                    const rootObj: Record<string, unknown> = {}
-                    for (const key of Object.keys(db)) {
-                        if (key !== 'characters' && key !== 'botPresets' && key !== 'modules') {
-                            rootObj[key] = (db as any)[key]
-                        }
-                    }
-                    saves.push(forageStorage.saveSettings(encodeEntity(rootObj)))
-                    // Characters
-                    for (const char of db.characters) {
-                        saves.push(forageStorage.saveCharacter(char.chaId, encodeEntity(char)))
-                        for (const chat of char.chats ?? []) {
-                            saves.push(forageStorage.saveChat(char.chaId, chat.id, encodeEntity(chat)))
-                        }
-                    }
-                    // Presets
-                    for (const preset of db.botPresets) {
-                        const id = String(preset.name ?? db.botPresets.indexOf(preset))
-                        saves.push(forageStorage.savePreset(id, encodeEntity(preset)))
-                    }
-                    // Modules
-                    for (const mod of db.modules ?? []) {
-                        saves.push(forageStorage.saveModule(mod.id, encodeEntity(mod)))
-                    }
-                    console.log('[Bootstrap] entity migration start', {
-                        characters: db.characters.length,
-                        chats: db.characters.reduce((a, c) => a + (c.chats?.length ?? 0), 0),
-                        presets: db.botPresets.length,
-                        modules: db.modules?.length ?? 0,
-                    })
-                    await Promise.all(saves)
-                    console.log('[Bootstrap] entity migration done', (performance.now() - migStart).toFixed(0), 'ms')
-                }
-            } catch (e) {
-                console.warn('[Bootstrap] Entity API migration failed (non-fatal):', e)
-            }
-            // ── End entity migration ────────────────────────────────────────
             LoadingStatusState.text = "Loading Plugins..."
             try {
                 await loadPlugins()
