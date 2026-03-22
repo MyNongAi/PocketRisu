@@ -99,20 +99,8 @@ jobs:
       - name: Add launcher scripts
         shell: bash
         run: |
-          cat > portable/RisuAI.bat << 'BATCH'
-          @echo off
-          setlocal
-          title RisuAI NodeOnly
-          set PORT=6001
-          start "" "http://localhost:%PORT%"
-          "%~dp0bin\node.exe" "%~dp0server\node\server.cjs"
-          pause
-          BATCH
-          cat > portable/update.bat << 'BATCH'
-          @echo off
-          "%~dp0bin\node.exe" "%~dp0scripts\updater.cjs"
-          pause
-          BATCH
+          printf '@echo off\r\nsetlocal\r\ntitle RisuAI NodeOnly\r\nset PORT=6001\r\nstart "" "http://localhost:%%PORT%%"\r\n"%%~dp0bin\\node.exe" "%%~dp0server\\node\\server.cjs"\r\npause\r\n' > portable/RisuAI.bat
+          printf '@echo off\r\n"%%~dp0bin\\node.exe" "%%~dp0scripts\\updater.cjs"\r\npause\r\n' > portable/update.bat
 
       - name: Add updater script
         shell: bash

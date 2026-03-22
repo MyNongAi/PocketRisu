@@ -135,23 +135,53 @@ async function main() {
 
     const extractedDir = path.join(tmpDir, 'extracted');
 
-    // Remove old files (keep save/, bin/, .installed-version, .update-tmp)
+    // Phase 1: move old files to backup (safer than immediate delete)
     log('Replacing files...');
     const keep = new Set(['save', 'bin', '.installed-version', '.update-tmp', 'scripts']);
+    const backupDir = path.join(tmpDir, 'backup');
+    fs.mkdirSync(backupDir, { recursive: true });
+
     for (const entry of fs.readdirSync(ROOT)) {
         if (keep.has(entry)) continue;
-        fs.rmSync(path.join(ROOT, entry), { recursive: true, force: true });
+        try {
+            fs.renameSync(path.join(ROOT, entry), path.join(backupDir, entry));
+        } catch (e) {
+            log(`Warning: could not move ${entry} to backup, removing directly...`);
+            try { fs.rmSync(path.join(ROOT, entry), { recursive: true, force: true }); }
+            catch { /* best effort */ }
+        }
     }
 
-    // Move new files
-    for (const entry of fs.readdirSync(extractedDir)) {
-        if (entry === 'save' || entry === 'bin') continue;
-        const src = path.join(extractedDir, entry);
-        const dest = path.join(ROOT, entry);
-        fs.renameSync(src, dest);
+    // Phase 2: move new files from extracted to root
+    const moved = [];
+    const skipMove = new Set(['save', 'bin', 'scripts']);
+    try {
+        for (const entry of fs.readdirSync(extractedDir)) {
+            if (skipMove.has(entry)) continue;
+            const src = path.join(extractedDir, entry);
+            const dest = path.join(ROOT, entry);
+            if (fs.existsSync(dest)) {
+                fs.rmSync(dest, { recursive: true, force: true });
+            }
+            fs.renameSync(src, dest);
+            moved.push(entry);
+        }
+    } catch (e) {
+        // Restore from backup on failure
+        log(`Error moving files: ${e.message}`);
+        log('Restoring from backup...');
+        for (const entry of fs.readdirSync(backupDir)) {
+            const src = path.join(backupDir, entry);
+            const dest = path.join(ROOT, entry);
+            try {
+                if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true, force: true });
+                fs.renameSync(src, dest);
+            } catch { /* best effort */ }
+        }
+        error('Update failed, previous version restored. Please try again.');
     }
 
-    // Update scripts/ from new release
+    // Phase 3: update scripts/ from new release
     const newScripts = path.join(extractedDir, 'scripts');
     if (fs.existsSync(newScripts)) {
         if (!fs.existsSync(path.join(ROOT, 'scripts'))) {
@@ -166,7 +196,8 @@ async function main() {
     fs.writeFileSync(path.join(ROOT, '.installed-version'), latest);
 
     // Cleanup
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); }
+    catch { log('Warning: could not remove .update-tmp, you can delete it manually.'); }
 
     log(`Update complete! ${current} → ${latest}`);
     log('');
