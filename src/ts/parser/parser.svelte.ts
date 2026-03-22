@@ -11,6 +11,7 @@ import css, { type CssAtRuleAST } from '@adobe/css-tools'
 import { selectedCharID } from '../stores.svelte';
 import { calcString } from '../process/infunctions';
 import { findCharacterbyId, getPersonaPrompt, getUserIcon, getUserName, pickHashRand, replaceAsync} from '../util';
+
 import { getInlayInfosBatch } from '../process/files/inlays';
 import { getModuleAssets, getModuleLorebooks, getModules } from '../process/modules';
 import hljs from 'highlight.js/lib/core'
@@ -737,23 +738,28 @@ async function processInlayQueue() {
     while (resolveQueue.length > 0) {
         const batch = resolveQueue.splice(0, 20)
 
-        // Collect IDs that need type info (not yet in blobUrlCache)
         const unknownIds = batch
             .filter(({ id }) => !blobUrlCache.has(id))
             .map(({ id }) => id)
 
-        // Single bulk-read for type info — avoids N+1
         if (unknownIds.length > 0) {
-            try {
-                const infos = await getInlayInfosBatch(unknownIds)
-                for (const id of unknownIds) {
-                    const type = infos[id]?.type ?? 'image'
-                    blobUrlCache.set(id, { url: assetUrl(`inlay/${id}`), type })
-                }
-            } catch {
-                // Fallback: default all to 'image'
+            if (DBState.db.inlayImagePriority) {
+                // Fast path: assume image, let img.onerror handle video/audio
                 for (const id of unknownIds) {
                     blobUrlCache.set(id, { url: assetUrl(`inlay/${id}`), type: 'image' })
+                }
+            } else {
+                // Accurate path: fetch type info first
+                try {
+                    const infos = await getInlayInfosBatch(unknownIds)
+                    for (const id of unknownIds) {
+                        const type = infos[id]?.type ?? 'image'
+                        blobUrlCache.set(id, { url: assetUrl(`inlay/${id}`), type })
+                    }
+                } catch {
+                    for (const id of unknownIds) {
+                        blobUrlCache.set(id, { url: assetUrl(`inlay/${id}`), type: 'image' })
+                    }
                 }
             }
         }

@@ -111,6 +111,7 @@ export const advancedSettingsItems: SettingItem[] = [
     { id: 'adv.showUnrec', type: 'check', labelKey: 'showUnrecommended', bindKey: 'showUnrecommended', helpKey: 'showUnrecommended', classes: 'mt-4' },
     { id: 'adv.imgComp', type: 'check', labelKey: 'imageCompression', bindKey: 'imageCompression', helpKey: 'imageCompression', classes: 'mt-4' },
     { id: 'adv.inlayLossless', type: 'check', labelKey: 'inlayImageLossless', bindKey: 'inlayImageLossless', helpKey: 'inlayImageLossless', classes: 'mt-4' },
+    { id: 'adv.inlayImagePriority', type: 'check', labelKey: 'inlayImagePriority', bindKey: 'inlayImagePriority', helpKey: 'inlayImagePriority', classes: 'mt-4' },
     { id: 'adv.inlayCompress', type: 'custom', componentId: 'InlayCompressButton' },
     { id: 'adv.useExp', type: 'check', labelKey: 'useExperimental', bindKey: 'useExperimental', helpKey: 'useExperimental', classes: 'mt-4' },
     { id: 'adv.sourceMap', type: 'check', labelKey: 'sourcemapTranslate', bindKey: 'sourcemapTranslate', helpKey: 'sourcemapTranslate', classes: 'mt-4' },

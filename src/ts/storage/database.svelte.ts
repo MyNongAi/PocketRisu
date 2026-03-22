@@ -346,6 +346,7 @@ export function setDatabase(data:Database){
     data.autoSuggestClean ??= true
     data.imageCompression ??= true
     data.inlayImageLossless ??= false
+    data.inlayImagePriority ??= true
     data.enableBlockPartialEdit ??= false
     data.enableDragPartialEdit ??= false
     if(!data.formatingOrder.includes('personaPrompt')){
@@ -1037,6 +1038,7 @@ export interface Database{
     useAutoTranslateInput:boolean
     imageCompression:boolean
     inlayImageLossless:boolean
+    inlayImagePriority:boolean
     account?:{
         token:string
         id:string,

@@ -1290,7 +1290,7 @@ app.get('/api/asset/:hexKey', sessionAuthMiddleware, async (req, res) => {
                 }
                 res.set({
                     'Content-Type': file.mime,
-                    'Cache-Control': 'public, max-age=0, must-revalidate',
+                    'Cache-Control': 'public, max-age=86400',
                     'ETag': etag,
                 })
                 return res.send(file.buffer)
