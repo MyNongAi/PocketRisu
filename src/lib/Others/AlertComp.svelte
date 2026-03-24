@@ -301,7 +301,15 @@
                     })
                 }}>OK</Button>
             {:else if $alertStore.type === 'input'}
-                <TextInput value={$alertStore.defaultValue} id="alert-input" autocomplete="off" marginTop list="alert-input-list" />
+                <TextInput value={$alertStore.defaultValue} id="alert-input" autocomplete="off" marginTop list="alert-input-list" onkeydown={(e) => {
+                    if (e.key === 'Enter') {
+                        alertStore.set({
+                            type: 'none',
+                            //@ts-expect-error 'value' doesn't exist on Element, but target is HTMLInputElement here
+                            msg: document.querySelector('#alert-input')?.value
+                        })
+                    }
+                }} />
                 <Button className="mt-4" onclick={() => {
                     alertStore.set({
                         type: 'none',
