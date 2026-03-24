@@ -1513,4 +1513,8 @@ export const languageKorean = {
     "togglePresetMenuDuplicate": "복제",
     "togglePresetMenuDelete": "삭제",
     "togglePresetMenuOverwrite": "덮어쓰기",
+    "togglePresetMenuExport": "내보내기",
+    "togglePresetImport": "파일에서 불러오기",
+    "togglePresetImported": (name: string) => `"${name}" 프리셋을 불러왔습니다.`,
+    "togglePresetImportError": "올바른 토글 프리셋 파일이 아닙니다.",
 } satisfies DeepPartial<typeof import('./en').languageEnglish>

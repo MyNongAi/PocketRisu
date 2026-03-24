@@ -1659,6 +1659,10 @@ export const languageEnglish = {
     togglePresetMenuDuplicate: "Duplicate",
     togglePresetMenuDelete: "Delete",
     togglePresetMenuOverwrite: "Overwrite",
+    togglePresetMenuExport: "Export",
+    togglePresetImport: "Import from File",
+    togglePresetImported: (name: string) => `Preset "${name}" imported.`,
+    togglePresetImportError: "Invalid toggle preset file.",
 } satisfies I18nTranslation;
 
 type I18nTranslationFunction = (...args: any[]) => string;

@@ -8,9 +8,9 @@
     import { ChevronRightIcon, User } from '@lucide/svelte';
     import { hubURL, isCharacterHasAssets } from 'src/ts/characterCards';
     import TextInput from '../UI/GUI/TextInput.svelte';
-    import { aiLawApplies, openURL, getFetchLogs } from 'src/ts/globalApi.svelte';
+    import { aiLawApplies, openURL, getFetchLogs, downloadFile } from 'src/ts/globalApi.svelte';
     import Button from '../UI/GUI/Button.svelte';
-    import { XIcon, ChevronDownIcon, ChevronUpIcon, CopyIcon, CheckIcon, PencilIcon, TrashIcon, EllipsisVerticalIcon, RefreshCwIcon, PlusIcon } from "@lucide/svelte";
+    import { XIcon, ChevronDownIcon, ChevronUpIcon, CopyIcon, CheckIcon, PencilIcon, TrashIcon, EllipsisVerticalIcon, RefreshCwIcon, PlusIcon, DownloadIcon, UploadIcon } from "@lucide/svelte";
     import hljs from 'highlight.js/lib/core';
     import json from 'highlight.js/lib/languages/json';
     import SelectInput from "../UI/GUI/SelectInput.svelte";
@@ -25,7 +25,8 @@
     import Help from "./Help.svelte";
     import { getChatBranches } from "src/ts/gui/branches";
     import { getCurrentCharacter, type TogglePreset, applyToggleValues, snapshotCurrentToggleValues } from "src/ts/storage/database.svelte";
-    import { alertInput, alertConfirm } from "src/ts/alert";
+    import { alertInput, alertConfirm, alertError, alertNormalWait } from "src/ts/alert";
+    import { selectSingleFile } from "src/ts/util";
     import { translateStackTrace } from "../../ts/sourcemap";
 
     let showDetails = $state(false);
@@ -800,6 +801,14 @@
                                                 <CopyIcon size={14} />
                                                 {language.togglePresetMenuDuplicate}
                                             </button>
+                                            <button class="w-full px-3 py-1.5 text-left text-sm text-textcolor hover:bg-selected cursor-pointer flex items-center gap-2" onclick={() => {
+                                                togglePresetMenuOpen = null
+                                                const exportData = { name: preset.name, values: preset.values, promptPresetName: preset.promptPresetName }
+                                                downloadFile(`${preset.name}_toggle.json`, Buffer.from(JSON.stringify(exportData, null, 2), 'utf-8'))
+                                            }}>
+                                                <DownloadIcon size={14} />
+                                                {language.togglePresetMenuExport}
+                                            </button>
                                             <hr class="border-darkborderc my-1" />
                                             <button class="w-full px-3 py-1.5 text-left text-sm text-red-400 hover:bg-selected cursor-pointer flex items-center gap-2" onclick={async () => {
                                                 togglePresetMenuOpen = null
@@ -842,6 +851,34 @@
             }}>
                 <PlusIcon size={16} />
                 {language.togglePresetSaveNew}
+            </button>
+            <button class="w-full mt-1 py-2 px-4 rounded-md border border-dashed border-darkborderc text-textcolor2 hover:bg-selected hover:text-textcolor cursor-pointer transition-colors flex items-center justify-center gap-2 text-sm" onclick={async () => {
+                let f: {name: string, data: Uint8Array} | undefined
+                try {
+                    f = await selectSingleFile(['json'])
+                } catch { return }
+                if (!f) { reopenPresets(); return }
+                try {
+                    const data = JSON.parse(Buffer.from(f.data).toString('utf-8'))
+                    if (typeof data.name !== 'string' || !data.values || typeof data.values !== 'object') {
+                        alertError(language.togglePresetImportError)
+                        return
+                    }
+                    DBState.db.togglePresets ??= []
+                    DBState.db.togglePresets.push({
+                        name: data.name,
+                        values: data.values,
+                        promptPresetName: data.promptPresetName
+                    })
+                    DBState.db.togglePresets = [...DBState.db.togglePresets]
+                    await alertNormalWait((language.togglePresetImported as any)(data.name))
+                    reopenPresets()
+                } catch {
+                    alertError(language.togglePresetImportError)
+                }
+            }}>
+                <UploadIcon size={16} />
+                {language.togglePresetImport}
             </button>
         </div>
     </div>
