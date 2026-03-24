@@ -5,7 +5,7 @@
     import { language } from "src/lang";
     import type { PromptItem } from "src/ts/process/prompt";
     import type { character, groupChat } from "src/ts/storage/database.svelte";
-    import { getCurrentChat, snapshotToggleValues, applyToggleValues, saveTogglesToChat, type TogglePreset } from "src/ts/storage/database.svelte";
+    import { getCurrentChat, snapshotToggleValues, snapshotCurrentToggleValues, applyToggleValues, saveTogglesToChat, type TogglePreset } from "src/ts/storage/database.svelte";
     import { alertInput, alertConfirm, alertNormal, alertTogglePresets } from "src/ts/alert";
     import { tooltip } from "src/ts/gui/tooltip";
     import { PinIcon, SaveIcon, BookmarkIcon, FolderOpenIcon } from "@lucide/svelte";
@@ -57,7 +57,7 @@
         DBState.db.togglePresets ??= []
         DBState.db.togglePresets.push({
             name,
-            values: snapshotToggleValues()
+            values: snapshotCurrentToggleValues()
         })
     }
 
