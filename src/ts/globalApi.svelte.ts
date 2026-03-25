@@ -1595,7 +1595,7 @@ export async function fetchNative(url: string, arg: {
         }
 
         if (realBody) {
-            proxyHeaders["Content-Type"] = headers["Content-Type"] ?? headers["content-type"] ?? "application/octet-stream"
+            proxyHeaders["Content-Type"] = headers["Content-Type"] ?? headers["content-type"] ?? "application/json"
         }
 
         const r = await fetch(`/proxy2`, {
