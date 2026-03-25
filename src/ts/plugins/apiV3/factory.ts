@@ -542,7 +542,28 @@ export class SandboxHost {
                     }
 
 
-                    response.result = this.serialize(result);
+                    // WebKit on iOS fails when Response.body (ReadableStream)
+                    // is transferred through postMessage. Pre-read and send as text.
+                    const isWebKit = /Safari/.test(navigator.userAgent) && !/Chrome|Chromium/.test(navigator.userAgent);
+                    if (isWebKit && result instanceof Response && result.body) {
+                        try {
+                            const bodyText = await result.text();
+                            response.result = {
+                                __type: 'CALLBACK_STREAMS',
+                                __specialType: 'Response',
+                                value: bodyText,
+                                init: {
+                                    status: result.status,
+                                    statusText: result.statusText,
+                                    headers: Array.from(result.headers.entries())
+                                }
+                            };
+                        } catch (_) {
+                            response.result = this.serialize(result);
+                        }
+                    } else {
+                        response.result = this.serialize(result);
+                    }
 
                 } catch (err: any) {
                     response.error = err.message || "Host execution error";
