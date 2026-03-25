@@ -1,13 +1,17 @@
-import { sleep } from "./util";
 import { globalFetch } from "./globalApi.svelte";
 
 let bgmElement:HTMLAudioElement|null = null;
+let domObserver: MutationObserver | null = null;
+
+const OBSERVED_HL_ATTR = 'data-risu-observed-hl'
+const OBSERVED_CTRL_ATTR = 'data-risu-observed-ctrl'
 
 function nodeObserve(node:HTMLElement){
     const hlLang = node.getAttribute('x-hl-lang');
     const ctrlName = node.getAttribute('risu-ctrl');
 
-    if(hlLang){
+    if(hlLang && node.getAttribute(OBSERVED_HL_ATTR) !== '1'){
+        node.setAttribute(OBSERVED_HL_ATTR, '1')
         node.addEventListener('contextmenu', (e)=>{
             e.preventDefault()
 
@@ -24,7 +28,7 @@ function nodeObserve(node:HTMLElement){
             copyOption.textContent = 'Copy'
             copyOption.setAttribute('class', 'px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 cursor-pointer')
             copyOption.addEventListener('click', ()=>{
-                navigator.clipboard.writeText(node.textContent)
+                navigator.clipboard.writeText(node.textContent ?? '')
                 menu.remove()
             })
 
@@ -33,7 +37,7 @@ function nodeObserve(node:HTMLElement){
             downloadOption.setAttribute('class', 'px-4 py-2 text-sm text-gray-300 hover:bg-gray-700 cursor-pointer')
             downloadOption.addEventListener('click', ()=>{
                 const a = document.createElement('a')
-                a.href = URL.createObjectURL(new Blob([node.textContent], {type: 'text/plain'}))
+                a.href = URL.createObjectURL(new Blob([node.textContent ?? ''], {type: 'text/plain'}))
                 a.download = 'code.' + hlLang
                 a.click()
                 menu.remove()
@@ -46,14 +50,15 @@ function nodeObserve(node:HTMLElement){
             menu.style.top = e.clientY + 'px'
 
             document.body.appendChild(menu)
-            
+
             document.addEventListener('click', ()=>{
                 menu?.remove()
             }, {once: true})
         })
     }
 
-    if(ctrlName){
+    if(ctrlName && node.getAttribute(OBSERVED_CTRL_ATTR) !== '1'){
+        node.setAttribute(OBSERVED_CTRL_ATTR, '1')
         const split = ctrlName.split('___');
 
         switch(split[0]){
@@ -74,22 +79,46 @@ function nodeObserve(node:HTMLElement){
     }
 }
 
+function observeNodeTree(node: Node) {
+    if(!(node instanceof Element)){
+        return
+    }
+
+    if(node instanceof HTMLElement){
+        nodeObserve(node)
+    }
+
+    node.querySelectorAll<HTMLElement>('[x-hl-lang], [risu-ctrl]').forEach((element) => {
+        nodeObserve(element)
+    })
+}
+
 export async function startObserveDom(){
-    //For codeblock we are using MutationObserver since it doesn't appear well
-    const observer = new MutationObserver((mutations) => {
+    if(domObserver){
+        return
+    }
+
+    // For parsed HTML blocks, scan once and then watch future subtree insertions.
+    document.querySelectorAll<HTMLElement>('[x-hl-lang], [risu-ctrl]').forEach((node) => {
+        nodeObserve(node)
+    })
+
+    const target = document.body ?? document.documentElement
+    if(!target){
+        return
+    }
+
+    domObserver = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
             mutation.addedNodes.forEach((node) => {
-                if(node instanceof HTMLElement){
-                    nodeObserve(node);
-                }
+                observeNodeTree(node)
             })
         })
     })
-
-    while(true){
-        document.querySelectorAll('[x-hl-lang], [risu-ctrl]').forEach(nodeObserve);
-        await sleep(100);
-    }
+    domObserver.observe(target, {
+        childList: true,
+        subtree: true,
+    })
 }
 
 
