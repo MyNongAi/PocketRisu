@@ -123,11 +123,20 @@ export async function startObserveDom(){
 
 
 let claudeObserverRunning = false;
+let claudeObserverTimer: ReturnType<typeof setInterval> | null = null;
 let lastClaudeObserverLoad = 0;
 let lastClaudeRequestTimes = 0;
 let lastClaudeObserverPayload:any = null;
 let lastClaudeObserverHeaders:any = null;
 let lastClaudeObserverURL:any = null;
+
+function stopClaudeObserver(){
+    if(claudeObserverTimer){
+        clearInterval(claudeObserverTimer)
+        claudeObserverTimer = null
+    }
+    claudeObserverRunning = false
+}
 
 export function registerClaudeObserver(arg:{
     url:string,
@@ -157,24 +166,29 @@ function claudeObserver(){
         })
         if(res.status >= 400){
             if(tries < 3){
-                fetchIt(tries + 1)
+                return fetchIt(tries + 1)
             }
         }
     }
 
-    const func = ()=>{       
+    const func = ()=>{
         //request every 4 minutes and 30 seconds
         if(lastClaudeObserverLoad > Date.now() - 1000 * 60 * 4.5){
             return
         }
-        
+
         if(lastClaudeRequestTimes > 4){
+            stopClaudeObserver()
             return
         }
-        fetchIt()
+        void fetchIt()
         lastClaudeObserverLoad = Date.now();
         lastClaudeRequestTimes += 1;
+
+        if(lastClaudeRequestTimes > 4){
+            stopClaudeObserver()
+        }
     }
-    
-    setInterval(func, 20000)
+
+    claudeObserverTimer = setInterval(func, 20000)
 }
