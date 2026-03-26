@@ -44,6 +44,7 @@ export interface HypaV3Settings {
     embeddingRequestsPerMinute: number;
     embeddingMaxConcurrent: number;
     alwaysToggleOn: boolean;
+    queryChatCount: number;
 }
 
 interface HypaV3Data {
@@ -96,7 +97,6 @@ export interface HypaV3Result {
 
 const logPrefix = "[HypaV3]";
 const memoryPromptTag = "Past Events Summary";
-const minChatsForSimilarity = 3;
 const summarySeparator = "\n\n";
 
 export async function hypaMemoryV3(
@@ -244,14 +244,14 @@ async function hypaMemoryV3MainExp(
             break;
         }
 
-        if (chats.length - startIdx <= minChatsForSimilarity) {
+        if (chats.length - startIdx <= settings.queryChatCount) {
             if (currentTokens <= maxContextTokens) {
                 break;
             } else {
                 return {
                     currentTokens,
                     chats,
-                    error: `${logPrefix} Cannot summarize further: input token count (${currentTokens}) exceeds max context size (${maxContextTokens}), but minimum ${minChatsForSimilarity} messages required.`,
+                    error: `${logPrefix} Cannot summarize further: input token count (${currentTokens}) exceeds max context size (${maxContextTokens}), but minimum ${settings.queryChatCount} messages required.`,
                     memory: toSerializableHypaV3Data(data),
                 };
             }
@@ -276,7 +276,7 @@ async function hypaMemoryV3MainExp(
 
         while (
             toSummarize.length < settings.maxChatsPerSummary &&
-            currentIndex < chats.length - minChatsForSimilarity
+            currentIndex < chats.length - settings.queryChatCount
         ) {
             const chat = chats[currentIndex];
             const chatTokens = await tokenizer.tokenizeChat(chat);
@@ -659,7 +659,7 @@ async function hypaMemoryV3MainExp(
         }
 
         const recentChats = chats
-            .slice(-minChatsForSimilarity)
+            .slice(-settings.queryChatCount)
             .filter((chat) => chat.content.trim().length > 0);
 
         const queries = recentChats
@@ -1027,14 +1027,14 @@ async function hypaMemoryV3Main(
             break;
         }
 
-        if (chats.length - startIdx <= minChatsForSimilarity) {
+        if (chats.length - startIdx <= settings.queryChatCount) {
             if (currentTokens <= maxContextTokens) {
                 break;
             } else {
                 return {
                     currentTokens,
                     chats,
-                    error: `${logPrefix} Cannot summarize further: input token count (${currentTokens}) exceeds max context size (${maxContextTokens}), but minimum ${minChatsForSimilarity} messages required.`,
+                    error: `${logPrefix} Cannot summarize further: input token count (${currentTokens}) exceeds max context size (${maxContextTokens}), but minimum ${settings.queryChatCount} messages required.`,
                     memory: toSerializableHypaV3Data(data),
                 };
             }
@@ -1043,7 +1043,7 @@ async function hypaMemoryV3Main(
         const toSummarize: OpenAIChat[] = [];
         const endIdx = Math.min(
             startIdx + settings.maxChatsPerSummary,
-            chats.length - minChatsForSimilarity
+            chats.length - settings.queryChatCount
         );
         let toSummarizeTokens = 0;
 
@@ -1347,7 +1347,7 @@ async function hypaMemoryV3Main(
         }
 
         const recentChats = chats
-            .slice(-minChatsForSimilarity)
+            .slice(-settings.queryChatCount)
             .filter((chat) => chat.content.trim().length > 0);
 
         if (recentChats.length > 0) {
@@ -1777,6 +1777,7 @@ export function createHypaV3Preset(
         embeddingRequestsPerMinute: 100,
         embeddingMaxConcurrent: 1,
         alwaysToggleOn: false,
+        queryChatCount: 3,
     };
 
     if (
