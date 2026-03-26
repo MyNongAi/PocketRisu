@@ -831,7 +831,7 @@ export async function globalFetch(url: string, arg: GlobalFetchArgs = {}): Promi
             return await fetchWithPlainFetch(url, arg);
         }
         //userScriptFetch is provided by userscript
-        if (window.userScriptFetch) {
+        if (window.userScriptFetch && !arg.plainFetchDeforce) {
             return await fetchWithUSFetch(url, arg);
         }
         return await fetchWithProxy(url, arg);
