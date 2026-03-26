@@ -516,17 +516,75 @@ export async function requestOpenAI(arg:RequestDataArgumentExtended):Promise<req
         }
         body.n = db.genTime
     }
-    if(arg.useStreaming){
-        body.stream = true
-        let urlHost = new URL(replacerURL).host
-        if(urlHost.includes("localhost") || urlHost.includes("172.0.0.1") || urlHost.includes("0.0.0.0")){
-            if(!isNodeServer){
-                return {
-                    type: 'fail',
-                    result: 'You are trying local request on streaming. this is not allowed dude to browser/os security policy. turn off streaming.',
+    if(aiModel === 'reverse_proxy' || aiModel.startsWith('xcustom:::')){
+        let additionalParams = aiModel === 'reverse_proxy' ? db.additionalParams : []
+
+        if(aiModel.startsWith('xcustom:::')){
+            const found = db.customModels.find(m => m.id === aiModel)
+            const params = found?.params
+            if(params){
+                const lines = params.split('\n')
+                for(const line of lines){
+                    const split = line.split('=')
+                    if(split.length >= 2){
+                        additionalParams.push([split[0], split.slice(1).join('=')])
+                    }
                 }
             }
         }
+
+        for(let i=0;i<additionalParams.length;i++){
+            let key = additionalParams[i][0]
+            let value = additionalParams[i][1]
+
+            if(!key || !value){
+                continue
+            }
+
+            if(value === '{{none}}'){
+                if(key.startsWith('header::')){
+                    key = key.replace('header::', '')
+                    delete headers[key]
+                }
+                else{
+                    delete body[key]
+                }
+                continue
+            }
+
+            if(key.startsWith('header::')){
+                key = key.replace('header::', '')
+                headers[key] = value
+            }
+            else if(value.startsWith('json::')){
+                value = value.replace('json::', '')
+                try {
+                    body[key] = JSON.parse(value)
+                } catch (error) {}
+            }
+            else if((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))){
+                body = setObjectValue(body, key, value.slice(1, -1))
+            }
+            else if(value === 'true' || value === 'false'){
+                body = setObjectValue(body, key, value === 'true')
+            }
+            else if(value === 'null'){
+                body = setObjectValue(body, key, null)
+            }
+            else{
+                const num = Number(value)
+                if(isNaN(num)){
+                    body = setObjectValue(body, key, value)
+                }
+                else{
+                    body = setObjectValue(body, key, num)
+                }
+            }
+        }
+    }
+
+    if(arg.useStreaming){
+        body.stream = true
 
         if(arg.previewBody){
             return {
@@ -579,71 +637,8 @@ export async function requestOpenAI(arg:RequestDataArgumentExtended):Promise<req
         }
     }
 
-    if(aiModel === 'reverse_proxy' || aiModel.startsWith('xcustom:::')){
-        let additionalParams = aiModel === 'reverse_proxy' ? db.additionalParams : []
-
-        if(aiModel.startsWith('xcustom:::')){
-            const found = db.customModels.find(m => m.id === aiModel)
-            const params = found?.params
-            if(params){
-                const lines = params.split('\n')
-                for(const line of lines){
-                    const split = line.split('=')
-                    if(split.length >= 2){
-                        additionalParams.push([split[0], split.slice(1).join('=')])
-                    }
-                }
-            }
-        }
-
-        for(let i=0;i<additionalParams.length;i++){
-            let key = additionalParams[i][0]
-            let value = additionalParams[i][1]
-
-            if(!key || !value){
-                continue
-            }
-
-            if(value === '{{none}}'){
-                if(key.startsWith('header::')){
-                    key = key.replace('header::', '')
-                    delete headers[key]
-                }
-                else{
-                    delete body[key]
-                }
-                continue
-            }
-
-            if(key.startsWith('header::')){
-                key = key.replace('header::', '')
-                headers[key] = value
-            }
-            else if(value.startsWith('json::')){
-                value = value.replace('json::', '')
-                try {
-                    body[key] = JSON.parse(value)                            
-                } catch (error) {}
-            }
-            else if((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))){
-                body = setObjectValue(body, key, value.slice(1, -1))
-            }
-            else if(value === 'true' || value === 'false'){
-                body = setObjectValue(body, key, value === 'true')
-            }
-            else if(value === 'null'){
-                body = setObjectValue(body, key, null)
-            }
-            else{
-                const num = Number(value)
-                if(isNaN(num)){
-                    body = setObjectValue(body, key, value)
-                }
-                else{
-                    body = setObjectValue(body, key, num)
-                }
-            }
-        }
+    if(!arg.useStreaming){
+        body.stream = false
     }
 
     if(arg.previewBody){
