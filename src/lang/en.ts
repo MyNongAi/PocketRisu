@@ -27,7 +27,7 @@ export const languageEnglish = {
         vertexAuthError: "Vertex AI authentication details are missing.",
         networkFetch: "This happens when the network is unstable or the server is down.",
         networkFetchWeb:
-            "This can be a CORS error. this only happens when using web version dude to limitations of the browser. try using desktop local version, or other version of Risuai.",
+            "This can be a CORS error. this only happens when using web version due to limitations of the browser. try using desktop local version, or other version of Risuai.",
         networkFetchPlain: "This can be a plain fetch error. try disabling force plain fetch option in settings.",
         requestLogRemoved: "This request log is removed.",
         requestLogRemovedDesc: "This request log removes when client is refreshed or reloaded.",
@@ -35,11 +35,11 @@ export const languageEnglish = {
     showHelp: "Show Help",
     help: {
         model: "Model option is a main model used in chat.",
-        submodel: "Auxiliary Model is a model that used in analizing emotion images and auto suggestions and etc. gpt3.5 is recommended.",
-        oaiapikey: "Api key for OpenAI. you can get it in https://platform.openai.com/account/api-keys",
+        submodel: "Auxiliary Model is a model that used in analyzing emotion images and auto suggestions and etc. gpt3.5 is recommended.",
+        oaiapikey: "API key for OpenAI. you can get it in https://platform.openai.com/account/api-keys",
         mainprompt: "The main prompt option sets the default model behavior.",
         jailbreak: "The jailbreak prompt option activates when jailbreak toggle is on in character.",
-        globalNote: "a note that strongly effects model behavior, also known as UJB. works in all characters.",
+        globalNote: "A note that strongly affects model behavior, also known as UJB. Works in all characters.",
         autoSuggest: "Prompts used to generate options when automatically suggesting user responses.",
         formatOrder: "formating order of prompt. lower blocks does more effect to the model.",
         forceUrl: "if it is not blank, the request will go to the url that you had inputed.",
@@ -49,12 +49,12 @@ export const languageEnglish = {
         presensePenalty: "Higher values prevent the use of duplicate words in all context, but character's response can break down more easily.",
         sdProvider: "provider for image generation.",
         msgSound: "Plays *ding* sound when character responses",
-        charDesc: "Brief description of the character. this effects characters response.",
-        charFirstMessage: "First message of the character. this highly effects characters response.",
-        charNote: "a note that strongly effects model behavior. embbedded to current character. also known as UJB.",
+        charDesc: "Brief description of the character. This affects characters response.",
+        charFirstMessage: "First message of the character. This highly affects characters response.",
+        charNote: "A note that strongly affects model behavior. Embbedded to current character, also known as UJB.",
         toggleNsfw: "toggles jailbreak prompt on and off.",
         lorebook: "Lorebook is a user-made dictionary for AI. AI only sees it when where is an activation keys in the context.",
-        loreName: "name of the lore. it dosen't effects the Ai.",
+        loreName: "Name of the lore. It doesn't affect the Ai.",
         loreActivationKey: "If one of the activation key exists in context, the lore will be activated and prompt will go in. seperated by commas.",
         loreorder: "If insert Order is higher, it will effect the model more, and it will more lessly cuted when activated lore are many.",
         bias: "bias is a key-value data which modifies the likelihood of string appearing.\nit can be -100 to 100, higher values will be more likely to appear, and lower values will be more unlikely to appear. \nAdditionaly, if its set to -101, it would work as 'strong ban word' for some models. \nWarning: if the tokenizer is wrong, it not work properly.",
@@ -63,9 +63,9 @@ export const languageEnglish = {
         imggen: "After analyzing the chat, apply the prompt to {{slot}}.",
         regexScript:
             "Regex Script is a custom regex that replaces string that matches IN to OUT.\n\nThere four type options." +
-            "\n\n- **Modify Input** modifys user's input" +
-            "\n\n- **Modify Output** modifys character's output" +
-            "\n\n- **Modify Request Data** modifys current chat data when sent." +
+            "\n\n- **Modify Input** modifies user's input" +
+            "\n\n- **Modify Output** modifies character's output" +
+            "\n\n- **Modify Request Data** modifies current chat data when sent." +
             "\n\n- **Modify Display** just modifies the text when shown without modifying chat data." +
             "\n\nIN must be a regex without flags and without slashes in start and end.\n\nOUT is a string which can include replacement patterns. these are the patterns:" +
             "\n\n- $$\n\n    - inserts $" +
@@ -86,13 +86,13 @@ export const languageEnglish = {
             "If your WebUI supports older version of api, your url should look *like https:.../run/textgen*\n\n" +
             "If your WebUI supports newVersion of api, your url should look like *https://.../api/v1/generate* and use the api server as host, and add --api to arguments.",
         exampleMessage:
-            "Example conversations that effects output of the character. it dosen't uses tokens permanently." +
+            "Example conversations that affects output of the character. It doesn't uses tokens permanently." +
             "\n\nExample format of conversations:" +
             "\n\n```\n<START>\n{{user}}: hi\n{{char}}: hello\n<START>\n{{user}}: hi\nHaruhi: hello\n```" +
             "\n\n```<START>``` Marks the beginning of a new conversation.",
         creatorQuotes: "Note that appearances on top of first message. Used to inform users about this character. It doesn't go into prompt.",
         systemPrompt: "A prompt that replaces main prompt in settings if its not blank.",
-        chatNote: "a note that strongly effects model behavior. embbedded to current chat. also known as memory or ujb.",
+        chatNote: "A note that strongly affects model behavior. Embbedded to current chat, also known as memory or UJB.",
         personality: "A brief description about character's personality. \n\n**It is not recommended to use this option. Describe it in character description instead.**",
         scenario: "A brief description about character's scenario. \n\n**It is not recommended to use this option. Describe it in character description instead.**",
         utilityBot: "When activated, it ignores main prompt, jailbreak and other prompts. used for bot made for utility, not for roleplay.",
