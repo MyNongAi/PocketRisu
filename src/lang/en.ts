@@ -22,6 +22,8 @@ export const languageEnglish = {
         noUserIcon: "You must set your icon first.",
         emptyText: "Text is empty.",
         wrongPassword: "Wrong Password",
+        coldStorageWriteFailed: "Cold storage write failed. Your chat data has been preserved.",
+        coldStorageVerifyFailed: "Cold storage verification failed. Your chat data has been preserved.",
         vertexAuthError: "Vertex AI authentication details are missing.",
         networkFetch: "This happens when the network is unstable or the server is down.",
         networkFetchWeb:
