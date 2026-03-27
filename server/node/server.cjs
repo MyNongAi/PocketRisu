@@ -1915,7 +1915,7 @@ app.post('/api/set_password', async (req, res) => {
     }
 })
 
-app.get('/api/read', authRouteLimiter, async (req, res, next) => {
+app.get('/api/read', async (req, res, next) => {
     if(!await checkAuth(req, res)){
         return;
     }
@@ -1962,7 +1962,7 @@ app.get('/api/read', authRouteLimiter, async (req, res, next) => {
     }
 });
 
-app.get('/api/remove', authRouteLimiter, async (req, res, next) => {
+app.get('/api/remove', async (req, res, next) => {
     if(!await checkAuth(req, res)){
         return;
     }
@@ -1995,7 +1995,7 @@ app.get('/api/remove', authRouteLimiter, async (req, res, next) => {
     }
 });
 
-app.get('/api/list', authRouteLimiter, async (req, res, next) => {
+app.get('/api/list', async (req, res, next) => {
     if(!await checkAuth(req, res)){
         return;
     }
@@ -2017,7 +2017,7 @@ app.get('/api/list', authRouteLimiter, async (req, res, next) => {
     }
 });
 
-app.post('/api/write', authRouteLimiter, async (req, res, next) => {
+app.post('/api/write', async (req, res, next) => {
     if(!await checkAuth(req, res)){
         return;
     }
@@ -2105,7 +2105,7 @@ app.post('/api/db/flush', sessionAuthMiddleware, async (req, res, next) => {
 });
 
 // ─── Patch sync endpoint ──────────────────────────────────────────────────────
-app.post('/api/patch', authRouteLimiter, async (req, res, next) => {
+app.post('/api/patch', async (req, res, next) => {
     if (!enablePatchSync) {
         res.status(404).send({ error: 'Patch sync is not enabled' });
         return;
@@ -2205,7 +2205,7 @@ app.post('/api/patch', authRouteLimiter, async (req, res, next) => {
 // ─── Bulk asset endpoints (3-2-B) ─────────────────────────────────────────────
 const BULK_BATCH = 50;
 
-app.post('/api/assets/bulk-read', authRouteLimiter, async (req, res, next) => {
+app.post('/api/assets/bulk-read', async (req, res, next) => {
     if(!await checkAuth(req, res)){ return; }
     try {
         const keys = req.body; // string[] — decoded key strings
@@ -2273,7 +2273,7 @@ app.post('/api/assets/bulk-read', authRouteLimiter, async (req, res, next) => {
     } catch(error){ next(error); }
 });
 
-app.post('/api/assets/bulk-write', authRouteLimiter, async (req, res, next) => {
+app.post('/api/assets/bulk-write', async (req, res, next) => {
     if(!await checkAuth(req, res)){ return; }
     try {
         const entries = req.body; // {key: string, value: base64}[]
