@@ -646,6 +646,10 @@ export function setDatabase(data:Database){
     // Because its likely they are power users who would benefit from the features
     data.enableRisuaiProTools ??= data.plugins.length > 0
     data.keepSessionAlive ??= 'off'
+    data.localNetworkMode ??= false
+    if (typeof data.localNetworkMode !== 'boolean') data.localNetworkMode = false
+    data.localNetworkTimeoutSec ??= 600
+    if (typeof data.localNetworkTimeoutSec !== 'number' || Number.isNaN(data.localNetworkTimeoutSec)) data.localNetworkTimeoutSec = 600
     changeLanguage(data.language)
     setDatabaseLite(data)
 }
@@ -973,6 +977,8 @@ export interface Database{
     useChatSticker:boolean,
     useAdditionalAssetsPreview:boolean,
     usePlainFetch:boolean
+    localNetworkMode:boolean
+    localNetworkTimeoutSec:number
     hypaMemory:boolean
     hypav2:boolean
     memoryAlgorithmType:string // To enable new memory module/algorithms 
@@ -1568,6 +1574,8 @@ export interface botPreset{
     name?:string
     apiType?: string
     openAIKey?: string
+    localNetworkMode?: boolean
+    localNetworkTimeoutSec?: number
     mainPrompt: string
     jailbreak: string
     globalNote:string
@@ -1970,6 +1978,8 @@ export const presetTemplate:botPreset = {
     name: "New Preset",
     apiType: "gemini-3-flash-preview",
     openAIKey: "",
+    localNetworkMode: false,
+    localNetworkTimeoutSec: 600,
     mainPrompt: defaultMainPrompt,
     jailbreak: defaultJailbreak,
     globalNote: "",
@@ -2020,6 +2030,8 @@ export function saveCurrentPreset(){
         name: pres[db.botPresetsId].name,
         apiType: db.apiType,
         openAIKey: db.openAIKey,
+        localNetworkMode: db.localNetworkMode,
+        localNetworkTimeoutSec: db.localNetworkTimeoutSec,
         mainPrompt:db.mainPrompt,
         jailbreak: db.jailbreak,
         globalNote: db.globalNote,
@@ -2135,6 +2147,8 @@ export function changeToPreset(id =0, savecurrent = true){
 
 export function setPreset(db:Database, newPres: botPreset){
     db.apiType = newPres.apiType ?? db.apiType
+    db.localNetworkMode = newPres.localNetworkMode ?? db.localNetworkMode
+    db.localNetworkTimeoutSec = newPres.localNetworkTimeoutSec ?? db.localNetworkTimeoutSec
     db.mainPrompt = newPres.mainPrompt ?? db.mainPrompt
     db.jailbreak = newPres.jailbreak ?? db.jailbreak
     db.globalNote = newPres.globalNote ?? db.globalNote

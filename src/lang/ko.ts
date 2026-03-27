@@ -90,6 +90,7 @@ export const languageKorean = {
         "inlayImagePriority": "활성화되면 인레이를 이미지로 먼저 렌더링하여 로딩 속도를 높입니다. 비디오/오디오 인레이는 이미지 로딩 실패 후 자동 전환됩니다. 비디오/오디오 인레이를 많이 사용하는 경우 비활성화하세요.",
         "useExperimental": "활성화되면 일부 실험적인 기능이 표시됩니다.",
         "forceProxyAsOpenAI": "활성화되면 커스텀 모델 사용 시 OpenAI 형식을 강제로 사용합니다.",
+        "localNetworkModeDesc": "사설망/LAN 모델 URL을 브라우저 직접 요청 대신 로컬 서버를 통해 라우팅합니다.\n\n**목적**\n- 브라우저 사설망/CORS 제한 우회\n- 로컬 모델의 느린 첫 토큰 응답에 대한 타임아웃 위험 완화\n\n**동작 방식**\n- 스트리밍: Job+WebSocket 릴레이 우선 (실패 시 /proxy2 폴백)\n- 비스트리밍: /proxy2 릴레이\n\n**제약사항**\n- OpenAI 호환 요청 경로에만 적용",
         "forcePlainFetch": "활성화되면 네이티브 HTTP 요청 대신 브라우저 Fetch API를 사용합니다. 이로 인해 CORS 오류가 발생할 수 있습니다.",
         "autoFillRequestURL": "활성화되면 요청 URL을 현재 모델과 일치하도록 자동으로 채웁니다.",
         "chainOfThought": "활성화되면 생각의 사슬 프롬프트를 프롬프트에 추가합니다.",
