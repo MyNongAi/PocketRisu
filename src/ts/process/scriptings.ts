@@ -1247,14 +1247,16 @@ function loadLoreBooks(id)
     return json.decode(loadLoreBooksMain(id):await())
 end
 
-function LLM(id, prompt, useMultimodal)
+function LLM(id, prompt, useMultimodal, options)
     useMultimodal = useMultimodal or false
-    return json.decode(LLMMain(id, json.encode(prompt), useMultimodal):await())
+    options = options or {}
+    return json.decode(LLMMain(id, json.encode(prompt), useMultimodal, json.encode(options)):await())
 end
 
-function axLLM(id, prompt, useMultimodal)
+function axLLM(id, prompt, useMultimodal, options)
     useMultimodal = useMultimodal or false
-    return json.decode(axLLMMain(id, json.encode(prompt), useMultimodal):await())
+    options = options or {}
+    return json.decode(axLLMMain(id, json.encode(prompt), useMultimodal, json.encode(options)):await())
 end
 
 function getCharacterImage(id)

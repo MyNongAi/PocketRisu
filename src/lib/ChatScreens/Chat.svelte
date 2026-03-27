@@ -318,12 +318,17 @@
             <button class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
                             hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center"
                     onclick={() => {
-                        chatBodyRef?.loadTranslationForEdit()
+                        if(editTranslationMode){
+                            chatBodyRef?.saveTranslationEdit()
+                        }
+                        else{
+                            chatBodyRef?.loadTranslationForEdit()
+                        }
                     }}
             >
                 <PencilIcon size={20} />
                 <span class="ml-1">
-                    {language.editTranslation}
+                    {editTranslationMode ? language.editTranslationSave : language.editTranslation}
                 </span>
             </button>
         {/if}

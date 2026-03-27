@@ -1619,9 +1619,14 @@ export async function fetchNative(url: string, arg: {
     const useLocalNetworkRoute = arg.networkRoute === 'local_network' && isLocalNetworkUrl(url)
     const timeoutSignal = buildTimeoutSignal(arg.signal, arg.requestTimeoutMs)
     const requestSignal = timeoutSignal.signal
+    const db = getDatabase()
+    let throughProxy = !db.usePlainFetch
+    if (useLocalNetworkRoute) {
+        throughProxy = true
+    }
 
     try {
-        if (window.userScriptFetch) {
+        if (window.userScriptFetch && !throughProxy) {
             return await window.userScriptFetch(url, {
                 body: realBody as any,
                 headers: headers,

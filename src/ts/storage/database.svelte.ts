@@ -554,6 +554,18 @@ export function setDatabase(data:Database){
             )
         )
     }
+    if (data.botPresets) {
+        for (const preset of data.botPresets) {
+            preset.localNetworkMode ??= false
+            preset.localNetworkTimeoutSec ??= 600
+            if (typeof preset.localNetworkMode !== 'boolean') {
+                preset.localNetworkMode = false
+            }
+            if (typeof preset.localNetworkTimeoutSec !== 'number' || Number.isNaN(preset.localNetworkTimeoutSec)) {
+                preset.localNetworkTimeoutSec = 600
+            }
+        }
+    }
     data.hypaV3PresetId ??= 0
     data.showDeprecatedTriggerV2 ??= false
     data.returnCSSError ??= true

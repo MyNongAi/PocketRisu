@@ -584,9 +584,9 @@ async function translateLLM(text:string, arg:{to:string, from:string, regenerate
     return result
 }
 
-export function clearLLMCache(): void {
+export async function clearLLMCache(): Promise<void> {
     llmTranslateCache.clear()
-    void clearPersistentPrefix(llmTranslateCachePrefix)
+    await clearPersistentPrefix(llmTranslateCachePrefix)
 }
 
 export async function getLLMCache(text:string):Promise<string | null>{
