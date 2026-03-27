@@ -714,6 +714,15 @@ function isLocalNetworkHost(hostname) {
     if (normalizedHost === 'localhost' || normalizedHost === '::1' || normalizedHost.endsWith('.local')) {
         return true;
     }
+    // NodeOnly policy: keep server-side validation aligned with the client helper
+    // for Node/self-hosted deployments where single-label LAN or Docker DNS names
+    // like "litellm" / "ollama" are valid local targets. Upstream currently only
+    // allows localhost/.local/IP here, but NodeOnly routes all local-network-mode
+    // traffic through the Node server, so rejecting single-label hosts would make
+    // the feature unusable for common self-hosted setups.
+    if (/^[a-z0-9_-]+$/i.test(normalizedHost) && !normalizedHost.includes('.')) {
+        return true;
+    }
     if (net.isIP(normalizedHost) === 4) {
         return isPrivateIPv4Host(normalizedHost);
     }
