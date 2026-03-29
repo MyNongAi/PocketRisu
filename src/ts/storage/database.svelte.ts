@@ -1710,7 +1710,6 @@ export interface themePreset{
     memoryLimitThickness?: number
     settingsCloseButtonSize: number
     // Others tab (submenu 2)
-    fullScreen: boolean
     showMemoryLimit: boolean
     showFirstMessagePages: boolean
     hideRealm: boolean
@@ -2104,7 +2103,6 @@ export const themePresetTemplate: themePreset = {
     animationSpeed: 0.4,
     memoryLimitThickness: 1,
     settingsCloseButtonSize: 24,
-    fullScreen: false,
     showMemoryLimit: false,
     showFirstMessagePages: false,
     hideRealm: false,
@@ -2413,7 +2411,6 @@ export function saveCurrentThemePreset(){
         animationSpeed: db.animationSpeed,
         memoryLimitThickness: db.memoryLimitThickness,
         settingsCloseButtonSize: db.settingsCloseButtonSize,
-        fullScreen: db.fullScreen,
         showMemoryLimit: db.showMemoryLimit,
         showFirstMessagePages: db.showFirstMessagePages,
         hideRealm: db.hideRealm,
@@ -2485,7 +2482,6 @@ export function changeToThemePreset(id = 0, savecurrent = true){
     db.animationSpeed = p.animationSpeed ?? db.animationSpeed
     db.memoryLimitThickness = p.memoryLimitThickness ?? db.memoryLimitThickness
     db.settingsCloseButtonSize = p.settingsCloseButtonSize ?? db.settingsCloseButtonSize
-    db.fullScreen = p.fullScreen ?? db.fullScreen
     db.showMemoryLimit = p.showMemoryLimit ?? db.showMemoryLimit
     db.showFirstMessagePages = p.showFirstMessagePages ?? db.showFirstMessagePages
     db.hideRealm = p.hideRealm ?? db.hideRealm
@@ -2529,6 +2525,7 @@ export async function downloadThemePreset(id: number, type: 'json'|'risutheme' =
     saveCurrentThemePreset()
     let db = getDatabase()
     let pres = safeStructuredClone(db.themePresets[id])
+    pres.customBackground = ''
 
     if(type === 'json'){
         downloadFile(pres.name + "_theme.json", Buffer.from(JSON.stringify(pres, null, 2)))
