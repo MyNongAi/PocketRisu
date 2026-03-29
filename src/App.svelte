@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { DynamicGUI, settingsOpen, sideBarStore, openPresetList, openPersonaList, openHypaV3PresetList, openThemePresetList, MobileGUI, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore } from './ts/stores.svelte';
+    import { DynamicGUI, settingsOpen, sideBarStore, openPresetList, openPersonaList, personaSelectCallback, openHypaV3PresetList, openThemePresetList, MobileGUI, CustomGUISettingMenuStore, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, easyPanelStore } from './ts/stores.svelte';
     import Sidebar from './lib/SideBars/Sidebar.svelte';
     import { DBState } from './ts/stores.svelte';
     import ChatScreen from './lib/ChatScreens/ChatScreen.svelte';
@@ -217,7 +217,7 @@
         <Themepreset close={() => {$openThemePresetList = false}} />
     {/if}
     {#if $openPersonaList}
-        <ListedPersona close={() => {$openPersonaList = false}} />
+        <ListedPersona close={() => {$openPersonaList = false; $personaSelectCallback = null}} onSelect={$personaSelectCallback} />
     {/if}
     {#if $openHypaV3PresetList}
         <ListedHypaV3Preset close={() => {$openHypaV3PresetList = false}} />
