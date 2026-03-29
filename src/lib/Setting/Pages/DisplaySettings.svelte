@@ -72,6 +72,11 @@
         <TextAreaInput bind:value={DBState.db.guiHTML} />
     {/if}
 
+    <span class="text-textcolor mt-4">{language.customCSS}<Help key="customCSS" /></span>
+    <TextAreaInput bind:value={DBState.db.customCSS} onInput={() => {
+        updateTextThemeAndCSS()
+    }} />
+
 
     {#if DBState.db.theme === "waifu"}
         <span class="text-textcolor mt-4">{language.waifuWidth}</span>
@@ -427,10 +432,5 @@
             <Help key="unrecommended" name={language.useChatSticker} unrecommended/>
         </div>
     {/if}
-
-    <span class="text-textcolor mt-4">{language.customCSS}<Help key="customCSS" /></span>
-    <TextAreaInput bind:value={DBState.db.customCSS} onInput={() => {
-        updateTextThemeAndCSS()
-    }} />
 
 {/if}
