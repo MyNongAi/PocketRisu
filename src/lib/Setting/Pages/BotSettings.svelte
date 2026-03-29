@@ -159,7 +159,7 @@
         <TextInput marginBottom={false} size={"sm"} bind:value={DBState.db.customProxyRequestModel} placeholder="Name" />
         <span class="text-textcolor mt-4"> {language.format}</span>
         <SelectInput value={DBState.db.customAPIFormat.toString()} onchange={(e) => {
-            DBState.db.customAPIFormat = parseInt(e.currentTarget.value)
+            DBState.db.customAPIFormat = parseInt(e.currentTarget.value) as LLMFormat
         }}>
             <OptionInput value={LLMFormat.OpenAICompatible.toString()}>
                 OpenAI Compatible
@@ -537,7 +537,7 @@
         {/if}
     </Accordion>
 
-    {#snippet CustomFlagButton(name:string,flag:number)}
+    {#snippet CustomFlagButton(name:string,flag:LLMFlags)}
         <Button className="mt-2" onclick={(e) => {
             if(DBState.db.customFlags.includes(flag)){
                 DBState.db.customFlags = DBState.db.customFlags.filter((f) => f !== flag)

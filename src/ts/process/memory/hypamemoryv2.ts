@@ -220,7 +220,7 @@ export class HypaProcessorV2<TMetadata> {
       const embeddingTasks = chunks.map((chunk) => {
         const contents = chunk.map((item) => item.content);
 
-        return () => this.getAPIEmbeds(contents);
+        return () => this.getAPIEmbeds(contents, saveToMemory ? "document" : "query");
       });
 
       // Progress callback
@@ -355,7 +355,10 @@ export class HypaProcessorV2<TMetadata> {
     return results;
   }
 
-  private async getAPIEmbeds(contents: string[]): Promise<EmbeddingVector[]> {
+  private async getAPIEmbeds(
+    contents: string[],
+    inputType: "query" | "document" = "query"
+  ): Promise<EmbeddingVector[]> {
     const db = getDatabase();
     let response = null;
 
@@ -424,7 +427,7 @@ export class HypaProcessorV2<TMetadata> {
           body: {
             "inputs": contents.map(s => [s]),
             "model": "voyage-context-3",
-            "input_type": "query"
+            "input_type": inputType
           }
         }
       );
