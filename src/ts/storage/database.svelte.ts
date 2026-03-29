@@ -220,6 +220,9 @@ export function setDatabase(data:Database){
     if(checkNullish(data.supaMemoryKey)){
         data.supaMemoryKey = ""
     }
+    if(checkNullish(data.voyageApiKey)){
+        data.voyageApiKey = ""
+    }
     if(checkNullish(data.hypaMemoryKey)){
         data.hypaMemoryKey = ""
     }
@@ -944,6 +947,7 @@ export interface Database{
     roundIcons:boolean
     useStreaming:boolean
     supaMemoryKey:string
+    voyageApiKey:string
     hypaMemoryKey:string
     supaModelType:string
     textScreenColor?:string
