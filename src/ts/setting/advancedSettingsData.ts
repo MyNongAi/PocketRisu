@@ -1,6 +1,5 @@
 
 import type { SettingItem } from './types';
-import { loadPlugins } from '../plugins/plugins.svelte';
 export const advancedSettingsItems: SettingItem[] = [
     { type: 'header', id: 'adv.header', labelKey: 'advancedSettings', options: { level: 'h2' }, classes: '!mb-0' },
     { type: 'header', id: 'adv.warn', labelKey: 'advancedSettingsWarn', options: { level: 'warning' } },
@@ -110,9 +109,6 @@ export const advancedSettingsItems: SettingItem[] = [
     { id: 'adv.sayNothing', type: 'check', labelKey: 'sayNothing', bindKey: 'useSayNothing', helpKey: 'sayNothing', classes: 'mt-4' },
     { id: 'adv.showUnrec', type: 'check', labelKey: 'showUnrecommended', bindKey: 'showUnrecommended', helpKey: 'showUnrecommended', classes: 'mt-4' },
     { id: 'adv.imgComp', type: 'check', labelKey: 'imageCompression', bindKey: 'imageCompression', helpKey: 'imageCompression', classes: 'mt-4' },
-    { id: 'adv.inlayLossless', type: 'check', labelKey: 'inlayImageLossless', bindKey: 'inlayImageLossless', helpKey: 'inlayImageLossless', classes: 'mt-4' },
-    { id: 'adv.inlayImagePriority', type: 'check', labelKey: 'inlayImagePriority', bindKey: 'inlayImagePriority', helpKey: 'inlayImagePriority', classes: 'mt-4' },
-    { id: 'adv.inlayCompress', type: 'custom', componentId: 'InlayCompressButton' },
     { id: 'adv.useExp', type: 'check', labelKey: 'useExperimental', bindKey: 'useExperimental', helpKey: 'useExperimental', classes: 'mt-4' },
     { id: 'adv.sourceMap', type: 'check', labelKey: 'sourcemapTranslate', bindKey: 'sourcemapTranslate', helpKey: 'sourcemapTranslate', classes: 'mt-4' },
     { id: 'adv.forceProxy', type: 'check', labelKey: 'forceProxyAsOpenAI', bindKey: 'forceProxyAsOpenAI', helpKey: 'forceProxyAsOpenAI', classes: 'mt-4' },
@@ -144,13 +140,6 @@ export const advancedSettingsItems: SettingItem[] = [
     {
         id: 'adv.cot', type: 'check', labelKey: 'cot', bindKey: 'chainOfThought',
         condition: (ctx) => ctx.db.showUnrecommended, helpKey: 'customChainOfThought', helpUnrecommended: true, classes: 'mt-4'
-    },
-    {
-        id: 'adv.allowV2Plugin', type: 'check', labelKey: 'allowV2Plugin', bindKey: 'allowV2Plugin',
-        condition: (ctx) => ctx.db.showUnrecommended, helpKey: 'allowV2Plugin', helpUnrecommended: true, classes: 'mt-4',
-        onChange: () => {
-            void loadPlugins();
-        }
     },
 
     // More Toggles
