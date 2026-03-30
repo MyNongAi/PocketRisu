@@ -1166,10 +1166,16 @@ app.get('/api/test_auth', async(req, res) => {
         res.send({status: 'unset'})
     }
     else if(!await checkAuth(req, res, true)){
-        res.send({status: 'incorrect'})
+        // JWT missing/invalid – fall back to session cookie (survives page refresh)
+        const sessionToken = parseSessionCookie(req)
+        if (sessionToken && (sessions.get(sessionToken) ?? 0) > Date.now()) {
+            res.send({status: 'success', token: createServerJwt()})
+        } else {
+            res.send({status: 'incorrect'})
+        }
     }
     else{
-        res.send({status: 'success'})
+        res.send({status: 'success', token: createServerJwt()})
     }
 })
 

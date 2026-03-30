@@ -276,6 +276,9 @@ export class NodeStorage{
                 return
             }
             else{
+                if (data.token) {
+                    this.cachedJwt = { token: data.token, expiresAt: Date.now() + 5 * 60 * 1000 }
+                }
                 this.authChecked = true
             }
         }
