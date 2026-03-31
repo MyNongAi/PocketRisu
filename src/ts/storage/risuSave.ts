@@ -84,6 +84,9 @@ enum RisuSaveType {
     REMOTE = 6,
     CHARACTER_WITHOUT_CHAT = 7,
     ROOT_COMPONENT = 8,
+    PLUGINS = 9,
+    LOADOUTS = 10,
+    PLUGIN_STORAGE = 11,
 }
 
 type EncodeBlockArg = {
@@ -408,6 +411,7 @@ export class RisuSaveDecoder {
         let directory: string[] = []
         for(let i = 0; i < this.blocks.length; i++){
             const key = i;
+            try {
             switch(this.blocks[key].type){
                 case RisuSaveType.ROOT:{
                     const rootData = JSON.parse(this.blocks[key].content);
@@ -465,6 +469,18 @@ export class RisuSaveDecoder {
                     //ignore for now
                     break;
                 }
+                case RisuSaveType.PLUGINS:{
+                    db.plugins = JSON.parse(this.blocks[key].content);
+                    break;
+                }
+                case RisuSaveType.LOADOUTS:{
+                    db.loadouts = JSON.parse(this.blocks[key].content);
+                    break;
+                }
+                case RisuSaveType.PLUGIN_STORAGE:{
+                    db.pluginCustomStorage = JSON.parse(this.blocks[key].content);
+                    break;
+                }
                 case RisuSaveType.REMOTE:{
                     const remoteInfo:{
                         v:number
@@ -503,6 +519,13 @@ export class RisuSaveDecoder {
                 }
                 default:{
                     console.warn(`Not Implemented RisuSaveType: ${this.blocks[key].type} for ${this.blocks[key].name}`);
+                }
+            }
+            } catch (error) {
+                console.error(`Error processing block ${this.blocks[key].name}:`, error);
+
+                if(this.blocks[key].type === RisuSaveType.ROOT){
+                    throw new Error('Failed to decode root block, cannot proceed with decoding RisuSave data');
                 }
             }
         }

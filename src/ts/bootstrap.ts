@@ -395,7 +395,10 @@ async function cleanChunks() {
         db.characters.map((v) => v.chaId)
     )
     for (const asset of indexes) {
-        if (asset.startsWith('assets/')) {
+        if (asset.endsWith('.meta')) {
+            continue
+        }
+        else if (asset.startsWith('assets/')) {
             const n = getBasename(asset)
             if(!uncleanable.has(n)) {
                 await forageStorage.removeItem(asset)
