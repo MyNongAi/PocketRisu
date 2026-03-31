@@ -1484,6 +1484,7 @@ export const languageEnglish = {
         webcam: "Toggle Webcam",
         focusInput: "Focus Input",
         scrollToActiveChar: "Scroll to Active Character",
+        loadout: "Loadout",
     },
     screenTooSmall: "Screen is too small to show the interface.",
     advancedModelSettings: "Advanced Model Settings",
@@ -1677,6 +1678,8 @@ export const languageEnglish = {
     togglePresetImport: "Import from File",
     togglePresetImported: (name: string) => `Preset "${name}" imported.`,
     togglePresetImportError: "Invalid toggle preset file.",
+    loadouts: "Loadouts",
+    loadout: "Loadout",
 } satisfies I18nTranslation;
 
 type I18nTranslationFunction = (...args: any[]) => string;
