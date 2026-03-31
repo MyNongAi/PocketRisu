@@ -1215,17 +1215,17 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
                 throw new Error("No active chat found");
             }
 
+            if(getModelInfo(DBState.db.aiModel).id.startsWith('pluginmodel:::')){
+                // Executing plugin provider is block because it can be used for loopholes for ipc right now.
+                throw new Error("Sending chat with plugin-based model is currently blocked");
+            }
+
             if(message){
                 chat.message.push({
                     role: 'user',
                     data: message,
                     time: Date.now(),
                 });
-            }
-
-            if(getModelInfo(DBState.db.aiModel).id.startsWith('pluginmodel:::')){
-                // Executing plugin provider is block because it can be used for loopholes for ipc right now.
-                throw new Error("Sending chat with plugin-based model is currently blocked");
             }
 
             await processSendChat(-1, {});
