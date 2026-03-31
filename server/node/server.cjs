@@ -1987,10 +1987,13 @@ app.get('/api/read', async (req, res, next) => {
             res.send();
         } else {
             res.setHeader('Content-Type', 'application/octet-stream');
-            // Return ETag for database.bin reads
+            // Return ETag for database.bin reads, support 304 Not Modified
             if (key === 'database/database.bin') {
                 if (!dbEtag) {
                     dbEtag = computeBufferEtag(value);
+                }
+                if (req.headers['if-none-match'] === dbEtag) {
+                    return res.status(304).end();
                 }
                 res.setHeader('x-db-etag', dbEtag);
             }
