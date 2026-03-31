@@ -110,9 +110,42 @@
         class="w-full h-full bg-transparent focus-within:outline-hidden resize-none absolute top-0 left-0 z-50 overflow-y-auto px-4 py-2 wrap-break-word whitespace-pre-wrap"
         contenteditable="true"
         bind:textContent={value}
-        onkeydown={(e) => {
+        onkeydown={async (e) => {
+            if(
+                (e.ctrlKey || e.shiftKey || e.altKey)
+                && hotkeyMatches(DBState.db.hotkeys.find(hk => hk.action === 'popupEditor'), e)
+            ){
+                e.preventDefault()
+                popUpEditorStore.value = value
+                popUpEditorStore.mode = 'default'
+                popUpEditorStore.open = true
+
+                while(popUpEditorStore.open){
+                    await sleep(100)
+                }
+
+                value = popUpEditorStore.value
+                onInput()
+                return
+            }
             handleKeyDown(e)
             onInput()
+        }}
+        oncontextmenu={(e) => {
+            if(DBState.db.longPressToPopupEditor){
+                e.preventDefault()
+                popUpEditorStore.value = value
+                popUpEditorStore.mode = 'default'
+                popUpEditorStore.open = true
+
+                const checkInterval = setInterval(() => {
+                    if(!popUpEditorStore.open){
+                        value = popUpEditorStore.value
+                        onInput()
+                        clearInterval(checkInterval)
+                    }
+                }, 100)
+            }
         }}
         role="textbox"
         tabindex="0"

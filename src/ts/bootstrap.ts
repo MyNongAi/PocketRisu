@@ -174,6 +174,10 @@ function updateErrorHandling() {
     };
     const rejectHandler = (event: PromiseRejectionEvent) => {
         console.error(event.reason);
+        const msg = String(event.reason?.message ?? event.reason ?? '')
+        if(msg.includes('Worker') || msg.includes('worker')){
+            return
+        }
         alertError(event.reason);
     };
     window.addEventListener('error', errorHandler);
