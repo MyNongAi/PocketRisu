@@ -1485,6 +1485,7 @@ export const languageEnglish = {
         focusInput: "Focus Input",
         scrollToActiveChar: "Scroll to Active Character",
         loadout: "Loadout",
+        popupEditor: "Popup Editor",
     },
     screenTooSmall: "Screen is too small to show the interface.",
     advancedModelSettings: "Advanced Model Settings",
@@ -1680,6 +1681,7 @@ export const languageEnglish = {
     togglePresetImportError: "Invalid toggle preset file.",
     loadouts: "Loadouts",
     loadout: "Loadout",
+    longPressToPopupEditor: "Long press to open popup editor",
 } satisfies I18nTranslation;
 
 type I18nTranslationFunction = (...args: any[]) => string;

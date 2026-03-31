@@ -680,6 +680,7 @@ export function setDatabase(data:Database){
     if (typeof data.localNetworkTimeoutSec !== 'number' || Number.isNaN(data.localNetworkTimeoutSec)) data.localNetworkTimeoutSec = 600
     data.loadouts ??= []
     data.pluginCustomStorage ??= {}
+    data.longPressToPopupEditor ??= false
     changeLanguage(data.language)
     setDatabaseLite(data)
 }
@@ -1292,6 +1293,7 @@ export interface Database{
     hubServerType?:string
     pluginCustomStorage:{[key:string]:any}
     loadouts: Loadout[]
+    longPressToPopupEditor?: boolean
     ImagenModel:string
     ImagenImageSize:string
     ImagenAspectRatio:string

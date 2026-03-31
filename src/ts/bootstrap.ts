@@ -168,7 +168,9 @@ export async function loadData() {
 function updateErrorHandling() {
     const errorHandler = (event: ErrorEvent) => {
         console.error(event.error);
-        alertError(event.error);
+        if(!(event.error?.target instanceof Worker)){
+            alertError(event.error);
+        }
     };
     const rejectHandler = (event: PromiseRejectionEvent) => {
         console.error(event.reason);
