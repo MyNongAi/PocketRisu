@@ -42,20 +42,23 @@ export function applyLoadout(loadout: Loadout, apply:LoadoutApplyOption[] = [
     'persona'
 ]) {
     loadout.lastUsed = Date.now()
-    loadout.characterIds.push(getCurrentCharacter()?.chaId)
+    const chaId = getCurrentCharacter()?.chaId
+    if(chaId && !loadout.characterIds.includes(chaId)) {
+        loadout.characterIds.push(chaId)
+    }
     if(apply.includes('persona')) {
-        let personaIndex = DBState.db.personas.findIndex(p => p.id === loadout.personaId) || 0
-        changeUserPersona(personaIndex)
+        const personaIndex = DBState.db.personas.findIndex(p => p.id === loadout.personaId)
+        changeUserPersona(personaIndex >= 0 ? personaIndex : 0)
     }
     if(apply.includes('preset')) {
-        let presetIndex = DBState.db.botPresets.findIndex(p => p.name === loadout.presetName) || 0
-        changeToPreset(presetIndex)
+        const presetIndex = DBState.db.botPresets.findIndex(p => p.name === loadout.presetName)
+        changeToPreset(presetIndex >= 0 ? presetIndex : 0)
     }
     if(apply.includes('modules')) {
-        DBState.db.enabledModules = loadout.modules
+        DBState.db.enabledModules = safeStructuredClone(loadout.modules)
     }
     if(apply.includes('globalVariables')) {
-        DBState.db.globalChatVariables = loadout.globalVariables
+        DBState.db.globalChatVariables = safeStructuredClone(loadout.globalVariables)
     }
 }
 
