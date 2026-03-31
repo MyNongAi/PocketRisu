@@ -311,8 +311,6 @@ export async function saveDb() {
         patchSyncBaseline = null
     }
 
-    let lastBackupTime: number | null = null
-
     function hasTrackedChanges(toSave: toSaveType) {
         return !!(
             toSave.botPreset ||
@@ -659,23 +657,11 @@ export async function saveDb() {
             forageStorage.setDbEtag(newEtag)
         }
 
+        // NOTE: skipBackups only controls Kei cloud backup here.
+        // Internal database backups (dbbackup-*) are now created server-side
+        // with a 5-minute throttle, independent of this flag.
         if (!options?.skipBackups) {
-            const backupData = dbData.slice()
-            const shouldWriteBackup = !lastBackupTime || Date.now() - lastBackupTime >= 5 * 60 * 1000
-            if (shouldWriteBackup) {
-                lastBackupTime = Date.now()
-            }
-            void (async () => {
-                try {
-                    if (shouldWriteBackup) {
-                        await forageStorage.setItem(`database/dbbackup-${(Date.now() / 100).toFixed()}.bin`, backupData)
-                        await getDbBackups(backupData.byteLength)
-                    }
-                    await saveDbKei()
-                } catch (error) {
-                    console.error('[Save] Failed to write backup maintenance data', error)
-                }
-            })()
+            void saveDbKei()
         }
         return 'saved'
     }

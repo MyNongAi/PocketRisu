@@ -13,7 +13,7 @@ const rateLimit = require('express-rate-limit')
 const { WebSocketServer } = require('ws')
 const sharp = require('sharp')
 const { kvGet, kvSet, kvDel, kvList,
-        kvDelPrefix, kvListWithSizes, kvSize, kvGetUpdatedAt, clearEntities, checkpointWal,
+        kvDelPrefix, kvListWithSizes, kvSize, kvGetUpdatedAt, kvCopyValue, clearEntities, checkpointWal,
         db: sqliteDb } = require('./db.cjs');
 const { applyPatch } = require('fast-json-patch');
 const { decodeRisuSave, encodeRisuSaveLegacy, calculateHash, normalizeJSON } = require('./utils.cjs');
@@ -51,6 +51,36 @@ function queueStorageOperation(operation) {
 
 const DB_HEX_KEY = Buffer.from('database/database.bin', 'utf-8').toString('hex');
 
+// ─── Server-side database backup ─────────────────────────────────────────────
+const BACKUP_BUDGET_BYTES = 500 * 1024 * 1024; // 500 MB
+const BACKUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+let lastBackupTime = null;
+
+function createBackupAndRotate() {
+    const now = Date.now();
+    if (lastBackupTime && now - lastBackupTime < BACKUP_INTERVAL_MS) {
+        return;
+    }
+    lastBackupTime = now;
+
+    const backupKey = `database/dbbackup-${(now / 100).toFixed()}.bin`;
+    kvCopyValue('database/database.bin', backupKey);
+
+    const backupKeys = kvList('database/dbbackup-')
+        .sort((a, b) => {
+            const aTs = parseInt(a.slice(18, -4));
+            const bTs = parseInt(b.slice(18, -4));
+            return bTs - aTs;
+        });
+
+    const dbSize = kvSize('database/database.bin') || 1;
+    const maxBackups = Math.min(20, Math.max(3, Math.floor(BACKUP_BUDGET_BYTES / dbSize)));
+
+    while (backupKeys.length > maxBackups) {
+        kvDel(backupKeys.pop());
+    }
+}
+
 function flushPendingDb() {
     if (saveTimers[DB_HEX_KEY]) {
         clearTimeout(saveTimers[DB_HEX_KEY]);
@@ -58,6 +88,7 @@ function flushPendingDb() {
         if (dbCache[DB_HEX_KEY]) {
             const data = Buffer.from(encodeRisuSaveLegacy(dbCache[DB_HEX_KEY]));
             kvSet('database/database.bin', data);
+            createBackupAndRotate();
         }
     }
 }
@@ -2082,10 +2113,11 @@ app.post('/api/write', async (req, res, next) => {
                 kvSet(key, fileContent);
             }
 
-            // Update ETag and invalidate cache after database.bin write
+            // Update ETag, backup, and invalidate cache after database.bin write
             if (key === 'database/database.bin') {
                 invalidateDbCache();
                 dbEtag = computeBufferEtag(fileContent);
+                createBackupAndRotate();
             }
 
             res.send({
@@ -2184,6 +2216,9 @@ app.post('/api/patch', async (req, res, next) => {
                 try {
                     const data = Buffer.from(encodeRisuSaveLegacy(dbCache[filePath]));
                     kvSet(decodedKey, data);
+                    if (decodedKey === 'database/database.bin') {
+                        createBackupAndRotate();
+                    }
                 } catch (error) {
                     console.error(`[Patch] Error saving ${decodedKey}:`, error);
                 } finally {
