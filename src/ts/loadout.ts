@@ -48,13 +48,13 @@ export function applyLoadout(loadout: Loadout, apply:LoadoutApplyOption[] = [
     }
     if(apply.includes('persona')) {
         const personaIndex = DBState.db.personas?.findIndex(p => p.id === loadout.personaId)
-        if(personaIndex !== -1){
+        if(personaIndex >= 0){
             changeUserPersona(personaIndex)
         }
     }
     if(apply.includes('preset')) {
         const presetIndex = DBState.db.botPresets?.findIndex(p => p.name === loadout.presetName)
-        if(presetIndex !== -1){
+        if(presetIndex >= 0){
             changeToPreset(presetIndex)
         }
     }
