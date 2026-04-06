@@ -639,6 +639,7 @@ export function setDatabase(data:Database){
     data.sourcemapTranslate ??= false
     data.settingsCloseButtonSize ??= 24
     data.showModelInSidebar ??= true
+    data.showPresetInSidebar ??= true
     data.showPersonaInSidebar ??= true
     data.disableMobileDragDrop ??= false
     data.hideAllImages ??= false
@@ -1198,6 +1199,7 @@ export interface Database{
     assetMaxDifference:number
     auxModelUnderModelSettings:boolean
     showModelInSidebar:boolean
+    showPresetInSidebar:boolean
     showPersonaInSidebar:boolean
     disableMobileDragDrop:boolean
     menuSideBar:boolean
