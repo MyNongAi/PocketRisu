@@ -12,7 +12,7 @@
 
 [![Latest Release](https://img.shields.io/github/v/release/mrbart3885/Risuai-NodeOnly?label=latest)](https://github.com/mrbart3885/Risuai-NodeOnly/releases)
 [![License: GPL-3.0](https://img.shields.io/github/license/mrbart3885/Risuai-NodeOnly)](LICENSE)
-[![Node](https://img.shields.io/badge/node-≥20-brightgreen)](https://nodejs.org/)
+[![Node](https://img.shields.io/badge/node-≥22.12-brightgreen)](https://nodejs.org/)
 [![Docker](https://img.shields.io/badge/docker-supported-blue)](#2--docker)
 
 **RisuAI의 모든 기능 + 전용 편의기능, Node.js 서버 하나로.**
@@ -146,7 +146,7 @@ JSON 또는 `.risutheme` 형식으로 내보내기/가져오기가 가능하여,
 | **CPU**     | 1코어        | 2코어 이상           |
 | **RAM**     | 1GB (실행만) | 4GB 이상 (빌드 포함) |
 | **디스크**  | 1GB          | 2GB 이상             |
-| **Node.js** | 20 이상      | —                    |
+| **Node.js** | 22.12 이상   | —                    |
 
 > 💡 **포터블 패키지**나 **Docker**를 사용하면 빌드 과정이 없으므로, RAM 1GB로도 실행할 수 있습니다.
 > **직접 빌드**하는 경우(Git Clone, 설치 스크립트) 빌드 중 메모리를 많이 사용하므로 4GB 이상을 권장합니다.
@@ -300,12 +300,12 @@ docker compose pull && docker compose up -d
 
 #### 사전 준비
 
-Node.js 20 이상이 설치되어 있어야 합니다.
+Node.js 22.12 이상이 설치되어 있어야 합니다.
 
 ```bash
 # Node.js 버전 확인
 node --version
-# v20.0.0 이상이면 OK
+# v22.12.0 이상이면 OK
 ```
 
 Node.js가 없다면: [Node.js 공식 사이트](https://nodejs.org/)에서 설치하세요.

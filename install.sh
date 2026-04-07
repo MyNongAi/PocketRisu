@@ -11,10 +11,14 @@ error() { printf '\033[1;31m[ERROR]\033[0m %s\n' "$*"; exit 1; }
 
 # ── Prerequisites ──────────────────────────────────────────────────────────────
 
-command -v node >/dev/null 2>&1 || error "Node.js is not installed. Please install Node.js 20+ first: https://nodejs.org/"
+command -v node >/dev/null 2>&1 || error "Node.js is not installed. Please install Node.js 22.12+ first: https://nodejs.org/"
 
-NODE_MAJOR=$(node -e 'console.log(process.versions.node.split(".")[0])')
-[ "$NODE_MAJOR" -ge 20 ] 2>/dev/null || warn "Node.js v$NODE_MAJOR detected. v20+ is recommended."
+NODE_VER=$(node -e 'console.log(process.versions.node)')
+NODE_MAJOR=$(echo "$NODE_VER" | cut -d. -f1)
+NODE_MINOR=$(echo "$NODE_VER" | cut -d. -f2)
+if [ "$NODE_MAJOR" -lt 22 ] || { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -lt 12 ]; }; then
+    error "Node.js v$NODE_VER detected. v22.12.0+ is required."
+fi
 
 if ! command -v pnpm >/dev/null 2>&1; then
     info "Installing pnpm..."

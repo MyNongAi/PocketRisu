@@ -18,6 +18,12 @@ const { kvGet, kvSet, kvDel, kvList,
 const { applyPatch } = require('fast-json-patch');
 const { decodeRisuSave, encodeRisuSaveLegacy, calculateHash, normalizeJSON } = require('./utils.cjs');
 
+// Node.js version check
+const [nodeMajor] = process.version.slice(1).split('.').map(Number);
+if (nodeMajor < 24) {
+    console.warn(`[Server] Node.js ${process.version} is below the recommended version (v24.x). Consider upgrading for best compatibility.`);
+}
+
 // Configuration flags for patch-based sync
 const enablePatchSync = true;
 
