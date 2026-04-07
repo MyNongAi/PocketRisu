@@ -422,7 +422,7 @@ export function setDatabase(data:Database){
         customChainOfThought: false,
         maxThoughtTagDepth: -1
     }
-    data.keiServerURL ??= ''
+    if (data.sdProvider === 'kei') data.sdProvider = ''
     data.top_k ??= 0
     data.promptSettings.maxThoughtTagDepth ??= -1
     data.openrouterFallback ??= true
@@ -987,7 +987,6 @@ export interface Database{
             expires_in?: number
         }
         useSync?:boolean
-        kei?:boolean
     },
     classicMaxWidth: boolean,
     useChatSticker:boolean,
@@ -1063,7 +1062,6 @@ export interface Database{
     chainOfThought?:boolean
     genTime:number
     promptSettings: PromptSettings
-    keiServerURL:string
     top_k:number
     repetition_penalty:number
     min_p:number

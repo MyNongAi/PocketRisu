@@ -16,7 +16,6 @@ import { ConflictError } from "./storage/nodeStorage";
 import { supportsPatchSync } from "./platform";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
-import { autoServerBackup, saveDbKei } from "./kei/backup";
 import { language } from "src/lang";
 import { startObserveDom } from "./observer.svelte";
 import { updateGuisize } from "./gui/guisize";
@@ -251,13 +250,11 @@ export let requiresFullEncoderReload = $state({
 
 let requestImmediateSaveImpl: ((options?: {
     forceFullWrite?: boolean
-    skipBackups?: boolean
 }) => Promise<void> | void) = () => {}
 let patchSyncBaseline: Database | null = null
 
 export function requestImmediateSave(options?: {
     forceFullWrite?: boolean
-    skipBackups?: boolean
 }) {
     return requestImmediateSaveImpl(options)
 }
@@ -396,7 +393,6 @@ export async function saveDb() {
             changed = true;
             void triggerSave({
                 skipBroadcast: true,
-                skipBackups: true,
             })
             void flushServerDbKeepalive()
         }
@@ -600,7 +596,6 @@ export async function saveDb() {
         options?: {
             forceFullWrite?: boolean
             skipBroadcast?: boolean
-            skipBackups?: boolean
         }
     ): Promise<'saved' | 'retry' | 'noop'> {
         if (gotChannel) {
@@ -668,19 +663,12 @@ export async function saveDb() {
         }
 
 
-        // NOTE: skipBackups only controls Kei cloud backup here.
-        // Internal database backups (dbbackup-*) are now created server-side
-        // with a 5-minute throttle, independent of this flag.
-        if (!options?.skipBackups) {
-            void saveDbKei()
-        }
         return 'saved'
     }
 
     async function triggerSave(options?: {
         forceFullWrite?: boolean
         skipBroadcast?: boolean
-        skipBackups?: boolean
     }) {
         if (saveInFlight) {
             return saveInFlight
@@ -726,7 +714,6 @@ export async function saveDb() {
         await tick()
         await triggerSave({
             forceFullWrite: options?.forceFullWrite,
-            skipBackups: options?.skipBackups,
         })
     }
 
