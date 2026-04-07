@@ -29,8 +29,6 @@ import {
 } from "./globalApi.svelte";
 import { registerModelDynamic } from "./model/modellist";
 
-const appWindow = null
-
 /**
  * Loads the application data.
  */
