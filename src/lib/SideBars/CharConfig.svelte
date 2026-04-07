@@ -5,7 +5,7 @@
     import { DBState } from 'src/ts/stores.svelte';
     import { untrack } from 'svelte';
     import { CharConfigSubMenu, MobileGUI, selectedCharID, hypaV3ModalOpen } from "../../ts/stores.svelte";
-    import { PlusIcon, SmileIcon, TrashIcon, UserIcon, ActivityIcon, BookIcon, Braces, Volume2Icon, DownloadIcon, HardDriveUploadIcon, Share2Icon, ImageIcon, ImageOffIcon, ArrowUp, ArrowDown } from '@lucide/svelte'
+    import { PlusIcon, SmileIcon, TrashIcon, UserIcon, ActivityIcon, BookIcon, Braces, Volume2Icon, DownloadIcon, HardDriveUploadIcon, Share2Icon, ImageIcon, ImageOffIcon, ArrowUp, ArrowDown, TriangleAlertIcon } from '@lucide/svelte'
     import Check from "../UI/GUI/CheckInput.svelte";
     import { addCharEmotion, addingEmotion, getCharImage, rmCharEmotion, selectCharImg, removeChar, changeCharImage } from "../../ts/characters";
     import LoreBook from "./LoreBook/LoreBookSetting.svelte";
@@ -28,12 +28,19 @@
     import { registerOnnxModel } from "src/ts/process/transformers";
     import MultiLangInput from "../UI/GUI/MultiLangInput.svelte";
     import { applyModule } from "src/ts/process/modules";
+    import { exportCharacterPackage, importPackageToCharacter, scanCharacterInlayIds, getCharacterBoundPersonas } from "src/ts/characterPackage";
     import { exportRegex, importRegex } from "src/ts/process/scripts";
     import SliderInput from "../UI/GUI/SliderInput.svelte";
     import Toggles from "./Toggles.svelte";
     import PersonaBind from "./PersonaBind.svelte";
 
     let iconRemoveMode = $state(false)
+    let pkgIncludeCharacter = $state(true)
+    let pkgIncludeChats = $state(true)
+    let pkgIncludePersona = $state(true)
+    let pkgIncludeInlays = $state(false)
+    let pkgPersonaInfo = $state<string | null>(null)
+    let pkgInlayInfo = $state<string | null>(null)
     let viewSubMenu = $state(0)
     let emos:[string, string][] = $state([])
     let iconButtonSize = window.innerWidth > 360 ? 24 as const : 20 as const
@@ -77,6 +84,12 @@
 
     $effect.pre(() => {
         emos = DBState.db.characters[$selectedCharID].emotionImages
+    });
+
+    $effect.pre(() => {
+        $selectedCharID;
+        pkgPersonaInfo = null
+        pkgInlayInfo = null
     });
 
     $effect.pre(() => {
@@ -635,21 +648,82 @@
         {/if}
     {/if}
 {:else if $CharConfigSubMenu === 6}
+    {@const licenseRestricted =
+        DBState.db.characters[$selectedCharID].license === 'CC BY-NC-SA 4.0'
+        || DBState.db.characters[$selectedCharID].license === 'CC BY-SA 4.0'
+        || DBState.db.characters[$selectedCharID].license === 'CC BY-ND 4.0'
+        || DBState.db.characters[$selectedCharID].license === 'CC BY-NC-ND 4.0'
+    }
 
-    {#if DBState.db.characters[$selectedCharID].license !== 'CC BY-NC-SA 4.0'
-        && DBState.db.characters[$selectedCharID].license !== 'CC BY-SA 4.0'
-        && DBState.db.characters[$selectedCharID].license !== 'CC BY-ND 4.0'
-        && DBState.db.characters[$selectedCharID].license !== 'CC BY-NC-ND 4.0'
-        }
-        <Button size="sm" onclick={async () => {
+    {#if licenseRestricted}
+        <div class="flex items-center gap-2 text-red-400 text-sm mt-2 mb-2">
+            <TriangleAlertIcon size={16} class="shrink-0" />
+            <span>{language.characterPackageLicenseWarning} ({DBState.db.characters[$selectedCharID].license})</span>
+        </div>
+    {/if}
+
+    {#if !licenseRestricted}
+        <Button size="md" onclick={async () => {
             const res = await exportChar($selectedCharID)
         }} className="mt-2">{language.exportCharacter}</Button>
     {/if}
 
     <Button onclick={async () => {
         removeChar($selectedCharID, DBState.db.characters[$selectedCharID].name)
-    }} className="mt-2" size="sm">{language.removeCharacter}</Button>
-    
+    }} className="mt-2" size="md">{language.removeCharacter}</Button>
+
+    {#if DBState.db.characters[$selectedCharID].type === 'character'}
+        {@const char = DBState.db.characters[$selectedCharID] as character}
+        <div class="mt-6 border-t border-darkborderc pt-4">
+            <h3 class="text-lg font-bold mb-3">{language.characterPackage}</h3>
+            {#key $selectedCharID}
+                <div class="flex items-center justify-between py-1">
+                    <CheckInput check={licenseRestricted ? false : pkgIncludeCharacter} name={language.characterPackageCharacter + ' (charx)'} margin={false}
+                        onChange={(v) => { pkgIncludeCharacter = v }}
+                        className={licenseRestricted ? "opacity-50 pointer-events-none" : ""} />
+                    <span class="text-textcolor2 text-sm ml-2 truncate shrink-0">{char.name}</span>
+                </div>
+                <div class="flex items-center justify-between py-1">
+                    <CheckInput bind:check={pkgIncludeChats} name={language.characterPackageChats + ' (json)'} margin={false} />
+                    <span class="text-textcolor2 text-sm ml-2 shrink-0">{char.chats.length}{language.characterPackageChatCount}</span>
+                </div>
+                <div class="flex items-center justify-between py-1">
+                    <CheckInput bind:check={pkgIncludePersona} name={language.characterPackagePersona} margin={false} />
+                    {#if pkgPersonaInfo !== null}
+                        <span class="text-textcolor2 text-sm ml-2 shrink-0">{pkgPersonaInfo}</span>
+                    {:else}
+                        <button class="text-xs text-textcolor2 ml-2 shrink-0 border border-darkborderc rounded px-2 py-0.5 hover:bg-selected transition-colors" onclick={() => {
+                            const c = DBState.db.characters[$selectedCharID] as character
+                            pkgPersonaInfo = `${getCharacterBoundPersonas(c).length}${language.characterPackageChatCount}`
+                        }}>{language.characterPackageCheckCount}</button>
+                    {/if}
+                </div>
+                <div class="flex items-center justify-between py-1">
+                    <CheckInput bind:check={pkgIncludeInlays} name={language.characterPackageInlays} margin={false} />
+                    {#if pkgInlayInfo !== null}
+                        <span class="text-textcolor2 text-sm ml-2 shrink-0">{pkgInlayInfo}</span>
+                    {:else}
+                        <button class="text-xs text-textcolor2 ml-2 shrink-0 border border-darkborderc rounded px-2 py-0.5 hover:bg-selected transition-colors" onclick={() => {
+                            const c = DBState.db.characters[$selectedCharID] as character
+                            pkgInlayInfo = `${scanCharacterInlayIds(c).size}${language.characterPackageInlayCount}`
+                        }}>{language.characterPackageCheckCount}</button>
+                    {/if}
+                </div>
+            {/key}
+            <Button size="md" className="mt-2 w-full" onclick={async () => {
+                await exportCharacterPackage($selectedCharID, {
+                    includeCharacter: licenseRestricted ? false : pkgIncludeCharacter,
+                    includeChats: pkgIncludeChats,
+                    includePersona: pkgIncludePersona,
+                    includeInlays: pkgIncludeInlays
+                })
+            }}>{language.characterPackageExport}</Button>
+            <Button size="md" className="mt-2 w-full" onclick={async () => {
+                await importPackageToCharacter($selectedCharID)
+            }}>{language.characterPackageImportToChar}</Button>
+        </div>
+    {/if}
+
 {:else if $CharConfigSubMenu === 5}
     {#if DBState.db.characters[$selectedCharID].type === 'character'}
         {#if !$MobileGUI}

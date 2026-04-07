@@ -12,6 +12,7 @@ import { parseMarkdownSafe } from "./parser/parser.svelte";
 import { translateHTML } from "./translator/translator";
 import { doingChat } from "./process/index.svelte";
 import { importCharacter } from "./characterCards";
+import { importCharacterPackage } from "./characterPackage";
 import { PngChunk } from "./pngChunk";
 
 export function createNewCharacter() {
@@ -735,6 +736,9 @@ export async function addCharacter(arg:{
             break
         case 'importCharacter':
             await importCharacter()
+            break
+        case 'importPackage':
+            await importCharacterPackage()
             break
         default:
             MobileGUIStack.set(1)

@@ -1165,9 +1165,17 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
     password?:string
     writer?:LocalWriter|VirtualWriter,
     spec?:'v2'|'v3'
+    onProgress?:(msg:string, pct:number) => void
 } = {}) {
     let img = await readImage(char.image)
     const spec:'v2'|'v3' = arg.spec ?? 'v2' //backward compatibility
+    const onProgress = arg.onProgress ?? ((msg:string, pct:number) => {
+        if (pct >= 100) {
+            alertStore.set({ type: 'wait', msg })
+        } else {
+            alertStore.set({ type: 'progress', msg, submsg: pct.toFixed(2) })
+        }
+    })
     try{
         char.image = ''
         img = type === 'png' ? (await reencodeImage(img)) : img
@@ -1192,11 +1200,7 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
             const card = await createBaseV2(char)
             if(card.data.extensions.risuai.emotions && card.data.extensions.risuai.emotions.length > 0){
                 for(let i=0;i<card.data.extensions.risuai.emotions.length;i++){
-                    alertStore.set({
-                        type: 'progress',
-                        msg: 'Loading... (Adding Emotions)',
-                        submsg: (i / card.data.extensions.risuai.emotions.length * 100).toFixed(2)
-                    })
+                    onProgress('Loading... (Adding Emotions)', i / card.data.extensions.risuai.emotions.length * 100)
                     const key = card.data.extensions.risuai.emotions[i][1]
                     const rData = await readImage(key)
                     const b64encoded = Buffer.from(await compressImage(rData)).toString('base64')
@@ -1209,11 +1213,7 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
             
             if(card.data.extensions.risuai.additionalAssets && card.data.extensions.risuai.additionalAssets.length > 0){
                 for(let i=0;i<card.data.extensions.risuai.additionalAssets.length;i++){
-                    alertStore.set({
-                        type: 'progress',
-                        msg: 'Loading... (Adding Additional Assets)',
-                        submsg: (i / card.data.extensions.risuai.additionalAssets.length * 100).toFixed(2)
-                    })
+                    onProgress('Loading... (Adding Additional Assets)', i / card.data.extensions.risuai.additionalAssets.length * 100)
                     const key = card.data.extensions.risuai.additionalAssets[i][1]
                     const rData = await readImage(key)
                     const b64encoded = Buffer.from(await compressImage(rData)).toString('base64')
@@ -1226,11 +1226,7 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
             if(char.vits && char.ttsMode === 'vits'){
                 const keys = Object.keys(char.vits.files)
                 for(let i=0;i<keys.length;i++){
-                    alertStore.set({
-                        type: 'progress',
-                        msg: 'Loading... (Adding VITS)',
-                        submsg: (i / keys.length * 100).toFixed(2)
-                    })
+                    onProgress('Loading... (Adding VITS)', i / keys.length * 100)
                     const key = keys[i]
                     const rData = await loadAsset(char.vits.files[key])
                     const b64encoded = Buffer.from(rData).toString('base64')
@@ -1246,11 +1242,8 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
             }
     
             await sleep(10)
-            alertStore.set({
-                type: 'wait',
-                msg: 'Loading... (Writing)'
-            })
-    
+            onProgress('Loading... (Writing)', 100)
+
             await writer.write("chara", Buffer.from(JSON.stringify(card)).toString('base64'))     
         }
         else if(spec === 'v3'){
@@ -1258,11 +1251,7 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
             const seenPaths = new Set<string>()
             if(card.data.assets && card.data.assets.length > 0){
                 for(let i=0;i<card.data.assets.length;i++){
-                    alertStore.set({
-                        type: 'progress',
-                        msg: 'Loading... (Adding Assets)',
-                        submsg: (i / card.data.assets.length * 100).toFixed(2)
-                    })
+                    onProgress('Loading... (Adding Assets)', i / card.data.assets.length * 100)
                     let key = card.data.assets[i].uri
                     let rData:Uint8Array
                     if(key === 'ccdefault:' && type !== 'png'){
@@ -1402,11 +1391,8 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
             }
 
             await sleep(10)
-            alertStore.set({
-                type: 'wait',
-                msg: 'Loading... (Writing)'
-            })
-    
+            onProgress('Loading... (Writing)', 100)
+
             if(type === 'charx' || type === 'charxJpeg'){
                 const md:RisuModule = {
                     name: `${char.name} Module`,
