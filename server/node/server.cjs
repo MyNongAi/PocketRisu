@@ -2181,7 +2181,7 @@ app.get('/api/asset/:hexKey', sessionAuthMiddleware, async (req, res) => {
             if (file) {
                 const etag = `"${Math.floor(file.mtimeMs)}"`
                 if (req.headers['if-none-match'] === etag) {
-                    return res.status(304).end()
+                    return res.status(304).set('Cache-Control', 'public, max-age=31536000, immutable').end()
                 }
                 res.set({
                     'Content-Type': file.mime,
@@ -2203,7 +2203,7 @@ app.get('/api/asset/:hexKey', sessionAuthMiddleware, async (req, res) => {
             if (!file) return res.status(404).set('Cache-Control', 'no-store').end()
             const etag = `"thumb-${Math.floor(file.mtimeMs)}"`
             if (req.headers['if-none-match'] === etag) {
-                return res.status(304).end()
+                return res.status(304).set('Cache-Control', 'public, max-age=31536000, immutable').end()
             }
             const thumb = await generateThumbnail(file.buffer)
             res.set({
@@ -2220,7 +2220,7 @@ app.get('/api/asset/:hexKey', sessionAuthMiddleware, async (req, res) => {
 
         const etag = `"${updatedAt}"`
         if (req.headers['if-none-match'] === etag) {
-            return res.status(304).end()
+            return res.status(304).set('Cache-Control', 'public, max-age=31536000, immutable').end()
         }
 
         const data = kvGet(key)
