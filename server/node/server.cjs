@@ -1376,6 +1376,9 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
         writeFileSync(stagingSidecarPath(id), JSON.stringify(sidecar));
     }
 
+    await flushPendingDb();
+    createBackupAndRotate();
+
     sqliteDb.pragma('synchronous = OFF');
 
     sqliteDb.exec('BEGIN');
@@ -1385,9 +1388,7 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
     kvDelPrefix('inlay_meta/');
     kvDelPrefix('inlay_info/');
     clearEntities();
-    sqliteDb.exec('COMMIT');
 
-    sqliteDb.exec('BEGIN');
     try {
         for await (const chunk of dataSource) {
             bytesReceived += chunk.length;
@@ -3300,7 +3301,6 @@ async function importHexFilesFromDir(dirPath) {
 
     await flushPendingDb();
     createBackupAndRotate();
-    clearExistingData();
     invalidateDbCache();
 
     const insert = sqliteDb.prepare(
@@ -3309,6 +3309,7 @@ async function importHexFilesFromDir(dirPath) {
     const now = Date.now();
 
     const run = sqliteDb.transaction(() => {
+        clearExistingData();
         for (const hexFile of hexFiles) {
             const key = Buffer.from(hexFile, 'hex').toString('utf-8');
             const value = readFileSync(path.join(dirPath, hexFile));
@@ -3328,7 +3329,6 @@ async function importHexEntries(entries) {
 
     await flushPendingDb();
     createBackupAndRotate();
-    clearExistingData();
     invalidateDbCache();
 
     const insert = sqliteDb.prepare(
@@ -3337,6 +3337,7 @@ async function importHexEntries(entries) {
     const now = Date.now();
 
     const run = sqliteDb.transaction(() => {
+        clearExistingData();
         for (const { key, value } of entries) {
             insert.run(key, value, now);
         }
