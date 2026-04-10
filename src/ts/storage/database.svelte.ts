@@ -656,9 +656,7 @@ export function setDatabase(data:Database){
     data.hamburgerButtonBottom ??= false
     data.dynamicModelRegistry ??= true
     data.saveSignatures ??= false
-    // If the user uses plugins, its probably better to enable RisuAI Pro Tools by default
-    // Because its likely they are power users who would benefit from the features
-    data.enableRisuaiProTools ??= data.plugins.length > 0
+    data.enableRisuaiProTools ??= false
     data.keepSessionAlive ??= 'off'
     data.localNetworkMode ??= false
     if (typeof data.localNetworkMode !== 'boolean') data.localNetworkMode = false
