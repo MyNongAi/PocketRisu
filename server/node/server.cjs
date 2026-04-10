@@ -117,6 +117,33 @@ function invalidateDbCache() {
 
 // ─── Chat runtime lazy load helpers ─────────────────────────────────────────
 
+function assignMissingChatIds(dbObj) {
+    let changed = false;
+    if (!dbObj?.characters) return changed;
+    for (const char of dbObj.characters) {
+        if (!char?.chats) continue;
+        for (const chat of char.chats) {
+            if (!chat || chat._stub || chat.id) continue;
+            chat.id = nodeCrypto.randomUUID();
+            changed = true;
+        }
+    }
+    return changed;
+}
+
+async function decodeDatabaseWithPersistentChatIds(raw, options = {}) {
+    const { createBackup = false } = options;
+    const dbObj = normalizeJSON(await decodeRisuSave(raw));
+    const hadMissingIds = assignMissingChatIds(dbObj);
+    if (hadMissingIds) {
+        kvSet('database/database.bin', Buffer.from(encodeRisuSaveLegacy(dbObj)));
+        if (createBackup) {
+            createBackupAndRotate();
+        }
+    }
+    return dbObj;
+}
+
 /**
  * Convert a full chat to a stub (metadata only).
  */
@@ -145,8 +172,6 @@ function initChatStore(dbObj) {
         const charChats = new Map();
         for (const chat of char.chats) {
             if (chat && !chat._stub) {
-                // Assign ID if missing — old versions didn't generate chat IDs.
-                // Persisted to disk shortly after via client saveDb() → PATCH flow.
                 if (!chat.id) {
                     chat.id = nodeCrypto.randomUUID();
                 }
@@ -225,7 +250,9 @@ async function ensureChatStore() {
         fullChatStore = new Map();
         return;
     }
-    const dbObj = normalizeJSON(await decodeRisuSave(raw));
+    const dbObj = await decodeDatabaseWithPersistentChatIds(raw, {
+        createBackup: true,
+    });
     initChatStore(dbObj);
 }
 
@@ -2305,7 +2332,9 @@ app.get('/api/read', async (req, res, next) => {
             // Strip chat payloads from database.bin — client gets stubs only
             if (key === 'database/database.bin') {
                 try {
-                    const dbObj = await decodeRisuSave(value);
+                    const dbObj = await decodeDatabaseWithPersistentChatIds(value, {
+                        createBackup: true,
+                    });
                     initChatStore(dbObj);
                     const stripped = normalizeJSON(stripChatsFromDb(dbObj));
                     // Populate dbCache so patch endpoint uses the same data
