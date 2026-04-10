@@ -626,6 +626,9 @@ export function setDatabase(data:Database){
     data.showPresetInSidebar ??= true
     data.showPersonaInSidebar ??= true
     data.disableMobileDragDrop ??= false
+    data.disableToggleBinding ??= false
+    data.hideLoadout ??= true
+    data.hideEasyPanel ??= true
     data.hideAllImages ??= false
     data.ImagenModel ??= 'imagen-4.0-generate-001'
     data.ImagenImageSize ??= '1K'
@@ -655,9 +658,7 @@ export function setDatabase(data:Database){
     data.hamburgerButtonBottom ??= false
     data.dynamicModelRegistry ??= true
     data.saveSignatures ??= false
-    // If the user uses plugins, its probably better to enable RisuAI Pro Tools by default
-    // Because its likely they are power users who would benefit from the features
-    data.enableRisuaiProTools ??= data.plugins.length > 0
+    data.enableRisuaiProTools ??= false
     data.keepSessionAlive ??= 'off'
     data.localNetworkMode ??= false
     if (typeof data.localNetworkMode !== 'boolean') data.localNetworkMode = false
@@ -835,12 +836,14 @@ export function applyToggleValues(values:Record<string, string>, db:Database = g
 }
 
 export function saveTogglesToChat():void{
+    if(getDatabase().disableToggleBinding) return
     const chat = getCurrentChat()
     if(!chat) return
     chat.savedToggleValues = snapshotToggleValues()
 }
 
 export function loadTogglesFromChat(chat:Chat):void{
+    if(getDatabase().disableToggleBinding) return
     if(!chat?.savedToggleValues) return
     applyToggleValues(chat.savedToggleValues)
 }
@@ -1172,6 +1175,9 @@ export interface Database{
     showPresetInSidebar:boolean
     showPersonaInSidebar:boolean
     disableMobileDragDrop:boolean
+    disableToggleBinding:boolean
+    hideLoadout:boolean
+    hideEasyPanel:boolean
     menuSideBar:boolean
     pluginV2: RisuPlugin[]
     showSavingIcon:boolean
@@ -1908,6 +1914,7 @@ export interface ChatStub {
     name: string
     lastDate?: number
     folderId?: string
+    modules?: string[]
     _stub: true
 }
 
