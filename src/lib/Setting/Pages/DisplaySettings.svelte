@@ -52,7 +52,8 @@
     <Button onclick={() => {$openThemePresetList = true}} className="mt-4">{language.themePresets}</Button>
     <span class="text-textcolor mt-4">{language.theme}</span>
     <SelectInput className="mt-2" bind:value={DBState.db.theme}>
-        <OptionInput value="" >Standard Risu</OptionInput>
+        <OptionInput value="" >NodeOnly Standard</OptionInput>
+        <OptionInput value="standardRisu" >Standard Risu</OptionInput>
         <OptionInput value="waifu" >Waifulike</OptionInput>
         <!-- <OptionInput value="waifuMobile" >WaifuCut</OptionInput> -->
         <OptionInput value="mobilechat" >Mobile Chat</OptionInput>
