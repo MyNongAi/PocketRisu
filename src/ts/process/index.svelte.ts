@@ -1542,10 +1542,6 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             }
         }
 
-        if(mrerolls.length >1){
-            addRerolls(generationId, mrerolls)
-        }
-
         DBState.db.characters[selectedChar].chats[selectedChat] = runCurrentChatFunction(DBState.db.characters[selectedChar].chats[selectedChat])
         currentChat = DBState.db.characters[selectedChar].chats[selectedChat]        
 

@@ -236,18 +236,10 @@
         const lastMsg = getLastCharMsg()
         if (!lastMsg) return
 
-        // If swipes exist and not at the end, navigate forward
-        if (lastMsg.swipes && lastMsg.swipeId < lastMsg.swipes.length - 1) {
-            lastMsg.swipeId += 1
-            lastMsg.data = lastMsg.swipes[lastMsg.swipeId]
-            DBState.db.characters[$selectedCharID].reloadKeys += 1
-            return
-        }
-
         // Save existing swipes before clone replaces the array
         const savedSwipes = lastMsg.swipes ? [...lastMsg.swipes] : [lastMsg.data]
 
-        // At the end — generate new response
+        // Generate new response
         // Preserve trailing comment/disabled messages (e.g. branch comments)
         let cha = safeStructuredClone(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message)
         if(cha.length === 0) return
@@ -290,11 +282,18 @@
     async function unReroll() {
         if($doingChat) return
         const lastMsg = getLastCharMsg()
-        if (!lastMsg) return
+        if (!lastMsg || !lastMsg.swipes || lastMsg.swipeId === undefined) return
 
-        if (!lastMsg.swipes || lastMsg.swipeId === undefined || lastMsg.swipeId <= 0) return
+        lastMsg.swipeId = lastMsg.swipeId <= 0 ? lastMsg.swipes.length - 1 : lastMsg.swipeId - 1
+        lastMsg.data = lastMsg.swipes[lastMsg.swipeId]
+        DBState.db.characters[$selectedCharID].reloadKeys += 1
+    }
 
-        lastMsg.swipeId -= 1
+    function nextSwipe() {
+        const lastMsg = getLastCharMsg()
+        if (!lastMsg || !lastMsg.swipes || lastMsg.swipeId === undefined) return
+
+        lastMsg.swipeId = lastMsg.swipeId >= lastMsg.swipes.length - 1 ? 0 : lastMsg.swipeId + 1
         lastMsg.data = lastMsg.swipes[lastMsg.swipeId]
         DBState.db.characters[$selectedCharID].reloadKeys += 1
     }
@@ -809,6 +808,7 @@
                 messages={currentChat}
                 loadPages={loadPages}
                 onReroll={reroll}
+                onNextSwipe={nextSwipe}
                 onDeleteSwipe={deleteSwipe}
                 unReroll={unReroll}
                 currentCharacter={currentCharacter}

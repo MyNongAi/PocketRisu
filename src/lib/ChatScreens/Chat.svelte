@@ -45,6 +45,7 @@
         role?: string;
         totalLength?: number;
         onReroll?: () => void;
+        onNextSwipe?: () => void;
         unReroll?: () => void;
         onDeleteSwipe?: () => void;
         character?: simpleCharacterArgument|string|null;
@@ -68,6 +69,7 @@
         role = null,
         totalLength = 0,
         onReroll = () => {},
+        onNextSwipe = () => {},
         unReroll = () => {},
         onDeleteSwipe = () => {},
         character = null,
@@ -455,7 +457,7 @@
             </button>
         {:else}
             <span class="text-xs">{statusMessage}</span>
-            <div class="flex items-center ml-2 gap-2">
+            <div class="flex items-center ml-2 gap-2 flex-wrap justify-end">
                 {@render translationButton()}
                 {#if window.innerWidth >= 640}
                     {@render majorIconButtonsBody(false)}
@@ -474,8 +476,9 @@
                         {@render majorIconButtonsBody(false)}
                     {/if}
                 {/if}
-                {@render rerolls()}
-
+                <div class="flex items-center gap-1">
+                    {@render rerolls()}
+                </div>
             </div>
         {/if}
     </div>
@@ -767,37 +770,44 @@
 {#snippet rerolls()}
     {#if (rerollIcon || altGreeting) && role !== 'user'}
         {#if altGreeting}
-            <!-- First message: always ← counter → -->
-            <button class="flex items-center hover:text-blue-500 transition-colors button-icon-unreroll" onclick={unReroll}>
+            <!-- First message: ← counter → -->
+            <button class="flex items-center shrink-0 hover:text-blue-500 transition-colors button-icon-unreroll" onclick={unReroll}>
                 <ArrowLeft size={22}/>
             </button>
-            {#if DBState.db.showFirstMessagePages}
-                <span class="flex items-center text-xs text-textcolor2">{currentPage}/{totalPages}</span>
+            {#if !DBState.db.hideMessagePageCount}
+                <span class="flex items-center text-xs text-textcolor2 shrink overflow-hidden whitespace-nowrap min-w-0">{currentPage}/{totalPages}</span>
             {/if}
-            <button class="flex items-center hover:text-blue-500 transition-colors button-icon-reroll" onclick={onReroll}>
+            <button class="flex items-center shrink-0 hover:text-blue-500 transition-colors button-icon-reroll" onclick={onReroll}>
                 <ArrowRight size={22}/>
             </button>
         {:else}
-            <!-- Normal messages: ← counter ↻/→ with hide/show logic -->
-            {#if currentPage <= 1}
-                <div class:dyna-icon={rerollIcon === 'dynamic'} class:force-show={rerollIcon === 'force'} style="width:22px"></div>
-            {:else}
-                <button class="flex items-center hover:text-blue-500 transition-colors button-icon-unreroll" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'} onclick={unReroll}>
-                    <ArrowLeft size={22}/>
-                </button>
+            <!-- Normal messages: ← counter → ↻ -->
+            <button class="flex items-center shrink-0 hover:text-blue-500 transition-colors button-icon-unreroll" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'} onclick={async () => {
+                if (totalPages <= 1) {
+                    if (await alertConfirm(language.noSwipesRerollConfirm)) onReroll()
+                } else {
+                    unReroll()
+                }
+            }}>
+                <ArrowLeft size={22}/>
+            </button>
+            {#if !DBState.db.hideMessagePageCount}
+                <span class="flex items-center text-xs text-textcolor2 shrink overflow-hidden whitespace-nowrap min-w-0" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'}>{currentPage}/{totalPages}</span>
             {/if}
-            {#if totalPages > 1}
-                <span class="flex items-center text-xs text-textcolor2" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'}>{currentPage}/{totalPages}</span>
-            {/if}
-            {#if currentPage >= totalPages}
-                <button class="flex items-center hover:text-blue-500 transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'} onclick={onReroll}>
-                    <RefreshCcwIcon size={22}/>
-                </button>
-            {:else}
-                <button class="flex items-center hover:text-blue-500 transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'} onclick={onReroll}>
-                    <ArrowRight size={22}/>
-                </button>
-            {/if}
+            <button class="flex items-center shrink-0 hover:text-blue-500 transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'} onclick={async () => {
+                if (totalPages <= 1) {
+                    if (await alertConfirm(language.noSwipesRerollConfirm)) onReroll()
+                } else {
+                    onNextSwipe()
+                }
+            }}>
+                <ArrowRight size={22}/>
+            </button>
+            <button class="flex items-center shrink-0 hover:text-blue-500 transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'} onclick={async () => {
+                if (await alertConfirm(language.rerollConfirm)) onReroll()
+            }}>
+                <RefreshCcwIcon size={20}/>
+            </button>
         {/if}
     {/if}
 {/snippet}
@@ -819,7 +829,7 @@
     {#if totalPages > 1}
         <button class="flex items-center hover:text-red-500 transition-colors" onclick={async () => {
             await sleep(1)
-            if(confirm(language.deleteRerollMessageConfirm)){
+            if(await alertConfirm(language.deleteRerollMessageConfirm)){
                 onDeleteSwipe()
             }
         }}>

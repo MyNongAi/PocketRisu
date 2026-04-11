@@ -19,6 +19,7 @@
         messages,
         currentCharacter,
         onReroll,
+        onNextSwipe = () => {},
         unReroll,
         onDeleteSwipe = () => {},
         currentUsername,
@@ -30,6 +31,7 @@
         messages: Message[]
         currentCharacter: character | groupChat
         onReroll: () => void
+        onNextSwipe?: () => void
         unReroll: () => void
         onDeleteSwipe?: () => void
         currentUsername: string
@@ -111,6 +113,7 @@
                         totalLength: messages.length,
                         img: message.role === 'user' ? userImage : charImage,
                         onReroll: onReroll,
+                        onNextSwipe: i === lastRealCharIdx ? onNextSwipe : () => {},
                         unReroll: unReroll,
                         onDeleteSwipe: i === lastRealCharIdx ? onDeleteSwipe : () => {},
                         rerollIcon: i === lastRealCharIdx ? 'force' : false,
@@ -121,9 +124,9 @@
                         name: message.role === 'user' ? currentUsername : currentCharacter.name,
                         isComment: message.isComment ?? false,
                         disabled: message.disabled ?? false,
-                        ...(i === lastRealCharIdx && swipes && swipes.length > 0 ? {
-                            currentPage: swipeId + 1,
-                            totalPages: swipes.length,
+                        ...(i === lastRealCharIdx ? {
+                            currentPage: (swipeId ?? 0) + 1,
+                            totalPages: swipes?.length ?? 1,
                         } : {}),
                     },
 
