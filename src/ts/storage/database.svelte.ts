@@ -630,6 +630,7 @@ export function setDatabase(data:Database){
     data.hideLoadout ??= true
     data.hideEasyPanel ??= true
     data.hideAllImages ??= false
+    data.hideMessagePageCount ??= false
     data.ImagenModel ??= 'imagen-4.0-generate-001'
     data.ImagenImageSize ??= '1K'
     data.ImagenAspectRatio ??= '1:1'
@@ -1297,6 +1298,7 @@ export interface Database{
     promptDiffPrefs:PromptDiffPrefs
     enableBookmark?: boolean
     hideAllImages?: boolean
+    hideMessagePageCount?: boolean
     autoScrollToNewMessage?: boolean
     alwaysScrollToNewMessage?: boolean
     newMessageButtonStyle?: string
@@ -1727,6 +1729,7 @@ export interface themePreset{
     showFirstMessagePages: boolean
     hideRealm: boolean
     hideAllImages?: boolean
+    hideMessagePageCount?: boolean
     showFolderName: boolean
     customBackground: string
     playMessage: boolean
@@ -1956,6 +1959,8 @@ export interface Message{
     otherUser?:boolean
     disabled?:false|true|'allBefore'
     isComment?:boolean
+    swipes?: string[]
+    swipeId?: number
 }
 
 export interface MessageGenerationInfo{
@@ -2153,6 +2158,7 @@ export const themePresetTemplate: themePreset = {
     showFirstMessagePages: false,
     hideRealm: false,
     hideAllImages: false,
+    hideMessagePageCount: false,
     showFolderName: false,
     customBackground: '',
     playMessage: false,
@@ -2469,6 +2475,7 @@ export function saveCurrentThemePreset(){
         showFirstMessagePages: db.showFirstMessagePages,
         hideRealm: db.hideRealm,
         hideAllImages: db.hideAllImages,
+        hideMessagePageCount: db.hideMessagePageCount,
         showFolderName: db.showFolderName,
         customBackground: db.customBackground,
         playMessage: db.playMessage,
@@ -2538,6 +2545,7 @@ export function changeToThemePreset(id = 0, savecurrent = true){
     db.settingsCloseButtonSize = p.settingsCloseButtonSize ?? db.settingsCloseButtonSize
     db.showMemoryLimit = p.showMemoryLimit ?? db.showMemoryLimit
     db.showFirstMessagePages = p.showFirstMessagePages ?? db.showFirstMessagePages
+    db.hideMessagePageCount = p.hideMessagePageCount ?? db.hideMessagePageCount
     db.hideRealm = p.hideRealm ?? db.hideRealm
     db.hideAllImages = p.hideAllImages ?? db.hideAllImages
     db.showFolderName = p.showFolderName ?? db.showFolderName

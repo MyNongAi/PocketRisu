@@ -243,6 +243,7 @@ export const languageEnglish = {
         additionalPrompt:
             "Text that gets appended to the Main Prompt when Prompt Preprocess is enabled. Default is 'The assistant must act as {{char}}. user is {{user}}.' This helps set up basic roleplay context.",
         hideAllImagesDesc: "Hides bot icons, bot image assets, and RisuRealm cover images.",
+        hideMessagePageCountDesc: "Hides the page counter (e.g. 1/3) for regenerated messages and first message greetings. Navigation arrows and the regenerate button remain visible.",
         embedding:
             "Embedding model is used for similarity search across multiple features:\n\n" +
             "- **Long Term Memory**: HypaV2, HypaV3, Hanurai Memory, and SupaMemory (with HypaMemory enabled)\n" +
@@ -746,6 +747,11 @@ export const languageEnglish = {
     emotion: "Emotion Name",
     value: "Value",
     reroll: "Regenerate",
+    hideMessagePageCount: "Hide Message Page Counter",
+    deleteRerollMessage: "Delete Regenerated Message",
+    deleteRerollMessageConfirm: "Delete the currently selected regenerated message?",
+    rerollConfirm: "Generate a new message and add it to the list?",
+    noSwipesRerollConfirm: "There are no additional regenerated messages. Generate a new message and add it to the list?",
     chatList: "Chat List",
     removeChat: "Remove this message?",
     loreBook: "Lorebook",
