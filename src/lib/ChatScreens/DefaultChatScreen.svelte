@@ -244,11 +244,8 @@
             return
         }
 
-        // Initialize swipes before generation
-        if (!lastMsg.swipes) {
-            lastMsg.swipes = [lastMsg.data]
-            lastMsg.swipeId = 0
-        }
+        // Save existing swipes before clone replaces the array
+        const savedSwipes = lastMsg.swipes ? [...lastMsg.swipes] : [lastMsg.data]
 
         // At the end — generate new response
         // Preserve trailing comment/disabled messages (e.g. branch comments)
@@ -282,13 +279,11 @@
             DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message = msgs
         }
 
-        // After generation, save new response to swipes
+        // Save new response to swipes
         const newLastMsg = getLastCharMsg()
-        if (newLastMsg && lastMsg.swipes) {
-            if (!newLastMsg.swipes) {
-                newLastMsg.swipes = [...lastMsg.swipes, newLastMsg.data]
-                newLastMsg.swipeId = newLastMsg.swipes.length - 1
-            }
+        if (newLastMsg && !newLastMsg.swipes) {
+            newLastMsg.swipes = [...savedSwipes, newLastMsg.data]
+            newLastMsg.swipeId = newLastMsg.swipes.length - 1
         }
     }
 
