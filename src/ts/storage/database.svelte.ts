@@ -1956,6 +1956,8 @@ export interface Message{
     otherUser?:boolean
     disabled?:false|true|'allBefore'
     isComment?:boolean
+    swipes?: string[]
+    swipeId?: number
 }
 
 export interface MessageGenerationInfo{
