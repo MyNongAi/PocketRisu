@@ -116,6 +116,41 @@ describe('asset round-trip', () => {
   })
 })
 
+// ─── Content-type compatibility ────────────────────────────────────────────
+
+describe('content-type compatibility', () => {
+  test('import works with application/octet-stream', async () => {
+    const srv = await spawnServer()
+    servers.push(srv)
+    const client = await createClient(srv.port, srv.password)
+
+    const seed = createSeedBackup({ characterCount: 1 })
+    const before = normalizeBackup(seed)
+
+    // Bypass the normal importBackup (which uses x-risu-backup) and
+    // send with octet-stream directly to verify the fix.
+    const prepRes = await client.fetch('/api/backup/import/prepare', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ size: seed.byteLength }),
+    })
+    expect(prepRes.ok).toBe(true)
+
+    const impRes = await client.fetch('/api/backup/import', {
+      method: 'POST',
+      headers: { 'content-type': 'application/octet-stream' },
+      body: new Uint8Array(seed),
+    })
+    const result = await impRes.json() as { ok: boolean }
+    expect(result.ok).toBe(true)
+
+    const exported = await client.exportBackup()
+    const after = normalizeBackup(exported)
+    expect(after.normalized.characterCount).toBe(before.normalized.characterCount)
+    expect(after.normalized.characters).toEqual(before.normalized.characters)
+  })
+})
+
 // ─── Malformed import safety ────────────────────────────────────────────────
 
 describe('malformed import safety', () => {
