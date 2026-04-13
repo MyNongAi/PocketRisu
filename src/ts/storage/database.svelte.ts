@@ -622,7 +622,6 @@ export function setDatabase(data:Database){
     data.rememberToolUsage ??= true
     data.simplifiedToolUse ??= false
     data.streamGeminiThoughts ??= false
-    data.sourcemapTranslate ??= false
     data.settingsCloseButtonSize ??= 24
     data.showModelInSidebar ??= true
     data.showPresetInSidebar ??= true
@@ -1297,7 +1296,6 @@ export interface Database{
         reference_image: string
         reference_base64image: string
     }
-    sourcemapTranslate:boolean
     settingsCloseButtonSize:number
     promptDiffPrefs:PromptDiffPrefs
     enableBookmark?: boolean
