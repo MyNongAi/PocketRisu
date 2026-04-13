@@ -12,6 +12,7 @@ import { defaultColorScheme, type ColorScheme } from '../gui/colorscheme';
 import type { PromptItem, PromptSettings } from '../process/prompt';
 import type { OobaChatCompletionRequestParams } from '../model/ooba';
 import { type HypaV3Settings, type HypaV3Preset, createHypaV3Preset } from '../process/memory/hypav3'
+import { normalizeTranslatorPresetState, type TranslatorPreset } from '../translator/presets'
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
 export let appVer = "2026.2.291" //<APP_VERSION_POINT>
@@ -562,6 +563,7 @@ export function setDatabase(data:Database){
         }
     }
     data.hypaV3PresetId ??= 0
+    normalizeTranslatorPresetState(data)
     data.showDeprecatedTriggerV2 ??= false
     data.returnCSSError ??= true
     data.realmDirectOpen ??= false
@@ -1057,6 +1059,8 @@ export interface Database{
     allowAllExtentionFiles?:boolean
     translatorPrompt:string
     translatorMaxResponse:number
+    translatorPresets: TranslatorPreset[]
+    translatorPresetId: number
     top_p: number,
     google: {
         accessToken: string
