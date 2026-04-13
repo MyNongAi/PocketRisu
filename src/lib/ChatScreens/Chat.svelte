@@ -209,7 +209,7 @@
 
     async function handleButtonTriggerWithin(event: UIEvent) {
         const currentChar = getCurrentCharacter()
-        if(!currentChar || currentChar.type === 'group'){
+        if(!currentChar){
             return
         }
 
@@ -717,7 +717,7 @@
     </button>    
 {/if}
 {#if idx > -1}
-    {#if DBState.db.characters[selIdState.selId].type !== 'group' && DBState.db.characters[selIdState.selId].ttsMode !== 'none' && (DBState.db.characters[selIdState.selId].ttsMode)}
+    {#if DBState.db.characters[selIdState.selId].ttsMode !== 'none' && (DBState.db.characters[selIdState.selId].ttsMode)}
         <button class="flex items-center hover:text-blue-500 transition-colors button-icon-tts" onclick={()=>{
             return sayTTS(null, message)
         }}>

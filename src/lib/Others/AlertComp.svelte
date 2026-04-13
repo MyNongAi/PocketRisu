@@ -357,27 +357,25 @@
             {:else if $alertStore.type === 'selectChar'}
                 <div class="flex w-full items-start flex-wrap gap-2 justify-start">
                     {#each DBState.db.characters as char, i}
-                        {#if char.type !== 'group'}
-                            {#if char.image}
-                                {#await getCharImage(DBState.db.characters[i].image, 'css')}
-                                    <BarIcon onClick={() => {
-                                        alertStore.set({type: 'none',msg: char.chaId})
-                                    }}>
-                                        <User/>
-                                    </BarIcon>
-                                {:then im} 
-                                    <BarIcon onClick={() => {
-                                        alertStore.set({type: 'none',msg: char.chaId})
-                                    }} additionalStyle={im} />
-                                    
-                                {/await}
-                            {:else}
+                        {#if char.image}
+                            {#await getCharImage(DBState.db.characters[i].image, 'css')}
                                 <BarIcon onClick={() => {
                                     alertStore.set({type: 'none',msg: char.chaId})
                                 }}>
-                                <User/>
+                                    <User/>
                                 </BarIcon>
-                            {/if}
+                            {:then im} 
+                                <BarIcon onClick={() => {
+                                    alertStore.set({type: 'none',msg: char.chaId})
+                                }} additionalStyle={im} />
+                                
+                            {/await}
+                        {:else}
+                            <BarIcon onClick={() => {
+                                alertStore.set({type: 'none',msg: char.chaId})
+                            }}>
+                            <User/>
+                            </BarIcon>
                         {/if}
                     {/each}
                 </div>

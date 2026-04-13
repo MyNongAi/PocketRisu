@@ -134,7 +134,7 @@ export async function requestChatData(arg:requestDataArgument, model:ModelModeEx
             
             try{
                 const currentChar = getCurrentCharacter()
-                if(currentChar?.type !== 'group'){
+                if(currentChar){
                     const perf = performance.now()
                     const d = await runTrigger(currentChar, 'request', {
                         chat: getCurrentChat(),

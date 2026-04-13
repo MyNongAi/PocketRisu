@@ -247,11 +247,6 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         caculatedChatTokens += 3
     }
 
-    if(nowChatroom.type === 'group'){
-        alertError('Group chat is no longer supported.')
-        return false
-    }
-
     currentChar = nowChatroom
 
     let chatAdditonalTokens = arg.chatAdditonalTokens ?? caculatedChatTokens

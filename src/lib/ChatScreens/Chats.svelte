@@ -1,5 +1,5 @@
 <script lang="ts">
-    import type { character, groupChat, Message } from 'src/ts/storage/database.svelte';
+    import type { character, Message } from 'src/ts/storage/database.svelte';
     import { mount, onDestroy, unmount } from 'svelte';
     import Chat from './Chat.svelte';
     import { getCharImage } from 'src/ts/characters';
@@ -29,7 +29,7 @@
         hasNewUnreadMessage = $bindable(false)
     }:{
         messages: Message[]
-        currentCharacter: character | groupChat
+        currentCharacter: character
         onReroll: () => void
         onNextSwipe?: () => void
         unReroll: () => void

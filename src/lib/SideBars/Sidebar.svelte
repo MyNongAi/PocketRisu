@@ -95,7 +95,7 @@
             img:cha.image ?? "",
             index:index,
             type: "normal",
-            name: cha.type === 'group' ? `[Group] ${cha.name}` : cha.name
+            name: cha.name
           });
         }
       }
@@ -110,7 +110,7 @@
               img:cha.image ?? "",
               index:index,
               type: "normal",
-              name: cha.type === 'group' ? `[Group] ${cha.name}` : cha.name
+              name: cha.name
             });
           }
         }

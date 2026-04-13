@@ -176,15 +176,13 @@
         }
 
         if(messageInput === ''){
-            if(DBState.db.characters[selectedChar].type !== 'group'){
-                if(cha.length === 0 || cha[cha.length - 1].role !== 'user'){
-                    if(DBState.db.useSayNothing){
-                        cha.push({
-                            role: 'user',
-                            data: '*says nothing*',
-                            name: null
-                        })
-                    }
+            if(cha.length === 0 || cha[cha.length - 1].role !== 'user'){
+                if(DBState.db.useSayNothing){
+                    cha.push({
+                        role: 'user',
+                        data: '*says nothing*',
+                        name: null
+                    })
                 }
             }
         }
@@ -588,7 +586,7 @@
                     class="{DBState.db.fixedChatTextarea ? 'sticky pt-2 pb-2 right-0 bottom-0 bg-bgcolor' : 'mt-2 mb-2'} flex items-stretch w-full"
                     style="{DBState.db.fixedChatTextarea ? 'z-index:29;' : ''}"
             >
-                {#if DBState.db.useChatSticker && currentCharacter.type !== 'group'}
+                {#if DBState.db.useChatSticker}
                     <div onclick={()=>{toggleStickers = !toggleStickers}}
                          class={"ml-4 bg-textcolor2 flex justify-center items-center  w-12 h-12 rounded-md hover:bg-blue-500 transition-colors "+(toggleStickers ? 'text-green-500':'text-textcolor')}>
                         <Laugh/>
@@ -819,63 +817,55 @@
             />
 
             {#if currentChat.length <= loadPages}
-                {#if DBState.db.characters[$selectedCharID].type !== 'group' }
-                    <Chat
-                        character={createSimpleCharacter(DBState.db.characters[$selectedCharID])}
-                        name={DBState.db.characters[$selectedCharID].name}
-                        message={currentChatFmIndex === -1 ? DBState.db.characters[$selectedCharID].firstMessage :
-                            DBState.db.characters[$selectedCharID].alternateGreetings[currentChatFmIndex]}
-                        role='char'
-                        img={getCharImage(DBState.db.characters[$selectedCharID].image, 'css')}
-                        idx={-1}
-                        altGreeting={DBState.db.characters[$selectedCharID].alternateGreetings.length > 0 && DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length === 0}
-                        largePortrait={DBState.db.characters[$selectedCharID].largePortrait}
-                        firstMessage={true}
-                        onReroll={() => {
-                            const cha = DBState.db.characters[$selectedCharID]
-                            const chat = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
-                            if(cha.type !== 'group'){
-                                if (chat.fmIndex >= (cha.alternateGreetings.length - 1)){
-                                    chat.fmIndex = -1
-                                }
-                                else{
-                                    chat.fmIndex += 1
-                                }
-                            }
-                            DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage] = chat
-                        }}
-                        unReroll={() => {
-                            const cha = DBState.db.characters[$selectedCharID]
-                            const chat = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
-                            if(cha.type !== 'group'){
-                                if (chat.fmIndex === -1){
-                                    chat.fmIndex = (cha.alternateGreetings.length - 1)
-                                }
-                                else{
-                                    chat.fmIndex -= 1
-                                }
-                            }
-                            DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage] = chat
-                        }}
-                        isLastMemory={false}
-                        currentPage={(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].fmIndex ?? -1) + 2}
-                        totalPages={DBState.db.characters[$selectedCharID].alternateGreetings.length + 1}
+                <Chat
+                    character={createSimpleCharacter(DBState.db.characters[$selectedCharID])}
+                    name={DBState.db.characters[$selectedCharID].name}
+                    message={currentChatFmIndex === -1 ? DBState.db.characters[$selectedCharID].firstMessage :
+                        DBState.db.characters[$selectedCharID].alternateGreetings[currentChatFmIndex]}
+                    role='char'
+                    img={getCharImage(DBState.db.characters[$selectedCharID].image, 'css')}
+                    idx={-1}
+                    altGreeting={DBState.db.characters[$selectedCharID].alternateGreetings.length > 0 && DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length === 0}
+                    largePortrait={DBState.db.characters[$selectedCharID].largePortrait}
+                    firstMessage={true}
+                    onReroll={() => {
+                        const cha = DBState.db.characters[$selectedCharID]
+                        const chat = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+                        if (chat.fmIndex >= (cha.alternateGreetings.length - 1)){
+                            chat.fmIndex = -1
+                        }
+                        else{
+                            chat.fmIndex += 1
+                        }
+                        DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage] = chat
+                    }}
+                    unReroll={() => {
+                        const cha = DBState.db.characters[$selectedCharID]
+                        const chat = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+                        if (chat.fmIndex === -1){
+                            chat.fmIndex = (cha.alternateGreetings.length - 1)
+                        }
+                        else{
+                            chat.fmIndex -= 1
+                        }
+                        DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage] = chat
+                    }}
+                    isLastMemory={false}
+                    currentPage={(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].fmIndex ?? -1) + 2}
+                    totalPages={DBState.db.characters[$selectedCharID].alternateGreetings.length + 1}
 
-                    />
-                    {#if (aiLawApplies() && DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length === 0)}
-                        <div class="ml-auto mr-auto mt-4 text-textcolor2 italic max-w-2/3 wrap-break-word text-center">
-                            {language.aiGenerationWarning}
-                        </div>
-                    {/if}
-                    {#if !DBState.db.characters[$selectedCharID].removedQuotes && DBState.db.characters[$selectedCharID].creatorNotes.length >= 2}
-                        <CreatorQuote quote={DBState.db.characters[$selectedCharID].creatorNotes} onRemove={() => {
-                            const cha = DBState.db.characters[$selectedCharID]
-                            if(cha.type !== 'group'){
-                                cha.removedQuotes = true
-                            }
-                            DBState.db.characters[$selectedCharID] = cha
-                        }} />
-                    {/if}
+                />
+                {#if (aiLawApplies() && DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length === 0)}
+                    <div class="ml-auto mr-auto mt-4 text-textcolor2 italic max-w-2/3 wrap-break-word text-center">
+                        {language.aiGenerationWarning}
+                    </div>
+                {/if}
+                {#if !DBState.db.characters[$selectedCharID].removedQuotes && DBState.db.characters[$selectedCharID].creatorNotes.length >= 2}
+                    <CreatorQuote quote={DBState.db.characters[$selectedCharID].creatorNotes} onRemove={() => {
+                        const cha = DBState.db.characters[$selectedCharID]
+                        cha.removedQuotes = true
+                        DBState.db.characters[$selectedCharID] = cha
+                    }} />
                 {/if}
             {/if}
 
