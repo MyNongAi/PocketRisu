@@ -129,10 +129,106 @@ jobs:
     permissions:
       packages: write
     steps:
-      - name: Delete old package versions
-        uses: actions/delete-package-versions@v5
+      - name: Delete orphaned untagged versions
+        uses: actions/github-script@v7
         with:
-          package-name: risuai-nodeonly
-          package-type: container
-          min-versions-to-keep: 5
-          delete-only-untagged-versions: true
+          script: |
+            const owner = context.repo.owner;
+            const pkg = 'risuai-nodeonly';
+
+            // 1. Get all package versions
+            const versions = await github.paginate(
+              github.rest.packages.getAllPackageVersionsForPackageOwnedByUser,
+              { package_type: 'container', package_name: pkg, username: owner, per_page: 100 }
+            );
+
+            const tagged = versions.filter(v => v.metadata?.container?.tags?.length > 0);
+            const untagged = versions.filter(v => !v.metadata?.container?.tags?.length);
+            core.info(`Total: ${versions.length} versions (${tagged.length} tagged, ${untagged.length} untagged)`);
+
+            if (tagged.length === 0) {
+              core.warning('No tagged versions found — aborting cleanup');
+              return;
+            }
+
+            // 2. Get ghcr.io auth token (Basic auth for private support)
+            let token;
+            try {
+              const basicAuth = Buffer.from(`${owner}:${process.env.GITHUB_TOKEN}`).toString('base64');
+              const tokenResp = await fetch(
+                `https://ghcr.io/token?scope=repository:${owner}/${pkg}:pull`,
+                { headers: { 'Authorization': `Basic ${basicAuth}` } }
+              );
+              if (!tokenResp.ok) throw new Error(`token endpoint returned ${tokenResp.status}`);
+              token = (await tokenResp.json()).token;
+            } catch (e) {
+              core.error(`Failed to get ghcr.io token: ${e.message} — aborting cleanup`);
+              return;
+            }
+
+            // 3. Collect digests referenced by tagged manifest lists
+            const referencedDigests = new Set();
+            let fetchFailures = 0;
+            const acceptHeader = [
+              'application/vnd.oci.image.index.v1+json',
+              'application/vnd.docker.distribution.manifest.list.v2+json',
+              'application/vnd.oci.image.manifest.v1+json',
+              'application/vnd.docker.distribution.manifest.v2+json'
+            ].join(',');
+            for (const v of tagged) {
+              try {
+                const resp = await fetch(
+                  `https://ghcr.io/v2/${owner}/${pkg}/manifests/${v.name}`,
+                  { headers: { 'Authorization': `Bearer ${token}`, 'Accept': acceptHeader } }
+                );
+                if (!resp.ok) {
+                  fetchFailures++;
+                  core.warning(`Manifest fetch failed for ${v.metadata.container.tags}: HTTP ${resp.status}`);
+                  continue;
+                }
+                const manifest = await resp.json();
+                // manifest list → collect child digests; single manifest → no children
+                if (manifest.manifests) {
+                  for (const m of manifest.manifests) {
+                    referencedDigests.add(m.digest);
+                  }
+                }
+              } catch (e) {
+                fetchFailures++;
+                core.warning(`Manifest fetch error for ${v.name}: ${e.message}`);
+              }
+            }
+            core.info(`Referenced digests: ${referencedDigests.size}, fetch failures: ${fetchFailures}`);
+
+            // 4. Safety: abort if ANY manifest list fetch failed
+            if (fetchFailures > 0) {
+              core.error(`${fetchFailures} manifest fetch(es) failed — aborting to prevent data loss`);
+              return;
+            }
+            if (referencedDigests.size === 0) {
+              core.info('No multi-platform manifests found — nothing to clean up');
+              return;
+            }
+
+            // 5. Delete untagged versions NOT referenced by any manifest list
+            const orphaned = untagged.filter(v => !referencedDigests.has(v.name));
+            core.info(`Orphaned: ${orphaned.length}, Referenced: ${untagged.length - orphaned.length}`);
+
+            let deleted = 0;
+            for (const v of orphaned) {
+              core.info(`DELETE ${v.name.substring(0, 27)}...`);
+              try {
+                await github.rest.packages.deletePackageVersionForUser({
+                  package_type: 'container',
+                  package_name: pkg,
+                  username: owner,
+                  package_version_id: v.id
+                });
+                deleted++;
+              } catch (e) {
+                core.warning(`Failed to delete ${v.id}: ${e.message}`);
+              }
+            }
+            core.info(`Cleanup done: deleted ${deleted} orphaned versions`);
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
