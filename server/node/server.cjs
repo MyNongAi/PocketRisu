@@ -396,13 +396,16 @@ const currentVersion = (() => {
 const GITHUB_REPO = 'mrbart3885/Risuai-NodeOnly';
 
 const deploymentType = (() => {
+    // Only portable builds have the .portable marker (created by CI release workflow).
+    // Self-update is gated on this — all other types are inferred for analytics only.
+    if (existsSync(path.join(process.cwd(), '.portable'))) return 'portable';
+    if (existsSync(path.join(process.cwd(), '.git'))) return 'git';
     if (existsSync('/.dockerenv')) return 'docker';
     try {
         const cgroup = readFileSync('/proc/1/cgroup', 'utf-8');
         if (cgroup.includes('docker') || cgroup.includes('containerd')) return 'docker';
     } catch {}
-    if (existsSync(path.join(process.cwd(), '.git'))) return 'git';
-    return 'portable';
+    return 'unknown';
 })();
 
 function getSelfUpdateAssetInfo(version) {
@@ -4036,10 +4039,15 @@ app.post('/api/self-update', async (req, res) => {
         await fs.mkdir(extractDir, { recursive: true });
 
         if (process.platform === 'win32') {
-            execSync(
-                `powershell -NoProfile -Command "Expand-Archive -Force -Path '${archivePath}' -DestinationPath '${extractDir}'"`,
-                { timeout: 300000 },
-            );
+            try {
+                // Windows 10 1803+ has tar.exe built-in, handles zip, much faster than PowerShell
+                execSync(`tar -xf "${archivePath}" -C "${extractDir}"`, { timeout: 300000 });
+            } catch {
+                execSync(
+                    `powershell -NoProfile -Command "Expand-Archive -Force -Path '${archivePath}' -DestinationPath '${extractDir}'"`,
+                    { timeout: 300000 },
+                );
+            }
         } else {
             execSync(`tar -xzf "${archivePath}" -C "${extractDir}"`, { timeout: 300000 });
         }
@@ -4094,7 +4102,7 @@ app.post('/api/self-update', async (req, res) => {
         } catch { /* no user certs */ }
 
         // Keep set — matches updater.cjs + user data/config that must survive updates
-        const keep = new Set(['save', 'backups', '.installed-version', '.update-tmp', 'scripts', '.env', '.npmrc']);
+        const keep = new Set(['save', 'backups', '.installed-version', '.update-tmp', 'scripts', '.env', '.npmrc', '.portable']);
         if (isWin) keep.add('bin');
 
         // Phase 1: move old files to backup — rollback immediately on any failure

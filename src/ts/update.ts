@@ -1,4 +1,4 @@
-import { writable } from "svelte/store"
+import { writable, get } from "svelte/store"
 import { forageStorage } from "./globalApi.svelte"
 
 export interface UpdateInfo {
@@ -103,9 +103,10 @@ export async function executeSelfUpdate(): Promise<void> {
             }
         }
 
-        // Server is restarting — poll until it's back
+        // Server is restarting — poll until the new version is actually running
         set({ step: 'reconnecting', progress: null, message: 'Waiting for server to restart...' })
-        await waitForServerRestart()
+        const expectedVersion = get(updateInfoStore)?.latestVersion ?? ''
+        await waitForServerRestart(expectedVersion)
 
         set({ step: 'done', progress: 100, message: 'Update complete!' })
     } catch (e: any) {
@@ -113,7 +114,7 @@ export async function executeSelfUpdate(): Promise<void> {
     }
 }
 
-async function waitForServerRestart(timeoutMs = 60000): Promise<void> {
+async function waitForServerRestart(expectedVersion: string, timeoutMs = 60000): Promise<void> {
     const start = Date.now()
     // Give the server a moment to shut down before polling
     await new Promise(r => setTimeout(r, 3000))
@@ -121,7 +122,12 @@ async function waitForServerRestart(timeoutMs = 60000): Promise<void> {
     while (Date.now() - start < timeoutMs) {
         try {
             const res = await fetch('/api/update-check')
-            if (res.ok) return
+            if (res.ok) {
+                const data: UpdateInfo = await res.json()
+                // Verify the new server is actually running the updated version,
+                // not the old process still alive after a failed restart
+                if (data.currentVersion === expectedVersion) return
+            }
         } catch { /* server not yet up */ }
         await new Promise(r => setTimeout(r, 2000))
     }
