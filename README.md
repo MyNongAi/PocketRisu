@@ -208,9 +208,11 @@ tar -xzf RisuAI-NodeOnly-vX.X.X-*.tar.gz
 
 **3단계: 실행**
 
-🪟 **Windows**: `RisuAI.bat`을 더블클릭하면 브라우저가 자동으로 열리며, `http://localhost:6001`로 접속됩니다.
+🪟 **Windows**: `RisuAI.exe`를 더블클릭하면 브라우저가 자동으로 열리며, `http://localhost:6001`로 접속됩니다.
 
-🍎🐧 **macOS/Linux**: 터미널에서 실행:
+🍎 **macOS**: `RisuAI.app`을 더블클릭하면 Terminal에서 서버가 실행되고 브라우저가 자동으로 열립니다.
+
+🐧 **Linux**: 터미널에서 실행:
 
 ```bash
 cd RisuAI-NodeOnly-vX.X.X-*/
