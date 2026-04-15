@@ -135,6 +135,28 @@ jobs:
           cp "node-v${NODE_VERSION}-darwin-arm64/bin/node" portable/bin/node
           chmod +x portable/bin/node
 
+      - name: Download cloudflared (Windows)
+        if: matrix.platform == 'win'
+        shell: bash
+        run: |
+          curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" -o portable/bin/cloudflared.exe
+
+      - name: Download cloudflared (Linux)
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64" -o portable/bin/cloudflared
+          chmod +x portable/bin/cloudflared
+
+      - name: Download cloudflared (macOS)
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: |
+          curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-arm64.tgz" -o cloudflared.tgz
+          tar -xzf cloudflared.tgz
+          mv cloudflared portable/bin/cloudflared
+          chmod +x portable/bin/cloudflared
+
       - name: Add launcher scripts (Windows)
         if: matrix.platform == 'win'
         shell: bash

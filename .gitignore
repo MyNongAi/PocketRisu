@@ -49,6 +49,7 @@ dist.zip
 !/scripts/updater.cjs
 .env
 /server/node/ssl/certificate
+/bin/
 
 
 # Due to Cargo.lock makes the project build fail, we ignore it
