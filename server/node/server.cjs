@@ -774,7 +774,26 @@ async function fetchLatestRelease() {
 // ── Session store for direct asset URL auth (F-0) ──────────────────────────
 // <img src="/api/asset/..."> cannot send custom headers, so we use a session
 // cookie issued after initial JWT auth. Single-user environment: Map is fine.
+// Sessions are persisted to disk so they survive server restarts.
+const SESSION_FILE = path.join(process.cwd(), 'save', '__sessions')
 const sessions = new Map() // token → expiresAt (ms)
+
+function loadSessions() {
+    try {
+        const raw = readFileSync(SESSION_FILE, 'utf-8')
+        const now = Date.now()
+        for (const [token, exp] of JSON.parse(raw)) {
+            if (exp > now) sessions.set(token, exp)
+        }
+    } catch { /* file missing or corrupt – start fresh */ }
+}
+
+function saveSessions() {
+    try { writeFileSync(SESSION_FILE, JSON.stringify([...sessions])) }
+    catch { /* non-critical */ }
+}
+
+loadSessions()
 
 function parseSessionCookie(req) {
     const cookieHeader = req.headers.cookie || ''
@@ -2338,6 +2357,7 @@ app.post('/api/session', async (req, res) => {
     for (const [t, exp] of sessions) {
         if (exp < Date.now()) sessions.delete(t)
     }
+    saveSessions()
     const maxAge = 7 * 24 * 60 * 60 // seconds
     res.setHeader('Set-Cookie', `risu-session=${token}; HttpOnly; SameSite=Strict; Max-Age=${maxAge}; Path=/`)
     res.json({ ok: true })
