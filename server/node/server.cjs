@@ -369,6 +369,16 @@ if (existsSync(jwtSecretPath)) {
     writeFileSync(jwtSecretPath, jwtSecret, 'utf-8')
 }
 
+// ── Instance ID for anonymous usage analytics ────────────────────────────────
+const instanceIdPath = path.join(savePath, '__instance_id')
+let instanceId
+if (existsSync(instanceIdPath)) {
+    instanceId = readFileSync(instanceIdPath, 'utf-8').trim()
+} else {
+    instanceId = nodeCrypto.randomUUID()
+    writeFileSync(instanceIdPath, instanceId, 'utf-8')
+}
+
 const authCodePath = path.join(process.cwd(), 'save', '__authcode')
 const inlayDir = path.join(savePath, 'inlays')
 const inlayMigrationMarker = path.join(inlayDir, '.migrated_to_fs')
@@ -852,6 +862,7 @@ async function fetchLatestRelease() {
             v: currentVersion,
             d: deploymentType,
             os: `${process.platform}-${process.arch}`,
+            id: instanceId,
         });
         const url = `${UPDATE_CHECK_URL}?${params}`;
         const res = await fetch(url);
