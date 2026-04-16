@@ -1,6 +1,7 @@
 <script lang="ts">
 
     import Check from "src/lib/UI/GUI/CheckInput.svelte";
+    import SettingPage from "src/lib/UI/GUI/SettingPage.svelte";
     import { language } from "src/lang";
     import Help from "src/lib/Others/Help.svelte";
     
@@ -121,8 +122,7 @@
         }
     });
 </script>
-<h2 class="mb-2 text-2xl font-bold mt-2">{language.chatBot}</h2>
-
+<SettingPage title={language.chatBot}>
 {#if submenu !== -1}
     <div class="flex w-full rounded-md border border-darkborderc mb-4">
         <button onclick={() => {
@@ -762,3 +762,4 @@
 {#if submenu === -1}
     <Button onclick={() => {$openPresetList = true}} className="mt-4">{language.presets}</Button>
 {/if}
+</SettingPage>

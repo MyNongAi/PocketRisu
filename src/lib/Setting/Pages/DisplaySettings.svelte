@@ -1,5 +1,6 @@
 <script lang="ts">
     import { language } from "src/lang";
+    import SettingPage from "src/lib/UI/GUI/SettingPage.svelte";
     import { saveImage } from "src/ts/storage/database.svelte";
     import { DBState } from 'src/ts/stores.svelte';
     import { changeFullscreen, selectSingleFile } from "src/ts/util";
@@ -26,8 +27,7 @@
     let submenu = $state(DBState.db.useLegacyGUI ? -1 : 0)
 </script>
 
-<h2 class="mb-2 text-2xl font-bold mt-2">{language.display}</h2>
-
+<SettingPage title={language.display}>
 {#if submenu !== -1}
     <div class="flex w-full rounded-md border border-darkborderc mb-4 overflow-x-auto h-16 min-h-16 overflow-y-clip">
         <button onclick={() => {
@@ -437,3 +437,4 @@
     {/if}
 
 {/if}
+</SettingPage>
