@@ -490,12 +490,16 @@ const GITHUB_REPO = 'mrbart3885/Risuai-NodeOnly';
 const deploymentType = (() => {
     // Only portable builds have the .portable marker (created by CI release workflow).
     // Self-update is gated on this — all other types are inferred for analytics only.
-    if (existsSync(path.join(process.cwd(), '.portable'))) return 'portable';
-    if (existsSync(path.join(process.cwd(), '.git'))) return 'git';
-    if (existsSync('/.dockerenv')) return 'docker';
+    // Wrapped in try/catch so unexpected filesystem errors can't crash server boot.
     try {
-        const cgroup = readFileSync('/proc/1/cgroup', 'utf-8');
-        if (cgroup.includes('docker') || cgroup.includes('containerd')) return 'docker';
+        if (existsSync(path.join(process.cwd(), '.portable'))) return 'portable';
+        if (existsSync(path.join(process.cwd(), '.git'))) return 'git';
+        if (existsSync('/.dockerenv')) return 'docker';
+        try {
+            const cgroup = readFileSync('/proc/1/cgroup', 'utf-8');
+            if (cgroup.includes('docker') || cgroup.includes('containerd')) return 'docker';
+        } catch {}
+        if (process.platform === 'android') return 'termux';
     } catch {}
     return 'unknown';
 })();
