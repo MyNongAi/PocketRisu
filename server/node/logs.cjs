@@ -7,6 +7,8 @@ const os = require('os');
 
 const MAX_ROWS = 5000;
 const MAX_DESCRIPTION_BYTES = 10 * 1024; // 10KB per entry
+const MAX_BATCH_SIZE = 1000;             // per addLogBatch / per /api/logs request
+const ROTATE_EVERY_N_ROWS = 100;         // amortize DELETE cost
 
 const saveDir = path.join(process.cwd(), 'save');
 if (!fs.existsSync(saveDir)) {
@@ -57,11 +59,14 @@ const stmtCount = db.prepare(`SELECT COUNT(*) as n FROM logs`);
 const MASK_PATTERNS = [
     // JWT (three base64url segments joined by dots, starts with eyJ)
     { re: /eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, replacement: '[REDACTED_JWT]' },
+    // JSON-quoted auth headers:  "x-api-key": "secret"  /  "authorization": "Bearer …"
+    { re: /"((?:x-)?api[-_]?key)"\s*:\s*"[^"]*"/gi, replacement: '"$1":"[REDACTED_API_KEY]"' },
+    { re: /"authorization"\s*:\s*"[^"]*"/gi, replacement: '"authorization":"[REDACTED_TOKEN]"' },
     // Bearer tokens
     { re: /Bearer\s+[A-Za-z0-9_.\-+/=]{10,}/gi, replacement: 'Bearer [REDACTED_TOKEN]' },
-    // Authorization header values
+    // Authorization header values (non-JSON form)
     { re: /(Authorization\s*[:=]\s*)[^\s,;)}{]+/gi, replacement: '$1[REDACTED_TOKEN]' },
-    // Header-style api key fields (x-api-key, api-key, api_key, apikey)
+    // Header-style api key fields (x-api-key, api-key, api_key, apikey) — non-JSON form
     { re: /((?:x-)?api[-_]?key\s*[:=]\s*)['"]?[^'"\s,;)}{]+/gi, replacement: '$1[REDACTED_API_KEY]' },
     // Anthropic keys (more specific than sk-)
     { re: /sk-ant-[A-Za-z0-9_\-]{20,}/g, replacement: '[REDACTED_API_KEY]' },
@@ -110,22 +115,29 @@ const insertMany = db.transaction((entries) => {
     for (const e of entries) insertEntry(e);
 });
 
+let insertedSinceRotate = 0;
+
 function addLog(entry) {
     insertMany([entry]);
+    insertedSinceRotate += 1;
     maybeRotate();
 }
 
 function addLogBatch(entries) {
-    if (!Array.isArray(entries) || entries.length === 0) return;
-    insertMany(entries);
+    if (!Array.isArray(entries) || entries.length === 0) return 0;
+    // Defensive cap: prefer the most recent entries when truncating.
+    const capped = entries.length > MAX_BATCH_SIZE
+        ? entries.slice(entries.length - MAX_BATCH_SIZE)
+        : entries;
+    insertMany(capped);
+    insertedSinceRotate += capped.length;
     maybeRotate();
+    return capped.length;
 }
 
-let rotateCounter = 0;
 function maybeRotate() {
-    // run rotation every 50 inserts to amortize cost
-    if (++rotateCounter < 50) return;
-    rotateCounter = 0;
+    if (insertedSinceRotate < ROTATE_EVERY_N_ROWS) return;
+    insertedSinceRotate = 0;
     stmtRotate.run(MAX_ROWS);
 }
 
@@ -133,8 +145,29 @@ function maybeRotate() {
 const hostname = os.hostname();
 const serverPlatform = `Node · ${hostname}`;
 
+function formatErrorWithCause(err) {
+    // Walk the cause chain so we don't lose context when a caller switches
+    // from logging `err.cause` to logging the outer error (needed for __logged
+    // tagging to work end-to-end).
+    let out = err.stack || err.message || String(err);
+    let seen = new Set([err]);
+    let cause = err.cause;
+    while (cause && !seen.has(cause)) {
+        seen.add(cause);
+        out += '\nCaused by: ';
+        if (cause instanceof Error) {
+            out += cause.stack || cause.message || String(cause);
+            cause = cause.cause;
+        } else {
+            out += String(cause);
+            break;
+        }
+    }
+    return out;
+}
+
 function formatArg(arg) {
-    if (arg instanceof Error) return arg.stack || arg.message;
+    if (arg instanceof Error) return formatErrorWithCause(arg);
     if (arg === null || arg === undefined) return String(arg);
     if (typeof arg === 'string') return arg;
     try { return JSON.stringify(arg); } catch { return String(arg); }
@@ -144,7 +177,7 @@ function normalizeArgs(args) {
     if (args.length === 0) return { message: '', description: undefined };
     if (args.length === 1) {
         const a = args[0];
-        if (a instanceof Error) return { message: a.message || String(a), description: a.stack };
+        if (a instanceof Error) return { message: a.message || String(a), description: formatErrorWithCause(a) };
         return { message: formatArg(a), description: undefined };
     }
     const [first, ...rest] = args;
@@ -172,11 +205,21 @@ function makeServerLogger() {
             console.error('[logs] failed to persist log entry:', e);
         }
     }
+    // Tag Error instances so the Express error middleware (which logs every
+    // error it sees) can skip anything we already recorded here. Prevents
+    // double-entry when a route does `logger.error(err); next(err)`.
+    function markLogged(args) {
+        for (const a of args) {
+            if (a && typeof a === 'object' && a instanceof Error) {
+                try { Object.defineProperty(a, '__logged', { value: true, configurable: true }); } catch {}
+            }
+        }
+    }
     // varargs-compatible — drop-in for console.error / console.warn
     return {
-        error: (...args) => { log('error', args); console.error(...args); },
-        warning: (...args) => { log('warning', args); console.warn(...args); },
-        warn: (...args) => { log('warning', args); console.warn(...args); },
+        error: (...args) => { log('error', args); markLogged(args); console.error(...args); },
+        warning: (...args) => { log('warning', args); markLogged(args); console.warn(...args); },
+        warn: (...args) => { log('warning', args); markLogged(args); console.warn(...args); },
         info: (...args) => { log('info', args); },
     };
 }
@@ -212,7 +255,7 @@ function queryLogs({ level, origin, since, before, limit } = {}) {
 
 function clearLogs() {
     stmtClearAll.run();
-    rotateCounter = 0;
+    insertedSinceRotate = 0;
 }
 
 function countLogs() {
@@ -239,6 +282,9 @@ function installProcessHandlers() {
             });
         } catch {}
         console.error('[uncaughtException]', err);
+        // Preserve Node's default: terminate after uncaught exception.
+        // better-sqlite3 writes synchronously, so the log entry above is already on disk.
+        process.exit(1);
     });
 
     process.on('unhandledRejection', (reason) => {
@@ -255,11 +301,15 @@ function installProcessHandlers() {
             });
         } catch {}
         console.error('[unhandledRejection]', reason);
+        // Node 15+ default: treat unhandled rejection as fatal.
+        process.exit(1);
     });
 }
 
 // ─── Express middleware ─────────────────────────────────────────────────────
 function expressErrorMiddleware(err, req, res, next) {
+    // Skip if the route already logged this error via logger.* — prevents double-entry.
+    if (err && typeof err === 'object' && err.__logged) return next(err);
     try {
         addLog({
             timestamp: Date.now(),
@@ -270,6 +320,9 @@ function expressErrorMiddleware(err, req, res, next) {
             description: err?.stack,
             platform: serverPlatform,
         });
+        if (err && typeof err === 'object') {
+            try { Object.defineProperty(err, '__logged', { value: true, configurable: true }); } catch {}
+        }
     } catch {}
     next(err);
 }

@@ -2086,7 +2086,10 @@ const reverseProxyFunc = async (req, res, next) => {
             }
             return;
         }
-        logger.error('[Proxy]', req.method, urlParam, err?.cause || err);
+        // Pass the actual `err` (not err.cause) so logger.* can tag it and the
+        // Express error middleware knows to skip. The cause chain is preserved
+        // via formatErrorWithCause in normalizeArgs.
+        logger.error(`[Proxy] ${req.method} ${urlParam}`, err);
         next(err);
         return;
     } finally {
@@ -2664,7 +2667,9 @@ app.get('/api/read', async (req, res, next) => {
                     dbCache[filePath] = stripped;
                     value = Buffer.from(encodeRisuSaveLegacy(stripped));
                 } catch (e) {
-                    logger.error('[Read] Failed to strip chats from database.bin:', e.message);
+                    // Log the Error itself (not just e.message) so logger.*
+                    // tags it and the Express middleware won't re-log after next().
+                    logger.error('[Read] Failed to strip chats from database.bin', e);
                     return next(e);
                 }
                 dbEtag = computeBufferEtag(value);
@@ -2737,6 +2742,7 @@ app.get('/api/list', async (req, res, next) => {
 });
 
 // ─── /api/logs — client-side error/warning/info log persistence ───────────────
+const LOGS_POST_MAX_ENTRIES = 1000;
 app.post('/api/logs', async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
     try {
@@ -2744,6 +2750,9 @@ app.post('/api/logs', async (req, res, next) => {
         const entries = Array.isArray(body) ? body : [body];
         if (entries.length === 0) {
             return res.send({ success: true, written: 0 });
+        }
+        if (entries.length > LOGS_POST_MAX_ENTRIES) {
+            return res.status(413).send({ error: `too many entries (max ${LOGS_POST_MAX_ENTRIES})` });
         }
         const prepared = entries
             .filter(e => e && typeof e === 'object' && typeof e.message === 'string')
@@ -2759,8 +2768,8 @@ app.post('/api/logs', async (req, res, next) => {
                 clientId: e.clientId,
                 userAgent: e.userAgent,
             }));
-        addLogBatch(prepared);
-        res.send({ success: true, written: prepared.length });
+        const written = addLogBatch(prepared);
+        res.send({ success: true, written });
     } catch (error) {
         next(error);
     }
