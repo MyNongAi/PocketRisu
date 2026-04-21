@@ -1,12 +1,15 @@
 import { get, writable } from "svelte/store"
+import { toast } from "svelte-sonner"
 import { sleep } from "./util"
 import { language } from "../lang"
 import { getDatabase, nodeOnlyVer, type MessageGenerationInfo } from "./storage/database.svelte"
 import { alertStore as alertStoreImported } from "./stores.svelte"
+import { addLog } from "./log"
+import { nativeConsoleError } from "./log-capture"
 
 export interface alertData{
     type: 'error'|'normal'|'none'|'ask'|'wait'|'selectChar'
-            |'input'|'toast'|'wait2'|'markdown'|'select'|'login'
+            |'input'|'wait2'|'markdown'|'select'|'login'
             |'tos'|'cardexport'|'requestdata'|'addchar'|'selectModule'
             |'chatOptions'|'pukmakkurit'|'branches'|'progress'|'pluginconfirm'|'requestlogs'
             |'togglePresets',
@@ -15,6 +18,11 @@ export interface alertData{
     datalist?: [string, string][],
     stackTrace?: string;
     defaultValue?: string
+}
+
+export interface NotifyOptions {
+    description?: string
+    source?: string
 }
 
 type AlertGenerationInfoStoreData = {
@@ -32,7 +40,10 @@ export const alertStore = {
 const TOS_ACCEPTANCE_STORAGE_KEY = 'tos2'
 
 export function alertError(msg: unknown) {
-    console.error(`[NodeOnly v${nodeOnlyVer}]`, msg)
+    // Use nativeConsoleError (pre-monkey-patch) so devtools still shows the error
+    // but log-capture does not also persist it — alertError below calls addLog
+    // explicitly with source='blocking-alert', avoiding a duplicate entry.
+    nativeConsoleError(`[NodeOnly v${nodeOnlyVer}]`, msg)
     const db = getDatabase()
 
     let stackTrace: string | undefined = undefined; 
@@ -83,6 +94,15 @@ export function alertError(msg: unknown) {
     if(errorMessage.includes('Failed to fetch') || errorMessage.includes("NetworkError when attempting to fetch resource.")){
         submsg =    db.usePlainFetch ? language.errors.networkFetchPlain : language.errors.networkFetch
     }
+
+    // Persist error to logs.db alongside the blocking modal. UX remains blocking;
+    // logging is a parallel concern.
+    addLog({
+        level: 'error',
+        message: errorMessage,
+        description: stackTrace,
+        source: 'blocking-alert',
+    })
 
     alertStoreImported.set({
         'type': 'error',
@@ -174,14 +194,32 @@ export function alertMd(msg:string){
 }
 
 export function doingAlert(){
-    return get(alertStoreImported).type !== 'none' && get(alertStoreImported).type !== 'toast' && get(alertStoreImported).type !== 'wait'
+    return get(alertStoreImported).type !== 'none' && get(alertStoreImported).type !== 'wait'
 }
 
-export function alertToast(msg:string){
-    alertStoreImported.set({
-        'type': 'toast',
-        'msg': msg
-    })
+// ─── Non-blocking notify* family ────────────────────────────────────────────
+// Pairs a sonner toast with a persistent log entry. Pick the level that fits
+// the message; blocking equivalents (alertError, alertConfirm, alertInput)
+// stay in place for cases that require user acknowledgement.
+
+export function notifyError(msg: string, opts?: NotifyOptions) {
+    addLog({ level: 'error', message: msg, description: opts?.description, source: opts?.source })
+    toast.error(msg, opts?.description ? { description: opts.description } : undefined)
+}
+
+export function notifyWarning(msg: string, opts?: NotifyOptions) {
+    addLog({ level: 'warning', message: msg, description: opts?.description, source: opts?.source })
+    toast.warning(msg, opts?.description ? { description: opts.description } : undefined)
+}
+
+export function notifyInfo(msg: string, opts?: NotifyOptions) {
+    addLog({ level: 'info', message: msg, description: opts?.description, source: opts?.source })
+    toast.info(msg, opts?.description ? { description: opts.description } : undefined)
+}
+
+export function notifySuccess(msg: string, opts?: Pick<NotifyOptions, 'description'>) {
+    // Intentionally not logged (decision 4-2): success feedback has low timeline value.
+    toast.success(msg, opts?.description ? { description: opts.description } : undefined)
 }
 
 export function alertWait(msg:string){

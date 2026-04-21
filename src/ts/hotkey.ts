@@ -1,5 +1,5 @@
 import { get } from "svelte/store"
-import { alertMd, alertSelect, alertToast, alertWait, doingAlert, alertRequestLogs } from "./alert"
+import { alertMd, alertSelect, notifyInfo, alertWait, doingAlert, alertRequestLogs } from "./alert"
 import { changeToPreset as changeToPreset2, getDatabase  } from "./storage/database.svelte"
 import { alertStore, DBState, loadoutModalStore, MobileGUIStack, MobileSideBar, openPersonaList, personaSelectCallback, openPresetList, openHypaV3PresetList, openThemePresetList, OpenRealmStore, PlaygroundStore, QuickSettings, SafeModeStore, selectedCharID, settingsOpen } from "./stores.svelte"
 import { language } from "src/lang"
@@ -241,9 +241,6 @@ export function initHotkey(){
             }
         }
         if(ev.key === 'Escape'){
-            if(doingAlert()){
-                alertToast('Alert Closed')
-            }
             if(get(settingsOpen)){
                 settingsOpen.set(false)
             }
@@ -433,7 +430,7 @@ function changeToPreset(num:number){
         let db = getDatabase()
         let pres = db.botPresets
         if(pres.length > num){
-            alertToast(`Changed to Preset: ${pres[num].name}`)
+            notifyInfo(`Changed to Preset: ${pres[num].name}`)
             changeToPreset2(num)
         }
     }

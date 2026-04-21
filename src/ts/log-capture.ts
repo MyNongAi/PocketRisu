@@ -13,6 +13,14 @@
 //
 import { addLog, type LogLevel } from './log'
 
+// Snapshot of the native console methods, captured at module eval time before
+// installConsolePatch() runs. Exported so callers that want to print to
+// devtools without triggering the log capture (e.g. alert.ts alertError,
+// which persists its own addLog entry with a semantic source tag) can
+// bypass the monkey-patch.
+export const nativeConsoleError = console.error.bind(console)
+export const nativeConsoleWarn = console.warn.bind(console)
+
 let installed = false
 let inLog = false
 
@@ -49,8 +57,8 @@ function patch(level: LogLevel, orig: (...a: unknown[]) => void): (...a: unknown
 }
 
 function installConsolePatch() {
-    console.error = patch('error', console.error.bind(console))
-    console.warn = patch('warning', console.warn.bind(console))
+    console.error = patch('error', nativeConsoleError)
+    console.warn = patch('warning', nativeConsoleWarn)
 }
 
 function installGlobalHandlers() {

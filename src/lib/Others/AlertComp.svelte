@@ -173,7 +173,7 @@
     }
 }}></svelte:window>
 
-{#if $alertStore.type !== 'none' &&  $alertStore.type !== 'toast' &&  $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs' && $alertStore.type !== 'togglePresets'}
+{#if $alertStore.type !== 'none' &&  $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs' && $alertStore.type !== 'togglePresets'}
     <div class="absolute w-full h-full z-50 bg-black/50 flex justify-center items-center" class:vis={ $alertStore.type === 'wait2'}>
         <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl  max-h-full overflow-y-auto">
             {#if $alertStore.type === 'error'}
@@ -946,15 +946,6 @@
         </div>
     </div>
 
-{:else if $alertStore.type === 'toast'}
-    <div class="toast-anime absolute right-0 bottom-0 bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl  max-h-11/12 overflow-y-auto z-50 text-textcolor"
-        onanimationend={() => {
-            alertStore.set({
-                type: 'none',
-                msg: ''
-            })
-        }}
-    >{$alertStore.msg}</div>
 {:else if $alertStore.type === 'selectModule'}
     <ModuleChatMenu alertMode close={(d) => {
         alertStore.set({
@@ -1213,22 +1204,6 @@
         word-break: normal;
         overflow-wrap: anywhere;
     }
-    @keyframes toastAnime {
-        0% {
-            opacity: 0;
-        }
-        50% {
-            opacity: 1;
-        }
-        100% {
-            opacity: 0;
-        }
-    }
-
-    .toast-anime {
-        animation: toastAnime 1s ease-out;
-    }
-
     .vis{
         opacity: 1 !important;
         --tw-bg-opacity: 1 !important;
