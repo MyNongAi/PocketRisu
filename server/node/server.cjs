@@ -16,16 +16,23 @@ const sharp = require('sharp')
 const { kvGet, kvSet, kvDel, kvList,
         kvDelPrefix, kvListWithSizes, kvSize, kvGetUpdatedAt, kvCopyValue, clearEntities, checkpointWal,
         db: sqliteDb } = require('./db.cjs');
+const {
+    addLogBatch, queryLogs, clearLogs, countLogs,
+    logger, installProcessHandlers, expressErrorMiddleware,
+} = require('./logs.cjs');
 const { applyPatch } = require('fast-json-patch');
 const { decodeRisuSave, encodeRisuSaveLegacy, calculateHash, normalizeJSON } = require('./utils.cjs');
 const { spawn, execSync } = require('child_process');
 const os = require('os');
 const { Readable, Transform } = require('stream');
 
+// Install process-level error handlers before any other init so early crashes get logged.
+installProcessHandlers();
+
 // Node.js version check
 const [nodeMajor] = process.version.slice(1).split('.').map(Number);
 if (nodeMajor < 24) {
-    console.warn(`[Server] Node.js ${process.version} is below the recommended version (v24.x). Consider upgrading for best compatibility.`);
+    logger.warn(`[Server] Node.js ${process.version} is below the recommended version (v24.x). Consider upgrading for best compatibility.`);
 }
 
 // Configuration flags for patch-based sync
@@ -149,9 +156,9 @@ async function decodeDatabaseWithPersistentChatIds(raw, options = {}) {
     const coldRestoreResult = restoreColdStorageCharactersInDb(dbObj);
     if (coldRestoreResult.restored > 0 || coldRestoreResult.failed > 0) needsPersist = true;
     if (coldRestoreResult.failed > 0) {
-        console.error(`[ColdStorage] ${coldRestoreResult.failed} character(s) could not be restored and were converted to safe blank characters. Cold storage KV data is preserved.`);
+        logger.error(`[ColdStorage] ${coldRestoreResult.failed} character(s) could not be restored and were converted to safe blank characters. Cold storage KV data is preserved.`);
         for (const name of coldRestoreResult.failedNames) {
-            console.error(`[ColdStorage]   - "${name}"`);
+            logger.error(`[ColdStorage]   - "${name}"`);
         }
     }
 
@@ -848,7 +855,7 @@ async function migrateInlaysToFilesystem() {
             kvDel(`inlay_thumb/${id}`);
             kvDel(`inlay_info/${id}`);
         } catch (error) {
-            console.warn(`[InlayFS] Failed to migrate ${key}:`, error?.message || error);
+            logger.warn(`[InlayFS] Failed to migrate ${key}:`, error?.message || error);
         }
     }
 
@@ -873,7 +880,7 @@ async function fetchLatestRelease() {
         }
         return data;
     } catch (e) {
-        console.error('[Update] Failed to check for updates:', e.message);
+        logger.error('[Update] Failed to check for updates:', e.message);
         return null;
     }
 }
@@ -1875,12 +1882,12 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
     try {
         checkpointWal('TRUNCATE');
     } catch (checkpointError) {
-        console.warn('[Backup Import] WAL checkpoint after import failed:', checkpointError);
+        logger.warn('[Backup Import] WAL checkpoint after import failed:', checkpointError);
     }
 
     console.log(`[Backup Import] Complete: ${assetsRestored} assets restored, ${(bytesReceived / 1024 / 1024).toFixed(1)}MB processed`);
     if (coldStorageFailed > 0) {
-        console.error(`[Backup Import] ${coldStorageFailed} cold storage character(s) could not be restored`);
+        logger.error(`[Backup Import] ${coldStorageFailed} cold storage character(s) could not be restored`);
     }
     return { assetsRestored, bytesReceived, coldStorageFailed };
 }
@@ -2079,7 +2086,7 @@ const reverseProxyFunc = async (req, res, next) => {
             }
             return;
         }
-        console.error('[Proxy]', req.method, urlParam, err?.cause || err);
+        logger.error('[Proxy]', req.method, urlParam, err?.cause || err);
         next(err);
         return;
     } finally {
@@ -2311,7 +2318,7 @@ async function hubProxyFunc(req, res) {
         }
         
     } catch (error) {
-        console.error("[Hub Proxy] Error:", error);
+        logger.error("[Hub Proxy] Error:", error);
         if (!res.headersSent) {
             res.status(502).send({ error: 'Proxy request failed: ' + error.message });
         } else {
@@ -2586,7 +2593,7 @@ app.get('/api/asset/:hexKey', sessionAuthMiddleware, async (req, res) => {
         })
         res.send(binary)
     } catch (error) {
-        console.error('[Asset] Failed to serve asset:', error);
+        logger.error('[Asset] Failed to serve asset:', error);
         res.status(500).end()
     }
 })
@@ -2657,7 +2664,7 @@ app.get('/api/read', async (req, res, next) => {
                     dbCache[filePath] = stripped;
                     value = Buffer.from(encodeRisuSaveLegacy(stripped));
                 } catch (e) {
-                    console.error('[Read] Failed to strip chats from database.bin:', e.message);
+                    logger.error('[Read] Failed to strip chats from database.bin:', e.message);
                     return next(e);
                 }
                 dbEtag = computeBufferEtag(value);
@@ -2729,6 +2736,63 @@ app.get('/api/list', async (req, res, next) => {
     }
 });
 
+// ─── /api/logs — client-side error/warning/info log persistence ───────────────
+app.post('/api/logs', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    try {
+        const body = req.body;
+        const entries = Array.isArray(body) ? body : [body];
+        if (entries.length === 0) {
+            return res.send({ success: true, written: 0 });
+        }
+        const prepared = entries
+            .filter(e => e && typeof e === 'object' && typeof e.message === 'string')
+            .map(e => ({
+                timestamp: typeof e.timestamp === 'number' ? e.timestamp : Date.now(),
+                level: e.level,
+                origin: 'client',
+                message: e.message,
+                description: e.description,
+                source: e.source,
+                count: e.count,
+                platform: e.platform,
+                clientId: e.clientId,
+                userAgent: e.userAgent,
+            }));
+        addLogBatch(prepared);
+        res.send({ success: true, written: prepared.length });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.get('/api/logs', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    try {
+        const rows = queryLogs({
+            level: typeof req.query.level === 'string' ? req.query.level : undefined,
+            origin: typeof req.query.origin === 'string' ? req.query.origin : undefined,
+            since: req.query.since ? Number(req.query.since) : undefined,
+            before: req.query.before ? Number(req.query.before) : undefined,
+            limit: req.query.limit ? Number(req.query.limit) : undefined,
+        });
+        res.send({ success: true, content: rows, total: countLogs() });
+    } catch (error) {
+        next(error);
+    }
+});
+
+app.delete('/api/logs', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!checkActiveSession(req, res)) return;
+    try {
+        clearLogs();
+        res.send({ success: true });
+    } catch (error) {
+        next(error);
+    }
+});
+
 app.post('/api/write', async (req, res, next) => {
     if(!await checkAuth(req, res)){
         return;
@@ -2794,7 +2858,7 @@ app.post('/api/write', async (req, res, next) => {
                     initChatStore(fullDb);
                     kvSet(key, mergedContent);
                 } catch (e) {
-                    console.error('[Write] Failed to merge chats into database.bin:', e.message);
+                    logger.error('[Write] Failed to merge chats into database.bin:', e.message);
                     // Do NOT write stubs-only to disk — that would permanently
                     // destroy existing full chat data. Preserve disk as-is.
                     res.status(500).json({ error: 'Database merge failed' });
@@ -2931,7 +2995,7 @@ app.post('/api/patch', async (req, res, next) => {
                         createBackupAndRotate();
                     }
                 } catch (error) {
-                    console.error(`[Patch] Error saving ${decodedKey}:`, error);
+                    logger.error(`[Patch] Error saving ${decodedKey}:`, error);
                 } finally {
                     delete saveTimers[filePath];
                 }
@@ -2949,7 +3013,7 @@ app.post('/api/patch', async (req, res, next) => {
             });
         });
     } catch (error) {
-        console.error(`[Patch] Error applying patch to ${filePath}:`, error.name);
+        logger.error(`[Patch] Error applying patch to ${filePath}:`, error.name);
         res.status(500).send({
             error: 'Patch application failed: ' + (error && error.message ? error.message : error)
         });
@@ -3508,7 +3572,7 @@ function restoreColdStorageCharacter(character) {
         migrateLegacy: true,
     });
     if (!entry) {
-        console.error(`[ColdStorage] character data not found for key: ${key}`);
+        logger.error(`[ColdStorage] character data not found for key: ${key}`);
         return false;
     }
     try {
@@ -3518,12 +3582,12 @@ function restoreColdStorageCharacter(character) {
             delete character.coldstorage;
             delete character.coldStoragedChats;
         } else {
-            console.error(`[ColdStorage] unexpected character cold data format for key: ${key}`);
+            logger.error(`[ColdStorage] unexpected character cold data format for key: ${key}`);
             return false;
         }
         return true;
     } catch (err) {
-        console.error(`[ColdStorage] character restore failed for key ${key}:`, err.message);
+        logger.error(`[ColdStorage] character restore failed for key ${key}:`, err.message);
         return false;
     }
 }
@@ -3597,7 +3661,7 @@ function restoreColdStorageChat(chat) {
         migrateLegacy: true,
     });
     if (!entry) {
-        console.error(`[ColdStorage] data not found for key: ${key}`);
+        logger.error(`[ColdStorage] data not found for key: ${key}`);
         return false;
     }
     try {
@@ -3613,7 +3677,7 @@ function restoreColdStorageChat(chat) {
         chat.lastDate = Date.now();
         return true;
     } catch (err) {
-        console.error(`[ColdStorage] restore failed for key ${key}:`, err.message);
+        logger.error(`[ColdStorage] restore failed for key ${key}:`, err.message);
         return false;
     }
 }
@@ -3721,7 +3785,7 @@ app.post('/api/chat-content/:chaId/:chatIndex', async (req, res, next) => {
                     }
                     createBackupAndRotate();
                 } catch (error) {
-                    console.error('[ChatContent] Error persisting chat:', error);
+                    logger.error('[ChatContent] Error persisting chat:', error);
                 } finally {
                     delete saveTimers[DB_HEX_KEY];
                 }
@@ -4244,7 +4308,7 @@ app.post('/api/self-update', async (req, res) => {
             try {
                 await fs.rename(path.join(appDir, e), path.join(backupDir, e));
             } catch (backupErr) {
-                console.error(`[Update] Failed to back up ${e}: ${backupErr.message}`);
+                logger.error(`[Update] Failed to back up ${e}: ${backupErr.message}`);
                 console.log('[Update] Restoring files already moved to backup...');
                 await restoreBackup(backupDir, appDir);
                 throw new Error(isWin
@@ -4278,7 +4342,7 @@ app.post('/api/self-update', async (req, res) => {
                 }
             }
         } catch (moveErr) {
-            console.error(`[Update] Move failed: ${moveErr.message}`);
+            logger.error(`[Update] Move failed: ${moveErr.message}`);
             console.log('[Update] Restoring from backup...');
             await restoreBackup(backupDir, appDir);
             throw new Error('Update failed, previous version restored. Please try again.');
@@ -4391,13 +4455,13 @@ app.post('/api/self-update', async (req, res) => {
             }
             process.exit(0);
             } catch (restartErr) {
-                console.error('[Update] Restart failed:', restartErr);
+                logger.error('[Update] Restart failed:', restartErr);
                 selfUpdateInProgress = false;
             }
         }, 500);
 
     } catch (e) {
-        console.error('[Update] Self-update failed:', e);
+        logger.error('[Update] Self-update failed:', e);
         send('error', null, `Update failed: ${e.message}`);
         res.end();
         selfUpdateInProgress = false;
@@ -4443,7 +4507,7 @@ app.post('/api/tunnel/start', async (req, res) => {
         try {
             cfPath = await downloadCloudflared();
         } catch (e) {
-            console.error('[Tunnel] Download failed:', e.message);
+            logger.error('[Tunnel] Download failed:', e.message);
             tunnelStatus = 'error';
             tunnelError = `Failed to download cloudflared: ${e.message}`;
             return;
@@ -4483,7 +4547,7 @@ function startTunnelProcess(cfPath) {
         });
 
         tunnelProcess.on('error', (err) => {
-            console.error('[Tunnel] Process error:', err.message);
+            logger.error('[Tunnel] Process error:', err.message);
             tunnelStatus = 'error';
             tunnelError = err.message;
             tunnelProcess = null;
@@ -4522,6 +4586,13 @@ app.post('/api/tunnel/stop', async (req, res) => {
     res.json({ status: 'off' });
 });
 
+// ─── Express error middleware — must be registered after all routes ─────────
+app.use(expressErrorMiddleware);
+app.use((err, req, res, next) => {
+    if (res.headersSent) return next(err);
+    res.status(500).json({ error: err?.message || 'internal server error' });
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function getHttpsOptions() {
@@ -4542,7 +4613,7 @@ async function getHttpsOptions() {
         return { key, cert };
 
     } catch (error) {
-        console.error('[Server] SSL setup errors:', error.message);
+        logger.error('[Server] SSL setup errors:', error.message);
         console.log('[Server] Start the server with HTTP instead of HTTPS...');
         return null;
     }
@@ -4573,7 +4644,7 @@ async function startServer() {
             });
         }
     } catch (error) {
-        console.error('[Server] Failed to start server :', error);
+        logger.error('[Server] Failed to start server :', error);
         process.exit(1);
     }
 }
@@ -4583,7 +4654,7 @@ for (const sig of ['SIGTERM', 'SIGINT']) {
     process.on(sig, async () => {
         console.log(`[Server] Received ${sig}, flushing pending data...`);
         stopTunnel();
-        try { await flushPendingDb(); } catch (e) { console.error('[Server] Flush error:', e); }
+        try { await flushPendingDb(); } catch (e) { logger.error('[Server] Flush error:', e); }
         try { checkpointWal('TRUNCATE'); } catch { /* non-fatal */ }
         process.exit(0);
     });
