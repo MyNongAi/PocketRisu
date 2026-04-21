@@ -78,6 +78,7 @@
     "tailwind-merge": "^3.5.0",
     "three": "^0.154.0",
     "tippy.js": "^6.3.7",
+    "ua-parser-js": "^2.0.9",
     "uuid": "^9.0.1",
     "wasmoon": "^1.16.0",
     "wavefile": "^11.0.0",
