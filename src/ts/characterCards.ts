@@ -1,5 +1,5 @@
 import { writable, type Writable } from "svelte/store"
-import { alertCardExport, alertConfirm, alertError, alertInput, alertStore, alertTOS, alertWait, notifySuccess } from "./alert"
+import { alertCardExport, alertConfirm, alertError, alertInput, alertStore, alertTOS, alertWait, notifySuccess, notifyError } from "./alert"
 import { defaultSdDataFunc, type character, setDatabase, type customscript, type loreSettings, type loreBook, type triggerscript, importPreset, getDatabase, setDatabaseLite, appVer } from "./storage/database.svelte"
 import { checkNullish, decryptBuffer, isKnownUri, selectFileByDom, sleep } from "./util"
 import { language } from "src/lang"
@@ -340,7 +340,7 @@ export const getRealmInfo = async (realmPath:string) => {
 
     const res = await fetch(`${hubURL}/hub/info/${realmPath}`)
     if(res.status !== 200){
-        alertError(await res.text())
+        notifyError(await res.text())
         return
     }
     showRealmInfoStore.set(await res.json())
@@ -383,7 +383,7 @@ export async function characterURLImport() {
             })
         }
     } catch (error) {
-        alertError(language.errors.noData)
+        notifyError(language.errors.noData)
         return null
     }
 
@@ -400,7 +400,7 @@ export async function characterURLImport() {
             await importFile(getFileName(res), data)
             checkCharOrder()
         } catch (error) {
-            alertError(language.errors.noData)
+            notifyError(language.errors.noData)
             return null
         }
     }
@@ -1639,7 +1639,7 @@ export async function downloadRisuHub(id:string, arg:{
             }
         })
         if(res.status !== 200){
-            alertError(await res.text())
+            notifyError(await res.text())
             return
         }
 

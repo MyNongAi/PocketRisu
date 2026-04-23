@@ -20,7 +20,7 @@
     import { tokenizePreset } from "src/ts/process/prompt";
     import { getCharToken } from "src/ts/tokenizer";
     import { PlusIcon, PencilIcon, TrashIcon, DownloadIcon, HardDriveUploadIcon } from "@lucide/svelte";
-    import { alertError, alertInput, alertConfirm, notifySuccess } from "src/ts/alert";
+    import { alertError, alertInput, alertConfirm, notifySuccess, notifyError } from "src/ts/alert";
     import { createHypaV3Preset } from "src/ts/process/memory/hypav3";
 
     let submenu = $state(0);
@@ -106,7 +106,7 @@
      */
     async function fetchWavespeedModels() {
         if (!DBState.db.wavespeedImage.key || DBState.db.wavespeedImage.key.trim() === '') {
-            alertError('WaveSpeed API Key not set');
+            notifyError('WaveSpeed API Key not set');
             return [];
         }
 
@@ -120,7 +120,7 @@
             });
 
             if (!result.ok || !result.data) {
-                alertError('Failed to fetch WaveSpeed models');
+                notifyError('Failed to fetch WaveSpeed models');
                 return;
             }
 
@@ -128,12 +128,12 @@
             try {
                 responseData = typeof result.data === 'string' ? JSON.parse(result.data) : result.data;
             } catch (e) {
-                alertError('Failed to parse WaveSpeed response');
+                notifyError('Failed to parse WaveSpeed response');
                 return;
             }
 
             if (responseData.code !== 200 || !Array.isArray(responseData.data)) {
-                alertError('Invalid WaveSpeed API response');
+                notifyError('Invalid WaveSpeed API response');
                 return;
             }
 
@@ -162,7 +162,7 @@
             wavespeedModels = filteredModels;
             notifySuccess(`Successfully loaded ${filteredModels.length} models`);
         } catch (error) {
-            alertError(`Failed to fetch models: ${error}`);
+            notifyError(`Failed to fetch models: ${error}`);
         } finally {
             isWavespeedLoading = false;
         }
@@ -997,7 +997,7 @@
                     const presets = DBState.db.hypaV3Presets
 
                     if(presets.length === 0){
-                        alertError("There must be least one preset.")
+                        notifyError("There must be least one preset.")
                         return
                     }
 
@@ -1017,7 +1017,7 @@
                     const presets = DBState.db.hypaV3Presets
 
                     if(presets.length <= 1){
-                        alertError("There must be least one preset.")
+                        notifyError("There must be least one preset.")
                         return
                     }
 
@@ -1041,7 +1041,7 @@
                         const presets = DBState.db.hypaV3Presets
                         
                         if(presets.length === 0){
-                            alertError("There must be least one preset.")
+                            notifyError("There must be least one preset.")
                             return
                         }
 

@@ -1,5 +1,5 @@
 import { language } from "src/lang"
-import { alertError } from "src/ts/alert";
+import { notifyError } from "src/ts/alert";
 import { getDatabase } from "src/ts/storage/database.svelte"
 import { LLMFlags, LLMFormat } from "src/ts/model/modellist"
 import { strongBan, tokenizeNum } from "src/ts/tokenizer"
@@ -854,7 +854,7 @@ async function requestHTTPOpenAI(replacerURL:string,body:any, headers:Record<str
                 const result = (db.simplifiedToolUse ? '' : (processTextResponse(dat) ?? '') + '\n\n') + callCode
                         
                 if(resRec.type === 'fail') {
-                    alertError(`Failed to fetch model response after tool execution`)
+                    notifyError(`Failed to fetch model response after tool execution`)
                     return {
                         type: 'success',
                         result: result
@@ -1460,7 +1460,7 @@ function wrapToolStream(
                         } while (attempt <= db.requestRetrys) // Retry up to db.requestRetrys times
                         
                         if(errorFlag){
-                            alertError(`Failed to fetch model response after tool execution`)
+                            notifyError(`Failed to fetch model response after tool execution`)
                             return controller.close()
                         }
                         

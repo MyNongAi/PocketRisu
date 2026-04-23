@@ -6,7 +6,7 @@ import { v4 } from "uuid"
 import { saveInlayedSignature, setInlayAsset, writeInlayImage, type InlaySignature } from "../files/inlays"
 import { extractJSON, getGeneralJSONSchema } from "../templates/jsonSchema"
 import { callTool, decodeToolCall, encodeToolCall } from "../mcp/mcp"
-import { alertError } from "src/ts/alert";
+import { notifyError } from "src/ts/alert";
 import { addFetchLog } from "src/ts/globalApi.svelte"
 import type { RequestDataArgumentExtended, requestDataResponse, StreamResponseChunk } from './request'
 import { applyParameters, setObjectValue, type LLMParameter } from './shared'
@@ -523,7 +523,7 @@ export async function requestGoogleCloudVertex(arg:RequestDataArgumentExtended):
     if(arg.modelInfo.format === LLMFormat.VertexAIGemini){
         if(db.vertexAccessTokenExpires < Date.now()){
             if (!db.vertexClientEmail || !db.vertexPrivateKey) {
-                alertError("Vertex AI authentication information is missing or incomplete. Please check your settings.");
+                notifyError("Vertex AI authentication information is missing or incomplete. Please check your settings.");
                 return { type: 'fail', result: "Vertex AI authentication information is missing or incomplete. Please check your settings." };
             }
             headers['Authorization'] = "Bearer " + await generateToken(db.vertexClientEmail, db.vertexPrivateKey)
@@ -1003,7 +1003,7 @@ async function requestGoogle(url:string, body:any, headers:{[key:string]:string}
 
         // If the next request fails, only the responses so far are returned
         if(resRec.type === 'fail'){
-            alertError(`Failed to fetch model response after tool execution`)
+            notifyError(`Failed to fetch model response after tool execution`)
             return {
                 type: 'success',
                 result: result
@@ -1329,7 +1329,7 @@ function wrapToolStream(
                         } while (attempt <= db.requestRetrys) // Retry up to db.requestRetrys times
 
                         if(errorFlag){
-                            alertError(`Failed to fetch model response after tool execution`)
+                            notifyError(`Failed to fetch model response after tool execution`)
                             return controller.close()
                         }
 
