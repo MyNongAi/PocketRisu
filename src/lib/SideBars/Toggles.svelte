@@ -47,6 +47,7 @@
             const confirmed = await alertConfirm(language.togglePinRemove)
             if (confirmed) {
                 chat.savedToggleValues = undefined
+                notifySuccess(language.togglePinUnbound)
             }
         } else {
             saveTogglesToChat()

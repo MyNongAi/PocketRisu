@@ -26,7 +26,7 @@
     import Help from "./Help.svelte";
     import { getChatBranches } from "src/ts/gui/branches";
     import { getCurrentCharacter, type TogglePreset, applyToggleValues, snapshotCurrentToggleValues } from "src/ts/storage/database.svelte";
-    import { alertInput, alertConfirm, alertError, alertNormalWait } from "src/ts/alert";
+    import { alertInput, alertConfirm, alertError, alertNormalWait, notifySuccess } from "src/ts/alert";
     import { selectSingleFile } from "src/ts/util";
     import { translateStackTrace } from "../../ts/sourcemap";
     import versionData from "../../../version.json";
@@ -698,7 +698,7 @@
                                     return
                                 }
                                 applyToggleValues(preset.values)
-                                alertStore.set({ type: 'normal', msg: (language.togglePresetApplied as any)(name) })
+                                notifySuccess((language.togglePresetApplied as any)(name))
                             }}>
                                 <div class="text-xs text-textcolor2 leading-tight">{preset.promptPresetName ?? language.togglePresetNoPromptPreset}</div>
                                 {preset.name}
@@ -750,7 +750,7 @@
                                                     DBState.db.togglePresets![idx].values = snapshotCurrentToggleValues()
                                                     DBState.db.togglePresets![idx].promptPresetName = promptPreset?.name
                                                     DBState.db.togglePresets = [...DBState.db.togglePresets!]
-                                                    await alertNormalWait((language.togglePresetOverwritten as any)(presetName))
+                                                    notifySuccess((language.togglePresetOverwritten as any)(presetName))
                                                 }
                                                 reopenPresets()
                                             }}>
@@ -765,6 +765,7 @@
                                                 if (name && name !== oldName) {
                                                     DBState.db.togglePresets![idx].name = name
                                                     DBState.db.togglePresets = [...DBState.db.togglePresets!]
+                                                    notifySuccess((language.togglePresetRenamed as any)(oldName, name))
                                                 }
                                                 reopenPresets()
                                             }}>
@@ -777,6 +778,7 @@
                                                 copy.name = preset.name + ' (Copy)';
                                                 DBState.db.togglePresets!.splice(i + 1, 0, copy);
                                                 DBState.db.togglePresets = [...DBState.db.togglePresets!];
+                                                notifySuccess((language.togglePresetDuplicated as any)(copy.name))
                                             }}>
                                                 <CopyIcon size={14} />
                                                 {language.togglePresetMenuDuplicate}
@@ -785,6 +787,7 @@
                                                 togglePresetMenuOpen = null
                                                 const exportData = { name: preset.name, values: preset.values, promptPresetName: preset.promptPresetName }
                                                 downloadFile(`${preset.name}_toggle.json`, Buffer.from(JSON.stringify(exportData, null, 2), 'utf-8'))
+                                                notifySuccess((language.togglePresetExported as any)(preset.name))
                                             }}>
                                                 <DownloadIcon size={14} />
                                                 {language.togglePresetMenuExport}
@@ -798,6 +801,7 @@
                                                 if (confirmed) {
                                                     DBState.db.togglePresets!.splice(idx, 1)
                                                     DBState.db.togglePresets = [...DBState.db.togglePresets!]
+                                                    notifySuccess((language.togglePresetDeleted as any)(presetName))
                                                 }
                                                 reopenPresets()
                                             }}>
@@ -827,6 +831,7 @@
                     promptPresetName: promptPreset?.name
                 })
                 DBState.db.togglePresets = [...DBState.db.togglePresets]
+                notifySuccess((language.togglePresetSaved as any)(name))
                 reopenPresets()
             }}>
                 <PlusIcon size={16} />
@@ -857,7 +862,7 @@
                         promptPresetName: typeof data.promptPresetName === 'string' ? data.promptPresetName : undefined
                     })
                     DBState.db.togglePresets = [...DBState.db.togglePresets]
-                    await alertNormalWait((language.togglePresetImported as any)(data.name))
+                    notifySuccess((language.togglePresetImported as any)(data.name))
                     reopenPresets()
                 } catch {
                     alertError(language.togglePresetImportError)
