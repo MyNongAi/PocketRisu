@@ -1834,6 +1834,7 @@ export const languageEnglish = {
     systemLogsOriginClient: "Client",
     systemLogsOriginServer: "Server",
     systemLogsFailedLoad: "Failed to load logs",
+    systemLogsLoading: "Loading...",
 
 } satisfies I18nTranslation;
 

@@ -1681,5 +1681,6 @@ export const languageKorean = {
     systemLogsOriginClient: "클라이언트",
     systemLogsOriginServer: "서버",
     systemLogsFailedLoad: "로그를 불러오지 못했습니다",
+    systemLogsLoading: "불러오는 중...",
 
 } satisfies DeepPartial<typeof import('./en').languageEnglish>

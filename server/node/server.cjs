@@ -2782,7 +2782,7 @@ app.get('/api/logs', async (req, res, next) => {
             level: typeof req.query.level === 'string' ? req.query.level : undefined,
             origin: typeof req.query.origin === 'string' ? req.query.origin : undefined,
             since: req.query.since ? Number(req.query.since) : undefined,
-            before: req.query.before ? Number(req.query.before) : undefined,
+            beforeId: req.query.before_id ? Number(req.query.before_id) : undefined,
             limit: req.query.limit ? Number(req.query.limit) : undefined,
         });
         res.send({ success: true, content: rows, total: countLogs() });

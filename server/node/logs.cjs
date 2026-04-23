@@ -227,13 +227,15 @@ function makeServerLogger() {
 const logger = makeServerLogger();
 
 // ─── Query ───────────────────────────────────────────────────────────────────
-function queryLogs({ level, origin, since, before, limit } = {}) {
+function queryLogs({ level, origin, since, beforeId, limit } = {}) {
     const conditions = [];
     const params = [];
     if (level) { conditions.push(`level = ?`); params.push(level); }
     if (origin) { conditions.push(`origin = ?`); params.push(origin); }
     if (typeof since === 'number') { conditions.push(`timestamp >= ?`); params.push(since); }
-    if (typeof before === 'number') { conditions.push(`timestamp < ?`); params.push(before); }
+    // Cursor is id (not timestamp): aligns with ORDER BY id DESC so burst-written rows
+    // sharing a timestamp paginate deterministically instead of being skipped.
+    if (typeof beforeId === 'number') { conditions.push(`id < ?`); params.push(beforeId); }
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
     const lim = Math.min(Math.max(Number(limit) || 500, 1), 5000);
     const sql = `SELECT * FROM logs ${where} ORDER BY id DESC LIMIT ?`;

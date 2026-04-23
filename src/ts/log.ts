@@ -29,15 +29,26 @@ export interface AddLogInput {
     source?: string
 }
 
+function randomId(): string {
+    return (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2)
+}
+
 let cachedClientId: string | null = null
 function getClientId(): string {
     if (cachedClientId) return cachedClientId
-    let id = localStorage.getItem(CLIENT_ID_KEY)
+    // Private-mode browsers and storage-disabled environments throw on localStorage access.
+    // Fall back to a session-only random id so log capture keeps working even without persistence.
+    let id: string | null = null
+    try {
+        id = localStorage.getItem(CLIENT_ID_KEY)
+    } catch { /* storage unavailable */ }
     if (!id) {
-        id = (typeof crypto !== 'undefined' && crypto.randomUUID)
-            ? crypto.randomUUID()
-            : Math.random().toString(16).slice(2) + Math.random().toString(16).slice(2)
-        localStorage.setItem(CLIENT_ID_KEY, id)
+        id = randomId()
+        try {
+            localStorage.setItem(CLIENT_ID_KEY, id)
+        } catch { /* storage unavailable — id stays session-only */ }
     }
     cachedClientId = id.slice(0, 6)
     return cachedClientId

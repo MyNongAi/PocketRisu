@@ -75,9 +75,10 @@
         if (loadingMore || !hasMore || entries.length === 0) return
         loadingMore = true
         try {
-            const oldestTs = entries[entries.length - 1].timestamp
-            const data = await fetchLogs({ limit: PAGE_SIZE, before: oldestTs })
-            // Filter by id to avoid duplicates if timestamps collide.
+            // Use row id as the cursor — server sorts by id DESC, so this matches the
+            // server ordering exactly and avoids skipping entries that share a timestamp.
+            const oldestId = entries[entries.length - 1].id
+            const data = await fetchLogs({ limit: PAGE_SIZE, beforeId: oldestId })
             const existing = new Set(entries.map(e => e.id))
             const fresh = data.rows.filter(r => !existing.has(r.id))
             entries = [...entries, ...fresh]
@@ -90,11 +91,11 @@
         }
     }
 
-    async function fetchLogs(opts: { limit?: number; before?: number } = {}) {
+    async function fetchLogs(opts: { limit?: number; beforeId?: number } = {}) {
         const auth = await forageStorage.createAuth()
         const params = new URLSearchParams()
         if (opts.limit) params.set('limit', String(opts.limit))
-        if (opts.before) params.set('before', String(opts.before))
+        if (opts.beforeId) params.set('before_id', String(opts.beforeId))
         const res = await fetch(`/api/logs?${params.toString()}`, {
             headers: { 'risu-auth': auth },
         })
@@ -256,7 +257,7 @@
     <!-- Status bar -->
     <div class="text-textcolor2 text-xs mb-2 flex items-center gap-2">
         {#if loading}
-            <span>Loading...</span>
+            <span>{language.systemLogsLoading}</span>
         {:else if loadError}
             <span class="text-draculared">{language.systemLogsFailedLoad}: {loadError}</span>
         {:else}
@@ -292,10 +293,15 @@
                                 <span class="hidden sm:inline">{entry.level}</span>
                             </ShBadge>
 
-                            <!-- Time (relative + absolute tooltip) -->
+                            <!-- Time (relative + absolute tooltip) — render Trigger as <span>
+                                 via child snippet to avoid a <button> inside Collapsible.Trigger. -->
                             <Tooltip.Root>
-                                <Tooltip.Trigger class="text-textcolor2 text-xs shrink-0 tabular-nums cursor-help">
-                                    {formatRelative(entry.timestamp)}
+                                <Tooltip.Trigger>
+                                    {#snippet child({ props })}
+                                        <span {...props} class="text-textcolor2 text-xs shrink-0 tabular-nums cursor-help">
+                                            {formatRelative(entry.timestamp)}
+                                        </span>
+                                    {/snippet}
                                 </Tooltip.Trigger>
                                 <Tooltip.Content
                                     class="bg-darkbg border border-darkborderc rounded-md px-2 py-1 text-xs text-textcolor shadow-lg z-50"
@@ -369,7 +375,7 @@
         {#if hasMore}
             <div class="flex justify-center mt-3">
                 <ShButton variant="outline" size="default" disabled={loadingMore} onclick={loadMore}>
-                    {loadingMore ? 'Loading...' : language.systemLogsLoadMore}
+                    {loadingMore ? language.systemLogsLoading : language.systemLogsLoadMore}
                 </ShButton>
             </div>
         {/if}
