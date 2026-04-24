@@ -1846,8 +1846,10 @@ export const languageEnglish = {
     systemLogsFilterOrigin: "Origin",
     systemLogsFilterSource: "Source",
     systemLogsFilterDevice: "Device",
-    systemLogsFilterClear: "Clear filters",
-    systemLogsFilterActive: (count: number) => count === 0 ? '' : `${count} active`,
+    systemLogsFilterClear: "Reset filters",
+    systemLogsFilterActive: (count: number) => count === 0 ? '' : `${count} excluded`,
+    systemLogsExplicitOnly: "Explicit logs only",
+    systemLogsExplicitOnlyHint: "Excludes console, uncaught exceptions, framework captures",
 
 } satisfies I18nTranslation;
 

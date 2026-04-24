@@ -1694,6 +1694,8 @@ export const languageKorean = {
     systemLogsFilterSource: "소스",
     systemLogsFilterDevice: "기기",
     systemLogsFilterClear: "필터 초기화",
-    systemLogsFilterActive: (count: number) => count === 0 ? '' : `${count}개 적용`,
+    systemLogsFilterActive: (count: number) => count === 0 ? '' : `${count}개 제외됨`,
+    systemLogsExplicitOnly: "명시적 로그만",
+    systemLogsExplicitOnlyHint: "console, 미처리 예외, 프레임워크 캡처 제외",
 
 } satisfies DeepPartial<typeof import('./en').languageEnglish>

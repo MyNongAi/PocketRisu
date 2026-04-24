@@ -18,6 +18,7 @@
         ServerIcon,
         ScrollTextIcon,
         FilterIcon,
+        TerminalIcon,
     } from '@lucide/svelte'
     import { alertConfirm, notifyError, notifySuccess } from 'src/ts/alert'
     import { forageStorage } from 'src/ts/globalApi.svelte'
@@ -49,19 +50,26 @@
     let hasMore = $state(false)
     let loadError = $state<string | null>(null)
 
-    // Tag-based filter state: each Set holds the tag keys the user has selected.
-    // Empty Set => no explicit filter for that dimension.
-    // Exception: the Source dimension has a default hide-list for background
-    // capture paths (console/uncaught/promise/express/server). Those stay
-    // hidden until the user explicitly selects them.
-    const BACKGROUND_SOURCES = new Set(['console', 'uncaught', 'promise', 'express', 'server'])
+    // Subtractive filter model: each Set holds tags the user has *deselected*.
+    // Empty Set => no exclusion for that dimension (show all). All tags render
+    // as pressed by default; unpressing adds the key to the excluded set.
+    // Dynamic dimensions (Source/Device) naturally default to "included" for
+    // newly-seen keys because they're absent from the excluded set.
+    //
+    // Background capture sources (console/uncaught/promise/express) are
+    // auto-captured by monkey-patched console / window handlers / Express
+    // error middleware — not explicit logger calls. They're hidden by default
+    // via the `explicitOnly` mode toggle. `server` is an explicit logger.* call
+    // (server-side analog of notifyError) and stays visible.
+    const BACKGROUND_SOURCES = new Set(['console', 'uncaught', 'promise', 'express'])
 
-    let levelTags = $state<Set<LogLevel>>(new Set())
-    let originTags = $state<Set<LogOrigin>>(new Set())
-    let sourceTags = $state<Set<string>>(new Set())
-    let deviceTags = $state<Set<string>>(new Set())
+    let excludedLevels = $state<Set<LogLevel>>(new Set())
+    let excludedOrigins = $state<Set<LogOrigin>>(new Set())
+    let excludedSources = $state<Set<string>>(new Set())
+    let excludedDevices = $state<Set<string>>(new Set())
+    let explicitOnly = $state(true)
     let search = $state('')
-    let filtersOpen = $state(true)
+    let filtersOpen = $state(false)
 
     let expanded = $state<Record<number, boolean>>({})
 
@@ -71,12 +79,15 @@
         else next.add(key)
         return next
     }
-    const toggleLevel = (k: LogLevel) => { levelTags = toggleSet(levelTags, k) }
-    const toggleOrigin = (k: LogOrigin) => { originTags = toggleSet(originTags, k) }
-    const toggleSource = (k: string) => { sourceTags = toggleSet(sourceTags, k) }
-    const toggleDevice = (k: string) => { deviceTags = toggleSet(deviceTags, k) }
+    const toggleLevel = (k: LogLevel) => { excludedLevels = toggleSet(excludedLevels, k) }
+    const toggleOrigin = (k: LogOrigin) => { excludedOrigins = toggleSet(excludedOrigins, k) }
+    const toggleSource = (k: string) => { excludedSources = toggleSet(excludedSources, k) }
+    const toggleDevice = (k: string) => { excludedDevices = toggleSet(excludedDevices, k) }
     const clearAllFilters = () => {
-        levelTags = new Set(); originTags = new Set(); sourceTags = new Set(); deviceTags = new Set(); search = ''
+        excludedLevels = new Set(); excludedOrigins = new Set()
+        excludedSources = new Set(); excludedDevices = new Set()
+        explicitOnly = true
+        search = ''
     }
 
     // ─── Fetch ──────────────────────────────────────────────────────────────
@@ -170,7 +181,7 @@
             const k = sourceKey(e)
             if (!set.has(k)) { set.add(k); seen.push(k) }
         }
-        return seen
+        return explicitOnly ? seen.filter(s => !BACKGROUND_SOURCES.has(s)) : seen
     })
 
     const availableDevices = $derived.by(() => {
@@ -187,18 +198,15 @@
     const filtered = $derived.by(() => {
         const needle = search.trim().toLowerCase()
         return entries.filter((e) => {
-            if (levelTags.size > 0 && !levelTags.has(e.level)) return false
-            if (originTags.size > 0 && !originTags.has(e.origin)) return false
+            if (excludedLevels.has(e.level)) return false
+            if (excludedOrigins.has(e.origin)) return false
 
-            const src = sourceKey(e)
-            if (sourceTags.size > 0) {
-                if (!sourceTags.has(src)) return false
-            } else if (e.source && BACKGROUND_SOURCES.has(e.source)) {
-                // No explicit source filter: hide background capture by default.
-                return false
-            }
+            // Explicit-only mode hides auto-captured sources regardless of
+            // the per-source excluded set (mode takes precedence).
+            if (explicitOnly && e.source && BACKGROUND_SOURCES.has(e.source)) return false
 
-            if (deviceTags.size > 0 && !deviceTags.has(deviceKey(e))) return false
+            if (excludedSources.has(sourceKey(e))) return false
+            if (excludedDevices.has(deviceKey(e))) return false
 
             if (!needle) return true
             const hay = [
@@ -213,7 +221,12 @@
         })
     })
 
-    const activeFilterCount = $derived(levelTags.size + originTags.size + sourceTags.size + deviceTags.size)
+    // Active filter count = number of tags the user has *deselected* from the
+    // default (all-on) state. The `explicitOnly` toggle is a mode, not a tag —
+    // it's tracked separately and not added to this count.
+    const activeFilterCount = $derived(
+        excludedLevels.size + excludedOrigins.size + excludedSources.size + excludedDevices.size
+    )
 
     // ─── Formatting helpers ─────────────────────────────────────────────────
     let cachedLocale: string | null = null
@@ -321,13 +334,13 @@
                     <div class="flex items-start gap-2">
                         <span class="text-textcolor2 text-xs shrink-0 w-16 pt-1">{language.systemLogsFilterLevel}</span>
                         <div class="flex flex-wrap gap-1">
-                            <ShToggle size="xs" pressed={levelTags.has('error')} onPressedChange={() => toggleLevel('error')}>
+                            <ShToggle size="xs" pressed={!excludedLevels.has('error')} onPressedChange={() => toggleLevel('error')}>
                                 <CircleXIcon /> {language.systemLogsLevelError}
                             </ShToggle>
-                            <ShToggle size="xs" pressed={levelTags.has('warning')} onPressedChange={() => toggleLevel('warning')}>
+                            <ShToggle size="xs" pressed={!excludedLevels.has('warning')} onPressedChange={() => toggleLevel('warning')}>
                                 <TriangleAlertIcon /> {language.systemLogsLevelWarning}
                             </ShToggle>
-                            <ShToggle size="xs" pressed={levelTags.has('info')} onPressedChange={() => toggleLevel('info')}>
+                            <ShToggle size="xs" pressed={!excludedLevels.has('info')} onPressedChange={() => toggleLevel('info')}>
                                 <InfoIcon /> {language.systemLogsLevelInfo}
                             </ShToggle>
                         </div>
@@ -336,10 +349,10 @@
                     <div class="flex items-start gap-2">
                         <span class="text-textcolor2 text-xs shrink-0 w-16 pt-1">{language.systemLogsFilterOrigin}</span>
                         <div class="flex flex-wrap gap-1">
-                            <ShToggle size="xs" pressed={originTags.has('client')} onPressedChange={() => toggleOrigin('client')}>
+                            <ShToggle size="xs" pressed={!excludedOrigins.has('client')} onPressedChange={() => toggleOrigin('client')}>
                                 {language.systemLogsOriginClient}
                             </ShToggle>
-                            <ShToggle size="xs" pressed={originTags.has('server')} onPressedChange={() => toggleOrigin('server')}>
+                            <ShToggle size="xs" pressed={!excludedOrigins.has('server')} onPressedChange={() => toggleOrigin('server')}>
                                 {language.systemLogsOriginServer}
                             </ShToggle>
                         </div>
@@ -350,8 +363,7 @@
                             <span class="text-textcolor2 text-xs shrink-0 w-16 pt-1">{language.systemLogsFilterSource}</span>
                             <div class="flex flex-wrap gap-1">
                                 {#each availableSources as src (src)}
-                                    <ShToggle size="xs" pressed={sourceTags.has(src)} onPressedChange={() => toggleSource(src)}
-                                        className={BACKGROUND_SOURCES.has(src) ? 'opacity-60' : ''}>
+                                    <ShToggle size="xs" pressed={!excludedSources.has(src)} onPressedChange={() => toggleSource(src)}>
                                         {src}
                                     </ShToggle>
                                 {/each}
@@ -364,7 +376,7 @@
                             <span class="text-textcolor2 text-xs shrink-0 w-16 pt-1">{language.systemLogsFilterDevice}</span>
                             <div class="flex flex-wrap gap-1">
                                 {#each availableDevices as dev (dev.key)}
-                                    <ShToggle size="xs" pressed={deviceTags.has(dev.key)} onPressedChange={() => toggleDevice(dev.key)}>
+                                    <ShToggle size="xs" pressed={!excludedDevices.has(dev.key)} onPressedChange={() => toggleDevice(dev.key)}>
                                         {#if deviceKind(dev.entry) === 'server'}<ServerIcon />
                                         {:else if deviceKind(dev.entry) === 'mobile'}<SmartphoneIcon />
                                         {:else}<MonitorIcon />{/if}
@@ -374,6 +386,13 @@
                             </div>
                         </div>
                     {/if}
+                    <!-- Mode: explicit logs only (pressed = hide auto-captured) -->
+                    <div class="flex items-center gap-2 flex-wrap pt-2 mt-1 border-t border-darkborderc/30">
+                        <ShToggle size="xs" pressed={explicitOnly} onPressedChange={v => explicitOnly = v}>
+                            <TerminalIcon /> {language.systemLogsExplicitOnly}
+                        </ShToggle>
+                        <span class="text-textcolor2 text-xs opacity-70">{language.systemLogsExplicitOnlyHint}</span>
+                    </div>
                 </div>
             </Collapsible.Content>
         </Collapsible.Root>
@@ -463,14 +482,14 @@
                                 <ShBadge variant="outline" className="shrink-0 tabular-nums">×{entry.count}</ShBadge>
                             {/if}
 
-                            <!-- Device badge (click to add this device to the filter) -->
+                            <!-- Device badge (click to toggle exclusion of this device) -->
                             <!-- svelte-ignore a11y_click_events_have_key_events -->
                             <!-- svelte-ignore a11y_no_static_element_interactions -->
                             <span
                                 class="shrink-0 cursor-pointer"
                                 onclick={(e) => { e.stopPropagation(); toggleDevice(deviceKey(entry)) }}
                             >
-                                <ShBadge variant={deviceTags.has(deviceKey(entry)) ? 'default' : 'secondary'}>
+                                <ShBadge variant={excludedDevices.has(deviceKey(entry)) ? 'secondary' : 'default'}>
                                     {#if deviceKind(entry) === 'server'}
                                         <ServerIcon size={12} />
                                     {:else if deviceKind(entry) === 'mobile'}
