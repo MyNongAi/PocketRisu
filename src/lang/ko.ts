@@ -1688,5 +1688,12 @@ export const languageKorean = {
     systemLogsOriginServer: "서버",
     systemLogsFailedLoad: "로그를 불러오지 못했습니다",
     systemLogsLoading: "불러오는 중...",
+    systemLogsFilters: "필터",
+    systemLogsFilterLevel: "레벨",
+    systemLogsFilterOrigin: "오리진",
+    systemLogsFilterSource: "소스",
+    systemLogsFilterDevice: "기기",
+    systemLogsFilterClear: "필터 초기화",
+    systemLogsFilterActive: (count: number) => count === 0 ? '' : `${count}개 적용`,
 
 } satisfies DeepPartial<typeof import('./en').languageEnglish>

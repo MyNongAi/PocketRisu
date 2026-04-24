@@ -3,7 +3,7 @@
     import ShButton from 'src/lib/UI/GUI/ShButton.svelte'
     import ShInput from 'src/lib/UI/GUI/ShInput.svelte'
     import ShBadge from 'src/lib/UI/GUI/ShBadge.svelte'
-    import SegmentedControl from 'src/lib/UI/GUI/SegmentedControl.svelte'
+    import ShToggle from 'src/lib/UI/GUI/ShToggle.svelte'
     import { Collapsible, Tooltip } from 'bits-ui'
     import {
         RefreshCwIcon,
@@ -17,6 +17,7 @@
         SmartphoneIcon,
         ServerIcon,
         ScrollTextIcon,
+        FilterIcon,
     } from '@lucide/svelte'
     import { alertConfirm, notifyError, notifySuccess } from 'src/ts/alert'
     import { forageStorage } from 'src/ts/globalApi.svelte'
@@ -48,11 +49,35 @@
     let hasMore = $state(false)
     let loadError = $state<string | null>(null)
 
-    let levelFilter = $state<'all' | LogLevel>('all')
-    let originFilter = $state<'all' | LogOrigin>('all')
+    // Tag-based filter state: each Set holds the tag keys the user has selected.
+    // Empty Set => no explicit filter for that dimension.
+    // Exception: the Source dimension has a default hide-list for background
+    // capture paths (console/uncaught/promise/express/server). Those stay
+    // hidden until the user explicitly selects them.
+    const BACKGROUND_SOURCES = new Set(['console', 'uncaught', 'promise', 'express', 'server'])
+
+    let levelTags = $state<Set<LogLevel>>(new Set())
+    let originTags = $state<Set<LogOrigin>>(new Set())
+    let sourceTags = $state<Set<string>>(new Set())
+    let deviceTags = $state<Set<string>>(new Set())
     let search = $state('')
+    let filtersOpen = $state(true)
 
     let expanded = $state<Record<number, boolean>>({})
+
+    function toggleSet<T>(set: Set<T>, key: T): Set<T> {
+        const next = new Set(set)
+        if (next.has(key)) next.delete(key)
+        else next.add(key)
+        return next
+    }
+    const toggleLevel = (k: LogLevel) => { levelTags = toggleSet(levelTags, k) }
+    const toggleOrigin = (k: LogOrigin) => { originTags = toggleSet(originTags, k) }
+    const toggleSource = (k: string) => { sourceTags = toggleSet(sourceTags, k) }
+    const toggleDevice = (k: string) => { deviceTags = toggleSet(deviceTags, k) }
+    const clearAllFilters = () => {
+        levelTags = new Set(); originTags = new Set(); sourceTags = new Set(); deviceTags = new Set(); search = ''
+    }
 
     // ─── Fetch ──────────────────────────────────────────────────────────────
     async function loadInitial() {
@@ -126,12 +151,55 @@
         }
     }
 
+    // Stable key for grouping entries per device/session.
+    function deviceKey(e: LogEntry): string {
+        if (e.origin === 'server') return `server:${e.platform ?? 'server'}`
+        return `${e.platform ?? 'unknown'}#${e.clientId ?? ''}`
+    }
+
+    function sourceKey(e: LogEntry): string {
+        return e.source ?? '(none)'
+    }
+
+    // Unique values derived from loaded entries, ordered by most recent first
+    // so the tag rows reflect what the user is actually seeing.
+    const availableSources = $derived.by(() => {
+        const seen: string[] = []
+        const set = new Set<string>()
+        for (const e of entries) {
+            const k = sourceKey(e)
+            if (!set.has(k)) { set.add(k); seen.push(k) }
+        }
+        return seen
+    })
+
+    const availableDevices = $derived.by(() => {
+        const seen: Array<{ key: string; entry: LogEntry }> = []
+        const set = new Set<string>()
+        for (const e of entries) {
+            const k = deviceKey(e)
+            if (!set.has(k)) { set.add(k); seen.push({ key: k, entry: e }) }
+        }
+        return seen
+    })
+
     // ─── Client-side filtering ──────────────────────────────────────────────
     const filtered = $derived.by(() => {
         const needle = search.trim().toLowerCase()
         return entries.filter((e) => {
-            if (levelFilter !== 'all' && e.level !== levelFilter) return false
-            if (originFilter !== 'all' && e.origin !== originFilter) return false
+            if (levelTags.size > 0 && !levelTags.has(e.level)) return false
+            if (originTags.size > 0 && !originTags.has(e.origin)) return false
+
+            const src = sourceKey(e)
+            if (sourceTags.size > 0) {
+                if (!sourceTags.has(src)) return false
+            } else if (e.source && BACKGROUND_SOURCES.has(e.source)) {
+                // No explicit source filter: hide background capture by default.
+                return false
+            }
+
+            if (deviceTags.size > 0 && !deviceTags.has(deviceKey(e))) return false
+
             if (!needle) return true
             const hay = [
                 e.message,
@@ -144,6 +212,8 @@
             return hay.includes(needle)
         })
     })
+
+    const activeFilterCount = $derived(levelTags.size + originTags.size + sourceTags.size + deviceTags.size)
 
     // ─── Formatting helpers ─────────────────────────────────────────────────
     let cachedLocale: string | null = null
@@ -212,8 +282,9 @@
         }
     }
 
-    function onBadgeClick(token: string) {
-        search = token
+    function deviceLabel(e: LogEntry): string {
+        if (e.origin === 'server') return `${e.platform ?? 'server'}`
+        return `${e.platform ?? 'unknown'}${e.clientId ? ` #${e.clientId}` : ''}`
     }
 
     // Initial load
@@ -227,27 +298,87 @@
 
     <!-- Toolbar -->
     <div class="flex flex-col gap-3 mb-4">
-        <div class="flex flex-wrap gap-2 items-center">
-            <SegmentedControl
-                bind:value={levelFilter}
-                size="sm"
-                options={[
-                    { value: 'all', label: language.systemLogsLevelAll },
-                    { value: 'error', label: language.systemLogsLevelError },
-                    { value: 'warning', label: language.systemLogsLevelWarning },
-                    { value: 'info', label: language.systemLogsLevelInfo },
-                ]}
-            />
-            <SegmentedControl
-                bind:value={originFilter}
-                size="sm"
-                options={[
-                    { value: 'all', label: language.systemLogsOriginAll },
-                    { value: 'client', label: language.systemLogsOriginClient },
-                    { value: 'server', label: language.systemLogsOriginServer },
-                ]}
-            />
-        </div>
+        <!-- Filter section: collapsible, default open, tag-based multi-select -->
+        <Collapsible.Root bind:open={filtersOpen}>
+            <div class="flex items-center justify-between mb-2">
+                <Collapsible.Trigger class="flex items-center gap-1 text-textcolor2 hover:text-textcolor text-sm transition-colors group">
+                    <FilterIcon size={14} />
+                    <span>{language.systemLogsFilters}</span>
+                    {#if activeFilterCount > 0}
+                        <ShBadge variant="secondary" className="ml-1">{language.systemLogsFilterActive(activeFilterCount)}</ShBadge>
+                    {/if}
+                    <ChevronDownIcon size={14} class="transition-transform group-data-[state=closed]:-rotate-90" />
+                </Collapsible.Trigger>
+                {#if activeFilterCount > 0}
+                    <button class="text-textcolor2 hover:text-textcolor text-xs cursor-pointer" onclick={clearAllFilters}>
+                        {language.systemLogsFilterClear}
+                    </button>
+                {/if}
+            </div>
+            <Collapsible.Content>
+                <div class="flex flex-col gap-2 pb-3 border-b border-darkborderc/50">
+                    <!-- Level -->
+                    <div class="flex items-start gap-2">
+                        <span class="text-textcolor2 text-xs shrink-0 w-16 pt-1">{language.systemLogsFilterLevel}</span>
+                        <div class="flex flex-wrap gap-1">
+                            <ShToggle size="xs" pressed={levelTags.has('error')} onPressedChange={() => toggleLevel('error')}>
+                                <CircleXIcon /> {language.systemLogsLevelError}
+                            </ShToggle>
+                            <ShToggle size="xs" pressed={levelTags.has('warning')} onPressedChange={() => toggleLevel('warning')}>
+                                <TriangleAlertIcon /> {language.systemLogsLevelWarning}
+                            </ShToggle>
+                            <ShToggle size="xs" pressed={levelTags.has('info')} onPressedChange={() => toggleLevel('info')}>
+                                <InfoIcon /> {language.systemLogsLevelInfo}
+                            </ShToggle>
+                        </div>
+                    </div>
+                    <!-- Origin -->
+                    <div class="flex items-start gap-2">
+                        <span class="text-textcolor2 text-xs shrink-0 w-16 pt-1">{language.systemLogsFilterOrigin}</span>
+                        <div class="flex flex-wrap gap-1">
+                            <ShToggle size="xs" pressed={originTags.has('client')} onPressedChange={() => toggleOrigin('client')}>
+                                {language.systemLogsOriginClient}
+                            </ShToggle>
+                            <ShToggle size="xs" pressed={originTags.has('server')} onPressedChange={() => toggleOrigin('server')}>
+                                {language.systemLogsOriginServer}
+                            </ShToggle>
+                        </div>
+                    </div>
+                    <!-- Source -->
+                    {#if availableSources.length > 0}
+                        <div class="flex items-start gap-2">
+                            <span class="text-textcolor2 text-xs shrink-0 w-16 pt-1">{language.systemLogsFilterSource}</span>
+                            <div class="flex flex-wrap gap-1">
+                                {#each availableSources as src (src)}
+                                    <ShToggle size="xs" pressed={sourceTags.has(src)} onPressedChange={() => toggleSource(src)}
+                                        className={BACKGROUND_SOURCES.has(src) ? 'opacity-60' : ''}>
+                                        {src}
+                                    </ShToggle>
+                                {/each}
+                            </div>
+                        </div>
+                    {/if}
+                    <!-- Device -->
+                    {#if availableDevices.length > 0}
+                        <div class="flex items-start gap-2">
+                            <span class="text-textcolor2 text-xs shrink-0 w-16 pt-1">{language.systemLogsFilterDevice}</span>
+                            <div class="flex flex-wrap gap-1">
+                                {#each availableDevices as dev (dev.key)}
+                                    <ShToggle size="xs" pressed={deviceTags.has(dev.key)} onPressedChange={() => toggleDevice(dev.key)}>
+                                        {#if deviceKind(dev.entry) === 'server'}<ServerIcon />
+                                        {:else if deviceKind(dev.entry) === 'mobile'}<SmartphoneIcon />
+                                        {:else}<MonitorIcon />{/if}
+                                        {deviceLabel(dev.entry)}
+                                    </ShToggle>
+                                {/each}
+                            </div>
+                        </div>
+                    {/if}
+                </div>
+            </Collapsible.Content>
+        </Collapsible.Root>
+
+        <!-- Search + actions -->
         <div class="flex gap-2 items-stretch">
             <div class="flex-1 min-w-0">
                 <ShInput bind:value={search} placeholder={language.systemLogsSearchPlaceholder} />
@@ -332,14 +463,14 @@
                                 <ShBadge variant="outline" className="shrink-0 tabular-nums">×{entry.count}</ShBadge>
                             {/if}
 
-                            <!-- Device badge (click to filter) -->
+                            <!-- Device badge (click to add this device to the filter) -->
                             <!-- svelte-ignore a11y_click_events_have_key_events -->
                             <!-- svelte-ignore a11y_no_static_element_interactions -->
                             <span
-                                class="shrink-0"
-                                onclick={(e) => { e.stopPropagation(); onBadgeClick(entry.clientId ?? (entry.origin === 'server' ? 'server' : deviceKind(entry))) }}
+                                class="shrink-0 cursor-pointer"
+                                onclick={(e) => { e.stopPropagation(); toggleDevice(deviceKey(entry)) }}
                             >
-                                <ShBadge variant="secondary">
+                                <ShBadge variant={deviceTags.has(deviceKey(entry)) ? 'default' : 'secondary'}>
                                     {#if deviceKind(entry) === 'server'}
                                         <ServerIcon size={12} />
                                     {:else if deviceKind(entry) === 'mobile'}
@@ -347,10 +478,7 @@
                                     {:else}
                                         <MonitorIcon size={12} />
                                     {/if}
-                                    <span class="hidden md:inline text-[10px]">
-                                        {entry.platform ?? (entry.origin === 'server' ? 'server' : '')}
-                                        {#if entry.clientId}#{entry.clientId}{/if}
-                                    </span>
+                                    <span class="hidden md:inline text-[10px]">{deviceLabel(entry)}</span>
                                 </ShBadge>
                             </span>
 

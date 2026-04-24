@@ -1841,6 +1841,13 @@ export const languageEnglish = {
     systemLogsOriginServer: "Server",
     systemLogsFailedLoad: "Failed to load logs",
     systemLogsLoading: "Loading...",
+    systemLogsFilters: "Filters",
+    systemLogsFilterLevel: "Level",
+    systemLogsFilterOrigin: "Origin",
+    systemLogsFilterSource: "Source",
+    systemLogsFilterDevice: "Device",
+    systemLogsFilterClear: "Clear filters",
+    systemLogsFilterActive: (count: number) => count === 0 ? '' : `${count} active`,
 
 } satisfies I18nTranslation;
 
