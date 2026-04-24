@@ -4630,8 +4630,12 @@ async function getHttpsOptions() {
         return { key, cert };
 
     } catch (error) {
-        logger.error('[Server] SSL setup errors:', error.message);
-        console.log('[Server] Start the server with HTTP instead of HTTPS...');
+        if (error.code === 'ENOENT') {
+            logger.info('[Server] No SSL certificate found, starting with HTTP');
+        } else {
+            logger.error('[Server] SSL setup errors:', error.message);
+            console.log('[Server] Start the server with HTTP instead of HTTPS...');
+        }
         return null;
     }
 }
