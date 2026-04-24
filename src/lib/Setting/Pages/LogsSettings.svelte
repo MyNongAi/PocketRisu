@@ -20,7 +20,7 @@
     } from '@lucide/svelte'
     import { alertConfirm, notifyError, notifySuccess } from 'src/ts/alert'
     import { forageStorage } from 'src/ts/globalApi.svelte'
-    import { language } from 'src/lang'
+    import { language, getCurrentLocale } from 'src/lang'
 
     type LogLevel = 'error' | 'warning' | 'info'
     type LogOrigin = 'client' | 'server'
@@ -146,14 +146,27 @@
     })
 
     // ─── Formatting helpers ─────────────────────────────────────────────────
+    let cachedLocale: string | null = null
+    let cachedRtf: Intl.RelativeTimeFormat | null = null
+    function rtf(): Intl.RelativeTimeFormat {
+        const locale = getCurrentLocale()
+        if (cachedLocale !== locale || !cachedRtf) {
+            cachedLocale = locale
+            cachedRtf = new Intl.RelativeTimeFormat(locale, { numeric: 'auto' })
+        }
+        return cachedRtf
+    }
+
     function formatRelative(ts: number): string {
         const diff = Date.now() - ts
-        if (diff < 60_000) return `${Math.max(1, Math.floor(diff / 1000))}s ago`
-        if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
-        if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
-        const days = Math.floor(diff / 86_400_000)
-        if (days < 7) return `${days}d ago`
-        return new Date(ts).toLocaleDateString()
+        const sign = diff > 0 ? -1 : 1
+        const abs = Math.abs(diff)
+        const f = rtf()
+        if (abs < 60_000) return f.format(sign * Math.max(1, Math.floor(abs / 1000)), 'second')
+        if (abs < 3_600_000) return f.format(sign * Math.floor(abs / 60_000), 'minute')
+        if (abs < 86_400_000) return f.format(sign * Math.floor(abs / 3_600_000), 'hour')
+        if (abs < 7 * 86_400_000) return f.format(sign * Math.floor(abs / 86_400_000), 'day')
+        return new Date(ts).toLocaleDateString(getCurrentLocale())
     }
 
     function formatAbsolute(ts: number): string {
