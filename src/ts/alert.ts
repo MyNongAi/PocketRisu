@@ -39,6 +39,30 @@ export const alertStore = {
 // Shared acceptance cache for both global startup TOS and Realm download confirmation.
 const TOS_ACCEPTANCE_STORAGE_KEY = 'tos2'
 
+// Normalize any value (string / Error / plain object / primitive) into a
+// human-readable message and an optional stack trace. Shared by alertError
+// and the notify* family so callers can pass raw catch() values safely —
+// a raw Error object would otherwise end up as `[object Object]` in the
+// toast title and get dropped by the server's string-message filter.
+function normalizeErrorMessage(msg: unknown): { message: string; stack?: string } {
+    if (typeof msg === 'string') return { message: msg }
+    try {
+        if (msg instanceof Error) {
+            return { message: msg.message || String(msg), stack: msg.stack }
+        }
+        if (msg && typeof msg === 'object') {
+            const errorLike = msg as { message?: unknown; stack?: unknown }
+            const stack = typeof errorLike.stack === 'string' ? errorLike.stack : undefined
+            const messageField = typeof errorLike.message === 'string' ? errorLike.message : ''
+            const message = messageField || (JSON.stringify(msg) ?? String(msg))
+            return { message, stack }
+        }
+        return { message: JSON.stringify(msg) ?? String(msg) }
+    } catch {
+        return { message: String(msg) }
+    }
+}
+
 export function alertError(msg: unknown) {
     // Use nativeConsoleError (pre-monkey-patch) so devtools still shows the error
     // but log-capture does not also persist it — alertError below calls addLog
@@ -46,35 +70,7 @@ export function alertError(msg: unknown) {
     nativeConsoleError(`[NodeOnly v${nodeOnlyVer}]`, msg)
     const db = getDatabase()
 
-    let stackTrace: string | undefined = undefined; 
-    let errorMessage = ''
-
-    if (typeof(msg) === 'string') {
-        errorMessage = msg
-    } else {
-        try{
-            if (msg instanceof Error) {
-                stackTrace = msg.stack
-                errorMessage = msg.message
-            } else if (msg && typeof msg === 'object') {
-                const errorLike = msg as { message?: unknown, stack?: unknown }
-                if (typeof errorLike.stack === 'string') {
-                    stackTrace = errorLike.stack
-                }
-                if (typeof errorLike.message === 'string') {
-                    errorMessage = errorLike.message
-                }
-                if (!errorMessage) {
-                    errorMessage = JSON.stringify(msg) ?? `${msg}`
-                }
-            } else {
-                errorMessage = JSON.stringify(msg) ?? `${msg}`
-            }
-        } catch {
-            errorMessage = `${msg}`
-        }
-    }
-
+    let { message: errorMessage, stack: stackTrace } = normalizeErrorMessage(msg)
     errorMessage = errorMessage.trim()
     if (!errorMessage) {
         errorMessage = 'Unknown error'
@@ -219,28 +215,38 @@ function clearTransitionalAlert() {
     }
 }
 
-export function notifyError(msg: string, opts?: NotifyOptions) {
+// notify* accept `unknown` so catch-block callers (notifyError(err)) work
+// safely. Raw Error objects were previously stringified as `[object Object]`
+// by sonner and dropped by the server's string-message filter — now they
+// normalize to .message + .stack (stack → description unless caller overrides).
+export function notifyError(msg: unknown, opts?: NotifyOptions) {
     clearTransitionalAlert()
-    addLog({ level: 'error', message: msg, description: opts?.description, source: opts?.source })
-    toast.error(msg, opts?.description ? { description: opts.description } : undefined)
+    const { message, stack } = normalizeErrorMessage(msg)
+    const description = opts?.description ?? stack
+    addLog({ level: 'error', message, description, source: opts?.source })
+    toast.error(message, description ? { description } : undefined)
 }
 
-export function notifyWarning(msg: string, opts?: NotifyOptions) {
+export function notifyWarning(msg: unknown, opts?: NotifyOptions) {
     clearTransitionalAlert()
-    addLog({ level: 'warning', message: msg, description: opts?.description, source: opts?.source })
-    toast.warning(msg, opts?.description ? { description: opts.description } : undefined)
+    const { message, stack } = normalizeErrorMessage(msg)
+    const description = opts?.description ?? stack
+    addLog({ level: 'warning', message, description, source: opts?.source })
+    toast.warning(message, description ? { description } : undefined)
 }
 
-export function notifyInfo(msg: string, opts?: NotifyOptions) {
+export function notifyInfo(msg: unknown, opts?: NotifyOptions) {
     clearTransitionalAlert()
-    addLog({ level: 'info', message: msg, description: opts?.description, source: opts?.source })
-    toast.info(msg, opts?.description ? { description: opts.description } : undefined)
+    const { message } = normalizeErrorMessage(msg)
+    addLog({ level: 'info', message, description: opts?.description, source: opts?.source })
+    toast.info(message, opts?.description ? { description: opts.description } : undefined)
 }
 
-export function notifySuccess(msg: string, opts?: Pick<NotifyOptions, 'description'>) {
+export function notifySuccess(msg: unknown, opts?: Pick<NotifyOptions, 'description'>) {
     // Intentionally not logged (decision 4-2): success feedback has low timeline value.
     clearTransitionalAlert()
-    toast.success(msg, opts?.description ? { description: opts.description } : undefined)
+    const { message } = normalizeErrorMessage(msg)
+    toast.success(message, opts?.description ? { description: opts.description } : undefined)
 }
 
 export function alertWait(msg:string){
