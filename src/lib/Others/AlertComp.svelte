@@ -11,6 +11,7 @@
     import { aiLawApplies, openURL, getFetchLogs, downloadFile } from 'src/ts/globalApi.svelte';
     import Button from '../UI/GUI/Button.svelte';
     import ShDialog from '../UI/GUI/ShDialog.svelte';
+    import ShAlertDialog from '../UI/GUI/ShAlertDialog.svelte';
     import ShButton from '../UI/GUI/ShButton.svelte';
     import { XIcon, ChevronDownIcon, ChevronUpIcon, CopyIcon, CheckIcon, PencilIcon, TrashIcon, EllipsisVerticalIcon, RefreshCwIcon, PlusIcon, DownloadIcon, UploadIcon } from "@lucide/svelte";
     import hljs from 'highlight.js/lib/core';
@@ -175,43 +176,15 @@
     }
 }}></svelte:window>
 
-{#if $alertStore.type !== 'none' &&  $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs' && $alertStore.type !== 'togglePresets' && $alertStore.type !== 'error' && $alertStore.type !== 'normal' && $alertStore.type !== 'markdown'}
+{#if $alertStore.type !== 'none' &&  $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs' && $alertStore.type !== 'togglePresets' && $alertStore.type !== 'error' && $alertStore.type !== 'normal' && $alertStore.type !== 'markdown' && $alertStore.type !== 'ask' && $alertStore.type !== 'pluginconfirm' && $alertStore.type !== 'tos'}
     <div class="absolute w-full h-full z-50 bg-black/50 flex justify-center items-center" class:vis={ $alertStore.type === 'wait2'}>
         <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl  max-h-full overflow-y-auto">
-            {#if $alertStore.type === 'ask'}
-                <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">Confirm</h2>
-            {:else if $alertStore.type === 'pluginconfirm'}
-                <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">Plugin Import</h2>
-            {:else if $alertStore.type === 'selectChar'}
+            {#if $alertStore.type === 'selectChar'}
                 <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">Select</h2>
             {:else if $alertStore.type === 'input'}
                 <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">Input</h2>
             {/if}
-            {#if $alertStore.type === 'tos'}
-                <!-- svelte-ignore a11y_missing_attribute -->
-                <!-- svelte-ignore a11y_click_events_have_key_events -->
-                <div class="text-textcolor">You should accept <a role="button" tabindex="0" class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer" onclick={() => {
-                    openURL('https://sv.risuai.xyz/hub/tos')
-                }}>Terms of Service</a> to continue</div>
-            {:else if $alertStore.type === 'pluginconfirm'}
-                {@const parts = $alertStore.msg.split('\n\n')}
-                {@const mainPart = parts[0]}
-                {@const confirmMessage = parts[1]}
-                {@const mainParts = mainPart.split('\n')}
-                {@const pluginName = mainParts[0]}
-                {@const warnings = mainParts.slice(1)}
-                <div class="plugin-confirm-content">
-                    <p class="plugin-name">{pluginName}</p>
-                    {#if warnings.length > 0}
-                        <ul class="warnings-list">
-                            {#each warnings as warning}
-                                <li class="warning-item">{warning}</li>
-                            {/each}
-                        </ul>
-                    {/if}
-                    <p class="confirm-message">{confirmMessage}</p>
-                </div>
-            {:else if $alertStore.type !== 'select' && $alertStore.type !== 'requestdata' && $alertStore.type !== 'addchar' && $alertStore.type !== 'chatOptions'}
+            {#if $alertStore.type !== 'select' && $alertStore.type !== 'requestdata' && $alertStore.type !== 'addchar' && $alertStore.type !== 'chatOptions'}
                 <span class="text-gray-300 whitespace-pre-wrap">{$alertStore.msg}</span>
                 {#if $alertStore.submsg && $alertStore.type !== 'progress'}
                     <span class="text-gray-500 text-sm">{$alertStore.submsg}</span>
@@ -226,37 +199,7 @@
                 </div>
             {/if}
 
-            {#if $alertStore.type === 'ask' || $alertStore.type === 'pluginconfirm'}
-                <div class="flex gap-2 w-full">
-                    <Button className="mt-4 grow" onclick={() => {
-                        alertStore.set({
-                            type: 'none',
-                            msg: 'yes'
-                        })
-                    }}>{language.yes}</Button>
-                    <Button className="mt-4 grow" onclick={() => {
-                        alertStore.set({
-                            type: 'none',
-                            msg: 'no'
-                        })
-                    }}>{language.no}</Button>
-                </div>
-            {:else if $alertStore.type === 'tos'}
-                <div class="flex gap-2 w-full">
-                    <Button className="mt-4 grow" onclick={() => {
-                        alertStore.set({
-                            type: 'none',
-                            msg: 'yes'
-                        })
-                    }}>Accept</Button>
-                    <Button styled={'outlined'} className="mt-4 grow" onclick={() => {
-                        alertStore.set({
-                            type: 'none',
-                            msg: 'no'
-                        })
-                    }}>Do not Accept</Button>
-                </div>
-            {:else if $alertStore.type === 'select'}
+            {#if $alertStore.type === 'select'}
                 {@const hasDisplay = $alertStore.msg.startsWith('__DISPLAY__')}
                 {#if hasDisplay}
                     {@const parts = $alertStore.msg.substring(11).split('||')}
@@ -1237,27 +1180,82 @@
     {/snippet}
 </ShDialog>
 
+<ShAlertDialog
+    open={$alertStore.type === 'ask'}
+    closeOnOutsideClick={true}
+    onOpenChange={(v) => {
+        if (!v && $alertStore.type === 'ask') {
+            alertStore.set({ type: 'none', msg: 'no' })
+        }
+    }}
+>
+    {#snippet title()}{language.confirm}{/snippet}
+    <span class="whitespace-pre-wrap">{$alertStore.msg}</span>
+    {#snippet footer()}
+        <ShButton variant="outline" onclick={() => alertStore.set({ type: 'none', msg: 'no' })}>{language.no}</ShButton>
+        <ShButton onclick={() => alertStore.set({ type: 'none', msg: 'yes' })}>{language.yes}</ShButton>
+    {/snippet}
+</ShAlertDialog>
+
+<ShAlertDialog
+    open={$alertStore.type === 'pluginconfirm'}
+    closeOnOutsideClick={true}
+    onOpenChange={(v) => {
+        if (!v && $alertStore.type === 'pluginconfirm') {
+            alertStore.set({ type: 'none', msg: 'no' })
+        }
+    }}
+>
+    {#snippet title()}Plugin Import{/snippet}
+    {#if $alertStore.type === 'pluginconfirm'}
+        {@const parts = $alertStore.msg.split('\n\n')}
+        {@const mainPart = parts[0] ?? ''}
+        {@const confirmMessage = parts[1] ?? ''}
+        {@const mainParts = mainPart.split('\n')}
+        {@const pluginName = mainParts[0] ?? ''}
+        {@const warnings = mainParts.slice(1)}
+        <div class="flex flex-col gap-3">
+            <p class="text-xl font-bold text-textcolor">{pluginName}</p>
+            {#if warnings.length > 0}
+                <ul class="list-disc list-inside text-draculared text-sm space-y-1">
+                    {#each warnings as warning}
+                        <li>{warning}</li>
+                    {/each}
+                </ul>
+            {/if}
+            {#if confirmMessage}
+                <p class="text-textcolor2">{confirmMessage}</p>
+            {/if}
+        </div>
+    {/if}
+    {#snippet footer()}
+        <ShButton variant="outline" onclick={() => alertStore.set({ type: 'none', msg: 'no' })}>{language.no}</ShButton>
+        <ShButton variant="destructive" onclick={() => alertStore.set({ type: 'none', msg: 'yes' })}>{language.yes}</ShButton>
+    {/snippet}
+</ShAlertDialog>
+
+<ShAlertDialog
+    open={$alertStore.type === 'tos'}
+    onOpenChange={(v) => {
+        if (!v && $alertStore.type === 'tos') {
+            alertStore.set({ type: 'none', msg: 'no' })
+        }
+    }}
+>
+    <!-- svelte-ignore a11y_missing_attribute -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="text-textcolor">
+        You should accept
+        <a role="button" tabindex="0" class="text-borderc hover:underline cursor-pointer" onclick={() => openURL('https://sv.risuai.xyz/hub/tos')}>Terms of Service</a>
+        to continue.
+    </div>
+    {#snippet footer()}
+        <ShButton variant="outline" onclick={() => alertStore.set({ type: 'none', msg: 'no' })}>Do not Accept</ShButton>
+        <ShButton onclick={() => alertStore.set({ type: 'none', msg: 'yes' })}>Accept</ShButton>
+    {/snippet}
+</ShAlertDialog>
+
 <style>
-    .plugin-confirm-content .plugin-name {
-        font-size: 1.25rem;
-        font-weight: bold;
-        color: white;
-    }
-    .plugin-confirm-content .warnings-list {
-        list-style-type: disc;
-        list-style-position: inside;
-        margin-top: 0.5rem;
-        margin-bottom: 0.5rem;
-        padding-left: 1rem;
-        color: #f87171; /* red-400 */
-    }
-    .plugin-confirm-content .warning-item {
-        margin-bottom: 0.25rem;
-    }
-    .plugin-confirm-content .confirm-message {
-        margin-top: 1rem;
-        color: #d1d5db; /* gray-300 */
-    }
     .break-any{
         word-break: normal;
         overflow-wrap: anywhere;
