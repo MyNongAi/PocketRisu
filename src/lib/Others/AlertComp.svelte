@@ -175,7 +175,7 @@
     }
 }}></svelte:window>
 
-{#if $alertStore.type !== 'none' &&  $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs' && $alertStore.type !== 'togglePresets' && $alertStore.type !== 'error'}
+{#if $alertStore.type !== 'none' &&  $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs' && $alertStore.type !== 'togglePresets' && $alertStore.type !== 'error' && $alertStore.type !== 'normal' && $alertStore.type !== 'markdown'}
     <div class="absolute w-full h-full z-50 bg-black/50 flex justify-center items-center" class:vis={ $alertStore.type === 'wait2'}>
         <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl  max-h-full overflow-y-auto">
             {#if $alertStore.type === 'ask'}
@@ -187,15 +187,7 @@
             {:else if $alertStore.type === 'input'}
                 <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">Input</h2>
             {/if}
-            {#if $alertStore.type === 'markdown'}
-                <div class="overflow-y-auto">
-                    <span class="text-gray-300 chattext prose chattext2" class:prose-invert={$ColorSchemeTypeStore}>
-                        {#await ParseMarkdown($alertStore.msg) then msg}
-                            {@html msg}                        
-                        {/await}
-                    </span>
-                </div>
-            {:else if $alertStore.type === 'tos'}
+            {#if $alertStore.type === 'tos'}
                 <!-- svelte-ignore a11y_missing_attribute -->
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
                 <div class="text-textcolor">You should accept <a role="button" tabindex="0" class="text-green-600 hover:text-green-500 transition-colors duration-200 cursor-pointer" onclick={() => {
@@ -288,13 +280,6 @@
                         }}>{n}</Button>
                     {/each}
                 {/if}
-            {:else if $alertStore.type === 'normal' || $alertStore.type === 'markdown'}
-               <Button className="mt-4" onclick={() => {
-                    alertStore.set({
-                        type: 'none',
-                        msg: ''
-                    })
-                }}>{language.confirm}</Button>
             {:else if $alertStore.type === 'input'}
                 <TextInput value={$alertStore.defaultValue} id="alert-input" autocomplete="off" marginTop list="alert-input-list" onkeydown={(e) => {
                     if (e.key === 'Enter' && !e.isComposing) {
@@ -1203,6 +1188,48 @@
                 {/if}
             </div>
         {/if}
+    </div>
+
+    {#snippet footer()}
+        <ShButton onclick={() => alertStore.set({ type: 'none', msg: '' })}>{language.confirm}</ShButton>
+    {/snippet}
+</ShDialog>
+
+<ShDialog
+    open={$alertStore.type === 'normal'}
+    onOpenChange={(v) => {
+        if (!v && $alertStore.type === 'normal') {
+            alertStore.set({ type: 'none', msg: '' })
+        }
+    }}
+>
+    <div class="flex flex-col gap-2">
+        <span class="whitespace-pre-wrap">{$alertStore.msg}</span>
+        {#if $alertStore.submsg}
+            <span class="text-textcolor2 text-sm">{$alertStore.submsg}</span>
+        {/if}
+    </div>
+
+    {#snippet footer()}
+        <ShButton onclick={() => alertStore.set({ type: 'none', msg: '' })}>{language.confirm}</ShButton>
+    {/snippet}
+</ShDialog>
+
+<ShDialog
+    open={$alertStore.type === 'markdown'}
+    size="lg"
+    onOpenChange={(v) => {
+        if (!v && $alertStore.type === 'markdown') {
+            alertStore.set({ type: 'none', msg: '' })
+        }
+    }}
+>
+    <div class="overflow-y-auto">
+        <span class="chattext prose chattext2" class:prose-invert={$ColorSchemeTypeStore}>
+            {#await ParseMarkdown($alertStore.msg) then msg}
+                {@html msg}
+            {/await}
+        </span>
     </div>
 
     {#snippet footer()}
