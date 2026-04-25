@@ -117,6 +117,8 @@
         }
         if($alertStore.type !== 'input'){
             input = ''
+        } else {
+            input = $alertStore.defaultValue ?? ''
         }
         if($alertStore.type !== 'branches'){
             branchHover = null
@@ -176,13 +178,11 @@
     }
 }}></svelte:window>
 
-{#if $alertStore.type !== 'none' &&  $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs' && $alertStore.type !== 'togglePresets' && $alertStore.type !== 'error' && $alertStore.type !== 'normal' && $alertStore.type !== 'markdown' && $alertStore.type !== 'ask' && $alertStore.type !== 'pluginconfirm' && $alertStore.type !== 'tos'}
+{#if $alertStore.type !== 'none' &&  $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs' && $alertStore.type !== 'togglePresets' && $alertStore.type !== 'error' && $alertStore.type !== 'normal' && $alertStore.type !== 'markdown' && $alertStore.type !== 'ask' && $alertStore.type !== 'pluginconfirm' && $alertStore.type !== 'tos' && $alertStore.type !== 'input'}
     <div class="absolute w-full h-full z-50 bg-black/50 flex justify-center items-center" class:vis={ $alertStore.type === 'wait2'}>
         <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl  max-h-full overflow-y-auto">
             {#if $alertStore.type === 'selectChar'}
                 <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">Select</h2>
-            {:else if $alertStore.type === 'input'}
-                <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">Input</h2>
             {/if}
             {#if $alertStore.type !== 'select' && $alertStore.type !== 'requestdata' && $alertStore.type !== 'addchar' && $alertStore.type !== 'chatOptions'}
                 <span class="text-gray-300 whitespace-pre-wrap">{$alertStore.msg}</span>
@@ -222,33 +222,6 @@
                             })
                         }}>{n}</Button>
                     {/each}
-                {/if}
-            {:else if $alertStore.type === 'input'}
-                <TextInput value={$alertStore.defaultValue} id="alert-input" autocomplete="off" marginTop list="alert-input-list" onkeydown={(e) => {
-                    if (e.key === 'Enter' && !e.isComposing) {
-                        alertStore.set({
-                            type: 'none',
-                            //@ts-expect-error 'value' doesn't exist on Element, but target is HTMLInputElement here
-                            msg: document.querySelector('#alert-input')?.value
-                        })
-                    }
-                }} />
-                <Button className="mt-4" onclick={() => {
-                    alertStore.set({
-                        type: 'none',
-                        //@ts-expect-error 'value' doesn't exist on Element, but target is HTMLInputElement here
-                        msg: document.querySelector('#alert-input')?.value
-                    })
-                }}>{language.confirm}</Button>
-                {#if $alertStore.datalist}
-                    <datalist id="alert-input-list">
-                        {#each $alertStore.datalist as item}
-                            <option
-                                value={item[0]}
-                                label={item[1] ? item[1] : item[0]}
-                            >{item[1] ? item[1] : item[0]}</option>
-                        {/each}
-                    </datalist>
                 {/if}
             {:else if $alertStore.type === 'login'}
                 <div class="fixed top-0 left-0 bg-black/50 w-full h-full flex justify-center items-center">
@@ -1233,6 +1206,43 @@
         <ShButton variant="destructive" onclick={() => alertStore.set({ type: 'none', msg: 'yes' })}>{language.yes}</ShButton>
     {/snippet}
 </ShAlertDialog>
+
+<ShDialog
+    open={$alertStore.type === 'input'}
+    closable={false}
+    closeOnOutsideClick={false}
+>
+    {#snippet title()}{language.input}{/snippet}
+    {#if $alertStore.msg}
+        <p class="text-textcolor whitespace-pre-wrap">{$alertStore.msg}</p>
+    {/if}
+    <TextInput
+        bind:value={input}
+        id="alert-input"
+        autocomplete="off"
+        list="alert-input-list"
+        fullwidth
+        onkeydown={(e) => {
+            if (e.key === 'Enter' && !e.isComposing) {
+                alertStore.set({ type: 'none', msg: input })
+            }
+        }}
+    />
+    {#if $alertStore.datalist}
+        <datalist id="alert-input-list">
+            {#each $alertStore.datalist as item}
+                <option
+                    value={item[0]}
+                    label={item[1] ? item[1] : item[0]}
+                >{item[1] ? item[1] : item[0]}</option>
+            {/each}
+        </datalist>
+    {/if}
+    {#snippet footer()}
+        <ShButton variant="outline" onclick={() => alertStore.set({ type: 'none', msg: '' })}>{language.cancel}</ShButton>
+        <ShButton onclick={() => alertStore.set({ type: 'none', msg: input })}>{language.confirm}</ShButton>
+    {/snippet}
+</ShDialog>
 
 <ShAlertDialog
     open={$alertStore.type === 'tos'}
