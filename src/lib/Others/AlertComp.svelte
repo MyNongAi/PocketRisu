@@ -12,6 +12,7 @@
     import Button from '../UI/GUI/Button.svelte';
     import ShDialog from '../UI/GUI/ShDialog.svelte';
     import ShAlertDialog from '../UI/GUI/ShAlertDialog.svelte';
+    import ShLoadingDialog from '../UI/GUI/ShLoadingDialog.svelte';
     import ShButton from '../UI/GUI/ShButton.svelte';
     import { XIcon, ChevronDownIcon, ChevronUpIcon, CopyIcon, CheckIcon, PencilIcon, TrashIcon, EllipsisVerticalIcon, RefreshCwIcon, PlusIcon, DownloadIcon, UploadIcon } from "@lucide/svelte";
     import hljs from 'highlight.js/lib/core';
@@ -178,25 +179,17 @@
     }
 }}></svelte:window>
 
-{#if $alertStore.type !== 'none' &&  $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs' && $alertStore.type !== 'togglePresets' && $alertStore.type !== 'error' && $alertStore.type !== 'normal' && $alertStore.type !== 'markdown' && $alertStore.type !== 'ask' && $alertStore.type !== 'pluginconfirm' && $alertStore.type !== 'tos' && $alertStore.type !== 'input' && $alertStore.type !== 'select'}
-    <div class="absolute w-full h-full z-50 bg-black/50 flex justify-center items-center" class:vis={ $alertStore.type === 'wait2'}>
+{#if $alertStore.type !== 'none' &&  $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs' && $alertStore.type !== 'togglePresets' && $alertStore.type !== 'error' && $alertStore.type !== 'normal' && $alertStore.type !== 'markdown' && $alertStore.type !== 'ask' && $alertStore.type !== 'pluginconfirm' && $alertStore.type !== 'tos' && $alertStore.type !== 'input' && $alertStore.type !== 'select' && $alertStore.type !== 'wait' && $alertStore.type !== 'wait2' && $alertStore.type !== 'progress'}
+    <div class="absolute w-full h-full z-50 bg-black/50 flex justify-center items-center">
         <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl  max-h-full overflow-y-auto">
             {#if $alertStore.type === 'selectChar'}
                 <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">Select</h2>
             {/if}
             {#if $alertStore.type !== 'requestdata' && $alertStore.type !== 'addchar' && $alertStore.type !== 'chatOptions'}
                 <span class="text-gray-300 whitespace-pre-wrap">{$alertStore.msg}</span>
-                {#if $alertStore.submsg && $alertStore.type !== 'progress'}
+                {#if $alertStore.submsg}
                     <span class="text-gray-500 text-sm">{$alertStore.submsg}</span>
                 {/if}
-            {/if}
-            {#if $alertStore.type === 'progress'}
-                <div class="w-full min-w-64 md:min-w-138 h-2 bg-darkbg border border-darkborderc rounded-md mt-6">
-                    <div class="h-full bg-linear-to-r from-blue-500 to-purple-800 saving-animation transition-[width]" style:width={$alertStore.submsg + '%'}></div>
-                </div>
-                <div class="w-full flex justify-center mt-6">
-                    <span class="text-gray-500 text-sm">{$alertStore.submsg + '%'}</span>
-                </div>
             {/if}
 
             {#if $alertStore.type === 'login'}
@@ -1250,6 +1243,13 @@
     {/snippet}
 </ShDialog>
 
+<ShLoadingDialog
+    open={$alertStore.type === 'wait' || $alertStore.type === 'wait2' || $alertStore.type === 'progress'}
+    message={$alertStore.msg}
+    submessage={$alertStore.type !== 'progress' ? ($alertStore.submsg ?? '') : ''}
+    progress={$alertStore.type === 'progress' ? parseFloat($alertStore.submsg ?? '0') : null}
+/>
+
 <ShAlertDialog
     open={$alertStore.type === 'tos'}
     onOpenChange={(v) => {
@@ -1275,10 +1275,6 @@
     .break-any{
         word-break: normal;
         overflow-wrap: anywhere;
-    }
-    .vis{
-        opacity: 1 !important;
-        --tw-bg-opacity: 1 !important;
     }
 
     .stack-trace-wrap {
