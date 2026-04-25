@@ -178,13 +178,13 @@
     }
 }}></svelte:window>
 
-{#if $alertStore.type !== 'none' &&  $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs' && $alertStore.type !== 'togglePresets' && $alertStore.type !== 'error' && $alertStore.type !== 'normal' && $alertStore.type !== 'markdown' && $alertStore.type !== 'ask' && $alertStore.type !== 'pluginconfirm' && $alertStore.type !== 'tos' && $alertStore.type !== 'input'}
+{#if $alertStore.type !== 'none' &&  $alertStore.type !== 'cardexport' && $alertStore.type !== 'branches' && $alertStore.type !== 'selectModule' && $alertStore.type !== 'pukmakkurit' && $alertStore.type !== 'requestlogs' && $alertStore.type !== 'togglePresets' && $alertStore.type !== 'error' && $alertStore.type !== 'normal' && $alertStore.type !== 'markdown' && $alertStore.type !== 'ask' && $alertStore.type !== 'pluginconfirm' && $alertStore.type !== 'tos' && $alertStore.type !== 'input' && $alertStore.type !== 'select'}
     <div class="absolute w-full h-full z-50 bg-black/50 flex justify-center items-center" class:vis={ $alertStore.type === 'wait2'}>
         <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl  max-h-full overflow-y-auto">
             {#if $alertStore.type === 'selectChar'}
                 <h2 class="text-green-700 mt-0 mb-2 w-40 max-w-full">Select</h2>
             {/if}
-            {#if $alertStore.type !== 'select' && $alertStore.type !== 'requestdata' && $alertStore.type !== 'addchar' && $alertStore.type !== 'chatOptions'}
+            {#if $alertStore.type !== 'requestdata' && $alertStore.type !== 'addchar' && $alertStore.type !== 'chatOptions'}
                 <span class="text-gray-300 whitespace-pre-wrap">{$alertStore.msg}</span>
                 {#if $alertStore.submsg && $alertStore.type !== 'progress'}
                     <span class="text-gray-500 text-sm">{$alertStore.submsg}</span>
@@ -199,31 +199,7 @@
                 </div>
             {/if}
 
-            {#if $alertStore.type === 'select'}
-                {@const hasDisplay = $alertStore.msg.startsWith('__DISPLAY__')}
-                {#if hasDisplay}
-                    {@const parts = $alertStore.msg.substring(11).split('||')}
-                    <div class="mb-4 text-textcolor">{parts[0]}</div>
-                    {#each parts.slice(1) as n, i}
-                        <Button className="mt-4" onclick={() => {
-                            alertStore.set({
-                                type: 'none',
-                                msg: i.toString()
-                            })
-                        }}>{n}</Button>
-                    {/each}
-                {:else}
-                    {@const parts = $alertStore.msg.split('||')}
-                    {#each parts as n, i}
-                        <Button className="mt-4" onclick={() => {
-                            alertStore.set({
-                                type: 'none',
-                                msg: i.toString()
-                            })
-                        }}>{n}</Button>
-                    {/each}
-                {/if}
-            {:else if $alertStore.type === 'login'}
+            {#if $alertStore.type === 'login'}
                 <div class="fixed top-0 left-0 bg-black/50 w-full h-full flex justify-center items-center">
                     <iframe src={hubURL + '/hub/login'} title="login" class="w-full h-full">
                     </iframe>
@@ -1206,6 +1182,36 @@
         <ShButton variant="destructive" onclick={() => alertStore.set({ type: 'none', msg: 'yes' })}>{language.yes}</ShButton>
     {/snippet}
 </ShAlertDialog>
+
+<ShDialog
+    open={$alertStore.type === 'select'}
+    closable={false}
+    closeOnOutsideClick={false}
+>
+    {#if $alertStore.type === 'select'}
+        {@const hasDisplay = $alertStore.msg.startsWith('__DISPLAY__')}
+        {@const raw = hasDisplay ? $alertStore.msg.substring(11) : $alertStore.msg}
+        {@const parts = raw.split('||')}
+        {@const prompt = hasDisplay ? parts[0] : ''}
+        {@const options = hasDisplay ? parts.slice(1) : parts}
+        <div class="flex flex-col gap-3">
+            {#if prompt}
+                <p class="text-textcolor whitespace-pre-wrap">{prompt}</p>
+            {/if}
+            <div class="flex flex-col gap-2">
+                {#each options as label, i}
+                    <ShButton
+                        variant="outline"
+                        className="w-full justify-start"
+                        onclick={() => alertStore.set({ type: 'none', msg: i.toString() })}
+                    >
+                        {label}
+                    </ShButton>
+                {/each}
+            </div>
+        </div>
+    {/if}
+</ShDialog>
 
 <ShDialog
     open={$alertStore.type === 'input'}
