@@ -35,7 +35,7 @@
         link: 'bg-transparent text-borderc border-transparent underline-offset-4 hover:underline',
         warning: 'bg-yellow-900/30 text-yellow-400 border-yellow-700/40',
         info: 'bg-blue-900/30 text-blue-400 border-blue-700/40',
-        success: 'bg-green-900/30 text-green-400 border-green-700/40',
+        success: 'bg-success/20 text-success border-success/40',
     };
 </script>
 

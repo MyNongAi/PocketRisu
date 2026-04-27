@@ -36,14 +36,14 @@
     }: Props = $props();
 
     const base =
-        'grid gap-0.5 rounded-md border px-4 py-3 text-base md:text-sm text-left';
+        'grid gap-0.5 rounded-md border px-4 py-3 text-base text-left';
 
     const variantClasses: Record<ShAlertVariant, string> = {
         default:     'bg-darkbg text-textcolor border-darkborderc',
         destructive: 'bg-draculared/20 text-red-300 border-draculared/40 [&_[data-slot=alert-icon]_svg]:text-red-400',
         warning:     'bg-yellow-900/30 text-yellow-300 border-yellow-700/40 [&_[data-slot=alert-icon]_svg]:text-yellow-400',
         info:        'bg-blue-900/30 text-blue-300 border-blue-700/40 [&_[data-slot=alert-icon]_svg]:text-blue-400',
-        success:     'bg-green-900/30 text-green-300 border-green-700/40 [&_[data-slot=alert-icon]_svg]:text-green-400',
+        success:     'bg-success/15 text-success border-success/40 [&_[data-slot=alert-icon]_svg]:text-success',
     };
 
     const layoutClasses = $derived(icon ? 'grid-cols-[auto_1fr] gap-x-2.5' : '');
