@@ -144,7 +144,7 @@
                 <ShInput
                     type="text"
                     readonly
-                    value={tunnelUrl}
+                    value={tunnelUrl ?? ''}
                     className="flex-1 select-all"
                 />
                 <ShButton size="icon" onclick={copyUrl}>
