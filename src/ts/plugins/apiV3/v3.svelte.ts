@@ -1211,6 +1211,11 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
                 throw new Error("A chat is already in progress");
             }
 
+            if(getModelInfo(DBState.db.aiModel).id.startsWith('pluginmodel:::')){
+                // Executing plugin provider is block because it can be used for loopholes for ipc right now.
+                throw new Error("Sending chat with plugin-based model is currently blocked");
+            }
+
             const charId = get(selectedCharID);
             const char = DBState.db.characters[charId];
             if(!char){
@@ -1222,11 +1227,6 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
                 throw new Error("No active chat found");
             }
 
-            if(getModelInfo(DBState.db.aiModel).id.startsWith('pluginmodel:::')){
-                // Executing plugin provider is block because it can be used for loopholes for ipc right now.
-                throw new Error("Sending chat with plugin-based model is currently blocked");
-            }
-
             if(message){
                 chat.message.push({
                     role: 'user',
@@ -1235,7 +1235,13 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
                 });
             }
 
-            await processSendChat(-1, {});
+            try {
+                await processSendChat(-1, {});
+            } finally {
+                // Plugin API path does not pass through the UI unlock logic,
+                // so release doingChat here on both success and failure.
+                doingChat.set(false);
+            }
 
             return true;
         },
