@@ -39,14 +39,23 @@
     import { alertInput, alertConfirm, alertError, alertNormalWait, notifySuccess } from "src/ts/alert";
     import { selectSingleFile } from "src/ts/util";
     import { translateStackTrace } from "../../ts/sourcemap";
+    import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel } from "src/ts/platform";
 
     let showDetails = $state(false);
     let translatedStackTrace = $state('');
     let stackTraceTranslationFailed = $state(false);
     let isTranslating = $state(false);
+    let osLabel = $state(getFallbackOSLabel());
     const displayedStackTrace = $derived(translatedStackTrace || $alertStore.stackTrace || '');
+    const risuEnvironment = getRisuEnvironmentLabel();
+    const userAgent = typeof navigator === "undefined" ? "Unknown" : navigator.userAgent || "Unknown";
     const stackTraceCodeBlock = $derived.by(() => {
-        const lines = [`NodeOnly v${nodeOnlyVer}`]
+        const lines = [
+            `NodeOnly v${nodeOnlyVer}`,
+            `OS: ${osLabel}`,
+            `User-Agent: ${userAgent}`,
+            `Risu environment: ${risuEnvironment}`,
+        ]
 
         if (stackTraceTranslationFailed) {
             lines.push(language.stackTraceTranslationFailed)
@@ -143,6 +152,18 @@
             void loadTranslatedTrace();
         }
     });
+
+    $effect(() => {
+        void loadDetailedOSLabel();
+    });
+
+    async function loadDetailedOSLabel() {
+        try {
+            osLabel = await getDetailedOSLabel();
+        } catch (error) {
+            console.warn("Failed to load detailed OS information:", error);
+        }
+    }
 
     async function loadTranslatedTrace() {
         if (isTranslating || translatedStackTrace || stackTraceTranslationFailed || !$alertStore.stackTrace) return;
