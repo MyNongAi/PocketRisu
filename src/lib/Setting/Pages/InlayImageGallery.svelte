@@ -1,12 +1,15 @@
 <script lang="ts">
   import { onDestroy } from 'svelte'
   import { SvelteSet } from 'svelte/reactivity'
-  import { ChevronLeft, ChevronRight, X, Download, Trash2, Info, ImageIcon } from '@lucide/svelte'
+  import { Collapsible } from 'bits-ui'
+  import { ChevronDown as ChevronDownIcon, ChevronLeft, ChevronRight, Funnel as FilterIcon, X, Download, Trash2, Info, ImageIcon } from '@lucide/svelte'
   import OptionInput from "../../UI/GUI/OptionInput.svelte";
+  import ShBadge from '../../UI/GUI/ShBadge.svelte'
   import ShButton from '../../UI/GUI/ShButton.svelte'
   import ShSelect from '../../UI/GUI/ShSelect.svelte'
 
   import { language } from 'src/lang'
+  import { SizeStore } from 'src/ts/stores.svelte'
   import { alertConfirm, notifySuccess, notifyError } from 'src/ts/alert'
   import { downloadFile } from 'src/ts/globalApi.svelte'
   import {
@@ -47,6 +50,7 @@
   let characterFilter = $state('')
   let chatFilter = $state('')
   let specialFilter = $state<SpecialFilter>('all')
+  let filtersOpen = $state(false)
 
   // Scan state
   let scanResult = $state<InlayScanResult | null>(null)
@@ -57,9 +61,15 @@
   let viewerUrl = $state('')
   let viewerLoading = $state(false)
   let viewerError = $state('')
-  let infoPanelOpen = $state(true)
+  // Mobile defaults to image-only — narrow info panel would dominate the viewport.
+  let infoPanelOpen = $state($SizeStore.w >= 768)
 
   // --- Derived ---
+  const activeFilterCount = $derived(
+    (characterFilter !== '' ? 1 : 0) +
+    (chatFilter !== '' ? 1 : 0) +
+    (specialFilter !== 'all' ? 1 : 0)
+  )
   const characterMap = $derived(new Map(characterIndex.map((char) => [char.chaId, char])))
   const allChatIds = $derived(new Set(characterIndex.flatMap((char) => char.chats.map((chat) => chat.id))))
   const availableChats = $derived(characterFilter ? (characterMap.get(characterFilter)?.chats ?? []) : [])
@@ -354,45 +364,57 @@
       </div>
 
       {#if allItems.length > 0}
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-          <div class="flex flex-col gap-1 text-xs text-textcolor2">
-            <span>{language.playground.inlaySort}</span>
-            <ShSelect bind:value={sortKey} size="sm">
-              <OptionInput value="updated-desc">{language.playground.inlaySortUpdatedDesc}</OptionInput>
-              <OptionInput value="updated-asc">{language.playground.inlaySortUpdatedAsc}</OptionInput>
-              <OptionInput value="created-desc">{language.playground.inlaySortCreatedDesc}</OptionInput>
-              <OptionInput value="created-asc">{language.playground.inlaySortCreatedAsc}</OptionInput>
-            </ShSelect>
-          </div>
-          <div class="flex flex-col gap-1 text-xs text-textcolor2">
-            <span>{language.character}</span>
-            <ShSelect bind:value={characterFilter} size="sm">
-              <OptionInput value="">{language.none}</OptionInput>
-              {#each characterIndex as char (char.chaId)}
-                <OptionInput value={char.chaId}>{char.name}</OptionInput>
-              {/each}
-            </ShSelect>
-          </div>
-          <div class="flex flex-col gap-1 text-xs text-textcolor2">
-            <span>{language.Chat}</span>
-            <ShSelect bind:value={chatFilter} size="sm">
-              <OptionInput value="">{language.none}</OptionInput>
-              {#each availableChats as chat (chat.id)}
-                <OptionInput value={chat.id}>{chat.name}</OptionInput>
-              {/each}
-            </ShSelect>
-          </div>
-          <div class="flex flex-col gap-1 text-xs text-textcolor2">
+        <Collapsible.Root bind:open={filtersOpen}>
+          <Collapsible.Trigger class="group flex items-center gap-1 text-textcolor2 hover:text-textcolor text-sm transition-colors">
+            <FilterIcon size={14} />
             <span>{language.playground.inlayFilter}</span>
-            <ShSelect bind:value={specialFilter} size="sm">
-              <OptionInput value="all">{language.playground.inlayFilterAll}</OptionInput>
-              <OptionInput value="meta-missing">{language.playground.inlayFilterMetaMissing}</OptionInput>
-              <OptionInput value="orphan-character">{language.playground.inlayFilterOrphanCharacter}</OptionInput>
-              <OptionInput value="orphan-chat">{language.playground.inlayFilterOrphanChat}</OptionInput>
-              <OptionInput value="orphan-message">{language.playground.inlayFilterOrphanMessage}</OptionInput>
-            </ShSelect>
-          </div>
-        </div>
+            {#if activeFilterCount > 0}
+              <ShBadge variant="secondary" className="ml-1">{activeFilterCount}</ShBadge>
+            {/if}
+            <ChevronDownIcon size={14} class="transition-transform group-data-[state=closed]:-rotate-90" />
+          </Collapsible.Trigger>
+          <Collapsible.Content>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 pt-2">
+              <div class="flex flex-col gap-1 text-xs text-textcolor2">
+                <span>{language.playground.inlaySort}</span>
+                <ShSelect bind:value={sortKey} size="sm">
+                  <OptionInput value="updated-desc">{language.playground.inlaySortUpdatedDesc}</OptionInput>
+                  <OptionInput value="updated-asc">{language.playground.inlaySortUpdatedAsc}</OptionInput>
+                  <OptionInput value="created-desc">{language.playground.inlaySortCreatedDesc}</OptionInput>
+                  <OptionInput value="created-asc">{language.playground.inlaySortCreatedAsc}</OptionInput>
+                </ShSelect>
+              </div>
+              <div class="flex flex-col gap-1 text-xs text-textcolor2">
+                <span>{language.character}</span>
+                <ShSelect bind:value={characterFilter} size="sm">
+                  <OptionInput value="">{language.none}</OptionInput>
+                  {#each characterIndex as char (char.chaId)}
+                    <OptionInput value={char.chaId}>{char.name}</OptionInput>
+                  {/each}
+                </ShSelect>
+              </div>
+              <div class="flex flex-col gap-1 text-xs text-textcolor2">
+                <span>{language.Chat}</span>
+                <ShSelect bind:value={chatFilter} size="sm">
+                  <OptionInput value="">{language.none}</OptionInput>
+                  {#each availableChats as chat (chat.id)}
+                    <OptionInput value={chat.id}>{chat.name}</OptionInput>
+                  {/each}
+                </ShSelect>
+              </div>
+              <div class="flex flex-col gap-1 text-xs text-textcolor2">
+                <span>{language.playground.inlayFilter}</span>
+                <ShSelect bind:value={specialFilter} size="sm">
+                  <OptionInput value="all">{language.playground.inlayFilterAll}</OptionInput>
+                  <OptionInput value="meta-missing">{language.playground.inlayFilterMetaMissing}</OptionInput>
+                  <OptionInput value="orphan-character">{language.playground.inlayFilterOrphanCharacter}</OptionInput>
+                  <OptionInput value="orphan-chat">{language.playground.inlayFilterOrphanChat}</OptionInput>
+                  <OptionInput value="orphan-message">{language.playground.inlayFilterOrphanMessage}</OptionInput>
+                </ShSelect>
+              </div>
+            </div>
+          </Collapsible.Content>
+        </Collapsible.Root>
       {/if}
     </header>
 

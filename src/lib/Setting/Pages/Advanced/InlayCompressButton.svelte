@@ -66,6 +66,7 @@
 
 <div class="mt-4">
     <ShButton
+        className="w-full"
         onclick={compressAll}
         disabled={compressing}
     >
