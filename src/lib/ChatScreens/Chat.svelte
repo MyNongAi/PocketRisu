@@ -115,13 +115,21 @@
     }
 
     async function edit(){
-        DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].data = message
+        const msg = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx]
+        msg.data = message
+        if (msg.swipes && msg.swipeId !== undefined) {
+            msg.swipes[msg.swipeId] = message
+        }
     }
 
     function handlePartialEditSave(e: CustomEvent<{ newData: string }>) {
         if (idx >= 0) {
             message = e.detail.newData
-            DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].data = e.detail.newData
+            const msg = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx]
+            msg.data = e.detail.newData
+            if (msg.swipes && msg.swipeId !== undefined) {
+                msg.swipes[msg.swipeId] = e.detail.newData
+            }
             displaya(e.detail.newData)
         }
     }

@@ -292,6 +292,7 @@
         // Generate new response
         // Preserve trailing comment/disabled messages (e.g. branch comments)
         let cha = safeStructuredClone(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message)
+        const originalMessages = safeStructuredClone(cha)
         if(cha.length === 0) return
         openMenu = false
 
@@ -312,13 +313,20 @@
             if(!msg) return
         }
         DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message = cha
-        await sendChatMain()
+        const generated = await sendChatMain()
+
+        const currentMsgs = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message
+
+        // If generation failed, restore original messages
+        if (!generated) {
+            DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message = originalMessages
+            return
+        }
 
         // Restore trailing comments after the new message
         if (trailingComments.length > 0) {
-            const msgs = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message
-            msgs.push(...trailingComments)
-            DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message = msgs
+            currentMsgs.push(...trailingComments)
+            DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message = currentMsgs
         }
 
         // Save new response to swipes
@@ -371,11 +379,11 @@
 
     async function sendChatMain(continued:boolean = false) {
 
-        let previousLength = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length
         messageInput = ''
         abortController = new AbortController()
+        let generated = false
         try {
-            await sendChat(-1, {
+            generated = await sendChat(-1, {
                 signal:abortController.signal,
                 continue:continued
             })
@@ -388,6 +396,7 @@
             const audio = new Audio(sendSound);
             audio.play().catch(() => {});
         }
+        return generated
     }
 
     function abortChat(){
