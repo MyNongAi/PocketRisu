@@ -313,6 +313,10 @@ function hello(): string {
     let galleryToggle3 = $state(false);
     let galleryInputText = $state('');
     let gallerySelectValue = $state('option-2');
+    // 긴 옵션 리스트 — 키보드 nav 스크롤-인-뷰 + 초기 열림 시 스크롤 점프 검증용.
+    // 기본값을 중간에 두어, 처음 열 때 드롭다운이 그 위치로 점프하는지 확인 가능.
+    const galleryLongOptions = Array.from({ length: 50 }, (_, i) => `item-${String(i + 1).padStart(2, '0')}`);
+    let galleryLongSelectValue = $state('item-25');
 
     async function resetPluginPermissions() {
         const ok = await alertConfirm(
@@ -519,6 +523,22 @@ function hello(): string {
             <p class="text-xs text-textcolor2/60 mt-1">
                 세 컨트롤의 위·아래 라인이 픽셀 단위로 맞아야 합니다.
             </p>
+        </div>
+
+        <!-- ShSelect 긴 리스트 — 스크롤-인-뷰 + 초기 열림 점프 검증 -->
+        <div class="flex flex-col gap-1.5">
+            <span class="text-xs text-textcolor2">긴 ShSelect (50개) — 키보드 nav 스크롤 검증</span>
+            <ShSelect bind:value={galleryLongSelectValue} className="max-w-xs">
+                {#each galleryLongOptions as opt}
+                    <OptionInput value={opt}>{opt}</OptionInput>
+                {/each}
+            </ShSelect>
+            <ul class="text-xs text-textcolor2/60 mt-1 list-disc pl-4 space-y-0.5">
+                <li>처음 열기: 기본값이 <code>item-25</code>이라 드롭다운이 그 위치로 스크롤되어 열려야 함</li>
+                <li>↓↓↓ 연타: 하이라이트가 항상 화면 안에 있어야 함 (block: nearest)</li>
+                <li>↑↑↑ 위로 올라갈 때도 동일</li>
+                <li>현재 선택값: <code>{galleryLongSelectValue}</code></li>
+            </ul>
         </div>
     </div>
 
