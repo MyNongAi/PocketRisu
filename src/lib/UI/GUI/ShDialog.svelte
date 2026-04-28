@@ -29,6 +29,12 @@
         description?: Snippet;
         footer?: Snippet;
         children?: Snippet;
+        /** Fallback aria-label for the dialog when no `title` snippet is
+         *  provided. bits-ui sets aria-labelledby pointing to Dialog.Title;
+         *  if no Title is rendered, the labelledby reference is broken.
+         *  This prop is rendered as a visually-hidden Dialog.Title in that
+         *  case. Defaults to "Dialog" for callers that don't specify. */
+        ariaLabel?: string;
     }
 
     let {
@@ -45,6 +51,7 @@
         description,
         footer,
         children,
+        ariaLabel,
     }: Props = $props();
 
     const sizeClasses: Record<ShDialogSize, string> = {
@@ -102,6 +109,12 @@
                         </Dialog.Close>
                     {/if}
                 </div>
+            {/if}
+            {#if !title}
+                <!-- A11y: bits-ui's aria-labelledby points to Dialog.Title.
+                     When the caller omits the title snippet, render a sr-only
+                     fallback so screen readers always have a name to announce. -->
+                <Dialog.Title class="sr-only">{ariaLabel ?? 'Dialog'}</Dialog.Title>
             {/if}
 
             {#if children}

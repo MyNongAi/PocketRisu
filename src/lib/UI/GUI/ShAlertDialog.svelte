@@ -23,6 +23,11 @@
         description?: Snippet;
         footer?: Snippet;
         children?: Snippet;
+        /** Fallback aria-label when no `title` snippet is provided. bits-ui
+         *  sets aria-labelledby pointing to AlertDialog.Title; without one,
+         *  screen readers have no name to announce. Rendered as a sr-only
+         *  Title in that case. Defaults to "Alert". */
+        ariaLabel?: string;
     }
 
     let {
@@ -37,6 +42,7 @@
         description,
         footer,
         children,
+        ariaLabel,
     }: Props = $props();
 
     const sizeClasses: Record<ShAlertDialogSize, string> = {
@@ -85,6 +91,12 @@
                         </AlertDialog.Description>
                     {/if}
                 </div>
+            {/if}
+            {#if !title}
+                <!-- A11y: bits-ui's aria-labelledby points to AlertDialog.Title.
+                     When the caller omits the title snippet, render a sr-only
+                     fallback so screen readers always have a name to announce. -->
+                <AlertDialog.Title class="sr-only">{ariaLabel ?? 'Alert'}</AlertDialog.Title>
             {/if}
 
             {#if children}
