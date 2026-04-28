@@ -1,5 +1,6 @@
 
 import type { SettingItem } from './types';
+import { loadPlugins } from '../plugins/plugins.svelte';
 export const advancedSettingsItems: SettingItem[] = [
     { type: 'header', id: 'adv.warn', labelKey: 'advancedSettingsWarn', options: { level: 'warning' } },
 
@@ -116,6 +117,15 @@ export const advancedSettingsItems: SettingItem[] = [
     { id: 'adv.allowExt', type: 'check', fallbackLabel: 'Allow all in file select', bindKey: 'allowAllExtentionFiles', classes: 'mt-4' },
     { id: 'adv.dynamicModelRegistry', type: 'check', labelKey: 'dynamicModelRegistry', bindKey: 'dynamicModelRegistry', classes: 'mt-4' },
     { id: 'adv.disableSeperateParameterChangeOnPresetChange', type: 'check', labelKey: 'disableSeperateParameterChangeOnPresetChange', bindKey: 'disableSeperateParameterChangeOnPresetChange', classes: 'mt-4' },
+    { id: 'adv.hideLoadout', type: 'check', labelKey: 'hideLoadout', bindKey: 'hideLoadout', helpKey: 'hideLoadout', classes: 'mt-4' },
+    { id: 'adv.hideEasyPanel', type: 'check', labelKey: 'hideEasyPanel', bindKey: 'hideEasyPanel', helpKey: 'hideEasyPanel', classes: 'mt-4' },
+    {
+        id: 'adv.allowV2Plugin', type: 'check', labelKey: 'allowV2Plugin', bindKey: 'allowV2Plugin',
+        helpKey: 'allowV2Plugin', helpUnrecommended: true, classes: 'mt-4',
+        onChange: () => {
+            void loadPlugins();
+        }
+    },
     // Experimental Section (visible when useExperimental is true)
     {
         id: 'adv.exp.googleToken', type: 'check', labelKey: 'googleCloudTokenization', bindKey: 'googleClaudeTokenizing',

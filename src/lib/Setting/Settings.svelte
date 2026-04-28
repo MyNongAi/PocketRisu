@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, BoxIcon, CodeIcon, ContactIcon, ContainerIcon, FlaskConicalIcon, LanguagesIcon, MonitorIcon, MonitorSmartphoneIcon, Sailboat, ScrollTextIcon, UserIcon, CircleXIcon, KeyboardIcon, SparkleIcon } from "@lucide/svelte";
+    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, BoxIcon, CodeIcon, ContactIcon, FlaskConicalIcon, ImageIcon, LanguagesIcon, MonitorIcon, MonitorSmartphoneIcon, Sailboat, ScrollTextIcon, UserIcon, CircleXIcon, KeyboardIcon, SparkleIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import DisplaySettings from "./Pages/DisplaySettings.svelte";
     import UserSettings from "./Pages/UserSettings.svelte";
@@ -23,7 +23,7 @@
     import ModuleSettings from "./Pages/Module/ModuleSettings.svelte";
   import { isLite } from "src/ts/lite";
     import HotkeySettings from "./Pages/HotkeySettings.svelte";
-    import NodeOnlySettings from "./Pages/NodeOnlySettings.svelte";
+    import InlayImageGallery from "./Pages/InlayImageGallery.svelte";
     import RemoteAccessSettings from "./Pages/RemoteAccessSettings.svelte";
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
     import DevPanel from "src/lib/_dev/DevPanel.svelte";
@@ -145,13 +145,13 @@
                     </button>
                 {#if !$isLite}
                     <button class="flex gap-2 items-center hover:text-textcolor"
-                        class:text-textcolor={$SettingsMenuIndex === 20}
-                        class:text-textcolor2={$SettingsMenuIndex !== 20}
+                        class:text-textcolor={$SettingsMenuIndex === 23}
+                        class:text-textcolor2={$SettingsMenuIndex !== 23}
                         onclick={() => {
-                        $SettingsMenuIndex = 20
+                        $SettingsMenuIndex = 23
                     }}>
-                        <ContainerIcon />
-                        <span>{language.nodeOnlySettings}</span>
+                        <ImageIcon />
+                        <span>{language.playground.inlayImageGallery}</span>
                     </button>
                     <button class="flex gap-2 items-center hover:text-textcolor"
                         class:text-textcolor={$SettingsMenuIndex === 21}
@@ -282,8 +282,8 @@
                         }}/>
                     {:else if $SettingsMenuIndex === 15 && window.innerWidth >= 768}
                         <HotkeySettings/>
-                    {:else if $SettingsMenuIndex === 20}
-                        <NodeOnlySettings/>
+                    {:else if $SettingsMenuIndex === 23}
+                        <InlayImageGallery/>
                     {:else if $SettingsMenuIndex === 21}
                         <RemoteAccessSettings/>
                     {:else if $SettingsMenuIndex === 22}

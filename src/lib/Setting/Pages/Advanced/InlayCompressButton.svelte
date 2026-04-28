@@ -1,6 +1,6 @@
 <script lang="ts">
     import { language } from "src/lang";
-    import Button from "src/lib/UI/GUI/Button.svelte";
+    import ShButton from "src/lib/UI/GUI/ShButton.svelte";
     import { alertConfirm, alertNormal } from "src/ts/alert";
 
     let compressing = $state(false);
@@ -65,12 +65,12 @@
 </script>
 
 <div class="mt-4">
-    <Button
+    <ShButton
         onclick={compressAll}
         disabled={compressing}
     >
         {compressing ? language.inlayCompressing : language.inlayCompressAll}
-    </Button>
+    </ShButton>
     {#if progress}
         <p class="text-sm text-textcolor2 mt-2">{progress}</p>
     {/if}

@@ -6,6 +6,7 @@
 
 import type { SettingItem } from './types';
 import { language } from "src/lang";
+import { getCurrentChat, getDatabase, loadTogglesFromChat } from '../storage/database.svelte';
 
 export const accessibilitySettingsItems: SettingItem[] = [
     // Checkboxes
@@ -195,5 +196,51 @@ export const accessibilitySettingsItems: SettingItem[] = [
         bindKey: 'useNodeOnlyScrollButton',
         helpKey: 'useNodeOnlyScrollButton',
         keywords: ['scroll', 'button', 'navigate', 'message'],
+    },
+    {
+        id: 'acc.showModelInSidebar',
+        type: 'check',
+        labelKey: 'showModelInSidebar',
+        bindKey: 'showModelInSidebar',
+        helpKey: 'showModelInSidebar',
+        keywords: ['sidebar', 'model', 'show', 'select'],
+    },
+    {
+        id: 'acc.showPresetInSidebar',
+        type: 'check',
+        labelKey: 'showPresetInSidebar',
+        bindKey: 'showPresetInSidebar',
+        helpKey: 'showPresetInSidebar',
+        keywords: ['sidebar', 'preset', 'show', 'select'],
+    },
+    {
+        id: 'acc.showPersonaInSidebar',
+        type: 'check',
+        labelKey: 'showPersonaInSidebar',
+        bindKey: 'showPersonaInSidebar',
+        helpKey: 'showPersonaInSidebar',
+        keywords: ['sidebar', 'persona', 'binding', 'show'],
+    },
+    {
+        id: 'acc.disableMobileDragDrop',
+        type: 'check',
+        labelKey: 'disableMobileDragDrop',
+        bindKey: 'disableMobileDragDrop',
+        helpKey: 'disableMobileDragDrop',
+        keywords: ['mobile', 'drag', 'drop', 'character', 'disable'],
+    },
+    {
+        id: 'acc.disableToggleBinding',
+        type: 'check',
+        labelKey: 'disableToggleBinding',
+        bindKey: 'disableToggleBinding',
+        helpKey: 'disableToggleBinding',
+        keywords: ['toggle', 'binding', 'chat', 'disable'],
+        onChange: () => {
+            if (!getDatabase().disableToggleBinding) {
+                const chat = getCurrentChat();
+                if (chat) loadTogglesFromChat(chat);
+            }
+        }
     }
 ];
