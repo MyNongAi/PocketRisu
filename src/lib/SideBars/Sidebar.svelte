@@ -606,17 +606,6 @@
           PlaygroundStore.set(1)
         }}
       ><ShellIcon /></BarIcon>
-      {#each additionalHamburgerMenu as menu}
-        <div class="mt-2"></div>
-        <BarIcon
-          onClick={() => {
-            reseter();
-            menu.callback();
-          }}>
-            <PluginDefinedIcon ico={menu} />
-          </BarIcon
-        >
-      {/each}
       <div class="mt-2"></div>
       <BarIcon
         onClick={() => {
@@ -624,6 +613,20 @@
           openGrid();
         }}><LayoutGridIcon /></BarIcon
       >
+      {#if additionalHamburgerMenu.length > 0}
+        <div class="mt-2 h-px w-10 bg-selected"></div>
+        {#each additionalHamburgerMenu as menu}
+          <div class="mt-2"></div>
+          <BarIcon
+            onClick={() => {
+              reseter();
+              menu.callback();
+            }}>
+              <PluginDefinedIcon ico={menu} />
+            </BarIcon
+          >
+        {/each}
+      {/if}
     </div>
     {/if}
   </div>
@@ -928,17 +931,6 @@
           PlaygroundStore.set(1)
         }}
       ><ShellIcon /></BarIcon>
-      {#each additionalHamburgerMenu as menu}
-        <div class="mt-2"></div>
-        <BarIcon
-          onClick={() => {
-            reseter();
-            menu.callback();
-          }}>
-            <PluginDefinedIcon ico={menu} />
-          </BarIcon
-        >
-      {/each}
       <div class="mt-2"></div>
       <BarIcon
         onClick={() => {
@@ -946,6 +938,20 @@
           openGrid();
         }}><LayoutGridIcon /></BarIcon
       >
+      {#if additionalHamburgerMenu.length > 0}
+        <div class="mt-2 h-px w-10 bg-selected"></div>
+        {#each additionalHamburgerMenu as menu}
+          <div class="mt-2"></div>
+          <BarIcon
+            onClick={() => {
+              reseter();
+              menu.callback();
+            }}>
+              <PluginDefinedIcon ico={menu} />
+            </BarIcon
+          >
+        {/each}
+      {/if}
     </div>
     {/if}
   </div>
