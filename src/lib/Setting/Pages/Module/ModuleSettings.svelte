@@ -124,7 +124,7 @@
     </div>
 
     <div class="flex mr-2 mt-4">
-        <button class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer" onclick={async () => {
+        <button class="text-textcolor2 hover:text-primary mr-2 cursor-pointer" onclick={async () => {
             tempModule = {
                 name: '',
                 description: '',
@@ -135,12 +135,12 @@
         }}>
             <PlusIcon />
         </button>
-        <button class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer" onclick={async () => {
+        <button class="text-textcolor2 hover:text-primary mr-2 cursor-pointer" onclick={async () => {
             importMCPModule()
         }}>
             <Waypoints />
         </button>
-        <button class="text-textcolor2 hover:text-blue-500 mr-2 cursor-pointer" onclick={async () => {
+        <button class="text-textcolor2 hover:text-primary mr-2 cursor-pointer" onclick={async () => {
             importModule()
         }}>
             <HardDriveUpload  />

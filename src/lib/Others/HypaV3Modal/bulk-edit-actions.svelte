@@ -81,8 +81,8 @@
       <div class="flex items-center gap-2">
         <!-- Resummarize Button -->
         <button
-          class="px-4 py-2 rounded text-sm font-medium transition-colors {bulkEditState.selectedSummaries.size > 1 
-            ? 'bg-green-600 hover:bg-blue-700 text-white' 
+          class="px-4 py-2 rounded text-sm font-medium transition-colors {bulkEditState.selectedSummaries.size > 1
+            ? 'bg-green-600 hover:bg-blue-700 text-white'
             : 'bg-zinc-600 text-zinc-400 cursor-not-allowed'}"
           onclick={onResummarize}
           disabled={bulkEditState.selectedSummaries.size < 2}
@@ -106,7 +106,7 @@
         <!-- Apply Category Button -->
         <button
           class="px-4 py-2 rounded text-sm font-medium transition-colors {bulkEditState.selectedSummaries.size > 0
-            ? 'bg-blue-600 hover:bg-blue-700 text-white'
+            ? 'bg-primary hover:bg-primary/90 text-white'
             : 'bg-zinc-600 text-zinc-400 cursor-not-allowed'}"
           onclick={applyCategoryToSelected}
           disabled={bulkEditState.selectedSummaries.size === 0}

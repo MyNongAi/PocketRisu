@@ -567,7 +567,7 @@
 >
   {#if !DBState.db.hamburgerButtonBottom}
   <button
-    class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
+    class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-primary"
     onclick={() => {
       menuMode = 1 - menuMode;
     }}><ListIcon />
@@ -956,7 +956,7 @@
     {/if}
   </div>
   <button
-    class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mb-2 mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-blue-500"
+    class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mb-2 mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-primary"
     onclick={() => {
       menuMode = 1 - menuMode;
     }}><ListIcon />

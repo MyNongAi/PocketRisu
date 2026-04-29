@@ -70,7 +70,7 @@
                         </select>
                     {/if}
                     <button
-                        class="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition"
+                        class="bg-primary text-white px-3 py-1 rounded hover:bg-primary/90 transition"
                         onclick={() => (previewing = !previewing)}
                     >
                         {previewing ? language.edit : language.preview}
@@ -96,7 +96,7 @@
 
                         <div class="text-sm p-4 text-gray-500 flex overflow-x-auto">
                             <button class={{
-                                "bg-blue-500 text-white hover:bg-blue-600": showToggles,
+                                "bg-primary text-white hover:bg-primary/90": showToggles,
                                 "bg-gray-500 text-white hover:bg-gray-600": !showToggles,
                                 "px-3 py-1 rounded transition": true,
                             }} onclick={() => {

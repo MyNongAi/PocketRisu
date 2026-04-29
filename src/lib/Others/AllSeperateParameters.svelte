@@ -41,7 +41,7 @@
 
 {#if withImportExport}
     <div class="flex">
-        <button class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded" onclick={() => {
+        <button class="bg-primary hover:bg-primary/90 text-white font-bold py-2 px-4 rounded" onclick={() => {
             const json = JSON.stringify(value, null, 2)
             downloadFile(`parameters-${Date.now()}.json`, json)
         }}>

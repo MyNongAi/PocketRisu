@@ -455,7 +455,7 @@
     <div class="grow flex items-center justify-end" class:text-textcolor2={options?.applyTextColors !== false}>
         {#if isComment}
             <button
-                class="flex items-center hover:text-blue-500 transition-colors button-icon-remove"
+                class="flex items-center hover:text-red-400 transition-colors button-icon-remove"
                 onclick={async (e) => {
                     await rm(e, true)
                 }}
@@ -495,7 +495,7 @@
 
 {#snippet majorIconButtonsBody(showNames:boolean)}
     {#if DBState.db.useChatCopy && !blankMessage}
-    <button class="flex items-center hover:text-blue-500 transition-colors button-icon-copy" onclick={async ()=>{
+    <button class="flex items-center hover:text-primary transition-colors button-icon-copy" onclick={async ()=>{
         if(window.navigator.clipboard.write){
             try {
                 alertWait(language.loading)
@@ -726,7 +726,7 @@
 {/if}
 {#if idx > -1}
     {#if DBState.db.characters[selIdState.selId].ttsMode !== 'none' && (DBState.db.characters[selIdState.selId].ttsMode)}
-        <button class="flex items-center hover:text-blue-500 transition-colors button-icon-tts" onclick={()=>{
+        <button class="flex items-center hover:text-primary transition-colors button-icon-tts" onclick={()=>{
             return sayTTS(null, message)
         }}>
             <Volume2Icon size={20}/>
@@ -735,7 +735,7 @@
             {/if}
         </button>
     {/if}
-    <button class="flex items-center hover:text-blue-500 transition-colors button-icon-remove" onclick={(e) => rm(e, false)} use:longpress={(e) => rm(e, true)}>
+    <button class="flex items-center hover:text-red-400 transition-colors button-icon-remove" onclick={(e) => rm(e, false)} use:longpress={(e) => rm(e, true)}>
         <TrashIcon size={20}/>
 
         {#if showNames}
@@ -747,7 +747,7 @@
 
 {#snippet translationButton(showNames = false)}
     {#if DBState.db.translator !== '' && !blankMessage}
-        <button class={"flex items-center cursor-pointer hover:text-blue-500 transition-colors button-icon-translate " + (translated ? 'text-blue-400':'')} class:translating={translating} onclick={async () => {
+        <button class={"flex items-center cursor-pointer hover:text-primary transition-colors button-icon-translate " + (translated ? 'text-blue-400':'')} class:translating={translating} onclick={async () => {
             translated = !translated
         }}>
             <LanguagesIcon />
@@ -757,7 +757,7 @@
         </button>
     {/if}
     {#if idx > -1}
-        <button class={"flex items-center hover:text-blue-500 transition-colors button-icon-edit "+(editMode?'text-blue-400':'')} onclick={() => {
+        <button class={"flex items-center hover:text-primary transition-colors button-icon-edit "+(editMode?'text-blue-400':'')} onclick={() => {
             if(!editMode){
                 editMode = true
             }
@@ -779,18 +779,18 @@
     {#if (rerollIcon || altGreeting) && role !== 'user'}
         {#if altGreeting}
             <!-- First message: ← counter → -->
-            <button class="flex items-center shrink-0 hover:text-blue-500 transition-colors button-icon-unreroll" onclick={unReroll}>
+            <button class="flex items-center shrink-0 hover:text-primary transition-colors button-icon-unreroll" onclick={unReroll}>
                 <ArrowLeft size={22}/>
             </button>
             {#if !DBState.db.hideMessagePageCount}
                 <span class="flex items-center text-xs text-textcolor2 shrink overflow-hidden whitespace-nowrap min-w-0">{currentPage}/{totalPages}</span>
             {/if}
-            <button class="flex items-center shrink-0 hover:text-blue-500 transition-colors button-icon-reroll" onclick={onReroll}>
+            <button class="flex items-center shrink-0 hover:text-primary transition-colors button-icon-reroll" onclick={onReroll}>
                 <ArrowRight size={22}/>
             </button>
         {:else}
             <!-- Normal messages: ← counter → ↻ -->
-            <button class="flex items-center shrink-0 hover:text-blue-500 transition-colors button-icon-unreroll" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'} onclick={async () => {
+            <button class="flex items-center shrink-0 hover:text-primary transition-colors button-icon-unreroll" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'} onclick={async () => {
                 if (totalPages <= 1) {
                     if (!DBState.db.confirmReroll || await alertConfirm(language.noSwipesRerollConfirm)) onReroll()
                 } else {
@@ -802,7 +802,7 @@
             {#if !DBState.db.hideMessagePageCount}
                 <span class="flex items-center text-xs text-textcolor2 shrink overflow-hidden whitespace-nowrap min-w-0" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'}>{currentPage}/{totalPages}</span>
             {/if}
-            <button class="flex items-center shrink-0 hover:text-blue-500 transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'} onclick={async () => {
+            <button class="flex items-center shrink-0 hover:text-primary transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'} onclick={async () => {
                 if (totalPages <= 1) {
                     if (!DBState.db.confirmReroll || await alertConfirm(language.noSwipesRerollConfirm)) onReroll()
                 } else {
@@ -811,7 +811,7 @@
             }}>
                 <ArrowRight size={22}/>
             </button>
-            <button class="flex items-center shrink-0 hover:text-blue-500 transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'} onclick={async () => {
+            <button class="flex items-center shrink-0 hover:text-primary transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'} onclick={async () => {
                 if (!DBState.db.confirmReroll || await alertConfirm(language.rerollConfirm)) onReroll()
             }}>
                 <RefreshCcwIcon size={20}/>
@@ -823,7 +823,7 @@
 {#snippet minorIconButtonsBody(showNames:boolean)}
     
     {#if DBState.db.enableBookmark}
-        <button class="flex items-center hover:text-blue-500 transition-colors button-icon-bookmark {isBookmarked ? 'text-yellow-400' : ''}" onclick={async () => {
+        <button class="flex items-center hover:text-primary transition-colors button-icon-bookmark {isBookmarked ? 'text-yellow-400' : ''}" onclick={async () => {
             await sleep(1)
             toggleBookmark()
         }}>
@@ -848,7 +848,7 @@
         </button>
     {/if}
 
-    <button class="flex items-center hover:text-blue-500 transition-colors" onclick={async () => {
+    <button class="flex items-center hover:text-primary transition-colors" onclick={async () => {
         await sleep(1)
         const currentChat = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage]
 
@@ -885,7 +885,7 @@
         {/if}
     </button>
 
-    <button class="flex items-center hover:text-blue-500 transition-colors" onclick={async () => {
+    <button class="flex items-center hover:text-primary transition-colors" onclick={async () => {
         await sleep(1)
         const currentMessage = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx]
         DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].disabled = !currentMessage.disabled
@@ -896,7 +896,7 @@
         {/if}
     </button>
 
-    <button class="flex items-center hover:text-blue-500 transition-colors" onclick={async () => {
+    <button class="flex items-center hover:text-primary transition-colors" onclick={async () => {
         await sleep(1)
         const currentMessage = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx]
         DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].disabled = currentMessage.disabled === 'allBefore' ? false : 'allBefore'

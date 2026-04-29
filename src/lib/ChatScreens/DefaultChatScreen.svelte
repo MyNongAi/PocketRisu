@@ -593,41 +593,41 @@
 
     {#if showNewMessageButton}
         {#if (DBState.db.newMessageButtonStyle === 'bottom-center' || !DBState.db.newMessageButtonStyle)}
-            <button class="absolute bottom-16 left-1/2 -translate-x-1/2 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors" onclick={scrollToBottom}>
+            <button class="absolute bottom-16 left-1/2 -translate-x-1/2 bg-primary text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-primary/90 transition-colors" onclick={scrollToBottom}>
                 <ArrowDown size={16} />
                 <span>{language.newMessage}</span>
             </button>
         {/if}
 
         {#if DBState.db.newMessageButtonStyle === 'bottom-right'}
-            <button class="absolute bottom-20 right-4 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors" onclick={scrollToBottom}>
+            <button class="absolute bottom-20 right-4 bg-primary text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-primary/90 transition-colors" onclick={scrollToBottom}>
                 <ArrowDown size={16} />
                 <span>{language.newMessage}</span>
             </button>
         {/if}
 
         {#if DBState.db.newMessageButtonStyle === 'bottom-left'}
-            <button class="absolute bottom-20 left-4 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors" onclick={scrollToBottom}>
+            <button class="absolute bottom-20 left-4 bg-primary text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-primary/90 transition-colors" onclick={scrollToBottom}>
                 <ArrowDown size={16} />
                 <span>{language.newMessage}</span>
             </button>
         {/if}
 
         {#if DBState.db.newMessageButtonStyle === 'floating-circle'}
-            <button class="absolute bottom-36 right-4 bg-blue-500 text-white w-12 h-12 rounded-full shadow-lg z-50 flex items-center justify-center hover:bg-blue-600 transition-colors" onclick={scrollToBottom} title="4. 원형 (우하단)">
+            <button class="absolute bottom-36 right-4 bg-primary text-white w-12 h-12 rounded-full shadow-lg z-50 flex items-center justify-center hover:bg-primary/90 transition-colors" onclick={scrollToBottom} title="4. 원형 (우하단)">
                 <ArrowDown size={20} />
             </button>
         {/if}
 
         {#if DBState.db.newMessageButtonStyle === 'right-center'}
-            <button class="absolute top-1/2 right-2 -translate-y-1/2 bg-blue-500 text-white px-2 py-3 rounded-l-lg shadow-lg z-50 flex flex-col items-center gap-1 hover:bg-blue-600 transition-colors" onclick={scrollToBottom}>
+            <button class="absolute top-1/2 right-2 -translate-y-1/2 bg-primary text-white px-2 py-3 rounded-l-lg shadow-lg z-50 flex flex-col items-center gap-1 hover:bg-primary/90 transition-colors" onclick={scrollToBottom}>
                 <ArrowDown size={14} />
                 <span class="text-xs writing-mode-vertical">{language.newMessage}</span>
             </button>
         {/if}
 
         {#if DBState.db.newMessageButtonStyle === 'top-bar'}
-            <button class="absolute top-2 left-1/2 -translate-x-1/2 bg-blue-500 text-white px-6 py-1.5 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-blue-600 transition-colors text-sm" onclick={scrollToBottom}>
+            <button class="absolute top-2 left-1/2 -translate-x-1/2 bg-primary text-white px-6 py-1.5 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-primary/90 transition-colors text-sm" onclick={scrollToBottom}>
                 <ArrowDown size={14} />
                 <span>{language.newMessage}</span>
             </button>
@@ -676,7 +676,7 @@
             >
                 {#if DBState.db.useChatSticker}
                     <div onclick={()=>{toggleStickers = !toggleStickers}}
-                         class={"ml-4 bg-textcolor2 flex justify-center items-center  w-12 h-12 rounded-md hover:bg-blue-500 transition-colors "+(toggleStickers ? 'text-green-500':'text-textcolor')}>
+                         class={"ml-4 bg-textcolor2 flex justify-center items-center  w-12 h-12 rounded-md hover:bg-primary/30 transition-colors "+(toggleStickers ? 'text-green-500':'text-textcolor')}>
                         <Laugh/>
                     </div>
                 {/if}
@@ -746,7 +746,7 @@
                 {#if $doingChat || doingChatInputTranslate}
                     <button
                             aria-labelledby="cancel"
-                            class="peer-focus:border-textcolor  flex justify-center border-y border-darkborderc items-center text-gray-100 p-3 hover:bg-blue-500 transition-colors" onclick={abortChat}
+                            class="peer-focus:border-textcolor  flex justify-center border-y border-darkborderc items-center text-gray-100 p-3 hover:bg-primary/30 transition-colors" onclick={abortChat}
                             style:height={inputHeight}
                     >
                         <div class="loadmove chat-process-stage-{$chatProcessStage}"></div>
@@ -754,7 +754,7 @@
                 {:else}
                     <button
                             onclick={send}
-                            class="flex justify-center border-y border-darkborderc items-center text-gray-100 p-3 peer-focus:border-textcolor hover:bg-blue-500 transition-colors button-icon-send"
+                            class="flex justify-center border-y border-darkborderc items-center text-gray-100 p-3 peer-focus:border-textcolor hover:bg-primary/30 transition-colors button-icon-send"
                             style:height={inputHeight}
                     >
                         <Send />
@@ -766,7 +766,7 @@
                             openMenu = !openMenu
                             e.stopPropagation()
                         }}
-                            class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-gray-100 p-3 rounded-r-md hover:bg-blue-500 transition-colors"
+                            class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-gray-100 p-3 rounded-r-md hover:bg-primary/30 transition-colors"
                             style:height={inputHeight}
                     >
                         <MenuIcon />
@@ -779,7 +779,7 @@
                         })
                         DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage] = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
                     }}
-                         class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-gray-100 p-3 rounded-r-md hover:bg-blue-500 transition-colors"
+                         class="peer-focus:border-textcolor mr-2 flex border-y border-r border-darkborderc justify-center items-center text-gray-100 p-3 rounded-r-md hover:bg-primary/30 transition-colors"
                          style:height={inputHeight}
                     >
                         <Plus />
@@ -1103,7 +1103,7 @@
 {#if additionalFloatingActionButtons.length > 0}
     <div class="fixed top-4 right-4 flex flex-col gap-3 z-50">
         {#each additionalFloatingActionButtons as button}
-            <button class="bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 hover:bg-blue-600 transition-colors" onclick={() => {
+            <button class="bg-primary text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 hover:bg-primary/90 transition-colors" onclick={() => {
                 button.callback()
             }}>
                 <PluginDefinedIcon ico={button} />

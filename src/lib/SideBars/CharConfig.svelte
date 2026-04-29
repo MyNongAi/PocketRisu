@@ -373,7 +373,7 @@
                 {/if}
                 <button onclick={async () => {await selectCharImg($selectedCharID);}}>
                     <div
-                        class="rounded-md h-24 w-24 cursor-pointer border-darkborderc border border-dashed flex justify-center items-center hover:border-blue-500"
+                        class="rounded-md h-24 w-24 cursor-pointer border-darkborderc border border-dashed flex justify-center items-center hover:border-primary"
                         style={(DBState.db.characters[$selectedCharID] as character).largePortrait ? 'height: 10.66rem;' : ''}
                     >
                         <PlusIcon />
@@ -555,7 +555,7 @@
                                 </td>
                                 
                                 <th class="font-medium cursor-pointer w-10">
-                                    <button class="hover:text-blue-500" onclick={() => {
+                                    <button class="hover:text-red-400" onclick={() => {
                                         if(DBState.db.characters[$selectedCharID].type === 'character'){
                                             DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].fmIndex = -1
                                             let additionalAssets = DBState.db.characters[$selectedCharID].additionalAssets
@@ -566,7 +566,7 @@
                                         <TrashIcon />
                                     </button>
                                     {#if DBState.db.useAdditionalAssetsPreview}
-                                        <button class="hover:text-blue-500" class:text-textcolor2={DBState.db.characters[$selectedCharID].prebuiltAssetExclude?.includes?.(assets[1])} onclick={() => {
+                                        <button class="hover:text-primary" class:text-textcolor2={DBState.db.characters[$selectedCharID].prebuiltAssetExclude?.includes?.(assets[1])} onclick={() => {
                                             DBState.db.characters[$selectedCharID].prebuiltAssetExclude ??= []
                                             if(DBState.db.characters[$selectedCharID].prebuiltAssetExclude.includes(assets[1])){
                                                 DBState.db.characters[$selectedCharID].prebuiltAssetExclude = DBState.db.characters[$selectedCharID].prebuiltAssetExclude.filter((e) => e !== assets[1])
@@ -1086,10 +1086,10 @@
                         </td>
                         <th class="font-medium cursor-pointer w-8">
                             <div class="flex flex-col items-center">
-                                <button class="hover:text-blue-500 p-1" onclick={() => moveAlternateGreetingUp(i)} disabled={i === 0}>
+                                <button class="hover:text-primary p-1" onclick={() => moveAlternateGreetingUp(i)} disabled={i === 0}>
                                     <ArrowUp size={16} />
                                 </button>
-                                <button class="hover:text-blue-500 p-1" onclick={() => moveAlternateGreetingDown(i)} disabled={i === DBState.db.characters[$selectedCharID].alternateGreetings.length - 1}>
+                                <button class="hover:text-primary p-1" onclick={() => moveAlternateGreetingDown(i)} disabled={i === DBState.db.characters[$selectedCharID].alternateGreetings.length - 1}>
                                     <ArrowDown size={16} />
                                 </button>
                                 <button class="hover:text-red-500 p-1" onclick={() => {
