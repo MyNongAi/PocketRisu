@@ -31,7 +31,7 @@ export const defaultColorScheme: ColorScheme = {
     textcolor2: "#64748b",
     darkBorderc: "#4b5563",
     darkbutton: "#374151",
-    primary: "#5a9baa",
+    primary: "#3b82f6",
     type:'dark'
 }
 

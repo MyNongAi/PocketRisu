@@ -186,7 +186,7 @@ body {
   /* Primary — dynamic accent for "active/on" fills (toggle track, primary CTA).
      Part of ColorScheme: updateColorScheme() overrides it per theme. The default
      here is a fallback for the brief boot window before updateColorScheme runs. */
-  --risu-theme-primary: #5a9baa;
+  --risu-theme-primary: #3b82f6;
   --risu-height-size: 100%;
   --risu-font-family: Arial, sans-serif, serif;
 
