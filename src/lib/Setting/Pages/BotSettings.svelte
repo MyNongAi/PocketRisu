@@ -139,11 +139,11 @@
     <ModelList bind:value={DBState.db.subModel}/>
 
     {#if modelInfo.provider === LLMProvider.GoogleCloud || subModelInfo.provider === LLMProvider.GoogleCloud}
-        <span class="text-textcolor">GoogleAI API Key</span>
+        <span class="text-textcolor mt-4">GoogleAI API Key</span>
         <TextInput className="mt-2" marginBottom={true} placeholder="..." hideText={DBState.db.hideApiKey} bind:value={DBState.db.google.accessToken}/>
     {/if}
     {#if modelInfo.provider === LLMProvider.VertexAI || subModelInfo.provider === LLMProvider.VertexAI}
-        <span class="text-textcolor">Project ID</span>
+        <span class="text-textcolor mt-4">Project ID</span>
         <TextInput className="mt-2" marginBottom={true} placeholder="..." bind:value={DBState.db.google.projectId} oninput={clearVertexToken}/>
         <span class="text-textcolor">Vertex Client Email</span>
         <TextInput className="mt-2" marginBottom={true} placeholder="..." bind:value={DBState.db.vertexClientEmail} oninput={clearVertexToken}/>
@@ -166,24 +166,24 @@
         </SelectInput>    
     {/if}
     {#if modelInfo.provider === LLMProvider.NovelList || subModelInfo.provider === LLMProvider.NovelList}
-        <span class="text-textcolor">NovelList {language.apiKey}</span>
+        <span class="text-textcolor mt-4">NovelList {language.apiKey}</span>
         <TextInput className="mt-2" hideText={DBState.db.hideApiKey} marginBottom={true} placeholder="..." bind:value={DBState.db.novellistAPI}/>
     {/if}
     {#if DBState.db.aiModel.startsWith('mancer') || DBState.db.subModel.startsWith('mancer')}
-        <span class="text-textcolor">Mancer {language.apiKey}</span>
+        <span class="text-textcolor mt-4">Mancer {language.apiKey}</span>
         <TextInput className="mt-2" hideText={DBState.db.hideApiKey} marginBottom={true} placeholder="..." bind:value={DBState.db.mancerHeader}/>
     {/if}
     {#if modelInfo.provider === LLMProvider.Anthropic || subModelInfo.provider === LLMProvider.Anthropic
             || modelInfo.provider === LLMProvider.AWS || subModelInfo.provider === LLMProvider.AWS }
-        <span class="text-textcolor">Claude {language.apiKey}</span>
+        <span class="text-textcolor mt-4">Claude {language.apiKey}</span>
         <TextInput className="mt-2" hideText={DBState.db.hideApiKey} marginBottom={true} placeholder="..." bind:value={DBState.db.claudeAPIKey}/>
     {/if}
     {#if modelInfo.provider === LLMProvider.Mistral || subModelInfo.provider === LLMProvider.Mistral}
-        <span class="text-textcolor">Mistral {language.apiKey}</span>
+        <span class="text-textcolor mt-4">Mistral {language.apiKey}</span>
         <TextInput className="mt-2" hideText={DBState.db.hideApiKey} marginBottom={true} placeholder="..." bind:value={DBState.db.mistralKey}/>
     {/if}
     {#if modelInfo.provider === LLMProvider.NovelAI || subModelInfo.provider === LLMProvider.NovelAI}
-        <span class="text-textcolor">NovelAI Bearer Token</span>
+        <span class="text-textcolor mt-4">NovelAI Bearer Token</span>
         <TextInput className="mt-2" bind:value={DBState.db.novelai.token}/>
     {/if}
     {#if DBState.db.aiModel === 'reverse_proxy' || DBState.db.subModel === 'reverse_proxy'}
@@ -285,7 +285,7 @@
         {/await}
     {/if}
     {#if DBState.db.aiModel === 'openrouter' || DBState.db.aiModel === 'reverse_proxy'}
-        <span class="text-textcolor">{language.tokenizer}</span>
+        <span class="text-textcolor mt-4">{language.tokenizer}</span>
         <SelectInput className="mt-2" bind:value={DBState.db.customTokenizer}>
             {#each tokenizerList as entry}
                 <OptionInput value={entry[0]}>{entry[1]}</OptionInput>
@@ -293,17 +293,17 @@
         </SelectInput>
     {/if}
     {#if modelInfo.provider === LLMProvider.OpenAI || subModelInfo.provider === LLMProvider.OpenAI}
-        <span class="text-textcolor">OpenAI {language.apiKey} <Help key="oaiapikey"/></span>
+        <span class="text-textcolor mt-4">OpenAI {language.apiKey} <Help key="oaiapikey"/></span>
         <TextInput className="mt-2" hideText={DBState.db.hideApiKey} marginBottom={false} bind:value={DBState.db.openAIKey} placeholder="sk-XXXXXXXXXXXXXXXXXXXX"/>
     {/if}
 
     {#if modelInfo.keyIdentifier}
-        <span class="text-textcolor">{modelInfo.name} {language.apiKey}</span>
+        <span class="text-textcolor mt-4">{modelInfo.name} {language.apiKey}</span>
         <TextInput className="mt-2" hideText={DBState.db.hideApiKey} marginBottom={false} bind:value={DBState.db.OaiCompAPIKeys[modelInfo.keyIdentifier]} placeholder="..."/>
     {/if}
 
     {#if subModelInfo.keyIdentifier && subModelInfo.keyIdentifier !== modelInfo.keyIdentifier}
-        <span class="text-textcolor">{subModelInfo.name} {language.apiKey}</span>
+        <span class="text-textcolor mt-4">{subModelInfo.name} {language.apiKey}</span>
         <TextInput className="mt-2" hideText={DBState.db.hideApiKey} marginBottom={false} bind:value={DBState.db.OaiCompAPIKeys[subModelInfo.keyIdentifier]} placeholder="..."/>
     {/if}
 
@@ -337,7 +337,7 @@
     {/if}
 
     {#if DBState.db.aiModel === "kobold" || DBState.db.subModel === "kobold"}
-        <span class="text-textcolor">Kobold URL</span>
+        <span class="text-textcolor mt-4">Kobold URL</span>
         <TextInput className="mt-2" marginBottom={true} bind:value={DBState.db.koboldURL} />
     {/if}
 
@@ -349,7 +349,7 @@
     {/if}
 
     {#if DBState.db.aiModel.startsWith("horde") || DBState.db.subModel.startsWith("horde") }
-        <span class="text-textcolor">Horde {language.apiKey}</span>
+        <span class="text-textcolor mt-4">Horde {language.apiKey}</span>
         <TextInput className="mt-2" hideText={DBState.db.hideApiKey} marginBottom={true} bind:value={DBState.db.hordeConfig.apiKey} />
     {/if}
     {#if DBState.db.aiModel === 'textgen_webui' || DBState.db.subModel === 'textgen_webui'
