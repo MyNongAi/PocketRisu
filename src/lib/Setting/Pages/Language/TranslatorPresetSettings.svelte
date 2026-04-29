@@ -165,6 +165,7 @@
     {@const preset = DBState.db.translatorPresets[DBState.db.translatorPresetId]}
     <span class="text-textcolor mt-4">{language.translationResponseSize}</span>
     <NumberInput
+        className="mt-2"
         min={0}
         max={2048}
         marginBottom={true}
@@ -175,6 +176,7 @@
     />
     <span class="text-textcolor mt-4">{language.translatorPrompt} <Help key="translatorPrompt" /></span>
     <TextAreaInput
+        className="mt-2"
         bind:value={() => preset.prompt, (value) => {
             preset.prompt = value;
             syncCurrentTranslatorPreset();

@@ -920,7 +920,7 @@
 {#if submenu === 1}
 <Accordion name="TTS" styled disabled>
     <span class="text-textcolor mt-2">Auto Speech</span>
-    <CheckInput bind:check={DBState.db.ttsAutoSpeech}/>
+    <CheckInput className="mt-2" bind:check={DBState.db.ttsAutoSpeech}/>
 
     <span class="text-textcolor mt-2">ElevenLabs API key</span>
     <TextInput className="mt-2" size="sm" marginBottom bind:value={DBState.db.elevenLabKey}/>
