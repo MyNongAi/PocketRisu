@@ -38,7 +38,6 @@
 <NumberInput
     className="mt-2"
     marginBottom={true}
-    size="sm"
     min={item.options?.min}
     max={item.options?.max}
     bind:value={localValue}
