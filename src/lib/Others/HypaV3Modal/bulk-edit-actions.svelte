@@ -82,7 +82,7 @@
         <!-- Resummarize Button -->
         <button
           class="px-4 py-2 rounded text-sm font-medium transition-colors {bulkEditState.selectedSummaries.size > 1
-            ? 'bg-green-600 hover:bg-blue-700 text-white'
+            ? 'bg-primary hover:bg-primary/90 text-white'
             : 'bg-zinc-600 text-zinc-400 cursor-not-allowed'}"
           onclick={onResummarize}
           disabled={bulkEditState.selectedSummaries.size < 2}
@@ -130,7 +130,7 @@
             value={bulkEditState.bulkSelectInput}
             oninput={handleBulkSelectInputChange}
             placeholder="1,3,5-8"
-            class="w-32 px-3 py-2 text-sm bg-zinc-800 border border-zinc-600 rounded-sm text-zinc-300 placeholder-zinc-500 focus:border-blue-500 outline-hidden"
+            class="w-32 px-3 py-2 text-sm bg-zinc-800 border border-zinc-600 rounded-sm text-zinc-300 placeholder-zinc-500 focus:border-borderc outline-hidden"
             onkeydown={handleBulkSelectKeydown}
           />
           <button
