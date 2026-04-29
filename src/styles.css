@@ -13,6 +13,7 @@
   --color-darkborderc: var(--risu-theme-darkborderc);
   --color-darkbutton: var(--risu-theme-darkbutton);
   --color-success: var(--risu-theme-success);
+  --color-primary: var(--risu-theme-primary);
 
   --color-primary-50: var(--risu-theme-primary-50);
   --color-primary-100: var(--risu-theme-primary-100);
@@ -182,6 +183,10 @@ body {
      of ColorScheme interface, so updateColorScheme() never overrides it.
      See .agent/guide/ui.md "시맨틱 토큰". */
   --risu-theme-success: #16a34a;
+  /* Primary — dynamic accent for "active/on" fills (toggle track, primary CTA).
+     Part of ColorScheme: updateColorScheme() overrides it per theme. The default
+     here is a fallback for the brief boot window before updateColorScheme runs. */
+  --risu-theme-primary: #5a9baa;
   --risu-height-size: 100%;
   --risu-font-family: Arial, sans-serif, serif;
 

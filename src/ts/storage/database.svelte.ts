@@ -389,6 +389,10 @@ export function setDatabase(data:Database){
     data.assetWidth ??= -1
     data.animationSpeed ??= 0.4
     data.colorScheme ??= safeStructuredClone(defaultColorScheme)
+    // Backfill `primary` for existing colorScheme objects saved before the
+    // primary token was added. Without this, custom-scheme users (whose object
+    // is preserved as-is) would render with an undefined CSS var.
+    data.colorScheme.primary ??= defaultColorScheme.primary
     data.colorSchemeName ??= 'default'
     data.NAIsettings.starter ??= ""
     data.hypaModel ??= 'MiniLM'

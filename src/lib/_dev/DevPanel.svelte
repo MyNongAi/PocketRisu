@@ -39,6 +39,7 @@
     import ShAlert from "src/lib/UI/GUI/ShAlert.svelte";
     import ShInput from "src/lib/UI/GUI/ShInput.svelte";
     import ShToggle from "src/lib/UI/GUI/ShToggle.svelte";
+    import ShSwitch from "src/lib/UI/GUI/ShSwitch.svelte";
     import { TriangleAlertIcon, InfoIcon, CheckCircleIcon, XCircleIcon } from "@lucide/svelte";
     import ShSelect from "src/lib/UI/GUI/ShSelect.svelte";
     import OptionInput from "src/lib/UI/GUI/OptionInput.svelte";
@@ -352,6 +353,10 @@ function hello(): string {
     let galleryToggle1 = $state(false);
     let galleryToggle2 = $state(true);
     let galleryToggle3 = $state(false);
+    let gallerySwitch1 = $state(false);
+    let gallerySwitch2 = $state(true);
+    let gallerySwitch3 = $state(false);
+    let gallerySwitch4 = $state(true);
     let galleryInputText = $state('');
     let gallerySelectValue = $state('option-2');
     // 긴 옵션 리스트 — 키보드 nav 스크롤-인-뷰 + 초기 열림 시 스크롤 점프 검증용.
@@ -516,10 +521,14 @@ function hello(): string {
                 <ShButton variant="outline">Outline</ShButton>
                 <ShButton variant="secondary">Secondary</ShButton>
                 <ShButton variant="ghost">Ghost</ShButton>
+                <ShButton variant="primary">Primary</ShButton>
                 <ShButton variant="destructive">Destructive</ShButton>
                 <ShButton variant="success">Success</ShButton>
                 <ShButton variant="link">Link</ShButton>
             </div>
+            <p class="text-xs text-textcolor2/60 mt-1">
+                Primary는 filled-solid 톤(테마별 동적 액센트). destructive/success의 muted 톤과는 의도적으로 차별화 — ShSwitch 트랙과 같은 풀 fill 강도를 공유합니다.
+            </p>
         </div>
 
         <!-- ShButton sizes -->
@@ -541,6 +550,32 @@ function hello(): string {
                 <ShToggle bind:pressed={galleryToggle2} variant="default">Default variant</ShToggle>
                 <ShToggle bind:pressed={galleryToggle3} size="sm">sm</ShToggle>
             </div>
+        </div>
+
+        <!-- ShSwitch -->
+        <div class="flex flex-col gap-1.5">
+            <span class="text-xs text-textcolor2">ShSwitch (checked → bg-primary)</span>
+            <div class="flex flex-wrap gap-4 items-center">
+                <label class="flex items-center gap-2 cursor-pointer select-none text-textcolor">
+                    <ShSwitch bind:checked={gallerySwitch1} />
+                    off → on
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer select-none text-textcolor">
+                    <ShSwitch bind:checked={gallerySwitch2} />
+                    on (default)
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer select-none text-textcolor">
+                    <ShSwitch bind:checked={gallerySwitch3} size="sm" />
+                    sm size
+                </label>
+                <label class="flex items-center gap-2 cursor-pointer select-none text-textcolor2">
+                    <ShSwitch bind:checked={gallerySwitch4} disabled />
+                    disabled (on)
+                </label>
+            </div>
+            <p class="text-xs text-textcolor2/60 mt-1">
+                checked 트랙은 ColorScheme.primary 색을 따릅니다 — 테마를 바꾸면 색도 바뀜.
+            </p>
         </div>
 
         <!-- ShBadge -->

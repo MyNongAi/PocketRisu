@@ -26,7 +26,7 @@
         >
             {tab.label}
             {#if selected === tab.value}
-                <span class="absolute bottom-0 left-0 right-0 h-0.5 bg-borderc"></span>
+                <span class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary"></span>
             {/if}
         </button>
     {/each}

@@ -3,7 +3,7 @@
     // desktop/mobile use (NodeOnly is also accessed via Tailscale on phones).
     // See .agent/guide/ui.md "Sh* sizing scale" for the rationale and the
     // coordination with ShInput / ShToggle / SelectInput.
-    export type ShButtonVariant = 'default' | 'outline' | 'secondary' | 'ghost' | 'destructive' | 'success' | 'link';
+    export type ShButtonVariant = 'default' | 'outline' | 'secondary' | 'ghost' | 'destructive' | 'success' | 'primary' | 'link';
     export type ShButtonSize = 'default' | 'xs' | 'sm' | 'lg' | 'icon' | 'icon-xs' | 'icon-sm' | 'icon-lg';
 </script>
 
@@ -55,6 +55,12 @@
         // text-red-400 choice. bg/border use the success token so themes can
         // shift the hue without re-touching this file.
         success:     'bg-success/20 text-green-400 border border-success/40 hover:bg-success/30',
+        // Primary: filled-solid (shadcn vega original pattern, NOT muted).
+        // Pairs with ShSwitch checked-track which is also a full bg-primary fill,
+        // so the visual weight matches when both appear in the same form. text
+        // uses textcolor; primary hues per theme are picked dark enough that the
+        // theme textcolor (mostly off-white) stays readable.
+        primary:     'bg-primary text-textcolor border border-transparent hover:bg-primary/90',
         link:        'bg-transparent text-borderc border-none underline-offset-4 hover:underline',
     };
 

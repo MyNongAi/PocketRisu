@@ -21,6 +21,7 @@
         ['darkbutton', 'Color 5'],
         ['textcolor', 'Text Color'],
         ['textcolor2', 'Text Color 2'],
+        ['primary', 'Primary (Accent)'],
     ] as const;
 </script>
 
@@ -46,13 +47,13 @@
 
         <div class="grow flex justify-end">
             <button
-                class="text-textcolor2 hover:text-green-500 mr-2 cursor-pointer"
+                class="text-textcolor2 hover:text-primary mr-2 cursor-pointer"
                 onclick={() => exportColorScheme()}
             >
                 <DownloadIcon size={18} />
             </button>
             <button
-                class="text-textcolor2 hover:text-green-500 cursor-pointer"
+                class="text-textcolor2 hover:text-primary cursor-pointer"
                 onclick={() => importColorScheme()}
             >
                 <HardDriveUploadIcon size={18} />
