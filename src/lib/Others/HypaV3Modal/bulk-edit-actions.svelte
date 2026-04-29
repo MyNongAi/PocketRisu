@@ -3,6 +3,8 @@
   import { DBState, selectedCharID } from "src/ts/stores.svelte";
   import type { BulkEditState, Category } from "./types";
   import { language } from "src/lang";
+  import ShSelect from "src/lib/UI/GUI/ShSelect.svelte";
+  import OptionInput from "src/lib/UI/GUI/OptionInput.svelte";
 
   interface Props {
     bulkEditState: BulkEditState;
@@ -92,15 +94,14 @@
       <!-- Right Side: Category, Important, Bulk Select, Clear -->
       <div class="flex items-center gap-2">
         <!-- Category Selection -->
-        <select
-          class="px-3 py-2 rounded-sm border border-zinc-600 bg-zinc-900 text-zinc-200 text-sm focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+        <ShSelect
           value={bulkEditState.selectedCategory}
           onchange={handleCategoryChange}
         >
           {#each categories as category}
-            <option value={category.id}>{category.name}</option>
+            <OptionInput value={category.id}>{category.name}</OptionInput>
           {/each}
-        </select>
+        </ShSelect>
 
         <!-- Apply Category Button -->
         <button
