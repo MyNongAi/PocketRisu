@@ -268,4 +268,532 @@ export const helpEn = {
             "Higher values use more chat context to determine similarity.",
         useNodeOnlyScrollButton:
             "Shows navigation buttons to jump between chat messages while scrolling. Buttons appear on scroll and fade out after 1.5 seconds.",
+        askRemoval:
+            "Show a confirmation dialog before deleting chats, characters, personas, presets, and similar items. When disabled, pressing the trash icon deletes immediately.",
+        instantRemove:
+            "When deleting one chat message, also delete every message after it. When off, only the selected message is deleted.",
+        confirmReroll:
+            "Ask for confirmation before regenerating a message. Enable this if you want protection against accidentally losing a response.",
+        sendWithEnter:
+            "Send the message with Enter. When disabled, Shift+Enter becomes the send shortcut and Enter inserts a newline.",
+        fixedChatTextarea:
+            "Keep the chat input area at a fixed height. When disabled, the input grows automatically as you type more lines.",
+        clickToEdit:
+            "Enter edit mode immediately when clicking a chat message. When disabled, use the separate edit button.",
+        enableBlockPartialEdit:
+            "Show per-block edit controls when hovering over a paragraph/block in a message. Useful when you only want to fix one part of a long response.",
+        longPressToPopupEditor:
+            "Open the popup editor when long-pressing a message. This is mainly for easier editing on mobile screens.",
+        enableDragPartialEdit:
+            "Allow editing only the text selected by dragging inside a message. Can be used together with block partial edit.",
+        botSettingAtStart:
+            "Open the bot settings page automatically whenever the app starts. Leave this off if you prefer going straight to chat.",
+        showMenuChatList:
+            "Show the current character's chat list directly in the sidebar menu. When off, the list is one level deeper.",
+        showMenuHypaMemoryModal:
+            "Show a sidebar button that opens the HypaMemory (HypaV3) management modal. Useful if you review long-term memory often.",
+        goCharacterOnImport:
+            "After importing a character card, switch to that character automatically. When off, you stay on the current screen.",
+        sideMenuRerollButton:
+            "Show a regenerate/reroll button in the chat side menu, in addition to the normal message controls.",
+        localActivationInGlobalLorebook:
+            "Allow global lorebooks to use local activation options such as activating only for the current character.",
+        requestInfoInsideChat:
+            "Allow LLM request information such as sent prompts and token counts to be displayed inside the chat area. Useful for debugging and prompt review.",
+        inlayErrorResponse:
+            "When a model request fails, show the error as an inlaid chat response. When off, errors are only shown as separate notifications.",
+        bulkEnabling:
+            "Show buttons in the lorebook editor for enabling or disabling multiple entries at once. Useful for large lorebooks.",
+        showTranslationLoading:
+            "Show a loading indicator while message translation is in progress. Helpful when using slow LLM-based translators.",
+        autoScrollToNewMessage:
+            "Automatically scroll to a newly arrived message. When off, the viewport stays put while you review older messages.",
+        alwaysScrollToNewMessage:
+            "Always scroll down when a new message arrives, even if you have manually scrolled upward. Only applies when auto-scroll is enabled.\n\nWhen off, Risu shows a \"new message\" button instead of stealing the scroll position.",
+        newMessageButtonStyle:
+            "Choose where and how the \"new message\" button appears. This matters when auto-scroll is enabled but always-scroll is disabled.\n\nOptions include bottom center, bottom right, bottom left, floating circle, right middle, and top bar.",
+        createFolderOnBranch:
+            "Automatically create a folder when branching a chat, grouping the original and branched chats together.",
+        hamburgerButtonBottom:
+            "Move the hamburger/menu button to the bottom of the sidebar. This can make one-handed use easier on mobile or small screens.",
+        enableRisuaiProTools:
+            "Enable RisuAI Pro Tools such as Easy Panel. Some NodeOnly features require this separate toggle.",
+        loreBookDepth:
+            "Number of previous messages to scan for lorebook activation keywords. `0` disables scanning; higher values can find older keywords but may activate unnecessary lore. (0-20)",
+        loreBookToken:
+            "Maximum number of tokens lorebook entries may occupy in one response. When the limit is exceeded, lower-priority entries are cut first. (0-4096)",
+        autoContinueMinTokens:
+            "Minimum token count for Auto Continue Chat. Responses shorter than this value will not trigger automatic continuation.",
+        descriptionPrefix:
+            "Prefix string added before the character description when sending it to the model. Leave blank to use the default. Change this only if you need a custom header or formatting style.",
+        assetMaxDifference:
+            "Allowed difference when matching dynamic asset names. Higher values match more loosely, but may pick the wrong asset. The default is usually best.",
+        heightMode:
+            "CSS unit used to measure chat screen height. If the mobile browser address bar cuts off the screen, try another unit (`svh`, `lvh`, `dvh`).\n\n- **Normal**: automatic (`100%`)\n- **Percent / VH**: traditional units, sometimes broken on mobile\n- **DVH**: dynamic viewport, changes with address-bar size\n- **SVH**: small viewport, safest visible area\n- **LVH**: large viewport, address bar hidden",
+        removeIncompleteResponse:
+            "Automatically remove responses that were cut off by a network error, token limit, or similar interruption. When off, truncated responses stay in chat so you can inspect or reroll them manually.",
+        newOAIHandle:
+            "Use the newer OpenAI response-handling path. Try this when a model or response breaks under the legacy handler. The default is recommended for normal use.",
+        noWaitForTranslate:
+            "Show the original message before automatic translation finishes. The translated result replaces or augments it when ready.",
+        newImageHandlingBeta:
+            "Use the newer inlay image handling path. This is beta behavior and may differ in some edge cases.",
+        allowAllExtentionFiles:
+            "Disable extension filtering in file pickers and allow every file type. Useful for importing character cards saved with unusual or incorrect extensions.",
+        dynamicModelRegistry:
+            "Fetch model lists dynamically from providers such as OpenRouter at runtime. When off, only the built-in static list is shown.",
+        disableSeperateParameterChangeOnPresetChange:
+            "Keep separate auxiliary parameters (memory, emotion, translation model settings, etc.) from following prompt preset changes. Enable when you want helper models fixed independently from presets.",
+        googleCloudTokenization:
+            "Use the Google Cloud / Vertex / Gemini tokenizer API to count tokens. More accurate, but may add API calls and cost. Experimental; shown only when experimental settings are enabled.",
+        localNetworkTimeoutSec:
+            "Maximum seconds to wait in Local Network Mode. Local LLMs can be slow to produce the first token, so 30 seconds or more is recommended. (30-3600)",
+        enableDevTools:
+            "Show developer tools for debugging chat and UI behavior. Most users can leave this off.",
+        promptTextInfoInsideChat:
+            "When prompt info inside chat is enabled, also store and display the actual prompt text sent to the model. This can make chats heavier, so use it mainly for debugging.",
+        returnCSSError:
+            "Show notification details when custom CSS compilation fails. When off, CSS errors are ignored silently.",
+        antiServerOverload:
+            "Automatically increase retry intervals when an API server responds as overloaded (for example 429 or 503). Helps reduce pressure on unstable providers.",
+        claude1HourCaching:
+            "Use Claude's 1-hour prompt cache TTL instead of the default 5-minute cache. This can save more cost for repeated contexts, but 1-hour cache pricing differs.",
+        claudeBatching:
+            "Use Claude Batch API to process requests in batches. Cheaper, but responses are not immediate and may take minutes to hours. Best for background work.",
+        rememberToolUsage:
+            "Keep tool-use results in chat so later responses can refer to them. When off, tool results are treated as one-off data.",
+        bookmark:
+            "Enable bookmarks on chat messages and collect them in the menu. Useful for finding important messages in long chats.",
+        simplifiedToolUse:
+            "Show tool-call results in a simplified chat-friendly format. Use this when raw tool output is too long or noisy.",
+        useTokenizerCaching:
+            "Cache token counts for repeated text instead of recalculating them. This improves performance in long chats and is generally safe to keep enabled.",
+        auxModelUnderModelSettings:
+            "Show auxiliary model settings directly below the main model settings, making it easier to compare and adjust both in one place.",
+        pluginDevelopMode:
+            "Enable plugin development helpers such as logs, reload behavior, and hot-reload support. Regular users should leave this off.",
+        unrecommendedNewGoogleTrans:
+            "Use the new experimental Google Translate path. It may be faster than the old path, but can break in some cases.",
+        unrecommendedClaudeCachingRetrival:
+            "Try reusing cached Claude responses for repeated requests. Cache invalidation is tricky and can return unintended results, so this is not recommended.",
+        lightningRealmImport:
+            "Use a faster import path when importing characters from RisuRealm while account sync is enabled. Experimental.",
+        unrecommendedTriggerV1:
+            "Allow adding and editing Trigger V1. Trigger V1 is deprecated; use V2/V3 for new work. Keep this only for legacy V1 compatibility.",
+        theme:
+            "Overall chat layout theme.\n\n- **NodeOnly Standard**: default NodeOnly design\n- **Standard Risu**: original RisuAI layout\n- **Waifulike**: character-art-focused layout with side character visuals\n- **Mobile Chat**: mobile chat style\n- **CardBoard**: card-style layout\n- **Custom HTML**: use the custom Chat HTML below",
+        waifuWidth:
+            "Width of the character illustration in the Waifulike theme (50-200%). `100%` is the default. Only shown for Waifulike.",
+        waifuWidth2:
+            "Width of the second character or secondary visual in the Waifulike theme (20-150%). Set close to 0 if you want to hide it for a single-character setup.",
+        colorScheme:
+            "Color palette used across the Risu UI (background, text, accents). Independent of the Theme (layout) option above. Pick **Custom** to define your own colors in the editor that appears below.",
+        textColor:
+            "Message text color theme.\n\n- **Classic Risu**: classic tone\n- **High Contrast**: readability first\n- **Custom**: use custom colors",
+        font:
+            "Message font.\n\n- **Default**: system default\n- **Times New Roman**: useful for English-heavy text\n- **Custom**: use the custom font name field below",
+        customFont:
+            "Font name to use. Enter an installed system font or web font family name, such as `Pretendard` or `Noto Sans KR`.",
+        UISize:
+            "Global UI zoom scale (50-200%). `100%` is the default. Increase for mobile or accessibility; very large values reduce available width.",
+        lineHeight:
+            "Line height for message text (0.5-3). Larger values are easier to read but fit less text on screen.",
+        iconSize:
+            "Character/persona icon size (50-200%). Increase if icons are hard to see, decrease to save screen space.",
+        textAreaSize:
+            "Size step for the chat input area (-5 to +5). `0` is default. Larger values show more input text; smaller values leave more room for chat.",
+        textAreaTextSize:
+            "Text size step inside the chat input (0-3). Larger text is easier to read, smaller text fits more content.",
+        sideBarSize:
+            "Sidebar width step (0-3). `0` is narrowest, `3` is widest. Small values are good for mobile; `1` or `2` suits many desktops.",
+        assetWidth:
+            "Maximum width for in-chat asset images (`{{image::...}}`) in rem units.\n\n- **-1**: unlimited, use original image size\n- **0**: hide\n- **1-40**: cap maximum width\n\nUse this to prevent large images from overwhelming the chat.",
+        animationSpeed:
+            "UI animation speed multiplier (0-1). `0` makes transitions instant; `1` is default. Lower this on slow devices or if animations feel distracting.",
+        memoryLimitThickness:
+            "Thickness in pixels of the memory-limit line shown when Show Memory Limit is enabled (1-500). The line visualizes the max-context cutoff in chat.",
+        fullscreen:
+            "Switch the browser into fullscreen mode. On mobile, this can hide browser UI such as the address bar and give the chat more space.",
+        showMemoryLimit:
+            "Show the current max-context limit as a visual line in the chat area. Messages above the line may not be sent to the model, so this helps show what the model can still remember.",
+        hideRealm:
+            "Hide RisuRealm entry points such as the sidebar gallery link. Useful if you do not use external character discovery and want a lighter menu.",
+        showFolderNameInIcon:
+            "Show folder names on folder icons in the character grid. Makes large folder collections easier to scan.",
+        customBackground:
+            "Use a custom image as the chat background. Enabling this opens a file picker; turning it off removes the custom background.",
+        playMessageOnTranslateEnd:
+            "Play a separate notification sound when translation finishes. Useful when automatic translation is enabled and you want an audible completion cue.",
+        roundIcons:
+            "Display character and persona icons as circles instead of squares.",
+        textScreenColor:
+            "Set a background color behind the message text area. Disable it to make the text area transparent again.",
+        textBorder:
+            "Draw a subtle outline around message text to improve readability over background images.",
+        textScreenRound:
+            "Round the corners of the message text area. Most visible on themes with text backgrounds or borders.",
+        showSavingIcon:
+            "Show a small saving indicator while data is being saved. Helpful on pages where frequent saves happen.",
+        showPromptComparison:
+            "Show the built prompt in the prompt-comparison modal. Useful for debugging prompts or reducing token usage.",
+        textScreenBorder:
+            "Set the outline color around the chat text area. Disable it to remove the outline.",
+        useChatCopy:
+            "Show a copy button next to each message. When off, copy through the message menu instead.",
+        useAdditionalAssetsPreview:
+            "Show thumbnail previews in the character additional-assets list. Large asset collections may load a bit more slowly.",
+        hideApiKeys:
+            "Mask API key input fields in settings. Useful when sharing your screen or taking screenshots.",
+        unformatQuotes:
+            "Disable the default quote formatting such as italics or colors and render quotes as normal text. Enable if your text already includes its own formatting.",
+        blockquoteStyling:
+            "Render Markdown `>` blockquotes with the styled quote design. When off, they appear as plain indented text.",
+        customQuotes:
+            "Automatically replace single and double quote marks with custom characters. Useful for forcing language-specific quote marks.",
+        customQuotesDoubleLeading:
+            "Character to use at the start of double quotes. Examples: `\"`, `“`, `「`, `«`.",
+        customQuotesDoubleTrailing:
+            "Character to use at the end of double quotes. Examples: `\"`, `”`, `」`, `»`.",
+        customQuotesSingleLeading:
+            "Character to use at the start of single quotes. Examples: `'`, `‘`, `『`.",
+        customQuotesSingleTrailing:
+            "Character to use at the end of single quotes. Examples: `'`, `’`, `』`.",
+        menuSideBar:
+            "Use an always-visible sidebar menu instead of the classic hamburger menu. Useful on wider screens for faster navigation.",
+        notification:
+            "Enable browser notifications for new messages. Your browser may ask for permission the first time; if permission is denied, the option is turned back off.",
+        unrecommendedChatSticker:
+            "Enable the old chat-sticker feature. This is no longer recommended and may be removed in a future version.",
+        UiLanguage:
+            "Risu UI display language. Close the settings once after changing it so the new language fully applies.\n\n- **[Translate in your own language]** downloads the current language JSON so you can translate it and send it to the developer for inclusion.",
+        translatorLanguage:
+            "Language to translate character responses into. This is the output language, not your source language. Choose `Disabled` to turn translation off.",
+        translatorType:
+            "Translation engine to use.\n\n- **Google**: free, fast, acceptable quality for supported languages\n- **DeepL**: natural output, requires free or paid key\n- **Ax. Model**: LLM translation through the auxiliary model, most natural but slower and costs tokens\n- **DeepL X**: self-hosted DeepL-compatible proxy\n- **Firefox**: browser built-in Bergamot translation, downloads local models",
+        deeplKey:
+            "DeepL API auth key from https://www.deepl.com/account. Free keys require the DeepL Free toggle below because they use a different endpoint.",
+        deeplFreeKey:
+            "Use a DeepL Free key. Free keys are routed to the `*-free.com.deepl.com` endpoint. Turn this off for Pro keys.",
+        deeplXUrl:
+            "URL of your self-hosted DeepL X / DeepL-compatible translation server, such as `https://my-server.com/translate`.",
+        deeplXToken:
+            "Auth token for your DeepL X server. Leave blank if the server does not require authentication.",
+        sourceLanguage:
+            "Choose whether Google Translate should auto-detect the source language or assume a fixed source language. Auto is usually best, but fixing it can help short messages that get misdetected.",
+        htmlTranslation:
+            "When using the Firefox/Bergamot translator, translate HTML markup too. Turn this off if markup breaks and you only want plain text translated.",
+        autoTranslation:
+            "Automatically translate character responses as soon as they arrive. When off, use the per-message translate button. Pairs well with No Wait For Translate if you want the original shown first.",
+        translationResponseSize:
+            "Maximum response tokens to request during LLM translation. Too low can cut long translations; too high increases cost. 1000-4000 is common.",
+        translatorPreset:
+            "LLM translation preset to edit and use. Each preset stores its own response-size limit and translation prompt, so switching presets changes the fields below.",
+        postEndInnerFormat:
+            "Format appended to model input when a character response ends in group chat. Leave blank to disable. Helps the model recognize the next speaker turn, for example `\\n[end_of_turn]\\n`.",
+        maxThoughtTagDepth:
+            "Maximum allowed depth for nested thought tags such as `<thought>...</thought>` in model output. Deep thoughts can waste tokens; `1` to `3` is usually enough. `0` disables thought-tag handling.",
+        predictedOutput:
+            "OpenAI Predicted Outputs content. Tells the model what the response is expected to start with so generation can be faster. Useful for low-variance tasks such as code edits; usually minor for roleplay.",
+        moduleName:
+            "Display name of the module. This is for humans in the UI; references between modules and characters use the namespace below.",
+        moduleDescription:
+            "A note describing the module. It is shown only in the UI and is not sent to the model.",
+        moduleHideChatIcon:
+            "Hide this module's icon in chats where the module is applied. Useful for keeping the UI clean when many modules are active.",
+        moduleBackgroundEmbedding:
+            "Background HTML/CBS attached to this module. When the module is active, it is applied to the chat background. See the global Background HTML help for syntax.",
+        moduleRegexList:
+            "Regex scripts attached to this module. See the global Regex Script help for syntax and behavior.",
+        moduleAdditionalAssets:
+            "Additional assets bundled with this module. They can be referenced by module background HTML, regex scripts, triggers, and prompts.",
+        googleAIKey:
+            "API key from Google AI Studio (https://aistudio.google.com). Used for direct Gemini API calls. For enterprise Vertex AI, fill in the Vertex fields below instead.",
+        vertexProjectId:
+            "Google Cloud project ID for Vertex AI. The service account used must have Vertex AI permissions on this project.",
+        vertexClientEmail:
+            "Service account email used for Vertex authentication (`...@<project>.iam.gserviceaccount.com`). Copy from your service account JSON key file.",
+        vertexPrivateKey:
+            "The `private_key` value from your service account JSON key file. Paste the full `-----BEGIN PRIVATE KEY-----` ... `-----END PRIVATE KEY-----` block. This is highly sensitive — be careful when sharing backups.",
+        vertexRegion:
+            "Region to send Vertex AI requests to. `global` auto-routes; for US users `us-central1` or `us-west1` are common. Pick a region that matches any data residency requirements you have.",
+        novellistKey:
+            "API key for NovelList (the Korean AI Novelist service). The model lineup and access rules change frequently — check NovelList's own guidance before use.",
+        mancerKey:
+            "API key for Mancer. Required when using open-source models hosted on Mancer (https://mancer.tech/).",
+        claudeApiKey:
+            "Anthropic API key (starts with `sk-ant-`). Get one at https://console.anthropic.com/settings/keys.\n\nIf you've selected an AWS Bedrock model, this key is not used — Bedrock auth is configured separately.",
+        mistralKey:
+            "Mistral AI API key from https://console.mistral.ai/api-keys/. Only needed for direct Mistral calls. If you reach Mistral models through another provider (e.g. OpenRouter), leave this blank.",
+        novelaiToken:
+            "Bearer token for the NovelAI API. NovelAI does not expose an official API-key page — extract the token via your browser's dev tools after signing in, or use a helper tool.",
+        proxyAPIKey:
+            "API key the reverse proxy expects for authentication. Leave blank if your proxy doesn't require one. The value is sent as `Authorization: Bearer <key>`.",
+        proxyRequestModel:
+            "Model name to send to the proxy. Some OpenAI-compatible proxies use their own naming conventions, so paste the exact model id the proxy expects (e.g. `gpt-4o`, `claude-3-5-sonnet-20241022`).",
+        proxyFormat:
+            "Request body format for the reverse proxy.\n\n- **OpenAI Compatible**: most common, OpenAI Chat Completions shape\n- **OpenAI Response API**: the new Response API (only on supporting models)\n- **Anthropic**: Claude API shape\n- **Mistral**: Mistral's own format\n- **Google Cloud**: Vertex / Gemini\n- **Cohere**: Cohere's own format\n\nPick whichever the proxy accepts. If unsure, start with OpenAI Compatible.",
+        cohereKey:
+            "Cohere API key (https://dashboard.cohere.com/api-keys). Required when using Cohere's own models such as `command-r`.",
+        ollamaURL:
+            "URL of your local or remote Ollama server (e.g. `http://localhost:11434`). Pairs well with NodeOnly's local-network mode for stable access to private LAN LLMs.",
+        ollamaModel:
+            "Model name to call on the Ollama server. Run `ollama list` to see installed models and copy the name verbatim (e.g. `llama3:8b`).",
+        nanogptKey:
+            "API key for NanoGPT (https://nano-gpt.com). NanoGPT supports both pay-per-message and subscription billing — if you're on a subscription plan, also enable the toggle below.",
+        nanoGPTUseSubscriptionEndpoint:
+            "Enable this if you're on a NanoGPT subscription plan. Requests are routed to the subscription endpoint instead of pay-per-message, so they don't draw down your prepaid balance. Non-subscribers will get rejected requests with this on.",
+        nanogptModelMode:
+            "How to choose the NanoGPT model. **Select from List** picks from a dropdown of popular models NanoGPT exposes; **Manual Input** lets you type a model id directly (useful for niche or newly added models).",
+        nanogptManualModel:
+            "Model id to send to NanoGPT. Copy the exact id from NanoGPT's model list page.",
+        openrouterKey:
+            "OpenRouter API key (https://openrouter.ai/keys). One key gives you access to models from many providers; usage is billed against your OpenRouter balance.",
+        openrouterModel:
+            "Model to call through OpenRouter. The grid shows popular models — use the search to narrow down. Pricing and context limits vary per model, so check before committing.",
+        tokenizer:
+            "Tokenizer used to count tokens. Picking one that doesn't match the actual model can make the max-context limit and the displayed token usage drift apart, so choose the tokenizer that matches your model.",
+        koboldURL:
+            "URL of your Kobold / KoboldCpp server (e.g. `http://localhost:5001`). You need to be running a KoboldCpp instance separately.",
+        echoMessage:
+            "The Echo model doesn't call any LLM — it just returns whatever you put here. Useful for testing UI flow or debugging prompts without spending tokens.",
+        echoDelay:
+            "Delay (in seconds) before the Echo model returns its response. Handy for testing streaming and loading UI behavior.",
+        hordeKey:
+            "API key for AI Horde (https://stablehorde.net). You can use Horde anonymously, but priority is low and responses are slow. Setting a key lets you spend (and earn) your own kudos.",
+        textgenBlockingURL:
+            "Synchronous (blocking) API endpoint for TextGen WebUI. The WebUI must be launched with the `--api` flag (e.g. `https://server.local/api/v1/generate`).",
+        textgenStreamURL:
+            "Streaming WebSocket endpoint for TextGen WebUI. Lets responses arrive token by token. Leave blank to disable streaming.",
+        streaming:
+            "Display the model's response token-by-token in real time (only on models that support it). When off, the full response appears all at once after generation finishes, which can feel slightly slower.",
+        streamGeminiThoughts:
+            "Also stream Gemini's `thinking` tokens in real time. Only meaningful when streaming is on and the chosen Gemini model supports thinking.",
+        reverseProxyOobaMode:
+            "Enable this when your reverse proxy uses an Oobabooga-style generate endpoint. Requests are routed through the Ooba code path instead of OpenAI Chat Completions.",
+        textAdventureNAI:
+            "Call NovelAI in text-adventure mode. Output takes on an adventure-game tone — only meaningful for the NovelAI models that support this mode.",
+        appendNameNAI:
+            "Automatically inject the character/persona name into the NovelAI prompt. Off sends just the body without the name.",
+        customPlugin:
+            "Custom models are powered by a plugin. Pick the plugin provider that should generate responses. If the plugin is disabled the response will come back empty.",
+        maxContextSize:
+            "Maximum input tokens to send to the model. Going over the model's own limit (e.g. 128K for GPT-4o) causes errors, so keep it within bounds. Larger values increase input cost.",
+        maxResponseSize:
+            "Maximum output tokens for a single response. Too low and replies get cut off; too high costs more and can let the model ramble. 256–1024 covers most cases.",
+        seed:
+            "Seed for deterministic output. Same input + same seed ≈ same response. Use it to remove variance when comparing prompts. Only honored on OpenAI / reverse-proxy / OpenRouter models.",
+        thinkingType:
+            "Claude thinking mode.\n\n- **Off**: no thinking (faster and cheaper)\n- **Budget (Manual Tokens)**: spend up to the \"Thinking Tokens\" amount on thinking\n- **Adaptive**: Claude adjusts its thinking budget to the difficulty of the task (newest Claude models only)",
+        thinkingTokens:
+            "Maximum tokens to spend on thinking when in Budget mode. Raise it for harder reasoning, lower it to save cost. `-1` uses the model default.",
+        adaptiveThinkingEffort:
+            "Effort level Claude applies in Adaptive mode.\n\n- **Low**: fast, simple tasks\n- **Medium**: general use\n- **High**: complex reasoning or coding\n- **Max**: maximum effort, with the cost and latency to match",
+        topK:
+            "Limit candidate tokens to the top K most likely. Lower values feel conservative and repetitive; higher values pull in more variety. Around 40 is a common middle ground. Not all models honor this.",
+        minP:
+            "Drop tokens whose probability falls below this fraction of the most likely token's probability. Around 0.05–0.1 is typical. More adaptive than Top P, which is why it's gained popularity.",
+        topA:
+            "Dynamically clip candidates based on the squared probability (or a fraction) of the top token. `0` disables it. Used by NovelAI and some local models.",
+        repetitionPenalty:
+            "Lowers the probability of tokens that have already appeared. `1.0` is neutral; `1.1` is a typical light penalty. Push it too high and the model will avoid even natural repetitions, sounding stilted.",
+        reasoningEffort:
+            "For OpenAI o-series reasoning models. Controls how much effort goes into reasoning.\n\n- **-1**: model default\n- **0–2**: low / medium / high (deeper reasoning is slower and more expensive)",
+        verbosity:
+            "Response-length control on some OpenAI models. `0` is concise, `2` is long-form. Only meaningful on models that support it.",
+        promptPreprocess:
+            "Append an extra prompt (the `additionalPrompt` setting, default \"The assistant must act as {{char}}. user is {{user}}.\") to the end of the main prompt. Helps lock in roleplay context. When off, only the raw main prompt is sent.",
+        usePromptTemplate:
+            "Use a custom prompt template (Settings → Prompt Template) instead of the four prompt fields above (main / jailbreak / note / order). Templates allow more sophisticated prompt composition but have a steeper learning curve.",
+        customFlags:
+            "Force capability flags on the current model. For example, even if the model doesn't natively report image input support, turning on `hasImageInput` makes the system assume it does. Useful for compatibility shims and workarounds — set the wrong flag and requests will break.",
+        enableCustomFlags:
+            "Whether the custom flags above actually take effect. When off, the configured flags are stored but not applied.",
+        tools:
+            "Tools the model is allowed to call mid-response (search, function calls, …). The model itself must support tool use, and only some providers honor it.",
+        searchTool:
+            "Allow the model to call an external search tool while generating its response. This can improve factual accuracy at the cost of extra tokens and latency. Requires a tools-capable model.",
+        botRegexScript:
+            "Regex scripts that apply only to this bot configuration, in addition to global regex scripts. See the global regex script help for syntax details.",
+        botIcon:
+            "Default icon for this bot configuration. Independent of the character card's icon — used as the assistant message icon.",
+        botPromptTemplate:
+            "Pick a prompt template. Templates allow more elaborate prompt construction than the main / jailbreak / note fields. Only active when \"Use Prompt Template\" is enabled.",
+        personaName:
+            "Name of the current persona. This fills the `{{user}}` variable in chats and is the name the character uses to address you.",
+        personaNote:
+            "A memo / identifier for this persona (only shown when Advanced → personaNote is enabled). Useful for distinguishing multiple personas that share the same display name.",
+        personaDescription:
+            "Persona information. Embedded into the system prompt sent to the model so it recognizes who the user is. Example: \"<user> is a 20 year old woman who normally speaks calmly.\"",
+        personaLargePortrait:
+            "Themes such as Waifulike will display a large portrait instead of the persona icon. Use when you want to show a full-body illustration of the persona.",
+        openRouterFallback:
+            "When the selected model is temporarily unavailable, OpenRouter automatically routes the request to a compatible fallback model. Improves reliability. Turn off to surface the original error instead.",
+        openRouterMiddleOut:
+            "OpenRouter's context compression feature. For requests that exceed the model's max context, middle messages are auto-summarized. Some models do not support this.",
+        useInstructPrompt:
+            "Send the request to OpenRouter using the instruct format instead of Chat Completions. Turn on when you want to call a base / instruct model raw.",
+        chatFormating:
+            "Chat template for instruct models. The template must match the format the model was trained on, otherwise responses break.\n\n- **ChatML**: OpenAI / Qwen family (`<|im_start|>` tokens)\n- **Llama2 / Llama3**: Meta Llama family\n- **Gemma / Mistral / Vicuna / Alpaca / GPT2**: each model's official format\n- **Custom (Jinja)**: write your own Jinja template\n\nIf responses look broken with a proxy or local model, switch to the format the model was actually trained on.",
+        jinjaTemplate:
+            "Jinja template source. The safest approach is to copy the model card's `chat_template` verbatim. Use `{{ messages }}`, `{{ bos_token }}` etc. to tokenize the message array. (Only shown when `Custom (Jinja)` is selected.)",
+        customStopWords:
+            "Use stop strings. The model's response is cut as soon as one of these strings appears. Useful for blocking patterns where the character impersonates the next speaker (e.g. `{{user}}: ...`).",
+
+        memType:
+            "Long-term memory mode.\n\n- **None**: disabled (chat is sent as-is up to the max context limit)\n- **HypaV3**: RisuAI's long-term memory that auto-summarizes and retrieves older chat to inject into the context. Slightly more cost / latency, but consistency in long chats improves a lot.",
+        hypaV3SummaryModel:
+            "Model used to summarize chat.\n\n- **subModel**: use the auxiliary model (most common)\n- **Qwen3 4B/14B**: free local summarization (runs in the browser or Node instance directly, downloads on first use)\n\nUsing a lighter model than the main model saves cost.",
+        hypaV3Preset:
+            "HypaV3 settings preset. Save and load groups of frequently used settings; switching presets also swaps every ratio / model option above.",
+        embeddingOpenAIKey:
+            "API key used when an OpenAI embedding model is selected. Set this only if you want to manage embedding cost separately from the main-model key. If empty, the main OpenAI key is reused.",
+        embeddingCustomURL:
+            "OpenAI-compatible endpoint URL of a custom embedding model. Use this when you self-host or run an open-source embedding server.",
+        embeddingCustomKey:
+            "Auth key for the custom embedding server. Leave blank if your server does not require auth.",
+        embeddingCustomModel:
+            "Model name to send to the custom endpoint, exactly as the server expects (e.g. `nomic-embed-text-v1.5`).",
+        embeddingVoyageKey:
+            "Voyage AI API key (`https://www.voyageai.com/`). Required when the embedding model is set to voyageContext3 etc.",
+
+        ttsAutoSpeech:
+            "Automatically play the character's response as speech when it arrives. Mobile browsers may block this in the background — after enabling, tap the screen once to grant permission.",
+        ttsElevenLabsKey:
+            "ElevenLabs (`https://elevenlabs.io`) API key. Provides the most natural-sounding voices, with a small free tier and paid plans.",
+        ttsVoicevoxUrl:
+            "URL of a locally running VOICEVOX (`https://voicevox.hiroshiba.jp/`) engine (e.g. `http://localhost:50021`). Strong on Japanese synthesis.",
+        ttsOpenAIKey:
+            "OpenAI TTS API key. The same key as your main OpenAI key works, but use a separate one if you want to track TTS spend separately.",
+        ttsNAIKey:
+            "API key for NovelAI voice synthesis. Same as the regular NovelAI Bearer token.",
+        ttsHuggingfaceKey:
+            "HuggingFace Inference API key. Required to call HuggingFace's free or paid TTS models.",
+        ttsFishSpeechKey:
+            "Fish-speech (`https://fish.audio/`) API key. Provides natural-sounding multi-speaker voices.",
+
+        emotionMethod:
+            "Method used to detect emotion in the character's response and pick the matching emotion image.\n\n- **Ax. Model**: ask the auxiliary LLM to classify the emotion (high accuracy, small cost)\n- **MiniLM-L6-v2**: local embedding-based classifier (free, fast, lower accuracy)\n\nThe emotion images themselves work only after you register emotion assets on the character card.",
+
+        webuiUrl:
+            "URL of an AUTOMATIC1111 or compatible WebUI (e.g. `http://localhost:7860`). The WebUI must be launched with the `--api` flag.",
+        webuiSteps:
+            "Sampling steps. 20–50 is typical. More steps slightly improve quality but linearly increase generation time. (0–100)",
+        webuiCFG:
+            "Prompt adherence (CFG). Lower = freer interpretation, higher = forced match to the prompt. Around 7 is a common middle ground. (0–20)",
+        webuiWidth:
+            "Image width in pixels. Use 1024 as a baseline for SDXL and 512 for SD1.5. Non-standard resolutions can hurt quality.",
+        webuiHeight:
+            "Image height in pixels. Use 1024 as a baseline for SDXL and 512 for SD1.5. Non-standard resolutions can hurt quality.",
+        webuiSampler:
+            "Sampler name. Type the exact name supported by your WebUI (e.g. `Euler a`, `DPM++ 2M Karras`).",
+        webuiEnableHr:
+            "Use Hires fix. Generates at a smaller resolution first, then upscales and re-denoises to add detail. Roughly doubles generation time.",
+        webuiDenoising:
+            "Strength of the re-denoise pass during Hires fix. Lower stays close to the original; higher adds more detail but drifts further. 0.4–0.6 is a typical range.",
+        webuiHrScale:
+            "Upscale ratio used during Hires fix (e.g. 2 = 2×). Memory and time cost scale linearly.",
+        webuiUpscaler:
+            "Upscaler name (e.g. `Latent`, `R-ESRGAN 4x+`, `4x-UltraSharp`). Use a name available in your WebUI's settings.",
+
+        naiImgUrl:
+            "NovelAI image generation endpoint. Rarely needs to be changed from the default — leave blank to use it.",
+        naiImgKey:
+            "NovelAI Bearer token. Same as the token used for the text models.",
+        naiModel:
+            "NovelAI image model to use. Newer models look better and cost slightly more (Anlas drawn from your subscription plan).",
+        naiWidth:
+            "Image width. NAI recommends predefined resolutions like 832×1216.",
+        naiHeight:
+            "Image height. NAI recommends predefined resolutions like 832×1216.",
+        naiSampler:
+            "Sampler supported by the selected model. Refer to NovelAI's official guide for per-model recommended samplers.",
+        naiNoiseSchedule:
+            "Noise schedule. Most setups use `native` (model recommended) or `karras`. Other options require model compatibility checks.",
+        naiSteps:
+            "Sampling steps. NAI recommends around 28. Going much higher just increases Anlas cost.",
+        naiCFG:
+            "Prompt adherence (CFG). 5–7 is typical for NAI; the recommended value varies by model.",
+        naiCFGRescale:
+            "CFG rescale correction. 0 disables; 0.5–0.7 is typical. Helps with color / contrast on some models.",
+        naiImageReference:
+            "Image reference mode.\n\n- **None**: text only\n- **Vibe Transfer**: borrow the mood of the reference image\n- **Character Reference**: borrow the character from the reference image (NAI Diffusion 4-5 only)",
+        naiVibeModel:
+            "NAI model used to extract the Vibe Transfer encoding. Usually pick the same model you generate with.",
+        naiInfoExtracted:
+            "What kind of information to extract from the reference (overall vibe / colors only / composition etc).",
+        naiRefStrength:
+            "Reference strength. Low = subtle borrowing, high = near-replica. 0.5–0.8 is a good range.",
+        naiStyleAware:
+            "Style-aware mode. With Character Reference, also matches the character's style more strongly.",
+        naiUseSMEA:
+            "Use SMEA (Smea) sampling. Improves detail on some NAI models.",
+        naiUseDYN:
+            "Use Dynamic Thresholding (DYN). Helps with color and exposure balance.",
+        naiVarietyPlus:
+            "Variety+ mode. Produces more varied results from the same prompt.",
+        naiDecrisp:
+            "Decrisp mode. Softens excessive sharpness (effect varies by model).",
+        naiLegacyUC:
+            "Use the legacy unconditional (negative-prompt) handling. Only meaningful on NAI Diffusion 4 full / curated models.",
+        naiEnableI2I:
+            "Enable image-to-image. Generate variations based on a reference image.",
+
+        dalleKey:
+            "OpenAI API key for Dall-E. The same key used for text models works.",
+        dalleQuality:
+            "Image quality (`standard` / `hd`). HD costs roughly 2× more.",
+
+        stabilityKey:
+            "Stability Platform API key (`https://platform.stability.ai/`).",
+        stabilityModel:
+            "Stability model to use (`ultra` / `core` / `sd3-large` / `sd3-medium`). Ultra is the most expensive and highest quality; Core is fast and cheap.",
+        stabilityCoreStyle:
+            "Style preset for the SD Core model (Photographic / Anime / 3D Model etc). Ignored on other models.",
+
+        comfyUrl:
+            "URL of your local ComfyUI server (e.g. `http://localhost:8188`).",
+        comfyTimeout:
+            "Maximum seconds to wait for a ComfyUI response. Use a longer value for complex workflows. (1–120)",
+
+        falKey:
+            "Fal.ai API key (`https://fal.ai/dashboard/keys`). Used to call Flux models.",
+        falWidth:
+            "Recommended Flux width. Same idea as SDXL — 1024×1024 or 16:9 aspect ratios are recommended.",
+        falHeight:
+            "Recommended Flux height. Same idea as SDXL — 1024×1024 or 16:9 aspect ratios are recommended.",
+        falModel:
+            "Which Flux variant to use. **dev** = standard, **dev+lora** = LoRA-applied, **pro** = high quality, **schnell** = fast and cheap.",
+        falLoraWeight:
+            "LoRA application strength. 0 = ignored, 1 = fully applied. Above 1.2 results tend to break.",
+
+        imagenKey:
+            "Google AI Studio API key. The same key as your main Gemini key works.",
+        imagenModel:
+            "Imagen model to use (version 3 / 4 etc). Newer versions produce higher quality.",
+        imagenImageSize:
+            "1K / 2K. 2K costs more and is supported only on some models.",
+        imagenAspectRatio:
+            "1:1, 4:3, 16:9 and so on. Quality may suffer outside the model's recommended ratios.",
+        imagenPersonGeneration:
+            "Person-generation policy.\n\n- **allow_all**: all people\n- **allow_adult**: adults only\n- **dont_allow**: no people\n\nPrompts that don't match the policy may be rejected.",
+
+        oaiImgUrl:
+            "URL of an OpenAI-compatible image API. Must follow a standard path like `/v1/images/generations`.",
+        oaiImgKey:
+            "API key. If your server doesn't require auth, you can put any value here.",
+        oaiImgModel:
+            "Name of the image model registered on the server (exactly as the server expects).",
+        oaiImgSize:
+            "Image size. Only sizes supported by the server work.",
+        oaiImgQuality:
+            "Quality option. Only meaningful when the server supports a `quality` parameter.",
+
+        waveKey:
+            "WaveSpeed.ai API key (`https://wavespeed.ai/`). A fast, low-cost image generation router.",
+        waveModel:
+            "WaveSpeed model to use. Use the \"Refresh Models\" button above to refresh the available list, and the search box to narrow it down.",
+        waveLoras:
+            "Register up to 3 LoRA URLs and weights. Applied only when the model supports LoRA.",
+        waveImageReference:
+            "Reference image mode (None / Upload / Use Character Image). Works only when the model supports image input.",
 }
