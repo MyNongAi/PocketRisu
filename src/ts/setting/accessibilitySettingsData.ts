@@ -214,6 +214,14 @@ export const accessibilitySettingsItems: SettingItem[] = [
         keywords: ['hamburger', 'button', 'bottom', 'menu', 'sidebar', 'accessibility'],
     },
     {
+        id: 'acc.hideLeftBarCollapseButton',
+        type: 'check',
+        labelKey: 'hideLeftBarCollapseButton',
+        bindKey: 'hideLeftBarCollapseButton',
+        helpKey: 'hideLeftBarCollapseButton',
+        keywords: ['left', 'bar', 'collapse', 'toggle', 'mobile', 'sidebar', 'hide'],
+    },
+    {
         id: 'acc.enableRisuaiProTools',
         type: 'check',
         labelKey: 'enableRisuaiProTools',

@@ -1408,6 +1408,7 @@ export const languageKorean = {
         "cancel": "취소",
     },
     "hamburgerButtonBottom": "메뉴 버튼을 사이드바 하단으로 이동",
+    "hideLeftBarCollapseButton": "메뉴바 접기 버튼 숨기기",
     "toggleBindingLabel": "토글 바인딩",
     "togglePinToChat": "채팅에 토글 바인드",
     "togglePinLabel": "토글 바인드",

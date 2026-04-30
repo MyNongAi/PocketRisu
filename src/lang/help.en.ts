@@ -316,6 +316,8 @@ export const helpEn = {
             "Automatically create a folder when branching a chat, grouping the original and branched chats together.",
         hamburgerButtonBottom:
             "Move the hamburger/menu button to the bottom of the sidebar. This can make one-handed use easier on mobile or small screens.",
+        hideLeftBarCollapseButton:
+            "Hide the toggle button that collapses the left character grid bar on narrow screens (under 400px). Enable this if you prefer to keep the left bar always visible on mobile.",
         enableRisuaiProTools:
             "Enable RisuAI Pro Tools such as Easy Panel. Some NodeOnly features require this separate toggle.",
         loreBookDepth:

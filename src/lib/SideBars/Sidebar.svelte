@@ -578,6 +578,7 @@
       menuMode = 1 - menuMode;
     }}><ListIcon />
   </button>
+  {#if !DBState.db.hideLeftBarCollapseButton}
   <button
     class="hidden max-xs:flex h-8 min-h-8 w-14 min-w-14 cursor-pointer mt-2 items-center justify-center rounded-md border border-borderc text-textcolor transition-colors hover:border-primary hover:text-primary"
     aria-label="Collapse sidebar"
@@ -585,6 +586,7 @@
   >
     <ChevronsLeft size={20} />
   </button>
+  {/if}
   <div class="mt-2 border-b border-b-selected w-full relative text-white" class:max-xs:hidden={$leftBarCollapsed}>
     {#if menuMode === 1}
       <div class="absolute w-20 min-w-20 flex border-b-selected border-b bg-bgcolor flex-col items-center pt-2 rounded-b-md z-20 pb-2">
