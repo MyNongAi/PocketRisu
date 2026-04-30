@@ -156,7 +156,7 @@
                 {@render toggles((toggle as sidebarToggleGroup).children, reverse)}
             </ShAccordion>
         {:else if toggle.type === 'select'}
-            <div class="w-full flex gap-2 mt-2 items-center justify-between min-h-10 rounded-md px-1 -mx-1 transition-colors" class:bg-red-900={isToggleDirty(toggle.key)} class:bg-opacity-15={isToggleDirty(toggle.key)}>
+            <div class="w-full flex gap-2 mt-2 items-center justify-between min-h-10 rounded-md px-1 transition-colors" class:bg-red-900={isToggleDirty(toggle.key)} class:bg-opacity-15={isToggleDirty(toggle.key)}>
                 <span class="min-w-0 break-words">{toggle.value}</span>
                 <SelectInput className="w-32 shrink-0" bind:value={DBState.db.globalChatVariables[`toggle_${toggle.key}`]}>
                     {#each toggle.options as option, i}
@@ -165,12 +165,12 @@
                 </SelectInput>
             </div>
         {:else if toggle.type === 'text'}
-            <div class="w-full flex gap-2 mt-2 items-center justify-between min-h-10 rounded-md px-1 -mx-1 transition-colors" class:bg-red-900={isToggleDirty(toggle.key)} class:bg-opacity-15={isToggleDirty(toggle.key)}>
+            <div class="w-full flex gap-2 mt-2 items-center justify-between min-h-10 rounded-md px-1 transition-colors" class:bg-red-900={isToggleDirty(toggle.key)} class:bg-opacity-15={isToggleDirty(toggle.key)}>
                 <span class="min-w-0 break-words">{toggle.value}</span>
                 <TextInput className="w-32 shrink-0" bind:value={DBState.db.globalChatVariables[`toggle_${toggle.key}`]} />
             </div>
         {:else if toggle.type === 'textarea'}
-            <div class="w-full flex gap-2 mt-2 items-start justify-between min-h-10 rounded-md px-1 -mx-1 transition-colors" class:bg-red-900={isToggleDirty(toggle.key)} class:bg-opacity-15={isToggleDirty(toggle.key)}>
+            <div class="w-full flex gap-2 mt-2 items-start justify-between min-h-10 rounded-md px-1 transition-colors" class:bg-red-900={isToggleDirty(toggle.key)} class:bg-opacity-15={isToggleDirty(toggle.key)}>
                 <span class="min-w-0 break-words mt-1.5">{toggle.value}</span>
                 <TextAreaInput className="w-32 shrink-0" height='20' bind:value={DBState.db.globalChatVariables[`toggle_${toggle.key}`]} />
             </div>
@@ -189,7 +189,7 @@
                 </div>
             {/if}
         {:else}
-            <div class="w-full flex gap-2 mt-2 items-center justify-between min-h-10 rounded-md px-1 -mx-1 transition-colors" class:bg-red-900={isToggleDirty(toggle.key)} class:bg-opacity-15={isToggleDirty(toggle.key)}>
+            <div class="w-full flex gap-2 mt-2 items-center justify-between min-h-10 rounded-md px-1 transition-colors" class:bg-red-900={isToggleDirty(toggle.key)} class:bg-opacity-15={isToggleDirty(toggle.key)}>
                 <span class="min-w-0 break-words">{toggle.value}</span>
                 <ShSwitch
                     className="shrink-0"
@@ -242,7 +242,7 @@
 {#if !noContainer && groupedToggles.length > 4}
     <div class="h-48 border-darkborderc p-2 border rounded-sm flex flex-col items-start mt-2 overflow-y-auto">
         {#if hasJailbreakPrompt}
-            <div class="w-full flex gap-2 mt-2 items-center justify-between min-h-10 rounded-md px-1 -mx-1">
+            <div class="w-full flex gap-2 mt-2 items-center justify-between min-h-10 rounded-md px-1">
                 <span class="min-w-0 break-words">{language.jailbreakToggle}</span>
                 <ShSwitch className="shrink-0" bind:checked={DBState.db.jailbreakToggle} />
             </div>
@@ -250,7 +250,7 @@
         {/if}
         {@render toggles(groupedToggles, true)}
         {#if chara && DBState.db.hypaV3}
-            <div class="w-full flex mt-2 items-center justify-between gap-2 min-h-10 rounded-md px-1 -mx-1">
+            <div class="w-full flex mt-2 items-center justify-between gap-2 min-h-10 rounded-md px-1">
                 <span class="flex items-center gap-1">
                     <span>{language.ToggleHypaMemory}</span>
                     <Help key="toggleHypaMemory" />
@@ -269,7 +269,7 @@
     </div>
 {:else}
     {#if hasJailbreakPrompt}
-        <div class="w-full flex gap-2 mt-2 items-center justify-between min-h-10 rounded-md px-1 -mx-1">
+        <div class="w-full flex gap-2 mt-2 items-center justify-between min-h-10 rounded-md px-1">
             <span class="min-w-0 break-words">{language.jailbreakToggle}</span>
             <ShSwitch className="shrink-0" bind:checked={DBState.db.jailbreakToggle} />
         </div>
@@ -279,7 +279,7 @@
     {/if}
     {@render toggles(groupedToggles)}
     {#if DBState.db.hypaV3}
-        <div class="w-full flex mt-2 items-center justify-between gap-2 min-h-10 rounded-md px-1 -mx-1">
+        <div class="w-full flex mt-2 items-center justify-between gap-2 min-h-10 rounded-md px-1">
             <span class="flex items-center gap-1">
                 <span>{language.ToggleHypaMemory}</span>
                 <Help key="toggleHypaMemory" />
