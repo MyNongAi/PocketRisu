@@ -4,8 +4,8 @@
     import { saveImage as saveAsset, type character } from "../../ts/storage/database.svelte";
     import { DBState } from 'src/ts/stores.svelte';
     import { untrack } from 'svelte';
-    import { CharConfigSubMenu, MobileGUI, selectedCharID, hypaV3ModalOpen, openModuleListStore } from "../../ts/stores.svelte";
-    import { PlusIcon, SmileIcon, TrashIcon, UserIcon, ActivityIcon, BookIcon, Braces, Volume2Icon, DownloadIcon, HardDriveUploadIcon, Share2Icon, ImageIcon, ImageOffIcon, ArrowUp, ArrowDown, TriangleAlertIcon, PackageIcon } from '@lucide/svelte'
+    import { CharConfigSubMenu, MobileGUI, selectedCharID, hypaV3ModalOpen } from "../../ts/stores.svelte";
+    import { PlusIcon, SmileIcon, TrashIcon, UserIcon, ActivityIcon, BookIcon, Braces, Volume2Icon, DownloadIcon, HardDriveUploadIcon, Share2Icon, ImageIcon, ImageOffIcon, ArrowUp, ArrowDown, TriangleAlertIcon } from '@lucide/svelte'
     import Check from "../UI/GUI/CheckInput.svelte";
     import { addCharEmotion, addingEmotion, getCharImage, rmCharEmotion, selectCharImg, removeChar, changeCharImage } from "../../ts/characters";
     import LoreBook from "./LoreBook/LoreBookSetting.svelte";
@@ -30,8 +30,6 @@
     import { exportCharacterPackage, importPackageToCharacter } from "src/ts/characterPackage";
     import { exportRegex, importRegex } from "src/ts/process/scripts";
     import SliderInput from "../UI/GUI/SliderInput.svelte";
-    import Toggles from "./Toggles.svelte";
-    import PersonaBind from "./PersonaBind.svelte";
 
     let iconRemoveMode = $state(false)
     let pkgIncludeCharacter = $state(true)
@@ -271,22 +269,6 @@
     />
     <span class="text-textcolor2 mb-6 text-sm">{tokens.localNote} {language.tokens}</span>
 
-    {#if !$MobileGUI}
-        {#if DBState.db.showPersonaInSidebar}
-            <PersonaBind />
-        {/if}
-        <Toggles bind:chara={DBState.db.characters[$selectedCharID]} noContainer />
-        <button class="flex w-full items-center justify-center gap-1.5 py-2 px-4 mt-2 rounded-md border border-darkborderc bg-darkbutton hover:bg-selected text-textcolor text-md cursor-pointer transition-colors shadow-xs"
-            onclick={() => {
-                const char = DBState.db.characters[$selectedCharID]
-                if (!char) return
-                char.chats[char.chatPage].modules ??= []
-                openModuleListStore.set(true)
-            }}>
-            <PackageIcon size={16} class="shrink-0" />
-            <span class="truncate">{language.modules}</span>
-        </button>
-    {/if}
 {:else if licensed === 'private'}
     <span>You are not allowed</span>
     {(() => {
