@@ -255,6 +255,11 @@ export const helpEn = {
             "Switches to the experimental HypaMemory V3 implementation. Enables rate limit settings and changes the query method.",
         hypaV3AlwaysToggleOn:
             "If enabled, the HypaMemory toggle is automatically activated when selecting a character.",
+        toggleHypaMemory:
+            "Whether to use HypaMemory (long-term memory) for this chat.\n\n" +
+            "- When on, past messages are automatically summarized into long-term memory once the context fills up, and relevant summaries are pulled back into later responses.\n" +
+            "- When off, messages beyond the context window are simply truncated and never reach the model.\n\n" +
+            "This setting is stored per-chat (independent of the character default), so other chats with the same character are unaffected. Tune the summarization behavior itself under HypaV3 in the preset.",
         hypaV3SummarizationRequestsPerMinute:
             "Maximum summarization model requests per minute. Only applies when the summarization model is set to Auxiliary Model.",
         hypaV3SummarizationMaxConcurrent:
@@ -316,6 +321,8 @@ export const helpEn = {
             "Automatically create a folder when branching a chat, grouping the original and branched chats together.",
         hamburgerButtonBottom:
             "Move the hamburger/menu button to the bottom of the sidebar. This can make one-handed use easier on mobile or small screens.",
+        hideLeftBarCollapseButton:
+            "Hide the toggle button that collapses the left character grid bar on narrow screens (under 400px). Enable this if you prefer to keep the left bar always visible on mobile.",
         enableRisuaiProTools:
             "Enable RisuAI Pro Tools such as Easy Panel. Some NodeOnly features require this separate toggle.",
         loreBookDepth:
