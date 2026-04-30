@@ -485,6 +485,8 @@ export const languageKorean = {
     "noBias": "Bias 없음",
     "image": "이미지",
     "name": "이름",
+    "characterName": "캐릭터 이름",
+    "characterInfo": "캐릭터 정보",
     "folderName": "폴더 이름",
     "folderRemoveConfirm": "이 폴더에는 로어북이 포함되어 있습니다. 폴더와 그 안의 모든 항목을 삭제하시겠습니까?",
     "emotion": "감정 이름",

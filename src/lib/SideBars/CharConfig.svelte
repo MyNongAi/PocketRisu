@@ -252,7 +252,9 @@
 
 {#if $CharConfigSubMenu === 0}
     {#if licensed !== 'private'}
-        <TextInput size="xl" marginBottom placeholder="Character Name" bind:value={DBState.db.characters[$selectedCharID].name} />
+        <h2 class="mb-2 text-2xl font-bold mt-2">{language.characterInfo}</h2>
+        <span class="text-textcolor">{language.characterName}</span>
+        <ShInput className="mt-2 mb-4" autocomplete="off" placeholder={language.characterName} bind:value={DBState.db.characters[$selectedCharID].name} />
         <span class="text-textcolor">{language.description} <Help key="charDesc"/></span>
         <TextAreaInput highlight margin="both" autocomplete="off" bind:value={(DBState.db.characters[$selectedCharID] as character).desc}></TextAreaInput>
         <span class="text-textcolor2 mb-6 text-sm">{tokens.desc} {language.tokens}</span>
