@@ -1708,7 +1708,12 @@ function parseBackupChunk(buffer, onEntry) {
 // Accepts any async iterable of Buffer chunks (HTTP request body, file stream, etc.)
 async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0, onProgress = null } = {}) {
     const BATCH_SIZE = 5000;
-    let remainingBuffer = Buffer.alloc(0);
+    // Defer Buffer.concat until enough bytes for the next entry are buffered.
+    // Concatenating on every chunk arrival is O(n²) when a single entry (e.g.
+    // database.risudat) far exceeds chunk size.
+    let pendingChunks = [];
+    let pendingTotal = 0;
+    let nextEntryThreshold = 8;
     let hasDatabase = false;
     let assetsRestored = 0;
     let bytesReceived = 0;
@@ -1776,10 +1781,17 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
             }
             if (onProgress) onProgress(bytesReceived, totalBytes);
 
-            remainingBuffer = remainingBuffer.length === 0
-                ? Buffer.from(chunk)
-                : Buffer.concat([remainingBuffer, Buffer.from(chunk)]);
-            remainingBuffer = parseBackupChunk(remainingBuffer, (name, data) => {
+            pendingChunks.push(Buffer.from(chunk));
+            pendingTotal += chunk.length;
+            if (pendingTotal < nextEntryThreshold) continue;
+
+            const buffer = pendingChunks.length === 1
+                ? pendingChunks[0]
+                : Buffer.concat(pendingChunks, pendingTotal);
+            pendingChunks = [];
+            pendingTotal = 0;
+
+            const remaining = parseBackupChunk(buffer, (name, data) => {
                 if (seenEntryNames.has(name)) {
                     throw new Error(`Duplicate backup entry: ${name}`);
                 }
@@ -1867,9 +1879,28 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
                     batchCount = 0;
                 }
             });
+
+            if (remaining.length === 0) {
+                nextEntryThreshold = 8;
+            } else {
+                pendingChunks.push(remaining);
+                pendingTotal = remaining.length;
+                if (remaining.length < 4) {
+                    nextEntryThreshold = 8;
+                } else {
+                    const nameLen = remaining.readUInt32LE(0);
+                    const headerEnd = 4 + nameLen + 4;
+                    if (remaining.length < headerEnd) {
+                        nextEntryThreshold = headerEnd;
+                    } else {
+                        const dataLen = remaining.readUInt32LE(4 + nameLen);
+                        nextEntryThreshold = headerEnd + dataLen;
+                    }
+                }
+            }
         }
 
-        if (remainingBuffer.length > 0) {
+        if (pendingTotal > 0) {
             throw new Error('Backup stream ended with incomplete entry');
         }
         if (!hasDatabase) {
