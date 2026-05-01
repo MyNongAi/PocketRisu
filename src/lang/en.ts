@@ -866,6 +866,8 @@ export const languageEnglish = {
     translationResponseSize: "Translation Response Size",
     webdeeplwarn: "This option is not recommended for use with web version, as it can cause CORS errors.",
     saveBackupLocal: "Save Backup Locally",
+    saveBackupForUpstream: "Save Backup for Original RisuAI",
+    saveBackupForUpstreamConfirm: "This backup is intended for moving your data to the original RisuAI (web/Tauri). Inlay images are excluded because their entry names use a layout that the original RisuAI cannot import. Other data (database, character assets, cold storage) is included.\n\nFor moving data between NodeOnly installations, use the regular local backup instead.\n\nProceed?",
     loadBackupLocal: "Load Backup Locally",
     topP: "Top P",
     genTimes: "Generation Choices",

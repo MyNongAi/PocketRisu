@@ -3227,9 +3227,15 @@ app.post('/api/assets/bulk-write', async (req, res, next) => {
 app.get('/api/backup/export', async (req, res, next) => {
     if(!await checkAuth(req, res)){ return; }
     try {
+        // ?target=upstream excludes NodeOnly-only inlay namespaces (inlay/,
+        // inlay_sidecar/, inlay_meta/). Their entry names contain a slash,
+        // which upstream RisuAI's import treats as a path under assets/ and
+        // fails with ENOENT. The export becomes lossy on inlay images but
+        // imports cleanly into upstream.
+        const target = req.query.target === 'upstream' ? 'upstream' : 'nodeonly';
         // Flush any pending patches to ensure export includes latest data
         await flushPendingDb();
-        const inlayFiles = await listInlayFiles();
+        const inlayFiles = target === 'upstream' ? [] : await listInlayFiles();
         const inlayEntries = await Promise.all(inlayFiles.map(async (entry) => {
             const stat = await fs.stat(entry.filePath);
             return {
@@ -3255,6 +3261,13 @@ app.get('/api/backup/export', async (req, res, next) => {
                 return null;
             }
         }));
+        const inlayMetaEntries = target === 'upstream' ? [] : kvListWithSizes('inlay_meta/').map((entry) => ({
+            kind: 'kv',
+            key: entry.key,
+            backupName: entry.key,
+            sortKey: entry.key,
+            size: entry.size,
+        }));
         const namespacedEntries = [
             ...kvListWithSizes('assets/').map((entry) => ({
                 kind: 'kv',
@@ -3264,13 +3277,7 @@ app.get('/api/backup/export', async (req, res, next) => {
                 size: entry.size,
             })),
             ...listColdStorageBackupEntries(),
-            ...kvListWithSizes('inlay_meta/').map((entry) => ({
-                kind: 'kv',
-                key: entry.key,
-                backupName: entry.key,
-                sortKey: entry.key,
-                size: entry.size,
-            })),
+            ...inlayMetaEntries,
             ...inlayEntries,
             ...sidecarEntries.filter(Boolean),
         ].sort((a, b) => a.sortKey.localeCompare(b.sortKey));
@@ -3279,8 +3286,9 @@ app.get('/api/backup/export', async (req, res, next) => {
             return sum + 8 + Buffer.byteLength(entry.backupName, 'utf-8') + entry.size;
         }, 0) + (dbSize ? 8 + Buffer.byteLength('database.risudat', 'utf-8') + dbSize : 0);
 
+        const filenameSuffix = target === 'upstream' ? '-upstream' : '';
         res.setHeader('content-type', 'application/octet-stream');
-        res.setHeader('content-disposition', `attachment; filename="risu-backup-${Date.now()}.bin"`);
+        res.setHeader('content-disposition', `attachment; filename="risu-backup-${Date.now()}${filenameSuffix}.bin"`);
         res.setHeader('content-length', totalBytes);
         res.setHeader('x-risu-backup-assets', namespacedEntries.length);
 
