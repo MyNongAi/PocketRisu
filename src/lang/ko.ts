@@ -1573,4 +1573,116 @@ export const languageKorean = {
     systemLogsExplicitOnly: "명시적 로그만",
     systemLogsExplicitOnlyHint: "console, 미처리 예외, 프레임워크 캡처 제외",
 
+    // 스토리지 대시보드
+    systemDashboard: "대시보드",
+    storageDashboardDesc: "스토리지 사용량을 확인하고, 큰 항목을 찾고, 공간을 회수합니다.",
+    storageRefresh: "새로고침",
+    storageLoading: "불러오는 중...",
+    storageFailedLoad: "스토리지 통계를 불러오지 못했습니다",
+
+    // 디스크 사용량 (맥OS 스타일 막대)
+    storageDiskUsage: "저장공간",
+    storageDiskHeader: (used: number, total: number) =>
+        `${(total / 1024 / 1024 / 1024).toFixed(2)} GB 중 ${(used / 1024 / 1024 / 1024).toFixed(2)} GB 사용됨`,
+    storageDiskHeaderUnknown: "디스크 크기를 가져오지 못했습니다",
+    storageDiskOther: "기타 (시스템 및 다른 앱)",
+    storageDiskFree: "여유 공간",
+    storageDiskRisuTotal: (size: number) => `RisuAI 합계: ${(size / 1024 / 1024).toFixed(1)} MB`,
+
+    // 항목별 라벨 (분포 리스트의 ⓘ 설명)
+    storageRowDbFile: "risuai.db",
+    storageRowDbFileDesc: "RisuAI의 메인 SQLite 데이터베이스 파일. 모든 채팅·캐릭터·에셋·설정이 여기 들어갑니다.",
+    storageRowWal: "WAL (Write-Ahead Log)",
+    storageRowWalDesc: "임시 트랜잭션 로그. 저장이 먼저 여기 기록된 뒤 본 파일에 통합됩니다. 사용 중엔 정상적으로 존재.",
+    storageRowShm: "SHM (공유 메모리)",
+    storageRowShmDesc: "WAL용 SQLite 공유 메모리 인덱스. 작고 휘발성이며 필요 시 재생성됩니다.",
+    storageRowFileBackups: "디스크 백업 (.bin)",
+    storageRowFileBackupsDesc: "수동으로 export한 백업 파일. backups/ 폴더에 보관됩니다.",
+    storageRowKvDatabase: "database.bin (활성)",
+    storageRowKvDatabaseDesc: "risuai.db 내부에 있는 단일 BLOB 행. 캐릭터 메타·채팅·설정이 통째로 들어갑니다. 2 GB 단일 BLOB 한계의 적용 대상.",
+    storageRowKvDbBackups: "DB 백업 (인프로세스)",
+    storageRowKvDbBackupsDesc: "risuai.db 내부에 자동으로 보관되는 database.bin 스냅샷. 약 500 MB 한도로 자동 로테이션.",
+    storageRowKvAssets: "캐릭터 에셋",
+    storageRowKvAssetsDesc: "캐릭터 카드, 이모션 이미지, 추가 에셋, 페르소나 아이콘 등.",
+    storageRowKvInlay: "Inlay 이미지",
+    storageRowKvInlayDesc: "메시지에 첨부된 이미지 (본체 + 썸네일 + 메타).",
+    storageRowKvRemotes: "원격 채팅 데이터",
+    storageRowKvRemotesDesc: "캐릭터별 원격 동기화 캐시 (remotes/{chaId}.local.bin).",
+    storageRowKvColdStorage: "콜드 스토리지",
+    storageRowKvColdStorageDesc: "레거시·휴면 저장 영역. 보통 비어 있습니다.",
+    storageRowKvUncategorized: "기타 데이터",
+    storageRowKvUncategorizedDesc: "위 분류에 들어가지 않는 키. 마이그레이션 잔여물이나 임시 항목 등이 여기 잡힙니다.",
+    storageRowSqliteOverhead: "SQLite 오버헤드 (구조)",
+    storageRowSqliteOverheadDesc: "인덱스, 페이지 헤더, 정렬 패딩 등 SQLite가 항상 들고 있는 구조적 영역입니다. 사용자 데이터가 아니며 정리로 제거되지 않습니다 (데이터 양에 비례해 자연 증가).",
+    storageRowReclaimablePages: "SQLite 오버헤드 (회수 가능)",
+    storageRowReclaimablePagesDesc: "삭제된 데이터가 남긴 빈 페이지로, SQLite 오버헤드 중 정리로 회수 가능한 부분입니다. 아래 \"SQLite 오버헤드 정리\"의 막대 노란색 부분과 같은 값이며, 정리 실행 시 모두 회수됩니다.",
+    storageRowReclaimable: (size: number) =>
+        `${(size / 1024 / 1024).toFixed(1)} MB 회수 가능 — Optimize로 압축.`,
+    storageInternalOnly: "RisuAI 구성만 보기",
+    storageInternalOnlyHint: "기타 시스템·여유 공간을 숨기고 RisuAI 내부 항목만 비율로 표시합니다.",
+
+    // 2 GB BLOB 한계 (별도 섹션)
+    storageBlobLimit: "2 GB BLOB 한계",
+    storageBlobLimitDesc: "SQLite는 단일 행 값을 약 2 GB까지만 허용합니다. database.bin이 하나의 행이라 채팅·설정 합계가 이 값을 넘을 수 없으며, 한계에 가까워지면 저장이 실패하기 시작합니다.",
+    storageBlobThreshold: (used: number, max: number, pct: number) =>
+        `2 GB 중 ${pct.toFixed(1)}% (${(used / 1024 / 1024 / 1024).toFixed(2)} / ${(max / 1024 / 1024 / 1024).toFixed(2)} GB)`,
+    storageBlobThresholdWarn: "2 GB BLOB 한계에 가까워지고 있습니다. 채팅이나 에셋을 정리하세요.",
+    storageBlobThresholdCrit: "위험: 2 GB BLOB 한계가 임박했습니다. 저장이 실패할 수 있습니다.",
+
+    storageOptimize: "지금 정리",
+    storageOptimizing: "정리 중...",
+    storageOptimizeHeader: (dbSize: number, reclaim: number) =>
+        `${(dbSize / 1024 / 1024 / 1024).toFixed(2)} GB 중 ${(reclaim / 1024 / 1024).toFixed(1)} MB 회수 가능`,
+    storageOptimizeBarUsed: "사용 중",
+    storageOptimizeBarReclaimable: "회수 가능",
+    storageOptimizeWhat: "캐릭터·채팅·에셋을 삭제해도 데이터베이스는 그 자리를 빈 공간으로 표시할 뿐 파일 크기는 줄어들지 않습니다. 정리는 이 빈 공간을 제거해 파일을 다시 써서 실제 크기를 줄입니다. 데이터는 변경되지 않습니다.",
+    storageOptimizeWhen: "큰 삭제 작업 후나 위 막대의 빈 공간이 많이 쌓였을 때 실행하면 효과가 큽니다. 정리 중에는 서버 저장이 잠시 멈춥니다 (보통 수 초, 매우 큰 DB는 수십 초까지).",
+    storageOptimizeConfirm: "지금 정리할까요? 서버 저장이 수 초간 멈춥니다.",
+    storageOptimizeNeedsSpace: (need: number, free: number) =>
+        `디스크 여유가 부족합니다. 약 ${(need / 1024 / 1024).toFixed(0)} MB 필요, 여유 ${(free / 1024 / 1024).toFixed(0)} MB.`,
+    storageOptimizeDone: (reclaimed: number, ms: number) =>
+        `${(reclaimed / 1024 / 1024).toFixed(1)} MB 회수 (${(ms / 1000).toFixed(1)}초).`,
+    storageOptimizeFailed: "정리 실패",
+
+    storageCleanup: "SQLite 오버헤드 정리",
+
+    storageBackups: "백업",
+    storageBackupsAuto: "자동 백업 (DB만)",
+    storageBackupsAutoDesc: "주기적으로 자동 생성되는 빠른 복구용 스냅샷입니다. risuai.db 안에 저장되며 약 500 MB 한도로 자동 회전합니다. 캐릭터 에셋과 inlay는 포함되지 않습니다.",
+    storageBackupsManual: "수동 백업 (전체)",
+    storageBackupsManualDesc: "직접 저장하는 풀 백업입니다. 캐릭터 에셋·inlay·콜드 스토리지까지 모두 포함되며 backups/ 폴더에 별도 파일로 보관됩니다 (자동 회전 없음).",
+    storageBackupsCount: (count: number, size: number) =>
+        `${count}개 · ${(size / 1024 / 1024).toFixed(1)} MB`,
+    storageBackupsRange: (oldest: string, newest: string) => `최신 ${newest} · 가장 오래된 것 ${oldest}`,
+    storageBackupsLocalNote: "로컬 다운로드 백업은 사용자 기기에 저장되어 여기에 표시되지 않습니다. \"계정 및 파일\" 설정에서 생성하거나 복원할 수 있습니다.",
+    storageBackupsEmpty: "없음",
+
+    storageCharacters: "캐릭터별 점유",
+    storageCharactersDesc: "각 캐릭터의 카드, 미디어, 채팅 용량 근사값을 측정합니다.",
+    storageCharactersMeasure: "측정",
+    storageCharactersMeasuring: "측정 중...",
+    storageCharactersDone: (ms: number, count: number) =>
+        `캐릭터 ${count.toLocaleString()}개 측정 (${(ms / 1000).toFixed(1)}초). 채팅 용량은 근사값입니다.`,
+    storageCharactersCard: "카드",
+    storageCharactersImage: "미디어",
+    storageCharactersChat: "채팅",
+    storageCharactersTrashed: "휴지통",
+    storageCharactersOrphan: (count: number, size: number) =>
+        `고아 미디어 (어떤 캐릭터도 참조하지 않음): ${count}개, ${(size / 1024 / 1024).toFixed(1)} MB`,
+    storageCharactersEmpty: "캐릭터 없음",
+    storageLoadMore: (remaining: number) => `더 보기 (${remaining.toLocaleString()}개 남음)`,
+    storageShowingOf: (shown: number, total: number) => `${total.toLocaleString()}개 중 ${shown.toLocaleString()}개 표시`,
+
+    storageModules: "모듈별 점유",
+    storageModulesDesc: "각 모듈의 본문과 에셋 용량을 측정합니다.",
+    storageModulesMeasure: "측정",
+    storageModulesMeasuring: "측정 중...",
+    storageModulesDone: (ms: number, count: number) =>
+        `모듈 ${count.toLocaleString()}개 측정 (${(ms / 1000).toFixed(1)}초).`,
+    storageModulesBody: "본문",
+    storageModulesAssets: "에셋",
+    storageModulesEmpty: "모듈 없음",
+
+    storageDebug: "디버그 정보",
+
 } satisfies DeepPartial<typeof import('./en').languageEnglish>

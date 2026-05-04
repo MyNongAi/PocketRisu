@@ -5,6 +5,7 @@
     import ShInput from 'src/lib/UI/GUI/ShInput.svelte'
     import ShBadge from 'src/lib/UI/GUI/ShBadge.svelte'
     import ShToggle from 'src/lib/UI/GUI/ShToggle.svelte'
+    import SystemDashboard from './SystemDashboard.svelte'
     import { Collapsible, Tooltip } from 'bits-ui'
     import {
         RefreshCwIcon,
@@ -348,17 +349,22 @@
     // `loadInitial()` synchronously reads `serverFilter` before its first
     // await, so Svelte picks up the dependency and reruns this effect on
     // any change to excludedLevels / excludedOrigins / explicitOnly.
+    // Gated on submenu===1 so Dashboard tab doesn't spend a fetch on entry.
     $effect(() => {
+        if (submenu !== 1) return
         loadInitial()
     })
 </script>
 
 <SettingPage title={language.system}>
     <SettingTabs tabs={[
-        { label: language.systemLogs, value: 0 },
+        { label: language.systemDashboard, value: 0 },
+        { label: language.systemLogs, value: 1 },
     ]} bind:selected={submenu} />
 
     {#if submenu === 0}
+    <SystemDashboard />
+    {:else if submenu === 1}
     <p class="text-textcolor2 text-sm mb-4">{language.systemLogsDesc}</p>
 
     <!-- Toolbar -->

@@ -4179,6 +4179,360 @@ app.post('/api/migrate/save-folder/cleanup/execute', async (req, res, next) => {
     }
 });
 
+// ── Storage dashboard endpoints ──────────────────────────────────────────────
+
+const DB_BLOB_KEY = 'database/database.bin';
+const DB_BACKUP_PREFIX = 'database/dbbackup-';
+const ASSET_PREFIXES = ['assets/', 'remotes/', 'inlay/', 'inlay_thumb/', 'inlay_meta/', 'inlay_info/', 'coldstorage/'];
+// Slightly above 2GB BLOB ceiling — better-sqlite3 throws RangeError near INT_MAX.
+const BLOB_INT_MAX = 2 * 1024 * 1024 * 1024 - 1;
+
+function statsBasename(s) {
+    if (!s) return '';
+    return String(s).replace(/\\/g, '/').split('/').pop();
+}
+
+// Mirrors src/ts/globalApi.svelte.ts:getUncleanables — every asset reference reachable from the DB.
+function buildUncleanableSet(dbObj) {
+    const set = new Set();
+    const add = (v) => {
+        const bn = statsBasename(v);
+        if (bn) set.add(bn);
+    };
+    if (!dbObj) return set;
+    add(dbObj.customBackground);
+    add(dbObj.userIcon);
+    if (Array.isArray(dbObj.characters)) {
+        for (const cha of dbObj.characters) {
+            if (!cha) continue;
+            add(cha.image);
+            if (Array.isArray(cha.emotionImages)) for (const em of cha.emotionImages) add(em?.[1]);
+            if (Array.isArray(cha.additionalAssets)) for (const em of cha.additionalAssets) add(em?.[1]);
+            if (cha.vits?.files) for (const k of Object.keys(cha.vits.files)) add(cha.vits.files[k]);
+            if (Array.isArray(cha.ccAssets)) for (const a of cha.ccAssets) add(a?.uri);
+        }
+    }
+    if (Array.isArray(dbObj.modules)) {
+        for (const m of dbObj.modules) if (Array.isArray(m?.assets)) for (const a of m.assets) add(a?.[1]);
+    }
+    if (Array.isArray(dbObj.personas)) for (const p of dbObj.personas) add(p?.icon);
+    if (Array.isArray(dbObj.characterOrder)) {
+        for (const item of dbObj.characterOrder) {
+            if (item && typeof item === 'object' && 'imgFile' in item) add(item.imgFile);
+        }
+    }
+    return set;
+}
+
+function statSafe(p) {
+    try { return require('fs').statSync(p); } catch { return null; }
+}
+
+async function diskFreeStat(dirPath) {
+    try {
+        const sf = await fs.statfs(dirPath);
+        return { free: sf.bsize * sf.bavail, total: sf.bsize * sf.blocks };
+    } catch { return { free: null, total: null }; }
+}
+
+app.get('/api/db/stats', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    try {
+        const saveDir = path.join(process.cwd(), 'save');
+        const dbFilePath = path.join(saveDir, 'risuai.db');
+        const walPath = dbFilePath + '-wal';
+        const shmPath = dbFilePath + '-shm';
+
+        const files = {
+            db: statSafe(dbFilePath)?.size ?? 0,
+            wal: statSafe(walPath)?.size ?? 0,
+            shm: statSafe(shmPath)?.size ?? 0,
+        };
+
+        const disk = await diskFreeStat(saveDir);
+
+        const pageSize = sqliteDb.pragma('page_size', { simple: true });
+        const pageCount = sqliteDb.pragma('page_count', { simple: true });
+        const freelistCount = sqliteDb.pragma('freelist_count', { simple: true });
+        const journalMode = sqliteDb.pragma('journal_mode', { simple: true });
+        const autoVacuum = sqliteDb.pragma('auto_vacuum', { simple: true });
+        const reclaimable = freelistCount * pageSize;
+
+        const dbBlobSize = kvSize(DB_BLOB_KEY) || 0;
+
+        // Prefix breakdown — split database/ into the live blob vs rotated backups.
+        const prefixes = {};
+        prefixes[DB_BLOB_KEY] = { totalSize: dbBlobSize, count: dbBlobSize > 0 ? 1 : 0 };
+        const backupKeys = kvList(DB_BACKUP_PREFIX);
+        let backupTotal = 0;
+        let backupOldest = null, backupNewest = null;
+        for (const k of backupKeys) {
+            const sz = kvSize(k) || 0;
+            backupTotal += sz;
+            const tsRaw = parseInt(k.slice(DB_BACKUP_PREFIX.length, -4), 10);
+            if (Number.isFinite(tsRaw)) {
+                const ts = tsRaw * 100;
+                if (!backupOldest || ts < backupOldest) backupOldest = ts;
+                if (!backupNewest || ts > backupNewest) backupNewest = ts;
+            }
+        }
+        prefixes[DB_BACKUP_PREFIX] = { totalSize: backupTotal, count: backupKeys.length };
+        for (const p of ASSET_PREFIXES) {
+            const items = kvListWithSizes(p);
+            let total = 0;
+            for (const it of items) total += it.size;
+            prefixes[p] = { totalSize: total, count: items.length };
+        }
+
+        const kvRows = sqliteDb.prepare('SELECT COUNT(*) AS c FROM kv').get().c;
+        const kvTotalBytes = sqliteDb.prepare('SELECT COALESCE(SUM(LENGTH(value)), 0) AS s FROM kv').get().s;
+
+        let fileBackups = { count: 0, totalSize: 0, oldest: null, newest: null };
+        try {
+            const entries = await fs.readdir(backupsDir, { withFileTypes: true });
+            for (const e of entries) {
+                if (!e.isFile() || !BACKUP_FILENAME_REGEX.test(e.name)) continue;
+                const st = await fs.stat(path.join(backupsDir, e.name));
+                fileBackups.count++;
+                fileBackups.totalSize += st.size;
+                const ts = st.mtimeMs;
+                if (!fileBackups.oldest || ts < fileBackups.oldest) fileBackups.oldest = ts;
+                if (!fileBackups.newest || ts > fileBackups.newest) fileBackups.newest = ts;
+            }
+        } catch { /* backups dir may not exist */ }
+
+        // Quick estimates from in-memory cache only — never decode the BLOB just for stats.
+        let trashed = { count: 0, expiredCount: 0, available: false };
+        let orphan = { count: 0, totalSize: 0, available: false };
+        const stripped = dbCache[DB_HEX_KEY];
+        if (stripped?.characters) {
+            const now = Date.now();
+            const GRACE = 1000 * 60 * 60 * 24 * 3;
+            for (const c of stripped.characters) {
+                if (c?.trashTime) {
+                    trashed.count++;
+                    if (c.trashTime + GRACE < now) trashed.expiredCount++;
+                }
+            }
+            trashed.available = true;
+        }
+        if (stripped) {
+            const uncleanable = buildUncleanableSet(stripped);
+            for (const it of kvListWithSizes('assets/')) {
+                if (!uncleanable.has(statsBasename(it.key))) {
+                    orphan.count++;
+                    orphan.totalSize += it.size;
+                }
+            }
+            orphan.available = true;
+        }
+
+        res.json({
+            files,
+            disk,
+            sqlite: { pageSize, pageCount, freelistCount, reclaimable, journalMode, autoVacuum },
+            blob: { dbSize: dbBlobSize, intMax: BLOB_INT_MAX },
+            prefixes,
+            kvRows,
+            kvTotalBytes,
+            backups: {
+                kv: { count: backupKeys.length, totalSize: backupTotal, oldest: backupOldest, newest: backupNewest },
+                file: fileBackups,
+            },
+            trashed,
+            orphan,
+            etag: dbEtag,
+        });
+    } catch (err) { next(err); }
+});
+
+app.get('/api/db/stats/characters', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    try {
+        await ensureChatStore();
+        const raw = kvGet(DB_BLOB_KEY);
+        if (!raw) {
+            res.json({ characters: [], orphan: { count: 0, totalSize: 0 }, chatBytesNote: 'estimate' });
+            return;
+        }
+        const dbObj = await decodeRisuSave(raw);
+
+        const assetSize = new Map();
+        for (const it of kvListWithSizes('assets/')) {
+            assetSize.set(statsBasename(it.key), it.size);
+        }
+        // remotes/<chaId>.local.bin (+ optional .meta sidecar) → bucket by chaId.
+        const remoteSize = new Map();
+        for (const it of kvListWithSizes('remotes/')) {
+            const bn = statsBasename(it.key).replace(/\.meta$/, '');
+            const chaId = bn.replace(/\.local\.bin$/, '');
+            if (chaId) remoteSize.set(chaId, (remoteSize.get(chaId) || 0) + it.size);
+        }
+
+        const claimed = new Set();
+        const characters = [];
+        const list = Array.isArray(dbObj.characters) ? dbObj.characters : [];
+        for (const cha of list) {
+            if (!cha) continue;
+            const refs = [];
+            const collect = (v) => { if (v) refs.push(statsBasename(v)); };
+            collect(cha.image);
+            if (Array.isArray(cha.emotionImages)) for (const em of cha.emotionImages) collect(em?.[1]);
+            if (Array.isArray(cha.additionalAssets)) for (const em of cha.additionalAssets) collect(em?.[1]);
+            if (cha.vits?.files) for (const k of Object.keys(cha.vits.files)) collect(cha.vits.files[k]);
+            if (Array.isArray(cha.ccAssets)) for (const a of cha.ccAssets) collect(a?.uri);
+
+            // Same asset shared across characters is attributed to the first one we see — avoids double-counting.
+            let imgBytes = 0;
+            for (const bn of refs) {
+                if (!bn || claimed.has(bn)) continue;
+                const sz = assetSize.get(bn);
+                if (sz != null) {
+                    imgBytes += sz;
+                    claimed.add(bn);
+                }
+            }
+            const remoteBytes = remoteSize.get(cha.chaId) || 0;
+
+            let chatBytes = 0;
+            const charChats = fullChatStore?.get(cha.chaId);
+            if (charChats) {
+                for (const chat of charChats.values()) {
+                    try { chatBytes += JSON.stringify(chat).length; } catch { /* skip un-serializable */ }
+                }
+            }
+
+            // Card body = the character row minus chats (which we count separately).
+            // Asset URIs themselves are tiny strings — leaving them in card body is fine.
+            let cardBytes = 0;
+            try {
+                const { chats: _drop, ...body } = cha;
+                cardBytes = JSON.stringify(body).length;
+            } catch { /* skip un-serializable */ }
+
+            characters.push({
+                chaId: cha.chaId || '',
+                name: cha.name || '',
+                image: cha.image || '',
+                trashed: !!cha.trashTime,
+                cardBytes,
+                imgBytes: imgBytes + remoteBytes,
+                chatBytes,
+                totalBytes: cardBytes + imgBytes + remoteBytes + chatBytes,
+            });
+        }
+
+        const uncleanable = buildUncleanableSet(dbObj);
+        let orphanCount = 0, orphanTotal = 0;
+        for (const it of kvListWithSizes('assets/')) {
+            if (!uncleanable.has(statsBasename(it.key))) {
+                orphanCount++;
+                orphanTotal += it.size;
+            }
+        }
+
+        characters.sort((a, b) => b.totalBytes - a.totalBytes);
+        res.json({
+            characters,
+            orphan: { count: orphanCount, totalSize: orphanTotal },
+            chatBytesNote: 'JSON.stringify estimate; on-disk msgpack ~0.6×',
+            etag: dbEtag,
+        });
+    } catch (err) { next(err); }
+});
+
+// Per-module breakdown — modules live inside database.bin (no separate kv keys
+// for module bodies), so size = JSON.stringify of the module + sum of its
+// referenced assets. Assets attribution is independent from /characters; an
+// asset shared between a character and a module would be counted in both.
+app.get('/api/db/stats/modules', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    try {
+        const raw = kvGet(DB_BLOB_KEY);
+        if (!raw) {
+            res.json({ modules: [] });
+            return;
+        }
+        const dbObj = await decodeRisuSave(raw);
+        const list = Array.isArray(dbObj.modules) ? dbObj.modules : [];
+
+        const assetSize = new Map();
+        for (const it of kvListWithSizes('assets/')) {
+            assetSize.set(statsBasename(it.key), it.size);
+        }
+
+        const modules = [];
+        for (const m of list) {
+            if (!m) continue;
+
+            let bodyBytes = 0;
+            try {
+                const { assets: _drop, ...body } = m;
+                bodyBytes = JSON.stringify(body).length;
+            } catch { /* skip un-serializable */ }
+
+            let assetBytes = 0;
+            const seen = new Set();
+            if (Array.isArray(m.assets)) {
+                for (const a of m.assets) {
+                    const bn = statsBasename(a?.[1]);
+                    if (!bn || seen.has(bn)) continue;
+                    seen.add(bn);
+                    const sz = assetSize.get(bn);
+                    if (sz != null) assetBytes += sz;
+                }
+            }
+
+            modules.push({
+                id: m.id || m.namespace || m.name || '',
+                name: m.name || m.namespace || '',
+                bodyBytes,
+                assetBytes,
+                totalBytes: bodyBytes + assetBytes,
+            });
+        }
+
+        modules.sort((a, b) => b.totalBytes - a.totalBytes);
+        res.json({ modules, etag: dbEtag });
+    } catch (err) { next(err); }
+});
+
+app.post('/api/db/optimize', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!checkActiveSession(req, res)) return;
+    try {
+        const saveDir = path.join(process.cwd(), 'save');
+        const dbFilePath = path.join(saveDir, 'risuai.db');
+        const preDbSize = statSafe(dbFilePath)?.size ?? 0;
+
+        const { free } = await diskFreeStat(saveDir);
+        if (preDbSize > 0 && free != null && free < preDbSize * 1.2) {
+            return res.status(400).json({
+                error: 'Insufficient disk space for VACUUM',
+                required: Math.ceil(preDbSize * 1.2),
+                free,
+            });
+        }
+
+        const result = await queueStorageOperation(async () => {
+            await flushPendingDb();
+            const t0 = Date.now();
+            try { checkpointWal('TRUNCATE'); } catch (e) { logger.warn('[Optimize] checkpoint failed:', e?.message || e); }
+            sqliteDb.exec('VACUUM');
+            const elapsed = Date.now() - t0;
+            const postDbSize = statSafe(dbFilePath)?.size ?? 0;
+            return {
+                ok: true,
+                elapsedMs: elapsed,
+                preDbSize,
+                postDbSize,
+                reclaimed: Math.max(0, preDbSize - postDbSize),
+            };
+        });
+        res.json(result);
+    } catch (err) { next(err); }
+});
+
 // ── Inlay bulk compression endpoint ──────────────────────────────────────────
 const COMPRESS_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp']);
 
