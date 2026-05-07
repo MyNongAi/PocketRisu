@@ -65,6 +65,9 @@
     let bootReminderLoaded = $state(false)
 
     // Stats subset for warnings — fetched alongside snapshots/limits.
+    // Uses backupDisk (the backup destination) rather than save/ — the user
+    // may have pointed backupsDir at a different mount/external drive, in
+    // which case save/'s free space is irrelevant for the backup guard.
     let diskFree = $state<number | null>(null)
     let diskTotal = $state<number | null>(null)
     let estimatedBackupSize = $state<number | null>(null)
@@ -133,13 +136,20 @@
         if (!(await alertConfirm(language.backupLoadConfirm2))) return
         alertWait(language.serverBackupRestoring)
         try {
-            // Same path as loadInternalBackup but without the alertSelect prompt —
-            // user already picked the row, so we go straight to fetch + decode + apply.
-            const data = await forageStorage.getItem(snap.key) as unknown as Uint8Array
-            if (!data) throw new Error('Snapshot data unavailable')
-            const decoded = await decodeRisuSave(Buffer.from(data) as unknown as Uint8Array)
-            setDatabase(decoded)
+            // Server-side atomic restore: copies snapshot blob → live blob,
+            // invalidates caches, rebuilds chat store. Avoids the race where
+            // a client-side setDatabase + reload could lose data because the
+            // debounced save hadn't flushed yet.
+            const auth = await forageStorage.createAuth()
+            const res = await fetch('/api/db/snapshots/restore', {
+                method: 'POST',
+                headers: { 'risu-auth': auth, 'content-type': 'application/json' },
+                body: JSON.stringify({ key: snap.key }),
+            })
+            const json = await res.json().catch(() => ({}))
+            if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`)
             notifySuccess('Loaded backup')
+            location.search = ''
             location.reload()
         } catch (err) {
             alertError(err instanceof Error ? err.message : String(err))
@@ -264,8 +274,11 @@
             const res = await fetch('/api/db/stats', { headers: { 'risu-auth': auth } })
             if (!res.ok) return
             const json = await res.json()
-            if (typeof json?.disk?.free === 'number') diskFree = json.disk.free
-            if (typeof json?.disk?.total === 'number') diskTotal = json.disk.total
+            // Prefer backupDisk (mounts to actual backup destination); fall
+            // back to disk for older servers that don't yet expose it.
+            const d = json?.backupDisk ?? json?.disk
+            if (typeof d?.free === 'number') diskFree = d.free
+            if (typeof d?.total === 'number') diskTotal = d.total
             if (typeof json?.estimatedBackupSize === 'number') estimatedBackupSize = json.estimatedBackupSize
         } catch { /* non-fatal */ }
     }

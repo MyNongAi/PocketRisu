@@ -199,7 +199,9 @@ async function maybeRunBootBackupReminder() {
     if (!enabled) return
 
     // Best-effort stats fetch. The prompt component will render whatever we
-    // can supply; missing values just hide their respective lines.
+    // can supply; missing values just hide their respective lines. Uses
+    // backupDisk (actual backup destination) so warnings target the right
+    // mount when backupsDir is on a different drive than save/.
     let estimate: number | null = null
     let free: number | null = null
     let total: number | null = null
@@ -209,8 +211,9 @@ async function maybeRunBootBackupReminder() {
         if (res.ok) {
             const stats = await res.json()
             if (typeof stats?.estimatedBackupSize === 'number') estimate = stats.estimatedBackupSize
-            if (typeof stats?.disk?.free === 'number') free = stats.disk.free
-            if (typeof stats?.disk?.total === 'number') total = stats.disk.total
+            const d = stats?.backupDisk ?? stats?.disk
+            if (typeof d?.free === 'number') free = d.free
+            if (typeof d?.total === 'number') total = d.total
         }
     } catch { /* keep nulls */ }
 

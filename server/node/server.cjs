@@ -4323,6 +4323,28 @@ async function diskFreeStat(dirPath) {
     } catch { return { free: null, total: null }; }
 }
 
+// Sum the on-disk inlay payload (image files + sidecar JSONs in save/inlays).
+// Returns 0 if the directory is missing. Used by both the backup-size
+// estimator and the dashboard inlay total — kv inlay/* prefixes don't
+// reflect filesystem bytes after the inlay→fs migration.
+async function sumInlayFsBytes() {
+    let total = 0;
+    try {
+        const inlayFiles = await listInlayFiles();
+        await Promise.all(inlayFiles.map(async (entry) => {
+            try {
+                const st = await fs.stat(entry.filePath);
+                total += st.size;
+            } catch { /* missing — skip */ }
+            try {
+                const sst = await fs.stat(getInlaySidecarPath(entry.id));
+                total += sst.size;
+            } catch { /* sidecar may not exist */ }
+        }));
+    } catch { /* dir missing */ }
+    return total;
+}
+
 // Estimated server-backup size — mirrors the enumeration in
 // /api/backup/server/save without writing anything. Inlay files live on the
 // filesystem (post-migration), so we have to fs.stat them rather than read
@@ -4333,19 +4355,7 @@ async function estimateServerBackupSize() {
     for (const it of kvListWithSizes('assets/')) total += it.size;
     for (const it of kvListWithSizes('inlay_meta/')) total += it.size;
     for (const e of listColdStorageBackupEntries()) total += e.size;
-    try {
-        const inlayFiles = await listInlayFiles();
-        await Promise.all(inlayFiles.map(async (entry) => {
-            try {
-                const st = await fs.stat(entry.filePath);
-                total += st.size;
-            } catch { /* missing file — skip */ }
-            try {
-                const sst = await fs.stat(getInlaySidecarPath(entry.id));
-                total += sst.size;
-            } catch { /* sidecar may not exist — fine */ }
-        }));
-    } catch { /* inlay dir missing — skip */ }
+    total += await sumInlayFsBytes();
     return total;
 }
 
@@ -4364,6 +4374,12 @@ app.get('/api/db/stats', async (req, res, next) => {
         };
 
         const disk = await diskFreeStat(saveDir);
+        // Backup destination disk — same as save/ in the default config but
+        // can diverge when the user points backupsDir at a different mount.
+        // Surfaced separately so backup-side warnings target the right disk.
+        const backupDisk = backupsDir === DEFAULT_BACKUPS_DIR
+            ? { ...disk, path: backupsDir }
+            : { ...(await diskFreeStat(backupsDir)), path: backupsDir };
 
         const pageSize = sqliteDb.pragma('page_size', { simple: true });
         const pageCount = sqliteDb.pragma('page_count', { simple: true });
@@ -4442,16 +4458,22 @@ app.get('/api/db/stats', async (req, res, next) => {
         }
 
         const estimatedBackupSize = await estimateServerBackupSize();
+        // Inlay payload now lives on the filesystem (post-migration) rather
+        // than in kv `inlay/*` prefixes. Surface explicitly so the dashboard
+        // chart can include it in the inlay slice instead of underreporting.
+        const inlayFsBytes = await sumInlayFsBytes();
 
         res.json({
             files,
             disk,
+            backupDisk,
             sqlite: { pageSize, pageCount, freelistCount, reclaimable, journalMode, autoVacuum },
             blob: { dbSize: dbBlobSize, intMax: BLOB_INT_MAX },
             prefixes,
             kvRows,
             kvTotalBytes,
             estimatedBackupSize,
+            inlayFsBytes,
             backups: {
                 kv: { count: backupKeys.length, totalSize: backupTotal, oldest: backupOldest, newest: backupNewest },
                 file: fileBackups,
@@ -4728,6 +4750,47 @@ app.delete('/api/db/snapshots', async (req, res, next) => {
             return res.status(400).json({ error: 'Invalid snapshot key' });
         }
         kvDel(key);
+        res.json({ ok: true });
+    } catch (err) { next(err); }
+});
+
+// Restore a snapshot atomically server-side: copy snapshot blob → live blob,
+// invalidate caches, rebuild chat store. Client-side setDatabase + reload is
+// racy because the patch-sync save loop is debounced and the reload can fire
+// before the snapshot data lands on disk.
+app.post('/api/db/snapshots/restore', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!checkActiveSession(req, res)) return;
+    try {
+        const key = typeof req.body?.key === 'string' ? req.body.key : '';
+        if (!key.startsWith(DB_BACKUP_PREFIX)) {
+            return res.status(400).json({ error: 'Invalid snapshot key' });
+        }
+        const blob = kvGet(key);
+        if (!blob) {
+            return res.status(404).json({ error: 'Snapshot not found' });
+        }
+        await queueStorageOperation(async () => {
+            // Cancel any pending debounced persist so it can't overwrite our restore.
+            if (saveTimers[DB_HEX_KEY]) {
+                clearTimeout(saveTimers[DB_HEX_KEY]);
+                delete saveTimers[DB_HEX_KEY];
+            }
+            kvCopyValue(key, DB_BLOB_KEY);
+            invalidateDbCache();
+            // Pre-warm chat store from the just-restored blob so subsequent
+            // /api/read fetches and patch-sync baselines see the new data.
+            try {
+                const raw = kvGet(DB_BLOB_KEY);
+                if (raw) {
+                    const dbObj = await decodeRisuSave(raw);
+                    initChatStore(dbObj);
+                    dbEtag = computeBufferEtag(Buffer.from(raw));
+                }
+            } catch (e) {
+                logger.warn('[Snapshot restore] post-restore decode failed:', e?.message || e);
+            }
+        });
         res.json({ ok: true });
     } catch (err) { next(err); }
 });

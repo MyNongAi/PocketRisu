@@ -37,6 +37,7 @@
         prefixes: Record<string, PrefixInfo>
         kvRows: number
         kvTotalBytes: number
+        inlayFsBytes?: number
         backups: {
             kv: { count: number; totalSize: number; oldest: number | null; newest: number | null }
             file: { count: number; totalSize: number; oldest: number | null; newest: number | null }
@@ -206,7 +207,10 @@
         if (!stats) return []
         const p = stats.prefixes
         const get = (k: string) => p[k]?.totalSize ?? 0
-        const inlayTotal = get('inlay/') + get('inlay_thumb/') + get('inlay_meta/') + get('inlay_info/')
+        // Inlay payload now lives mostly on the filesystem (post-migration);
+        // include the fs bytes here so the chart doesn't underreport.
+        const inlayFsBytes = stats.inlayFsBytes ?? 0
+        const inlayTotal = get('inlay/') + get('inlay_thumb/') + get('inlay_meta/') + get('inlay_info/') + inlayFsBytes
         // Known prefixes I track explicitly. If anything else lives in kv (test
         // keys, migration leftovers), it shows up under "uncategorized" so the
         // bar always sums correctly in internal-only mode.
@@ -238,7 +242,10 @@
     })
 
     const risuFootprint = $derived(
-        stats ? stats.files.db + stats.files.wal + stats.files.shm + stats.backups.file.totalSize : 0
+        stats
+            ? stats.files.db + stats.files.wal + stats.files.shm
+              + stats.backups.file.totalSize + (stats.inlayFsBytes ?? 0)
+            : 0
     )
 
     const diskTotal = $derived(stats?.disk.total ?? null)
