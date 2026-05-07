@@ -1688,7 +1688,7 @@ export const languageEnglish = {
     storageBackups: "Backups",
     storageBackupsManage: "Manage backups",
     storageBackupsAuto: "Snapshot (DB only)",
-    storageBackupsAutoDesc: "Periodic automatic snapshots for quick recovery. Stored inside risuai.db and rotated to fit ~500 MB. Character assets and inlay images are not included.",
+    storageBackupsAutoDesc: "Periodic automatic snapshots for quick recovery. Stored inside risuai.db; oldest are pruned first based on the configured limits. Character assets and inlay images are not included.",
     storageBackupsManual: "Server backup",
     storageBackupsManualDesc: "A full backup including character assets and inlay images. Stored directly on the server; the location can be changed.",
     storageBackupsCount: (count: number, size: number) =>

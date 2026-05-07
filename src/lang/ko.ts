@@ -1649,7 +1649,7 @@ export const languageKorean = {
     storageBackups: "백업",
     storageBackupsManage: "백업 관리",
     storageBackupsAuto: "스냅샷 (DB만)",
-    storageBackupsAutoDesc: "주기적으로 자동 생성되는 빠른 복구용 스냅샷입니다. risuai.db 안에 저장되며 약 500 MB 한도로 자동 회전합니다. 캐릭터 에셋과 inlay는 포함되지 않습니다.",
+    storageBackupsAutoDesc: "주기적으로 자동 생성되는 빠른 복구용 스냅샷입니다. risuai.db 안에 저장되며, 설정된 한도에 따라 오래된 것부터 자동으로 정리됩니다. 캐릭터 에셋과 inlay는 포함되지 않습니다.",
     storageBackupsManual: "서버 백업",
     storageBackupsManualDesc: "캐릭터 에셋과 inlay 이미지를 모두 포함하는 풀 백업입니다. 서버 스토리지에 직접 저장되며, 보관 위치는 변경 가능합니다.",
     storageBackupsCount: (count: number, size: number) =>

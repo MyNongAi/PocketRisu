@@ -667,24 +667,6 @@
         <div class="flex flex-col gap-1 mb-4">
             <div class="flex items-baseline justify-between gap-2">
                 <div class="flex items-center gap-2 text-textcolor">
-                    <ShieldCheckIcon size={14} />
-                    <span class="font-medium text-sm">{language.storageBackupsAuto}</span>
-                </div>
-                <span class="text-textcolor2 text-sm tabular-nums">
-                    {stats.backups.kv.count > 0 ? language.storageBackupsCount(stats.backups.kv.count, stats.backups.kv.totalSize) : language.storageBackupsEmpty}
-                </span>
-            </div>
-            <p class="text-textcolor2 text-sm leading-relaxed">{language.storageBackupsAutoDesc}</p>
-            {#if stats.backups.kv.oldest && stats.backups.kv.newest}
-                <div class="text-textcolor2 text-xs opacity-70 tabular-nums">
-                    {language.storageBackupsRange(fmtDate(stats.backups.kv.oldest), fmtDate(stats.backups.kv.newest))}
-                </div>
-            {/if}
-        </div>
-
-        <div class="flex flex-col gap-1 pt-4 border-t border-darkborderc/50">
-            <div class="flex items-baseline justify-between gap-2">
-                <div class="flex items-center gap-2 text-textcolor">
                     <SaveIcon size={14} />
                     <span class="font-medium text-sm">{language.storageBackupsManual}</span>
                 </div>
@@ -696,6 +678,24 @@
             {#if stats.backups.file.oldest && stats.backups.file.newest}
                 <div class="text-textcolor2 text-xs opacity-70 tabular-nums">
                     {language.storageBackupsRange(fmtDateShort(stats.backups.file.oldest), fmtDateShort(stats.backups.file.newest))}
+                </div>
+            {/if}
+        </div>
+
+        <div class="flex flex-col gap-1 pt-4 border-t border-darkborderc/50">
+            <div class="flex items-baseline justify-between gap-2">
+                <div class="flex items-center gap-2 text-textcolor">
+                    <ShieldCheckIcon size={14} />
+                    <span class="font-medium text-sm">{language.storageBackupsAuto}</span>
+                </div>
+                <span class="text-textcolor2 text-sm tabular-nums">
+                    {stats.backups.kv.count > 0 ? language.storageBackupsCount(stats.backups.kv.count, stats.backups.kv.totalSize) : language.storageBackupsEmpty}
+                </span>
+            </div>
+            <p class="text-textcolor2 text-sm leading-relaxed">{language.storageBackupsAutoDesc}</p>
+            {#if stats.backups.kv.oldest && stats.backups.kv.newest}
+                <div class="text-textcolor2 text-xs opacity-70 tabular-nums">
+                    {language.storageBackupsRange(fmtDate(stats.backups.kv.oldest), fmtDate(stats.backups.kv.newest))}
                 </div>
             {/if}
         </div>
