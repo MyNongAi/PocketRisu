@@ -100,10 +100,74 @@ function currentPersistWarning() {
     return lastPersistFailure;
 }
 
-// ─── Server-side database backup ─────────────────────────────────────────────
-const BACKUP_BUDGET_BYTES = 500 * 1024 * 1024; // 500 MB
+// ─── Server-side database backup (DB-only snapshots) ────────────────────────
+//
+// Snapshots live as `database/dbbackup-{ts}.bin` keys inside the kv table.
+// They're created on every successful persist (with a cooldown) and rotated
+// to fit user-configured count/size limits — see SNAPSHOT_LIMIT_* below.
+const SNAPSHOT_LIMIT_COUNT_KEY = 'config/snapshot-max-count';
+const SNAPSHOT_LIMIT_BYTES_KEY = 'config/snapshot-max-bytes';
+const SNAPSHOT_LIMIT_DEFAULT_COUNT = 20;
+const SNAPSHOT_LIMIT_DEFAULT_BYTES = 500 * 1024 * 1024; // 500 MB
+// Safety bounds to keep a stray PUT from making the system unusable.
+const SNAPSHOT_LIMIT_MIN_COUNT = 1;
+const SNAPSHOT_LIMIT_MAX_COUNT = 100;
+const SNAPSHOT_LIMIT_MIN_BYTES = 10 * 1024 * 1024;        // 10 MB
+const SNAPSHOT_LIMIT_MAX_BYTES = 50 * 1024 * 1024 * 1024; // 50 GB
 const BACKUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 let lastBackupTime = null;
+
+function readSnapshotConfigInt(key, fallback, min, max) {
+    try {
+        const raw = kvGet(key);
+        if (!raw) return fallback;
+        const n = parseInt(Buffer.from(raw).toString('utf-8').trim(), 10);
+        if (!Number.isFinite(n)) return fallback;
+        return Math.min(max, Math.max(min, n));
+    } catch { return fallback; }
+}
+
+function getSnapshotLimits() {
+    return {
+        maxCount: readSnapshotConfigInt(
+            SNAPSHOT_LIMIT_COUNT_KEY, SNAPSHOT_LIMIT_DEFAULT_COUNT,
+            SNAPSHOT_LIMIT_MIN_COUNT, SNAPSHOT_LIMIT_MAX_COUNT,
+        ),
+        maxBytes: readSnapshotConfigInt(
+            SNAPSHOT_LIMIT_BYTES_KEY, SNAPSHOT_LIMIT_DEFAULT_BYTES,
+            SNAPSHOT_LIMIT_MIN_BYTES, SNAPSHOT_LIMIT_MAX_BYTES,
+        ),
+    };
+}
+
+// Walk newest → oldest; keep within both limits, delete the rest. The most
+// recent snapshot is always kept (even if it alone exceeds the byte limit) so
+// we never end up with zero backups after a config change.
+function trimSnapshotsToLimits() {
+    const { maxCount, maxBytes } = getSnapshotLimits();
+    const entries = kvListWithSizes(DB_BACKUP_PREFIX)
+        .map((it) => {
+            const tsRaw = parseInt(it.key.slice(DB_BACKUP_PREFIX.length, -4), 10);
+            return { key: it.key, size: it.size, ts: Number.isFinite(tsRaw) ? tsRaw : 0 };
+        })
+        .sort((a, b) => b.ts - a.ts);
+
+    let runningBytes = 0;
+    const toDelete = [];
+    for (let i = 0; i < entries.length; i++) {
+        const e = entries[i];
+        const isFirst = i === 0;
+        const fitsByCount = i < maxCount;
+        const fitsByBytes = runningBytes + e.size <= maxBytes;
+        if (isFirst || (fitsByCount && fitsByBytes)) {
+            runningBytes += e.size;
+        } else {
+            toDelete.push(e.key);
+        }
+    }
+    for (const key of toDelete) kvDel(key);
+    return { kept: entries.length - toDelete.length, removed: toDelete.length };
+}
 
 function createBackupAndRotate() {
     const now = Date.now();
@@ -112,22 +176,9 @@ function createBackupAndRotate() {
     }
     lastBackupTime = now;
 
-    const backupKey = `database/dbbackup-${(now / 100).toFixed()}.bin`;
+    const backupKey = `${DB_BACKUP_PREFIX}${(now / 100).toFixed()}.bin`;
     kvCopyValue('database/database.bin', backupKey);
-
-    const backupKeys = kvList('database/dbbackup-')
-        .sort((a, b) => {
-            const aTs = parseInt(a.slice(18, -4));
-            const bTs = parseInt(b.slice(18, -4));
-            return bTs - aTs;
-        });
-
-    const dbSize = kvSize('database/database.bin') || 1;
-    const maxBackups = Math.min(20, Math.max(3, Math.floor(BACKUP_BUDGET_BYTES / dbSize)));
-
-    while (backupKeys.length > maxBackups) {
-        kvDel(backupKeys.pop());
-    }
+    trimSnapshotsToLimits();
 }
 
 async function flushPendingDb() {
@@ -4551,6 +4602,59 @@ app.post('/api/db/optimize', async (req, res, next) => {
 
 // ── Snapshot list (database/dbbackup-* keys) ─────────────────────────────────
 
+app.get('/api/db/snapshots/limits', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    try {
+        const { maxCount, maxBytes } = getSnapshotLimits();
+        const items = kvListWithSizes(DB_BACKUP_PREFIX);
+        const currentBytes = items.reduce((s, it) => s + it.size, 0);
+        res.json({
+            maxCount,
+            maxBytes,
+            currentCount: items.length,
+            currentBytes,
+            bounds: {
+                minCount: SNAPSHOT_LIMIT_MIN_COUNT,
+                maxCount: SNAPSHOT_LIMIT_MAX_COUNT,
+                minBytes: SNAPSHOT_LIMIT_MIN_BYTES,
+                maxBytes: SNAPSHOT_LIMIT_MAX_BYTES,
+            },
+            defaults: {
+                count: SNAPSHOT_LIMIT_DEFAULT_COUNT,
+                bytes: SNAPSHOT_LIMIT_DEFAULT_BYTES,
+            },
+        });
+    } catch (err) { next(err); }
+});
+
+app.put('/api/db/snapshots/limits', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!checkActiveSession(req, res)) return;
+    try {
+        const rawCount = Number(req.body?.maxCount);
+        const rawBytes = Number(req.body?.maxBytes);
+        if (!Number.isFinite(rawCount) || rawCount < SNAPSHOT_LIMIT_MIN_COUNT || rawCount > SNAPSHOT_LIMIT_MAX_COUNT) {
+            return res.status(400).json({ error: `maxCount out of range (${SNAPSHOT_LIMIT_MIN_COUNT}-${SNAPSHOT_LIMIT_MAX_COUNT})` });
+        }
+        if (!Number.isFinite(rawBytes) || rawBytes < SNAPSHOT_LIMIT_MIN_BYTES || rawBytes > SNAPSHOT_LIMIT_MAX_BYTES) {
+            return res.status(400).json({ error: `maxBytes out of range` });
+        }
+        const maxCount = Math.floor(rawCount);
+        const maxBytes = Math.floor(rawBytes);
+        kvSet(SNAPSHOT_LIMIT_COUNT_KEY, Buffer.from(String(maxCount), 'utf-8'));
+        kvSet(SNAPSHOT_LIMIT_BYTES_KEY, Buffer.from(String(maxBytes), 'utf-8'));
+        const trim = trimSnapshotsToLimits();
+        const items = kvListWithSizes(DB_BACKUP_PREFIX);
+        const currentBytes = items.reduce((s, it) => s + it.size, 0);
+        res.json({
+            maxCount, maxBytes,
+            currentCount: items.length,
+            currentBytes,
+            removed: trim.removed,
+        });
+    } catch (err) { next(err); }
+});
+
 app.get('/api/db/snapshots', async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
     try {
@@ -4561,6 +4665,20 @@ app.get('/api/db/snapshots', async (req, res, next) => {
             return { key: it.key, size: it.size, timestamp: ts };
         }).sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
         res.json({ snapshots: out });
+    } catch (err) { next(err); }
+});
+
+app.delete('/api/db/snapshots', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!checkActiveSession(req, res)) return;
+    try {
+        const key = typeof req.query?.key === 'string' ? req.query.key : '';
+        // Restrict to snapshot prefix — never let this endpoint touch other kv keys.
+        if (!key.startsWith(DB_BACKUP_PREFIX)) {
+            return res.status(400).json({ error: 'Invalid snapshot key' });
+        }
+        kvDel(key);
+        res.json({ ok: true });
     } catch (err) { next(err); }
 });
 

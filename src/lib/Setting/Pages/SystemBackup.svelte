@@ -16,6 +16,7 @@
         FolderIcon,
         TriangleAlertIcon,
         RefreshCwIcon,
+        TrashIcon,
     } from '@lucide/svelte'
     import { alertConfirm, alertError, alertWait, notifySuccess } from 'src/ts/alert'
     import { forageStorage } from 'src/ts/globalApi.svelte'
@@ -27,6 +28,14 @@
     // ── Types ────────────────────────────────────────────────────────────────
     interface Snapshot { key: string; size: number; timestamp: number | null }
     interface BackupPathInfo { path: string; default: string; isDefault: boolean }
+    interface SnapshotLimits {
+        maxCount: number
+        maxBytes: number
+        currentCount: number
+        currentBytes: number
+        bounds: { minCount: number; maxCount: number; minBytes: number; maxBytes: number }
+        defaults: { count: number; bytes: number }
+    }
 
     // ── State ────────────────────────────────────────────────────────────────
     let snapshots = $state<Snapshot[]>([])
@@ -41,6 +50,14 @@
 
     let backupListEl = $state<ServerBackupList | undefined>(undefined)
     let backupSaving = $state(false)
+
+    let limits = $state<SnapshotLimits | null>(null)
+    let limitsDialogOpen = $state(false)
+    // ShInput is string-typed; we parse in submitLimits.
+    let limitsDraftCount = $state('20')
+    let limitsDraftMB = $state('500')
+    let limitsDialogError = $state<string | null>(null)
+    let limitsDialogBusy = $state(false)
 
     // ── Format helpers ───────────────────────────────────────────────────────
     function fmtBytes(n: number): string {
@@ -67,6 +84,24 @@
         }
     }
 
+    async function deleteSnapshot(snap: Snapshot) {
+        const when = snap.timestamp ? new Date(snap.timestamp).toLocaleString() : snap.key
+        if (!(await alertConfirm(language.backupSnapshotDeleteConfirm(when)))) return
+        try {
+            const auth = await forageStorage.createAuth()
+            const url = '/api/db/snapshots?key=' + encodeURIComponent(snap.key)
+            const res = await fetch(url, { method: 'DELETE', headers: { 'risu-auth': auth } })
+            if (!res.ok) {
+                const json = await res.json().catch(() => ({}))
+                throw new Error(json?.error || `HTTP ${res.status}`)
+            }
+            notifySuccess(language.backupSnapshotDeleted)
+            await Promise.all([loadSnapshots(), loadLimits()])
+        } catch (err) {
+            alertError(language.backupSnapshotDeleteFailed + ': ' + (err instanceof Error ? err.message : String(err)))
+        }
+    }
+
     async function restoreSnapshot(snap: Snapshot) {
         if (!(await alertConfirm(language.backupLoadConfirm))) return
         if (!(await alertConfirm(language.backupLoadConfirm2))) return
@@ -82,6 +117,66 @@
             location.reload()
         } catch (err) {
             alertError(err instanceof Error ? err.message : String(err))
+        }
+    }
+
+    // ── Snapshot limits ──────────────────────────────────────────────────────
+    async function loadLimits() {
+        try {
+            const auth = await forageStorage.createAuth()
+            const res = await fetch('/api/db/snapshots/limits', { headers: { 'risu-auth': auth } })
+            if (!res.ok) throw new Error(`HTTP ${res.status}`)
+            limits = await res.json()
+        } catch (err) {
+            console.error('[Snapshot limits]', err)
+        }
+    }
+
+    function openLimitsDialog() {
+        if (!limits) return
+        limitsDraftCount = String(limits.maxCount)
+        limitsDraftMB = String(Math.round(limits.maxBytes / 1024 / 1024))
+        limitsDialogError = null
+        limitsDialogOpen = true
+    }
+
+    async function submitLimits() {
+        if (!limits) return
+        const c = Math.floor(Number(limitsDraftCount))
+        const mb = Math.floor(Number(limitsDraftMB))
+        const minC = limits.bounds.minCount
+        const maxC = limits.bounds.maxCount
+        const minMB = Math.round(limits.bounds.minBytes / 1024 / 1024)
+        const maxMB = Math.round(limits.bounds.maxBytes / 1024 / 1024)
+        if (!Number.isFinite(c) || c < minC || c > maxC) {
+            limitsDialogError = language.backupSnapshotLimitsCountRange(minC, maxC)
+            return
+        }
+        if (!Number.isFinite(mb) || mb < minMB || mb > maxMB) {
+            limitsDialogError = language.backupSnapshotLimitsBytesRange(minMB, maxMB)
+            return
+        }
+        limitsDialogBusy = true
+        limitsDialogError = null
+        try {
+            const auth = await forageStorage.createAuth()
+            const res = await fetch('/api/db/snapshots/limits', {
+                method: 'PUT',
+                headers: { 'risu-auth': auth, 'content-type': 'application/json' },
+                body: JSON.stringify({ maxCount: c, maxBytes: mb * 1024 * 1024 }),
+            })
+            const json = await res.json().catch(() => ({}))
+            if (!res.ok) {
+                limitsDialogError = json?.error || `HTTP ${res.status}`
+                return
+            }
+            limitsDialogOpen = false
+            notifySuccess(language.backupSnapshotLimitsSuccess(json.removed ?? 0))
+            await Promise.all([loadLimits(), loadSnapshots()])
+        } catch (err) {
+            limitsDialogError = err instanceof Error ? err.message : String(err)
+        } finally {
+            limitsDialogBusy = false
         }
     }
 
@@ -162,6 +257,7 @@
     $effect(() => {
         loadSnapshots()
         loadPath()
+        loadLimits()
     })
 </script>
 
@@ -215,6 +311,19 @@
     </div>
     <p class="text-textcolor2 text-sm leading-relaxed mb-3">{language.storageBackupsAutoDesc}</p>
 
+    <!-- Retention limits row -->
+    {#if limits}
+        <div class="flex items-center gap-2 mb-3 p-2 border border-darkborderc/50 rounded-md bg-bgcolor/50 flex-wrap">
+            <span class="text-textcolor2 text-xs shrink-0">{language.backupSnapshotLimits(limits.maxCount, limits.maxBytes)}</span>
+            <span class="text-textcolor2 text-xs opacity-70 truncate flex-1 min-w-0">
+                {language.backupSnapshotLimitsCurrent(limits.currentCount, limits.currentBytes)}
+            </span>
+            <ShButton variant="outline" size="xs" onclick={openLimitsDialog}>
+                {language.backupSnapshotLimitsChange}
+            </ShButton>
+        </div>
+    {/if}
+
     {#if snapshotError}
         <ShAlert variant="destructive">
             {#snippet icon()}<TriangleAlertIcon />{/snippet}
@@ -232,10 +341,16 @@
                         </span>
                         <span class="text-xs text-textcolor2 tabular-nums">{fmtBytes(snap.size)}</span>
                     </div>
-                    <button class="text-textcolor2 hover:text-primary cursor-pointer" title={language.backupSnapshotRestore} aria-label={language.backupSnapshotRestore}
-                        onclick={() => restoreSnapshot(snap)}>
-                        <RotateCcwIcon size={18}/>
-                    </button>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <button class="text-textcolor2 hover:text-primary cursor-pointer" title={language.backupSnapshotRestore} aria-label={language.backupSnapshotRestore}
+                            onclick={() => restoreSnapshot(snap)}>
+                            <RotateCcwIcon size={18}/>
+                        </button>
+                        <button class="text-textcolor2 hover:text-red-400 cursor-pointer" title={language.backupSnapshotDelete} aria-label={language.backupSnapshotDelete}
+                            onclick={() => deleteSnapshot(snap)}>
+                            <TrashIcon size={18}/>
+                        </button>
+                    </div>
                 </div>
             {/each}
         </div>
@@ -294,6 +409,53 @@
                 {language.cancel}
             </ShButton>
             <ShButton variant="primary" onclick={submitPathChange} disabled={pathDialogBusy}>
+                {language.confirm}
+            </ShButton>
+        </div>
+    {/snippet}
+</ShDialog>
+
+<!-- Snapshot limits dialog ──────────────────────────────────────────────── -->
+<ShDialog bind:open={limitsDialogOpen} size="lg">
+    {#snippet title()}{language.backupSnapshotLimitsDialog}{/snippet}
+    <p class="text-textcolor2 text-sm leading-relaxed mb-3">{language.backupSnapshotLimitsDialogDesc}</p>
+    {#if limits}
+        <div class="flex flex-col gap-3">
+            <label class="flex flex-col gap-1">
+                <span class="text-textcolor2 text-sm">{language.backupSnapshotLimitsCount}</span>
+                <ShInput type="number" bind:value={limitsDraftCount}
+                    min={limits.bounds.minCount} max={limits.bounds.maxCount} step={1} />
+                <span class="text-textcolor2 text-xs opacity-70">
+                    {language.backupSnapshotLimitsCountRange(limits.bounds.minCount, limits.bounds.maxCount)}
+                </span>
+            </label>
+            <label class="flex flex-col gap-1">
+                <span class="text-textcolor2 text-sm">{language.backupSnapshotLimitsBytes}</span>
+                <ShInput type="number" bind:value={limitsDraftMB}
+                    min={Math.round(limits.bounds.minBytes / 1024 / 1024)}
+                    max={Math.round(limits.bounds.maxBytes / 1024 / 1024)}
+                    step={10} />
+                <span class="text-textcolor2 text-xs opacity-70">
+                    {language.backupSnapshotLimitsBytesRange(
+                        Math.round(limits.bounds.minBytes / 1024 / 1024),
+                        Math.round(limits.bounds.maxBytes / 1024 / 1024)
+                    )}
+                </span>
+            </label>
+        </div>
+    {/if}
+    {#if limitsDialogError}
+        <ShAlert variant="destructive" className="mt-3">
+            {#snippet icon()}<TriangleAlertIcon />{/snippet}
+            {limitsDialogError}
+        </ShAlert>
+    {/if}
+    {#snippet footer()}
+        <div class="flex justify-end gap-2">
+            <ShButton variant="outline" onclick={() => (limitsDialogOpen = false)} disabled={limitsDialogBusy}>
+                {language.cancel}
+            </ShButton>
+            <ShButton variant="primary" onclick={submitLimits} disabled={limitsDialogBusy}>
                 {language.confirm}
             </ShButton>
         </div>

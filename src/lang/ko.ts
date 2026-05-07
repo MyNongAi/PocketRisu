@@ -1703,6 +1703,26 @@ export const languageKorean = {
     backupSnapshot: "스냅샷 (DB만)",
     backupSnapshotEmpty: "스냅샷이 없습니다.",
     backupSnapshotRestore: "이 스냅샷으로 복원",
+    backupSnapshotDelete: "스냅샷 삭제",
+    backupSnapshotDeleteConfirm: (when: string) => `${when} 스냅샷을 삭제할까요? 되돌릴 수 없습니다.`,
+    backupSnapshotDeleted: "스냅샷이 삭제되었습니다.",
+    backupSnapshotDeleteFailed: "스냅샷 삭제 실패",
+    backupSnapshotLimits: (count: number, bytes: number) =>
+        `최대 ${count}개 · ${(bytes / 1024 / 1024).toFixed(0)} MB`,
+    backupSnapshotLimitsCurrent: (count: number, bytes: number) =>
+        `현재 ${count}개 · ${(bytes / 1024 / 1024).toFixed(1)} MB 사용`,
+    backupSnapshotLimitsChange: "한도 설정",
+    backupSnapshotLimitsDialog: "스냅샷 보관 한도",
+    backupSnapshotLimitsDialogDesc: "두 한도 중 먼저 도달하는 쪽이 적용됩니다. 새 스냅샷이 생성될 때 자동으로 회전되며, 한도를 줄이면 즉시 정리됩니다 (가장 최신 1개는 한도 무관 보존).",
+    backupSnapshotLimitsCount: "최대 개수",
+    backupSnapshotLimitsBytes: "최대 용량 (MB)",
+    backupSnapshotLimitsSuccess: (removed: number) =>
+        removed > 0 ? `한도 적용 완료 (${removed}개 정리됨)` : "한도가 변경되었습니다.",
+    backupSnapshotLimitsFailed: "한도 변경 실패",
+    backupSnapshotLimitsCountRange: (min: number, max: number) =>
+        `${min}-${max} 사이 정수`,
+    backupSnapshotLimitsBytesRange: (minMB: number, maxMB: number) =>
+        `${minMB}-${maxMB.toLocaleString()} MB 사이`,
 
     backupServer: "서버 백업",
     backupServerDesc: "캐릭터 에셋과 inlay 이미지를 모두 포함하는 풀 백업입니다. 서버 스토리지에 직접 저장되며, 보관 위치는 아래에서 변경할 수 있습니다.",

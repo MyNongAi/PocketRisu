@@ -1742,6 +1742,26 @@ export const languageEnglish = {
     backupSnapshot: "Snapshot (DB only)",
     backupSnapshotEmpty: "No snapshots.",
     backupSnapshotRestore: "Restore from this snapshot",
+    backupSnapshotDelete: "Delete snapshot",
+    backupSnapshotDeleteConfirm: (when: string) => `Delete the ${when} snapshot? This cannot be undone.`,
+    backupSnapshotDeleted: "Snapshot deleted.",
+    backupSnapshotDeleteFailed: "Failed to delete snapshot",
+    backupSnapshotLimits: (count: number, bytes: number) =>
+        `Up to ${count} · ${(bytes / 1024 / 1024).toFixed(0)} MB`,
+    backupSnapshotLimitsCurrent: (count: number, bytes: number) =>
+        `Currently ${count} · ${(bytes / 1024 / 1024).toFixed(1)} MB used`,
+    backupSnapshotLimitsChange: "Configure limits",
+    backupSnapshotLimitsDialog: "Snapshot retention limits",
+    backupSnapshotLimitsDialogDesc: "Whichever limit is reached first applies. Snapshots are rotated as new ones are created; reducing a limit trims immediately (the most recent snapshot is always kept regardless).",
+    backupSnapshotLimitsCount: "Max count",
+    backupSnapshotLimitsBytes: "Max size (MB)",
+    backupSnapshotLimitsSuccess: (removed: number) =>
+        removed > 0 ? `Limits applied (${removed} removed)` : "Limits updated.",
+    backupSnapshotLimitsFailed: "Failed to update limits",
+    backupSnapshotLimitsCountRange: (min: number, max: number) =>
+        `Integer between ${min} and ${max}`,
+    backupSnapshotLimitsBytesRange: (minMB: number, maxMB: number) =>
+        `Between ${minMB} and ${maxMB.toLocaleString()} MB`,
 
     backupServer: "Server backup",
     backupServerDesc: "A full backup including character assets and inlay images. Stored directly on the server; you can change the location below.",
