@@ -1618,8 +1618,8 @@ export const languageKorean = {
     storageRowReclaimablePagesDesc: "삭제된 데이터가 남긴 빈 페이지로, SQLite 오버헤드 중 정리로 회수 가능한 부분입니다. 아래 \"SQLite 오버헤드 정리\"의 막대 노란색 부분과 같은 값이며, 정리 실행 시 모두 회수됩니다.",
     storageRowReclaimable: (size: number) =>
         `${(size / 1024 / 1024).toFixed(1)} MB 회수 가능 — Optimize로 압축.`,
-    storageInternalOnly: "RisuAI 구성만 보기",
-    storageInternalOnlyHint: "기타 시스템·여유 공간을 숨기고 RisuAI 내부 항목만 비율로 표시합니다.",
+    storageInternalOnly: "저장공간과 함께보기",
+    storageInternalOnlyHint: "끄면 RisuAI 내부 항목만, 켜면 기타 시스템·여유 공간까지 디스크 전체 기준으로 표시합니다.",
 
     // 2 GB BLOB 한계 (별도 섹션)
     storageBlobLimit: "2 GB BLOB 한계",
@@ -1650,8 +1650,8 @@ export const languageKorean = {
     storageBackupsManage: "백업 관리",
     storageBackupsAuto: "스냅샷 (DB만)",
     storageBackupsAutoDesc: "주기적으로 자동 생성되는 빠른 복구용 스냅샷입니다. risuai.db 안에 저장되며 약 500 MB 한도로 자동 회전합니다. 캐릭터 에셋과 inlay는 포함되지 않습니다.",
-    storageBackupsManual: "백업 (전체)",
-    storageBackupsManualDesc: "직접 저장하는 풀 백업입니다. 캐릭터 에셋·inlay·콜드 스토리지까지 모두 포함되며 backups/ 폴더에 별도 파일로 보관됩니다 (자동 회전 없음).",
+    storageBackupsManual: "서버 백업",
+    storageBackupsManualDesc: "캐릭터 에셋과 inlay 이미지를 모두 포함하는 풀 백업입니다. 서버 스토리지에 직접 저장되며, 보관 위치는 변경 가능합니다.",
     storageBackupsCount: (count: number, size: number) =>
         `${count}개 · ${(size / 1024 / 1024).toFixed(1)} MB`,
     storageBackupsRange: (oldest: string, newest: string) => `최신 ${newest} · 가장 오래된 것 ${oldest}`,
@@ -1691,6 +1691,7 @@ export const languageKorean = {
     migrationInfoBackupMoved: "서버 백업, 로컬 백업, 자동 스냅샷 관리는 [시스템 → 백업] 탭으로 이동했습니다.",
     migrationGotoBackupTab: "백업 탭 열기",
     migrationLegacyAccordion: "기존 리스 방식으로 백업 (레거시)",
+    migrationLoadUpstreamBackup: "원본 리스 로컬 백업 불러오기",
 
     // 시스템 → 백업 탭
     systemBackups: "백업",
@@ -1700,7 +1701,8 @@ export const languageKorean = {
     backupSnapshotEmpty: "스냅샷이 없습니다.",
     backupSnapshotRestore: "이 스냅샷으로 복원",
 
-    backupServer: "백업 (전체)",
+    backupServer: "서버 백업",
+    backupServerDesc: "캐릭터 에셋과 inlay 이미지를 모두 포함하는 풀 백업입니다. 서버 스토리지에 직접 저장되며, 보관 위치는 아래에서 변경할 수 있습니다.",
     backupServerCreate: "백업 만들기",
     backupServerEmpty: "저장된 백업이 없습니다.",
 

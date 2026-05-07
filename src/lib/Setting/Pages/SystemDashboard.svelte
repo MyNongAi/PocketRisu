@@ -81,7 +81,10 @@
     let optimizeOpen = $state(false)
     let optimizeMessage = $state('')
 
-    let internalOnly = $state(false)
+    // Default off = show only RisuAI internal breakdown (smaller scope, more
+    // useful at-a-glance). Toggle on to expand the bar to disk-total scale
+    // including "Other (system & apps)" and "Free space".
+    let showFullDisk = $state(false)
 
     const PAGE_SIZE = 50
 
@@ -246,7 +249,7 @@
     // Bar denominator depends on view mode.
     //   Disk mode: full disk total — RisuAI slices may be near-invisible slivers.
     //   Internal mode: RisuAI footprint — every slice expands proportionally.
-    const barDenominator = $derived(internalOnly ? Math.max(1, risuFootprint) : (diskTotal ?? Math.max(1, risuFootprint)))
+    const barDenominator = $derived(showFullDisk ? (diskTotal ?? Math.max(1, risuFootprint)) : Math.max(1, risuFootprint))
 
     function slicePct(size: number): number {
         if (size <= 0 || barDenominator <= 0) return 0
@@ -307,7 +310,7 @@
                 <span class="font-medium">{language.storageDiskUsage}</span>
             </div>
             <span class="text-textcolor2 text-sm tabular-nums">
-                {#if internalOnly}
+                {#if !showFullDisk}
                     {language.storageDiskRisuTotal(risuFootprint)}
                 {:else if diskTotal != null && diskUsed != null}
                     {language.storageDiskHeader(diskUsed, diskTotal)}
@@ -338,7 +341,7 @@
                     </Tooltip.Portal>
                 </Tooltip.Root>
             {/each}
-            {#if !internalOnly && otherUsed != null && otherUsed > 0}
+            {#if showFullDisk && otherUsed != null && otherUsed > 0}
                 <Tooltip.Root>
                     <Tooltip.Trigger>
                         {#snippet child({ props })}
@@ -392,7 +395,7 @@
                     <span class="text-textcolor text-sm tabular-nums shrink-0 w-20 text-right">{fmtBytes(row.size)}</span>
                 </div>
             {/each}
-            {#if !internalOnly && otherUsed != null && otherUsed > 0}
+            {#if showFullDisk && otherUsed != null && otherUsed > 0}
                 <div class="flex items-center gap-2 py-1.5 border-b border-darkborderc/30 last:border-b-0">
                     <span class="inline-block size-3 rounded-sm shrink-0 bg-textcolor2/40"></span>
                     <span class="text-textcolor text-sm flex-1 min-w-0 truncate">{language.storageDiskOther}</span>
@@ -400,7 +403,7 @@
                     <span class="text-textcolor text-sm tabular-nums shrink-0 w-20 text-right">{fmtBytes(otherUsed)}</span>
                 </div>
             {/if}
-            {#if !internalOnly && diskFree != null}
+            {#if showFullDisk && diskFree != null}
                 <div class="flex items-center gap-2 py-1.5 border-b border-darkborderc/30 last:border-b-0">
                     <span class="inline-block size-3 rounded-sm shrink-0 border border-darkborderc bg-bgcolor"></span>
                     <span class="text-textcolor text-sm flex-1 min-w-0 truncate">{language.storageDiskFree}</span>
@@ -413,7 +416,7 @@
         <!-- Footer: internal-only switch -->
         <div class="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-darkborderc/50">
             <label class="flex items-center gap-2 cursor-pointer select-none">
-                <ShSwitch bind:checked={internalOnly} />
+                <ShSwitch bind:checked={showFullDisk} />
                 <span class="text-textcolor text-sm">{language.storageInternalOnly}</span>
             </label>
             <span class="text-textcolor2 text-xs hidden sm:inline">{language.storageInternalOnlyHint}</span>

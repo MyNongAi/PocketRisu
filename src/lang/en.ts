@@ -1657,8 +1657,8 @@ export const languageEnglish = {
     storageRowReclaimablePagesDesc: "Empty pages left behind by deleted data — the reclaimable portion of SQLite overhead. Same value as the yellow segment in the \"Clean up SQLite overhead\" bar below; cleanup reclaims all of them.",
     storageRowReclaimable: (size: number) =>
         `${(size / 1024 / 1024).toFixed(1)} MB reclaimable — run Optimize to compact.`,
-    storageInternalOnly: "RisuAI breakdown only",
-    storageInternalOnlyHint: "Hide system & free space; show only what RisuAI uses.",
+    storageInternalOnly: "Show with full disk",
+    storageInternalOnlyHint: "Off shows only RisuAI items; on includes system & free space relative to the disk.",
 
     // 2 GB BLOB limit (separate section)
     storageBlobLimit: "2 GB BLOB limit",
@@ -1689,8 +1689,8 @@ export const languageEnglish = {
     storageBackupsManage: "Manage backups",
     storageBackupsAuto: "Snapshot (DB only)",
     storageBackupsAutoDesc: "Periodic automatic snapshots for quick recovery. Stored inside risuai.db and rotated to fit ~500 MB. Character assets and inlay images are not included.",
-    storageBackupsManual: "Backup (full)",
-    storageBackupsManualDesc: "Full backups you save explicitly. Includes character assets, inlay images, and cold storage. Stored as separate files under the backups/ folder (no auto-rotation).",
+    storageBackupsManual: "Server backup",
+    storageBackupsManualDesc: "A full backup including character assets and inlay images. Stored directly on the server; the location can be changed.",
     storageBackupsCount: (count: number, size: number) =>
         `${count} · ${(size / 1024 / 1024).toFixed(1)} MB`,
     storageBackupsRange: (oldest: string, newest: string) => `Latest ${newest} · oldest ${oldest}`,
@@ -1730,6 +1730,7 @@ export const languageEnglish = {
     migrationInfoBackupMoved: "Server backups, local backups, and DB snapshots have moved to [System → Backups].",
     migrationGotoBackupTab: "Open Backups tab",
     migrationLegacyAccordion: "Legacy backup options (RisuAI-style)",
+    migrationLoadUpstreamBackup: "Load upstream RisuAI local backup",
 
     // System → Backups tab
     systemBackups: "Backups",
@@ -1739,7 +1740,8 @@ export const languageEnglish = {
     backupSnapshotEmpty: "No snapshots.",
     backupSnapshotRestore: "Restore from this snapshot",
 
-    backupServer: "Backup (full)",
+    backupServer: "Server backup",
+    backupServerDesc: "A full backup including character assets and inlay images. Stored directly on the server; you can change the location below.",
     backupServerCreate: "Create backup",
     backupServerEmpty: "No backups saved.",
 

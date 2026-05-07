@@ -2,13 +2,11 @@
     import { language } from "src/lang";
     import SettingPage from "src/lib/UI/GUI/SettingPage.svelte";
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
-    import ShAlert from "src/lib/UI/GUI/ShAlert.svelte";
     import ShAccordion from "src/lib/UI/GUI/ShAccordion.svelte";
     import Button from "src/lib/UI/GUI/Button.svelte";
     import { alertConfirm } from "src/ts/alert";
     import {
         LoadLocalBackup,
-        SaveLocalBackup,
         SaveLocalBackupForUpstream,
         SavePartialLocalBackup,
         ImportFromSaveZip,
@@ -26,15 +24,15 @@
 <SettingPage title={language.migration}>
     <p class="text-textcolor2 text-sm leading-relaxed mb-4">{language.migrationDesc}</p>
 
-    <ShAlert variant="info" className="mb-4">
-        {#snippet icon()}<InfoIcon />{/snippet}
-        <div class="flex items-baseline justify-between gap-3 flex-wrap">
-            <span class="leading-relaxed">{language.migrationInfoBackupMoved}</span>
-            <ShButton variant="outline" size="sm" onclick={gotoBackupTab}>
-                {language.migrationGotoBackupTab}
-            </ShButton>
+    <div class="bg-blue-900/30 border border-blue-700/40 rounded-md px-4 py-3 mb-4 flex items-center justify-between gap-3 flex-wrap text-blue-300">
+        <div class="flex items-center gap-2.5 min-w-0 flex-1">
+            <InfoIcon class="size-4 shrink-0 text-blue-400" />
+            <span class="leading-relaxed text-sm">{language.migrationInfoBackupMoved}</span>
         </div>
-    </ShAlert>
+        <ShButton variant="outline" size="sm" onclick={gotoBackupTab}>
+            {language.migrationGotoBackupTab}
+        </ShButton>
+    </div>
 
     <!-- Migration: upstream RisuAI ↔ NodeOnly ─────────────────────────── -->
     <Button
@@ -52,7 +50,7 @@
                 LoadLocalBackup();
             }
         }} className="mt-2">
-        {language.loadBackupLocal}
+        {language.migrationLoadUpstreamBackup}
     </Button>
 
     <h3 class="mb-1 text-lg font-bold mt-6">{language.importSaveFolderHeader}</h3>
@@ -70,27 +68,20 @@
     <!-- Legacy backup options — collapsed by default ─────────────────── -->
     <div class="mt-6">
         <ShAccordion name={language.migrationLegacyAccordion} variant="card">
-            <Button
-                onclick={async () => {
-                    if (await alertConfirm(language.backupConfirm)) {
-                        SaveLocalBackup();
-                    }
-                }} className="mt-2">
-                {language.saveBackupLocal}
-            </Button>
+            <div class="flex flex-col gap-2">
+                <Button
+                    onclick={async () => {
+                        if (await alertConfirm(language.backupConfirm)) {
+                            SavePartialLocalBackup();
+                        }
+                    }} className="w-full">
+                    {language.savePartialLocalBackup}
+                </Button>
 
-            <Button
-                onclick={async () => {
-                    if (await alertConfirm(language.backupConfirm)) {
-                        SavePartialLocalBackup();
-                    }
-                }} className="mt-2">
-                {language.savePartialLocalBackup}
-            </Button>
-
-            <Button onclick={exportAsDataset} className="mt-2">
-                {language.exportAsDataset}
-            </Button>
+                <Button onclick={exportAsDataset} className="w-full">
+                    {language.exportAsDataset}
+                </Button>
+            </div>
         </ShAccordion>
     </div>
 </SettingPage>

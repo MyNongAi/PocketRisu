@@ -167,6 +167,41 @@
 
 <p class="text-textcolor2 text-sm mb-4">{language.backupTabDesc}</p>
 
+<!-- Server backup section ────────────────────────────────────────────────── -->
+<div class="border border-darkborderc bg-darkbg/40 rounded-md p-4 mb-4">
+    <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+        <div class="flex items-center gap-2 text-textcolor">
+            <SaveIcon size={16} />
+            <span class="font-medium">{language.backupServer}</span>
+        </div>
+    </div>
+    <p class="text-textcolor2 text-sm leading-relaxed mb-3">{language.backupServerDesc}</p>
+
+    <div class="flex justify-end mb-3">
+        <ShButton variant="primary" onclick={createServerBackup} disabled={backupSaving}>
+            <SaveIcon size={16} />
+            {language.backupServerCreate}
+        </ShButton>
+    </div>
+
+    <!-- Path control -->
+    <div class="flex items-center gap-2 mb-3 p-2 border border-darkborderc/50 rounded-md bg-bgcolor/50">
+        <FolderIcon size={14} class="text-textcolor2 shrink-0" />
+        <span class="text-textcolor2 text-xs shrink-0">{language.backupServerPath}:</span>
+        <span class="text-textcolor text-xs font-mono truncate flex-1 min-w-0">
+            {pathInfo?.path ?? '—'}
+        </span>
+        {#if pathInfo?.isDefault}
+            <span class="text-textcolor2 text-xs shrink-0 opacity-60">({language.backupServerPathDefault})</span>
+        {/if}
+        <ShButton variant="outline" size="xs" onclick={openPathDialog}>
+            {language.backupServerPathChange}
+        </ShButton>
+    </div>
+
+    <ServerBackupList bind:this={backupListEl} />
+</div>
+
 <!-- Snapshot section ─────────────────────────────────────────────────────── -->
 <div class="border border-darkborderc bg-darkbg/40 rounded-md p-4 mb-4">
     <div class="flex items-center justify-between gap-2 mb-3">
@@ -205,41 +240,6 @@
             {/each}
         </div>
     {/if}
-</div>
-
-<!-- Server backup section ────────────────────────────────────────────────── -->
-<div class="border border-darkborderc bg-darkbg/40 rounded-md p-4 mb-4">
-    <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
-        <div class="flex items-center gap-2 text-textcolor">
-            <SaveIcon size={16} />
-            <span class="font-medium">{language.backupServer}</span>
-        </div>
-    </div>
-    <p class="text-textcolor2 text-sm leading-relaxed mb-3">{language.storageBackupsManualDesc}</p>
-
-    <!-- Path control -->
-    <div class="flex items-center gap-2 mb-3 p-2 border border-darkborderc/50 rounded-md bg-bgcolor/50">
-        <FolderIcon size={14} class="text-textcolor2 shrink-0" />
-        <span class="text-textcolor2 text-xs shrink-0">{language.backupServerPath}:</span>
-        <span class="text-textcolor text-xs font-mono truncate flex-1 min-w-0">
-            {pathInfo?.path ?? '—'}
-        </span>
-        {#if pathInfo?.isDefault}
-            <span class="text-textcolor2 text-xs shrink-0 opacity-60">({language.backupServerPathDefault})</span>
-        {/if}
-        <ShButton variant="outline" size="xs" onclick={openPathDialog}>
-            {language.backupServerPathChange}
-        </ShButton>
-    </div>
-
-    <div class="flex justify-end mb-3">
-        <ShButton variant="primary" onclick={createServerBackup} disabled={backupSaving}>
-            <SaveIcon size={16} />
-            {language.backupServerCreate}
-        </ShButton>
-    </div>
-
-    <ServerBackupList bind:this={backupListEl} />
 </div>
 
 <!-- Local backup section ────────────────────────────────────────────────── -->
