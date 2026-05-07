@@ -21,6 +21,7 @@
     import { alertConfirm, alertMd, notifyError, notifySuccess } from 'src/ts/alert'
     import { forageStorage } from 'src/ts/globalApi.svelte'
     import { SystemSubmenuIndex } from 'src/ts/stores.svelte'
+    import { SystemTab } from 'src/ts/routing'
     import { language, getCurrentLocale } from 'src/lang'
 
     // ── Types ────────────────────────────────────────────────────────────────
@@ -655,7 +656,7 @@
                 <ArchiveIcon size={16} />
                 <span class="font-medium">{language.storageBackups}</span>
             </div>
-            <ShButton variant="outline" size="sm" onclick={() => $SystemSubmenuIndex = 1}>
+            <ShButton variant="outline" size="sm" onclick={() => SystemSubmenuIndex.set(SystemTab.Backups)}>
                 {language.storageBackupsManage}
             </ShButton>
         </div>

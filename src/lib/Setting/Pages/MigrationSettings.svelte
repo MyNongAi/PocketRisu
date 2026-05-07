@@ -15,12 +15,11 @@
         CleanupMigratedFiles,
     } from "src/ts/drive/backuplocal";
     import { exportAsDataset } from "src/ts/storage/exportAsDataset";
-    import { SettingsMenuIndex, SystemSubmenuIndex } from "src/ts/stores.svelte";
+    import { openSettings, SettingsRoute, SystemTab } from "src/ts/routing";
     import { InfoIcon } from "@lucide/svelte";
 
     function gotoBackupTab() {
-        SettingsMenuIndex.set(23);
-        SystemSubmenuIndex.set(1);
+        openSettings(SettingsRoute.System, SystemTab.Backups);
     }
 </script>
 

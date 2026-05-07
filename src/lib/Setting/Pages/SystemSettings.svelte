@@ -48,8 +48,7 @@
     const PAGE_SIZE = 200
 
     // submenu lives in a store so other pages can deep-link via
-    // SettingsMenuIndex.set(23) + SystemSubmenuIndex.set(N).
-    // 0 = Dashboard, 1 = Backups, 2 = System Logs.
+    // openSettings(SettingsRoute.System, SystemTab.X) — see src/ts/routing.
     let entries = $state<LogEntry[]>([])
     let totalCount = $state(0)
     let loading = $state(false)
