@@ -53,9 +53,39 @@ export function chatToStub(chat: Chat | ChatStub): ChatStub {
 /**
  * Replace all ChatStubs in a character's chats array with placeholder Chats.
  * Call this once after decoding database.bin so runtime code only sees Chat objects.
+ *
+ * Self-healing for hybrid corruption: if a chat carries the `_stub: true`
+ * flag *and* a real message array (legacy v1.4.x disk corruption), strip the
+ * flag and keep the Chat as-is. Converting it to a placeholder would call
+ * stubToPlaceholder, which resets `message` to `[]` — the corruption would
+ * become real data loss the moment the user sees the chat list.
  */
 export function convertStubsToPlaceholders(chats: ChatOrStub[]): Chat[] {
-    return chats.map(c => isChatStub(c) ? stubToPlaceholder(c) : c)
+    return chats.map(c => {
+        if (!c) return c as Chat
+        if ((c as any)._stub === true && Array.isArray((c as any).message)) {
+            const { _stub: _drop, ...rest } = c as any
+            return rest as Chat
+        }
+        return isChatStub(c) ? stubToPlaceholder(c) : (c as Chat)
+    })
+}
+
+// Classify a chat slot by shape. Used by the chat-data guard's diagnostic
+// dump to surface hybrid corruption (the `_stub: true` + message pattern that
+// caused widespread chat data loss in v1.4.x).
+export type ChatShape = 'stub' | 'placeholder' | 'hybrid' | 'full' | 'empty' | 'neither'
+
+export function classifyChat(c: any): ChatShape {
+    if (!c) return 'empty'
+    const isStub = c._stub === true
+    const isPh = c._placeholder === true
+    const hasMessage = Array.isArray(c.message)
+    if (isStub && hasMessage) return 'hybrid'
+    if (isStub) return 'stub'
+    if (isPh) return 'placeholder'
+    if (hasMessage) return 'full'
+    return 'neither'
 }
 
 // ── Hydration state ──────────────────────────────────────────────────────────
