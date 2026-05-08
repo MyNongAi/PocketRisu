@@ -226,6 +226,29 @@ function assignMissingChatIds(dbObj) {
     return changed;
 }
 
+// Recovers chats whose folderId points to a deleted folder. The previous merge
+// layer silently kept stale folderId on disk when a user moved a chat out of a
+// folder, then later deleting that folder produced orphans invisible in the
+// sidebar (rendered into neither the no-folder section nor any folder section).
+// Boot-time normalize so historical corruption self-heals; new corruption is
+// blocked by the merge fix in mergeChatStubWithFullChat.
+function normalizeOrphanFolderIds(dbObj) {
+    let changed = false;
+    if (!dbObj?.characters) return changed;
+    for (const char of dbObj.characters) {
+        if (!char?.chats) continue;
+        const validIds = new Set((char.chatFolders ?? []).map(f => f?.id).filter(Boolean));
+        for (const chat of char.chats) {
+            if (!chat) continue;
+            if (chat.folderId && !validIds.has(chat.folderId)) {
+                chat.folderId = null;
+                changed = true;
+            }
+        }
+    }
+    return changed;
+}
+
 async function decodeDatabaseWithPersistentChatIds(raw, options = {}) {
     const { createBackup = false, migrationResult = null } = options;
     const dbObj = normalizeJSON(await decodeRisuSave(raw));
@@ -233,6 +256,9 @@ async function decodeDatabaseWithPersistentChatIds(raw, options = {}) {
 
     const hadMissingIds = assignMissingChatIds(dbObj);
     if (hadMissingIds) needsPersist = true;
+
+    const hadOrphanFolderIds = normalizeOrphanFolderIds(dbObj);
+    if (hadOrphanFolderIds) needsPersist = true;
 
     // One-time migration: restore upstream cold storage characters to full characters.
     // This runs when upstream data first enters NodeOnly (backup import or save folder copy).
@@ -269,9 +295,12 @@ function chatToStub(chat) {
         name: chat.name ?? '',
         _stub: true,
     };
-    if (chat.lastDate != null) stub.lastDate = chat.lastDate;
-    if (chat.folderId != null) stub.folderId = chat.folderId;
-    if (chat.modules != null) stub.modules = chat.modules;
+    // Preserve key presence even when the value is null/undefined so the
+    // round-trip distinguishes "user cleared" from "field absent". See
+    // mergeChatStubWithFullChat — it relies on `in` semantics.
+    if ('lastDate' in chat) stub.lastDate = chat.lastDate;
+    if ('folderId' in chat) stub.folderId = chat.folderId;
+    if ('modules' in chat) stub.modules = chat.modules;
     return stub;
 }
 
@@ -329,9 +358,13 @@ function mergeChatStubWithFullChat(stub, fullChat) {
         id: stub.id || fullChat.id || '',
         name: stub.name,
     };
-    if (stub.lastDate != null) merged.lastDate = stub.lastDate;
-    if (stub.folderId != null) merged.folderId = stub.folderId;
-    if (stub.modules != null) merged.modules = stub.modules;
+    // Use key presence (`in`) so an explicit null/undefined from the client —
+    // meaning "user cleared this field" — overwrites fullChat. The previous
+    // `!= null` check conflated "cleared" with "absent" and silently kept
+    // stale folderId / modules on disk, producing orphan-folder chats.
+    if ('lastDate' in stub) merged.lastDate = stub.lastDate;
+    if ('folderId' in stub) merged.folderId = stub.folderId;
+    if ('modules' in stub) merged.modules = stub.modules;
     return merged;
 }
 
@@ -389,6 +422,14 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
             try { err.attemptedSize = data.length; } catch {}
         }
         throw err;
+    }
+    // Refresh fullChatStore from the persisted snapshot so subsequent
+    // /api/chat-content GETs return the same metadata (folderId, modules)
+    // that just hit disk. Without this, PATCH-only clears of stub fields
+    // leave fullChatStore holding stale fullChat objects, and hydration
+    // would resurrect the cleared values until the next /api/read.
+    if (decodedKey === 'database/database.bin') {
+        initChatStore(fullDb);
     }
 }
 

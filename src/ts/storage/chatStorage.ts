@@ -8,6 +8,11 @@ import { tick } from "svelte"
  * Convert a ChatStub to a placeholder Chat with safe empty defaults.
  * The placeholder passes all Chat type checks so existing code works unchanged.
  * `_placeholder: true` marks it for hydration and dirty-tracking suppression.
+ *
+ * Key presence is preserved (mirroring chatToStub) so an explicit null from
+ * the server — meaning "user cleared this field" — survives the placeholder
+ * round-trip. Otherwise the next chatToStub call would emit a "remove" patch
+ * op and the server merge would fall back to a stale fullChat value.
  */
 export function stubToPlaceholder(stub: ChatStub): Chat {
     const placeholder: Chat = {
@@ -19,14 +24,18 @@ export function stubToPlaceholder(stub: ChatStub): Chat {
         fmIndex: -1,
         _placeholder: true,
     }
-    if (stub.lastDate != null) placeholder.lastDate = stub.lastDate
-    if (stub.folderId != null) placeholder.folderId = stub.folderId
-    if (stub.modules != null) placeholder.modules = stub.modules
+    if ('lastDate' in stub) placeholder.lastDate = stub.lastDate
+    if ('folderId' in stub) placeholder.folderId = stub.folderId
+    if ('modules' in stub) placeholder.modules = stub.modules
     return placeholder
 }
 
 /**
  * Convert a Chat (or placeholder) to a ChatStub for database.bin encoding.
+ *
+ * Key presence is preserved even when the value is null/undefined so the
+ * stub round-trip distinguishes "user cleared" from "field absent". The
+ * server merge layer relies on `in` semantics — see mergeChatStubWithFullChat.
  */
 export function chatToStub(chat: Chat | ChatStub): ChatStub {
     if (isChatStub(chat)) return chat
@@ -35,9 +44,9 @@ export function chatToStub(chat: Chat | ChatStub): ChatStub {
         name: chat.name ?? '',
         _stub: true,
     }
-    if (chat.lastDate != null) stub.lastDate = chat.lastDate
-    if (chat.folderId != null) stub.folderId = chat.folderId
-    if (chat.modules != null) stub.modules = chat.modules
+    if ('lastDate' in chat) stub.lastDate = chat.lastDate
+    if ('folderId' in chat) stub.folderId = chat.folderId
+    if ('modules' in chat) stub.modules = chat.modules
     return stub
 }
 
