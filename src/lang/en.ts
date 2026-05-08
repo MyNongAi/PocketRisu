@@ -1475,7 +1475,7 @@ export const languageEnglish = {
     togglePresetEmpty: "No toggle presets saved.",
     togglePresetRename: "Rename toggle preset",
     togglePresetApplied: (name: string) => `"${name}" preset applied.`,
-    togglePresetFilterCurrentOnly: "Current preset only",
+    togglePresetFilterShowAll: "Show all presets",
     togglePresetNoPromptPreset: "No preset",
     togglePresetEmptyFiltered: "No toggle presets for the current prompt preset.",
     togglePresetApplyConfirm: "Current toggle settings will be overwritten. Apply?",
