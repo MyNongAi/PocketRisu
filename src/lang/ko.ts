@@ -33,7 +33,11 @@ export const languageKorean = {
         "coldStorageWriteFailed": "콜드 스토리지 저장에 실패했습니다. 채팅 데이터는 보존되었습니다.",
         "coldStorageVerifyFailed": "콜드 스토리지 검증에 실패했습니다. 채팅 데이터는 보존되었습니다.",
         "persistFailureTitle": "서버 저장 실패 — 변경사항이 디스크에 반영되지 않습니다",
-        "persistFailureAttemptedSize": "시도 크기"
+        "persistFailureAttemptedSize": "시도 크기",
+        "chatGuardTitle": "채팅 데이터 보호 작동 — 안전 저장 모드로 전환됨",
+        "chatGuardDesc": "비정상적인 저장 패턴이 차단되어 안전 저장(full-write)으로 전환됐어요. 변경사항은 그 경로로 디스크에 저장됩니다. 반복되면 브라우저 콘솔 로그와 함께 제보해주세요.",
+        "chatGuardPersistTitle": "기존 채팅 데이터 보호를 위해 저장을 중단했어요",
+        "chatGuardPersistDesc": "서버에서 손상된 채팅 구조를 감지하여 디스크 기록을 거부했어요. 최근 변경사항이 아직 디스크에 반영되지 않았을 수 있으니 새로고침 전에 다시 확인해주세요. 기존 데이터는 안전합니다."
     },
     "showHelp": "도움말 보기",
     help: helpKo,

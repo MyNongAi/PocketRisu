@@ -287,9 +287,16 @@ async function decodeDatabaseWithPersistentChatIds(raw, options = {}) {
 
 /**
  * Convert a full chat to a stub (metadata only).
+ *
+ * Hybrid corruption guard: a chat carrying `_stub: true` AND a real `message`
+ * array is the v1.4.x legacy hybrid pattern. The fast-path "if _stub return"
+ * would propagate the corruption (server reassemble skips merge for _stub
+ * chats with no fullChat lookup match). Treat hybrids as real chats and
+ * collapse them to a real stub here.
  */
 function chatToStub(chat) {
-    if (!chat || chat._stub) return chat;
+    if (!chat) return chat;
+    if (chat._stub && !Array.isArray(chat.message)) return chat;
     const stub = {
         id: chat.id || '',
         name: chat.name ?? '',
@@ -307,6 +314,11 @@ function chatToStub(chat) {
 /**
  * Initialize fullChatStore from a decoded full database object.
  * Extracts all chat payloads into the store keyed by chaId → chatId.
+ *
+ * Hybrid corruption recovery: a chat with both `_stub: true` and a real
+ * message array is treated as a real chat (its fullChat data is intact).
+ * Strip the `_stub` flag in place so subsequent reassemble passes don't
+ * reproduce the hybrid on disk.
  */
 function initChatStore(dbObj) {
     fullChatStore = new Map();
@@ -315,12 +327,19 @@ function initChatStore(dbObj) {
         if (!char?.chaId || !char.chats) continue;
         const charChats = new Map();
         for (const chat of char.chats) {
-            if (chat && !chat._stub) {
-                if (!chat.id) {
-                    chat.id = nodeCrypto.randomUUID();
-                }
-                charChats.set(chat.id, chat);
+            if (!chat) continue;
+            const isStub = chat._stub === true;
+            const hasMessage = Array.isArray(chat.message);
+            // Real stub (no payload) — fullChatStore tracks payloads only.
+            if (isStub && !hasMessage) continue;
+            // Hybrid: strip the corrupt _stub flag, keep the real chat.
+            if (isStub && hasMessage) {
+                delete chat._stub;
             }
+            if (!chat.id) {
+                chat.id = nodeCrypto.randomUUID();
+            }
+            charChats.set(chat.id, chat);
         }
         if (charChats.size > 0) {
             fullChatStore.set(char.chaId, charChats);
@@ -358,6 +377,11 @@ function mergeChatStubWithFullChat(stub, fullChat) {
         id: stub.id || fullChat.id || '',
         name: stub.name,
     };
+    // Defensive: never let `_stub: true` ride along on a merged chat. If
+    // fullChat carries a stale flag (legacy disk corruption), the spread
+    // would propagate the hybrid pattern back to disk and re-trigger the
+    // chat-data loss path on next round-trip.
+    if ('_stub' in merged) delete merged._stub;
     // Use key presence (`in`) so an explicit null/undefined from the client —
     // meaning "user cleared this field" — overwrites fullChat. The previous
     // `!= null` check conflated "cleared" with "absent" and silently kept
@@ -404,6 +428,112 @@ async function ensureChatStore() {
     initChatStore(dbObj);
 }
 
+// Stub metadata fields a JSON Patch may legitimately touch on a `chats[i]`
+// entry. Anything else is a chat-internal field — those live in fullChatStore,
+// not in dbCache, and should never appear in a /api/patch payload. Keep in
+// sync with chatToStub on both server and client.
+const STUB_METADATA_FIELDS = new Set(['id', 'name', '_stub', 'lastDate', 'folderId', 'modules']);
+
+// Only add/replace/remove are produced by the legitimate patcher. move/copy
+// could alias _stub or other chat-internal fields through `from`, bypassing
+// the path-based field allowlist. Reject those op types outright on chat
+// paths. test ops can also reveal/manipulate state; deny for symmetry.
+const ALLOWED_CHAT_OP_TYPES = new Set(['add', 'replace', 'remove']);
+
+const CHAT_FIELD_PATH_RE = /^\/characters\/\d+\/chats\/\d+\/([^/]+)/;
+
+/**
+ * Detect JSON Patch ops that mutate chat-internal fields (anything beyond
+ * STUB_METADATA_FIELDS). Such ops are the loss vector: applying them to
+ * dbCache leaves a metadata-only chat without `_stub`, which then bypasses
+ * fullChat merge in reassembleFullDb and gets persisted as-is.
+ *
+ * Whole-chat ops (path = `/characters/N/chats/M` or `/characters/N/chats`)
+ * are allowed — those replace/add/remove chat slots wholesale and the
+ * reassemble guard takes care of validating the resulting state.
+ *
+ * The `_stub` field gets stricter treatment than other allowed fields: only
+ * `add`/`replace` with literal value `true` is permitted. Any op that could
+ * remove the flag or set it to a falsy value is itself the loss mechanism
+ * (reassembleFullDb skips merge when `_stub` is falsy), so it must be
+ * blocked at the patch boundary, not just at the persist boundary.
+ *
+ * `move`/`copy` ops are rejected wholesale on chat-internal paths because
+ * the field-name allowlist on `path` alone can't catch a `from` that points
+ * at `_stub` or another chat-internal field. Both `path` and `from` are
+ * checked when present.
+ */
+function findChatInternalFieldOps(patch) {
+    if (!Array.isArray(patch)) return [];
+    const violations = [];
+    for (const op of patch) {
+        if (!op || typeof op !== 'object' || typeof op.path !== 'string') continue;
+
+        const pathMatch = op.path.match(CHAT_FIELD_PATH_RE);
+        const fromMatch = typeof op.from === 'string' ? op.from.match(CHAT_FIELD_PATH_RE) : null;
+        if (!pathMatch && !fromMatch) continue;
+
+        if (!ALLOWED_CHAT_OP_TYPES.has(op.op)) {
+            violations.push({
+                op: op.op,
+                path: op.path,
+                field: (pathMatch && pathMatch[1]) || (fromMatch && fromMatch[1]) || '',
+                reason: 'disallowed op type on chat field',
+            });
+            continue;
+        }
+
+        if (pathMatch) {
+            const field = pathMatch[1];
+            if (!STUB_METADATA_FIELDS.has(field)) {
+                violations.push({ op: op.op, path: op.path, field });
+                continue;
+            }
+            if (field === '_stub') {
+                if (op.op === 'remove') {
+                    violations.push({ op: op.op, path: op.path, field, reason: 'remove _stub' });
+                } else if ((op.op === 'add' || op.op === 'replace') && op.value !== true) {
+                    violations.push({ op: op.op, path: op.path, field, reason: 'non-true _stub value' });
+                }
+            }
+        }
+    }
+    return violations;
+}
+
+/**
+ * Detect chats that lost their `_stub` flag without being upgraded to a real
+ * Chat. reassembleFullDb skips merge when `_stub` is falsy, so persisting such
+ * a chat would write metadata-only to disk and silently strip messages — the
+ * exact data-loss path reported with PATCH `remove /chats/N/{message,...}` ops.
+ *
+ * A real Chat has `message` (Array). A real stub has `_stub === true`. Anything
+ * with neither is a malformed in-between state; treat as a corruption signal.
+ */
+function findStubFlagLossChats(fullDb) {
+    if (!fullDb?.characters) return [];
+    const losses = [];
+    for (let ci = 0; ci < fullDb.characters.length; ci++) {
+        const char = fullDb.characters[ci];
+        if (!char?.chats) continue;
+        for (let chi = 0; chi < char.chats.length; chi++) {
+            const chat = char.chats[chi];
+            if (!chat || typeof chat !== 'object') continue;
+            const isStub = chat._stub === true;
+            const hasMessage = Array.isArray(chat.message);
+            if (!isStub && !hasMessage) {
+                losses.push({
+                    chaId: char.chaId,
+                    charIndex: ci,
+                    chatIndex: chi,
+                    chatId: chat.id || null,
+                });
+            }
+        }
+    }
+    return losses;
+}
+
 /**
  * Persist dbCache to disk with full chats merged back in.
  */
@@ -412,6 +542,26 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
     if (!strippedDb) return;
     await ensureChatStore();
     const fullDb = reassembleFullDb(strippedDb);
+
+    // Disk protection guard: abort persist when reassemble produced metadata-only
+    // chats. Writing them would lock the loss in (next /api/read returns the
+    // stripped chat with no `_stub`, so hydration never re-merges fullChatStore).
+    // Invalidate dbCache so the next request re-reads from disk and rebuilds a
+    // consistent stub view; client receives 409 on next /api/patch via hash mismatch.
+    if (decodedKey === 'database/database.bin') {
+        const losses = findStubFlagLossChats(fullDb);
+        if (losses.length > 0) {
+            const sample = losses.slice(0, 3).map(l => `${l.chaId}/${l.chatId ?? l.chatIndex}`).join(', ');
+            const err = new Error(
+                `persist aborted: ${losses.length} chat(s) lost _stub flag without upgrade — `
+                + `would silently strip messages on disk. sample=[${sample}]`
+            );
+            recordPersistFailure(err, 'persistDbCacheWithChats:stub-flag-loss');
+            delete dbCache[filePath];
+            throw err;
+        }
+    }
+
     const data = Buffer.from(encodeRisuSaveLegacy(fullDb));
     try {
         kvSet(decodedKey, data);
@@ -3052,6 +3202,30 @@ app.post('/api/write', async (req, res, next) => {
                     const incomingDb = await decodeRisuSave(fileContent);
                     await ensureChatStore();
                     const fullDb = reassembleFullDb(incomingDb);
+
+                    // Mirror the patch-persist guard (persistDbCacheWithChats):
+                    // a malformed full-write payload could carry chats with
+                    // neither `_stub` nor `message` (the v1.4.x metadata-only
+                    // pattern). reassembleFullDb passes them through unchanged
+                    // because there's no fullChat lookup to merge in, so they
+                    // would land on disk and silently strip user messages.
+                    // Normal clients are safe (RisuSaveEncoder runs chatToStub
+                    // on every chat first), but external tools / future
+                    // regressions could bypass that — keep the guard at the
+                    // disk boundary for defense in depth.
+                    const losses = findStubFlagLossChats(fullDb);
+                    if (losses.length > 0) {
+                        const sample = losses.slice(0, 3).map(l => `${l.chaId}/${l.chatId ?? l.chatIndex}`).join(', ');
+                        const err = new Error(
+                            `write aborted: ${losses.length} chat(s) lost _stub flag without upgrade — `
+                            + `would silently strip messages on disk. sample=[${sample}]`
+                        );
+                        recordPersistFailure(err, '/api/write:stub-flag-loss');
+                        logger.error(`[Write] ${err.message}`);
+                        res.status(500).json({ error: 'Write aborted: chat data integrity check failed' });
+                        return;
+                    }
+
                     const mergedContent = Buffer.from(encodeRisuSaveLegacy(fullDb));
                     // Re-init chat store from merged result
                     initChatStore(fullDb);
@@ -3148,6 +3322,39 @@ app.post('/api/patch', async (req, res, next) => {
                 } else {
                     dbCache[filePath] = {};
                 }
+            }
+
+            // Reject patch ops that touch chat-internal fields. Lazy loading
+            // strips chats to stubs in dbCache; the only legitimate chat ops
+            // are stub metadata (id, name, _stub, lastDate, folderId, modules)
+            // or whole-chat add/replace/remove. Field-level ops on chats —
+            // particularly remove of message/hypaV3Data/scriptstate/etc —
+            // strip the `_stub` flag and cause silent on-disk data loss when
+            // reassembleFullDb later sees the metadata-only chat. Reject as
+            // 409 so the client falls through to a full write and rebases its
+            // patcher baseline. See findStubFlagLossChats for the disk-side
+            // partner guard.
+            const chatInternalOps = decodedKey === 'database/database.bin'
+                ? findChatInternalFieldOps(patch)
+                : [];
+            if (chatInternalOps.length > 0) {
+                const sample = chatInternalOps.slice(0, 5).map(v => `${v.op} ${v.path}`).join(', ');
+                logger.warn(
+                    `[Patch] Rejected ${chatInternalOps.length} chat-internal field op(s) `
+                    + `(would corrupt lazy-loaded chats): ${sample}`
+                );
+                let currentEtag;
+                try {
+                    currentEtag = computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(dbCache[filePath])));
+                    dbEtag = currentEtag;
+                } catch {}
+                res.status(409).send({
+                    error: 'Patch rejected: chat-internal field ops not allowed for lazy-loaded chats',
+                    code: 'CHAT_GUARD_REJECTED',
+                    chatGuardRejected: true,
+                    currentEtag,
+                });
+                return;
             }
 
             const serverHash = calculateHash(dbCache[filePath]).toString(16);
