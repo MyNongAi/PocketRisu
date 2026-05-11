@@ -731,7 +731,7 @@ export const languageVietnamese = {
     "ifChatIndex": "Nếu chỉ mục trò chuyện",
     "ifRandom": "Nếu ngẫu nhiên",
     "ifValue": "Nếu giá trị",
-    "hideRealm": "Ẩn RisuRealm",
+    "hideRealm": "Khởi động RisuRealm thu gọn",
     "hideAllImages": "Ẩn tất cả hình ảnh",
     "hideMessagePageCount": "Ẩn bộ đếm trang tin nhắn",
     "popularityLevel": "{} Mức độ phổ biến",

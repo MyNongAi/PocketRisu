@@ -424,7 +424,7 @@ export const helpEn = {
         showMemoryLimit:
             "Show the current max-context limit as a visual line in the chat area. Messages above the line may not be sent to the model, so this helps show what the model can still remember.",
         hideRealm:
-            "Hide RisuRealm entry points such as the sidebar gallery link. Useful if you do not use external character discovery and want a lighter menu.",
+            "Start the Recently Uploaded section on the home screen collapsed. While collapsed it skips the RisuRealm fetch, speeding up initial load. You can expand it any time from the home screen.",
         showFolderNameInIcon:
             "Show folder names on folder icons in the character grid. Makes large folder collections easier to scan.",
         customBackground:

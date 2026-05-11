@@ -731,7 +731,7 @@ export const languageChinese = {
     "ifChatIndex": "如果对话索引",
     "ifRandom": "如果随机",
     "ifValue": "如果值",
-    "hideRealm": "隐藏 RisuRealm",
+    "hideRealm": "RisuRealm 默认折叠",
     "hideAllImages": "隐藏所有图片",
     "hideMessagePageCount": "隐藏消息页码",
     "popularityLevel": "{} 人气",

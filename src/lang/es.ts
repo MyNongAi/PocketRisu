@@ -731,7 +731,7 @@ export const languageSpanish = {
     "ifChatIndex": "Si índice del chat",
     "ifRandom": "Si aleatorio",
     "ifValue": "Si valor",
-    "hideRealm": "Ocultar RisuRealm",
+    "hideRealm": "Iniciar RisuRealm contraído",
     "hideAllImages": "Ocultar todas las imágenes",
     "hideMessagePageCount": "Ocultar contador de páginas de mensajes",
     "popularityLevel": "{} Popularidad",

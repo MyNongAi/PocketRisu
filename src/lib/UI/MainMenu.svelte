@@ -2,7 +2,7 @@
     import { DBState } from 'src/ts/stores.svelte';
     import Hub from "./Realm/RealmMain.svelte";
     import { OpenRealmStore, RealmInitialOpenChar } from "src/ts/stores.svelte";
-    import { ArrowLeft, FolderCodeIcon, MailIcon, SendIcon, UsersIcon } from "@lucide/svelte";
+    import { ArrowLeft, ChevronDown, FolderCodeIcon, MailIcon, SendIcon, UsersIcon } from "@lucide/svelte";
     import { getVersionString, openURL } from "src/ts/globalApi.svelte";
     import { language } from "src/lang";
     import { getRisuHub, hubAdditionalHTML } from "src/ts/characterCards";
@@ -10,6 +10,8 @@
     import Title from "./Title.svelte";
     import { updateInfoStore, updatePopupStore } from "src/ts/update";
     import { publicStatsStore } from "src/ts/publicStats";
+
+    let realmOpen = $state(!DBState.db.hideRealm);
 
     const relatedLinkIconClass =
       "h-40 w-40 md:h-44 md:w-44 origin-right -rotate-12 opacity-[0.12] transition-all duration-500 group-hover:scale-105 group-hover:opacity-[0.22]";
@@ -49,6 +51,60 @@
     {/if}
     <div class="w-full flex p-4 flex-col text-textcolor max-w-4xl">
       {#if !$OpenRealmStore}
+      <div class="mt-4 mb-4 w-full border-t border-t-selected"></div>
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="flex-1 flex items-center gap-2 text-2xl font-bold text-left outline-none focus-visible:ring-2 focus-visible:ring-borderc/50 rounded"
+          aria-expanded={realmOpen}
+          aria-controls="main-realm-section"
+          onclick={() => (realmOpen = !realmOpen)}
+        >
+          <span>Recently Uploaded</span>
+          <ChevronDown
+            size={20}
+            class="shrink-0 transition-transform duration-150 {realmOpen ? 'rotate-180' : ''}"
+          />
+        </button>
+        <button
+          type="button"
+          class="text-base font-medium p-1 bg-darkbg rounded-md hover:ring-3"
+          onclick={() => {
+            $OpenRealmStore = true
+          }}
+        >Get More</button>
+      </div>
+      <div
+        id="main-realm-section"
+        role="region"
+        aria-hidden={!realmOpen}
+        inert={!realmOpen}
+      >
+        {#if realmOpen}
+          {#await getRisuHub({
+                search: '',
+                page: 0,
+                nsfw: false,
+                sort: 'recommended'
+            }) then charas}
+            {#if charas.length > 0}
+              {@html hubAdditionalHTML}
+              <div class="w-full flex gap-4 p-2 flex-wrap justify-center">
+                  {#each charas as chara}
+                      <RisuHubIcon onClick={() => {
+                        $OpenRealmStore = true
+                        if(DBState.db.realmDirectOpen){
+                            $RealmInitialOpenChar = chara
+                        }
+                      }} chara={chara} />
+                  {/each}
+              </div>
+            {:else}
+              <div class="text-textcolor2">Failed to load {language.hub}...</div>
+            {/if}
+          {/await}
+        {/if}
+      </div>
       <div class="mt-4 mb-4 w-full border-t border-t-selected"></div>
       <h1 class="text-2xl font-bold mb-4">
         Related Links
@@ -107,36 +163,6 @@
             </div>
           </button>
         </div>
-      <div class="mt-4 mb-4 w-full border-t border-t-selected"></div>
-      <h1 class="text-2xl font-bold">Recently Uploaded<button class="text-base font-medium float-right p-1 bg-darkbg rounded-md hover:ring-3" onclick={() => {
-        $OpenRealmStore = true
-      }}>Get More</button></h1>
-          {#if !DBState.db.hideRealm}
-            {#await getRisuHub({
-                  search: '',
-                  page: 0,
-                  nsfw: false,
-                  sort: 'recommended'
-              }) then charas}
-            {#if charas.length > 0}
-              {@html hubAdditionalHTML}
-              <div class="w-full flex gap-4 p-2 flex-wrap justify-center">
-                  {#each charas as chara}
-                      <RisuHubIcon onClick={() => {
-                        $OpenRealmStore = true
-                        if(DBState.db.realmDirectOpen){
-                            $RealmInitialOpenChar = chara
-                        }
-                      }} chara={chara} />
-                  {/each}
-              </div>
-            {:else}
-              <div class="text-textcolor2">Failed to load {language.hub}...</div>
-            {/if}
-          {/await}
-        {:else}
-          <div class="text-textcolor2">{language.hideRealm}</div>
-        {/if}
 
       {:else}
         <div class="flex items-center mt-4">

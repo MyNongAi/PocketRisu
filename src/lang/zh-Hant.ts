@@ -800,7 +800,7 @@ export const languageChineseTraditional = {
     "ifChatIndex": "如果對話索引",
     "ifRandom": "如果隨機",
     "ifValue": "如果值",
-    "hideRealm": "隱藏 RisuRealm",
+    "hideRealm": "RisuRealm 預設折疊",
     "hideAllImages": "隱藏所有圖片",
     "popularityLevel": "人氣 {}",
     "colorScheme": "配色方案",

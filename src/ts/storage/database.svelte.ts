@@ -2131,7 +2131,7 @@ export const themePresetTemplate: themePreset = {
     settingsCloseButtonSize: 24,
     showMemoryLimit: false,
     showFirstMessagePages: false,
-    hideRealm: false,
+    hideRealm: true,
     hideAllImages: false,
     hideMessagePageCount: false,
     showFolderName: false,

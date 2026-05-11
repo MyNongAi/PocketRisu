@@ -818,7 +818,7 @@ export const languageEnglish = {
     ifChatIndex: "If chat index",
     ifRandom: "If random",
     ifValue: "If Value",
-    hideRealm: "Hide RisuRealm",
+    hideRealm: "Start RisuRealm Collapsed",
     hideAllImages: "Hide All Images",
     popularityLevel: "{} Popularity",
     colorScheme: "Color Scheme",

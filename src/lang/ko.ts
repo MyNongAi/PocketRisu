@@ -812,7 +812,7 @@ export const languageKorean = {
     "ifChatIndex": "채팅 인덱스가",
     "ifRandom": "만약 랜덤",
     "ifValue": "값이 다음과 같다면",
-    "hideRealm": "RisuRealm 숨기기",
+    "hideRealm": "RisuRealm 접힘으로 시작",
     "hideAllImages": "모든 이미지 숨기기",
     "hideMessagePageCount": "메세지 페이지 숫자 숨기기",
     "popularityLevel": "{} 인기도",

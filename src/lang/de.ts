@@ -731,7 +731,7 @@ export const languageGerman = {
     "ifChatIndex": "Wenn Chat-Index",
     "ifRandom": "Wenn zufällig",
     "ifValue": "Wenn Wert",
-    "hideRealm": "RisuRealm verstecken",
+    "hideRealm": "RisuRealm eingeklappt starten",
     "hideAllImages": "Alle Bilder ausblenden",
     "hideMessagePageCount": "Nachrichtenseitenzähler ausblenden",
     "popularityLevel": "{} Beliebtheit",
