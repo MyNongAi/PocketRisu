@@ -250,6 +250,8 @@ export const helpEn = {
             "If enabled, user messages are excluded from the max messages per summary count.",
         hypaV3EnableSimilarityCorrection:
             "If enabled, a summary of recent chats is additionally used as a query. Does not work with the experimental HypaMemory V3.",
+        hypaV3SummaryChunkSeparator:
+            "Separator used to split summaries into chunks for similarity search.",
         hypaV3UseExperimentalImpl:
             "Switches to the experimental HypaMemory V3 implementation. Enables rate limit settings and changes the query method.",
         hypaV3AlwaysToggleOn:

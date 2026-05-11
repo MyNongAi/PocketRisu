@@ -1275,6 +1275,7 @@ export const languageEnglish = {
         extraSummarizationRatioLabel: "Extra Summarization Ratio",
         maxChatsPerSummaryLabel: "Max Messages Per Summary",
         queryChatCountLabel: "Query Chat Count",
+        summaryChunkSeparatorLabel: "Chunk Separator Regex",
         recentMemoryRatioLabel: "Recent Memory Ratio",
         similarMemoryRatioLabel: "Similar Memory Ratio",
         randomMemoryRatioLabel: "Random Memory Ratio",
