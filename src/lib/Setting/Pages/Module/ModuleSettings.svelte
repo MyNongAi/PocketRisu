@@ -40,7 +40,30 @@
 {#if mode === 0}
     <SettingPage title={language.modules}>
 
-    <TextInput className="mt-4" placeholder={language.search} bind:value={moduleSearch} />
+    <div class="mt-4 flex gap-2 items-center">
+        <TextInput className="grow" placeholder={language.search} bind:value={moduleSearch} />
+        <button class="text-textcolor2 hover:text-primary cursor-pointer" onclick={async () => {
+            tempModule = {
+                name: '',
+                description: '',
+                id: v4(),
+            }
+            DBState.db.modules.push(tempModule)
+            mode = 1
+        }}>
+            <PlusIcon />
+        </button>
+        <button class="text-textcolor2 hover:text-primary cursor-pointer" onclick={async () => {
+            importMCPModule()
+        }}>
+            <Waypoints />
+        </button>
+        <button class="text-textcolor2 hover:text-primary cursor-pointer" onclick={async () => {
+            importModule()
+        }}>
+            <HardDriveUpload  />
+        </button>
+    </div>
 
     <div class="contain w-full max-w-full mt-4 flex flex-col border-selected border-1 rounded-md flex-1 overflow-y-auto">
         {#if DBState.db.modules.length === 0}
@@ -55,7 +78,7 @@
                     {#if rmodule.mcp}
                         <Waypoints size={18} class="mr-2" />
                     {/if}
-                    <span class="text-lg">{rmodule.name}</span>
+                    <span class="font-bold">{rmodule.name}</span>
                     <div class="grow flex justify-end">
                         <button class={(DBState.db.enabledModules.includes(rmodule.id)) ?
                                 "mr-2 cursor-pointer text-blue-500" :
@@ -123,29 +146,6 @@
         {/if}
     </div>
 
-    <div class="flex mr-2 mt-4">
-        <button class="text-textcolor2 hover:text-primary mr-2 cursor-pointer" onclick={async () => {
-            tempModule = {
-                name: '',
-                description: '',
-                id: v4(),
-            }
-            DBState.db.modules.push(tempModule)
-            mode = 1
-        }}>
-            <PlusIcon />
-        </button>
-        <button class="text-textcolor2 hover:text-primary mr-2 cursor-pointer" onclick={async () => {
-            importMCPModule()
-        }}>
-            <Waypoints />
-        </button>
-        <button class="text-textcolor2 hover:text-primary mr-2 cursor-pointer" onclick={async () => {
-            importModule()
-        }}>
-            <HardDriveUpload  />
-        </button>
-    </div>
     </SettingPage>
 {:else if mode === 1}
     <SettingPage title={language.createModule}>
