@@ -59,6 +59,9 @@ jobs:
           - os: ubuntu-latest
             platform: linux
             arch: x64
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
           - os: macos-latest
             platform: macos
             arch: arm64
@@ -118,10 +121,11 @@ jobs:
         shell: bash
         run: |
           NODE_VERSION="24.14.1"
+          NODE_ARCH="${{ matrix.arch }}"
           mkdir -p portable/bin
-          curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" -o node.tar.xz
+          curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz" -o node.tar.xz
           tar -xJf node.tar.xz
-          cp "node-v${NODE_VERSION}-linux-x64/bin/node" portable/bin/node
+          cp "node-v${NODE_VERSION}-linux-${NODE_ARCH}/bin/node" portable/bin/node
           chmod +x portable/bin/node
 
       - name: Download Node.js binary (macOS)
@@ -145,7 +149,12 @@ jobs:
         if: matrix.platform == 'linux'
         shell: bash
         run: |
-          curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64" -o portable/bin/cloudflared
+          if [ "${{ matrix.arch }}" = "arm64" ]; then
+            CLOUDFLARED_ARCH="arm64"
+          else
+            CLOUDFLARED_ARCH="amd64"
+          fi
+          curl -fsSL "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${CLOUDFLARED_ARCH}" -o portable/bin/cloudflared
           chmod +x portable/bin/cloudflared
 
       - name: Download cloudflared (macOS)
