@@ -5790,9 +5790,10 @@ for (const sig of ['SIGTERM', 'SIGINT']) {
     await startServer();
 
     // Periodically checkpoint WAL to reclaim disk space.
-    // Without this, the -wal file grows unbounded as inlay/asset writes accumulate.
+    // TRUNCATE (vs RESTART) shrinks the -wal file on disk, not just the writer
+    // pointer — required for journal_size_limit to actually take effect.
     setInterval(() => {
-        try { checkpointWal('RESTART'); }
+        try { checkpointWal('TRUNCATE'); }
         catch { /* non-fatal */ }
     }, 5 * 60 * 1000); // every 5 minutes
 
