@@ -488,10 +488,18 @@ async function migrateRemoteBlocksIfNeeded() {
 
     const reEncoded = encodeRisuSaveLegacy(dbObj, 'compression');
 
-    // Single transaction so swap + GC + marker move together.
+    // Single transaction so swap + marker move together.
+    // remotes/ files are intentionally NOT deleted here: pre-migration
+    // dbbackup-* snapshots and the migration-backup we just wrote both
+    // only carry database.bin (kvCopyValue is single-key). If a user later
+    // restores one of those snapshots — which holds REMOTE pointers —
+    // resolveRemote needs the remotes/<id>.local.bin payloads to still
+    // exist, otherwise every REMOTE-pointed character drops on the next
+    // decode and the backup is effectively dead. The orphans don't grow
+    // (NodeOnly's disableRemoteSaving = true on writes), so leaving them
+    // costs a few MB of disk for full backup recoverability.
     sqliteDb.transaction(() => {
         kvSet('database/database.bin', Buffer.from(reEncoded));
-        kvDelPrefix('remotes/');
         markRemoteMigrationDone();
     })();
 
@@ -2128,6 +2136,13 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
     kvDelPrefix('inlay_meta/');
     kvDelPrefix('inlay_info/');
     kvDelPrefix('coldstorage/');
+    // Same reasoning as clearExistingData (save-folder import path): wipe stale
+    // remote payloads from the prior user before this backup's contents land.
+    // .bin backups never carry REMOTE blocks today, so the migration won't
+    // resolveRemote on them — but keeping the two import paths consistent
+    // avoids a contamination regression if that ever changes (upstream sync,
+    // plugin-generated buffers, etc.).
+    kvDelPrefix('remotes/');
     // Allow remote-block migration to re-evaluate against the new database.bin.
     // (.bin backups themselves never carry REMOTE blocks — legacy msgpack
     // format only — but a fresh import is a clear "data changed" signal.)
@@ -4403,6 +4418,13 @@ function clearExistingData() {
     kvDelPrefix('inlay_thumb/');
     kvDelPrefix('inlay_meta/');
     kvDelPrefix('inlay_info/');
+    // Drop the previous user's remote payloads. The new save folder usually
+    // brings its own remotes/<id>.local.bin files (INSERT OR REPLACE), but if
+    // the imported character ids reuse names from the prior user without
+    // shipping a matching payload, the migration's resolveRemote would silently
+    // stitch in stale cross-user data. Wiping here ensures only payloads
+    // that arrived in this import survive.
+    kvDelPrefix('remotes/');
     // Clear remote-block migration marker — newly imported database.bin may
     // contain REMOTE blocks (it usually does, since save-folder imports
     // preserve upstream's split-character format) and we want the migration
