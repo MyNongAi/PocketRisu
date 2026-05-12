@@ -510,6 +510,7 @@ export const languageChinese = {
     "userIcon": "你的头像",
     "successExport": "已成功导出并保存至你的下载数据夹",
     "successImport": "成功导入",
+    "moduleDeleted": "模块已删除",
     "importedCharacter": "导入角色",
     "alwaysActive": "始终激活",
     "additionalPrompt": "附加提示词",

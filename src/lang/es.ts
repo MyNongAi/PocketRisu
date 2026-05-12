@@ -510,6 +510,7 @@ export const languageSpanish = {
     "userIcon": "Tu Icono",
     "successExport": "Exportado y descargado exitosamente en tu directorio de descargas",
     "successImport": "Importado exitosamente",
+    "moduleDeleted": "Módulo eliminado.",
     "importedCharacter": "Personaje Importado",
     "alwaysActive": "Siempre Activo",
     "additionalPrompt": "Prompt Adicional",
