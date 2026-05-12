@@ -152,6 +152,7 @@
     <ModuleMenu bind:currentModule={tempModule}/>
     <Button className="mt-6" onclick={() => {
         DBState.db.modules.push(tempModule)
+        notifySuccess(language.moduleCreated)
         mode = 0
     }}>{language.createModule}</Button>
     </SettingPage>
@@ -161,6 +162,7 @@
     {#if tempModule.name !== ''}
         <Button className="mt-6" onclick={() => {
             DBState.db.modules[editModuleIndex] = tempModule
+            notifySuccess(language.moduleUpdated)
             mode = 0
         }}>{language.editModule}</Button>
     {/if}

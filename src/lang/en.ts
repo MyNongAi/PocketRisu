@@ -560,6 +560,8 @@ export const languageEnglish = {
     userIcon: "Your Icon",
     successExport: "Successfuly exported and downloaded to your download directory",
     successImport: "Successfuly imported",
+    moduleCreated: "Module created.",
+    moduleUpdated: "Module updated.",
     moduleDeleted: "Module deleted.",
     importedCharacter: "Imported Character",
     alwaysActive: "Always Active",

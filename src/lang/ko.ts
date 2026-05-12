@@ -554,6 +554,8 @@ export const languageKorean = {
     "userIcon": "유저 아이콘",
     "successExport": "성공적으로 엑스포트하여 다운로드 경로에 다운로드했습니다.",
     "successImport": "성공적으로 임포트했습니다.",
+    "moduleCreated": "모듈이 생성되었습니다.",
+    "moduleUpdated": "모듈이 수정되었습니다.",
     "moduleDeleted": "모듈이 삭제되었습니다.",
     "importedCharacter": "성공적으로 임포트 됨.",
     "alwaysActive": "언제나 활성화",

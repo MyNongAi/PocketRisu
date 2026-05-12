@@ -548,6 +548,8 @@ export const languageChineseTraditional = {
     "userIcon": "您的頭像",
     "successExport": "已成功匯出並儲存至您的下載資料夾",
     "successImport": "成功匯入",
+    "moduleCreated": "模組已建立",
+    "moduleUpdated": "模組已更新",
     "moduleDeleted": "模組已刪除",
     "importedCharacter": "匯入角色",
     "alwaysActive": "始終啟用",

@@ -510,6 +510,8 @@ export const languageVietnamese = {
     "userIcon": "Biểu tượng của bạn",
     "successExport": "Đã xuất thành công và tải xuống thư mục tải xuống của bạn",
     "successImport": "Đã nhập thành công",
+    "moduleCreated": "Đã tạo mô-đun.",
+    "moduleUpdated": "Đã cập nhật mô-đun.",
     "moduleDeleted": "Đã xóa mô-đun.",
     "importedCharacter": "Ký tự đã nhập",
     "alwaysActive": "Luôn luôn hoạt động",

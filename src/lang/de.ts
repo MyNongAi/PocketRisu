@@ -510,6 +510,8 @@ export const languageGerman = {
     "userIcon": "Ihr Icon",
     "successExport": "Erfolgreich exportiert und in Ihrem Download-Verzeichnis gespeichert",
     "successImport": "Erfolgreich importiert",
+    "moduleCreated": "Modul erstellt.",
+    "moduleUpdated": "Modul aktualisiert.",
     "moduleDeleted": "Modul gelöscht.",
     "importedCharacter": "Importierter Charakter",
     "alwaysActive": "Immer aktiv",
