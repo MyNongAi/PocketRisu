@@ -38,7 +38,7 @@ PocketRisu là một nền tảng trò chuyện nhập vai AI tự lưu trữ, c
 
 ## Tài liệu
 
-- [Hướng dẫn cài đặt](docs/en/install.md)
+- [Hướng dẫn cài đặt](docs/vi/install.md)
 - [Hướng dẫn di chuyển](docs/en/migration.md)
 - [Truy cập di động](docs/en/mobile.md)
 

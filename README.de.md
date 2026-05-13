@@ -38,7 +38,7 @@ PocketRisu ist eine selbstgehostete KI-Rollenspiel-Chat-Plattform, die Sie auf I
 
 ## Dokumentation
 
-- [Installationsanleitung](docs/en/install.md)
+- [Installationsanleitung](docs/de/install.md)
 - [Migrationsleitfaden](docs/en/migration.md)
 - [Mobiler Zugriff](docs/en/mobile.md)
 
