@@ -852,7 +852,7 @@ function findCloudflaredBinary() {
 function followRedirects(url) {
     return new Promise((resolve, reject) => {
         const mod = url.startsWith('https') ? require('https') : require('http');
-        mod.get(url, { headers: { 'User-Agent': 'risuai-nodeonly' } }, (res) => {
+        mod.get(url, { headers: { 'User-Agent': 'pocketrisu' } }, (res) => {
             if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
                 followRedirects(res.headers.location).then(resolve, reject);
             } else if (res.statusCode === 200) {
