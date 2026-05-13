@@ -39,7 +39,7 @@ PocketRisu ist eine selbstgehostete KI-Rollenspiel-Chat-Plattform, die Sie auf I
 ## Dokumentation
 
 - [Installationsanleitung](docs/de/install.md)
-- [Migrationsleitfaden](docs/en/migration.md)
+- [RisuAI-Migrationsleitfaden](docs/de/migration.md)
 - [Mobiler Zugriff](docs/en/mobile.md)
 
 
@@ -52,7 +52,7 @@ PocketRisu ist von [RisuAI](https://github.com/kwaroran/RisuAI) abgeleitet und f
 - Module, Lorebooks, Presets
 - Backup-Dateien (`.bin`) mit bidirektionaler Kompatibilität
 
-Für die Migration von einer bestehenden RisuAI-Installation siehe den [Migrationsleitfaden](docs/en/migration.md).
+Für die Migration von einer bestehenden RisuAI-Installation siehe den [Migrationsleitfaden](docs/de/migration.md).
 
 
 ## Funktionen
