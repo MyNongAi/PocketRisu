@@ -320,7 +320,7 @@ export const helpEn = {
         hideLeftBarCollapseButton:
             "Hide the toggle button that collapses the left character grid bar on narrow screens (under 400px). Enable this if you prefer to keep the left bar always visible on mobile.",
         enableRisuaiProTools:
-            "Enable RisuAI Pro Tools such as Easy Panel. Some NodeOnly features require this separate toggle.",
+            "Enable Pro Tools such as Easy Panel. Some PocketRisu features require this separate toggle.",
         loreBookDepth:
             "Number of previous messages to scan for lorebook activation keywords. `0` disables scanning; higher values can find older keywords but may activate unnecessary lore. (0-20)",
         loreBookToken:
@@ -386,13 +386,13 @@ export const helpEn = {
         themePresets:
             "Bundle the current Sound & Display settings (layout, color/font, sizes, sound toggles, etc.) as a preset and switch between them. The active preset auto-syncs with edits you make below; clicking opens the preset list to add, switch, rename, or delete.",
         theme:
-            "Overall chat layout theme.\n\n- **NodeOnly Standard**: default NodeOnly design\n- **Standard Risu**: original RisuAI layout\n- **Waifulike**: character-art-focused layout with side character visuals\n- **Mobile Chat**: mobile chat style\n- **CardBoard**: card-style layout\n- **Custom HTML**: use the custom Chat HTML below",
+            "Overall chat layout theme.\n\n- **PocketRisu Standard**: default PocketRisu design\n- **Standard Risu**: original RisuAI layout\n- **Waifulike**: character-art-focused layout with side character visuals\n- **Mobile Chat**: mobile chat style\n- **CardBoard**: card-style layout\n- **Custom HTML**: use the custom Chat HTML below",
         waifuWidth:
             "Width of the character illustration in the Waifulike theme (50-200%). `100%` is the default. Only shown for Waifulike.",
         waifuWidth2:
             "Width of the second character or secondary visual in the Waifulike theme (20-150%). Set close to 0 if you want to hide it for a single-character setup.",
         nodeOnlyStandardChatWidth:
-            "Maximum chat card width in the NodeOnly Standard theme.\n\n- **Standard**: 768px (default)\n- **Wide**: 1152px\n- **No Limit**: fills the available chat area\n\nOnly shown for the NodeOnly Standard theme.",
+            "Maximum chat card width in the PocketRisu Standard theme.\n\n- **Standard**: 768px (default)\n- **Wide**: 1152px\n- **No Limit**: fills the available chat area\n\nOnly shown for the PocketRisu Standard theme.",
         colorScheme:
             "Color palette used across the Risu UI (background, text, accents). Independent of the Theme (layout) option above. Pick **Custom** to define your own colors in the editor that appears below.",
         textColor:
@@ -542,7 +542,7 @@ export const helpEn = {
         cohereKey:
             "Cohere API key (https://dashboard.cohere.com/api-keys). Required when using Cohere's own models such as `command-r`.",
         ollamaURL:
-            "URL of your local or remote Ollama server (e.g. `http://localhost:11434`). Pairs well with NodeOnly's local-network mode for stable access to private LAN LLMs.",
+            "URL of your local or remote Ollama server (e.g. `http://localhost:11434`). Pairs well with PocketRisu's local-network mode for stable access to private LAN LLMs.",
         ollamaModel:
             "Model name to call on the Ollama server. Run `ollama list` to see installed models and copy the name verbatim (e.g. `llama3:8b`).",
         nanogptKey:
@@ -647,7 +647,7 @@ export const helpEn = {
             "Use stop strings. The model's response is cut as soon as one of these strings appears. Useful for blocking patterns where the character impersonates the next speaker (e.g. `{{user}}: ...`).",
 
         memType:
-            "Long-term memory mode.\n\n- **None**: disabled (chat is sent as-is up to the max context limit)\n- **HypaV3**: RisuAI's long-term memory that auto-summarizes and retrieves older chat to inject into the context. Slightly more cost / latency, but consistency in long chats improves a lot.",
+            "Long-term memory mode.\n\n- **None**: disabled (chat is sent as-is up to the max context limit)\n- **HypaV3**: PocketRisu's long-term memory that auto-summarizes and retrieves older chat to inject into the context. Slightly more cost / latency, but consistency in long chats improves a lot.",
         hypaV3SummaryModel:
             "Model used to summarize chat.\n\n- **subModel**: use the auxiliary model (most common)\n- **Qwen3 4B/14B**: free local summarization (runs in the browser or Node instance directly, downloads on first use)\n\nUsing a lighter model than the main model saves cost.",
         hypaV3Preset:
@@ -805,5 +805,5 @@ export const helpEn = {
             "Reference image mode (None / Upload / Use Character Image). Works only when the model supports image input.",
 
         bootBackupReminder:
-            "When enabled, RisuAI prompts you on every boot whether to create a server backup right away. Useful as a lightweight safety net before opening the app each session. Confirming runs a full server backup (the loading screen waits while it finishes); skipping continues straight to the app.",
+            "When enabled, PocketRisu prompts you on every boot whether to create a server backup right away. Useful as a lightweight safety net before opening the app each session. Confirming runs a full server backup (the loading screen waits while it finishes); skipping continues straight to the app.",
 }

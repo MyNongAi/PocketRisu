@@ -661,8 +661,8 @@ export const languageEnglish = {
     chatWidthStandard: "Standard",
     chatWidthWide: "Wide",
     chatWidthFull: "No Limit",
-    customCSSWarning: "NodeOnly's UI structure (HTML/CSS) differs from upstream RisuAI, so existing custom CSS may break the layout or behave unexpectedly. Use only when you know what you are overriding.",
-    customHTMLWarning: "NodeOnly's UI structure (HTML/CSS) differs from upstream RisuAI, so existing custom Chat HTML may not render correctly. Use only when you know what you are overriding.",
+    customCSSWarning: "PocketRisu's UI structure (HTML/CSS) differs from upstream RisuAI, so existing custom CSS may break the layout or behave unexpectedly. Use only when you know what you are overriding.",
+    customHTMLWarning: "PocketRisu's UI structure (HTML/CSS) differs from upstream RisuAI, so existing custom Chat HTML may not render correctly. Use only when you know what you are overriding.",
     sayNothing: "Input 'say nothing' when no string inputed",
     regexScript: "Regex Script",
     type: "Type",
@@ -875,7 +875,7 @@ export const languageEnglish = {
     webdeeplwarn: "This option is not recommended for use with web version, as it can cause CORS errors.",
     saveBackupLocal: "Save Backup Locally",
     saveBackupForUpstream: "Save Backup for Original RisuAI",
-    saveBackupForUpstreamConfirm: "This backup is intended for moving your data to the original RisuAI (web/Tauri). Inlay images are excluded because their entry names use a layout that the original RisuAI cannot import. Other data (database, character assets, cold storage) is included.\n\nFor moving data between NodeOnly installations, use the regular local backup instead.\n\nProceed?",
+    saveBackupForUpstreamConfirm: "This backup is intended for moving your data to the original RisuAI (web/Tauri). Inlay images are excluded because their entry names use a layout that the original RisuAI cannot import. Other data (database, character assets, cold storage) is included.\n\nFor moving data between PocketRisu installations, use the regular local backup instead.\n\nProceed?",
     loadBackupLocal: "Load Backup Locally",
     topP: "Top P",
     genTimes: "Generation Choices",
@@ -1410,8 +1410,8 @@ export const languageEnglish = {
     partialBackupFirstConfirm: "⚠️ WARNING: Partial Local Backup ⚠️\n\nThis backup quickly saves only essential information.\n\nIncluded:\n- Database (chat history, characters, modules, plugins, prompts, settings, etc.)\n- Character profile icons (main images)\n- User icons and custom backgrounds\n- Persona icons\n- Folder images\n- Bot preset images\n\n⚠️ NOT Included:\n- Emotion images\n- Additional character assets\n- VITS voice files\n- All other additional media files\n\nThis backup file does NOT include all character assets!\nIf you need a complete backup, use the regular local backup.\n\nDo you want to continue?",
     partialBackupSecondConfirm: "⚠️⚠️ FINAL WARNING ⚠️⚠️\n\nThis backup saves only character profile images and does NOT save most other assets!\n\nWhat will be saved:\n- Database (chat history, characters, modules, plugins, prompts, settings, etc.)\n- Character profile icons (main images)\n- User icons and custom backgrounds\n- Persona icons\n- Folder images\n- Bot preset images\n\nWhat will NOT be saved:\n- Emotion images\n- Additional character assets\n- VITS voice files\n- All other media files\n\n⚠️ Proceed ONLY if you don't need character assets in your backup file! ⚠️\n\nAre you really sure you want to proceed with partial backup?",
     savePartialLocalBackup: "Save Partial Backup Locally (Excluding Character Assets)",
-    serverBackupHeader: "NodeOnly Server Backup",
-    serverBackupDesc: "Save and restore backup files directly on the device (server) where NodeOnly is installed, without downloading.",
+    serverBackupHeader: "PocketRisu Server Backup",
+    serverBackupDesc: "Save and restore backup files directly on the device (server) where PocketRisu is installed, without downloading.",
     serverBackupSave: "Save Backup to Server",
     serverBackupManage: "Manage Server Backups",
     serverBackupSaving: "Saving backup to server...",
@@ -1512,7 +1512,7 @@ export const languageEnglish = {
     loadouts: "Loadouts",
     loadout: "Loadout",
     longPressToPopupEditor: "Long press to open popup editor",
-    importSaveFolderHeader: "Load Save into NodeOnly",
+    importSaveFolderHeader: "Load Save into PocketRisu",
     importSaveZip: "Load from Save Folder (Zip Upload)",
     importSaveZipDesc: "Compress your existing RisuAI project's save folder into a zip file and upload it here to import your data. Uploading may fail if the zip file is too large — in that case, copy the save folder directly into the server's save directory and restart to migrate automatically.",
     importSaveFolderScanning: "Scanning save folder...",
@@ -1573,7 +1573,7 @@ export const languageEnglish = {
     nanoGPTManualModelSelect: "Manual Model Select",
     // Remote Access (Cloudflare Quick Tunnel)
     remoteAccess: "Remote Access",
-    remoteAccessDesc: "Use a remote access link to connect to this NodeOnly server from another device.",
+    remoteAccessDesc: "Use a remote access link to connect to this PocketRisu server from another device.",
     remoteAccessOpen: "Open Remote Access",
     remoteAccessClose: "Close Remote Access",
     remoteAccessCloseConfirm: "Close remote access? The link will expire.",
@@ -1642,7 +1642,7 @@ export const languageEnglish = {
     storageDiskHeaderUnknown: "Disk size unavailable",
     storageDiskOther: "Other (system & apps)",
     storageDiskFree: "Free",
-    storageDiskRisuTotal: (size: number) => `RisuAI total: ${(size / 1024 / 1024).toFixed(1)} MB`,
+    storageDiskRisuTotal: (size: number) => `PocketRisu total: ${(size / 1024 / 1024).toFixed(1)} MB`,
 
     // Per-row labels (shown in the breakdown list with ⓘ explanations)
     storageRowDbFile: "risuai.db",
@@ -1674,7 +1674,7 @@ export const languageEnglish = {
     storageRowReclaimable: (size: number) =>
         `${(size / 1024 / 1024).toFixed(1)} MB reclaimable — run Optimize to compact.`,
     storageInternalOnly: "Show with full disk",
-    storageInternalOnlyHint: "Off shows only RisuAI items; on includes system & free space relative to the disk.",
+    storageInternalOnlyHint: "Off shows only PocketRisu items; on includes system & free space relative to the disk.",
 
     // 2 GB BLOB limit (separate section)
     storageBlobLimit: "2 GB BLOB limit",
@@ -1754,7 +1754,7 @@ export const languageEnglish = {
 
     // Data migration (formerly "Account & Files")
     migration: "Data Migration",
-    migrationDesc: "Move data between RisuAI (or compatible systems) and NodeOnly: import from upstream, or export to upstream-compatible format.",
+    migrationDesc: "Move data between RisuAI (or compatible systems) and PocketRisu: import from upstream, or export to upstream-compatible format.",
     migrationInfoBackupMoved: "Server backups, local backups, and DB snapshots have moved to [System → Backups].",
     migrationGotoBackupTab: "Open Backups tab",
     migrationLegacyAccordion: "RisuAI-style backup (legacy)",
