@@ -364,6 +364,13 @@ cd ~/pocketrisu
 ./update.sh
 ```
 
+> ⚠️ **v1.5.x → v1.6.0 1회성 안내**: Risuai-NodeOnly 시절(v1.5.x 이하)에 `install.sh`로 설치한 분은, v1.6.0으로 첫 업데이트 전에 `update.sh`를 새 버전으로 한 번만 교체해주세요. (repo 이름이 PocketRisu로 바뀌어 옛 `update.sh`가 새 소스 디렉토리를 찾지 못합니다.)
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/PocketRisu/PocketRisu/main/update.sh -o update.sh && chmod +x update.sh
+> ./update.sh
+> ```
+> 이후 업데이트부터는 평소대로 `./update.sh`만 실행하면 됩니다.
+
 ---
 
 ### 4. 🧑‍💻 Git Clone (개발자/고급 사용자)

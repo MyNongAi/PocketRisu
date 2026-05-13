@@ -53,7 +53,9 @@ fi
 
 info "Extracting..."
 tar -xzf "$TMP_DIR/release.tar.gz" -C "$TMP_DIR"
-EXTRACTED_DIR=$(ls -d "$TMP_DIR"/PocketRisu-* 2>/dev/null | head -1)
+# Match both PocketRisu-* (current) and Risuai-NodeOnly-* (legacy repo name)
+# in case an older script encounters a redirected source archive.
+EXTRACTED_DIR=$(ls -d "$TMP_DIR"/PocketRisu-* "$TMP_DIR"/Risuai-NodeOnly-* 2>/dev/null | head -1)
 [ -d "$EXTRACTED_DIR" ] || error "Extraction failed."
 
 # ── Install ────────────────────────────────────────────────────────────────────
