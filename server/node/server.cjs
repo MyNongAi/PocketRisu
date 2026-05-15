@@ -12,7 +12,17 @@ const nodeCrypto = require('crypto')
 const zlib = require('zlib')
 const rateLimit = require('express-rate-limit')
 const { WebSocketServer } = require('ws')
-const sharp = require('sharp')
+const Vips = require('wasm-vips')
+let _vipsPromise = null
+const getVips = () => {
+    if (!_vipsPromise) {
+        _vipsPromise = Vips().catch(err => {
+            _vipsPromise = null
+            throw err
+        })
+    }
+    return _vipsPromise
+}
 const { kvGet, kvSet, kvDel, kvList,
         kvDelPrefix, kvListWithSizes, kvSize, kvGetUpdatedAt, kvCopyValue, clearEntities, checkpointWal,
         db: sqliteDb } = require('./db.cjs');
@@ -834,6 +844,9 @@ const CLOUDFLARED_ASSETS = {
     'darwin-x64':    { url: 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-amd64.tgz', type: 'tgz' },
     'linux-x64':     { url: 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64', type: 'bin' },
     'linux-arm64':   { url: 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64', type: 'bin' },
+    // Termux reports process.platform === 'android' but the linux-arm64
+    // cloudflared binary (statically linked Go) runs cleanly on Bionic.
+    'android-arm64': { url: 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64', type: 'bin' },
     'win32-x64':     { url: 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe', type: 'bin' },
 };
 
@@ -1288,7 +1301,7 @@ async function migrateInlaysToFilesystem() {
     await fs.writeFile(inlayMigrationMarker, new Date().toISOString(), 'utf-8');
 }
 
-async function fetchLatestRelease() {
+async function fetchLatestRelease(lang) {
     if (UPDATE_CHECK_DISABLED) return null;
     try {
         const currentVersion = getCurrentVersion();
@@ -1298,6 +1311,7 @@ async function fetchLatestRelease() {
             os: `${process.platform}-${process.arch}`,
             id: instanceId,
         });
+        if (lang) params.set('l', String(lang).slice(0, 16));
         const url = `${UPDATE_CHECK_URL}?${params}`;
         const res = await fetch(url);
         if (!res.ok) return null;
@@ -2996,10 +3010,17 @@ const THUMB_QUALITY = 75;
 const THUMB_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
 
 async function generateThumbnail(buffer) {
-    return sharp(buffer)
-        .resize(THUMB_MAX_SIDE, THUMB_MAX_SIDE, { fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: THUMB_QUALITY })
-        .toBuffer();
+    const vips = await getVips()
+    const img = vips.Image.thumbnailBuffer(buffer, THUMB_MAX_SIDE, {
+        height: THUMB_MAX_SIDE,
+        size: 'down',
+    })
+    try {
+        const out = img.writeToBuffer('.webp', { Q: THUMB_QUALITY })
+        return Buffer.from(out);
+    } finally {
+        img.delete()
+    }
 }
 
 app.get('/api/asset/:hexKey', sessionAuthMiddleware, async (req, res) => {
@@ -5402,11 +5423,20 @@ app.post('/api/inlays/compress', sessionAuthMiddleware, async (req, res) => {
         let skipped = 0;
         let totalSaved = 0;
 
+        const vips = await getVips()
+
         for (let i = 0; i < imageFiles.length; i++) {
             const entry = imageFiles[i];
             try {
                 const original = await fs.readFile(entry.filePath);
-                const webpBuf = await sharp(original).webp({ quality }).toBuffer();
+                const img = vips.Image.newFromBuffer(original)
+                let webpBuf
+                try {
+                    const out = img.writeToBuffer('.webp', { Q: quality })
+                    webpBuf = Buffer.from(out);
+                } finally {
+                    img.delete()
+                }
 
                 if (webpBuf.length < original.length) {
                     const sidecar = await readInlaySidecar(entry.id);
@@ -5454,7 +5484,7 @@ app.get('/api/update-check', async (req, res) => {
         res.json({ currentVersion, hasUpdate: false, severity: 'none', disabled: true, deploymentType, canSelfUpdate: false });
         return;
     }
-    const result = await fetchLatestRelease();
+    const result = await fetchLatestRelease(req.query.lang);
     const response = result || { currentVersion, hasUpdate: false, severity: 'none' };
     response.deploymentType = deploymentType;
     response.canSelfUpdate = deploymentType === 'portable'
@@ -5827,7 +5857,13 @@ async function restoreBackup(backupDir, rootDir) {
 
 app.get('/api/tunnel/status', async (req, res) => {
     if (!await checkAuth(req, res)) return;
-    res.json({ disabled: TUNNEL_DISABLED, status: tunnelStatus, url: tunnelUrl, error: tunnelError });
+    res.json({
+        disabled: TUNNEL_DISABLED,
+        status: tunnelStatus,
+        url: tunnelUrl,
+        error: tunnelError,
+        platform: process.platform,
+    });
 });
 
 app.post('/api/tunnel/start', async (req, res) => {
