@@ -648,7 +648,6 @@ export function setDatabase(data:Database){
     data.disableMobileDragDrop ??= false
     data.disableToggleBinding ??= false
     data.hideLoadout ??= true
-    data.hideEasyPanel ??= true
     data.hideAllImages ??= false
     data.hideMessagePageCount ??= false
     data.ImagenModel ??= 'imagen-4.0-generate-001'
@@ -680,7 +679,6 @@ export function setDatabase(data:Database){
     data.hideLeftBarCollapseButton ??= false
     data.dynamicModelRegistry ??= true
     data.saveSignatures ??= false
-    data.enableRisuaiProTools ??= false
     data.useNodeOnlyScrollButton ??= true
     data.keepSessionAlive ??= 'off'
     data.localNetworkMode ??= false
@@ -1207,7 +1205,6 @@ export interface Database{
     disableMobileDragDrop:boolean
     disableToggleBinding:boolean
     hideLoadout:boolean
-    hideEasyPanel:boolean
     menuSideBar:boolean
     pluginV2: RisuPlugin[]
     showSavingIcon:boolean
@@ -1339,9 +1336,7 @@ export interface Database{
     enableRemoteSaving?:boolean
     blockquoteStyling?:boolean
     dynamicModelRegistry?:boolean
-    enableRisuaiProTools?:boolean
     useNodeOnlyScrollButton?:boolean
-    epEnabled?:boolean
     seperateParametersByModel?:boolean
     disableSeperateParameterChangeOnPresetChange?:boolean
     saveSignatures?:boolean

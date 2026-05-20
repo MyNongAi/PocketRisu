@@ -1250,7 +1250,6 @@ export const languageKorean = {
     "disableMobileDragDrop": "모바일에서 캐릭터 드래그 앤 드롭 비활성화",
     "disableToggleBinding": "채팅 토글 바인딩 비활성화",
     "hideLoadout": "로드아웃 숨기기",
-    "hideEasyPanel": "Easy Panel 숨기기",
     "seperateModelsForAxModels": "보조 모델 분리",
     "axModelsDef": "보조 모델 정의",
     "doNotChangeSeperateModels": "프리셋 변경 시 분리된 모델 변경하지 않기",

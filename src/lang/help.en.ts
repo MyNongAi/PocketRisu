@@ -104,7 +104,6 @@ export const helpEn = {
         disableMobileDragDrop: "Disable drag-and-drop for chat reordering on mobile devices. Enable this if you experience accidental drags while scrolling.",
         disableToggleBinding: "Disable the toggle binding feature that pins toggle values to individual chats. When disabled, the bind/save/preset buttons are hidden and previously bound values are not restored on chat switch.",
         hideLoadout: "Hide the loadout feature. Loadouts let you save and restore preset/module/persona combinations. When hidden, the loadout hotkey (Ctrl+O) and quick menu entry are also disabled.",
-        hideEasyPanel: "Hide the Easy Panel menu entry. The Easy Panel itself is part of Pro Tools, but this option hides its button from the chat menu and settings sidebar independently.",
         useExperimental: "If enabled, it will show some experimental features.",
         forceProxyAsOpenAI: "If enabled, it will force to use OpenAI format when using reverse proxy.",
         forcePlainFetch: "If enabled, it will use the browser Fetch API instead of the native HTTP request. This can cause CORS errors.",
@@ -319,8 +318,6 @@ export const helpEn = {
             "Move the hamburger/menu button to the bottom of the sidebar. This can make one-handed use easier on mobile or small screens.",
         hideLeftBarCollapseButton:
             "Hide the toggle button that collapses the left character grid bar on narrow screens (under 400px). Enable this if you prefer to keep the left bar always visible on mobile.",
-        enableRisuaiProTools:
-            "Enable Pro Tools such as Easy Panel. Some PocketRisu features require this separate toggle.",
         loreBookDepth:
             "Number of previous messages to scan for lorebook activation keywords. `0` disables scanning; higher values can find older keywords but may activate unnecessary lore. (0-20)",
         loreBookToken:

@@ -206,14 +206,6 @@ export const accessibilitySettingsItems: SettingItem[] = [
         keywords: ['left', 'bar', 'collapse', 'toggle', 'mobile', 'sidebar', 'hide'],
     },
     {
-        id: 'acc.enableRisuaiProTools',
-        type: 'check',
-        labelKey: 'enableRisuaiProTools',
-        bindKey: 'enableRisuaiProTools',
-        helpKey: 'enableRisuaiProTools',
-        keywords: ['pro', 'tools', 'accessibility'],
-    },
-    {
         id: 'acc.useNodeOnlyScrollButton',
         type: 'check',
         labelKey: 'useNodeOnlyScrollButton',
