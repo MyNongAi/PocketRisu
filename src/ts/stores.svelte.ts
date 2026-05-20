@@ -179,10 +179,6 @@ export const popupStore = $state({
     openId: 0,
 })
 
-export const loadoutModalStore = $state({
-    open: false
-})
-
 export const popUpEditorStore = $state({
     open: false,
     value: '',

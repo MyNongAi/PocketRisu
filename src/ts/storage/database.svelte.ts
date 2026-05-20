@@ -647,7 +647,6 @@ export function setDatabase(data:Database){
     data.showPersonaInSidebar ??= true
     data.disableMobileDragDrop ??= false
     data.disableToggleBinding ??= false
-    data.hideLoadout ??= true
     data.hideAllImages ??= false
     data.hideMessagePageCount ??= false
     data.ImagenModel ??= 'imagen-4.0-generate-001'
@@ -685,7 +684,6 @@ export function setDatabase(data:Database){
     if (typeof data.localNetworkMode !== 'boolean') data.localNetworkMode = false
     data.localNetworkTimeoutSec ??= 600
     if (typeof data.localNetworkTimeoutSec !== 'number' || Number.isNaN(data.localNetworkTimeoutSec)) data.localNetworkTimeoutSec = 600
-    data.loadouts ??= []
     data.pluginCustomStorage ??= {}
     data.longPressToPopupEditor ??= false
     changeLanguage(data.language)
@@ -1204,7 +1202,6 @@ export interface Database{
     showPersonaInSidebar:boolean
     disableMobileDragDrop:boolean
     disableToggleBinding:boolean
-    hideLoadout:boolean
     menuSideBar:boolean
     pluginV2: RisuPlugin[]
     showSavingIcon:boolean
@@ -1297,7 +1294,6 @@ export interface Database{
     dynamicOutput?:DynamicOutput
     hubServerType?:string
     pluginCustomStorage:{[key:string]:any}
-    loadouts: Loadout[]
     longPressToPopupEditor?: boolean
     ImagenModel:string
     ImagenImageSize:string
@@ -2617,7 +2613,6 @@ import type { HypaModel } from '../process/memory/hypamemory';
 import type { SerializableHypaV3Data } from '../process/memory/hypav3';
 import { defaultHotkeys, type Hotkey } from '../defaulthotkeys';
 import type { OpenAIChat } from '../process/index.svelte';
-import type { Loadout } from '../loadout';
 
 export async function downloadPreset(id:number, type:'json'|'risupreset'|'return' = 'json'){
     saveCurrentPreset()

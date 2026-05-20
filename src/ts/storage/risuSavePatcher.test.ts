@@ -221,7 +221,6 @@ const emptyToSave = () => ({
     root: false,
     botPreset: false,
     modules: false,
-    loadouts: false,
     plugins: false,
     pluginCustomStorage: false,
 })

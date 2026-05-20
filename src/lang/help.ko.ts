@@ -65,7 +65,6 @@ export const helpKo = {
         "showPersonaInSidebar": "사이드바에 현재 활성화된 페르소나명을 표시합니다.",
         "disableMobileDragDrop": "모바일에서 채팅 목록의 드래그 앤 드롭 정렬을 비활성화합니다. 스크롤 중 의도치 않은 드래그가 발생할 경우 활성화하세요.",
         "disableToggleBinding": "채팅별로 토글 값을 고정하는 바인딩 기능을 비활성화합니다. 비활성화 시 바인딩 버튼이 숨겨지고, 이미 바인딩된 값도 채팅 전환 시 복원되지 않습니다.",
-        "hideLoadout": "로드아웃 기능을 숨깁니다. 로드아웃은 프리셋/모듈/페르소나 조합을 저장하고 복원하는 기능입니다. 숨기면 단축키(Ctrl+O)와 퀵 메뉴 항목도 비활성화됩니다.",
         "useExperimental": "활성화되면 일부 실험적인 기능이 표시됩니다.",
         "forceProxyAsOpenAI": "활성화되면 커스텀 모델 사용 시 OpenAI 형식을 강제로 사용합니다.",
         "localNetworkModeDesc": "사설망/LAN 모델 URL을 브라우저 직접 요청 대신 로컬 서버를 통해 라우팅합니다.\n\n**목적**\n- 브라우저 사설망/CORS 제한 우회\n- 로컬 모델의 느린 첫 토큰 응답에 대한 타임아웃 위험 완화\n\n**동작 방식**\n- 스트리밍: Job+WebSocket 릴레이 우선 (실패 시 /proxy2 폴백)\n- 비스트리밍: /proxy2 릴레이\n\n**제약사항**\n- OpenAI 호환 요청 경로에만 적용",

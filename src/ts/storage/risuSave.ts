@@ -73,7 +73,6 @@ export type toSaveType = {
     root: boolean;
     botPreset: boolean;
     modules: boolean;
-    loadouts: boolean;
     plugins: boolean;
     pluginCustomStorage: boolean;
 }
@@ -127,7 +126,7 @@ export class RisuSaveEncoder {
         for(const key of keys){
             if(
                 key !== 'characters' && key !== 'botPresets' && key !== 'modules' &&
-                key !== 'loadouts' && key !== 'plugins' && key !== 'pluginCustomStorage'
+                key !== 'plugins' && key !== 'pluginCustomStorage'
             ){
                 obj[key] = data[key]
             }
@@ -149,12 +148,6 @@ export class RisuSaveEncoder {
             data: JSON.stringify(data.modules),
             type: RisuSaveType.MODULES,
             name: 'modules'
-        });
-        this.blocks['loadouts'] = await this.encodeBlock({
-            compression,
-            data: JSON.stringify(data.loadouts),
-            type: RisuSaveType.LOADOUTS,
-            name: 'loadouts'
         });
         this.blocks['plugins'] = await this.encodeBlock({
             compression,
@@ -199,7 +192,7 @@ export class RisuSaveEncoder {
         for(const key of keys){
             if(
                 key !== 'characters' && key !== 'botPresets' && key !== 'modules' &&
-                key !== 'loadouts' && key !== 'plugins' && key !== 'pluginCustomStorage'
+                key !== 'plugins' && key !== 'pluginCustomStorage'
             ){
                 obj[key] = data[key]
             }
@@ -251,7 +244,7 @@ export class RisuSaveEncoder {
         const currentCharacterIds = new Set<string>((data.characters ?? []).map((character) => character?.chaId).filter(Boolean));
         for (const key of Object.keys(this.blocks)) {
             if (key === 'root' || key === 'preset' || key === 'modules' || key === 'config'
-                || key === 'loadouts' || key === 'plugins' || key === 'pluginStorage') {
+                || key === 'plugins' || key === 'pluginStorage') {
                 continue;
             }
             if (!currentCharacterIds.has(key)) {
@@ -274,15 +267,6 @@ export class RisuSaveEncoder {
                 data: JSON.stringify(data.modules),
                 type: RisuSaveType.MODULES,
                 name: 'modules'
-            });
-        }
-
-        if(toSave.loadouts){
-            this.blocks['loadouts'] = await this.encodeBlock({
-                compression: this.compression,
-                data: JSON.stringify(data.loadouts),
-                type: RisuSaveType.LOADOUTS,
-                name: 'loadouts'
             });
         }
 
@@ -536,7 +520,7 @@ export class RisuSaveDecoder {
                     break;
                 }
                 case RisuSaveType.LOADOUTS:{
-                    db.loadouts = JSON.parse(this.blocks[key].content);
+                    // Loadout feature removed; ignore any legacy blocks from older backups.
                     break;
                 }
                 case RisuSaveType.PLUGIN_STORAGE:{

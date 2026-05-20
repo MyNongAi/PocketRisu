@@ -1,7 +1,7 @@
 import { get } from "svelte/store"
 import { alertMd, alertSelect, notifyInfo, alertWait, doingAlert, alertRequestLogs } from "./alert"
 import { changeToPreset as changeToPreset2, getDatabase  } from "./storage/database.svelte"
-import { alertStore, DBState, loadoutModalStore, MobileGUIStack, MobileSideBar, openPersonaList, personaSelectCallback, openPresetList, openHypaV3PresetList, openThemePresetList, OpenRealmStore, PlaygroundStore, QuickSettings, SafeModeStore, selectedCharID, settingsOpen } from "./stores.svelte"
+import { alertStore, DBState, MobileGUIStack, MobileSideBar, openPersonaList, personaSelectCallback, openPresetList, openHypaV3PresetList, openThemePresetList, OpenRealmStore, PlaygroundStore, QuickSettings, SafeModeStore, selectedCharID, settingsOpen } from "./stores.svelte"
 import { language } from "src/lang"
 import { updateTextThemeAndCSS } from "./gui/colorscheme"
 import { defaultHotkeys } from "./defaulthotkeys"
@@ -158,12 +158,6 @@ export function initHotkey(){
                     }
                     break
                 }
-                case 'loadout':{
-                    if(!database.hideLoadout){
-                        loadoutModalStore.open = !loadoutModalStore.open
-                    }
-                    break
-                }
                 default:{
                     hotKeyRanThisTime = false
                 }
@@ -314,14 +308,11 @@ export async function quickMenu(){
     const db = getDatabase()
     const showHypaV3 = db.hypaV3 && db.hypaV3Presets?.length > 1
 
-    const showLoadout = !db.hideLoadout
-
     const options = [
         language.presets,
         language.themePresets,
         language.persona,
         ...(showHypaV3 ? [language.longTermMemory + ' ' + language.presets] : []),
-        ...(showLoadout ? [language.hotkeyDesc.loadout] : []),
         language.cancel
     ]
 
@@ -339,9 +330,6 @@ export async function quickMenu(){
     }
     else if(showHypaV3 && sel === idx++){
         openHypaV3PresetList.set(true)
-    }
-    else if(showLoadout && sel === idx++){
-        loadoutModalStore.open = !(loadoutModalStore.open)
     }
 }
 
