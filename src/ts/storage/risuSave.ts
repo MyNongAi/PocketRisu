@@ -786,10 +786,12 @@ export function normalizeJSON(value: any, seen?: WeakSet<object>): any {
 // returned ops with `for (const op of ops) patch.push(op)` rather than spread,
 // to stay safe even when a single item's internal diff is large.
 //
-// `idKey != null` (modules): structural detection by id equality at each index,
-// with a safety belt that forces `replace` when ids are falsy or duplicated
-// (defensive against corrupted backups). `idKey == null` (botPresets, which
-// have no stable id): length-only detection.
+// `idKey != null` (modules, botPresets — both gained stable string ids):
+// structural detection by id equality at each index, with a safety belt
+// that forces `replace` when ids are falsy or duplicated (defensive against
+// corrupted backups, or backups predating the id field). `idKey == null`:
+// length-only detection — retained as a fallback for arrays without stable
+// ids, currently unused by callers but kept for future use.
 export function diffArrayWithIdGuard(
     compare: (a: any, b: any) => any[],
     path: string,
@@ -893,7 +895,7 @@ export class RisuSavePatcher {
 
         if (toSave.botPreset) {
             const normBotPresets = normalizeJSON(curBotPresets) ?? []
-            const ops = diffArrayWithIdGuard(compare, '/botPresets', lastBotPresets, normBotPresets, null)
+            const ops = diffArrayWithIdGuard(compare, '/botPresets', lastBotPresets, normBotPresets, 'id')
             for (const op of ops) patch.push(op)
             this.hashBlocks['botPresets'] = calculateHash(normBotPresets);
             this.lastSyncedDb.botPresets = normBotPresets;
