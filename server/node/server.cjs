@@ -765,6 +765,11 @@ if(!existsSync(savePath)){
 // stay where they were); only future backups land at the new path.
 const DEFAULT_BACKUPS_DIR = path.join(process.cwd(), "backups");
 const BACKUP_PATH_CONFIG_KEY = 'config/server-backup-path';
+const MANAGED_BACKUP_PATH_ROOTS = new Set(['server', 'dist', 'scripts', 'bin', 'node_modules', '.update-tmp']);
+// Plaintext marker the updater reads to preserve a custom in-tree backup dir
+// during in-place updates. KV lives inside the SQLite DB so the updater (which
+// runs without npm deps) can't read it; this marker bridges that gap.
+const BACKUP_PATH_MARKER = path.join(savePath, '__backup_path');
 
 function readBackupsDirConfig() {
     try {
@@ -775,11 +780,28 @@ function readBackupsDirConfig() {
     } catch { return DEFAULT_BACKUPS_DIR; }
 }
 
+function writeBackupPathMarker(absPath) {
+    try {
+        require('fs').writeFileSync(BACKUP_PATH_MARKER, absPath, 'utf-8');
+    } catch {
+        // Best-effort; marker absence only means the updater falls back to the
+        // hard-coded `backups` keep — same as before this feature existed.
+    }
+}
+
+function isManagedBackupPath(absPath) {
+    const rel = path.relative(process.cwd(), absPath);
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return false;
+    if (!rel) return true;
+    return MANAGED_BACKUP_PATH_ROOTS.has(rel.split(path.sep)[0]);
+}
+
 let backupsDir = readBackupsDirConfig();
 if(!existsSync(backupsDir)){
     try { mkdirSync(backupsDir, { recursive: true }); }
     catch { backupsDir = DEFAULT_BACKUPS_DIR; mkdirSync(backupsDir, { recursive: true }); }
 }
+writeBackupPathMarker(backupsDir);
 const BACKUP_FILENAME_REGEX = /^risu-backup-\d+\.bin$/;
 
 const passwordPath = path.join(process.cwd(), 'save', '__password')
@@ -5366,6 +5388,11 @@ app.put('/api/backup/server/path', async (req, res, next) => {
             return res.status(400).json({ error: 'Path required' });
         }
         const resolved = path.resolve(next);
+        if (isManagedBackupPath(resolved)) {
+            return res.status(400).json({
+                error: 'Backup path cannot be inside PocketRisu app files. Choose a separate folder such as data/backups.',
+            });
+        }
         // Ensure parent exists / target is writable. Create the dir if missing.
         try {
             if (!existsSync(resolved)) {
@@ -5381,6 +5408,7 @@ app.put('/api/backup/server/path', async (req, res, next) => {
         const previous = backupsDir;
         backupsDir = resolved;
         kvSet(BACKUP_PATH_CONFIG_KEY, Buffer.from(resolved, 'utf-8'));
+        writeBackupPathMarker(resolved);
         res.json({
             path: backupsDir,
             previous,
