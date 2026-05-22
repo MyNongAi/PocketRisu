@@ -6,7 +6,7 @@
     import ShDropdownMenuTrigger from 'src/lib/UI/GUI/ShDropdownMenuTrigger.svelte';
     import ShDropdownMenuContent from 'src/lib/UI/GUI/ShDropdownMenuContent.svelte';
     import ShDropdownMenuItem from 'src/lib/UI/GUI/ShDropdownMenuItem.svelte';
-    import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, chatDeselected } from "../../ts/stores.svelte";
+    import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, chatDeselected, chatPanelStore } from "../../ts/stores.svelte";
     import { tick } from 'svelte';
     import Chat from "./Chat.svelte";
     import { type Chat as ChatData, type Message } from "../../ts/storage/database.svelte";
@@ -1141,6 +1141,16 @@ import { isMobile } from 'src/ts/platform'
         }}>
             {#if !floatingMode}
                 {@render composerCluster()}
+            {/if}
+
+            {#if chatPanelStore.length > 0}
+                <div class="mx-4 my-2 flex flex-col gap-2">
+                    {#each chatPanelStore as panel (panel.id)}
+                        <section class={`rounded-md border border-darkborderc bg-darkbg/80 p-3 text-textcolor ${panel.className ?? ''}`} data-plugin-chat-panel={panel.id}>
+                            {@html panel.html}
+                        </section>
+                    {/each}
+                </div>
             {/if}
 
             {#if !currentChatReady}
