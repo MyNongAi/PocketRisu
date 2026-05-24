@@ -15,6 +15,8 @@ import { type HypaV3Settings, type HypaV3Preset, createHypaV3Preset } from '../p
 import { normalizeTranslatorPresetState, type TranslatorPreset } from '../translator/presets'
 import { safeStructuredClone } from '../polyfill';
 import { v4 as uuidv4 } from 'uuid';
+import { applyModelPresetDefaults } from '../preset/dbDefaults';
+import type { ApiKeyPoolEntry, ModelBindingFields, ModelPreset, ModelPresetMigrationSummary, RegistryCache } from '../preset/types';
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
 export let appVer = "2026.2.291" //<APP_VERSION_POINT>
@@ -697,6 +699,7 @@ export function setDatabase(data:Database){
     if (typeof data.localNetworkTimeoutSec !== 'number' || Number.isNaN(data.localNetworkTimeoutSec)) data.localNetworkTimeoutSec = 600
     data.pluginCustomStorage ??= {}
     data.longPressToPopupEditor ??= false
+    applyModelPresetDefaults(data)
     changeLanguage(data.language)
     setDatabaseLite(data)
 }
@@ -1286,6 +1289,13 @@ export interface Database{
         params: string
         flags: LLMFlags[]
     }[]
+    modelPresets: ModelPreset[]
+    modelPresetMigrationVersion?: number
+    modelPresetMigrationAppliedAt?: number
+    modelPresetMigrationReport?: ModelPresetMigrationSummary
+    apiKeyPool?: Record<string, ApiKeyPoolEntry>
+    modelProfileRegistryCache?: RegistryCache
+    modelProfileRegistryLastFetched?: number
     igpPrompt:string
     useTokenizerCaching:boolean
     showMenuHypaMemoryModal:boolean
@@ -1682,6 +1692,9 @@ export interface botPreset{
     fallbackWhenBlankResponse?: boolean
     verbosity?:number
     dynamicOutput?:DynamicOutput
+    modelBinding?: ModelBindingFields['modelBinding']
+    subModelBinding?: ModelBindingFields['subModelBinding']
+    taskModelBindings?: ModelBindingFields['taskModelBindings']
 }
 
 
@@ -1911,6 +1924,9 @@ export interface Chat{
     bookmarkNames?: { [chatId: string]: string };
     supaMemory?: boolean
     savedToggleValues?: Record<string, string>
+    modelBinding?: ModelBindingFields['modelBinding']
+    subModelBinding?: ModelBindingFields['subModelBinding']
+    taskModelBindings?: ModelBindingFields['taskModelBindings']
     /** Runtime-only: true while awaiting hydration from server. Never persisted. */
     _placeholder?: boolean
 }
