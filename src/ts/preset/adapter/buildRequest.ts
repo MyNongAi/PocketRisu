@@ -5,7 +5,7 @@ import type { AdapterPreparedRequest, AdapterRequestContext } from './types'
 
 export function buildPreparedRequest(ctx: AdapterRequestContext): AdapterPreparedRequest {
     const snapshot = ctx.preset.profileSnapshot
-    const baseUrl = resolveEndpointUrl(snapshot)
+    const baseUrl = resolveEndpointUrl(snapshot, ctx.preset.userValues)
 
     const body: Record<string, unknown> = structuredClone({
         ...(snapshot.defaults ?? {}),
@@ -57,7 +57,26 @@ export function buildPreparedRequest(ctx: AdapterRequestContext): AdapterPrepare
     return applyAuth(prepared, snapshot.auth, ctx.credential)
 }
 
-function resolveEndpointUrl(snapshot: ResolvedModelProfileSnapshot): string {
+function resolveEndpointUrl(
+    snapshot: ResolvedModelProfileSnapshot,
+    userValues: Record<string, unknown>,
+): string {
+    // Endpoint override primitive: a schema field with
+    // `mapsTo: { target: 'custom', path: 'endpointUrl' }` lets users plug in
+    // a base URL on profiles that ship with an empty endpoint.url
+    // (e.g. openai-compatible:custom). Migration analyzer writes this value
+    // into `userValues.endpointUrl` for custom OpenAI-compatible providers.
+    const override = pickEndpointOverride(snapshot, userValues)
+    if (override !== undefined) {
+        if (override.length === 0) {
+            throw new ModelPresetAdapterError(
+                'invalid-request',
+                'Endpoint URL override is empty',
+                { retryable: false },
+            )
+        }
+        return override
+    }
     if (snapshot.endpoint.kind === 'static') {
         if (!snapshot.endpoint.url) {
             throw new ModelPresetAdapterError(
@@ -73,6 +92,19 @@ function resolveEndpointUrl(snapshot: ResolvedModelProfileSnapshot): string {
         `Endpoint kind '${snapshot.endpoint.kind}' is not supported by the shared request builder yet`,
         { retryable: false },
     )
+}
+
+function pickEndpointOverride(
+    snapshot: ResolvedModelProfileSnapshot,
+    userValues: Record<string, unknown>,
+): string | undefined {
+    for (const field of snapshot.schema) {
+        if (field.mapsTo?.target !== 'custom') continue
+        if (field.mapsTo.path !== 'endpointUrl') continue
+        const value = pickEffective(userValues, field.key, field.default)
+        if (typeof value === 'string') return value
+    }
+    return undefined
 }
 
 function pickEffective(

@@ -46,3 +46,38 @@ export interface AdapterStreamEvent {
     data: string
     id?: string
 }
+
+export type AdapterChatRole = 'system' | 'user' | 'assistant' | 'tool'
+
+export interface AdapterChatMessage {
+    role: AdapterChatRole
+    content: string
+    name?: string
+    toolCallId?: string
+}
+
+export interface AdapterUsage {
+    promptTokens?: number
+    completionTokens?: number
+    totalTokens?: number
+}
+
+export interface AdapterChatResponse {
+    text: string
+    finishReason?: string
+    usage?: AdapterUsage
+    raw: unknown
+}
+
+export interface AdapterChatStreamDelta {
+    textDelta: string
+    finishReason?: string
+    usage?: AdapterUsage
+    raw: unknown
+}
+
+export interface AdapterChatOptions {
+    messages: AdapterChatMessage[]
+    abortSignal?: AbortSignal
+    fetchImpl?: typeof fetch
+}

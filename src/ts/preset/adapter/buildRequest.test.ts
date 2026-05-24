@@ -316,6 +316,94 @@ describe('buildPreparedRequest', () => {
         expect(result.body).toEqual({ model: 'gpt-5' })
     })
 
+    test('resolves endpoint URL from userValues when schema has custom endpointUrl mapping', () => {
+        const preset = makePreset({
+            profileSnapshot: makeSnapshot({
+                endpoint: { kind: 'static', url: '' },
+                schema: [
+                    {
+                        key: 'apiKey',
+                        type: 'string',
+                        label: 'API Key',
+                        secret: true,
+                        mapsTo: { target: 'auth', path: 'apiKey' },
+                    },
+                    {
+                        key: 'endpointUrl',
+                        type: 'string',
+                        label: 'Endpoint URL',
+                        mapsTo: { target: 'custom', path: 'endpointUrl' },
+                    },
+                    {
+                        key: 'modelId',
+                        type: 'string',
+                        label: 'Model ID',
+                        mapsTo: { target: 'body', path: 'model' },
+                    },
+                ],
+            }),
+            userValues: {
+                endpointUrl: 'https://my-proxy.example/v1/chat/completions',
+                modelId: 'demo-fast',
+            },
+        })
+        const result = buildPreparedRequest({ preset, credential: { apiKey: 'sk' } })
+        expect(result.url).toBe('https://my-proxy.example/v1/chat/completions')
+        expect(result.body).toEqual({ model: 'demo-fast' })
+    })
+
+    test('endpoint override takes precedence over snapshot.endpoint.url', () => {
+        const preset = makePreset({
+            profileSnapshot: makeSnapshot({
+                endpoint: { kind: 'static', url: 'https://demo.test/v1/chat/completions' },
+                schema: [
+                    {
+                        key: 'apiKey',
+                        type: 'string',
+                        label: 'API Key',
+                        secret: true,
+                        mapsTo: { target: 'auth', path: 'apiKey' },
+                    },
+                    {
+                        key: 'endpointUrl',
+                        type: 'string',
+                        label: 'Endpoint URL',
+                        mapsTo: { target: 'custom', path: 'endpointUrl' },
+                    },
+                ],
+            }),
+            userValues: { endpointUrl: 'https://override.example/v1' },
+        })
+        const result = buildPreparedRequest({ preset, credential: { apiKey: 'sk' } })
+        expect(result.url).toBe('https://override.example/v1')
+    })
+
+    test('empty endpoint override throws invalid-request', () => {
+        const preset = makePreset({
+            profileSnapshot: makeSnapshot({
+                endpoint: { kind: 'static', url: '' },
+                schema: [
+                    {
+                        key: 'endpointUrl',
+                        type: 'string',
+                        label: 'Endpoint URL',
+                        mapsTo: { target: 'custom', path: 'endpointUrl' },
+                    },
+                ],
+            }),
+            userValues: { endpointUrl: '' },
+        })
+        try {
+            buildPreparedRequest({ preset, credential: { apiKey: 'sk' } })
+            throw new Error('expected throw')
+        } catch (err) {
+            expect(err).toBeInstanceOf(ModelPresetAdapterError)
+            if (err instanceof ModelPresetAdapterError) {
+                expect(err.kind).toBe('invalid-request')
+            }
+        }
+    })
+
     test('userValues explicit null suppresses schema default fallback', () => {
         const preset = makePreset({
             profileSnapshot: makeSnapshot({

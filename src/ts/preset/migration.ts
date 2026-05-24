@@ -167,11 +167,12 @@ export function analyzeModelPresetMigration(db: ModelPresetMigrationInput): Migr
 
     for (const [index, customModel] of (db.customModels ?? []).entries()) {
         const sourcePath = `customModels.${customModel.id || index}`
-        const profileId = profileForFormat(customModel.format)
-        if (!profileId) {
+        const baseProfileId = profileForFormat(customModel.format)
+        if (!baseProfileId) {
             addManual(report, sourcePath, `Unsupported custom model format: ${customModel.format}`, customModel.id)
             continue
         }
+        const profileId = pickOpenAiCompatibleProfile(baseProfileId, Boolean(customModel.key))
         addPreset(createPlannedPreset({
             sourceKind: 'custom',
             sourcePath,
@@ -387,11 +388,12 @@ function addReverseProxyPreset(
         additionalParams?: [string, string][]
     },
 ): void {
-    const profileId = profileForFormat(args.customAPIFormat ?? LLMFormat.OpenAICompatible)
-    if (!profileId) {
+    const baseProfileId = profileForFormat(args.customAPIFormat ?? LLMFormat.OpenAICompatible)
+    if (!baseProfileId) {
         addManual(report, args.sourcePath, `Unsupported reverse proxy format: ${args.customAPIFormat}`, 'reverse_proxy')
         return
     }
+    const profileId = pickOpenAiCompatibleProfile(baseProfileId, Boolean(args.proxyKeyPath))
     const planned = createPlannedPreset({
         sourceKind: args.sourceKind,
         sourcePath: args.sourcePath,
@@ -561,6 +563,18 @@ function profileForFormat(format: number | undefined): string | undefined {
         default:
             return undefined
     }
+}
+
+// Custom OpenAI-compatible endpoints (self-hosted vLLM, LiteLLM, local Ollama
+// OpenAI mode, etc.) often run without authentication. The bundled registry
+// expresses this as a separate `openai-compatible:custom-noauth` profile
+// (auth.kind = 'none'); migration picks it whenever the legacy source has no
+// credential. Other base providers always carry a credential by contract.
+function pickOpenAiCompatibleProfile(baseProfileId: string, hasCredential: boolean): string {
+    if (baseProfileId === 'openai-compatible:custom' && !hasCredential) {
+        return 'openai-compatible:custom-noauth'
+    }
+    return baseProfileId
 }
 
 function hasReverseProxyConfig(db: ModelPresetMigrationInput): boolean {

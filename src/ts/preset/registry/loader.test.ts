@@ -25,6 +25,7 @@ const EXPECTED_PROFILE_IDS = [
     'nanogpt:openai-compatible',
     'ollama:openai-compatible-local',
     'openai-compatible:custom',
+    'openai-compatible:custom-noauth',
     'openai:standard',
     'openrouter:openai-compatible',
     'vercel:openai-compatible',

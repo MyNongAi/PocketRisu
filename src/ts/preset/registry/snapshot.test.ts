@@ -175,6 +175,7 @@ describe('resolveSnapshot', () => {
             'anthropic:standard',
             'google:standard',
             'openai-compatible:custom',
+            'openai-compatible:custom-noauth',
             'openrouter:openai-compatible',
             'nanogpt:openai-compatible',
             'ollama:openai-compatible-local',
@@ -186,6 +187,21 @@ describe('resolveSnapshot', () => {
             const snapshot = resolveSnapshot(registry, profileId)
             expect(snapshot.profileId).toBe(profileId)
         }
+    })
+
+    test('returns the openai-compatible:custom-noauth snapshot with auth.kind=none and hidden apiKey field', () => {
+        const snapshot = resolveSnapshot(registry, 'openai-compatible:custom-noauth')
+        expect(snapshot.auth).toEqual({ kind: 'none', fields: [] })
+        expect(snapshot.adapterKind).toBe('openai-compatible')
+        expect(snapshot.endpoint).toEqual({ kind: 'static', url: '' })
+        const apiKeyField = snapshot.uiSchema.fields.find((f) => f.key === 'apiKey')
+        expect(apiKeyField?.visibility).toBe('hidden')
+        // endpointUrl + modelId remain visible for user input
+        const visibleKeys = snapshot.uiSchema.fields
+            .filter((f) => f.visibility === 'basic')
+            .map((f) => f.key)
+        expect(visibleKeys).toContain('endpointUrl')
+        expect(visibleKeys).toContain('modelId')
     })
 
     test('merges profile schema/uiSchema on top of base provider fields', () => {

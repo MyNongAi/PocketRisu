@@ -68,6 +68,43 @@ describe('analyzeModelPresetMigration', () => {
         expect(report.createdModelPresets[0].userValues.additionalParams).toEqual([['x-provider', 'abc']])
     })
 
+    test('routes no-credential custom OpenAI-compatible models to the custom-noauth profile', () => {
+        const report = analyzeModelPresetMigration({
+            customModels: [{
+                id: 'xcustom:::local',
+                internalId: 'llama3',
+                url: 'http://localhost:11434/v1/chat/completions',
+                format: LLMFormat.OpenAICompatible,
+                name: 'Local vLLM',
+                // no key
+            }],
+            aiModel: 'xcustom:::local',
+        })
+        expect(report.createdModelPresets).toHaveLength(1)
+        expect(report.createdModelPresets[0]).toMatchObject({
+            profileId: 'openai-compatible:custom-noauth',
+            modelId: 'llama3',
+            endpointUrl: 'http://localhost:11434/v1/chat/completions',
+        })
+        expect(report.createdModelPresets[0].credentialSource).toBeUndefined()
+    })
+
+    test('routes reverse proxy without proxyKey to the custom-noauth profile', () => {
+        const report = analyzeModelPresetMigration({
+            aiModel: 'reverse_proxy',
+            forceReplaceUrl: 'http://localhost:4000/v1/chat/completions',
+            customProxyRequestModel: 'gateway-model',
+            customAPIFormat: LLMFormat.OpenAICompatible,
+            // no proxyKey
+        })
+        expect(report.createdModelPresets).toHaveLength(1)
+        expect(report.createdModelPresets[0]).toMatchObject({
+            profileId: 'openai-compatible:custom-noauth',
+            modelId: 'gateway-model',
+        })
+        expect(report.createdModelPresets[0].credentialSource).toBeUndefined()
+    })
+
     test('uses provider-specific request model fields for OpenRouter and reverse proxy', () => {
         const report = analyzeModelPresetMigration({
             aiModel: 'openrouter',
@@ -99,7 +136,8 @@ describe('analyzeModelPresetMigration', () => {
             modelId: 'openai/gpt-4o-mini',
         })
         expect(report.createdModelPresets.find((preset) => preset.sourcePath === 'botPresets.bot-proxy.reverse_proxy')).toMatchObject({
-            profileId: 'openai-compatible:custom',
+            // bot-proxy has no proxyKey → routes to custom-noauth (plan §9-5-1)
+            profileId: 'openai-compatible:custom-noauth',
             modelId: 'proxy-model-from-legacy',
             userValues: {
                 endpointUrl: 'https://proxy.test/v1/chat/completions',
