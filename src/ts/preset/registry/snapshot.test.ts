@@ -1,0 +1,169 @@
+import { describe, expect, test } from 'vitest'
+import type { BaseProviderDefinition, ModelProfile, RegistryCache } from '../types'
+import { loadBundledRegistry } from './loader'
+import { RegistryProfileNotFoundError, resolveSnapshot } from './snapshot'
+
+describe('resolveSnapshot', () => {
+    const registry = loadBundledRegistry()
+
+    test('returns the openai:standard snapshot with merged base schema', () => {
+        const snapshot = resolveSnapshot(registry, 'openai:standard')
+        expect(snapshot).toMatchObject({
+            profileId: 'openai:standard',
+            profileVersion: 1,
+            providerBaseId: 'openai',
+            adapterKind: 'openai-compatible',
+            auth: { kind: 'bearer', fields: ['apiKey'] },
+            endpoint: { kind: 'static', url: 'https://api.openai.com/v1/chat/completions' },
+            modelId: '',
+        })
+        expect(snapshot.schema.map((f) => f.key)).toEqual(['apiKey', 'modelId'])
+        expect(snapshot.headerTemplate).toEqual({ 'Content-Type': 'application/json' })
+        expect(snapshot.capabilities).toContain('streaming')
+    })
+
+    test('returns the anthropic:standard snapshot with anthropic-messages adapter', () => {
+        const snapshot = resolveSnapshot(registry, 'anthropic:standard')
+        expect(snapshot.adapterKind).toBe('anthropic-messages')
+        expect(snapshot.auth).toEqual({ kind: 'x-api-key', fields: ['apiKey'] })
+        expect(snapshot.endpoint.url).toBe('https://api.anthropic.com/v1/messages')
+        expect(snapshot.headerTemplate?.['anthropic-version']).toBe('2023-06-01')
+    })
+
+    test('returns the google:standard snapshot with x-goog-api-key auth', () => {
+        const snapshot = resolveSnapshot(registry, 'google:standard')
+        expect(snapshot.adapterKind).toBe('google-gemini')
+        expect(snapshot.auth.kind).toBe('x-goog-api-key')
+    })
+
+    test('returns the ollama:openai-compatible-local snapshot with none auth', () => {
+        const snapshot = resolveSnapshot(registry, 'ollama:openai-compatible-local')
+        expect(snapshot.auth.kind).toBe('none')
+        expect(snapshot.endpoint.url).toBe('http://localhost:11434/v1/chat/completions')
+    })
+
+    test('returns the vertex-openai:standard snapshot with vertex-openai endpoint kind', () => {
+        const snapshot = resolveSnapshot(registry, 'vertex-openai:standard')
+        expect(snapshot.adapterKind).toBe('openai-compatible')
+        expect(snapshot.endpoint.kind).toBe('vertex-openai')
+        expect(snapshot.auth.kind).toBe('google-service-account')
+        expect(snapshot.defaults).toMatchObject({ location: 'us-central1' })
+    })
+
+    test('throws RegistryProfileNotFoundError for unknown profile ids', () => {
+        expect(() => resolveSnapshot(registry, 'unknown:profile')).toThrowError(RegistryProfileNotFoundError)
+    })
+
+    test('covers every analyzer-emitted profile id', () => {
+        const analyzerProfileIds = [
+            'openai:standard',
+            'anthropic:standard',
+            'google:standard',
+            'openai-compatible:custom',
+            'openrouter:openai-compatible',
+            'nanogpt:openai-compatible',
+            'ollama:openai-compatible-local',
+            'deepseek:openai-compatible',
+            'deepinfra:openai-compatible',
+            'vercel:openai-compatible',
+        ]
+        for (const profileId of analyzerProfileIds) {
+            const snapshot = resolveSnapshot(registry, profileId)
+            expect(snapshot.profileId).toBe(profileId)
+        }
+    })
+
+    test('merges profile schema/uiSchema on top of base provider fields', () => {
+        const baseProvider: BaseProviderDefinition = {
+            id: 'demo',
+            version: 1,
+            displayName: 'Demo',
+            adapterKind: 'openai-compatible',
+            authKinds: ['bearer'],
+            endpointKinds: ['static'],
+            defaultHeaders: { 'Content-Type': 'application/json' },
+            defaultBody: { base: 'value' },
+            requestSchema: [
+                {
+                    key: 'apiKey',
+                    type: 'string',
+                    label: 'API Key',
+                    secret: true,
+                    mapsTo: { target: 'auth', path: 'apiKey' },
+                },
+                {
+                    key: 'modelId',
+                    type: 'string',
+                    label: 'Model ID',
+                    mapsTo: { target: 'body', path: 'model' },
+                },
+            ],
+            uiSchema: {
+                groups: [{ id: 'credentials', label: 'Credentials', order: 1 }],
+                fields: [
+                    { key: 'apiKey', widget: 'secret', visibility: 'basic', group: 'credentials' },
+                    { key: 'modelId', widget: 'text', visibility: 'basic', group: 'credentials' },
+                ],
+            },
+            capabilities: ['streaming'],
+            sourceUrls: ['https://example.test'],
+        }
+        const profile: ModelProfile = {
+            id: 'demo:override',
+            version: 2,
+            displayName: 'Demo Override',
+            providerBaseId: 'demo',
+            profileTier: 'standard',
+            modelId: 'demo-fast',
+            endpoint: { kind: 'static', url: 'https://demo.test/v1/chat/completions' },
+            auth: { kind: 'bearer', fields: ['apiKey'] },
+            defaults: { profile: 'value' },
+            schema: [
+                {
+                    key: 'modelId',
+                    type: 'string',
+                    label: 'Model ID (override)',
+                    description: 'profile-level override',
+                    mapsTo: { target: 'body', path: 'model' },
+                },
+                {
+                    key: 'reasoning',
+                    type: 'string',
+                    label: 'Reasoning',
+                    mapsTo: { target: 'body', path: 'reasoning_effort' },
+                },
+            ],
+            uiSchema: {
+                groups: [{ id: 'reasoning', label: 'Reasoning' }],
+                fields: [
+                    { key: 'reasoning', widget: 'select', visibility: 'advanced', group: 'reasoning' },
+                ],
+            },
+            capabilities: ['streaming', 'reasoning'],
+            sourceUrls: ['https://example.test/profile'],
+        }
+        const cache: RegistryCache = {
+            schemaVersion: 4,
+            registries: {
+                synthetic: {
+                    fetchedAt: 0,
+                    baseProviders: { demo: baseProvider },
+                    profiles: { 'demo:override': profile },
+                },
+            },
+        }
+
+        const snapshot = resolveSnapshot(cache, 'demo:override')
+
+        const modelIdField = snapshot.schema.find((f) => f.key === 'modelId')
+        expect(modelIdField?.description).toBe('profile-level override')
+        expect(snapshot.schema.map((f) => f.key)).toEqual(['apiKey', 'modelId', 'reasoning'])
+
+        expect(snapshot.uiSchema.groups.map((g) => g.id)).toEqual(['credentials', 'reasoning'])
+        expect(snapshot.uiSchema.fields.map((f) => f.key)).toEqual(['apiKey', 'modelId', 'reasoning'])
+
+        expect(snapshot.defaults).toEqual({ base: 'value', profile: 'value' })
+        expect(snapshot.headerTemplate).toEqual({ 'Content-Type': 'application/json' })
+        expect(snapshot.capabilities).toEqual(['streaming', 'reasoning'])
+    })
+})

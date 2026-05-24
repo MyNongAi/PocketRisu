@@ -8,6 +8,7 @@ import type {
     ModelBinding,
     ModelPreset,
     ModelPresetMigrationSummary,
+    ModelPresetSourceProfile,
     PlannedBinding,
     PlannedModelPreset,
     PlannedPluginBinding,
@@ -128,7 +129,22 @@ export type ModelPresetMigrationApplyTarget = ModelPresetMigrationInput & Mutabl
     }>
 }
 
-export type MigrationSnapshotResolver = (planned: PlannedModelPreset) => ResolvedModelProfileSnapshot | undefined
+export interface MigrationSnapshotResult {
+    snapshot: ResolvedModelProfileSnapshot
+    sourceProfile?: ModelPresetSourceProfile
+}
+
+export type MigrationSnapshotResolver = (
+    planned: PlannedModelPreset,
+) => ResolvedModelProfileSnapshot | MigrationSnapshotResult | undefined
+
+function normalizeSnapshotResult(
+    raw: ResolvedModelProfileSnapshot | MigrationSnapshotResult | undefined,
+): MigrationSnapshotResult | undefined {
+    if (!raw) return undefined
+    if ((raw as MigrationSnapshotResult).snapshot) return raw as MigrationSnapshotResult
+    return { snapshot: raw as ResolvedModelProfileSnapshot }
+}
 
 export function analyzeModelPresetMigration(db: ModelPresetMigrationInput): MigrationReport {
     const report: MigrationReport = {
@@ -669,17 +685,22 @@ function upsertModelPreset(
     )
     const existing = existingIndex >= 0 ? db.modelPresets[existingIndex] : undefined
     const apiKeyRef = apiKeyPoolRefForPlanned(db, planned)
+    const resolved = normalizeSnapshotResult(resolveSnapshot?.(planned))
     const preset: ModelPreset = {
         id: planned.id,
         name: existing?.name || planned.name,
         notes: existing?.notes,
-        sourceProfile: existing?.sourceProfile,
+        // sourceProfile must match the snapshot we are about to write. Falling
+        // back to existing metadata when the new snapshot came from a different
+        // path (or from the fallback) would leave stale registry pointers and
+        // break profile-update detection later.
+        sourceProfile: resolved?.sourceProfile,
         migrationSource: {
             sourceKind: planned.sourceKind,
             sourcePath: planned.sourcePath,
             configHash: configHashFromPlannedId(planned.id),
         },
-        profileSnapshot: resolveSnapshot?.(planned) || createFallbackMigrationSnapshot(planned),
+        profileSnapshot: resolved?.snapshot || createFallbackMigrationSnapshot(planned),
         userValues: cloneJsonLike(planned.userValues) as Record<string, unknown>,
         orphanValues: existing?.orphanValues,
         apiKeyRef,
@@ -797,7 +818,7 @@ function adapterKindForProfile(profileId: string): ResolvedModelProfileSnapshot[
 function authKindForProfile(profileId: string): ResolvedModelProfileSnapshot['auth']['kind'] {
     if (profileId.startsWith('ollama:')) return 'none'
     if (profileId.startsWith('anthropic:')) return 'x-api-key'
-    if (profileId.startsWith('google:')) return 'query'
+    if (profileId.startsWith('google:')) return 'x-goog-api-key'
     return 'bearer'
 }
 

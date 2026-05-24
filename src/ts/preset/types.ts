@@ -7,6 +7,7 @@ export type AuthKind =
     | 'none'
     | 'bearer'
     | 'x-api-key'
+    | 'x-goog-api-key'
     | 'query'
     | 'google-service-account'
 

@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from 'vitest'
 import { LLMFormat } from '../model/types'
 import { analyzeModelPresetMigration, applyModelPresetMigration } from './migration'
 import type { ModelPresetMigrationApplyTarget } from './migration'
+import { bundledMigrationResolver } from './registry'
 import type { MigrationReport } from './types'
 
 describe('analyzeModelPresetMigration', () => {
@@ -535,5 +536,96 @@ describe('analyzeModelPresetMigration', () => {
             createdModelPresetCount: 0,
             skippedBiasCount: 1,
         })
+    })
+
+    test('uses bundled registry snapshot when resolver is provided', () => {
+        const db: ModelPresetMigrationApplyTarget = {
+            aiModel: 'gpt-4o',
+            openAIKey: 'sk-secret',
+        }
+        const report = analyzeModelPresetMigration(db)
+
+        applyModelPresetMigration(db, report, bundledMigrationResolver())
+
+        const snapshot = db.modelPresets?.[0]?.profileSnapshot
+        expect(snapshot).toMatchObject({
+            profileId: 'openai:standard',
+            adapterKind: 'openai-compatible',
+            auth: { kind: 'bearer', fields: ['apiKey'] },
+            endpoint: { kind: 'static', url: 'https://api.openai.com/v1/chat/completions' },
+        })
+        expect(snapshot?.schema.map((f) => f.key)).toEqual(['apiKey', 'modelId'])
+        expect(snapshot?.headerTemplate).toEqual({ 'Content-Type': 'application/json' })
+    })
+
+    test('populates sourceProfile from bundled resolver', () => {
+        const db: ModelPresetMigrationApplyTarget = {
+            aiModel: 'gemini-2.5-pro',
+        }
+        const report = analyzeModelPresetMigration(db)
+
+        applyModelPresetMigration(db, report, bundledMigrationResolver())
+
+        expect(db.modelPresets?.[0]?.sourceProfile).toEqual({
+            registryId: 'bundled',
+            profileId: 'google:standard',
+            profileVersion: 1,
+            fetchedAt: expect.any(Number),
+        })
+        // x-goog-api-key auth flows through both the registry snapshot and the
+        // legacy fallback (analyzer never strips it).
+        expect(db.modelPresets?.[0]?.profileSnapshot.auth.kind).toBe('x-goog-api-key')
+    })
+
+    test('clears sourceProfile when reapplied without a resolver', () => {
+        const db: ModelPresetMigrationApplyTarget = {
+            aiModel: 'gpt-4o',
+            openAIKey: 'sk-secret',
+        }
+        const firstReport = analyzeModelPresetMigration(db)
+        applyModelPresetMigration(db, firstReport, bundledMigrationResolver())
+
+        const firstPreset = db.modelPresets?.[0]
+        expect(firstPreset?.sourceProfile?.registryId).toBe('bundled')
+
+        // Reapply with no resolver — snapshot falls back to the placeholder, so
+        // the bundled-registry pointer must not linger from the previous apply.
+        const secondReport = analyzeModelPresetMigration(db)
+        applyModelPresetMigration(db, secondReport)
+
+        const secondPreset = db.modelPresets?.[0]
+        expect(secondPreset?.sourceProfile).toBeUndefined()
+        expect(secondPreset?.profileSnapshot.schema).toEqual([])
+        expect(secondPreset?.profileSnapshot.profileId).toBe('openai:standard')
+    })
+
+    test('retains custom endpointUrl when bundled resolver fills snapshot', () => {
+        const db: ModelPresetMigrationApplyTarget = {
+            customModels: [{
+                id: 'xcustom:::ep',
+                internalId: 'custom-model',
+                url: 'https://reverse.test/v1/chat/completions',
+                format: LLMFormat.OpenAICompatible,
+                key: 'sk-reverse',
+                name: 'Reverse',
+                params: '',
+                flags: [],
+            }],
+            aiModel: 'xcustom:::ep',
+        }
+        const report = analyzeModelPresetMigration(db)
+
+        applyModelPresetMigration(db, report, bundledMigrationResolver())
+
+        const preset = db.modelPresets?.[0]
+        expect(preset?.profileSnapshot.profileId).toBe('openai-compatible:custom')
+        expect(preset?.sourceProfile).toEqual({
+            registryId: 'bundled',
+            profileId: 'openai-compatible:custom',
+            profileVersion: 1,
+            fetchedAt: expect.any(Number),
+        })
+        expect(preset?.userValues.endpointUrl).toBe('https://reverse.test/v1/chat/completions')
+        expect(preset?.userValues.modelId).toBe('custom-model')
     })
 })
