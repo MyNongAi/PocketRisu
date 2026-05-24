@@ -2,6 +2,7 @@ import type { ModelPreset } from '../types'
 import { buildPreparedRequest } from './buildRequest'
 import {
     ModelPresetAdapterError,
+    extractErrorMessage,
     normalizeFetchError,
     normalizeHttpStatus,
 } from './error'
@@ -144,18 +145,6 @@ async function deriveHttpError(response: Response): Promise<ModelPresetAdapterEr
     const message = extractErrorMessage(bodyText) ?? `HTTP ${response.status}`
     return normalizeHttpStatus(response.status, message)
         ?? new ModelPresetAdapterError('unknown', message, { status: response.status })
-}
-
-function extractErrorMessage(bodyText: string): string | null {
-    if (!bodyText) return null
-    try {
-        const parsed = JSON.parse(bodyText) as { error?: { message?: unknown }; message?: unknown }
-        if (typeof parsed?.error?.message === 'string') return parsed.error.message
-        if (typeof parsed?.message === 'string') return parsed.message
-    } catch {
-        return bodyText.slice(0, 200)
-    }
-    return null
 }
 
 function parseChatCompletion(raw: unknown): AdapterChatResponse {

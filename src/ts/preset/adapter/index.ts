@@ -19,8 +19,11 @@ export {
     ModelPresetAdapterError,
     defaultFallbackEligible,
     defaultRetryable,
+    extractErrorMessage,
     normalizeFetchError,
     normalizeHttpStatus,
 } from './error'
 export { parseSseEventBlock, parseSseStream } from './sse'
 export { sendChatRequest, streamChatRequest } from './openaiCompatible'
+export { sendAnthropicChatRequest, streamAnthropicChatRequest } from './anthropicMessages'
+export { sendGoogleChatRequest, streamGoogleChatRequest } from './googleGemini'

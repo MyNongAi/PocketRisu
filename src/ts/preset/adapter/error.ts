@@ -81,6 +81,24 @@ export function normalizeFetchError(err: unknown): ModelPresetAdapterError {
     return new ModelPresetAdapterError('unknown', String(err))
 }
 
+/**
+ * Best-effort error message extractor for vendor JSON error bodies.
+ * Supports the common shapes used by OpenAI-compatible providers, Anthropic
+ * Messages API, and Google AI Studio (all use `{ error: { message } }` or
+ * `{ message }`).
+ */
+export function extractErrorMessage(bodyText: string): string | null {
+    if (!bodyText) return null
+    try {
+        const parsed = JSON.parse(bodyText) as { error?: { message?: unknown }; message?: unknown }
+        if (typeof parsed?.error?.message === 'string') return parsed.error.message
+        if (typeof parsed?.message === 'string') return parsed.message
+    } catch {
+        return bodyText.slice(0, 200)
+    }
+    return null
+}
+
 export function normalizeHttpStatus(status: number, message?: string): ModelPresetAdapterError | null {
     if (status >= 200 && status < 300) return null
     if (status === 401 || status === 403) {
