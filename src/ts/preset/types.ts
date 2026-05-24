@@ -229,3 +229,61 @@ export interface ModelPresetMigrationSummary {
     skippedBiasCount: number
     warnings: string[]
 }
+
+export interface PlannedModelPreset {
+    id: string
+    name: string
+    sourceKind: string
+    sourcePath: string
+    profileId: string
+    modelId?: string
+    endpointUrl?: string
+    credentialSource?: {
+        kind: 'legacyKey'
+        sourcePath: string
+    }
+    userValues: Record<string, unknown>
+}
+
+export type MigrationBindingScope = 'global' | 'botPreset' | 'chat'
+
+export interface PlannedBinding {
+    scope: MigrationBindingScope
+    ownerId?: string
+    targetTask: ResolvedTask
+    sourcePath: string
+    binding: ModelBinding
+}
+
+export interface PlannedPluginBinding {
+    scope: MigrationBindingScope
+    ownerId?: string
+    targetTask: ResolvedTask
+    sourcePath: string
+    pluginModelId: string
+    binding: ModelBinding
+}
+
+export interface ManualMigrationItem {
+    sourcePath: string
+    reason: string
+    legacySource?: string
+}
+
+export interface DeprecatedMigrationItem {
+    sourcePath: string
+    reason: string
+}
+
+export interface MigrationReport {
+    version: 1
+    createdModelPresets: PlannedModelPreset[]
+    globalBindings: PlannedBinding[]
+    botPresetBindings: PlannedBinding[]
+    chatBindings: PlannedBinding[]
+    pluginBindings: PlannedPluginBinding[]
+    manualRequired: ManualMigrationItem[]
+    skippedBias: DeprecatedMigrationItem[]
+    preservedLegacyFields: DeprecatedMigrationItem[]
+    warnings: string[]
+}
