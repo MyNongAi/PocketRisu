@@ -2,6 +2,11 @@ import type { ResolvedModelProfileSnapshot } from '../types'
 import { appendQuery, applyAuth } from './auth'
 import { ModelPresetAdapterError } from './error'
 import type { AdapterPreparedRequest, AdapterRequestContext } from './types'
+import {
+    buildVertexOpenAIEndpointUrl,
+    VERTEX_CUSTOM_PATH_LOCATION,
+    VERTEX_CUSTOM_PATH_PROJECT,
+} from './vertexEndpoint'
 
 export function buildPreparedRequest(ctx: AdapterRequestContext): AdapterPreparedRequest {
     const snapshot = ctx.preset.profileSnapshot
@@ -87,6 +92,25 @@ function resolveEndpointUrl(
         }
         return snapshot.endpoint.url
     }
+    if (snapshot.endpoint.kind === 'vertex-openai') {
+        const project = pickCustomString(snapshot, userValues, VERTEX_CUSTOM_PATH_PROJECT)
+        const location = pickCustomString(snapshot, userValues, VERTEX_CUSTOM_PATH_LOCATION)
+        if (project === undefined) {
+            throw new ModelPresetAdapterError(
+                'invalid-request',
+                `Vertex endpoint requires a project value (schema field with mapsTo custom.${VERTEX_CUSTOM_PATH_PROJECT})`,
+                { retryable: false, fallbackEligible: false },
+            )
+        }
+        if (location === undefined) {
+            throw new ModelPresetAdapterError(
+                'invalid-request',
+                `Vertex endpoint requires a location value (schema field with mapsTo custom.${VERTEX_CUSTOM_PATH_LOCATION})`,
+                { retryable: false, fallbackEligible: false },
+            )
+        }
+        return buildVertexOpenAIEndpointUrl({ project, location })
+    }
     throw new ModelPresetAdapterError(
         'unsupported',
         `Endpoint kind '${snapshot.endpoint.kind}' is not supported by the shared request builder yet`,
@@ -98,9 +122,17 @@ function pickEndpointOverride(
     snapshot: ResolvedModelProfileSnapshot,
     userValues: Record<string, unknown>,
 ): string | undefined {
+    return pickCustomString(snapshot, userValues, 'endpointUrl')
+}
+
+function pickCustomString(
+    snapshot: ResolvedModelProfileSnapshot,
+    userValues: Record<string, unknown>,
+    path: string,
+): string | undefined {
     for (const field of snapshot.schema) {
         if (field.mapsTo?.target !== 'custom') continue
-        if (field.mapsTo.path !== 'endpointUrl') continue
+        if (field.mapsTo.path !== path) continue
         const value = pickEffective(userValues, field.key, field.default)
         if (typeof value === 'string') return value
     }

@@ -82,17 +82,42 @@ export function normalizeFetchError(err: unknown): ModelPresetAdapterError {
 }
 
 /**
- * Best-effort error message extractor for vendor JSON error bodies.
- * Supports the common shapes used by OpenAI-compatible providers, Anthropic
- * Messages API, and Google AI Studio (all use `{ error: { message } }` or
- * `{ message }`).
+ * Best-effort error message extractor for vendor JSON error bodies. Handles
+ * the common shapes:
+ *  - `{ error: { message } }` — OpenAI-compatible, Anthropic Messages, Google AI Studio
+ *  - `{ message }`            — bare-message responses
+ *  - `{ error_description }`  — Google OAuth token endpoint (RFC 6749 §5.2)
+ *  - `{ error }` (string)     — Google OAuth error code (e.g. "invalid_grant")
+ *
+ * Returns the first match in priority order, or a truncated raw body if the
+ * payload is not JSON, or `null` if JSON parsed but no known field matched.
  */
 export function extractErrorMessage(bodyText: string): string | null {
     if (!bodyText) return null
     try {
-        const parsed = JSON.parse(bodyText) as { error?: { message?: unknown }; message?: unknown }
-        if (typeof parsed?.error?.message === 'string') return parsed.error.message
+        const parsed = JSON.parse(bodyText) as {
+            error?: { message?: unknown } | unknown
+            message?: unknown
+            error_description?: unknown
+        }
+        if (
+            typeof parsed?.error === 'object'
+            && parsed.error !== null
+            && typeof (parsed.error as { message?: unknown }).message === 'string'
+        ) {
+            return (parsed.error as { message: string }).message
+        }
         if (typeof parsed?.message === 'string') return parsed.message
+        if (typeof parsed?.error_description === 'string') {
+            // Google OAuth: include the error code alongside the description
+            // when both are present, so the caller sees both `invalid_grant`
+            // and the human-readable reason.
+            if (typeof parsed.error === 'string') {
+                return `${parsed.error}: ${parsed.error_description}`
+            }
+            return parsed.error_description
+        }
+        if (typeof parsed?.error === 'string') return parsed.error
     } catch {
         return bodyText.slice(0, 200)
     }

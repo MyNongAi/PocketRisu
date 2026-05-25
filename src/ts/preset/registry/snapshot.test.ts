@@ -47,7 +47,14 @@ describe('resolveSnapshot', () => {
         expect(snapshot.adapterKind).toBe('openai-compatible')
         expect(snapshot.endpoint.kind).toBe('vertex-openai')
         expect(snapshot.auth.kind).toBe('google-service-account')
-        expect(snapshot.defaults).toMatchObject({ location: 'us-central1' })
+        // location default lives on the base-provider schema field, not in body defaults.
+        const locationField = snapshot.schema.find((f) => f.key === 'location')
+        expect(locationField?.default).toBe('us-central1')
+        expect(locationField?.mapsTo).toEqual({ target: 'custom', path: 'location' })
+        const projectField = snapshot.schema.find((f) => f.key === 'projectId')
+        expect(projectField?.mapsTo).toEqual({ target: 'custom', path: 'project' })
+        const saField = snapshot.schema.find((f) => f.key === 'serviceAccountJson')
+        expect(saField?.mapsTo).toEqual({ target: 'auth', path: 'apiKey' })
     })
 
     test('backfills modelId schema field default from profile.modelId when missing', () => {

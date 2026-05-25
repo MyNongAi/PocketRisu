@@ -68,14 +68,24 @@ describe('applyAuth', () => {
             .toThrowError(ModelPresetAdapterError)
     })
 
-    test('google-service-account throws unsupported', () => {
+    test('google-service-account adds Authorization bearer header (token is supplied upstream)', () => {
+        const result = applyAuth(
+            basePrepared(),
+            { kind: 'google-service-account' },
+            { apiKey: 'ya29.access-token' },
+        )
+        expect(result.headers.Authorization).toBe('Bearer ya29.access-token')
+    })
+
+    test('google-service-account throws auth error when no access token is present', () => {
         try {
-            applyAuth(basePrepared(), { kind: 'google-service-account' }, { apiKey: 'sa' })
+            applyAuth(basePrepared(), { kind: 'google-service-account' }, undefined)
             throw new Error('expected throw')
         } catch (err) {
             expect(err).toBeInstanceOf(ModelPresetAdapterError)
             if (err instanceof ModelPresetAdapterError) {
-                expect(err.kind).toBe('unsupported')
+                expect(err.kind).toBe('auth')
+                expect(err.retryable).toBe(false)
             }
         }
     })
@@ -110,6 +120,7 @@ describe('regression', () => {
             'x-api-key',
             'x-goog-api-key',
             'query',
+            'google-service-account',
         ]
         for (const kind of kinds) {
             const result = applyAuth(basePrepared(), { kind }, { apiKey: 'k' })

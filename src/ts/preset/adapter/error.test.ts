@@ -3,9 +3,88 @@ import {
     ModelPresetAdapterError,
     defaultFallbackEligible,
     defaultRetryable,
+    extractErrorMessage,
     normalizeFetchError,
     normalizeHttpStatus,
 } from './error'
+
+describe('extractErrorMessage', () => {
+    test('returns error.message for OpenAI/Anthropic/Google AI Studio shape', () => {
+        expect(
+            extractErrorMessage(JSON.stringify({ error: { message: 'rate limited' } })),
+        ).toBe('rate limited')
+    })
+
+    test('returns bare message field', () => {
+        expect(extractErrorMessage(JSON.stringify({ message: 'short msg' }))).toBe('short msg')
+    })
+
+    test('returns Google OAuth error_description', () => {
+        expect(
+            extractErrorMessage(
+                JSON.stringify({ error_description: 'JWT signature is invalid.' }),
+            ),
+        ).toBe('JWT signature is invalid.')
+    })
+
+    test('combines Google OAuth error code with error_description', () => {
+        expect(
+            extractErrorMessage(
+                JSON.stringify({
+                    error: 'invalid_grant',
+                    error_description: 'Bad assertion JWT',
+                }),
+            ),
+        ).toBe('invalid_grant: Bad assertion JWT')
+    })
+
+    test('returns plain error string when only Google OAuth error code is present', () => {
+        expect(extractErrorMessage(JSON.stringify({ error: 'invalid_grant' }))).toBe(
+            'invalid_grant',
+        )
+    })
+
+    test('truncates non-JSON body to 200 chars', () => {
+        const long = 'x'.repeat(500)
+        const got = extractErrorMessage(long)
+        expect(got).toBe('x'.repeat(200))
+    })
+
+    test('returns null when body is empty', () => {
+        expect(extractErrorMessage('')).toBeNull()
+    })
+
+    test('returns null for JSON without any known field', () => {
+        expect(extractErrorMessage(JSON.stringify({ unrelated: 'thing' }))).toBeNull()
+    })
+
+    test('error.message wins over message wins over error_description wins over error', () => {
+        // Priority order regression guard.
+        expect(
+            extractErrorMessage(
+                JSON.stringify({
+                    error: { message: 'first' },
+                    message: 'second',
+                    error_description: 'third',
+                }),
+            ),
+        ).toBe('first')
+        expect(
+            extractErrorMessage(
+                JSON.stringify({
+                    message: 'second',
+                    error_description: 'third',
+                    error: 'invalid_grant',
+                }),
+            ),
+        ).toBe('second')
+        expect(
+            extractErrorMessage(
+                JSON.stringify({ error_description: 'third', error: 'invalid_grant' }),
+            ),
+        ).toBe('invalid_grant: third')
+    })
+})
 
 describe('defaultRetryable', () => {
     test('marks network/timeout/rate-limit/server/parse as retryable', () => {

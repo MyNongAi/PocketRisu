@@ -1,11 +1,11 @@
 import type { ModelPreset } from '../types'
-import { buildPreparedRequest } from './buildRequest'
 import {
     ModelPresetAdapterError,
     extractErrorMessage,
     normalizeFetchError,
     normalizeHttpStatus,
 } from './error'
+import { prepareAdapterRequest } from './resolveCredential'
 import { parseSseStream } from './sse'
 import type {
     AdapterChatMessage,
@@ -32,7 +32,7 @@ export async function sendGoogleChatRequest(
     options: AdapterChatOptions,
     credential?: AdapterCredential,
 ): Promise<AdapterChatResponse> {
-    const prepared = prepareGeminiBody(preset, options, credential, false)
+    const prepared = await prepareGeminiBody(preset, options, credential, false)
     const fetchImpl = options.fetchImpl ?? globalThis.fetch
     let response: Response
     try {
@@ -67,7 +67,7 @@ export async function* streamGoogleChatRequest(
     options: AdapterChatOptions,
     credential?: AdapterCredential,
 ): AsyncGenerator<AdapterChatStreamDelta, void, void> {
-    const prepared = prepareGeminiBody(preset, options, credential, true)
+    const prepared = await prepareGeminiBody(preset, options, credential, true)
     const fetchImpl = options.fetchImpl ?? globalThis.fetch
     let response: Response
     try {
@@ -111,13 +111,17 @@ export async function* streamGoogleChatRequest(
     }
 }
 
-function prepareGeminiBody(
+async function prepareGeminiBody(
     preset: ModelPreset,
     options: AdapterChatOptions,
     credential: AdapterCredential | undefined,
     stream: boolean,
-): AdapterPreparedRequest {
-    const prepared = buildPreparedRequest({ preset, credential })
+): Promise<AdapterPreparedRequest> {
+    const prepared = await prepareAdapterRequest({
+        preset,
+        credential,
+        abortSignal: options.abortSignal,
+    })
     // Wire invariants overwrite any customBody collisions (plan §4-5):
     //   - contents / systemInstruction → adapter owns the prompt structure
     //   - model (URL path)             → adapter selects the endpoint, not

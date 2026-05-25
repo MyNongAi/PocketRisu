@@ -26,12 +26,13 @@ export function applyAuth(
             const key = requireApiKey(auth.kind, credential)
             return { ...prepared, url: appendQuery(prepared.url, 'key', key) }
         }
-        case 'google-service-account':
-            throw new ModelPresetAdapterError(
-                'unsupported',
-                "Auth kind 'google-service-account' is not supported by the shared adapter layer yet",
-                { retryable: false },
-            )
+        case 'google-service-account': {
+            // The async `resolveAdapterCredential` step is expected to swap the
+            // raw service-account JSON for a freshly-minted access token before
+            // this point. We treat it like bearer auth here.
+            const token = requireApiKey(auth.kind, credential)
+            return withHeader(prepared, 'Authorization', `Bearer ${token}`)
+        }
         default: {
             const exhaustiveCheck: never = auth.kind
             throw new ModelPresetAdapterError(

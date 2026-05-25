@@ -1,0 +1,67 @@
+import { ModelPresetAdapterError } from '../error'
+
+export interface ParsedServiceAccount {
+    type: 'service_account'
+    clientEmail: string
+    privateKeyId?: string
+    privateKey: string
+    tokenUri: string
+}
+
+const DEFAULT_TOKEN_URI = 'https://oauth2.googleapis.com/token'
+
+export function parseServiceAccountJson(source: string): ParsedServiceAccount {
+    if (typeof source !== 'string' || source.trim().length === 0) {
+        throw invalid('Service account JSON is empty')
+    }
+    let raw: unknown
+    try {
+        raw = JSON.parse(source)
+    } catch (err) {
+        throw invalid('Service account JSON is not valid JSON', err)
+    }
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+        throw invalid('Service account JSON must be a JSON object')
+    }
+    const obj = raw as Record<string, unknown>
+    const type = obj.type
+    if (type !== 'service_account') {
+        throw invalid(`Service account JSON has unsupported type '${String(type)}'`)
+    }
+    const clientEmail = requireString(obj, 'client_email')
+    const privateKey = requireString(obj, 'private_key')
+    if (!privateKey.includes('BEGIN PRIVATE KEY') || !privateKey.includes('END PRIVATE KEY')) {
+        throw invalid('Service account private_key is not a PEM-formatted PKCS#8 key')
+    }
+    const tokenUriRaw = obj.token_uri
+    const tokenUri =
+        typeof tokenUriRaw === 'string' && tokenUriRaw.length > 0 ? tokenUriRaw : DEFAULT_TOKEN_URI
+    const privateKeyIdRaw = obj.private_key_id
+    const privateKeyId =
+        typeof privateKeyIdRaw === 'string' && privateKeyIdRaw.length > 0
+            ? privateKeyIdRaw
+            : undefined
+    return {
+        type: 'service_account',
+        clientEmail,
+        privateKeyId,
+        privateKey,
+        tokenUri,
+    }
+}
+
+function requireString(obj: Record<string, unknown>, key: string): string {
+    const value = obj[key]
+    if (typeof value !== 'string' || value.length === 0) {
+        throw invalid(`Service account JSON is missing field '${key}'`)
+    }
+    return value
+}
+
+function invalid(message: string, cause?: unknown): ModelPresetAdapterError {
+    return new ModelPresetAdapterError('invalid-request', message, {
+        retryable: false,
+        fallbackEligible: false,
+        cause,
+    })
+}

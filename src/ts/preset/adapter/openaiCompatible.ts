@@ -1,11 +1,11 @@
 import type { ModelPreset } from '../types'
-import { buildPreparedRequest } from './buildRequest'
 import {
     ModelPresetAdapterError,
     extractErrorMessage,
     normalizeFetchError,
     normalizeHttpStatus,
 } from './error'
+import { prepareAdapterRequest } from './resolveCredential'
 import { parseSseStream } from './sse'
 import type {
     AdapterChatMessage,
@@ -29,7 +29,7 @@ export async function sendChatRequest(
     options: AdapterChatOptions,
     credential?: AdapterCredential,
 ): Promise<AdapterChatResponse> {
-    const prepared = prepareOpenAiBody(preset, options, credential, false)
+    const prepared = await prepareOpenAiBody(preset, options, credential, false)
     const fetchImpl = options.fetchImpl ?? globalThis.fetch
     let response: Response
     try {
@@ -64,7 +64,7 @@ export async function* streamChatRequest(
     options: AdapterChatOptions,
     credential?: AdapterCredential,
 ): AsyncGenerator<AdapterChatStreamDelta, void, void> {
-    const prepared = prepareOpenAiBody(preset, options, credential, true)
+    const prepared = await prepareOpenAiBody(preset, options, credential, true)
     const fetchImpl = options.fetchImpl ?? globalThis.fetch
     let response: Response
     try {
@@ -111,13 +111,17 @@ export async function* streamChatRequest(
     }
 }
 
-function prepareOpenAiBody(
+async function prepareOpenAiBody(
     preset: ModelPreset,
     options: AdapterChatOptions,
     credential: AdapterCredential | undefined,
     stream: boolean,
-): AdapterPreparedRequest {
-    const prepared = buildPreparedRequest({ preset, credential })
+): Promise<AdapterPreparedRequest> {
+    const prepared = await prepareAdapterRequest({
+        preset,
+        credential,
+        abortSignal: options.abortSignal,
+    })
     // messages and stream are wire invariants per plan §4-5 and must not be
     // overridden by customBody; assign them after the shared merge.
     prepared.body.messages = options.messages.map(toWireMessage)

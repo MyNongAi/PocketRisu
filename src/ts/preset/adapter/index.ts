@@ -15,6 +15,15 @@ export type {
 
 export { buildPreparedRequest } from './buildRequest'
 export { applyAuth, appendQuery } from './auth'
+export { prepareAdapterRequest, resolveAdapterCredential } from './resolveCredential'
+export {
+    createServiceAccountTokenCache,
+    getDefaultServiceAccountTokenCache,
+} from './googleServiceAccount/cache'
+export type {
+    ServiceAccountTokenCache,
+    ServiceAccountTokenCacheOptions,
+} from './googleServiceAccount/cache'
 export {
     ModelPresetAdapterError,
     defaultFallbackEligible,

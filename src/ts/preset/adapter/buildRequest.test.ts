@@ -216,14 +216,144 @@ describe('buildPreparedRequest', () => {
         })
     })
 
-    test('throws unsupported error for non-static endpoint kinds', () => {
+    test('builds the Vertex OpenAI endpoint URL from custom-mapped project + location', () => {
         const preset = makePreset({
             profileSnapshot: makeSnapshot({
-                endpoint: { kind: 'vertex-openai', url: 'https://example' },
+                auth: { kind: 'google-service-account', fields: ['serviceAccountJson'] },
+                endpoint: { kind: 'vertex-openai' },
+                schema: [
+                    {
+                        key: 'serviceAccountJson',
+                        type: 'string',
+                        label: 'Service Account JSON',
+                        secret: true,
+                        mapsTo: { target: 'auth', path: 'apiKey' },
+                    },
+                    {
+                        key: 'project',
+                        type: 'string',
+                        label: 'GCP Project',
+                        mapsTo: { target: 'custom', path: 'project' },
+                    },
+                    {
+                        key: 'location',
+                        type: 'string',
+                        label: 'Vertex Location',
+                        default: 'us-central1',
+                        mapsTo: { target: 'custom', path: 'location' },
+                    },
+                ],
             }),
+            userValues: { project: 'my-proj' },
         })
-        expect(() => buildPreparedRequest({ preset, credential: { apiKey: 'sk' } }))
-            .toThrowError(ModelPresetAdapterError)
+        const result = buildPreparedRequest({ preset, credential: { apiKey: 'ya29.token' } })
+        expect(result.url).toBe(
+            'https://us-central1-aiplatform.googleapis.com/v1/projects/my-proj/locations/us-central1/endpoints/openapi/chat/completions',
+        )
+        expect(result.headers.Authorization).toBe('Bearer ya29.token')
+    })
+
+    test('falls back to schema default for Vertex location when userValues omits it', () => {
+        const preset = makePreset({
+            profileSnapshot: makeSnapshot({
+                auth: { kind: 'google-service-account', fields: ['serviceAccountJson'] },
+                endpoint: { kind: 'vertex-openai' },
+                schema: [
+                    {
+                        key: 'serviceAccountJson',
+                        type: 'string',
+                        label: 'SA',
+                        mapsTo: { target: 'auth', path: 'apiKey' },
+                    },
+                    {
+                        key: 'project',
+                        type: 'string',
+                        label: 'Project',
+                        mapsTo: { target: 'custom', path: 'project' },
+                    },
+                    {
+                        key: 'location',
+                        type: 'string',
+                        label: 'Location',
+                        default: 'global',
+                        mapsTo: { target: 'custom', path: 'location' },
+                    },
+                ],
+            }),
+            userValues: { project: 'my-proj' },
+        })
+        const result = buildPreparedRequest({ preset, credential: { apiKey: 'tok' } })
+        expect(result.url).toBe(
+            'https://aiplatform.googleapis.com/v1/projects/my-proj/locations/global/endpoints/openapi/chat/completions',
+        )
+    })
+
+    test('throws invalid-request when Vertex project is missing', () => {
+        const preset = makePreset({
+            profileSnapshot: makeSnapshot({
+                auth: { kind: 'google-service-account', fields: ['serviceAccountJson'] },
+                endpoint: { kind: 'vertex-openai' },
+                schema: [
+                    {
+                        key: 'project',
+                        type: 'string',
+                        label: 'Project',
+                        mapsTo: { target: 'custom', path: 'project' },
+                    },
+                    {
+                        key: 'location',
+                        type: 'string',
+                        label: 'Location',
+                        default: 'us-central1',
+                        mapsTo: { target: 'custom', path: 'location' },
+                    },
+                ],
+            }),
+            userValues: {},
+        })
+        try {
+            buildPreparedRequest({ preset, credential: { apiKey: 'tok' } })
+            throw new Error('expected throw')
+        } catch (err) {
+            expect(err).toBeInstanceOf(ModelPresetAdapterError)
+            if (err instanceof ModelPresetAdapterError) {
+                expect(err.kind).toBe('invalid-request')
+                expect(err.retryable).toBe(false)
+            }
+        }
+    })
+
+    test('throws invalid-request when Vertex location is missing', () => {
+        const preset = makePreset({
+            profileSnapshot: makeSnapshot({
+                auth: { kind: 'google-service-account', fields: ['serviceAccountJson'] },
+                endpoint: { kind: 'vertex-openai' },
+                schema: [
+                    {
+                        key: 'project',
+                        type: 'string',
+                        label: 'Project',
+                        mapsTo: { target: 'custom', path: 'project' },
+                    },
+                    {
+                        key: 'location',
+                        type: 'string',
+                        label: 'Location',
+                        mapsTo: { target: 'custom', path: 'location' },
+                    },
+                ],
+            }),
+            userValues: { project: 'p' },
+        })
+        try {
+            buildPreparedRequest({ preset, credential: { apiKey: 'tok' } })
+            throw new Error('expected throw')
+        } catch (err) {
+            expect(err).toBeInstanceOf(ModelPresetAdapterError)
+            if (err instanceof ModelPresetAdapterError) {
+                expect(err.kind).toBe('invalid-request')
+            }
+        }
     })
 
     test('throws invalid-request when static endpoint has no url', () => {
