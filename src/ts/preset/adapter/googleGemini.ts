@@ -153,6 +153,15 @@ function collectSystemAndChat(messages: AdapterChatMessage[]): {
     for (const message of messages) {
         if (message.role === 'system') {
             systems.push(message.content)
+        } else if (message.role === 'tool') {
+            // Gemini expresses tool results via `functionResponse` parts on
+            // role `user`, not a `tool` role. Until the adapter actually
+            // supports tool use, silently mapping tool → user would corrupt
+            // the conversation. Surface it instead.
+            throw new ModelPresetAdapterError(
+                'unsupported',
+                'Google Gemini adapter does not support tool-role messages yet',
+            )
         } else {
             chat.push(message)
         }

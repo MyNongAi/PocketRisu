@@ -16,6 +16,7 @@ import type {
     AdapterPreparedRequest,
     AdapterUsage,
 } from './types'
+import { resolveWireModelId } from './wireInvariants'
 
 interface WireMessage {
     role: AdapterChatMessage['role']
@@ -122,9 +123,13 @@ async function prepareOpenAiBody(
         credential,
         abortSignal: options.abortSignal,
     })
-    // messages and stream are wire invariants per plan §4-5 and must not be
-    // overridden by customBody; assign them after the shared merge.
+    // messages, model, and stream are wire invariants per plan §4-5 and must
+    // not be overridden by customBody. Resolve modelId from the preset's user
+    // values / schema (not the customBody-merged body), then overwrite the
+    // body fields after the shared merge so customBody collisions lose.
+    const modelId = resolveWireModelId(preset, { vendorName: 'OpenAI-compatible' })
     prepared.body.messages = options.messages.map(toWireMessage)
+    prepared.body.model = modelId
     prepared.body.stream = stream
     return prepared
 }

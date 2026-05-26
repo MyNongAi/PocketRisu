@@ -176,15 +176,15 @@ export function analyzeModelPresetMigration(db: ModelPresetMigrationInput): Migr
             addManual(report, sourcePath, `Unsupported custom model format: ${customModel.format}`, customModel.id)
             continue
         }
-        const profileId = pickOpenAiCompatibleProfile(baseProfileId, Boolean(customModel.key))
+        const profileId = pickOpenAiCompatibleProfile(baseProfileId, isNonEmptyString(customModel.key))
         // Legacy Google call path falls back to db.google.accessToken when the
         // per-model key is empty (see process/request/google.ts: `arg.key ||
         // db.google.accessToken`). Mirror that fallback during migration so a
         // Google custom model with empty key + valid top-level Google key still
         // ends up with a resolvable apiKeyRef. Per-model key always wins.
-        const credentialPath = customModel.key
+        const credentialPath = isNonEmptyString(customModel.key)
             ? `${sourcePath}.key`
-            : (profileId === 'google:standard' && db.google?.accessToken
+            : (profileId === 'google:standard' && isNonEmptyString(db.google?.accessToken)
                 ? 'db.google.accessToken'
                 : undefined)
         addPreset(createPlannedPreset({
@@ -211,7 +211,7 @@ export function analyzeModelPresetMigration(db: ModelPresetMigrationInput): Migr
             name: 'Migrated Reverse Proxy',
             forceReplaceUrl: db.forceReplaceUrl,
             requestModel: db.customProxyRequestModel || db.proxyRequestModel,
-            proxyKeyPath: db.proxyKey ? 'db.proxyKey' : undefined,
+            proxyKeyPath: isNonEmptyString(db.proxyKey) ? 'db.proxyKey' : undefined,
             customAPIFormat: db.customAPIFormat,
             additionalParams: db.additionalParams,
         })
@@ -315,7 +315,7 @@ function addBotPresetBindings(
                 name: `Migrated ${preset.name || ownerId} Reverse Proxy`,
                 forceReplaceUrl: preset.forceReplaceUrl,
                 requestModel: preset.customProxyRequestModel || preset.proxyRequestModel,
-                proxyKeyPath: preset.proxyKey ? `${sourcePrefix}.proxyKey` : undefined,
+                proxyKeyPath: isNonEmptyString(preset.proxyKey) ? `${sourcePrefix}.proxyKey` : undefined,
                 customAPIFormat: preset.customAPIFormat,
                 additionalParams: undefined,
             })
@@ -556,7 +556,7 @@ function profileForLegacyModel(
             kind: 'profile',
             profileId: 'google:standard',
             modelId: model,
-            credentialPath: db.google?.accessToken ? 'db.google.accessToken' : undefined,
+            credentialPath: isNonEmptyString(db.google?.accessToken) ? 'db.google.accessToken' : undefined,
         }
     }
     return { kind: 'manual', reason: `Unsupported legacy model: ${model}` }
@@ -628,11 +628,11 @@ function credentialPathFor(
     botPreset: LegacyBotPreset | undefined,
     sourcePath: string,
 ): string | undefined {
-    if (key === 'openAIKey' && botPreset?.openAIKey) {
+    if (key === 'openAIKey' && isNonEmptyString(botPreset?.openAIKey)) {
         const match = /^botPresets\.([^.]+)\./.exec(sourcePath)
         return match ? `botPresets.${match[1]}.${key}` : `${sourcePath}.${key}`
     }
-    return db[key] ? `db.${key}` : undefined
+    return isNonEmptyString(db[key]) ? `db.${key}` : undefined
 }
 
 function addDeprecatedItems(report: MigrationReport, db: ModelPresetMigrationInput): void {
@@ -972,6 +972,15 @@ function shouldRedactKey(key: string): boolean {
 
 function shouldRedactValue(value: string): boolean {
     return /bearer\s+\S+|sk-[A-Za-z0-9_-]+|api[-_ ]?key|token|secret/i.test(value)
+}
+
+// Truthy checks on legacy DB fields (`db.proxyKey ? ... : ''`) would silently
+// accept non-string truthy values (e.g. a number left by a corrupted import)
+// and produce phantom credentialPath entries in the dry-run report, even
+// though the apply phase later filters them out via `readLegacyStringAtPath`.
+// Strict checking at analyze time keeps report/summary honest.
+function isNonEmptyString(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0
 }
 
 function cloneArray<T>(value: T[]): T[] {

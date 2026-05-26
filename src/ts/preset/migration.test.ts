@@ -89,6 +89,32 @@ describe('analyzeModelPresetMigration', () => {
         expect(report.createdModelPresets[0].credentialSource).toBeUndefined()
     })
 
+    test('routes NanoGPT-format custom models without per-model key to custom-noauth', () => {
+        // Boundary regression: customModels with format=NanoGPT (or any
+        // NanoGPT variant) goes through `profileForFormat` → base profile
+        // 'openai-compatible:custom'. Without a per-model key the migration
+        // should land on the no-auth variant the same way OpenAICompatible
+        // does (NanoGPT itself requires a key on the live endpoint, but the
+        // legacy DB shape allows recording one without a key).
+        const report = analyzeModelPresetMigration({
+            customModels: [{
+                id: 'xcustom:::nanogpt-local',
+                internalId: 'nano-llama',
+                url: 'http://localhost:8200/v1/chat/completions',
+                format: LLMFormat.NanoGPT,
+                name: 'Local NanoGPT mirror',
+                // no key
+            }],
+            aiModel: 'xcustom:::nanogpt-local',
+        })
+        expect(report.createdModelPresets).toHaveLength(1)
+        expect(report.createdModelPresets[0]).toMatchObject({
+            profileId: 'openai-compatible:custom-noauth',
+            modelId: 'nano-llama',
+        })
+        expect(report.createdModelPresets[0].credentialSource).toBeUndefined()
+    })
+
     test('routes reverse proxy without proxyKey to the custom-noauth profile', () => {
         const report = analyzeModelPresetMigration({
             aiModel: 'reverse_proxy',
@@ -761,5 +787,33 @@ describe('analyzeModelPresetMigration', () => {
         expect(preset?.profileSnapshot.profileId).toBe('google:standard')
         expect(preset?.apiKeyRef).toEqual(expect.any(String))
         expect(db.apiKeyPool?.[preset!.apiKeyRef!]?.key).toBe('AIza-per-model')
+    })
+
+    test('VertexAIGemini custom models also fall back to db.google.accessToken when per-model key is empty', () => {
+        // VertexAIGemini shares the `google:standard` mapping with
+        // GoogleCloud via `profileForFormat`, so the global Google key
+        // fallback should apply identically. Regression guard for the
+        // both-formats-one-fallback invariant.
+        const db: ModelPresetMigrationApplyTarget = {
+            customModels: [{
+                id: 'xcustom:::vertex-gemini',
+                internalId: 'gemini-pro',
+                url: 'https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1',
+                format: LLMFormat.VertexAIGemini,
+                key: '',
+                name: 'Vertex Gemini Custom',
+                params: '',
+                flags: [],
+            }],
+            google: { accessToken: 'AIza-vertex-fallback' },
+        }
+        const report = analyzeModelPresetMigration(db)
+
+        applyModelPresetMigration(db, report, bundledMigrationResolver())
+
+        const preset = db.modelPresets?.[0]
+        expect(preset?.profileSnapshot.profileId).toBe('google:standard')
+        expect(preset?.apiKeyRef).toEqual(expect.any(String))
+        expect(db.apiKeyPool?.[preset!.apiKeyRef!]?.key).toBe('AIza-vertex-fallback')
     })
 })

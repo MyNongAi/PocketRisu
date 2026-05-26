@@ -170,6 +170,34 @@ describe('sendChatRequest (non-stream)', () => {
         expect(calls[0].body.extra).toBe('kept')
     })
 
+    test('customBody.model cannot override the wire model id', async () => {
+        // body.model is a wire invariant per plan §4-5. resolveWireModelId
+        // reads modelId from userValues / schema / snapshot directly, so a
+        // customBody key collision must lose.
+        const preset = makePreset({
+            userValues: { modelId: 'demo-fast' },
+            customBody: { model: 'hijacked-model' },
+        })
+        const { fetchImpl, calls } = captureFetch(
+            jsonResponse({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }),
+        )
+        await sendChatRequest(preset, { messages: userMessages, fetchImpl }, { apiKey: 'sk' })
+        expect(calls[0].body.model).toBe('demo-fast')
+    })
+
+    test('throws invalid-request when userValues.modelId is an empty string', async () => {
+        // Explicit empty modelId is treated as a configuration error rather
+        // than silently falling back to the schema default (otherwise
+        // corrupted UI/migration data would call the wrong endpoint).
+        const preset = makePreset({ userValues: { modelId: '' } })
+        const { fetchImpl } = captureFetch(
+            jsonResponse({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }),
+        )
+        await expect(
+            sendChatRequest(preset, { messages: userMessages, fetchImpl }, { apiKey: 'sk' }),
+        ).rejects.toMatchObject({ kind: 'invalid-request', retryable: false })
+    })
+
     test('throws auth error on 401 with provider error message', async () => {
         const { fetchImpl } = captureFetch(
             jsonResponse({ error: { message: 'invalid key', type: 'auth' } }, { status: 401 }),

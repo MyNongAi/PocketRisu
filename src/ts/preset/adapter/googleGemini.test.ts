@@ -187,6 +187,29 @@ describe('sendGoogleChatRequest (non-stream)', () => {
         expect(calls[0].body.systemInstruction).toBeUndefined()
     })
 
+    test('rejects tool-role messages as unsupported rather than silently mapping them to user', async () => {
+        // Gemini expresses tool results via `functionResponse` parts on
+        // role `user`, not a `tool` role. Silently dropping the role would
+        // corrupt the conversation; the adapter throws so the caller can
+        // route to a tool-capable preset or drop the message.
+        const { fetchImpl } = captureFetch(
+            jsonResponse({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }),
+        )
+        await expect(
+            sendGoogleChatRequest(
+                makePreset(),
+                {
+                    messages: [
+                        { role: 'user', content: 'q' },
+                        { role: 'tool', content: '{"r":1}', toolCallId: 'call-1' },
+                    ],
+                    fetchImpl,
+                },
+                { apiKey: 'k' },
+            ),
+        ).rejects.toMatchObject({ kind: 'unsupported', retryable: false, fallbackEligible: false })
+    })
+
     test('URL-encodes modelId', async () => {
         const preset = makePreset({ userValues: { modelId: 'gemini/2.5-pro' } })
         const { fetchImpl, calls } = captureFetch(

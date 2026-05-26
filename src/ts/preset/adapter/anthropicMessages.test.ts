@@ -32,7 +32,11 @@ function makeSnapshot(overrides: Partial<ResolvedModelProfileSnapshot> = {}): Re
             },
         ],
         uiSchema: { groups: [], fields: [] },
-        defaults: {},
+        // Mirrors the `anthropic` base provider's defaultBody (registry v2).
+        // `max_tokens` is required by the Messages API; supplied here as the
+        // conservative default. Tests that exercise overrides set it via
+        // `overrides.defaults` (which replaces this entire object).
+        defaults: { max_tokens: 4096 },
         headerTemplate: {
             'Content-Type': 'application/json',
             'anthropic-version': '2023-06-01',
@@ -176,7 +180,10 @@ describe('sendAnthropicChatRequest (non-stream)', () => {
         expect(calls[0].body.system).toBeUndefined()
     })
 
-    test('honors snapshot max_tokens when present and skips the adapter fallback', async () => {
+    test('snapshot defaults.max_tokens overrides the registry-supplied default', async () => {
+        // The base provider's defaultBody supplies max_tokens: 4096; a
+        // per-profile or per-preset override (here via snapshot defaults)
+        // should win.
         const { fetchImpl, calls } = captureFetch(
             jsonResponse({ content: [{ type: 'text', text: 'ok' }] }),
         )
@@ -191,7 +198,46 @@ describe('sendAnthropicChatRequest (non-stream)', () => {
         expect(calls[0].body.max_tokens).toBe(200)
     })
 
-    test('maps user assistant tool roles to user/assistant only', async () => {
+    test('stale v1 snapshots (empty defaults) get max_tokens from the adapter safety net', async () => {
+        // Presets persisted before the `anthropic` base provider bumped to v2
+        // still carry `defaults: {}`. The profile-update detection compares
+        // profile version (not base-provider version), and we did not bump the
+        // profile, so those snapshots will never get re-resolved automatically.
+        // The adapter fallback keeps them working.
+        const { fetchImpl, calls } = captureFetch(
+            jsonResponse({ content: [{ type: 'text', text: 'ok' }] }),
+        )
+        const preset = makePreset({
+            profileSnapshot: makeSnapshot({ defaults: {} }),
+        })
+        await sendAnthropicChatRequest(
+            preset,
+            { messages: messagesWithSystem, fetchImpl },
+            { apiKey: 'k' },
+        )
+        expect(calls[0].body.max_tokens).toBe(4096)
+    })
+
+    test('explicit zero max_tokens in defaults is preserved by the adapter (not clobbered by the safety net)', async () => {
+        // The fallback guards on `=== undefined`, so any explicit value
+        // (including 0 or a negative number) must survive. This protects
+        // intentional overrides through customBody / userValues mapping that
+        // happen to use a falsy number.
+        const { fetchImpl, calls } = captureFetch(
+            jsonResponse({ content: [{ type: 'text', text: 'ok' }] }),
+        )
+        const preset = makePreset({
+            profileSnapshot: makeSnapshot({ defaults: { max_tokens: 0 } }),
+        })
+        await sendAnthropicChatRequest(
+            preset,
+            { messages: messagesWithSystem, fetchImpl },
+            { apiKey: 'k' },
+        )
+        expect(calls[0].body.max_tokens).toBe(0)
+    })
+
+    test('maps user/assistant roles to user/assistant', async () => {
         const { fetchImpl, calls } = captureFetch(
             jsonResponse({ content: [{ type: 'text', text: 'ok' }] }),
         )
@@ -201,18 +247,38 @@ describe('sendAnthropicChatRequest (non-stream)', () => {
                 messages: [
                     { role: 'user', content: 'q1' },
                     { role: 'assistant', content: 'a1' },
-                    { role: 'tool', content: '{"r":1}' },
                 ],
                 fetchImpl,
             },
             { apiKey: 'k' },
         )
-        // tool fallback maps to 'user' for now (B3 scope); tool_use/tool_result is a future evolution
         expect(calls[0].body.messages).toEqual([
             { role: 'user', content: [{ type: 'text', text: 'q1' }] },
             { role: 'assistant', content: [{ type: 'text', text: 'a1' }] },
-            { role: 'user', content: [{ type: 'text', text: '{"r":1}' }] },
         ])
+    })
+
+    test('rejects tool-role messages as unsupported rather than silently mapping them to user', async () => {
+        // Silent map would corrupt the conversation because Anthropic's tool
+        // semantics require `tool_result` content blocks, not a plain user
+        // text turn. The adapter throws so the caller can decide (route to a
+        // tool-capable preset / drop the message / etc).
+        const { fetchImpl } = captureFetch(
+            jsonResponse({ content: [{ type: 'text', text: 'ok' }] }),
+        )
+        await expect(
+            sendAnthropicChatRequest(
+                makePreset(),
+                {
+                    messages: [
+                        { role: 'user', content: 'q1' },
+                        { role: 'tool', content: '{"r":1}', toolCallId: 'call-1' },
+                    ],
+                    fetchImpl,
+                },
+                { apiKey: 'k' },
+            ),
+        ).rejects.toMatchObject({ kind: 'unsupported', retryable: false, fallbackEligible: false })
     })
 
     test('customBody cannot inject system field when user provided no system message', async () => {

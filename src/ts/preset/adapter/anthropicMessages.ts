@@ -18,11 +18,15 @@ import type {
 } from './types'
 import { resolveWireModelId } from './wireInvariants'
 
-// Anthropic Messages API requires `max_tokens`. The shared layer cannot inject
-// a vendor-specific constant, so the adapter falls back when neither the
-// snapshot nor the user provided one. Surfaced for future move to the
-// `anthropic` base provider's `defaultBody`.
-const DEFAULT_ANTHROPIC_MAX_TOKENS = 4096
+// `anthropic` base provider v2+ supplies `max_tokens: 4096` via `defaultBody`,
+// so freshly-resolved snapshots already carry the value. But presets persisted
+// under an older snapshot (v1, `defaults: {}`) won't pick up the new default
+// until they are re-resolved against the registry — and the profile version
+// did not change (only the base provider did), so the profile-update detection
+// will not flag them. Keep an adapter-side safety net for stale snapshots so
+// existing chats keep working. `=== undefined` preserves any explicit 0 or
+// negative override.
+const ANTHROPIC_FALLBACK_MAX_TOKENS = 4096
 
 interface AnthropicContentBlock {
     type: 'text'
@@ -148,7 +152,7 @@ async function prepareAnthropicBody(
     }
     prepared.body.model = modelId
     if (prepared.body.max_tokens === undefined) {
-        prepared.body.max_tokens = DEFAULT_ANTHROPIC_MAX_TOKENS
+        prepared.body.max_tokens = ANTHROPIC_FALLBACK_MAX_TOKENS
     }
     prepared.body.stream = stream
     return prepared
@@ -163,6 +167,15 @@ function collectSystemAndChat(messages: AdapterChatMessage[]): {
     for (const message of messages) {
         if (message.role === 'system') {
             systems.push(message.content)
+        } else if (message.role === 'tool') {
+            // Tool messages need a different wire shape on Anthropic
+            // (`tool_result` content blocks). Until the adapter actually
+            // supports tool use, silently mapping tool → user would corrupt
+            // the conversation. Surface it instead.
+            throw new ModelPresetAdapterError(
+                'unsupported',
+                'Anthropic adapter does not support tool-role messages yet',
+            )
         } else {
             chat.push(message)
         }
