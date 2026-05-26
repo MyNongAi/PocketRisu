@@ -131,6 +131,108 @@ describe('analyzeModelPresetMigration', () => {
         expect(report.createdModelPresets[0].credentialSource).toBeUndefined()
     })
 
+    test('does NOT create a top-level reverse-proxy preset on stale aux fields alone (regression A)', () => {
+        // db.aiModel is not 'reverse_proxy' and db.forceReplaceUrl is empty,
+        // but auxiliary reverse-proxy fields (proxyKey / customProxyRequestModel /
+        // proxyRequestModel) are filled with leftover values from a prior UI
+        // session. Legacy request.ts routes reverse-proxy only when
+        // aiModel === 'reverse_proxy', so triggering on these aux fields
+        // alone was a false positive that produced URL-less preset entries.
+        const report = analyzeModelPresetMigration({
+            aiModel: 'gpt-4o',
+            openAIKey: 'sk-openai-test',
+            proxyKey: 'sk-stale-proxy',
+            customProxyRequestModel: 'stale-model',
+            proxyRequestModel: 'older-stale-model',
+            additionalParams: [['x-stale', 'value']],
+            // no forceReplaceUrl, no aiModel/subModel === 'reverse_proxy'
+        })
+        expect(report.createdModelPresets.find((p) => p.sourceKind === 'reverse-proxy')).toBeUndefined()
+        expect(report.createdModelPresets.find((p) => p.sourcePath === 'db.reverse_proxy')).toBeUndefined()
+    })
+
+    test('does NOT create a bot-preset reverse-proxy preset on stale aux fields alone (regression A)', () => {
+        // botPreset has stale aux fields but neither aiModel nor subModel
+        // says 'reverse_proxy'. botPreset.forceReplaceUrl is also empty (no
+        // UI exists for it; default initializer fills ''). No reverse-proxy
+        // preset should be created.
+        const report = analyzeModelPresetMigration({
+            botPresets: [{
+                id: 'bot-stale',
+                aiModel: 'gpt-4o',
+                customProxyRequestModel: 'stale-model',
+                proxyRequestModel: 'older-stale-model',
+                proxyKey: 'sk-stale-bot-proxy',
+            }],
+        })
+        expect(report.createdModelPresets.find(
+            (p) => p.sourceKind === 'bot-preset-reverse-proxy',
+        )).toBeUndefined()
+        expect(report.createdModelPresets.find(
+            (p) => p.sourcePath === 'botPresets.bot-stale.reverse_proxy',
+        )).toBeUndefined()
+    })
+
+    test('bot-preset reverse-proxy preset falls back to db top-level URL/key/model/format (regression B)', () => {
+        // BotPreset reverse-proxy fields (forceReplaceUrl/proxyKey/
+        // customProxyRequestModel/customAPIFormat) have no UI; all live on
+        // db top-level. legacy request.ts:357-362 reads from db when wiring
+        // reverse-proxy. analyzer must mirror.
+        const report = analyzeModelPresetMigration({
+            forceReplaceUrl: 'https://global-proxy.test/v1/chat/completions',
+            proxyKey: 'sk-global-proxy',
+            customProxyRequestModel: 'global-default-model',
+            customAPIFormat: LLMFormat.OpenAICompatible,
+            botPresets: [{
+                id: 'bot-relies-on-global',
+                aiModel: 'reverse_proxy',
+                // botPreset-level reverse-proxy fields empty (default leftovers)
+            }],
+        })
+        const botProxyPreset = report.createdModelPresets.find(
+            (p) => p.sourcePath === 'botPresets.bot-relies-on-global.reverse_proxy',
+        )
+        expect(botProxyPreset).toBeTruthy()
+        expect(botProxyPreset).toMatchObject({
+            profileId: 'openai-compatible:custom',
+            modelId: 'global-default-model',
+            endpointUrl: 'https://global-proxy.test/v1/chat/completions',
+            credentialSource: { kind: 'legacyKey', sourcePath: 'db.proxyKey' },
+        })
+        expect(botProxyPreset?.userValues).toMatchObject({
+            endpointUrl: 'https://global-proxy.test/v1/chat/completions',
+            modelId: 'global-default-model',
+        })
+    })
+
+    test('bot-preset reverse-proxy honors explicit botPreset-level values over db fallback (regression B)', () => {
+        // Edge case for users whose .bin was imported from an older RisuAI
+        // build that *did* expose botPreset-level reverse-proxy inputs.
+        // If botPreset has explicit non-empty values, they should win over
+        // db top-level fallback. This guards against fallback regressing
+        // a user-intended per-bot override.
+        const report = analyzeModelPresetMigration({
+            forceReplaceUrl: 'https://global-proxy.test/v1/chat/completions',
+            proxyKey: 'sk-global-proxy',
+            customProxyRequestModel: 'global-default-model',
+            botPresets: [{
+                id: 'bot-explicit',
+                aiModel: 'reverse_proxy',
+                forceReplaceUrl: 'https://bot-specific.test/v1/chat/completions',
+                proxyKey: 'sk-bot-specific',
+                proxyRequestModel: 'bot-specific-model',
+            }],
+        })
+        const botProxyPreset = report.createdModelPresets.find(
+            (p) => p.sourcePath === 'botPresets.bot-explicit.reverse_proxy',
+        )
+        expect(botProxyPreset).toMatchObject({
+            modelId: 'bot-specific-model',
+            endpointUrl: 'https://bot-specific.test/v1/chat/completions',
+            credentialSource: { kind: 'legacyKey', sourcePath: 'botPresets.bot-explicit.proxyKey' },
+        })
+    })
+
     test('uses provider-specific request model fields for OpenRouter and reverse proxy', () => {
         const report = analyzeModelPresetMigration({
             aiModel: 'openrouter',

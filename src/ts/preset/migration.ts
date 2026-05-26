@@ -309,14 +309,30 @@ function addBotPresetBindings(
         if (hasPresetReverseProxyConfig(preset)) {
             // Create the preset before resolving bindings so reverse_proxy
             // bindings can link to the planned ModelPreset by source path.
+            //
+            // BotSettings.svelte only exposes top-level (db.*) inputs for
+            // reverse-proxy fields (forceReplaceUrl / proxyKey /
+            // customProxyRequestModel / customAPIFormat). botPreset-level
+            // copies of these fields are leftover defaults from the
+            // database.svelte.ts initializer and have no UI. Mirror legacy
+            // dispatch (request.ts:357-362) by falling back to db top-level
+            // values; honor botPreset values when they are explicitly set
+            // (e.g. via .bin import from an older build).
             addReverseProxyPreset(report, plannedById, {
                 sourceKind: 'bot-preset-reverse-proxy',
                 sourcePath: `${sourcePrefix}.reverse_proxy`,
                 name: `Migrated ${preset.name || ownerId} Reverse Proxy`,
-                forceReplaceUrl: preset.forceReplaceUrl,
-                requestModel: preset.customProxyRequestModel || preset.proxyRequestModel,
-                proxyKeyPath: isNonEmptyString(preset.proxyKey) ? `${sourcePrefix}.proxyKey` : undefined,
-                customAPIFormat: preset.customAPIFormat,
+                forceReplaceUrl: isNonEmptyString(preset.forceReplaceUrl)
+                    ? preset.forceReplaceUrl
+                    : db.forceReplaceUrl,
+                requestModel: preset.customProxyRequestModel
+                    || preset.proxyRequestModel
+                    || db.customProxyRequestModel
+                    || db.proxyRequestModel,
+                proxyKeyPath: isNonEmptyString(preset.proxyKey)
+                    ? `${sourcePrefix}.proxyKey`
+                    : (isNonEmptyString(db.proxyKey) ? 'db.proxyKey' : undefined),
+                customAPIFormat: preset.customAPIFormat ?? db.customAPIFormat,
                 additionalParams: undefined,
             })
         }
@@ -596,24 +612,29 @@ function pickOpenAiCompatibleProfile(baseProfileId: string, hasCredential: boole
     return baseProfileId
 }
 
+// Legacy request.ts routes reverse-proxy only when `aiModel === 'reverse_proxy'`
+// (uses db.forceReplaceUrl as the URL) or when a top-level reverse-proxy URL
+// is explicitly set. Triggering on auxiliary fields (proxyRequestModel,
+// customProxyRequestModel, proxyKey) is a false positive: those are leftovers
+// from earlier UI sessions and never reach the wire because the legacy
+// dispatch branch is gated by `aiModel === 'reverse_proxy'`. Mirror that.
 function hasReverseProxyConfig(db: ModelPresetMigrationInput): boolean {
     return Boolean(
         db.aiModel === 'reverse_proxy' ||
-        db.forceReplaceUrl ||
-        db.customProxyRequestModel ||
-        db.proxyKey ||
-        (db.additionalParams?.length ?? 0) > 0,
+        isNonEmptyString(db.forceReplaceUrl),
     )
 }
 
+// BotPreset-level forceReplaceUrl has no UI in BotSettings.svelte (only the
+// top-level db.forceReplaceUrl input exists). botPreset objects still carry
+// `forceReplaceUrl: ''` from their default initializer in
+// database.svelte.ts, so triggering on it would fire for every botPreset.
+// Stick to the explicit `aiModel === 'reverse_proxy'` / `subModel === 'reverse_proxy'`
+// signal, which is the only thing the user can actually set via UI.
 function hasPresetReverseProxyConfig(preset: LegacyBotPreset): boolean {
     return Boolean(
         preset.aiModel === 'reverse_proxy' ||
-        preset.subModel === 'reverse_proxy' ||
-        preset.forceReplaceUrl ||
-        preset.proxyRequestModel ||
-        preset.customProxyRequestModel ||
-        preset.proxyKey,
+        preset.subModel === 'reverse_proxy',
     )
 }
 
