@@ -666,4 +666,100 @@ describe('analyzeModelPresetMigration', () => {
         expect(preset?.userValues.endpointUrl).toBe('https://reverse.test/v1/chat/completions')
         expect(preset?.userValues.modelId).toBe('custom-model')
     })
+
+    test('migrates top-level db.google.accessToken into apiKeyPool for gemini presets', () => {
+        const db: ModelPresetMigrationApplyTarget = {
+            aiModel: 'gemini-2.5-pro',
+            google: { accessToken: 'AIza-google-secret' },
+        }
+        const report = analyzeModelPresetMigration(db)
+
+        applyModelPresetMigration(db, report, bundledMigrationResolver())
+
+        const preset = db.modelPresets?.[0]
+        expect(preset?.profileSnapshot.profileId).toBe('google:standard')
+        expect(preset?.apiKeyRef).toEqual(expect.any(String))
+        expect(db.apiKeyPool?.[preset!.apiKeyRef!]).toMatchObject({
+            provider: 'google:standard',
+            key: 'AIza-google-secret',
+        })
+        // Plain key lives in apiKeyPool for the chat-send path, but must not
+        // leak into the persisted summary or the dry-run report.
+        expect(JSON.stringify(db.modelPresetMigrationReport)).not.toContain('AIza-google-secret')
+        expect(JSON.stringify(report)).not.toContain('AIza-google-secret')
+    })
+
+    test('omits apiKeyRef for gemini presets when db.google.accessToken is empty', () => {
+        const db: ModelPresetMigrationApplyTarget = {
+            aiModel: 'gemini-2.5-pro',
+            google: { accessToken: '' },
+        }
+        const report = analyzeModelPresetMigration(db)
+
+        applyModelPresetMigration(db, report, bundledMigrationResolver())
+
+        const preset = db.modelPresets?.[0]
+        expect(preset?.profileSnapshot.profileId).toBe('google:standard')
+        // Strict undefined (not falsy) — an empty-string apiKeyRef would be an
+        // invalid persisted shape.
+        expect(preset?.apiKeyRef).toBeUndefined()
+    })
+
+    test('falls back to db.google.accessToken for GoogleCloud custom models with empty per-model key', () => {
+        // Mirrors legacy `arg.key || db.google.accessToken` behaviour for
+        // Google custom models. Without this fallback the migrated preset
+        // would land without apiKeyRef and break sends that worked before.
+        const db: ModelPresetMigrationApplyTarget = {
+            customModels: [{
+                id: 'xcustom:::google-fallback',
+                internalId: 'gemini-pro-custom',
+                url: 'https://generativelanguage.googleapis.com/v1beta',
+                format: LLMFormat.GoogleCloud,
+                key: '',
+                name: 'Google Custom',
+                params: '',
+                flags: [],
+            }],
+            google: { accessToken: 'AIza-global-secret' },
+        }
+        const report = analyzeModelPresetMigration(db)
+
+        applyModelPresetMigration(db, report, bundledMigrationResolver())
+
+        const preset = db.modelPresets?.[0]
+        expect(preset?.profileSnapshot.profileId).toBe('google:standard')
+        expect(preset?.apiKeyRef).toEqual(expect.any(String))
+        expect(db.apiKeyPool?.[preset!.apiKeyRef!]).toMatchObject({
+            provider: 'google:standard',
+            key: 'AIza-global-secret',
+        })
+        expect(JSON.stringify(db.modelPresetMigrationReport)).not.toContain('AIza-global-secret')
+        expect(JSON.stringify(report)).not.toContain('AIza-global-secret')
+    })
+
+    test('per-model key beats db.google.accessToken for GoogleCloud custom models', () => {
+        // Regression guard: a non-empty per-model key must not be overridden
+        // by the global db.google.accessToken fallback.
+        const db: ModelPresetMigrationApplyTarget = {
+            customModels: [{
+                id: 'xcustom:::google-explicit',
+                internalId: 'gemini-pro-custom',
+                url: 'https://generativelanguage.googleapis.com/v1beta',
+                format: LLMFormat.GoogleCloud,
+                key: 'AIza-per-model',
+                name: 'Google Custom',
+                params: '',
+                flags: [],
+            }],
+            google: { accessToken: 'AIza-global' },
+        }
+        const report = analyzeModelPresetMigration(db)
+
+        applyModelPresetMigration(db, report, bundledMigrationResolver())
+
+        const preset = db.modelPresets?.[0]
+        expect(preset?.profileSnapshot.profileId).toBe('google:standard')
+        expect(preset?.apiKeyRef).toEqual(expect.any(String))
+        expect(db.apiKeyPool?.[preset!.apiKeyRef!]?.key).toBe('AIza-per-model')
+    })
 })

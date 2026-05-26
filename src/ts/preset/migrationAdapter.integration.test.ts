@@ -72,13 +72,21 @@ describe('migrated preset → buildPreparedRequest wire shape', () => {
         expect(prepared.body.model).toBe('claude-sonnet-4-5')
     })
 
-    test('google:standard preset → x-goog-api-key + body.model', () => {
-        // Migration analyzer doesn't currently consume a top-level Google API
-        // key — google presets land without an apiKeyRef. The adapter layer
-        // can still accept a credential at request time, so we feed one
-        // directly to exercise the wire shape.
-        const presets = migrate({ aiModel: 'gemini-2.5-pro' })
-        const preset = presetByProfileId(presets, 'google:standard')
+    test('google:standard preset → x-goog-api-key + body.model + apiKeyRef from db.google.accessToken', () => {
+        const db: ModelPresetMigrationApplyTarget = {
+            aiModel: 'gemini-2.5-pro',
+            google: { accessToken: 'goog-test' },
+        }
+        const report = analyzeModelPresetMigration(db)
+        applyModelPresetMigration(db, report, bundledMigrationResolver())
+        const preset = presetByProfileId(db.modelPresets ?? [], 'google:standard')
+
+        // Migration consumes db.google.accessToken into apiKeyPool, so the
+        // preset carries a resolvable apiKeyRef instead of relying on a
+        // request-time credential injection.
+        expect(preset.apiKeyRef).toEqual(expect.any(String))
+        expect(db.apiKeyPool?.[preset.apiKeyRef!]?.key).toBe('goog-test')
+
         const prepared = buildPreparedRequest({
             preset,
             credential: { apiKey: 'goog-test' },

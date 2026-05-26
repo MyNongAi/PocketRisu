@@ -91,6 +91,10 @@ export type ModelPresetMigrationInput = {
     fallbackModels?: LegacyFallbackModels
     modelTools?: string[]
     presetChain?: string
+    google?: {
+        accessToken?: string
+        projectId?: string
+    }
 }
 
 type ProfileResolution =
@@ -173,6 +177,16 @@ export function analyzeModelPresetMigration(db: ModelPresetMigrationInput): Migr
             continue
         }
         const profileId = pickOpenAiCompatibleProfile(baseProfileId, Boolean(customModel.key))
+        // Legacy Google call path falls back to db.google.accessToken when the
+        // per-model key is empty (see process/request/google.ts: `arg.key ||
+        // db.google.accessToken`). Mirror that fallback during migration so a
+        // Google custom model with empty key + valid top-level Google key still
+        // ends up with a resolvable apiKeyRef. Per-model key always wins.
+        const credentialPath = customModel.key
+            ? `${sourcePath}.key`
+            : (profileId === 'google:standard' && db.google?.accessToken
+                ? 'db.google.accessToken'
+                : undefined)
         addPreset(createPlannedPreset({
             sourceKind: 'custom',
             sourcePath,
@@ -180,7 +194,7 @@ export function analyzeModelPresetMigration(db: ModelPresetMigrationInput): Migr
             name: customModel.name || customModel.id || `Custom Model ${index + 1}`,
             endpointUrl: customModel.url || '',
             modelId: customModel.internalId || customModel.id,
-            credentialPath: customModel.key ? `${sourcePath}.key` : undefined,
+            credentialPath,
             userValues: {
                 endpointUrl: customModel.url || '',
                 modelId: customModel.internalId || customModel.id,
@@ -538,7 +552,12 @@ function profileForLegacyModel(
         return { kind: 'manual', reason: `Native Bedrock Claude model requires manual migration: ${model}` }
     }
     if (model.startsWith('gemini')) {
-        return { kind: 'profile', profileId: 'google:standard', modelId: model }
+        return {
+            kind: 'profile',
+            profileId: 'google:standard',
+            modelId: model,
+            credentialPath: db.google?.accessToken ? 'db.google.accessToken' : undefined,
+        }
     }
     return { kind: 'manual', reason: `Unsupported legacy model: ${model}` }
 }

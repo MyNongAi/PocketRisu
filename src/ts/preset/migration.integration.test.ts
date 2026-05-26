@@ -63,15 +63,14 @@ function multiSourceDb(): ModelPresetMigrationApplyTarget {
         subModel: 'claude-sonnet-4-5',
         claudeAPIKey: 'sk-ant-secret',
         // Task bindings: memory → google, translate → NovelAI (unsupported).
-        // Note: the migration analyzer does NOT consume a top-level Google API
-        // key today — google presets are created without an apiKeyRef. That's
-        // a known gap captured elsewhere; this integration test just exercises
-        // the binding path.
         seperateModelsForAxModels: true,
         seperateModels: {
             memory: 'gemini-2.5-pro',
             translate: 'novelai',
         },
+        // Top-level Google credential — migrated into apiKeyPool for the
+        // google:standard preset created by the memory binding.
+        google: { accessToken: 'AIza-google-secret' },
         // BotPreset with its own model override.
         botPresets: [
             { id: 'bot-a', name: 'Alpha', aiModel: 'gpt-4o' },
@@ -147,13 +146,11 @@ describe('Model preset v4 migration — multi-source end-to-end', () => {
         expectSourcePath('db.reverse_proxy', 'openai-compatible:custom', { withApiKey: true })
         // Native bindings come from global/task aiModel paths, not from
         // customModels/reverse_proxy. Each native preset must carry its own
-        // apiKeyRef (anthropic from claudeAPIKey, openai from openAIKey).
-        // `db.seperateModels.memory` (google) stays withApiKey:false until
-        // the analyzer learns to read the top-level Google credential — see
-        // the §14-11 follow-up.
+        // apiKeyRef (anthropic from claudeAPIKey, openai from openAIKey,
+        // google from db.google.accessToken).
         expectSourcePath('db.subModel', 'anthropic:standard', { withApiKey: true })
         expectSourcePath('botPresets.bot-a.aiModel', 'openai:standard', { withApiKey: true })
-        expectSourcePath('db.seperateModels.memory', 'google:standard', { withApiKey: false })
+        expectSourcePath('db.seperateModels.memory', 'google:standard', { withApiKey: true })
 
         // ── 3. binding referential integrity ────────────────────────────
         // aiModel → plugin binding (no preset).
@@ -209,6 +206,7 @@ describe('Model preset v4 migration — multi-source end-to-end', () => {
             'sk-openai-secret',
             'sk-reverse-secret',
             'sk-secret-custom',
+            'AIza-google-secret',
         ]
         const summaryJson = JSON.stringify(db.modelPresetMigrationReport)
         const dryRunJson = JSON.stringify(report)
