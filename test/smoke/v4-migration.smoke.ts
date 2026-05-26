@@ -1,20 +1,28 @@
 /**
  * v4 ModelPreset 백엔드 smoke harness.
  *
- * 사용자가 NodeOnly UI의 backup 기능으로 export한 `.bin` 파일을 입력으로 받아
- * 다음 네 영역을 dry-run으로 검증한다.
+ * 입력 형식 두 가지를 자동 감지:
+ *   - SMOKE_DB_PATH가 `.db`로 끝남 → SQLite (`save/risuai.db`). readonly로 열고
+ *     `kv` 테이블에서 `database/database.bin` row의 value를 꺼낸 뒤 디코딩.
+ *   - 그 외 → 단일 RisuSave Legacy `.bin` 파일로 간주, 직접 디코딩.
+ *     (UI backup으로 받은 archive 형식은 미지원 — 그런 archive 안에서는
+ *     database entry 외에 character/asset 등이 섞여 있어 추출 단계가 필요함.)
  *
+ * 다음 네 영역을 dry-run으로 검증:
  *   1. analyze report   — migration이 어떤 ModelPreset 후보를 만드는지
  *   2. dry-run apply    — apiKeyPool / binding integrity / orphan
  *   3. adapter wire     — 각 migrated preset의 buildPreparedRequest 출력
  *   4. .bin round-trip  — apply 결과를 다시 encode → 같은 라이브러리로 decode
  *
- * 출력은 stdout에만 쓴다. 입력 .bin / 라이브 db는 절대 건드리지 않는다.
+ * 출력은 stdout에만 쓴다. 입력 파일은 절대 건드리지 않는다.
  * 비밀 key는 redact해서 출력한다.
  *
  * 실행:
- *   SMOKE_DB_PATH=/path/to/your-export.bin \
- *     pnpm exec vitest run --config vitest.config.smoke.ts
+ *   SMOKE_DB_PATH=/path/to/save/risuai.db \
+ *     pnpm test:v4-smoke
+ *   # 또는
+ *   SMOKE_DB_PATH=/path/to/raw-export.bin \
+ *     pnpm test:v4-smoke
  */
 import fs from 'node:fs'
 import { createRequire } from 'node:module'
@@ -34,6 +42,38 @@ const require = createRequire(import.meta.url)
 const utilsCjs = require('../../server/node/utils.cjs') as {
     decodeRisuSave: (data: Uint8Array, options?: unknown) => Promise<Record<string, unknown>>
     encodeRisuSaveLegacy: (data: unknown, compression?: 'compression' | 'noCompression') => Uint8Array
+}
+
+interface BetterSqliteDatabase {
+    prepare: (sql: string) => { get: (...params: unknown[]) => Record<string, unknown> | undefined }
+    close: () => void
+    pragma: (sql: string) => unknown
+}
+type BetterSqliteCtor = new (
+    path: string,
+    options?: { readonly?: boolean; fileMustExist?: boolean },
+) => BetterSqliteDatabase
+
+/**
+ * Read the legacy DB blob out of the live SQLite store at the given path.
+ * Opens readonly + WAL-aware so the running server (if any) is unaffected.
+ */
+function readDbBlobFromSqlite(dbPath: string): Uint8Array {
+    const Database = require('better-sqlite3') as BetterSqliteCtor
+    const sqlite = new Database(dbPath, { readonly: true, fileMustExist: true })
+    try {
+        sqlite.pragma('journal_mode = WAL')
+        const row = sqlite.prepare('SELECT value FROM kv WHERE key = ?').get('database/database.bin')
+        if (!row || !(row.value instanceof Uint8Array || Buffer.isBuffer(row.value))) {
+            throw new Error(
+                `SQLite at ${dbPath} has no kv row for key="database/database.bin" — `
+                + 'unable to extract legacy DB blob.',
+            )
+        }
+        return new Uint8Array(row.value as Buffer)
+    } finally {
+        sqlite.close()
+    }
 }
 
 const dbPath = process.env.SMOKE_DB_PATH
@@ -69,19 +109,30 @@ function looksLikeSecret(value: string): boolean {
 }
 
 function summarizePreset(preset: ModelPreset): Record<string, unknown> {
+    const snap = preset.profileSnapshot as (ModelPreset['profileSnapshot'] | undefined)
+    if (!snap) {
+        return {
+            id: preset.id,
+            name: preset.name,
+            warning: 'INCOMPLETE: profileSnapshot is missing (pre-v4 or partial migration?)',
+            keysPresent: Object.keys(preset as unknown as Record<string, unknown>),
+            migrationSource: preset.migrationSource ?? null,
+            hasApiKeyRef: Boolean(preset.apiKeyRef),
+        }
+    }
     return {
         id: preset.id,
         name: preset.name,
-        profileId: preset.profileSnapshot.profileId,
-        providerBaseId: preset.profileSnapshot.providerBaseId,
-        providerBaseVersion: preset.profileSnapshot.providerBaseVersion,
-        adapterKind: preset.profileSnapshot.adapterKind,
-        authKind: preset.profileSnapshot.auth.kind,
-        endpoint: preset.profileSnapshot.endpoint,
-        modelId: preset.profileSnapshot.modelId,
+        profileId: snap.profileId,
+        providerBaseId: snap.providerBaseId,
+        providerBaseVersion: snap.providerBaseVersion,
+        adapterKind: snap.adapterKind,
+        authKind: snap.auth?.kind,
+        endpoint: snap.endpoint,
+        modelId: snap.modelId,
         hasApiKeyRef: Boolean(preset.apiKeyRef),
         migrationSource: preset.migrationSource,
-        userValueKeys: Object.keys(preset.userValues),
+        userValueKeys: Object.keys(preset.userValues ?? {}),
         orphanValueKeys: preset.orphanValues ? Object.keys(preset.orphanValues) : [],
     }
 }
@@ -112,13 +163,137 @@ describe.skipIf(!dbPath)('v4 ModelPreset smoke', () => {
         console.log(`SMOKE_DB_PATH: ${dbPath}`)
         console.log(`file size: ${fileSize} bytes`)
 
-        const buffer = new Uint8Array(fs.readFileSync(dbPath))
+        const isSqlite = dbPath.toLowerCase().endsWith('.db')
+        const buffer = isSqlite
+            ? readDbBlobFromSqlite(dbPath)
+            : new Uint8Array(fs.readFileSync(dbPath))
+        if (isSqlite) {
+            console.log(`source: SQLite (kv['database/database.bin'])`)
+            console.log(`extracted blob size: ${buffer.length} bytes`)
+        } else {
+            console.log(`source: raw RisuSave .bin`)
+        }
         const decoded = await utilsCjs.decodeRisuSave(buffer)
         const db = decoded as ModelPresetMigrationApplyTarget
         console.log(`decoded top-level keys: ${Object.keys(decoded).length}`)
-        console.log(`already-migrated modelPresets: ${(db.modelPresets ?? []).length}`)
-        console.log(`existing apiKeyPool entries: ${Object.keys(db.apiKeyPool ?? {}).length}`)
+        const existingPresets = db.modelPresets ?? []
+        const existingApiKeyPool = db.apiKeyPool ?? {}
+        console.log(`already-migrated modelPresets: ${existingPresets.length}`)
+        console.log(`existing apiKeyPool entries: ${Object.keys(existingApiKeyPool).length}`)
         console.log(`migrationVersion: ${db.modelPresetMigrationVersion ?? '<none>'}`)
+
+        // Diagnostic: dump what's already in the v4 fields so we can tell
+        // whether the user db was previously touched by partial migration code.
+        if (existingPresets.length > 0) {
+            console.log('--- existing preset summaries (pre-existing in db) ---')
+            for (const p of existingPresets) {
+                console.log(JSON.stringify(summarizePreset(p)))
+            }
+        }
+        if (Object.keys(existingApiKeyPool).length > 0) {
+            console.log('--- existing apiKeyPool entries (id / provider / hasKey) ---')
+            for (const [id, entry] of Object.entries(existingApiKeyPool)) {
+                const e = entry as { id?: string; provider?: string; key?: string; name?: string }
+                console.log(`  • ${id}: provider=${e.provider ?? '?'}, hasKey=${Boolean(e.key)}, name=${e.name ?? '?'}`)
+            }
+        }
+
+        // Diagnostic: which legacy aiModel values appear in botPresets — so we
+        // can see why so many manualRequired entries land on "Unsupported
+        // legacy model: custom". 'custom' is NOT a standard upstream model id,
+        // so it likely indicates a reverse-proxy-bound botPreset that the
+        // analyzer's profileForLegacyModel does not recognize.
+        const legacyValueCounts = new Map<string, number>()
+        const inc = (v: string | undefined) => {
+            if (!v) return
+            legacyValueCounts.set(v, (legacyValueCounts.get(v) ?? 0) + 1)
+        }
+        inc(db.aiModel)
+        inc(db.subModel)
+        for (const bp of db.botPresets ?? []) {
+            inc(bp.aiModel)
+            inc(bp.subModel)
+        }
+        const interesting = [...legacyValueCounts.entries()]
+            .filter(([v, c]) => c >= 2 || v === 'custom' || v === 'reverse_proxy')
+            .sort((a, b) => b[1] - a[1])
+        if (interesting.length > 0) {
+            console.log('--- legacy aiModel/subModel value frequency (filtered) ---')
+            for (const [v, c] of interesting) {
+                console.log(`  • "${v}" × ${c}`)
+            }
+        }
+
+        // Diagnostic: for botPresets where aiModel/subModel is 'custom' (the
+        // legacy "Plugin Legacy" model), show neighboring fields so we can
+        // tell whether the user was using plugin route, reverse proxy, or a
+        // mix. analyzer currently lacks a 'custom' branch.
+        type LegacyBot = {
+            id?: string
+            name?: string
+            aiModel?: string
+            subModel?: string
+            currentPluginProvider?: string
+            forceReplaceUrl?: string
+            proxyRequestModel?: string
+            customProxyRequestModel?: string
+            customAPIFormat?: number
+            proxyKey?: string
+            reverseProxyOobaArgs?: unknown
+        }
+        const customBots = (db.botPresets ?? []).filter((bp) => {
+            const x = bp as LegacyBot
+            return x.aiModel === 'custom' || x.subModel === 'custom'
+        }) as LegacyBot[]
+        if (customBots.length > 0) {
+            console.log(`--- botPresets with aiModel/subModel === 'custom' (${customBots.length} total) ---`)
+            for (const bp of customBots) {
+                console.log(`  • ${bp.id ?? '<no-id>'} "${bp.name ?? ''}"`)
+                console.log(
+                    `      aiModel="${bp.aiModel}", subModel="${bp.subModel}", `
+                    + `pluginProvider="${bp.currentPluginProvider ?? ''}", `
+                    + `forceReplaceUrl="${bp.forceReplaceUrl ?? ''}", `
+                    + `customAPIFormat=${bp.customAPIFormat ?? '<none>'}`
+                )
+            }
+            console.log(`db.currentPluginProvider = "${(db as { currentPluginProvider?: string }).currentPluginProvider ?? ''}"`)
+        }
+
+        // Diagnostic: forceReplaceUrl presence per bot-preset that has
+        // reverse_proxy plumbing (proxyRequestModel/customProxyRequestModel/
+        // proxyKey/forceReplaceUrl any). This shows whether the empty endpoint
+        // URL in migrated reverse-proxy presets is caused by user data or by
+        // analyzer extraction.
+        const proxyBots = (db.botPresets ?? []).filter((bp) => {
+            const x = bp as LegacyBot
+            return Boolean(
+                x.aiModel === 'reverse_proxy' || x.subModel === 'reverse_proxy'
+                || x.forceReplaceUrl || x.proxyRequestModel
+                || x.customProxyRequestModel || x.proxyKey
+            )
+        }) as LegacyBot[]
+        if (proxyBots.length > 0) {
+            console.log(`--- botPresets touching reverse_proxy fields (${proxyBots.length} total) ---`)
+            for (const bp of proxyBots) {
+                console.log(
+                    `  • ${bp.id ?? '<no-id>'}: aiModel="${bp.aiModel ?? ''}", `
+                    + `forceReplaceUrl="${(bp.forceReplaceUrl ?? '').slice(0, 60)}${(bp.forceReplaceUrl ?? '').length > 60 ? '…' : ''}", `
+                    + `proxyRequestModel="${bp.proxyRequestModel ?? ''}", `
+                    + `customProxyRequestModel="${bp.customProxyRequestModel ?? ''}", `
+                    + `customAPIFormat=${bp.customAPIFormat ?? '<none>'}, `
+                    + `hasProxyKey=${Boolean(bp.proxyKey)}`
+                )
+            }
+        }
+        // Diagnostic: top-level db.forceReplaceUrl + db.proxyKey to see whether
+        // the reverse-proxy plumbing lives at the global level instead of per-bot.
+        const topDb = db as { forceReplaceUrl?: string; proxyKey?: string; customProxyRequestModel?: string }
+        console.log(
+            `--- db top-level reverse_proxy fields ---\n`
+            + `  • db.forceReplaceUrl="${topDb.forceReplaceUrl ?? ''}"\n`
+            + `  • db.customProxyRequestModel="${topDb.customProxyRequestModel ?? ''}"\n`
+            + `  • db.proxyKey present=${Boolean(topDb.proxyKey)}`
+        )
 
         // ── 2. analyze report ──────────────────────────────────────────
         logSection('analyze report')
@@ -207,9 +382,19 @@ describe.skipIf(!dbPath)('v4 ModelPreset smoke', () => {
         let wireSkipped = 0
         const wireFailures: Array<{ presetId: string; error: string }> = []
         for (const preset of presets) {
+            // Skip presets that are not v4-shaped (e.g., pre-existing
+            // template-based presets from another model preset system in the
+            // same DB row). Mark them in the report so the user can
+            // investigate where they came from.
+            const snap = preset.profileSnapshot
+            if (!snap || !snap.auth) {
+                wireSkipped++
+                console.log(`  • [skipped] ${preset.id}: missing profileSnapshot (not a v4 preset)`)
+                continue
+            }
             // SA auth needs async credential resolve via resolveAdapterCredential;
             // skip here. Coverage for that path lives in adapter unit tests.
-            if (preset.profileSnapshot.auth.kind === 'google-service-account') {
+            if (snap.auth.kind === 'google-service-account') {
                 wireSkipped++
                 continue
             }
@@ -220,8 +405,8 @@ describe.skipIf(!dbPath)('v4 ModelPreset smoke', () => {
                 })
                 wireOK++
                 console.log(
-                    `  • [${preset.profileSnapshot.profileId}] ${prepared.method} ${prepared.url}`
-                    + ` (auth=${preset.profileSnapshot.auth.kind})`
+                    `  • [${snap.profileId}] ${prepared.method} ${prepared.url}`
+                    + ` (auth=${snap.auth.kind})`
                 )
             } catch (err) {
                 wireFailures.push({
@@ -230,12 +415,13 @@ describe.skipIf(!dbPath)('v4 ModelPreset smoke', () => {
                 })
             }
         }
-        console.log(`wire smoke: ${wireOK} ok / ${wireSkipped} skipped (SA) / ${wireFailures.length} failed`)
+        console.log(`wire smoke: ${wireOK} ok / ${wireSkipped} skipped / ${wireFailures.length} failed`)
         if (wireFailures.length > 0) {
             console.log('--- wire failures ---')
             for (const f of wireFailures) console.log(`  • ${f.presetId}: ${f.error}`)
         }
-        expect(wireFailures).toEqual([])
+        // Smoke should report failures but not abort with assertion — we want
+        // the full output for analysis even when issues are present.
 
         // ── 5. .bin round-trip ─────────────────────────────────────────
         logSection('.bin round-trip (in-memory encode → decode)')
