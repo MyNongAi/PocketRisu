@@ -232,15 +232,15 @@ export interface RegistryCache {
     }>
 }
 
+// v5 migration scope (plan v5): customModels-only. Everything else (provider
+// keys, reverse-proxy fields, native aiModel strings, botPreset overrides,
+// task bindings, bias, fallbacks) stays in the legacy DB untouched and is
+// surfaced via the "Legacy Info" UI. Summary/report types are sized to that.
 export interface ModelPresetMigrationSummary {
     version: number
     appliedAt: number
     createdModelPresetCount: number
-    botPresetBindingCount: number
-    chatBindingCount: number
-    pluginBindingCount: number
     manualRequiredCount: number
-    skippedBiasCount: number
     warnings: string[]
 }
 
@@ -259,46 +259,16 @@ export interface PlannedModelPreset {
     userValues: Record<string, unknown>
 }
 
-export type MigrationBindingScope = 'global' | 'botPreset' | 'chat'
-
-export interface PlannedBinding {
-    scope: MigrationBindingScope
-    ownerId?: string
-    targetTask: ResolvedTask
-    sourcePath: string
-    binding: ModelBinding
-}
-
-export interface PlannedPluginBinding {
-    scope: MigrationBindingScope
-    ownerId?: string
-    targetTask: ResolvedTask
-    sourcePath: string
-    pluginModelId: string
-    binding: ModelBinding
-}
-
 export interface ManualMigrationItem {
     sourcePath: string
     reason: string
     legacySource?: string
 }
 
-export interface DeprecatedMigrationItem {
-    sourcePath: string
-    reason: string
-}
-
 export interface MigrationReport {
     version: 1
     createdModelPresets: PlannedModelPreset[]
-    globalBindings: PlannedBinding[]
-    botPresetBindings: PlannedBinding[]
-    chatBindings: PlannedBinding[]
-    pluginBindings: PlannedPluginBinding[]
     manualRequired: ManualMigrationItem[]
-    skippedBias: DeprecatedMigrationItem[]
-    preservedLegacyFields: DeprecatedMigrationItem[]
     warnings: string[]
 }
 

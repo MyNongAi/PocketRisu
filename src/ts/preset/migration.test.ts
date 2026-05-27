@@ -1,12 +1,15 @@
 import { describe, expect, test, vi } from 'vitest'
 import { LLMFormat } from '../model/types'
-import { analyzeModelPresetMigration, applyModelPresetMigration } from './migration'
-import type { ModelPresetMigrationApplyTarget } from './migration'
+import {
+    analyzeModelPresetMigration,
+    applyModelPresetMigration,
+    type ModelPresetMigrationApplyTarget,
+} from './migration'
 import { bundledMigrationResolver } from './registry'
 import type { MigrationReport } from './types'
 
-describe('analyzeModelPresetMigration', () => {
-    test('plans custom OpenAI-compatible models without leaking key material into ids', () => {
+describe('analyzeModelPresetMigration (plan v5: customModels-only)', () => {
+    test('plans custom OpenAI-compatible models with apiKey credential path', () => {
         const report = analyzeModelPresetMigration({
             customModels: [{
                 id: 'xcustom:::main',
@@ -15,466 +18,186 @@ describe('analyzeModelPresetMigration', () => {
                 format: LLMFormat.OpenAICompatible,
                 key: 'sk-secret',
                 name: 'Main Custom',
-                params: 'temperature=0.7',
-                flags: [8],
+                params: '',
+                flags: [],
             }],
-            aiModel: 'xcustom:::main',
         })
-
         expect(report.createdModelPresets).toHaveLength(1)
-        expect(report.createdModelPresets[0]).toMatchObject({
+        const planned = report.createdModelPresets[0]
+        expect(planned).toMatchObject({
             sourceKind: 'custom',
             sourcePath: 'customModels.xcustom:::main',
             profileId: 'openai-compatible:custom',
             modelId: 'gpt-custom',
-            credentialSource: {
-                kind: 'legacyKey',
-                sourcePath: 'customModels.xcustom:::main.key',
-            },
+            endpointUrl: 'https://example.test/v1/chat/completions',
+            credentialSource: { kind: 'legacyKey', sourcePath: 'customModels.xcustom:::main.key' },
         })
-        expect(JSON.stringify(report.createdModelPresets)).not.toContain('sk-secret')
-        expect(report.createdModelPresets[0].id).not.toContain('sk-secret')
-        expect(report.globalBindings).toContainEqual({
-            scope: 'global',
-            targetTask: 'model',
-            sourcePath: 'db.aiModel',
-            binding: { kind: 'modelPreset', id: report.createdModelPresets[0].id },
-        })
-    })
-
-    test('plans reverse proxy as custom OpenAI-compatible profile', () => {
-        const report = analyzeModelPresetMigration({
-            aiModel: 'reverse_proxy',
-            forceReplaceUrl: 'https://proxy.test/v1/chat/completions',
-            customProxyRequestModel: 'proxy-model',
-            proxyKey: 'proxy-secret',
-            customAPIFormat: LLMFormat.OpenAICompatible,
-            additionalParams: [['x-provider', 'abc']],
-        })
-
-        expect(report.createdModelPresets).toHaveLength(1)
-        expect(report.createdModelPresets[0]).toMatchObject({
-            sourceKind: 'reverse-proxy',
-            sourcePath: 'db.reverse_proxy',
-            profileId: 'openai-compatible:custom',
-            modelId: 'proxy-model',
-            endpointUrl: 'https://proxy.test/v1/chat/completions',
-            credentialSource: {
-                kind: 'legacyKey',
-                sourcePath: 'db.proxyKey',
-            },
-        })
-        expect(JSON.stringify(report)).not.toContain('proxy-secret')
-        expect(report.createdModelPresets[0].userValues.additionalParams).toEqual([['x-provider', 'abc']])
+        // Key value is never embedded in the planned id or userValues.
+        expect(JSON.stringify(planned)).not.toContain('sk-secret')
     })
 
     test('routes no-credential custom OpenAI-compatible models to the custom-noauth profile', () => {
         const report = analyzeModelPresetMigration({
             customModels: [{
                 id: 'xcustom:::local',
-                internalId: 'llama3',
-                url: 'http://localhost:11434/v1/chat/completions',
+                internalId: 'llama-3',
+                url: 'http://localhost:8000/v1/chat/completions',
                 format: LLMFormat.OpenAICompatible,
-                name: 'Local vLLM',
-                // no key
+                key: '',
+                name: 'Local',
             }],
-            aiModel: 'xcustom:::local',
         })
-        expect(report.createdModelPresets).toHaveLength(1)
-        expect(report.createdModelPresets[0]).toMatchObject({
-            profileId: 'openai-compatible:custom-noauth',
-            modelId: 'llama3',
-            endpointUrl: 'http://localhost:11434/v1/chat/completions',
-        })
+        expect(report.createdModelPresets[0].profileId).toBe('openai-compatible:custom-noauth')
         expect(report.createdModelPresets[0].credentialSource).toBeUndefined()
     })
 
-    test('routes NanoGPT-format custom models without per-model key to custom-noauth', () => {
-        // Boundary regression: customModels with format=NanoGPT (or any
-        // NanoGPT variant) goes through `profileForFormat` → base profile
-        // 'openai-compatible:custom'. Without a per-model key the migration
-        // should land on the no-auth variant the same way OpenAICompatible
-        // does (NanoGPT itself requires a key on the live endpoint, but the
-        // legacy DB shape allows recording one without a key).
+    test('routes Anthropic / Google / Ollama formats to their bundled profiles', () => {
         const report = analyzeModelPresetMigration({
-            customModels: [{
-                id: 'xcustom:::nanogpt-local',
-                internalId: 'nano-llama',
-                url: 'http://localhost:8200/v1/chat/completions',
-                format: LLMFormat.NanoGPT,
-                name: 'Local NanoGPT mirror',
-                // no key
-            }],
-            aiModel: 'xcustom:::nanogpt-local',
+            customModels: [
+                { id: 'a', format: LLMFormat.Anthropic, key: 'sk-ant' },
+                { id: 'g', format: LLMFormat.GoogleCloud, key: 'goog' },
+                { id: 'o', format: LLMFormat.Ollama, key: '' },
+            ],
         })
-        expect(report.createdModelPresets).toHaveLength(1)
-        expect(report.createdModelPresets[0]).toMatchObject({
-            profileId: 'openai-compatible:custom-noauth',
-            modelId: 'nano-llama',
-        })
-        expect(report.createdModelPresets[0].credentialSource).toBeUndefined()
-    })
-
-    test('routes reverse proxy without proxyKey to the custom-noauth profile', () => {
-        const report = analyzeModelPresetMigration({
-            aiModel: 'reverse_proxy',
-            forceReplaceUrl: 'http://localhost:4000/v1/chat/completions',
-            customProxyRequestModel: 'gateway-model',
-            customAPIFormat: LLMFormat.OpenAICompatible,
-            // no proxyKey
-        })
-        expect(report.createdModelPresets).toHaveLength(1)
-        expect(report.createdModelPresets[0]).toMatchObject({
-            profileId: 'openai-compatible:custom-noauth',
-            modelId: 'gateway-model',
-        })
-        expect(report.createdModelPresets[0].credentialSource).toBeUndefined()
-    })
-
-    test('does NOT create a top-level reverse-proxy preset on stale aux fields alone (regression A)', () => {
-        // db.aiModel is not 'reverse_proxy' and db.forceReplaceUrl is empty,
-        // but auxiliary reverse-proxy fields (proxyKey / customProxyRequestModel /
-        // proxyRequestModel) are filled with leftover values from a prior UI
-        // session. Legacy request.ts routes reverse-proxy only when
-        // aiModel === 'reverse_proxy', so triggering on these aux fields
-        // alone was a false positive that produced URL-less preset entries.
-        const report = analyzeModelPresetMigration({
-            aiModel: 'gpt-4o',
-            openAIKey: 'sk-openai-test',
-            proxyKey: 'sk-stale-proxy',
-            customProxyRequestModel: 'stale-model',
-            proxyRequestModel: 'older-stale-model',
-            additionalParams: [['x-stale', 'value']],
-            // no forceReplaceUrl, no aiModel/subModel === 'reverse_proxy'
-        })
-        expect(report.createdModelPresets.find((p) => p.sourceKind === 'reverse-proxy')).toBeUndefined()
-        expect(report.createdModelPresets.find((p) => p.sourcePath === 'db.reverse_proxy')).toBeUndefined()
-    })
-
-    test('does NOT create a bot-preset reverse-proxy preset on stale aux fields alone (regression A)', () => {
-        // botPreset has stale aux fields but neither aiModel nor subModel
-        // says 'reverse_proxy'. botPreset.forceReplaceUrl is also empty (no
-        // UI exists for it; default initializer fills ''). No reverse-proxy
-        // preset should be created.
-        const report = analyzeModelPresetMigration({
-            botPresets: [{
-                id: 'bot-stale',
-                aiModel: 'gpt-4o',
-                customProxyRequestModel: 'stale-model',
-                proxyRequestModel: 'older-stale-model',
-                proxyKey: 'sk-stale-bot-proxy',
-            }],
-        })
-        expect(report.createdModelPresets.find(
-            (p) => p.sourceKind === 'bot-preset-reverse-proxy',
-        )).toBeUndefined()
-        expect(report.createdModelPresets.find(
-            (p) => p.sourcePath === 'botPresets.bot-stale.reverse_proxy',
-        )).toBeUndefined()
-    })
-
-    test('bot-preset reverse-proxy preset falls back to db top-level URL/key/model/format (regression B)', () => {
-        // BotPreset reverse-proxy fields (forceReplaceUrl/proxyKey/
-        // customProxyRequestModel/customAPIFormat) have no UI; all live on
-        // db top-level. legacy request.ts:357-362 reads from db when wiring
-        // reverse-proxy. analyzer must mirror.
-        const report = analyzeModelPresetMigration({
-            forceReplaceUrl: 'https://global-proxy.test/v1/chat/completions',
-            proxyKey: 'sk-global-proxy',
-            customProxyRequestModel: 'global-default-model',
-            customAPIFormat: LLMFormat.OpenAICompatible,
-            botPresets: [{
-                id: 'bot-relies-on-global',
-                aiModel: 'reverse_proxy',
-                // botPreset-level reverse-proxy fields empty (default leftovers)
-            }],
-        })
-        const botProxyPreset = report.createdModelPresets.find(
-            (p) => p.sourcePath === 'botPresets.bot-relies-on-global.reverse_proxy',
-        )
-        expect(botProxyPreset).toBeTruthy()
-        expect(botProxyPreset).toMatchObject({
-            profileId: 'openai-compatible:custom',
-            modelId: 'global-default-model',
-            endpointUrl: 'https://global-proxy.test/v1/chat/completions',
-            credentialSource: { kind: 'legacyKey', sourcePath: 'db.proxyKey' },
-        })
-        expect(botProxyPreset?.userValues).toMatchObject({
-            endpointUrl: 'https://global-proxy.test/v1/chat/completions',
-            modelId: 'global-default-model',
-        })
-    })
-
-    test('bot-preset reverse-proxy honors explicit botPreset-level values over db fallback (regression B)', () => {
-        // Edge case for users whose .bin was imported from an older RisuAI
-        // build that *did* expose botPreset-level reverse-proxy inputs.
-        // If botPreset has explicit non-empty values, they should win over
-        // db top-level fallback. This guards against fallback regressing
-        // a user-intended per-bot override.
-        const report = analyzeModelPresetMigration({
-            forceReplaceUrl: 'https://global-proxy.test/v1/chat/completions',
-            proxyKey: 'sk-global-proxy',
-            customProxyRequestModel: 'global-default-model',
-            botPresets: [{
-                id: 'bot-explicit',
-                aiModel: 'reverse_proxy',
-                forceReplaceUrl: 'https://bot-specific.test/v1/chat/completions',
-                proxyKey: 'sk-bot-specific',
-                proxyRequestModel: 'bot-specific-model',
-            }],
-        })
-        const botProxyPreset = report.createdModelPresets.find(
-            (p) => p.sourcePath === 'botPresets.bot-explicit.reverse_proxy',
-        )
-        expect(botProxyPreset).toMatchObject({
-            modelId: 'bot-specific-model',
-            endpointUrl: 'https://bot-specific.test/v1/chat/completions',
-            credentialSource: { kind: 'legacyKey', sourcePath: 'botPresets.bot-explicit.proxyKey' },
-        })
-    })
-
-    test('uses provider-specific request model fields for OpenRouter and reverse proxy', () => {
-        const report = analyzeModelPresetMigration({
-            aiModel: 'openrouter',
-            openrouterRequestModel: 'anthropic/claude-3-opus',
-            openrouterKey: 'sk-or-secret',
-            botPresets: [{
-                id: 'bot-router',
-                aiModel: 'openrouter',
-                openrouterRequestModel: 'openai/gpt-4o-mini',
-            }, {
-                id: 'bot-proxy',
-                aiModel: 'reverse_proxy',
-                forceReplaceUrl: 'https://proxy.test/v1/chat/completions',
-                proxyRequestModel: 'proxy-model-from-legacy',
-            }],
-        })
-
-        expect(report.createdModelPresets.find((preset) => preset.sourcePath === 'db.aiModel')).toMatchObject({
-            profileId: 'openrouter:openai-compatible',
-            modelId: 'anthropic/claude-3-opus',
-            credentialSource: { kind: 'legacyKey', sourcePath: 'db.openrouterKey' },
-            userValues: {
-                modelId: 'anthropic/claude-3-opus',
-                format: undefined,
-            },
-        })
-        expect(report.createdModelPresets.find((preset) => preset.sourcePath === 'botPresets.bot-router.aiModel')).toMatchObject({
-            profileId: 'openrouter:openai-compatible',
-            modelId: 'openai/gpt-4o-mini',
-        })
-        expect(report.createdModelPresets.find((preset) => preset.sourcePath === 'botPresets.bot-proxy.reverse_proxy')).toMatchObject({
-            // bot-proxy has no proxyKey → routes to custom-noauth (plan §9-5-1)
-            profileId: 'openai-compatible:custom-noauth',
-            modelId: 'proxy-model-from-legacy',
-            userValues: {
-                endpointUrl: 'https://proxy.test/v1/chat/completions',
-                modelId: 'proxy-model-from-legacy',
-                additionalParams: [],
-            },
-        })
-        expect(report.botPresetBindings).toContainEqual({
-            scope: 'botPreset',
-            ownerId: 'bot-proxy',
-            targetTask: 'model',
-            sourcePath: 'botPresets.bot-proxy.aiModel',
-            binding: {
-                kind: 'modelPreset',
-                id: report.createdModelPresets.find((preset) => preset.sourcePath === 'botPresets.bot-proxy.reverse_proxy')?.id,
-            },
-        })
-        expect(JSON.stringify(report)).not.toContain('sk-or-secret')
-    })
-
-    test('creates plugin bindings without converting plugin models to ModelPreset', () => {
-        const report = analyzeModelPresetMigration({
-            aiModel: 'pluginmodel:::cpm',
-            botPresets: [{
-                id: 'bot-a',
-                aiModel: 'pluginmodel:::other-plugin',
-                bias: [],
-            }],
-        })
-
-        expect(report.createdModelPresets).toEqual([])
-        expect(report.pluginBindings).toEqual([
-            {
-                scope: 'global',
-                targetTask: 'model',
-                sourcePath: 'db.aiModel',
-                pluginModelId: 'pluginmodel:::cpm',
-                binding: { kind: 'pluginModel', id: 'pluginmodel:::cpm' },
-            },
-            {
-                scope: 'botPreset',
-                ownerId: 'bot-a',
-                targetTask: 'model',
-                sourcePath: 'botPresets.bot-a.aiModel',
-                pluginModelId: 'pluginmodel:::other-plugin',
-                binding: { kind: 'pluginModel', id: 'pluginmodel:::other-plugin' },
-            },
+        const profiles = report.createdModelPresets.map((p) => p.profileId)
+        expect(profiles).toEqual([
+            'anthropic:standard',
+            'google:standard',
+            'ollama:openai-compatible-local',
         ])
     })
 
-    test('reports unsupported native providers and skipped bias', () => {
+    test('routes non-1:1 wire formats to manualRequired (no silent guess)', () => {
+        // VertexAIGemini uses Bearer + aiplatform.googleapis.com, not AI Studio's
+        // x-goog-api-key + generativelanguage.googleapis.com. OpenAIResponseAPI
+        // and NanoGPT variants route through different request builders. Auto-
+        // mapping them to a profile would produce a preset that talks to the
+        // wrong endpoint or with the wrong auth header — v5 policy is to leave
+        // them for the user to re-create via the new ModelPreset UI.
+        const report = analyzeModelPresetMigration({
+            customModels: [
+                { id: 'v', format: LLMFormat.VertexAIGemini, key: 'vertex' },
+                { id: 'r', format: LLMFormat.OpenAIResponseAPI, key: 'sk-resp' },
+                { id: 'n1', format: LLMFormat.NanoGPTResponses, key: 'sk-r' },
+                { id: 'n2', format: LLMFormat.NanoGPTMessages, key: 'sk-m' },
+                { id: 'n3', format: LLMFormat.NanoGPTLegacy, key: 'sk-l' },
+            ],
+        })
+        expect(report.createdModelPresets).toEqual([])
+        const sourcePaths = report.manualRequired.map((m) => m.sourcePath)
+        expect(sourcePaths).toEqual([
+            'customModels.v',
+            'customModels.r',
+            'customModels.n1',
+            'customModels.n2',
+            'customModels.n3',
+        ])
+        // Secrets stay out of the manualRequired entries.
+        const dryRunJson = JSON.stringify(report)
+        for (const secret of ['vertex', 'sk-resp', 'sk-r', 'sk-m', 'sk-l']) {
+            expect(dryRunJson).not.toContain(secret)
+        }
+    })
+
+    test('falls back to db.google.accessToken when a Google custom model has no per-model key', () => {
+        const report = analyzeModelPresetMigration({
+            customModels: [{ id: 'g', format: LLMFormat.GoogleCloud, key: '' }],
+            google: { accessToken: 'goog-fallback' },
+        })
+        expect(report.createdModelPresets[0].credentialSource).toEqual({
+            kind: 'legacyKey',
+            sourcePath: 'db.google.accessToken',
+        })
+    })
+
+    test('per-model key wins over db.google.accessToken when both are present', () => {
+        const report = analyzeModelPresetMigration({
+            customModels: [{ id: 'g', format: LLMFormat.GoogleCloud, key: 'per-model' }],
+            google: { accessToken: 'fallback' },
+        })
+        expect(report.createdModelPresets[0].credentialSource?.sourcePath).toBe('customModels.g.key')
+    })
+
+    test('reports manualRequired for custom models with unsupported format', () => {
         const report = analyzeModelPresetMigration({
             customModels: [{
-                id: 'xcustom:::kobold',
+                id: 'kobold-one',
                 format: LLMFormat.Kobold,
                 key: 'kobold-secret',
                 name: 'Kobold',
             }],
-            aiModel: 'novelai',
-            bias: [['token', 42]],
-            enableCustomFlags: true,
-            customFlags: [6],
         })
-
         expect(report.createdModelPresets).toEqual([])
-        expect(report.manualRequired).toEqual([
-            {
-                sourcePath: 'customModels.xcustom:::kobold',
-                reason: `Unsupported custom model format: ${LLMFormat.Kobold}`,
-                legacySource: 'xcustom:::kobold',
-            },
-            {
-                sourcePath: 'db.aiModel',
-                reason: 'Unsupported legacy model: novelai',
-                legacySource: 'db.aiModel',
-            },
-        ])
-        expect(report.skippedBias).toEqual([
-            {
-                sourcePath: 'db.bias',
-                reason: 'Bias is not migrated to v4 ModelPreset or PromptPreset',
-            },
-        ])
-        expect(report.preservedLegacyFields).toEqual([
-            {
-                sourcePath: 'db.customFlags',
-                reason: 'Custom flags are preserved and only auto-mapped when profile schema supports them',
-            },
-        ])
-        expect(JSON.stringify(report)).not.toContain('kobold-secret')
+        expect(report.manualRequired).toEqual([{
+            sourcePath: 'customModels.kobold-one',
+            reason: `Unsupported custom model format: ${LLMFormat.Kobold}`,
+            legacySource: 'kobold-one',
+        }])
     })
 
-    test('adds structured global and task binding metadata', () => {
-        const report = analyzeModelPresetMigration({
-            aiModel: 'gpt-4o',
-            subModel: 'claude-3-5-sonnet',
-            seperateModelsForAxModels: true,
-            seperateModels: {
-                memory: 'gemini-2.5-pro',
-                translate: 'pluginmodel:::translator',
-            },
-            openAIKey: 'sk-openai',
-            claudeAPIKey: 'sk-anthropic',
-        })
-
-        expect(report.globalBindings).toEqual([
-            expect.objectContaining({
-                scope: 'global',
-                targetTask: 'model',
-                sourcePath: 'db.aiModel',
-                binding: { kind: 'modelPreset', id: expect.any(String) },
-            }),
-            expect.objectContaining({
-                scope: 'global',
-                targetTask: 'submodel',
-                sourcePath: 'db.subModel',
-                binding: { kind: 'modelPreset', id: expect.any(String) },
-            }),
-            expect.objectContaining({
-                scope: 'global',
-                targetTask: 'memory',
-                sourcePath: 'db.seperateModels.memory',
-                binding: { kind: 'modelPreset', id: expect.any(String) },
-            }),
-        ])
-        expect(report.pluginBindings).toContainEqual({
-            scope: 'global',
-            targetTask: 'translate',
-            sourcePath: 'db.seperateModels.translate',
-            pluginModelId: 'pluginmodel:::translator',
-            binding: { kind: 'pluginModel', id: 'pluginmodel:::translator' },
-        })
-        expect(report.createdModelPresets.find((preset) => preset.sourcePath === 'db.aiModel')?.credentialSource).toEqual({
-            kind: 'legacyKey',
-            sourcePath: 'db.openAIKey',
-        })
-        expect(JSON.stringify(report)).not.toContain('sk-openai')
-        expect(JSON.stringify(report)).not.toContain('sk-anthropic')
-    })
-
-    test('redacts secret-like freeform params and additionalParams', () => {
+    test('redacts secret-like freeform params', () => {
         const report = analyzeModelPresetMigration({
             customModels: [{
-                id: 'xcustom:::leaky',
+                id: 'a',
                 format: LLMFormat.OpenAICompatible,
-                name: 'Leaky',
-                params: 'Authorization=Bearer sk-leak',
+                key: 'sk-test',
+                params: 'authorization: Bearer sk-XXXXXX',
             }],
-            aiModel: 'reverse_proxy',
-            forceReplaceUrl: 'https://proxy.test',
-            additionalParams: [
-                ['Authorization', 'Bearer sk-header-leak'],
-                ['x-safe', 'visible'],
-            ],
         })
-
-        expect(JSON.stringify(report)).not.toContain('sk-leak')
-        expect(JSON.stringify(report)).not.toContain('sk-header-leak')
-        expect(report.createdModelPresets.find((preset) => preset.sourcePath === 'customModels.xcustom:::leaky')?.userValues.params).toBe('[redacted]')
-        expect(report.createdModelPresets.find((preset) => preset.sourcePath === 'db.reverse_proxy')?.userValues.additionalParams).toEqual([
-            ['Authorization', '[redacted]'],
-            ['x-safe', 'visible'],
-        ])
+        expect(report.createdModelPresets[0].userValues.params).toBe('[redacted]')
     })
 
-    test('hardens legacy model prefix matching for native and lookalike ids', () => {
-        const report = analyzeModelPresetMigration({
-            aiModel: 'gpt2-large-conversational',
-            subModel: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+    test('returns an empty report when there are no customModels', () => {
+        const report = analyzeModelPresetMigration({})
+        expect(report).toEqual({
+            version: 1,
+            createdModelPresets: [],
+            manualRequired: [],
+            warnings: [],
         })
+    })
 
-        expect(report.createdModelPresets).toEqual([])
-        expect(report.manualRequired).toEqual([
-            {
-                sourcePath: 'db.aiModel',
-                reason: 'Unsupported legacy model: gpt2-large-conversational',
-                legacySource: 'db.aiModel',
-            },
-            {
-                sourcePath: 'db.subModel',
-                reason: 'Native Bedrock Claude model requires manual migration: anthropic.claude-3-5-sonnet-20241022-v2:0',
-                legacySource: 'db.subModel',
-            },
-        ])
+    test('handles customModels without an id by falling back to array index for source path lookup', () => {
+        // Regression for corrupted/imported legacy data: a customModel that
+        // lacks `id` should still get a deterministic source path AND have its
+        // key lookup succeed during apply. analyze writes
+        // `customModels.${id || index}`; readLegacyValueAtPath must mirror.
+        const db: ModelPresetMigrationApplyTarget = {
+            customModels: [{
+                id: '',
+                internalId: 'm-noid',
+                url: 'https://x.test/v1/chat/completions',
+                format: LLMFormat.OpenAICompatible,
+                key: 'sk-noid',
+                name: 'No-Id',
+            } as unknown as Parameters<typeof analyzeModelPresetMigration>[0]['customModels'][number]],
+        }
+        const report = analyzeModelPresetMigration(db)
+        expect(report.createdModelPresets[0].sourcePath).toBe('customModels.0')
+        applyModelPresetMigration(db, report)
+        // Key landed in apiKeyPool — proves readLegacyValueAtPath resolved the
+        // index-based source path back to the customModel.
+        expect(Object.values(db.apiKeyPool ?? {}).some((e) => e.key === 'sk-noid')).toBe(true)
     })
 
     test('does not mutate input during dry-run', () => {
         const db: ModelPresetMigrationApplyTarget = {
             customModels: [{
-                id: 'xcustom:::main',
-                internalId: 'model',
-                url: 'https://example.test',
+                id: 'a',
                 format: LLMFormat.OpenAICompatible,
-                key: 'secret',
-                name: 'Main',
+                key: 'sk-test',
                 params: '',
                 flags: [],
             }],
-            aiModel: 'xcustom:::main',
-            bias: [['token', 1]] as [string, number][],
         }
         const before = JSON.stringify(db)
-
         analyzeModelPresetMigration(db)
-
         expect(JSON.stringify(db)).toBe(before)
     })
+})
 
-    test('applies migration report without storing secrets in migration summary', () => {
+describe('applyModelPresetMigration (plan v5)', () => {
+    test('persists modelPresets + apiKeyPool entries without leaking secrets into the summary', () => {
         const db: ModelPresetMigrationApplyTarget = {
             customModels: [{
                 id: 'xcustom:::main',
@@ -483,26 +206,14 @@ describe('analyzeModelPresetMigration', () => {
                 format: LLMFormat.OpenAICompatible,
                 key: 'sk-secret',
                 name: 'Main Custom',
-                params: '',
-                flags: [],
-            }],
-            aiModel: 'xcustom:::main',
-            botPresets: [{
-                id: 'bot-a',
-                aiModel: 'pluginmodel:::cpm',
             }],
         }
         const report = analyzeModelPresetMigration(db)
-
         applyModelPresetMigration(db, report)
 
         expect(db.modelPresets).toHaveLength(1)
         expect(db.modelPresets?.[0]).toMatchObject({
-            id: report.createdModelPresets[0].id,
-            migrationSource: {
-                sourceKind: 'custom',
-                sourcePath: 'customModels.xcustom:::main',
-            },
+            migrationSource: { sourceKind: 'custom', sourcePath: 'customModels.xcustom:::main' },
             apiKeyRef: expect.any(String),
             profileSnapshot: {
                 profileId: 'openai-compatible:custom',
@@ -510,8 +221,6 @@ describe('analyzeModelPresetMigration', () => {
                 modelId: 'gpt-custom',
             },
         })
-        expect(db.modelBinding).toEqual({ kind: 'modelPreset', id: report.createdModelPresets[0].id })
-        expect(db.botPresets?.[0].modelBinding).toEqual({ kind: 'pluginModel', id: 'pluginmodel:::cpm' })
         expect(Object.values(db.apiKeyPool ?? {})).toEqual([
             expect.objectContaining({
                 provider: 'openai-compatible:custom',
@@ -523,46 +232,6 @@ describe('analyzeModelPresetMigration', () => {
         expect(JSON.stringify(report)).not.toContain('sk-secret')
     })
 
-    test('applies task bindings and avoids numeric owner id collisions', () => {
-        const db: ModelPresetMigrationApplyTarget = {
-            aiModel: 'gpt-4o',
-            seperateModelsForAxModels: true,
-            seperateModels: {
-                memory: 'gemini-2.5-pro',
-                translate: 'pluginmodel:::translator',
-            },
-            botPresets: [{
-                name: 'No Id',
-                aiModel: 'gpt-4o-mini',
-            }, {
-                id: '0',
-                name: 'Looks Like Numeric Index',
-                aiModel: 'gpt-4o',
-            }],
-        }
-        const report = analyzeModelPresetMigration(db)
-
-        applyModelPresetMigration(db, report)
-
-        expect(db.taskModelBindings?.memory).toEqual({
-            kind: 'modelPreset',
-            id: report.createdModelPresets.find((preset) => preset.sourcePath === 'db.seperateModels.memory')?.id,
-        })
-        expect(db.taskModelBindings?.translate).toEqual({ kind: 'pluginModel', id: 'pluginmodel:::translator' })
-        expect(report.botPresetBindings.find((binding) => binding.sourcePath === 'botPresets.index:0.aiModel')).toMatchObject({
-            ownerId: 'index:0',
-            binding: { kind: 'modelPreset', id: expect.any(String) },
-        })
-        expect(db.botPresets?.[0].modelBinding).toEqual({
-            kind: 'modelPreset',
-            id: report.createdModelPresets.find((preset) => preset.sourcePath === 'botPresets.index:0.aiModel')?.id,
-        })
-        expect(db.botPresets?.[1].modelBinding).toEqual({
-            kind: 'modelPreset',
-            id: report.createdModelPresets.find((preset) => preset.sourcePath === 'botPresets.0.aiModel')?.id,
-        })
-    })
-
     test('reapplying migration upserts by source path instead of duplicating presets or keys', () => {
         const db: ModelPresetMigrationApplyTarget = {
             customModels: [{
@@ -572,352 +241,95 @@ describe('analyzeModelPresetMigration', () => {
                 format: LLMFormat.OpenAICompatible,
                 key: 'sk-secret-a',
                 name: 'Main Custom',
-                params: '',
-                flags: [],
             }],
-            aiModel: 'xcustom:::main',
         }
         const firstReport = analyzeModelPresetMigration(db)
         vi.useFakeTimers()
-        vi.setSystemTime(1000)
+        vi.setSystemTime(1_000)
         applyModelPresetMigration(db, firstReport)
         const keyId = Object.keys(db.apiKeyPool ?? {})[0]
         if (keyId && db.apiKeyPool) {
+            // Simulate a user renaming the migrated key — reapply must preserve
+            // user-edited metadata (name, createdAt).
             db.apiKeyPool[keyId].name = 'User Named Key'
             db.apiKeyPool[keyId].createdAt = 123
         }
-        if (db.modelPresets?.[0]) {
-            db.modelPresets[0].notes = 'user note'
-            db.modelPresets[0].orphanValues = { oldField: true }
-            db.modelPresets[0].inlineCredential = { kind: 'external' }
-            db.modelPresets[0].fallbackModelPresetIds = ['fallback-a']
-            db.modelPresets[0].pinned = true
-            db.modelPresets[0].order = 7
-        }
 
-        db.customModels[0].internalId = 'model-b'
-        db.customModels[0].key = 'sk-secret-b'
+        vi.setSystemTime(2_000)
         const secondReport = analyzeModelPresetMigration(db)
-        vi.setSystemTime(2000)
         applyModelPresetMigration(db, secondReport)
+        vi.useRealTimers()
 
         expect(db.modelPresets).toHaveLength(1)
-        expect(db.modelPresets?.[0]).toMatchObject({
-            id: secondReport.createdModelPresets[0].id,
-            userValues: {
-                endpointUrl: 'https://example.test/v1/chat/completions',
-                modelId: 'model-b',
-                params: '',
-                flags: [],
-            },
-            notes: 'user note',
-            orphanValues: { oldField: true },
-            inlineCredential: { kind: 'external' },
-            fallbackModelPresetIds: ['fallback-a'],
-            pinned: true,
-            order: 7,
-            createdAt: 1000,
-            updatedAt: 2000,
-        })
-        expect(db.modelBinding).toEqual({ kind: 'modelPreset', id: secondReport.createdModelPresets[0].id })
-        expect(Object.values(db.apiKeyPool ?? {})).toHaveLength(1)
-        expect(Object.values(db.apiKeyPool ?? {})[0]).toMatchObject({
-            name: 'User Named Key',
-            key: 'sk-secret-b',
-            createdAt: 123,
-            updatedAt: 2000,
-        })
-        vi.useRealTimers()
+        expect(Object.keys(db.apiKeyPool ?? {})).toHaveLength(1)
+        const kept = db.apiKeyPool?.[Object.keys(db.apiKeyPool)[0]]
+        expect(kept?.name).toBe('User Named Key')
+        expect(kept?.createdAt).toBe(123)
+        expect(kept?.updatedAt).toBe(2_000)
     })
 
-    test('applies chat bindings from a report', () => {
+    test('applies manualRequired report without creating presets for unsupported formats', () => {
         const db: ModelPresetMigrationApplyTarget = {
-            characters: [{
-                chats: [{
-                    id: 'chat-a',
-                    name: 'Chat A',
-                }],
+            customModels: [{
+                id: 'kobold',
+                format: LLMFormat.Kobold,
+                key: 'k',
             }],
         }
-        const report: MigrationReport = {
-            version: 1,
-            createdModelPresets: [],
-            globalBindings: [],
-            botPresetBindings: [],
-            chatBindings: [{
-                scope: 'chat',
-                ownerId: 'chat-a',
-                targetTask: 'memory',
-                sourcePath: 'characters.0.chats.0.memory',
-                binding: { kind: 'modelPreset', id: 'preset-memory' },
-            }, {
-                scope: 'chat',
-                ownerId: '0.0',
-                targetTask: 'submodel',
-                sourcePath: 'characters.0.chats.0.subModel',
-                binding: { kind: 'pluginModel', id: 'pluginmodel:::sub' },
-            }],
-            pluginBindings: [],
-            manualRequired: [],
-            skippedBias: [],
-            preservedLegacyFields: [],
-            warnings: [],
-        }
-
-        applyModelPresetMigration(db, report)
-
-        expect(db.characters?.[0].chats?.[0].taskModelBindings?.memory).toEqual({ kind: 'modelPreset', id: 'preset-memory' })
-        expect(db.characters?.[0].chats?.[0].subModelBinding).toEqual({ kind: 'pluginModel', id: 'pluginmodel:::sub' })
-    })
-
-    test('applies manualRequired bindings for unsupported legacy models', () => {
-        const db: ModelPresetMigrationApplyTarget = {
-            aiModel: 'novelai',
-        }
         const report = analyzeModelPresetMigration(db)
-
         applyModelPresetMigration(db, report)
-
-        expect(db.modelBinding).toEqual({
-            kind: 'manualRequired',
-            reason: 'Unsupported legacy model: novelai',
-            legacySource: 'db.aiModel',
-        })
-        expect(db.modelPresetMigrationReport).toMatchObject({
-            manualRequiredCount: 1,
-            createdModelPresetCount: 0,
-        })
-    })
-
-    test('applies bias-only migration summary without creating presets', () => {
-        const db: ModelPresetMigrationApplyTarget = {
-            bias: [['token', 1]],
-        }
-        const report = analyzeModelPresetMigration(db)
-
-        applyModelPresetMigration(db, report)
-
         expect(db.modelPresets).toEqual([])
-        expect(db.modelPresetMigrationReport).toMatchObject({
-            createdModelPresetCount: 0,
-            skippedBiasCount: 1,
-        })
+        expect(db.apiKeyPool).toEqual({})
+        expect(db.modelPresetMigrationReport?.manualRequiredCount).toBe(1)
+        expect(db.modelPresetMigrationReport?.createdModelPresetCount).toBe(0)
     })
 
     test('uses bundled registry snapshot when resolver is provided', () => {
         const db: ModelPresetMigrationApplyTarget = {
-            aiModel: 'gpt-4o',
-            openAIKey: 'sk-secret',
+            customModels: [{
+                id: 'x',
+                format: LLMFormat.OpenAICompatible,
+                key: 'sk',
+                url: 'https://my-proxy.test/v1/chat/completions',
+                internalId: 'my-model',
+                name: 'My',
+            }],
         }
         const report = analyzeModelPresetMigration(db)
-
         applyModelPresetMigration(db, report, bundledMigrationResolver())
 
         const snapshot = db.modelPresets?.[0]?.profileSnapshot
-        expect(snapshot).toMatchObject({
-            profileId: 'openai:standard',
-            adapterKind: 'openai-compatible',
-            auth: { kind: 'bearer', fields: ['apiKey'] },
-            endpoint: { kind: 'static', url: 'https://api.openai.com/v1/chat/completions' },
-        })
-        expect(snapshot?.schema.map((f) => f.key)).toEqual(['apiKey', 'modelId'])
-        expect(snapshot?.headerTemplate).toEqual({ 'Content-Type': 'application/json' })
-    })
-
-    test('populates sourceProfile from bundled resolver', () => {
-        const db: ModelPresetMigrationApplyTarget = {
-            aiModel: 'gemini-2.5-pro',
-        }
-        const report = analyzeModelPresetMigration(db)
-
-        applyModelPresetMigration(db, report, bundledMigrationResolver())
-
-        expect(db.modelPresets?.[0]?.sourceProfile).toEqual({
+        expect(snapshot?.profileId).toBe('openai-compatible:custom')
+        expect(snapshot?.adapterKind).toBe('openai-compatible')
+        expect(snapshot?.auth.kind).toBe('bearer')
+        // endpointUrl override + modelId are preserved via userValues even when
+        // the snapshot itself ships with an empty endpoint.url.
+        expect(db.modelPresets?.[0]?.userValues.endpointUrl).toBe('https://my-proxy.test/v1/chat/completions')
+        expect(db.modelPresets?.[0]?.userValues.modelId).toBe('my-model')
+        expect(db.modelPresets?.[0]?.sourceProfile).toMatchObject({
             registryId: 'bundled',
-            profileId: 'google:standard',
+            profileId: 'openai-compatible:custom',
             profileVersion: 1,
-            providerBaseVersion: 1,
-            fetchedAt: expect.any(Number),
         })
-        // x-goog-api-key auth flows through both the registry snapshot and the
-        // legacy fallback (analyzer never strips it).
-        expect(db.modelPresets?.[0]?.profileSnapshot.auth.kind).toBe('x-goog-api-key')
+        expect(db.modelPresets?.[0]?.sourceProfile?.fetchedAt).toEqual(expect.any(Number))
     })
 
     test('clears sourceProfile when reapplied without a resolver', () => {
         const db: ModelPresetMigrationApplyTarget = {
-            aiModel: 'gpt-4o',
-            openAIKey: 'sk-secret',
+            customModels: [{ id: 'x', format: LLMFormat.OpenAICompatible, key: 'sk' }],
         }
-        const firstReport = analyzeModelPresetMigration(db)
-        applyModelPresetMigration(db, firstReport, bundledMigrationResolver())
+        applyModelPresetMigration(db, analyzeModelPresetMigration(db), bundledMigrationResolver())
+        expect(db.modelPresets?.[0]?.sourceProfile?.registryId).toBe('bundled')
 
-        const firstPreset = db.modelPresets?.[0]
-        expect(firstPreset?.sourceProfile?.registryId).toBe('bundled')
-
-        // Reapply with no resolver — snapshot falls back to the placeholder, so
-        // the bundled-registry pointer must not linger from the previous apply.
-        const secondReport = analyzeModelPresetMigration(db)
-        applyModelPresetMigration(db, secondReport)
-
-        const secondPreset = db.modelPresets?.[0]
-        expect(secondPreset?.sourceProfile).toBeUndefined()
-        expect(secondPreset?.profileSnapshot.schema).toEqual([])
-        expect(secondPreset?.profileSnapshot.profileId).toBe('openai:standard')
+        applyModelPresetMigration(db, analyzeModelPresetMigration(db))
+        expect(db.modelPresets?.[0]?.sourceProfile).toBeUndefined()
+        // Fallback snapshot has empty schema and no source pointer.
+        expect(db.modelPresets?.[0]?.profileSnapshot.schema).toEqual([])
     })
 
-    test('retains custom endpointUrl when bundled resolver fills snapshot', () => {
-        const db: ModelPresetMigrationApplyTarget = {
-            customModels: [{
-                id: 'xcustom:::ep',
-                internalId: 'custom-model',
-                url: 'https://reverse.test/v1/chat/completions',
-                format: LLMFormat.OpenAICompatible,
-                key: 'sk-reverse',
-                name: 'Reverse',
-                params: '',
-                flags: [],
-            }],
-            aiModel: 'xcustom:::ep',
-        }
-        const report = analyzeModelPresetMigration(db)
-
-        applyModelPresetMigration(db, report, bundledMigrationResolver())
-
-        const preset = db.modelPresets?.[0]
-        expect(preset?.profileSnapshot.profileId).toBe('openai-compatible:custom')
-        expect(preset?.sourceProfile).toEqual({
-            registryId: 'bundled',
-            profileId: 'openai-compatible:custom',
-            profileVersion: 1,
-            providerBaseVersion: 1,
-            fetchedAt: expect.any(Number),
-        })
-        expect(preset?.userValues.endpointUrl).toBe('https://reverse.test/v1/chat/completions')
-        expect(preset?.userValues.modelId).toBe('custom-model')
-    })
-
-    test('migrates top-level db.google.accessToken into apiKeyPool for gemini presets', () => {
-        const db: ModelPresetMigrationApplyTarget = {
-            aiModel: 'gemini-2.5-pro',
-            google: { accessToken: 'AIza-google-secret' },
-        }
-        const report = analyzeModelPresetMigration(db)
-
-        applyModelPresetMigration(db, report, bundledMigrationResolver())
-
-        const preset = db.modelPresets?.[0]
-        expect(preset?.profileSnapshot.profileId).toBe('google:standard')
-        expect(preset?.apiKeyRef).toEqual(expect.any(String))
-        expect(db.apiKeyPool?.[preset!.apiKeyRef!]).toMatchObject({
-            provider: 'google:standard',
-            key: 'AIza-google-secret',
-        })
-        // Plain key lives in apiKeyPool for the chat-send path, but must not
-        // leak into the persisted summary or the dry-run report.
-        expect(JSON.stringify(db.modelPresetMigrationReport)).not.toContain('AIza-google-secret')
-        expect(JSON.stringify(report)).not.toContain('AIza-google-secret')
-    })
-
-    test('omits apiKeyRef for gemini presets when db.google.accessToken is empty', () => {
-        const db: ModelPresetMigrationApplyTarget = {
-            aiModel: 'gemini-2.5-pro',
-            google: { accessToken: '' },
-        }
-        const report = analyzeModelPresetMigration(db)
-
-        applyModelPresetMigration(db, report, bundledMigrationResolver())
-
-        const preset = db.modelPresets?.[0]
-        expect(preset?.profileSnapshot.profileId).toBe('google:standard')
-        // Strict undefined (not falsy) — an empty-string apiKeyRef would be an
-        // invalid persisted shape.
-        expect(preset?.apiKeyRef).toBeUndefined()
-    })
-
-    test('falls back to db.google.accessToken for GoogleCloud custom models with empty per-model key', () => {
-        // Mirrors legacy `arg.key || db.google.accessToken` behaviour for
-        // Google custom models. Without this fallback the migrated preset
-        // would land without apiKeyRef and break sends that worked before.
-        const db: ModelPresetMigrationApplyTarget = {
-            customModels: [{
-                id: 'xcustom:::google-fallback',
-                internalId: 'gemini-pro-custom',
-                url: 'https://generativelanguage.googleapis.com/v1beta',
-                format: LLMFormat.GoogleCloud,
-                key: '',
-                name: 'Google Custom',
-                params: '',
-                flags: [],
-            }],
-            google: { accessToken: 'AIza-global-secret' },
-        }
-        const report = analyzeModelPresetMigration(db)
-
-        applyModelPresetMigration(db, report, bundledMigrationResolver())
-
-        const preset = db.modelPresets?.[0]
-        expect(preset?.profileSnapshot.profileId).toBe('google:standard')
-        expect(preset?.apiKeyRef).toEqual(expect.any(String))
-        expect(db.apiKeyPool?.[preset!.apiKeyRef!]).toMatchObject({
-            provider: 'google:standard',
-            key: 'AIza-global-secret',
-        })
-        expect(JSON.stringify(db.modelPresetMigrationReport)).not.toContain('AIza-global-secret')
-        expect(JSON.stringify(report)).not.toContain('AIza-global-secret')
-    })
-
-    test('per-model key beats db.google.accessToken for GoogleCloud custom models', () => {
-        // Regression guard: a non-empty per-model key must not be overridden
-        // by the global db.google.accessToken fallback.
-        const db: ModelPresetMigrationApplyTarget = {
-            customModels: [{
-                id: 'xcustom:::google-explicit',
-                internalId: 'gemini-pro-custom',
-                url: 'https://generativelanguage.googleapis.com/v1beta',
-                format: LLMFormat.GoogleCloud,
-                key: 'AIza-per-model',
-                name: 'Google Custom',
-                params: '',
-                flags: [],
-            }],
-            google: { accessToken: 'AIza-global' },
-        }
-        const report = analyzeModelPresetMigration(db)
-
-        applyModelPresetMigration(db, report, bundledMigrationResolver())
-
-        const preset = db.modelPresets?.[0]
-        expect(preset?.profileSnapshot.profileId).toBe('google:standard')
-        expect(preset?.apiKeyRef).toEqual(expect.any(String))
-        expect(db.apiKeyPool?.[preset!.apiKeyRef!]?.key).toBe('AIza-per-model')
-    })
-
-    test('VertexAIGemini custom models also fall back to db.google.accessToken when per-model key is empty', () => {
-        // VertexAIGemini shares the `google:standard` mapping with
-        // GoogleCloud via `profileForFormat`, so the global Google key
-        // fallback should apply identically. Regression guard for the
-        // both-formats-one-fallback invariant.
-        const db: ModelPresetMigrationApplyTarget = {
-            customModels: [{
-                id: 'xcustom:::vertex-gemini',
-                internalId: 'gemini-pro',
-                url: 'https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1',
-                format: LLMFormat.VertexAIGemini,
-                key: '',
-                name: 'Vertex Gemini Custom',
-                params: '',
-                flags: [],
-            }],
-            google: { accessToken: 'AIza-vertex-fallback' },
-        }
-        const report = analyzeModelPresetMigration(db)
-
-        applyModelPresetMigration(db, report, bundledMigrationResolver())
-
-        const preset = db.modelPresets?.[0]
-        expect(preset?.profileSnapshot.profileId).toBe('google:standard')
-        expect(preset?.apiKeyRef).toEqual(expect.any(String))
-        expect(db.apiKeyPool?.[preset!.apiKeyRef!]?.key).toBe('AIza-vertex-fallback')
+    test('throws on unsupported report version', () => {
+        const db: ModelPresetMigrationApplyTarget = {}
+        const report = { version: 99 } as unknown as MigrationReport
+        expect(() => applyModelPresetMigration(db, report)).toThrow(/Unsupported.*version/)
     })
 })

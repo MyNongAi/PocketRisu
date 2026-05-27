@@ -1,17 +1,23 @@
 /**
- * Migrated preset → buildPreparedRequest end-to-end coverage (plan §14-11).
+ * Migrated preset → buildPreparedRequest end-to-end coverage (plan v5).
  *
- * Proves that each migrated ModelPreset, once persisted by `applyMigration`
- * with the bundled registry resolver, produces a syntactically valid wire
- * request when handed back to the adapter layer via `buildPreparedRequest`.
+ * v5 narrows migration to `customModels[]`-only, so the only profile families
+ * that can arrive via the migration pipeline are:
+ *  - openai-compatible:custom         (custom OpenAI-compatible with key)
+ *  - openai-compatible:custom-noauth  (self-hosted / no key)
+ *  - anthropic:standard               (LLMFormat.Anthropic custom model)
+ *  - google:standard                  (LLMFormat.GoogleCloud — AI Studio only)
+ *  - ollama:openai-compatible-local   (LLMFormat.Ollama)
  *
- * Catches the class of regression where snapshot fields routed by `mapsTo`
- * mismatch what the adapter expects (URL, auth header, body shape), or where
- * a new profile/wire variant ships without a corresponding adapter branch.
+ * LLMFormat.VertexAIGemini deliberately does NOT reach `google:standard` via
+ * migration; Vertex uses Bearer + aiplatform.googleapis.com and lands in
+ * `manualRequired` (see migration.test.ts "routes non-1:1 wire formats to
+ * manualRequired"). The Vertex SA flow itself is covered by
+ * [vertexIntegration.test.ts](./adapter/vertexIntegration.test.ts) +
+ * [openaiCompatibleVertex.test.ts](./adapter/openaiCompatibleVertex.test.ts).
  *
- * The Vertex/SA path is excluded here because it requires the async
- * resolveAdapterCredential step (covered in vertexIntegration.test.ts and
- * openaiCompatibleVertex.test.ts).
+ * Native provider migration (db.openAIKey → openai:standard etc.) was dropped
+ * in v5 — that surface lives in the "Legacy Info" UI now.
  */
 import { describe, expect, test } from 'vitest'
 import { LLMFormat } from '../model/types'
@@ -36,69 +42,8 @@ function presetByProfileId(presets: ModelPreset[], profileId: string): ModelPres
     return found
 }
 
-describe('migrated preset → buildPreparedRequest wire shape', () => {
-    test('openai:standard preset → bearer + OpenAI URL + body.model from legacy aiModel', () => {
-        const presets = migrate({
-            aiModel: 'gpt-4o',
-            openAIKey: 'sk-openai-test',
-        })
-        const preset = presetByProfileId(presets, 'openai:standard')
-        const prepared = buildPreparedRequest({
-            preset,
-            credential: { apiKey: 'sk-openai-test' },
-        })
-        expect(prepared.url).toBe('https://api.openai.com/v1/chat/completions')
-        expect(prepared.method).toBe('POST')
-        expect(prepared.headers.Authorization).toBe('Bearer sk-openai-test')
-        expect(prepared.headers['Content-Type']).toBe('application/json')
-        expect(prepared.body.model).toBe('gpt-4o')
-    })
-
-    test('anthropic:standard preset → x-api-key + anthropic-version + body.model', () => {
-        const presets = migrate({
-            aiModel: 'claude-sonnet-4-5',
-            claudeAPIKey: 'sk-ant-test',
-        })
-        const preset = presetByProfileId(presets, 'anthropic:standard')
-        const prepared = buildPreparedRequest({
-            preset,
-            credential: { apiKey: 'sk-ant-test' },
-        })
-        expect(prepared.url).toBe('https://api.anthropic.com/v1/messages')
-        expect(prepared.headers['x-api-key']).toBe('sk-ant-test')
-        expect(prepared.headers['anthropic-version']).toBe('2023-06-01')
-        // Bearer must NOT be set for x-api-key auth (wire invariant).
-        expect(prepared.headers.Authorization).toBeUndefined()
-        expect(prepared.body.model).toBe('claude-sonnet-4-5')
-    })
-
-    test('google:standard preset → x-goog-api-key + body.model + apiKeyRef from db.google.accessToken', () => {
-        const db: ModelPresetMigrationApplyTarget = {
-            aiModel: 'gemini-2.5-pro',
-            google: { accessToken: 'goog-test' },
-        }
-        const report = analyzeModelPresetMigration(db)
-        applyModelPresetMigration(db, report, bundledMigrationResolver())
-        const preset = presetByProfileId(db.modelPresets ?? [], 'google:standard')
-
-        // Migration consumes db.google.accessToken into apiKeyPool, so the
-        // preset carries a resolvable apiKeyRef instead of relying on a
-        // request-time credential injection.
-        expect(preset.apiKeyRef).toEqual(expect.any(String))
-        expect(db.apiKeyPool?.[preset.apiKeyRef!]?.key).toBe('goog-test')
-
-        const prepared = buildPreparedRequest({
-            preset,
-            credential: { apiKey: 'goog-test' },
-        })
-        expect(prepared.headers['x-goog-api-key']).toBe('goog-test')
-        // body.model resolved from legacy aiModel via migration.
-        expect(prepared.body.model).toBe('gemini-2.5-pro')
-        // Google base URL is not the OpenAI URL.
-        expect(prepared.url).not.toContain('openai.com')
-    })
-
-    test('openai-compatible:custom preset → custom URL + bearer + custom model id', () => {
+describe('migrated preset → buildPreparedRequest wire shape (v5)', () => {
+    test('openai-compatible:custom (with key) → custom URL + bearer + custom model id', () => {
         const presets = migrate({
             customModels: [{
                 id: 'xcustom:::main',
@@ -107,10 +52,7 @@ describe('migrated preset → buildPreparedRequest wire shape', () => {
                 format: LLMFormat.OpenAICompatible,
                 key: 'sk-custom-test',
                 name: 'Main Custom',
-                params: '',
-                flags: [],
             }],
-            aiModel: 'xcustom:::main',
         })
         const preset = presetByProfileId(presets, 'openai-compatible:custom')
         const prepared = buildPreparedRequest({
@@ -122,7 +64,7 @@ describe('migrated preset → buildPreparedRequest wire shape', () => {
         expect(prepared.body.model).toBe('my-local-model')
     })
 
-    test('openai-compatible:custom-noauth preset → custom URL + no Authorization header', () => {
+    test('openai-compatible:custom-noauth → custom URL + no Authorization header', () => {
         const presets = migrate({
             customModels: [{
                 id: 'xcustom:::local',
@@ -131,10 +73,7 @@ describe('migrated preset → buildPreparedRequest wire shape', () => {
                 format: LLMFormat.OpenAICompatible,
                 key: '',
                 name: 'Local',
-                params: '',
-                flags: [],
             }],
-            aiModel: 'xcustom:::local',
         })
         const preset = presetByProfileId(presets, 'openai-compatible:custom-noauth')
         const prepared = buildPreparedRequest({ preset, credential: undefined })
@@ -145,55 +84,70 @@ describe('migrated preset → buildPreparedRequest wire shape', () => {
         expect(prepared.body.model).toBe('llama-3')
     })
 
-    test('reverse proxy with key → openai-compatible:custom preset talks to the proxy URL', () => {
-        const presets = migrate({
-            forceReplaceUrl: 'https://reverse.test/v1/chat/completions',
-            proxyKey: 'sk-reverse',
-            customAPIFormat: LLMFormat.OpenAICompatible,
-            customProxyRequestModel: 'gpt-4o-proxy',
-            aiModel: 'reverse_proxy',
-        })
-        const preset = presetByProfileId(presets, 'openai-compatible:custom')
-        const prepared = buildPreparedRequest({
-            preset,
-            credential: { apiKey: 'sk-reverse' },
-        })
-        expect(prepared.url).toBe('https://reverse.test/v1/chat/completions')
-        expect(prepared.headers.Authorization).toBe('Bearer sk-reverse')
-        expect(prepared.body.model).toBe('gpt-4o-proxy')
-    })
-
-    test('every migrated non-vertex preset builds a request without throwing', () => {
-        // Regression net for any future bundled profile addition: a single
-        // migration that touches several legacy sources should not produce a
-        // preset whose snapshot the shared request builder rejects.
+    test('google:standard (LLMFormat.GoogleCloud customModel) → x-goog-api-key + AI Studio URL', () => {
+        // Pinning the wire shape here makes sure that if migration ever silently
+        // routes VertexAIGemini back into this profile (it must NOT — see
+        // migration.test.ts "routes non-1:1 wire formats to manualRequired"),
+        // the wrong endpoint/auth would surface immediately as a request shape
+        // regression.
         const presets = migrate({
             customModels: [{
-                id: 'xcustom:::a',
-                internalId: 'm-a',
-                url: 'https://a.test/v1/chat/completions',
-                format: LLMFormat.OpenAICompatible,
-                key: 'k-a',
-                name: 'A',
-                params: '',
-                flags: [],
+                id: 'xcustom:::gemini',
+                internalId: 'gemini-2.5-pro',
+                format: LLMFormat.GoogleCloud,
+                key: 'goog-test',
+                name: 'Gemini',
             }],
-            aiModel: 'gpt-4o',
-            subModel: 'claude-sonnet-4-5',
-            seperateModels: { memory: 'gemini-2.5-pro' },
-            seperateModelsForAxModels: true,
-            openAIKey: 'sk-openai',
-            claudeAPIKey: 'sk-ant',
         })
+        const preset = presetByProfileId(presets, 'google:standard')
+        const prepared = buildPreparedRequest({
+            preset,
+            credential: { apiKey: 'goog-test' },
+        })
+        expect(prepared.headers['x-goog-api-key']).toBe('goog-test')
+        // No Bearer auth (that would indicate accidental Vertex routing).
+        expect(prepared.headers.Authorization).toBeUndefined()
+        // AI Studio host, not Vertex's *-aiplatform.googleapis.com.
+        expect(prepared.url).not.toContain('aiplatform.googleapis.com')
+        expect(prepared.url).not.toContain('openai.com')
+    })
 
-        // Pick a credential that satisfies the loosest profile (bearer).
+    test('anthropic:standard (LLMFormat.Anthropic customModel) → x-api-key + version header', () => {
+        const presets = migrate({
+            customModels: [{
+                id: 'xcustom:::claude',
+                internalId: 'claude-sonnet-4-5',
+                format: LLMFormat.Anthropic,
+                key: 'sk-ant-test',
+                name: 'Claude',
+            }],
+        })
+        const preset = presetByProfileId(presets, 'anthropic:standard')
+        const prepared = buildPreparedRequest({
+            preset,
+            credential: { apiKey: 'sk-ant-test' },
+        })
+        expect(prepared.headers['x-api-key']).toBe('sk-ant-test')
+        expect(prepared.headers['anthropic-version']).toBe('2023-06-01')
+        expect(prepared.headers.Authorization).toBeUndefined()
+        expect(prepared.body.model).toBe('claude-sonnet-4-5')
+    })
+
+    test('every migrated non-SA preset builds a request without throwing (sweep)', () => {
+        // Regression net: a single migrate of several customModels should
+        // never produce a preset whose snapshot the shared request builder
+        // rejects. SA-auth profiles need the async resolveAdapterCredential
+        // path and have their own integration tests.
+        const presets = migrate({
+            customModels: [
+                { id: 'a', format: LLMFormat.OpenAICompatible, key: 'k', url: 'https://a.test/v1/chat/completions', internalId: 'm-a' },
+                { id: 'b', format: LLMFormat.OpenAICompatible, key: '', url: 'http://localhost:9/v1/chat/completions', internalId: 'm-b' },
+                { id: 'c', format: LLMFormat.Anthropic, key: 'k-c', internalId: 'claude-x' },
+                { id: 'd', format: LLMFormat.GoogleCloud, key: 'k-d', internalId: 'gemini-x' },
+                { id: 'e', format: LLMFormat.Ollama, key: '', url: 'http://localhost:11434/v1/chat/completions', internalId: 'm-e' },
+            ],
+        })
         for (const preset of presets) {
-            // Skip any profile whose auth needs the async resolveAdapterCredential
-            // step (SA JSON → access token exchange). The wire shape for those
-            // is covered by [vertexIntegration.test.ts](./adapter/vertexIntegration.test.ts)
-            // and [openaiCompatibleVertex.test.ts](./adapter/openaiCompatibleVertex.test.ts).
-            // Skipping on auth.kind (not endpoint.kind) keeps this guard correct
-            // if a future profile pairs SA auth with a non-vertex endpoint.
             if (preset.profileSnapshot.auth.kind === 'google-service-account') continue
             expect(() =>
                 buildPreparedRequest({ preset, credential: { apiKey: 'placeholder' } }),

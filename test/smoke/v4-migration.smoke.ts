@@ -299,12 +299,12 @@ describe.skipIf(!dbPath)('v4 ModelPreset smoke', () => {
         logSection('analyze report')
         const analyzeInput = structuredClone(db)
         const report = analyzeModelPresetMigration(analyzeInput)
+        // v5 narrowed MigrationReport to createdModelPresets / manualRequired /
+        // warnings. Binding-related dry-run fields (globalBindings, botPresetBindings,
+        // chatBindings, pluginBindings, skippedBias, preservedLegacyFields) were
+        // removed along with the auto-inference branches they fed; see plan v5.
         console.log(`createdModelPresets: ${report.createdModelPresets.length}`)
-        console.log(`globalBindings: ${report.globalBindings.length}`)
-        console.log(`botPresetBindings: ${report.botPresetBindings.length}`)
-        console.log(`pluginBindings: ${report.pluginBindings.length}`)
         console.log(`manualRequired: ${report.manualRequired.length}`)
-        console.log(`preservedLegacyFields: ${report.preservedLegacyFields.length}`)
         console.log(`warnings: ${report.warnings.length}`)
         console.log('--- created presets ---')
         for (const p of report.createdModelPresets) {

@@ -1,20 +1,12 @@
 import { LLMFormat } from '../model/types'
 import type {
     ApiKeyPoolEntry,
-    ManualMigrationItem,
-    MigrationBindingScope,
     MigrationReport,
-    ModelBindingFields,
-    ModelBinding,
     ModelPreset,
     ModelPresetMigrationSummary,
     ModelPresetSourceProfile,
-    PlannedBinding,
     PlannedModelPreset,
-    PlannedPluginBinding,
     ResolvedModelProfileSnapshot,
-    ResolvedTask,
-    TaskModelBindings,
 } from './types'
 
 type LegacyCustomModel = {
@@ -28,109 +20,32 @@ type LegacyCustomModel = {
     flags?: number[]
 }
 
-type LegacyTaskModels = {
-    memory?: string
-    emotion?: string
-    translate?: string
-    otherAx?: string
-}
-
-type LegacyFallbackModels = {
-    memory?: string[]
-    emotion?: string[]
-    translate?: string[]
-    otherAx?: string[]
-    model?: string[]
-}
-
-type LegacyBotPreset = {
-    id?: string
-    name?: string
-    aiModel?: string
-    subModel?: string
-    forceReplaceUrl?: string
-    proxyKey?: string
-    openAIKey?: string
-    proxyRequestModel?: string
-    openrouterRequestModel?: string
-    nanogptRequestModel?: string
-    customProxyRequestModel?: string
-    customAPIFormat?: number
-    currentPluginProvider?: string
-    bias?: [string, number][]
-    customFlags?: number[]
-    enableCustomFlags?: boolean
-    seperateModelsForAxModels?: boolean
-    seperateModels?: LegacyTaskModels
-    fallbackModels?: LegacyFallbackModels
-}
-
+/**
+ * Migration input contract (plan v5).
+ *
+ * v4 attempted to auto-infer presets from the entire legacy DB surface
+ * (provider keys, reverse-proxy fields, native `aiModel` strings, botPreset
+ * overrides, …). v5 narrows to `customModels[]` only — the one legacy shape
+ * that maps 1:1 to a v4 ModelPreset. Everything else (18 provider API keys,
+ * reverse-proxy fields, prompt/parameter settings, fallbacks, bias) stays in
+ * the legacy DB untouched and is surfaced through the "Legacy Info" UI for
+ * the user to reference when building new ModelPresets manually.
+ *
+ * The `google.accessToken` fallback is retained because the legacy Google
+ * dispatch path itself falls back to it when a per-customModel key is empty
+ * (see process/request/google.ts: `arg.key || db.google.accessToken`).
+ */
 export type ModelPresetMigrationInput = {
-    aiModel?: string
-    subModel?: string
-    forceReplaceUrl?: string
-    proxyKey?: string
-    openAIKey?: string
-    openrouterKey?: string
-    nanogptKey?: string
-    claudeAPIKey?: string
-    proxyRequestModel?: string
-    openrouterRequestModel?: string
-    nanogptRequestModel?: string
-    customProxyRequestModel?: string
-    customAPIFormat?: number
-    additionalParams?: [string, string][]
-    currentPluginProvider?: string
-    bias?: [string, number][]
-    customFlags?: number[]
-    enableCustomFlags?: boolean
     customModels?: LegacyCustomModel[]
-    botPresets?: LegacyBotPreset[]
-    seperateModelsForAxModels?: boolean
-    seperateModels?: LegacyTaskModels
-    fallbackModels?: LegacyFallbackModels
-    modelTools?: string[]
-    presetChain?: string
-    google?: {
-        accessToken?: string
-        projectId?: string
-    }
+    google?: { accessToken?: string }
 }
 
-type ProfileResolution =
-    | { kind: 'profile'; profileId: string; modelId?: string; credentialPath?: string }
-    | { kind: 'plugin'; pluginModelId: string }
-    | { kind: 'manual'; reason: string }
-    | { kind: 'none' }
-
-type BindingTarget = {
-    scope: MigrationBindingScope
-    ownerId?: string
-    targetTask: ResolvedTask
-    sourcePath: string
-}
-
-type MutableModelBindingFields = {
-    modelBinding?: ModelBindingFields['modelBinding']
-    subModelBinding?: ModelBindingFields['subModelBinding']
-    taskModelBindings?: TaskModelBindings
-}
-
-type MutableChat = MutableModelBindingFields & {
-    id?: string
-    name?: string
-}
-
-export type ModelPresetMigrationApplyTarget = ModelPresetMigrationInput & MutableModelBindingFields & {
+export type ModelPresetMigrationApplyTarget = ModelPresetMigrationInput & {
     modelPresets?: ModelPreset[]
     apiKeyPool?: Record<string, ApiKeyPoolEntry>
     modelPresetMigrationVersion?: number
     modelPresetMigrationAppliedAt?: number
     modelPresetMigrationReport?: ModelPresetMigrationSummary
-    botPresets?: Array<LegacyBotPreset & MutableModelBindingFields>
-    characters?: Array<{
-        chats?: MutableChat[]
-    }>
 }
 
 export interface MigrationSnapshotResult {
@@ -154,26 +69,19 @@ export function analyzeModelPresetMigration(db: ModelPresetMigrationInput): Migr
     const report: MigrationReport = {
         version: 1,
         createdModelPresets: [],
-        globalBindings: [],
-        botPresetBindings: [],
-        chatBindings: [],
-        pluginBindings: [],
         manualRequired: [],
-        skippedBias: [],
-        preservedLegacyFields: [],
         warnings: [],
-    }
-    const plannedById = new Map<string, PlannedModelPreset>()
-
-    const addPreset = (preset: PlannedModelPreset) => {
-        plannedById.set(preset.id, preset)
     }
 
     for (const [index, customModel] of (db.customModels ?? []).entries()) {
         const sourcePath = `customModels.${customModel.id || index}`
         const baseProfileId = profileForFormat(customModel.format)
         if (!baseProfileId) {
-            addManual(report, sourcePath, `Unsupported custom model format: ${customModel.format}`, customModel.id)
+            report.manualRequired.push({
+                sourcePath,
+                reason: `Unsupported custom model format: ${customModel.format}`,
+                legacySource: customModel.id,
+            })
             continue
         }
         const profileId = pickOpenAiCompatibleProfile(baseProfileId, isNonEmptyString(customModel.key))
@@ -187,7 +95,7 @@ export function analyzeModelPresetMigration(db: ModelPresetMigrationInput): Migr
             : (profileId === 'google:standard' && isNonEmptyString(db.google?.accessToken)
                 ? 'db.google.accessToken'
                 : undefined)
-        addPreset(createPlannedPreset({
+        report.createdModelPresets.push(createPlannedPreset({
             sourceKind: 'custom',
             sourcePath,
             profileId,
@@ -199,29 +107,11 @@ export function analyzeModelPresetMigration(db: ModelPresetMigrationInput): Migr
                 endpointUrl: customModel.url || '',
                 modelId: customModel.internalId || customModel.id,
                 params: redactFreeform(customModel.params || ''),
-                flags: cloneArray(customModel.flags ?? []),
+                flags: (customModel.flags ?? []).slice(),
             },
         }))
     }
 
-    if (hasReverseProxyConfig(db)) {
-        addReverseProxyPreset(report, plannedById, {
-            sourceKind: 'reverse-proxy',
-            sourcePath: 'db.reverse_proxy',
-            name: 'Migrated Reverse Proxy',
-            forceReplaceUrl: db.forceReplaceUrl,
-            requestModel: db.customProxyRequestModel || db.proxyRequestModel,
-            proxyKeyPath: isNonEmptyString(db.proxyKey) ? 'db.proxyKey' : undefined,
-            customAPIFormat: db.customAPIFormat,
-            additionalParams: db.additionalParams,
-        })
-    }
-
-    addGlobalBindings(report, plannedById, db)
-    addBotPresetBindings(report, plannedById, db)
-    addDeprecatedItems(report, db)
-
-    report.createdModelPresets = Array.from(plannedById.values())
     return report
 }
 
@@ -245,461 +135,9 @@ export function applyModelPresetMigration(
         upsertModelPreset(db, planned, appliedAt, resolveSnapshot)
     }
 
-    for (const binding of report.globalBindings) {
-        applyScopedBinding(db, binding)
-    }
-    for (const binding of report.botPresetBindings) {
-        applyScopedBinding(db, binding)
-    }
-    for (const binding of report.chatBindings) {
-        applyScopedBinding(db, binding)
-    }
-    for (const binding of report.pluginBindings) {
-        applyScopedBinding(db, binding)
-    }
-
     db.modelPresetMigrationVersion = report.version
     db.modelPresetMigrationAppliedAt = appliedAt
     db.modelPresetMigrationReport = summarizeMigrationReport(report, appliedAt)
-}
-
-function addGlobalBindings(
-    report: MigrationReport,
-    plannedById: Map<string, PlannedModelPreset>,
-    db: ModelPresetMigrationInput,
-): void {
-    if (db.aiModel) {
-        pushBinding(report, {
-            scope: 'global',
-            targetTask: 'model',
-            sourcePath: 'db.aiModel',
-        }, bindingForLegacyModel({
-            model: db.aiModel,
-            sourcePath: 'db.aiModel',
-            plannedById,
-            db,
-        }))
-    }
-    if (db.subModel) {
-        pushBinding(report, {
-            scope: 'global',
-            targetTask: 'submodel',
-            sourcePath: 'db.subModel',
-        }, bindingForLegacyModel({
-            model: db.subModel,
-            sourcePath: 'db.subModel',
-            plannedById,
-            db,
-        }))
-    }
-    if (db.seperateModelsForAxModels && db.seperateModels) {
-        addTaskBindings(report, plannedById, db, db.seperateModels, 'global', undefined, 'db.seperateModels')
-    }
-}
-
-function addBotPresetBindings(
-    report: MigrationReport,
-    plannedById: Map<string, PlannedModelPreset>,
-    db: ModelPresetMigrationInput,
-): void {
-    for (const [index, preset] of (db.botPresets ?? []).entries()) {
-        const ownerId = botPresetOwnerId(preset, index)
-        const sourcePrefix = `botPresets.${ownerId}`
-
-        if (hasPresetReverseProxyConfig(preset)) {
-            // Create the preset before resolving bindings so reverse_proxy
-            // bindings can link to the planned ModelPreset by source path.
-            //
-            // BotSettings.svelte only exposes top-level (db.*) inputs for
-            // reverse-proxy fields (forceReplaceUrl / proxyKey /
-            // customProxyRequestModel / customAPIFormat). botPreset-level
-            // copies of these fields are leftover defaults from the
-            // database.svelte.ts initializer and have no UI. Mirror legacy
-            // dispatch (request.ts:357-362) by falling back to db top-level
-            // values; honor botPreset values when they are explicitly set
-            // (e.g. via .bin import from an older build).
-            addReverseProxyPreset(report, plannedById, {
-                sourceKind: 'bot-preset-reverse-proxy',
-                sourcePath: `${sourcePrefix}.reverse_proxy`,
-                name: `Migrated ${preset.name || ownerId} Reverse Proxy`,
-                forceReplaceUrl: isNonEmptyString(preset.forceReplaceUrl)
-                    ? preset.forceReplaceUrl
-                    : db.forceReplaceUrl,
-                requestModel: preset.customProxyRequestModel
-                    || preset.proxyRequestModel
-                    || db.customProxyRequestModel
-                    || db.proxyRequestModel,
-                proxyKeyPath: isNonEmptyString(preset.proxyKey)
-                    ? `${sourcePrefix}.proxyKey`
-                    : (isNonEmptyString(db.proxyKey) ? 'db.proxyKey' : undefined),
-                customAPIFormat: preset.customAPIFormat ?? db.customAPIFormat,
-                additionalParams: undefined,
-            })
-        }
-
-        if (preset.aiModel) {
-            pushBinding(report, {
-                scope: 'botPreset',
-                ownerId,
-                targetTask: 'model',
-                sourcePath: `${sourcePrefix}.aiModel`,
-            }, bindingForLegacyModel({
-                model: preset.aiModel,
-                sourcePath: `${sourcePrefix}.aiModel`,
-                plannedById,
-                db,
-                botPreset: preset,
-            }))
-        }
-        if (preset.subModel) {
-            pushBinding(report, {
-                scope: 'botPreset',
-                ownerId,
-                targetTask: 'submodel',
-                sourcePath: `${sourcePrefix}.subModel`,
-            }, bindingForLegacyModel({
-                model: preset.subModel,
-                sourcePath: `${sourcePrefix}.subModel`,
-                plannedById,
-                db,
-                botPreset: preset,
-            }))
-        }
-        if (preset.seperateModelsForAxModels && preset.seperateModels) {
-            addTaskBindings(report, plannedById, db, preset.seperateModels, 'botPreset', ownerId, `${sourcePrefix}.seperateModels`, preset)
-        }
-    }
-}
-
-function addTaskBindings(
-    report: MigrationReport,
-    plannedById: Map<string, PlannedModelPreset>,
-    db: ModelPresetMigrationInput,
-    taskModels: LegacyTaskModels,
-    scope: MigrationBindingScope,
-    ownerId: string | undefined,
-    sourcePrefix: string,
-    botPreset?: LegacyBotPreset,
-): void {
-    const taskEntries: Array<[ResolvedTask, string | undefined]> = [
-        ['memory', taskModels.memory],
-        ['emotion', taskModels.emotion],
-        ['translate', taskModels.translate],
-        ['otherAx', taskModels.otherAx],
-    ]
-    for (const [targetTask, model] of taskEntries) {
-        if (!model) continue
-        pushBinding(report, {
-            scope,
-            ownerId,
-            targetTask,
-            sourcePath: `${sourcePrefix}.${targetTask}`,
-        }, bindingForLegacyModel({
-            model,
-            sourcePath: `${sourcePrefix}.${targetTask}`,
-            plannedById,
-            db,
-            botPreset,
-        }))
-    }
-}
-
-function addReverseProxyPreset(
-    report: MigrationReport,
-    plannedById: Map<string, PlannedModelPreset>,
-    args: {
-        sourceKind: string
-        sourcePath: string
-        name: string
-        forceReplaceUrl?: string
-        requestModel?: string
-        proxyKeyPath?: string
-        customAPIFormat?: number
-        additionalParams?: [string, string][]
-    },
-): void {
-    const baseProfileId = profileForFormat(args.customAPIFormat ?? LLMFormat.OpenAICompatible)
-    if (!baseProfileId) {
-        addManual(report, args.sourcePath, `Unsupported reverse proxy format: ${args.customAPIFormat}`, 'reverse_proxy')
-        return
-    }
-    const profileId = pickOpenAiCompatibleProfile(baseProfileId, Boolean(args.proxyKeyPath))
-    const planned = createPlannedPreset({
-        sourceKind: args.sourceKind,
-        sourcePath: args.sourcePath,
-        profileId,
-        name: args.name,
-        endpointUrl: args.forceReplaceUrl || '',
-        modelId: args.requestModel || 'reverse_proxy',
-        credentialPath: args.proxyKeyPath,
-        userValues: {
-            endpointUrl: args.forceReplaceUrl || '',
-            modelId: args.requestModel || '',
-            additionalParams: redactAdditionalParams(args.additionalParams ?? []),
-        },
-    })
-    plannedById.set(planned.id, planned)
-}
-
-function pushBinding(report: MigrationReport, target: BindingTarget, result: ProfileResolution | ModelBinding): void {
-    if ('kind' in result && result.kind === 'plugin') {
-        const binding: ModelBinding = { kind: 'pluginModel', id: result.pluginModelId }
-        report.pluginBindings.push({ ...target, pluginModelId: result.pluginModelId, binding })
-        return
-    }
-    if ('kind' in result && result.kind === 'manual') {
-        const binding: ModelBinding = { kind: 'manualRequired', reason: result.reason, legacySource: target.sourcePath }
-        addBinding(report, { ...target, binding })
-        report.manualRequired.push({ sourcePath: target.sourcePath, reason: result.reason, legacySource: target.sourcePath })
-        return
-    }
-    if ('kind' in result && result.kind === 'none') {
-        return
-    }
-    addBinding(report, { ...target, binding: result as ModelBinding })
-}
-
-function addBinding(report: MigrationReport, binding: {
-    scope: MigrationBindingScope
-    ownerId?: string
-    targetTask: ResolvedTask
-    sourcePath: string
-    binding: ModelBinding
-}): void {
-    if (binding.scope === 'global') {
-        report.globalBindings.push(binding)
-    } else if (binding.scope === 'chat') {
-        report.chatBindings.push(binding)
-    } else {
-        report.botPresetBindings.push(binding)
-    }
-}
-
-function bindingForLegacyModel(args: {
-    model: string
-    sourcePath: string
-    plannedById: Map<string, PlannedModelPreset>
-    db: ModelPresetMigrationInput
-    botPreset?: LegacyBotPreset
-}): ProfileResolution | ModelBinding {
-    const { model, plannedById, db, botPreset, sourcePath } = args
-    if (model.startsWith('pluginmodel:::')) {
-        return { kind: 'plugin', pluginModelId: model }
-    }
-    if (model.startsWith('xcustom:::')) {
-        const found = (db.customModels ?? []).find((customModel) => customModel.id === model)
-        if (!found) {
-            return { kind: 'manual', reason: `Custom model not found: ${model}` }
-        }
-        const planned = findPresetBySource(plannedById, `customModels.${found.id}`)
-        if (!planned) {
-            return { kind: 'manual', reason: `Custom model is not auto-migratable: ${model}` }
-        }
-        return { kind: 'modelPreset', id: planned.id }
-    }
-    if (model === 'reverse_proxy') {
-        const source = botPreset ? botPresetReverseProxySource(sourcePath) : 'db.reverse_proxy'
-        const planned = findPresetBySource(plannedById, source)
-        if (planned) return { kind: 'modelPreset', id: planned.id }
-        return { kind: 'manual', reason: 'Reverse proxy is not auto-migratable' }
-    }
-
-    const resolved = profileForLegacyModel(model, db, botPreset, sourcePath)
-    if (resolved.kind !== 'profile') return resolved
-
-    const planned = createPlannedPreset({
-        sourceKind: 'legacy-model',
-        sourcePath,
-        profileId: resolved.profileId,
-        name: `Migrated ${model}`,
-        modelId: resolved.modelId || model,
-        credentialPath: resolved.credentialPath,
-        userValues: {
-            modelId: resolved.modelId || model,
-            format: botPreset?.customAPIFormat ?? db.customAPIFormat,
-        },
-    })
-    plannedById.set(planned.id, planned)
-    return { kind: 'modelPreset', id: planned.id }
-}
-
-function profileForLegacyModel(
-    model: string,
-    db: ModelPresetMigrationInput,
-    botPreset: LegacyBotPreset | undefined,
-    sourcePath: string,
-): ProfileResolution {
-    if (!model) return { kind: 'none' }
-    if (model === 'openrouter' || model.startsWith('openrouter')) {
-        return {
-            kind: 'profile',
-            profileId: 'openrouter:openai-compatible',
-            modelId: botPreset?.openrouterRequestModel || db.openrouterRequestModel || model,
-            credentialPath: credentialPathFor('openrouterKey', db, botPreset, sourcePath),
-        }
-    }
-    if (model === 'nanogpt' || model.startsWith('nanogpt')) {
-        return {
-            kind: 'profile',
-            profileId: 'nanogpt:openai-compatible',
-            modelId: botPreset?.nanogptRequestModel || db.nanogptRequestModel || model,
-            credentialPath: credentialPathFor('nanogptKey', db, botPreset, sourcePath),
-        }
-    }
-    if (model === 'ollama' || model.startsWith('ollama')) {
-        return { kind: 'profile', profileId: 'ollama:openai-compatible-local', modelId: model }
-    }
-    if (model.startsWith('deepseek')) {
-        return { kind: 'profile', profileId: 'deepseek:openai-compatible', modelId: model }
-    }
-    if (model.startsWith('deepinfra_')) {
-        return { kind: 'profile', profileId: 'deepinfra:openai-compatible', modelId: model }
-    }
-    if (model.startsWith('vercel:') || model.startsWith('vercel_')) {
-        return { kind: 'profile', profileId: 'vercel:openai-compatible', modelId: model }
-    }
-    if (isOpenAIModelId(model)) {
-        return { kind: 'profile', profileId: 'openai:standard', modelId: model, credentialPath: credentialPathFor('openAIKey', db, botPreset, sourcePath) }
-    }
-    if (model.startsWith('claude')) {
-        return { kind: 'profile', profileId: 'anthropic:standard', modelId: model, credentialPath: credentialPathFor('claudeAPIKey', db, botPreset, sourcePath) }
-    }
-    if (model.startsWith('anthropic.claude')) {
-        return { kind: 'manual', reason: `Native Bedrock Claude model requires manual migration: ${model}` }
-    }
-    if (model.startsWith('gemini')) {
-        return {
-            kind: 'profile',
-            profileId: 'google:standard',
-            modelId: model,
-            credentialPath: isNonEmptyString(db.google?.accessToken) ? 'db.google.accessToken' : undefined,
-        }
-    }
-    return { kind: 'manual', reason: `Unsupported legacy model: ${model}` }
-}
-
-function profileForFormat(format: number | undefined): string | undefined {
-    switch (format) {
-        case undefined:
-        case LLMFormat.OpenAICompatible:
-        case LLMFormat.OpenAIResponseAPI:
-        case LLMFormat.NanoGPT:
-        case LLMFormat.NanoGPTResponses:
-        case LLMFormat.NanoGPTMessages:
-        case LLMFormat.NanoGPTLegacy:
-            return 'openai-compatible:custom'
-        case LLMFormat.Ollama:
-            return 'ollama:openai-compatible-local'
-        case LLMFormat.Anthropic:
-            return 'anthropic:standard'
-        case LLMFormat.GoogleCloud:
-        case LLMFormat.VertexAIGemini:
-            return 'google:standard'
-        default:
-            return undefined
-    }
-}
-
-// Custom OpenAI-compatible endpoints (self-hosted vLLM, LiteLLM, local Ollama
-// OpenAI mode, etc.) often run without authentication. The bundled registry
-// expresses this as a separate `openai-compatible:custom-noauth` profile
-// (auth.kind = 'none'); migration picks it whenever the legacy source has no
-// credential. Other base providers always carry a credential by contract.
-function pickOpenAiCompatibleProfile(baseProfileId: string, hasCredential: boolean): string {
-    if (baseProfileId === 'openai-compatible:custom' && !hasCredential) {
-        return 'openai-compatible:custom-noauth'
-    }
-    return baseProfileId
-}
-
-// Legacy request.ts routes reverse-proxy only when `aiModel === 'reverse_proxy'`
-// (uses db.forceReplaceUrl as the URL) or when a top-level reverse-proxy URL
-// is explicitly set. Triggering on auxiliary fields (proxyRequestModel,
-// customProxyRequestModel, proxyKey) is a false positive: those are leftovers
-// from earlier UI sessions and never reach the wire because the legacy
-// dispatch branch is gated by `aiModel === 'reverse_proxy'`. Mirror that.
-function hasReverseProxyConfig(db: ModelPresetMigrationInput): boolean {
-    return Boolean(
-        db.aiModel === 'reverse_proxy' ||
-        isNonEmptyString(db.forceReplaceUrl),
-    )
-}
-
-// BotPreset-level forceReplaceUrl has no UI in BotSettings.svelte (only the
-// top-level db.forceReplaceUrl input exists). botPreset objects still carry
-// `forceReplaceUrl: ''` from their default initializer in
-// database.svelte.ts, so triggering on it would fire for every botPreset.
-// Stick to the explicit `aiModel === 'reverse_proxy'` / `subModel === 'reverse_proxy'`
-// signal, which is the only thing the user can actually set via UI.
-function hasPresetReverseProxyConfig(preset: LegacyBotPreset): boolean {
-    return Boolean(
-        preset.aiModel === 'reverse_proxy' ||
-        preset.subModel === 'reverse_proxy',
-    )
-}
-
-function botPresetReverseProxySource(sourcePath: string): string {
-    const match = /^botPresets\.([^.]+)\./.exec(sourcePath)
-    return match ? `botPresets.${match[1]}.reverse_proxy` : sourcePath.replace(/\.[^.]+$/, '.reverse_proxy')
-}
-
-function credentialPathFor(
-    key: 'openAIKey' | 'openrouterKey' | 'nanogptKey' | 'claudeAPIKey',
-    db: ModelPresetMigrationInput,
-    botPreset: LegacyBotPreset | undefined,
-    sourcePath: string,
-): string | undefined {
-    if (key === 'openAIKey' && isNonEmptyString(botPreset?.openAIKey)) {
-        const match = /^botPresets\.([^.]+)\./.exec(sourcePath)
-        return match ? `botPresets.${match[1]}.${key}` : `${sourcePath}.${key}`
-    }
-    return isNonEmptyString(db[key]) ? `db.${key}` : undefined
-}
-
-function addDeprecatedItems(report: MigrationReport, db: ModelPresetMigrationInput): void {
-    if ((db.bias?.length ?? 0) > 0) {
-        report.skippedBias.push({ sourcePath: 'db.bias', reason: 'Bias is not migrated to v4 ModelPreset or PromptPreset' })
-    }
-    for (const [index, preset] of (db.botPresets ?? []).entries()) {
-        if ((preset.bias?.length ?? 0) > 0) {
-            report.skippedBias.push({
-                sourcePath: `botPresets.${preset.id || index}.bias`,
-                reason: 'Bias is not migrated to v4 ModelPreset or PromptPreset',
-            })
-        }
-        if ((preset.customFlags?.length ?? 0) > 0 || preset.enableCustomFlags) {
-            report.preservedLegacyFields.push({
-                sourcePath: `botPresets.${preset.id || index}.customFlags`,
-                reason: 'Custom flags are preserved and only auto-mapped when profile schema supports them',
-            })
-        }
-        if (preset.fallbackModels) {
-            report.preservedLegacyFields.push({
-                sourcePath: `botPresets.${preset.id || index}.fallbackModels`,
-                reason: 'Fallback models are preserved for a later migration pass',
-            })
-        }
-    }
-    if ((db.customFlags?.length ?? 0) > 0 || db.enableCustomFlags) {
-        report.preservedLegacyFields.push({
-            sourcePath: 'db.customFlags',
-            reason: 'Custom flags are preserved and only auto-mapped when profile schema supports them',
-        })
-    }
-    if (db.fallbackModels) {
-        report.preservedLegacyFields.push({
-            sourcePath: 'db.fallbackModels',
-            reason: 'Fallback models are preserved for a later migration pass',
-        })
-    }
-    for (const path of ['modelTools', 'presetChain'] as const) {
-        if (db[path] && ((Array.isArray(db[path]) && db[path].length > 0) || (!Array.isArray(db[path]) && db[path]))) {
-            report.preservedLegacyFields.push({
-                sourcePath: `db.${path}`,
-                reason: 'Legacy field is preserved and not migrated by this dry-run analyzer',
-            })
-        }
-    }
 }
 
 function upsertApiKeyPoolEntry(
@@ -773,71 +211,12 @@ function upsertModelPreset(
     }
 }
 
-function applyScopedBinding(
-    db: ModelPresetMigrationApplyTarget,
-    binding: PlannedBinding | PlannedPluginBinding,
-): void {
-    const target = binding.scope === 'global'
-        ? db
-        : binding.scope === 'botPreset'
-            ? findBotPresetForBinding(db, binding.ownerId)
-            : findChatForBinding(db, binding.ownerId)
-    if (!target) return
-    setBinding(target, binding.targetTask, binding.binding)
-}
-
-function setBinding(target: MutableModelBindingFields, task: ResolvedTask, binding: ModelBinding): void {
-    if (task === 'model') {
-        target.modelBinding = binding
-        return
-    }
-    if (task === 'submodel') {
-        target.subModelBinding = binding
-        return
-    }
-    target.taskModelBindings = target.taskModelBindings || {}
-    target.taskModelBindings[task] = binding
-}
-
-function findBotPresetForBinding(
-    db: ModelPresetMigrationApplyTarget,
-    ownerId: string | undefined,
-): (LegacyBotPreset & MutableModelBindingFields) | undefined {
-    if (!ownerId || !Array.isArray(db.botPresets)) return undefined
-    if (ownerId.startsWith('index:')) {
-        const index = Number(ownerId.slice('index:'.length))
-        return Number.isInteger(index) ? db.botPresets[index] : undefined
-    }
-    const byId = db.botPresets.find((preset) => preset.id === ownerId)
-    if (byId) return byId
-    const index = Number(ownerId)
-    return Number.isInteger(index) ? db.botPresets[index] : undefined
-}
-
-function findChatForBinding(
-    db: ModelPresetMigrationApplyTarget,
-    ownerId: string | undefined,
-): MutableChat | undefined {
-    if (!ownerId || !Array.isArray(db.characters)) return undefined
-    for (const character of db.characters) {
-        const found = character.chats?.find((chat) => chat.id === ownerId)
-        if (found) return found
-    }
-    const indexMatch = /^(\d+)\.(\d+)$/.exec(ownerId)
-    if (!indexMatch) return undefined
-    return db.characters[Number(indexMatch[1])]?.chats?.[Number(indexMatch[2])]
-}
-
 function summarizeMigrationReport(report: MigrationReport, appliedAt: number): ModelPresetMigrationSummary {
     return {
         version: report.version,
         appliedAt,
         createdModelPresetCount: report.createdModelPresets.length,
-        botPresetBindingCount: report.botPresetBindings.length,
-        chatBindingCount: report.chatBindings.length,
-        pluginBindingCount: report.pluginBindings.length,
         manualRequiredCount: report.manualRequired.length,
-        skippedBiasCount: report.skippedBias.length,
         warnings: report.warnings.slice(),
     }
 }
@@ -847,15 +226,14 @@ function createFallbackMigrationSnapshot(planned: PlannedModelPreset): ResolvedM
         profileId: planned.profileId,
         profileVersion: 1,
         providerBaseId: providerBaseIdForProfile(planned.profileId),
-        // Required for snapshot completeness. Migrations applied without a
-        // registry resolver also skip writing `sourceProfile`, so this value
-        // never reaches `getProfileUpdateAvailability` — it returns 'no-source'
-        // first. Re-running migration with the bundled resolver fills the real
-        // snapshot (and sourceProfile) from the registry.
+        // Migrations applied without a registry resolver also skip writing
+        // `sourceProfile`, so this value never reaches `getProfileUpdateAvailability`
+        // — it returns 'no-source' first. Re-running migration with the
+        // bundled resolver fills the real snapshot (and sourceProfile).
         providerBaseVersion: 1,
         adapterKind: adapterKindForProfile(planned.profileId),
         auth: { kind: authKindForProfile(planned.profileId), fields: planned.credentialSource ? ['apiKey'] : undefined },
-        endpoint: { kind: 'static', url: planned.endpointUrl },
+        endpoint: { kind: 'static', url: planned.endpointUrl ?? '' },
         modelId: planned.modelId || planned.profileId,
         schema: [],
         uiSchema: { groups: [], fields: [] },
@@ -879,6 +257,7 @@ function authKindForProfile(profileId: string): ResolvedModelProfileSnapshot['au
     if (profileId.startsWith('ollama:')) return 'none'
     if (profileId.startsWith('anthropic:')) return 'x-api-key'
     if (profileId.startsWith('google:')) return 'x-goog-api-key'
+    if (profileId === 'openai-compatible:custom-noauth') return 'none'
     return 'bearer'
 }
 
@@ -892,14 +271,19 @@ function readLegacyValueAtPath(db: ModelPresetMigrationApplyTarget, sourcePath: 
         return readPathSegments(db as Record<string, unknown>, sourcePath.slice(3).split('.'))
     }
     if (sourcePath.startsWith('customModels.')) {
-        const [, id, ...rest] = sourcePath.split('.')
-        const customModel = (db.customModels ?? []).find((model) => model.id === id)
+        const [, identifier, ...rest] = sourcePath.split('.')
+        // analyze step writes `customModels.${customModel.id || index}` so a
+        // legacy import without ids still gets a deterministic source path.
+        // Read-back must mirror that fallback: try id first, then array index.
+        const list = db.customModels ?? []
+        let customModel = list.find((model) => model.id === identifier)
+        if (!customModel && /^\d+$/.test(identifier)) {
+            const index = Number(identifier)
+            if (Number.isInteger(index) && index >= 0 && index < list.length) {
+                customModel = list[index]
+            }
+        }
         return readPathSegments(customModel as Record<string, unknown> | undefined, rest)
-    }
-    if (sourcePath.startsWith('botPresets.')) {
-        const [, id, ...rest] = sourcePath.split('.')
-        const preset = findBotPresetForBinding(db, id)
-        return readPathSegments(preset as Record<string, unknown> | undefined, rest)
     }
     return undefined
 }
@@ -925,10 +309,6 @@ function apiKeyPoolRefForPlanned(
     if (!sourcePath || !db.apiKeyPool) return undefined
     const id = apiKeyPoolIdForSourcePath(sourcePath)
     return db.apiKeyPool[id] ? id : undefined
-}
-
-function botPresetOwnerId(preset: LegacyBotPreset, index: number): string {
-    return preset.id || `index:${index}`
 }
 
 function configHashFromPlannedId(id: string): string {
@@ -965,36 +345,53 @@ function createPlannedPreset(args: {
     }
 }
 
-function findPresetBySource(plannedById: Map<string, PlannedModelPreset>, sourcePath: string): PlannedModelPreset | undefined {
-    return Array.from(plannedById.values()).find((preset) => preset.sourcePath === sourcePath)
+// v5 policy: only formats whose wire shape is genuinely 1:1 with a bundled
+// profile get auto-migrated. Anything else (OpenAI Responses API, NanoGPT
+// non-default variants, Vertex AI Gemini's Bearer+aiplatform.googleapis.com
+// transport, …) gets a `manualRequired` entry and is left for the user to
+// re-create via the new ModelPreset UI — guessing on those would produce a
+// preset that silently talks to the wrong endpoint or with the wrong auth
+// header.
+function profileForFormat(format: number | undefined): string | undefined {
+    switch (format) {
+        case undefined:
+        case LLMFormat.OpenAICompatible:
+        case LLMFormat.NanoGPT:
+            // NanoGPT (id 20) is the OpenAI-compatible variant; the other
+            // NanoGPT* enum values (Responses/Messages/Legacy) route through
+            // different request builders in process/request/request.ts and
+            // must NOT be auto-migrated.
+            return 'openai-compatible:custom'
+        case LLMFormat.Ollama:
+            return 'ollama:openai-compatible-local'
+        case LLMFormat.Anthropic:
+            return 'anthropic:standard'
+        case LLMFormat.GoogleCloud:
+            // Google AI Studio (x-goog-api-key + generativelanguage.googleapis.com).
+            // VertexAIGemini deliberately omitted: it uses Bearer + a different
+            // host and requires the SA-auth Vertex profile (vertex-openai:standard,
+            // §14-5), which the user must select via UI.
+            return 'google:standard'
+        default:
+            return undefined
+    }
 }
 
-function addManual(report: MigrationReport, sourcePath: string, reason: string, legacySource?: string): void {
-    const item: ManualMigrationItem = { sourcePath, reason, legacySource }
-    report.manualRequired.push(item)
-}
-
-function isOpenAIModelId(model: string): boolean {
-    return model === 'o1' ||
-        model === 'o3' ||
-        model === 'o4' ||
-        model.startsWith('gpt-') ||
-        model.startsWith('o1-') ||
-        model.startsWith('o3-') ||
-        model.startsWith('o4-')
-}
-
-function redactAdditionalParams(params: [string, string][]): [string, string][] {
-    return params.map(([key, value]) => [key, shouldRedactKey(key) || shouldRedactValue(value) ? '[redacted]' : value])
+// Custom OpenAI-compatible endpoints (self-hosted vLLM, LiteLLM, local Ollama
+// OpenAI mode, etc.) often run without authentication. The bundled registry
+// expresses this as a separate `openai-compatible:custom-noauth` profile
+// (auth.kind = 'none'); migration picks it whenever the legacy source has no
+// credential. Other base providers always carry a credential by contract.
+function pickOpenAiCompatibleProfile(baseProfileId: string, hasCredential: boolean): string {
+    if (baseProfileId === 'openai-compatible:custom' && !hasCredential) {
+        return 'openai-compatible:custom-noauth'
+    }
+    return baseProfileId
 }
 
 function redactFreeform(value: string): string {
     if (!value) return ''
     return shouldRedactValue(value) ? '[redacted]' : value
-}
-
-function shouldRedactKey(key: string): boolean {
-    return /authorization|api[-_ ]?key|token|secret|bearer|credential/i.test(key)
 }
 
 function shouldRedactValue(value: string): boolean {
@@ -1008,10 +405,6 @@ function shouldRedactValue(value: string): boolean {
 // Strict checking at analyze time keeps report/summary honest.
 function isNonEmptyString(value: unknown): value is string {
     return typeof value === 'string' && value.length > 0
-}
-
-function cloneArray<T>(value: T[]): T[] {
-    return value.slice()
 }
 
 function cloneJsonLike(value: unknown): unknown {
