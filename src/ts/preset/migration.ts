@@ -74,12 +74,33 @@ export function analyzeModelPresetMigration(db: ModelPresetMigrationInput): Migr
     }
 
     for (const [index, customModel] of (db.customModels ?? []).entries()) {
-        const sourcePath = `customModels.${customModel.id || index}`
+        // customModel.id can contain `.` (legacy import data, hand-crafted
+        // entries). Source paths are dot-segmented, so we percent-encode the
+        // id segment to keep `readLegacyValueAtPath`'s round-trip robust.
+        // UI-generated UUIDs are encode-safe, so this is a no-op for normal
+        // data — only corrupted/imported `id="my.custom"` benefits. See
+        // review F5.
+        const idSegment = isNonEmptyString(customModel.id)
+            ? encodeCustomModelIdSegment(customModel.id)
+            : String(index)
+        const sourcePath = `customModels.${idSegment}`
         const baseProfileId = profileForFormat(customModel.format)
         if (!baseProfileId) {
             report.manualRequired.push({
                 sourcePath,
                 reason: `Unsupported custom model format: ${customModel.format}`,
+                legacySource: customModel.id,
+            })
+            continue
+        }
+        // Legacy resolution uses customModel.internalId verbatim. Falling back
+        // to customModel.id would invent a wire model id like `xcustom:::main`
+        // that legacy treated as invalid — surface the incomplete row instead.
+        // See review F6.
+        if (!isNonEmptyString(customModel.internalId)) {
+            report.manualRequired.push({
+                sourcePath,
+                reason: 'Custom model is missing internalId (wire model id); user must complete it before migration.',
                 legacySource: customModel.id,
             })
             continue
@@ -90,22 +111,31 @@ export function analyzeModelPresetMigration(db: ModelPresetMigrationInput): Migr
         // db.google.accessToken`). Mirror that fallback during migration so a
         // Google custom model with empty key + valid top-level Google key still
         // ends up with a resolvable apiKeyRef. Per-model key always wins.
-        const credentialPath = isNonEmptyString(customModel.key)
-            ? `${sourcePath}.key`
-            : (profileId === 'google:standard' && isNonEmptyString(db.google?.accessToken)
-                ? 'db.google.accessToken'
-                : undefined)
+        //
+        // No-auth profiles (ollama:openai-compatible-local, openai-compatible:custom-noauth)
+        // must not pull a stale legacy key into apiKeyPool — the adapter would
+        // never use it but the secret would needlessly survive in the new
+        // structure. See review F4.
+        const credentialPath = profileExpectsCredential(profileId)
+            ? (isNonEmptyString(customModel.key)
+                ? `${sourcePath}.key`
+                : (profileId === 'google:standard' && isNonEmptyString(db.google?.accessToken)
+                    ? 'db.google.accessToken'
+                    : undefined))
+            : undefined
+        // `customModel.internalId` is non-empty here (guarded above), so no
+        // fallback to customModel.id is needed for modelId.
         report.createdModelPresets.push(createPlannedPreset({
             sourceKind: 'custom',
             sourcePath,
             profileId,
             name: customModel.name || customModel.id || `Custom Model ${index + 1}`,
             endpointUrl: customModel.url || '',
-            modelId: customModel.internalId || customModel.id,
+            modelId: customModel.internalId,
             credentialPath,
             userValues: {
                 endpointUrl: customModel.url || '',
-                modelId: customModel.internalId || customModel.id,
+                modelId: customModel.internalId,
                 params: redactFreeform(customModel.params || ''),
                 flags: (customModel.flags ?? []).slice(),
             },
@@ -140,13 +170,39 @@ export function applyModelPresetMigration(
     db.modelPresetMigrationReport = summarizeMigrationReport(report, appliedAt)
 }
 
+// Apply-time allowlist. v5's narrowed analyzer only ever emits one of:
+//   • `customModels.<id-or-index>.key`
+//   • `db.google.accessToken`
+// but apply consumes a MigrationReport that could be stale (persisted from a
+// v4-era run, hand-edited, or supplied by a code path outside the analyzer
+// flow). An attacker-shaped report with `db.openAIKey` / `db.vertexPrivateKey`
+// in `credentialSource.sourcePath` would otherwise copy arbitrary legacy
+// secrets into `apiKeyPool`, violating the v5 customModels-only invariant.
+// Reject anything outside the analyzer's documented output shape.
+const ALLOWED_CREDENTIAL_SOURCE_PATTERNS: RegExp[] = [
+    /^customModels\.[^.]+\.key$/,
+    /^db\.google\.accessToken$/,
+]
+
+function isAllowedCredentialSourcePath(sourcePath: string): boolean {
+    return ALLOWED_CREDENTIAL_SOURCE_PATTERNS.some((pattern) => pattern.test(sourcePath))
+}
+
 function upsertApiKeyPoolEntry(
     db: ModelPresetMigrationApplyTarget,
     planned: PlannedModelPreset,
     now: number,
 ): void {
+    // Apply-time mirror of the analyzer's no-auth guard (see review F4 round 2).
+    // Analyzer already refuses to record a credentialSource for no-auth profiles,
+    // but a tampered/stale report could still smuggle in a planned preset with
+    // `profileId: 'ollama:*'` (or any other no-auth profile) and an *allowed*
+    // sourcePath like `customModels.x.key`. The allowlist alone would let it
+    // through; reject it here so no-auth profiles can never hold a secret.
+    if (!profileExpectsCredential(planned.profileId)) return
     const credentialPath = planned.credentialSource?.sourcePath
     if (!credentialPath || !db.apiKeyPool) return
+    if (!isAllowedCredentialSourcePath(credentialPath)) return
 
     const key = readLegacyStringAtPath(db, credentialPath)
     if (!key) return
@@ -178,21 +234,37 @@ function upsertModelPreset(
     const existing = existingIndex >= 0 ? db.modelPresets[existingIndex] : undefined
     const apiKeyRef = apiKeyPoolRefForPlanned(db, planned)
     const resolved = normalizeSnapshotResult(resolveSnapshot?.(planned))
+    // Snapshot / sourceProfile resolution priority (v5 narrowing review F1):
+    //   1. New resolver result (`resolved`) — caller supplied a registry resolver.
+    //   2. Existing preset's snapshot/sourceProfile — only when the resolver was
+    //      omitted AND the existing snapshot still targets the same profile id.
+    //      This protects re-apply without a resolver from downgrading a real
+    //      bundled snapshot to an empty `createFallbackMigrationSnapshot`
+    //      (no schema/defaults, sourceProfile cleared → profile updates would
+    //      then look unavailable for the rest of the preset's lifetime).
+    //   3. Fallback synthesized snapshot — only when both above are unavailable.
+    const reuseExistingSnapshot =
+        !resolved &&
+        existing &&
+        existing.profileSnapshot.profileId === planned.profileId
+    const nextSnapshot =
+        resolved?.snapshot
+        ?? (reuseExistingSnapshot ? existing!.profileSnapshot : createFallbackMigrationSnapshot(planned))
+    const nextSourceProfile =
+        resolved?.sourceProfile
+        ?? (reuseExistingSnapshot ? existing!.sourceProfile : undefined)
+
     const preset: ModelPreset = {
         id: planned.id,
         name: existing?.name || planned.name,
         notes: existing?.notes,
-        // sourceProfile must match the snapshot we are about to write. Falling
-        // back to existing metadata when the new snapshot came from a different
-        // path (or from the fallback) would leave stale registry pointers and
-        // break profile-update detection later.
-        sourceProfile: resolved?.sourceProfile,
+        sourceProfile: nextSourceProfile,
         migrationSource: {
             sourceKind: planned.sourceKind,
             sourcePath: planned.sourcePath,
             configHash: configHashFromPlannedId(planned.id),
         },
-        profileSnapshot: resolved?.snapshot || createFallbackMigrationSnapshot(planned),
+        profileSnapshot: nextSnapshot,
         userValues: cloneJsonLike(planned.userValues) as Record<string, unknown>,
         orphanValues: existing?.orphanValues,
         apiKeyRef,
@@ -272,11 +344,13 @@ function readLegacyValueAtPath(db: ModelPresetMigrationApplyTarget, sourcePath: 
     }
     if (sourcePath.startsWith('customModels.')) {
         const [, identifier, ...rest] = sourcePath.split('.')
-        // analyze step writes `customModels.${customModel.id || index}` so a
-        // legacy import without ids still gets a deterministic source path.
-        // Read-back must mirror that fallback: try id first, then array index.
+        // analyze step writes `customModels.${encodeCustomModelIdSegment(id) || index}`
+        // so a dotted/imported id round-trips safely, and a missing id still
+        // gets a deterministic source path. Read-back mirrors the encoder:
+        // 1) try the decoded id, 2) fall back to array index.
         const list = db.customModels ?? []
-        let customModel = list.find((model) => model.id === identifier)
+        const decoded = decodeCustomModelIdSegment(identifier)
+        let customModel = list.find((model) => model.id === decoded)
         if (!customModel && /^\d+$/.test(identifier)) {
             const index = Number(identifier)
             if (Number.isInteger(index) && index >= 0 && index < list.length) {
@@ -389,6 +463,15 @@ function pickOpenAiCompatibleProfile(baseProfileId: string, hasCredential: boole
     return baseProfileId
 }
 
+// Profiles whose registry `auth.kind === 'none'`. These must not pull a stale
+// legacy key into `apiKeyPool` — the adapter would never read it but the
+// secret would needlessly survive in the new structure. Keep this aligned
+// with `authKindForProfile` below (the fallback snapshot's auth.kind) and
+// with the registry profiles in `pocketrisu-model-registry/profiles/`.
+function profileExpectsCredential(profileId: string): boolean {
+    return authKindForProfile(profileId) !== 'none'
+}
+
 function redactFreeform(value: string): string {
     if (!value) return ''
     return shouldRedactValue(value) ? '[redacted]' : value
@@ -405,6 +488,19 @@ function shouldRedactValue(value: string): boolean {
 // Strict checking at analyze time keeps report/summary honest.
 function isNonEmptyString(value: unknown): value is string {
     return typeof value === 'string' && value.length > 0
+}
+
+// Encode a customModel id for safe inclusion in a dot-segmented source path.
+// `.` is the segment delimiter and `%` is the encoding sentinel — escape both.
+// UI-generated UUIDs don't include either, so this is a no-op for the common
+// case; only legacy-imported / hand-crafted ids like `my.custom.model` need
+// the round-trip. See review F5.
+function encodeCustomModelIdSegment(id: string): string {
+    return id.replace(/%/g, '%25').replace(/\./g, '%2E')
+}
+
+function decodeCustomModelIdSegment(segment: string): string {
+    return segment.replace(/%2E/gi, '.').replace(/%25/g, '%')
 }
 
 function cloneJsonLike(value: unknown): unknown {

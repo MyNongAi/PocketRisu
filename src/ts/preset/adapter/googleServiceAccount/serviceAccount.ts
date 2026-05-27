@@ -10,6 +10,17 @@ export interface ParsedServiceAccount {
 
 const DEFAULT_TOKEN_URI = 'https://oauth2.googleapis.com/token'
 
+// SA JSON often comes from external sources (user-imported files, copy-paste
+// from internal docs, …). We sign a JWT and POST it to whatever `token_uri`
+// the JSON specifies, so an attacker-supplied SA JSON with a hostile
+// `token_uri` would receive the signed assertion (potentially replayable for
+// the actual Google audience) and let us probe internal networks (SSRF).
+// Lock the field to Google's documented OAuth token endpoint. Any deviation
+// would need a deliberate, code-level allowlist extension — not user input.
+const ALLOWED_TOKEN_URIS = new Set<string>([
+    'https://oauth2.googleapis.com/token',
+])
+
 export function parseServiceAccountJson(source: string): ParsedServiceAccount {
     if (typeof source !== 'string' || source.trim().length === 0) {
         throw invalid('Service account JSON is empty')
@@ -36,6 +47,13 @@ export function parseServiceAccountJson(source: string): ParsedServiceAccount {
     const tokenUriRaw = obj.token_uri
     const tokenUri =
         typeof tokenUriRaw === 'string' && tokenUriRaw.length > 0 ? tokenUriRaw : DEFAULT_TOKEN_URI
+    if (!ALLOWED_TOKEN_URIS.has(tokenUri)) {
+        throw invalid(
+            `Service account token_uri '${tokenUri}' is not in the allowed set. ` +
+                'Only the standard Google OAuth token endpoint is permitted to ' +
+                'prevent SSRF / signed-JWT exfiltration via imported SA JSON.',
+        )
+    }
     const privateKeyIdRaw = obj.private_key_id
     const privateKeyId =
         typeof privateKeyIdRaw === 'string' && privateKeyIdRaw.length > 0

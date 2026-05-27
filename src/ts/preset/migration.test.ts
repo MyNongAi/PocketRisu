@@ -36,6 +36,40 @@ describe('analyzeModelPresetMigration (plan v5: customModels-only)', () => {
         expect(JSON.stringify(planned)).not.toContain('sk-secret')
     })
 
+    test('does not record credentialSource for no-auth profiles even when a stale key is present (review F4)', () => {
+        // Ollama maps to a no-auth profile. A legacy customModel that still
+        // carries a stale `key` must NOT pull that secret into the migrated
+        // preset — the adapter would never use it and apiKeyPool would hold
+        // a dead secret indefinitely.
+        const report = analyzeModelPresetMigration({
+            customModels: [{
+                id: 'ollama-stale',
+                internalId: 'llama-3',
+                url: 'http://localhost:11434/v1/chat/completions',
+                format: LLMFormat.Ollama,
+                key: 'sk-stale-leftover-from-previous-setup',
+                name: 'Ollama',
+            }],
+        })
+        expect(report.createdModelPresets).toHaveLength(1)
+        expect(report.createdModelPresets[0].profileId).toBe('ollama:openai-compatible-local')
+        expect(report.createdModelPresets[0].credentialSource).toBeUndefined()
+        // Apply must therefore not write the secret into apiKeyPool either.
+        const db: ModelPresetMigrationApplyTarget = {
+            customModels: [{
+                id: 'ollama-stale',
+                internalId: 'llama-3',
+                url: 'http://localhost:11434/v1/chat/completions',
+                format: LLMFormat.Ollama,
+                key: 'sk-stale-leftover-from-previous-setup',
+                name: 'Ollama',
+            }],
+        }
+        applyModelPresetMigration(db, analyzeModelPresetMigration(db))
+        expect(db.apiKeyPool).toEqual({})
+        expect(JSON.stringify(db.modelPresets)).not.toContain('sk-stale-leftover')
+    })
+
     test('routes no-credential custom OpenAI-compatible models to the custom-noauth profile', () => {
         const report = analyzeModelPresetMigration({
             customModels: [{
@@ -54,9 +88,9 @@ describe('analyzeModelPresetMigration (plan v5: customModels-only)', () => {
     test('routes Anthropic / Google / Ollama formats to their bundled profiles', () => {
         const report = analyzeModelPresetMigration({
             customModels: [
-                { id: 'a', format: LLMFormat.Anthropic, key: 'sk-ant' },
-                { id: 'g', format: LLMFormat.GoogleCloud, key: 'goog' },
-                { id: 'o', format: LLMFormat.Ollama, key: '' },
+                { id: 'a', internalId: 'claude-x', format: LLMFormat.Anthropic, key: 'sk-ant' },
+                { id: 'g', internalId: 'gemini-x', format: LLMFormat.GoogleCloud, key: 'goog' },
+                { id: 'o', internalId: 'llama-3', format: LLMFormat.Ollama, key: '' },
             ],
         })
         const profiles = report.createdModelPresets.map((p) => p.profileId)
@@ -101,7 +135,7 @@ describe('analyzeModelPresetMigration (plan v5: customModels-only)', () => {
 
     test('falls back to db.google.accessToken when a Google custom model has no per-model key', () => {
         const report = analyzeModelPresetMigration({
-            customModels: [{ id: 'g', format: LLMFormat.GoogleCloud, key: '' }],
+            customModels: [{ id: 'g', internalId: 'gemini-x', format: LLMFormat.GoogleCloud, key: '' }],
             google: { accessToken: 'goog-fallback' },
         })
         expect(report.createdModelPresets[0].credentialSource).toEqual({
@@ -112,7 +146,7 @@ describe('analyzeModelPresetMigration (plan v5: customModels-only)', () => {
 
     test('per-model key wins over db.google.accessToken when both are present', () => {
         const report = analyzeModelPresetMigration({
-            customModels: [{ id: 'g', format: LLMFormat.GoogleCloud, key: 'per-model' }],
+            customModels: [{ id: 'g', internalId: 'gemini-x', format: LLMFormat.GoogleCloud, key: 'per-model' }],
             google: { accessToken: 'fallback' },
         })
         expect(report.createdModelPresets[0].credentialSource?.sourcePath).toBe('customModels.g.key')
@@ -139,6 +173,7 @@ describe('analyzeModelPresetMigration (plan v5: customModels-only)', () => {
         const report = analyzeModelPresetMigration({
             customModels: [{
                 id: 'a',
+                internalId: 'm-a',
                 format: LLMFormat.OpenAICompatible,
                 key: 'sk-test',
                 params: 'authorization: Bearer sk-XXXXXX',
@@ -155,6 +190,57 @@ describe('analyzeModelPresetMigration (plan v5: customModels-only)', () => {
             manualRequired: [],
             warnings: [],
         })
+    })
+
+    test('round-trips customModels with dotted ids via source-path encoding (review F5)', () => {
+        // Imported / hand-crafted customModels can have an id like
+        // "my.custom.gpt". Without encoding, the apply step would split the
+        // source path on `.` and silently fail key lookup → preset created
+        // but apiKeyRef missing.
+        const db: ModelPresetMigrationApplyTarget = {
+            customModels: [{
+                id: 'my.custom.gpt',
+                internalId: 'gpt-x',
+                url: 'https://x.test/v1/chat/completions',
+                format: LLMFormat.OpenAICompatible,
+                key: 'sk-dotted',
+                name: 'Dotted',
+            }],
+        }
+        const report = analyzeModelPresetMigration(db)
+        // Source path encodes the dots so it stays one segment after decode.
+        expect(report.createdModelPresets[0].sourcePath).toBe('customModels.my%2Ecustom%2Egpt')
+        expect(report.createdModelPresets[0].credentialSource?.sourcePath).toBe(
+            'customModels.my%2Ecustom%2Egpt.key',
+        )
+        applyModelPresetMigration(db, report)
+        // Apply resolves the encoded segment back to the original id and the
+        // key ends up in apiKeyPool (no silent loss).
+        expect(Object.values(db.apiKeyPool ?? {}).some((e) => e.key === 'sk-dotted')).toBe(true)
+        expect(db.modelPresets?.[0]?.apiKeyRef).toBeTruthy()
+    })
+
+    test('marks customModels with blank internalId as manualRequired (review F6)', () => {
+        // Legacy resolution path uses `customModel.internalId` directly;
+        // falling back to customModel.id would silently send `xcustom:::main`
+        // as a wire model id, which legacy treated as invalid. Surface the
+        // incomplete row to the user instead of inventing a model id.
+        const report = analyzeModelPresetMigration({
+            customModels: [{
+                id: 'xcustom:::blank',
+                internalId: '',
+                url: 'https://x.test/v1/chat/completions',
+                format: LLMFormat.OpenAICompatible,
+                key: 'sk-irrelevant',
+                name: 'Blank InternalId',
+            }],
+        })
+        expect(report.createdModelPresets).toEqual([])
+        expect(report.manualRequired).toEqual([{
+            sourcePath: expect.stringContaining('customModels.xcustom'),
+            reason: expect.stringContaining('internalId'),
+            legacySource: 'xcustom:::blank',
+        }])
     })
 
     test('handles customModels without an id by falling back to array index for source path lookup', () => {
@@ -184,6 +270,7 @@ describe('analyzeModelPresetMigration (plan v5: customModels-only)', () => {
         const db: ModelPresetMigrationApplyTarget = {
             customModels: [{
                 id: 'a',
+                internalId: 'm-a',
                 format: LLMFormat.OpenAICompatible,
                 key: 'sk-test',
                 params: '',
@@ -314,16 +401,35 @@ describe('applyModelPresetMigration (plan v5)', () => {
         expect(db.modelPresets?.[0]?.sourceProfile?.fetchedAt).toEqual(expect.any(Number))
     })
 
-    test('clears sourceProfile when reapplied without a resolver', () => {
+    test('preserves existing snapshot + sourceProfile when reapplied without a resolver (v5 review F1)', () => {
+        // Reapply without a resolver must NOT downgrade a previously-resolved
+        // bundled snapshot to the empty fallback. Doing so would lose the real
+        // schema / defaults / sourceProfile and permanently break profile-update
+        // detection (it would return 'no-source' forever after).
         const db: ModelPresetMigrationApplyTarget = {
-            customModels: [{ id: 'x', format: LLMFormat.OpenAICompatible, key: 'sk' }],
+            customModels: [{ id: 'x', internalId: 'm-x', format: LLMFormat.OpenAICompatible, key: 'sk' }],
         }
         applyModelPresetMigration(db, analyzeModelPresetMigration(db), bundledMigrationResolver())
-        expect(db.modelPresets?.[0]?.sourceProfile?.registryId).toBe('bundled')
+        const firstSnapshot = db.modelPresets?.[0]?.profileSnapshot
+        const firstSource = db.modelPresets?.[0]?.sourceProfile
+        expect(firstSource?.registryId).toBe('bundled')
+        expect(firstSnapshot?.schema.length).toBeGreaterThan(0)
 
+        // Reapply without a resolver — must keep the resolved snapshot intact.
+        applyModelPresetMigration(db, analyzeModelPresetMigration(db))
+        expect(db.modelPresets?.[0]?.profileSnapshot).toEqual(firstSnapshot)
+        expect(db.modelPresets?.[0]?.sourceProfile).toEqual(firstSource)
+    })
+
+    test('writes the fallback snapshot only when no existing preset and no resolver', () => {
+        // Cold apply (first time, no resolver) still has to produce a valid
+        // preset; the fallback snapshot is the documented escape hatch for
+        // that case. Empty schema is expected and acceptable here.
+        const db: ModelPresetMigrationApplyTarget = {
+            customModels: [{ id: 'x', internalId: 'm-x', format: LLMFormat.OpenAICompatible, key: 'sk' }],
+        }
         applyModelPresetMigration(db, analyzeModelPresetMigration(db))
         expect(db.modelPresets?.[0]?.sourceProfile).toBeUndefined()
-        // Fallback snapshot has empty schema and no source pointer.
         expect(db.modelPresets?.[0]?.profileSnapshot.schema).toEqual([])
     })
 
@@ -331,5 +437,93 @@ describe('applyModelPresetMigration (plan v5)', () => {
         const db: ModelPresetMigrationApplyTarget = {}
         const report = { version: 99 } as unknown as MigrationReport
         expect(() => applyModelPresetMigration(db, report)).toThrow(/Unsupported.*version/)
+    })
+
+    test('refuses to write apiKeyPool when planned profile is no-auth (review F4 round 2)', () => {
+        // Tampered/stale report sneaks in a planned preset whose profileId is
+        // a no-auth profile (`ollama:openai-compatible-local`) but supplies an
+        // allowed credential sourcePath. analyzer never produces this shape
+        // (review F4 round 1 closed that), but apply must mirror the guard so
+        // no-auth profiles can never hold a secret.
+        const db: ModelPresetMigrationApplyTarget = {
+            customModels: [{
+                id: 'o',
+                internalId: 'llama-3',
+                url: 'http://localhost:11434/v1/chat/completions',
+                format: LLMFormat.Ollama,
+                key: 'sk-stale-from-prior-setup',
+                name: 'Ollama',
+            }],
+        }
+        const tamperedReport: MigrationReport = {
+            version: 1,
+            warnings: [],
+            manualRequired: [],
+            createdModelPresets: [{
+                id: 'migrated:custom:customModels.o:tampered',
+                name: 'Ollama (tampered)',
+                sourceKind: 'custom',
+                sourcePath: 'customModels.o',
+                profileId: 'ollama:openai-compatible-local',
+                modelId: 'llama-3',
+                endpointUrl: 'http://localhost:11434/v1/chat/completions',
+                // sourcePath itself IS allowed by the F2 allowlist — only the
+                // profile-side guard (F4 round 2) keeps the secret out.
+                credentialSource: { kind: 'legacyKey', sourcePath: 'customModels.o.key' },
+                userValues: {},
+            }],
+        }
+        applyModelPresetMigration(db, tamperedReport)
+        expect(db.apiKeyPool).toEqual({})
+        expect(db.modelPresets?.[0]?.apiKeyRef).toBeUndefined()
+        expect(JSON.stringify(db.modelPresets)).not.toContain('sk-stale-from-prior-setup')
+    })
+
+    test('ignores credentialSource paths outside the v5 allowlist (defense-in-depth)', () => {
+        // A tampered / v4-era report could reference arbitrary `db.*` legacy
+        // credential paths. Apply must refuse to copy those into apiKeyPool
+        // even though the analyzer never emits such paths today.
+        const db: ModelPresetMigrationApplyTarget & Record<string, unknown> = {
+            customModels: [],
+            // Pretend the legacy DB still holds these top-level secrets.
+            openAIKey: 'sk-leaked-openai',
+            vertexPrivateKey: 'pem-leaked-vertex',
+        }
+        const tamperedReport: MigrationReport = {
+            version: 1,
+            warnings: [],
+            manualRequired: [],
+            createdModelPresets: [
+                {
+                    id: 'migrated:custom:fake.path:deadbeef',
+                    name: 'Tampered',
+                    sourceKind: 'custom',
+                    sourcePath: 'customModels.fake',
+                    profileId: 'openai-compatible:custom',
+                    modelId: 'm',
+                    endpointUrl: 'https://x.test/v1',
+                    credentialSource: { kind: 'legacyKey', sourcePath: 'db.openAIKey' },
+                    userValues: {},
+                },
+                {
+                    id: 'migrated:custom:other.path:beefdead',
+                    name: 'Tampered Vertex',
+                    sourceKind: 'custom',
+                    sourcePath: 'customModels.other',
+                    profileId: 'google:standard',
+                    modelId: 'gemini',
+                    credentialSource: { kind: 'legacyKey', sourcePath: 'db.vertexPrivateKey' },
+                    userValues: {},
+                },
+            ],
+        }
+        applyModelPresetMigration(db, tamperedReport)
+        // Allowlist rejected both paths; nothing leaks into apiKeyPool.
+        expect(db.apiKeyPool).toEqual({})
+        // The presets themselves still get created with no apiKeyRef (no key
+        // means the migrated preset is intentionally credential-less).
+        for (const preset of db.modelPresets ?? []) {
+            expect(preset.apiKeyRef).toBeUndefined()
+        }
     })
 })

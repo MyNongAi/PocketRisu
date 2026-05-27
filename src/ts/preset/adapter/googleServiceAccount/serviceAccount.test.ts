@@ -79,6 +79,20 @@ describe('parseServiceAccountJson', () => {
             parseServiceAccountJson(validJson({ private_key: '-----BEGIN PRIVATE KEY-----\nabc' })),
         )
     })
+
+    test('rejects non-Google token_uri (SSRF / signed-JWT exfiltration guard)', () => {
+        // Hostile imported SA JSON could redirect our signed assertion to any
+        // URL. Only the standard Google OAuth token endpoint is allowed.
+        expectInvalid(() => parseServiceAccountJson(validJson({ token_uri: 'https://attacker.test/token' })))
+        expectInvalid(() => parseServiceAccountJson(validJson({ token_uri: 'http://internal-host:8080/probe' })))
+        // Even a Google-looking but non-standard host is rejected (e.g. a typo
+        // attack or a related but unaudited endpoint).
+        expectInvalid(() => parseServiceAccountJson(validJson({ token_uri: 'https://oauth2.google.com/token' })))
+        expectInvalid(() => parseServiceAccountJson(validJson({ token_uri: 'https://accounts.google.com/o/oauth2/token' })))
+        // Default fallback (when token_uri is missing/empty) is still allowed.
+        const parsed = parseServiceAccountJson(validJson({ token_uri: '' }))
+        expect(parsed.tokenUri).toBe('https://oauth2.googleapis.com/token')
+    })
 })
 
 function expectInvalid(fn: () => unknown): void {
