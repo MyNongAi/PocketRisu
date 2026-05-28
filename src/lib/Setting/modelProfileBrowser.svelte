@@ -1,0 +1,133 @@
+<script lang="ts">
+    import { SearchIcon, XIcon } from "@lucide/svelte";
+    import { language } from "src/lang";
+    import { DBState } from "src/ts/stores.svelte";
+    import { notifySuccess } from "src/ts/alert";
+    import {
+        getBundledRegistryId,
+        loadBundledRegistry,
+        resolveSnapshot,
+    } from "src/ts/preset/registry";
+    import type { BaseProviderDefinition, ModelPreset, ModelProfile } from "src/ts/preset/types";
+    import TextInput from "../UI/GUI/TextInput.svelte";
+    import { v4 as uuidv4 } from "uuid";
+
+    interface Props {
+        close?: any;
+    }
+
+    let { close = () => {} }: Props = $props();
+
+    const registry = loadBundledRegistry();
+    const registryId = getBundledRegistryId();
+
+    // Flatten all profiles across all registries (currently just `bundled`).
+    type Entry = {
+        profile: ModelProfile;
+        baseProvider: BaseProviderDefinition | undefined;
+    };
+
+    const entries: Entry[] = (() => {
+        const out: Entry[] = [];
+        for (const reg of Object.values(registry.registries)) {
+            for (const profile of Object.values(reg.profiles ?? {})) {
+                const baseProvider = reg.baseProviders?.[profile.providerBaseId];
+                out.push({ profile, baseProvider });
+            }
+        }
+        return out.sort((a, b) =>
+            (a.baseProvider?.displayName ?? '').localeCompare(b.baseProvider?.displayName ?? '')
+            || a.profile.displayName.localeCompare(b.profile.displayName),
+        );
+    })();
+
+    let query = $state('');
+
+    const filtered = $derived.by(() => {
+        const q = query.trim().toLowerCase();
+        if (!q) return entries;
+        return entries.filter(({ profile, baseProvider }) => {
+            return profile.displayName.toLowerCase().includes(q)
+                || profile.id.toLowerCase().includes(q)
+                || profile.modelId.toLowerCase().includes(q)
+                || (profile.description ?? '').toLowerCase().includes(q)
+                || (baseProvider?.displayName ?? '').toLowerCase().includes(q)
+                || (baseProvider?.id ?? '').toLowerCase().includes(q);
+        });
+    });
+
+    function createPresetFrom(profile: ModelProfile) {
+        const snapshot = resolveSnapshot(registry, profile.id);
+        const preset: ModelPreset = {
+            id: uuidv4(),
+            name: profile.displayName,
+            profileSnapshot: snapshot,
+            sourceProfile: {
+                registryId,
+                profileId: snapshot.profileId,
+                profileVersion: snapshot.profileVersion,
+                providerBaseVersion: snapshot.providerBaseVersion,
+                fetchedAt: Date.now(),
+            },
+            userValues: {},
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+        };
+        DBState.db.modelPresets = [...DBState.db.modelPresets, preset];
+        notifySuccess(language.modelPresetCreated);
+        close();
+    }
+</script>
+
+<div class="absolute w-full h-full z-40 bg-black/50 flex justify-center items-center">
+    <div class="bg-darkbg p-4 break-any rounded-md flex flex-col max-w-3xl w-124 max-h-full overflow-hidden">
+        <div class="flex items-center text-textcolor mb-4 shrink-0">
+            <h2 class="mt-0 mb-0">{language.selectProfile}</h2>
+            <div class="grow flex justify-end">
+                <button class="text-textcolor2 hover:text-primary mr-2 cursor-pointer items-center" onclick={close}>
+                    <XIcon size={24}/>
+                </button>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2 mb-4 shrink-0">
+            <SearchIcon size={16} class="text-textcolor2 shrink-0" />
+            <TextInput bind:value={query} placeholder={language.searchProfiles} fullwidth />
+        </div>
+
+        <div class="flex flex-col gap-1 overflow-y-auto">
+            {#if filtered.length === 0}
+                <div class="text-textcolor2 text-sm text-center py-8">
+                    {language.noProfileMatch}
+                </div>
+            {:else}
+                {#each filtered as { profile, baseProvider } (profile.id)}
+                    <button
+                        class="flex items-start text-textcolor border border-darkborderc rounded-md p-3 cursor-pointer hover:bg-selected/30 transition-colors text-left"
+                        onclick={() => createPresetFrom(profile)}
+                    >
+                        <div class="flex flex-col min-w-0 grow">
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm text-textcolor truncate">{profile.displayName}</span>
+                                {#if baseProvider}
+                                    <span class="text-xs text-textcolor2 shrink-0">[{baseProvider.displayName}]</span>
+                                {/if}
+                            </div>
+                            <span class="text-xs text-textcolor2 truncate">{profile.id}</span>
+                            {#if profile.description}
+                                <span class="text-xs text-textcolor2 mt-1 truncate">{profile.description}</span>
+                            {/if}
+                        </div>
+                    </button>
+                {/each}
+            {/if}
+        </div>
+    </div>
+</div>
+
+<style>
+    .break-any{
+        word-break: normal;
+        overflow-wrap: anywhere;
+    }
+</style>
