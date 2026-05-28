@@ -9,21 +9,7 @@ import { changeFullscreen } from '../util';
 import { updateAnimationSpeed } from '../gui/animation';
 import { guiSizeText, updateGuisize } from '../gui/guisize';
 import { updateTextThemeAndCSS } from '../gui/colorscheme';
-import { openThemePresetList } from '../stores.svelte';
-
 export const displayThemeSettingsItems: SettingItem[] = [
-    {
-        id: 'display.themePresets',
-        type: 'button',
-        labelKey: 'themePresets',
-        helpKey: 'themePresets',
-        classes: 'mt-4',
-        getValue: (db) => db.themePresets?.[db.themePresetsId]?.name ?? 'Default',
-        options: {
-            onClick: () => openThemePresetList.set(true),
-        },
-        keywords: ['theme', 'presets'],
-    },
     {
         id: 'display.theme',
         type: 'select',
