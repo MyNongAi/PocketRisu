@@ -16,7 +16,7 @@
 
 <SettingPage title={language.display}>
 <PresetHeader
-    label={language.themePresets}
+    label={language.currentThemePreset}
     activeName={DBState.db.themePresets?.[DBState.db.themePresetsId]?.name ?? 'Default'}
     onManage={() => openThemePresetList.set(true)}
 />

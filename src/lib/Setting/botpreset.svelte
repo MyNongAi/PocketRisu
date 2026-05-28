@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { alertCardExport, alertConfirm, notifyError } from "../../ts/alert";
+    import { alertConfirm, notifyError, notifySuccess } from "../../ts/alert";
     import { language } from "../../lang";
     import { changeToPreset, copyPreset, downloadPreset, importPreset, saveCurrentPreset, withStableActivePreset } from "../../ts/storage/database.svelte";
     import { v4 as uuidv4 } from "uuid";
@@ -183,7 +183,13 @@
                     {/if}
                     <div class="text-textcolor2 hover:text-primary cursor-pointer mr-2" role="button" tabindex="0" onclick={(e) => {
                         e.stopPropagation()
+                        const before = DBState.db.botPresets.length
                         copyPreset(i)
+                        const after = DBState.db.botPresets.length
+                        if (after > before) {
+                            changeToPreset(after - 1)
+                            notifySuccess(language.presetDuplicated)
+                        }
                     }} onkeydown={(e) => {
                         if(e.key === 'Enter' && e.currentTarget instanceof HTMLElement){
                             e.currentTarget.click()
@@ -191,13 +197,10 @@
                     }}>
                         <CopyIcon size={18}/>
                     </div>
-                    <div class="text-textcolor2 hover:text-primary cursor-pointer mr-2" role="button" tabindex="0" onclick={async (e) => {
+                    <div class="text-textcolor2 hover:text-primary cursor-pointer mr-2" role="button" tabindex="0" onclick={(e) => {
                         e.stopPropagation()
-                        const data = await alertCardExport('preset')
-                        console.log(data.type)
-                        if(data.type === ''){
-                            downloadPreset(i, 'risupreset')
-                        }
+                        downloadPreset(i, 'risupreset')
+                        notifySuccess(language.presetExported)
                     }} onkeydown={(e) => {
                         if(e.key === 'Enter' && e.currentTarget instanceof HTMLElement){
                             e.currentTarget.click()
@@ -209,7 +212,7 @@
                     <div class="text-textcolor2 hover:text-red-400 cursor-pointer" role="button" tabindex="0" onclick={async (e) => {
                         e.stopPropagation()
                         if(DBState.db.botPresets.length === 1){
-                            notifyError(language.errors.onlyOneChat)
+                            notifyError(language.errors.onlyOnePreset)
                             return
                         }
                         const d = await alertConfirm(`${language.removeConfirm}${preset.name}`)
@@ -232,6 +235,7 @@
                                 // longer exists in the array).
                                 changeToPreset(0, false)
                             }
+                            notifySuccess(language.presetDeleted)
                         }
                     }} onkeydown={(e) => {
                         if(e.key === 'Enter' && e.currentTarget instanceof HTMLElement){
@@ -276,8 +280,14 @@
             }}>
                 <PlusIcon/>
             </button>
-            <button class="text-textcolor2 hover:text-primary mr-2 cursor-pointer" onclick={() => {
-                importPreset()
+            <button class="text-textcolor2 hover:text-primary mr-2 cursor-pointer" onclick={async () => {
+                const before = DBState.db.botPresets.length
+                await importPreset()
+                const after = DBState.db.botPresets.length
+                if (after > before) {
+                    changeToPreset(after - 1)
+                    notifySuccess(language.presetImported)
+                }
             }}>
                 <HardDriveUploadIcon size={18}/>
             </button>
