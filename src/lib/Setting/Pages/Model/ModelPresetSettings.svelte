@@ -3,6 +3,8 @@
     import SettingPage from "src/lib/UI/GUI/SettingPage.svelte";
     import SettingTabs from "src/lib/UI/GUI/SettingTabs.svelte";
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
+    import SchemaFormRenderer from "src/lib/UI/GUI/SchemaFormRenderer.svelte";
+    import ModelPresetBasicInfo from "./ModelPresetBasicInfo.svelte";
     import { language } from "src/lang";
     import { DBState, openModelProfileBrowser } from "src/ts/stores.svelte";
     import { alertConfirm, notifySuccess } from "src/ts/alert";
@@ -117,12 +119,24 @@
             bind:selected={submenu}
         />
 
-        {#if submenu === 0}
-            <p class="text-textcolor2 mt-4">기본 정보 영역 — Phase 후속에서 채워짐 (이름, 프로필 표시, 복제/내보내기/불러오기/삭제)</p>
-        {:else if submenu === 1}
-            <p class="text-textcolor2 mt-4">기본 설정 영역 — Phase 3 (registry schema renderer)에서 구현</p>
-        {:else if submenu === 2}
-            <p class="text-textcolor2 mt-4">고급 설정 영역 — Phase 3/6에서 구현 (customBody / customHeaders)</p>
+        {#if editingPreset}
+            {#if submenu === 0}
+                <ModelPresetBasicInfo preset={editingPreset} onAfterDelete={() => { editingId = null }} />
+            {:else if submenu === 1}
+                <SchemaFormRenderer
+                    schema={editingPreset.profileSnapshot.schema}
+                    uiSchema={editingPreset.profileSnapshot.uiSchema}
+                    userValues={editingPreset.userValues}
+                    visibility="basic"
+                />
+            {:else if submenu === 2}
+                <SchemaFormRenderer
+                    schema={editingPreset.profileSnapshot.schema}
+                    uiSchema={editingPreset.profileSnapshot.uiSchema}
+                    userValues={editingPreset.userValues}
+                    visibility="advanced"
+                />
+            {/if}
         {/if}
     {/if}
 </SettingPage>
