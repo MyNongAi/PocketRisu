@@ -691,6 +691,8 @@ export const languageKorean = {
     "roundIcons": "둥근 아이콘",
     "streaming": "스트리밍",
     "chatBot": "채팅 봇",
+    "modelPresetMenu": "모델",
+    "promptPresetMenu": "프롬프트",
     "otherBots": "기타 봇",
     "user": "유저",
     "additionalAssets": "추가 에셋",

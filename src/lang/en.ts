@@ -697,6 +697,8 @@ export const languageEnglish = {
     roundIcons: "Round Icons",
     streaming: "Streaming",
     chatBot: "Chat Bot",
+    modelPresetMenu: "Model",
+    promptPresetMenu: "Prompt",
     otherBots: "Other Bots",
     user: "User",
     additionalAssets: "Additional Assets",

@@ -1,9 +1,11 @@
 <script lang="ts">
-    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, CodeIcon, CogIcon, ContactIcon, FlaskConicalIcon, ImageIcon, LanguagesIcon, MonitorIcon, MonitorSmartphoneIcon, Sailboat, UserIcon, CircleXIcon, KeyboardIcon, TruckIcon } from "@lucide/svelte";
+    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, CodeIcon, CogIcon, ContactIcon, FlaskConicalIcon, ImageIcon, LanguagesIcon, MonitorIcon, MonitorSmartphoneIcon, Sailboat, ScrollTextIcon, UserIcon, CircleXIcon, KeyboardIcon, TruckIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import DisplaySettings from "./Pages/DisplaySettings.svelte";
     import MigrationSettings from "./Pages/MigrationSettings.svelte";
     import BotSettings from "./Pages/BotSettings.svelte";
+    import ModelPresetSettings from "./Pages/Model/ModelPresetSettings.svelte";
+    import PromptPresetSettings from "./Pages/PromptPresetSettings.svelte";
     import OtherBotSettings from "./Pages/OtherBotSettings.svelte";
     import PluginSettings from "./Pages/PluginSettings.svelte";
     import FilesSettings from "./Pages/FilesSettings.svelte";
@@ -52,10 +54,28 @@
                         class:text-textcolor2={$SettingsMenuIndex !== 1 && $SettingsMenuIndex !== 13}
                         onclick={() => {
                             $SettingsMenuIndex = 1
-                            
+
                     }}>
                         <BotIcon />
                         <span>{language.chatBot}</span>
+                    </button>
+                    <button class="flex gap-2 items-center hover:text-textcolor"
+                        class:text-textcolor={$SettingsMenuIndex === 16}
+                        class:text-textcolor2={$SettingsMenuIndex !== 16}
+                        onclick={() => {
+                            $SettingsMenuIndex = 16
+                    }}>
+                        <BotIcon />
+                        <span>{language.modelPresetMenu}</span>
+                    </button>
+                    <button class="flex gap-2 items-center hover:text-textcolor"
+                        class:text-textcolor={$SettingsMenuIndex === 17}
+                        class:text-textcolor2={$SettingsMenuIndex !== 17}
+                        onclick={() => {
+                            $SettingsMenuIndex = 17
+                    }}>
+                        <ScrollTextIcon />
+                        <span>{language.promptPresetMenu}</span>
                     </button>
                     <button class="flex gap-2 items-center hover:text-textcolor"
                         class:text-textcolor={$SettingsMenuIndex === 12}
@@ -250,6 +270,10 @@
                             }}/>
                         {:else if $SettingsMenuIndex === 15 && window.innerWidth >= 768}
                             <HotkeySettings/>
+                        {:else if $SettingsMenuIndex === 16}
+                            <ModelPresetSettings/>
+                        {:else if $SettingsMenuIndex === 17}
+                            <PromptPresetSettings/>
                         {:else if $SettingsMenuIndex === 23}
                             <InlayImageGallery/>
                         {:else if $SettingsMenuIndex === 21}
