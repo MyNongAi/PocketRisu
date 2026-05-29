@@ -1,9 +1,11 @@
 <script lang="ts">
     import type { RegistryFieldSchema, RegistryUiField } from "src/ts/preset/types";
+    import { language } from "src/lang";
+    import { XIcon } from "@lucide/svelte";
     import TextInput from "./TextInput.svelte";
     import TextAreaInput from "./TextAreaInput.svelte";
     import NumberInput from "./NumberInput.svelte";
-    import SliderInput from "./SliderInput.svelte";
+    import ShSlider from "./ShSlider.svelte";
     import SelectInput from "./SelectInput.svelte";
     import OptionInput from "./OptionInput.svelte";
     import CheckInput from "./CheckInput.svelte";
@@ -17,6 +19,23 @@
     let { schemaField, uiField, userValues = $bindable() }: Props = $props();
 
     const fieldKey = $derived(schemaField.key);
+
+    // Reset (clear-to-undefined) is offered for optional scalar widgets where
+    // a value is present. textarea/string-array/json/key-value let the user
+    // clear by emptying the textarea directly, so we skip the button there.
+    const resetableWidgets = new Set([
+        'text', 'secret', 'number-input', 'slider',
+        'select', 'segmented', 'toggle', 'combobox',
+    ]);
+    const showReset = $derived(
+        !schemaField.required &&
+        userValues[fieldKey] !== undefined &&
+        resetableWidgets.has(uiField.widget)
+    );
+
+    function resetField() {
+        userValues[fieldKey] = undefined;
+    }
 
     // stringArray widget: textarea one-per-line, syncs to/from userValues[key]: string[]
     let stringArrayText = $state('');
@@ -75,10 +94,23 @@
 </script>
 
 <div class="flex flex-col gap-1">
-    <span class="text-sm text-textcolor flex items-center gap-1">
-        {schemaField.label}
-        {#if schemaField.required}<span class="text-red-400">*</span>{/if}
-    </span>
+    <div class="flex items-center justify-between gap-2">
+        <span class="text-sm text-textcolor flex items-center gap-1">
+            {schemaField.label}
+            {#if schemaField.required}<span class="text-red-400">*</span>{/if}
+        </span>
+        {#if showReset}
+            <button
+                type="button"
+                class="text-textcolor2 hover:text-red-400 transition-colors flex items-center gap-1 text-xs"
+                title={language.reset}
+                onclick={resetField}
+            >
+                <XIcon size={12} />
+                <span>{language.reset}</span>
+            </button>
+        {/if}
+    </div>
     {#if schemaField.description}
         <span class="text-xs text-textcolor2">{schemaField.description}</span>
     {/if}
@@ -112,7 +144,7 @@
             fullwidth
         />
     {:else if uiField.widget === 'slider'}
-        <SliderInput
+        <ShSlider
             bind:value={userValues[fieldKey] as number}
             min={schemaField.min ?? 0}
             max={schemaField.max ?? 100}
