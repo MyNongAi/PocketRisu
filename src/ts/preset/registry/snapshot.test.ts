@@ -6,16 +6,16 @@ import { RegistryProfileNotFoundError, resolveSnapshot } from './snapshot'
 describe('resolveSnapshot', () => {
     const registry = loadBundledRegistry()
 
-    test('returns the openai:standard snapshot with merged base schema', () => {
-        const snapshot = resolveSnapshot(registry, 'openai:standard')
+    test('returns the openai:gpt-5 snapshot with merged base schema', () => {
+        const snapshot = resolveSnapshot(registry, 'openai:gpt-5')
         expect(snapshot).toMatchObject({
-            profileId: 'openai:standard',
+            profileId: 'openai:gpt-5',
             profileVersion: 1,
             providerBaseId: 'openai',
             adapterKind: 'openai-compatible',
             auth: { kind: 'bearer', fields: ['apiKey'] },
             endpoint: { kind: 'static', url: 'https://api.openai.com/v1/chat/completions' },
-            modelId: '',
+            modelId: 'gpt-5.2',
         })
         expect(snapshot.schema.map((f) => f.key)).toEqual(expect.arrayContaining(['apiKey', 'modelId']))
         expect(snapshot.schema.find((f) => f.key === 'apiKey')).toBeDefined()
@@ -24,16 +24,16 @@ describe('resolveSnapshot', () => {
         expect(snapshot.capabilities).toContain('streaming')
     })
 
-    test('returns the anthropic:standard snapshot with anthropic-messages adapter', () => {
-        const snapshot = resolveSnapshot(registry, 'anthropic:standard')
+    test('returns the anthropic:sonnet-adaptive snapshot with anthropic-messages adapter', () => {
+        const snapshot = resolveSnapshot(registry, 'anthropic:sonnet-adaptive')
         expect(snapshot.adapterKind).toBe('anthropic-messages')
         expect(snapshot.auth).toEqual({ kind: 'x-api-key', fields: ['apiKey'] })
         expect(snapshot.endpoint.url).toBe('https://api.anthropic.com/v1/messages')
         expect(snapshot.headerTemplate?.['anthropic-version']).toBe('2023-06-01')
     })
 
-    test('returns the google:standard snapshot with x-goog-api-key auth', () => {
-        const snapshot = resolveSnapshot(registry, 'google:standard')
+    test('returns the google:gemini-25 snapshot with x-goog-api-key auth', () => {
+        const snapshot = resolveSnapshot(registry, 'google:gemini-25')
         expect(snapshot.adapterKind).toBe('google-gemini')
         expect(snapshot.auth.kind).toBe('x-goog-api-key')
     })
@@ -180,15 +180,15 @@ describe('resolveSnapshot', () => {
 
     test('covers every analyzer-emitted profile id', () => {
         const analyzerProfileIds = [
-            'openai:standard',
-            'anthropic:standard',
-            'google:standard',
+            'openai:gpt-5',
+            'anthropic:sonnet-adaptive',
+            'google:gemini-25',
             'openai-compatible:custom',
             'openai-compatible:custom-noauth',
             'openrouter:openai-compatible',
             'nanogpt:openai-compatible',
             'ollama:openai-compatible-local',
-            'deepseek:openai-compatible',
+            'deepseek:v4',
             'deepinfra:openai-compatible',
             'vercel:openai-compatible',
         ]

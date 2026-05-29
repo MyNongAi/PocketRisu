@@ -454,10 +454,10 @@ describe('streamGoogleChatRequest', () => {
     })
 })
 
-describe('bundled google:standard profile integration', () => {
-    test('google:standard routes to generateContent under the bundled base URL', async () => {
+describe('bundled google:gemini-25 profile integration', () => {
+    test('google:gemini-25 routes to generateContent under the bundled base URL', async () => {
         const registry = loadBundledRegistry()
-        const snapshot = resolveSnapshot(registry, 'google:standard')
+        const snapshot = resolveSnapshot(registry, 'google:gemini-25')
         const preset: ModelPreset = {
             id: 'preset-gemini',
             name: 'Gemini',

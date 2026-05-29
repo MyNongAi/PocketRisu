@@ -472,10 +472,10 @@ describe('streamAnthropicChatRequest', () => {
     })
 })
 
-describe('bundled anthropic:standard profile integration', () => {
-    test('anthropic:standard backfills modelId default and routes to /v1/messages', async () => {
+describe('bundled anthropic:sonnet-adaptive profile integration', () => {
+    test('anthropic:sonnet-adaptive backfills modelId default and routes to /v1/messages', async () => {
         const registry = loadBundledRegistry()
-        const snapshot = resolveSnapshot(registry, 'anthropic:standard')
+        const snapshot = resolveSnapshot(registry, 'anthropic:sonnet-adaptive')
         // bundled profile.modelId is empty string by default; user is expected
         // to set it. Provide a userValue.
         const preset: ModelPreset = {

@@ -95,8 +95,8 @@ describe('analyzeModelPresetMigration (plan v5: customModels-only)', () => {
         })
         const profiles = report.createdModelPresets.map((p) => p.profileId)
         expect(profiles).toEqual([
-            'anthropic:standard',
-            'google:standard',
+            'anthropic:sonnet-adaptive',
+            'google:gemini-25',
             'ollama:openai-compatible-local',
         ])
     })
@@ -510,7 +510,7 @@ describe('applyModelPresetMigration (plan v5)', () => {
                     name: 'Tampered Vertex',
                     sourceKind: 'custom',
                     sourcePath: 'customModels.other',
-                    profileId: 'google:standard',
+                    profileId: 'google:gemini-25',
                     modelId: 'gemini',
                     credentialSource: { kind: 'legacyKey', sourcePath: 'db.vertexPrivateKey' },
                     userValues: {},

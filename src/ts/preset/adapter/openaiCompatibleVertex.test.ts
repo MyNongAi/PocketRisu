@@ -130,12 +130,12 @@ describe('openai-compatible adapter — Vertex google-service-account integratio
         )
         const { fetchImpl, calls } = captureFetch(chatResponse)
 
-        // openai:standard uses bearer auth — no SA exchange should happen.
+        // openai:gpt-5 uses bearer auth — no SA exchange should happen.
         const registry = loadBundledRegistry()
         const preset: ModelPreset = {
             id: 'preset-bearer',
             name: 'OpenAI',
-            profileSnapshot: resolveSnapshot(registry, 'openai:standard'),
+            profileSnapshot: resolveSnapshot(registry, 'openai:gpt-5'),
             userValues: { modelId: 'gpt-5' },
             createdAt: 1,
             updatedAt: 1,

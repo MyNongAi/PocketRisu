@@ -106,6 +106,19 @@ export type RegistryCapability =
     | 'json'
     | 'reasoning'
 
+export type RegistryProfileVisibility =
+    | 'popular'
+    | 'standard'
+    | 'advanced'
+    | 'legacy'
+
+export type RegistryLifecycle =
+    | 'recommended'
+    | 'current'
+    | 'legacy'
+    | 'deprecated'
+    | 'experimental'
+
 export interface BaseProviderDefinition {
     id: string
     version: number
@@ -125,9 +138,15 @@ export interface ModelProfile {
     id: string
     version: number
     displayName: string
+    displayNameI18n?: Record<string, string>
     providerBaseId: string
     profileTier: 'standard'
     description?: string
+    descriptionI18n?: Record<string, string>
+    visibility?: RegistryProfileVisibility
+    lifecycle?: RegistryLifecycle
+    tags?: string[]
+    sortOrder?: number
     modelId: string
     endpoint: RegistryEndpoint
     auth: RegistryAuth

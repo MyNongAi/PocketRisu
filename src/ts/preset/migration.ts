@@ -84,7 +84,7 @@ export function analyzeModelPresetMigration(db: ModelPresetMigrationInput): Migr
             ? encodeCustomModelIdSegment(customModel.id)
             : String(index)
         const sourcePath = `customModels.${idSegment}`
-        const baseProfileId = profileForFormat(customModel.format)
+        const baseProfileId = profileForCustomModel(customModel)
         if (!baseProfileId) {
             report.manualRequired.push({
                 sourcePath,
@@ -119,7 +119,7 @@ export function analyzeModelPresetMigration(db: ModelPresetMigrationInput): Migr
         const credentialPath = profileExpectsCredential(profileId)
             ? (isNonEmptyString(customModel.key)
                 ? `${sourcePath}.key`
-                : (profileId === 'google:standard' && isNonEmptyString(db.google?.accessToken)
+                : (profileId.startsWith('google:') && isNonEmptyString(db.google?.accessToken)
                     ? 'db.google.accessToken'
                     : undefined))
             : undefined
@@ -426,8 +426,8 @@ function createPlannedPreset(args: {
 // re-create via the new ModelPreset UI — guessing on those would produce a
 // preset that silently talks to the wrong endpoint or with the wrong auth
 // header.
-function profileForFormat(format: number | undefined): string | undefined {
-    switch (format) {
+function profileForCustomModel(customModel: LegacyCustomModel): string | undefined {
+    switch (customModel.format) {
         case undefined:
         case LLMFormat.OpenAICompatible:
         case LLMFormat.NanoGPT:
@@ -439,16 +439,35 @@ function profileForFormat(format: number | undefined): string | undefined {
         case LLMFormat.Ollama:
             return 'ollama:openai-compatible-local'
         case LLMFormat.Anthropic:
-            return 'anthropic:standard'
+            return anthropicProfileForModelId(customModel.internalId)
         case LLMFormat.GoogleCloud:
             // Google AI Studio (x-goog-api-key + generativelanguage.googleapis.com).
             // VertexAIGemini deliberately omitted: it uses Bearer + a different
             // host and requires the SA-auth Vertex profile (vertex-openai:standard,
             // §14-5), which the user must select via UI.
-            return 'google:standard'
+            return googleProfileForModelId(customModel.internalId)
         default:
             return undefined
     }
+}
+
+function anthropicProfileForModelId(modelId: string | undefined): string {
+    const model = modelId?.toLowerCase() ?? ''
+    if (model.includes('opus-4-8') || model.includes('opus-4-7')) return 'anthropic:opus-adaptive'
+    if (model.includes('opus-4-6')) return 'anthropic:opus-46'
+    if (model.includes('sonnet-4-6')) return 'anthropic:sonnet-adaptive'
+    if (model.includes('sonnet-4-5') || model.includes('haiku-4-5')) return 'anthropic:claude-45'
+    if (model.includes('claude-3-')) return 'anthropic:legacy'
+    return 'anthropic:sonnet-adaptive'
+}
+
+function googleProfileForModelId(modelId: string | undefined): string {
+    const model = modelId?.toLowerCase() ?? ''
+    if (model.includes('gemini-3.5')) return 'google:gemini-35'
+    if (model.includes('gemini-3.1') || model.includes('gemini-3-')) return 'google:gemini-31'
+    if (model.includes('gemini-2.5')) return 'google:gemini-25'
+    if (model.includes('gemini-2.0') || model.includes('gemini-1.5')) return 'google:legacy'
+    return 'google:gemini-25'
 }
 
 // Custom OpenAI-compatible endpoints (self-hosted vLLM, LiteLLM, local Ollama
