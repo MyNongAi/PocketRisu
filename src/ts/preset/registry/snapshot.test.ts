@@ -10,7 +10,7 @@ describe('resolveSnapshot', () => {
         const snapshot = resolveSnapshot(registry, 'openai:gpt-5')
         expect(snapshot).toMatchObject({
             profileId: 'openai:gpt-5',
-            profileVersion: 1,
+            profileVersion: 2,
             providerBaseId: 'openai',
             adapterKind: 'openai-compatible',
             auth: { kind: 'bearer', fields: ['apiKey'] },
@@ -83,6 +83,11 @@ describe('resolveSnapshot', () => {
                 },
             ],
             uiSchema: { groups: [], fields: [] },
+            limits: {
+                known: false,
+                contextWindowTokens: 65536,
+                sourceUrls: ['https://example.test/base-limits'],
+            },
             sourceUrls: ['https://example.test'],
         }
         const profile: ModelProfile = {
@@ -97,6 +102,11 @@ describe('resolveSnapshot', () => {
             defaults: {},
             schema: [],
             uiSchema: { groups: [], fields: [] },
+            limits: {
+                known: true,
+                maxOutputTokens: 8192,
+                sourceUrls: ['https://example.test/profile-limits'],
+            },
             sourceUrls: [],
         }
         const cache: RegistryCache = {
@@ -112,6 +122,12 @@ describe('resolveSnapshot', () => {
         const snapshot = resolveSnapshot(cache, 'demo:gpt-5')
         const modelIdField = snapshot.schema.find((f) => f.key === 'modelId')
         expect(modelIdField?.default).toBe('gpt-5')
+        expect(snapshot.limits).toEqual({
+            known: true,
+            contextWindowTokens: 65536,
+            maxOutputTokens: 8192,
+            sourceUrls: ['https://example.test/profile-limits'],
+        })
     })
 
     test('does not overwrite explicit modelId default and skips empty profile.modelId', () => {

@@ -114,6 +114,15 @@ export type RegistryCapability =
     | 'json'
     | 'reasoning'
 
+export interface ModelLimits {
+    known?: boolean
+    contextWindowTokens?: number
+    maxOutputTokens?: number
+    sourceUrls?: string[]
+    notes?: string
+    notesI18n?: Record<string, string>
+}
+
 export type RegistryProfileVisibility =
     | 'popular'
     | 'standard'
@@ -139,6 +148,7 @@ export interface BaseProviderDefinition {
     requestSchema: RegistryFieldSchema[]
     uiSchema: RegistryUiSchema
     capabilities?: RegistryCapability[]
+    limits?: ModelLimits
     sourceUrls: string[]
 }
 
@@ -164,6 +174,7 @@ export interface ModelProfile {
     bodyTemplate?: Record<string, unknown>
     headerTemplate?: Record<string, string>
     capabilities?: RegistryCapability[]
+    limits?: ModelLimits
     sourceUrls: string[]
 }
 
@@ -194,6 +205,7 @@ export interface ResolvedModelProfileSnapshot {
     bodyTemplate?: Record<string, unknown>
     headerTemplate?: Record<string, string>
     capabilities?: RegistryCapability[]
+    limits?: ModelLimits
 }
 
 export interface ModelPreset {

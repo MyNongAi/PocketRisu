@@ -58,8 +58,11 @@
     // bits-ui v2 Slider with type="single" exposes a scalar value.
     // We mirror outer ↔ inner explicitly: outer→inner via $effect,
     // inner→outer via onValueChange callback (avoids effect loop).
-    // Initialize to 0; the first $effect tick syncs to the real value/min.
-    let internal = $state<number>(0);
+    // Initialize from the bound value before bits-ui mounts. Starting below
+    // min would let the headless slider normalize to min and overwrite a
+    // seeded default such as maxOutputTokens=8192 with 1.
+    // svelte-ignore state_referenced_locally
+    let internal = $state<number>(typeof value === 'number' ? clamp(value) : min);
 
     $effect(() => {
         const v = typeof value === 'number' ? clamp(value) : min;

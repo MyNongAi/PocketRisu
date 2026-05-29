@@ -9,7 +9,7 @@
         resolveSnapshot,
     } from "src/ts/preset/registry";
     import { localizeDisplayName, localizeDescription } from "src/ts/preset/registry/i18n";
-    import type { BaseProviderDefinition, ModelPreset, ModelProfile } from "src/ts/preset/types";
+    import type { BaseProviderDefinition, ModelPreset, ModelProfile, ResolvedModelProfileSnapshot } from "src/ts/preset/types";
     import TextInput from "../UI/GUI/TextInput.svelte";
     import { v4 as uuidv4 } from "uuid";
 
@@ -59,6 +59,14 @@
         });
     });
 
+    function seedDefaults(snapshot: ResolvedModelProfileSnapshot): Record<string, unknown> {
+        const seeded: Record<string, unknown> = {};
+        for (const field of snapshot.schema) {
+            if (field.default !== undefined) seeded[field.key] = field.default;
+        }
+        return seeded;
+    }
+
     function createPresetFrom(profile: ModelProfile) {
         const snapshot = resolveSnapshot(registry, profile.id);
         const preset: ModelPreset = {
@@ -72,7 +80,7 @@
                 providerBaseVersion: snapshot.providerBaseVersion,
                 fetchedAt: Date.now(),
             },
-            userValues: {},
+            userValues: seedDefaults(snapshot),
             createdAt: Date.now(),
             updatedAt: Date.now(),
         };

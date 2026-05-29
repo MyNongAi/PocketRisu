@@ -5,6 +5,7 @@ import type {
     RegistryFieldSchema,
     RegistryUiField,
     RegistryUiSchema,
+    ModelLimits,
     ResolvedModelProfileSnapshot,
 } from '../types'
 
@@ -53,7 +54,17 @@ export function resolveSnapshot(registry: RegistryCache, profileId: string): Res
         bodyTemplate: profile.bodyTemplate,
         headerTemplate: { ...(baseProvider.defaultHeaders ?? {}), ...(profile.headerTemplate ?? {}) },
         capabilities: profile.capabilities ?? baseProvider.capabilities,
+        limits: mergeLimits(baseProvider.limits, profile.limits),
     }
+}
+
+function mergeLimits(
+    baseLimits: ModelLimits | undefined,
+    profileLimits: ModelLimits | undefined,
+): ModelLimits | undefined {
+    if (!baseLimits) return profileLimits ? { ...profileLimits } : undefined
+    if (!profileLimits) return { ...baseLimits }
+    return { ...baseLimits, ...profileLimits }
 }
 
 function backfillSchemaDefaults(
