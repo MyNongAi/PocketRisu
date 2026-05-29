@@ -37,6 +37,24 @@
         return Math.min(max, Math.max(min, v));
     }
 
+    // Coarsen the slider step when the (max-min)/step ratio is huge.
+    // The number input keeps the original step so users can still type
+    // a precise value (e.g. 4321). Slider drag is for coarse pick.
+    // Without this, max_tokens (range 128000, step 1) fires onValueChange
+    // ~256× per pixel of drag and lags the whole form.
+    const sliderStep = $derived.by(() => {
+        if (step <= 0) return 1;
+        const range = max - min;
+        if (range <= 0) return step;
+        const numSteps = range / step;
+        if (numSteps <= 500) return step;
+        // Target ~100 slider positions, rounded to a "nice" magnitude.
+        const target = range / 100;
+        const magnitude = Math.pow(10, Math.floor(Math.log10(target)));
+        const rounded = Math.round(target / magnitude) * magnitude;
+        return Math.max(step, rounded);
+    });
+
     // bits-ui v2 Slider with type="single" exposes a scalar value.
     // We mirror outer ↔ inner explicitly: outer→inner via $effect,
     // inner→outer via onValueChange callback (avoids effect loop).
@@ -66,7 +84,7 @@
         bind:value={internal}
         {min}
         {max}
-        {step}
+        step={sliderStep}
         {disabled}
         {onValueChange}
         data-slot="slider"
