@@ -57,6 +57,7 @@ export interface RegistryFieldSchema {
     type: RegistryFieldType
     label: string
     description?: string
+    descriptionI18n?: Record<string, string>
     default?: unknown
     enum?: Array<{ value: string | number | boolean; label: string }>
     min?: number
@@ -84,8 +85,15 @@ export interface RegistryUiField {
     showIf?: RegistrySimpleCondition
 }
 
+export interface RegistryUiGroup {
+    id: string
+    label: string
+    labelI18n?: Record<string, string>
+    order?: number
+}
+
 export interface RegistryUiSchema {
-    groups: Array<{ id: string; label: string; order?: number }>
+    groups: RegistryUiGroup[]
     fields: RegistryUiField[]
 }
 

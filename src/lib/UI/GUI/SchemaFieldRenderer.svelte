@@ -1,6 +1,7 @@
 <script lang="ts">
     import type { RegistryFieldSchema, RegistryUiField } from "src/ts/preset/types";
     import { language } from "src/lang";
+    import { localizeDescription } from "src/ts/preset/registry/i18n";
     import { XIcon } from "@lucide/svelte";
     import TextInput from "./TextInput.svelte";
     import TextAreaInput from "./TextAreaInput.svelte";
@@ -36,6 +37,8 @@
     function resetField() {
         userValues[fieldKey] = undefined;
     }
+
+    const localizedDescription = $derived(localizeDescription(schemaField));
 
     // stringArray widget: textarea one-per-line, syncs to/from userValues[key]: string[]
     let stringArrayText = $state('');
@@ -111,8 +114,8 @@
             </button>
         {/if}
     </div>
-    {#if schemaField.description}
-        <span class="text-xs text-textcolor2">{schemaField.description}</span>
+    {#if localizedDescription}
+        <span class="text-xs text-textcolor2">{localizedDescription}</span>
     {/if}
 
     {#if uiField.widget === 'text'}

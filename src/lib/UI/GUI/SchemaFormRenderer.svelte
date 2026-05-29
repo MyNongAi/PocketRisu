@@ -2,9 +2,11 @@
     import type {
         RegistryFieldSchema,
         RegistryUiField,
+        RegistryUiGroup,
         RegistryUiSchema,
         UiVisibility,
     } from "src/ts/preset/types";
+    import { localizeGroupLabel } from "src/ts/preset/registry/i18n";
     import SchemaFieldRenderer from "./SchemaFieldRenderer.svelte";
 
     interface Props {
@@ -71,7 +73,7 @@
         for (const group of groupOrder) {
             const items = buckets.get(group.id);
             if (items && items.length > 0) {
-                out.push({ label: group.label, items });
+                out.push({ label: localizeGroupLabel(group), items });
             }
         }
         const ungrouped = buckets.get('');
