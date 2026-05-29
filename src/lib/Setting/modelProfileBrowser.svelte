@@ -8,6 +8,7 @@
         loadBundledRegistry,
         resolveSnapshot,
     } from "src/ts/preset/registry";
+    import { localizeDisplayName, localizeDescription } from "src/ts/preset/registry/i18n";
     import type { BaseProviderDefinition, ModelPreset, ModelProfile } from "src/ts/preset/types";
     import TextInput from "../UI/GUI/TextInput.svelte";
     import { v4 as uuidv4 } from "uuid";
@@ -48,9 +49,11 @@
         if (!q) return entries;
         return entries.filter(({ profile, baseProvider }) => {
             return profile.displayName.toLowerCase().includes(q)
+                || localizeDisplayName(profile).toLowerCase().includes(q)
                 || profile.id.toLowerCase().includes(q)
                 || profile.modelId.toLowerCase().includes(q)
                 || (profile.description ?? '').toLowerCase().includes(q)
+                || localizeDescription(profile).toLowerCase().includes(q)
                 || (baseProvider?.displayName ?? '').toLowerCase().includes(q)
                 || (baseProvider?.id ?? '').toLowerCase().includes(q);
         });
@@ -102,20 +105,21 @@
                 </div>
             {:else}
                 {#each filtered as { profile, baseProvider } (profile.id)}
+                    {@const localizedDesc = localizeDescription(profile)}
                     <button
                         class="flex items-start text-textcolor border border-darkborderc rounded-md p-3 cursor-pointer hover:bg-selected/30 transition-colors text-left"
                         onclick={() => createPresetFrom(profile)}
                     >
                         <div class="flex flex-col min-w-0 grow">
                             <div class="flex items-center gap-2">
-                                <span class="text-sm text-textcolor truncate">{profile.displayName}</span>
+                                <span class="text-sm text-textcolor truncate">{localizeDisplayName(profile)}</span>
                                 {#if baseProvider}
                                     <span class="text-xs text-textcolor2 shrink-0">[{baseProvider.displayName}]</span>
                                 {/if}
                             </div>
                             <span class="text-xs text-textcolor2 truncate">{profile.id}</span>
-                            {#if profile.description}
-                                <span class="text-xs text-textcolor2 mt-1 truncate">{profile.description}</span>
+                            {#if localizedDesc}
+                                <span class="text-xs text-textcolor2 mt-1 truncate">{localizedDesc}</span>
                             {/if}
                         </div>
                     </button>
