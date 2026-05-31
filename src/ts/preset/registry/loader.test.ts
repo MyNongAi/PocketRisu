@@ -18,31 +18,22 @@ const EXPECTED_BASE_PROVIDER_IDS = [
 ]
 
 const EXPECTED_PROFILE_IDS = [
-    'anthropic:claude-45',
-    'anthropic:legacy',
-    'anthropic:opus-46',
+    'anthropic:haiku-45',
     'anthropic:opus-adaptive',
     'anthropic:sonnet-adaptive',
     'bedrock:openai-compatible',
     'deepinfra:openai-compatible',
     'deepseek:legacy',
     'deepseek:v4',
-    'google:gemini-25',
-    'google:gemini-31',
-    'google:gemini-35',
-    'google:legacy',
+    'google:gemini-3',
     'nanogpt:openai-compatible',
     'ollama-cloud:standard',
     'ollama:openai-compatible-local',
     'openai-compatible:custom',
     'openai-compatible:custom-noauth',
-    'openai:chatgpt',
     'openai:codex',
-    'openai:gpt-4o',
-    'openai:gpt-5',
     'openai:gpt-54',
     'openai:gpt-55',
-    'openai:reasoning',
     'openrouter:openai-compatible',
     'vercel:openai-compatible',
     'vertex-openai:standard',
@@ -71,7 +62,7 @@ describe('loadBundledRegistry', () => {
         expect(Object.keys(profiles).sort()).toEqual(EXPECTED_PROFILE_IDS)
         for (const id of EXPECTED_PROFILE_IDS) {
             expect(profiles[id]?.id).toBe(id)
-            expect(profiles[id]?.profileTier).toBe('standard')
+            expect(['current', 'outdated', 'deprecated']).toContain(profiles[id]?.profileStatus)
         }
     })
 

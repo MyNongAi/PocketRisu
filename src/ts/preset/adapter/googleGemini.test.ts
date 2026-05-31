@@ -454,15 +454,15 @@ describe('streamGoogleChatRequest', () => {
     })
 })
 
-describe('bundled google:gemini-25 profile integration', () => {
-    test('google:gemini-25 routes to generateContent under the bundled base URL', async () => {
+describe('bundled google:gemini-3 profile integration', () => {
+    test('google:gemini-3 routes to generateContent under the bundled base URL', async () => {
         const registry = loadBundledRegistry()
-        const snapshot = resolveSnapshot(registry, 'google:gemini-25')
+        const snapshot = resolveSnapshot(registry, 'google:gemini-3')
         const preset: ModelPreset = {
             id: 'preset-gemini',
             name: 'Gemini',
             profileSnapshot: snapshot,
-            userValues: { modelId: 'gemini-2.5-pro' },
+            userValues: { modelId: 'gemini-3.5-flash' },
             createdAt: 0,
             updatedAt: 0,
         }
@@ -475,7 +475,7 @@ describe('bundled google:gemini-25 profile integration', () => {
         )
         await sendGoogleChatRequest(preset, { messages: messagesWithSystem, fetchImpl }, { apiKey: 'gk' })
         expect(calls[0].url).toBe(
-            'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent',
+            'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent',
         )
         expect(calls[0].headers['x-goog-api-key']).toBe('gk')
     })

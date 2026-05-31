@@ -61,9 +61,15 @@ function withHeader(
     name: string,
     value: string,
 ): AdapterPreparedRequest {
+    const headers: Record<string, string> = {}
+    const normalized = name.toLowerCase()
+    for (const [existingName, existingValue] of Object.entries(prepared.headers)) {
+        if (existingName.toLowerCase() !== normalized) headers[existingName] = existingValue
+    }
+    headers[name] = value
     return {
         ...prepared,
-        headers: { ...prepared.headers, [name]: value },
+        headers,
     }
 }
 

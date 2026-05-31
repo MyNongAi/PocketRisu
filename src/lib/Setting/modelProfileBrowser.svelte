@@ -9,7 +9,7 @@
         resolveSnapshot,
     } from "src/ts/preset/registry";
     import { localizeDisplayName, localizeDescription } from "src/ts/preset/registry/i18n";
-    import type { BaseProviderDefinition, ModelPreset, ModelProfile, ResolvedModelProfileSnapshot } from "src/ts/preset/types";
+    import type { BaseProviderDefinition, ModelPreset, ModelProfile, RegistryProfileStatus, ResolvedModelProfileSnapshot } from "src/ts/preset/types";
     import TextInput from "../UI/GUI/TextInput.svelte";
     import { v4 as uuidv4 } from "uuid";
 
@@ -27,6 +27,14 @@
         profile: ModelProfile;
         baseProvider: BaseProviderDefinition | undefined;
     };
+
+    const profileStatusOrder: RegistryProfileStatus[] = ['current', 'outdated', 'deprecated'];
+
+    function getProfileStatusLabel(status: RegistryProfileStatus): string {
+        if (status === 'current') return language.profileStatusCurrent;
+        if (status === 'outdated') return language.profileStatusOutdated;
+        return language.profileStatusDeprecated;
+    }
 
     const entries: Entry[] = (() => {
         const out: Entry[] = [];
@@ -57,6 +65,17 @@
                 || (baseProvider?.displayName ?? '').toLowerCase().includes(q)
                 || (baseProvider?.id ?? '').toLowerCase().includes(q);
         });
+    });
+
+    const groupedFiltered = $derived.by(() => {
+        const buckets = new Map<RegistryProfileStatus, Entry[]>();
+        for (const status of profileStatusOrder) buckets.set(status, []);
+        for (const entry of filtered) {
+            buckets.get(entry.profile.profileStatus)?.push(entry);
+        }
+        return profileStatusOrder
+            .map((status) => ({ status, entries: buckets.get(status) ?? [] }))
+            .filter((group) => group.entries.length > 0);
     });
 
     function seedDefaults(snapshot: ResolvedModelProfileSnapshot): Record<string, unknown> {
@@ -112,25 +131,35 @@
                     {language.noProfileMatch}
                 </div>
             {:else}
-                {#each filtered as { profile, baseProvider } (profile.id)}
-                    {@const localizedDesc = localizeDescription(profile)}
-                    <button
-                        class="flex items-start text-textcolor border border-darkborderc rounded-md p-3 cursor-pointer hover:bg-selected/30 transition-colors text-left"
-                        onclick={() => createPresetFrom(profile)}
-                    >
-                        <div class="flex flex-col min-w-0 grow">
-                            <div class="flex items-center gap-2">
-                                <span class="text-sm text-textcolor truncate">{localizeDisplayName(profile)}</span>
-                                {#if baseProvider}
-                                    <span class="text-xs text-textcolor2 shrink-0">[{baseProvider.displayName}]</span>
-                                {/if}
-                            </div>
-                            <span class="text-xs text-textcolor2 truncate">{profile.id}</span>
-                            {#if localizedDesc}
-                                <span class="text-xs text-textcolor2 mt-1 truncate">{localizedDesc}</span>
-                            {/if}
-                        </div>
-                    </button>
+                {#each groupedFiltered as group (group.status)}
+                    <section class="flex flex-col gap-1 mt-2 first:mt-0">
+                        <h3 class="text-xs font-semibold uppercase text-textcolor2 px-1">
+                            {getProfileStatusLabel(group.status)}
+                        </h3>
+                        {#each group.entries as { profile, baseProvider } (profile.id)}
+                            {@const localizedDesc = localizeDescription(profile)}
+                            <button
+                                class="flex items-start text-textcolor border border-darkborderc rounded-md p-3 cursor-pointer hover:bg-selected/30 transition-colors text-left"
+                                onclick={() => createPresetFrom(profile)}
+                            >
+                                <div class="flex flex-col min-w-0 grow">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-sm text-textcolor truncate">{localizeDisplayName(profile)}</span>
+                                        {#if baseProvider}
+                                            <span class="text-xs text-textcolor2 shrink-0">[{baseProvider.displayName}]</span>
+                                        {/if}
+                                    </div>
+                                    <span class="text-xs text-textcolor2 truncate">{profile.id}</span>
+                                    {#if localizedDesc}
+                                        <span class="text-xs text-textcolor2 mt-1 truncate">{localizedDesc}</span>
+                                    {/if}
+                                    {#if profile.statusReason}
+                                        <span class="text-xs text-textcolor2 mt-1 truncate">{profile.statusReason}</span>
+                                    {/if}
+                                </div>
+                            </button>
+                        {/each}
+                    </section>
                 {/each}
             {/if}
         </div>

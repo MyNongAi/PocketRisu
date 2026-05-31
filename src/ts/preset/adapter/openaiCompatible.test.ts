@@ -424,7 +424,7 @@ describe('bundled OpenAI-compatible profiles', () => {
     const registry = loadBundledRegistry()
 
     test.each([
-        ['openai:gpt-5', 'https://api.openai.com/v1/chat/completions'],
+        ['openai:gpt-55', 'https://api.openai.com/v1/chat/completions'],
         ['openrouter:openai-compatible', 'https://openrouter.ai/api/v1/chat/completions'],
         ['ollama:openai-compatible-local', 'http://localhost:11434/v1/chat/completions'],
     ])('builds the right URL and auth header for %s', async (profileId, expectedUrl) => {

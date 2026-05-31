@@ -96,7 +96,7 @@ describe('analyzeModelPresetMigration (plan v5: customModels-only)', () => {
         const profiles = report.createdModelPresets.map((p) => p.profileId)
         expect(profiles).toEqual([
             'anthropic:sonnet-adaptive',
-            'google:gemini-25',
+            'google:gemini-3',
             'ollama:openai-compatible-local',
         ])
     })
@@ -180,6 +180,27 @@ describe('analyzeModelPresetMigration (plan v5: customModels-only)', () => {
             }],
         })
         expect(report.createdModelPresets[0].userValues.params).toBe('[redacted]')
+    })
+
+    test('applies legacy freeform params into ModelPreset additionalParamsText', () => {
+        const db: ModelPresetMigrationApplyTarget = {
+            customModels: [{
+                id: 'a',
+                internalId: 'm-a',
+                format: LLMFormat.OpenAICompatible,
+                key: 'sk-test',
+                params: 'reasoning=json::{"effort":"max"}\nheader::Authorization=Bearer sk-param',
+            }],
+        }
+        const report = analyzeModelPresetMigration(db)
+        expect(report.createdModelPresets[0].userValues.params).toBe('[redacted]')
+        expect(JSON.stringify(report)).not.toContain('sk-param')
+
+        applyModelPresetMigration(db, report)
+
+        expect(db.modelPresets?.[0]?.additionalParamsText).toBe(
+            'reasoning=json::{"effort":"max"}\nheader::Authorization=Bearer sk-param',
+        )
     })
 
     test('returns an empty report when there are no customModels', () => {
@@ -510,7 +531,7 @@ describe('applyModelPresetMigration (plan v5)', () => {
                     name: 'Tampered Vertex',
                     sourceKind: 'custom',
                     sourcePath: 'customModels.other',
-                    profileId: 'google:gemini-25',
+                    profileId: 'google:gemini-3',
                     modelId: 'gemini',
                     credentialSource: { kind: 'legacyKey', sourcePath: 'db.vertexPrivateKey' },
                     userValues: {},

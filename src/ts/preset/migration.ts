@@ -267,6 +267,8 @@ function upsertModelPreset(
         profileSnapshot: nextSnapshot,
         userValues: cloneJsonLike(planned.userValues) as Record<string, unknown>,
         orphanValues: existing?.orphanValues,
+        additionalParamsText: existing?.additionalParamsText
+            ?? readLegacyStringAtPath(db, `${planned.sourcePath}.params`),
         apiKeyRef,
         inlineCredential: existing?.inlineCredential,
         fallbackModelPresetIds: existing?.fallbackModelPresetIds,
@@ -453,21 +455,14 @@ function profileForCustomModel(customModel: LegacyCustomModel): string | undefin
 
 function anthropicProfileForModelId(modelId: string | undefined): string {
     const model = modelId?.toLowerCase() ?? ''
-    if (model.includes('opus-4-8') || model.includes('opus-4-7')) return 'anthropic:opus-adaptive'
-    if (model.includes('opus-4-6')) return 'anthropic:opus-46'
+    if (model.includes('opus-4-')) return 'anthropic:opus-adaptive'
     if (model.includes('sonnet-4-6')) return 'anthropic:sonnet-adaptive'
-    if (model.includes('sonnet-4-5') || model.includes('haiku-4-5')) return 'anthropic:claude-45'
-    if (model.includes('claude-3-')) return 'anthropic:legacy'
+    if (model.includes('haiku-4-5')) return 'anthropic:haiku-45'
     return 'anthropic:sonnet-adaptive'
 }
 
-function googleProfileForModelId(modelId: string | undefined): string {
-    const model = modelId?.toLowerCase() ?? ''
-    if (model.includes('gemini-3.5')) return 'google:gemini-35'
-    if (model.includes('gemini-3.1') || model.includes('gemini-3-')) return 'google:gemini-31'
-    if (model.includes('gemini-2.5')) return 'google:gemini-25'
-    if (model.includes('gemini-2.0') || model.includes('gemini-1.5')) return 'google:legacy'
-    return 'google:gemini-25'
+function googleProfileForModelId(_modelId: string | undefined): string {
+    return 'google:gemini-3'
 }
 
 // Custom OpenAI-compatible endpoints (self-hosted vLLM, LiteLLM, local Ollama

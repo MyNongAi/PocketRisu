@@ -74,7 +74,7 @@ function makeProfile(overrides: Partial<ModelProfile> = {}): ModelProfile {
         version: 1,
         displayName: 'Demo Standard',
         providerBaseId: 'demo',
-        profileTier: 'standard',
+        profileStatus: 'current',
         modelId: 'demo-fast',
         endpoint: { kind: 'static', url: 'https://demo.test/v1/chat/completions' },
         auth: { kind: 'bearer', fields: ['apiKey'] },

@@ -123,18 +123,10 @@ export interface ModelLimits {
     notesI18n?: Record<string, string>
 }
 
-export type RegistryProfileVisibility =
-    | 'popular'
-    | 'standard'
-    | 'advanced'
-    | 'legacy'
-
-export type RegistryLifecycle =
-    | 'recommended'
+export type RegistryProfileStatus =
     | 'current'
-    | 'legacy'
+    | 'outdated'
     | 'deprecated'
-    | 'experimental'
 
 export interface BaseProviderDefinition {
     id: string
@@ -170,11 +162,11 @@ export interface ModelProfile {
     displayName: string
     displayNameI18n?: Record<string, string>
     providerBaseId: string
-    profileTier: 'standard'
+    profileStatus: RegistryProfileStatus
+    statusReason?: string
+    statusSourceUrls?: string[]
     description?: string
     descriptionI18n?: Record<string, string>
-    visibility?: RegistryProfileVisibility
-    lifecycle?: RegistryLifecycle
     tags?: string[]
     sortOrder?: number
     recommendedTokenizer?: RegistryTokenizer

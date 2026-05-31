@@ -6,16 +6,16 @@ import { RegistryProfileNotFoundError, resolveSnapshot } from './snapshot'
 describe('resolveSnapshot', () => {
     const registry = loadBundledRegistry()
 
-    test('returns the openai:gpt-5 snapshot with merged base schema', () => {
-        const snapshot = resolveSnapshot(registry, 'openai:gpt-5')
+    test('returns the openai:gpt-55 snapshot with merged base schema', () => {
+        const snapshot = resolveSnapshot(registry, 'openai:gpt-55')
         expect(snapshot).toMatchObject({
-            profileId: 'openai:gpt-5',
-            profileVersion: 2,
+            profileId: 'openai:gpt-55',
+            profileVersion: 1,
             providerBaseId: 'openai',
             adapterKind: 'openai-compatible',
             auth: { kind: 'bearer', fields: ['apiKey'] },
             endpoint: { kind: 'static', url: 'https://api.openai.com/v1/chat/completions' },
-            modelId: 'gpt-5.2',
+            modelId: 'gpt-5.5',
         })
         expect(snapshot.schema.map((f) => f.key)).toEqual(expect.arrayContaining(['apiKey', 'modelId']))
         expect(snapshot.schema.find((f) => f.key === 'apiKey')).toBeDefined()
@@ -32,8 +32,8 @@ describe('resolveSnapshot', () => {
         expect(snapshot.headerTemplate?.['anthropic-version']).toBe('2023-06-01')
     })
 
-    test('returns the google:gemini-25 snapshot with x-goog-api-key auth', () => {
-        const snapshot = resolveSnapshot(registry, 'google:gemini-25')
+    test('returns the google:gemini-3 snapshot with x-goog-api-key auth', () => {
+        const snapshot = resolveSnapshot(registry, 'google:gemini-3')
         expect(snapshot.adapterKind).toBe('google-gemini')
         expect(snapshot.auth.kind).toBe('x-goog-api-key')
     })
@@ -95,7 +95,7 @@ describe('resolveSnapshot', () => {
             version: 1,
             displayName: 'GPT-5',
             providerBaseId: 'demo',
-            profileTier: 'standard',
+            profileStatus: 'current',
             modelId: 'gpt-5',
             endpoint: { kind: 'static', url: 'https://demo.test/v1' },
             auth: { kind: 'bearer', fields: ['apiKey'] },
@@ -155,7 +155,7 @@ describe('resolveSnapshot', () => {
             version: 1,
             displayName: 'A',
             providerBaseId: 'demo',
-            profileTier: 'standard',
+            profileStatus: 'current',
             modelId: 'profile-model',
             endpoint: { kind: 'static', url: 'https://demo.test/v1' },
             auth: { kind: 'bearer', fields: ['apiKey'] },
@@ -196,9 +196,9 @@ describe('resolveSnapshot', () => {
 
     test('covers every analyzer-emitted profile id', () => {
         const analyzerProfileIds = [
-            'openai:gpt-5',
+            'openai:gpt-55',
             'anthropic:sonnet-adaptive',
-            'google:gemini-25',
+            'google:gemini-3',
             'openai-compatible:custom',
             'openai-compatible:custom-noauth',
             'openrouter:openai-compatible',
@@ -269,7 +269,7 @@ describe('resolveSnapshot', () => {
             version: 2,
             displayName: 'Demo Override',
             providerBaseId: 'demo',
-            profileTier: 'standard',
+            profileStatus: 'current',
             modelId: 'demo-fast',
             endpoint: { kind: 'static', url: 'https://demo.test/v1/chat/completions' },
             auth: { kind: 'bearer', fields: ['apiKey'] },

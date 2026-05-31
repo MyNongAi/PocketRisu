@@ -96,6 +96,18 @@ describe('applyAuth', () => {
         expect(prepared.headers.Authorization).toBeUndefined()
         expect(result.headers.Authorization).toBe('Bearer sk')
     })
+
+    test('replaces existing auth header case-insensitively', () => {
+        const result = applyAuth(
+            basePrepared({ headers: { authorization: 'Bearer fake', 'Content-Type': 'application/json' } }),
+            { kind: 'bearer' },
+            { apiKey: 'sk-real' },
+        )
+        expect(result.headers).toEqual({
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer sk-real',
+        })
+    })
 })
 
 describe('appendQuery', () => {

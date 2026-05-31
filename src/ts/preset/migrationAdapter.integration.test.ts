@@ -5,18 +5,18 @@
  * that can arrive via the migration pipeline are:
  *  - openai-compatible:custom         (custom OpenAI-compatible with key)
  *  - openai-compatible:custom-noauth  (self-hosted / no key)
- *  - anthropic:sonnet-adaptive               (LLMFormat.Anthropic custom model)
- *  - google:gemini-25                  (LLMFormat.GoogleCloud — AI Studio only)
+ *  - anthropic:sonnet-adaptive         (LLMFormat.Anthropic custom model)
+ *  - google:gemini-3                   (LLMFormat.GoogleCloud — AI Studio only)
  *  - ollama:openai-compatible-local   (LLMFormat.Ollama)
  *
- * LLMFormat.VertexAIGemini deliberately does NOT reach `google:gemini-25` via
+ * LLMFormat.VertexAIGemini deliberately does NOT reach `google:gemini-3` via
  * migration; Vertex uses Bearer + aiplatform.googleapis.com and lands in
  * `manualRequired` (see migration.test.ts "routes non-1:1 wire formats to
  * manualRequired"). The Vertex SA flow itself is covered by
  * [vertexIntegration.test.ts](./adapter/vertexIntegration.test.ts) +
  * [openaiCompatibleVertex.test.ts](./adapter/openaiCompatibleVertex.test.ts).
  *
- * Native provider migration (db.openAIKey → openai:gpt-5 etc.) was dropped
+ * Native provider migration (db.openAIKey → openai:gpt-55 etc.) was dropped
  * in v5 — that surface lives in the "Legacy Info" UI now.
  */
 import { describe, expect, test } from 'vitest'
@@ -84,7 +84,7 @@ describe('migrated preset → buildPreparedRequest wire shape (v5)', () => {
         expect(prepared.body.model).toBe('llama-3')
     })
 
-    test('google:gemini-25 (LLMFormat.GoogleCloud customModel) → x-goog-api-key + AI Studio URL', () => {
+    test('google:gemini-3 (LLMFormat.GoogleCloud customModel) → x-goog-api-key + AI Studio URL', () => {
         // Pinning the wire shape here makes sure that if migration ever silently
         // routes VertexAIGemini back into this profile (it must NOT — see
         // migration.test.ts "routes non-1:1 wire formats to manualRequired"),
@@ -99,7 +99,7 @@ describe('migrated preset → buildPreparedRequest wire shape (v5)', () => {
                 name: 'Gemini',
             }],
         })
-        const preset = presetByProfileId(presets, 'google:gemini-25')
+        const preset = presetByProfileId(presets, 'google:gemini-3')
         const prepared = buildPreparedRequest({
             preset,
             credential: { apiKey: 'goog-test' },
@@ -112,7 +112,7 @@ describe('migrated preset → buildPreparedRequest wire shape (v5)', () => {
         expect(prepared.url).not.toContain('openai.com')
     })
 
-    test('anthropic:claude-45 (LLMFormat.Anthropic customModel) → x-api-key + version header', () => {
+    test('anthropic:sonnet-adaptive (LLMFormat.Anthropic customModel) → x-api-key + version header', () => {
         const presets = migrate({
             customModels: [{
                 id: 'xcustom:::claude',
@@ -122,7 +122,7 @@ describe('migrated preset → buildPreparedRequest wire shape (v5)', () => {
                 name: 'Claude',
             }],
         })
-        const preset = presetByProfileId(presets, 'anthropic:claude-45')
+        const preset = presetByProfileId(presets, 'anthropic:sonnet-adaptive')
         const prepared = buildPreparedRequest({
             preset,
             credential: { apiKey: 'sk-ant-test' },

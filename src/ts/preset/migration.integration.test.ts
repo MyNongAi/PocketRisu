@@ -58,7 +58,7 @@ function multiCustomModelDb(): ModelPresetMigrationApplyTarget {
             {
                 // Regression guard against silent auto-mapping. VertexAIGemini
                 // uses Bearer + aiplatform.googleapis.com — auto-mapping it to
-                // AI Studio (`google:gemini-25`, x-goog-api-key + generativelanguage)
+                // AI Studio (`google:gemini-3`, x-goog-api-key + generativelanguage)
                 // would produce a preset that talks to the wrong endpoint
                 // with the wrong auth header. v5 policy: manualRequired.
                 id: 'xcustom:::vertex-native',
@@ -103,7 +103,7 @@ describe('Model preset v5 migration — multi-customModel end-to-end', () => {
         }
         expectPreset('customModels.xcustom:::main', 'openai-compatible:custom', { withApiKey: true })
         expectPreset('customModels.xcustom:::local', 'openai-compatible:custom-noauth', { withApiKey: false })
-        expectPreset('customModels.xcustom:::claude', 'anthropic:claude-45', { withApiKey: true })
+        expectPreset('customModels.xcustom:::claude', 'anthropic:sonnet-adaptive', { withApiKey: true })
 
         // Both unsupported customModels (Kobold, Vertex-native) land in
         // manualRequired, not in modelPresets.
