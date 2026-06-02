@@ -692,7 +692,7 @@ export const languageKorean = {
     "roundIcons": "둥근 아이콘",
     "streaming": "스트리밍",
     "chatBot": "채팅 봇",
-    "modelPresetMenu": "모델",
+    "modelPresetMenu": "모델 프리셋",
     "promptPresetMenu": "프롬프트",
     "currentThemePreset": "현재 테마 프리셋",
     "currentPromptPreset": "현재 프롬프트 프리셋",

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, CodeIcon, CogIcon, ContactIcon, FlaskConicalIcon, ImageIcon, LanguagesIcon, MonitorIcon, MonitorSmartphoneIcon, Sailboat, ScrollTextIcon, UserIcon, CircleXIcon, KeyboardIcon, TruckIcon } from "@lucide/svelte";
+    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, CodeIcon, CogIcon, ContactIcon, FlaskConicalIcon, ImageIcon, LanguagesIcon, MonitorIcon, MonitorSmartphoneIcon, Sailboat, ScrollTextIcon, UserIcon, CircleXIcon, KeyboardIcon, TruckIcon, FileBoxIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import DisplaySettings from "./Pages/DisplaySettings.svelte";
     import MigrationSettings from "./Pages/MigrationSettings.svelte";
@@ -65,7 +65,7 @@
                         onclick={() => {
                             $SettingsMenuIndex = 16
                     }}>
-                        <BotIcon />
+                        <FileBoxIcon />
                         <span>{language.modelPresetMenu}</span>
                     </button>
                     <button class="flex gap-2 items-center hover:text-textcolor"
@@ -239,9 +239,7 @@
                         {#if $SettingsMenuIndex === 0}
                             <MigrationSettings />
                         {:else if $SettingsMenuIndex === 1}
-                            <BotSettings goPromptTemplate={() => {
-                                $SettingsMenuIndex = 13
-                            }} />
+                            <BotSettings />
                         {:else if $SettingsMenuIndex === 2}
                             <OtherBotSettings />
                         {:else if $SettingsMenuIndex === 3}
