@@ -273,6 +273,33 @@ export interface ModelBindingFields {
     taskModelBindings?: TaskModelBindings
 }
 
+/**
+ * P4 dual-regime model binding (plan v6 §7, model-preset-p4-task). The full
+ * per-chat model configuration as ONE bundle, mirroring the classic global
+ * model config 1:1 — main↔db.aiModel, sub↔db.subModel,
+ * separateAux↔db.seperateModelsForAxModels, aux↔db.seperateModels — but each
+ * slot holds a ModelPreset id instead of a model-id string. Lives per-chat
+ * (chat.modelBinding) with a global default (db.defaultModelBinding) copied
+ * into new chats.
+ *
+ * Resolution (resolveChatModelBinding): main/sub unresolved → block; aux
+ * unresolved → fall back to sub ("use default sub model"). "Unresolved" =
+ * undefined OR a dangling id whose preset no longer exists; both are treated
+ * identically (dangling ids are never auto-cleared, to allow re-import
+ * reconnection).
+ */
+export interface ModelBindingSet {
+    main?: string
+    sub?: string
+    separateAux: boolean
+    aux: {
+        memory?: string
+        emotion?: string
+        translate?: string
+        otherAx?: string
+    }
+}
+
 export interface ApiKeyPoolEntry {
     id: string
     name: string

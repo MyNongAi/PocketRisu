@@ -2,7 +2,7 @@
     import { onDestroy, onMount } from "svelte";
     import { v4 } from "uuid";
     import Sortable from 'sortablejs/modular/sortable.core.esm.js';
-    import { DownloadIcon, PencilIcon, HardDriveUploadIcon, MenuIcon, TrashIcon, SplitIcon, FolderPlusIcon, BookmarkCheckIcon, PackageIcon, CopyIcon, ChevronDownIcon } from "@lucide/svelte";
+    import { DownloadIcon, PencilIcon, HardDriveUploadIcon, MenuIcon, TrashIcon, SplitIcon, FolderPlusIcon, BookmarkCheckIcon, PackageIcon, CopyIcon } from "@lucide/svelte";
 
     import type { Chat, ChatFolder, character } from "src/ts/storage/database.svelte";
     import { ensureChatHydrated } from "src/ts/storage/chatStorage";
@@ -10,7 +10,6 @@
     import { selectedCharID, chatDeselected } from "src/ts/stores.svelte";
 
     import CheckInput from "../UI/GUI/CheckInput.svelte";
-    import ShSwitch from "../UI/GUI/ShSwitch.svelte";
     import ShButton from "../UI/GUI/ShButton.svelte";
     import TextInput from "../UI/GUI/TextInput.svelte";
 
@@ -23,7 +22,7 @@
     import Toggles from "./Toggles.svelte";
     import PersonaBind from "./PersonaBind.svelte";
     import PromptBind from "./PromptBind.svelte";
-    import ModelList from "../UI/ModelList.svelte";
+    import ModelBind from "./ModelBind.svelte";
     import { changeChatTo, createChatCopyName, requestImmediateSave } from "src/ts/globalApi.svelte";
 
     interface Props {
@@ -32,7 +31,6 @@
 
     let { chara = $bindable() }: Props = $props();
     let editMode = $state(false)
-    let auxModelExpanded = $state(false)
 
     // Safety net: chats whose folderId references a deleted folder would
     // otherwise be invisible (excluded from both the no-folder section and
@@ -483,38 +481,7 @@
 
         {#if DBState.db.characters[$selectedCharID]?.chaId !== '§playground' && !$chatDeselected}
             {#if DBState.db.showModelInSidebar}
-                <div class="flex flex-col gap-1 mt-4">
-                    <div class="text-[11px] text-textcolor2 px-1">{language.model} / {language.submodel}</div>
-                    <ModelList compact bind:value={DBState.db.aiModel} />
-                    <div class="flex gap-1 items-stretch">
-                        <div class="flex-1 min-w-0">
-                            <ModelList compact bind:value={DBState.db.subModel} />
-                        </div>
-                        <button
-                            class="shrink-0 flex items-center justify-center px-2 rounded-md border border-darkborderc bg-darkbutton hover:bg-selected"
-                            onclick={() => { auxModelExpanded = !auxModelExpanded }}
-                            title={language.seperateModelsForAxModels}
-                        >
-                            <ChevronDownIcon size={16} class={`transition-transform${auxModelExpanded ? ' rotate-180' : ''}`} />
-                        </button>
-                    </div>
-                    {#if auxModelExpanded}
-                        <div class="flex flex-col gap-1 mt-1 pl-2 border-l border-selected">
-                            <div class="w-full flex items-center justify-between gap-2 min-h-10 rounded-md px-1">
-                                <span class="min-w-0">{language.seperateModelsForAxModels}</span>
-                                <ShSwitch className="shrink-0" bind:checked={DBState.db.seperateModelsForAxModels} />
-                            </div>
-                            <div class="text-[11px] text-textcolor2 px-1">{language.axModelMemory}</div>
-                            <ModelList compact blankable blankLabel={language.useDefaultSubModel} disabled={!DBState.db.seperateModelsForAxModels} bind:value={DBState.db.seperateModels.memory} />
-                            <div class="text-[11px] text-textcolor2 px-1">{language.axModelTranslate}</div>
-                            <ModelList compact blankable blankLabel={language.useDefaultSubModel} disabled={!DBState.db.seperateModelsForAxModels} bind:value={DBState.db.seperateModels.translate} />
-                            <div class="text-[11px] text-textcolor2 px-1">{language.axModelEmotion}</div>
-                            <ModelList compact blankable blankLabel={language.useDefaultSubModel} disabled={!DBState.db.seperateModelsForAxModels} bind:value={DBState.db.seperateModels.emotion} />
-                            <div class="text-[11px] text-textcolor2 px-1">{language.axModelOther}</div>
-                            <ModelList compact blankable blankLabel={language.useDefaultSubModel} disabled={!DBState.db.seperateModelsForAxModels} bind:value={DBState.db.seperateModels.otherAx} />
-                        </div>
-                    {/if}
-                </div>
+                <ModelBind />
             {/if}
             {#if DBState.db.showPresetInSidebar}
                 <PromptBind />

@@ -16,7 +16,7 @@ import { normalizeTranslatorPresetState, type TranslatorPreset } from '../transl
 import { safeStructuredClone } from '../polyfill';
 import { v4 as uuidv4 } from 'uuid';
 import { applyModelPresetDefaults } from '../preset/dbDefaults';
-import type { ApiKeyPoolEntry, ModelBindingFields, ModelPreset, ModelPresetMigrationSummary, RegistryCache } from '../preset/types';
+import type { ApiKeyPoolEntry, ModelBindingFields, ModelBindingSet, ModelPreset, ModelPresetMigrationSummary, RegistryCache } from '../preset/types';
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
 export let appVer = "2026.2.291" //<APP_VERSION_POINT>
@@ -1290,9 +1290,10 @@ export interface Database{
         flags: LLMFlags[]
     }[]
     modelPresets: ModelPreset[]
-    modelBinding?: ModelBindingFields['modelBinding']
-    subModelBinding?: ModelBindingFields['subModelBinding']
-    taskModelBindings?: ModelBindingFields['taskModelBindings']
+    // P4 dual-regime global default binding (plan v6 §7). Copied into new chats
+    // (seeding); useModelPresetByDefault seeds the new-chat regime toggle.
+    useModelPresetByDefault?: boolean
+    defaultModelBinding?: ModelBindingSet
     modelPresetMigrationVersion?: number
     modelPresetMigrationAppliedAt?: number
     modelPresetMigrationReport?: ModelPresetMigrationSummary
@@ -1928,9 +1929,11 @@ export interface Chat{
     bookmarkNames?: { [chatId: string]: string };
     supaMemory?: boolean
     savedToggleValues?: Record<string, string>
-    modelBinding?: ModelBindingFields['modelBinding']
-    subModelBinding?: ModelBindingFields['subModelBinding']
-    taskModelBindings?: ModelBindingFields['taskModelBindings']
+    // P4 dual-regime: per-chat model preset binding (plan v6 §7). useModelPreset
+    // is the regime toggle; modelBinding (the bundle) persists across toggling so
+    // it is restored on re-enable. Off (or absent) => classic global model path.
+    useModelPreset?: boolean
+    modelBinding?: ModelBindingSet
     /** Runtime-only: true while awaiting hydration from server. Never persisted. */
     _placeholder?: boolean
 }

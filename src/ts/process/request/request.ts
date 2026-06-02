@@ -20,6 +20,15 @@ import { requestClaude } from './anthropic';
 import { requestGoogleCloudVertex } from './google';
 import { requestOpenAI, requestOpenAILegacyInstruct, requestOpenAIResponseAPI } from "./openAI/requests";
 import { applyParameters, type ModelModeExtended } from './shared';
+import {
+    sendChatRequest, streamChatRequest,
+    sendAnthropicChatRequest, streamAnthropicChatRequest,
+    sendGoogleChatRequest, streamGoogleChatRequest,
+    type AdapterChatMessage, type AdapterChatOptions, type AdapterChatResponse,
+    type AdapterChatStreamDelta, type AdapterCredential,
+} from "src/ts/preset/adapter";
+import type { AdapterKind, ModelPreset } from "src/ts/preset/types";
+import { resolveChatModelBinding, buildModelPresetCredential } from "./modelPresetBinding";
 
 export type ToolCall = {
     name: string;
@@ -325,7 +334,27 @@ export async function requestChatDataMain(arg:requestDataArgument, model:ModelMo
     const db = getDatabase()
     const targ:RequestDataArgumentExtended = arg
 
-    
+    // P4 dual-regime dispatch (plan v6 §7). Resolve the per-chat ModelPreset
+    // binding BEFORE any classic model selection so a binding chat never touches
+    // db.aiModel / db.seperateModels. Skipped when a staticModel (fallback retry)
+    // is forced — fallbacks are classic model ids.
+    if(!arg.staticModel){
+        const binding = resolveChatModelBinding(getCurrentChat(), model)
+        if(binding.kind === 'modelPreset'){
+            return requestModelPreset(targ, binding.preset, abortSignal)
+        }
+        if(binding.kind === 'block'){
+            return {
+                type: 'fail',
+                noRetry: true,
+                result: binding.reason === 'main-unset'
+                    ? language.modelPresetBindingMainUnset
+                    : language.modelPresetBindingSubUnset,
+            }
+        }
+        // binding.kind === 'classic' → fall through to the classic path below.
+    }
+
     targ.aiModel = arg.staticModel ? arg.staticModel : (model === 'model' ? db.aiModel : db.subModel)
     targ.modelInfo = getModelInfo(targ.aiModel)
     if(db.seperateModelsForAxModels && !arg.staticModel){
@@ -423,6 +452,83 @@ export async function requestChatDataMain(arg:requestDataArgument, model:ModelMo
 }
 
 
+// P4 text bridge (plan v6 §7). Converts the classic OpenAIChat[] prompt to the
+// adapter's AdapterChatMessage[], routes by adapterKind, and normalizes the
+// AdapterChatResponse back into a requestDataResponse. The send/stream/parse
+// adapter layer (preset/adapter) is reused as-is.
+//
+// Scope: TEXT ONLY. Multimodal / tools / thoughts are dropped here because
+// AdapterChatMessage does not model them yet (deferred to a later sprint).
+function toAdapterMessage(m: OpenAIChat): AdapterChatMessage {
+    const role: AdapterChatMessage['role'] = m.role === 'function' ? 'tool' : m.role
+    const msg: AdapterChatMessage = { role, content: m.content ?? '' }
+    if (m.name) msg.name = m.name
+    return msg
+}
+
+function sendModelPreset(
+    kind: AdapterKind,
+    preset: ModelPreset,
+    options: AdapterChatOptions,
+    credential: AdapterCredential | undefined,
+): Promise<AdapterChatResponse> {
+    switch (kind) {
+        case 'openai-compatible': return sendChatRequest(preset, options, credential)
+        case 'anthropic-messages': return sendAnthropicChatRequest(preset, options, credential)
+        case 'google-gemini': return sendGoogleChatRequest(preset, options, credential)
+    }
+}
+
+function streamModelPreset(
+    kind: AdapterKind,
+    preset: ModelPreset,
+    options: AdapterChatOptions,
+    credential: AdapterCredential | undefined,
+): AsyncGenerator<AdapterChatStreamDelta, void, void> {
+    switch (kind) {
+        case 'openai-compatible': return streamChatRequest(preset, options, credential)
+        case 'anthropic-messages': return streamAnthropicChatRequest(preset, options, credential)
+        case 'google-gemini': return streamGoogleChatRequest(preset, options, credential)
+    }
+}
+
+async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelPreset, abortSignal:AbortSignal=null):Promise<requestDataResponse> {
+    const db = getDatabase()
+    const messages = arg.formated.map(toAdapterMessage)
+    const credential = buildModelPresetCredential(preset)
+    const kind = preset.profileSnapshot.adapterKind
+    const useStreaming = arg.forceStreaming ? true : (db.useStreaming && arg.useStreaming)
+    const options: AdapterChatOptions = { messages, abortSignal: abortSignal ?? undefined }
+
+    try {
+        if(useStreaming){
+            const gen = streamModelPreset(kind, preset, options, credential)
+            const stream = new ReadableStream<StreamResponseChunk>({
+                async start(controller){
+                    let fullText = ''
+                    try {
+                        for await (const delta of gen){
+                            fullText += delta.textDelta
+                            controller.enqueue({ "0": fullText })
+                        }
+                        controller.close()
+                    } catch (err) {
+                        controller.error(err)
+                    }
+                }
+            })
+            return { type: 'streaming', result: stream, model: preset.name }
+        }
+        const response = await sendModelPreset(kind, preset, options, credential)
+        return { type: 'success', result: response.text, model: preset.name }
+    } catch (err) {
+        return {
+            type: 'fail',
+            result: err instanceof Error ? err.message : String(err),
+            model: preset.name,
+        }
+    }
+}
 
 
 async function requestNovelAI(arg:RequestDataArgumentExtended):Promise<requestDataResponse>{

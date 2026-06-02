@@ -84,7 +84,7 @@
     <ShButton
         className={`flex-1 min-w-0 justify-start ${isPresetBound
             ? 'border-selected text-textcolor'
-            : 'text-textcolor2 opacity-50 hover:opacity-100'}`}
+            : 'text-textcolor2 opacity-75 hover:opacity-100'}`}
         onclick={handlePresetBindClick}
     >
         {#if isPresetBound}
