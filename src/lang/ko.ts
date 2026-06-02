@@ -1292,6 +1292,8 @@ export const languageKorean = {
     "axModelsDef": "보조 모델 정의",
     "doNotChangeSeperateModels": "프리셋 변경 시 분리된 모델 변경하지 않기",
     "useDefaultSubModel": "기본 보조모델 사용",
+    "modelTabBuiltin": "기본 모델",
+    "modelTabPlugin": "플러그인",
     "axModelMemory": "장기 기억",
     "axModelTranslate": "번역",
     "axModelEmotion": "감정",

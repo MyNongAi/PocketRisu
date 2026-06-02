@@ -1300,6 +1300,8 @@ export const languageEnglish = {
     axModelsDef: "Ax Models Definition",
     doNotChangeSeperateModels: "Do Not Change Seperate Models on Preset Change",
     useDefaultSubModel: "Use default submodel",
+    modelTabBuiltin: "Built-in",
+    modelTabPlugin: "Plugin",
     axModelMemory: "Memory",
     axModelTranslate: "Translation",
     axModelEmotion: "Emotion",

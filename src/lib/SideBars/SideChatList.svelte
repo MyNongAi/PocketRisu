@@ -482,9 +482,6 @@
         </div>
 
         {#if DBState.db.characters[$selectedCharID]?.chaId !== '§playground' && !$chatDeselected}
-            {#if DBState.db.showPresetInSidebar}
-                <PromptBind />
-            {/if}
             {#if DBState.db.showModelInSidebar}
                 <div class="flex flex-col gap-1 mt-4">
                     <div class="text-[11px] text-textcolor2 px-1">{language.model} / {language.submodel}</div>
@@ -518,6 +515,9 @@
                         </div>
                     {/if}
                 </div>
+            {/if}
+            {#if DBState.db.showPresetInSidebar}
+                <PromptBind />
             {/if}
             {#if DBState.db.showPersonaInSidebar}
                 <PersonaBind />
