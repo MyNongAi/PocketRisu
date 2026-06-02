@@ -10,7 +10,6 @@
   <Check bind:check={DBState.db.seperateModelsForAxModels} name={language.seperateModelsForAxModels}></Check>
 </div>
 {#if DBState.db.seperateModelsForAxModels}
-  <Check bind:check={DBState.db.doNotChangeSeperateModels} name={language.doNotChangeSeperateModels}></Check>
   <Accordion name={language.axModelsDef} styled>
     <span class="text-textcolor mt-4">{language.axModelMemory}</span>
     <ModelList bind:value={DBState.db.seperateModels.memory} blankable blankLabel={language.useDefaultSubModel} />

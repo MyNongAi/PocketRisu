@@ -2348,8 +2348,8 @@ export function saveCurrentPreset(){
         thinkingType: db.thinkingType ?? 'budget',
         adaptiveThinkingEffort: db.adaptiveThinkingEffort ?? 'high',
         outputImageModal: db.outputImageModal ?? false,
-        seperateModelsForAxModels: db.doNotChangeSeperateModels ? false : db.seperateModelsForAxModels ?? false,
-        seperateModels: db.doNotChangeSeperateModels ? null : safeStructuredClone(db.seperateModels),
+        seperateModelsForAxModels: false,
+        seperateModels: null,
         modelTools: safeStructuredClone(db.modelTools),
         fallbackModels: safeStructuredClone(db.fallbackModels),
         fallbackWhenBlankResponse: db.fallbackWhenBlankResponse ?? false,
@@ -2475,15 +2475,9 @@ export function setPreset(db:Database, newPres: botPreset){
     db.thinkingType = newPres.thinkingType ?? 'budget'
     db.adaptiveThinkingEffort = newPres.adaptiveThinkingEffort ?? 'high'
     db.outputImageModal = newPres.outputImageModal ?? false
-    if(!db.doNotChangeSeperateModels){
-        db.seperateModelsForAxModels = newPres.seperateModelsForAxModels ?? false
-        db.seperateModels = safeStructuredClone(newPres.seperateModels) ?? {
-            memory: '',
-            emotion: '',
-            translate: '',
-            otherAx: ''
-        }
-    }
+    // Model config (separated aux models) is decoupled from prompt presets in v6:
+    // switching a prompt preset no longer overwrites db.seperateModels. The global
+    // db.seperateModels is the single source of truth (preset copies are inert).
     if(!db.doNotChangeFallbackModels){
         db.fallbackModels = safeStructuredClone(newPres.fallbackModels) ?? {
             memory: [],
