@@ -19,9 +19,11 @@
         excludesPrefix?: string
         compact?: boolean
         label?: string
+        disabled?: boolean
+        blankLabel?: string
     }
 
-    let { value = $bindable(""), onChange = (v) => {}, onclick, blankable, excludesPrefix, compact, label }: Props = $props();
+    let { value = $bindable(""), onChange = (v) => {}, onclick, blankable, excludesPrefix, compact, label, disabled = false, blankLabel }: Props = $props();
     let openOptions = $state(false)
 
     function changeModel(name:string){
@@ -101,7 +103,7 @@
             
 
             {#if blankable}
-                <button class="hover:bg-selected px-6 py-2 text-lg" onclick={() => {changeModel('')}}>{language.none}</button>
+                <button class="hover:bg-selected px-6 py-2 text-lg" onclick={() => {changeModel('')}}>{blankLabel ?? language.none}</button>
             {/if}
             <div class="text-textcolor2 text-xs">
                 <CheckInput name={language.showUnrecommended}  grayText bind:check={showUnrec}/>
@@ -112,13 +114,13 @@
 {/if}
 
 {#if compact}
-    <ShButton className="w-full min-w-0 justify-start" onclick={() => {openOptions = true}}>
-        <span class="truncate">{getModelInfo(value)?.shortName || getModelInfo(value)?.name || language.none}</span>
+    <ShButton className={`w-full min-w-0 justify-start${disabled ? ' opacity-50 pointer-events-none' : ''}`} onclick={() => { if(!disabled){ openOptions = true } }}>
+        <span class="truncate">{(blankable && !value && blankLabel) ? blankLabel : (getModelInfo(value)?.shortName || getModelInfo(value)?.name || language.none)}</span>
     </ShButton>
 {:else}
-    <button onclick={() => {openOptions = true}}
+    <button onclick={() => { if(!disabled){ openOptions = true } }} class:opacity-50={disabled} class:pointer-events-none={disabled}
         class="mt-4 drop-shadow-lg p-3 flex justify-center items-center ml-2 mr-2 rounded-lg bg-darkbutton mb-4 border-darkborderc border">
-            {getModelInfo(value)?.fullName || language.none}
+            {(blankable && !value && blankLabel) ? blankLabel : (getModelInfo(value)?.fullName || language.none)}
     </button>
 {/if}
 

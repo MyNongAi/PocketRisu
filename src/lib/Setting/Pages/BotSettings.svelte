@@ -358,9 +358,7 @@
         <ChatFormatSettings />
     {/if}
 
-    {#if DBState.db.auxModelUnderModelSettings}
-        <AuxModelSelectors />
-    {/if}
+    <AuxModelSelectors />
 {/if}
 
 {#if submenu === 1}
