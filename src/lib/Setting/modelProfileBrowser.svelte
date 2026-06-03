@@ -1,15 +1,26 @@
 <script lang="ts">
-    import { SearchIcon, XIcon } from "@lucide/svelte";
+    import { DownloadIcon, SearchIcon, TrashIcon, UploadIcon, XIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import { DBState } from "src/ts/stores.svelte";
-    import { notifySuccess } from "src/ts/alert";
+    import { alertConfirm, alertError, notifySuccess } from "src/ts/alert";
+    import { downloadFile } from "src/ts/globalApi.svelte";
+    import { selectSingleFile } from "src/ts/util";
     import {
         getBundledRegistryId,
         loadBundledRegistry,
         resolveSnapshot,
     } from "src/ts/preset/registry";
+    import { createEmptyRegistryCache } from "src/ts/preset/dbDefaults";
+    import {
+        buildProfileFragment,
+        CUSTOM_ID_PREFIX,
+        CUSTOM_REGISTRY_ID,
+        importFragment,
+        removeCustomProfile,
+        validateFragment,
+    } from "src/ts/preset/customProfiles";
     import { localizeDisplayName, localizeDescription } from "src/ts/preset/registry/i18n";
-    import type { BaseProviderDefinition, ModelPreset, ModelProfile, RegistryProfileStatus, ResolvedModelProfileSnapshot } from "src/ts/preset/types";
+    import type { BaseProviderDefinition, ModelPreset, ModelProfile, RegistryCache, RegistryProfileStatus, ResolvedModelProfileSnapshot } from "src/ts/preset/types";
     import TextInput from "../UI/GUI/TextInput.svelte";
     import { v4 as uuidv4 } from "uuid";
 
@@ -19,10 +30,11 @@
 
     let { close = () => {} }: Props = $props();
 
-    const registry = loadBundledRegistry();
-    const registryId = getBundledRegistryId();
+    const officialRegistry = loadBundledRegistry();
 
-    // Flatten all profiles across all registries (currently just `bundled`).
+    let activeTab = $state<'official' | 'custom'>('official');
+    let query = $state('');
+
     type Entry = {
         profile: ModelProfile;
         baseProvider: BaseProviderDefinition | undefined;
@@ -36,21 +48,29 @@
         return language.profileStatusDeprecated;
     }
 
-    const entries: Entry[] = (() => {
+    // Active registry by tab. Official = bundled (read-only). Custom = the
+    // persisted cache's 'custom' registry (reactive: import/delete update it).
+    const activeRegistry = $derived<RegistryCache>(
+        activeTab === 'official'
+            ? officialRegistry
+            : (DBState.db.modelProfileRegistryCache ?? createEmptyRegistryCache()),
+    );
+    const activeRegistryId = $derived(activeTab === 'official' ? getBundledRegistryId() : CUSTOM_REGISTRY_ID);
+
+    function buildEntries(registry: RegistryCache): Entry[] {
         const out: Entry[] = [];
         for (const reg of Object.values(registry.registries)) {
             for (const profile of Object.values(reg.profiles ?? {})) {
-                const baseProvider = reg.baseProviders?.[profile.providerBaseId];
-                out.push({ profile, baseProvider });
+                out.push({ profile, baseProvider: reg.baseProviders?.[profile.providerBaseId] });
             }
         }
         return out.sort((a, b) =>
             (a.baseProvider?.displayName ?? '').localeCompare(b.baseProvider?.displayName ?? '')
             || a.profile.displayName.localeCompare(b.profile.displayName),
         );
-    })();
+    }
 
-    let query = $state('');
+    const entries = $derived(buildEntries(activeRegistry));
 
     const filtered = $derived.by(() => {
         const q = query.trim().toLowerCase();
@@ -87,17 +107,18 @@
     }
 
     function createPresetFrom(profile: ModelProfile) {
-        const snapshot = resolveSnapshot(registry, profile.id);
+        const snapshot = resolveSnapshot(activeRegistry, profile.id);
         const preset: ModelPreset = {
             id: uuidv4(),
             name: profile.displayName,
             profileSnapshot: snapshot,
             sourceProfile: {
-                registryId,
+                registryId: activeRegistryId,
                 profileId: snapshot.profileId,
                 profileVersion: snapshot.profileVersion,
                 providerBaseVersion: snapshot.providerBaseVersion,
                 fetchedAt: Date.now(),
+                profileUpdatedAt: profile.updatedAt,
             },
             userValues: seedDefaults(snapshot),
             createdAt: Date.now(),
@@ -106,6 +127,57 @@
         DBState.db.modelPresets = [...DBState.db.modelPresets, preset];
         notifySuccess(language.modelPresetCreated);
         close();
+    }
+
+    function safeFileName(id: string): string {
+        return id.replace(/[^a-z0-9._-]/gi, '_');
+    }
+
+    // Export any profile (official or custom) as a self-contained, key-free
+    // fragment so it can be edited and shared as a JSON file.
+    async function exportProfile(profile: ModelProfile, baseProvider: BaseProviderDefinition | undefined) {
+        if (!baseProvider) {
+            alertError(language.profileExportNoBase);
+            return;
+        }
+        const fragment = buildProfileFragment(profile, baseProvider, Date.now());
+        await downloadFile(`${safeFileName(profile.id)}.profile.json`, JSON.stringify(fragment, null, 2));
+    }
+
+    async function importProfile() {
+        const file = await selectSingleFile(['json']);
+        if (!file) return;
+        let parsed: unknown;
+        try {
+            parsed = JSON.parse(new TextDecoder().decode(file.data));
+        } catch {
+            alertError(language.profileImportParseError);
+            return;
+        }
+        const res = validateFragment(parsed);
+        if (!res.ok || !res.fragment) {
+            alertError(`${language.profileImportInvalid}\n\n- ${res.errors.join('\n- ')}`);
+            return;
+        }
+        const fragment = res.fragment;
+        const cache = (DBState.db.modelProfileRegistryCache ??= createEmptyRegistryCache());
+        const targetId = fragment.profile.id.startsWith(CUSTOM_ID_PREFIX)
+            ? fragment.profile.id
+            : `${CUSTOM_ID_PREFIX}${fragment.profile.id}`;
+        const exists = cache.registries[CUSTOM_REGISTRY_ID]?.profiles?.[targetId] !== undefined;
+        if (exists && !(await alertConfirm(language.profileOverwriteConfirm))) {
+            return;
+        }
+        importFragment(cache, fragment, Date.now());
+        activeTab = 'custom';
+        notifySuccess(language.profileImported);
+    }
+
+    async function deleteCustom(profile: ModelProfile) {
+        if (!(await alertConfirm(`${language.removeConfirm}${profile.displayName}`))) return;
+        const cache = DBState.db.modelProfileRegistryCache;
+        if (cache) removeCustomProfile(cache, profile.id);
+        notifySuccess(language.presetDeleted);
     }
 </script>
 
@@ -120,15 +192,30 @@
             </div>
         </div>
 
-        <div class="flex items-center gap-2 mb-4 shrink-0">
+        <div class="shrink-0 flex w-full rounded-md border border-selected mb-3">
+            <button class="p-1.5 flex-1 text-sm" class:bg-selected={activeTab === 'official'} onclick={() => { activeTab = 'official' }}>{language.profileTabOfficial}</button>
+            <button class="p-1.5 flex-1 text-sm" class:bg-selected={activeTab === 'custom'} onclick={() => { activeTab = 'custom' }}>{language.profileTabCustom}</button>
+        </div>
+
+        <div class="flex items-center gap-2 mb-3 shrink-0">
             <SearchIcon size={16} class="text-textcolor2 shrink-0" />
             <TextInput bind:value={query} placeholder={language.searchProfiles} fullwidth />
         </div>
 
+        {#if activeTab === 'custom'}
+            <button
+                class="shrink-0 w-full flex items-center justify-center gap-2 mb-3 p-2 rounded-md border border-darkborderc bg-darkbutton hover:bg-selected text-sm"
+                onclick={importProfile}
+            >
+                <UploadIcon size={16} class="shrink-0" />
+                <span>{language.profileImport}</span>
+            </button>
+        {/if}
+
         <div class="flex flex-col gap-1 overflow-y-auto">
             {#if filtered.length === 0}
                 <div class="text-textcolor2 text-sm text-center py-8">
-                    {language.noProfileMatch}
+                    {activeTab === 'custom' ? language.customProfileEmpty : language.noProfileMatch}
                 </div>
             {:else}
                 {#each groupedFiltered as group (group.status)}
@@ -138,11 +225,8 @@
                         </h3>
                         {#each group.entries as { profile, baseProvider } (profile.id)}
                             {@const localizedDesc = localizeDescription(profile)}
-                            <button
-                                class="flex items-start text-textcolor border border-darkborderc rounded-md p-3 cursor-pointer hover:bg-selected/30 transition-colors text-left"
-                                onclick={() => createPresetFrom(profile)}
-                            >
-                                <div class="flex flex-col min-w-0 grow">
+                            <div class="flex items-start text-textcolor border border-darkborderc rounded-md p-3 hover:bg-selected/30 transition-colors">
+                                <button class="flex flex-col min-w-0 grow cursor-pointer text-left" onclick={() => createPresetFrom(profile)}>
                                     <div class="flex items-center gap-2">
                                         <span class="text-sm text-textcolor truncate">{localizeDisplayName(profile)}</span>
                                         {#if baseProvider}
@@ -156,8 +240,18 @@
                                     {#if profile.statusReason}
                                         <span class="text-xs text-textcolor2 mt-1 truncate">{profile.statusReason}</span>
                                     {/if}
+                                </button>
+                                <div class="flex gap-2 shrink-0 ml-2">
+                                    <button class="text-textcolor2 hover:text-primary cursor-pointer" title={language.profileExport} onclick={() => exportProfile(profile, baseProvider)}>
+                                        <DownloadIcon size={18}/>
+                                    </button>
+                                    {#if activeTab === 'custom'}
+                                        <button class="text-textcolor2 hover:text-red-400 cursor-pointer" title={language.profileDelete} onclick={() => deleteCustom(profile)}>
+                                            <TrashIcon size={18}/>
+                                        </button>
+                                    {/if}
                                 </div>
-                            </button>
+                            </div>
                         {/each}
                     </section>
                 {/each}

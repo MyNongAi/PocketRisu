@@ -159,6 +159,12 @@ export type RegistryTokenizer =
 export interface ModelProfile {
     id: string
     version: number
+    // Precise timestamp (epoch millis) of the profile's last revision. Basis for
+    // the per-preset "update available" hint (custom-profiles plan): compared
+    // against the preset's recorded sourceProfile.profileUpdatedAt. Optional —
+    // legacy/unstamped profiles compare as "unknown" (no hint). `version` is
+    // retained but no longer drives update detection.
+    updatedAt?: number
     displayName: string
     displayNameI18n?: Record<string, string>
     providerBaseId: string
@@ -193,6 +199,10 @@ export interface ModelPresetSourceProfile {
     // spurious update card on every legacy preset.
     providerBaseVersion?: number
     fetchedAt: number
+    // The source profile's `updatedAt` captured at creation/replace time.
+    // The "update available" hint compares this against the current profile's
+    // updatedAt (matched by registryId + profileId). Undefined => no hint.
+    profileUpdatedAt?: number
 }
 
 export interface ResolvedModelProfileSnapshot {
