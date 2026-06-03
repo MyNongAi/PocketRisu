@@ -3,6 +3,7 @@
     import SettingPage from "src/lib/UI/GUI/SettingPage.svelte";
     import SettingTabs from "src/lib/UI/GUI/SettingTabs.svelte";
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
+    import ShSwitch from "src/lib/UI/GUI/ShSwitch.svelte";
     import SchemaFormRenderer from "src/lib/UI/GUI/SchemaFormRenderer.svelte";
     import TextAreaInput from "src/lib/UI/GUI/TextAreaInput.svelte";
     import SelectInput from "src/lib/UI/GUI/SelectInput.svelte";
@@ -133,6 +134,13 @@
                     userValues={editingPreset.userValues}
                     visibility="basic"
                 />
+                <div class="flex flex-col gap-1 mt-6">
+                    <div class="flex items-center justify-between gap-2">
+                        <span class="text-sm text-textcolor">{language.streamingOverride}</span>
+                        <ShSwitch checked={!!editingPreset.useStreaming} onCheckedChange={(v) => { editingPreset.useStreaming = v }} />
+                    </div>
+                    <span class="text-xs text-textcolor2">{language.streamingOverrideHelp}</span>
+                </div>
             {:else if submenu === 2}
                 <SchemaFormRenderer
                     schema={editingPreset.profileSnapshot.schema}

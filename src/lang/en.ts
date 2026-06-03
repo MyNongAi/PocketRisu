@@ -1307,6 +1307,8 @@ export const languageEnglish = {
     modelPresetConfigure: "Configure model presets",
     modelPresetSetDefaultConfirm: "Set the current model binding as the default for new chats?",
     modelPresetBindedSuccess: "Model preset is successfully binded",
+    streamingOverride: "Response streaming",
+    streamingOverrideHelp: "Whether this preset streams responses.",
     modelPresetDeleted: "Deleted preset",
     modelPresetUnset: "Not set",
     modelPresetSetAsDefault: "Set current binding as default for new chats",

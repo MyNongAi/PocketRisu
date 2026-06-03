@@ -536,12 +536,23 @@ function describeModelPresetError(err: unknown): Record<string, unknown> {
     return { message: String(err) }
 }
 
+// Per-preset streaming resolution. Independent of the global db.useStreaming:
+// the preset's own on/off decides (default off). Forced off when the profile
+// does not declare the 'streaming' capability, or when the caller opted out
+// (arg.useStreaming === false, e.g. aux/summarization requests).
+function resolvePresetStreaming(preset: ModelPreset, arg: RequestDataArgumentExtended): boolean {
+    if (arg.forceStreaming) return true
+    const caps = preset.profileSnapshot.capabilities
+    const supportsStreaming = !caps || caps.includes('streaming')
+    if (!supportsStreaming) return false
+    return !!preset.useStreaming && (arg.useStreaming ?? true)
+}
+
 async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelPreset, abortSignal:AbortSignal=null):Promise<requestDataResponse> {
-    const db = getDatabase()
     const messages = arg.formated.map(toAdapterMessage)
     const credential = buildModelPresetCredential(preset)
     const kind = preset.profileSnapshot.adapterKind
-    const useStreaming = arg.forceStreaming ? true : (db.useStreaming && arg.useStreaming)
+    const useStreaming = resolvePresetStreaming(preset, arg)
     const options: AdapterChatOptions = { messages, abortSignal: abortSignal ?? undefined, fetchImpl: makeProxiedFetch(arg.chatId) }
 
     try {

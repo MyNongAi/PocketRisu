@@ -242,6 +242,10 @@ export interface ModelPreset {
     // falls back to profile.recommendedTokenizer, then db.customTokenizer
     // (legacy global), then a sane default based on the adapter kind.
     tokenizerOverride?: RegistryTokenizer
+    // Per-ModelPreset streaming. Independent of the global db.useStreaming.
+    // Default off (undefined/false). Forced off when the profile does not
+    // declare the 'streaming' capability.
+    useStreaming?: boolean
     apiKeyRef?: string
     inlineCredential?: unknown
     fallbackModelPresetIds?: string[]
