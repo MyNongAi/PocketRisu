@@ -6,6 +6,7 @@
     import { downloadFile } from "src/ts/globalApi.svelte";
     import { getBundledRegistryId, loadBundledRegistry, resolveSnapshot } from "src/ts/preset/registry";
     import { buildFragmentFromSnapshot, getProfileUpdateStatus, migrateUserValues } from "src/ts/preset/customProfiles";
+    import { localizeDescription } from "src/ts/preset/registry/i18n";
     import type { ModelPreset } from "src/ts/preset/types";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
@@ -59,6 +60,7 @@
     const updateStatus = $derived(getProfileUpdateStatus(sourceLookup.current, preset.sourceProfile?.profileUpdatedAt));
     const updatedAtMs = $derived(sourceLookup.current?.updatedAt ?? preset.sourceProfile?.profileUpdatedAt);
     const updatedAtLabel = $derived(updatedAtMs ? new Date(updatedAtMs).toLocaleString() : null);
+    const description = $derived(sourceLookup.current ? localizeDescription(sourceLookup.current) : '');
 
     function replaceProfile() {
         modelProfileReplaceTarget.set(preset.id);
@@ -101,16 +103,20 @@
         <TextInput bind:value={preset.name} fullwidth />
     </div>
 
+    <div class="flex flex-col gap-1">
+    <span class="text-textcolor">{language.profileSectionTitle}</span>
     <div class="flex flex-col gap-1 p-3 rounded-md border border-darkborderc bg-darkbg/40">
         <div class="flex items-center justify-between gap-2">
-            <span class="text-xs text-textcolor2 uppercase tracking-wide">{language.profileSectionTitle}</span>
+            <span class="text-sm text-textcolor truncate">{preset.profileSnapshot.profileId}</span>
             {#if updateStatus === 'updatable'}
-                <button class="text-xs px-2 py-0.5 rounded border border-amber-500 text-amber-500 hover:bg-amber-500/10 cursor-pointer" onclick={applyUpdate}>{language.profileUpdateAvailable}</button>
+                <button class="text-xs px-2 py-0.5 rounded border border-amber-500 text-amber-500 hover:bg-amber-500/10 cursor-pointer shrink-0" onclick={applyUpdate}>{language.profileUpdateAvailable}</button>
             {:else if updateStatus === 'missing'}
-                <span class="text-xs px-2 py-0.5 rounded border border-darkborderc text-textcolor2">{language.profileSourceMissing}</span>
+                <span class="text-xs px-2 py-0.5 rounded border border-darkborderc text-textcolor2 shrink-0">{language.profileSourceMissing}</span>
             {/if}
         </div>
-        <div class="text-sm text-textcolor">{preset.profileSnapshot.profileId}</div>
+        {#if description}
+            <div class="text-xs text-textcolor2">{description}</div>
+        {/if}
         <div class="text-xs text-textcolor2">Provider: {preset.profileSnapshot.providerBaseId}</div>
         {#if preset.profileSnapshot.modelId}
             <div class="text-xs text-textcolor2">Default model: {preset.profileSnapshot.modelId}</div>
@@ -135,6 +141,7 @@
                 <span class="ml-1">{language.profileExport}</span>
             </ShButton>
         </div>
+    </div>
     </div>
 
     <div class="flex flex-col gap-2">

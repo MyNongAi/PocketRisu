@@ -11,7 +11,7 @@
     import { tokenizerList } from "src/ts/tokenizer";
     import ModelPresetBasicInfo from "./ModelPresetBasicInfo.svelte";
     import { language } from "src/lang";
-    import { DBState, openModelProfileBrowser, modelProfileReplaceTarget } from "src/ts/stores.svelte";
+    import { DBState, openModelProfileBrowser, modelProfileReplaceTarget, openModelPresetEditId } from "src/ts/stores.svelte";
     import { alertConfirm, notifySuccess } from "src/ts/alert";
     import { v4 as uuidv4 } from "uuid";
 
@@ -28,6 +28,15 @@
     $effect(() => {
         if (editingId && !editingPreset) {
             editingId = null;
+        }
+    });
+
+    // Open a freshly-created preset directly in its editor.
+    $effect(() => {
+        if ($openModelPresetEditId) {
+            editingId = $openModelPresetEditId;
+            submenu = 0;
+            openModelPresetEditId.set(null);
         }
     });
 

@@ -42,6 +42,9 @@ export const openModelProfileBrowser = writable(false)
 // When set to a preset id, the profile browser replaces that preset's profile
 // (migrating matching userValues) instead of creating a new preset. null = create.
 export const modelProfileReplaceTarget = writable<string | null>(null)
+// Set to a newly-created preset id so the ModelPreset settings page opens it
+// for editing immediately. Consumed (cleared) by ModelPresetSettings.
+export const openModelPresetEditId = writable<string | null>(null)
 export const openModuleListStore = writable(false)
 export const openThemePresetList = writable(false)
 export const openPersonaList = writable(false)

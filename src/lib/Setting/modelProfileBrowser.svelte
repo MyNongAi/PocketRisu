@@ -1,7 +1,7 @@
 <script lang="ts">
     import { DownloadIcon, SearchIcon, TrashIcon, UploadIcon, XIcon } from "@lucide/svelte";
     import { language } from "src/lang";
-    import { DBState, modelProfileReplaceTarget } from "src/ts/stores.svelte";
+    import { DBState, modelProfileReplaceTarget, openModelPresetEditId } from "src/ts/stores.svelte";
     import { alertConfirm, alertError, notifySuccess } from "src/ts/alert";
     import { downloadFile } from "src/ts/globalApi.svelte";
     import { selectSingleFile } from "src/ts/util";
@@ -127,6 +127,7 @@
         };
         DBState.db.modelPresets = [...DBState.db.modelPresets, preset];
         notifySuccess(language.modelPresetCreated);
+        openModelPresetEditId.set(preset.id);
         close();
     }
 
