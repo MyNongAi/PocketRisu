@@ -3,12 +3,14 @@ import {
     buildProfileFragment,
     CUSTOM_ID_PREFIX,
     CUSTOM_REGISTRY_ID,
+    getProfileUpdateStatus,
     importFragment,
     removeCustomProfile,
     validateFragment,
     type ProfileFragment,
 } from './customProfiles'
 import type { BaseProviderDefinition, ModelProfile, RegistryCache } from './types'
+import { loadBundledRegistry } from './registry'
 
 function makeBaseProvider(): BaseProviderDefinition {
     return {
@@ -103,6 +105,12 @@ describe('validateFragment', () => {
         delete (frag.profile as { modelId?: string }).modelId
         expect(validateFragment(frag).ok).toBe(false)
     })
+
+    it('accepts an empty modelId (supplied via userValues, e.g. deepinfra)', () => {
+        const frag = makeFragment()
+        frag.profile.modelId = ''
+        expect(validateFragment(frag).ok).toBe(true)
+    })
 })
 
 describe('importFragment', () => {
@@ -143,6 +151,45 @@ describe('importFragment', () => {
         importFragment(cache, frag, 9999)
         const reg = cache.registries[CUSTOM_REGISTRY_ID]
         expect(reg.profiles![`${CUSTOM_ID_PREFIX}myprofile`].updatedAt).toBe(12345)
+    })
+})
+
+describe('bundled profiles round-trip (export → import validation)', () => {
+    it('every bundled profile exports to a fragment that re-imports cleanly', () => {
+        const reg = loadBundledRegistry()
+        const failures: string[] = []
+        for (const r of Object.values(reg.registries)) {
+            for (const profile of Object.values(r.profiles ?? {})) {
+                const base = r.baseProviders?.[profile.providerBaseId]
+                if (!base) {
+                    failures.push(`${profile.id}: missing base provider ${profile.providerBaseId}`)
+                    continue
+                }
+                const frag = buildProfileFragment(profile, base, 1)
+                const res = validateFragment(frag)
+                if (!res.ok) failures.push(`${profile.id}: ${res.errors.join('; ')}`)
+            }
+        }
+        expect(failures).toEqual([])
+    })
+})
+
+describe('getProfileUpdateStatus', () => {
+    const withUpdatedAt = (t?: number) => ({ ...makeProfile(), updatedAt: t })
+
+    it('missing when current profile is undefined', () => {
+        expect(getProfileUpdateStatus(undefined, 100)).toBe('missing')
+    })
+    it('updatable when current is strictly newer', () => {
+        expect(getProfileUpdateStatus(withUpdatedAt(200), 100)).toBe('updatable')
+    })
+    it('none when equal or older', () => {
+        expect(getProfileUpdateStatus(withUpdatedAt(100), 100)).toBe('none')
+        expect(getProfileUpdateStatus(withUpdatedAt(50), 100)).toBe('none')
+    })
+    it('none when either timestamp is unknown', () => {
+        expect(getProfileUpdateStatus(withUpdatedAt(undefined), 100)).toBe('none')
+        expect(getProfileUpdateStatus(withUpdatedAt(200), undefined)).toBe('none')
     })
 })
 

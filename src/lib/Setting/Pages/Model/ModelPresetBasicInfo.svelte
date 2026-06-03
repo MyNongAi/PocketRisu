@@ -1,8 +1,11 @@
 <script lang="ts">
-    import { CopyIcon, Trash2Icon } from "@lucide/svelte";
+    import { CopyIcon, DownloadIcon, RefreshCwIcon, Trash2Icon } from "@lucide/svelte";
     import { language } from "src/lang";
-    import { DBState } from "src/ts/stores.svelte";
+    import { DBState, modelProfileReplaceTarget, openModelProfileBrowser } from "src/ts/stores.svelte";
     import { alertConfirm, notifySuccess } from "src/ts/alert";
+    import { downloadFile } from "src/ts/globalApi.svelte";
+    import { getBundledRegistryId, loadBundledRegistry, resolveSnapshot } from "src/ts/preset/registry";
+    import { buildFragmentFromSnapshot, getProfileUpdateStatus, migrateUserValues } from "src/ts/preset/customProfiles";
     import type { ModelPreset } from "src/ts/preset/types";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
@@ -39,6 +42,57 @@
         notifySuccess(language.presetDeleted);
         onAfterDelete();
     }
+
+    // Resolve the preset's source profile in its registry (official=bundled,
+    // else the persisted custom cache) — drives the update hint, updated-at
+    // date, and the one-click apply.
+    const sourceLookup = $derived.by(() => {
+        const sp = preset.sourceProfile;
+        const cache = !sp?.registryId
+            ? undefined
+            : sp.registryId === getBundledRegistryId()
+                ? loadBundledRegistry()
+                : DBState.db.modelProfileRegistryCache;
+        const current = sp?.registryId ? cache?.registries?.[sp.registryId]?.profiles?.[sp.profileId] : undefined;
+        return { sp, cache, current };
+    });
+    const updateStatus = $derived(getProfileUpdateStatus(sourceLookup.current, preset.sourceProfile?.profileUpdatedAt));
+    const updatedAtMs = $derived(sourceLookup.current?.updatedAt ?? preset.sourceProfile?.profileUpdatedAt);
+    const updatedAtLabel = $derived(updatedAtMs ? new Date(updatedAtMs).toLocaleString() : null);
+
+    function replaceProfile() {
+        modelProfileReplaceTarget.set(preset.id);
+        openModelProfileBrowser.set(true);
+    }
+
+    // One-click apply of the current source profile (the "update available"
+    // badge). Re-resolves the same profile, migrates matching userValues, and
+    // warns before dropping orphaned settings.
+    async function applyUpdate() {
+        const { sp, cache, current } = sourceLookup;
+        if (!sp?.registryId || !cache || !current) return;
+        const snapshot = resolveSnapshot(cache, sp.profileId);
+        const { values, droppedKeys } = migrateUserValues(preset.userValues, snapshot.schema);
+        const msg = droppedKeys.length > 0 ? language.profileReplaceWarn : language.profileUpdateConfirm;
+        if (!(await alertConfirm(msg))) return;
+        preset.profileSnapshot = snapshot;
+        preset.sourceProfile = {
+            ...sp,
+            profileVersion: snapshot.profileVersion,
+            providerBaseVersion: snapshot.providerBaseVersion,
+            fetchedAt: Date.now(),
+            profileUpdatedAt: current.updatedAt,
+        };
+        preset.userValues = values;
+        preset.updatedAt = Date.now();
+        notifySuccess(language.profileReplaced);
+    }
+
+    async function exportPreset() {
+        const fragment = buildFragmentFromSnapshot(preset.profileSnapshot, preset.name, Date.now());
+        const name = (preset.name || 'profile').replace(/[^a-z0-9._-]/gi, '_');
+        await downloadFile(`${name}.profile.json`, JSON.stringify(fragment, null, 2));
+    }
 </script>
 
 <div class="flex flex-col gap-4">
@@ -48,11 +102,21 @@
     </div>
 
     <div class="flex flex-col gap-1 p-3 rounded-md border border-darkborderc bg-darkbg/40">
-        <span class="text-xs text-textcolor2 uppercase tracking-wide">Profile</span>
+        <div class="flex items-center justify-between gap-2">
+            <span class="text-xs text-textcolor2 uppercase tracking-wide">{language.profileSectionTitle}</span>
+            {#if updateStatus === 'updatable'}
+                <button class="text-xs px-2 py-0.5 rounded border border-amber-500 text-amber-500 hover:bg-amber-500/10 cursor-pointer" onclick={applyUpdate}>{language.profileUpdateAvailable}</button>
+            {:else if updateStatus === 'missing'}
+                <span class="text-xs px-2 py-0.5 rounded border border-darkborderc text-textcolor2">{language.profileSourceMissing}</span>
+            {/if}
+        </div>
         <div class="text-sm text-textcolor">{preset.profileSnapshot.profileId}</div>
         <div class="text-xs text-textcolor2">Provider: {preset.profileSnapshot.providerBaseId}</div>
         {#if preset.profileSnapshot.modelId}
             <div class="text-xs text-textcolor2">Default model: {preset.profileSnapshot.modelId}</div>
+        {/if}
+        {#if updatedAtLabel}
+            <div class="text-xs text-textcolor2">{language.profileUpdatedAtLabel}: {updatedAtLabel}</div>
         {/if}
         {#if preset.profileSnapshot.capabilities && preset.profileSnapshot.capabilities.length > 0}
             <div class="flex flex-wrap gap-1 mt-1">
@@ -61,6 +125,16 @@
                 {/each}
             </div>
         {/if}
+        <div class="flex gap-2 mt-2">
+            <ShButton size="sm" className="flex-1" onclick={replaceProfile}>
+                <RefreshCwIcon size={14} class="shrink-0" />
+                <span class="ml-1">{language.profileReplace}</span>
+            </ShButton>
+            <ShButton size="sm" className="flex-1" onclick={exportPreset}>
+                <DownloadIcon size={14} class="shrink-0" />
+                <span class="ml-1">{language.profileExport}</span>
+            </ShButton>
+        </div>
     </div>
 
     <div class="flex flex-col gap-2">

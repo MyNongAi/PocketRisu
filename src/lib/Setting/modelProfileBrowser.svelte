@@ -1,7 +1,7 @@
 <script lang="ts">
     import { DownloadIcon, SearchIcon, TrashIcon, UploadIcon, XIcon } from "@lucide/svelte";
     import { language } from "src/lang";
-    import { DBState } from "src/ts/stores.svelte";
+    import { DBState, modelProfileReplaceTarget } from "src/ts/stores.svelte";
     import { alertConfirm, alertError, notifySuccess } from "src/ts/alert";
     import { downloadFile } from "src/ts/globalApi.svelte";
     import { selectSingleFile } from "src/ts/util";
@@ -16,6 +16,7 @@
         CUSTOM_ID_PREFIX,
         CUSTOM_REGISTRY_ID,
         importFragment,
+        migrateUserValues,
         removeCustomProfile,
         validateFragment,
     } from "src/ts/preset/customProfiles";
@@ -129,6 +130,46 @@
         close();
     }
 
+    // Replace an existing preset's profile (custom-profiles plan §3): re-resolve
+    // the chosen profile's snapshot, carry over matching userValues keys, drop
+    // orphans, seed defaults for new fields, and re-stamp sourceProfile.
+    async function replacePresetProfile(targetId: string, profile: ModelProfile): Promise<boolean> {
+        const idx = DBState.db.modelPresets.findIndex((p) => p.id === targetId);
+        if (idx < 0) return false;
+        const snapshot = resolveSnapshot(activeRegistry, profile.id);
+        const preset = DBState.db.modelPresets[idx];
+        const { values, droppedKeys } = migrateUserValues(preset.userValues, snapshot.schema);
+        // Warn before discarding settings that the new profile does not define.
+        if (droppedKeys.length > 0 && !(await alertConfirm(language.profileReplaceWarn))) {
+            return false;
+        }
+        preset.profileSnapshot = snapshot;
+        preset.sourceProfile = {
+            registryId: activeRegistryId,
+            profileId: snapshot.profileId,
+            profileVersion: snapshot.profileVersion,
+            providerBaseVersion: snapshot.providerBaseVersion,
+            fetchedAt: Date.now(),
+            profileUpdatedAt: profile.updatedAt,
+        };
+        preset.userValues = values;
+        preset.updatedAt = Date.now();
+        notifySuccess(language.profileReplaced);
+        return true;
+    }
+
+    async function selectProfile(profile: ModelProfile) {
+        const target = $modelProfileReplaceTarget;
+        if (target) {
+            if (await replacePresetProfile(target, profile)) {
+                modelProfileReplaceTarget.set(null);
+                close();
+            }
+        } else {
+            createPresetFrom(profile);
+        }
+    }
+
     function safeFileName(id: string): string {
         return id.replace(/[^a-z0-9._-]/gi, '_');
     }
@@ -226,7 +267,7 @@
                         {#each group.entries as { profile, baseProvider } (profile.id)}
                             {@const localizedDesc = localizeDescription(profile)}
                             <div class="flex items-start text-textcolor border border-darkborderc rounded-md p-3 hover:bg-selected/30 transition-colors">
-                                <button class="flex flex-col min-w-0 grow cursor-pointer text-left" onclick={() => createPresetFrom(profile)}>
+                                <button class="flex flex-col min-w-0 grow cursor-pointer text-left" onclick={() => selectProfile(profile)}>
                                     <div class="flex items-center gap-2">
                                         <span class="text-sm text-textcolor truncate">{localizeDisplayName(profile)}</span>
                                         {#if baseProvider}
@@ -234,6 +275,9 @@
                                         {/if}
                                     </div>
                                     <span class="text-xs text-textcolor2 truncate">{profile.id}</span>
+                                    {#if profile.updatedAt}
+                                        <span class="text-xs text-textcolor2">{language.profileUpdatedAtLabel}: {new Date(profile.updatedAt).toLocaleDateString()}</span>
+                                    {/if}
                                     {#if localizedDesc}
                                         <span class="text-xs text-textcolor2 mt-1 truncate">{localizedDesc}</span>
                                     {/if}

@@ -3,6 +3,8 @@ import type {
     BaseProviderDefinition,
     ModelProfile,
     RegistryCache,
+    RegistryFieldSchema,
+    ResolvedModelProfileSnapshot,
 } from './types'
 
 /**
@@ -89,7 +91,9 @@ export function validateFragment(raw: unknown): FragmentValidation {
     const b = baseProvider as Record<string, unknown>
 
     if (typeof p['id'] !== 'string' || p['id'].length === 0) errors.push('profile.id is required')
-    if (typeof p['modelId'] !== 'string' || p['modelId'].length === 0) errors.push('profile.modelId is required')
+    // modelId may be empty (openai-compatible/custom profiles supply the model
+    // elsewhere, e.g. via userValues) — only require that it is a string.
+    if (typeof p['modelId'] !== 'string') errors.push('profile.modelId must be a string')
     if (!isObject(p['endpoint'])) errors.push('profile.endpoint is required')
     if (!isObject(p['auth'])) errors.push('profile.auth is required')
     if (!Array.isArray(p['schema'])) errors.push('profile.schema must be an array')
@@ -159,6 +163,100 @@ export function importFragment(
     registry.fetchedAt = now
 
     return { profileId, overwritten }
+}
+
+export type ProfileUpdateStatus = 'none' | 'updatable' | 'missing'
+
+/**
+ * Client-side update hint (custom-profiles plan §A/§3). Compares the timestamp
+ * a preset recorded at creation/replace (`recordedUpdatedAt`) against the
+ * current registry profile's `updatedAt`. Best-effort: only flags 'updatable'
+ * when both timestamps are known and the registry copy is strictly newer.
+ *   - 'missing'   → source profile no longer in the registry (offer re-pick)
+ *   - 'updatable' → a newer revision exists (offer replace)
+ *   - 'none'      → up to date / unknown
+ */
+export function getProfileUpdateStatus(
+    current: ModelProfile | undefined,
+    recordedUpdatedAt: number | undefined,
+): ProfileUpdateStatus {
+    if (!current) return 'missing'
+    if (
+        recordedUpdatedAt !== undefined
+        && current.updatedAt !== undefined
+        && current.updatedAt > recordedUpdatedAt
+    ) {
+        return 'updatable'
+    }
+    return 'none'
+}
+
+/**
+ * Migrate userValues when a preset's profile is replaced (custom-profiles §3):
+ * keep values whose key still exists in the new schema, DROP the rest (orphans),
+ * and seed defaults for new fields. Orphan loss is surfaced to the user via a
+ * confirm before this runs.
+ */
+export function migrateUserValues(
+    oldValues: Record<string, unknown> | undefined,
+    newSchema: RegistryFieldSchema[],
+): { values: Record<string, unknown>; droppedKeys: string[] } {
+    const newKeys = new Set(newSchema.map((f) => f.key))
+    const values: Record<string, unknown> = {}
+    const droppedKeys: string[] = []
+    for (const [k, v] of Object.entries(oldValues ?? {})) {
+        if (newKeys.has(k)) values[k] = v
+        else droppedKeys.push(k)
+    }
+    for (const f of newSchema) {
+        if (f.default !== undefined && !(f.key in values)) values[f.key] = f.default
+    }
+    return { values, droppedKeys }
+}
+
+/**
+ * Build a self-contained fragment from a preset's resolved snapshot (for the
+ * editor's "download" — the preset holds a merged snapshot, not a raw
+ * profile+baseProvider). The merged schema is carried on the profile with a
+ * minimal base provider; re-import re-merges to the same result.
+ */
+export function buildFragmentFromSnapshot(
+    snapshot: ResolvedModelProfileSnapshot,
+    displayName: string,
+    now: number,
+): ProfileFragment {
+    const baseProvider: BaseProviderDefinition = {
+        id: snapshot.providerBaseId,
+        version: 1,
+        displayName: snapshot.providerBaseId,
+        adapterKind: snapshot.adapterKind,
+        authKinds: [snapshot.auth.kind],
+        endpointKinds: [snapshot.endpoint.kind],
+        requestSchema: [],
+        uiSchema: { groups: [], fields: [] },
+        sourceUrls: [],
+    }
+    const profile: ModelProfile = {
+        id: snapshot.profileId,
+        version: 1,
+        updatedAt: now,
+        displayName,
+        providerBaseId: snapshot.providerBaseId,
+        profileStatus: 'current',
+        modelId: snapshot.modelId,
+        endpoint: snapshot.endpoint,
+        auth: snapshot.auth,
+        defaults: snapshot.defaults,
+        schema: snapshot.schema,
+        uiSchema: snapshot.uiSchema,
+        bodyTemplate: snapshot.bodyTemplate,
+        headerTemplate: snapshot.headerTemplate,
+        capabilities: snapshot.capabilities,
+        limits: snapshot.limits,
+        recommendedTokenizer: snapshot.recommendedTokenizer,
+        sourceUrls: [],
+    }
+    return buildProfileFragment(profile, baseProvider, now)
 }
 
 /** Remove a custom profile (and its base provider if now unreferenced). */

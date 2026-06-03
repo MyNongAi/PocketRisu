@@ -39,6 +39,9 @@ export const presetSelectCallback = writable<((index: number) => void) | null>(n
 export const openModelPresetList = writable(false)
 export const modelPresetSelectCallback = writable<((id: string) => void) | null>(null)
 export const openModelProfileBrowser = writable(false)
+// When set to a preset id, the profile browser replaces that preset's profile
+// (migrating matching userValues) instead of creating a new preset. null = create.
+export const modelProfileReplaceTarget = writable<string | null>(null)
 export const openModuleListStore = writable(false)
 export const openThemePresetList = writable(false)
 export const openPersonaList = writable(false)
