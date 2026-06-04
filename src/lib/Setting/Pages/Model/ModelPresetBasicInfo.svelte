@@ -1,7 +1,7 @@
 <script lang="ts">
     import { CopyIcon, DownloadIcon, RefreshCwIcon, Trash2Icon } from "@lucide/svelte";
     import { language } from "src/lang";
-    import { DBState, modelProfileReplaceTarget, openModelProfileBrowser } from "src/ts/stores.svelte";
+    import { DBState, modelProfileReplaceTarget, openModelProfileBrowser, openModelPresetEditId } from "src/ts/stores.svelte";
     import { alertConfirm, notifySuccess } from "src/ts/alert";
     import { downloadFile } from "src/ts/globalApi.svelte";
     import { getBundledRegistryId, getOfficialRegistry, resolveSnapshot } from "src/ts/preset/registry";
@@ -30,6 +30,8 @@
         copy.updatedAt = Date.now();
         DBState.db.modelPresets = [...DBState.db.modelPresets, copy];
         notifySuccess(language.presetDuplicated);
+        // Jump straight into the new copy's editor (parent watches this store).
+        openModelPresetEditId.set(copy.id);
     }
 
     async function remove() {
