@@ -40,15 +40,29 @@ export function computeRegistryNotice(
     official: RegistryCache,
     seen: Record<string, number> | undefined,
 ): RegistryNotice {
-    const profiles = official.registries?.[getBundledRegistryId()]?.profiles ?? {}
+    const registry = official.registries?.[getBundledRegistryId()]
+    const profiles = registry?.profiles ?? {}
+    const baseProviders = registry?.baseProviders ?? {}
     const newProfiles: RegistryNoticeEntry[] = []
     const updatedProfiles: RegistryNoticeEntry[] = []
     // No baseline yet: caller seeds `seen` silently and shows nothing.
     if (!seen) return { newProfiles, updatedProfiles }
+
+    // Always prefix the provider so the same model name hosted by different
+    // providers (e.g. "GLM 5.1" on OpenRouter / Vercel / NanoGPT) is never
+    // ambiguous and the list stays consistent ("NanoGPT / GLM 5.1").
     for (const [id, profile] of Object.entries(profiles)) {
+        const modelName = localizeDisplayName(profile)
+        const base = baseProviders[profile.providerBaseId]
+        const providerName = base ? localizeDisplayName(base) : undefined
+        // Prefix the provider, but skip when the model name already leads with it
+        // (e.g. "OpenAI GPT-5.5", "DeepSeek V4 Pro") to avoid "OpenAI / OpenAI …".
+        const displayName = providerName && !modelName.toLowerCase().startsWith(providerName.toLowerCase())
+            ? `${providerName} / ${modelName}`
+            : modelName
         const entry: RegistryNoticeEntry = {
             id,
-            displayName: localizeDisplayName(profile),
+            displayName,
             updatedAt: profile.updatedAt,
         }
         if (!(id in seen)) {
