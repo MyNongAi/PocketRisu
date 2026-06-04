@@ -32,13 +32,26 @@
     });
 </script>
 
-{#each items as item (item.id)}
-    {#if checkCondition(item, ctx)}
-        {@const Component = settingRegistry[item.type]}
-        {#if Component}
-            <Component {item} {ctx} />
-        {:else}
-            <div class="text-draculared text-xs mt-2">Unknown setting type: {item.type}</div>
+{#snippet itemList()}
+    {#each items as item (item.id)}
+        {#if checkCondition(item, ctx)}
+            {@const Component = settingRegistry[item.type]}
+            {#if Component}
+                <Component {item} {ctx} />
+            {:else}
+                <div class="text-draculared text-xs mt-2">Unknown setting type: {item.type}</div>
+            {/if}
         {/if}
-    {/if}
-{/each}
+    {/each}
+{/snippet}
+
+{#if layout === 'row'}
+    <!-- Row wrappers carry their own top border; custom items (warnings,
+         editors) don't, so they attach to the option above with no divider.
+         Drop the very first row's leading border. -->
+    <div class="[&>*:first-child]:border-t-0">
+        {@render itemList()}
+    </div>
+{:else}
+    {@render itemList()}
+{/if}

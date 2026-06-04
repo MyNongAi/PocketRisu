@@ -202,7 +202,7 @@ export const helpEn = {
         dynamicMemory: "When enabled, assistant will make memory notes on response time. additional prompting is required to utilize this feature.",
         dynamicResponseTiming: "When enabled, it will adjust the response timing dynamically.",
         dynamicRequest: "When enabled, it will request to model at random timing without waiting for user input.",
-        settingsCloseButtonSize: "Adjusts the size of the close (X) button in the top right corner of the settings window. Default is 24.",
+        settingsCloseButtonSize: "Size of the settings close button.",
         showTypingEffect: "When enabled, it will show a typing indicator while the assistant is generating a response.",
         dynamicOutputPrompt: "When enabled, the schema information will be included in the request.",
         realmDirectOpen: "If enabled, clicking a character in RisuRealm preview will directly open the character description.",
@@ -392,24 +392,15 @@ export const helpEn = {
         textColor: "Message text color theme.",
         font: "Message font.",
         customFont: "Font name to use.",
-        UISize:
-            "Global UI zoom scale (50-200%). `100%` is the default. Increase for mobile or accessibility; very large values reduce available width.",
-        lineHeight:
-            "Line height for message text (0.5-3). Larger values are easier to read but fit less text on screen.",
-        iconSize:
-            "Character/persona icon size (50-200%). Increase if icons are hard to see, decrease to save screen space.",
-        textAreaSize:
-            "Size step for the chat input area (-5 to +5). `0` is default. Larger values show more input text; smaller values leave more room for chat.",
-        textAreaTextSize:
-            "Text size step inside the chat input (0-3). Larger text is easier to read, smaller text fits more content.",
-        sideBarSize:
-            "Sidebar width step (0-3). `0` is narrowest, `3` is widest. Small values are good for mobile; `1` or `2` suits many desktops.",
-        assetWidth:
-            "Maximum width for in-chat asset images (`{{image::...}}`) in rem units.\n\n- **-1**: unlimited, use original image size\n- **0**: hide\n- **1-40**: cap maximum width\n\nUse this to prevent large images from overwhelming the chat.",
-        animationSpeed:
-            "UI animation speed multiplier (0-1). `0` makes transitions instant; `1` is default. Lower this on slow devices or if animations feel distracting.",
-        memoryLimitThickness:
-            "Thickness in pixels of the memory-limit line shown when Show Memory Limit is enabled (1-500). The line visualizes the max-context cutoff in chat.",
+        UISize: "Global UI zoom scale.",
+        lineHeight: "Line height for message text.",
+        iconSize: "Character/persona icon size.",
+        textAreaSize: "Size step for the chat input area.",
+        textAreaTextSize: "Text size step inside the chat input.",
+        sideBarSize: "Sidebar width step.",
+        assetWidth: "Maximum width for in-chat asset images.",
+        animationSpeed: "UI animation speed multiplier.",
+        memoryLimitThickness: "Thickness of the memory-limit line.",
         fullscreen:
             "Switch the browser into fullscreen mode. On mobile, this can hide browser UI such as the address bar and give the chat more space.",
         showMemoryLimit:

@@ -32,7 +32,7 @@
 {#if submenu === 0}
     <SettingRenderer items={displayThemeSettingsItems} layout="row" />
 {:else if submenu === 1}
-    <SettingRenderer items={displaySizeSettingsItems} />
+    <SettingRenderer items={displaySizeSettingsItems} layout="row" />
 {:else if submenu === 2}
     <SettingRenderer items={displayOtherSettingsItems} />
 {/if}

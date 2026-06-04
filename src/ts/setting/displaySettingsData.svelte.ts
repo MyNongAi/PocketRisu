@@ -7,7 +7,7 @@
 import type { SettingItem } from './types';
 import { changeFullscreen } from '../util';
 import { updateAnimationSpeed } from '../gui/animation';
-import { guiSizeText, updateGuisize } from '../gui/guisize';
+import { updateGuisize } from '../gui/guisize';
 import { updateTextThemeAndCSS } from '../gui/colorscheme';
 export const displayThemeSettingsItems: SettingItem[] = [
     {
@@ -215,35 +215,43 @@ export const displaySizeSettingsItems: SettingItem[] = [
         options: {
             min: -5,
             max: 5,
-            customText: (value) => guiSizeText(value),
+            customText: (value) => '×' + (1 + value * 0.1).toFixed(1),
         },
         keywords: ['textarea', 'input', 'size'],
     },
     {
         id: 'display.textAreaTextSize',
-        type: 'slider',
+        type: 'select',
         labelKey: 'textAreaTextSize',
         helpKey: 'textAreaTextSize',
-        bindKey: 'textAreaTextSize',
+        getValue: (db) => String(db.textAreaTextSize),
+        setValue: (db, v) => { db.textAreaTextSize = Number(v); },
         onChange: () => updateGuisize(),
         options: {
-            min: 0,
-            max: 3,
-            customText: (value) => guiSizeText(value),
+            selectOptions: [
+                { value: '0', label: '×1.0' },
+                { value: '1', label: '×1.25' },
+                { value: '2', label: '×1.5' },
+                { value: '3', label: '×1.75' },
+            ],
         },
         keywords: ['textarea', 'text', 'size'],
     },
     {
         id: 'display.sideBarSize',
-        type: 'slider',
+        type: 'select',
         labelKey: 'sideBarSize',
         helpKey: 'sideBarSize',
-        bindKey: 'sideBarSize',
+        getValue: (db) => String(db.sideBarSize),
+        setValue: (db, v) => { db.sideBarSize = Number(v); },
         onChange: () => updateGuisize(),
         options: {
-            min: 0,
-            max: 3,
-            customText: (value) => guiSizeText(value),
+            selectOptions: [
+                { value: '0', label: '×1.0' },
+                { value: '1', label: '×1.25' },
+                { value: '2', label: '×1.5' },
+                { value: '3', label: '×1.75' },
+            ],
         },
         keywords: ['sidebar', 'size'],
     },
@@ -258,7 +266,7 @@ export const displaySizeSettingsItems: SettingItem[] = [
             max: 40,
             step: 1,
             customText: (value) =>
-                value === -1 ? 'Unlimited' : value === 0 ? 'Hidden' : `${value.toFixed(1)} rem`,
+                value === -1 ? 'Unlimited' : value === 0 ? 'Hidden' : `${value} rem`,
         },
         keywords: ['asset', 'width'],
     },

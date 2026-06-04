@@ -17,6 +17,10 @@
         inputWidth?: string;
         placeholder?: string;
         className?: string;
+        /** When set, the editable number input is replaced by a read-only label
+         * showing format(value). Use for sliders whose value maps to a word
+         * (e.g. "Default"/"Big") or a unit-suffixed display ("120%"). */
+        format?: (value: number) => string;
     }
 
     let {
@@ -29,6 +33,7 @@
         inputWidth = 'w-20',
         placeholder,
         className = '',
+        format,
     }: Props = $props();
 
     const inputPlaceholder = $derived(placeholder ?? language.disabled ?? '—');
@@ -78,6 +83,15 @@
         const n = el.valueAsNumber;
         if (Number.isNaN(n)) return;
         value = clamp(n);
+        // Snap the field down immediately when typing past max (can't block
+        // typing toward a multi-digit min, so under-min is snapped on commit).
+        if (n > max) el.value = String(value);
+    }
+
+    // On blur/enter, force the field to the clamped model value so it can never
+    // be left showing an out-of-range number.
+    function onCommit(e: Event) {
+        (e.currentTarget as HTMLInputElement).value = String(value ?? '');
     }
 </script>
 
@@ -122,11 +136,16 @@
             {/each}
         {/snippet}
     </SliderPrimitive.Root>
-    {#if showInput}
+    {#if format}
+        <span class={cn('shrink-0 text-sm text-textcolor2 text-right tabular-nums', inputWidth)}>
+            {format(value ?? min)}
+        </span>
+    {:else if showInput}
         <input
             type="number"
             value={value ?? ''}
             oninput={onInput}
+            onchange={onCommit}
             {min}
             {max}
             {step}
