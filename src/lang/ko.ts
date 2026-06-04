@@ -1625,6 +1625,7 @@ export const languageKorean = {
   noRequestLogs: "요청 로그가 없습니다.",
   branchedText: "이 채팅은 {}에서 분기되었습니다.",
   disableMessage: "메시지 비활성화",
+  disableFirstMessageConfirm: "퍼스널 메세지를 비활성화할까요? 컨텍스트에서 제외됩니다.",
   bookmark: "북마크",
   branch: "분기점",
   fetchLogConsent:

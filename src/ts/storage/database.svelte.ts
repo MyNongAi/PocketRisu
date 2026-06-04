@@ -1929,6 +1929,11 @@ export interface Chat{
     bindedPersona?:string
     bindedBotPreset?:string
     fmIndex?:number
+    /** Per-chat toggle to exclude the first message (greeting) from the prompt
+     * context. The greeting still renders in the UI. Absent/undefined => included
+     * (default). The greeting lives on the character, not in `message`, so this
+     * cannot reuse the message-level `disabled` flag. */
+    firstMessageDisabled?:boolean
     hypaV3Data?:SerializableHypaV3Data
     folderId?:string
     lastDate?:number

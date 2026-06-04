@@ -919,6 +919,7 @@
                     img={getCharImage(DBState.db.characters[$selectedCharID].image, 'css')}
                     idx={-1}
                     altGreeting={DBState.db.characters[$selectedCharID].alternateGreetings.length > 0}
+                    disabled={DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].firstMessageDisabled === true}
                     largePortrait={DBState.db.characters[$selectedCharID].largePortrait}
                     firstMessage={true}
                     onReroll={() => {

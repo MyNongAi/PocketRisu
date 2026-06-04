@@ -1483,6 +1483,7 @@ export const languageEnglish = {
     branchedText: "This chat has been branched from {}.",
     loadMore: "Load More",
     disableMessage: "Disable Message",
+    disableFirstMessageConfirm: "Disable the personal message? It will be excluded from the context.",
     disableAbove: "Cut Messages for AI",
     autoScrollToNewMessage: "Auto scroll to new message",
     alwaysScrollToNewMessage: "Always scroll to new message (ignore scroll position)",
