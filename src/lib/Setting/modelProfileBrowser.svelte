@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { DownloadIcon, SearchIcon, TrashIcon, UploadIcon, XIcon } from "@lucide/svelte";
+    import { ChevronDownIcon, ChevronRightIcon, DownloadIcon, SearchIcon, TrashIcon, UploadIcon, XIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import { DBState, modelProfileReplaceTarget, openModelPresetEditId } from "src/ts/stores.svelte";
     import { alertConfirm, alertError, notifySuccess } from "src/ts/alert";
@@ -44,12 +44,6 @@
 
     const profileStatusOrder: RegistryProfileStatus[] = ['current', 'outdated', 'deprecated'];
 
-    function getProfileStatusLabel(status: RegistryProfileStatus): string {
-        if (status === 'current') return language.profileStatusCurrent;
-        if (status === 'outdated') return language.profileStatusOutdated;
-        return language.profileStatusDeprecated;
-    }
-
     // Active registry by tab. Official = bundled (read-only). Custom = the
     // persisted cache's 'custom' registry (reactive: import/delete update it).
     const activeRegistry = $derived<RegistryCache>(
@@ -59,12 +53,16 @@
     );
     const activeRegistryId = $derived(activeTab === 'official' ? getBundledRegistryId() : CUSTOM_REGISTRY_ID);
 
-    function buildEntries(registry: RegistryCache): Entry[] {
+    // Scope to the active tab's registry only. The custom cache object can hold
+    // multiple registries (e.g. the official 'bundled' entry is persisted into
+    // the same DB cache), so iterating all of them would leak official profiles
+    // into the custom tab.
+    function buildEntries(registry: RegistryCache, registryId: string): Entry[] {
+        const reg = registry.registries[registryId];
+        if (!reg) return [];
         const out: Entry[] = [];
-        for (const reg of Object.values(registry.registries)) {
-            for (const profile of Object.values(reg.profiles ?? {})) {
-                out.push({ profile, baseProvider: reg.baseProviders?.[profile.providerBaseId] });
-            }
+        for (const profile of Object.values(reg.profiles ?? {})) {
+            out.push({ profile, baseProvider: reg.baseProviders?.[profile.providerBaseId] });
         }
         return out.sort((a, b) =>
             (a.baseProvider?.displayName ?? '').localeCompare(b.baseProvider?.displayName ?? '')
@@ -72,7 +70,7 @@
         );
     }
 
-    const entries = $derived(buildEntries(activeRegistry));
+    const entries = $derived(buildEntries(activeRegistry, activeRegistryId));
 
     const filtered = $derived.by(() => {
         const q = query.trim().toLowerCase();
@@ -89,16 +87,43 @@
         });
     });
 
-    const groupedFiltered = $derived.by(() => {
-        const buckets = new Map<RegistryProfileStatus, Entry[]>();
-        for (const status of profileStatusOrder) buckets.set(status, []);
+    // Both tabs group by provider (collapsible) — soon-large catalog, and a
+    // single list UI for official + custom. Within a provider, current profiles
+    // sort before outdated/deprecated.
+    const groupedByProvider = $derived.by(() => {
+        const buckets = new Map<string, { id: string; label: string; entries: Entry[] }>();
         for (const entry of filtered) {
-            buckets.get(entry.profile.profileStatus)?.push(entry);
+            const id = entry.baseProvider?.id ?? entry.profile.providerBaseId ?? '';
+            let b = buckets.get(id);
+            if (!b) {
+                b = { id, label: entry.baseProvider?.displayName ?? id ?? 'Unknown', entries: [] };
+                buckets.set(id, b);
+            }
+            b.entries.push(entry);
         }
-        return profileStatusOrder
-            .map((status) => ({ status, entries: buckets.get(status) ?? [] }))
-            .filter((group) => group.entries.length > 0);
+        for (const b of buckets.values()) {
+            b.entries.sort((x, y) =>
+                profileStatusOrder.indexOf(x.profile.profileStatus) - profileStatusOrder.indexOf(y.profile.profileStatus)
+                || localizeDisplayName(x.profile).localeCompare(localizeDisplayName(y.profile)));
+        }
+        return [...buckets.values()].sort((a, b) => a.label.localeCompare(b.label));
     });
+
+    // Providers default collapsed; an active search force-expands everything so
+    // matches are always visible.
+    let expandedProviders = $state(new Set<string>());
+    const searching = $derived(query.trim() !== '');
+    function isProviderExpanded(id: string): boolean {
+        return searching || expandedProviders.has(id);
+    }
+    function toggleProvider(id: string) {
+        // Reassign a new Set — Svelte 5 $state does not proxy Set mutations
+        // (.add/.delete), so an in-place change wouldn't trigger reactivity.
+        const next = new Set(expandedProviders);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        expandedProviders = next;
+    }
 
     function seedDefaults(snapshot: ResolvedModelProfileSnapshot): Record<string, unknown> {
         const seeded: Record<string, unknown> = {};
@@ -274,50 +299,73 @@
             </button>
         {/if}
 
+        {#snippet profileCard(profile: ModelProfile, baseProvider: BaseProviderDefinition | undefined)}
+            {@const localizedDesc = localizeDescription(profile)}
+            <div class="flex items-start text-textcolor border border-darkborderc rounded-md p-3 hover:bg-selected/30 transition-colors">
+                <button class="flex flex-col min-w-0 grow cursor-pointer text-left" onclick={() => selectProfile(profile)}>
+                    <div class="flex items-center gap-2">
+                        <span class="text-sm text-textcolor truncate">{localizeDisplayName(profile)}</span>
+                        {#if profile.profileStatus !== 'current'}
+                            <span
+                                class="text-[10px] leading-none px-1.5 py-0.5 rounded shrink-0
+                                {profile.profileStatus === 'deprecated' ? 'bg-red-500/15 text-red-400' : 'bg-amber-500/15 text-amber-500'}"
+                            >
+                                {profile.profileStatus === 'deprecated' ? language.profileStatusDeprecated : language.profileStatusOutdated}
+                            </span>
+                        {/if}
+                        {#if baseProvider}
+                            <span class="text-xs text-textcolor2 shrink-0">[{baseProvider.displayName}]</span>
+                        {/if}
+                    </div>
+                    <span class="text-xs text-textcolor2 truncate">{profile.id}</span>
+                    {#if profile.updatedAt}
+                        <span class="text-xs text-textcolor2">{language.profileUpdatedAtLabel}: {new Date(profile.updatedAt).toLocaleDateString()}</span>
+                    {/if}
+                    {#if localizedDesc}
+                        <span class="text-xs text-textcolor2 mt-1 truncate">{localizedDesc}</span>
+                    {/if}
+                    {#if profile.statusReason}
+                        <span class="text-xs text-textcolor2 mt-1 truncate">{profile.statusReason}</span>
+                    {/if}
+                </button>
+                <div class="flex gap-2 shrink-0 ml-2">
+                    <button class="text-textcolor2 hover:text-primary cursor-pointer" title={language.profileExport} onclick={() => exportProfile(profile, baseProvider)}>
+                        <DownloadIcon size={18}/>
+                    </button>
+                    {#if activeTab === 'custom'}
+                        <button class="text-textcolor2 hover:text-red-400 cursor-pointer" title={language.profileDelete} onclick={() => deleteCustom(profile)}>
+                            <TrashIcon size={18}/>
+                        </button>
+                    {/if}
+                </div>
+            </div>
+        {/snippet}
+
         <div class="flex flex-col gap-1 overflow-y-auto">
             {#if filtered.length === 0}
                 <div class="text-textcolor2 text-sm text-center py-8">
                     {activeTab === 'custom' ? language.customProfileEmpty : language.noProfileMatch}
                 </div>
             {:else}
-                {#each groupedFiltered as group (group.status)}
+                {#each groupedByProvider as group (group.id)}
                     <section class="flex flex-col gap-1 mt-2 first:mt-0">
-                        <h3 class="text-xs font-semibold uppercase text-textcolor2 px-1">
-                            {getProfileStatusLabel(group.status)}
-                        </h3>
-                        {#each group.entries as { profile, baseProvider } (profile.id)}
-                            {@const localizedDesc = localizeDescription(profile)}
-                            <div class="flex items-start text-textcolor border border-darkborderc rounded-md p-3 hover:bg-selected/30 transition-colors">
-                                <button class="flex flex-col min-w-0 grow cursor-pointer text-left" onclick={() => selectProfile(profile)}>
-                                    <div class="flex items-center gap-2">
-                                        <span class="text-sm text-textcolor truncate">{localizeDisplayName(profile)}</span>
-                                        {#if baseProvider}
-                                            <span class="text-xs text-textcolor2 shrink-0">[{baseProvider.displayName}]</span>
-                                        {/if}
-                                    </div>
-                                    <span class="text-xs text-textcolor2 truncate">{profile.id}</span>
-                                    {#if profile.updatedAt}
-                                        <span class="text-xs text-textcolor2">{language.profileUpdatedAtLabel}: {new Date(profile.updatedAt).toLocaleDateString()}</span>
-                                    {/if}
-                                    {#if localizedDesc}
-                                        <span class="text-xs text-textcolor2 mt-1 truncate">{localizedDesc}</span>
-                                    {/if}
-                                    {#if profile.statusReason}
-                                        <span class="text-xs text-textcolor2 mt-1 truncate">{profile.statusReason}</span>
-                                    {/if}
-                                </button>
-                                <div class="flex gap-2 shrink-0 ml-2">
-                                    <button class="text-textcolor2 hover:text-primary cursor-pointer" title={language.profileExport} onclick={() => exportProfile(profile, baseProvider)}>
-                                        <DownloadIcon size={18}/>
-                                    </button>
-                                    {#if activeTab === 'custom'}
-                                        <button class="text-textcolor2 hover:text-red-400 cursor-pointer" title={language.profileDelete} onclick={() => deleteCustom(profile)}>
-                                            <TrashIcon size={18}/>
-                                        </button>
-                                    {/if}
-                                </div>
-                            </div>
-                        {/each}
+                        <button
+                            class="flex items-center gap-1.5 px-1 py-1 text-textcolor2 hover:text-textcolor transition-colors cursor-pointer"
+                            onclick={() => toggleProvider(group.id)}
+                        >
+                            {#if isProviderExpanded(group.id)}
+                                <ChevronDownIcon size={16} class="shrink-0" />
+                            {:else}
+                                <ChevronRightIcon size={16} class="shrink-0" />
+                            {/if}
+                            <span class="text-sm font-semibold">{group.label}</span>
+                            <span class="text-xs">({group.entries.length})</span>
+                        </button>
+                        {#if isProviderExpanded(group.id)}
+                            {#each group.entries as { profile, baseProvider } (profile.id)}
+                                {@render profileCard(profile, baseProvider)}
+                            {/each}
+                        {/if}
                     </section>
                 {/each}
             {/if}
