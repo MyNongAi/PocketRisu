@@ -918,7 +918,7 @@
                     role='char'
                     img={getCharImage(DBState.db.characters[$selectedCharID].image, 'css')}
                     idx={-1}
-                    altGreeting={DBState.db.characters[$selectedCharID].alternateGreetings.length > 0 && DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length === 0}
+                    altGreeting={DBState.db.characters[$selectedCharID].alternateGreetings.length > 0}
                     largePortrait={DBState.db.characters[$selectedCharID].largePortrait}
                     firstMessage={true}
                     onReroll={() => {
