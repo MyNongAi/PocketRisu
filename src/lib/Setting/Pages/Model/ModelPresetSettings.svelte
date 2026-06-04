@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { ArrowLeftIcon, BellIcon, CopyIcon, PlusIcon, TrashIcon } from "@lucide/svelte";
+    import { ArrowLeftIcon, BellIcon, CopyIcon, KeyIcon, PlusIcon, TrashIcon } from "@lucide/svelte";
     import SettingPage from "src/lib/UI/GUI/SettingPage.svelte";
     import ShAlert from "src/lib/UI/GUI/ShAlert.svelte";
     import SettingTabs from "src/lib/UI/GUI/SettingTabs.svelte";
@@ -12,6 +12,7 @@
     import NumberInput from "src/lib/UI/GUI/NumberInput.svelte";
     import { tokenizerList } from "src/ts/tokenizer";
     import ModelPresetBasicInfo from "./ModelPresetBasicInfo.svelte";
+    import ApiKeyPoolManager from "./ApiKeyPoolManager.svelte";
     import RegistryNoticeModal from "./RegistryNoticeModal.svelte";
     import { language } from "src/lang";
     import { DBState, openModelProfileBrowser, modelProfileReplaceTarget, openModelPresetEditId } from "src/ts/stores.svelte";
@@ -23,6 +24,7 @@
 
     let editingId = $state<string | null>(null);
     let submenu = $state(0);
+    let showKeyManager = $state(false);
 
     // Catalog "new/updated models" notice. Fetch the remote registry on menu
     // entry (debounced), then diff the official registry against the seen-map.
@@ -96,7 +98,13 @@
 </script>
 
 <SettingPage title={language.modelPresetMenu}>
-    {#if !editingId}
+    {#if !editingId && showKeyManager}
+        <ShButton variant="ghost" size="sm" className="mb-4 self-start" onclick={() => { showKeyManager = false }}>
+            <ArrowLeftIcon size={16}/>
+            <span class="ml-1">{language.backToList}</span>
+        </ShButton>
+        <ApiKeyPoolManager />
+    {:else if !editingId}
         {#if noticeN > 0}
             <ShAlert variant="info" className="mb-4">
                 {#snippet icon()}<BellIcon />{/snippet}
@@ -109,9 +117,14 @@
             </ShAlert>
         {/if}
 
-        <ShButton variant="default" size="default" className="w-full mb-4" onclick={createNew}>
+        <ShButton variant="default" size="default" className="w-full mb-2" onclick={createNew}>
             <PlusIcon size={16}/>
             <span class="ml-1">{language.modelPresetCreate}</span>
+        </ShButton>
+
+        <ShButton variant="outline" size="default" className="w-full mb-4" onclick={() => { showKeyManager = true }}>
+            <KeyIcon size={16}/>
+            <span class="ml-1">{language.apiKeyManagerMenu}</span>
         </ShButton>
 
         {#if DBState.db.modelPresets.length === 0}
@@ -204,6 +217,7 @@
                     uiSchema={editingPreset.profileSnapshot.uiSchema}
                     userValues={editingPreset.userValues}
                     visibility="basic"
+                    preset={editingPreset}
                 />
             {:else if submenu === 2}
                 <SchemaFormRenderer
@@ -211,6 +225,7 @@
                     uiSchema={editingPreset.profileSnapshot.uiSchema}
                     userValues={editingPreset.userValues}
                     visibility="advanced"
+                    preset={editingPreset}
                 />
                 <div class="flex flex-col gap-1 mt-6">
                     <span class="text-sm text-textcolor">{language.tokenizerOverride}</span>

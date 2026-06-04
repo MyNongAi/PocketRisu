@@ -230,8 +230,10 @@ export function buildFragmentFromSnapshot(
         version: 1,
         displayName: snapshot.providerBaseId,
         adapterKind: snapshot.adapterKind,
-        authKinds: [snapshot.auth.kind],
-        endpointKinds: [snapshot.endpoint.kind],
+        // Tolerate an incomplete snapshot (auth/endpoint may be null on a
+        // legacy/corrupted preset) so export degrades instead of crashing.
+        authKinds: snapshot.auth ? [snapshot.auth.kind] : [],
+        endpointKinds: snapshot.endpoint ? [snapshot.endpoint.kind] : [],
         requestSchema: [],
         uiSchema: { groups: [], fields: [] },
         sourceUrls: [],

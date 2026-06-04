@@ -108,8 +108,21 @@
         return seeded;
     }
 
+    // A resolved snapshot must carry the data needed to build & dispatch a
+    // request. A degenerate snapshot (null auth/endpoint, empty schema) comes
+    // from an incomplete registry cache — refuse rather than persist a preset
+    // that renders blank and crashes on export. (always-persist sync should
+    // self-heal the cache on the next menu entry; this is the safety net.)
+    function snapshotIncomplete(s: ResolvedModelProfileSnapshot): boolean {
+        return !s.auth || !s.endpoint || !Array.isArray(s.schema) || s.schema.length === 0;
+    }
+
     function createPresetFrom(profile: ModelProfile) {
         const snapshot = resolveSnapshot(activeRegistry, profile.id);
+        if (snapshotIncomplete(snapshot)) {
+            alertError(language.profileDataIncomplete);
+            return;
+        }
         const preset: ModelPreset = {
             id: uuidv4(),
             name: profile.displayName,
@@ -139,6 +152,10 @@
         const idx = DBState.db.modelPresets.findIndex((p) => p.id === targetId);
         if (idx < 0) return false;
         const snapshot = resolveSnapshot(activeRegistry, profile.id);
+        if (snapshotIncomplete(snapshot)) {
+            alertError(language.profileDataIncomplete);
+            return false;
+        }
         const preset = DBState.db.modelPresets[idx];
         const { values, droppedKeys } = migrateUserValues(preset.userValues, snapshot.schema);
         // Replacing the profile can lose settings — always confirm (a stronger,

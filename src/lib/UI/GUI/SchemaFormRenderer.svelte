@@ -1,5 +1,6 @@
 <script lang="ts">
     import type {
+        ModelPreset,
         RegistryFieldSchema,
         RegistryUiField,
         RegistryUiGroup,
@@ -14,9 +15,11 @@
         uiSchema: RegistryUiSchema;
         userValues: Record<string, unknown>;
         visibility: UiVisibility;
+        // Passed through to auth fields so they can render the saved-key picker.
+        preset?: ModelPreset;
     }
 
-    let { schema, uiSchema, userValues = $bindable(), visibility }: Props = $props();
+    let { schema, uiSchema, userValues = $bindable(), visibility, preset }: Props = $props();
 
     // Seed defaults into userValues for fields that the snapshot defines a
     // `default` for. Idempotent — only writes when the key is still undefined.
@@ -94,7 +97,7 @@
                     <h3 class="text-sm font-semibold text-textcolor2 uppercase tracking-wide">{group.label}</h3>
                 {/if}
                 {#each group.items as { schemaField, uiField } (uiField.key)}
-                    <SchemaFieldRenderer {schemaField} {uiField} bind:userValues />
+                    <SchemaFieldRenderer {schemaField} {uiField} bind:userValues {preset} />
                 {/each}
             </div>
         {/each}

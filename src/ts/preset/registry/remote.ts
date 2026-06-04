@@ -140,18 +140,26 @@ export async function syncRemoteRegistry(force = false): Promise<SyncResult> {
         return { ok: false, changed: false, error: result.error }
     }
 
+    // Always persist the freshly-fetched entry. fetchRemoteRegistry already
+    // downloaded every file, so re-storing is free — and the gate must NOT
+    // guard persistence: if a cache was once stored incomplete (e.g. a
+    // mid-edit registry state) while the gate stayed the same, gating the
+    // write would strand that bad cache forever. The gate's only job is the
+    // user-facing "changed" notification (banner / seen-map), not freshness.
+    //
+    // Assign a brand-new object (not a same-reference reassign) so the async
+    // write reliably triggers Svelte reactivity in already-mounted views.
+    // Preserve any other registries (e.g. 'custom').
+    db.modelProfileRegistryCache = {
+        schemaVersion: 4,
+        registries: {
+            ...(db.modelProfileRegistryCache?.registries ?? {}),
+            [getBundledRegistryId()]: result.entry,
+        },
+    }
+
     const changed = result.gate !== db.modelProfileRegistryIndexUpdatedAt
     if (changed) {
-        // Assign a brand-new object (not a same-reference reassign) so the
-        // async write reliably triggers Svelte reactivity in already-mounted
-        // views. Preserve any other registries (e.g. 'custom').
-        db.modelProfileRegistryCache = {
-            schemaVersion: 4,
-            registries: {
-                ...(db.modelProfileRegistryCache?.registries ?? {}),
-                [getBundledRegistryId()]: result.entry,
-            },
-        }
         db.modelProfileRegistryIndexUpdatedAt = result.gate
     }
     return { ok: true, changed }

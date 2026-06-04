@@ -94,13 +94,18 @@ describe('syncRemoteRegistry', () => {
         expect(mockDb.db.modelProfileRegistryIndexUpdatedAt).toBe(2000)
     })
 
-    it('does not rewrite when the gate is unchanged', async () => {
+    it('still persists fresh data when the gate is unchanged (self-heal), but reports changed=false', async () => {
+        // A stale/incomplete cache with a matching gate must not be stranded:
+        // the freshly-fetched entry is always written. The gate only governs
+        // the user-facing "changed" notification.
         mockDb.db.modelProfileRegistryIndexUpdatedAt = 2000
         setupHappyResponders(2000)
         const res = await syncRemoteRegistry()
         expect(res.ok).toBe(true)
         expect(res.changed).toBe(false)
-        expect(mockDb.db.modelProfileRegistryCache).toBeUndefined()
+        const regs = mockDb.db.modelProfileRegistryCache?.registries
+        expect(regs?.[getBundledRegistryId()]?.profiles?.['openai:gpt']).toBeTruthy()
+        expect(mockDb.db.modelProfileRegistryIndexUpdatedAt).toBe(2000)
     })
 
     it('debounces a recent fetch', async () => {

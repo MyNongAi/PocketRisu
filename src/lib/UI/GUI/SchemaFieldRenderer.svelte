@@ -1,9 +1,11 @@
 <script lang="ts">
-    import type { RegistryFieldSchema, RegistryUiField } from "src/ts/preset/types";
+    import type { ModelPreset, RegistryFieldSchema, RegistryUiField } from "src/ts/preset/types";
     import { language } from "src/lang";
     import { localizeDescription } from "src/ts/preset/registry/i18n";
     import { XIcon } from "@lucide/svelte";
     import TextInput from "./TextInput.svelte";
+    import SecretInput from "./SecretInput.svelte";
+    import CredentialField from "src/lib/Setting/Pages/Model/CredentialField.svelte";
     import TextAreaInput from "./TextAreaInput.svelte";
     import NumberInput from "./NumberInput.svelte";
     import ShSlider from "./ShSlider.svelte";
@@ -15,11 +17,15 @@
         schemaField: RegistryFieldSchema;
         uiField: RegistryUiField;
         userValues: Record<string, unknown>;
+        // Present only in the ModelPreset editor. Lets auth (`secret`) fields
+        // render the saved-key picker, which binds the preset-level apiKeyRef.
+        preset?: ModelPreset;
     }
 
-    let { schemaField, uiField, userValues = $bindable() }: Props = $props();
+    let { schemaField, uiField, userValues = $bindable(), preset }: Props = $props();
 
     const fieldKey = $derived(schemaField.key);
+    const isAuthField = $derived(schemaField.mapsTo?.target === 'auth');
 
     // Reset (clear-to-undefined) is offered for optional scalar widgets where
     // a value is present. textarea/string-array/json/key-value let the user
@@ -96,6 +102,9 @@
     });
 </script>
 
+{#if isAuthField && preset}
+    <CredentialField {preset} {schemaField} {uiField} bind:userValues />
+{:else}
 <div class="flex flex-col gap-1">
     <div class="flex items-center justify-between gap-2">
         <span class="text-sm text-textcolor flex items-center gap-1">
@@ -125,11 +134,10 @@
             fullwidth
         />
     {:else if uiField.widget === 'secret'}
-        <TextInput
+        <SecretInput
             bind:value={userValues[fieldKey] as string}
             placeholder={uiField.placeholder ?? ''}
             fullwidth
-            hideText
         />
     {:else if uiField.widget === 'textarea'}
         <TextAreaInput
@@ -201,3 +209,4 @@
         {/if}
     {/if}
 </div>
+{/if}
