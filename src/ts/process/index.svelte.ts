@@ -23,6 +23,7 @@ import { runInlayScreen } from "./inlayScreen";
 import { runImageEmbedding } from "./transformers";
 import { runLuaEditTrigger } from "./scriptings";
 import { getModelInfo, LLMFlags } from "../model/modellist";
+import { resolveChatModelBinding } from "./request/modelPresetBinding";
 import { hypaMemoryV3 } from "./memory/hypav3";
 import { getModuleAssets, getModuleToggles } from "./modules";
 import { readImage } from "../globalApi.svelte";
@@ -254,6 +255,19 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     let currentChat = runCurrentChatFunction(nowChatroom.chats[selectedChat])
     nowChatroom.chats[selectedChat] = currentChat
     let maxContextTokens = DBState.db.maxContext
+    // When this chat is bound to a ModelPreset, use the preset's own input
+    // budget (preset.maxContext, default 65000) instead of the global
+    // db.maxContext — clamped to the model's context window when known.
+    // Without this, a small global maxContext blocks large-context presets.
+    {
+        const mainBinding = resolveChatModelBinding(currentChat, 'model')
+        if (mainBinding.kind === 'modelPreset') {
+            const ctxWindow = mainBinding.preset.profileSnapshot.limits?.contextWindowTokens
+            const set = mainBinding.preset.maxContext
+            const budget = set && set > 0 ? set : 65000
+            maxContextTokens = ctxWindow ? Math.min(budget, ctxWindow) : budget
+        }
+    }
 
     chatProcessStage.set(1)
     stageTimings.stage1Start = Date.now()

@@ -1458,6 +1458,7 @@ export const languageKorean = {
   modelPresetBindedSuccess: "모델 프리셋이 성공적으로 바인드되었습니다.",
   streamingOverride: "응답 스트리밍",
   streamingOverrideHelp: "이 프리셋이 응답을 스트리밍할지 여부.",
+  maxContextHelp: "이 프리셋의 입력(프롬프트) 토큰 예산. 비우면 기본값(65000)을 쓰고, 모델 컨텍스트 윈도우 한도로 제한됩니다. 응답 길이(Max Tokens)와는 다릅니다.",
   modelPresetDeleted: "삭제된 프리셋",
   modelPresetUnset: "미설정",
   modelPresetSetAsDefault: "현재 바인딩을 새 채팅 기본값으로",

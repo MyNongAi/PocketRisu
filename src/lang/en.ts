@@ -1337,6 +1337,7 @@ export const languageEnglish = {
     modelPresetBindedSuccess: "Model preset is successfully binded",
     streamingOverride: "Response streaming",
     streamingOverrideHelp: "Whether this preset streams responses.",
+    maxContextHelp: "Input (prompt) token budget for this preset. Leave empty for the default (65000), capped at the model's context window. Not the response length (that is Max Tokens).",
     modelPresetDeleted: "Deleted preset",
     modelPresetUnset: "Not set",
     modelPresetSetAsDefault: "Set current binding as default for new chats",

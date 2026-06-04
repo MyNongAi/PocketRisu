@@ -256,6 +256,11 @@ export interface ModelPreset {
     // Default off (undefined/false). Forced off when the profile does not
     // declare the 'streaming' capability.
     useStreaming?: boolean
+    // Per-ModelPreset input (context) token budget — how much prompt to send,
+    // mirroring the global db.maxContext but per binding. Empty → 65000 default,
+    // clamped to the profile's contextWindowTokens when known. NOT the output
+    // limit (that is the profile's max_tokens param).
+    maxContext?: number
     apiKeyRef?: string
     inlineCredential?: unknown
     fallbackModelPresetIds?: string[]

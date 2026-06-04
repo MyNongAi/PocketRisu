@@ -9,6 +9,7 @@
     import TextAreaInput from "src/lib/UI/GUI/TextAreaInput.svelte";
     import SelectInput from "src/lib/UI/GUI/SelectInput.svelte";
     import OptionInput from "src/lib/UI/GUI/OptionInput.svelte";
+    import NumberInput from "src/lib/UI/GUI/NumberInput.svelte";
     import { tokenizerList } from "src/ts/tokenizer";
     import ModelPresetBasicInfo from "./ModelPresetBasicInfo.svelte";
     import RegistryNoticeModal from "./RegistryNoticeModal.svelte";
@@ -180,19 +181,30 @@
             {#if submenu === 0}
                 <ModelPresetBasicInfo preset={editingPreset} onAfterDelete={() => { editingId = null }} />
             {:else if submenu === 1}
+                <div class="flex flex-col gap-4 mb-6">
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="flex flex-col gap-0.5 min-w-0">
+                            <span class="text-sm text-textcolor">{language.maxContextSize}</span>
+                            <span class="text-xs text-textcolor2">{language.maxContextHelp}</span>
+                        </div>
+                        <NumberInput bind:value={editingPreset.maxContext as number} placeholder="65000" className="w-32 shrink-0" />
+                    </div>
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="flex flex-col gap-0.5 min-w-0">
+                            <span class="text-sm text-textcolor">{language.streamingOverride}</span>
+                            <span class="text-xs text-textcolor2">{language.streamingOverrideHelp}</span>
+                        </div>
+                        <div class="shrink-0">
+                            <ShSwitch checked={!!editingPreset.useStreaming} onCheckedChange={(v) => { editingPreset.useStreaming = v }} />
+                        </div>
+                    </div>
+                </div>
                 <SchemaFormRenderer
                     schema={editingPreset.profileSnapshot.schema}
                     uiSchema={editingPreset.profileSnapshot.uiSchema}
                     userValues={editingPreset.userValues}
                     visibility="basic"
                 />
-                <div class="flex flex-col gap-1 mt-6">
-                    <div class="flex items-center justify-between gap-2">
-                        <span class="text-sm text-textcolor">{language.streamingOverride}</span>
-                        <ShSwitch checked={!!editingPreset.useStreaming} onCheckedChange={(v) => { editingPreset.useStreaming = v }} />
-                    </div>
-                    <span class="text-xs text-textcolor2">{language.streamingOverrideHelp}</span>
-                </div>
             {:else if submenu === 2}
                 <SchemaFormRenderer
                     schema={editingPreset.profileSnapshot.schema}
