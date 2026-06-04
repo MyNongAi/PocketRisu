@@ -504,7 +504,7 @@
 
 
 {#snippet majorIconButtonsBody(showNames:boolean)}
-    {#if DBState.db.useChatCopy && !blankMessage}
+    {#if !blankMessage}
     <button class="flex items-center hover:text-primary transition-colors button-icon-copy" onclick={async ()=>{
         if(window.navigator.clipboard.write){
             try {

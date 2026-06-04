@@ -340,7 +340,6 @@ export const displayOtherSettingsItems: SettingItem[] = [
         },
         keywords: ['text', 'screen', 'border', 'color'],
     },
-    { id: 'display.useChatCopy', type: 'check', labelKey: 'useChatCopy', helpKey: 'useChatCopy', bindKey: 'useChatCopy', keywords: ['chat', 'copy'] },
     { id: 'display.useAdditionalAssetsPreview', type: 'check', labelKey: 'useAdditionalAssetsPreview', helpKey: 'useAdditionalAssetsPreview', bindKey: 'useAdditionalAssetsPreview', keywords: ['additional', 'assets', 'preview'] },
     { id: 'display.hideApiKey', type: 'check', labelKey: 'hideApiKeys', helpKey: 'hideApiKeys', bindKey: 'hideApiKey', keywords: ['api', 'key', 'hide'] },
     { id: 'display.unformatQuotes', type: 'check', labelKey: 'unformatQuotes', helpKey: 'unformatQuotes', bindKey: 'unformatQuotes', keywords: ['quotes'] },
