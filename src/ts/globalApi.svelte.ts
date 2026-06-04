@@ -1474,6 +1474,10 @@ export function getUncleanables(db: Database, uptype: 'basename' | 'pure' = 'bas
 
     addUncleanable(db.customBackground);
     addUncleanable(db.userIcon);
+    // Uploaded notification sounds. Preset-id values (e.g. "bell") are not
+    // asset paths, so they add a harmless basename that matches no stored asset.
+    addUncleanable(db.messageSound);
+    addUncleanable(db.translateSound);
 
     for (const cha of db.characters) {
         if (cha.image) {
@@ -1554,6 +1558,8 @@ export function replaceDbResources(db: Database, replacer: { [key: string]: stri
 
     db.customBackground = replaceData(db.customBackground);
     db.userIcon = replaceData(db.userIcon);
+    db.messageSound = replaceData(db.messageSound);
+    db.translateSound = replaceData(db.translateSound);
 
     for (const cha of db.characters) {
         if (cha.image) {

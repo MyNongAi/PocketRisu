@@ -138,6 +138,18 @@ export function setDatabase(data:Database){
     if(checkNullish(data.playMessage)){
         data.playMessage = false
     }
+    if(checkNullish(data.messageSound)){
+        data.messageSound = ''
+    }
+    if(checkNullish(data.messageSoundVolume)){
+        data.messageSoundVolume = 100
+    }
+    if(checkNullish(data.translateSound)){
+        data.translateSound = ''
+    }
+    if(checkNullish(data.translateSoundVolume)){
+        data.translateSoundVolume = 100
+    }
     if(checkNullish(data.iconsize)){
         data.iconsize = 100
     }
@@ -934,6 +946,17 @@ export interface Database{
     autoTranslate: boolean
     fullScreen:boolean
     playMessage:boolean
+    /** Sound for the message-complete notification. Holds either a bundled
+     * preset id (e.g. "bell") or an uploaded asset path ("assets/<hash>.mp3").
+     * Empty => the default sound. Not theme-scoped. */
+    messageSound:string
+    /** Playback volume (0-100) for the message-complete notification. */
+    messageSoundVolume:number
+    /** Sound for the translation-complete notification. Same format as
+     * {@link messageSound}. Empty => the default sound. */
+    translateSound:string
+    /** Playback volume (0-100) for the translation-complete notification. */
+    translateSoundVolume:number
     iconsize:number
     theme: string
     nodeOnlyStandardChatWidth: 'standard' | 'wide' | 'full'

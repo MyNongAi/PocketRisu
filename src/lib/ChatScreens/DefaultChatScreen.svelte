@@ -14,7 +14,7 @@
     import { language } from "../../lang";
     import { isExpTranslator, translate } from "../../ts/translator/translator";
     import { alertError, alertWait, notifySuccess, notifyError } from "../../ts/alert";
-    import sendSound from '../../etc/send.mp3'
+    import { playNotificationSound } from '../../ts/notificationSound'
     import { processScript } from "src/ts/process/scripts";
     import CreatorQuote from "./CreatorQuote.svelte";
     import { stopTTS } from "src/ts/process/tts";
@@ -394,8 +394,7 @@
         }
         $doingChat = false
         if(DBState.db.playMessage){
-            const audio = new Audio(sendSound);
-            audio.play().catch(() => {});
+            playNotificationSound(DBState.db.messageSound, DBState.db.messageSoundVolume)
         }
         return generated
     }
