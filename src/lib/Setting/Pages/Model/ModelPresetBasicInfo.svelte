@@ -4,7 +4,7 @@
     import { DBState, modelProfileReplaceTarget, openModelProfileBrowser } from "src/ts/stores.svelte";
     import { alertConfirm, notifySuccess } from "src/ts/alert";
     import { downloadFile } from "src/ts/globalApi.svelte";
-    import { getBundledRegistryId, loadBundledRegistry, resolveSnapshot } from "src/ts/preset/registry";
+    import { getBundledRegistryId, getOfficialRegistry, resolveSnapshot } from "src/ts/preset/registry";
     import { buildFragmentFromSnapshot, getProfileUpdateStatus, migrateUserValues } from "src/ts/preset/customProfiles";
     import { localizeDescription } from "src/ts/preset/registry/i18n";
     import type { ModelPreset } from "src/ts/preset/types";
@@ -52,15 +52,22 @@
         const cache = !sp?.registryId
             ? undefined
             : sp.registryId === getBundledRegistryId()
-                ? loadBundledRegistry()
+                ? getOfficialRegistry()
                 : DBState.db.modelProfileRegistryCache;
         const current = sp?.registryId ? cache?.registries?.[sp.registryId]?.profiles?.[sp.profileId] : undefined;
         return { sp, cache, current };
     });
     const updateStatus = $derived(getProfileUpdateStatus(sourceLookup.current, preset.sourceProfile?.profileUpdatedAt));
-    const updatedAtMs = $derived(sourceLookup.current?.updatedAt ?? preset.sourceProfile?.profileUpdatedAt);
-    const updatedAtLabel = $derived(updatedAtMs ? new Date(updatedAtMs).toLocaleString() : null);
+    // Installed = the snapshot this preset is pinned to; latest = the registry's
+    // current version (only meaningful when an update is available).
+    const installedLabel = $derived(fmtDate(preset.sourceProfile?.profileUpdatedAt));
+    const latestLabel = $derived(fmtDate(sourceLookup.current?.updatedAt));
     const description = $derived(sourceLookup.current ? localizeDescription(sourceLookup.current) : '');
+
+    function fmtDate(ms?: number): string {
+        // Strip the ko-locale trailing period ("2026. 6. 3." -> "2026. 6. 3").
+        return ms ? new Date(ms).toLocaleDateString().replace(/\.\s*$/, '') : '';
+    }
 
     function replaceProfile() {
         modelProfileReplaceTarget.set(preset.id);
@@ -75,7 +82,10 @@
         if (!sp?.registryId || !cache || !current) return;
         const snapshot = resolveSnapshot(cache, sp.profileId);
         const { values, droppedKeys } = migrateUserValues(preset.userValues, snapshot.schema);
-        const msg = droppedKeys.length > 0 ? language.profileReplaceWarn : language.profileUpdateConfirm;
+        const warn = droppedKeys.length > 0 ? language.profileReplaceWarn : language.profileUpdateLossWarn;
+        const msg = `${warn}\n\n`
+            + `${language.profileUpdatedAtLabel}: ${fmtDate(sp.profileUpdatedAt) || '-'}\n`
+            + `${language.profileLatestVersionLabel}: ${fmtDate(current.updatedAt) || '-'}`;
         if (!(await alertConfirm(msg))) return;
         preset.profileSnapshot = snapshot;
         preset.sourceProfile = {
@@ -121,8 +131,10 @@
         {#if preset.profileSnapshot.modelId}
             <div class="text-xs text-textcolor2">Default model: {preset.profileSnapshot.modelId}</div>
         {/if}
-        {#if updatedAtLabel}
-            <div class="text-xs text-textcolor2">{language.profileUpdatedAtLabel}: {updatedAtLabel}</div>
+        {#if installedLabel}
+            <div class="text-xs text-textcolor2">
+                {language.profileUpdatedAtLabel}: {installedLabel}{#if updateStatus === 'updatable' && latestLabel && latestLabel !== installedLabel}{' '}({language.profileLatestVersionLabel}: {latestLabel}){/if}
+            </div>
         {/if}
         {#if preset.profileSnapshot.capabilities && preset.profileSnapshot.capabilities.length > 0}
             <div class="flex flex-wrap gap-1 mt-1">

@@ -4,3 +4,10 @@ export {
     RegistryProfileNotFoundError,
     RegistryBaseProviderNotFoundError,
 } from './snapshot'
+export {
+    fetchRemoteRegistry,
+    syncRemoteRegistry,
+    isRefetchGuarded,
+    getOfficialRegistry,
+    getPresetUpdateStatus,
+} from './remote'

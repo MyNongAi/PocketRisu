@@ -1300,6 +1300,13 @@ export interface Database{
     apiKeyPool?: Record<string, ApiKeyPoolEntry>
     modelProfileRegistryCache?: RegistryCache
     modelProfileRegistryLastFetched?: number
+    // Top-level `updatedAt` of the last fetched remote index.json — the change
+    // gate. Re-download the full file set only when the remote value differs.
+    modelProfileRegistryIndexUpdatedAt?: number
+    // Per-profile id -> last acknowledged `updatedAt`. Drives the catalog
+    // "new/updated models" notice; the user acknowledges by overwriting it
+    // with the current map. See src/ts/preset/registry/notice.ts.
+    modelRegistrySeen?: Record<string, number>
     igpPrompt:string
     useTokenizerCaching:boolean
     showMenuHypaMemoryModal:boolean

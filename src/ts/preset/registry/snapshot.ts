@@ -101,35 +101,38 @@ function mergeSchemas(
     base: RegistryFieldSchema[],
     extension: RegistryFieldSchema[],
 ): RegistryFieldSchema[] {
-    if (!extension || extension.length === 0) return base.slice()
+    // Tolerate null/undefined array elements from malformed registry data so a
+    // single bad entry can't crash resolution (reading `.key` of null).
+    const safeBase = (base ?? []).filter(Boolean)
+    const safeExt = (extension ?? []).filter(Boolean)
+    if (safeExt.length === 0) return safeBase.slice()
     const merged: RegistryFieldSchema[] = []
-    const overrideKeys = new Set(extension.map((f) => f.key))
-    for (const field of base) {
+    const overrideKeys = new Set(safeExt.map((f) => f.key))
+    for (const field of safeBase) {
         if (!overrideKeys.has(field.key)) merged.push(field)
     }
-    for (const field of extension) merged.push(field)
+    for (const field of safeExt) merged.push(field)
     return merged
 }
 
 function mergeUiSchemas(base: RegistryUiSchema, extension: RegistryUiSchema): RegistryUiSchema {
-    if (!extension || (extension.groups.length === 0 && extension.fields.length === 0)) {
-        return cloneUiSchema(base)
+    // Tolerate null/undefined elements (malformed registry data) so a bad entry
+    // can't crash resolution (reading `.key`/`.id` of null).
+    const baseGroups = (base?.groups ?? []).filter(Boolean)
+    const baseFields = (base?.fields ?? []).filter(Boolean)
+    const extGroups = (extension?.groups ?? []).filter(Boolean)
+    const extFields = (extension?.fields ?? []).filter(Boolean)
+    if (extGroups.length === 0 && extFields.length === 0) {
+        return { groups: baseGroups.slice(), fields: baseFields.slice() }
     }
 
-    const groupIds = new Set(extension.groups.map((g) => g.id))
-    const groups = base.groups.filter((g) => !groupIds.has(g.id)).concat(extension.groups)
+    const groupIds = new Set(extGroups.map((g) => g.id))
+    const groups = baseGroups.filter((g) => !groupIds.has(g.id)).concat(extGroups)
 
-    const fieldKeys = new Set(extension.fields.map((f) => f.key))
-    const fields: RegistryUiField[] = base.fields
+    const fieldKeys = new Set(extFields.map((f) => f.key))
+    const fields: RegistryUiField[] = baseFields
         .filter((f) => !fieldKeys.has(f.key))
-        .concat(extension.fields)
+        .concat(extFields)
 
     return { groups, fields }
-}
-
-function cloneUiSchema(ui: RegistryUiSchema): RegistryUiSchema {
-    return {
-        groups: ui.groups.slice(),
-        fields: ui.fields.slice(),
-    }
 }

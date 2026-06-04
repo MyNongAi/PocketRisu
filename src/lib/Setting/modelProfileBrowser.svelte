@@ -7,7 +7,7 @@
     import { selectSingleFile } from "src/ts/util";
     import {
         getBundledRegistryId,
-        loadBundledRegistry,
+        getOfficialRegistry,
         resolveSnapshot,
     } from "src/ts/preset/registry";
     import { createEmptyRegistryCache } from "src/ts/preset/dbDefaults";
@@ -31,7 +31,8 @@
 
     let { close = () => {} }: Props = $props();
 
-    const officialRegistry = loadBundledRegistry();
+    // Official = remote registry if synced, else bundled (reactive on the cache).
+    const officialRegistry = $derived(getOfficialRegistry());
 
     let activeTab = $state<'official' | 'custom'>('official');
     let query = $state('');
@@ -140,8 +141,10 @@
         const snapshot = resolveSnapshot(activeRegistry, profile.id);
         const preset = DBState.db.modelPresets[idx];
         const { values, droppedKeys } = migrateUserValues(preset.userValues, snapshot.schema);
-        // Warn before discarding settings that the new profile does not define.
-        if (droppedKeys.length > 0 && !(await alertConfirm(language.profileReplaceWarn))) {
+        // Replacing the profile can lose settings — always confirm (a stronger,
+        // specific warning when settings will definitely be dropped).
+        const warn = droppedKeys.length > 0 ? language.profileReplaceWarn : language.profileUpdateLossWarn;
+        if (!(await alertConfirm(warn))) {
             return false;
         }
         preset.profileSnapshot = snapshot;

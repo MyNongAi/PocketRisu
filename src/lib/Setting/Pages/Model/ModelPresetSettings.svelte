@@ -1,6 +1,7 @@
 <script lang="ts">
-    import { ArrowLeftIcon, CopyIcon, PlusIcon, TrashIcon } from "@lucide/svelte";
+    import { ArrowLeftIcon, BellIcon, CopyIcon, PlusIcon, TrashIcon } from "@lucide/svelte";
     import SettingPage from "src/lib/UI/GUI/SettingPage.svelte";
+    import ShAlert from "src/lib/UI/GUI/ShAlert.svelte";
     import SettingTabs from "src/lib/UI/GUI/SettingTabs.svelte";
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
     import ShSwitch from "src/lib/UI/GUI/ShSwitch.svelte";
@@ -10,13 +11,37 @@
     import OptionInput from "src/lib/UI/GUI/OptionInput.svelte";
     import { tokenizerList } from "src/ts/tokenizer";
     import ModelPresetBasicInfo from "./ModelPresetBasicInfo.svelte";
+    import RegistryNoticeModal from "./RegistryNoticeModal.svelte";
     import { language } from "src/lang";
     import { DBState, openModelProfileBrowser, modelProfileReplaceTarget, openModelPresetEditId } from "src/ts/stores.svelte";
     import { alertConfirm, notifySuccess } from "src/ts/alert";
+    import { getOfficialRegistry, getPresetUpdateStatus, syncRemoteRegistry } from "src/ts/preset/registry";
+    import { buildSeenMap, computeRegistryNotice, noticeCount } from "src/ts/preset/registry/notice";
+    import { onMount } from "svelte";
     import { v4 as uuidv4 } from "uuid";
 
     let editingId = $state<string | null>(null);
     let submenu = $state(0);
+
+    // Catalog "new/updated models" notice. Fetch the remote registry on menu
+    // entry (debounced), then diff the official registry against the seen-map.
+    // First successful sync seeds the baseline silently (no banner).
+    let noticeOpen = $state(false);
+    const notice = $derived(computeRegistryNotice(getOfficialRegistry(), DBState.db.modelRegistrySeen));
+    const noticeN = $derived(noticeCount(notice));
+
+    onMount(async () => {
+        const res = await syncRemoteRegistry();
+        if (res.ok && !DBState.db.modelRegistrySeen) {
+            DBState.db.modelRegistrySeen = buildSeenMap(getOfficialRegistry());
+        }
+    });
+
+    // Acknowledge only when the user ticks "don't show again": overwrite the
+    // seen-map so the banner clears. Closing without the tick leaves it.
+    function acknowledgeNotice(dismiss: boolean) {
+        if (dismiss) DBState.db.modelRegistrySeen = buildSeenMap(getOfficialRegistry());
+    }
 
     const editingPreset = $derived(
         editingId
@@ -71,6 +96,18 @@
 
 <SettingPage title={language.modelPresetMenu}>
     {#if !editingId}
+        {#if noticeN > 0}
+            <ShAlert variant="info" className="mb-4">
+                {#snippet icon()}<BellIcon />{/snippet}
+                {#snippet title()}{language.registryNoticeBanner.replace('{n}', String(noticeN))}{/snippet}
+                {#snippet action()}
+                    <ShButton variant="outline" size="sm" onclick={() => { noticeOpen = true }}>
+                        {language.registryNoticeMore}
+                    </ShButton>
+                {/snippet}
+            </ShAlert>
+        {/if}
+
         <ShButton variant="default" size="default" className="w-full mb-4" onclick={createNew}>
             <PlusIcon size={16}/>
             <span class="ml-1">{language.modelPresetCreate}</span>
@@ -88,7 +125,12 @@
                         onclick={() => { editingId = preset.id; submenu = 0; }}
                     >
                         <div class="flex flex-col min-w-0 grow">
-                            <span class="text-sm text-textcolor truncate">{preset.name}</span>
+                            <span class="text-sm text-textcolor truncate flex items-center gap-1.5">
+                                {#if getPresetUpdateStatus(preset) === 'updatable'}
+                                    <span class="w-2 h-2 rounded-full bg-amber-500 shrink-0" title={language.profileUpdateAvailable}></span>
+                                {/if}
+                                <span class="truncate">{preset.name}</span>
+                            </span>
                             {#if preset.profileSnapshot?.profileId}
                                 <span class="text-xs text-textcolor2 truncate">{preset.profileSnapshot.profileId}</span>
                             {/if}
@@ -185,4 +227,6 @@
             {/if}
         {/if}
     {/if}
+
+    <RegistryNoticeModal bind:open={noticeOpen} {notice} onConfirm={acknowledgeNotice} />
 </SettingPage>
