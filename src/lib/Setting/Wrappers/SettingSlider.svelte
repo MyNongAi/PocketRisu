@@ -4,6 +4,7 @@
     import { untrack } from 'svelte';
     import SliderInput from 'src/lib/UI/GUI/SliderInput.svelte';
     import Help from 'src/lib/Others/Help.svelte';
+    import SettingRowLayout from './SettingRowLayout.svelte';
 
     interface Props {
         item: SettingItem;
@@ -37,19 +38,37 @@
     );
 </script>
 
-<span class="text-textcolor {item.classes ?? ''}">
-    {getLabel(item)}
-    {#if item.helpKey}<Help key={item.helpKey as any}/>{/if}
-</span>
-<SliderInput
-    className="mt-2"
-    marginBottom={true}
-    min={item.options?.min}
-    max={item.options?.max}
-    step={item.options?.step}
-    fixed={item.options?.fixed}
-    multiple={item.options?.multiple}
-    disableable={item.options?.disableable}
-    {customText}
-    bind:value={localValue}
-/>
+{#if ctx.layout === 'row'}
+    <SettingRowLayout {item}>
+        {#snippet control()}
+            <SliderInput
+                className="w-48"
+                min={item.options?.min}
+                max={item.options?.max}
+                step={item.options?.step}
+                fixed={item.options?.fixed}
+                multiple={item.options?.multiple}
+                disableable={item.options?.disableable}
+                {customText}
+                bind:value={localValue}
+            />
+        {/snippet}
+    </SettingRowLayout>
+{:else}
+    <span class="text-textcolor {item.classes ?? ''}">
+        {getLabel(item)}
+        {#if item.helpKey}<Help key={item.helpKey as any}/>{/if}
+    </span>
+    <SliderInput
+        className="mt-2"
+        marginBottom={true}
+        min={item.options?.min}
+        max={item.options?.max}
+        step={item.options?.step}
+        fixed={item.options?.fixed}
+        multiple={item.options?.multiple}
+        disableable={item.options?.disableable}
+        {customText}
+        bind:value={localValue}
+    />
+{/if}

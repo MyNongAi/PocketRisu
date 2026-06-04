@@ -30,7 +30,7 @@
 />
 
 {#if submenu === 0}
-    <SettingRenderer items={displayThemeSettingsItems} />
+    <SettingRenderer items={displayThemeSettingsItems} layout="row" />
 {:else if submenu === 1}
     <SettingRenderer items={displaySizeSettingsItems} />
 {:else if submenu === 2}

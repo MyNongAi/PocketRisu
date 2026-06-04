@@ -153,7 +153,7 @@ export const helpEn = {
             "Namespace is a unique identifier for the module. it is used to prevent conflicts between modules, and for interaction of presets, other modules and etc. if you are not sure what to put, leave it blank.",
         moduleIntergration:
             "You can enable modules by putting the module namespace in the module intergartion sections. if you want to enable multiple modules, you can seperate them by comma. for example, `module1,module2,module3`. this is for advanced users, who wants to vary the use of modules by presets.",
-        customCSS: "Custom CSS for styling. you can also disable/enable it by pressing (Ctrl + .) if something goes wrong.",
+        customCSS: "Custom CSS for styling.",
         betaMobileGUI: "If enabled, it will use beta mobile GUI on small (less than 800px) screens. requires refresh.",
         enableScrollToActiveChar: "If enabled, pressing the hotkey or holding Ctrl while dragging a character will scroll to the currently active character. Folders will be opened automatically if closed.",
         unrecommended: "This is a unrecommended setting. it is not recommended to use this setting.",
@@ -177,8 +177,7 @@ export const helpEn = {
             "Here, you can add a unique translation prompt for each character. This option only applies when using the Ax. model for translation. To apply it, include `{{slot::tnote}}` in the language settings. It doesn't work in group chats.",
         groupInnerFormat:
             "This defines a format that is used in group chat for characters that isn't speaker. if it is not blank, it will use this format instead of the default format. if `Group Other Bot Role` is `assistant`, it will also be applied to the speaker.",
-        chatHTML:
-            "A HTML that would be inserted as each chat.\n\nYou can use CBS and special tags.\n- `<risutextbox>`: a textbox that would be used to render text\n- `<risuicon>`: an icon for user or assistant\n- `<risubuttons>`: icon buttons for chat edit, translations and etc.\n- `<risugeninfo>`: generation information button.",
+        chatHTML: "A HTML that would be inserted as each chat.",
         systemContentReplacement: "The prompt format that replaces system prompt if the model doesn't support system prompt.",
         systemRoleReplacement: "The role that replaces system role if the model doesn't support system role.",
         summarizationPrompt:
@@ -385,22 +384,14 @@ export const helpEn = {
             "Allow adding and editing Trigger V1. Trigger V1 is deprecated; use V2/V3 for new work. Keep this only for legacy V1 compatibility.",
         themePresets:
             "Bundle the current Sound & Display settings (layout, color/font, sizes, sound toggles, etc.) as a preset and switch between them. The active preset auto-syncs with edits you make below; clicking opens the preset list to add, switch, rename, or delete.",
-        theme:
-            "Overall chat layout theme.\n\n- **PocketRisu Standard**: default PocketRisu design\n- **Standard Risu**: original RisuAI layout\n- **Waifulike**: character-art-focused layout with side character visuals\n- **Mobile Chat**: mobile chat style\n- **CardBoard**: card-style layout\n- **Custom HTML**: use the custom Chat HTML below",
-        waifuWidth:
-            "Width of the character illustration in the Waifulike theme (50-200%). `100%` is the default. Only shown for Waifulike.",
-        waifuWidth2:
-            "Width of the second character or secondary visual in the Waifulike theme (20-150%). Set close to 0 if you want to hide it for a single-character setup.",
-        nodeOnlyStandardChatWidth:
-            "Maximum chat card width in the PocketRisu Standard theme.\n\n- **Standard**: 768px (default)\n- **Wide**: 1152px\n- **No Limit**: fills the available chat area\n\nOnly shown for the PocketRisu Standard theme.",
-        colorScheme:
-            "Color palette used across the Risu UI (background, text, accents). Independent of the Theme (layout) option above. Pick **Custom** to define your own colors in the editor that appears below.",
-        textColor:
-            "Message text color theme.\n\n- **Classic Risu**: classic tone\n- **High Contrast**: readability first\n- **Custom**: use custom colors",
-        font:
-            "Message font.\n\n- **Default**: system default\n- **Times New Roman**: useful for English-heavy text\n- **Custom**: use the custom font name field below",
-        customFont:
-            "Font name to use. Enter an installed system font or web font family name, such as `Pretendard` or `Noto Sans KR`.",
+        theme: "Overall chat layout theme.",
+        waifuWidth: "Width of the character illustration in the Waifulike theme.",
+        waifuWidth2: "Width of the second character or secondary visual in the Waifulike theme.",
+        nodeOnlyStandardChatWidth: "Maximum chat card width in the PocketRisu Standard theme.",
+        colorScheme: "Color palette used across the Risu UI.",
+        textColor: "Message text color theme.",
+        font: "Message font.",
+        customFont: "Font name to use.",
         UISize:
             "Global UI zoom scale (50-200%). `100%` is the default. Increase for mobile or accessibility; very large values reduce available width.",
         lineHeight:

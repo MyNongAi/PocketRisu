@@ -12,9 +12,12 @@
         modelInfo?: LLMModel;
         /** Optional subModelInfo, derived automatically if not provided */
         subModelInfo?: LLMModel;
+        /** 'row' renders row-capable wrappers (select/text/slider) with the label
+         * + inline help on the left and the control right-aligned. Default 'stacked'. */
+        layout?: 'stacked' | 'row';
     }
 
-    let { items, modelInfo, subModelInfo }: Props = $props();
+    let { items, modelInfo, subModelInfo, layout = 'stacked' }: Props = $props();
 
     // Derive modelInfo if not provided
     let effectiveModelInfo = $derived(modelInfo ?? getModelInfo(DBState.db.aiModel));
@@ -25,6 +28,7 @@
         db: DBState.db,
         modelInfo: effectiveModelInfo,
         subModelInfo: effectiveSubModelInfo,
+        layout,
     });
 </script>
 

@@ -16,6 +16,11 @@ export interface SettingContext {
     db: Database;
     modelInfo: LLMModel;
     subModelInfo: LLMModel;
+    /** Render mode for row-capable wrappers (select/text/slider). 'row' puts the
+     * label + inline help on the left and the control right-aligned & vertically
+     * centered; 'stacked' (default) keeps the label above the control. Multiline
+     * textareas always stay stacked regardless. */
+    layout?: 'stacked' | 'row';
 }
 
 /**
