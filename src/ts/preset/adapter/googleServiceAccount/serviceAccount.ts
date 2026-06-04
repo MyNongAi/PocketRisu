@@ -6,7 +6,15 @@ export interface ParsedServiceAccount {
     privateKeyId?: string
     privateKey: string
     tokenUri: string
+    // The original JSON string. JWT signing + token exchange runs on the Node
+    // server (node:crypto, no Secure Context requirement), so the raw JSON is
+    // forwarded there rather than signed in the browser.
+    sourceJson: string
 }
+
+// Default OAuth scope. Lives here (not in the removed browser-side jwt module)
+// so the token client + cache can share it.
+export const DEFAULT_SCOPE = 'https://www.googleapis.com/auth/cloud-platform'
 
 const DEFAULT_TOKEN_URI = 'https://oauth2.googleapis.com/token'
 
@@ -65,6 +73,7 @@ export function parseServiceAccountJson(source: string): ParsedServiceAccount {
         privateKeyId,
         privateKey,
         tokenUri,
+        sourceJson: source,
     }
 }
 

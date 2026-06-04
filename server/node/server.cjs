@@ -3123,6 +3123,93 @@ app.post('/api/crypto', async (req, res) => {
     }
 })
 
+// Vertex / google-service-account access tokens. The browser cannot sign the
+// RS256 JWT itself: crypto.subtle needs a Secure Context that HTTP remote
+// access lacks, and node:crypto isn't in the client bundle. So the client
+// forwards the SA JSON here and the server signs + exchanges it. Google's token
+// response is forwarded verbatim so the client maps statuses unchanged.
+// Never log the SA JSON / private key / assertion / OAuth body.
+const GOOGLE_OAUTH_TOKEN_URI = 'https://oauth2.googleapis.com/token'
+app.post('/api/model-preset/google-service-account/token', async (req, res) => {
+    if (!await checkAuth(req, res)) return
+    try {
+        const serviceAccountJson = req.body && req.body.serviceAccountJson
+        const scope = (req.body && typeof req.body.scope === 'string' && req.body.scope.length > 0)
+            ? req.body.scope
+            : 'https://www.googleapis.com/auth/cloud-platform'
+        if (typeof serviceAccountJson !== 'string' || serviceAccountJson.length === 0) {
+            res.status(400).send({ error: 'serviceAccountJson required' })
+            return
+        }
+        let sa
+        try {
+            sa = JSON.parse(serviceAccountJson)
+        } catch {
+            res.status(400).send({ error: 'invalid service account JSON' })
+            return
+        }
+        const clientEmail = sa && sa.client_email
+        const privateKey = sa && sa.private_key
+        const kid = sa && sa.private_key_id
+        const tokenUri = (sa && typeof sa.token_uri === 'string' && sa.token_uri.length > 0)
+            ? sa.token_uri
+            : GOOGLE_OAUTH_TOKEN_URI
+        if (typeof clientEmail !== 'string' || typeof privateKey !== 'string') {
+            res.status(400).send({ error: 'service account missing client_email / private_key' })
+            return
+        }
+        // SSRF / signed-JWT exfiltration guard: only Google's documented endpoint.
+        if (tokenUri !== GOOGLE_OAUTH_TOKEN_URI) {
+            res.status(400).send({ error: 'unsupported token_uri' })
+            return
+        }
+        const nowSec = Math.floor(Date.now() / 1000)
+        const header = { alg: 'RS256', typ: 'JWT' }
+        if (typeof kid === 'string' && kid.length > 0) header.kid = kid
+        const payload = { iss: clientEmail, scope, aud: tokenUri, iat: nowSec, exp: nowSec + 3600 }
+        const signingInput =
+            `${Buffer.from(JSON.stringify(header)).toString('base64url')}.` +
+            `${Buffer.from(JSON.stringify(payload)).toString('base64url')}`
+        let signature
+        try {
+            const signer = nodeCrypto.createSign('RSA-SHA256')
+            signer.update(signingInput)
+            signer.end()
+            signature = signer.sign(privateKey).toString('base64url')
+        } catch {
+            res.status(400).send({ error: 'failed to sign with the provided private key' })
+            return
+        }
+        const assertion = `${signingInput}.${signature}`
+
+        let googleRes
+        try {
+            googleRes = await fetch(tokenUri, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    Accept: 'application/json',
+                },
+                body: new URLSearchParams({
+                    grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+                    assertion,
+                }).toString(),
+            })
+        } catch {
+            res.status(502).send({ error: 'OAuth token endpoint unreachable' })
+            return
+        }
+
+        // Forward Google's status + body verbatim (client maps errors).
+        const text = await googleRes.text().catch(() => '')
+        const contentType = googleRes.headers.get('content-type')
+        if (contentType) res.set('content-type', contentType)
+        res.status(googleRes.status).send(text)
+    } catch {
+        res.status(500).send({ error: 'service account token exchange failed' })
+    }
+})
+
 
 app.post('/api/set_password', async (req, res) => {
     if(password === ''){

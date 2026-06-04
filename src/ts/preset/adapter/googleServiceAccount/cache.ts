@@ -1,6 +1,5 @@
 import { ModelPresetAdapterError } from '../error'
-import { DEFAULT_SCOPE } from './jwt'
-import type { ParsedServiceAccount } from './serviceAccount'
+import { DEFAULT_SCOPE, type ParsedServiceAccount } from './serviceAccount'
 import {
     exchangeServiceAccountForAccessToken,
     type AccessTokenResult,

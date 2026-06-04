@@ -4,16 +4,24 @@ import {
     normalizeFetchError,
     normalizeHttpStatus,
 } from '../error'
-import { buildServiceAccountAssertion, DEFAULT_SCOPE } from './jwt'
-import type { ParsedServiceAccount } from './serviceAccount'
+import { DEFAULT_SCOPE, type ParsedServiceAccount } from './serviceAccount'
 
-const JWT_BEARER_GRANT = 'urn:ietf:params:oauth:grant-type:jwt-bearer'
+// JWT signing + Google OAuth exchange run on the Node server, not the browser:
+// crypto.subtle needs a Secure Context (HTTPS/localhost) which NodeOnly's HTTP
+// remote-access pattern does not provide, and node:crypto isn't available in
+// the client bundle. The client forwards the service account JSON to this
+// endpoint (auth-gated) and the server returns Google's token response verbatim
+// so the status/error mapping below is unchanged.
+const TOKEN_ENDPOINT = '/api/model-preset/google-service-account/token'
 
 export interface ExchangeServiceAccountInput {
     serviceAccount: ParsedServiceAccount
     scope?: string
     now?: () => number
     fetchImpl?: typeof fetch
+    // Returns the `risu-auth` JWT for the NodeOnly server. Defaults to the app's
+    // shared session auth; injected in tests to avoid pulling in globalApi.
+    getAuthHeader?: () => Promise<string>
     abortSignal?: AbortSignal
 }
 
@@ -24,23 +32,17 @@ export interface AccessTokenResult {
     issuedAtMs: number
 }
 
+async function defaultAuthHeader(): Promise<string> {
+    const { forageStorage } = await import('src/ts/globalApi.svelte')
+    return forageStorage.createAuth()
+}
+
 export async function exchangeServiceAccountForAccessToken(
     input: ExchangeServiceAccountInput,
 ): Promise<AccessTokenResult> {
     const now = input.now ?? Date.now
     const issuedAtMs = now()
     const scope = input.scope && input.scope.length > 0 ? input.scope : DEFAULT_SCOPE
-
-    const jwt = await buildServiceAccountAssertion({
-        serviceAccount: input.serviceAccount,
-        scope,
-        now,
-    })
-
-    const body = new URLSearchParams({
-        grant_type: JWT_BEARER_GRANT,
-        assertion: jwt.assertion,
-    }).toString()
 
     const fetchImpl = input.fetchImpl ?? globalThis.fetch
     if (typeof fetchImpl !== 'function') {
@@ -51,15 +53,18 @@ export async function exchangeServiceAccountForAccessToken(
         )
     }
 
+    const authHeader = await (input.getAuthHeader ?? defaultAuthHeader)()
+
     let response: Response
     try {
-        response = await fetchImpl(input.serviceAccount.tokenUri, {
+        response = await fetchImpl(TOKEN_ENDPOINT, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
+                'Content-Type': 'application/json',
                 Accept: 'application/json',
+                'risu-auth': authHeader,
             },
-            body,
+            body: JSON.stringify({ serviceAccountJson: input.serviceAccount.sourceJson, scope }),
             signal: input.abortSignal,
         })
     } catch (err) {
@@ -68,6 +73,8 @@ export async function exchangeServiceAccountForAccessToken(
 
     const bodyText = await response.text().catch(() => '')
 
+    // The server forwards Google's token response verbatim (status + body), so
+    // a non-2xx maps the same way a direct Google call would.
     const httpError = normalizeHttpStatus(
         response.status,
         extractErrorMessage(bodyText) ?? `HTTP ${response.status}`,
