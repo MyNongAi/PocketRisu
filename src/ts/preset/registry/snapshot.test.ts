@@ -10,7 +10,7 @@ describe('resolveSnapshot', () => {
         const snapshot = resolveSnapshot(registry, 'openai:gpt-55')
         expect(snapshot).toMatchObject({
             profileId: 'openai:gpt-55',
-            profileVersion: 1,
+            profileVersion: 2,
             providerBaseId: 'openai',
             adapterKind: 'openai-compatible',
             auth: { kind: 'bearer', fields: ['apiKey'] },
@@ -24,16 +24,16 @@ describe('resolveSnapshot', () => {
         expect(snapshot.capabilities).toContain('streaming')
     })
 
-    test('returns the anthropic:sonnet-adaptive snapshot with anthropic-messages adapter', () => {
-        const snapshot = resolveSnapshot(registry, 'anthropic:sonnet-adaptive')
+    test('returns the anthropic:sonnet-46 snapshot with anthropic-messages adapter', () => {
+        const snapshot = resolveSnapshot(registry, 'anthropic:sonnet-46')
         expect(snapshot.adapterKind).toBe('anthropic-messages')
         expect(snapshot.auth).toEqual({ kind: 'x-api-key', fields: ['apiKey'] })
         expect(snapshot.endpoint.url).toBe('https://api.anthropic.com/v1/messages')
         expect(snapshot.headerTemplate?.['anthropic-version']).toBe('2023-06-01')
     })
 
-    test('returns the google:gemini-3 snapshot with x-goog-api-key auth', () => {
-        const snapshot = resolveSnapshot(registry, 'google:gemini-3')
+    test('returns the google:gemini-35-flash snapshot with x-goog-api-key auth', () => {
+        const snapshot = resolveSnapshot(registry, 'google:gemini-35-flash')
         expect(snapshot.adapterKind).toBe('google-gemini')
         expect(snapshot.auth.kind).toBe('x-goog-api-key')
     })
@@ -197,8 +197,8 @@ describe('resolveSnapshot', () => {
     test('covers every analyzer-emitted profile id', () => {
         const analyzerProfileIds = [
             'openai:gpt-55',
-            'anthropic:sonnet-adaptive',
-            'google:gemini-3',
+            'anthropic:sonnet-46',
+            'google:gemini-35-flash',
             'openai-compatible:custom',
             'openai-compatible:custom-noauth',
             'openrouter:openai-compatible',
