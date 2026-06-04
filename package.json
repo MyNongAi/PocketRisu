@@ -14,7 +14,6 @@
     "check:help": "node scripts/check-help-keys.mjs",
     "test": "vitest run",
     "test:compat": "vitest run --config vitest.config.compat.ts",
-    "test:v4-smoke": "vitest run --config vitest.config.smoke.ts",
     "runserver": "node server/node/server.cjs",
     "hono:build": "vite build --sourcemap && node server/hono/src/utils/postbuild.js"
   },

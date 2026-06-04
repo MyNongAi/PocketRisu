@@ -298,4 +298,3 @@ describe('ModelPreset v4 .bin round-trip', () => {
         expect(rawB.modelPresetMigrationReport).toEqual(rawA.modelPresetMigrationReport)
     })
 })
-
