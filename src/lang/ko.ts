@@ -715,6 +715,9 @@ export const languageKorean = {
   sectionBubble: "말풍선 스타일",
   sectionQuotes: "따옴표",
   sectionAdvanced: "고급",
+  accTabEditing: "편집",
+  accTabScroll: "스크롤",
+  accTabSidebar: "사이드바",
   presets: "프리셋",
   themePresets: "테마 프리셋",
   imageGeneration: "이미지 생성",
@@ -1636,6 +1639,8 @@ export const languageKorean = {
   newMessageButtonFloatingCircle: "아이콘 원 (우측 하단)",
   newMessageButtonRightCenter: "우측 중앙",
   newMessageButtonTopBar: "상단 바",
+  longPressToPopupEditor: "길게 눌러 팝업 편집기 열기",
+  createFolderOnBranch: "분기 시 폴더 생성",
   goToChat: "채팅으로 이동",
   duplicatePluginFoundUpdateIt:
     "중복된 플러그인이 발견되었습니다. 기존 플러그인을 업데이트하시겠습니까?",

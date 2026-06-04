@@ -272,54 +272,32 @@ export const helpEn = {
         hypaV3QueryChatCount:
             "The number of recent chat messages used as the query for similarity search. " +
             "Higher values use more chat context to determine similarity.",
-        useNodeOnlyScrollButton:
-            "Shows navigation buttons to jump between chat messages while scrolling. Buttons appear on scroll and fade out after 1.5 seconds.",
-        confirmReroll:
-            "Ask for confirmation before regenerating a message. Enable this if you want protection against accidentally losing a response.",
-        sendWithEnter:
-            "Send the message with Enter. When disabled, Shift+Enter becomes the send shortcut and Enter inserts a newline.",
-        fixedChatTextarea:
-            "Keep the chat input area at a fixed height. When disabled, the input grows automatically as you type more lines.",
-        clickToEdit:
-            "Enter edit mode immediately when clicking a chat message. When disabled, use the separate edit button.",
-        enableBlockPartialEdit:
-            "Show per-block edit controls when hovering over a paragraph/block in a message. Useful when you only want to fix one part of a long response.",
-        longPressToPopupEditor:
-            "Open the popup editor when long-pressing a message. This is mainly for easier editing on mobile screens.",
-        enableDragPartialEdit:
-            "Allow editing only the text selected by dragging inside a message. Can be used together with block partial edit.",
-        botSettingAtStart:
-            "Open the bot settings page automatically whenever the app starts. Leave this off if you prefer going straight to chat.",
-        showMenuChatList:
-            "Show the current character's chat list directly in the sidebar menu. When off, the list is one level deeper.",
-        showMenuHypaMemoryModal:
-            "Show a sidebar button that opens the HypaMemory (HypaV3) management modal. Useful if you review long-term memory often.",
-        goCharacterOnImport:
-            "After importing a character card, switch to that character automatically. When off, you stay on the current screen.",
-        sideMenuRerollButton:
-            "Show a regenerate/reroll button in the chat side menu, in addition to the normal message controls.",
+        useNodeOnlyScrollButton: "Shows navigation buttons to jump between chat messages while scrolling.",
+        confirmReroll: "Ask for confirmation before regenerating a message.",
+        sendWithEnter: "Send the message with Enter.",
+        fixedChatTextarea: "Keep the chat input area at a fixed height.",
+        clickToEdit: "Enter edit mode immediately when clicking a chat message.",
+        enableBlockPartialEdit: "Show per-block edit controls when hovering over a paragraph/block in a message.",
+        longPressToPopupEditor: "Open the popup editor when long-pressing a message.",
+        enableDragPartialEdit: "Allow editing only the text selected by dragging inside a message.",
+        botSettingAtStart: "Open the bot settings page automatically whenever the app starts.",
+        showMenuChatList: "Show the current character's chat list directly in the sidebar menu.",
+        showMenuHypaMemoryModal: "Show a sidebar button that opens the HypaMemory (HypaV3) management modal.",
+        goCharacterOnImport: "After importing a character card, switch to that character automatically.",
+        sideMenuRerollButton: "Show a regenerate/reroll button in the chat side menu.",
         localActivationInGlobalLorebook:
             "Allow global lorebooks to use local activation options such as activating only for the current character.",
-        requestInfoInsideChat:
-            "Allow LLM request information such as sent prompts and token counts to be displayed inside the chat area. Useful for debugging and prompt review.",
-        inlayErrorResponse:
-            "When a model request fails, show the error as an inlaid chat response. When off, errors are only shown as separate notifications.",
-        bulkEnabling:
-            "Show buttons in the lorebook editor for enabling or disabling multiple entries at once. Useful for large lorebooks.",
-        showTranslationLoading:
-            "Show a loading indicator while message translation is in progress. Helpful when using slow LLM-based translators.",
-        autoScrollToNewMessage:
-            "Automatically scroll to a newly arrived message. When off, the viewport stays put while you review older messages.",
-        alwaysScrollToNewMessage:
-            "Always scroll down when a new message arrives, even if you have manually scrolled upward. Only applies when auto-scroll is enabled.\n\nWhen off, Risu shows a \"new message\" button instead of stealing the scroll position.",
-        newMessageButtonStyle:
-            "Choose where and how the \"new message\" button appears. This matters when auto-scroll is enabled but always-scroll is disabled.\n\nOptions include bottom center, bottom right, bottom left, floating circle, right middle, and top bar.",
+        requestInfoInsideChat: "Allow LLM request information such as sent prompts and token counts to be displayed inside the chat area.",
+        inlayErrorResponse: "When a model request fails, show the error as an inlaid chat response.",
+        bulkEnabling: "Show buttons in the lorebook editor for enabling or disabling multiple entries at once.",
+        showTranslationLoading: "Show a loading indicator while message translation is in progress.",
+        autoScrollToNewMessage: "Automatically scroll to a newly arrived message.",
+        alwaysScrollToNewMessage: "Always scroll down when a new message arrives, even if you have manually scrolled upward.",
+        newMessageButtonStyle: "Choose where and how the \"new message\" button appears.",
         createFolderOnBranch:
             "Automatically create a folder when branching a chat, grouping the original and branched chats together.",
-        hamburgerButtonBottom:
-            "Move the hamburger/menu button to the bottom of the sidebar. This can make one-handed use easier on mobile or small screens.",
-        hideLeftBarCollapseButton:
-            "Hide the toggle button that collapses the left character grid bar on narrow screens (under 400px). Enable this if you prefer to keep the left bar always visible on mobile.",
+        hamburgerButtonBottom: "Move the hamburger/menu button to the bottom of the sidebar.",
+        hideLeftBarCollapseButton: "Hide the toggle button that collapses the left character grid bar on narrow screens (under 400px).",
         loreBookDepth:
             "Number of previous messages to scan for lorebook activation keywords. `0` disables scanning; higher values can find older keywords but may activate unnecessary lore. (0-20)",
         loreBookToken:

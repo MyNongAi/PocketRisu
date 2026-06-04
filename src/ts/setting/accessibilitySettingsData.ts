@@ -5,7 +5,6 @@
  */
 
 import type { SettingItem } from './types';
-import { language } from "src/lang";
 import { getCurrentChat, getDatabase, loadTogglesFromChat } from '../storage/database.svelte';
 
 export const accessibilitySettingsItems: SettingItem[] = [
@@ -172,12 +171,12 @@ export const accessibilitySettingsItems: SettingItem[] = [
         condition: (ctx) => ctx.db.autoScrollToNewMessage && !ctx.db.alwaysScrollToNewMessage,
         options: {
             selectOptions: [
-                { value: 'bottom-center', label: language.newMessageButtonBottomCenter },
-                { value: 'bottom-right', label: language.newMessageButtonBottomRight },
-                { value: 'bottom-left', label: language.newMessageButtonBottomLeft },
-                { value: 'floating-circle', label: language.newMessageButtonFloatingCircle },
-                { value: 'right-center', label: language.newMessageButtonRightCenter },
-                { value: 'top-bar', label: language.newMessageButtonTopBar }
+                { value: 'bottom-center', labelKey: 'newMessageButtonBottomCenter' },
+                { value: 'bottom-right', labelKey: 'newMessageButtonBottomRight' },
+                { value: 'bottom-left', labelKey: 'newMessageButtonBottomLeft' },
+                { value: 'floating-circle', labelKey: 'newMessageButtonFloatingCircle' },
+                { value: 'right-center', labelKey: 'newMessageButtonRightCenter' },
+                { value: 'top-bar', labelKey: 'newMessageButtonTopBar' }
             ]
         }
     },
@@ -260,3 +259,50 @@ export const accessibilitySettingsItems: SettingItem[] = [
         }
     }
 ];
+
+// Tab groupings (the flat array above stays the source of truth + search index).
+const pick = (ids: string[]): SettingItem[] =>
+    ids
+        .map((id) => accessibilitySettingsItems.find((i) => i.id === id))
+        .filter((i): i is SettingItem => !!i);
+
+export const accessibilityEditingItems = pick([
+    'acc.confirmReroll',
+    'acc.sendWithEnter',
+    'acc.fixedChatTextarea',
+    'acc.clickToEdit',
+    'acc.enableBlockPartialEdit',
+    'acc.enableDragPartialEdit',
+    'acc.longPressToPopupEditor',
+]);
+
+export const accessibilityScrollItems = pick([
+    'acc.autoScrollToNewMessage',
+    'acc.alwaysScrollToNewMessage',
+    'acc.newMessageButtonStyle',
+    'acc.useNodeOnlyScrollButton',
+]);
+
+export const accessibilitySidebarItems = pick([
+    'acc.showMenuChatList',
+    'acc.showMenuHypaMemoryModal',
+    'acc.sideMenuRerollButton',
+    'acc.hamburgerButtonBottom',
+    'acc.hideLeftBarCollapseButton',
+    'acc.showModelInSidebar',
+    'acc.showPresetInSidebar',
+    'acc.showPersonaInSidebar',
+]);
+
+export const accessibilityOtherItems = pick([
+    'acc.botSettingAtStart',
+    'acc.goCharacterOnImport',
+    'acc.createFolderOnBranch',
+    'acc.localActivationInGlobalLorebook',
+    'acc.requestInfoInsideChat',
+    'acc.inlayErrorResponse',
+    'acc.bulkEnabling',
+    'acc.showTranslationLoading',
+    'acc.disableMobileDragDrop',
+    'acc.disableToggleBinding',
+]);
