@@ -309,8 +309,6 @@ export const displayOtherSettingsItems: SettingItem[] = [
     { id: 'display.hideMessagePageCount', type: 'check', labelKey: 'hideMessagePageCount', helpKey: 'hideMessagePageCountDesc', bindKey: 'hideMessagePageCount', keywords: ['message', 'page', 'count', 'hide'] },
     { id: 'display.showFolderName', type: 'check', labelKey: 'showFolderNameInIcon', helpKey: 'showFolderNameInIcon', bindKey: 'showFolderName', keywords: ['folder', 'name', 'icon'] },
     { id: 'display.customBackground', type: 'custom', componentId: 'CustomBackgroundToggle', keywords: ['custom', 'background'] },
-    { id: 'display.playMessage', type: 'check', labelKey: 'playMessage', helpKey: 'msgSound', bindKey: 'playMessage', keywords: ['message', 'sound'] },
-    { id: 'display.playMessageOnTranslateEnd', type: 'check', labelKey: 'playMessageOnTranslateEnd', helpKey: 'playMessageOnTranslateEnd', bindKey: 'playMessageOnTranslateEnd', keywords: ['translate', 'sound'] },
     { id: 'display.roundIcons', type: 'check', labelKey: 'roundIcons', helpKey: 'roundIcons', bindKey: 'roundIcons', keywords: ['round', 'icons'] },
     {
         id: 'display.textScreenColor',
@@ -399,7 +397,6 @@ export const displayOtherSettingsItems: SettingItem[] = [
     },
     { id: 'display.betaMobileGUI', type: 'check', labelKey: 'betaMobileGUI', helpKey: 'betaMobileGUI', bindKey: 'betaMobileGUI', keywords: ['beta', 'mobile', 'gui'] },
     { id: 'display.menuSideBar', type: 'check', labelKey: 'menuSideBar', helpKey: 'menuSideBar', bindKey: 'menuSideBar', keywords: ['menu', 'sidebar'] },
-    { id: 'display.notification', type: 'custom', componentId: 'NotificationToggle', keywords: ['notification'] },
     {
         id: 'display.useChatSticker',
         type: 'check',

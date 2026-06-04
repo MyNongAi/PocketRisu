@@ -1478,6 +1478,11 @@ export function getUncleanables(db: Database, uptype: 'basename' | 'pure' = 'bas
     // asset paths, so they add a harmless basename that matches no stored asset.
     addUncleanable(db.messageSound);
     addUncleanable(db.translateSound);
+    if (db.customSounds) {
+        for (const s of db.customSounds) {
+            addUncleanable(s.path);
+        }
+    }
 
     for (const cha of db.characters) {
         if (cha.image) {
@@ -1560,6 +1565,11 @@ export function replaceDbResources(db: Database, replacer: { [key: string]: stri
     db.userIcon = replaceData(db.userIcon);
     db.messageSound = replaceData(db.messageSound);
     db.translateSound = replaceData(db.translateSound);
+    if (db.customSounds) {
+        for (const s of db.customSounds) {
+            s.path = replaceData(s.path);
+        }
+    }
 
     for (const cha of db.characters) {
         if (cha.image) {

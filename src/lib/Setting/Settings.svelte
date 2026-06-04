@@ -1,7 +1,8 @@
 <script lang="ts">
-    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, CodeIcon, CogIcon, ContactIcon, FlaskConicalIcon, ImageIcon, LanguagesIcon, MonitorIcon, MonitorSmartphoneIcon, Sailboat, ScrollTextIcon, UserIcon, CircleXIcon, KeyboardIcon, TruckIcon, FileBoxIcon } from "@lucide/svelte";
+    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, CodeIcon, CogIcon, ContactIcon, FlaskConicalIcon, ImageIcon, LanguagesIcon, MonitorIcon, MonitorSmartphoneIcon, Sailboat, ScrollTextIcon, UserIcon, CircleXIcon, KeyboardIcon, TruckIcon, FileBoxIcon, Volume2Icon } from "@lucide/svelte";
     import { language } from "src/lang";
     import DisplaySettings from "./Pages/DisplaySettings.svelte";
+    import NotificationSoundSettings from "./Pages/NotificationSoundSettings.svelte";
     import MigrationSettings from "./Pages/MigrationSettings.svelte";
     import BotSettings from "./Pages/BotSettings.svelte";
     import ModelPresetSettings from "./Pages/Model/ModelPresetSettings.svelte";
@@ -103,6 +104,15 @@
                     }}>
                         <MonitorIcon />
                         <span>{language.display}</span>
+                    </button>
+                    <button class="flex gap-2 items-center hover:text-textcolor"
+                        class:text-textcolor={$SettingsMenuIndex === 5}
+                        class:text-textcolor2={$SettingsMenuIndex !== 5}
+                        onclick={() => {
+                            $SettingsMenuIndex = 5
+                    }}>
+                        <Volume2Icon />
+                        <span>{language.soundAndNotification}</span>
                     </button>
                 {/if}
                 <button class="flex gap-2 items-center hover:text-textcolor"
@@ -244,6 +254,8 @@
                             <OtherBotSettings />
                         {:else if $SettingsMenuIndex === 3}
                             <DisplaySettings />
+                        {:else if $SettingsMenuIndex === 5}
+                            <NotificationSoundSettings />
                         {:else if $SettingsMenuIndex === 4}
                             <PluginSettings />
                         {:else if $SettingsMenuIndex === 5}

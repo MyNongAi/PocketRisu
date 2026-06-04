@@ -150,6 +150,9 @@ export function setDatabase(data:Database){
     if(checkNullish(data.translateSoundVolume)){
         data.translateSoundVolume = 100
     }
+    if(checkNullish(data.customSounds)){
+        data.customSounds = []
+    }
     if(checkNullish(data.iconsize)){
         data.iconsize = 100
     }
@@ -957,6 +960,11 @@ export interface Database{
     translateSound:string
     /** Playback volume (0-100) for the translation-complete notification. */
     translateSoundVolume:number
+    /** User-uploaded notification sounds, shown alongside bundled presets in
+     * the sound picker. `id` is a stable uuid (list identity / render key);
+     * `path` is the "assets/<hash>" asset path (content-hashed, deduped by
+     * saveAsset); `name` is the original filename for display. Not theme-scoped. */
+    customSounds:{ id:string, name:string, path:string }[]
     iconsize:number
     theme: string
     nodeOnlyStandardChatWidth: 'standard' | 'wide' | 'full'
@@ -1773,8 +1781,6 @@ export interface themePreset{
     hideMessagePageCount?: boolean
     showFolderName: boolean
     customBackground: string
-    playMessage: boolean
-    playMessageOnTranslateEnd: boolean
     roundIcons: boolean
     textScreenColor?: string
     textBorder?: boolean
@@ -1792,7 +1798,6 @@ export interface themePreset{
     customQuotesData?: [string, string, string, string]
     betaMobileGUI: boolean
     menuSideBar: boolean
-    notification: boolean
     useChatSticker: boolean
 }
 
@@ -2203,8 +2208,6 @@ export const themePresetTemplate: themePreset = {
     hideMessagePageCount: false,
     showFolderName: false,
     customBackground: '',
-    playMessage: false,
-    playMessageOnTranslateEnd: false,
     roundIcons: false,
     textScreenColor: null,
     textBorder: false,
@@ -2222,7 +2225,6 @@ export const themePresetTemplate: themePreset = {
     customQuotesData: ['"', '"', '\u2018', '\u2019'],
     betaMobileGUI: false,
     menuSideBar: false,
-    notification: false,
     useChatSticker: false,
 }
 
@@ -2581,8 +2583,6 @@ export function saveCurrentThemePreset(){
         hideMessagePageCount: db.hideMessagePageCount,
         showFolderName: db.showFolderName,
         customBackground: db.customBackground,
-        playMessage: db.playMessage,
-        playMessageOnTranslateEnd: db.playMessageOnTranslateEnd,
         roundIcons: db.roundIcons,
         textScreenColor: db.textScreenColor,
         textBorder: db.textBorder,
@@ -2600,7 +2600,6 @@ export function saveCurrentThemePreset(){
         customQuotesData: db.customQuotesData ? [...db.customQuotesData] as [string,string,string,string] : ['"','"','\u2018','\u2019'],
         betaMobileGUI: db.betaMobileGUI,
         menuSideBar: db.menuSideBar,
-        notification: db.notification,
         useChatSticker: db.useChatSticker,
     }
     if(!Array.isArray(pres)){
@@ -2652,8 +2651,6 @@ export function changeToThemePreset(id = 0, savecurrent = true){
     db.hideAllImages = p.hideAllImages ?? db.hideAllImages
     db.showFolderName = p.showFolderName ?? db.showFolderName
     db.customBackground = p.customBackground ?? db.customBackground
-    db.playMessage = p.playMessage ?? db.playMessage
-    db.playMessageOnTranslateEnd = p.playMessageOnTranslateEnd ?? db.playMessageOnTranslateEnd
     db.roundIcons = p.roundIcons ?? db.roundIcons
     db.textScreenColor = p.textScreenColor
     db.textBorder = p.textBorder
@@ -2671,7 +2668,6 @@ export function changeToThemePreset(id = 0, savecurrent = true){
     db.customQuotesData = p.customQuotesData ? [...p.customQuotesData] as [string,string,string,string] : db.customQuotesData
     db.betaMobileGUI = p.betaMobileGUI ?? db.betaMobileGUI
     db.menuSideBar = p.menuSideBar ?? db.menuSideBar
-    db.notification = p.notification ?? db.notification
     db.useChatSticker = p.useChatSticker ?? db.useChatSticker
 }
 
