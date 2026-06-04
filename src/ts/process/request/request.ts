@@ -216,7 +216,10 @@ export async function requestChatData(arg:requestDataArgument, model:ModelModeEx
             if(da.type !== 'fail' || da.noRetry){
                 return {
                     ...da,
-                    model: fallBackModels[fallbackIndex]
+                    // fallBackModels[fallbackIndex] is '' for the primary (non-fallback)
+                    // attempt; keep the dispatcher's own model label (e.g. a ModelPreset
+                    // name) instead of clobbering it with the empty sentinel.
+                    model: fallBackModels[fallbackIndex] || da.model
                 }
             }
     

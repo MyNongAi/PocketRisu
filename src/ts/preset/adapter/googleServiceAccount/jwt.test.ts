@@ -12,8 +12,8 @@ import { getTestKeyPair, makeServiceAccountFixture as fixture } from './__testFi
 const fixedNow = () => 1_700_000_000_000
 
 describe('buildServiceAccountAssertion', () => {
-    test('produces three-segment JWT with header, payload, signature', () => {
-        const result = buildServiceAccountAssertion({ serviceAccount: fixture(), now: fixedNow })
+    test('produces three-segment JWT with header, payload, signature', async () => {
+        const result = await buildServiceAccountAssertion({ serviceAccount: fixture(), now: fixedNow })
         const segments = result.assertion.split('.')
         expect(segments).toHaveLength(3)
         expect(`${segments[0]}.${segments[1]}`).toBe(result.signingInput)
@@ -23,8 +23,8 @@ describe('buildServiceAccountAssertion', () => {
         expect(result.signature).not.toContain('/')
     })
 
-    test('payload contains iss, scope, aud, iat, exp with 1h TTL', () => {
-        const result = buildServiceAccountAssertion({ serviceAccount: fixture(), now: fixedNow })
+    test('payload contains iss, scope, aud, iat, exp with 1h TTL', async () => {
+        const result = await buildServiceAccountAssertion({ serviceAccount: fixture(), now: fixedNow })
         const payload = decodeJwtPayloadForTest(result.assertion) as Record<string, unknown>
         expect(payload.iss).toBe('svc@demo.iam.gserviceaccount.com')
         expect(payload.scope).toBe(DEFAULT_SCOPE)
@@ -33,16 +33,16 @@ describe('buildServiceAccountAssertion', () => {
         expect(payload.exp).toBe(Math.floor(fixedNow() / 1000) + 3600)
     })
 
-    test('header contains alg=RS256, typ=JWT, kid when privateKeyId present', () => {
-        const result = buildServiceAccountAssertion({ serviceAccount: fixture(), now: fixedNow })
+    test('header contains alg=RS256, typ=JWT, kid when privateKeyId present', async () => {
+        const result = await buildServiceAccountAssertion({ serviceAccount: fixture(), now: fixedNow })
         const header = decodeJwtHeaderForTest(result.assertion) as Record<string, unknown>
         expect(header.alg).toBe('RS256')
         expect(header.typ).toBe('JWT')
         expect(header.kid).toBe('kid-1')
     })
 
-    test('header omits kid when privateKeyId is absent', () => {
-        const result = buildServiceAccountAssertion({
+    test('header omits kid when privateKeyId is absent', async () => {
+        const result = await buildServiceAccountAssertion({
             serviceAccount: fixture({ privateKeyId: undefined }),
             now: fixedNow,
         })
@@ -50,8 +50,8 @@ describe('buildServiceAccountAssertion', () => {
         expect('kid' in header).toBe(false)
     })
 
-    test('honors custom scope', () => {
-        const result = buildServiceAccountAssertion({
+    test('honors custom scope', async () => {
+        const result = await buildServiceAccountAssertion({
             serviceAccount: fixture(),
             scope: 'https://www.googleapis.com/auth/aiplatform',
             now: fixedNow,
@@ -60,8 +60,8 @@ describe('buildServiceAccountAssertion', () => {
         expect(payload.scope).toBe('https://www.googleapis.com/auth/aiplatform')
     })
 
-    test('empty scope falls back to default', () => {
-        const result = buildServiceAccountAssertion({
+    test('empty scope falls back to default', async () => {
+        const result = await buildServiceAccountAssertion({
             serviceAccount: fixture(),
             scope: '',
             now: fixedNow,
@@ -70,8 +70,8 @@ describe('buildServiceAccountAssertion', () => {
         expect(payload.scope).toBe(DEFAULT_SCOPE)
     })
 
-    test('signature verifies against matching public key (real RS256)', () => {
-        const result = buildServiceAccountAssertion({ serviceAccount: fixture(), now: fixedNow })
+    test('signature verifies against matching public key (real RS256)', async () => {
+        const result = await buildServiceAccountAssertion({ serviceAccount: fixture(), now: fixedNow })
         const verifier = createVerify('RSA-SHA256')
         verifier.update(result.signingInput)
         verifier.end()
@@ -83,18 +83,18 @@ describe('buildServiceAccountAssertion', () => {
         expect(ok).toBe(true)
     })
 
-    test('different now produces different iat/exp and different signature', () => {
-        const a = buildServiceAccountAssertion({ serviceAccount: fixture(), now: () => 1_700_000_000_000 })
-        const b = buildServiceAccountAssertion({ serviceAccount: fixture(), now: () => 1_700_000_010_000 })
+    test('different now produces different iat/exp and different signature', async () => {
+        const a = await buildServiceAccountAssertion({ serviceAccount: fixture(), now: () => 1_700_000_000_000 })
+        const b = await buildServiceAccountAssertion({ serviceAccount: fixture(), now: () => 1_700_000_010_000 })
         expect(a.payload.iat).not.toBe(b.payload.iat)
         expect(a.assertion).not.toBe(b.assertion)
     })
 
-    test('throws invalid-request when private key is malformed PEM body', () => {
+    test('throws invalid-request when private key is malformed PEM body', async () => {
         const badPem =
             '-----BEGIN PRIVATE KEY-----\nnot-actually-base64-of-a-key\n-----END PRIVATE KEY-----\n'
         try {
-            buildServiceAccountAssertion({
+            await buildServiceAccountAssertion({
                 serviceAccount: fixture({ privateKey: badPem }),
                 now: fixedNow,
             })

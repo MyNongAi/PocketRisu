@@ -31,7 +31,7 @@ export async function exchangeServiceAccountForAccessToken(
     const issuedAtMs = now()
     const scope = input.scope && input.scope.length > 0 ? input.scope : DEFAULT_SCOPE
 
-    const jwt = buildServiceAccountAssertion({
+    const jwt = await buildServiceAccountAssertion({
         serviceAccount: input.serviceAccount,
         scope,
         now,
