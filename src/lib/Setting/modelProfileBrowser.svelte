@@ -104,6 +104,7 @@
         for (const b of buckets.values()) {
             b.entries.sort((x, y) =>
                 profileStatusOrder.indexOf(x.profile.profileStatus) - profileStatusOrder.indexOf(y.profile.profileStatus)
+                || ((x.profile.sortOrder ?? 0) - (y.profile.sortOrder ?? 0))
                 || localizeDisplayName(x.profile).localeCompare(localizeDisplayName(y.profile)));
         }
         return [...buckets.values()].sort((a, b) => a.label.localeCompare(b.label));
