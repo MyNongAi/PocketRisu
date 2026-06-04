@@ -275,6 +275,8 @@ export const helpEn = {
         useNodeOnlyScrollButton: "Shows navigation buttons to jump between chat messages while scrolling.",
         confirmReroll: "Ask for confirmation before regenerating a message.",
         sendWithEnter: "Send the message with Enter.",
+        sendKeyPC: "Which key sends a message on desktop.",
+        sendKeyMobile: "How messages are sent on mobile.",
         fixedChatTextarea: "Keep the chat input area at a fixed height.",
         clickToEdit: "Enter edit mode immediately when clicking a chat message.",
         enableBlockPartialEdit: "Show per-block edit controls when hovering over a paragraph/block in a message.",

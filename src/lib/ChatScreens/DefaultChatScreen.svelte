@@ -15,6 +15,7 @@
     import { isExpTranslator, translate } from "../../ts/translator/translator";
     import { alertError, alertWait, notifySuccess, notifyError } from "../../ts/alert";
     import { playNotificationSound } from '../../ts/notificationSound'
+import { isMobile } from 'src/ts/platform'
     import { processScript } from "src/ts/process/scripts";
     import CreatorQuote from "./CreatorQuote.svelte";
     import { stopTTS } from "src/ts/process/tts";
@@ -34,7 +35,19 @@
     import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte';
 
     const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then(m => m.default);
-    
+
+    // Whether an Enter keydown should send (vs insert a newline), based on the
+    // per-platform send-key mode. Mobile uses sendKeyMobile, desktop sendKeyPC.
+    function shouldSendOnEnter(e: KeyboardEvent): boolean {
+        const mode = isMobile ? DBState.db.sendKeyMobile : DBState.db.sendKeyPC;
+        switch (mode) {
+            case 'enter': return !e.shiftKey && !e.ctrlKey && !e.metaKey;
+            case 'ctrl-enter': return e.ctrlKey || e.metaKey;
+            case 'shift-enter': return e.shiftKey;
+            default: return false; // 'button'
+        }
+    }
+
     interface Props {
         openModuleList?: boolean;
         openChatList?: boolean;
@@ -690,10 +703,7 @@
                           bind:this={inputEle}
                           onkeydown={(e) => {
                         if(e.key.toLocaleLowerCase() === "enter" && !e.isComposing){
-                            if(DBState.db.sendWithEnter && (!e.shiftKey)){
-                                send()
-                                e.preventDefault()
-                            }else if(!DBState.db.sendWithEnter && e.shiftKey){
+                            if(shouldSendOnEnter(e)){
                                 send()
                                 e.preventDefault()
                             }
@@ -799,8 +809,8 @@
                               bind:value={messageInputTranslate}
                               bind:this={inputTranslateEle}
                               onkeydown={(e) => {
-                            if(e.key.toLocaleLowerCase() === "enter" && (!e.shiftKey)){
-                                if(DBState.db.sendWithEnter){
+                            if(e.key.toLocaleLowerCase() === "enter" && !e.isComposing){
+                                if(shouldSendOnEnter(e)){
                                     send()
                                     e.preventDefault()
                                 }

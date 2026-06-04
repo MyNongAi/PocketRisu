@@ -813,6 +813,12 @@ export const languageKorean = {
   accessibility: "접근성",
   sendWithEnter:
     "엔터키로 메세지 보내기(체크 해제시 Shift + Enter가 메세지 전송으로 변경.)",
+  sendKeyPC: "메시지 보내기 키 (PC)",
+  sendKeyMobile: "메시지 보내기 키 (모바일)",
+  sendKeyEnter: "Enter (Shift+Enter로 줄바꿈)",
+  sendKeyCtrlEnter: "Ctrl+Enter (Enter로 줄바꿈)",
+  sendKeyShiftEnter: "Shift+Enter (Enter로 줄바꿈)",
+  sendKeyButton: "전송 버튼만 사용 (Enter로 줄바꿈)",
   fixedChatTextarea: "채팅창 하단 고정",
   clickToEdit: "클릭해서 수정하기",
   enableBlockPartialEdit:

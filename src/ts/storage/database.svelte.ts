@@ -381,6 +381,8 @@ export function setDatabase(data:Database){
     }
     data.globalscript ??= []
     data.sendWithEnter ??= true
+    data.sendKeyPC ??= 'enter'
+    data.sendKeyMobile ??= 'button'
     data.autoSuggestPrompt ??= defaultAutoSuggestPrompt
     data.autoSuggestPrefix ??= ""
     data.OAIPrediction ??= ''
@@ -1034,6 +1036,13 @@ export interface Database{
     }
     globalscript: customscript[],
     sendWithEnter:boolean
+    /** Desktop send-key mode. 'enter': Enter sends (Shift+Enter newline);
+     * 'ctrl-enter'/'shift-enter': that combo sends (Enter newline);
+     * 'button': only the send button (Enter newline). Replaces sendWithEnter. */
+    sendKeyPC: 'enter' | 'ctrl-enter' | 'shift-enter' | 'button'
+    /** Mobile send-key mode. 'button': only the send button (Enter newline);
+     * 'enter': Enter sends (Shift+Enter newline). */
+    sendKeyMobile: 'button' | 'enter'
     fixedChatTextarea:boolean
     clickToEdit: boolean
     enableBlockPartialEdit: boolean

@@ -18,12 +18,34 @@ export const accessibilitySettingsItems: SettingItem[] = [
         keywords: ['reroll', 'regenerate', 'confirm', 'message']
     },
     {
-        id: 'acc.sendWithEnter',
-        type: 'check',
-        labelKey: 'sendWithEnter',
-        bindKey: 'sendWithEnter',
-        helpKey: 'sendWithEnter',
-        keywords: ['send', 'enter', 'keyboard', 'submit']
+        id: 'acc.sendKeyPC',
+        type: 'radio',
+        labelKey: 'sendKeyPC',
+        bindKey: 'sendKeyPC',
+        helpKey: 'sendKeyPC',
+        options: {
+            selectOptions: [
+                { value: 'enter', labelKey: 'sendKeyEnter' },
+                { value: 'ctrl-enter', labelKey: 'sendKeyCtrlEnter' },
+                { value: 'shift-enter', labelKey: 'sendKeyShiftEnter' },
+                { value: 'button', labelKey: 'sendKeyButton' },
+            ],
+        },
+        keywords: ['send', 'enter', 'keyboard', 'submit', 'pc', 'desktop']
+    },
+    {
+        id: 'acc.sendKeyMobile',
+        type: 'radio',
+        labelKey: 'sendKeyMobile',
+        bindKey: 'sendKeyMobile',
+        helpKey: 'sendKeyMobile',
+        options: {
+            selectOptions: [
+                { value: 'button', labelKey: 'sendKeyButton' },
+                { value: 'enter', labelKey: 'sendKeyEnter' },
+            ],
+        },
+        keywords: ['send', 'enter', 'keyboard', 'submit', 'mobile']
     },
     {
         id: 'acc.fixedChatTextarea',
@@ -268,7 +290,8 @@ const pick = (ids: string[]): SettingItem[] =>
 
 export const accessibilityEditingItems = pick([
     'acc.confirmReroll',
-    'acc.sendWithEnter',
+    'acc.sendKeyPC',
+    'acc.sendKeyMobile',
     'acc.fixedChatTextarea',
     'acc.clickToEdit',
     'acc.enableBlockPartialEdit',

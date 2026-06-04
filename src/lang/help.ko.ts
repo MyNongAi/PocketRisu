@@ -160,6 +160,8 @@ export const helpKo = {
         "useNodeOnlyScrollButton": "스크롤 시 채팅 메시지 간 이동 버튼을 표시합니다.",
         "confirmReroll": "메시지를 재생성(reroll)할 때 확인 다이얼로그를 띄웁니다. 실수로 응답을 날리는 것을 막고 싶을 때 켜세요.",
         "sendWithEnter": "Enter 키로 메시지를 전송합니다.",
+        "sendKeyPC": "PC(데스크톱)에서 메시지를 전송하는 키입니다.",
+        "sendKeyMobile": "모바일에서 메시지를 전송하는 방식입니다.",
         "fixedChatTextarea": "채팅 입력창의 높이를 고정합니다.",
         "clickToEdit": "채팅 메시지를 클릭하면 바로 편집 모드로 진입합니다.",
         "enableBlockPartialEdit": "메시지의 단락(블록) 위에 마우스를 올리면 해당 블록만 따로 편집할 수 있게 합니다.",
