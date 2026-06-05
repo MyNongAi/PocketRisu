@@ -7,10 +7,12 @@ import { buildSeenMap, computeRegistryNotice, noticeCount } from './notice'
 import { getBundledRegistryId } from './loader'
 import type { RegistryCache } from '../types'
 
-function official(profiles: Record<string, { updatedAt?: number }>): RegistryCache {
+function official(
+    profiles: Record<string, { updatedAt?: number; profileStatus?: string }>,
+): RegistryCache {
     const entries: Record<string, any> = {}
     for (const [id, p] of Object.entries(profiles)) {
-        entries[id] = { id, displayName: id, updatedAt: p.updatedAt }
+        entries[id] = { id, displayName: id, updatedAt: p.updatedAt, profileStatus: p.profileStatus }
     }
     return {
         schemaVersion: 4,
@@ -46,5 +48,22 @@ describe('computeRegistryNotice', () => {
     it('ignores unchanged profiles', () => {
         const n = computeRegistryNotice(official({ a: { updatedAt: 5 } }), { a: 5 })
         expect(noticeCount(n)).toBe(0)
+    })
+
+    it('skips profiles hidden by the display level', () => {
+        const reg = official({
+            a: { updatedAt: 1, profileStatus: 'current' },
+            b: { updatedAt: 1, profileStatus: 'outdated' },
+            c: { updatedAt: 1, profileStatus: 'deprecated' },
+        })
+        // currentOnly: only the current profile may notify.
+        const currentOnly = computeRegistryNotice(reg, {}, 'currentOnly')
+        expect(currentOnly.newProfiles.map((p) => p.id)).toEqual(['a'])
+        // hideDeprecated: current + outdated notify, deprecated is suppressed.
+        const hideDeprecated = computeRegistryNotice(reg, {}, 'hideDeprecated')
+        expect(hideDeprecated.newProfiles.map((p) => p.id).sort()).toEqual(['a', 'b'])
+        // all (default): everything notifies.
+        const all = computeRegistryNotice(reg, {}, 'all')
+        expect(all.newProfiles.map((p) => p.id).sort()).toEqual(['a', 'b', 'c'])
     })
 })

@@ -8,6 +8,7 @@
     import {
         getBundledRegistryId,
         getOfficialRegistry,
+        isProfileVisible,
         resolveSnapshot,
     } from "src/ts/preset/registry";
     import { createEmptyRegistryCache } from "src/ts/preset/dbDefaults";
@@ -70,7 +71,14 @@
         );
     }
 
-    const entries = $derived(buildEntries(activeRegistry, activeRegistryId));
+    // The catalog display level hides outdated/deprecated profiles on the
+    // official tab only. Custom profiles are the user's own — always shown.
+    const entries = $derived.by(() => {
+        const all = buildEntries(activeRegistry, activeRegistryId);
+        if (activeTab !== 'official') return all;
+        const level = DBState.db.modelProfileVisibilityLevel;
+        return all.filter(e => isProfileVisible(e.profile.profileStatus, level));
+    });
 
     const filtered = $derived.by(() => {
         const q = query.trim().toLowerCase();

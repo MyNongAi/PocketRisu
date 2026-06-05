@@ -546,6 +546,12 @@ export const helpEn = {
             "Custom models are powered by a plugin. Pick the plugin provider that should generate responses. If the plugin is disabled the response will come back empty.",
         maxContextSize:
             "Maximum input tokens to send to the model. Going over the model's own limit (e.g. 128K for GPT-4o) causes errors, so keep it within bounds. Larger values increase input cost.",
+        profileVisibilityLevel:
+            "Hide outdated or deprecated model profiles from the catalog list and update notices.",
+        useCustomRegistry:
+            "Download model profiles from your own registry fork or branch instead of the official one.",
+        customRegistryUrl:
+            "An https base URL ending in a slash; index.json and catalog.json are fetched from it. An empty or non-https URL is rejected.",
         maxResponseSize:
             "Maximum output tokens for a single response. Too low and replies get cut off; too high costs more and can let the model ramble. 256–1024 covers most cases.",
         seed:

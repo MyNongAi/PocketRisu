@@ -9,6 +9,7 @@
 import type { RegistryCache } from '../types'
 import { getBundledRegistryId } from './loader'
 import { localizeDisplayName } from './i18n'
+import { isProfileVisible, type ProfileVisibilityLevel } from './visibility'
 
 export interface RegistryNoticeEntry {
     id: string
@@ -39,6 +40,7 @@ export function buildSeenMap(official: RegistryCache): Record<string, number> {
 export function computeRegistryNotice(
     official: RegistryCache,
     seen: Record<string, number> | undefined,
+    level?: ProfileVisibilityLevel,
 ): RegistryNotice {
     const registry = official.registries?.[getBundledRegistryId()]
     const profiles = registry?.profiles ?? {}
@@ -52,6 +54,9 @@ export function computeRegistryNotice(
     // providers (e.g. "GLM 5.1" on OpenRouter / Vercel / NanoGPT) is never
     // ambiguous and the list stays consistent ("NanoGPT / GLM 5.1").
     for (const [id, profile] of Object.entries(profiles)) {
+        // Honour the catalog display level: a profile hidden from the browser
+        // shouldn't generate a "new/updated" notice either.
+        if (!isProfileVisible(profile.profileStatus, level)) continue
         const modelName = localizeDisplayName(profile)
         const base = baseProviders[profile.providerBaseId]
         const providerName = base ? localizeDisplayName(base) : undefined

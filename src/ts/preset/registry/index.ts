@@ -5,9 +5,9 @@ export {
     RegistryBaseProviderNotFoundError,
 } from './snapshot'
 export {
-    fetchRemoteRegistry,
     syncRemoteRegistry,
     isRefetchGuarded,
     getOfficialRegistry,
     getPresetUpdateStatus,
 } from './remote'
+export { isProfileVisible, type ProfileVisibilityLevel } from './visibility'
