@@ -219,11 +219,18 @@ export const accessibilitySettingsItems: SettingItem[] = [
         keywords: ['left', 'bar', 'collapse', 'toggle', 'mobile', 'sidebar', 'hide'],
     },
     {
-        id: 'acc.useNodeOnlyScrollButton',
-        type: 'check',
-        labelKey: 'useNodeOnlyScrollButton',
-        bindKey: 'useNodeOnlyScrollButton',
-        helpKey: 'useNodeOnlyScrollButton',
+        id: 'acc.nodeOnlyScrollButtonType',
+        type: 'select',
+        labelKey: 'nodeOnlyScrollButtonType',
+        bindKey: 'nodeOnlyScrollButtonType',
+        helpKey: 'nodeOnlyScrollButtonType',
+        options: {
+            selectOptions: [
+                { value: 'four', labelKey: 'scrollButtonTypeFour' },
+                { value: 'two', labelKey: 'scrollButtonTypeTwo' },
+                { value: 'off', labelKey: 'scrollButtonTypeOff' },
+            ],
+        },
         keywords: ['scroll', 'button', 'navigate', 'message'],
     },
     {
@@ -294,7 +301,7 @@ export const accessibilityScrollItems = pick([
     'acc.autoScrollToNewMessage',
     'acc.alwaysScrollToNewMessage',
     'acc.newMessageButtonStyle',
-    'acc.useNodeOnlyScrollButton',
+    'acc.nodeOnlyScrollButtonType',
 ]);
 
 export const accessibilitySidebarItems = pick([

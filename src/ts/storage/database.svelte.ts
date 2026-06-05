@@ -708,7 +708,7 @@ export function setDatabase(data:Database){
     data.hideLeftBarCollapseButton ??= false
     data.dynamicModelRegistry ??= true
     data.saveSignatures ??= false
-    data.useNodeOnlyScrollButton ??= true
+    data.nodeOnlyScrollButtonType ??= 'four'
     data.keepSessionAlive ??= 'off'
     data.localNetworkMode ??= false
     if (typeof data.localNetworkMode !== 'boolean') data.localNetworkMode = false
@@ -1414,7 +1414,7 @@ export interface Database{
     enableRemoteSaving?:boolean
     blockquoteStyling?:boolean
     dynamicModelRegistry?:boolean
-    useNodeOnlyScrollButton?:boolean
+    nodeOnlyScrollButtonType?:'four'|'two'|'off'
     seperateParametersByModel?:boolean
     disableSeperateParameterChangeOnPresetChange?:boolean
     saveSignatures?:boolean

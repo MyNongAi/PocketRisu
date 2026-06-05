@@ -1869,7 +1869,10 @@ export const languageKorean = {
   nanoGPTSelectFromList: "목록에서 선택",
   nanoGPTManualInput: "수동 입력",
   nanoGPTManualModelSelect: "수동 모델 선택",
-  useNodeOnlyScrollButton: "스크롤 버튼 활성화",
+  nodeOnlyScrollButtonType: "스크롤 버튼 타입",
+  scrollButtonTypeFour: "4버튼",
+  scrollButtonTypeTwo: "2버튼",
+  scrollButtonTypeOff: "사용 안 함",
   // 원격 접속 (Cloudflare Quick Tunnel)
   remoteAccess: "원격 접속",
   remoteAccessDesc:
