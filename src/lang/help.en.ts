@@ -258,6 +258,10 @@ export const helpEn = {
             "- When on, past messages are automatically summarized into long-term memory once the context fills up, and relevant summaries are pulled back into later responses.\n" +
             "- When off, messages beyond the context window are simply truncated and never reach the model.\n\n" +
             "This setting is stored per-chat (independent of the character default), so other chats with the same character are unaffected. Tune the summarization behavior itself under HypaV3 in the preset.",
+        useModelPresetBinding:
+            "Bind a model preset to this chat.\n\n" +
+            "On : Use a model preset, binding a model per chat.\n" +
+            "Off : Use the existing chatbot settings. (default)",
         hypaV3SummarizationRequestsPerMinute:
             "Maximum summarization model requests per minute. Only applies when the summarization model is set to Auxiliary Model.",
         hypaV3SummarizationMaxConcurrent:

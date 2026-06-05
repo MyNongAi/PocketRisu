@@ -1,0 +1,1839 @@
+{
+  "schemaVersion": 4,
+  "contentVersion": 14,
+  "updated": "2026-06-04",
+  "updatedAt": 1780599146598,
+  "baseProviders": [
+    {
+      "id": "openai",
+      "displayName": "OpenAI",
+      "url": "base-providers/openai.json",
+      "version": 1
+    },
+    {
+      "id": "anthropic",
+      "displayName": "Anthropic",
+      "url": "base-providers/anthropic.json",
+      "version": 1
+    },
+    {
+      "id": "google",
+      "displayName": "Google AI Studio (Gemini)",
+      "url": "base-providers/google.json",
+      "version": 1
+    },
+    {
+      "id": "openai-compatible",
+      "displayName": "OpenAI Compatible (Custom)",
+      "url": "base-providers/openai-compatible.json",
+      "version": 1
+    },
+    {
+      "id": "openrouter",
+      "displayName": "OpenRouter",
+      "url": "base-providers/openrouter.json",
+      "version": 1
+    },
+    {
+      "id": "nanogpt",
+      "displayName": "NanoGPT",
+      "url": "base-providers/nanogpt.json",
+      "version": 1
+    },
+    {
+      "id": "ollama",
+      "displayName": "Ollama (Self-hosted)",
+      "url": "base-providers/ollama.json",
+      "version": 1
+    },
+    {
+      "id": "ollama-cloud",
+      "displayName": "Ollama Cloud",
+      "url": "base-providers/ollama-cloud.json",
+      "version": 2
+    },
+    {
+      "id": "deepseek",
+      "displayName": "DeepSeek",
+      "url": "base-providers/deepseek.json",
+      "version": 1
+    },
+    {
+      "id": "deepinfra",
+      "displayName": "DeepInfra",
+      "url": "base-providers/deepinfra.json",
+      "version": 1
+    },
+    {
+      "id": "vercel",
+      "displayName": "Vercel AI Gateway",
+      "url": "base-providers/vercel.json",
+      "version": 1
+    },
+    {
+      "id": "bedrock",
+      "displayName": "AWS Bedrock (OpenAI-compatible)",
+      "url": "base-providers/bedrock.json",
+      "version": 1
+    },
+    {
+      "id": "vertex-openai",
+      "displayName": "Vertex AI (OpenAI-compatible)",
+      "url": "base-providers/vertex-openai.json",
+      "version": 2
+    }
+  ],
+  "profiles": [
+    {
+      "id": "openai:gpt-55",
+      "displayName": "OpenAI GPT-5.5",
+      "providerBaseId": "openai",
+      "url": "profiles/openai/gpt-55.json",
+      "version": 2,
+      "displayNameI18n": {
+        "ko": "OpenAI GPT-5.5"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openai",
+        "gpt",
+        "reasoning"
+      ],
+      "sortOrder": 100
+    },
+    {
+      "id": "openai:gpt-54",
+      "displayName": "OpenAI GPT-5.4",
+      "providerBaseId": "openai",
+      "url": "profiles/openai/gpt-54.json",
+      "version": 2,
+      "displayNameI18n": {
+        "ko": "OpenAI GPT-5.4"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openai",
+        "gpt",
+        "reasoning"
+      ],
+      "sortOrder": 105
+    },
+    {
+      "id": "openai:gpt-54-mini",
+      "displayName": "OpenAI GPT-5.4 Mini",
+      "providerBaseId": "openai",
+      "url": "profiles/openai/gpt-54-mini.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "OpenAI GPT-5.4 Mini"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openai",
+        "gpt",
+        "reasoning"
+      ],
+      "sortOrder": 106
+    },
+    {
+      "id": "openai:gpt-54-nano",
+      "displayName": "OpenAI GPT-5.4 Nano",
+      "providerBaseId": "openai",
+      "url": "profiles/openai/gpt-54-nano.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "OpenAI GPT-5.4 Nano"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openai",
+        "gpt",
+        "reasoning"
+      ],
+      "sortOrder": 107
+    },
+    {
+      "id": "openai:gpt-52",
+      "displayName": "OpenAI GPT-5.2",
+      "providerBaseId": "openai",
+      "url": "profiles/openai/gpt-52.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "OpenAI GPT-5.2"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openai",
+        "gpt",
+        "reasoning"
+      ],
+      "sortOrder": 110
+    },
+    {
+      "id": "openai:gpt-51",
+      "displayName": "OpenAI GPT-5.1",
+      "providerBaseId": "openai",
+      "url": "profiles/openai/gpt-51.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "OpenAI GPT-5.1"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openai",
+        "gpt",
+        "reasoning"
+      ],
+      "sortOrder": 115
+    },
+    {
+      "id": "openai:gpt-5",
+      "displayName": "OpenAI GPT-5",
+      "providerBaseId": "openai",
+      "url": "profiles/openai/gpt-5.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "OpenAI GPT-5"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openai",
+        "gpt",
+        "reasoning"
+      ],
+      "sortOrder": 120
+    },
+    {
+      "id": "openai:gpt-5-mini",
+      "displayName": "OpenAI GPT-5 Mini",
+      "providerBaseId": "openai",
+      "url": "profiles/openai/gpt-5-mini.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "OpenAI GPT-5 Mini"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openai",
+        "gpt",
+        "reasoning"
+      ],
+      "sortOrder": 121
+    },
+    {
+      "id": "openai:gpt-5-nano",
+      "displayName": "OpenAI GPT-5 Nano",
+      "providerBaseId": "openai",
+      "url": "profiles/openai/gpt-5-nano.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "OpenAI GPT-5 Nano"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openai",
+        "gpt",
+        "reasoning"
+      ],
+      "sortOrder": 122
+    },
+    {
+      "id": "openai:o3",
+      "displayName": "OpenAI o3",
+      "providerBaseId": "openai",
+      "url": "profiles/openai/o3.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "OpenAI o3"
+      },
+      "profileStatus": "outdated",
+      "tags": [
+        "openai",
+        "gpt",
+        "reasoning"
+      ],
+      "sortOrder": 130
+    },
+    {
+      "id": "openai:gpt-41",
+      "displayName": "OpenAI GPT-4.1",
+      "providerBaseId": "openai",
+      "url": "profiles/openai/gpt-41.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "OpenAI GPT-4.1"
+      },
+      "profileStatus": "outdated",
+      "tags": [
+        "openai",
+        "gpt"
+      ],
+      "sortOrder": 140
+    },
+    {
+      "id": "openai:gpt-41-mini",
+      "displayName": "OpenAI GPT-4.1 Mini",
+      "providerBaseId": "openai",
+      "url": "profiles/openai/gpt-41-mini.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "OpenAI GPT-4.1 Mini"
+      },
+      "profileStatus": "outdated",
+      "tags": [
+        "openai",
+        "gpt"
+      ],
+      "sortOrder": 141
+    },
+    {
+      "id": "openai:gpt-4o",
+      "displayName": "OpenAI GPT-4o",
+      "providerBaseId": "openai",
+      "url": "profiles/openai/gpt-4o.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "OpenAI GPT-4o"
+      },
+      "profileStatus": "outdated",
+      "tags": [
+        "openai",
+        "gpt"
+      ],
+      "sortOrder": 150
+    },
+    {
+      "id": "openai:gpt-4o-mini",
+      "displayName": "OpenAI GPT-4o Mini",
+      "providerBaseId": "openai",
+      "url": "profiles/openai/gpt-4o-mini.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "OpenAI GPT-4o Mini"
+      },
+      "profileStatus": "outdated",
+      "tags": [
+        "openai",
+        "gpt"
+      ],
+      "sortOrder": 151
+    },
+    {
+      "id": "openai:gpt-4",
+      "displayName": "OpenAI GPT-4",
+      "providerBaseId": "openai",
+      "url": "profiles/openai/gpt-4.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "OpenAI GPT-4"
+      },
+      "profileStatus": "outdated",
+      "tags": [
+        "openai",
+        "gpt"
+      ],
+      "sortOrder": 160
+    },
+    {
+      "id": "anthropic:opus-48",
+      "displayName": "Claude Opus 4.8",
+      "providerBaseId": "anthropic",
+      "url": "profiles/anthropic/opus-48.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Claude Opus 4.8"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "anthropic",
+        "claude",
+        "opus",
+        "reasoning",
+        "long-context"
+      ],
+      "sortOrder": 200
+    },
+    {
+      "id": "anthropic:opus-47",
+      "displayName": "Claude Opus 4.7",
+      "providerBaseId": "anthropic",
+      "url": "profiles/anthropic/opus-47.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Claude Opus 4.7"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "anthropic",
+        "claude",
+        "opus",
+        "reasoning",
+        "long-context"
+      ],
+      "sortOrder": 201
+    },
+    {
+      "id": "anthropic:sonnet-46",
+      "displayName": "Claude Sonnet 4.6",
+      "providerBaseId": "anthropic",
+      "url": "profiles/anthropic/sonnet-46.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Claude Sonnet 4.6"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "anthropic",
+        "claude",
+        "sonnet",
+        "reasoning",
+        "long-context"
+      ],
+      "sortOrder": 202
+    },
+    {
+      "id": "anthropic:opus-46",
+      "displayName": "Claude Opus 4.6",
+      "providerBaseId": "anthropic",
+      "url": "profiles/anthropic/opus-46.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Claude Opus 4.6"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "anthropic",
+        "claude",
+        "opus",
+        "reasoning",
+        "long-context"
+      ],
+      "sortOrder": 203
+    },
+    {
+      "id": "anthropic:opus-45",
+      "displayName": "Claude Opus 4.5",
+      "providerBaseId": "anthropic",
+      "url": "profiles/anthropic/opus-45.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Claude Opus 4.5"
+      },
+      "profileStatus": "outdated",
+      "tags": [
+        "anthropic",
+        "claude",
+        "opus",
+        "reasoning"
+      ],
+      "sortOrder": 210
+    },
+    {
+      "id": "anthropic:sonnet-45",
+      "displayName": "Claude Sonnet 4.5",
+      "providerBaseId": "anthropic",
+      "url": "profiles/anthropic/sonnet-45.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Claude Sonnet 4.5"
+      },
+      "profileStatus": "outdated",
+      "tags": [
+        "anthropic",
+        "claude",
+        "sonnet",
+        "reasoning",
+        "long-context"
+      ],
+      "sortOrder": 211
+    },
+    {
+      "id": "anthropic:haiku-45",
+      "displayName": "Claude Haiku 4.5",
+      "providerBaseId": "anthropic",
+      "url": "profiles/anthropic/haiku-45.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Claude Haiku 4.5"
+      },
+      "profileStatus": "outdated",
+      "tags": [
+        "anthropic",
+        "claude",
+        "haiku",
+        "reasoning"
+      ],
+      "sortOrder": 212
+    },
+    {
+      "id": "anthropic:opus-41",
+      "displayName": "Claude Opus 4.1",
+      "providerBaseId": "anthropic",
+      "url": "profiles/anthropic/opus-41.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Claude Opus 4.1"
+      },
+      "profileStatus": "outdated",
+      "tags": [
+        "anthropic",
+        "claude",
+        "opus",
+        "reasoning"
+      ],
+      "sortOrder": 213
+    },
+    {
+      "id": "anthropic:sonnet-4",
+      "displayName": "Claude Sonnet 4",
+      "providerBaseId": "anthropic",
+      "url": "profiles/anthropic/sonnet-4.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Claude Sonnet 4"
+      },
+      "profileStatus": "outdated",
+      "tags": [
+        "anthropic",
+        "claude",
+        "sonnet",
+        "reasoning",
+        "long-context"
+      ],
+      "sortOrder": 214
+    },
+    {
+      "id": "anthropic:opus-4",
+      "displayName": "Claude Opus 4",
+      "providerBaseId": "anthropic",
+      "url": "profiles/anthropic/opus-4.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Claude Opus 4"
+      },
+      "profileStatus": "outdated",
+      "tags": [
+        "anthropic",
+        "claude",
+        "opus",
+        "reasoning"
+      ],
+      "sortOrder": 215
+    },
+    {
+      "id": "google:gemini-35-flash",
+      "displayName": "Gemini 3.5 Flash",
+      "providerBaseId": "google",
+      "url": "profiles/google/gemini-35-flash.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemini 3.5 Flash"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "google",
+        "gemini",
+        "reasoning",
+        "vision"
+      ],
+      "sortOrder": 300
+    },
+    {
+      "id": "google:gemini-31-pro",
+      "displayName": "Gemini 3.1 Pro",
+      "providerBaseId": "google",
+      "url": "profiles/google/gemini-31-pro.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemini 3.1 Pro"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "google",
+        "gemini",
+        "reasoning",
+        "vision"
+      ],
+      "sortOrder": 301
+    },
+    {
+      "id": "google:gemini-31-flash-lite",
+      "displayName": "Gemini 3.1 Flash-Lite",
+      "providerBaseId": "google",
+      "url": "profiles/google/gemini-31-flash-lite.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemini 3.1 Flash-Lite"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "google",
+        "gemini",
+        "reasoning",
+        "vision"
+      ],
+      "sortOrder": 302
+    },
+    {
+      "id": "google:gemini-3-flash",
+      "displayName": "Gemini 3 Flash",
+      "providerBaseId": "google",
+      "url": "profiles/google/gemini-3-flash.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemini 3 Flash"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "google",
+        "gemini",
+        "reasoning",
+        "vision"
+      ],
+      "sortOrder": 303
+    },
+    {
+      "id": "google:gemini-25-pro",
+      "displayName": "Gemini 2.5 Pro",
+      "providerBaseId": "google",
+      "url": "profiles/google/gemini-25-pro.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemini 2.5 Pro"
+      },
+      "profileStatus": "outdated",
+      "tags": [
+        "google",
+        "gemini",
+        "reasoning",
+        "vision"
+      ],
+      "sortOrder": 310
+    },
+    {
+      "id": "google:gemini-25-flash",
+      "displayName": "Gemini 2.5 Flash",
+      "providerBaseId": "google",
+      "url": "profiles/google/gemini-25-flash.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemini 2.5 Flash"
+      },
+      "profileStatus": "outdated",
+      "tags": [
+        "google",
+        "gemini",
+        "reasoning",
+        "vision"
+      ],
+      "sortOrder": 311
+    },
+    {
+      "id": "google:gemini-25-flash-lite",
+      "displayName": "Gemini 2.5 Flash-Lite",
+      "providerBaseId": "google",
+      "url": "profiles/google/gemini-25-flash-lite.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemini 2.5 Flash-Lite"
+      },
+      "profileStatus": "outdated",
+      "tags": [
+        "google",
+        "gemini",
+        "reasoning",
+        "vision"
+      ],
+      "sortOrder": 312
+    },
+    {
+      "id": "google:gemma-4-31b",
+      "displayName": "Gemma 4 31B",
+      "providerBaseId": "google",
+      "url": "profiles/google/gemma-4-31b.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemma 4 31B"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "google",
+        "gemma",
+        "reasoning",
+        "vision"
+      ],
+      "sortOrder": 320
+    },
+    {
+      "id": "google:gemma-4-26b",
+      "displayName": "Gemma 4 26B",
+      "providerBaseId": "google",
+      "url": "profiles/google/gemma-4-26b.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemma 4 26B"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "google",
+        "gemma",
+        "reasoning",
+        "vision"
+      ],
+      "sortOrder": 321
+    },
+    {
+      "id": "deepseek:v4-pro-thinking",
+      "displayName": "DeepSeek V4 Pro (Thinking)",
+      "providerBaseId": "deepseek",
+      "url": "profiles/deepseek/v4-pro-thinking.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "DeepSeek V4 Pro (Thinking)"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "deepseek",
+        "v4",
+        "reasoning"
+      ],
+      "sortOrder": 400
+    },
+    {
+      "id": "deepseek:v4-pro",
+      "displayName": "DeepSeek V4 Pro",
+      "providerBaseId": "deepseek",
+      "url": "profiles/deepseek/v4-pro.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "DeepSeek V4 Pro"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "deepseek",
+        "v4"
+      ],
+      "sortOrder": 401
+    },
+    {
+      "id": "deepseek:v4-flash-thinking",
+      "displayName": "DeepSeek V4 Flash (Thinking)",
+      "providerBaseId": "deepseek",
+      "url": "profiles/deepseek/v4-flash-thinking.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "DeepSeek V4 Flash (Thinking)"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "deepseek",
+        "v4",
+        "reasoning"
+      ],
+      "sortOrder": 402
+    },
+    {
+      "id": "deepseek:v4-flash",
+      "displayName": "DeepSeek V4 Flash",
+      "providerBaseId": "deepseek",
+      "url": "profiles/deepseek/v4-flash.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "DeepSeek V4 Flash"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "deepseek",
+        "v4"
+      ],
+      "sortOrder": 403
+    },
+    {
+      "id": "openrouter:openai-compatible",
+      "displayName": "OpenRouter",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/openai-compatible.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "OpenRouter"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "aggregator",
+        "openai-compatible"
+      ],
+      "sortOrder": 500
+    },
+    {
+      "id": "openrouter:gpt-55",
+      "displayName": "GPT-5.5",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/gpt-55.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GPT-5.5"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "gpt"
+      ],
+      "sortOrder": 510
+    },
+    {
+      "id": "openrouter:gpt-54",
+      "displayName": "GPT-5.4",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/gpt-54.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GPT-5.4"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "gpt"
+      ],
+      "sortOrder": 511
+    },
+    {
+      "id": "openrouter:gpt-54-mini",
+      "displayName": "GPT-5.4 Mini",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/gpt-54-mini.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GPT-5.4 Mini"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "gpt"
+      ],
+      "sortOrder": 512
+    },
+    {
+      "id": "openrouter:gpt-54-nano",
+      "displayName": "GPT-5.4 Nano",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/gpt-54-nano.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GPT-5.4 Nano"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "gpt"
+      ],
+      "sortOrder": 513
+    },
+    {
+      "id": "openrouter:gpt-52",
+      "displayName": "GPT-5.2",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/gpt-52.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GPT-5.2"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "gpt"
+      ],
+      "sortOrder": 514
+    },
+    {
+      "id": "openrouter:gpt-51",
+      "displayName": "GPT-5.1",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/gpt-51.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GPT-5.1"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "gpt"
+      ],
+      "sortOrder": 515
+    },
+    {
+      "id": "openrouter:gpt-5",
+      "displayName": "GPT-5",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/gpt-5.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GPT-5"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "gpt"
+      ],
+      "sortOrder": 516
+    },
+    {
+      "id": "openrouter:gpt-5-mini",
+      "displayName": "GPT-5 Mini",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/gpt-5-mini.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GPT-5 Mini"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "gpt"
+      ],
+      "sortOrder": 517
+    },
+    {
+      "id": "openrouter:gpt-5-nano",
+      "displayName": "GPT-5 Nano",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/gpt-5-nano.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GPT-5 Nano"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "gpt"
+      ],
+      "sortOrder": 518
+    },
+    {
+      "id": "openrouter:claude-opus-48",
+      "displayName": "Claude Opus 4.8",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/claude-opus-48.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Claude Opus 4.8"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "claude"
+      ],
+      "sortOrder": 519
+    },
+    {
+      "id": "openrouter:claude-opus-47",
+      "displayName": "Claude Opus 4.7",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/claude-opus-47.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Claude Opus 4.7"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "claude"
+      ],
+      "sortOrder": 520
+    },
+    {
+      "id": "openrouter:claude-opus-46",
+      "displayName": "Claude Opus 4.6",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/claude-opus-46.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Claude Opus 4.6"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "claude"
+      ],
+      "sortOrder": 521
+    },
+    {
+      "id": "openrouter:claude-sonnet-46",
+      "displayName": "Claude Sonnet 4.6",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/claude-sonnet-46.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Claude Sonnet 4.6"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "claude"
+      ],
+      "sortOrder": 522
+    },
+    {
+      "id": "openrouter:gemini-35-flash",
+      "displayName": "Gemini 3.5 Flash",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/gemini-35-flash.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemini 3.5 Flash"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "gemini"
+      ],
+      "sortOrder": 523
+    },
+    {
+      "id": "openrouter:gemini-31-pro",
+      "displayName": "Gemini 3.1 Pro",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/gemini-31-pro.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemini 3.1 Pro"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "gemini"
+      ],
+      "sortOrder": 524
+    },
+    {
+      "id": "openrouter:gemini-31-flash-lite",
+      "displayName": "Gemini 3.1 Flash-Lite",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/gemini-31-flash-lite.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemini 3.1 Flash-Lite"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "gemini"
+      ],
+      "sortOrder": 525
+    },
+    {
+      "id": "openrouter:gemini-3-flash",
+      "displayName": "Gemini 3 Flash",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/gemini-3-flash.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemini 3 Flash"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "gemini"
+      ],
+      "sortOrder": 526
+    },
+    {
+      "id": "openrouter:gemma-4-31b",
+      "displayName": "Gemma 4 31B",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/gemma-4-31b.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemma 4 31B"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "gemini"
+      ],
+      "sortOrder": 527
+    },
+    {
+      "id": "openrouter:gemma-4-26b",
+      "displayName": "Gemma 4 26B",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/gemma-4-26b.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemma 4 26B"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "gemini"
+      ],
+      "sortOrder": 528
+    },
+    {
+      "id": "openrouter:deepseek-v4-pro",
+      "displayName": "DeepSeek V4 Pro",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/deepseek-v4-pro.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "DeepSeek V4 Pro"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "deepseek"
+      ],
+      "sortOrder": 529
+    },
+    {
+      "id": "openrouter:deepseek-v4-flash",
+      "displayName": "DeepSeek V4 Flash",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/deepseek-v4-flash.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "DeepSeek V4 Flash"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "deepseek"
+      ],
+      "sortOrder": 530
+    },
+    {
+      "id": "openrouter:glm-51",
+      "displayName": "GLM 5.1",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/glm-51.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GLM 5.1"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "glm"
+      ],
+      "sortOrder": 531
+    },
+    {
+      "id": "openrouter:kimi-k26",
+      "displayName": "Kimi K2.6",
+      "providerBaseId": "openrouter",
+      "url": "profiles/openrouter/kimi-k26.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Kimi K2.6"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "openrouter",
+        "kimi"
+      ],
+      "sortOrder": 532
+    },
+    {
+      "id": "nanogpt:openai-compatible",
+      "displayName": "NanoGPT",
+      "providerBaseId": "nanogpt",
+      "url": "profiles/nanogpt/openai-compatible.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "NanoGPT"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "nanogpt",
+        "aggregator",
+        "openai-compatible"
+      ],
+      "sortOrder": 520
+    },
+    {
+      "id": "nanogpt:glm-51",
+      "displayName": "GLM 5.1",
+      "providerBaseId": "nanogpt",
+      "url": "profiles/nanogpt/glm-51.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GLM 5.1"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "nanogpt",
+        "glm"
+      ],
+      "sortOrder": 525
+    },
+    {
+      "id": "nanogpt:kimi-k26",
+      "displayName": "Kimi K2.6",
+      "providerBaseId": "nanogpt",
+      "url": "profiles/nanogpt/kimi-k26.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Kimi K2.6"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "nanogpt",
+        "kimi"
+      ],
+      "sortOrder": 526
+    },
+    {
+      "id": "nanogpt:gemma-4-31b",
+      "displayName": "Gemma 4 31B",
+      "providerBaseId": "nanogpt",
+      "url": "profiles/nanogpt/gemma-4-31b.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemma 4 31B"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "nanogpt",
+        "gemma"
+      ],
+      "sortOrder": 527
+    },
+    {
+      "id": "nanogpt:gpt-oss-120b",
+      "displayName": "gpt-oss 120B",
+      "providerBaseId": "nanogpt",
+      "url": "profiles/nanogpt/gpt-oss-120b.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "gpt-oss 120B"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "nanogpt",
+        "gpt-oss"
+      ],
+      "sortOrder": 528
+    },
+    {
+      "id": "nanogpt:deepseek-v4-pro",
+      "displayName": "DeepSeek V4 Pro",
+      "providerBaseId": "nanogpt",
+      "url": "profiles/nanogpt/deepseek-v4-pro.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "DeepSeek V4 Pro"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "nanogpt",
+        "deepseek"
+      ],
+      "sortOrder": 529
+    },
+    {
+      "id": "nanogpt:deepseek-v4-flash",
+      "displayName": "DeepSeek V4 Flash",
+      "providerBaseId": "nanogpt",
+      "url": "profiles/nanogpt/deepseek-v4-flash.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "DeepSeek V4 Flash"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "nanogpt",
+        "deepseek"
+      ],
+      "sortOrder": 530
+    },
+    {
+      "id": "deepinfra:openai-compatible",
+      "displayName": "DeepInfra",
+      "providerBaseId": "deepinfra",
+      "url": "profiles/deepinfra/openai-compatible.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "DeepInfra"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "deepinfra",
+        "aggregator",
+        "openai-compatible"
+      ],
+      "sortOrder": 530
+    },
+    {
+      "id": "vercel:openai-compatible",
+      "displayName": "Vercel AI Gateway",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/openai-compatible.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Vercel AI Gateway"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "aggregator",
+        "openai-compatible"
+      ],
+      "sortOrder": 540
+    },
+    {
+      "id": "vercel:gpt-55",
+      "displayName": "GPT-5.5",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/gpt-55.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GPT-5.5"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "gpt"
+      ],
+      "sortOrder": 550
+    },
+    {
+      "id": "vercel:gpt-54",
+      "displayName": "GPT-5.4",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/gpt-54.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GPT-5.4"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "gpt"
+      ],
+      "sortOrder": 551
+    },
+    {
+      "id": "vercel:gpt-54-mini",
+      "displayName": "GPT-5.4 Mini",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/gpt-54-mini.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GPT-5.4 Mini"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "gpt"
+      ],
+      "sortOrder": 552
+    },
+    {
+      "id": "vercel:gpt-54-nano",
+      "displayName": "GPT-5.4 Nano",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/gpt-54-nano.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GPT-5.4 Nano"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "gpt"
+      ],
+      "sortOrder": 553
+    },
+    {
+      "id": "vercel:gpt-52",
+      "displayName": "GPT-5.2",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/gpt-52.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GPT-5.2"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "gpt"
+      ],
+      "sortOrder": 554
+    },
+    {
+      "id": "vercel:gpt-5",
+      "displayName": "GPT-5",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/gpt-5.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GPT-5"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "gpt"
+      ],
+      "sortOrder": 555
+    },
+    {
+      "id": "vercel:gpt-5-mini",
+      "displayName": "GPT-5 Mini",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/gpt-5-mini.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GPT-5 Mini"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "gpt"
+      ],
+      "sortOrder": 556
+    },
+    {
+      "id": "vercel:gpt-5-nano",
+      "displayName": "GPT-5 Nano",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/gpt-5-nano.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GPT-5 Nano"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "gpt"
+      ],
+      "sortOrder": 557
+    },
+    {
+      "id": "vercel:claude-opus-48",
+      "displayName": "Claude Opus 4.8",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/claude-opus-48.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Claude Opus 4.8"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "claude"
+      ],
+      "sortOrder": 558
+    },
+    {
+      "id": "vercel:claude-opus-47",
+      "displayName": "Claude Opus 4.7",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/claude-opus-47.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Claude Opus 4.7"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "claude"
+      ],
+      "sortOrder": 559
+    },
+    {
+      "id": "vercel:claude-opus-46",
+      "displayName": "Claude Opus 4.6",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/claude-opus-46.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Claude Opus 4.6"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "claude"
+      ],
+      "sortOrder": 560
+    },
+    {
+      "id": "vercel:claude-sonnet-46",
+      "displayName": "Claude Sonnet 4.6",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/claude-sonnet-46.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Claude Sonnet 4.6"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "claude"
+      ],
+      "sortOrder": 561
+    },
+    {
+      "id": "vercel:gemini-35-flash",
+      "displayName": "Gemini 3.5 Flash",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/gemini-35-flash.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemini 3.5 Flash"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "gemini"
+      ],
+      "sortOrder": 562
+    },
+    {
+      "id": "vercel:gemini-31-pro",
+      "displayName": "Gemini 3.1 Pro",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/gemini-31-pro.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemini 3.1 Pro"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "gemini"
+      ],
+      "sortOrder": 563
+    },
+    {
+      "id": "vercel:gemini-31-flash-lite",
+      "displayName": "Gemini 3.1 Flash-Lite",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/gemini-31-flash-lite.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemini 3.1 Flash-Lite"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "gemini"
+      ],
+      "sortOrder": 564
+    },
+    {
+      "id": "vercel:gemini-3-flash",
+      "displayName": "Gemini 3 Flash",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/gemini-3-flash.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemini 3 Flash"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "gemini"
+      ],
+      "sortOrder": 565
+    },
+    {
+      "id": "vercel:gemma-4-31b",
+      "displayName": "Gemma 4 31B",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/gemma-4-31b.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemma 4 31B"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "gemini"
+      ],
+      "sortOrder": 566
+    },
+    {
+      "id": "vercel:gemma-4-26b",
+      "displayName": "Gemma 4 26B",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/gemma-4-26b.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemma 4 26B"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "gemini"
+      ],
+      "sortOrder": 567
+    },
+    {
+      "id": "vercel:deepseek-v4-pro",
+      "displayName": "DeepSeek V4 Pro",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/deepseek-v4-pro.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "DeepSeek V4 Pro"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "deepseek"
+      ],
+      "sortOrder": 568
+    },
+    {
+      "id": "vercel:deepseek-v4-flash",
+      "displayName": "DeepSeek V4 Flash",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/deepseek-v4-flash.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "DeepSeek V4 Flash"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "deepseek"
+      ],
+      "sortOrder": 569
+    },
+    {
+      "id": "vercel:glm-51",
+      "displayName": "GLM 5.1",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/glm-51.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GLM 5.1"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "glm"
+      ],
+      "sortOrder": 570
+    },
+    {
+      "id": "vercel:kimi-k26",
+      "displayName": "Kimi K2.6",
+      "providerBaseId": "vercel",
+      "url": "profiles/vercel/kimi-k26.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Kimi K2.6"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "vercel",
+        "kimi"
+      ],
+      "sortOrder": 571
+    },
+    {
+      "id": "ollama:openai-compatible-local",
+      "displayName": "Ollama (Self-hosted)",
+      "providerBaseId": "ollama",
+      "url": "profiles/ollama/openai-compatible-local.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Ollama (로컬)"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "ollama",
+        "local",
+        "self-hosted",
+        "openai-compatible"
+      ],
+      "sortOrder": 600
+    },
+    {
+      "id": "ollama-cloud:standard",
+      "displayName": "Ollama Cloud",
+      "providerBaseId": "ollama-cloud",
+      "url": "profiles/ollama-cloud/standard.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Ollama Cloud"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "ollama",
+        "cloud"
+      ],
+      "sortOrder": 610
+    },
+    {
+      "id": "ollama-cloud:glm-51",
+      "displayName": "GLM 5.1",
+      "providerBaseId": "ollama-cloud",
+      "url": "profiles/ollama-cloud/glm-51.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "GLM 5.1"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "ollama",
+        "cloud",
+        "glm"
+      ],
+      "sortOrder": 620
+    },
+    {
+      "id": "ollama-cloud:kimi-k26",
+      "displayName": "Kimi K2.6",
+      "providerBaseId": "ollama-cloud",
+      "url": "profiles/ollama-cloud/kimi-k26.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Kimi K2.6"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "ollama",
+        "cloud",
+        "kimi"
+      ],
+      "sortOrder": 621
+    },
+    {
+      "id": "ollama-cloud:gemma-4-31b",
+      "displayName": "Gemma 4 31B",
+      "providerBaseId": "ollama-cloud",
+      "url": "profiles/ollama-cloud/gemma-4-31b.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Gemma 4 31B"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "ollama",
+        "cloud",
+        "gemma"
+      ],
+      "sortOrder": 622
+    },
+    {
+      "id": "ollama-cloud:gpt-oss-120b",
+      "displayName": "gpt-oss 120B",
+      "providerBaseId": "ollama-cloud",
+      "url": "profiles/ollama-cloud/gpt-oss-120b.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "gpt-oss 120B"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "ollama",
+        "cloud",
+        "gpt-oss"
+      ],
+      "sortOrder": 623
+    },
+    {
+      "id": "ollama-cloud:deepseek-v4-pro",
+      "displayName": "DeepSeek V4 Pro",
+      "providerBaseId": "ollama-cloud",
+      "url": "profiles/ollama-cloud/deepseek-v4-pro.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "DeepSeek V4 Pro"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "ollama",
+        "cloud",
+        "deepseek"
+      ],
+      "sortOrder": 624
+    },
+    {
+      "id": "ollama-cloud:deepseek-v4-flash",
+      "displayName": "DeepSeek V4 Flash",
+      "providerBaseId": "ollama-cloud",
+      "url": "profiles/ollama-cloud/deepseek-v4-flash.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "DeepSeek V4 Flash"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "ollama",
+        "cloud",
+        "deepseek"
+      ],
+      "sortOrder": 625
+    },
+    {
+      "id": "bedrock:openai-compatible",
+      "displayName": "AWS Bedrock (OpenAI-compatible)",
+      "providerBaseId": "bedrock",
+      "url": "profiles/bedrock/openai-compatible.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "AWS Bedrock (OpenAI 호환)"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "aws",
+        "bedrock",
+        "openai-compatible"
+      ],
+      "sortOrder": 800
+    },
+    {
+      "id": "vertex-openai:standard",
+      "displayName": "Vertex AI (OpenAI-compatible)",
+      "providerBaseId": "vertex-openai",
+      "url": "profiles/vertex-openai/standard.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "Vertex AI (OpenAI 호환)"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "google",
+        "vertex",
+        "openai-compatible"
+      ],
+      "sortOrder": 820
+    },
+    {
+      "id": "openai-compatible:custom",
+      "displayName": "OpenAI Compatible (Custom)",
+      "providerBaseId": "openai-compatible",
+      "url": "profiles/openai-compatible/custom.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "OpenAI 호환 (커스텀)"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "custom",
+        "openai-compatible"
+      ],
+      "sortOrder": 7000
+    },
+    {
+      "id": "openai-compatible:custom-noauth",
+      "displayName": "OpenAI Compatible (Custom, no auth)",
+      "providerBaseId": "openai-compatible",
+      "url": "profiles/openai-compatible/custom-noauth.json",
+      "version": 1,
+      "displayNameI18n": {
+        "ko": "OpenAI 호환 (커스텀, 인증 없음)"
+      },
+      "profileStatus": "current",
+      "tags": [
+        "custom",
+        "openai-compatible",
+        "noauth"
+      ],
+      "sortOrder": 7010
+    }
+  ]
+}

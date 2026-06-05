@@ -1,6 +1,6 @@
 import { Ollama } from 'ollama/dist/browser.mjs';
 import { language } from "../../../lang";
-import { globalFetch } from "../../globalApi.svelte";
+import { globalFetch, fetchNative } from "../../globalApi.svelte";
 import { getModelInfo, LLMFlags, LLMFormat, type LLMModel } from "../../model/modellist";
 import { risuChatParser, risuEscape, risuUnescape } from "../../parser/parser.svelte";
 import { pluginProcess, pluginV2 } from "../../plugins/plugins.svelte";
@@ -20,6 +20,16 @@ import { requestClaude } from './anthropic';
 import { requestGoogleCloudVertex } from './google';
 import { requestOpenAI, requestOpenAILegacyInstruct, requestOpenAIResponseAPI } from "./openAI/requests";
 import { applyParameters, type ModelModeExtended } from './shared';
+import {
+    sendChatRequest, streamChatRequest,
+    sendAnthropicChatRequest, streamAnthropicChatRequest,
+    sendGoogleChatRequest, streamGoogleChatRequest,
+    type AdapterChatMessage, type AdapterChatOptions, type AdapterChatResponse,
+    type AdapterChatStreamDelta, type AdapterCredential,
+} from "src/ts/preset/adapter";
+import type { AdapterKind, ModelPreset } from "src/ts/preset/types";
+import { resolveChatModelBinding, buildModelPresetCredential } from "./modelPresetBinding";
+import { isLocalNetworkUrl } from "src/ts/network/localNetwork";
 
 export type ToolCall = {
     name: string;
@@ -206,7 +216,10 @@ export async function requestChatData(arg:requestDataArgument, model:ModelModeEx
             if(da.type !== 'fail' || da.noRetry){
                 return {
                     ...da,
-                    model: fallBackModels[fallbackIndex]
+                    // fallBackModels[fallbackIndex] is '' for the primary (non-fallback)
+                    // attempt; keep the dispatcher's own model label (e.g. a ModelPreset
+                    // name) instead of clobbering it with the empty sentinel.
+                    model: fallBackModels[fallbackIndex] || da.model
                 }
             }
     
@@ -325,7 +338,27 @@ export async function requestChatDataMain(arg:requestDataArgument, model:ModelMo
     const db = getDatabase()
     const targ:RequestDataArgumentExtended = arg
 
-    
+    // P4 dual-regime dispatch (plan v6 §7). Resolve the per-chat ModelPreset
+    // binding BEFORE any classic model selection so a binding chat never touches
+    // db.aiModel / db.seperateModels. Skipped when a staticModel (fallback retry)
+    // is forced — fallbacks are classic model ids.
+    if(!arg.staticModel){
+        const binding = resolveChatModelBinding(getCurrentChat(), model)
+        if(binding.kind === 'modelPreset'){
+            return requestModelPreset(targ, binding.preset, abortSignal)
+        }
+        if(binding.kind === 'block'){
+            return {
+                type: 'fail',
+                noRetry: true,
+                result: binding.reason === 'main-unset'
+                    ? language.modelPresetBindingMainUnset
+                    : language.modelPresetBindingSubUnset,
+            }
+        }
+        // binding.kind === 'classic' → fall through to the classic path below.
+    }
+
     targ.aiModel = arg.staticModel ? arg.staticModel : (model === 'model' ? db.aiModel : db.subModel)
     targ.modelInfo = getModelInfo(targ.aiModel)
     if(db.seperateModelsForAxModels && !arg.staticModel){
@@ -423,6 +456,139 @@ export async function requestChatDataMain(arg:requestDataArgument, model:ModelMo
 }
 
 
+// P4 text bridge (plan v6 §7). Converts the classic OpenAIChat[] prompt to the
+// adapter's AdapterChatMessage[], routes by adapterKind, and normalizes the
+// AdapterChatResponse back into a requestDataResponse. The send/stream/parse
+// adapter layer (preset/adapter) is reused as-is.
+//
+// Scope: TEXT ONLY. Multimodal / tools / thoughts are dropped here because
+// AdapterChatMessage does not model them yet (deferred to a later sprint).
+function toAdapterMessage(m: OpenAIChat): AdapterChatMessage {
+    const role: AdapterChatMessage['role'] = m.role === 'function' ? 'tool' : m.role
+    const msg: AdapterChatMessage = { role, content: m.content ?? '' }
+    if (m.name) msg.name = m.name
+    return msg
+}
+
+function sendModelPreset(
+    kind: AdapterKind,
+    preset: ModelPreset,
+    options: AdapterChatOptions,
+    credential: AdapterCredential | undefined,
+): Promise<AdapterChatResponse> {
+    switch (kind) {
+        case 'openai-compatible': return sendChatRequest(preset, options, credential)
+        case 'anthropic-messages': return sendAnthropicChatRequest(preset, options, credential)
+        case 'google-gemini': return sendGoogleChatRequest(preset, options, credential)
+    }
+}
+
+function streamModelPreset(
+    kind: AdapterKind,
+    preset: ModelPreset,
+    options: AdapterChatOptions,
+    credential: AdapterCredential | undefined,
+): AsyncGenerator<AdapterChatStreamDelta, void, void> {
+    switch (kind) {
+        case 'openai-compatible': return streamChatRequest(preset, options, credential)
+        case 'anthropic-messages': return streamAnthropicChatRequest(preset, options, credential)
+        case 'google-gemini': return streamGoogleChatRequest(preset, options, credential)
+    }
+}
+
+// Route adapter requests through the proxy-aware fetch (fetchNative) instead of
+// globalThis.fetch: NodeOnly runs in the browser, so a direct cross-origin fetch
+// to a provider that doesn't send CORS headers fails ("Failed to fetch").
+// fetchNative tries a direct fetch first and falls back to the node /proxy2,
+// matching the classic request path.
+// chatId (= the message generationId) is threaded into fetchNative so the
+// request is recorded in the fetch log against the message — otherwise the
+// per-message "view log" shows "deleted log" for binding requests.
+function makeProxiedFetch(chatId?: string): typeof fetch {
+    return ((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString()
+        return fetchNative(url, {
+            method: (init?.method as 'POST' | 'GET' | 'PUT' | 'DELETE') ?? 'POST',
+            headers: (init?.headers as Record<string, string>) ?? {},
+            body: init?.body as string,
+            signal: init?.signal ?? undefined,
+            chatId,
+            // Local providers (e.g. self-hosted Ollama) must route through the node
+            // proxy rather than a browser-direct fetch to a private address.
+            networkRoute: isLocalNetworkUrl(url) ? 'local_network' : 'auto',
+            // Honor the same request-timeout the classic path uses.
+            requestTimeoutMs: (getDatabase().localNetworkTimeoutSec ?? 600) * 1000,
+        })
+    }) as typeof fetch
+}
+
+// Pull out adapter-error detail for logging without leaking the credential.
+function describeModelPresetError(err: unknown): Record<string, unknown> {
+    if (err && typeof err === 'object') {
+        const e = err as Record<string, unknown>
+        return {
+            name: (e.name as string) ?? undefined,
+            kind: e.kind,
+            status: e.status,
+            retryable: e.retryable,
+            fallbackEligible: e.fallbackEligible,
+            message: e.message ?? String(err),
+            cause: e.cause instanceof Error ? e.cause.message : e.cause,
+        }
+    }
+    return { message: String(err) }
+}
+
+// Per-preset streaming resolution. Independent of the global db.useStreaming:
+// the preset's own on/off decides (default off). Forced off when the profile
+// does not declare the 'streaming' capability, or when the caller opted out
+// (arg.useStreaming === false, e.g. aux/summarization requests).
+function resolvePresetStreaming(preset: ModelPreset, arg: RequestDataArgumentExtended): boolean {
+    if (arg.forceStreaming) return true
+    const caps = preset.profileSnapshot.capabilities
+    const supportsStreaming = !caps || caps.includes('streaming')
+    if (!supportsStreaming) return false
+    return !!preset.useStreaming && (arg.useStreaming ?? true)
+}
+
+async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelPreset, abortSignal:AbortSignal=null):Promise<requestDataResponse> {
+    const messages = arg.formated.map(toAdapterMessage)
+    const credential = buildModelPresetCredential(preset)
+    const kind = preset.profileSnapshot.adapterKind
+    const useStreaming = resolvePresetStreaming(preset, arg)
+    const options: AdapterChatOptions = { messages, abortSignal: abortSignal ?? undefined, fetchImpl: makeProxiedFetch(arg.chatId) }
+
+    try {
+        if(useStreaming){
+            const gen = streamModelPreset(kind, preset, options, credential)
+            const stream = new ReadableStream<StreamResponseChunk>({
+                async start(controller){
+                    let fullText = ''
+                    try {
+                        for await (const delta of gen){
+                            fullText += delta.textDelta
+                            controller.enqueue({ "0": fullText })
+                        }
+                        controller.close()
+                    } catch (err) {
+                        console.error('[ModelPreset] stream error', describeModelPresetError(err))
+                        controller.error(err)
+                    }
+                }
+            })
+            return { type: 'streaming', result: stream, model: preset.name }
+        }
+        const response = await sendModelPreset(kind, preset, options, credential)
+        return { type: 'success', result: response.text, model: preset.name }
+    } catch (err) {
+        console.error('[ModelPreset] request failed', describeModelPresetError(err))
+        return {
+            type: 'fail',
+            result: err instanceof Error ? err.message : String(err),
+            model: preset.name,
+        }
+    }
+}
 
 
 async function requestNovelAI(arg:RequestDataArgumentExtended):Promise<requestDataResponse>{

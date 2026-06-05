@@ -2,7 +2,9 @@
     import { language } from "src/lang";
     import SettingPage from "src/lib/UI/GUI/SettingPage.svelte";
     import SettingTabs from "src/lib/UI/GUI/SettingTabs.svelte";
+    import PresetHeader from "src/lib/UI/GUI/PresetHeader.svelte";
     import SettingRenderer from "../SettingRenderer.svelte";
+    import { DBState, openThemePresetList } from "src/ts/stores.svelte";
     import {
         displayOtherSettingsItems,
         displaySizeSettingsItems,
@@ -13,6 +15,11 @@
 </script>
 
 <SettingPage title={language.display}>
+<PresetHeader
+    label={language.currentThemePreset}
+    activeName={DBState.db.themePresets?.[DBState.db.themePresetsId]?.name ?? 'Default'}
+    onManage={() => openThemePresetList.set(true)}
+/>
 <SettingTabs
     tabs={[
         { label: language.theme, value: 0 },

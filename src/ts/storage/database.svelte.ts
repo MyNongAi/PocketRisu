@@ -15,6 +15,8 @@ import { type HypaV3Settings, type HypaV3Preset, createHypaV3Preset } from '../p
 import { normalizeTranslatorPresetState, type TranslatorPreset } from '../translator/presets'
 import { safeStructuredClone } from '../polyfill';
 import { v4 as uuidv4 } from 'uuid';
+import { applyModelPresetDefaults } from '../preset/dbDefaults';
+import type { ApiKeyPoolEntry, ModelBindingFields, ModelBindingSet, ModelPreset, ModelPresetMigrationSummary, RegistryCache } from '../preset/types';
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
 export let appVer = "2026.2.291" //<APP_VERSION_POINT>
@@ -697,6 +699,7 @@ export function setDatabase(data:Database){
     if (typeof data.localNetworkTimeoutSec !== 'number' || Number.isNaN(data.localNetworkTimeoutSec)) data.localNetworkTimeoutSec = 600
     data.pluginCustomStorage ??= {}
     data.longPressToPopupEditor ??= false
+    applyModelPresetDefaults(data)
     changeLanguage(data.language)
     setDatabaseLite(data)
 }
@@ -1286,6 +1289,24 @@ export interface Database{
         params: string
         flags: LLMFlags[]
     }[]
+    modelPresets: ModelPreset[]
+    // P4 dual-regime global default binding (plan v6 §7). Copied into new chats
+    // (seeding); useModelPresetByDefault seeds the new-chat regime toggle.
+    useModelPresetByDefault?: boolean
+    defaultModelBinding?: ModelBindingSet
+    modelPresetMigrationVersion?: number
+    modelPresetMigrationAppliedAt?: number
+    modelPresetMigrationReport?: ModelPresetMigrationSummary
+    apiKeyPool?: Record<string, ApiKeyPoolEntry>
+    modelProfileRegistryCache?: RegistryCache
+    modelProfileRegistryLastFetched?: number
+    // Top-level `updatedAt` of the last fetched remote index.json — the change
+    // gate. Re-download the full file set only when the remote value differs.
+    modelProfileRegistryIndexUpdatedAt?: number
+    // Per-profile id -> last acknowledged `updatedAt`. Drives the catalog
+    // "new/updated models" notice; the user acknowledges by overwriting it
+    // with the current map. See src/ts/preset/registry/notice.ts.
+    modelRegistrySeen?: Record<string, number>
     igpPrompt:string
     useTokenizerCaching:boolean
     showMenuHypaMemoryModal:boolean
@@ -1682,6 +1703,9 @@ export interface botPreset{
     fallbackWhenBlankResponse?: boolean
     verbosity?:number
     dynamicOutput?:DynamicOutput
+    modelBinding?: ModelBindingFields['modelBinding']
+    subModelBinding?: ModelBindingFields['subModelBinding']
+    taskModelBindings?: ModelBindingFields['taskModelBindings']
 }
 
 
@@ -1903,6 +1927,7 @@ export interface Chat{
     modules?:string[]
     id?:string
     bindedPersona?:string
+    bindedBotPreset?:string
     fmIndex?:number
     hypaV3Data?:SerializableHypaV3Data
     folderId?:string
@@ -1911,6 +1936,11 @@ export interface Chat{
     bookmarkNames?: { [chatId: string]: string };
     supaMemory?: boolean
     savedToggleValues?: Record<string, string>
+    // P4 dual-regime: per-chat model preset binding (plan v6 §7). useModelPreset
+    // is the regime toggle; modelBinding (the bundle) persists across toggling so
+    // it is restored on re-enable. Off (or absent) => classic global model path.
+    useModelPreset?: boolean
+    modelBinding?: ModelBindingSet
     /** Runtime-only: true while awaiting hydration from server. Never persisted. */
     _placeholder?: boolean
 }
@@ -2328,8 +2358,8 @@ export function saveCurrentPreset(){
         thinkingType: db.thinkingType ?? 'budget',
         adaptiveThinkingEffort: db.adaptiveThinkingEffort ?? 'high',
         outputImageModal: db.outputImageModal ?? false,
-        seperateModelsForAxModels: db.doNotChangeSeperateModels ? false : db.seperateModelsForAxModels ?? false,
-        seperateModels: db.doNotChangeSeperateModels ? null : safeStructuredClone(db.seperateModels),
+        seperateModelsForAxModels: false,
+        seperateModels: null,
         modelTools: safeStructuredClone(db.modelTools),
         fallbackModels: safeStructuredClone(db.fallbackModels),
         fallbackWhenBlankResponse: db.fallbackWhenBlankResponse ?? false,
@@ -2455,15 +2485,9 @@ export function setPreset(db:Database, newPres: botPreset){
     db.thinkingType = newPres.thinkingType ?? 'budget'
     db.adaptiveThinkingEffort = newPres.adaptiveThinkingEffort ?? 'high'
     db.outputImageModal = newPres.outputImageModal ?? false
-    if(!db.doNotChangeSeperateModels){
-        db.seperateModelsForAxModels = newPres.seperateModelsForAxModels ?? false
-        db.seperateModels = safeStructuredClone(newPres.seperateModels) ?? {
-            memory: '',
-            emotion: '',
-            translate: '',
-            otherAx: ''
-        }
-    }
+    // Model config (separated aux models) is decoupled from prompt presets in v6:
+    // switching a prompt preset no longer overwrites db.seperateModels. The global
+    // db.seperateModels is the single source of truth (preset copies are inert).
     if(!db.doNotChangeFallbackModels){
         db.fallbackModels = safeStructuredClone(newPres.fallbackModels) ?? {
             memory: [],

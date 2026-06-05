@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { DynamicGUI, settingsOpen, sideBarStore, openPresetList, openPersonaList, personaSelectCallback, openHypaV3PresetList, openThemePresetList, MobileGUI, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, popUpEditorStore } from './ts/stores.svelte';
+    import { DynamicGUI, settingsOpen, sideBarStore, openPresetList, openModelPresetList, openModelProfileBrowser, openPersonaList, personaSelectCallback, openHypaV3PresetList, openThemePresetList, MobileGUI, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, popUpEditorStore } from './ts/stores.svelte';
     import Sidebar from './lib/SideBars/Sidebar.svelte';
     import { DBState } from './ts/stores.svelte';
     import ChatScreen from './lib/ChatScreens/ChatScreen.svelte';
@@ -15,6 +15,8 @@
     import { language } from './lang';
     import SavePopupIconComp from './lib/Others/SavePopupIcon.svelte';
     import Botpreset from './lib/Setting/botpreset.svelte';
+    import Modelpreset from './lib/Setting/modelpreset.svelte';
+    import ModelProfileBrowser from './lib/Setting/modelProfileBrowser.svelte';
     import Themepreset from './lib/Setting/themepreset.svelte';
     import ListedPersona from './lib/Setting/listedPersona.svelte';
     import ListedHypaV3Preset from './lib/Setting/listedHypaV3Preset.svelte';
@@ -209,6 +211,12 @@
     {/if}
     {#if $openPresetList}
         <Botpreset close={() => {$openPresetList = false}} />
+    {/if}
+    {#if $openModelPresetList}
+        <Modelpreset close={() => {$openModelPresetList = false}} />
+    {/if}
+    {#if $openModelProfileBrowser}
+        <ModelProfileBrowser close={() => {$openModelProfileBrowser = false}} />
     {/if}
     {#if $openThemePresetList}
         <Themepreset close={() => {$openThemePresetList = false}} />

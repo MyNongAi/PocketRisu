@@ -28,6 +28,11 @@ import CustomBackgroundToggle from 'src/lib/Setting/Pages/Display/CustomBackgrou
 import NullableTextColorToggle from 'src/lib/Setting/Pages/Display/NullableTextColorToggle.svelte';
 import NotificationToggle from 'src/lib/Setting/Pages/Display/NotificationToggle.svelte';
 import CustomizationWarning from 'src/lib/Setting/Pages/Display/CustomizationWarning.svelte';
+import PromptPresetBasicInfo from 'src/lib/Setting/Pages/PromptPreset/PromptPresetBasicInfo.svelte';
+import PromptEditorSection from 'src/lib/Setting/Pages/PromptPreset/PromptEditorSection.svelte';
+import PromptTemplateBlock from 'src/lib/Setting/Pages/PromptPreset/PromptTemplateBlock.svelte';
+import PromptToolsBlock from 'src/lib/Setting/Pages/PromptPreset/PromptToolsBlock.svelte';
+import PromptRegexBlock from 'src/lib/Setting/Pages/PromptPreset/PromptRegexBlock.svelte';
 
 /**
  * Registry of custom components.
@@ -47,6 +52,11 @@ export const customComponents: Record<string, Component<any>> = {
     'NullableTextColorToggle': NullableTextColorToggle,
     'NotificationToggle': NotificationToggle,
     'CustomizationWarning': CustomizationWarning,
+    'PromptPresetBasicInfo': PromptPresetBasicInfo,
+    'PromptEditorSection': PromptEditorSection,
+    'PromptTemplateBlock': PromptTemplateBlock,
+    'PromptToolsBlock': PromptToolsBlock,
+    'PromptRegexBlock': PromptRegexBlock,
     // Add more as we migrate complex settings
 } as const;
 
