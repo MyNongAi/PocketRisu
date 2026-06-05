@@ -716,6 +716,7 @@ export function setDatabase(data:Database){
     if (typeof data.localNetworkTimeoutSec !== 'number' || Number.isNaN(data.localNetworkTimeoutSec)) data.localNetworkTimeoutSec = 600
     data.pluginCustomStorage ??= {}
     data.longPressToPopupEditor ??= false
+    data.fixedChatTextarea ??= true
     applyModelPresetDefaults(data)
     changeLanguage(data.language)
     setDatabaseLite(data)
