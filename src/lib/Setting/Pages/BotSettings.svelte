@@ -10,7 +10,10 @@
     import { customProviderStore } from "src/ts/plugins/plugins.svelte";
     import { tokenizerList } from "src/ts/tokenizer";
     import ModelList from "src/lib/UI/ModelList.svelte";
-    import { PlusIcon, TrashIcon } from "@lucide/svelte";
+    import { PlusIcon, TrashIcon, TriangleAlertIcon, InfoIcon, ArrowRightIcon } from "@lucide/svelte";
+    import ShAlert from "src/lib/UI/GUI/ShAlert.svelte";
+    import ShButton from "src/lib/UI/GUI/ShButton.svelte";
+    import { openSettings, SettingsRoute } from "src/ts/routing";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import NumberInput from "src/lib/UI/GUI/NumberInput.svelte";
     import SliderInput from "src/lib/UI/GUI/SliderInput.svelte";
@@ -100,6 +103,16 @@
     });
 </script>
 <SettingPage title={language.chatBot}>
+<ShAlert variant="info" className="mb-4">
+    {#snippet icon()}<InfoIcon />{/snippet}
+    {language.botSettingsPresetMovedDesc}
+    {#snippet action()}
+        <ShButton variant="outline" size="sm" onclick={() => openSettings(SettingsRoute.PromptPreset)}>
+            {language.promptPresetMenu}
+            <ArrowRightIcon size={14} />
+        </ShButton>
+    {/snippet}
+</ShAlert>
 <SettingTabs tabs={[
     { label: language.model, value: 0 },
     { label: language.parameters, value: 1 },
@@ -107,6 +120,17 @@
 ]} bind:selected={submenu} />
 
 {#if submenu === 0}
+    <ShAlert variant="warning" className="mt-4">
+        {#snippet icon()}<TriangleAlertIcon />{/snippet}
+        {#snippet title()}{language.botSettingsLegacyTitle}{/snippet}
+        {language.botSettingsLegacyDesc}
+        {#snippet action()}
+            <ShButton variant="outline" size="sm" onclick={() => openSettings(SettingsRoute.ModelPreset)}>
+                {language.modelPresetMenu}
+                <ArrowRightIcon size={14} />
+            </ShButton>
+        {/snippet}
+    </ShAlert>
     <span class="text-textcolor mt-4">{language.model} <Help key="model"/></span>
     <ModelList bind:value={DBState.db.aiModel}/>
 
@@ -364,6 +388,16 @@
 {/if}
 
 {#if submenu === 1}
+    <ShAlert variant="warning" className="mt-4 mb-2">
+        {#snippet icon()}<TriangleAlertIcon />{/snippet}
+        {language.botSettingsParamScopeDesc}
+        {#snippet action()}
+            <ShButton variant="outline" size="sm" onclick={() => openSettings(SettingsRoute.ModelPreset)}>
+                {language.modelPresetMenu}
+                <ArrowRightIcon size={14} />
+            </ShButton>
+        {/snippet}
+    </ShAlert>
     <!-- Data-driven basic parameters -->
     <SettingRenderer items={allBasicParameterItems} {modelInfo} {subModelInfo} />
     {#if DBState.db.aiModel === 'textgen_webui' || DBState.db.aiModel === 'mancer' || DBState.db.aiModel.startsWith('local_') || DBState.db.aiModel.startsWith('hf:::')}
