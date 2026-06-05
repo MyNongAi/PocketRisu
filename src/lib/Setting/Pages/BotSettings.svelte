@@ -33,6 +33,7 @@
     import { allBasicParameterItems } from "src/ts/setting/botSettingsParamsData";
     import SeparateParametersSection from "./SeparateParametersSection.svelte";
     import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
+    import CustomModelsSettings from './Model/CustomModelsSettings.svelte'
     
     const openrouterPinnedItems: ModelGridPinnedItem[] = [
         { id: 'risu/free',       displayName: 'Free Auto',       providerName: 'Risu'       },
@@ -102,6 +103,7 @@
 <SettingTabs tabs={[
     { label: language.model, value: 0 },
     { label: language.parameters, value: 1 },
+    { label: language.customModels, value: 2 },
 ]} bind:selected={submenu} />
 
 {#if submenu === 0}
@@ -500,6 +502,10 @@
 
     <!-- Separate Parameters - handled by custom component -->
     <SeparateParametersSection />
+{/if}
+
+{#if submenu === 2}
+    <CustomModelsSettings noAccordion />
 {/if}
 
 

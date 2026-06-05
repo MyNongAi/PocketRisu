@@ -18,7 +18,6 @@ import type { Component } from 'svelte';
 import SeparateParametersSection from 'src/lib/Setting/Pages/SeparateParametersSection.svelte';
 import TranslatorPresetSettings from 'src/lib/Setting/Pages/Language/TranslatorPresetSettings.svelte';
 import BanCharacterSetSettings from 'src/lib/Setting/Pages/Advanced/BanCharacterSetSettings.svelte';
-import CustomModelsSettings from 'src/lib/Setting/Pages/Advanced/CustomModelsSettings.svelte';
 import SettingsExportButtons from 'src/lib/Setting/Pages/Advanced/SettingsExportButtons.svelte';
 import InlayCompressButton from 'src/lib/Setting/Pages/Advanced/InlayCompressButton.svelte';
 import ColorSchemeSelect from 'src/lib/Setting/Pages/Display/ColorSchemeSelect.svelte';
@@ -42,7 +41,6 @@ export const customComponents: Record<string, Component<any>> = {
     'SeparateParametersSection': SeparateParametersSection,
     'TranslatorPresetSettings': TranslatorPresetSettings,
     'BanCharacterSetSettings': BanCharacterSetSettings,
-    'CustomModelsSettings': CustomModelsSettings,
     'SettingsExportButtons': SettingsExportButtons,
     'InlayCompressButton': InlayCompressButton,
     'ColorSchemeSelect': ColorSchemeSelect,

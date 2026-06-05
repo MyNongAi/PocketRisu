@@ -175,7 +175,7 @@
                 format: 0,
                 id: 'xcustom:::' + v4(),
                 key: "",
-                name: "",
+                name: "Custom Model",
                 params: "",
                 flags: [],
             })
