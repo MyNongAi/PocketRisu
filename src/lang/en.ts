@@ -858,6 +858,8 @@ export const languageEnglish = {
     hideAllImages: "Hide All Images",
     popularityLevel: "{} Popularity",
     colorScheme: "Color Scheme",
+    colorSchemeDefault: "Default",
+    showLegacyColorSchemes: "Show legacy palettes",
     rangeStart: "Range Start",
     rangeEnd: "Range End",
     untilChatEnd: "Until Chat End",

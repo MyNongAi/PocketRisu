@@ -938,6 +938,8 @@ export const languageKorean = {
   hideMessagePageCount: "메세지 페이지 숫자 숨기기",
   popularityLevel: "{} 인기도",
   colorScheme: "색상 팔레트",
+  colorSchemeDefault: "기본값",
+  showLegacyColorSchemes: "구버전 팔레트 보이기",
   rangeStart: "범위 시작",
   rangeEnd: "범위 끝",
   untilChatEnd: "채팅 끝까지",
