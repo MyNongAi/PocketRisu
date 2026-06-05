@@ -1,16 +1,17 @@
-// Runtime registry fetch — pulls the latest official model registry from
-// GitHub at runtime and overlays it on the build-time bundled snapshot.
+// Runtime registry fetch — pulls the combined catalog from GitHub and overlays
+// it on the build-time bundled snapshot.
 //
-// Flow (see model-preset-runtime-fetch-task.md):
-//  1. Fetch index.json (tiny manifest) every ModelPreset menu entry.
-//  2. Gate on its top-level `updatedAt`: only when it differs from the last
-//     stored value do we re-download the full base-provider + profile files.
-//  3. Store the rebuilt registry under registries['bundled'] in the DB cache
-//     (preserving registries['custom']), so the official tab + update badge
-//     read remote-first via getOfficialRegistry().
+// Flow:
+//  1. Fetch index.json (tiny: { schemaVersion, hash }) on every menu entry.
+//  2. If its hash differs from the cached entry's contentHash (or the source
+//     URL changed, or forced), download catalog.json — the whole registry in
+//     one file (no per-file fan-out).
+//  3. Verify catalog.hash === index.hash (guards a CDN serving a stale half of
+//     the pair), then atomically swap the cache entry
+//     { source, contentHash, hash maps, baseProviders, profiles }.
 //
-// Bundled stays the fallback: any failure (network, bad schema, empty result)
-// leaves the existing cache/bundle untouched and never throws to the UI.
+// The gate is a content hash — "different ⇒ adopt the published version". Any
+// failure leaves the cache/bundle untouched and never throws to the UI.
 
 import { DBState } from 'src/ts/stores.svelte'
 import { fetchNative } from 'src/ts/globalApi.svelte'
@@ -18,26 +19,28 @@ import type { BaseProviderDefinition, ModelPreset, ModelProfile, RegistryCache }
 import { getProfileUpdateStatus, type ProfileUpdateStatus } from '../customProfiles'
 import { getBundledRegistryId, loadBundledRegistry } from './loader'
 
-const REGISTRY_BASE = 'https://raw.githubusercontent.com/PocketRisu/pocketrisu-model-registry/main/'
-const REGISTRY_INDEX_URL = REGISTRY_BASE + 'index.json'
+const OFFICIAL_BASE = 'https://raw.githubusercontent.com/PocketRisu/pocketrisu-model-registry/main/'
 // Skip a re-fetch if one ran this recently (menu re-entry debounce).
 const REFETCH_GUARD_MS = 5_000
 
 type RegistryEntry = RegistryCache['registries'][string]
 
-interface RegistryIndexItem {
-    id: string
-    url: string
-    version?: number
+interface RegistryIndexFile {
+    schemaVersion: number
+    hash: string
 }
 
-interface RegistryIndex {
+interface CatalogFile {
     schemaVersion: number
-    contentVersion?: number
-    updatedAt?: number
-    baseProviders: RegistryIndexItem[]
-    profiles: RegistryIndexItem[]
+    hash: string
+    baseProviders: Record<string, BaseProviderDefinition>
+    profiles: Record<string, ModelProfile>
+    baseProviderHashes?: Record<string, string>
+    profileHashes?: Record<string, string>
 }
+
+// Monotonic token so a slow sync can't clobber a newer one's result.
+let syncToken = 0
 
 async function fetchJson<T>(url: string): Promise<T> {
     const res = await fetchNative(url, { method: 'GET' })
@@ -45,74 +48,48 @@ async function fetchJson<T>(url: string): Promise<T> {
     return (await res.json()) as T
 }
 
-export interface RemoteFetchResult {
-    ok: boolean
-    entry?: RegistryEntry
-    /** Gate value — the index's top-level updatedAt (or contentVersion). */
-    gate?: number
-    error?: string
+// https-only custom base (dev branch / fork), else official. Trailing slash so
+// `base + 'index.json'` resolves.
+function getRegistryBase(): string {
+    const db = DBState.db
+    const custom = db.useCustomModelRegistry ? db.modelProfileRegistryBaseUrl?.trim() : undefined
+    if (custom && /^https:\/\//i.test(custom)) return custom.endsWith('/') ? custom : custom + '/'
+    return OFFICIAL_BASE
 }
 
-export async function fetchRemoteRegistry(): Promise<RemoteFetchResult> {
-    let index: RegistryIndex
-    try {
-        index = await fetchJson<RegistryIndex>(REGISTRY_INDEX_URL)
-    } catch (e) {
-        return { ok: false, error: `index fetch failed: ${(e as Error).message}` }
-    }
+// Non-empty when the custom registry is enabled but its URL is empty or not
+// https. We fail loudly rather than silently using the official URL.
+function customUrlError(): string | undefined {
+    const db = DBState.db
+    if (!db.useCustomModelRegistry) return undefined
+    const raw = db.modelProfileRegistryBaseUrl?.trim()
+    if (!raw) return 'custom registry URL is empty'
+    if (!/^https:\/\//i.test(raw)) return 'custom registry URL must use https://'
+    return undefined
+}
 
-    if (index.schemaVersion !== 4) {
-        // Never break on an unexpected schema — keep the bundled fallback.
-        return { ok: false, error: `unsupported schemaVersion ${index.schemaVersion}` }
-    }
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+    return !!value && typeof value === 'object' && !Array.isArray(value)
+}
 
-    const baseProviders: Record<string, BaseProviderDefinition> = {}
-    const profiles: Record<string, ModelProfile> = {}
-
-    const baseResults = await Promise.allSettled(
-        (index.baseProviders ?? []).map((it) => fetchJson<BaseProviderDefinition>(REGISTRY_BASE + it.url)),
-    )
-    for (const r of baseResults) {
-        if (r.status === 'fulfilled' && r.value?.id) baseProviders[r.value.id] = r.value
-        else if (r.status === 'rejected') console.warn('[Registry] base provider fetch failed:', r.reason)
+// Reject a catalog that would crash snapshot resolution: every profile must be
+// a plain object whose id matches its key and whose providerBaseId resolves to
+// a base provider present in the catalog. All-or-nothing — a single bad entry
+// rejects the whole download (we never store a half-valid catalog).
+function validateCatalogShape(catalog: CatalogFile): string | undefined {
+    if (catalog.schemaVersion !== 4) return `unsupported catalog schemaVersion ${catalog.schemaVersion}`
+    if (!isPlainObject(catalog.profiles) || !isPlainObject(catalog.baseProviders)) return 'malformed catalog'
+    if (Object.keys(catalog.profiles).length === 0) return 'empty catalog'
+    for (const [id, profile] of Object.entries(catalog.profiles)) {
+        if (!isPlainObject(profile) || (profile as { id?: unknown }).id !== id) return `malformed catalog profile "${id}"`
+        const baseId = (profile as { providerBaseId?: unknown }).providerBaseId
+        if (typeof baseId !== 'string') return `catalog profile "${id}": missing providerBaseId`
+        if (!isPlainObject(catalog.baseProviders[baseId])) return `catalog profile "${id}": base provider "${baseId}" missing`
     }
-
-    const profileResults = await Promise.allSettled(
-        (index.profiles ?? []).map((it) => fetchJson<ModelProfile>(REGISTRY_BASE + it.url)),
-    )
-    for (const r of profileResults) {
-        if (r.status === 'rejected') {
-            console.warn('[Registry] profile fetch failed:', r.reason)
-            continue
-        }
-        const p = r.value
-        if (!p?.id || !p.providerBaseId) {
-            console.warn('[Registry] skipping malformed profile:', p)
-            continue
-        }
-        if (!baseProviders[p.providerBaseId]) {
-            // Profile whose base provider failed/missing is unusable — skip it
-            // rather than ship a registry that throws on resolveSnapshot.
-            console.warn(`[Registry] skipping profile ${p.id}: base provider ${p.providerBaseId} unavailable`)
-            continue
-        }
-        profiles[p.id] = p
+    for (const [id, base] of Object.entries(catalog.baseProviders)) {
+        if (!isPlainObject(base) || (base as { id?: unknown }).id !== id) return `malformed catalog base provider "${id}"`
     }
-
-    if (Object.keys(profiles).length === 0) {
-        return { ok: false, error: 'no usable profiles fetched' }
-    }
-
-    return {
-        ok: true,
-        gate: index.updatedAt ?? index.contentVersion ?? 0,
-        entry: {
-            fetchedAt: Date.now(),
-            indexVersion: index.contentVersion,
-            baseProviders,
-            profiles,
-        },
-    }
+    return undefined
 }
 
 export function isRefetchGuarded(lastFetched: number | undefined): boolean {
@@ -121,48 +98,110 @@ export function isRefetchGuarded(lastFetched: number | undefined): boolean {
 
 export interface SyncResult {
     ok: boolean
-    /** True when the gate changed and the cache was rewritten. */
+    /** True when the catalog content hash changed (a new catalog was adopted). */
     changed: boolean
+    /** True when the catalog was actually downloaded (vs a hash/debounce skip). */
+    downloaded?: boolean
     error?: string
 }
 
-// Fetch + (on gate change) persist the remote registry into the DB cache.
-// force bypasses the debounce guard. Never throws.
+function entryFromCatalog(base: string, catalog: CatalogFile): RegistryEntry {
+    return {
+        fetchedAt: Date.now(),
+        source: base,
+        contentHash: catalog.hash,
+        profileHashes: catalog.profileHashes,
+        baseProviderHashes: catalog.baseProviderHashes,
+        baseProviders: catalog.baseProviders,
+        profiles: catalog.profiles,
+    }
+}
+
+// Fetch the index gate, and download the combined catalog only when its hash
+// differs from the cached entry (or the source changed, or forced). Persists
+// atomically into the DB cache. Never throws.
 export async function syncRemoteRegistry(force = false): Promise<SyncResult> {
     const db = DBState.db
-    if (!force && isRefetchGuarded(db.modelProfileRegistryLastFetched)) {
-        return { ok: true, changed: false }
-    }
+    try {
+        const urlError = customUrlError()
+        if (urlError) return { ok: false, changed: false, downloaded: false, error: urlError }
 
-    const result = await fetchRemoteRegistry()
-    db.modelProfileRegistryLastFetched = Date.now()
-    if (!result.ok || !result.entry) {
-        return { ok: false, changed: false, error: result.error }
-    }
+        if (!force && isRefetchGuarded(db.modelProfileRegistryLastFetched)) {
+            return { ok: true, changed: false, downloaded: false }
+        }
 
-    // Always persist the freshly-fetched entry. fetchRemoteRegistry already
-    // downloaded every file, so re-storing is free — and the gate must NOT
-    // guard persistence: if a cache was once stored incomplete (e.g. a
-    // mid-edit registry state) while the gate stayed the same, gating the
-    // write would strand that bad cache forever. The gate's only job is the
-    // user-facing "changed" notification (banner / seen-map), not freshness.
-    //
-    // Assign a brand-new object (not a same-reference reassign) so the async
-    // write reliably triggers Svelte reactivity in already-mounted views.
-    // Preserve any other registries (e.g. 'custom').
-    db.modelProfileRegistryCache = {
-        schemaVersion: 4,
-        registries: {
-            ...(db.modelProfileRegistryCache?.registries ?? {}),
-            [getBundledRegistryId()]: result.entry,
-        },
-    }
+        const base = getRegistryBase()
+        let index: RegistryIndexFile
+        try {
+            index = await fetchJson<RegistryIndexFile>(base + 'index.json')
+        } catch (e) {
+            return { ok: false, changed: false, downloaded: false, error: `index fetch failed: ${(e as Error).message}` }
+        }
+        db.modelProfileRegistryLastFetched = Date.now()
+        if (index.schemaVersion !== 4) {
+            return { ok: false, changed: false, downloaded: false, error: `unsupported index schemaVersion ${index.schemaVersion}` }
+        }
+        if (typeof index.hash !== 'string') {
+            return { ok: false, changed: false, downloaded: false, error: 'index has no content hash (registry may be an old format — rebuild with scripts/build.mjs)' }
+        }
 
-    const changed = result.gate !== db.modelProfileRegistryIndexUpdatedAt
-    if (changed) {
-        db.modelProfileRegistryIndexUpdatedAt = result.gate
+        // Gate-skip: same source + same content hash + a populated cache. Source
+        // and hash live together in the entry, so they can't drift apart.
+        const cached = db.modelProfileRegistryCache?.registries?.[getBundledRegistryId()]
+        const cacheUsable = !!cached?.profiles && Object.keys(cached.profiles).length > 0
+        if (!force && cacheUsable && cached?.source === base && cached?.contentHash === index.hash) {
+            return { ok: true, changed: false, downloaded: false }
+        }
+
+        // We've decided to download — claim the latest token now (not at entry,
+        // so a debounced/skipped concurrent call can't cancel this download).
+        const token = ++syncToken
+
+        // Download the whole catalog (one request). Cache-bust by the expected
+        // hash so a CDN edge can't keep handing back a stale copy.
+        let catalog: CatalogFile
+        try {
+            catalog = await fetchJson<CatalogFile>(`${base}catalog.json?h=${encodeURIComponent(index.hash)}`)
+        } catch (e) {
+            return { ok: false, changed: false, downloaded: false, error: `catalog fetch failed: ${(e as Error).message}` }
+        }
+        const shapeError = validateCatalogShape(catalog)
+        if (shapeError) {
+            return { ok: false, changed: false, downloaded: false, error: shapeError }
+        }
+        // index and catalog can be served from different CDN edges mid-propagation.
+        // Adopt only a matching pair; otherwise keep the old cache and retry next time.
+        if (catalog.hash !== index.hash) {
+            return { ok: false, changed: false, downloaded: false, error: 'index/catalog hash mismatch (CDN propagating) — retry' }
+        }
+
+        // A newer sync started while we were downloading — discard this result.
+        if (token !== syncToken) {
+            return { ok: true, changed: false, downloaded: false }
+        }
+
+        const prevHash = cached?.contentHash
+        const sourceChanged = cached?.source !== undefined && cached.source !== base
+
+        // Atomic swap: source + hash + data move together. Assign a brand-new
+        // object so the async write triggers Svelte reactivity. Preserve 'custom'.
+        db.modelProfileRegistryCache = {
+            schemaVersion: 4,
+            registries: {
+                ...(db.modelProfileRegistryCache?.registries ?? {}),
+                [getBundledRegistryId()]: entryFromCatalog(base, catalog),
+            },
+        }
+
+        // A source switch invalidates the notice baseline (seen-map keys the
+        // previous source's catalog) — drop it so it reseeds against the new one.
+        if (sourceChanged) db.modelRegistrySeen = undefined
+
+        return { ok: true, changed: prevHash !== catalog.hash, downloaded: true }
+    } catch (e) {
+        // Honour the "never throws" contract — keep the bundled/cached fallback.
+        return { ok: false, changed: false, downloaded: false, error: `sync failed: ${(e as Error).message}` }
     }
-    return { ok: true, changed }
 }
 
 // The official registry to read from: remote cache if present, else bundled.
@@ -176,7 +215,8 @@ export function getOfficialRegistry(): RegistryCache {
 }
 
 // Per-preset update status against its source registry (official=remote-or-bundled,
-// else the custom cache). Shared by the editor badge and the preset-list dot.
+// else the custom cache). Unchanged: still compares the snapshot's
+// profileUpdatedAt against the current profile's updatedAt.
 export function getPresetUpdateStatus(preset: ModelPreset): ProfileUpdateStatus {
     const sp = preset.sourceProfile
     if (!sp?.registryId) return 'none'

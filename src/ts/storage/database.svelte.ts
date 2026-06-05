@@ -1340,13 +1340,17 @@ export interface Database{
     apiKeyPool?: Record<string, ApiKeyPoolEntry>
     modelProfileRegistryCache?: RegistryCache
     modelProfileRegistryLastFetched?: number
-    // Top-level `updatedAt` of the last fetched remote index.json — the change
-    // gate. Re-download the full file set only when the remote value differs.
-    modelProfileRegistryIndexUpdatedAt?: number
     // Per-profile id -> last acknowledged `updatedAt`. Drives the catalog
     // "new/updated models" notice; the user acknowledges by overwriting it
     // with the current map. See src/ts/preset/registry/notice.ts.
     modelRegistrySeen?: Record<string, number>
+    // Catalog display level: hide outdated/deprecated profiles from the browser
+    // and the update notice. Display-only — profiles are still downloaded.
+    modelProfileVisibilityLevel?: 'all' | 'hideDeprecated' | 'currentOnly'
+    // Opt-in custom registry source (dev branch / fork). Off ⇒ official URL.
+    // Must be https; a non-https value is rejected at sync time.
+    useCustomModelRegistry?: boolean
+    modelProfileRegistryBaseUrl?: string
     igpPrompt:string
     useTokenizerCaching:boolean
     showMenuHypaMemoryModal:boolean

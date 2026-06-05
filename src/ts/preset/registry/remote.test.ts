@@ -3,12 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // Mutable test doubles created before vi.mock factories run.
 const { mockDb, state } = vi.hoisted(() => ({
     mockDb: { db: {} as any },
-    state: { responders: {} as Record<string, () => unknown> },
+    state: { responders: {} as Record<string, () => unknown>, fetchCount: 0 },
 }))
 
 vi.mock('src/ts/globalApi.svelte', () => ({
     fetchNative: vi.fn(async (url: string) => {
-        const responder = state.responders[url]
+        state.fetchCount++
+        const key = url.split('?')[0] // ignore the ?h=<hash> cache-bust query
+        const responder = state.responders[key]
         if (!responder) return { ok: false, status: 404, json: async () => ({}) }
         return { ok: true, status: 200, json: async () => responder() }
     }),
@@ -16,55 +18,242 @@ vi.mock('src/ts/globalApi.svelte', () => ({
 
 vi.mock('src/ts/stores.svelte', () => ({ DBState: mockDb }))
 
-import { fetchRemoteRegistry, getOfficialRegistry, isRefetchGuarded, syncRemoteRegistry } from './remote'
+import { getOfficialRegistry, isRefetchGuarded, syncRemoteRegistry } from './remote'
 import { getBundledRegistryId, loadBundledRegistry } from './loader'
 
 const BASE = 'https://raw.githubusercontent.com/PocketRisu/pocketrisu-model-registry/main/'
 
-function indexJson(updatedAt: number, schemaVersion = 4) {
-    return {
-        schemaVersion,
-        contentVersion: 1,
-        updatedAt,
-        baseProviders: [{ id: 'openai', url: 'base-providers/openai.json', version: 1 }],
-        profiles: [{ id: 'openai:gpt', url: 'profiles/openai/gpt.json', version: 1 }],
+// Wire up index.json + catalog.json responders for a given base + hash.
+function setup(
+    base: string,
+    hash: string,
+    opts: { schemaVersion?: number; catalogHash?: string; profiles?: Record<string, any> } = {},
+) {
+    const profiles = opts.profiles ?? {
+        'openai:gpt': { id: 'openai:gpt', providerBaseId: 'openai', displayName: 'GPT', updatedAt: 1 },
     }
+    state.responders[base + 'index.json'] = () => ({ schemaVersion: opts.schemaVersion ?? 4, hash })
+    state.responders[base + 'catalog.json'] = () => ({
+        schemaVersion: 4,
+        hash: opts.catalogHash ?? hash,
+        baseProviders: { openai: { id: 'openai', adapterKind: 'openaiCompatible' } },
+        profiles,
+        baseProviderHashes: { openai: 'bh' },
+        profileHashes: Object.fromEntries(Object.keys(profiles).map((id) => [id, `ph:${id}`])),
+    })
 }
 
-function setupHappyResponders(updatedAt = 1000, opts: { schemaVersion?: number; orphanProfile?: boolean } = {}) {
-    state.responders = {
-        [BASE + 'index.json']: () => indexJson(updatedAt, opts.schemaVersion ?? 4),
-        [BASE + 'base-providers/openai.json']: () => (opts.orphanProfile ? { id: 'other' } : { id: 'openai', adapterKind: 'openaiCompatible', version: 1 }),
-        [BASE + 'profiles/openai/gpt.json']: () => ({ id: 'openai:gpt', providerBaseId: 'openai', displayName: 'GPT', version: 1, updatedAt }),
-    }
+function officialEntry() {
+    return mockDb.db.modelProfileRegistryCache?.registries?.[getBundledRegistryId()]
 }
 
 beforeEach(() => {
     mockDb.db = {}
     state.responders = {}
+    state.fetchCount = 0
 })
 
-describe('fetchRemoteRegistry', () => {
-    it('builds an entry from index + files', async () => {
-        setupHappyResponders(1234)
-        const res = await fetchRemoteRegistry()
+describe('syncRemoteRegistry', () => {
+    it('downloads the catalog on first sync and stores hash + source', async () => {
+        setup(BASE, 'h1')
+        const res = await syncRemoteRegistry()
         expect(res.ok).toBe(true)
-        expect(res.gate).toBe(1234)
-        expect(res.entry?.profiles?.['openai:gpt']).toBeTruthy()
-        expect(res.entry?.baseProviders?.['openai']).toBeTruthy()
+        expect(res.changed).toBe(true)
+        expect(res.downloaded).toBe(true)
+        const entry = officialEntry()
+        expect(entry?.contentHash).toBe('h1')
+        expect(entry?.source).toBe(BASE)
+        expect(entry?.profiles?.['openai:gpt']).toBeTruthy()
+        expect(entry?.profileHashes?.['openai:gpt']).toBe('ph:openai:gpt')
     })
 
-    it('rejects an unsupported schemaVersion (keeps fallback)', async () => {
-        setupHappyResponders(1, { schemaVersion: 3 })
-        const res = await fetchRemoteRegistry()
-        expect(res.ok).toBe(false)
-        expect(res.entry).toBeUndefined()
+    it('skips the catalog download when hash + source are unchanged', async () => {
+        mockDb.db.modelProfileRegistryCache = {
+            schemaVersion: 4,
+            registries: { [getBundledRegistryId()]: { fetchedAt: 1, source: BASE, contentHash: 'h1', profiles: { 'openai:gpt': { id: 'openai:gpt' } } } },
+        }
+        setup(BASE, 'h1')
+        const res = await syncRemoteRegistry()
+        expect(res.ok).toBe(true)
+        expect(res.changed).toBe(false)
+        expect(res.downloaded).toBe(false)
+        expect(state.fetchCount).toBe(1) // only index.json
     })
 
-    it('skips profiles whose base provider is unavailable, then fails if none usable', async () => {
-        setupHappyResponders(1, { orphanProfile: true })
-        const res = await fetchRemoteRegistry()
+    it('re-downloads when the hash changed', async () => {
+        mockDb.db.modelProfileRegistryCache = {
+            schemaVersion: 4,
+            registries: { [getBundledRegistryId()]: { fetchedAt: 1, source: BASE, contentHash: 'h1', profiles: { 'sentinel': { id: 'sentinel' } } } },
+        }
+        setup(BASE, 'h2')
+        const res = await syncRemoteRegistry()
+        expect(res.changed).toBe(true)
+        expect(res.downloaded).toBe(true)
+        expect(officialEntry()?.contentHash).toBe('h2')
+        expect(officialEntry()?.profiles?.['openai:gpt']).toBeTruthy()
+        expect(officialEntry()?.profiles?.['sentinel']).toBeUndefined()
+    })
+
+    it('re-downloads + resets the seen baseline when the source changes (even if hash matches)', async () => {
+        mockDb.db.modelProfileRegistryCache = {
+            schemaVersion: 4,
+            registries: { [getBundledRegistryId()]: { fetchedAt: 1, source: BASE, contentHash: 'h1', profiles: { 'sentinel': { id: 'sentinel' } } } },
+        }
+        mockDb.db.modelRegistrySeen = { 'sentinel': 1 }
+        const CUSTOM = 'https://example.com/fork/develop/'
+        mockDb.db.useCustomModelRegistry = true
+        mockDb.db.modelProfileRegistryBaseUrl = CUSTOM
+        setup(CUSTOM, 'h1') // same hash value, different source
+        const res = await syncRemoteRegistry()
+        expect(res.ok).toBe(true)
+        expect(res.downloaded).toBe(true)
+        expect(officialEntry()?.source).toBe(CUSTOM)
+        expect(officialEntry()?.profiles?.['openai:gpt']).toBeTruthy()
+        expect(mockDb.db.modelRegistrySeen).toBeUndefined()
+    })
+
+    it('keeps the old cache on an index/catalog hash mismatch (CDN race)', async () => {
+        mockDb.db.modelProfileRegistryCache = {
+            schemaVersion: 4,
+            registries: { [getBundledRegistryId()]: { fetchedAt: 1, source: BASE, contentHash: 'h1', profiles: { 'sentinel': { id: 'sentinel' } } } },
+        }
+        setup(BASE, 'h2', { catalogHash: 'h1' }) // index says h2, catalog still h1
+        const res = await syncRemoteRegistry()
         expect(res.ok).toBe(false)
+        expect(res.error).toMatch(/mismatch/)
+        // unchanged
+        expect(officialEntry()?.contentHash).toBe('h1')
+        expect(officialEntry()?.profiles?.['sentinel']).toBeTruthy()
+    })
+
+    it('rejects a malformed catalog without throwing', async () => {
+        state.responders[BASE + 'index.json'] = () => ({ schemaVersion: 4, hash: 'h9' })
+        state.responders[BASE + 'catalog.json'] = () => ({ schemaVersion: 4, hash: 'h9', profiles: 'nope' })
+        const res = await syncRemoteRegistry()
+        expect(res.ok).toBe(false)
+        expect(res.error).toMatch(/malformed/)
+        expect(mockDb.db.modelProfileRegistryCache).toBeUndefined()
+    })
+
+    it('rejects a non-https custom URL up front (no fetch, no silent fallback)', async () => {
+        mockDb.db.useCustomModelRegistry = true
+        mockDb.db.modelProfileRegistryBaseUrl = 'http://insecure.example.com/'
+        const res = await syncRemoteRegistry()
+        expect(res.ok).toBe(false)
+        expect(res.error).toMatch(/https/)
+        expect(state.fetchCount).toBe(0)
+    })
+
+    it('fetches from an https custom base when opted in', async () => {
+        const CUSTOM = 'https://example.com/fork/main/'
+        mockDb.db.useCustomModelRegistry = true
+        mockDb.db.modelProfileRegistryBaseUrl = CUSTOM
+        setup(CUSTOM, 'hc')
+        const res = await syncRemoteRegistry()
+        expect(res.ok).toBe(true)
+        expect(officialEntry()?.source).toBe(CUSTOM)
+        expect(officialEntry()?.profiles?.['openai:gpt']).toBeTruthy()
+    })
+
+    it('debounces a recent fetch', async () => {
+        mockDb.db.modelProfileRegistryLastFetched = Date.now()
+        setup(BASE, 'h1')
+        const res = await syncRemoteRegistry()
+        expect(res.downloaded).toBe(false)
+        expect(state.fetchCount).toBe(0)
+    })
+
+    it('reports failure without throwing on a bad index schema', async () => {
+        setup(BASE, 'h1', { schemaVersion: 9 })
+        const res = await syncRemoteRegistry()
+        expect(res.ok).toBe(false)
+        expect(mockDb.db.modelProfileRegistryCache).toBeUndefined()
+    })
+
+    it('rejects an old-format index that has no content hash', async () => {
+        // schemaVersion 4 but no top-level `hash` (pre-catalog index).
+        state.responders[BASE + 'index.json'] = () => ({ schemaVersion: 4, contentVersion: 14, updatedAt: 123 })
+        const res = await syncRemoteRegistry()
+        expect(res.ok).toBe(false)
+        expect(res.error).toMatch(/content hash|old format/)
+        expect(state.fetchCount).toBe(1) // index only — no catalog fetch
+    })
+
+    it('reports failure (never throws) when the index fetch fails', async () => {
+        // no responders → index.json 404 → fetchJson throws → caught
+        const res = await syncRemoteRegistry()
+        expect(res.ok).toBe(false)
+        expect(res.error).toMatch(/index fetch failed/)
+    })
+
+    it('rejects an empty custom URL (no silent official fallback)', async () => {
+        mockDb.db.useCustomModelRegistry = true
+        mockDb.db.modelProfileRegistryBaseUrl = '   '
+        const res = await syncRemoteRegistry()
+        expect(res.ok).toBe(false)
+        expect(res.error).toMatch(/empty/)
+        expect(state.fetchCount).toBe(0)
+    })
+
+    it('rejects a catalog whose profiles is an array (not a plain object)', async () => {
+        state.responders[BASE + 'index.json'] = () => ({ schemaVersion: 4, hash: 'h' })
+        state.responders[BASE + 'catalog.json'] = () => ({ schemaVersion: 4, hash: 'h', baseProviders: {}, profiles: [] })
+        const res = await syncRemoteRegistry()
+        expect(res.ok).toBe(false)
+        expect(res.error).toMatch(/malformed/)
+        expect(mockDb.db.modelProfileRegistryCache).toBeUndefined()
+    })
+
+    it('rejects a profile whose base provider is missing from the catalog', async () => {
+        state.responders[BASE + 'index.json'] = () => ({ schemaVersion: 4, hash: 'h' })
+        state.responders[BASE + 'catalog.json'] = () => ({
+            schemaVersion: 4, hash: 'h',
+            baseProviders: {},
+            profiles: { 'openai:gpt': { id: 'openai:gpt', providerBaseId: 'openai' } },
+        })
+        const res = await syncRemoteRegistry()
+        expect(res.ok).toBe(false)
+        expect(res.error).toMatch(/base provider/)
+        expect(mockDb.db.modelProfileRegistryCache).toBeUndefined()
+    })
+
+    it('rejects a profile whose id does not match its key', async () => {
+        state.responders[BASE + 'index.json'] = () => ({ schemaVersion: 4, hash: 'h' })
+        state.responders[BASE + 'catalog.json'] = () => ({
+            schemaVersion: 4, hash: 'h',
+            baseProviders: { openai: { id: 'openai' } },
+            profiles: { 'openai:gpt': { id: 'WRONG', providerBaseId: 'openai' } },
+        })
+        const res = await syncRemoteRegistry()
+        expect(res.ok).toBe(false)
+        expect(res.error).toMatch(/malformed catalog profile/)
+    })
+
+    it('a debounced concurrent call does not cancel an in-flight download', async () => {
+        // A's catalog download is parked on a manual gate; B is called while A is
+        // mid-download and returns via the debounce — it must not bump the token
+        // and cancel A's write.
+        let release: () => void = () => {}
+        const gate = new Promise<void>((r) => { release = r })
+        state.responders[BASE + 'index.json'] = () => ({ schemaVersion: 4, hash: 'h1' })
+        state.responders[BASE + 'catalog.json'] = async () => {
+            await gate
+            return {
+                schemaVersion: 4, hash: 'h1',
+                baseProviders: { openai: { id: 'openai', adapterKind: 'openaiCompatible' } },
+                profiles: { 'openai:gpt': { id: 'openai:gpt', providerBaseId: 'openai', displayName: 'GPT', updatedAt: 1 } },
+                profileHashes: {}, baseProviderHashes: {},
+            }
+        }
+        const pA = syncRemoteRegistry() // parks at the catalog download
+        await new Promise((r) => setTimeout(r, 0)) // let A set lastFetched + reach the gate
+        const resB = await syncRemoteRegistry() // debounced — returns immediately
+        expect(resB.downloaded).toBe(false)
+        release()
+        const resA = await pA
+        expect(resA.ok).toBe(true)
+        expect(resA.downloaded).toBe(true) // A's write was NOT cancelled by B
+        expect(officialEntry()?.contentHash).toBe('h1')
     })
 })
 
@@ -78,51 +267,6 @@ describe('isRefetchGuarded', () => {
     })
 })
 
-describe('syncRemoteRegistry', () => {
-    it('writes the cache on first sync and preserves the custom registry', async () => {
-        mockDb.db.modelProfileRegistryCache = {
-            schemaVersion: 4,
-            registries: { custom: { fetchedAt: 0, profiles: { 'custom::x': { id: 'custom::x' } } } },
-        }
-        setupHappyResponders(2000)
-        const res = await syncRemoteRegistry()
-        expect(res.ok).toBe(true)
-        expect(res.changed).toBe(true)
-        const regs = mockDb.db.modelProfileRegistryCache.registries
-        expect(regs[getBundledRegistryId()]?.profiles?.['openai:gpt']).toBeTruthy()
-        expect(regs.custom?.profiles?.['custom::x']).toBeTruthy() // preserved
-        expect(mockDb.db.modelProfileRegistryIndexUpdatedAt).toBe(2000)
-    })
-
-    it('still persists fresh data when the gate is unchanged (self-heal), but reports changed=false', async () => {
-        // A stale/incomplete cache with a matching gate must not be stranded:
-        // the freshly-fetched entry is always written. The gate only governs
-        // the user-facing "changed" notification.
-        mockDb.db.modelProfileRegistryIndexUpdatedAt = 2000
-        setupHappyResponders(2000)
-        const res = await syncRemoteRegistry()
-        expect(res.ok).toBe(true)
-        expect(res.changed).toBe(false)
-        const regs = mockDb.db.modelProfileRegistryCache?.registries
-        expect(regs?.[getBundledRegistryId()]?.profiles?.['openai:gpt']).toBeTruthy()
-        expect(mockDb.db.modelProfileRegistryIndexUpdatedAt).toBe(2000)
-    })
-
-    it('debounces a recent fetch', async () => {
-        mockDb.db.modelProfileRegistryLastFetched = Date.now()
-        setupHappyResponders(3000)
-        const res = await syncRemoteRegistry()
-        expect(res.changed).toBe(false)
-    })
-
-    it('reports failure without throwing on a bad schema', async () => {
-        setupHappyResponders(1, { schemaVersion: 9 })
-        const res = await syncRemoteRegistry()
-        expect(res.ok).toBe(false)
-        expect(mockDb.db.modelProfileRegistryCache).toBeUndefined()
-    })
-})
-
 describe('getOfficialRegistry', () => {
     it('falls back to the bundled registry when no remote cache', () => {
         const reg = getOfficialRegistry()
@@ -132,16 +276,15 @@ describe('getOfficialRegistry', () => {
         )
     })
 
-    it('returns the remote entry when present', () => {
+    it('returns the remote entry (scoped) when present', () => {
         mockDb.db.modelProfileRegistryCache = {
             schemaVersion: 4,
             registries: {
-                [getBundledRegistryId()]: { fetchedAt: 1, profiles: { 'openai:gpt': { id: 'openai:gpt' } }, baseProviders: {} },
+                [getBundledRegistryId()]: { fetchedAt: 1, contentHash: 'h1', profiles: { 'openai:gpt': { id: 'openai:gpt' } }, baseProviders: {} },
                 custom: { fetchedAt: 0, profiles: { 'custom::x': { id: 'custom::x' } } },
             },
         }
         const reg = getOfficialRegistry()
-        // scoped to the official entry only — custom must not leak in
         expect(Object.keys(reg.registries)).toEqual([getBundledRegistryId()])
         expect(reg.registries[getBundledRegistryId()]?.profiles?.['openai:gpt']).toBeTruthy()
     })

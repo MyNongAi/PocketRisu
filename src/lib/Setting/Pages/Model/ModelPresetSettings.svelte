@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { ArrowLeftIcon, BellIcon, CopyIcon, KeyIcon, PlusIcon, TrashIcon } from "@lucide/svelte";
+    import { ArrowLeftIcon, BellIcon, CopyIcon, PlusIcon, TrashIcon } from "@lucide/svelte";
     import SettingPage from "src/lib/UI/GUI/SettingPage.svelte";
     import ShAlert from "src/lib/UI/GUI/ShAlert.svelte";
     import SettingTabs from "src/lib/UI/GUI/SettingTabs.svelte";
@@ -13,6 +13,7 @@
     import { tokenizerList } from "src/ts/tokenizer";
     import ModelPresetBasicInfo from "./ModelPresetBasicInfo.svelte";
     import ApiKeyPoolManager from "./ApiKeyPoolManager.svelte";
+    import ModelPresetOptions from "./ModelPresetOptions.svelte";
     import RegistryNoticeModal from "./RegistryNoticeModal.svelte";
     import { language } from "src/lang";
     import { DBState, openModelProfileBrowser, modelProfileReplaceTarget, openModelPresetEditId } from "src/ts/stores.svelte";
@@ -24,13 +25,14 @@
 
     let editingId = $state<string | null>(null);
     let submenu = $state(0);
-    let showKeyManager = $state(false);
+    // Top-level page tabs (hidden while editing a preset): 0=presets, 1=keys, 2=settings.
+    let page = $state(0);
 
     // Catalog "new/updated models" notice. Fetch the remote registry on menu
     // entry (debounced), then diff the official registry against the seen-map.
     // First successful sync seeds the baseline silently (no banner).
     let noticeOpen = $state(false);
-    const notice = $derived(computeRegistryNotice(getOfficialRegistry(), DBState.db.modelRegistrySeen));
+    const notice = $derived(computeRegistryNotice(getOfficialRegistry(), DBState.db.modelRegistrySeen, DBState.db.modelProfileVisibilityLevel));
     const noticeN = $derived(noticeCount(notice));
 
     onMount(async () => {
@@ -98,84 +100,7 @@
 </script>
 
 <SettingPage title={language.modelPresetMenu}>
-    {#if !editingId && showKeyManager}
-        <ShButton variant="ghost" size="sm" className="mb-4 self-start" onclick={() => { showKeyManager = false }}>
-            <ArrowLeftIcon size={16}/>
-            <span class="ml-1">{language.backToList}</span>
-        </ShButton>
-        <ApiKeyPoolManager />
-    {:else if !editingId}
-        {#if noticeN > 0}
-            <ShAlert variant="info" className="mb-4">
-                {#snippet icon()}<BellIcon />{/snippet}
-                {#snippet title()}{language.registryNoticeBanner.replace('{n}', String(noticeN))}{/snippet}
-                {#snippet action()}
-                    <ShButton variant="outline" size="sm" onclick={() => { noticeOpen = true }}>
-                        {language.registryNoticeMore}
-                    </ShButton>
-                {/snippet}
-            </ShAlert>
-        {/if}
-
-        <ShButton variant="default" size="default" className="w-full mb-2" onclick={createNew}>
-            <PlusIcon size={16}/>
-            <span class="ml-1">{language.modelPresetCreate}</span>
-        </ShButton>
-
-        <ShButton variant="outline" size="default" className="w-full mb-4" onclick={() => { showKeyManager = true }}>
-            <KeyIcon size={16}/>
-            <span class="ml-1">{language.apiKeyManagerMenu}</span>
-        </ShButton>
-
-        {#if DBState.db.modelPresets.length === 0}
-            <div class="text-textcolor2 text-sm text-center py-8">
-                {language.modelPresetEmpty}
-            </div>
-        {:else}
-            <div class="flex flex-col gap-1">
-                {#each DBState.db.modelPresets as preset, i (preset.id)}
-                    <button
-                        class="flex items-center text-textcolor border border-darkborderc rounded-md p-3 cursor-pointer hover:bg-selected/30 transition-colors text-left"
-                        onclick={() => { editingId = preset.id; submenu = 0; }}
-                    >
-                        <div class="flex flex-col min-w-0 grow">
-                            <span class="text-sm text-textcolor truncate flex items-center gap-1.5">
-                                {#if getPresetUpdateStatus(preset) === 'updatable'}
-                                    <span class="w-2 h-2 rounded-full bg-amber-500 shrink-0" title={language.profileUpdateAvailable}></span>
-                                {/if}
-                                <span class="truncate">{preset.name}</span>
-                            </span>
-                            {#if preset.profileSnapshot?.profileId}
-                                <span class="text-xs text-textcolor2 truncate">{preset.profileSnapshot.profileId}</span>
-                            {/if}
-                        </div>
-                        <div class="flex gap-2 shrink-0 ml-2">
-                            <div class="text-textcolor2 hover:text-primary cursor-pointer" role="button" tabindex="0" onclick={(e) => {
-                                e.stopPropagation()
-                                duplicate(i)
-                            }} onkeydown={(e) => {
-                                if (e.key === 'Enter' && e.currentTarget instanceof HTMLElement) {
-                                    e.currentTarget.click()
-                                }
-                            }} aria-label="duplicate">
-                                <CopyIcon size={18}/>
-                            </div>
-                            <div class="text-textcolor2 hover:text-red-400 cursor-pointer" role="button" tabindex="0" onclick={(e) => {
-                                e.stopPropagation()
-                                remove(i)
-                            }} onkeydown={(e) => {
-                                if (e.key === 'Enter' && e.currentTarget instanceof HTMLElement) {
-                                    e.currentTarget.click()
-                                }
-                            }} aria-label="delete">
-                                <TrashIcon size={18}/>
-                            </div>
-                        </div>
-                    </button>
-                {/each}
-            </div>
-        {/if}
-    {:else}
+    {#if editingId}
         <ShButton variant="ghost" size="sm" className="mb-4 self-start" onclick={() => { editingId = null }}>
             <ArrowLeftIcon size={16}/>
             <span class="ml-1">{language.backToList}</span>
@@ -250,6 +175,87 @@
                         autocomplete="off"
                         height="32"
                     />
+                </div>
+            {/if}
+        {/if}
+    {:else}
+        <SettingTabs
+            tabs={[
+                { label: language.modelPresetTabPresets, value: 0 },
+                { label: language.apiKeyManagerMenu, value: 1 },
+                { label: language.modelPresetTabOptions, value: 2 },
+            ]}
+            bind:selected={page}
+        />
+
+        {#if page === 1}
+            <ApiKeyPoolManager />
+        {:else if page === 2}
+            <ModelPresetOptions />
+        {:else}
+            {#if noticeN > 0}
+                <ShAlert variant="info" className="mb-4">
+                    {#snippet icon()}<BellIcon />{/snippet}
+                    {#snippet title()}{language.registryNoticeBanner.replace('{n}', String(noticeN))}{/snippet}
+                    {#snippet action()}
+                        <ShButton variant="outline" size="sm" onclick={() => { noticeOpen = true }}>
+                            {language.registryNoticeMore}
+                        </ShButton>
+                    {/snippet}
+                </ShAlert>
+            {/if}
+
+            <ShButton variant="default" size="default" className="w-full mb-4" onclick={createNew}>
+                <PlusIcon size={16}/>
+                <span class="ml-1">{language.modelPresetCreate}</span>
+            </ShButton>
+
+            {#if DBState.db.modelPresets.length === 0}
+                <div class="text-textcolor2 text-sm text-center py-8">
+                    {language.modelPresetEmpty}
+                </div>
+            {:else}
+                <div class="flex flex-col gap-1">
+                    {#each DBState.db.modelPresets as preset, i (preset.id)}
+                        <button
+                            class="flex items-center text-textcolor border border-darkborderc rounded-md p-3 cursor-pointer hover:bg-selected/30 transition-colors text-left"
+                            onclick={() => { editingId = preset.id; submenu = 0; }}
+                        >
+                            <div class="flex flex-col min-w-0 grow">
+                                <span class="text-sm text-textcolor truncate flex items-center gap-1.5">
+                                    {#if getPresetUpdateStatus(preset) === 'updatable'}
+                                        <span class="w-2 h-2 rounded-full bg-amber-500 shrink-0" title={language.profileUpdateAvailable}></span>
+                                    {/if}
+                                    <span class="truncate">{preset.name}</span>
+                                </span>
+                                {#if preset.profileSnapshot?.profileId}
+                                    <span class="text-xs text-textcolor2 truncate">{preset.profileSnapshot.profileId}</span>
+                                {/if}
+                            </div>
+                            <div class="flex gap-2 shrink-0 ml-2">
+                                <div class="text-textcolor2 hover:text-primary cursor-pointer" role="button" tabindex="0" onclick={(e) => {
+                                    e.stopPropagation()
+                                    duplicate(i)
+                                }} onkeydown={(e) => {
+                                    if (e.key === 'Enter' && e.currentTarget instanceof HTMLElement) {
+                                        e.currentTarget.click()
+                                    }
+                                }} aria-label="duplicate">
+                                    <CopyIcon size={18}/>
+                                </div>
+                                <div class="text-textcolor2 hover:text-red-400 cursor-pointer" role="button" tabindex="0" onclick={(e) => {
+                                    e.stopPropagation()
+                                    remove(i)
+                                }} onkeydown={(e) => {
+                                    if (e.key === 'Enter' && e.currentTarget instanceof HTMLElement) {
+                                        e.currentTarget.click()
+                                    }
+                                }} aria-label="delete">
+                                    <TrashIcon size={18}/>
+                                </div>
+                            </div>
+                        </button>
+                    {/each}
                 </div>
             {/if}
         {/if}

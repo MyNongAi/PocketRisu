@@ -333,6 +333,14 @@ export interface RegistryCache {
     registries: Record<string, {
         fetchedAt: number
         indexVersion?: number
+        // The base URL this entry was synced from + the catalog content hash, so
+        // the gate-skip is atomic with the cache (a changed source or hash both
+        // force a re-download). Per-item hashes are reserved for a future
+        // differential download. Absent on the build-time bundled entry.
+        source?: string
+        contentHash?: string
+        profileHashes?: Record<string, string>
+        baseProviderHashes?: Record<string, string>
         profiles?: Record<string, ModelProfile>
         baseProviders?: Record<string, BaseProviderDefinition>
     }>
