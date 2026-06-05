@@ -1,7 +1,7 @@
 <script lang="ts">
 
     import Suggestion from './Suggestion.svelte';
-    import { CameraIcon, ChevronUpIcon, ChevronDownIcon, DatabaseIcon, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2 } from "@lucide/svelte";
+    import { CameraIcon, ChevronUpIcon, ChevronDownIcon, ChevronsUpIcon, ChevronsDownIcon, DatabaseIcon, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2 } from "@lucide/svelte";
     import ShDropdownMenu from 'src/lib/UI/GUI/ShDropdownMenu.svelte';
     import ShDropdownMenuTrigger from 'src/lib/UI/GUI/ShDropdownMenuTrigger.svelte';
     import ShDropdownMenuContent from 'src/lib/UI/GUI/ShDropdownMenuContent.svelte';
@@ -89,6 +89,36 @@ import { isMobile } from 'src/ts/platform'
 
     function scrollToBottom() {
         chatsInstance?.scrollToLatestMessage();
+    }
+
+    function bumpScrollNav() {
+        showScrollNav = true
+        if (scrollNavTimer) clearTimeout(scrollNavTimer)
+        scrollNavTimer = setTimeout(() => { showScrollNav = false }, 1500)
+    }
+
+    function getLoadedMessages(container: HTMLElement) {
+        return Array.from(container.querySelectorAll('[data-chat-index]'))
+            .map(el => ({ el: el as HTMLElement, idx: parseInt(el.getAttribute('data-chat-index')!) }))
+            .sort((a, b) => a.idx - b.idx)
+    }
+
+    // Top of currently loaded messages (no force-load of older pages).
+    function scrollToLoadedTop() {
+        const container = document.querySelector('.default-chat-screen') as HTMLElement | null
+        if (!container) return
+        const messages = getLoadedMessages(container)
+        if (messages.length === 0) return
+        scrollWithinContainer(messages[0].el, container, { block: 'start', behavior: 'smooth' })
+    }
+
+    // Literal bottom of the scroll (end of the latest message).
+    function scrollToLoadedBottom() {
+        const container = document.querySelector('.default-chat-screen') as HTMLElement | null
+        if (!container) return
+        const messages = getLoadedMessages(container)
+        if (messages.length === 0) return
+        scrollWithinContainer(messages[messages.length - 1].el, container, { block: 'end', behavior: 'smooth' })
     }
 
     function navigateMessage(direction: 'prev' | 'next') {
@@ -669,25 +699,43 @@ import { isMobile } from 'src/ts/platform'
     openMenu = false
 }}>
     
-    {#if DBState.db.useNodeOnlyScrollButton && currentChat.length > 0}
+    {#if DBState.db.nodeOnlyScrollButtonType !== 'off' && currentChat.length > 0}
         <div
             class="absolute right-3 bottom-16 z-40 flex flex-col rounded-lg bg-bgcolor/70 backdrop-blur-sm border border-darkborderc border-opacity-30 shadow-lg overflow-hidden transition-opacity duration-300"
             class:opacity-0={!showScrollNav}
             class:pointer-events-none={!showScrollNav}
         >
+            {#if DBState.db.nodeOnlyScrollButtonType === 'four'}
+                <button
+                    class="w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors"
+                    onclick={() => { bumpScrollNav(); scrollToLoadedTop() }}
+                >
+                    <ChevronsUpIcon size={18} />
+                </button>
+                <div class="border-t border-darkborderc border-opacity-30"></div>
+            {/if}
             <button
                 class="w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors"
-                onclick={() => { showScrollNav = true; if (scrollNavTimer) clearTimeout(scrollNavTimer); scrollNavTimer = setTimeout(() => { showScrollNav = false }, 1500); navigateMessage('prev') }}
+                onclick={() => { bumpScrollNav(); navigateMessage('prev') }}
             >
                 <ChevronUpIcon size={18} />
             </button>
             <div class="border-t border-darkborderc border-opacity-30"></div>
             <button
                 class="w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors"
-                onclick={() => { showScrollNav = true; if (scrollNavTimer) clearTimeout(scrollNavTimer); scrollNavTimer = setTimeout(() => { showScrollNav = false }, 1500); navigateMessage('next') }}
+                onclick={() => { bumpScrollNav(); navigateMessage('next') }}
             >
                 <ChevronDownIcon size={18} />
             </button>
+            {#if DBState.db.nodeOnlyScrollButtonType === 'four'}
+                <div class="border-t border-darkborderc border-opacity-30"></div>
+                <button
+                    class="w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors"
+                    onclick={() => { bumpScrollNav(); scrollToLoadedBottom() }}
+                >
+                    <ChevronsDownIcon size={18} />
+                </button>
+            {/if}
         </div>
     {/if}
 
@@ -756,10 +804,8 @@ import { isMobile } from 'src/ts/platform'
             class:no-chat-width-wide={DBState.db.theme === '' && DBState.db.nodeOnlyStandardChatWidth === 'wide'}
             class:no-chat-width-full={DBState.db.theme === '' && DBState.db.nodeOnlyStandardChatWidth === 'full'}
             onscroll={(e) => {
-            if (DBState.db.useNodeOnlyScrollButton) {
-                showScrollNav = true
-                if (scrollNavTimer) clearTimeout(scrollNavTimer)
-                scrollNavTimer = setTimeout(() => { showScrollNav = false }, 1500)
+            if (DBState.db.nodeOnlyScrollButtonType !== 'off') {
+                bumpScrollNav()
             }
             //@ts-expect-error scrollHeight/clientHeight/scrollTop don't exist on EventTarget, but target is HTMLElement here
             const scrolled = (e.target.scrollHeight - e.target.clientHeight + e.target.scrollTop)

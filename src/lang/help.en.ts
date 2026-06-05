@@ -272,7 +272,7 @@ export const helpEn = {
         hypaV3QueryChatCount:
             "The number of recent chat messages used as the query for similarity search. " +
             "Higher values use more chat context to determine similarity.",
-        useNodeOnlyScrollButton: "Shows navigation buttons to jump between chat messages while scrolling.",
+        nodeOnlyScrollButtonType: "How the chat scroll buttons are shown. 4 Buttons adds jump-to-top and jump-to-bottom controls; 2 Buttons keeps only previous/next message navigation; Off hides them.",
         confirmReroll: "Ask for confirmation before regenerating a message.",
         sendWithEnter: "Send the message with Enter.",
         sendKeyPC: "Which key sends a message on desktop.",
