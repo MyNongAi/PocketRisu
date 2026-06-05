@@ -731,7 +731,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 
     let ms:Message[] = makeMs(currentChat)
 
-    if(!msReseted){
+    if(!msReseted && !currentChat.firstMessageDisabled){
         const firstMsg = currentChat.fmIndex === -1 ? nowChatroom.firstMessage : nowChatroom.alternateGreetings[currentChat.fmIndex]
 
         const chat:OpenAIChat = {

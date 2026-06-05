@@ -138,6 +138,21 @@ export function setDatabase(data:Database){
     if(checkNullish(data.playMessage)){
         data.playMessage = false
     }
+    if(checkNullish(data.messageSound)){
+        data.messageSound = ''
+    }
+    if(checkNullish(data.messageSoundVolume)){
+        data.messageSoundVolume = 100
+    }
+    if(checkNullish(data.translateSound)){
+        data.translateSound = ''
+    }
+    if(checkNullish(data.translateSoundVolume)){
+        data.translateSoundVolume = 100
+    }
+    if(checkNullish(data.customSounds)){
+        data.customSounds = []
+    }
     if(checkNullish(data.iconsize)){
         data.iconsize = 100
     }
@@ -366,6 +381,8 @@ export function setDatabase(data:Database){
     }
     data.globalscript ??= []
     data.sendWithEnter ??= true
+    data.sendKeyPC ??= 'enter'
+    data.sendKeyMobile ??= 'button'
     data.autoSuggestPrompt ??= defaultAutoSuggestPrompt
     data.autoSuggestPrefix ??= ""
     data.OAIPrediction ??= ''
@@ -934,6 +951,22 @@ export interface Database{
     autoTranslate: boolean
     fullScreen:boolean
     playMessage:boolean
+    /** Sound for the message-complete notification. Holds either a bundled
+     * preset id (e.g. "bell") or an uploaded asset path ("assets/<hash>.mp3").
+     * Empty => the default sound. Not theme-scoped. */
+    messageSound:string
+    /** Playback volume (0-100) for the message-complete notification. */
+    messageSoundVolume:number
+    /** Sound for the translation-complete notification. Same format as
+     * {@link messageSound}. Empty => the default sound. */
+    translateSound:string
+    /** Playback volume (0-100) for the translation-complete notification. */
+    translateSoundVolume:number
+    /** User-uploaded notification sounds, shown alongside bundled presets in
+     * the sound picker. `id` is a stable uuid (list identity / render key);
+     * `path` is the "assets/<hash>" asset path (content-hashed, deduped by
+     * saveAsset); `name` is the original filename for display. Not theme-scoped. */
+    customSounds:{ id:string, name:string, path:string }[]
     iconsize:number
     theme: string
     nodeOnlyStandardChatWidth: 'standard' | 'wide' | 'full'
@@ -1003,6 +1036,13 @@ export interface Database{
     }
     globalscript: customscript[],
     sendWithEnter:boolean
+    /** Desktop send-key mode. 'enter': Enter sends (Shift+Enter newline);
+     * 'ctrl-enter'/'shift-enter': that combo sends (Enter newline);
+     * 'button': only the send button (Enter newline). Replaces sendWithEnter. */
+    sendKeyPC: 'enter' | 'ctrl-enter' | 'shift-enter' | 'button'
+    /** Mobile send-key mode. 'button': only the send button (Enter newline);
+     * 'enter': Enter sends (Shift+Enter newline). */
+    sendKeyMobile: 'button' | 'enter'
     fixedChatTextarea:boolean
     clickToEdit: boolean
     enableBlockPartialEdit: boolean
@@ -1750,8 +1790,6 @@ export interface themePreset{
     hideMessagePageCount?: boolean
     showFolderName: boolean
     customBackground: string
-    playMessage: boolean
-    playMessageOnTranslateEnd: boolean
     roundIcons: boolean
     textScreenColor?: string
     textBorder?: boolean
@@ -1769,7 +1807,6 @@ export interface themePreset{
     customQuotesData?: [string, string, string, string]
     betaMobileGUI: boolean
     menuSideBar: boolean
-    notification: boolean
     useChatSticker: boolean
 }
 
@@ -1929,6 +1966,11 @@ export interface Chat{
     bindedPersona?:string
     bindedBotPreset?:string
     fmIndex?:number
+    /** Per-chat toggle to exclude the first message (greeting) from the prompt
+     * context. The greeting still renders in the UI. Absent/undefined => included
+     * (default). The greeting lives on the character, not in `message`, so this
+     * cannot reuse the message-level `disabled` flag. */
+    firstMessageDisabled?:boolean
     hypaV3Data?:SerializableHypaV3Data
     folderId?:string
     lastDate?:number
@@ -2170,13 +2212,11 @@ export const themePresetTemplate: themePreset = {
     settingsCloseButtonSize: 24,
     showMemoryLimit: false,
     showFirstMessagePages: false,
-    hideRealm: true,
+    hideRealm: false,
     hideAllImages: false,
     hideMessagePageCount: false,
     showFolderName: false,
     customBackground: '',
-    playMessage: false,
-    playMessageOnTranslateEnd: false,
     roundIcons: false,
     textScreenColor: null,
     textBorder: false,
@@ -2194,7 +2234,6 @@ export const themePresetTemplate: themePreset = {
     customQuotesData: ['"', '"', '\u2018', '\u2019'],
     betaMobileGUI: false,
     menuSideBar: false,
-    notification: false,
     useChatSticker: false,
 }
 
@@ -2553,8 +2592,6 @@ export function saveCurrentThemePreset(){
         hideMessagePageCount: db.hideMessagePageCount,
         showFolderName: db.showFolderName,
         customBackground: db.customBackground,
-        playMessage: db.playMessage,
-        playMessageOnTranslateEnd: db.playMessageOnTranslateEnd,
         roundIcons: db.roundIcons,
         textScreenColor: db.textScreenColor,
         textBorder: db.textBorder,
@@ -2572,7 +2609,6 @@ export function saveCurrentThemePreset(){
         customQuotesData: db.customQuotesData ? [...db.customQuotesData] as [string,string,string,string] : ['"','"','\u2018','\u2019'],
         betaMobileGUI: db.betaMobileGUI,
         menuSideBar: db.menuSideBar,
-        notification: db.notification,
         useChatSticker: db.useChatSticker,
     }
     if(!Array.isArray(pres)){
@@ -2624,8 +2660,6 @@ export function changeToThemePreset(id = 0, savecurrent = true){
     db.hideAllImages = p.hideAllImages ?? db.hideAllImages
     db.showFolderName = p.showFolderName ?? db.showFolderName
     db.customBackground = p.customBackground ?? db.customBackground
-    db.playMessage = p.playMessage ?? db.playMessage
-    db.playMessageOnTranslateEnd = p.playMessageOnTranslateEnd ?? db.playMessageOnTranslateEnd
     db.roundIcons = p.roundIcons ?? db.roundIcons
     db.textScreenColor = p.textScreenColor
     db.textBorder = p.textBorder
@@ -2643,7 +2677,6 @@ export function changeToThemePreset(id = 0, savecurrent = true){
     db.customQuotesData = p.customQuotesData ? [...p.customQuotesData] as [string,string,string,string] : db.customQuotesData
     db.betaMobileGUI = p.betaMobileGUI ?? db.betaMobileGUI
     db.menuSideBar = p.menuSideBar ?? db.menuSideBar
-    db.notification = p.notification ?? db.notification
     db.useChatSticker = p.useChatSticker ?? db.useChatSticker
 }
 
