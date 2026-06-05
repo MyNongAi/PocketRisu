@@ -2565,6 +2565,10 @@ const reverseProxyFunc = async (req, res, next) => {
         head.delete('clear-site-data');
         head.delete('Cache-Control');
         head.delete('Content-Encoding');
+        // Node's fetch already decompressed the body, so the upstream
+        // (compressed) Content-Length no longer matches and would truncate the
+        // response. Drop it and let the body stream out chunked.
+        head.delete('Content-Length');
         const headObj = {};
         for (let [k, v] of head) {
             headObj[k] = v;
@@ -2644,6 +2648,10 @@ const reverseProxyFunc_get = async (req, res, next) => {
         head.delete('clear-site-data');
         head.delete('Cache-Control');
         head.delete('Content-Encoding');
+        // Node's fetch already decompressed the body, so the upstream
+        // (compressed) Content-Length no longer matches and would truncate the
+        // response. Drop it and let the body stream out chunked.
+        head.delete('Content-Length');
         const headObj = {};
         for (let [k, v] of head) {
             headObj[k] = v;
