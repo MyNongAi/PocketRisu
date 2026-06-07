@@ -12,6 +12,7 @@ const { cdcSplit, createChunkStore } = pkg as {
         putValue: (key: string, value: Buffer) => void
         getValue: (key: string) => Buffer | null
         sizeValue: (key: string) => number | null
+        snapshotValue: (srcKey: string, dstKey: string) => void
     }
 }
 
@@ -162,5 +163,50 @@ describe('createChunkStore — chunk-aware kv (injected :memory: db)', () => {
     it('B7: 없는 키는 null', () => {
         const store = createChunkStore(freshDb(), T)
         expect(store.getValue('nope')).toBeNull()
+    })
+})
+
+describe('snapshotValue — 조각 공유 스냅샷 (kvCopyValue 청크 인식)', () => {
+    const T = { threshold: 1024 }
+
+    it('C1: 청킹 값 스냅샷 → 바이트 동일 + 조각 중복 없음(공유)', () => {
+        const db = freshDb()
+        const store = createChunkStore(db, T)
+        const big = randomBytes(200_000)
+        store.putValue('live', big)
+        const before = countChunks(db)
+        store.snapshotValue('live', 'snap')
+        expect(countChunks(db)).toBe(before) // 조각 복사 안 함 — 공유
+        expect((store.getValue('snap') as Buffer).equals(big)).toBe(true)
+        expect((store.getValue('live') as Buffer).equals(big)).toBe(true)
+    })
+
+    it('C2: 스냅샷 후 live 변경 → 스냅샷은 옛 바이트 유지', () => {
+        const db = freshDb()
+        const store = createChunkStore(db, T)
+        const bufA = randomBytes(200_000)
+        const bufB = randomBytes(200_000)
+        store.putValue('live', bufA)
+        store.snapshotValue('live', 'snap')
+        store.putValue('live', bufB) // live 갱신 (옛 조각은 GC 전까지 잔존)
+        expect((store.getValue('snap') as Buffer).equals(bufA)).toBe(true) // 스냅샷 불변
+        expect((store.getValue('live') as Buffer).equals(bufB)).toBe(true)
+    })
+
+    it('C3: 작은(raw) 값 스냅샷도 정확 복사', () => {
+        const db = freshDb()
+        const store = createChunkStore(db, T)
+        const small = randomBytes(300)
+        store.putValue('live', small)
+        store.snapshotValue('live', 'snap')
+        expect((store.getValue('snap') as Buffer).equals(small)).toBe(true)
+    })
+
+    it('C4: 없는 src 스냅샷은 dst 무변경 (no-op)', () => {
+        const db = freshDb()
+        const store = createChunkStore(db, T)
+        store.putValue('snap', randomBytes(300))
+        store.snapshotValue('missing', 'snap') // src 없음
+        expect((store.getValue('snap') as Buffer).length).toBe(300) // dst 그대로
     })
 })

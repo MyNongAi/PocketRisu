@@ -75,6 +75,9 @@ function createChunkStore(db, opts = {}) {
     const selSize = db.prepare(
         'SELECT SUM(LENGTH(c.data)) AS n FROM manifest_chunks m JOIN chunks c ON c.hash = m.hash WHERE m.manifest_key = ?',
     );
+    const copyManifest = db.prepare(
+        'INSERT INTO manifest_chunks (manifest_key, seq, hash) SELECT ?, seq, hash FROM manifest_chunks WHERE manifest_key = ?',
+    );
     const kvSet = db.prepare('INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES (?, ?, ?)');
     const kvGet = db.prepare('SELECT value FROM kv WHERE key = ?');
 
@@ -112,7 +115,22 @@ function createChunkStore(db, opts = {}) {
         return row.value.length;
     }
 
-    return { putValue, getValue, sizeValue };
+    // Copy src's value to dst. For a chunked src, only the manifest (list of
+    // chunk hashes) is copied — chunks stay shared, so a snapshot costs ~nothing
+    // and never duplicates bytes. Mirrors kvCopyValue: missing src is a no-op.
+    const snapshotValue = db.transaction((srcKey, dstKey) => {
+        const row = kvGet.get(srcKey);
+        if (!row) return;
+        delManifest.run(dstKey);
+        if (isChunked(row.value)) {
+            copyManifest.run(dstKey, srcKey);
+            kvSet.run(dstKey, CHUNK_MARKER, Date.now());
+        } else {
+            kvSet.run(dstKey, row.value, Date.now());
+        }
+    });
+
+    return { putValue, getValue, sizeValue, snapshotValue };
 }
 
 module.exports = { cdcSplit, createChunkStore, CHUNK_MARKER };
