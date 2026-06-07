@@ -1,5 +1,7 @@
 import { helpVi } from "./help.vi";
 export const languageVietnamese = {
+    modelPresetToolUse: "Sử dụng công cụ",
+    modelPresetToolUseHelp: "Cho phép preset này gọi các công cụ đã cấu hình (MCP). Mặc định tắt. Lượt chạy công cụ được gửi mà không có streaming.",
     "formating": {
         "main": "Lời nhắc chính",
         "jailbreak": "Lời nhắc bẻ khóa",

@@ -1,5 +1,7 @@
 import { helpDe } from "./help.de";
 export const languageGerman = {
+    modelPresetToolUse: "Werkzeugnutzung",
+    modelPresetToolUseHelp: "Erlaubt diesem Preset, deine konfigurierten Werkzeuge (MCP) aufzurufen. Standardmäßig aus. Werkzeugaufrufe werden ohne Streaming gesendet.",
     "formating": {
         "main": "Haupt-Anweisung",
         "jailbreak": "Jailbreak Anweisung",

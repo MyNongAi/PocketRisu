@@ -1,5 +1,7 @@
 import { helpZhHant } from "./help.zh-Hant";
 export const languageChineseTraditional = {
+    modelPresetToolUse: "工具使用",
+    modelPresetToolUseHelp: "允許此預設呼叫已設定的工具（MCP）。預設關閉。工具執行時不使用串流。",
     "formating": {
         "main": "主要提示詞",
         "jailbreak": "越獄提示詞",
