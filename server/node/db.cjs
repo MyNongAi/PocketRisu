@@ -72,7 +72,10 @@ function migrateFromSaveDir() {
             }
             const key = Buffer.from(hexFiles[i], 'hex').toString('utf-8');
             const value = fs.readFileSync(path.join(savePath, hexFiles[i]));
-            insert.run(key, value, now);
+            // Route the DB blob through chunking so an oversized legacy
+            // database.bin migrates instead of hitting the BLOB bind limit.
+            if (key === DB_BLOB_KEY) chunkStore.putValue(key, value);
+            else insert.run(key, value, now);
         }
     });
     run();
@@ -82,15 +85,19 @@ function migrateFromSaveDir() {
     console.log(`[DB] To free disk space, remove migrated files via Settings > Clean Up Save Folder.`);
 }
 
-migrateFromSaveDir();
-
 // Chunk-aware store for the full DB blob. The blob is split into
 // content-addressed chunks so a small change rewrites only the chunks that
 // changed (dedup) and no single value hits the SQLite BLOB limit. Scoped to the
 // DB blob: assets are already one row each, so chunking them would add overhead
 // with no benefit. Creates its own chunks/manifest tables (kv stays as-is).
+// Built before migrateFromSaveDir so legacy blob migration can chunk too.
 const DB_BLOB_KEY = 'database/database.bin';
-const chunkStore = createChunkStore(db);
+const chunkThreshold = process.env.POCKETRISU_CHUNK_THRESHOLD
+    ? Number(process.env.POCKETRISU_CHUNK_THRESHOLD)
+    : undefined;
+const chunkStore = createChunkStore(db, { threshold: chunkThreshold });
+
+migrateFromSaveDir();
 
 // ─── KV operations ────────────────────────────────────────────────────────────
 // kv reads/writes for the DB blob route through chunkStore (get/put/size/copy);
@@ -118,8 +125,11 @@ function kvSet(key, value) {
 }
 
 function kvDel(key) {
-    // DB_BLOB_KEY is never deleted, so no manifest cleanup is needed here.
-    stmtKvDel.run(key);
+    // Route through the chunk store so a chunked key (the DB blob or a chunked
+    // snapshot, e.g. a rotated dbbackup-*) also drops its manifest — otherwise
+    // its chunks stay referenced and GC can never reclaim them. For non-chunked
+    // keys the manifest delete is a no-op, so this is safe and atomic for all.
+    chunkStore.dropValue(key);
 }
 
 function kvSize(key) {
@@ -167,6 +177,13 @@ function gcChunks() {
     return chunkStore.gc();
 }
 
+// Marginal disk cost of a snapshot key vs the live DB blob (chunks it uniquely
+// keeps alive). Use this to size snapshots for the disk limit — kvSize/LENGTH
+// would report a chunked snapshot's shared logical size and over-trim.
+function snapshotFootprint(key) {
+    return chunkStore.snapshotCost(key, DB_BLOB_KEY);
+}
+
 function clearEntities() {
     // Entity tables may still exist from previous versions — clear them during backup import
     try {
@@ -183,4 +200,5 @@ module.exports = {
     clearEntities,
     checkpointWal,
     gcChunks,
+    snapshotFootprint,
 };

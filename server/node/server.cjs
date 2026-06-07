@@ -25,7 +25,7 @@ const getVips = () => {
 }
 const { kvGet, kvSet, kvDel, kvList,
         kvDelPrefix, kvListWithSizes, kvSize, kvGetUpdatedAt, kvCopyValue, clearEntities, checkpointWal,
-        gcChunks, db: sqliteDb } = require('./db.cjs');
+        gcChunks, snapshotFootprint, db: sqliteDb } = require('./db.cjs');
 const {
     addLogBatch, queryLogs, clearLogs, countLogs,
     logger, installProcessHandlers, expressErrorMiddleware,
@@ -155,10 +155,13 @@ function getSnapshotLimits() {
 // we never end up with zero backups after a config change.
 function trimSnapshotsToLimits() {
     const { maxCount, maxBytes } = getSnapshotLimits();
-    const entries = kvListWithSizes(DB_BACKUP_PREFIX)
-        .map((it) => {
-            const tsRaw = parseInt(it.key.slice(DB_BACKUP_PREFIX.length, -4), 10);
-            return { key: it.key, size: it.size, ts: Number.isFinite(tsRaw) ? tsRaw : 0 };
+    // Size each snapshot by its marginal disk cost (chunks not shared with the
+    // live blob), not its logical size — chunked snapshots share chunks, so a
+    // logical measure would over-trim ones that cost almost nothing on disk.
+    const entries = kvList(DB_BACKUP_PREFIX)
+        .map((key) => {
+            const tsRaw = parseInt(key.slice(DB_BACKUP_PREFIX.length, -4), 10);
+            return { key, size: snapshotFootprint(key), ts: Number.isFinite(tsRaw) ? tsRaw : 0 };
         })
         .sort((a, b) => b.ts - a.ts);
 
@@ -4658,6 +4661,9 @@ async function importHexFilesFromDir(dirPath) {
         for (const hexFile of hexFiles) {
             const key = Buffer.from(hexFile, 'hex').toString('utf-8');
             const value = readFileSync(path.join(dirPath, hexFile));
+            // Chunk the DB blob so an oversized database.bin imports instead of
+            // failing the BLOB bind limit; other keys keep the bulk fast path.
+            if (key === DB_BLOB_KEY) { kvSet(key, value); continue; }
             insert.run(key, value, now);
         }
     });

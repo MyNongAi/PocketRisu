@@ -75,12 +75,28 @@ function createChunkStore(db, opts = {}) {
     const selSize = db.prepare(
         'SELECT SUM(LENGTH(c.data)) AS n FROM manifest_chunks m JOIN chunks c ON c.hash = m.hash WHERE m.manifest_key = ?',
     );
+    // Bytes of chunks referenced by `key` but NOT by `baseKey` — i.e. what `key`
+    // uniquely keeps alive beyond the base. Used to size snapshots for the disk
+    // limit by their real marginal cost, not their (shared) logical size.
+    const selMarginal = db.prepare(
+        `SELECT COALESCE(SUM(LENGTH(c.data)), 0) AS n FROM chunks c
+         WHERE c.hash IN (SELECT hash FROM manifest_chunks WHERE manifest_key = ?)
+           AND c.hash NOT IN (SELECT hash FROM manifest_chunks WHERE manifest_key = ?)`,
+    );
     const copyManifest = db.prepare(
         'INSERT INTO manifest_chunks (manifest_key, seq, hash) SELECT ?, seq, hash FROM manifest_chunks WHERE manifest_key = ?',
     );
     const kvSet = db.prepare('INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES (?, ?, ?)');
     const kvGet = db.prepare('SELECT value FROM kv WHERE key = ?');
     const kvDel = db.prepare('DELETE FROM kv WHERE key = ?');
+    // Defensive self-heal: drop any manifest whose kv key no longer exists. A
+    // chunked key's manifest and kv row should always die together (dropValue),
+    // but if a prior path deleted only the kv row, the orphaned manifest would
+    // pin its chunks forever. Sweeping these first lets the leak's damage be
+    // reclaimed on the next gc.
+    const gcStaleManifests = db.prepare(
+        'DELETE FROM manifest_chunks WHERE NOT EXISTS (SELECT 1 FROM kv WHERE kv.key = manifest_chunks.manifest_key)',
+    );
     // Mark-sweep: the set of all hashes referenced by ANY manifest (live + every
     // snapshot/backup) is the live set; anything else is unreachable. Recomputed
     // from manifest_chunks each run — stateless, self-healing, can't over-delete.
@@ -107,8 +123,13 @@ function createChunkStore(db, opts = {}) {
         const row = kvGet.get(key);
         if (!row) return null;
         if (isChunked(row.value)) {
-            const parts = selManifest.all(key).map((r) => selChunk.get(r.hash).data);
-            return Buffer.concat(parts);
+            const rows = selManifest.all(key);
+            // A real chunked key always has manifest rows. If a non-chunked value
+            // happens to equal the marker byte-for-byte (astronomically unlikely),
+            // there are none — return it raw instead of an empty buffer. No extra
+            // cost for real chunked keys: they need this manifest lookup anyway.
+            if (rows.length === 0) return row.value;
+            return Buffer.concat(rows.map((r) => selChunk.get(r.hash).data));
         }
         return row.value;
     }
@@ -118,6 +139,16 @@ function createChunkStore(db, opts = {}) {
         if (!row) return null;
         if (isChunked(row.value)) return selSize.get(key).n;
         return row.value.length;
+    }
+
+    // Marginal disk cost of a (snapshot) key relative to baseKey (the live blob):
+    // raw value → its full length; chunked → bytes of chunks not shared with base.
+    // A snapshot identical to base costs ~0; a divergent one costs its real delta.
+    function snapshotCost(key, baseKey) {
+        const row = kvGet.get(key);
+        if (!row) return 0;
+        if (!isChunked(row.value)) return row.value.length;
+        return selMarginal.get(key, baseKey).n;
     }
 
     // Copy src's value to dst. For a chunked src, only the manifest (list of
@@ -145,10 +176,11 @@ function createChunkStore(db, opts = {}) {
     // Reclaim unreferenced chunks. Returns the number deleted. Run opportunistically
     // (e.g. Optimize / periodic) — never on the hot save path.
     function gc() {
+        gcStaleManifests.run();
         return gcSweep.run().changes;
     }
 
-    return { putValue, getValue, sizeValue, snapshotValue, dropValue, gc };
+    return { putValue, getValue, sizeValue, snapshotCost, snapshotValue, dropValue, gc };
 }
 
 module.exports = { cdcSplit, createChunkStore, CHUNK_MARKER };

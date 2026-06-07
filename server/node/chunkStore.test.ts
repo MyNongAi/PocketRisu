@@ -12,6 +12,7 @@ const { cdcSplit, createChunkStore } = pkg as {
         putValue: (key: string, value: Buffer) => void
         getValue: (key: string) => Buffer | null
         sizeValue: (key: string) => number | null
+        snapshotCost: (key: string, baseKey: string) => number
         snapshotValue: (srcKey: string, dstKey: string) => void
         dropValue: (key: string) => void
         gc: () => number
@@ -166,6 +167,15 @@ describe('createChunkStore — chunk-aware kv (injected :memory: db)', () => {
         const store = createChunkStore(freshDb(), T)
         expect(store.getValue('nope')).toBeNull()
     })
+
+    it('B8: 마커와 정확히 같은 raw 값은 빈 버퍼가 아니라 원본 반환 (오탐 방어)', () => {
+        const db = freshDb()
+        const store = createChunkStore(db, T)
+        const marker = (pkg as { CHUNK_MARKER: Buffer }).CHUNK_MARKER
+        // 청킹 안 거치고 마커와 동일한 바이트를 직접 박음 (천문학적 우연 시뮬)
+        db.prepare('INSERT INTO kv (key, value, updated_at) VALUES (?, ?, 0)').run('k', marker)
+        expect((store.getValue('k') as Buffer).equals(marker)).toBe(true)
+    })
 })
 
 describe('snapshotValue — 조각 공유 스냅샷 (kvCopyValue 청크 인식)', () => {
@@ -210,6 +220,20 @@ describe('snapshotValue — 조각 공유 스냅샷 (kvCopyValue 청크 인식)'
         store.putValue('snap', randomBytes(300))
         store.snapshotValue('missing', 'snap') // src 없음
         expect((store.getValue('snap') as Buffer).length).toBe(300) // dst 그대로
+    })
+
+    it('C5: snapshotCost — live와 같으면 ~0, 갈라지면 델타, raw는 full, 없으면 0', () => {
+        const db = freshDb()
+        const store = createChunkStore(db, T)
+        const v0 = randomBytes(200_000)
+        store.putValue('live', v0)
+        store.snapshotValue('live', 'snap')
+        expect(store.snapshotCost('snap', 'live')).toBe(0) // 동일 → 공유라 0
+        store.putValue('live', randomBytes(200_000)) // live 완전 교체 → snap 조각이 단독
+        expect(store.snapshotCost('snap', 'live')).toBeGreaterThan(150_000)
+        store.putValue('rawsnap', randomBytes(500)) // < 임계 → raw
+        expect(store.snapshotCost('rawsnap', 'live')).toBe(500)
+        expect(store.snapshotCost('missing', 'live')).toBe(0)
     })
 })
 
@@ -276,5 +300,41 @@ describe('gc — mark-sweep (참조 없는 조각만 삭제)', () => {
         const after = countChunks(db)
         expect(store.gc()).toBe(0)
         expect(countChunks(db)).toBe(after)
+    })
+
+    it('D6: 스냅샷 로테이션 — dropValue로 삭제한 스냅샷 전용 조각만 회수, 산 스냅샷·live 보존', () => {
+        // db.cjs의 kvDel→dropValue 경로가 의존하는 시나리오 (회귀 가드).
+        const db = freshDb()
+        const store = createChunkStore(db, T)
+        const v0 = randomBytes(200_000)
+        store.putValue('live', v0)
+        store.snapshotValue('live', 'snapA') // snapA → v0
+        const v1 = Buffer.concat([v0.subarray(0, 100_000), randomBytes(120), v0.subarray(100_000)])
+        store.putValue('live', v1)
+        store.snapshotValue('live', 'snapB') // snapB → v1
+        store.dropValue('snapA') // 로테이션 = manifest까지 삭제
+        store.gc()
+        // snapB·live는 바이트 동일 유지
+        expect((store.getValue('snapB') as Buffer).equals(v1)).toBe(true)
+        expect((store.getValue('live') as Buffer).equals(v1)).toBe(true)
+        // gc 후 고아 0 (v0 전용 조각이 회수됨)
+        const distinct = db.prepare('SELECT COUNT(DISTINCT hash) c FROM manifest_chunks').get().c as number
+        expect(countChunks(db)).toBe(distinct)
+    })
+
+    it('D7: kv 키 없는 stale manifest 자가치유 — 정리 + 누수 조각 회수, live 무사', () => {
+        const db = freshDb()
+        const store = createChunkStore(db, T)
+        store.putValue('live', randomBytes(200_000))
+        store.snapshotValue('live', 'snap')
+        store.putValue('live', randomBytes(200_000)) // live 교체 → snap 조각이 snap 전용이 됨
+        // 옛 버그 시뮬: manifest는 남기고 kv 행만 삭제 (raw kvDel이 하던 짓)
+        db.prepare("DELETE FROM kv WHERE key = 'snap'").run()
+        expect(countManifest(db, 'snap')).toBeGreaterThan(0) // stale manifest 잔존
+        const before = countChunks(db)
+        store.gc()
+        expect(countManifest(db, 'snap')).toBe(0) // stale manifest 정리됨
+        expect(countChunks(db)).toBeLessThan(before) // snap 전용 조각 회수됨
+        expect((store.getValue('live') as Buffer).length).toBeGreaterThan(0) // live 무사
     })
 })
