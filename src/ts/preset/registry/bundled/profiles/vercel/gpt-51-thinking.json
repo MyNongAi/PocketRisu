@@ -1,22 +1,22 @@
 {
-  "id": "vercel:deepseek-v4-pro",
+  "id": "vercel:gpt-51-thinking",
   "version": 1,
   "updatedAt": 1780830394470,
-  "displayName": "DeepSeek V4 Pro",
+  "displayName": "GPT-5.1 Thinking",
   "displayNameI18n": {
-    "ko": "DeepSeek V4 Pro"
+    "ko": "GPT-5.1 Thinking"
   },
   "providerBaseId": "vercel",
-  "description": "DeepSeek V4 Pro via Vercel AI Gateway (deepseek/deepseek-v4-pro).",
+  "description": "GPT-5.1 Thinking via Vercel AI Gateway (openai/gpt-5.1-thinking).",
   "descriptionI18n": {
-    "ko": "DeepSeek V4 Pro (Vercel AI Gateway, deepseek/deepseek-v4-pro)."
+    "ko": "GPT-5.1 Thinking (Vercel AI Gateway, openai/gpt-5.1-thinking)."
   },
   "tags": [
     "vercel",
-    "deepseek"
+    "gpt"
   ],
-  "sortOrder": 568,
-  "modelId": "deepseek/deepseek-v4-pro",
+  "sortOrder": 555,
+  "modelId": "openai/gpt-5.1-thinking",
   "endpoint": {
     "kind": "static",
     "url": "https://ai-gateway.vercel.sh/v1/chat/completions"
@@ -36,6 +36,7 @@
   "capabilities": [
     "streaming",
     "reasoning",
+    "vision",
     "tools",
     "json"
   ],
@@ -45,12 +46,12 @@
   ],
   "limits": {
     "known": true,
-    "contextWindowTokens": 1000000,
+    "contextWindowTokens": 400000,
     "sourceUrls": [
       "https://ai-gateway.vercel.sh/v1/models"
     ],
-    "maxOutputTokens": 384000
+    "maxOutputTokens": 128000
   },
-  "recommendedTokenizer": "deepseek",
+  "recommendedTokenizer": "tik",
   "profileStatus": "current"
 }

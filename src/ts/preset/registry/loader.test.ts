@@ -115,6 +115,8 @@ const EXPECTED_PROFILE_IDS = [
     'vercel:gpt-5',
     'vercel:gpt-5-mini',
     'vercel:gpt-5-nano',
+    'vercel:gpt-51-instant',
+    'vercel:gpt-51-thinking',
     'vercel:gpt-52',
     'vercel:gpt-54',
     'vercel:gpt-54-mini',
