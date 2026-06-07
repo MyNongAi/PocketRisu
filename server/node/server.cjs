@@ -4856,8 +4856,6 @@ app.post('/api/migrate/save-folder/cleanup/execute', async (req, res, next) => {
 const DB_BLOB_KEY = 'database/database.bin';
 const DB_BACKUP_PREFIX = 'database/dbbackup-';
 const ASSET_PREFIXES = ['assets/', 'remotes/', 'inlay/', 'inlay_thumb/', 'inlay_meta/', 'inlay_info/', 'coldstorage/'];
-// Slightly above 2GB BLOB ceiling — better-sqlite3 throws RangeError near INT_MAX.
-const BLOB_INT_MAX = 2 * 1024 * 1024 * 1024 - 1;
 
 function statsBasename(s) {
     if (!s) return '';
@@ -4987,6 +4985,14 @@ app.get('/api/db/stats', async (req, res, next) => {
 
         const dbBlobSize = kvSize(DB_BLOB_KEY) || 0;
 
+        // Physical storage of the chunked DB blob (and all snapshots, which share
+        // chunks). This is where the blob bytes actually live post-chunking — kv
+        // holds only a tiny marker, so the chart must count this table separately.
+        const chunkStat = sqliteDb.prepare('SELECT COUNT(*) AS c, COALESCE(SUM(LENGTH(data)), 0) AS b FROM chunks').get();
+        const orphanChunkBytes = sqliteDb.prepare(
+            'SELECT COALESCE(SUM(LENGTH(data)), 0) AS b FROM chunks WHERE hash NOT IN (SELECT hash FROM manifest_chunks)'
+        ).get().b;
+
         // Prefix breakdown — split database/ into the live blob vs rotated backups.
         const prefixes = {};
         prefixes[DB_BLOB_KEY] = { totalSize: dbBlobSize, count: dbBlobSize > 0 ? 1 : 0 };
@@ -5065,7 +5071,7 @@ app.get('/api/db/stats', async (req, res, next) => {
             disk,
             backupDisk,
             sqlite: { pageSize, pageCount, freelistCount, reclaimable, journalMode, autoVacuum },
-            blob: { dbSize: dbBlobSize, intMax: BLOB_INT_MAX },
+            chunks: { count: chunkStat.c, bytes: chunkStat.b, orphanBytes: orphanChunkBytes },
             prefixes,
             kvRows,
             kvTotalBytes,
