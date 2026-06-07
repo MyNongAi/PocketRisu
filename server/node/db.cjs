@@ -3,6 +3,7 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
+const { createChunkStore } = require('./chunkStore.cjs');
 
 const saveDir = path.join(process.cwd(), 'save');
 if (!fs.existsSync(saveDir)) {
@@ -83,36 +84,47 @@ function migrateFromSaveDir() {
 
 migrateFromSaveDir();
 
+// Chunk-aware store for the full DB blob. The blob is split into
+// content-addressed chunks so a small change rewrites only the chunks that
+// changed (dedup) and no single value hits the SQLite BLOB limit. Scoped to the
+// DB blob: assets are already one row each, so chunking them would add overhead
+// with no benefit. Creates its own chunks/manifest tables (kv stays as-is).
+const DB_BLOB_KEY = 'database/database.bin';
+const chunkStore = createChunkStore(db);
+
 // ─── KV operations ────────────────────────────────────────────────────────────
-const stmtKvGet    = db.prepare(`SELECT value FROM kv WHERE key = ?`);
+// kv reads/writes for the DB blob route through chunkStore (get/put/size/copy);
+// the statements below serve the remaining direct-row keys.
 const stmtKvSet    = db.prepare(`INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES (?, ?, ?)`);
 const stmtKvDel    = db.prepare(`DELETE FROM kv WHERE key = ?`);
 const stmtKvList   = db.prepare(`SELECT key FROM kv`);
 const stmtKvPrefix = db.prepare(`SELECT key FROM kv WHERE key LIKE ? ESCAPE '\\'`);
 const stmtKvPrefixSizes = db.prepare(`SELECT key, LENGTH(value) as size FROM kv WHERE key LIKE ? ESCAPE '\\'`);
 const stmtKvDelPrefix = db.prepare(`DELETE FROM kv WHERE key LIKE ? ESCAPE '\\'`);
-const stmtKvSize      = db.prepare(`SELECT LENGTH(value) as size FROM kv WHERE key = ?`);
 const stmtKvUpdatedAt = db.prepare(`SELECT updated_at FROM kv WHERE key = ?`);
-const stmtKvCopy = db.prepare(
-    `INSERT OR REPLACE INTO kv (key, value, updated_at) SELECT ?, value, ? FROM kv WHERE key = ?`
-);
 
 function kvGet(key) {
-    const row = stmtKvGet.get(key);
-    return row ? row.value : null;
+    // Reassembles chunked values; returns raw value for everything else.
+    return chunkStore.getValue(key);
 }
 
 function kvSet(key, value) {
-    stmtKvSet.run(key, value, Date.now());
+    // Only the DB blob is chunked; all other keys keep the exact prior path.
+    if (key === DB_BLOB_KEY) {
+        chunkStore.putValue(key, value);
+    } else {
+        stmtKvSet.run(key, value, Date.now());
+    }
 }
 
 function kvDel(key) {
+    // DB_BLOB_KEY is never deleted, so no manifest cleanup is needed here.
     stmtKvDel.run(key);
 }
 
 function kvSize(key) {
-    const row = stmtKvSize.get(key);
-    return row ? row.size : null;
+    // Logical (reassembled) size for chunked values; raw length otherwise.
+    return chunkStore.sizeValue(key);
 }
 
 function kvGetUpdatedAt(key) {
@@ -121,7 +133,9 @@ function kvGetUpdatedAt(key) {
 }
 
 function kvCopyValue(srcKey, dstKey) {
-    stmtKvCopy.run(dstKey, Date.now(), srcKey);
+    // Chunked src copies only its manifest (chunks stay shared); raw src copies
+    // the value. Used for snapshots — keeps them near-free and byte-identical.
+    chunkStore.snapshotValue(srcKey, dstKey);
 }
 
 function kvDelPrefix(prefix) {
