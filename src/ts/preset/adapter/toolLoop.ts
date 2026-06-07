@@ -1,6 +1,7 @@
 import type {
     AdapterChatMessage,
     AdapterChatResponse,
+    AdapterReasoningPart,
     AdapterToolCall,
 } from './types'
 
@@ -23,6 +24,10 @@ export interface ToolLoopDeps {
     // Max execution rounds before stopping with a marker. Separate from any
     // network retry budget so a failed follow-up never re-runs executed tools.
     maxSteps: number
+    // Optional: render a turn's reasoning for DISPLAY, prepended to that turn's
+    // text segment. Injected (not hardcoded) so the loop stays free of Risu's
+    // <Thoughts> convention. Returns '' to show nothing.
+    formatReasoning?: (reasoning?: AdapterReasoningPart[]) => string
 }
 
 // Drives the tool-use loop: send → if the model requested tools, execute them and
@@ -55,7 +60,11 @@ export async function runToolLoop(
             parts.push('[ModelPreset: follow-up request failed after tool execution]')
             return joinParts(parts)
         }
-        if (response.text) parts.push(response.text)
+        // Prepend this turn's reasoning (for display) to its text segment, matching
+        // the classic path where <Thoughts> precede the visible reply.
+        const head = deps.formatReasoning?.(response.reasoning) ?? ''
+        const segment = head + (response.text ?? '')
+        if (segment.length > 0) parts.push(segment)
         const calls = response.toolCalls ?? []
         if (calls.length === 0) break
         if (step >= deps.maxSteps) {

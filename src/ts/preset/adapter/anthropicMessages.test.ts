@@ -622,3 +622,40 @@ describe('error class identity', () => {
         }
     })
 })
+
+describe('vision (Stage 3)', () => {
+    test('appends an image block (raw base64 + media_type) to the user turn', async () => {
+        const { fetchImpl, calls } = captureFetch(
+            jsonResponse({ content: [{ type: 'text', text: 'ok' }] }),
+        )
+        await sendAnthropicChatRequest(
+            makePreset(),
+            {
+                messages: [{ role: 'user', content: 'describe', images: [{ kind: 'image', base64: 'BBBB', mime: 'image/png' }] }],
+                fetchImpl,
+            },
+            { apiKey: 'k' },
+        )
+        const wire = calls[0].body.messages as Array<Record<string, unknown>>
+        expect(wire[0]).toEqual({
+            role: 'user',
+            content: [
+                { type: 'text', text: 'describe' },
+                { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'BBBB' } },
+            ],
+        })
+    })
+
+    test('a text-only user turn keeps a single text block (no regression)', async () => {
+        const { fetchImpl, calls } = captureFetch(
+            jsonResponse({ content: [{ type: 'text', text: 'ok' }] }),
+        )
+        await sendAnthropicChatRequest(
+            makePreset(),
+            { messages: [{ role: 'user', content: 'plain' }], fetchImpl },
+            { apiKey: 'k' },
+        )
+        const wire = calls[0].body.messages as Array<Record<string, unknown>>
+        expect(wire[0]).toEqual({ role: 'user', content: [{ type: 'text', text: 'plain' }] })
+    })
+})

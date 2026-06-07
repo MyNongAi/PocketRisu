@@ -13,6 +13,17 @@ export const TOOL_CAPABLE_ADAPTER_KINDS: readonly AdapterKind[] = [
     'google-gemini',
 ]
 
+// Adapter kinds whose image-input (vision) wire is implemented. Vision is not
+// behind a per-preset toggle (unlike tools): it is purely additive — the preset
+// path currently drops attached images, so sending them when the profile
+// declares the 'vision' capability matches the classic path's always-send
+// behavior. The capability gate keeps images off models that would reject them.
+export const VISION_CAPABLE_ADAPTER_KINDS: readonly AdapterKind[] = [
+    'openai-compatible',
+    'anthropic-messages',
+    'google-gemini',
+]
+
 export type AuthKind =
     | 'none'
     | 'bearer'

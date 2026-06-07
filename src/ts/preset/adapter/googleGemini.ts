@@ -25,6 +25,7 @@ interface GeminiPart {
     text?: string
     thought?: boolean
     thoughtSignature?: string
+    inlineData?: { mimeType: string; data: string }
     functionCall?: { id?: string; name: string; args: unknown }
     functionResponse?: { id?: string; name: string; response: unknown }
 }
@@ -229,11 +230,24 @@ function toGeminiContents(chat: AdapterChatMessage[]): GeminiContent[] {
                 : toModelParts(message)
             out.push({ role: 'model', parts })
         } else {
-            out.push({ role: 'user', parts: [{ text: message.content }] })
+            out.push({ role: 'user', parts: toUserParts(message) })
         }
     }
     flush()
     return out
+}
+
+// A user turn: the text part (when non-empty) followed by one inlineData part per
+// image. Gemini wants the raw base64 + mimeType split out of the data URL.
+function toUserParts(message: AdapterChatMessage): GeminiPart[] {
+    const parts: GeminiPart[] = []
+    if (message.content.length > 0) parts.push({ text: message.content })
+    for (const img of message.images ?? []) {
+        parts.push({ inlineData: { mimeType: img.mime ?? 'image/png', data: img.base64 } })
+    }
+    // Gemini rejects an empty parts array; keep at least one part.
+    if (parts.length === 0) parts.push({ text: '' })
+    return parts
 }
 
 function toModelParts(message: AdapterChatMessage): GeminiPart[] {

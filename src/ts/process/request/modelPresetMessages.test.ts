@@ -81,6 +81,54 @@ describe('expandAdapterMessages', () => {
     })
 })
 
+describe('vision (Stage 3) image extraction', () => {
+    const imageMsg: OpenAIChat[] = [
+        {
+            role: 'user',
+            content: 'what is this',
+            multimodals: [{ type: 'image', base64: 'data:image/jpeg;base64,QUJD' }],
+        },
+    ]
+
+    test('includeImages=true parses the data URL into raw base64 + mime', async () => {
+        const out = await expandAdapterMessages(imageMsg, makeDecoder({}), true)
+        expect(out[0]).toEqual({
+            role: 'user',
+            content: 'what is this',
+            images: [{ kind: 'image', base64: 'QUJD', mime: 'image/jpeg' }],
+        })
+    })
+
+    test('includeImages=false (default) drops images — text-only, no regression', async () => {
+        const out = await expandAdapterMessages(imageMsg, makeDecoder({}))
+        expect(out[0]).toEqual({ role: 'user', content: 'what is this' })
+        expect(out[0].images).toBeUndefined()
+    })
+
+    test('non-data-URL base64 keeps the payload with mime undefined', () => {
+        const msg: OpenAIChat = { role: 'user', content: '', multimodals: [{ type: 'image', base64: 'RAWBYTES' }] }
+        expect(toAdapterMessage(msg, true).images).toEqual([{ kind: 'image', base64: 'RAWBYTES' }])
+    })
+
+    test('only user turns carry images (assistant image multimodals dropped)', () => {
+        const msg: OpenAIChat = {
+            role: 'assistant',
+            content: 'here',
+            multimodals: [{ type: 'image', base64: 'data:image/png;base64,ZZ' }],
+        }
+        expect(toAdapterMessage(msg, true).images).toBeUndefined()
+    })
+
+    test('non-image multimodals (video/audio) are ignored', () => {
+        const msg: OpenAIChat = {
+            role: 'user',
+            content: 'clip',
+            multimodals: [{ type: 'video', base64: 'data:video/mp4;base64,VV' }],
+        }
+        expect(toAdapterMessage(msg, true).images).toBeUndefined()
+    })
+})
+
 describe('toAdapterMessage / toolResponseText', () => {
     test('maps the function role to tool', () => {
         expect(toAdapterMessage({ role: 'function', content: 'r', name: 'x' } as OpenAIChat))

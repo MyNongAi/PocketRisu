@@ -13,7 +13,9 @@ import type {
     AdapterChatResponse,
     AdapterChatStreamDelta,
     AdapterCredential,
+    AdapterImagePart,
     AdapterPreparedRequest,
+    AdapterReasoningPart,
     AdapterToolCall,
     AdapterToolDef,
     AdapterUsage,
@@ -30,9 +32,15 @@ interface WireToolCall {
     extra_content?: { google?: { thought_signature?: string } }
 }
 
+// Content is a plain string for text turns, or the OpenAI multimodal content-part
+// array `[{type:'text'...}, {type:'image_url'...}]` when a user turn carries images.
+type WireContentPart =
+    | { type: 'text'; text: string }
+    | { type: 'image_url'; image_url: { url: string } }
+
 interface WireMessage {
     role: AdapterChatMessage['role']
-    content: string
+    content: string | WireContentPart[]
     name?: string
     tool_call_id?: string
     tool_calls?: WireToolCall[]
@@ -198,7 +206,11 @@ function toWireMessage(message: AdapterChatMessage): WireMessage {
     }
     const wire: WireMessage = {
         role: message.role,
-        content: message.content,
+        // A user turn with images becomes a content-part array; otherwise the
+        // plain string (unchanged from text-only behavior).
+        content: message.role === 'user' && message.images && message.images.length > 0
+            ? toContentParts(message.content, message.images)
+            : message.content,
     }
     if (message.name !== undefined) wire.name = message.name
     if (message.toolCallId !== undefined) wire.tool_call_id = message.toolCallId
@@ -216,6 +228,22 @@ function toWireMessage(message: AdapterChatMessage): WireMessage {
         })
     }
     return wire
+}
+
+// Build the OpenAI multimodal content array: the text part (when non-empty)
+// followed by one image_url part per image. The image_url URL is the `data:` URL
+// reconstructed from the raw base64 + mime (OpenAI accepts data URLs directly).
+function toContentParts(text: string, images: AdapterImagePart[]): WireContentPart[] {
+    const parts: WireContentPart[] = []
+    if (text.length > 0) parts.push({ type: 'text', text })
+    for (const img of images) {
+        parts.push({ type: 'image_url', image_url: { url: toDataUrl(img) } })
+    }
+    return parts
+}
+
+function toDataUrl(img: AdapterImagePart): string {
+    return `data:${img.mime ?? 'image/png'};base64,${img.base64}`
 }
 
 async function deriveHttpError(response: Response): Promise<ModelPresetAdapterError> {
@@ -250,12 +278,14 @@ function parseChatCompletion(raw: unknown): AdapterChatResponse {
         ? (message['content'] as string)
         : ''
     const toolCalls = isPlainObject(message) ? parseToolCalls(message['tool_calls']) : undefined
+    const reasoning = isPlainObject(message) ? parseReasoning(message) : undefined
     const finishReason = typeof first['finish_reason'] === 'string'
         ? (first['finish_reason'] as string)
         : undefined
     return {
         text,
         toolCalls,
+        reasoning,
         // Keep the raw assistant message so a tool follow-up resends it verbatim
         // (preserves reasoning_details / any provider extension OpenRouter requires).
         providerEcho: isPlainObject(message) ? message : undefined,
@@ -263,6 +293,20 @@ function parseChatCompletion(raw: unknown): AdapterChatResponse {
         usage: parseUsage(raw['usage']),
         raw,
     }
+}
+
+// Surface the model's reasoning text for display only. OpenRouter exposes it as
+// `reasoning`, some OpenAI-compatible servers (DeepSeek etc.) as
+// `reasoning_content`. The opaque signature payload needed to ECHO reasoning back
+// on a tool follow-up rides in providerEcho (reasoning_details), so this string
+// is purely for the <Thoughts> display and need not round-trip.
+function parseReasoning(message: Record<string, unknown>): AdapterReasoningPart[] | undefined {
+    const raw = typeof message['reasoning'] === 'string'
+        ? (message['reasoning'] as string)
+        : typeof message['reasoning_content'] === 'string'
+            ? (message['reasoning_content'] as string)
+            : ''
+    return raw.length > 0 ? [{ text: raw }] : undefined
 }
 
 function parseToolCalls(raw: unknown): AdapterToolCall[] | undefined {

@@ -1,4 +1,4 @@
-import type { AdapterChatMessage } from 'src/ts/preset/adapter'
+import type { AdapterChatMessage, AdapterImagePart } from 'src/ts/preset/adapter'
 import type { OpenAIChat } from '../index.svelte'
 import type { toolCallData } from '../mcp/mcp'
 import type { RPCToolCallContent } from '../mcp/mcplib'
@@ -18,16 +18,41 @@ export type DecodeToolCall = (text: string) => Promise<toolCallData | undefined>
 export async function expandAdapterMessages(
     formated: OpenAIChat[],
     decode: DecodeToolCall,
+    includeImages = false,
 ): Promise<AdapterChatMessage[]> {
     const out: AdapterChatMessage[] = []
     for (const m of formated) {
         if (m.role === 'assistant' && typeof m.content === 'string' && m.content.includes('<tool_call>')) {
+            // Tool-call assistant turns carry no image attachments; expand as-is.
             out.push(...await expandToolCallMessage(m, decode))
             continue
         }
-        out.push(toAdapterMessage(m))
+        out.push(toAdapterMessage(m, includeImages))
     }
     return out
+}
+
+// Parse the classic `data:<mime>;base64,<payload>` URL into the raw payload +
+// mime the adapters need. Falls back to treating the whole string as raw base64
+// (mime unknown) for the rare non-data-URL case.
+function parseImageData(src: string): AdapterImagePart {
+    const match = /^data:([^;]+);base64,(.*)$/s.exec(src)
+    if (match) return { kind: 'image', base64: match[2], mime: match[1] }
+    return { kind: 'image', base64: src }
+}
+
+// Collect image attachments from a message's multimodals (vision). Only images
+// are mapped; video/audio/signature multimodals are out of Stage 3 scope and
+// left untouched.
+function extractImages(m: OpenAIChat): AdapterImagePart[] | undefined {
+    if (!m.multimodals || m.multimodals.length === 0) return undefined
+    const images: AdapterImagePart[] = []
+    for (const mm of m.multimodals) {
+        if (mm.type === 'image' && typeof mm.base64 === 'string' && mm.base64.length > 0) {
+            images.push(parseImageData(mm.base64))
+        }
+    }
+    return images.length > 0 ? images : undefined
 }
 
 // Split an assistant message that embeds `<tool_call>` markers into the
@@ -79,9 +104,15 @@ export function toolResponseText(response: RPCToolCallContent[]): string {
     return texts.join('\n')
 }
 
-export function toAdapterMessage(m: OpenAIChat): AdapterChatMessage {
+export function toAdapterMessage(m: OpenAIChat, includeImages = false): AdapterChatMessage {
     const role: AdapterChatMessage['role'] = m.role === 'function' ? 'tool' : m.role
     const msg: AdapterChatMessage = { role, content: m.content ?? '' }
     if (m.name) msg.name = m.name
+    // Vision: classic only attaches images to user turns (openAI/requests.ts),
+    // so mirror that — assistant/system image parts are dropped.
+    if (includeImages && role === 'user') {
+        const images = extractImages(m)
+        if (images) msg.images = images
+    }
     return msg
 }

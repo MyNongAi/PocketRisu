@@ -609,6 +609,56 @@ describe('bundled google:gemini-35-flash profile integration', () => {
     })
 })
 
+describe('vision (Stage 3)', () => {
+    test('appends an inlineData part (raw base64 + mimeType) to the user turn', async () => {
+        const { fetchImpl, calls } = captureFetch(
+            jsonResponse({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }),
+        )
+        await sendGoogleChatRequest(
+            makePreset(),
+            {
+                messages: [{ role: 'user', content: 'look', images: [{ kind: 'image', base64: 'CCCC', mime: 'image/webp' }] }],
+                fetchImpl,
+            },
+            { apiKey: 'k' },
+        )
+        const contents = calls[0].body.contents as Array<Record<string, unknown>>
+        expect(contents[0]).toEqual({
+            role: 'user',
+            parts: [
+                { text: 'look' },
+                { inlineData: { mimeType: 'image/webp', data: 'CCCC' } },
+            ],
+        })
+    })
+
+    test('a pure-image user turn (empty text) omits the empty text part', async () => {
+        const { fetchImpl, calls } = captureFetch(
+            jsonResponse({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }),
+        )
+        await sendGoogleChatRequest(
+            makePreset(),
+            { messages: [{ role: 'user', content: '', images: [{ kind: 'image', base64: 'DD', mime: 'image/png' }] }], fetchImpl },
+            { apiKey: 'k' },
+        )
+        const contents = calls[0].body.contents as Array<Record<string, unknown>>
+        expect(contents[0]).toEqual({ role: 'user', parts: [{ inlineData: { mimeType: 'image/png', data: 'DD' } }] })
+    })
+
+    test('a text-only user turn keeps a single text part (no regression)', async () => {
+        const { fetchImpl, calls } = captureFetch(
+            jsonResponse({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }),
+        )
+        await sendGoogleChatRequest(
+            makePreset(),
+            { messages: [{ role: 'user', content: 'plain' }], fetchImpl },
+            { apiKey: 'k' },
+        )
+        const contents = calls[0].body.contents as Array<Record<string, unknown>>
+        expect(contents[0]).toEqual({ role: 'user', parts: [{ text: 'plain' }] })
+    })
+})
+
 describe('error class identity', () => {
     test('thrown error is ModelPresetAdapterError', async () => {
         const { fetchImpl } = captureFetch(jsonResponse({}, { status: 500 }))

@@ -162,4 +162,23 @@ describe('runToolLoop', () => {
         await runToolLoop(initial, { send, executeTool: vi.fn(), maxSteps: 8 })
         expect(initial).toEqual(frozen)
     })
+
+    test('formatReasoning is prepended to each turn segment when provided', async () => {
+        const withReasoning: AdapterChatResponse = { text: 'visible', reasoning: [{ text: 'chain' }], raw: {} }
+        const { send } = scriptedSend([withReasoning])
+        const out = await runToolLoop(initial, {
+            send,
+            executeTool: vi.fn(),
+            maxSteps: 8,
+            formatReasoning: (r) => (r && r.length > 0 ? `<T>${r[0].text}</T>\n` : ''),
+        })
+        expect(out).toBe('<T>chain</T>\nvisible')
+    })
+
+    test('reasoning is ignored in output when no formatReasoning is injected', async () => {
+        const withReasoning: AdapterChatResponse = { text: 'visible', reasoning: [{ text: 'chain' }], raw: {} }
+        const { send } = scriptedSend([withReasoning])
+        const out = await runToolLoop(initial, { send, executeTool: vi.fn(), maxSteps: 8 })
+        expect(out).toBe('visible')
+    })
 })

@@ -33,6 +33,7 @@ const ANTHROPIC_FALLBACK_MAX_TOKENS = 4096
 
 type AnthropicContentBlock =
     | { type: 'text'; text: string }
+    | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
     | { type: 'thinking'; thinking: string; signature?: string }
     | { type: 'redacted_thinking'; data: string }
     | { type: 'tool_use'; id: string; name: string; input: unknown }
@@ -243,11 +244,25 @@ function toAnthropicWireMessages(chat: AdapterChatMessage[]): AnthropicWireMessa
                 : toAssistantBlocks(message)
             out.push({ role: 'assistant', content })
         } else {
-            out.push({ role: 'user', content: [{ type: 'text', text: message.content }] })
+            out.push({ role: 'user', content: toUserBlocks(message) })
         }
     }
     flushToolResults()
     return out
+}
+
+// A user turn: the text block (always present, even empty, so a pure-image turn
+// still carries the field) followed by one image block per attachment. Anthropic
+// wants the raw base64 + media_type split out of the data URL.
+function toUserBlocks(message: AdapterChatMessage): AnthropicContentBlock[] {
+    const blocks: AnthropicContentBlock[] = [{ type: 'text', text: message.content }]
+    for (const img of message.images ?? []) {
+        blocks.push({
+            type: 'image',
+            source: { type: 'base64', media_type: img.mime ?? 'image/png', data: img.base64 },
+        })
+    }
+    return blocks
 }
 
 function toAssistantBlocks(message: AdapterChatMessage): AnthropicContentBlock[] {

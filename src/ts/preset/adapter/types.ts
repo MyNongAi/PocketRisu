@@ -75,9 +75,11 @@ export interface AdapterReasoningPart {
     redactedData?: string
 }
 
-// Image attachment on a user/assistant message. Image-only for now; `mime` is
-// required wire-side on Anthropic/Gemini and cannot be inferred from raw base64,
-// so callers must supply it (Stage 3 vision). Reserved until then.
+// Image attachment on a user message (Stage 3 vision). `base64` is the RAW
+// base64 payload (no `data:` prefix); `mime` is the media type. Anthropic/Gemini
+// require the mime wire-side and it cannot be inferred from raw base64, so the
+// message builder parses it out of the classic `data:` URL when present and
+// callers default it otherwise.
 export interface AdapterImagePart {
     kind: 'image'
     base64: string
@@ -98,8 +100,7 @@ export interface AdapterChatMessage {
     // part) require the exact bytes back on the in-request follow-up. In-memory
     // only — never persisted (history-restored turns reconstruct from fields).
     providerEcho?: unknown
-    images?: AdapterImagePart[]          // reserved for Stage 3 (vision)
-    thoughts?: string[]                  // reserved for Stage 4 (reasoning display)
+    images?: AdapterImagePart[]          // role:'user' — image attachments (vision)
 }
 
 // A tool the model may call. `parameters` is a JSON schema already simplified by
@@ -122,9 +123,8 @@ export interface AdapterUsage {
 export interface AdapterChatResponse {
     text: string
     toolCalls?: AdapterToolCall[]        // calls the model requested this turn
-    reasoning?: AdapterReasoningPart[]   // thinking blocks emitted this turn (for echo)
+    reasoning?: AdapterReasoningPart[]   // thinking blocks emitted this turn (echo + display)
     providerEcho?: unknown               // raw assistant payload for verbatim re-send (see AdapterChatMessage)
-    thoughts?: string                    // reserved for Stage 4 (reasoning display)
     finishReason?: string
     usage?: AdapterUsage
     raw: unknown

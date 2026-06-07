@@ -27,9 +27,9 @@ import {
     runToolLoop,
     type AdapterChatMessage, type AdapterChatOptions, type AdapterChatResponse,
     type AdapterChatStreamDelta, type AdapterCredential,
-    type AdapterToolCall, type AdapterToolDef,
+    type AdapterReasoningPart, type AdapterToolCall, type AdapterToolDef,
 } from "src/ts/preset/adapter";
-import { TOOL_CAPABLE_ADAPTER_KINDS, type AdapterKind, type ModelPreset } from "src/ts/preset/types";
+import { TOOL_CAPABLE_ADAPTER_KINDS, VISION_CAPABLE_ADAPTER_KINDS, type AdapterKind, type ModelPreset } from "src/ts/preset/types";
 import { resolveChatModelBinding, buildModelPresetCredential } from "./modelPresetBinding";
 import { expandAdapterMessages, toAdapterMessage, toolResponseText } from "./modelPresetMessages";
 import { isLocalNetworkUrl } from "src/ts/network/localNetwork";
@@ -593,6 +593,21 @@ function toAdapterToolDef(tool: MCPTool): AdapterToolDef {
     }
 }
 
+// Render a turn's reasoning for DISPLAY, wrapped in the <Thoughts> tags the chat
+// renderer already parses (mirrors the classic anthropic path). Returns '' when
+// there is nothing to show, so non-reasoning models are byte-identical to before.
+// redacted_thinking has no visible text — surface the same placeholder as classic.
+function formatPresetReasoning(reasoning?: AdapterReasoningPart[]): string {
+    if (!reasoning || reasoning.length === 0) return ''
+    let body = ''
+    for (const part of reasoning) {
+        if (part.redactedData !== undefined) body += '\n{{redacted_thinking}}\n'
+        else if (part.text) body += part.text
+    }
+    if (body.trim().length === 0) return ''
+    return `<Thoughts>\n${body}\n</Thoughts>\n\n`
+}
+
 async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelPreset, abortSignal:AbortSignal=null):Promise<requestDataResponse> {
     const credential = buildModelPresetCredential(preset)
     const kind = preset.profileSnapshot.adapterKind
@@ -615,13 +630,21 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
         ? arg.tools.map(toAdapterToolDef)
         : undefined
 
+    // Vision gate (no per-preset toggle): send attached images when the profile
+    // declares the 'vision' capability and the adapter implements image wire.
+    // Additive — the preset path otherwise drops images, so OFF (no capability)
+    // is byte-identical to the prior text-only behavior.
+    const supportsVision = VISION_CAPABLE_ADAPTER_KINDS.includes(kind)
+        && (caps?.includes('vision') ?? false)
+
     // Expand `<tool_call>` history into structured tool turns ONLY on the active
     // tool path. With tools off, fall back to the plain mapping so existing chats
     // behave exactly as before (literal passthrough; no tool-role messages that a
-    // text-only adapter would reject). Guards regression P1#2.
+    // text-only adapter would reject). Guards regression P1#2. Image attachments
+    // ride along in both branches, gated by supportsVision.
     const messages = tools
-        ? await expandAdapterMessages(arg.formated, decodeToolCall)
-        : arg.formated.map(toAdapterMessage)
+        ? await expandAdapterMessages(arg.formated, decodeToolCall, supportsVision)
+        : arg.formated.map((m) => toAdapterMessage(m, supportsVision))
 
     // previewBody must NEVER hit the network or run tools — build the request and
     // return it as a preview. Mirrors the classic adapters' previewBody handling.
@@ -669,7 +692,7 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
             return { type: 'streaming', result: stream, model: preset.name }
         }
         const response = await sendModelPreset(kind, preset, options, credential)
-        return { type: 'success', result: response.text, model: preset.name }
+        return { type: 'success', result: formatPresetReasoning(response.reasoning) + response.text, model: preset.name }
     } catch (err) {
         console.error('[ModelPreset] request failed', describeModelPresetError(err))
         return {
@@ -700,6 +723,7 @@ async function runModelPresetToolLoop(
     let toolsExecuted = false
     const result = await runToolLoop(messages, {
         maxSteps: MODEL_PRESET_MAX_TOOL_STEPS,
+        formatReasoning: formatPresetReasoning,
         send: (convo) => sendModelPreset(
             kind, preset,
             { messages: convo, tools, abortSignal: abortSignal ?? undefined, fetchImpl },

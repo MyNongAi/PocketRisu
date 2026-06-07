@@ -725,6 +725,80 @@ describe('tool use (Stage 1)', () => {
     })
 })
 
+describe('vision (Stage 3)', () => {
+    test('serializes a user image as a content-part array with text + image_url', async () => {
+        const { fetchImpl, calls } = captureFetch(
+            jsonResponse({ choices: [{ message: { content: 'ok' } }] }),
+        )
+        await sendChatRequest(
+            makePreset(),
+            {
+                messages: [
+                    { role: 'user', content: 'what is this', images: [{ kind: 'image', base64: 'AAAA', mime: 'image/jpeg' }] },
+                ],
+                fetchImpl,
+            },
+            { apiKey: 'sk' },
+        )
+        const wire = calls[0].body.messages as Array<Record<string, unknown>>
+        expect(wire[0]).toEqual({
+            role: 'user',
+            content: [
+                { type: 'text', text: 'what is this' },
+                { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,AAAA' } },
+            ],
+        })
+    })
+
+    test('a text-only user turn stays a plain string (no regression)', async () => {
+        const { fetchImpl, calls } = captureFetch(
+            jsonResponse({ choices: [{ message: { content: 'ok' } }] }),
+        )
+        await sendChatRequest(makePreset(), { messages: userMessages, fetchImpl }, { apiKey: 'sk' })
+        const wire = calls[0].body.messages as Array<Record<string, unknown>>
+        expect(wire[1]).toEqual({ role: 'user', content: 'Hello' })
+    })
+
+    test('defaults mime to image/png when omitted', async () => {
+        const { fetchImpl, calls } = captureFetch(
+            jsonResponse({ choices: [{ message: { content: 'ok' } }] }),
+        )
+        await sendChatRequest(
+            makePreset(),
+            { messages: [{ role: 'user', content: '', images: [{ kind: 'image', base64: 'ZZ' }] }], fetchImpl },
+            { apiKey: 'sk' },
+        )
+        const wire = calls[0].body.messages as Array<Record<string, unknown>>
+        expect(wire[0].content).toEqual([{ type: 'image_url', image_url: { url: 'data:image/png;base64,ZZ' } }])
+    })
+})
+
+describe('reasoning display (Stage 4a)', () => {
+    test('parses the OpenRouter `reasoning` string into a reasoning part', async () => {
+        const { fetchImpl } = captureFetch(
+            jsonResponse({ choices: [{ message: { content: 'answer', reasoning: 'because' } }] }),
+        )
+        const result = await sendChatRequest(makePreset(), { messages: userMessages, fetchImpl }, { apiKey: 'sk' })
+        expect(result.reasoning).toEqual([{ text: 'because' }])
+    })
+
+    test('falls back to `reasoning_content` (DeepSeek-style)', async () => {
+        const { fetchImpl } = captureFetch(
+            jsonResponse({ choices: [{ message: { content: 'a', reasoning_content: 'step' } }] }),
+        )
+        const result = await sendChatRequest(makePreset(), { messages: userMessages, fetchImpl }, { apiKey: 'sk' })
+        expect(result.reasoning).toEqual([{ text: 'step' }])
+    })
+
+    test('no reasoning field → undefined (non-reasoning models unchanged)', async () => {
+        const { fetchImpl } = captureFetch(
+            jsonResponse({ choices: [{ message: { content: 'a' } }] }),
+        )
+        const result = await sendChatRequest(makePreset(), { messages: userMessages, fetchImpl }, { apiKey: 'sk' })
+        expect(result.reasoning).toBeUndefined()
+    })
+})
+
 describe('previewChatRequest (no network)', () => {
     test('returns the prepared body without fetching', async () => {
         let fetched = false
