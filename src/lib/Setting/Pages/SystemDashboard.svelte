@@ -252,11 +252,16 @@
         // tiny marker, so the chart counts the chunk table's physical size here
         // and excludes database.bin / dbbackup from kv accounting.
         const chunkedDbBytes = stats.chunks?.bytes ?? 0
+        // A small DB (≤ chunk threshold) stays a raw kv value rather than chunks,
+        // so count it here — otherwise the database row reads 0 and its bytes get
+        // mislabeled as "uncategorized". When chunked, chunkedDbBytes is the size.
+        const rawDbBlob = chunkedDbBytes > 0 ? 0 : get('database/database.bin')
+        const dbRowSize = chunkedDbBytes + rawDbBlob
         // Known kv prefixes I track explicitly — kv-side only. If anything
         // else lives in kv (test keys, migration leftovers), it shows up
         // under "uncategorized" so the bar always sums correctly.
         const knownKv =
-            get('assets/') + inlayKvTotal + get('remotes/') + get('coldstorage/')
+            get('assets/') + inlayKvTotal + get('remotes/') + get('coldstorage/') + rawDbBlob
         const uncategorizedKv = Math.max(0, stats.kvTotalBytes - knownKv)
         // SQLite overhead splits into "structural" (always present — indexes,
         // page headers, alignment) and "reclaimable" (the freelist, removable
@@ -265,7 +270,7 @@
         const reclaimable = stats.sqlite.reclaimable
         const structuralOverhead = Math.max(0, stats.files.db - stats.kvTotalBytes - chunkedDbBytes - reclaimable)
         const rows: DiskRow[] = [
-            { id: 'kv-database',     label: language.storageRowKvDatabase,     desc: language.storageRowKvDatabaseDesc,     size: chunkedDbBytes,                color: 'bg-rose-500' },
+            { id: 'kv-database',     label: language.storageRowKvDatabase,     desc: language.storageRowKvDatabaseDesc,     size: dbRowSize,                     color: 'bg-rose-500' },
             { id: 'kv-assets',       label: language.storageRowKvAssets,       desc: language.storageRowKvAssetsDesc,       size: get('assets/'),                color: 'bg-amber-500' },
             { id: 'kv-inlay',        label: language.storageRowKvInlay,        desc: language.storageRowKvInlayDesc,        size: inlayTotal,                    color: 'bg-emerald-500' },
             { id: 'kv-remotes',      label: language.storageRowKvRemotes,      desc: language.storageRowKvRemotesDesc,      size: get('remotes/'),               color: 'bg-cyan-500' },
@@ -575,7 +580,7 @@
         <p class="text-textcolor2 text-sm leading-relaxed mb-2">{language.storageOptimizeWhat}</p>
         <p class="text-textcolor2 text-sm leading-relaxed mb-3">{language.storageOptimizeWhen}</p>
         <div class="flex justify-end">
-            <ShButton variant="primary" onclick={runOptimize} disabled={stats.sqlite.reclaimable < 50 * 1024 * 1024}>
+            <ShButton variant="primary" onclick={runOptimize} disabled={(stats.sqlite.reclaimable + (stats.chunks?.orphanBytes ?? 0)) < 50 * 1024 * 1024}>
                 <SparklesIcon size={16} />
                 {language.storageOptimize}
             </ShButton>
