@@ -160,6 +160,13 @@ function checkpointWal(mode = 'TRUNCATE') {
     return db.pragma(`wal_checkpoint(${mode})`);
 }
 
+// Reclaim chunks no longer referenced by any manifest (live blob + snapshots).
+// Returns the number deleted. Caller should run it serialized with saves (e.g.
+// inside the storage queue) and before VACUUM so freed pages get compacted.
+function gcChunks() {
+    return chunkStore.gc();
+}
+
 function clearEntities() {
     // Entity tables may still exist from previous versions — clear them during backup import
     try {
@@ -175,4 +182,5 @@ module.exports = {
     kvGet, kvSet, kvDel, kvList, kvDelPrefix, kvListWithSizes, kvSize, kvGetUpdatedAt, kvCopyValue,
     clearEntities,
     checkpointWal,
+    gcChunks,
 };

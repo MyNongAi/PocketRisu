@@ -25,7 +25,7 @@ const getVips = () => {
 }
 const { kvGet, kvSet, kvDel, kvList,
         kvDelPrefix, kvListWithSizes, kvSize, kvGetUpdatedAt, kvCopyValue, clearEntities, checkpointWal,
-        db: sqliteDb } = require('./db.cjs');
+        gcChunks, db: sqliteDb } = require('./db.cjs');
 const {
     addLogBatch, queryLogs, clearLogs, countLogs,
     logger, installProcessHandlers, expressErrorMiddleware,
@@ -5253,6 +5253,11 @@ app.post('/api/db/optimize', async (req, res, next) => {
         const result = await queueStorageOperation(async () => {
             await flushPendingDb();
             const t0 = Date.now();
+            // Reclaim chunks orphaned by edits/snapshot rotation before VACUUM, so
+            // their pages get compacted in the same pass. Serialized with saves by
+            // the surrounding queueStorageOperation.
+            let gcDeleted = 0;
+            try { gcDeleted = gcChunks(); } catch (e) { logger.warn('[Optimize] chunk gc failed:', e?.message || e); }
             try { checkpointWal('TRUNCATE'); } catch (e) { logger.warn('[Optimize] checkpoint failed:', e?.message || e); }
             sqliteDb.exec('VACUUM');
             // VACUUM streams the whole DB through the WAL; without this checkpoint the
@@ -5266,6 +5271,7 @@ app.post('/api/db/optimize', async (req, res, next) => {
                 preDbSize,
                 postDbSize,
                 reclaimed: Math.max(0, preDbSize - postDbSize),
+                chunksReclaimed: gcDeleted,
             };
         });
         res.json(result);
