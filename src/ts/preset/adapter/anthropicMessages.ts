@@ -370,6 +370,11 @@ function parseAnthropicStreamDelta(eventName: string | undefined, raw: unknown):
         if (isPlainObject(delta) && delta['type'] === 'text_delta' && typeof delta['text'] === 'string') {
             return { textDelta: delta['text'] as string, raw }
         }
+        // thinking_delta carries the model's reasoning — keep it separate so it is
+        // displayed as <Thoughts>, not concatenated into the visible answer.
+        if (isPlainObject(delta) && delta['type'] === 'thinking_delta' && typeof delta['thinking'] === 'string') {
+            return { textDelta: '', reasoningDelta: delta['thinking'] as string, raw }
+        }
         return null
     }
     if (eventName === 'message_delta') {

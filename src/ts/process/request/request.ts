@@ -684,10 +684,18 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
             const stream = new ReadableStream<StreamResponseChunk>({
                 async start(controller){
                     let fullText = ''
+                    let reasoningText = ''
                     try {
                         for await (const delta of gen){
+                            if (delta.reasoningDelta) reasoningText += delta.reasoningDelta
                             fullText += delta.textDelta
-                            controller.enqueue({ "0": fullText })
+                            // Prepend the accumulated reasoning wrapped in <Thoughts>
+                            // (mirrors the non-streaming path), so thinking is shown
+                            // as reasoning and never merged into the saved answer.
+                            const prefix = reasoningText.length > 0
+                                ? formatPresetReasoning([{ text: reasoningText }])
+                                : ''
+                            controller.enqueue({ "0": prefix + fullText })
                         }
                         controller.close()
                     } catch (err) {

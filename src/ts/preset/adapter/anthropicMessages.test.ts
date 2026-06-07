@@ -510,6 +510,29 @@ describe('streamAnthropicChatRequest', () => {
         expect(calls[0].headers.Accept).toBe('text/event-stream')
     })
 
+    test('separates thinking_delta into reasoningDelta, never into textDelta', async () => {
+        const { fetchImpl } = captureFetch(
+            sseResponse([
+                'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"step "}}\n\n',
+                'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"one"}}\n\n',
+                'event: content_block_delta\ndata: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"answer"}}\n\n',
+                'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+            ]),
+        )
+        const text: string[] = []
+        const reasoning: string[] = []
+        for await (const delta of streamAnthropicChatRequest(
+            makePreset(),
+            { messages: messagesWithSystem, fetchImpl },
+            { apiKey: 'k' },
+        )) {
+            if (delta.textDelta) text.push(delta.textDelta)
+            if (delta.reasoningDelta) reasoning.push(delta.reasoningDelta)
+        }
+        expect(text.join('')).toBe('answer')
+        expect(reasoning.join('')).toBe('step one')
+    })
+
     test('skips ping events and ignores message_start/content_block_start/stop noise', async () => {
         const { fetchImpl } = captureFetch(
             sseResponse([

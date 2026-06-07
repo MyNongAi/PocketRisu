@@ -377,19 +377,22 @@ function parseGeminiStreamDelta(raw: unknown): AdapterChatStreamDelta | null {
     throwIfPromptBlocked(raw['promptFeedback'])
     const candidates = raw['candidates']
     let textDelta = ''
+    let reasoningDelta = ''
     let finishReason: string | undefined
     if (Array.isArray(candidates) && candidates.length > 0 && isPlainObject(candidates[0])) {
         const first = candidates[0] as Record<string, unknown>
-        textDelta = extractTextFromContent(first['content'])
+        const split = splitStreamParts(first['content'])
+        textDelta = split.text
+        reasoningDelta = split.reasoning
         if (typeof first['finishReason'] === 'string') {
             finishReason = first['finishReason'] as string
         }
     }
     const usage = parseGeminiUsage(raw['usageMetadata'])
-    if (textDelta.length === 0 && finishReason === undefined && usage === undefined) {
+    if (textDelta.length === 0 && reasoningDelta.length === 0 && finishReason === undefined && usage === undefined) {
         return null
     }
-    return { textDelta, finishReason, usage, raw }
+    return { textDelta, reasoningDelta: reasoningDelta.length > 0 ? reasoningDelta : undefined, finishReason, usage, raw }
 }
 
 function throwIfPromptBlocked(feedback: unknown): void {
@@ -406,17 +409,21 @@ function throwIfPromptBlocked(feedback: unknown): void {
     )
 }
 
-function extractTextFromContent(content: unknown): string {
-    if (!isPlainObject(content)) return ''
+// Split a streamed candidate's parts into visible text vs reasoning (thought)
+// text. Thought parts carry `thought: true`; merging them into the visible text
+// would leak the model's internal reasoning into the saved answer.
+function splitStreamParts(content: unknown): { text: string; reasoning: string } {
+    if (!isPlainObject(content)) return { text: '', reasoning: '' }
     const parts = content['parts']
-    if (!Array.isArray(parts)) return ''
+    if (!Array.isArray(parts)) return { text: '', reasoning: '' }
     let text = ''
+    let reasoning = ''
     for (const part of parts) {
-        if (isPlainObject(part) && typeof part['text'] === 'string') {
-            text += part['text'] as string
-        }
+        if (!isPlainObject(part) || typeof part['text'] !== 'string') continue
+        if (part['thought'] === true) reasoning += part['text'] as string
+        else text += part['text'] as string
     }
-    return text
+    return { text, reasoning }
 }
 
 function parseGeminiUsage(raw: unknown): AdapterUsage | undefined {

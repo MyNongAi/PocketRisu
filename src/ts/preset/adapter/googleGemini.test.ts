@@ -506,6 +506,28 @@ describe('streamGoogleChatRequest', () => {
         expect(calls[0].headers.Accept).toBe('text/event-stream')
     })
 
+    test('routes thought parts to reasoningDelta, never into the visible textDelta', async () => {
+        const { fetchImpl } = captureFetch(
+            sseResponse([
+                'data: {"candidates":[{"content":{"parts":[{"text":"thinking...","thought":true}],"role":"model"}}]}\n\n',
+                'data: {"candidates":[{"content":{"parts":[{"text":"answer"}],"role":"model"}}]}\n\n',
+                'data: {"candidates":[{"content":{"parts":[]},"finishReason":"STOP"}]}\n\n',
+            ]),
+        )
+        const text: string[] = []
+        const reasoning: string[] = []
+        for await (const delta of streamGoogleChatRequest(
+            makePreset(),
+            { messages: messagesWithSystem, fetchImpl },
+            { apiKey: 'k' },
+        )) {
+            if (delta.textDelta) text.push(delta.textDelta)
+            if (delta.reasoningDelta) reasoning.push(delta.reasoningDelta)
+        }
+        expect(text.join('')).toBe('answer')
+        expect(reasoning.join('')).toBe('thinking...')
+    })
+
     test('throws parse error on non-JSON SSE data', async () => {
         const { fetchImpl } = captureFetch(sseResponse(['data: not json\n\n']))
         const gen = streamGoogleChatRequest(

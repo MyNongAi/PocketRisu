@@ -338,22 +338,32 @@ function parseChatStreamDelta(raw: unknown): AdapterChatStreamDelta | null {
     if (!isPlainObject(raw)) return null
     const choices = raw['choices']
     let textDelta = ''
+    let reasoningDelta = ''
     let finishReason: string | undefined
     if (Array.isArray(choices) && choices.length > 0 && isPlainObject(choices[0])) {
         const first = choices[0] as Record<string, unknown>
         const delta = first['delta']
-        if (isPlainObject(delta) && typeof delta['content'] === 'string') {
-            textDelta = delta['content'] as string
+        if (isPlainObject(delta)) {
+            if (typeof delta['content'] === 'string') {
+                textDelta = delta['content'] as string
+            }
+            // OpenRouter streams reasoning as `reasoning`, DeepSeek-style servers as
+            // `reasoning_content`. Keep it separate from the visible answer.
+            if (typeof delta['reasoning'] === 'string') {
+                reasoningDelta = delta['reasoning'] as string
+            } else if (typeof delta['reasoning_content'] === 'string') {
+                reasoningDelta = delta['reasoning_content'] as string
+            }
         }
         if (typeof first['finish_reason'] === 'string') {
             finishReason = first['finish_reason'] as string
         }
     }
     const usage = parseUsage(raw['usage'])
-    if (textDelta.length === 0 && finishReason === undefined && usage === undefined) {
+    if (textDelta.length === 0 && reasoningDelta.length === 0 && finishReason === undefined && usage === undefined) {
         return null
     }
-    return { textDelta, finishReason, usage, raw }
+    return { textDelta, reasoningDelta: reasoningDelta.length > 0 ? reasoningDelta : undefined, finishReason, usage, raw }
 }
 
 function parseUsage(raw: unknown): AdapterUsage | undefined {

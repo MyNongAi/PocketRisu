@@ -132,6 +132,9 @@ export interface AdapterChatResponse {
 
 export interface AdapterChatStreamDelta {
     textDelta: string
+    // Reasoning (thinking) text for this chunk, kept SEPARATE from textDelta so it
+    // can be wrapped in <Thoughts> for display instead of leaking into the answer.
+    reasoningDelta?: string
     finishReason?: string
     usage?: AdapterUsage
     raw: unknown

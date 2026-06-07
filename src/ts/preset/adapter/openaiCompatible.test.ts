@@ -308,6 +308,29 @@ describe('streamChatRequest', () => {
         expect(calls[0].headers.Accept).toBe('text/event-stream')
     })
 
+    test('routes reasoning / reasoning_content deltas to reasoningDelta, not textDelta', async () => {
+        const { fetchImpl } = captureFetch(
+            sseResponse([
+                'data: {"choices":[{"delta":{"reasoning":"step "}}]}\n\n',
+                'data: {"choices":[{"delta":{"reasoning_content":"two"}}]}\n\n',
+                'data: {"choices":[{"delta":{"content":"answer"}}]}\n\n',
+                'data: [DONE]\n\n',
+            ]),
+        )
+        const text: string[] = []
+        const reasoning: string[] = []
+        for await (const delta of streamChatRequest(
+            makePreset(),
+            { messages: userMessages, fetchImpl },
+            { apiKey: 'sk' },
+        )) {
+            if (delta.textDelta) text.push(delta.textDelta)
+            if (delta.reasoningDelta) reasoning.push(delta.reasoningDelta)
+        }
+        expect(text.join('')).toBe('answer')
+        expect(reasoning.join('')).toBe('step two')
+    })
+
     test('captures usage emitted in the final chunk', async () => {
         const { fetchImpl } = captureFetch(
             sseResponse([

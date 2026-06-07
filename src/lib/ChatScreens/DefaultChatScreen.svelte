@@ -44,10 +44,12 @@ import { isMobile } from 'src/ts/platform'
     // per-platform send-key mode. Mobile uses sendKeyMobile, desktop sendKeyPC.
     function shouldSendOnEnter(e: KeyboardEvent): boolean {
         const mode = isMobile ? DBState.db.sendKeyMobile : DBState.db.sendKeyPC;
+        // Match the configured combo EXACTLY — every other modifier must be absent,
+        // so e.g. Alt+Enter or Ctrl+Shift+Enter inserts a newline instead of sending.
         switch (mode) {
-            case 'enter': return !e.shiftKey && !e.ctrlKey && !e.metaKey;
-            case 'ctrl-enter': return e.ctrlKey || e.metaKey;
-            case 'shift-enter': return e.shiftKey;
+            case 'enter': return !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey;
+            case 'ctrl-enter': return (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey;
+            case 'shift-enter': return e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey;
             default: return false; // 'button'
         }
     }
