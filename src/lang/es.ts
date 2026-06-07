@@ -1,5 +1,7 @@
 import { helpEs } from "./help.es";
 export const languageSpanish = {
+    modelPresetToolUse: "Uso de herramientas",
+    modelPresetToolUseHelp: "Permite que este preajuste use las herramientas configuradas (MCP). Desactivado por defecto. Las ejecuciones de herramientas se envían sin streaming.",
     "formating": {
         "main": "Prompt Principal",
         "jailbreak": "Prompt Jailbreak",

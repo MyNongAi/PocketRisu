@@ -1,5 +1,7 @@
 import { helpCn } from "./help.cn";
 export const languageChinese = {
+    modelPresetToolUse: "工具使用",
+    modelPresetToolUseHelp: "允许此预设调用已配置的工具（MCP）。默认关闭。工具运行时不使用流式传输。",
     "formating": {
         "main": "主提示词",
         "jailbreak": "越狱提示词",

@@ -3,6 +3,27 @@ export type AdapterKind =
     | 'anthropic-messages'
     | 'google-gemini'
 
+// Adapter kinds whose tool (function-calling) wire is actually implemented.
+// Both the runtime gate (requestModelPreset) and the editor toggle UI check
+// membership so a preset can never enable tools on an adapter that would reject
+// tool-role messages. Grows as each adapter's tool wire lands.
+export const TOOL_CAPABLE_ADAPTER_KINDS: readonly AdapterKind[] = [
+    'openai-compatible',
+    'anthropic-messages',
+    'google-gemini',
+]
+
+// Adapter kinds whose image-input (vision) wire is implemented. Vision is not
+// behind a per-preset toggle (unlike tools): it is purely additive — the preset
+// path currently drops attached images, so sending them when the profile
+// declares the 'vision' capability matches the classic path's always-send
+// behavior. The capability gate keeps images off models that would reject them.
+export const VISION_CAPABLE_ADAPTER_KINDS: readonly AdapterKind[] = [
+    'openai-compatible',
+    'anthropic-messages',
+    'google-gemini',
+]
+
 export type AuthKind =
     | 'none'
     | 'bearer'
@@ -256,6 +277,11 @@ export interface ModelPreset {
     // Default off (undefined/false). Forced off when the profile does not
     // declare the 'streaming' capability.
     useStreaming?: boolean
+    // Per-ModelPreset tool use (capabilities Stage 1). Default off
+    // (undefined/false): while off, the request stays text-only so existing
+    // bound chats are never routed through the tool loop. Only meaningful when
+    // the profile declares the 'tools' capability. Tool runs force non-streaming.
+    toolUse?: boolean
     // Per-ModelPreset input (context) token budget — how much prompt to send,
     // mirroring the global db.maxContext but per binding. Empty → 65000 default,
     // clamped to the profile's contextWindowTokens when known. NOT the output
