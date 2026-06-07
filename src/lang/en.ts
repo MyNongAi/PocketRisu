@@ -1791,6 +1791,8 @@ export const languageEnglish = {
     pluginStorageMetaType: "Type",
     pluginStorageMetaSize: "Size",
     pluginStorageMetaChars: "Chars",
+    pluginStorageOwner: "Origin",
+    pluginStorageOwnerUnknown: "Unknown",
     pluginStorageDeleted: "Deleted",
     pluginStorageJsonError: (msg: string) => `JSON parse failed: ${msg}`,
     pluginStorageSaved: (key: string) => `Saved "${key}"`,

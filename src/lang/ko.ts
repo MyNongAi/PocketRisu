@@ -1947,6 +1947,8 @@ export const languageKorean = {
   pluginStorageMetaType: "타입",
   pluginStorageMetaSize: "크기",
   pluginStorageMetaChars: "문자 수",
+  pluginStorageOwner: "출처(추정)",
+  pluginStorageOwnerUnknown: "미상",
   pluginStorageDeleted: "삭제됨",
   pluginStorageJsonError: (msg: string) => `JSON 파싱 실패: ${msg}`,
   pluginStorageSaved: (key: string) => `"${key}" 저장됨`,

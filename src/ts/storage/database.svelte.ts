@@ -1376,6 +1376,11 @@ export interface Database{
     dynamicOutput?:DynamicOutput
     hubServerType?:string
     pluginCustomStorage:{[key:string]:any}
+    // Best-effort "which plugin last wrote this key" sidecar for the save-file
+    // plugin storage. Additive metadata only — never wraps the value itself, so
+    // existing plugins read their keys unchanged. Populated for new V3 writes;
+    // legacy/V2 keys stay unrecorded. See pluginStorageMeta.ts.
+    pluginStorageMeta?:{[key:string]:{plugin:string,updatedAt:number}}
     longPressToPopupEditor?: boolean
     ImagenModel:string
     ImagenImageSize:string
