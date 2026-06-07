@@ -80,6 +80,11 @@ function createChunkStore(db, opts = {}) {
     );
     const kvSet = db.prepare('INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES (?, ?, ?)');
     const kvGet = db.prepare('SELECT value FROM kv WHERE key = ?');
+    const kvDel = db.prepare('DELETE FROM kv WHERE key = ?');
+    // Mark-sweep: the set of all hashes referenced by ANY manifest (live + every
+    // snapshot/backup) is the live set; anything else is unreachable. Recomputed
+    // from manifest_chunks each run — stateless, self-healing, can't over-delete.
+    const gcSweep = db.prepare('DELETE FROM chunks WHERE hash NOT IN (SELECT hash FROM manifest_chunks)');
 
     const isChunked = (value) => Buffer.isBuffer(value) && value.equals(CHUNK_MARKER);
 
@@ -130,7 +135,20 @@ function createChunkStore(db, opts = {}) {
         }
     });
 
-    return { putValue, getValue, sizeValue, snapshotValue };
+    // Remove a key entirely (its manifest + kv row). Chunks it referenced
+    // become orphans, reclaimed by the next gc(). Used for snapshot rotation.
+    const dropValue = db.transaction((key) => {
+        delManifest.run(key);
+        kvDel.run(key);
+    });
+
+    // Reclaim unreferenced chunks. Returns the number deleted. Run opportunistically
+    // (e.g. Optimize / periodic) — never on the hot save path.
+    function gc() {
+        return gcSweep.run().changes;
+    }
+
+    return { putValue, getValue, sizeValue, snapshotValue, dropValue, gc };
 }
 
 module.exports = { cdcSplit, createChunkStore, CHUNK_MARKER };
