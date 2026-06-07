@@ -40,4 +40,79 @@ function cdcSplit(buf) {
     return chunks;
 }
 
-module.exports = { cdcSplit };
+// Sentinel stored in kv.value for a chunked key. kv.value is NOT NULL, so a
+// chunked row holds this marker instead of an empty value; the real bytes live
+// in the chunks table, ordered by manifest_chunks. A legacy raw value never
+// equals this 13-byte sentinel, so reads stay backward-compatible.
+const CHUNK_MARKER = Buffer.from('\x00RISUCHUNKED\x00', 'binary');
+const DEFAULT_THRESHOLD = 16 * 1024 * 1024; // values larger than this get chunked
+
+// Bind chunk-aware get/put to a specific better-sqlite3 instance. db.cjs wires
+// the real DB; tests wire a :memory: DB. The kv table must already exist (it is
+// db.cjs's schema); this creates only the chunk/manifest tables.
+function createChunkStore(db, opts = {}) {
+    const threshold = opts.threshold ?? DEFAULT_THRESHOLD;
+
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS chunks (
+            hash TEXT PRIMARY KEY,
+            data BLOB NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS manifest_chunks (
+            manifest_key TEXT NOT NULL,
+            seq          INTEGER NOT NULL,
+            hash         TEXT NOT NULL,
+            PRIMARY KEY (manifest_key, seq)
+        );
+        CREATE INDEX IF NOT EXISTS idx_manifest_hash ON manifest_chunks(hash);
+    `);
+
+    const insChunk = db.prepare('INSERT OR IGNORE INTO chunks (hash, data) VALUES (?, ?)');
+    const delManifest = db.prepare('DELETE FROM manifest_chunks WHERE manifest_key = ?');
+    const insManifest = db.prepare('INSERT INTO manifest_chunks (manifest_key, seq, hash) VALUES (?, ?, ?)');
+    const selManifest = db.prepare('SELECT hash FROM manifest_chunks WHERE manifest_key = ? ORDER BY seq');
+    const selChunk = db.prepare('SELECT data FROM chunks WHERE hash = ?');
+    const selSize = db.prepare(
+        'SELECT SUM(LENGTH(c.data)) AS n FROM manifest_chunks m JOIN chunks c ON c.hash = m.hash WHERE m.manifest_key = ?',
+    );
+    const kvSet = db.prepare('INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES (?, ?, ?)');
+    const kvGet = db.prepare('SELECT value FROM kv WHERE key = ?');
+
+    const isChunked = (value) => Buffer.isBuffer(value) && value.equals(CHUNK_MARKER);
+
+    // Atomic: clearing the old manifest, inserting new chunks, and writing the
+    // marker all commit together. Orphaned chunks from a prior version are left
+    // for GC (a later layer) — never deleted here.
+    const putValue = db.transaction((key, value) => {
+        delManifest.run(key);
+        if (value.length <= threshold) {
+            kvSet.run(key, value, Date.now());
+            return;
+        }
+        const chunks = cdcSplit(value);
+        for (const c of chunks) insChunk.run(c.hash, c.data);
+        for (let i = 0; i < chunks.length; i++) insManifest.run(key, i, chunks[i].hash);
+        kvSet.run(key, CHUNK_MARKER, Date.now());
+    });
+
+    function getValue(key) {
+        const row = kvGet.get(key);
+        if (!row) return null;
+        if (isChunked(row.value)) {
+            const parts = selManifest.all(key).map((r) => selChunk.get(r.hash).data);
+            return Buffer.concat(parts);
+        }
+        return row.value;
+    }
+
+    function sizeValue(key) {
+        const row = kvGet.get(key);
+        if (!row) return null;
+        if (isChunked(row.value)) return selSize.get(key).n;
+        return row.value.length;
+    }
+
+    return { putValue, getValue, sizeValue };
+}
+
+module.exports = { cdcSplit, createChunkStore, CHUNK_MARKER };
