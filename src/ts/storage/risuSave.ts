@@ -1,6 +1,6 @@
 import { Packr, Unpackr, decode } from "msgpackr/index-no-eval";
 import * as fflate from "fflate";
-import { getDatabase, presetTemplate, type Database } from "./database.svelte";
+import { createBotPresetTemplate, getDatabase, type Database } from "./database.svelte";
 import { forageStorage } from "../globalApi.svelte";
 import { chatToStub } from "./chatStorage";
 
@@ -73,7 +73,6 @@ export type toSaveType = {
     root: boolean;
     botPreset: boolean;
     modules: boolean;
-    loadouts: boolean;
     plugins: boolean;
     pluginCustomStorage: boolean;
 }
@@ -127,7 +126,7 @@ export class RisuSaveEncoder {
         for(const key of keys){
             if(
                 key !== 'characters' && key !== 'botPresets' && key !== 'modules' &&
-                key !== 'loadouts' && key !== 'plugins' && key !== 'pluginCustomStorage'
+                key !== 'plugins' && key !== 'pluginCustomStorage'
             ){
                 obj[key] = data[key]
             }
@@ -149,12 +148,6 @@ export class RisuSaveEncoder {
             data: JSON.stringify(data.modules),
             type: RisuSaveType.MODULES,
             name: 'modules'
-        });
-        this.blocks['loadouts'] = await this.encodeBlock({
-            compression,
-            data: JSON.stringify(data.loadouts),
-            type: RisuSaveType.LOADOUTS,
-            name: 'loadouts'
         });
         this.blocks['plugins'] = await this.encodeBlock({
             compression,
@@ -199,7 +192,7 @@ export class RisuSaveEncoder {
         for(const key of keys){
             if(
                 key !== 'characters' && key !== 'botPresets' && key !== 'modules' &&
-                key !== 'loadouts' && key !== 'plugins' && key !== 'pluginCustomStorage'
+                key !== 'plugins' && key !== 'pluginCustomStorage'
             ){
                 obj[key] = data[key]
             }
@@ -251,7 +244,7 @@ export class RisuSaveEncoder {
         const currentCharacterIds = new Set<string>((data.characters ?? []).map((character) => character?.chaId).filter(Boolean));
         for (const key of Object.keys(this.blocks)) {
             if (key === 'root' || key === 'preset' || key === 'modules' || key === 'config'
-                || key === 'loadouts' || key === 'plugins' || key === 'pluginStorage') {
+                || key === 'plugins' || key === 'pluginStorage') {
                 continue;
             }
             if (!currentCharacterIds.has(key)) {
@@ -274,15 +267,6 @@ export class RisuSaveEncoder {
                 data: JSON.stringify(data.modules),
                 type: RisuSaveType.MODULES,
                 name: 'modules'
-            });
-        }
-
-        if(toSave.loadouts){
-            this.blocks['loadouts'] = await this.encodeBlock({
-                compression: this.compression,
-                data: JSON.stringify(data.loadouts),
-                type: RisuSaveType.LOADOUTS,
-                name: 'loadouts'
             });
         }
 
@@ -536,7 +520,7 @@ export class RisuSaveDecoder {
                     break;
                 }
                 case RisuSaveType.LOADOUTS:{
-                    db.loadouts = JSON.parse(this.blocks[key].content);
+                    // Loadout feature removed; ignore any legacy blocks from older backups.
                     break;
                 }
                 case RisuSaveType.PLUGIN_STORAGE:{
@@ -593,7 +577,7 @@ export class RisuSaveDecoder {
         }
         //to fix botpreset bugs
         if(!Array.isArray(db.botPresets) || db.botPresets.length === 0){
-            db.botPresets = [presetTemplate]
+            db.botPresets = [createBotPresetTemplate()]
             db.botPresetsId = 0
         }
         console.log('Decoded RisuSave data', db);
@@ -802,10 +786,12 @@ export function normalizeJSON(value: any, seen?: WeakSet<object>): any {
 // returned ops with `for (const op of ops) patch.push(op)` rather than spread,
 // to stay safe even when a single item's internal diff is large.
 //
-// `idKey != null` (modules): structural detection by id equality at each index,
-// with a safety belt that forces `replace` when ids are falsy or duplicated
-// (defensive against corrupted backups). `idKey == null` (botPresets, which
-// have no stable id): length-only detection.
+// `idKey != null` (modules, botPresets — both gained stable string ids):
+// structural detection by id equality at each index, with a safety belt
+// that forces `replace` when ids are falsy or duplicated (defensive against
+// corrupted backups, or backups predating the id field). `idKey == null`:
+// length-only detection — retained as a fallback for arrays without stable
+// ids, currently unused by callers but kept for future use.
 export function diffArrayWithIdGuard(
     compare: (a: any, b: any) => any[],
     path: string,
@@ -909,7 +895,7 @@ export class RisuSavePatcher {
 
         if (toSave.botPreset) {
             const normBotPresets = normalizeJSON(curBotPresets) ?? []
-            const ops = diffArrayWithIdGuard(compare, '/botPresets', lastBotPresets, normBotPresets, null)
+            const ops = diffArrayWithIdGuard(compare, '/botPresets', lastBotPresets, normBotPresets, 'id')
             for (const op of ops) patch.push(op)
             this.hashBlocks['botPresets'] = calculateHash(normBotPresets);
             this.lastSyncedDb.botPresets = normBotPresets;
