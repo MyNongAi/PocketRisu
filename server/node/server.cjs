@@ -25,7 +25,7 @@ const getVips = () => {
 }
 const { kvGet, kvSet, kvDel, kvList,
         kvDelPrefix, kvListWithSizes, kvSize, kvGetUpdatedAt, kvCopyValue, clearEntities, checkpointWal,
-        gcChunks, snapshotFootprint, db: sqliteDb } = require('./db.cjs');
+        gcChunks, reclaimableChunkBytes, snapshotFootprint, db: sqliteDb } = require('./db.cjs');
 const {
     addLogBatch, queryLogs, clearLogs, countLogs,
     logger, installProcessHandlers, expressErrorMiddleware,
@@ -5008,13 +5008,9 @@ app.get('/api/db/stats', async (req, res, next) => {
         // chunks). This is where the blob bytes actually live post-chunking — kv
         // holds only a tiny marker, so the chart must count this table separately.
         const chunkStat = sqliteDb.prepare('SELECT COUNT(*) AS c, COALESCE(SUM(LENGTH(data)), 0) AS b FROM chunks').get();
-        // Bytes gc would reclaim: chunks referenced by no *live* manifest (a
-        // manifest whose kv key still exists). Counts true orphans + chunks held
-        // only by stale manifests, so the Optimize button reflects both.
-        const orphanChunkBytes = sqliteDb.prepare(
-            `SELECT COALESCE(SUM(LENGTH(data)), 0) AS b FROM chunks WHERE hash NOT IN
-             (SELECT hash FROM manifest_chunks WHERE manifest_key IN (SELECT key FROM kv))`
-        ).get().b;
+        // Bytes the next gc() would reclaim (true orphans + chunks pinned only by
+        // stale/raw-overwritten manifests) — drives the Optimize button.
+        const orphanChunkBytes = reclaimableChunkBytes();
         const liveChunked = sqliteDb.prepare(
             'SELECT EXISTS(SELECT 1 FROM manifest_chunks WHERE manifest_key = ?) AS e'
         ).get(DB_BLOB_KEY).e === 1;
@@ -5392,11 +5388,12 @@ app.put('/api/db/snapshots/limits', async (req, res, next) => {
 app.get('/api/db/snapshots', async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
     try {
-        const items = kvListWithSizes(DB_BACKUP_PREFIX);
-        const out = items.map((it) => {
-            const tsRaw = parseInt(it.key.slice(DB_BACKUP_PREFIX.length, -4), 10);
+        const out = kvList(DB_BACKUP_PREFIX).map((key) => {
+            const tsRaw = parseInt(key.slice(DB_BACKUP_PREFIX.length, -4), 10);
             const ts = Number.isFinite(tsRaw) ? tsRaw * 100 : null;
-            return { key: it.key, size: it.size, timestamp: ts };
+            // Marginal disk cost (chunks not shared with live), matching the limit
+            // — kvListWithSizes would report a chunked snapshot's 13-byte marker.
+            return { key, size: snapshotFootprint(key), timestamp: ts };
         }).sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
         res.json({ snapshots: out });
     } catch (err) { next(err); }

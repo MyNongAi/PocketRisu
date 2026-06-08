@@ -337,4 +337,20 @@ describe('gc — mark-sweep (참조 없는 조각만 삭제)', () => {
         expect(countChunks(db)).toBeLessThan(before) // snap 전용 조각 회수됨
         expect((store.getValue('live') as Buffer).length).toBeGreaterThan(0) // live 무사
     })
+
+    it('D8: raw 값이 마커를 덮은 stale manifest도 자가치유 (kv 키는 있지만 마커 아님)', () => {
+        const db = freshDb()
+        const store = createChunkStore(db, T)
+        store.putValue('live', randomBytes(200_000))
+        store.snapshotValue('live', 'snap')
+        store.putValue('live', randomBytes(200_000)) // snap 조각이 단독이 됨
+        // 옛/누락 경로 시뮬: snap의 kv 값을 raw로 덮되 manifest는 남김
+        db.prepare("UPDATE kv SET value = ? WHERE key = 'snap'").run(Buffer.from('raw not marker'))
+        expect(countManifest(db, 'snap')).toBeGreaterThan(0)
+        const before = countChunks(db)
+        store.gc() // 마커 아님 → stale로 판정해 정리
+        expect(countManifest(db, 'snap')).toBe(0)
+        expect(countChunks(db)).toBeLessThan(before)
+        expect((store.getValue('live') as Buffer).length).toBeGreaterThan(0)
+    })
 })

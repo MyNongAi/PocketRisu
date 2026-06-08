@@ -177,6 +177,12 @@ function gcChunks() {
     return chunkStore.gc();
 }
 
+// Bytes the next gc() would reclaim (true orphans + chunks held only by stale
+// manifests). Drives the Optimize button so self-healable leaks can be cleared.
+function reclaimableChunkBytes() {
+    return chunkStore.reclaimableBytes();
+}
+
 // Marginal disk cost of a snapshot key vs the live DB blob (chunks it uniquely
 // keeps alive). Use this to size snapshots for the disk limit — kvSize/LENGTH
 // would report a chunked snapshot's shared logical size and over-trim.
@@ -200,5 +206,6 @@ module.exports = {
     clearEntities,
     checkpointWal,
     gcChunks,
+    reclaimableChunkBytes,
     snapshotFootprint,
 };

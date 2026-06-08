@@ -89,18 +89,24 @@ function createChunkStore(db, opts = {}) {
     const kvSet = db.prepare('INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES (?, ?, ?)');
     const kvGet = db.prepare('SELECT value FROM kv WHERE key = ?');
     const kvDel = db.prepare('DELETE FROM kv WHERE key = ?');
-    // Defensive self-heal: drop any manifest whose kv key no longer exists. A
-    // chunked key's manifest and kv row should always die together (dropValue),
-    // but if a prior path deleted only the kv row, the orphaned manifest would
-    // pin its chunks forever. Sweeping these first lets the leak's damage be
-    // reclaimed on the next gc.
+    // Defensive self-heal: drop any manifest that is not backed by a live chunked
+    // kv row — i.e. the key is gone OR its value is no longer the marker (some
+    // path wrote a raw value over it). Either way the manifest is stale and would
+    // pin its chunks forever; sweeping these first lets the damage be reclaimed.
     const gcStaleManifests = db.prepare(
-        'DELETE FROM manifest_chunks WHERE NOT EXISTS (SELECT 1 FROM kv WHERE kv.key = manifest_chunks.manifest_key)',
+        `DELETE FROM manifest_chunks WHERE NOT EXISTS (
+             SELECT 1 FROM kv WHERE kv.key = manifest_chunks.manifest_key AND kv.value = ?)`,
     );
     // Mark-sweep: the set of all hashes referenced by ANY manifest (live + every
     // snapshot/backup) is the live set; anything else is unreachable. Recomputed
     // from manifest_chunks each run — stateless, self-healing, can't over-delete.
     const gcSweep = db.prepare('DELETE FROM chunks WHERE hash NOT IN (SELECT hash FROM manifest_chunks)');
+    // Bytes gc would reclaim right now: chunks referenced by no marker-backed
+    // (live) manifest. Counts true orphans + chunks held only by stale manifests.
+    const selReclaimable = db.prepare(
+        `SELECT COALESCE(SUM(LENGTH(data)), 0) AS b FROM chunks WHERE hash NOT IN
+         (SELECT hash FROM manifest_chunks WHERE manifest_key IN (SELECT key FROM kv WHERE value = ?))`,
+    );
 
     const isChunked = (value) => Buffer.isBuffer(value) && value.equals(CHUNK_MARKER);
 
@@ -176,11 +182,15 @@ function createChunkStore(db, opts = {}) {
     // Reclaim unreferenced chunks. Returns the number deleted. Run opportunistically
     // (e.g. Optimize / periodic) — never on the hot save path.
     function gc() {
-        gcStaleManifests.run();
+        gcStaleManifests.run(CHUNK_MARKER);
         return gcSweep.run().changes;
     }
 
-    return { putValue, getValue, sizeValue, snapshotCost, snapshotValue, dropValue, gc };
+    function reclaimableBytes() {
+        return selReclaimable.get(CHUNK_MARKER).b;
+    }
+
+    return { putValue, getValue, sizeValue, snapshotCost, snapshotValue, dropValue, gc, reclaimableBytes };
 }
 
 module.exports = { cdcSplit, createChunkStore, CHUNK_MARKER };
