@@ -371,6 +371,13 @@ export interface ModelBindingSet {
     }
 }
 
+/** A fully-normalized empty binding bundle (every slot a defined primitive, so
+ * `bind:value` / `bind:checked` on a $bindable never sees undefined). Shared by
+ * the sidebar seeder and the new-chat default seeder. */
+export function emptyModelBinding(): ModelBindingSet {
+    return { main: '', sub: '', separateAux: false, aux: { memory: '', emotion: '', translate: '', otherAx: '' } }
+}
+
 export interface ApiKeyPoolEntry {
     id: string
     name: string
