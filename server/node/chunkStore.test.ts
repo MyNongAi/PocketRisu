@@ -16,6 +16,7 @@ const { cdcSplit, createChunkStore } = pkg as {
         snapshotValue: (srcKey: string, dstKey: string) => void
         dropValue: (key: string) => void
         gc: () => number
+        isChunkedKey: (key: string) => boolean
     }
 }
 
@@ -175,6 +176,19 @@ describe('createChunkStore — chunk-aware kv (injected :memory: db)', () => {
         // 청킹 안 거치고 마커와 동일한 바이트를 직접 박음 (천문학적 우연 시뮬)
         db.prepare('INSERT INTO kv (key, value, updated_at) VALUES (?, ?, 0)').run('k', marker)
         expect((store.getValue('k') as Buffer).equals(marker)).toBe(true)
+    })
+
+    it('B9: isChunkedKey — 청킹 키 true, raw/없음 false, 마커가 raw로 덮이면 false', () => {
+        const db = freshDb()
+        const store = createChunkStore(db, T)
+        store.putValue('big', randomBytes(200_000))
+        store.putValue('small', randomBytes(300))
+        expect(store.isChunkedKey('big')).toBe(true)
+        expect(store.isChunkedKey('small')).toBe(false)
+        expect(store.isChunkedKey('missing')).toBe(false)
+        // raw 값이 마커를 덮은 stale 상태 → 청킹 아님으로 정확히 판정
+        db.prepare("UPDATE kv SET value = ? WHERE key = 'big'").run(Buffer.from('raw'))
+        expect(store.isChunkedKey('big')).toBe(false)
     })
 })
 

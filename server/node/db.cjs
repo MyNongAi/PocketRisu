@@ -183,6 +183,12 @@ function reclaimableChunkBytes() {
     return chunkStore.reclaimableBytes();
 }
 
+// Whether the live DB blob is actually stored chunked right now (marker-backed),
+// not merely that a manifest row exists.
+function isDbBlobChunked() {
+    return chunkStore.isChunkedKey(DB_BLOB_KEY);
+}
+
 // Marginal disk cost of a snapshot key vs the live DB blob (chunks it uniquely
 // keeps alive). Use this to size snapshots for the disk limit — kvSize/LENGTH
 // would report a chunked snapshot's shared logical size and over-trim.
@@ -207,5 +213,6 @@ module.exports = {
     checkpointWal,
     gcChunks,
     reclaimableChunkBytes,
+    isDbBlobChunked,
     snapshotFootprint,
 };

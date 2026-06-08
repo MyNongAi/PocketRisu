@@ -25,7 +25,7 @@ const getVips = () => {
 }
 const { kvGet, kvSet, kvDel, kvList,
         kvDelPrefix, kvListWithSizes, kvSize, kvGetUpdatedAt, kvCopyValue, clearEntities, checkpointWal,
-        gcChunks, reclaimableChunkBytes, snapshotFootprint, db: sqliteDb } = require('./db.cjs');
+        gcChunks, reclaimableChunkBytes, isDbBlobChunked, snapshotFootprint, db: sqliteDb } = require('./db.cjs');
 const {
     addLogBatch, queryLogs, clearLogs, countLogs,
     logger, installProcessHandlers, expressErrorMiddleware,
@@ -124,7 +124,9 @@ const SNAPSHOT_LIMIT_MIN_COUNT = 1;
 const SNAPSHOT_LIMIT_MAX_COUNT = 100;
 const SNAPSHOT_LIMIT_MIN_BYTES = 10 * 1024 * 1024;        // 10 MB
 const SNAPSHOT_LIMIT_MAX_BYTES = 50 * 1024 * 1024 * 1024; // 50 GB
-const BACKUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const BACKUP_INTERVAL_MS = process.env.POCKETRISU_BACKUP_INTERVAL_MS
+    ? Number(process.env.POCKETRISU_BACKUP_INTERVAL_MS)
+    : 5 * 60 * 1000; // 5 minutes (override for tests to force snapshot creation)
 let lastBackupTime = null;
 
 function readSnapshotConfigInt(key, fallback, min, max) {
@@ -5011,9 +5013,7 @@ app.get('/api/db/stats', async (req, res, next) => {
         // Bytes the next gc() would reclaim (true orphans + chunks pinned only by
         // stale/raw-overwritten manifests) — drives the Optimize button.
         const orphanChunkBytes = reclaimableChunkBytes();
-        const liveChunked = sqliteDb.prepare(
-            'SELECT EXISTS(SELECT 1 FROM manifest_chunks WHERE manifest_key = ?) AS e'
-        ).get(DB_BLOB_KEY).e === 1;
+        const liveChunked = isDbBlobChunked();
 
         // Prefix breakdown — split database/ into the live blob vs rotated backups.
         const prefixes = {};

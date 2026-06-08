@@ -25,8 +25,8 @@ const CHUNK_ENV = { POCKETRISU_CHUNK_THRESHOLD: '4096' }
 const servers: ServerHandle[] = []
 afterAll(async () => { await Promise.allSettled(servers.map((s) => s.cleanup())) })
 
-async function boot(): Promise<{ client: RisuClient; srv: ServerHandle }> {
-  const srv = await spawnServer({ env: CHUNK_ENV })
+async function boot(extraEnv: Record<string, string> = {}): Promise<{ client: RisuClient; srv: ServerHandle }> {
+  const srv = await spawnServer({ env: { ...CHUNK_ENV, ...extraEnv } })
   servers.push(srv)
   const client = await createClient(srv.port, srv.password)
   return { client, srv }
@@ -42,18 +42,29 @@ function oversizedSeed(): Buffer {
 // which feed hex-named files rather than a .bin backup.
 const MAGIC_RAW = Buffer.from([0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 7])
 const packr = new Packr({ useRecords: false })
-function bigDbBlob(): Buffer {
+// salt makes two blobs differ so a snapshot of one has chunks the other lacks.
+function bigDbBlob(salt = ''): Buffer {
   const characters = Array.from({ length: 5 }, (_, ci) => ({
     name: `Char${ci}`, chaId: `c${ci}`, type: 'character', chatPage: 0, image: '', desc: 'x', firstMessage: 'hi',
     chats: [{
       id: `chat${ci}`, name: 'c', lastDate: 0, localLore: [], scriptstate: {}, note: '',
-      message: Array.from({ length: 2000 }, (_, mi) => ({ role: mi % 2 ? 'char' : 'user', data: `msg ${mi} of char ${ci} ${'x'.repeat(20)}` })),
+      message: Array.from({ length: 2000 }, (_, mi) => ({ role: mi % 2 ? 'char' : 'user', data: `msg ${mi} of char ${ci} ${salt} ${'x'.repeat(20)}` })),
     }],
   }))
   const database = { characters, apiType: 'openai', personas: [{ name: 'D', icon: '', personaPrompt: '' }], botPresets: [], botPresetsId: 0, selectedCharacter: 0 }
   return Buffer.concat([MAGIC_RAW, packr.encode(database)])
 }
 const DB_BLOB_HEX = Buffer.from('database/database.bin', 'utf-8').toString('hex')
+function saveFolderZip(blob: Buffer): Buffer {
+  return Buffer.from(zipSync({ [DB_BLOB_HEX]: new Uint8Array(blob) }))
+}
+async function uploadZip(client: RisuClient, blob: Buffer): Promise<Response> {
+  return client.fetch('/api/migrate/save-folder/upload', {
+    method: 'POST',
+    headers: { 'content-type': 'application/zip' },
+    body: new Uint8Array(saveFolderZip(blob)),
+  })
+}
 
 async function getStats(client: RisuClient): Promise<any> {
   const res = await client.fetch('/api/db/stats')
@@ -92,18 +103,24 @@ describe('chunking lifecycle (real server, low threshold)', () => {
     expect(chars.characters.length).toBeGreaterThanOrEqual(5)
   })
 
-  test('snapshot endpoints report chunk-aware sizes (never the 13-byte marker)', async () => {
-    const { client } = await boot()
-    await client.importBackup(oversizedSeed())
-
-    const lim = await (await client.fetch('/api/db/snapshots/limits')).json()
-    expect(lim.maxBytes).toBeGreaterThan(0)
-    expect(typeof lim.currentBytes).toBe('number')
+  test('a chunked snapshot reports a real footprint, not the 13-byte marker', async () => {
+    // No backup cooldown so the 2nd import snapshots the 1st (chunked) DB.
+    const { client } = await boot({ POCKETRISU_BACKUP_INTERVAL_MS: '0' })
+    expect((await uploadZip(client, bigDbBlob('AAA'))).status).toBe(200) // v1 chunked
+    expect((await uploadZip(client, bigDbBlob('BBB'))).status).toBe(200) // snapshots v1, then v2
 
     const snaps = await (await client.fetch('/api/db/snapshots')).json()
+    // The vacuous-pass guard: there must actually be a snapshot to check.
+    expect(snaps.snapshots.length).toBeGreaterThan(0)
     for (const sn of snaps.snapshots) {
       expect(sn.size).not.toBe(13) // 13 = CHUNK_MARKER length (the old bug)
     }
+    // The chunked snapshot of v1 differs from live v2, so its footprint is real.
+    const maxSize = Math.max(...snaps.snapshots.map((s: any) => s.size))
+    expect(maxSize).toBeGreaterThan(1000)
+
+    const lim = await (await client.fetch('/api/db/snapshots/limits')).json()
+    expect(lim.currentBytes).toBeGreaterThan(1000)
   })
 
   test('optimize runs gc and reports chunksReclaimed', async () => {
@@ -120,12 +137,7 @@ describe('chunking lifecycle (real server, low threshold)', () => {
   // The two save-folder import paths were where the raw-bind regressions hid.
   test('save-folder ZIP upload chunks an oversized DB blob (importHexEntries)', async () => {
     const { client } = await boot()
-    const zip = Buffer.from(zipSync({ [DB_BLOB_HEX]: new Uint8Array(bigDbBlob()) }))
-    const res = await client.fetch('/api/migrate/save-folder/upload', {
-      method: 'POST',
-      headers: { 'content-type': 'application/zip' }, // not parsed by json/raw/text
-      body: new Uint8Array(zip),
-    })
+    const res = await uploadZip(client, bigDbBlob())
     expect(res.status).toBe(200)
     expect((await res.json()).ok).toBe(true)
 

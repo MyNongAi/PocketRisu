@@ -190,7 +190,15 @@ function createChunkStore(db, opts = {}) {
         return selReclaimable.get(CHUNK_MARKER).b;
     }
 
-    return { putValue, getValue, sizeValue, snapshotCost, snapshotValue, dropValue, gc, reclaimableBytes };
+    // True only when the key is actually stored chunked right now (its kv value
+    // is the marker) — not merely when a manifest exists. A raw value that
+    // overwrote the marker (manifest not yet swept) reads as not-chunked.
+    function isChunkedKey(key) {
+        const row = kvGet.get(key);
+        return !!row && isChunked(row.value);
+    }
+
+    return { putValue, getValue, sizeValue, snapshotCost, snapshotValue, dropValue, gc, reclaimableBytes, isChunkedKey };
 }
 
 module.exports = { cdcSplit, createChunkStore, CHUNK_MARKER };
