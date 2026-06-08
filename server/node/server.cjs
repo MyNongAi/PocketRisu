@@ -182,6 +182,16 @@ function trimSnapshotsToLimits() {
     return { kept: entries.length - toDelete.length, removed: toDelete.length };
 }
 
+// Current snapshot count + total marginal disk cost. Uses the same measure as
+// the limit (snapshotFootprint), so the limits UI matches what trimming sees —
+// kvListWithSizes would report a chunked snapshot's 13-byte marker.
+function snapshotUsage() {
+    const keys = kvList(DB_BACKUP_PREFIX);
+    let bytes = 0;
+    for (const k of keys) bytes += snapshotFootprint(k);
+    return { count: keys.length, bytes };
+}
+
 function createBackupAndRotate() {
     const now = Date.now();
     if (lastBackupTime && now - lastBackupTime < BACKUP_INTERVAL_MS) {
@@ -4690,6 +4700,9 @@ async function importHexEntries(entries) {
     const run = sqliteDb.transaction(() => {
         clearExistingData();
         for (const { key, value } of entries) {
+            // Chunk the DB blob so an oversized database.bin imports instead of
+            // failing the BLOB bind limit; other keys keep the bulk fast path.
+            if (key === DB_BLOB_KEY) { kvSet(key, value); continue; }
             insert.run(key, value, now);
         }
     });
@@ -4995,9 +5008,16 @@ app.get('/api/db/stats', async (req, res, next) => {
         // chunks). This is where the blob bytes actually live post-chunking — kv
         // holds only a tiny marker, so the chart must count this table separately.
         const chunkStat = sqliteDb.prepare('SELECT COUNT(*) AS c, COALESCE(SUM(LENGTH(data)), 0) AS b FROM chunks').get();
+        // Bytes gc would reclaim: chunks referenced by no *live* manifest (a
+        // manifest whose kv key still exists). Counts true orphans + chunks held
+        // only by stale manifests, so the Optimize button reflects both.
         const orphanChunkBytes = sqliteDb.prepare(
-            'SELECT COALESCE(SUM(LENGTH(data)), 0) AS b FROM chunks WHERE hash NOT IN (SELECT hash FROM manifest_chunks)'
+            `SELECT COALESCE(SUM(LENGTH(data)), 0) AS b FROM chunks WHERE hash NOT IN
+             (SELECT hash FROM manifest_chunks WHERE manifest_key IN (SELECT key FROM kv))`
         ).get().b;
+        const liveChunked = sqliteDb.prepare(
+            'SELECT EXISTS(SELECT 1 FROM manifest_chunks WHERE manifest_key = ?) AS e'
+        ).get(DB_BLOB_KEY).e === 1;
 
         // Prefix breakdown — split database/ into the live blob vs rotated backups.
         const prefixes = {};
@@ -5077,7 +5097,7 @@ app.get('/api/db/stats', async (req, res, next) => {
             disk,
             backupDisk,
             sqlite: { pageSize, pageCount, freelistCount, reclaimable, journalMode, autoVacuum },
-            chunks: { count: chunkStat.c, bytes: chunkStat.b, orphanBytes: orphanChunkBytes },
+            chunks: { count: chunkStat.c, bytes: chunkStat.b, orphanBytes: orphanChunkBytes, liveChunked },
             prefixes,
             kvRows,
             kvTotalBytes,
@@ -5322,13 +5342,12 @@ app.get('/api/db/snapshots/limits', async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
     try {
         const { maxCount, maxBytes } = getSnapshotLimits();
-        const items = kvListWithSizes(DB_BACKUP_PREFIX);
-        const currentBytes = items.reduce((s, it) => s + it.size, 0);
+        const usage = snapshotUsage();
         res.json({
             maxCount,
             maxBytes,
-            currentCount: items.length,
-            currentBytes,
+            currentCount: usage.count,
+            currentBytes: usage.bytes,
             bounds: {
                 minCount: SNAPSHOT_LIMIT_MIN_COUNT,
                 maxCount: SNAPSHOT_LIMIT_MAX_COUNT,
@@ -5360,12 +5379,11 @@ app.put('/api/db/snapshots/limits', async (req, res, next) => {
         kvSet(SNAPSHOT_LIMIT_COUNT_KEY, Buffer.from(String(maxCount), 'utf-8'));
         kvSet(SNAPSHOT_LIMIT_BYTES_KEY, Buffer.from(String(maxBytes), 'utf-8'));
         const trim = trimSnapshotsToLimits();
-        const items = kvListWithSizes(DB_BACKUP_PREFIX);
-        const currentBytes = items.reduce((s, it) => s + it.size, 0);
+        const usage = snapshotUsage();
         res.json({
             maxCount, maxBytes,
-            currentCount: items.length,
-            currentBytes,
+            currentCount: usage.count,
+            currentBytes: usage.bytes,
             removed: trim.removed,
         });
     } catch (err) { next(err); }

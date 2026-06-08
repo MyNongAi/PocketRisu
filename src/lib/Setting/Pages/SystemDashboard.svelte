@@ -34,7 +34,7 @@
             pageSize: number; pageCount: number; freelistCount: number;
             reclaimable: number; journalMode: string; autoVacuum: number | string;
         }
-        chunks?: { count: number; bytes: number; orphanBytes: number }
+        chunks?: { count: number; bytes: number; orphanBytes: number; liveChunked: boolean }
         prefixes: Record<string, PrefixInfo>
         kvRows: number
         kvTotalBytes: number
@@ -254,8 +254,10 @@
         const chunkedDbBytes = stats.chunks?.bytes ?? 0
         // A small DB (≤ chunk threshold) stays a raw kv value rather than chunks,
         // so count it here — otherwise the database row reads 0 and its bytes get
-        // mislabeled as "uncategorized". When chunked, chunkedDbBytes is the size.
-        const rawDbBlob = chunkedDbBytes > 0 ? 0 : get('database/database.bin')
+        // mislabeled as "uncategorized". Keyed on whether the *live* blob is
+        // chunked (not whether any chunks exist — snapshots may be chunked while a
+        // shrunken live DB is raw).
+        const rawDbBlob = stats.chunks?.liveChunked ? 0 : get('database/database.bin')
         const dbRowSize = chunkedDbBytes + rawDbBlob
         // Known kv prefixes I track explicitly — kv-side only. If anything
         // else lives in kv (test keys, migration leftovers), it shows up
