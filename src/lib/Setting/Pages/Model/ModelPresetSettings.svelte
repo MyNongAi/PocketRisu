@@ -18,6 +18,7 @@
     import { language } from "src/lang";
     import { DBState, openModelProfileBrowser, modelProfileReplaceTarget, openModelPresetEditId } from "src/ts/stores.svelte";
     import { alertConfirm, notifySuccess } from "src/ts/alert";
+    import { testModelPreset, type ModelPresetTestResult } from "src/ts/process/request/request";
     import { getOfficialRegistry, getPresetUpdateStatus, syncRemoteRegistry } from "src/ts/preset/registry";
     import { buildSeenMap, computeRegistryNotice, noticeCount } from "src/ts/preset/registry/notice";
     import { TOOL_CAPABLE_ADAPTER_KINDS, VISION_CAPABLE_ADAPTER_KINDS } from "src/ts/preset/types";
@@ -26,6 +27,12 @@
 
     let editingId = $state<string | null>(null);
     let submenu = $state(0);
+
+    // "Test" tab state: a one-shot request through the current preset to verify
+    // its credentials/endpoint respond. Reset whenever the edited preset changes.
+    let testMessage = $state(language.modelPresetTestDefault);
+    let testing = $state(false);
+    let testResult = $state<ModelPresetTestResult | null>(null);
     // Top-level page tabs (hidden while editing a preset): 0=presets, 1=keys, 2=settings.
     let page = $state(0);
 
@@ -122,6 +129,25 @@
         modelProfileReplaceTarget.set(null);
         openModelProfileBrowser.set(true);
     }
+
+    // Clear any prior test result when the edited preset changes.
+    $effect(() => {
+        editingId;
+        testResult = null;
+    });
+
+    async function runTest() {
+        if (!editingPreset || testing || testMessage.trim().length === 0) return;
+        testing = true;
+        testResult = null;
+        try {
+            testResult = await testModelPreset(editingPreset, testMessage);
+        } catch (err) {
+            testResult = { ok: false, message: err instanceof Error ? err.message : String(err), latencyMs: 0 };
+        } finally {
+            testing = false;
+        }
+    }
 </script>
 
 <SettingPage title={language.modelPresetMenu}>
@@ -136,6 +162,7 @@
                 { label: language.basicInfo, value: 0 },
                 { label: language.basicSettings, value: 1 },
                 { label: language.advancedSettings, value: 2 },
+                { label: language.modelPresetTabTest, value: 3 },
             ]}
             bind:selected={submenu}
         />
@@ -269,6 +296,39 @@
                         autocomplete="off"
                         height="32"
                     />
+                </div>
+            {:else if submenu === 3}
+                <div class="flex flex-col gap-4 mb-6">
+                    <div class="flex flex-col gap-0.5">
+                        <span class="text-sm text-textcolor">{language.modelPresetTestTitle}</span>
+                        <span class="text-xs text-textcolor2">{language.modelPresetTestHelp}</span>
+                    </div>
+                    <TextAreaInput
+                        bind:value={testMessage}
+                        placeholder={language.modelPresetTestDefault}
+                        fullwidth
+                        autocomplete="off"
+                        height="24"
+                    />
+                    <ShButton
+                        variant="default"
+                        size="default"
+                        className="self-start"
+                        disabled={testing || testMessage.trim().length === 0}
+                        onclick={runTest}
+                    >
+                        {testing ? language.modelPresetTestSending : language.modelPresetTestSend}
+                    </ShButton>
+
+                    {#if testResult}
+                        <div class="flex flex-col gap-1 rounded-md border p-3 text-sm {testResult.ok ? 'bg-success/20 border-success/40' : 'bg-draculared/20 border-draculared/40'}">
+                            <span class="font-medium {testResult.ok ? 'text-success' : 'text-red-400'}">
+                                {testResult.ok ? language.modelPresetTestSuccess : language.modelPresetTestFail}
+                                <span class="text-textcolor2 font-normal ml-1">({testResult.latencyMs}ms)</span>
+                            </span>
+                            <span class="text-textcolor whitespace-pre-wrap break-words">{testResult.message}</span>
+                        </div>
+                    {/if}
                 </div>
             {/if}
         {/if}

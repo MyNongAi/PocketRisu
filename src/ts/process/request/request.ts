@@ -747,6 +747,37 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
     }
 }
 
+// One-shot test request for the preset editor's "Test" tab. Sends a single
+// user-supplied message through requestModelPreset so the credential resolution,
+// adapter dispatch and error handling are byte-identical to a real chat request —
+// only the prompt is caller-supplied and streaming/tools are forced off so the
+// result is a single text reply. Not part of the chat flow; nothing is persisted.
+export interface ModelPresetTestResult {
+    ok: boolean
+    message: string   // reply text on success, error message on failure
+    latencyMs: number
+}
+
+export async function testModelPreset(preset: ModelPreset, message: string, abortSignal: AbortSignal = null): Promise<ModelPresetTestResult> {
+    const arg: RequestDataArgumentExtended = {
+        formated: [{ role: 'user', content: message }],
+        bias: {},
+        useStreaming: false,
+    }
+    const start = performance.now()
+    const res = await requestModelPreset(arg, preset, abortSignal)
+    const latencyMs = Math.round(performance.now() - start)
+    // useStreaming:false + no tools guarantees a success/fail (never streaming/multiline),
+    // but fall through defensively rather than asserting the union.
+    if (res.type === 'success') {
+        return { ok: true, message: res.result, latencyMs }
+    }
+    if (res.type === 'fail') {
+        return { ok: false, message: res.result, latencyMs }
+    }
+    return { ok: false, message: 'Unexpected response type', latencyMs }
+}
+
 // Binds the real send + tool execution to the generic runToolLoop (kept in the
 // adapter layer so it is unit-testable without request.ts's import graph).
 // Mirrors the classic recursive path (openAI/requests.ts): the visible result
