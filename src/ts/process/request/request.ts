@@ -30,6 +30,7 @@ import {
     type AdapterReasoningPart, type AdapterToolCall, type AdapterToolDef,
 } from "src/ts/preset/adapter";
 import { TOOL_CAPABLE_ADAPTER_KINDS, VISION_CAPABLE_ADAPTER_KINDS, type AdapterKind, type ModelPreset } from "src/ts/preset/types";
+import { pumpPresetStream } from "./presetStreamPump";
 import { resolveChatModelBinding, buildModelPresetCredential } from "./modelPresetBinding";
 import { expandAdapterMessages, toAdapterMessage, toolResponseText } from "./modelPresetMessages";
 import { isLocalNetworkUrl } from "src/ts/network/localNetwork";
@@ -583,6 +584,14 @@ function resolvePresetStreaming(preset: ModelPreset, arg: RequestDataArgumentExt
 // follow-up re-run already-executed (possibly write-side) tools.
 const MODEL_PRESET_MAX_TOOL_STEPS = 8
 
+// How often (ms) a streaming response flushes accumulated text to the chat
+// renderer. Adapters yield one delta per token; each emitted chunk forces a full
+// re-parse of the whole message (markdown + sanitize) downstream, so emitting
+// every token makes the re-parse count scale with token count and stalls slow
+// (mobile) devices. Coalescing to ~20fps keeps streaming visibly live while
+// bounding re-parse cost. The final chunk is always flushed regardless.
+const STREAM_FLUSH_INTERVAL_MS = 50
+
 function toAdapterToolDef(tool: MCPTool): AdapterToolDef {
     return {
         name: tool.name,
@@ -716,26 +725,12 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
         if(useStreaming){
             const gen = streamModelPreset(kind, preset, options, credential)
             const stream = new ReadableStream<StreamResponseChunk>({
-                async start(controller){
-                    let fullText = ''
-                    let reasoningText = ''
-                    try {
-                        for await (const delta of gen){
-                            if (delta.reasoningDelta) reasoningText += delta.reasoningDelta
-                            fullText += delta.textDelta
-                            // Prepend the accumulated reasoning wrapped in <Thoughts>
-                            // (mirrors the non-streaming path), so thinking is shown
-                            // as reasoning and never merged into the saved answer.
-                            const prefix = reasoningText.length > 0
-                                ? formatPresetReasoning([{ text: reasoningText }])
-                                : ''
-                            controller.enqueue({ "0": prefix + fullText })
-                        }
-                        controller.close()
-                    } catch (err) {
-                        console.error('[ModelPreset] stream error', describeModelPresetError(err))
-                        controller.error(err)
-                    }
+                start(controller){
+                    return pumpPresetStream(gen, controller, {
+                        intervalMs: STREAM_FLUSH_INTERVAL_MS,
+                        formatReasoning: (text) => formatPresetReasoning([{ text }]),
+                        onError: (err) => console.error('[ModelPreset] stream error', describeModelPresetError(err)),
+                    })
                 }
             })
             return { type: 'streaming', result: stream, model: preset.name }
