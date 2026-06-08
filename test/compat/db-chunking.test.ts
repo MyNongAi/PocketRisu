@@ -18,6 +18,13 @@ import { Packr } from 'msgpackr'
 import { spawnServer, type ServerHandle } from './helpers/spawnServer.js'
 import { createClient, type RisuClient } from './helpers/client.js'
 import { createSeedBackup } from './helpers/seed.js'
+import { decodeBackup } from './helpers/decode.js'
+
+function dbBlobFromExport(exported: Buffer): Buffer {
+  const entry = decodeBackup(exported).find((e) => e.name === 'database.risudat')
+  if (!entry) throw new Error('export has no database.risudat')
+  return entry.data
+}
 
 // Chunk anything larger than 4 KB so a normal seed DB chunks.
 const CHUNK_ENV = { POCKETRISU_CHUNK_THRESHOLD: '4096' }
@@ -163,5 +170,63 @@ describe('chunking lifecycle (real server, low threshold)', () => {
     const s = await getStats(client)
     expect(s.chunks.liveChunked).toBe(true)
     expect(s.chunks.count).toBeGreaterThan(1)
+  })
+
+  test('restoring a chunked snapshot brings its data back (recovery path)', async () => {
+    const { client } = await boot({ POCKETRISU_BACKUP_INTERVAL_MS: '0' })
+    await uploadZip(client, bigDbBlob('AAA')) // v1
+    await uploadZip(client, bigDbBlob('BBB')) // snapshots v1 (chunked), live = v2
+
+    // Sanity: live is currently v2, not v1.
+    expect(dbBlobFromExport(await client.exportBackup()).includes(Buffer.from('BBB'))).toBe(true)
+
+    const snaps = (await (await client.fetch('/api/db/snapshots')).json()).snapshots
+    expect(snaps.length).toBeGreaterThan(0)
+    const res = await client.fetch('/api/db/snapshots/restore', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ key: snaps[0].key }), // newest = the v1 snapshot
+    })
+    expect(res.status).toBe(200)
+
+    // Live is now v1 again, still chunked and valid.
+    const restored = dbBlobFromExport(await client.exportBackup())
+    expect(restored.includes(Buffer.from('AAA'))).toBe(true)
+    expect((await getStats(client)).chunks.liveChunked).toBe(true)
+  })
+
+  test('optimize reclaims orphan chunks left by re-imports', async () => {
+    const { client } = await boot() // default cooldown → 2nd import takes no snapshot
+    await uploadZip(client, bigDbBlob('AAA')) // v1 chunked
+    await uploadZip(client, bigDbBlob('BBB')) // v2 chunked; v1's chunks now unreferenced
+
+    const before = await getStats(client)
+    expect(before.chunks.orphanBytes).toBeGreaterThan(0)
+
+    const opt = await (await client.fetch('/api/db/optimize', { method: 'POST' })).json()
+    expect(opt.ok).toBe(true)
+    expect(opt.chunksReclaimed).toBeGreaterThan(0)
+
+    const after = await getStats(client)
+    expect(after.chunks.orphanBytes).toBeLessThan(before.chunks.orphanBytes)
+  })
+
+  test('downgrade escape: a chunked DB exports a standard blob a non-chunking server reads', async () => {
+    const { client } = await boot()
+    await uploadZip(client, bigDbBlob('XYZ'))
+    expect((await getStats(client)).chunks.liveChunked).toBe(true)
+
+    // The export is the full reassembled DB (not a 13-byte marker) — readable by
+    // any version, including one with no chunking at all.
+    const blob = dbBlobFromExport(await client.exportBackup())
+    expect(blob.length).toBeGreaterThan(4096)
+    expect(blob.includes(Buffer.from('XYZ'))).toBe(true)
+
+    // Simulate an "old" server (chunking effectively off via a huge threshold):
+    // it must import and store the blob raw.
+    const exported = await client.exportBackup()
+    const { client: oldish } = await boot({ POCKETRISU_CHUNK_THRESHOLD: '9999999999' })
+    expect((await oldish.importBackup(exported)).ok).toBe(true)
+    const s2 = await getStats(oldish)
+    expect(s2.chunks.liveChunked).toBe(false) // stored raw, like a pre-chunking server
   })
 })
