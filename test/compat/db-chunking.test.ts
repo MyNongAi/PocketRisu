@@ -210,6 +210,26 @@ describe('chunking lifecycle (real server, low threshold)', () => {
     expect(after.chunks.orphanBytes).toBeLessThan(before.chunks.orphanBytes)
   })
 
+  test('pre-SQLite hex save folder migrates and chunks the DB blob (migrateFromSaveDir)', async () => {
+    // Plant an old file-based save folder (hex-named files, no SQLite marker)
+    // with an oversized database.bin before the server boots.
+    const srv = await spawnServer({
+      env: CHUNK_ENV,
+      seedSave: async (saveDir) => {
+        await writeFile(path.join(saveDir, DB_BLOB_HEX), bigDbBlob('HEX'))
+      },
+    })
+    servers.push(srv)
+    const client = await createClient(srv.port, srv.password)
+
+    // Boot ran migrateFromSaveDir → the blob is now in SQLite, chunked.
+    const s = await getStats(client)
+    expect(s.chunks.liveChunked).toBe(true)
+    expect(s.chunks.count).toBeGreaterThan(1)
+    // And the migrated data is intact (exports the seeded content back out).
+    expect(dbBlobFromExport(await client.exportBackup()).includes(Buffer.from('HEX'))).toBe(true)
+  })
+
   test('downgrade escape: a chunked DB exports a standard blob a non-chunking server reads', async () => {
     const { client } = await boot()
     await uploadZip(client, bigDbBlob('XYZ'))
