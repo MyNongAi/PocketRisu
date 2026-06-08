@@ -4,13 +4,17 @@
  * Boots a real server with a LOW chunk threshold (POCKETRISU_CHUNK_THRESHOLD)
  * so the DB blob actually chunks, then drives the full lifecycle over HTTP:
  *   import (chunks) → stats (chunk-aware) → export → re-import (round-trip) →
- *   snapshots/limits → optimize/gc.
+ *   snapshots/limits → optimize/gc, plus the save-folder import paths.
  *
  * The default compat fixtures use tiny DBs (< 16 MB) that never chunk, so this
  * is the only suite that exercises the chunked path through db.cjs + server.cjs
  * end-to-end — exactly the wiring the unit tests can't reach.
  */
 import { describe, test, expect, afterAll } from 'vitest'
+import { mkdir, writeFile } from 'node:fs/promises'
+import path from 'node:path'
+import { zipSync } from 'fflate'
+import { Packr } from 'msgpackr'
 import { spawnServer, type ServerHandle } from './helpers/spawnServer.js'
 import { createClient, type RisuClient } from './helpers/client.js'
 import { createSeedBackup } from './helpers/seed.js'
@@ -21,17 +25,35 @@ const CHUNK_ENV = { POCKETRISU_CHUNK_THRESHOLD: '4096' }
 const servers: ServerHandle[] = []
 afterAll(async () => { await Promise.allSettled(servers.map((s) => s.cleanup())) })
 
-async function boot(): Promise<RisuClient> {
+async function boot(): Promise<{ client: RisuClient; srv: ServerHandle }> {
   const srv = await spawnServer({ env: CHUNK_ENV })
   servers.push(srv)
-  return createClient(srv.port, srv.password)
+  const client = await createClient(srv.port, srv.password)
+  return { client, srv }
 }
 
-// A DB large enough (~400 KB) to span several CDC chunks (avg ~16 KB, max 64 KB),
-// so the test exercises real multi-chunk splitting, not a single-chunk blob.
+// A .bin backup whose DB comfortably exceeds the 4 KB threshold and spans
+// several CDC chunks (avg ~16 KB, max 64 KB).
 function oversizedSeed(): Buffer {
   return createSeedBackup({ characterCount: 5, chatsPerCharacter: 2, messagesPerChat: 1000 })
 }
+
+// Raw database.risudat blob (~400 KB) — used by the save-folder import paths,
+// which feed hex-named files rather than a .bin backup.
+const MAGIC_RAW = Buffer.from([0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 7])
+const packr = new Packr({ useRecords: false })
+function bigDbBlob(): Buffer {
+  const characters = Array.from({ length: 5 }, (_, ci) => ({
+    name: `Char${ci}`, chaId: `c${ci}`, type: 'character', chatPage: 0, image: '', desc: 'x', firstMessage: 'hi',
+    chats: [{
+      id: `chat${ci}`, name: 'c', lastDate: 0, localLore: [], scriptstate: {}, note: '',
+      message: Array.from({ length: 2000 }, (_, mi) => ({ role: mi % 2 ? 'char' : 'user', data: `msg ${mi} of char ${ci} ${'x'.repeat(20)}` })),
+    }],
+  }))
+  const database = { characters, apiType: 'openai', personas: [{ name: 'D', icon: '', personaPrompt: '' }], botPresets: [], botPresetsId: 0, selectedCharacter: 0 }
+  return Buffer.concat([MAGIC_RAW, packr.encode(database)])
+}
+const DB_BLOB_HEX = Buffer.from('database/database.bin', 'utf-8').toString('hex')
 
 async function getStats(client: RisuClient): Promise<any> {
   const res = await client.fetch('/api/db/stats')
@@ -41,31 +63,29 @@ async function getStats(client: RisuClient): Promise<any> {
 
 describe('chunking lifecycle (real server, low threshold)', () => {
   test('importing an oversized DB chunks the blob through the real server', async () => {
-    const client = await boot()
+    const { client } = await boot()
     const r = await client.importBackup(oversizedSeed())
     expect(r.ok).toBe(true)
 
     const s = await getStats(client)
-    // The whole point: the DB blob is stored as chunks, not one raw value.
     expect(s.chunks.liveChunked).toBe(true)
     expect(s.chunks.count).toBeGreaterThan(1)
     expect(s.chunks.bytes).toBeGreaterThan(0)
   })
 
   test('chunked DB exports to standard .bin and round-trips into a fresh server', async () => {
-    const client = await boot()
+    const { client } = await boot()
     await client.importBackup(oversizedSeed())
 
     const exported = await client.exportBackup()
     expect(exported.byteLength).toBeGreaterThan(4096)
 
-    const client2 = await boot()
+    const { client: client2 } = await boot()
     const r2 = await client2.importBackup(exported)
     expect(r2.ok).toBe(true)
 
     const s2 = await getStats(client2)
-    expect(s2.chunks.liveChunked).toBe(true) // re-chunked on the fresh server
-    // Data survived chunk → export(reassemble) → re-chunk.
+    expect(s2.chunks.liveChunked).toBe(true)
     const charRes = await client2.fetch('/api/db/stats/characters')
     expect(charRes.status).toBe(200)
     const chars = await charRes.json()
@@ -73,7 +93,7 @@ describe('chunking lifecycle (real server, low threshold)', () => {
   })
 
   test('snapshot endpoints report chunk-aware sizes (never the 13-byte marker)', async () => {
-    const client = await boot()
+    const { client } = await boot()
     await client.importBackup(oversizedSeed())
 
     const lim = await (await client.fetch('/api/db/snapshots/limits')).json()
@@ -87,7 +107,7 @@ describe('chunking lifecycle (real server, low threshold)', () => {
   })
 
   test('optimize runs gc and reports chunksReclaimed', async () => {
-    const client = await boot()
+    const { client } = await boot()
     await client.importBackup(oversizedSeed())
 
     const res = await client.fetch('/api/db/optimize', { method: 'POST' })
@@ -95,5 +115,41 @@ describe('chunking lifecycle (real server, low threshold)', () => {
     const body = await res.json()
     expect(body.ok).toBe(true)
     expect(typeof body.chunksReclaimed).toBe('number')
+  })
+
+  // The two save-folder import paths were where the raw-bind regressions hid.
+  test('save-folder ZIP upload chunks an oversized DB blob (importHexEntries)', async () => {
+    const { client } = await boot()
+    const zip = Buffer.from(zipSync({ [DB_BLOB_HEX]: new Uint8Array(bigDbBlob()) }))
+    const res = await client.fetch('/api/migrate/save-folder/upload', {
+      method: 'POST',
+      headers: { 'content-type': 'application/zip' }, // not parsed by json/raw/text
+      body: new Uint8Array(zip),
+    })
+    expect(res.status).toBe(200)
+    expect((await res.json()).ok).toBe(true)
+
+    const s = await getStats(client)
+    expect(s.chunks.liveChunked).toBe(true)
+    expect(s.chunks.count).toBeGreaterThan(1)
+  })
+
+  test('save-folder directory import chunks an oversized DB blob (importHexFilesFromDir)', async () => {
+    const { client, srv } = await boot()
+    const dir = path.join(srv.cwd, 'migrate-src')
+    await mkdir(dir, { recursive: true })
+    await writeFile(path.join(dir, DB_BLOB_HEX), bigDbBlob())
+
+    const res = await client.fetch('/api/migrate/save-folder/execute', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path: dir }),
+    })
+    expect(res.status).toBe(200)
+    expect((await res.json()).ok).toBe(true)
+
+    const s = await getStats(client)
+    expect(s.chunks.liveChunked).toBe(true)
+    expect(s.chunks.count).toBeGreaterThan(1)
   })
 })
