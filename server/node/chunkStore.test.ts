@@ -17,6 +17,7 @@ const { cdcSplit, createChunkStore } = pkg as {
         dropValue: (key: string) => void
         gc: () => number
         isChunkedKey: (key: string) => boolean
+        reclaimableBytes: () => number
     }
 }
 
@@ -41,6 +42,8 @@ function seededBytes(n: number, seed = 1): Buffer {
     return out
 }
 const countChunks = (db: any) => db.prepare('SELECT COUNT(*) c FROM chunks').get().c as number
+const countChunkBytes = (db: any) =>
+    db.prepare('SELECT COALESCE(SUM(LENGTH(data)), 0) b FROM chunks').get().b as number
 const countManifest = (db: any, key: string) =>
     db.prepare('SELECT COUNT(*) c FROM manifest_chunks WHERE manifest_key = ?').get(key).c as number
 
@@ -334,6 +337,21 @@ describe('gc — mark-sweep (참조 없는 조각만 삭제)', () => {
         // gc 후 고아 0 (v0 전용 조각이 회수됨)
         const distinct = db.prepare('SELECT COUNT(DISTINCT hash) c FROM manifest_chunks').get().c as number
         expect(countChunks(db)).toBe(distinct)
+    })
+
+    it('D6b: reclaimableBytes = 고아 바이트, 무관한 raw kv 값 다수에 영향 없음 (perf 회귀 가드)', () => {
+        const db = freshDb()
+        const store = createChunkStore(db, T)
+        store.putValue('database/database.bin', randomBytes(200_000)) // v1
+        const v1Bytes = countChunkBytes(db)
+        store.putValue('database/database.bin', randomBytes(200_000)) // v2 → v1 조각 고아
+        // assets 시뮬: 마커 아닌 raw kv 값 다수. correlated 쿼리는 이걸 안 스캔해야 정확+빠름.
+        for (let i = 0; i < 100; i++) {
+            db.prepare('INSERT INTO kv (key, value, updated_at) VALUES (?, ?, 0)').run('assets/' + i, randomBytes(500))
+        }
+        expect(store.reclaimableBytes()).toBe(v1Bytes) // 고아 = v1 조각 바이트, raw 값 무관
+        expect(store.gc()).toBeGreaterThan(0)
+        expect(store.reclaimableBytes()).toBe(0) // 회수 후 0
     })
 
     it('D7: kv 키 없는 stale manifest 자가치유 — 정리 + 누수 조각 회수, live 무사', () => {

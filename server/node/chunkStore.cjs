@@ -103,9 +103,13 @@ function createChunkStore(db, opts = {}) {
     const gcSweep = db.prepare('DELETE FROM chunks WHERE hash NOT IN (SELECT hash FROM manifest_chunks)');
     // Bytes gc would reclaim right now: chunks referenced by no marker-backed
     // (live) manifest. Counts true orphans + chunks held only by stale manifests.
+    // The kv check is correlated on key (PK lookup per manifest key, ~6 keys), NOT
+    // `value IN (SELECT … WHERE value = ?)` which full-scans every kv blob (seconds
+    // on a DB with thousands of assets, blocking the synchronous event loop).
     const selReclaimable = db.prepare(
         `SELECT COALESCE(SUM(LENGTH(data)), 0) AS b FROM chunks WHERE hash NOT IN
-         (SELECT hash FROM manifest_chunks WHERE manifest_key IN (SELECT key FROM kv WHERE value = ?))`,
+         (SELECT hash FROM manifest_chunks mc
+          WHERE EXISTS (SELECT 1 FROM kv WHERE kv.key = mc.manifest_key AND kv.value = ?))`,
     );
 
     const isChunked = (value) => Buffer.isBuffer(value) && value.equals(CHUNK_MARKER);
