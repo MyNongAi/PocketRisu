@@ -203,6 +203,24 @@ export const accessibilitySettingsItems: SettingItem[] = [
         }
     },
     {
+        id: 'acc.chatLoadInitialPages',
+        type: 'number',
+        labelKey: 'chatLoadInitialPages',
+        bindKey: 'chatLoadInitialPages',
+        helpKey: 'chatLoadInitialPages',
+        options: { min: 1 },
+        keywords: ['chat', 'load', 'initial', 'pages', 'scroll', 'message', 'count'],
+    },
+    {
+        id: 'acc.chatLoadAdditionalPages',
+        type: 'number',
+        labelKey: 'chatLoadAdditionalPages',
+        bindKey: 'chatLoadAdditionalPages',
+        helpKey: 'chatLoadAdditionalPages',
+        options: { min: 1 },
+        keywords: ['chat', 'load', 'additional', 'pages', 'scroll', 'message', 'count'],
+    },
+    {
         id: 'acc.createFolderOnBranch',
         type: 'check',
         labelKey: 'createFolderOnBranch',
@@ -343,6 +361,8 @@ export const accessibilityScrollItems = pick([
     'acc.alwaysScrollToNewMessage',
     'acc.newMessageButtonStyle',
     'acc.nodeOnlyScrollButtonType',
+    'acc.chatLoadInitialPages',
+    'acc.chatLoadAdditionalPages',
 ]);
 
 export const accessibilitySidebarItems = pick([
