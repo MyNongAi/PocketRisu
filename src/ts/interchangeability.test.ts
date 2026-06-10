@@ -34,6 +34,7 @@ function makeChar() {
         content: 'lore body', mode: 'normal', alwaysActive: false, selective: false,
     }] as any
     c.lowLevelAccess = true
+    c.image = 'asset://icon.png'
     return c
 }
 
@@ -64,6 +65,7 @@ describe('interchangeability: character <-> module round-trip', () => {
         expect(back.postHistoryInstructions).toBe(c.postHistoryInstructions)
         expect(back.customscript).toEqual(c.customscript)
         expect(back.lowLevelAccess).toBe(c.lowLevelAccess)
+        expect(back.image).toBe(c.image) // module icon preserves character image (#21381972)
         // the real lore entry survives; indicator entries are consumed back into fields
         expect(back.globalLore.some((l) => l.content === 'lore body')).toBe(true)
         expect(back.globalLore.some((l) => l.content.startsWith('@@indicator'))).toBe(false)
