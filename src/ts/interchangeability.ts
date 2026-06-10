@@ -53,7 +53,8 @@ export function convertCharacterToModule(c: character): RisuModule {
     const mod: RisuModule = {
         name: c.name,
         description: c.creatorNotes,
-        lorebook: c.globalLore,
+        // copy the array so the @@indicator entries pushed below don't mutate the source character's globalLore
+        lorebook: c.globalLore ? [...c.globalLore] : [],
         regex: c.customscript,
         trigger: c.triggerscript,
         lowLevelAccess: c.lowLevelAccess,
