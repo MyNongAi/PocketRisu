@@ -524,6 +524,8 @@ export const languageEnglish = {
     prompt: "Prompt",
     loreBookDepth: "Lorebook Search Depth",
     loreBookToken: "Lorebook Max Tokens",
+    chatLoadInitialPages: "Initial Chat Load Count",
+    chatLoadAdditionalPages: "Additional Chat Load Count",
     removeCharacter: "Remove Character",
     exportCharacter: "Export Character",
     characterPackage: "Character Package",

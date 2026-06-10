@@ -589,6 +589,8 @@ export const languageKorean = {
   prompt: "프롬프트",
   loreBookDepth: "로어북 검색 깊이",
   loreBookToken: "로어북 최대 토큰",
+  chatLoadInitialPages: "채팅 초기 로딩 개수",
+  chatLoadAdditionalPages: "채팅 추가 로딩 개수",
   removeCharacter: "캐릭터 삭제",
   exportCharacter: "캐릭터 엑스포트",
   characterPackage: "캐릭터 패키지",

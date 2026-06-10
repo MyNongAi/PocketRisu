@@ -9,6 +9,7 @@
     import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, chatDeselected, chatPanelStore } from "../../ts/stores.svelte";
     import { tick } from 'svelte';
     import Chat from "./Chat.svelte";
+    import { getAdditionalChatLoadPages, getInitialChatLoadPages } from 'src/ts/chatLoadPages';
     import { type Chat as ChatData, type Message } from "../../ts/storage/database.svelte";
     import { DBState } from 'src/ts/stores.svelte';
     import { getCharImage } from "../../ts/characters";
@@ -63,7 +64,7 @@ import { isMobile } from 'src/ts/platform'
     let messageInput:string = $state('')
     let messageInputTranslate:string = $state('')
     let openMenu = $state(false)
-    let loadPages = $state(30)
+    let loadPages = $state(getInitialChatLoadPages(DBState.db))
     let doingChatInputTranslate = false
     let toggleStickers:boolean = $state(false)
     let fileInput:string[] = $state([])
@@ -704,7 +705,7 @@ import { isMobile } from 'src/ts/platform'
                 mergedCanvas.remove();
             }
             notifySuccess(language.screenshotSaved)
-            loadPages = 10
+            loadPages = getInitialChatLoadPages(DBState.db)
         } catch (error) {
             console.error(error)
             notifyError("Error while taking screenshot")
@@ -1129,7 +1130,7 @@ import { isMobile } from 'src/ts/platform'
             //@ts-expect-error scrollHeight/clientHeight/scrollTop don't exist on EventTarget, but target is HTMLElement here
             const scrolled = (e.target.scrollHeight - e.target.clientHeight + e.target.scrollTop)
             if(scrolled < 100 && currentChat.length > loadPages){
-                loadPages += 15
+                loadPages += getAdditionalChatLoadPages(DBState.db)
             }
             const chatTarget = e.target as HTMLElement;
             const chatsContainer = (!floatingMode && DBState.db.fixedChatTextarea && chatTarget.children[1]) ? chatTarget.children[1] : chatTarget.children[0];

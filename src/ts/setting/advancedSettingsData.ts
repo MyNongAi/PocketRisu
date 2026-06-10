@@ -45,6 +45,15 @@ export const advancedSettingsItems: SettingItem[] = [
         id: 'adv.retries', type: 'number', labelKey: 'requestretrys', bindKey: 'requestRetrys',
         helpKey: 'requestretrys', options: { min: 0, max: 20 }
     },
+    // Chat Loading
+    {
+        id: 'adv.chatLoadInitial', type: 'number', labelKey: 'chatLoadInitialPages', bindKey: 'chatLoadInitialPages',
+        helpKey: 'chatLoadInitialPages', classes: 'mt-4', options: { min: 1 }
+    },
+    {
+        id: 'adv.chatLoadAdditional', type: 'number', labelKey: 'chatLoadAdditionalPages', bindKey: 'chatLoadAdditionalPages',
+        helpKey: 'chatLoadAdditionalPages', options: { min: 1 }
+    },
     {
         id: 'adv.genTime', type: 'number', labelKey: 'genTimes', bindKey: 'genTime',
         helpKey: 'genTimes', options: { min: 0, max: 4096 }
