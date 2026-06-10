@@ -1100,6 +1100,8 @@ export const languageEnglish = {
     personaBindCurrent: "Bind Current Persona",
     personaSelectOther: "Select Other Persona",
     promptBindingLabel: "Prompt Binding",
+    promptPresetParamsUse: "Use Prompt Parameters",
+    promptPresetParamScopeDesc: "These parameters are stored in this prompt preset. In classic model mode they always apply. With a Model Preset, sampling parameters apply only to chats where \"Use Prompt Parameters\" is enabled in the sidebar's Prompt Binding. Capacity settings (Max Context/Response) are properties of the model, so the model preset always decides them.",
     promptBindedSuccess: "Prompt preset is successfully binded",
     promptUnbindedSuccess: "Prompt preset is successfully unbinded",
     promptBindChange: "Change Prompt Preset",

@@ -32,7 +32,10 @@
     });
 </script>
 
-{#if ctx.layout === 'row'}
+{#if ctx.layout === 'row' || ctx.layout === 'block'}
+    <!-- A number field needs no full-width control, so the block layout is
+         identical to the row layout: label + inline help stacked on the left,
+         compact input vertically centered on the right (SettingRowLayout). -->
     <SettingRowLayout {item}>
         {#snippet control()}
             <NumberInput

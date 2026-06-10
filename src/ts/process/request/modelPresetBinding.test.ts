@@ -12,6 +12,7 @@ import {
     resolveChatModelBinding,
     resolvePresetMaxOutputTokens,
     resolveChatMaxResponseTokens,
+    applyPromptPresetParams,
 } from './modelPresetBinding'
 import { emptyModelBinding } from 'src/ts/preset/types'
 
@@ -185,5 +186,97 @@ describe('resolveChatMaxResponseTokens — the bug: stray legacy db.maxResponse 
         mockDb.modelPresets = [presetWith()]
         const chat = { useModelPreset: true, modelBinding: bindingWith('p-main') } as any
         expect(resolveChatMaxResponseTokens(chat)).toBe(500)
+    })
+})
+
+describe('applyPromptPresetParams — per-chat prompt-preset sampling override', () => {
+    const SAMPLING_SCHEMA = [
+        { key: 'temperature', default: 0.7, mapsTo: { target: 'body', path: 'temperature' } },
+        { key: 'top_p', default: 1, mapsTo: { target: 'body', path: 'top_p' } },
+        { key: 'max_tokens', default: 4096, mapsTo: { target: 'body', path: 'max_tokens' } },
+    ]
+
+    beforeEach(() => {
+        // Classic prompt-preset params as mirrored into db.* by setPreset
+        // (temperature / penalties are stored in hundredths).
+        mockDb.temperature = 80
+        mockDb.top_p = 0.9
+        mockDb.top_k = 40
+        mockDb.frequencyPenalty = 50
+        mockDb.PresensePenalty = -1000 // slider disabled
+        mockDb.maxResponse = 65535
+    })
+
+    const onChat = { usePromptPresetParams: true } as any
+
+    test('identity when the chat did not opt in', () => {
+        const preset = presetWith({ schema: SAMPLING_SCHEMA })
+        expect(applyPromptPresetParams(preset, { usePromptPresetParams: false } as any, 'model')).toBe(preset)
+        expect(applyPromptPresetParams(preset, {} as any, 'model')).toBe(preset)
+        expect(applyPromptPresetParams(preset, undefined, 'model')).toBe(preset)
+    })
+
+    test('identity for non-main modes even when opted in', () => {
+        const preset = presetWith({ schema: SAMPLING_SCHEMA })
+        expect(applyPromptPresetParams(preset, onChat, 'submodel')).toBe(preset)
+        expect(applyPromptPresetParams(preset, onChat, 'memory')).toBe(preset)
+    })
+
+    test('injects normalized sampling values over userValues without mutating the stored preset', () => {
+        const preset = presetWith({
+            schema: SAMPLING_SCHEMA,
+            userValues: { temperature: 0.2, apiKey: 'k' },
+        })
+        const out = applyPromptPresetParams(preset, onChat, 'model')
+        expect(out).not.toBe(preset)
+        expect(out.userValues.temperature).toBe(0.8) // 80 hundredths -> 0.8, beats the editor's 0.2
+        expect(out.userValues.top_p).toBe(0.9)
+        expect(out.userValues.apiKey).toBe('k') // unrelated values preserved
+        expect(preset.userValues).toEqual({ temperature: 0.2, apiKey: 'k' }) // input untouched
+    })
+
+    test('schema-gated: params the profile does not declare are not injected (top_k), and output caps never are', () => {
+        const preset = presetWith({ schema: SAMPLING_SCHEMA })
+        const out = applyPromptPresetParams(preset, onChat, 'model')
+        expect(out.userValues).not.toHaveProperty('top_k') // db.top_k=40 but schema lacks it
+        expect(out.userValues).not.toHaveProperty('max_tokens') // sampling only, never the output cap
+    })
+
+    test('-1000 slider-disabled sentinel is treated as unset', () => {
+        const preset = presetWith({
+            schema: [
+                { key: 'presence_penalty', mapsTo: { target: 'body', path: 'presence_penalty' } },
+                { key: 'frequency_penalty', mapsTo: { target: 'body', path: 'frequency_penalty' } },
+            ],
+        })
+        const out = applyPromptPresetParams(preset, onChat, 'model')
+        expect(out.userValues).not.toHaveProperty('presence_penalty') // PresensePenalty = -1000
+        expect(out.userValues.frequency_penalty).toBe(0.5) // 50 hundredths -> 0.5
+    })
+
+    test('wire-flavored alias keys map to the same classic values (Gemini camelCase)', () => {
+        const preset = presetWith({
+            schema: [
+                { key: 'topP', mapsTo: { target: 'body', path: 'generationConfig.topP' } },
+                { key: 'topK', mapsTo: { target: 'body', path: 'generationConfig.topK' } },
+            ],
+        })
+        const out = applyPromptPresetParams(preset, onChat, 'model')
+        expect(out.userValues.topP).toBe(0.9)
+        expect(out.userValues.topK).toBe(40)
+    })
+
+    test('non-body mappings are ignored even if the key matches', () => {
+        const preset = presetWith({
+            schema: [{ key: 'temperature', mapsTo: { target: 'header', path: 'X-Temp' } }],
+        })
+        expect(applyPromptPresetParams(preset, onChat, 'model')).toBe(preset)
+    })
+
+    test('identity when nothing in the schema matches', () => {
+        const preset = presetWith({
+            schema: [{ key: 'apiKey', mapsTo: { target: 'auth', path: 'apiKey' } }],
+        })
+        expect(applyPromptPresetParams(preset, onChat, 'model')).toBe(preset)
     })
 })
