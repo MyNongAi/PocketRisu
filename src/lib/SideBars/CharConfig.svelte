@@ -1,7 +1,9 @@
 <script lang="ts">
     import { language } from "../../lang";
     import { tokenizeAccurate } from "../../ts/tokenizer";
-    import { saveImage as saveAsset, type character } from "../../ts/storage/database.svelte";
+    import { saveImage as saveAsset, type character, getCurrentCharacter } from "../../ts/storage/database.svelte";
+    import { convertCharacterToModule } from "src/ts/interchangeability";
+    import { notifySuccess } from "src/ts/alert";
     import { DBState } from 'src/ts/stores.svelte';
     import { untrack } from 'svelte';
     import { CharConfigSubMenu, MobileGUI, selectedCharID, hypaV3ModalOpen } from "../../ts/stores.svelte";
@@ -650,6 +652,13 @@
             const res = await exportChar($selectedCharID)
         }} className="mt-2">{language.exportCharacter}</Button>
     {/if}
+
+    <Button size="md" className="mt-2" onclick={async () => {
+        const char = getCurrentCharacter()
+        const m = convertCharacterToModule(char)
+        DBState.db.modules.push(m)
+        notifySuccess(language.successfullyConverted)
+    }}>{language.convertToModule}</Button>
 
     <Button onclick={async () => {
         removeChar($selectedCharID, DBState.db.characters[$selectedCharID].name)
