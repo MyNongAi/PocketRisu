@@ -23,7 +23,7 @@ import { runInlayScreen } from "./inlayScreen";
 import { runImageEmbedding } from "./transformers";
 import { runLuaEditTrigger } from "./scriptings";
 import { getModelInfo, LLMFlags } from "../model/modellist";
-import { resolveChatModelBinding } from "./request/modelPresetBinding";
+import { resolveChatModelBinding, resolvePresetMaxOutputTokens } from "./request/modelPresetBinding";
 import { hypaMemoryV3 } from "./memory/hypav3";
 import { getModuleAssets, getModuleToggles } from "./modules";
 import { readImage } from "../globalApi.svelte";
@@ -255,6 +255,10 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     let currentChat = runCurrentChatFunction(nowChatroom.chats[selectedChat])
     nowChatroom.chats[selectedChat] = currentChat
     let maxContextTokens = DBState.db.maxContext
+    // Output-token reservation for the context budget. Defaults to the legacy
+    // global db.maxResponse (the "[채팅 봇]" max response size), overridden below
+    // when this chat is bound to a ModelPreset.
+    let maxResponseTokens = DBState.db.maxResponse
     // When this chat is bound to a ModelPreset, use the preset's own input
     // budget (preset.maxContext, default 65000) instead of the global
     // db.maxContext — clamped to the model's context window when known.
@@ -266,6 +270,13 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             const set = mainBinding.preset.maxContext
             const budget = set && set > 0 ? set : 65000
             maxContextTokens = ctxWindow ? Math.min(budget, ctxWindow) : budget
+            // Reserve output tokens from the preset's own max-output setting
+            // rather than db.maxResponse — the legacy global value can be a
+            // stray figure (e.g. 65535 carried over from an imported prompt
+            // preset) that would eat the whole context window and make even the
+            // first message fail with a false "too much token" error.
+            const presetOut = resolvePresetMaxOutputTokens(mainBinding.preset)
+            if (presetOut !== undefined) maxResponseTokens = presetOut
         }
     }
 
@@ -492,7 +503,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     }
 
     //await tokenize currernt
-    let currentTokens = DBState.db.maxResponse
+    let currentTokens = maxResponseTokens
     let supaMemoryCardUsed = false
     
     //for unexpected error
@@ -1330,7 +1341,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     }
 
     //estimate tokens
-    let outputTokens = DBState.db.maxResponse
+    let outputTokens = maxResponseTokens
     if(inputTokens + outputTokens > maxContextTokens){
         outputTokens = maxContextTokens - inputTokens
     }

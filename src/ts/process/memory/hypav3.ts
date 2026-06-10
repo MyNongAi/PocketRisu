@@ -15,6 +15,7 @@ import {
 } from "src/ts/storage/database.svelte";
 import { type OpenAIChat } from "../index.svelte";
 import { requestChatData } from "../request/request";
+import { resolveChatMaxResponseTokens } from "../request/modelPresetBinding";
 import { isLocalNetworkUrl } from "src/ts/network/localNetwork";
 import { chatCompletion, unloadEngine } from "../webllm";
 import { hypaV3ProgressStore } from "src/ts/stores.svelte";
@@ -179,8 +180,9 @@ async function hypaMemoryV3MainExp(
         };
     }
 
-    // Initial token correction
-    currentTokens -= db.maxResponse;
+    // Initial token correction — must match the output-token reservation the
+    // caller added (preset max-output for ModelPreset chats, else db.maxResponse).
+    currentTokens -= resolveChatMaxResponseTokens(room);
 
     // Load existing hypa data if available
     const data: HypaV3Data = room.hypaV3Data
@@ -959,8 +961,9 @@ async function hypaMemoryV3Main(
         };
     }
 
-    // Initial token correction
-    currentTokens -= db.maxResponse;
+    // Initial token correction — must match the output-token reservation the
+    // caller added (preset max-output for ModelPreset chats, else db.maxResponse).
+    currentTokens -= resolveChatMaxResponseTokens(room);
 
     // Load existing hypa data if available
     const data: HypaV3Data = room.hypaV3Data
