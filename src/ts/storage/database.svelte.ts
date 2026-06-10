@@ -2052,6 +2052,11 @@ export interface Chat{
     // it is restored on re-enable. Off (or absent) => classic global model path.
     useModelPreset?: boolean
     modelBinding?: ModelBindingSet
+    /** Per-chat opt-in: when this chat's MAIN request goes through a ModelPreset,
+     * override the preset's sampling parameters with the active prompt preset's
+     * (temperature, top_p, penalties, ...). Off (or absent) => preset params only.
+     * No effect in classic mode, where prompt-preset params already apply. */
+    usePromptPresetParams?: boolean
     /** Runtime-only: true while awaiting hydration from server. Never persisted. */
     _placeholder?: boolean
 }

@@ -31,7 +31,7 @@ import {
 } from "src/ts/preset/adapter";
 import { TOOL_CAPABLE_ADAPTER_KINDS, VISION_CAPABLE_ADAPTER_KINDS, type AdapterKind, type ModelPreset } from "src/ts/preset/types";
 import { pumpPresetStream } from "./presetStreamPump";
-import { resolveChatModelBinding, buildModelPresetCredential } from "./modelPresetBinding";
+import { resolveChatModelBinding, buildModelPresetCredential, applyPromptPresetParams } from "./modelPresetBinding";
 import { expandAdapterMessages, toAdapterMessage, toolResponseText } from "./modelPresetMessages";
 import { isLocalNetworkUrl } from "src/ts/network/localNetwork";
 
@@ -371,9 +371,10 @@ export async function requestChatDataMain(arg:requestDataArgument, model:ModelMo
     // db.aiModel / db.seperateModels. Skipped when a staticModel (fallback retry)
     // is forced — fallbacks are classic model ids.
     if(!arg.staticModel){
-        const binding = resolveChatModelBinding(getCurrentChat(), model)
+        const currentChat = getCurrentChat()
+        const binding = resolveChatModelBinding(currentChat, model)
         if(binding.kind === 'modelPreset'){
-            return requestModelPreset(targ, binding.preset, abortSignal)
+            return requestModelPreset(targ, applyPromptPresetParams(binding.preset, currentChat, model), abortSignal)
         }
         if(binding.kind === 'block'){
             return {

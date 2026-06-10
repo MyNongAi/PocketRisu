@@ -1200,6 +1200,8 @@ export const languageKorean = {
   personaBindCurrent: "현재 페르소나 바인딩",
   personaSelectOther: "다른 페르소나 선택",
   promptBindingLabel: "프롬프트 바인딩",
+  promptPresetParamsUse: "프롬프트 파라미터 사용",
+  promptPresetParamScopeDesc: "이 파라미터들은 프롬프트 프리셋에 저장됩니다. 클래식 모델 모드에서는 항상 적용되며, 모델 프리셋 사용 시에는 사이드바 프롬프트 바인딩에서 \"프롬프트 파라미터 사용\"을 켠 채팅에서만 샘플링 파라미터가 적용됩니다. 용량 설정(최대 콘텍스트/응답 크기)은 모델의 속성이므로 항상 모델 프리셋이 결정합니다.",
   promptBindedSuccess: "프롬프트 프리셋이 성공적으로 바인드되었습니다.",
   promptUnbindedSuccess: "프롬프트 프리셋이 성공적으로 언바인드되었습니다.",
   promptBindChange: "프롬프트 프리셋 변경",

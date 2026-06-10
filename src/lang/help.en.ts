@@ -267,6 +267,8 @@ export const helpEn = {
             "Bind a model preset to this chat.\n\n" +
             "On : Use a model preset, binding a model per chat.\n" +
             "Off : Use the existing chatbot settings. (default)",
+        promptPresetParams:
+            "When this chat sends its main request through a model preset, the sampling parameters of the currently applied prompt preset (Temperature, Top P, penalties, etc.) override the model preset's parameters.\n\n- Applies to this chat only, and only to the main model request (not sub/auxiliary models).\n- Only parameters the model preset actually supports are overridden. Output token caps (max tokens) and thinking settings are properties of the model, so the model preset always decides them.\n- Values you set explicitly in the model preset's custom body / additional parameters still take priority.\n- In classic model mode, prompt preset parameters already apply, so this option has no effect there.",
         hypaV3SummarizationRequestsPerMinute:
             "Maximum summarization model requests per minute. Only applies when the summarization model is set to Auxiliary Model.",
         hypaV3SummarizationMaxConcurrent:
