@@ -1,6 +1,7 @@
 import { get } from 'svelte/store';
 import { checkNullish, decryptBuffer, encryptBuffer, selectSingleFile } from '../util';
 import { changeLanguage, language } from '../../lang';
+import { DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES, DEFAULT_CHAT_LOAD_INITIAL_PAGES, normalizeChatLoadPages } from '../chatLoadPages';
 import type { RisuPlugin } from '../plugins/plugins.svelte';
 import type {triggerscript as triggerscriptMain} from '../process/triggers';
 import { downloadFile, saveAsset as saveImageGlobal } from '../globalApi.svelte';
@@ -722,6 +723,9 @@ export function setDatabase(data:Database){
     if (typeof data.localNetworkTimeoutSec !== 'number' || Number.isNaN(data.localNetworkTimeoutSec)) data.localNetworkTimeoutSec = 600
     data.pluginCustomStorage ??= {}
     data.longPressToPopupEditor ??= false
+    data.moveInsteadOfCopyOnCMPConvert ??= false
+    data.chatLoadInitialPages = normalizeChatLoadPages(data.chatLoadInitialPages, DEFAULT_CHAT_LOAD_INITIAL_PAGES)
+    data.chatLoadAdditionalPages = normalizeChatLoadPages(data.chatLoadAdditionalPages, DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES)
     data.fixedChatTextarea ??= true
     applyModelPresetDefaults(data)
     changeLanguage(data.language)
@@ -938,6 +942,16 @@ export interface DynamicOutput {
     dynamicRequest: boolean
 }
 
+export interface RisuPersona {
+    personaPrompt:string
+    name:string
+    icon:string
+    largePortrait?:boolean
+    id?:string
+    note?:string
+    embeddedModule?:RisuModule
+}
+
 export interface Database{
     characters: character[],
     apiType: string
@@ -1119,14 +1133,7 @@ export interface Database{
     nanogptUseSubscriptionEndpoint:boolean
     openrouterFallback:boolean
     selectedPersona:number
-    personas:{
-        personaPrompt:string
-        name:string
-        icon:string
-        largePortrait?:boolean
-        id?:string
-        note?:string
-    }[]
+    personas:RisuPersona[]
     personaNote:boolean
     assetWidth:number
     animationSpeed:number
@@ -1414,6 +1421,9 @@ export interface Database{
     // legacy/V2 keys stay unrecorded. See pluginStorageMeta.ts.
     pluginStorageMeta?:{[key:string]:{plugin:string,updatedAt:number}}
     longPressToPopupEditor?: boolean
+    moveInsteadOfCopyOnCMPConvert?:boolean
+    chatLoadInitialPages?: number
+    chatLoadAdditionalPages?: number
     ImagenModel:string
     ImagenImageSize:string
     ImagenAspectRatio:string
@@ -1613,6 +1623,21 @@ export interface character{
     private?:boolean
     additionalText:string
     oaiVoice?:string
+    oaiTTSConfig?:{
+        /** User opted into advanced OpenAI-compatible settings. When false/absent,
+         *  tts.ts ignores the other fields and uses the legacy oaiVoice + db.openAIKey path. */
+        enabled?: boolean
+        /** Base URL, trailing slash trimmed at runtime. Falls back to 'https://api.openai.com/v1'. */
+        baseURL?: string
+        /** Per-character API key. Falls back to db.openAIKey; the Authorization header is omitted entirely when both are empty. */
+        apiKey?: string
+        /** Model ID. Falls back to 'tts-1'. */
+        model?: string
+        /** Freeform voice ID for custom endpoints. Falls back to character.oaiVoice, then to 'alloy'. */
+        voice?: string
+        /** Response format. Falls back to 'mp3'. */
+        format?: 'mp3' | 'opus' | 'aac' | 'flac' | 'wav' | 'pcm'
+    }
     virtualscript?:string
     scriptstate?:{[key:string]:string|number|boolean}
     depth_prompt?: { depth: number, prompt: string }
@@ -1651,6 +1676,7 @@ export interface character{
     modules?:string[]
     coldstorage?:string
     coldStoragedChats?:string[]
+    customModuleToggle?:string
 }
 
 

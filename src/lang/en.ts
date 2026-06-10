@@ -524,10 +524,15 @@ export const languageEnglish = {
     prompt: "Prompt",
     loreBookDepth: "Lorebook Search Depth",
     loreBookToken: "Lorebook Max Tokens",
+    chatLoadInitialPages: "Initial Chat Load Count",
+    chatLoadAdditionalPages: "Additional Chat Load Count",
     removeCharacter: "Remove Character",
     exportCharacter: "Export Character",
     characterPackage: "Character Package",
     characterPackageExport: "Export Package",
+    convertToModule: "Convert to Module",
+    convertToCharacter: "Convert to Character",
+    successfullyConverted: "Successfully converted.",
     characterPackageImport: "Import Character Package (zip)",
     characterPackageCharacter: "Character",
     characterPackageChats: "Chats",
@@ -1276,6 +1281,7 @@ export const languageEnglish = {
         extraSummarizationRatioLabel: "Extra Summarization Ratio",
         maxChatsPerSummaryLabel: "Max Messages Per Summary",
         queryChatCountLabel: "Query Chat Count",
+        summaryChunkSeparatorLabel: "Chunk Separator Regex",
         recentMemoryRatioLabel: "Recent Memory Ratio",
         similarMemoryRatioLabel: "Similar Memory Ratio",
         randomMemoryRatioLabel: "Random Memory Ratio",
@@ -2066,6 +2072,7 @@ export const languageEnglish = {
     recentChatsTitle: "Recent Chats",
     noRecentChatsDesc: "No conversations yet",
     hideRecentChats: "Hide conversation list",
+    moveInsteadOfCopyOnCMPConvert: "Move Instead of Copy on CMP Convert",
 
 } satisfies I18nTranslation;
 

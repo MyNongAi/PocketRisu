@@ -33,7 +33,7 @@
 </script>
 <div class="flex flex-col items-center w-full overflow-y-auto h-full">
     {#each sortChar(DBState.db.characters) as char, i}
-        {#if char.name.toLocaleLowerCase().includes(search.toLocaleLowerCase())}
+        {#if char.name.replace(/ /g,"").toLocaleLowerCase().includes(search.replace(/ /g,"").toLocaleLowerCase())}
             <button class="flex p-2 border-t-darkborderc gap-2 w-full" class:border-t={i !== 0} onclick={() => {
                 changeChar(char.i)
                 endGrid()

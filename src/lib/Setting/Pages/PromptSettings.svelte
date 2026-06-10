@@ -301,7 +301,7 @@
             <ModelList bind:value={DBState.db.fallbackModels[arg][i]} blankable />
         {/each}
         <div class="flex gap-2">
-            <button class="bg-selected text-white p-2 rounded-md" onclick={() => {
+            <button class="bg-selected text-textcolor p-2 rounded-md" onclick={() => {
                 let value = DBState.db.fallbackModels[arg] ?? []
                 value.push('')
                 DBState.db.fallbackModels[arg] = value

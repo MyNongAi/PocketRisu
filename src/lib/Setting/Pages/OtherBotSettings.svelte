@@ -1148,6 +1148,8 @@
                 <NumberInput className="mt-2" marginBottom min={1} bind:value={settings.maxChatsPerSummary} />
                 <span class="text-textcolor">{language.hypaV3Settings.queryChatCountLabel} <Help key="hypaV3QueryChatCount"/></span>
                 <NumberInput className="mt-2" marginBottom min={1} max={20} bind:value={settings.queryChatCount} />
+                <span class="text-textcolor">{language.hypaV3Settings.summaryChunkSeparatorLabel} <Help key="hypaV3SummaryChunkSeparator"/></span>
+                <TextInput className="mt-2" marginBottom bind:value={settings.summaryChunkSeparator} />
                 <span class="text-textcolor">{language.hypaV3Settings.recentMemoryRatioLabel} <Help key="hypaV3RecentMemoryRatio"/></span>
                 <SliderInput className="mt-2" marginBottom min={0} max={1} step={0.01} fixed={2} bind:value={settings.recentMemoryRatio} />
                 <span class="text-textcolor">{language.hypaV3Settings.similarMemoryRatioLabel} <Help key="hypaV3SimilarMemoryRatio"/></span>
