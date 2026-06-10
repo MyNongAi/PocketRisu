@@ -1521,6 +1521,9 @@ export function getUncleanables(db: Database, uptype: 'basename' | 'pure' = 'bas
                     addUncleanable(asset[1])
                 }
             }
+            if(module.icon){
+                addUncleanable(module.icon)
+            }
         }
     }
 
@@ -1534,6 +1537,9 @@ export function getUncleanables(db: Database, uptype: 'basename' | 'pure' = 'bas
                     for (const asset of assets) {
                         addUncleanable(asset[1])
                     }
+                }
+                if(v.embeddedModule.icon){
+                    addUncleanable(v.embeddedModule.icon)
                 }
             }
         });
