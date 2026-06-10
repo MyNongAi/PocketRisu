@@ -4,6 +4,7 @@
     import { untrack } from 'svelte';
     import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte';
     import Help from 'src/lib/Others/Help.svelte';
+    import SettingRowLayout from './SettingRowLayout.svelte';
 
     interface Props {
         item: SettingItem;
@@ -31,14 +32,29 @@
     });
 </script>
 
-<span class="text-textcolor {item.classes ?? ''}">
-    {getLabel(item)}
-    {#if item.helpKey}<Help key={item.helpKey as any}/>{/if}
-</span>
-<NumberInput
-    className="mt-2"
-    marginBottom={true}
-    min={item.options?.min}
-    max={item.options?.max}
-    bind:value={localValue}
-/>
+{#if ctx.layout === 'row'}
+    <SettingRowLayout {item}>
+        {#snippet control()}
+            <NumberInput
+                className="w-24"
+                size="sm"
+                padding={true}
+                min={item.options?.min}
+                max={item.options?.max}
+                bind:value={localValue}
+            />
+        {/snippet}
+    </SettingRowLayout>
+{:else}
+    <span class="text-textcolor {item.classes ?? ''}">
+        {getLabel(item)}
+        {#if item.helpKey}<Help key={item.helpKey as any}/>{/if}
+    </span>
+    <NumberInput
+        className="mt-2"
+        marginBottom={true}
+        min={item.options?.min}
+        max={item.options?.max}
+        bind:value={localValue}
+    />
+{/if}
