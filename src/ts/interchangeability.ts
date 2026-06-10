@@ -12,7 +12,8 @@ export function convertModuleToCharacter(m: RisuModule): character {
 
     char.name = m.name
     char.creatorNotes = m.description
-    char.globalLore = m.lorebook || []
+    // deep-clone: the @@indicator consumption below splices this array — must not strip entries from the source module (upstream 912ecbbd is entry-only and misses this)
+    char.globalLore = safeStructuredClone(m.lorebook || [])
     char.customscript = m.regex || []
     char.triggerscript = m.trigger || []
     char.lowLevelAccess = m.lowLevelAccess || false
@@ -23,7 +24,7 @@ export function convertModuleToCharacter(m: RisuModule): character {
     char.image = m.icon || ""
 
     for(let i = 0; i < char.globalLore.length; i++){
-        const lore = char.globalLore[i]
+        const lore = safeStructuredClone(char.globalLore[i])
         if(lore.content.startsWith('@@indicator phi')){
             char.postHistoryInstructions = lore.content.replace('@@indicator phi', '').trim()
             char.globalLore.splice(i, 1)
@@ -54,8 +55,7 @@ export function convertCharacterToModule(c: character): RisuModule {
     const mod: RisuModule = {
         name: c.name,
         description: c.creatorNotes,
-        // copy the array so the @@indicator entries pushed below don't mutate the source character's globalLore
-        lorebook: c.globalLore ? [...c.globalLore] : [],
+        lorebook: c.globalLore,
         regex: c.customscript,
         trigger: c.triggerscript,
         lowLevelAccess: c.lowLevelAccess,
@@ -66,7 +66,8 @@ export function convertCharacterToModule(c: character): RisuModule {
         id: v4(),
         icon: c.image
     }
-    mod.lorebook = mod.lorebook || []
+    // deep-clone so the @@indicator entries pushed below don't mutate the source character's globalLore (upstream 8e6d3761)
+    mod.lorebook = safeStructuredClone(mod.lorebook || [])
 
 
     if(c.desc){

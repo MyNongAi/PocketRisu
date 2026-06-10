@@ -78,6 +78,16 @@ describe('interchangeability: character <-> module round-trip', () => {
         // converter must clone; source lore length unchanged
         expect(c.globalLore.length).toBe(loreLenBefore)
     })
+
+    it('does not mutate the source module (mirror direction)', () => {
+        const m = convertCharacterToModule(makeChar())
+        const loreLenBefore = m.lorebook.length
+        const indicatorsBefore = m.lorebook.filter((l) => l.content.startsWith('@@indicator')).length
+        convertModuleToCharacter(m)
+        // the @@indicator consumption splices a clone, not the module's own lorebook
+        expect(m.lorebook.length).toBe(loreLenBefore)
+        expect(m.lorebook.filter((l) => l.content.startsWith('@@indicator')).length).toBe(indicatorsBefore)
+    })
 })
 
 describe('interchangeability: character <-> persona round-trip', () => {
