@@ -1513,6 +1513,8 @@ export const languageKorean = {
   modelPresetBindedSuccess: "모델 프리셋이 성공적으로 바인드되었습니다.",
   streamingOverride: "응답 스트리밍",
   streamingOverrideHelp: "이 프리셋이 응답을 스트리밍할지 여부.",
+  decoupledStreaming: "디커플드 스트리밍 (한 번에 출력)",
+  decoupledStreamingHelp: "요청은 스트리밍으로 보내되 응답은 완성된 뒤 한 번에 표시합니다. 일부 프로바이더의 비스트리밍 출력 제한·타임아웃을 우회하고, 토큰 단위 렌더 부담을 줄입니다.",
   modelPresetToolUse: "도구 사용",
   modelPresetToolUseHelp: "이 프리셋이 설정된 도구(MCP)를 호출하도록 허용합니다. 기본 꺼짐. 도구 실행 시 스트리밍 없이 전송됩니다.",
   modelPresetAbilities: "모델 능력",

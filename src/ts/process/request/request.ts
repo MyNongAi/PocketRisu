@@ -19,7 +19,7 @@ import { runTrigger } from "../triggers";
 import { requestClaude } from './anthropic';
 import { requestGoogleCloudVertex } from './google';
 import { requestOpenAI, requestOpenAILegacyInstruct, requestOpenAIResponseAPI } from "./openAI/requests";
-import { applyParameters, type ModelModeExtended } from './shared';
+import { applyParameters, collectStreamingText, type ModelModeExtended } from './shared';
 import {
     sendChatRequest, streamChatRequest, previewChatRequest,
     sendAnthropicChatRequest, streamAnthropicChatRequest, previewAnthropicChatRequest,
@@ -733,6 +733,16 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
                     })
                 }
             })
+            // Decoupled streaming: the wire request still streams (keeping the
+            // provider's lenient streaming limits), but we drain the stream here
+            // and return a single text result. The final chunk already holds the
+            // full reasoning-prefixed text, so this matches the non-streaming
+            // sendModelPreset return byte-for-byte — the chat renderer paints it
+            // once instead of token-by-token.
+            if(preset.decoupledStreaming){
+                const text = await collectStreamingText(stream)
+                return { type: 'success', result: text, model: preset.name }
+            }
             return { type: 'streaming', result: stream, model: preset.name }
         }
         const response = await sendModelPreset(kind, preset, options, credential)

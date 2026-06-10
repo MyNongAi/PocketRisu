@@ -277,6 +277,12 @@ export interface ModelPreset {
     // Default off (undefined/false). Forced off when the profile does not
     // declare the 'streaming' capability.
     useStreaming?: boolean
+    // Decoupled streaming: send the request over the streaming wire (so the
+    // provider/proxy applies its more lenient streaming limits — output cap,
+    // timeout) but buffer the whole SSE response and surface the final text at
+    // once instead of token-by-token. Only meaningful when useStreaming is on.
+    // Default off (undefined/false) → ordinary token-by-token streaming.
+    decoupledStreaming?: boolean
     // Per-ModelPreset tool use (capabilities Stage 1). Default off
     // (undefined/false): while off, the request stays text-only so existing
     // bound chats are never routed through the tool loop. Only meaningful when

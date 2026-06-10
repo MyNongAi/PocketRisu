@@ -188,6 +188,17 @@
                             <ShSwitch checked={!!editingPreset.useStreaming} onCheckedChange={(v) => { editingPreset.useStreaming = v }} />
                         </div>
                     </div>
+                    {#if editingPreset.useStreaming}
+                        <div class="flex items-center justify-between gap-3 pl-4">
+                            <div class="flex flex-col gap-0.5 min-w-0">
+                                <span class="text-sm text-textcolor">{language.decoupledStreaming}</span>
+                                <span class="text-xs text-textcolor2">{language.decoupledStreamingHelp}</span>
+                            </div>
+                            <div class="shrink-0">
+                                <ShSwitch checked={!!editingPreset.decoupledStreaming} onCheckedChange={(v) => { editingPreset.decoupledStreaming = v }} />
+                            </div>
+                        </div>
+                    {/if}
                 </div>
                 <SchemaFormRenderer
                     schema={editingPreset.profileSnapshot.schema}
