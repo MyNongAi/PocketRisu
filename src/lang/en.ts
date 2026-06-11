@@ -1406,6 +1406,7 @@ export const languageEnglish = {
     modelPresetToolUse: "Tool use",
     modelPresetToolUseHelp: "Let this preset call your configured tools (MCP). Off by default. Tool runs are sent without streaming.",
     modelPresetAbilities: "Model abilities",
+    modelPresetPickSuggestion: "Choose from suggestions…",
     modelPresetImageInput: "Image input",
     modelPresetImageInputHelp: "Send images to the model. Off by default. Turn on only for models that accept images (e.g. Ollama gemma3, llava).",
     modelPresetFoldSystem: "Fold system prompt",

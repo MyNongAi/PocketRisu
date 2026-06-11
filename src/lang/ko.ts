@@ -1526,6 +1526,7 @@ export const languageKorean = {
   modelPresetToolUse: "도구 사용",
   modelPresetToolUseHelp: "이 프리셋이 설정된 도구(MCP)를 호출하도록 허용합니다. 기본 꺼짐. 도구 실행 시 스트리밍 없이 전송됩니다.",
   modelPresetAbilities: "모델 능력",
+  modelPresetPickSuggestion: "추천에서 선택…",
   modelPresetImageInput: "이미지 입력",
   modelPresetImageInputHelp: "이미지를 모델에 함께 전송합니다. 기본 꺼짐. 이미지를 지원하는 모델(예: Ollama gemma3, llava)에서만 켜세요.",
   modelPresetFoldSystem: "시스템 프롬프트 접기",
