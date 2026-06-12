@@ -110,7 +110,13 @@ export class RisuSaveEncoder {
 
     private blocks: { [key: string]: Uint8Array } = {};
     private compression: boolean = false;
-    private characterHashes: { [key: string]: number } = {};
+    // Per-character change detection: the exact JSON we last encoded. A plain
+    // string comparison is a native memcmp — ~3x faster than the previous
+    // normalizeJSON + calculateHash walk — and the string is reused as the
+    // encode payload, so changed characters aren't stringified twice.
+    // In-memory only (rebuilt by init()), so the representation is free to
+    // differ from the patcher's protocol-level calculateHash.
+    private characterJsons: { [key: string]: string } = {};
 
     async init(data:Database,arg:{
         compression?: boolean,
@@ -161,20 +167,24 @@ export class RisuSaveEncoder {
             type: RisuSaveType.PLUGIN_STORAGE,
             name: 'pluginStorage'
         });
-        this.characterHashes = {}
+        this.characterJsons = {}
         for( const character of data.characters) {
             // Replace chats with stubs for database.bin — full chat data lives server-side
             const charForEncode = { ...character, chats: character.chats.map(c => chatToStub(c)) }
+            // Raw stringify (no normalize fallback): a circular ref must fail the
+            // save loudly, exactly as before, rather than silently persist a
+            // lossy copy. This string doubles as the encode payload.
+            const charJson = JSON.stringify(charForEncode)
             this.blocks[character.chaId] = await this.encodeBlock({
                 compression,
-                data: JSON.stringify(charForEncode),
+                data: charJson,
                 type: RisuSaveType.CHARACTER_WITH_CHAT,
                 name: character.chaId,
                 skipRemoteSaving: skipRemoteSavingOnCharacters
             }, {
                 remote: 'prefer'
             });
-            this.characterHashes[character.chaId] = calculateHash(normalizeJSON(charForEncode))
+            this.characterJsons[character.chaId] = charJson
         }
         this.blocks['config'] = await this.encodeBlock({
             compression,
@@ -206,23 +216,23 @@ export class RisuSaveEncoder {
             const chaId = character.chaId
             savedId.add(chaId)
             const index = toSave.character.indexOf(chaId);
-            // Hash based on stub-replaced character to avoid hash changes from hydration
-            const charForHash = { ...character, chats: character.chats.map(c => chatToStub(c)) }
-            const currentHash = calculateHash(normalizeJSON(charForHash))
-            const hasChanged = this.characterHashes[chaId] !== currentHash
+            // Compare against the stub-replaced character so hydration (stub →
+            // full chat) doesn't read as a change of the character itself.
+            // Raw stringify (see init): circular refs fail the save loudly.
+            const charForEncode = { ...character, chats: character.chats.map(c => chatToStub(c)) }
+            const charJson = JSON.stringify(charForEncode)
+            const hasChanged = this.characterJsons[chaId] !== charJson
 
             if (index !== -1 || hasChanged || !this.blocks[chaId]) {
-                // Replace chats with stubs for database.bin — full chat data lives server-side
-                const charForEncode = { ...character, chats: character.chats.map(c => chatToStub(c)) }
                 this.blocks[character.chaId] = await this.encodeBlock({
                     compression: this.compression,
-                    data: JSON.stringify(charForEncode),
+                    data: charJson,
                     type: RisuSaveType.CHARACTER_WITH_CHAT,
                     name: character.chaId
                 }, {
                     remote: 'prefer'
                 });
-                this.characterHashes[chaId] = currentHash
+                this.characterJsons[chaId] = charJson
                 if (index !== -1) {
                     toSave.character.splice(index, 1);
                 }
@@ -234,7 +244,7 @@ export class RisuSaveEncoder {
             for(const chaId of toSave.character){
                 if(!savedId.has(chaId)){
                     delete this.blocks[chaId];
-                    delete this.characterHashes[chaId];
+                    delete this.characterJsons[chaId];
                 }
             }
         }
@@ -249,7 +259,7 @@ export class RisuSaveEncoder {
             }
             if (!currentCharacterIds.has(key)) {
                 delete this.blocks[key];
-                delete this.characterHashes[key];
+                delete this.characterJsons[key];
             }
         }
 
@@ -828,6 +838,14 @@ export function diffArrayWithIdGuard(
 export class RisuSavePatcher {
     private lastSyncedDb: any;
     private hashBlocks: { [key: string]: number } = {};
+    // Cheap change pre-check baselines. calculateHash over normalizeJSON'd data
+    // is the client↔server patch protocol (the server recomputes the same hash,
+    // see server.cjs expectedHash verification) and MUST NOT change — but when
+    // a block's JSON is byte-identical to the baseline, the stored hash and
+    // baseline are still valid, so the expensive normalize+hash+diff can be
+    // skipped wholesale. String comparison is a native memcmp (~3x cheaper).
+    private lastRootJson: string | null = null;
+    private lastCharJsons: { [key: string]: string } = {};
 
     hash(): string {
         this.hashBlocks['characters'] = SEED_ARRAY;
@@ -865,6 +883,21 @@ export class RisuSavePatcher {
             this.hashBlocks[character.chaId] = calculateHash(withStubs);
             this.lastSyncedDb.characters[i] = withStubs;
         }
+
+        // Seed the cheap pre-check baselines from the NORMALIZED data, not the
+        // raw input. The protocol baseline (what the server holds) is always the
+        // normalizeJSON form, so a raw baseline could match a future raw string
+        // whose normalized form differs from the server's (e.g. a shared
+        // reference that normalize replaced with null then later un-shares),
+        // causing the fast path to skip a change the server still needs. Seeding
+        // from the normalized form means any normalize-affecting value (shared
+        // ref, Date, non-finite) makes raw≠baseline and falls safely to full path.
+        const { characters: _c, botPresets: _b, modules: _m, ...normRootOnly } = this.lastSyncedDb
+        this.lastRootJson = JSON.stringify(normRootOnly)
+        this.lastCharJsons = {};
+        for (const character of this.lastSyncedDb.characters) {
+            if (character?.chaId) this.lastCharJsons[character.chaId] = JSON.stringify(character)
+        }
     }
 
     async set(data: any, toSave: toSaveType): Promise<{ patch: any[]; expectedHash: string }> {
@@ -886,11 +919,24 @@ export class RisuSavePatcher {
             ...curRoot
         } = data
 
-        const normRoot = normalizeJSON(curRoot)
-        patch.push(...compare(lastRoot, normRoot))
-        const keys = Object.keys(normRoot)
-        for (const key of keys) {
-            this.hashBlocks[key] = calculateHash(normRoot[key]);
+        // Cheap pre-check: identical root JSON ⇒ identical data ⇒ the stored
+        // root hashes and baseline are still valid; skip normalize/diff/rehash.
+        let curRootJson: string | null = null
+        try { curRootJson = JSON.stringify(curRoot) } catch { curRootJson = null }
+        const rootUnchanged = curRootJson !== null && this.lastRootJson !== null && curRootJson === this.lastRootJson
+
+        let normRoot: any = null
+        if (!rootUnchanged) {
+            normRoot = normalizeJSON(curRoot)
+            patch.push(...compare(lastRoot, normRoot))
+            const keys = Object.keys(normRoot)
+            for (const key of keys) {
+                this.hashBlocks[key] = calculateHash(normRoot[key]);
+            }
+            // Baseline from the NORMALIZED form (the server's actual state), not
+            // curRootJson — see init(). This keeps shared-ref/Date values on the
+            // safe full path on every save.
+            this.lastRootJson = JSON.stringify(normRoot)
         }
 
         if (toSave.botPreset) {
@@ -935,15 +981,31 @@ export class RisuSavePatcher {
                 }
             }
             this.lastSyncedDb.characters = normChars;
+            // Rebuild the cheap baselines from the NORMALIZED chars (the server's
+            // state), not the raw input — see init().
+            this.lastCharJsons = {};
+            for (const char of normChars) {
+                if (char?.chaId) this.lastCharJsons[char.chaId] = JSON.stringify(char)
+            }
         } else {
             // Same structure → per-character field-level diff (efficient)
             for (let i = 0; i < curCharacters.length; i++) {
                 const lastChar = lastCharacters[i]
                 const curChar = curCharacters[i]
-                const normChar = normalizeJSON(withStubs(curChar))
                 const curCharId = curChar?.chaId
-                const curCharHash = curCharId ? calculateHash(normChar) : undefined
                 const trackedBySave = toSave.character.includes(curCharId ?? '')
+
+                // Cheap pre-check: identical JSON ⇒ identical data ⇒ stored
+                // hash, baseline and (empty) diff are all still valid — skip
+                // the normalize + protocol hash + compare entirely.
+                let curJson: string | null = null
+                try { curJson = JSON.stringify(withStubs(curChar)) } catch { curJson = null }
+                if (!trackedBySave && curCharId && curJson !== null && curJson === this.lastCharJsons[curCharId]) {
+                    continue
+                }
+
+                const normChar = normalizeJSON(withStubs(curChar))
+                const curCharHash = curCharId ? calculateHash(normChar) : undefined
                 const changedByHash = !!(curCharId && curCharHash !== this.hashBlocks[curCharId])
 
                 if (trackedBySave || changedByHash) {
@@ -955,6 +1017,15 @@ export class RisuSavePatcher {
                     this.hashBlocks[normChar.chaId] = curCharHash ?? calculateHash(normChar);
                     this.lastSyncedDb.characters[i] = normChar;
                 }
+                // Refresh the cheap baseline from the NORMALIZED form (the
+                // server's actual state), not curJson — a raw baseline could
+                // later match a string whose normalized form differs from the
+                // server's (shared ref → null → un-share), silently skipping a
+                // real change. Normalized baseline keeps such chars on the safe
+                // full path. normChar is cycle-free, so stringify won't throw.
+                if (curCharId) {
+                    this.lastCharJsons[curCharId] = JSON.stringify(normChar)
+                }
             }
         }
 
@@ -962,7 +1033,7 @@ export class RisuSavePatcher {
             characters: this.lastSyncedDb.characters,
             botPresets: this.lastSyncedDb.botPresets,
             modules: this.lastSyncedDb.modules,
-            ...normRoot
+            ...(rootUnchanged ? lastRoot : normRoot)
         }
 
         return {
