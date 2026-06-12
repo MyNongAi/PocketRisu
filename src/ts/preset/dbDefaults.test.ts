@@ -54,7 +54,7 @@ describe('applyModelPresetDefaults', () => {
                             version: 2,
                             adapterKind: 'openai-compatible',
                             requestSchema: [
-                                { key: 'apiKey', type: 'string', label: 'API Key', secret: true, mapsTo: { target: 'auth', field: 'apiKey' } },
+                                { key: 'apiKey', type: 'string', label: 'API Key', secret: true, mapsTo: { target: 'auth', path: 'apiKey' } },
                                 { key: 'modelId', type: 'string', label: 'Model' },
                             ],
                             uiSchema: {
@@ -187,13 +187,77 @@ describe('applyModelPresetDefaults', () => {
         expect(db.modelPresets[0].profileSnapshot.uiSchema.fields.length).toBe(2)
     })
 
+    // The second degeneracy shape: the profile's own fields resolve fine
+    // (non-empty schema + non-empty uiSchema.fields), but the base-provided
+    // credential field was dropped — auth.fields still declares ['apiKey'] yet NO
+    // schema field maps to auth, so the user can't enter the API key. (openai
+    // presets hit this: profile fields present, apiKey missing.)
+    function authDroppedPreset(): any {
+        return {
+            id: 'p3',
+            sourceProfile: { registryId: 'bundled', profileId: 'testprofile', profileVersion: 1, providerBaseVersion: 1, fetchedAt: 0, profileUpdatedAt: 100 },
+            profileSnapshot: {
+                profileId: 'testprofile',
+                schema: [{ key: 'modelId', type: 'string', label: 'Model' }],
+                uiSchema: { groups: [], fields: [{ key: 'modelId', widget: 'combobox', visibility: 'basic' }] },
+                auth: { kind: 'bearer', fields: ['apiKey'] },
+                endpoint: { kind: 'static', url: 'https://x/v1' },
+            },
+            userValues: { modelId: 'gpt-x' },
+            createdAt: 0,
+            updatedAt: 0,
+        }
+    }
+
+    test('heals a snapshot whose auth.fields declares apiKey but no schema field maps to auth', () => {
+        const db: any = { modelPresets: [authDroppedPreset()], modelProfileRegistryCache: healthyCache() }
+
+        applyModelPresetDefaults(db)
+
+        const snap = db.modelPresets[0].profileSnapshot
+        // The base-provided apiKey field (mapsTo.target === 'auth') is restored.
+        const authField = snap.schema.find((f: any) => f?.mapsTo?.target === 'auth')
+        expect(authField).toBeTruthy()
+        expect(authField.key).toBe('apiKey')
+        // userValues carried over (modelId still exists in the fresh schema).
+        expect(db.modelPresets[0].userValues).toEqual({ modelId: 'gpt-x' })
+    })
+
+    test('does not flag a snapshot that already has an auth-mapped field', () => {
+        // Non-empty schema + uiSchema.fields, auth.fields=['apiKey'], AND a schema
+        // field mapping to auth → healthy. Must be left untouched (regression).
+        const healthy: any = {
+            id: 'p4',
+            sourceProfile: { registryId: 'bundled', profileId: 'testprofile', profileVersion: 3, providerBaseVersion: 2, fetchedAt: 0 },
+            profileSnapshot: {
+                profileId: 'testprofile',
+                schema: [
+                    { key: 'apiKey', type: 'string', label: 'API Key', mapsTo: { target: 'auth', path: 'apiKey' } },
+                    { key: 'modelId', type: 'string', label: 'Model' },
+                ],
+                uiSchema: { groups: [], fields: [{ key: 'apiKey', widget: 'secret', visibility: 'basic' }] },
+                auth: { kind: 'bearer', fields: ['apiKey'] },
+                endpoint: { kind: 'static', url: 'https://x/v1' },
+            },
+            userValues: {},
+            updatedAt: 777,
+        }
+        const db: any = { modelPresets: [healthy], modelProfileRegistryCache: healthyCache() }
+
+        applyModelPresetDefaults(db)
+
+        // Same object reference, untouched (no re-resolve, no updatedAt change).
+        expect(db.modelPresets[0]).toBe(healthy)
+        expect(db.modelPresets[0].updatedAt).toBe(777)
+    })
+
     test('does not touch a healthy preset', () => {
         const healthy: any = {
             id: 'p2',
             sourceProfile: { registryId: 'bundled', profileId: 'testprofile', profileVersion: 3, providerBaseVersion: 2, fetchedAt: 0 },
             profileSnapshot: {
                 profileId: 'testprofile',
-                schema: [{ key: 'apiKey', type: 'string', label: 'API Key' }],
+                schema: [{ key: 'apiKey', type: 'string', label: 'API Key', mapsTo: { target: 'auth', path: 'apiKey' } }],
                 uiSchema: { groups: [], fields: [{ key: 'apiKey', widget: 'secret', visibility: 'basic' }] },
                 auth: { kind: 'bearer', fields: ['apiKey'] },
                 endpoint: { kind: 'static', url: 'https://x/v1' },
