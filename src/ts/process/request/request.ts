@@ -37,7 +37,7 @@ import { resolveChatModelBinding, buildModelPresetCredential, applyPromptPresetP
 import { expandAdapterMessages, toAdapterMessage, toolResponseText } from "./modelPresetMessages";
 import { isLocalNetworkUrl } from "src/ts/network/localNetwork";
 import {
-    startStatus, appendText, endStatus, setStatusTokenCounter,
+    startStatus, appendText, endStatus, setStatusTokenCounter, addBadge,
     type RequestKind,
 } from "src/ts/status/requestStatus";
 
@@ -838,6 +838,13 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
                             // generator → 'failed'; reclassify as 'aborted' so the
                             // toast shows "Cancelled" rather than an error.
                             const finalOutcome = outcome === 'failed' && abortSignal?.aborted ? 'aborted' : outcome
+                            // Confirmed cache hit (usageMetadata.cachedContentTokenCount
+                            // > 0) → savings badge on the status toast. Gated on the
+                            // cache context so behavior is unchanged with caching off.
+                            const cachedTokens = lastUsage?.cachedTokens ?? 0
+                            if (cache && cachedTokens > 0) {
+                                addBadge(genId, { key: 'cache', text: language.requestStatus.cacheHit.replace('{n}', cachedTokens.toLocaleString()), tone: 'success' })
+                            }
                             endStatus(genId, finalOutcome, {
                                 now: Date.now(),
                                 usage: lastUsage?.completionTokens !== undefined
@@ -864,12 +871,19 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
         }
         const response = await sendModelPreset(kind, preset, options, credential)
         if (reportStatus) {
-            safeStatus(() => endStatus(genId, 'done', {
-                now: Date.now(),
-                usage: response.usage?.completionTokens !== undefined
-                    ? { responseTokens: response.usage.completionTokens }
-                    : undefined,
-            }))
+            safeStatus(() => {
+                // Cache-hit badge: same rule as the streaming onFinish above.
+                const cachedTokens = response.usage?.cachedTokens ?? 0
+                if (cache && cachedTokens > 0) {
+                    addBadge(genId, { key: 'cache', text: language.requestStatus.cacheHit.replace('{n}', cachedTokens.toLocaleString()), tone: 'success' })
+                }
+                endStatus(genId, 'done', {
+                    now: Date.now(),
+                    usage: response.usage?.completionTokens !== undefined
+                        ? { responseTokens: response.usage.completionTokens }
+                        : undefined,
+                })
+            })
         }
         return { type: 'success', result: formatPresetReasoning(response.reasoning) + response.text, model: preset.name }
     } catch (err) {
