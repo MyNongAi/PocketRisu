@@ -64,11 +64,24 @@ function sanitizeModelPresetSnapshots(presets: ModelPreset[]): void {
 // report (issues.md). It happens when a preset is resolved against an incomplete
 // base provider at creation (the generic passthrough profile carries no fields of
 // its own, so it's only as complete as the base at that moment).
+//
+// A second, subtler shape: the profile's own fields resolve fine (non-empty
+// schema / uiSchema.fields), but the base-provided credential field was dropped —
+// auth.fields still declares e.g. ['apiKey'] yet NO schema field maps to auth
+// (mapsTo.target === 'auth'), so the user has no way to enter the API key. The
+// openai presets hit this (13 profile fields present, apiKey missing). Flag these
+// too so heal re-resolves the credential field from the current registry.
 function isDegenerateSnapshot(s: ResolvedModelProfileSnapshot | undefined): boolean {
     if (!s) return true
-    return !s.auth || !s.endpoint
-        || !Array.isArray(s.schema) || s.schema.length === 0
-        || !Array.isArray(s.uiSchema?.fields) || s.uiSchema.fields.length === 0
+    if (!s.auth || !s.endpoint) return true
+    if (!Array.isArray(s.schema) || s.schema.length === 0) return true
+    if (!Array.isArray(s.uiSchema?.fields) || s.uiSchema.fields.length === 0) return true
+    const authFields = s.auth.fields
+    if (Array.isArray(authFields) && authFields.length > 0) {
+        const hasAuthField = s.schema.some((f) => f?.mapsTo?.target === 'auth')
+        if (!hasAuthField) return true
+    }
+    return false
 }
 
 // Re-take a frozen-degenerate snapshot from the current registry. When we still
