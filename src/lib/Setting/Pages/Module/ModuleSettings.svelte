@@ -26,33 +26,14 @@
         return modules.filter((v) => {
             if(search === '') return true
             return v.name.toLowerCase().includes(search.toLowerCase())
-
+        
         }).sort((a, b) => {
             let score = a.name.toLowerCase().localeCompare(b.name.toLowerCase())
             return score
         })
     }
 
-    // Edit mode works on a detached copy (`tempModule`), not the live
-    // DBState.db.modules entry, so typing into a module's lorebook doesn't
-    // mutate DBState on every keystroke — which would re-snapshot ALL modules
-    // twice (save tracker + moduleUpdate effect) and run moduleUpdate() each
-    // time. The copy is written back on the explicit Save button AND on unmount
-    // (closing settings / switching tab), so edits are never lost even without
-    // clicking Save. The only ways out of edit mode are those two paths.
-    function commitModuleEdit(){
-        if(mode !== 2) return
-        let idx = editModuleIndex
-        if(DBState.db.modules[idx]?.id !== tempModule.id){
-            idx = DBState.db.modules.findIndex((m) => m.id === tempModule.id)
-        }
-        if(idx !== -1){
-            DBState.db.modules[idx] = $state.snapshot(tempModule) as RisuModule
-        }
-    }
-
     onDestroy(() => {
-        commitModuleEdit()
         refreshModules()
     })
 </script>
@@ -126,9 +107,7 @@
                             <button class="text-textcolor2 hover:text-primary mr-2 cursor-pointer" use:tooltip={language.edit} onclick={async (e) => {
                                 e.stopPropagation()
                                 const index = DBState.db.modules.findIndex((v) => v.id === rmodule.id)
-                                // Detached copy — see commitModuleEdit(). Editing
-                                // this does not touch DBState.db.modules.
-                                tempModule = $state.snapshot(rmodule) as RisuModule
+                                tempModule = rmodule
                                 editModuleIndex = index
                                 mode = 2
                             }}>
@@ -182,7 +161,7 @@
     <ModuleMenu bind:currentModule={tempModule}/>
     {#if tempModule.name !== ''}
         <Button className="mt-6" onclick={() => {
-            commitModuleEdit()
+            DBState.db.modules[editModuleIndex] = tempModule
             notifySuccess(language.moduleUpdated)
             mode = 0
         }}>{language.editModule}</Button>
