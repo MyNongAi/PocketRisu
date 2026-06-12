@@ -1,0 +1,712 @@
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import {
+    GEMINI_CACHE_DEFAULTS,
+    GEMINI_CACHE_INVALIDATION_LIMIT,
+    applyGeminiCacheToBody,
+    buildGeminiCacheCreateBody,
+    buildGeminiCacheEntry,
+    buildGeminiCacheKey,
+    bumpGeminiCacheInvalidationCount,
+    computeGeminiCredentialFp,
+    computeGeminiPrefixHash,
+    createGeminiCachedContentsClient,
+    decideGeminiCacheAfterResponse,
+    deriveCachedContentsUrl,
+    disableGeminiCacheSession,
+    evaluateGeminiCacheBeforeRequest,
+    getGeminiCacheEntry,
+    getGeminiCacheInvalidationCount,
+    isGeminiCacheSessionDisabled,
+    removeGeminiCacheEntry,
+    resetGeminiCacheInvalidationCount,
+    resetGeminiContextCacheRuntime,
+    resolveGeminiCacheConfig,
+    setGeminiCacheEntry,
+    type GeminiCachePreRequestInput,
+    type GeminiCacheStateEntry,
+    type ResolvedGeminiCacheConfig,
+} from './geminiContextCache'
+
+const STORAGE_KEY = 'nodeOnlyGeminiCacheState'
+const NOW = 1_750_000_000_000
+
+function makeContents(count: number): unknown[] {
+    return Array.from({ length: count }, (_, i) => ({
+        role: i % 2 === 0 ? 'user' : 'model',
+        parts: [{ text: `turn ${i}` }],
+    }))
+}
+
+function makeEntry(overrides: Partial<GeminiCacheStateEntry> = {}): GeminiCacheStateEntry {
+    const contents = makeContents(6)
+    return {
+        cacheName: 'cachedContents/abc123',
+        modelId: 'gemini-demo',
+        createdAt: NOW - 60_000,
+        expiresAt: NOW + 300_000,
+        boundaryIndex: 4,
+        prefixHash: computeGeminiPrefixHash({ parts: [{ text: 'sys' }] }, contents, 4),
+        promptTokensAtCreation: 10_000,
+        credentialFp: 'fp-aaaa',
+        consecutiveInvalidations: 0,
+        ...overrides,
+    }
+}
+
+function makePreInput(overrides: Partial<GeminiCachePreRequestInput> = {}): GeminiCachePreRequestInput {
+    return {
+        entry: makeEntry(),
+        now: NOW,
+        modelId: 'gemini-demo',
+        credentialFp: 'fp-aaaa',
+        boundaryIndex: 4,
+        systemInstruction: { parts: [{ text: 'sys' }] },
+        contents: makeContents(6),
+        ...overrides,
+    }
+}
+
+function makeConfig(overrides: Partial<ResolvedGeminiCacheConfig> = {}): ResolvedGeminiCacheConfig {
+    return {
+        ttlSec: 600,
+        extendTtlOnHit: true,
+        minPromptTokens: 4096,
+        growthTokens: 4096,
+        ...overrides,
+    }
+}
+
+beforeEach(() => {
+    localStorage.clear()
+    resetGeminiContextCacheRuntime()
+})
+
+afterEach(() => {
+    vi.restoreAllMocks()
+})
+
+describe('resolveGeminiCacheConfig', () => {
+    test('disabled or missing config resolves to null', () => {
+        expect(resolveGeminiCacheConfig(undefined)).toBeNull()
+        expect(resolveGeminiCacheConfig(null)).toBeNull()
+        expect(resolveGeminiCacheConfig({ enabled: false, ttlSec: 999 })).toBeNull()
+    })
+
+    test('enabled config fills defaults', () => {
+        expect(resolveGeminiCacheConfig({ enabled: true })).toEqual({ ...GEMINI_CACHE_DEFAULTS })
+    })
+
+    test('overrides apply; non-positive values fall back to defaults', () => {
+        expect(resolveGeminiCacheConfig({
+            enabled: true,
+            ttlSec: 1200,
+            extendTtlOnHit: false,
+            minPromptTokens: 0,
+            growthTokens: -5,
+        })).toEqual({
+            ttlSec: 1200,
+            extendTtlOnHit: false,
+            minPromptTokens: GEMINI_CACHE_DEFAULTS.minPromptTokens,
+            growthTokens: GEMINI_CACHE_DEFAULTS.growthTokens,
+        })
+    })
+})
+
+describe('hashing', () => {
+    test('prefix hash is stable and 8 hex chars', () => {
+        const contents = makeContents(6)
+        const a = computeGeminiPrefixHash({ parts: [{ text: 'sys' }] }, contents, 4)
+        const b = computeGeminiPrefixHash({ parts: [{ text: 'sys' }] }, makeContents(6), 4)
+        expect(a).toBe(b)
+        expect(a).toMatch(/^[0-9a-f]{8}$/)
+    })
+
+    test('prefix hash ignores contents past the boundary', () => {
+        const short = makeContents(4)
+        const long = [...makeContents(4), { role: 'user', parts: [{ text: 'new turn' }] }]
+        expect(computeGeminiPrefixHash(undefined, short, 4)).toBe(computeGeminiPrefixHash(undefined, long, 4))
+    })
+
+    test('prefix hash changes when systemInstruction or a prefix message changes', () => {
+        const contents = makeContents(6)
+        const base = computeGeminiPrefixHash({ parts: [{ text: 'sys' }] }, contents, 4)
+        expect(computeGeminiPrefixHash({ parts: [{ text: 'SYS!' }] }, contents, 4)).not.toBe(base)
+        const edited = makeContents(6)
+        ;(edited[1] as { parts: { text: string }[] }).parts[0].text = 'edited'
+        expect(computeGeminiPrefixHash({ parts: [{ text: 'sys' }] }, edited, 4)).not.toBe(base)
+    })
+
+    test('credential fingerprint differs per key and is 8 hex chars', () => {
+        const a = computeGeminiCredentialFp('key-one')
+        const b = computeGeminiCredentialFp('key-two')
+        expect(a).toMatch(/^[0-9a-f]{8}$/)
+        expect(a).not.toBe(b)
+        expect(computeGeminiCredentialFp('key-one')).toBe(a)
+    })
+})
+
+describe('evaluateGeminiCacheBeforeRequest', () => {
+    test('no cachePoint in the request bypasses caching entirely', () => {
+        expect(evaluateGeminiCacheBeforeRequest(makePreInput({ boundaryIndex: null })))
+            .toEqual({ action: 'bypass', reason: 'no-cache-point' })
+    })
+
+    test('no stored state is a miss', () => {
+        expect(evaluateGeminiCacheBeforeRequest(makePreInput({ entry: undefined })))
+            .toEqual({ action: 'miss', reason: 'no-state' })
+    })
+
+    test('expiry boundary: expiresAt == now misses, one ms earlier applies', () => {
+        const expired = makePreInput({ entry: makeEntry({ expiresAt: NOW }) })
+        expect(evaluateGeminiCacheBeforeRequest(expired)).toEqual({ action: 'miss', reason: 'expired' })
+        const alive = makePreInput({ entry: makeEntry({ expiresAt: NOW + 1 }) })
+        expect(evaluateGeminiCacheBeforeRequest(alive).action).toBe('apply')
+    })
+
+    test('model mismatch misses', () => {
+        expect(evaluateGeminiCacheBeforeRequest(makePreInput({ modelId: 'gemini-other' })))
+            .toEqual({ action: 'miss', reason: 'model-mismatch' })
+    })
+
+    test('credential rotation misses', () => {
+        expect(evaluateGeminiCacheBeforeRequest(makePreInput({ credentialFp: 'fp-bbbb' })))
+            .toEqual({ action: 'miss', reason: 'credential-mismatch' })
+    })
+
+    test('stored boundary beyond current contents invalidates without counting toward the guard', () => {
+        const input = makePreInput({ contents: makeContents(3) })
+        expect(evaluateGeminiCacheBeforeRequest(input)).toEqual({
+            action: 'invalidate',
+            reason: 'boundary-out-of-range',
+            staleCacheName: 'cachedContents/abc123',
+            countsTowardGuard: false,
+        })
+    })
+
+    test('boundary == contents length still applies (empty suffix)', () => {
+        const contents = makeContents(4)
+        const entry = makeEntry({
+            boundaryIndex: 4,
+            prefixHash: computeGeminiPrefixHash({ parts: [{ text: 'sys' }] }, contents, 4),
+        })
+        const decision = evaluateGeminiCacheBeforeRequest(makePreInput({ entry, contents }))
+        expect(decision).toEqual({ action: 'apply', cacheName: 'cachedContents/abc123', boundaryIndex: 4 })
+    })
+
+    test('prefix hash mismatch invalidates and counts toward the guard', () => {
+        const input = makePreInput({ systemInstruction: { parts: [{ text: 'changed sys' }] } })
+        expect(evaluateGeminiCacheBeforeRequest(input)).toEqual({
+            action: 'invalidate',
+            reason: 'prefix-mismatch',
+            staleCacheName: 'cachedContents/abc123',
+            countsTowardGuard: true,
+        })
+    })
+
+    test('valid state applies with the stored cacheName and boundary', () => {
+        expect(evaluateGeminiCacheBeforeRequest(makePreInput())).toEqual({
+            action: 'apply',
+            cacheName: 'cachedContents/abc123',
+            boundaryIndex: 4,
+        })
+    })
+
+    test('does not mutate its input', () => {
+        const input = makePreInput()
+        const snapshot = JSON.parse(JSON.stringify(input))
+        evaluateGeminiCacheBeforeRequest(input)
+        expect(JSON.parse(JSON.stringify(input))).toEqual(snapshot)
+    })
+})
+
+describe('decideGeminiCacheAfterResponse', () => {
+    const apply = { action: 'apply', cacheName: 'cachedContents/abc123', boundaryIndex: 4 } as const
+    const miss = { action: 'miss', reason: 'no-state' } as const
+
+    test('fresh hit: reset invalidations, no extend while more than half the TTL remains', () => {
+        const decision = decideGeminiCacheAfterResponse({
+            pre: apply,
+            entry: makeEntry({ expiresAt: NOW + 300_001 }),
+            now: NOW,
+            promptTokens: 11_000,
+            boundaryIndex: 4,
+            consecutiveInvalidations: 0,
+            config: makeConfig(),
+        })
+        expect(decision).toEqual({
+            resetInvalidations: true,
+            disableSession: false,
+            extendTtl: false,
+            create: null,
+            reason: 'hit-fresh',
+        })
+    })
+
+    test('hit extends only when remaining TTL drops below half', () => {
+        const config = makeConfig()
+        const atHalf = decideGeminiCacheAfterResponse({
+            pre: apply,
+            entry: makeEntry({ expiresAt: NOW + 300_000 }),
+            now: NOW,
+            promptTokens: 11_000,
+            boundaryIndex: 4,
+            consecutiveInvalidations: 0,
+            config,
+        })
+        expect(atHalf.extendTtl).toBe(false)
+        const belowHalf = decideGeminiCacheAfterResponse({
+            pre: apply,
+            entry: makeEntry({ expiresAt: NOW + 299_999 }),
+            now: NOW,
+            promptTokens: 11_000,
+            boundaryIndex: 4,
+            consecutiveInvalidations: 0,
+            config,
+        })
+        expect(belowHalf.extendTtl).toBe(true)
+        expect(belowHalf.reason).toBe('hit-extend')
+    })
+
+    test('hit never extends when extendTtlOnHit is off', () => {
+        const decision = decideGeminiCacheAfterResponse({
+            pre: apply,
+            entry: makeEntry({ expiresAt: NOW + 1000 }),
+            now: NOW,
+            promptTokens: 11_000,
+            boundaryIndex: 4,
+            consecutiveInvalidations: 0,
+            config: makeConfig({ extendTtlOnHit: false }),
+        })
+        expect(decision.extendTtl).toBe(false)
+        expect(decision.reason).toBe('hit-fresh')
+    })
+
+    test('hit past the growth threshold recreates at the current boundary', () => {
+        const decision = decideGeminiCacheAfterResponse({
+            pre: apply,
+            entry: makeEntry({ promptTokensAtCreation: 10_000 }),
+            now: NOW,
+            promptTokens: 14_096,
+            boundaryIndex: 6,
+            consecutiveInvalidations: 0,
+            config: makeConfig(),
+        })
+        expect(decision).toEqual({
+            resetInvalidations: true,
+            disableSession: false,
+            extendTtl: false,
+            create: { boundaryIndex: 6, replaceCacheName: 'cachedContents/abc123' },
+            reason: 'hit-regrow',
+        })
+    })
+
+    test('hit just below the growth threshold does not recreate', () => {
+        const decision = decideGeminiCacheAfterResponse({
+            pre: apply,
+            entry: makeEntry({ promptTokensAtCreation: 10_000, expiresAt: NOW + 400_000 }),
+            now: NOW,
+            promptTokens: 14_095,
+            boundaryIndex: 6,
+            consecutiveInvalidations: 0,
+            config: makeConfig(),
+        })
+        expect(decision.create).toBeNull()
+        expect(decision.reason).toBe('hit-fresh')
+    })
+
+    test('miss without usage does nothing', () => {
+        const decision = decideGeminiCacheAfterResponse({
+            pre: miss,
+            entry: undefined,
+            now: NOW,
+            promptTokens: undefined,
+            boundaryIndex: 4,
+            consecutiveInvalidations: 0,
+            config: makeConfig(),
+        })
+        expect(decision.create).toBeNull()
+        expect(decision.reason).toBe('no-usage')
+    })
+
+    test('miss below minPromptTokens does not create', () => {
+        const decision = decideGeminiCacheAfterResponse({
+            pre: miss,
+            entry: undefined,
+            now: NOW,
+            promptTokens: 4095,
+            boundaryIndex: 4,
+            consecutiveInvalidations: 0,
+            config: makeConfig(),
+        })
+        expect(decision.create).toBeNull()
+        expect(decision.reason).toBe('below-min-tokens')
+        const atMin = decideGeminiCacheAfterResponse({
+            pre: miss,
+            entry: undefined,
+            now: NOW,
+            promptTokens: 4096,
+            boundaryIndex: 4,
+            consecutiveInvalidations: 0,
+            config: makeConfig(),
+        })
+        expect(atMin.reason).toBe('create')
+    })
+
+    test('invalidation guard fires at the limit instead of creating', () => {
+        const below = decideGeminiCacheAfterResponse({
+            pre: miss,
+            entry: undefined,
+            now: NOW,
+            promptTokens: 10_000,
+            boundaryIndex: 4,
+            consecutiveInvalidations: GEMINI_CACHE_INVALIDATION_LIMIT - 1,
+            config: makeConfig(),
+        })
+        expect(below.disableSession).toBe(false)
+        expect(below.reason).toBe('create')
+        const atLimit = decideGeminiCacheAfterResponse({
+            pre: miss,
+            entry: undefined,
+            now: NOW,
+            promptTokens: 10_000,
+            boundaryIndex: 4,
+            consecutiveInvalidations: GEMINI_CACHE_INVALIDATION_LIMIT,
+            config: makeConfig(),
+        })
+        expect(atLimit).toEqual({
+            resetInvalidations: false,
+            disableSession: true,
+            extendTtl: false,
+            create: null,
+            reason: 'invalidation-guard',
+        })
+    })
+
+    test('miss without a cachePoint does not create', () => {
+        const decision = decideGeminiCacheAfterResponse({
+            pre: { action: 'bypass', reason: 'no-cache-point' },
+            entry: undefined,
+            now: NOW,
+            promptTokens: 10_000,
+            boundaryIndex: null,
+            consecutiveInvalidations: 0,
+            config: makeConfig(),
+        })
+        expect(decision.create).toBeNull()
+        expect(decision.reason).toBe('no-cache-point')
+    })
+
+    test('miss with surviving entry replaces its cacheName on create', () => {
+        const decision = decideGeminiCacheAfterResponse({
+            pre: { action: 'miss', reason: 'credential-mismatch' },
+            entry: makeEntry(),
+            now: NOW,
+            promptTokens: 10_000,
+            boundaryIndex: 5,
+            consecutiveInvalidations: 0,
+            config: makeConfig(),
+        })
+        expect(decision.create).toEqual({ boundaryIndex: 5, replaceCacheName: 'cachedContents/abc123' })
+    })
+})
+
+describe('body transforms', () => {
+    test('applyGeminiCacheToBody sets cachedContent, slices the suffix, strips cached fields', () => {
+        const contents = makeContents(6)
+        const body: Record<string, unknown> = {
+            contents,
+            systemInstruction: { parts: [{ text: 'sys' }] },
+            tools: [{ functionDeclarations: [] }],
+            toolConfig: { mode: 'AUTO' },
+            generationConfig: { temperature: 1 },
+        }
+        const next = applyGeminiCacheToBody(body, { cacheName: 'cachedContents/abc123', boundaryIndex: 4 })
+        expect(next['cachedContent']).toBe('cachedContents/abc123')
+        expect(next['contents']).toEqual(contents.slice(4))
+        expect(next).not.toHaveProperty('systemInstruction')
+        expect(next).not.toHaveProperty('tools')
+        expect(next).not.toHaveProperty('toolConfig')
+        expect(next['generationConfig']).toEqual({ temperature: 1 })
+    })
+
+    test('applyGeminiCacheToBody does not mutate the original body', () => {
+        const body: Record<string, unknown> = {
+            contents: makeContents(6),
+            systemInstruction: { parts: [{ text: 'sys' }] },
+        }
+        const snapshot = JSON.parse(JSON.stringify(body))
+        applyGeminiCacheToBody(body, { cacheName: 'cachedContents/abc123', boundaryIndex: 4 })
+        expect(JSON.parse(JSON.stringify(body))).toEqual(snapshot)
+    })
+
+    test('boundary == contents length yields an empty suffix', () => {
+        const next = applyGeminiCacheToBody(
+            { contents: makeContents(4) },
+            { cacheName: 'cachedContents/abc123', boundaryIndex: 4 },
+        )
+        expect(next['contents']).toEqual([])
+    })
+
+    test('buildGeminiCacheCreateBody shapes the creation payload', () => {
+        const contents = makeContents(6)
+        const body = buildGeminiCacheCreateBody({
+            modelId: 'gemini-demo',
+            ttlSec: 600,
+            systemInstruction: { parts: [{ text: 'sys' }] },
+            contents,
+            boundaryIndex: 4,
+        })
+        expect(body).toEqual({
+            model: 'models/gemini-demo',
+            ttl: '600s',
+            systemInstruction: { parts: [{ text: 'sys' }] },
+            contents: contents.slice(0, 4),
+        })
+        expect(contents).toHaveLength(6)
+    })
+
+    test('buildGeminiCacheCreateBody omits systemInstruction when absent', () => {
+        const body = buildGeminiCacheCreateBody({
+            modelId: 'gemini-demo',
+            ttlSec: 600,
+            contents: makeContents(4),
+            boundaryIndex: 4,
+        })
+        expect(body).not.toHaveProperty('systemInstruction')
+    })
+})
+
+describe('deriveCachedContentsUrl', () => {
+    test('converts generateContent and stream URLs', () => {
+        expect(deriveCachedContentsUrl('https://demo.test/v1beta/models/gemini-demo:generateContent'))
+            .toBe('https://demo.test/v1beta/cachedContents')
+        expect(deriveCachedContentsUrl('https://demo.test/v1beta/models/gemini-demo:streamGenerateContent?alt=sse'))
+            .toBe('https://demo.test/v1beta/cachedContents')
+    })
+
+    test('converts the bare models base', () => {
+        expect(deriveCachedContentsUrl('https://demo.test/v1beta/models'))
+            .toBe('https://demo.test/v1beta/cachedContents')
+    })
+
+    test('returns null for unrecognized shapes', () => {
+        expect(deriveCachedContentsUrl('https://demo.test/v1/chat/completions')).toBeNull()
+    })
+})
+
+describe('state store', () => {
+    test('set/get roundtrip mirrors to localStorage', () => {
+        const key = buildGeminiCacheKey('chat-1', 'model', 'preset-1')
+        const entry = makeEntry()
+        setGeminiCacheEntry(key, entry)
+        expect(getGeminiCacheEntry(key, NOW)).toEqual(entry)
+        const mirrored = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}')
+        expect(mirrored[key]).toEqual(entry)
+    })
+
+    test('remove deletes the entry and the mirror copy', () => {
+        const key = buildGeminiCacheKey('chat-1', 'model', 'preset-1')
+        setGeminiCacheEntry(key, makeEntry())
+        removeGeminiCacheEntry(key)
+        expect(getGeminiCacheEntry(key, NOW)).toBeUndefined()
+        expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}')).toEqual({})
+    })
+
+    test('expired entry is pruned on read', () => {
+        const key = buildGeminiCacheKey('chat-1', 'model', 'preset-1')
+        setGeminiCacheEntry(key, makeEntry({ expiresAt: NOW }))
+        expect(getGeminiCacheEntry(key, NOW)).toBeUndefined()
+        expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '{}')).toEqual({})
+    })
+
+    test('mirror load skips expired and malformed entries', () => {
+        const live = makeEntry({ expiresAt: Date.now() + 600_000 })
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            'chat-live::model::p1': live,
+            'chat-expired::model::p1': makeEntry({ expiresAt: 1 }),
+            'chat-bad::model::p1': { cacheName: 42 },
+        }))
+        resetGeminiContextCacheRuntime()
+        expect(getGeminiCacheEntry('chat-live::model::p1')).toEqual(live)
+        expect(getGeminiCacheEntry('chat-expired::model::p1')).toBeUndefined()
+        expect(getGeminiCacheEntry('chat-bad::model::p1')).toBeUndefined()
+    })
+
+    test('corrupt mirror JSON is ignored without throwing', () => {
+        localStorage.setItem(STORAGE_KEY, 'not json{{')
+        resetGeminiContextCacheRuntime()
+        expect(getGeminiCacheEntry('any::model::p1')).toBeUndefined()
+    })
+
+    test('localStorage write failure is harmless', () => {
+        vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+            throw new Error('quota exceeded')
+        })
+        const key = buildGeminiCacheKey('chat-1', 'model', 'preset-1')
+        const entry = makeEntry()
+        expect(() => setGeminiCacheEntry(key, entry)).not.toThrow()
+        // in-memory map stays authoritative
+        expect(getGeminiCacheEntry(key, NOW)).toEqual(entry)
+    })
+
+    test('buildGeminiCacheEntry prefers server expireTime over local ttl', () => {
+        const base = {
+            cacheName: 'cachedContents/new',
+            modelId: 'gemini-demo',
+            now: NOW,
+            ttlSec: 600,
+            boundaryIndex: 4,
+            prefixHash: 'deadbeef',
+            promptTokensAtCreation: 9000,
+            credentialFp: 'fp-aaaa',
+        }
+        expect(buildGeminiCacheEntry(base).expiresAt).toBe(NOW + 600_000)
+        expect(buildGeminiCacheEntry({ ...base, expireTimeMs: NOW + 123_000 }).expiresAt).toBe(NOW + 123_000)
+        expect(buildGeminiCacheEntry(base).consecutiveInvalidations).toBe(0)
+        expect(buildGeminiCacheEntry({ ...base, consecutiveInvalidations: 2 }).consecutiveInvalidations).toBe(2)
+    })
+
+    test('buildGeminiCacheKey joins with ::', () => {
+        expect(buildGeminiCacheKey('chat-1', 'model', 'preset-1')).toBe('chat-1::model::preset-1')
+    })
+})
+
+describe('session guards', () => {
+    test('invalidation count bumps, reads, and resets', () => {
+        const key = 'chat-1::model::p1'
+        expect(getGeminiCacheInvalidationCount(key)).toBe(0)
+        expect(bumpGeminiCacheInvalidationCount(key)).toBe(1)
+        expect(bumpGeminiCacheInvalidationCount(key)).toBe(2)
+        expect(getGeminiCacheInvalidationCount(key)).toBe(2)
+        resetGeminiCacheInvalidationCount(key)
+        expect(getGeminiCacheInvalidationCount(key)).toBe(0)
+    })
+
+    test('invalidation count restores from the mirrored entry', () => {
+        const key = 'chat-1::model::p1'
+        setGeminiCacheEntry(key, makeEntry({ expiresAt: Date.now() + 600_000, consecutiveInvalidations: 2 }))
+        resetGeminiContextCacheRuntime()
+        expect(getGeminiCacheInvalidationCount(key)).toBe(2)
+    })
+
+    test('disableGeminiCacheSession warns once per key', () => {
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const key = 'chat-1::model::p1'
+        expect(isGeminiCacheSessionDisabled(key)).toBe(false)
+        disableGeminiCacheSession(key)
+        disableGeminiCacheSession(key)
+        expect(isGeminiCacheSessionDisabled(key)).toBe(true)
+        expect(warn).toHaveBeenCalledTimes(1)
+    })
+})
+
+describe('cachedContents REST client', () => {
+    interface CapturedCall {
+        url: string
+        method: string
+        headers: Record<string, string>
+        body: Record<string, unknown> | undefined
+    }
+
+    function captureFetch(response: Response | (() => Response)): {
+        fetchImpl: typeof fetch
+        calls: CapturedCall[]
+    } {
+        const calls: CapturedCall[] = []
+        const fetchImpl: typeof fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+            calls.push({
+                url,
+                method: (init?.method ?? 'GET') as string,
+                headers: (init?.headers ?? {}) as Record<string, string>,
+                body: init?.body != null ? JSON.parse(init.body as string) : undefined,
+            })
+            return typeof response === 'function' ? response() : response
+        }
+        return { fetchImpl, calls }
+    }
+
+    function jsonResponse(body: unknown, status = 200): Response {
+        return new Response(JSON.stringify(body), { status })
+    }
+
+    const clientOpts = {
+        cachedContentsUrl: 'https://demo.test/v1beta/cachedContents',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': 'secret' },
+    }
+
+    test('create POSTs the body with injected headers and parses name/expireTime', async () => {
+        const { fetchImpl, calls } = captureFetch(jsonResponse({
+            name: 'cachedContents/new1',
+            expireTime: new Date(NOW + 600_000).toISOString(),
+        }))
+        const client = createGeminiCachedContentsClient({ ...clientOpts, fetchImpl })
+        const result = await client.create({ model: 'models/gemini-demo', ttl: '600s', contents: [] })
+        expect(result).toEqual({
+            ok: true,
+            status: 200,
+            name: 'cachedContents/new1',
+            expireTimeMs: NOW + 600_000,
+        })
+        expect(calls).toHaveLength(1)
+        expect(calls[0].url).toBe('https://demo.test/v1beta/cachedContents')
+        expect(calls[0].method).toBe('POST')
+        expect(calls[0].headers['x-goog-api-key']).toBe('secret')
+        expect(calls[0].body).toEqual({ model: 'models/gemini-demo', ttl: '600s', contents: [] })
+    })
+
+    test('create without expireTime omits expireTimeMs', async () => {
+        const { fetchImpl } = captureFetch(jsonResponse({ name: 'cachedContents/new1' }))
+        const client = createGeminiCachedContentsClient({ ...clientOpts, fetchImpl })
+        const result = await client.create({})
+        expect(result.ok).toBe(true)
+        expect(result.expireTimeMs).toBeUndefined()
+    })
+
+    test('create surfaces HTTP failure as ok:false with status', async () => {
+        const { fetchImpl } = captureFetch(jsonResponse({ error: { message: 'too small' } }, 400))
+        const client = createGeminiCachedContentsClient({ ...clientOpts, fetchImpl })
+        expect(await client.create({})).toEqual({ ok: false, status: 400 })
+    })
+
+    test('create never throws on network failure', async () => {
+        const fetchImpl: typeof fetch = async () => {
+            throw new Error('network down')
+        }
+        const client = createGeminiCachedContentsClient({ ...clientOpts, fetchImpl })
+        expect(await client.create({})).toEqual({ ok: false })
+    })
+
+    test('create with a malformed response body is ok:false', async () => {
+        const { fetchImpl } = captureFetch(jsonResponse({ unexpected: true }))
+        const client = createGeminiCachedContentsClient({ ...clientOpts, fetchImpl })
+        expect(await client.create({})).toEqual({ ok: false, status: 200 })
+    })
+
+    test('extend PATCHes the resource URL with the ttl body', async () => {
+        const { fetchImpl, calls } = captureFetch(jsonResponse({ name: 'cachedContents/abc123' }))
+        const client = createGeminiCachedContentsClient({ ...clientOpts, fetchImpl })
+        const result = await client.extend('cachedContents/abc123', 900)
+        expect(result).toEqual({ ok: true, status: 200 })
+        expect(calls[0].url).toBe('https://demo.test/v1beta/cachedContents/abc123')
+        expect(calls[0].method).toBe('PATCH')
+        expect(calls[0].body).toEqual({ ttl: '900s' })
+    })
+
+    test('remove DELETEs the resource URL without a body', async () => {
+        const { fetchImpl, calls } = captureFetch(jsonResponse({}))
+        const client = createGeminiCachedContentsClient({ ...clientOpts, fetchImpl })
+        const result = await client.remove('cachedContents/abc123')
+        expect(result).toEqual({ ok: true, status: 200 })
+        expect(calls[0].url).toBe('https://demo.test/v1beta/cachedContents/abc123')
+        expect(calls[0].method).toBe('DELETE')
+        expect(calls[0].body).toBeUndefined()
+    })
+
+    test('extend/remove surface 404 status for expired-cache classification', async () => {
+        const { fetchImpl } = captureFetch(jsonResponse({ error: {} }, 404))
+        const client = createGeminiCachedContentsClient({ ...clientOpts, fetchImpl })
+        expect(await client.extend('cachedContents/gone', 600)).toEqual({ ok: false, status: 404 })
+        expect(await client.remove('cachedContents/gone')).toEqual({ ok: false, status: 404 })
+    })
+})
