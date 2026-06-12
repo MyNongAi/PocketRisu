@@ -5,7 +5,8 @@ import { getModelInfo, LLMFlags, LLMFormat, type LLMModel } from "../../model/mo
 import { risuChatParser, risuEscape, risuUnescape } from "../../parser/parser.svelte";
 import { pluginProcess, pluginV2 } from "../../plugins/plugins.svelte";
 import { getCurrentCharacter, getCurrentChat, getDatabase, type character } from "../../storage/database.svelte";
-import { tokenizeNum } from "../../tokenizer";
+import { tokenizeNum, encodeWithTokenizer } from "../../tokenizer";
+import { v4 as uuidv4 } from "uuid";
 import { simplifySchema, sleep } from "../../util";
 import type { OpenAIChat } from "../index.svelte";
 import { getTools, callTool, encodeToolCall, decodeToolCall } from "../mcp/mcp";
@@ -34,6 +35,10 @@ import { pumpPresetStream } from "./presetStreamPump";
 import { resolveChatModelBinding, buildModelPresetCredential, applyPromptPresetParams } from "./modelPresetBinding";
 import { expandAdapterMessages, toAdapterMessage, toolResponseText } from "./modelPresetMessages";
 import { isLocalNetworkUrl } from "src/ts/network/localNetwork";
+import {
+    startStatus, appendText, endStatus, setStatusTokenCounter,
+    type RequestKind,
+} from "src/ts/status/requestStatus";
 
 export type ToolCall = {
     name: string;
@@ -374,7 +379,7 @@ export async function requestChatDataMain(arg:requestDataArgument, model:ModelMo
         const currentChat = getCurrentChat()
         const binding = resolveChatModelBinding(currentChat, model)
         if(binding.kind === 'modelPreset'){
-            return requestModelPreset(targ, applyPromptPresetParams(binding.preset, currentChat, model), abortSignal)
+            return requestModelPreset(targ, applyPromptPresetParams(binding.preset, currentChat, model), abortSignal, model)
         }
         if(binding.kind === 'block'){
             return {
@@ -567,6 +572,57 @@ function describeModelPresetError(err: unknown): Record<string, unknown> {
     return { message: String(err) }
 }
 
+// --- request-status publishing (model-preset path only) ------------------
+//
+// Thin, harmless bridge from the preset request pipeline to the request-status
+// channel (src/ts/status/requestStatus). Every call is wrapped so status
+// reporting can NEVER break a request (P0: status display must not throw into
+// the request path). Gated by db.showRequestStatus so the whole feature is a
+// no-op when off — and the classic path is never touched regardless.
+//
+// Token counts during streaming use a cheap char-based estimate (no per-chunk
+// tokenizer cost — mobile-friendly), reconciled against the authoritative
+// adapter usage at completion. See .agent/notes/request-status-toast-infra.md.
+
+function statusEnabled(): boolean {
+    try {
+        return getDatabase()?.showRequestStatus !== false
+    } catch {
+        return false
+    }
+}
+
+// Register a LOCAL tokenizer with the status store so the render tick counts
+// streamed tokens language-aware (real subwords, good for CJK) instead of a
+// char/N estimate. Uses encodeWithTokenizer with a fixed local tokenizer — NOT
+// tokenizeNum/encode, which routes by db.aiModel and can fire the Google
+// countTokens NETWORK API (sending chat text + key, consuming quota) every
+// render tick for googleClaudeTokenizing users. Status is an approximate live
+// display (the final count is reconciled from provider usage), so a fixed local
+// tokenizer is the right tradeoff: never network, never quota, never leaks text.
+setStatusTokenCounter(async (text) => {
+    const encoded = await encodeWithTokenizer(text, 'tik')
+    return encoded.length
+})
+
+function safeStatus(fn: () => void): void {
+    try { fn() } catch (e) { console.error('[ModelPreset] status publish failed', e) }
+}
+
+// Map the request pipeline's mode to the status-channel chip kind. submodel and
+// otherAx collapse to 'sub' (both are internal aux calls the user rarely
+// distinguishes; see the toast infra note).
+function toRequestKind(mode: ModelModeExtended): RequestKind {
+    switch (mode) {
+        case 'translate': return 'translate'
+        case 'memory': return 'memory'
+        case 'emotion': return 'emotion'
+        case 'submodel':
+        case 'otherAx': return 'sub'
+        default: return 'main'
+    }
+}
+
 // Per-preset streaming resolution. Independent of the global db.useStreaming:
 // the preset's own on/off decides (default off). Forced off when the profile
 // does not declare the 'streaming' capability, or when the caller opted out
@@ -618,10 +674,20 @@ function formatPresetReasoning(reasoning?: AdapterReasoningPart[]): string {
     return `<Thoughts>\n${body}\n</Thoughts>\n\n`
 }
 
-async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelPreset, abortSignal:AbortSignal=null):Promise<requestDataResponse> {
+async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelPreset, abortSignal:AbortSignal=null, mode:ModelModeExtended='model'):Promise<requestDataResponse> {
     const credential = buildModelPresetCredential(preset)
     const kind = preset.profileSnapshot.adapterKind
     const fetchImpl = makeProxiedFetch(arg.chatId)
+    // arg.chatId is the per-request generationId for main chat (sendChat passes
+    // it under that name; see generation-state-keying.md §1-bis). Aux requests
+    // (translate/memory/emotion/sub) don't supply one, so mint a per-request key
+    // here purely for the status channel — it's memory-only and never persisted.
+    // Uses uuid v4 (crypto.getRandomValues, available over plain HTTP) NOT
+    // crypto.randomUUID (secure-context only — would throw on remote HTTP and
+    // break the aux request before the try). Reporting is gated by db.showRequestStatus.
+    const genId = arg.chatId ?? `aux-${uuidv4()}`
+    const statusKind = toRequestKind(mode)
+    const reportStatus = statusEnabled() && !!genId
 
     // Tool gating. Three guards:
     //  1) Per-preset opt-in (preset.toolUse, default OFF) — the hard regression
@@ -715,14 +781,18 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
     try {
         // Tool runs always go non-streaming for now: the execute→re-request loop
         // needs the full structured response (tool_calls) each turn, and
-        // streaming tool_call assembly is a later stage.
+        // streaming tool_call assembly is a later stage. Status is NOT reported
+        // for the tool path in v1 (it bypasses the pump); see the toast infra note.
         if (tools) {
             const { result, toolsExecuted } = await runModelPresetToolLoop(arg, preset, kind, credential, fetchImpl, messages, tools, abortSignal)
             return { type: 'success', result, model: preset.name, toolExecuted: toolsExecuted }
         }
 
         const useStreaming = resolvePresetStreaming(preset, arg)
-        const options: AdapterChatOptions = { messages, abortSignal: abortSignal ?? undefined, fetchImpl }
+        const options: AdapterChatOptions = { messages, abortSignal: abortSignal ?? undefined, fetchImpl, generationId: genId }
+        if (reportStatus) {
+            safeStatus(() => startStatus(genId, { kind: statusKind, label: preset.name, chatId: arg.chatId, phase: 'connecting', now: Date.now() }))
+        }
         if(useStreaming){
             const gen = streamModelPreset(kind, preset, options, credential)
             const stream = new ReadableStream<StreamResponseChunk>({
@@ -731,6 +801,26 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
                         intervalMs: STREAM_FLUSH_INTERVAL_MS,
                         formatReasoning: (text) => formatPresetReasoning([{ text }]),
                         onError: (err) => console.error('[ModelPreset] stream error', describeModelPresetError(err)),
+                        // appendText owns the phase transition (thinking/responding)
+                        // from which kind of text arrives, and recovers from 'stalled'
+                        // when chunks resume — no local phase tracking needed here.
+                        onDelta: reportStatus ? (delta) => safeStatus(() => {
+                            const now = Date.now()
+                            if (delta.reasoningDelta) appendText(genId, { thinking: delta.reasoningDelta }, now)
+                            if (delta.textDelta) appendText(genId, { response: delta.textDelta }, now)
+                        }) : undefined,
+                        onFinish: reportStatus ? (outcome, lastUsage) => safeStatus(() => {
+                            // A stream that ends via abort throws inside the
+                            // generator → 'failed'; reclassify as 'aborted' so the
+                            // toast shows "Cancelled" rather than an error.
+                            const finalOutcome = outcome === 'failed' && abortSignal?.aborted ? 'aborted' : outcome
+                            endStatus(genId, finalOutcome, {
+                                now: Date.now(),
+                                usage: lastUsage?.completionTokens !== undefined
+                                    ? { responseTokens: lastUsage.completionTokens }
+                                    : undefined,
+                            })
+                        }) : undefined,
                     })
                 }
             })
@@ -744,12 +834,27 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
                 const text = await collectStreamingText(stream)
                 return { type: 'success', result: text, model: preset.name }
             }
+            // endStatus fires from the pump's onFinish once the consumer drains
+            // the stream — NOT here, because the stream outlives this return.
             return { type: 'streaming', result: stream, model: preset.name }
         }
         const response = await sendModelPreset(kind, preset, options, credential)
+        if (reportStatus) {
+            safeStatus(() => endStatus(genId, 'done', {
+                now: Date.now(),
+                usage: response.usage?.completionTokens !== undefined
+                    ? { responseTokens: response.usage.completionTokens }
+                    : undefined,
+            }))
+        }
         return { type: 'success', result: formatPresetReasoning(response.reasoning) + response.text, model: preset.name }
     } catch (err) {
         console.error('[ModelPreset] request failed', describeModelPresetError(err))
+        if (reportStatus) {
+            // Distinguish a user cancel from a real failure for the status toast.
+            const outcome = abortSignal?.aborted ? 'aborted' : 'failed'
+            safeStatus(() => endStatus(genId, outcome, { now: Date.now(), error: outcome === 'failed' ? (err instanceof Error ? err.message : String(err)) : undefined }))
+        }
         return {
             type: 'fail',
             result: err instanceof Error ? err.message : String(err),

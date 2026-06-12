@@ -2078,6 +2078,26 @@ export const languageEnglish = {
     hideRecentChats: "Hide conversation list",
     moveInsteadOfCopyOnCMPConvert: "Move Instead of Copy on CMP Convert",
 
+    showRequestStatus: "Show request status",
+    requestStatus: {
+        connecting: "Connecting…",
+        thinking: "Thinking…",
+        responding: "Responding…",
+        retrying: "Retrying…",
+        stalled: "Stalled…",
+        done: "Done",
+        failed: "Failed",
+        aborted: "Cancelled",
+        kindMain: "Main",
+        kindTranslate: "Translate",
+        kindMemory: "Memory",
+        kindEmotion: "Emotion",
+        kindSub: "Sub",
+        outputTokens: "out",
+        thinkingTokensLabel: "think",
+        tokensPerSec: "tok/s",
+    },
+
 } satisfies I18nTranslation;
 
 type I18nTranslationFunction = (...args: any[]) => string;

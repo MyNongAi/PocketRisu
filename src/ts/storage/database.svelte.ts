@@ -397,6 +397,9 @@ export function setDatabase(data:Database){
     data.inlayImagePriority ??= true
     data.enableBlockPartialEdit ??= false
     data.enableDragPartialEdit ??= false
+    // Concrete default so the settings toggle (reads !!value) and the runtime
+    // gate (statusEnabled) agree. Default on — see request-status-toast-infra.md.
+    data.showRequestStatus ??= true
     if(!data.formatingOrder.includes('personaPrompt')){
         data.formatingOrder.splice(data.formatingOrder.indexOf('main'),0,'personaPrompt')
     }
@@ -1330,6 +1333,9 @@ export interface Database{
     localActivationInGlobalLorebook: boolean
     showFolderName: boolean
     automaticCachePoint: boolean
+    // Show the floating request-status toast (phase / thinking+response tokens /
+    // tok/s / stall) for model-preset requests. Memory-only UI feature; default on.
+    showRequestStatus: boolean
     chatCompression: boolean
     claudeRetrivalCaching: boolean
     outputImageModal: boolean

@@ -145,4 +145,10 @@ export interface AdapterChatOptions {
     tools?: AdapterToolDef[]             // when present, enables tool use on the request
     abortSignal?: AbortSignal
     fetchImpl?: typeof fetch
+    // Per-request identifier (= the message generationId issued in sendChat).
+    // Threaded through so request-status / context-cache consumers can key
+    // status and badges to this exact request. Optional and side-effect free:
+    // adapters that ignore it behave identically. See
+    // .agent/notes/generation-state-keying.md.
+    generationId?: string
 }
