@@ -3,6 +3,7 @@ import type { character, Database } from "./storage/database.svelte";
 import { type simpleCharacterArgument } from "./parser/parser.svelte";
 import type { alertData } from "./alert";
 import { moduleUpdate } from "./process/modules";
+import { deepTouch } from "./gui/deepTouch.svelte";
 import { resetScriptCache } from "./process/scripts";
 import type { hubType } from "./characterCards";
 import type { PluginSafetyErrors } from "./plugins/pluginSafety";
@@ -230,8 +231,8 @@ $effect.root(() => {
         }
     })
     $effect(() => {
-        try { $state.snapshot(DBState.db.modules) } catch (e) {
-            console.warn('[ModuleUpdate] $state.snapshot(modules) failed:', e)
+        try { deepTouch(DBState.db.modules) } catch (e) {
+            console.warn('[ModuleUpdate] deepTouch(modules) failed:', e)
             return
         }
         DBState?.db?.enabledModules
