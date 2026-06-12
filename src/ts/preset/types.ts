@@ -1,3 +1,5 @@
+import type { GeminiPromptCachingConfig } from './cache/geminiContextCache'
+
 export type AdapterKind =
     | 'openai-compatible'
     | 'anthropic-messages'
@@ -320,6 +322,13 @@ export interface ModelPreset {
     // clamped to the profile's contextWindowTokens when known. NOT the output
     // limit (that is the profile's max_tokens param).
     maxContext?: number
+    // Gemini explicit context caching (google-gemini adapter + AI Studio key
+    // auth, main chat only). The cache boundary comes from the native
+    // message.cachePoint infra (cache prompt card / automaticCachePoint), not
+    // from this config. Additive optional — absent/disabled => no cache calls,
+    // requests byte-identical to before. Runtime cache state lives in
+    // localStorage, never in the db.
+    promptCaching?: GeminiPromptCachingConfig
     apiKeyRef?: string
     inlineCredential?: unknown
     fallbackModelPresetIds?: string[]

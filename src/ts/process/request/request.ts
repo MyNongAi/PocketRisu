@@ -26,6 +26,7 @@ import {
     sendAnthropicChatRequest, streamAnthropicChatRequest, previewAnthropicChatRequest,
     sendGoogleChatRequest, streamGoogleChatRequest, previewGoogleChatRequest,
     runToolLoop,
+    type AdapterCacheContext,
     type AdapterChatMessage, type AdapterChatOptions, type AdapterChatResponse,
     type AdapterChatStreamDelta, type AdapterCredential,
     type AdapterReasoningPart, type AdapterToolCall, type AdapterToolDef,
@@ -717,6 +718,29 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
     const supportsVision = VISION_CAPABLE_ADAPTER_KINDS.includes(kind)
         && ((caps?.includes('vision') ?? false) || preset.imageInput === true)
 
+    // Gemini context caching (v1 scope): MAIN chat requests on the google-gemini
+    // adapter with AI Studio key auth (x-goog-api-key) only — Vertex/SA auth,
+    // tool runs and previews are excluded. The context carries everything the
+    // cache layer needs so the adapter never reads the database (SSR rule). The
+    // state key is chat.id (assigned at bootstrap for every chat); a chat
+    // without one cannot be keyed, so caching is skipped. All defaults off →
+    // cache undefined → requests byte-identical to before.
+    let cache: AdapterCacheContext | undefined
+    if (kind === 'google-gemini' && preset.promptCaching?.enabled && mode === 'model'
+        && !tools && !arg.previewBody
+        && preset.profileSnapshot.auth.kind === 'x-goog-api-key') {
+        const cacheChatKey = getCurrentChat()?.id
+        if (cacheChatKey) {
+            cache = {
+                promptCaching: preset.promptCaching,
+                chatKey: cacheChatKey,
+                task: mode,
+                presetId: preset.id,
+                generationId: genId,
+            }
+        }
+    }
+
     // System/role normalization. The classic path always runs reformater() before
     // dispatch (~431); the preset path skipped it, so models without a native system
     // role (e.g. Ollama Gemma3) never saw bot/persona info folded into user turns.
@@ -789,7 +813,7 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
         }
 
         const useStreaming = resolvePresetStreaming(preset, arg)
-        const options: AdapterChatOptions = { messages, abortSignal: abortSignal ?? undefined, fetchImpl, generationId: genId }
+        const options: AdapterChatOptions = { messages, abortSignal: abortSignal ?? undefined, fetchImpl, generationId: genId, cache }
         if (reportStatus) {
             safeStatus(() => startStatus(genId, { kind: statusKind, label: preset.name, chatId: arg.chatId, phase: 'connecting', now: Date.now() }))
         }

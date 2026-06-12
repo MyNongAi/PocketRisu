@@ -1,10 +1,11 @@
-import { describe, expect, test } from 'vitest'
+import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { resetGeminiContextCacheRuntime } from '../cache/geminiContextCache'
 import { loadBundledRegistry } from '../registry/loader'
 import { resolveSnapshot } from '../registry/snapshot'
 import type { ModelPreset, ResolvedModelProfileSnapshot } from '../types'
 import { ModelPresetAdapterError } from './error'
 import { sendGoogleChatRequest, streamGoogleChatRequest } from './googleGemini'
-import type { AdapterChatMessage } from './types'
+import type { AdapterCacheContext, AdapterChatMessage } from './types'
 
 function makeSnapshot(overrides: Partial<ResolvedModelProfileSnapshot> = {}): ResolvedModelProfileSnapshot {
     return {
@@ -694,5 +695,212 @@ describe('error class identity', () => {
         } catch (err) {
             expect(err).toBeInstanceOf(ModelPresetAdapterError)
         }
+    })
+})
+
+describe('context caching wiring', () => {
+    beforeEach(() => {
+        localStorage.clear()
+        resetGeminiContextCacheRuntime()
+    })
+
+    function makeCacheContext(): AdapterCacheContext {
+        return { promptCaching: { enabled: true }, chatKey: 'chat-1', task: 'model', presetId: 'preset-google' }
+    }
+
+    // Routes chat calls to `chatResponse` and answers the cachedContents API
+    // (POST create / PATCH extend / DELETE remove) like the real endpoint, with
+    // sequential cache names so assertions can pin them down.
+    function routedFetch(chatResponse: () => Response): {
+        fetchImpl: typeof fetch
+        calls: CapturedCall[]
+    } {
+        const calls: CapturedCall[] = []
+        let created = 0
+        const fetchImpl: typeof fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+            calls.push({
+                url,
+                method: (init?.method ?? 'GET') as string,
+                headers: (init?.headers as Record<string, string>) ?? {},
+                body: init?.body != null ? JSON.parse(init.body as string) : {},
+            })
+            if (url.includes('/cachedContents')) {
+                if (init?.method === 'POST') {
+                    created++
+                    return jsonResponse({ name: `cachedContents/created-${created}` })
+                }
+                return jsonResponse({})
+            }
+            return chatResponse()
+        }
+        return { fetchImpl, calls }
+    }
+
+    function chatJson(promptTokenCount: number): () => Response {
+        return () => jsonResponse({
+            candidates: [{ content: { parts: [{ text: 'ok' }], role: 'model' }, finishReason: 'STOP' }],
+            usageMetadata: { promptTokenCount, candidatesTokenCount: 2, totalTokenCount: promptTokenCount + 2 },
+        })
+    }
+
+    // system + cachePoint on the first user turn → wire boundary = 1 content.
+    const turnOneMessages: AdapterChatMessage[] = [
+        { role: 'system', content: 'You are factual.' },
+        { role: 'user', content: 'turn 1', cachePoint: true },
+        { role: 'assistant', content: 'reply 1' },
+        { role: 'user', content: 'turn 2' },
+    ]
+
+    test('first turn sends uncached, then creates the cache for the boundary prefix in the background', async () => {
+        const { fetchImpl, calls } = routedFetch(chatJson(10_000))
+        await sendGoogleChatRequest(
+            makePreset(),
+            { messages: turnOneMessages, fetchImpl, cache: makeCacheContext() },
+            { apiKey: 'k' },
+        )
+        // The chat request itself is untouched (full contents + systemInstruction).
+        expect(calls[0].body.cachedContent).toBeUndefined()
+        expect(calls[0].body.contents).toHaveLength(3)
+        expect(calls[0].body.systemInstruction).toBeDefined()
+        // Fire-and-forget creation lands after the response returned.
+        await vi.waitFor(() => expect(calls).toHaveLength(2))
+        expect(calls[1].method).toBe('POST')
+        expect(calls[1].url).toBe('https://demo.test/v1beta/cachedContents')
+        expect(calls[1].headers['x-goog-api-key']).toBe('k')
+        expect(calls[1].body).toEqual({
+            model: 'models/gemini-demo',
+            ttl: '600s',
+            systemInstruction: { parts: [{ text: 'You are factual.' }] },
+            contents: [{ role: 'user', parts: [{ text: 'turn 1' }] }],
+        })
+    })
+
+    test('second turn applies the cache: cachedContent + suffix only, systemInstruction stripped', async () => {
+        const { fetchImpl, calls } = routedFetch(chatJson(10_000))
+        await sendGoogleChatRequest(
+            makePreset(),
+            { messages: turnOneMessages, fetchImpl, cache: makeCacheContext() },
+            { apiKey: 'k' },
+        )
+        await vi.waitFor(() => expect(calls).toHaveLength(2))
+        const turnTwoMessages: AdapterChatMessage[] = [
+            ...turnOneMessages,
+            { role: 'assistant', content: 'reply 2' },
+            { role: 'user', content: 'turn 3' },
+        ]
+        await sendGoogleChatRequest(
+            makePreset(),
+            { messages: turnTwoMessages, fetchImpl, cache: makeCacheContext() },
+            { apiKey: 'k' },
+        )
+        expect(calls[2].body.cachedContent).toBe('cachedContents/created-1')
+        expect(calls[2].body.contents).toEqual([
+            { role: 'model', parts: [{ text: 'reply 1' }] },
+            { role: 'user', parts: [{ text: 'turn 2' }] },
+            { role: 'model', parts: [{ text: 'reply 2' }] },
+            { role: 'user', parts: [{ text: 'turn 3' }] },
+        ])
+        expect(calls[2].body.systemInstruction).toBeUndefined()
+        // Fresh hit (full TTL remaining, no growth) → no extend/recreate calls.
+        await new Promise((r) => setTimeout(r, 20))
+        expect(calls).toHaveLength(3)
+    })
+
+    test('a prefix edit invalidates: stale cache deleted, request uncached, cache recreated', async () => {
+        const { fetchImpl, calls } = routedFetch(chatJson(10_000))
+        await sendGoogleChatRequest(
+            makePreset(),
+            { messages: turnOneMessages, fetchImpl, cache: makeCacheContext() },
+            { apiKey: 'k' },
+        )
+        await vi.waitFor(() => expect(calls).toHaveLength(2))
+        const editedMessages: AdapterChatMessage[] = [
+            { role: 'system', content: 'You are factual.' },
+            { role: 'user', content: 'turn 1 EDITED', cachePoint: true },
+            { role: 'assistant', content: 'reply 1' },
+            { role: 'user', content: 'turn 2' },
+        ]
+        await sendGoogleChatRequest(
+            makePreset(),
+            { messages: editedMessages, fetchImpl, cache: makeCacheContext() },
+            { apiKey: 'k' },
+        )
+        // Recreation is also fire-and-forget: wait for DELETE + chat + POST.
+        await vi.waitFor(() => expect(calls).toHaveLength(5))
+        const remove = calls.find((c) => c.method === 'DELETE')
+        expect(remove?.url).toBe('https://demo.test/v1beta/cachedContents/created-1')
+        const chat = calls.find((c, i) => i >= 2 && c.url.includes(':generateContent'))
+        expect(chat?.body.cachedContent).toBeUndefined()
+        expect(chat?.body.contents).toHaveLength(3)
+        const recreate = calls.find((c, i) => i >= 2 && c.method === 'POST' && c.url.endsWith('/cachedContents'))
+        expect(recreate?.body.contents).toEqual([{ role: 'user', parts: [{ text: 'turn 1 EDITED' }] }])
+    })
+
+    test('a cache covering the whole prompt is never applied (empty-suffix guard)', async () => {
+        const messages: AdapterChatMessage[] = [
+            { role: 'system', content: 'You are factual.' },
+            { role: 'user', content: 'turn 1' },
+            { role: 'assistant', content: 'reply 1' },
+            { role: 'user', content: 'turn 2', cachePoint: true },
+        ]
+        const { fetchImpl, calls } = routedFetch(chatJson(10_000))
+        await sendGoogleChatRequest(
+            makePreset(),
+            { messages, fetchImpl, cache: makeCacheContext() },
+            { apiKey: 'k' },
+        )
+        await vi.waitFor(() => expect(calls).toHaveLength(2))
+        // Reroll: identical prompt — the cache boundary equals the contents
+        // length, so applying would leave contents empty. Must send uncached.
+        await sendGoogleChatRequest(
+            makePreset(),
+            { messages, fetchImpl, cache: makeCacheContext() },
+            { apiKey: 'k' },
+        )
+        expect(calls[2].body.cachedContent).toBeUndefined()
+        expect(calls[2].body.contents).toHaveLength(3)
+        await new Promise((r) => setTimeout(r, 20))
+        expect(calls).toHaveLength(3)
+    })
+
+    test('no cachePoint in the prompt → caching never engages', async () => {
+        const { fetchImpl, calls } = routedFetch(chatJson(10_000))
+        await sendGoogleChatRequest(
+            makePreset(),
+            { messages: messagesWithSystem, fetchImpl, cache: makeCacheContext() },
+            { apiKey: 'k' },
+        )
+        await new Promise((r) => setTimeout(r, 20))
+        expect(calls).toHaveLength(1)
+        expect(calls[0].body.cachedContent).toBeUndefined()
+    })
+
+    test('stream completion drives cache creation from the last chunk usage', async () => {
+        const { fetchImpl, calls } = routedFetch(() => sseResponse([
+            'data: {"candidates":[{"content":{"parts":[{"text":"ok"}],"role":"model"}}]}\n\n',
+            'data: {"candidates":[{"content":{"parts":[]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":10000,"candidatesTokenCount":2,"totalTokenCount":10002}}\n\n',
+        ]))
+        for await (const _ of streamGoogleChatRequest(
+            makePreset(),
+            { messages: turnOneMessages, fetchImpl, cache: makeCacheContext() },
+            { apiKey: 'k' },
+        )) { /* drain */ }
+        await vi.waitFor(() => expect(calls).toHaveLength(2))
+        expect(calls[1].method).toBe('POST')
+        expect(calls[1].url).toBe('https://demo.test/v1beta/cachedContents')
+    })
+
+    test('parses cachedContentTokenCount into usage.cachedTokens', async () => {
+        const { fetchImpl } = captureFetch(jsonResponse({
+            candidates: [{ content: { parts: [{ text: 'ok' }], role: 'model' } }],
+            usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 2, totalTokenCount: 12, cachedContentTokenCount: 7 },
+        }))
+        const result = await sendGoogleChatRequest(
+            makePreset(),
+            { messages: messagesWithSystem, fetchImpl },
+            { apiKey: 'k' },
+        )
+        expect(result.usage).toEqual({ promptTokens: 10, completionTokens: 2, totalTokens: 12, cachedTokens: 7 })
     })
 })
