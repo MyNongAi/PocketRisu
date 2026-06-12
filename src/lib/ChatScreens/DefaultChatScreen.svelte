@@ -201,18 +201,21 @@ import { isMobile } from 'src/ts/platform'
                 await sleep(100)
             }
 
+            const chatContainer = document.querySelector('.default-chat-screen') as HTMLElement | null;
             const preIndex = Math.max(0, index - 3)
             const preElement = document.querySelector(`[data-chat-index="${preIndex}"]`)
-            if(preElement){
-                preElement.scrollIntoView({behavior: "instant", block: "start"})
-            } else {
-                element?.scrollIntoView({behavior: "instant", block: "start"})
+            // Scroll within the chat container only — raw scrollIntoView climbs to
+            // documentElement and, if the root is inflated, shoves the whole page
+            // up. (rootScrollGuard is the backstop; this avoids the visible jolt.)
+            if(chatContainer && preElement){
+                scrollWithinContainer(preElement as HTMLElement, chatContainer, { block: 'start', behavior: 'instant' })
+            } else if(chatContainer && element){
+                scrollWithinContainer(element as HTMLElement, chatContainer, { block: 'start', behavior: 'instant' })
             }
             await sleep(50)
 
             if(element){
                 // Wait for images to load to prevent layout shift
-                const chatContainer = document.querySelector('.default-chat-screen');
                 if(chatContainer) {
                     const images = Array.from(chatContainer.querySelectorAll('img'));
                     const promises = images.map(img => {
@@ -229,11 +232,12 @@ import { isMobile } from 'src/ts/platform'
                     ]);
                 }
 
-                element.scrollIntoView({behavior: "instant", block: "start"})
-                
-                // Small delay and scroll again to ensure position is correct after any final layout adjustments
-                await sleep(50)
-                element.scrollIntoView({behavior: "instant", block: "start"})
+                if(chatContainer){
+                    scrollWithinContainer(element as HTMLElement, chatContainer, { block: 'start', behavior: 'instant' })
+                    // Small delay and scroll again to ensure position is correct after any final layout adjustments
+                    await sleep(50)
+                    scrollWithinContainer(element as HTMLElement, chatContainer, { block: 'start', behavior: 'instant' })
+                }
 
                 element.classList.add('ring-2', 'ring-blue-500')
                 setTimeout(() => {
