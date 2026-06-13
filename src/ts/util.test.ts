@@ -11,12 +11,14 @@ const mocks = vi.hoisted(() => {
     return {
         selectedCharID: writable(0),
         dbRef: { db: {} as any },
+        selIdState: { selId: -1 },
     }
 })
 
 vi.mock(import('./stores.svelte'), () => ({
     selectedCharID: mocks.selectedCharID,
     DBState: mocks.dbRef,
+    selIdState: mocks.selIdState,
 } as any))
 vi.mock(import('./storage/database.svelte'), () => ({
     getDatabase: () => mocks.dbRef.db,
