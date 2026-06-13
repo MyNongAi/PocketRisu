@@ -542,6 +542,16 @@ const unloadV3Plugin = async (pluginName: string) => {
     }
 }
 
+type PluginPermissionDesc = 'fetchLogs'|'db'|'mainDom'|'replacer'|'provider'|'sendChat';
+const pluginPermissionDescs: PluginPermissionDesc[] = ['fetchLogs', 'db', 'mainDom', 'replacer', 'provider', 'sendChat'];
+
+// Plugin names are free text (the //@name directive), so `${name}_${desc}` keys
+// can collide — both across permissions and with a legacy name-only entry that
+// happens to read like "name_desc". JSON-encoding the pair makes every key
+// unambiguous: ["foo","db"] can never equal a plain "foo_db" or ["foo_db","x"].
+const permissionKeyOf = (pluginName: string, permissionDesc: string) =>
+    JSON.stringify([pluginName, permissionDesc])
+
 const permissionGivenPlugins: Set<string> = new Set();
 const permissionDeniedPlugins: Set<string> = new Set();
 const permissionCache = new Map<string, boolean | number>();
@@ -586,13 +596,17 @@ export async function resetAllPluginPermissions() {
 
 export async function resetPluginPermission(pluginName: string) {
     await ensurePluginPermissionStateLoaded()
-    permissionGivenPlugins.delete(pluginName)
-    permissionDeniedPlugins.delete(pluginName)
-    const prefix = pluginName + '_'
-    for (const key of [...permissionCache.keys()]) {
-        if (key.startsWith(prefix)) {
-            permissionCache.delete(key)
-        }
+    // Permission descs are a fixed enum, so we delete the exact key for each
+    // one rather than prefix-matching (which would also wipe another plugin's
+    // keys). `pluginName` alone covers legacy name-only entries from older
+    // versions, which JSON keys never collide with but reset should still clear.
+    const exactKeys = pluginPermissionDescs.map(desc => permissionKeyOf(pluginName, desc))
+    for (const key of [pluginName, ...exactKeys]) {
+        permissionGivenPlugins.delete(key)
+        permissionDeniedPlugins.delete(key)
+    }
+    for (const desc of pluginPermissionDescs) {
+        permissionCache.delete(permissionKeyOf(pluginName, desc) + '_lastGrantTime')
     }
     const plugin = DBState.db.plugins?.find(p => p.name === pluginName)
     if (plugin?.script) {
@@ -629,13 +643,14 @@ let pluginPermissionDialogChain: Promise<unknown> = Promise.resolve()
 
 const isPermissionResolved = async (
     pluginName: string,
-    permissionDesc: 'fetchLogs'|'db'|'mainDom'|'replacer'|'provider'|'sendChat',
+    permissionDesc: PluginPermissionDesc,
     requiresReconfirm: boolean,
 ): Promise<{ resolved: boolean; value: boolean; pluginHash: string }> => {
-    if (!requiresReconfirm && permissionGivenPlugins.has(pluginName)) {
+    const permissionKey = permissionKeyOf(pluginName, permissionDesc);
+    if (!requiresReconfirm && permissionGivenPlugins.has(permissionKey)) {
         return { resolved: true, value: true, pluginHash: '' }
     }
-    if (!requiresReconfirm && permissionDeniedPlugins.has(pluginName)) {
+    if (!requiresReconfirm && permissionDeniedPlugins.has(permissionKey)) {
         return { resolved: true, value: false, pluginHash: '' }
     }
 
@@ -646,20 +661,20 @@ const isPermissionResolved = async (
     ) + `_${permissionDesc}`;
 
     if (!requiresReconfirm && permissionCache.get(pluginHash)) {
-        permissionGivenPlugins.add(pluginName);
+        permissionGivenPlugins.add(permissionKey);
         return { resolved: true, value: true, pluginHash }
     }
 
     return { resolved: false, value: false, pluginHash }
 }
 
-const getPluginPermission = async (pluginName: string, permissionDesc: 'fetchLogs'|'db'|'mainDom'|'replacer'|'provider'|'sendChat', reconfirm: boolean|'periodically' = false) => {
+const getPluginPermission = async (pluginName: string, permissionDesc: PluginPermissionDesc, reconfirm: boolean|'periodically' = false) => {
     await ensurePluginPermissionStateLoaded()
 
     let requiresReconfirm = false;
 
     if(reconfirm === 'periodically'){
-        const lastGrantTime = permissionCache.get(pluginName + '_' + permissionDesc + '_lastGrantTime') as number | undefined;
+        const lastGrantTime = permissionCache.get(permissionKeyOf(pluginName, permissionDesc) + '_lastGrantTime') as number | undefined;
         const now = Date.now();
         if(!lastGrantTime || now - lastGrantTime > 3 * 24 * 60 * 60 * 1000){ //3 days
             requiresReconfirm = true;
@@ -696,18 +711,19 @@ const getPluginPermission = async (pluginName: string, permissionDesc: 'fetchLog
         if(alertTitle === 'Error'){
             return false;
         }
+        const permissionKey = permissionKeyOf(pluginName, permissionDesc);
         const conf = await alertConfirm(alertTitle)
         if(conf && pluginHash){
-            permissionGivenPlugins.add(pluginName);
-            permissionDeniedPlugins.delete(pluginName);
+            permissionGivenPlugins.add(permissionKey);
+            permissionDeniedPlugins.delete(permissionKey);
             permissionCache.set(pluginHash, true);
             if(reconfirm === 'periodically'){
-                permissionCache.set(pluginName + '_' + permissionDesc + '_lastGrantTime', Date.now());
+                permissionCache.set(permissionKeyOf(pluginName, permissionDesc) + '_lastGrantTime', Date.now());
             }
             await persistPluginPermissionState()
             return true;
         }
-        permissionDeniedPlugins.add(pluginName);
+        permissionDeniedPlugins.add(permissionKey);
         await persistPluginPermissionState()
         return false;
     }

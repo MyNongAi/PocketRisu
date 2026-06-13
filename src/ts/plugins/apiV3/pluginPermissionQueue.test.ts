@@ -78,8 +78,30 @@ function startAutoResponder(alertStore: ReturnType<typeof makeAlertHarness>['ale
 function makePermissionState() {
     const given = new Set<string>()
     const denied = new Set<string>()
-    const cache = new Map<string, boolean>()
+    const cache = new Map<string, boolean | number>()
     return { given, denied, cache }
+}
+
+const PERMISSION_DESCS = ['fetchLogs', 'db', 'mainDom', 'replacer', 'provider', 'sendChat']
+
+// Mirrors permissionKeyOf() in v3.svelte.ts: JSON-encode the (name, desc) pair so
+// keys can never collide across permissions or with a legacy name-only entry.
+const keyOf = (pluginName: string, permissionDesc: string) => JSON.stringify([pluginName, permissionDesc])
+
+// Mirrors resetPluginPermission()'s exact-key deletion. Permission descs are a
+// fixed enum, so reset enumerates every exact key instead of prefix matching —
+// otherwise resetting "foo" would also wipe "foo_bar"'s records.
+function resetPermission(state: ReturnType<typeof makePermissionState>, pluginName: string) {
+    const exactKeys = PERMISSION_DESCS.map((desc) => keyOf(pluginName, desc))
+    // pluginName alone clears legacy name-only entries from older versions.
+    for (const key of [pluginName, ...exactKeys]) {
+        state.given.delete(key)
+        state.denied.delete(key)
+    }
+    // lastGrantTime entries live in the cache map, keyed the same way.
+    for (const desc of PERMISSION_DESCS) {
+        state.cache.delete(keyOf(pluginName, desc) + '_lastGrantTime')
+    }
 }
 
 // ─── BUGGY variant: original flow, no serialization ──────────────────────────
@@ -128,6 +150,49 @@ function makeFixedGetPermission(
                 return true
             }
             state.denied.add(pluginName)
+            return false
+        }
+
+        const run = chain.catch(() => {}).then(() => showDialog())
+        chain = run.catch(() => {})
+        return run
+    }
+}
+
+// ─── Per-permission variant: key state by pluginName + permissionDesc ────────
+//
+// The dialog-serialization fix keys granted/denied state by plugin NAME only.
+// That makes the queue correct but lets one granted permission (e.g. fetchLogs)
+// silently authorize a different one (e.g. db) for the same plugin. The real fix
+// keys the given/denied sets by keyOf(pluginName, permissionDesc). This variant
+// mirrors that so we can assert each permission is gated separately.
+
+function makePerPermissionGetPermission(
+    state: ReturnType<typeof makePermissionState>,
+    alertConfirm: (m: string) => Promise<boolean>,
+) {
+    let chain: Promise<unknown> = Promise.resolve()
+
+    const resolved = (key: string): { resolved: boolean; value: boolean } => {
+        if (state.given.has(key)) return { resolved: true, value: true }
+        if (state.denied.has(key)) return { resolved: true, value: false }
+        return { resolved: false, value: false }
+    }
+
+    return async function getPluginPermission(pluginName: string, permissionDesc: string): Promise<boolean> {
+        const key = keyOf(pluginName, permissionDesc)
+        const early = resolved(key)
+        if (early.resolved) return early.value
+
+        const showDialog = async (): Promise<boolean> => {
+            const recheck = resolved(key)
+            if (recheck.resolved) return recheck.value
+            const conf = await alertConfirm(`Allow ${pluginName} → ${permissionDesc}?`)
+            if (conf) {
+                state.given.add(key)
+                return true
+            }
+            state.denied.add(key)
             return false
         }
 
@@ -201,6 +266,139 @@ describe('plugin permission dialog serialization', () => {
         expect(r2).toBe(true)
         // Only one dialog total: the second request short-circuited.
         expect(harness.getMaxConcurrentLive()).toBe(1)
+    })
+
+    it('PER-PERMISSION: a grant for one permission does NOT authorize a different one', async () => {
+        const harness = makeAlertHarness()
+        const state = makePermissionState()
+        const getPerm = makePerPermissionGetPermission(state, harness.alertConfirm)
+
+        // Grant fetchLogs first.
+        const responder = startAutoResponder(harness.alertStore)
+        const fetchLogs = await getPerm('Plug', 'fetchLogs')
+        await responder.stop()
+        expect(fetchLogs).toBe(true)
+
+        // Now request a DIFFERENT permission for the same plugin. With name-only
+        // keying this would auto-resolve to true without ever asking. With
+        // per-permission keying it must show its own dialog. We deny it.
+        let denied = false
+        const denier = (() => {
+            let stopped = false
+            const loop = async () => {
+                while (!stopped) {
+                    if (get(harness.alertStore).type === 'ask') {
+                        harness.alertStore.set({ type: 'none', msg: 'no' })
+                        denied = true
+                    }
+                    await sleep(3)
+                }
+            }
+            const done = loop()
+            return { stop: async () => { stopped = true; await done } }
+        })()
+
+        const dbPerm = await getPerm('Plug', 'db')
+        await denier.stop()
+
+        // A dialog WAS shown for 'db' (it was not silently granted)...
+        expect(denied).toBe(true)
+        // ...and the denial took effect — the two permissions are independent.
+        expect(dbPerm).toBe(false)
+        expect(state.given.has(keyOf('Plug', 'fetchLogs'))).toBe(true)
+        expect(state.denied.has(keyOf('Plug', 'db'))).toBe(true)
+    })
+
+    it('PER-PERMISSION: a duplicate request for the SAME permission auto-resolves', async () => {
+        const harness = makeAlertHarness()
+        const state = makePermissionState()
+        const getPerm = makePerPermissionGetPermission(state, harness.alertConfirm)
+        const responder = startAutoResponder(harness.alertStore)
+
+        // Same plugin, same permission, twice — only one dialog should appear.
+        const [r1, r2] = await Promise.all([getPerm('Plug', 'db'), getPerm('Plug', 'db')])
+        await responder.stop()
+
+        expect(r1).toBe(true)
+        expect(r2).toBe(true)
+        expect(harness.getMaxConcurrentLive()).toBe(1)
+    })
+
+    it('RESET: resetting "foo" does NOT wipe a different plugin "foo_bar"', () => {
+        const state = makePermissionState()
+        // foo and foo_bar are distinct plugins whose underscore-laden names would
+        // collide under naive string keys; JSON keys keep them disjoint, and reset
+        // must delete only foo's exact keys.
+        state.given.add(keyOf('foo', 'db'))
+        state.given.add(keyOf('foo', 'fetchLogs'))
+        state.given.add(keyOf('foo_bar', 'db'))
+        state.denied.add(keyOf('foo_bar', 'provider'))
+        // lastGrantTime cache entries — foo_bar's must survive too.
+        state.cache.set(keyOf('foo', 'db') + '_lastGrantTime', 111)
+        state.cache.set(keyOf('foo_bar', 'db') + '_lastGrantTime', 222)
+
+        resetPermission(state, 'foo')
+
+        // foo's own permissions are gone...
+        expect(state.given.has(keyOf('foo', 'db'))).toBe(false)
+        expect(state.given.has(keyOf('foo', 'fetchLogs'))).toBe(false)
+        expect(state.cache.has(keyOf('foo', 'db') + '_lastGrantTime')).toBe(false)
+        // ...but foo_bar is untouched.
+        expect(state.given.has(keyOf('foo_bar', 'db'))).toBe(true)
+        expect(state.denied.has(keyOf('foo_bar', 'provider'))).toBe(true)
+        expect(state.cache.has(keyOf('foo_bar', 'db') + '_lastGrantTime')).toBe(true)
+    })
+
+    it('RESET: clears every permission desc and legacy name-only entries', () => {
+        const state = makePermissionState()
+        for (const desc of PERMISSION_DESCS) {
+            state.given.add(keyOf('Plug', desc))
+        }
+        state.denied.add(keyOf('Plug', 'db'))
+        state.given.add('Plug') // legacy name-only entry from older versions
+
+        resetPermission(state, 'Plug')
+
+        expect(state.given.size).toBe(0)
+        expect(state.denied.size).toBe(0)
+    })
+
+    it('LEGACY: a name-only entry "foo_db" does NOT grant plugin "foo" the db permission', async () => {
+        const harness = makeAlertHarness()
+        const state = makePermissionState()
+        // Older versions stored grants by plugin NAME only. A user who granted a
+        // plugin literally named "foo_db" left behind the entry "foo_db". With
+        // naive `${name}_${desc}` keys, a DIFFERENT plugin "foo" requesting "db"
+        // would compute "foo_db" and silently inherit that grant. JSON keys make
+        // the new key ["foo","db"], which can never equal the legacy "foo_db".
+        state.given.add('foo_db')
+
+        const getPerm = makePerPermissionGetPermission(state, harness.alertConfirm)
+        // Deny if a dialog appears, so a wrongly-silent grant is distinguishable
+        // from a correctly-prompted one.
+        let prompted = false
+        const denier = (() => {
+            let stopped = false
+            const loop = async () => {
+                while (!stopped) {
+                    if (get(harness.alertStore).type === 'ask') {
+                        harness.alertStore.set({ type: 'none', msg: 'no' })
+                        prompted = true
+                    }
+                    await sleep(3)
+                }
+            }
+            const done = loop()
+            return { stop: async () => { stopped = true; await done } }
+        })()
+
+        const dbPerm = await getPerm('foo', 'db')
+        await denier.stop()
+
+        // The legacy entry was NOT mistaken for a grant — a dialog was shown...
+        expect(prompted).toBe(true)
+        // ...and our denial held, so no silent authorization leaked through.
+        expect(dbPerm).toBe(false)
     })
 
     it('FIXED: a throwing dialog does not deadlock later requests', async () => {
