@@ -1,11 +1,37 @@
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { resetGeminiContextCacheRuntime } from '../cache/geminiContextCache'
 import { loadBundledRegistry } from '../registry/loader'
 import { resolveSnapshot } from '../registry/snapshot'
 import type { ModelPreset, ResolvedModelProfileSnapshot } from '../types'
 import { ModelPresetAdapterError } from './error'
+import * as serviceAccountCache from './googleServiceAccount/cache'
 import { sendGoogleChatRequest, streamGoogleChatRequest } from './googleGemini'
 import type { AdapterCacheContext, AdapterChatMessage } from './types'
+
+// Minimal SA JSON that parseServiceAccountJson accepts; the token exchange is
+// stubbed (see stubServiceAccountToken) so no signing/network happens.
+const VERTEX_SA_JSON = JSON.stringify({
+    type: 'service_account',
+    project_id: 'my-proj',
+    private_key_id: 'kid-1',
+    private_key: '-----BEGIN PRIVATE KEY-----\nMIIBVwIB...\n-----END PRIVATE KEY-----\n',
+    client_email: 'svc@my-proj.iam.gserviceaccount.com',
+    client_id: '1',
+    token_uri: 'https://oauth2.googleapis.com/token',
+})
+
+// Replaces the default SA token cache so google-service-account profiles resolve
+// to a fixed bearer token without a JWT-signing / OAuth round trip.
+function stubServiceAccountToken(accessToken: string): void {
+    vi.spyOn(serviceAccountCache, 'getDefaultServiceAccountTokenCache').mockReturnValue({
+        getAccessToken: async () => ({
+            accessToken,
+            tokenType: 'Bearer',
+            expiresAtMs: Date.now() + 3_600_000,
+        }),
+        clear() {},
+    })
+}
 
 function makeSnapshot(overrides: Partial<ResolvedModelProfileSnapshot> = {}): ResolvedModelProfileSnapshot {
     return {
@@ -704,6 +730,10 @@ describe('context caching wiring', () => {
         resetGeminiContextCacheRuntime()
     })
 
+    afterEach(() => {
+        vi.restoreAllMocks()
+    })
+
     function makeCacheContext(): AdapterCacheContext {
         return { promptCaching: { enabled: true }, chatKey: 'chat-1', task: 'model', presetId: 'preset-google' }
     }
@@ -774,6 +804,78 @@ describe('context caching wiring', () => {
             systemInstruction: { parts: [{ text: 'You are factual.' }] },
             contents: [{ role: 'user', parts: [{ text: 'turn 1' }] }],
         })
+    })
+
+    // Vertex native: same google-gemini adapter, but service-account auth and a
+    // publisher-rooted chat URL. The cache layer must derive the location-rooted
+    // cachedContents URL and the full "projects/.../models/{id}" resource name
+    // from that URL (host is never hardcoded), and reuse the Bearer auth.
+    function makeVertexPreset(): ModelPreset {
+        // The wire model id resolves from the snapshot schema default
+        // ('gemini-demo'), so the publisher URL carries that id.
+        return makePreset({
+            profileSnapshot: makeSnapshot({
+                providerBaseId: 'vertex-gemini-native',
+                auth: { kind: 'google-service-account', fields: ['serviceAccountJson'] },
+                endpoint: {
+                    kind: 'static',
+                    url: 'https://aiplatform.googleapis.com/v1/projects/my-proj/locations/global/publishers/google/models',
+                },
+            }),
+        })
+    }
+
+    test('Vertex: cachedContents URL is location-rooted and the create model is the full resource path', async () => {
+        stubServiceAccountToken('ya29.access-token')
+        const { fetchImpl, calls } = routedFetch(chatJson(10_000))
+        await sendGoogleChatRequest(
+            makeVertexPreset(),
+            { messages: turnOneMessages, fetchImpl, cache: makeCacheContext() },
+            { apiKey: VERTEX_SA_JSON },
+        )
+        // Chat call hits the Vertex publisher URL with Bearer auth.
+        expect(calls[0].url).toBe(
+            'https://aiplatform.googleapis.com/v1/projects/my-proj/locations/global'
+            + '/publishers/google/models/gemini-demo:generateContent',
+        )
+        expect(calls[0].headers['Authorization']).toBe('Bearer ya29.access-token')
+        await vi.waitFor(() => expect(calls).toHaveLength(2))
+        expect(calls[1].method).toBe('POST')
+        // cachedContents is rooted at the location, not the publisher segment.
+        expect(calls[1].url).toBe(
+            'https://aiplatform.googleapis.com/v1/projects/my-proj/locations/global/cachedContents',
+        )
+        expect(calls[1].headers['Authorization']).toBe('Bearer ya29.access-token')
+        expect(calls[1].body).toEqual({
+            model: 'projects/my-proj/locations/global/publishers/google/models/gemini-demo',
+            ttl: '600s',
+            systemInstruction: { parts: [{ text: 'You are factual.' }] },
+            contents: [{ role: 'user', parts: [{ text: 'turn 1' }] }],
+        })
+    })
+
+    test('Vertex: second turn applies the cache (cachedContent + suffix), Bearer auth reused', async () => {
+        stubServiceAccountToken('ya29.access-token')
+        const { fetchImpl, calls } = routedFetch(chatJson(10_000))
+        await sendGoogleChatRequest(
+            makeVertexPreset(),
+            { messages: turnOneMessages, fetchImpl, cache: makeCacheContext() },
+            { apiKey: VERTEX_SA_JSON },
+        )
+        await vi.waitFor(() => expect(calls).toHaveLength(2))
+        const turnTwoMessages: AdapterChatMessage[] = [
+            ...turnOneMessages,
+            { role: 'assistant', content: 'reply 2' },
+            { role: 'user', content: 'turn 3' },
+        ]
+        await sendGoogleChatRequest(
+            makeVertexPreset(),
+            { messages: turnTwoMessages, fetchImpl, cache: makeCacheContext() },
+            { apiKey: VERTEX_SA_JSON },
+        )
+        expect(calls[2].body.cachedContent).toBe('cachedContents/created-1')
+        expect(calls[2].body.systemInstruction).toBeUndefined()
+        expect(calls[2].headers['Authorization']).toBe('Bearer ya29.access-token')
     })
 
     test('second turn applies the cache: cachedContent + suffix only, systemInstruction stripped', async () => {

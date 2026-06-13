@@ -412,15 +412,18 @@ export function applyGeminiCacheToBody(
 
 // Creation payload: the cache owns systemInstruction + contents up to the
 // boundary. v1 never caches tools (tool-enabled requests skip caching).
+// `model` is the full resource name in the shape the endpoint expects:
+// "models/{id}" for AI Studio, the "projects/.../models/{id}" path for Vertex
+// (computed by the caller via deriveGeminiCacheModel from the chat URL).
 export function buildGeminiCacheCreateBody(args: {
-    modelId: string
+    model: string
     ttlSec: number
     systemInstruction?: unknown
     contents: readonly unknown[]
     boundaryIndex: number
 }): Record<string, unknown> {
     const body: Record<string, unknown> = {
-        model: `models/${args.modelId}`,
+        model: args.model,
         ttl: `${args.ttlSec}s`,
         contents: args.contents.slice(0, args.boundaryIndex),
     }
@@ -432,10 +435,25 @@ export function buildGeminiCacheCreateBody(args: {
 
 // ─── cachedContents REST client ─────────────────────────────────────────────
 
-// Studio URL family: ".../v1beta/models/{id}:generateContent" (or the bare
-// ".../v1beta/models" base) → ".../v1beta/cachedContents". null = unrecognized
-// shape, caller skips caching.
+// Marker that distinguishes the Vertex AI native URL family from AI Studio.
+// Vertex chat URLs are ".../v1/projects/{p}/locations/{l}/publishers/google/
+// models/{id}:generateContent" (host is global aiplatform.googleapis.com or
+// regional {loc}-aiplatform.googleapis.com — both end up in the path the same
+// way, so this works off the path alone, never a hardcoded host).
+const VERTEX_PUBLISHER_MARKER = '/publishers/google/models'
+
+// Derives the cachedContents collection URL from the prepared chat URL.
+//   AI Studio: ".../v1beta/models/{id}:generateContent" (or the bare
+//              ".../v1beta/models" base) → ".../v1beta/cachedContents".
+//   Vertex:    ".../v1/projects/{p}/locations/{l}/publishers/google/models/
+//              {id}:..." → ".../v1/projects/{p}/locations/{l}/cachedContents"
+//              (cachedContents is rooted at the location, not the publisher).
+// null = unrecognized shape, caller skips caching.
 export function deriveCachedContentsUrl(preparedUrl: string): string | null {
+    // Vertex must be checked first: its path also contains "/models/", so the
+    // Studio marker below would mis-cut it at the publisher segment.
+    const vertexIdx = preparedUrl.indexOf(VERTEX_PUBLISHER_MARKER)
+    if (vertexIdx >= 0) return `${preparedUrl.slice(0, vertexIdx)}/cachedContents`
     const marker = '/models/'
     const idx = preparedUrl.lastIndexOf(marker)
     if (idx >= 0) return `${preparedUrl.slice(0, idx)}/cachedContents`
@@ -443,6 +461,32 @@ export function deriveCachedContentsUrl(preparedUrl: string): string | null {
         return `${preparedUrl.slice(0, preparedUrl.length - '/models'.length)}/cachedContents`
     }
     return null
+}
+
+// Derives the `model` field for a cachedContents creation body from the prepared
+// chat URL. The cache resource must name the same model the chat call targets,
+// in the shape that endpoint family expects:
+//   AI Studio: "models/{id}"
+//   Vertex:    "projects/{p}/locations/{l}/publishers/google/models/{id}"
+//              (the full resource path that lives in the chat URL after "/v1/").
+// Falls back to "models/{modelId}" for the Studio shape so behavior there is
+// unchanged. The id is taken from the URL for Vertex (it already carries the
+// percent-encoded model id) and from modelId otherwise.
+export function deriveGeminiCacheModel(preparedUrl: string, modelId: string): string {
+    const vertexIdx = preparedUrl.indexOf(VERTEX_PUBLISHER_MARKER)
+    if (vertexIdx >= 0) {
+        // Path after "/v1/" up to the ":generateContent"/":streamGenerateContent"
+        // (and any "?alt=sse") suffix is exactly the model resource name.
+        const versionMarker = '/v1/'
+        const versionIdx = preparedUrl.indexOf(versionMarker)
+        if (versionIdx >= 0) {
+            const afterVersion = preparedUrl.slice(versionIdx + versionMarker.length)
+            const colonIdx = afterVersion.indexOf(':')
+            const resource = colonIdx >= 0 ? afterVersion.slice(0, colonIdx) : afterVersion
+            if (resource.length > 0) return resource
+        }
+    }
+    return `models/${modelId}`
 }
 
 export interface GeminiCacheClientResult {

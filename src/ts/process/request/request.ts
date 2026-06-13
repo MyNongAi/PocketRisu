@@ -718,17 +718,22 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
     const supportsVision = VISION_CAPABLE_ADAPTER_KINDS.includes(kind)
         && ((caps?.includes('vision') ?? false) || preset.imageInput === true)
 
-    // Gemini context caching (v1 scope): MAIN chat requests on the google-gemini
-    // adapter with AI Studio key auth (x-goog-api-key) only — Vertex/SA auth,
-    // tool runs and previews are excluded. The context carries everything the
-    // cache layer needs so the adapter never reads the database (SSR rule). The
-    // state key is chat.id (present for chats created in current versions; a
-    // chat without one is simply not cached). All defaults off →
-    // cache undefined → requests byte-identical to before.
+    // Gemini context caching: MAIN chat requests on the google-gemini adapter
+    // (AI Studio key auth OR Vertex native service-account auth) — tool runs and
+    // previews are excluded. Both auth kinds share the cachedContents wire; the
+    // adapter derives the Studio-vs-Vertex URL/model shape from the prepared
+    // chat URL, so the only difference here is admitting google-service-account.
+    // Vertex-OpenAI stays out: it routes through openai-compatible, not this
+    // adapter kind. The context carries everything the cache layer needs so the
+    // adapter never reads the database (SSR rule). The state key is chat.id
+    // (present for chats created in current versions; a chat without one is
+    // simply not cached). All defaults off → cache undefined → requests
+    // byte-identical to before.
+    const cacheAuthKind = preset.profileSnapshot.auth.kind
     let cache: AdapterCacheContext | undefined
     if (kind === 'google-gemini' && preset.promptCaching?.enabled && mode === 'model'
         && !tools && !arg.previewBody
-        && preset.profileSnapshot.auth.kind === 'x-goog-api-key') {
+        && (cacheAuthKind === 'x-goog-api-key' || cacheAuthKind === 'google-service-account')) {
         const cacheChatKey = getCurrentChat()?.id
         if (cacheChatKey) {
             cache = {

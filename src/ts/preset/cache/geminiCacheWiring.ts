@@ -17,6 +17,7 @@ import {
     createGeminiCachedContentsClient,
     decideGeminiCacheAfterResponse,
     deriveCachedContentsUrl,
+    deriveGeminiCacheModel,
     disableGeminiCacheSession,
     evaluateGeminiCacheBeforeRequest,
     getGeminiCacheEntry,
@@ -83,6 +84,10 @@ function beginTurn(args: Parameters<typeof beginGeminiCacheTurn>[0]): GeminiCach
     if (isGeminiCacheSessionDisabled(key)) return null
     const cachedContentsUrl = deriveCachedContentsUrl(args.url)
     if (!cachedContentsUrl) return null
+    // The cache resource's `model` field must match the chat call's model in the
+    // endpoint's own shape (Studio "models/{id}" vs the Vertex resource path);
+    // both are derived from the same chat URL the cachedContents URL came from.
+    const cacheModel = deriveGeminiCacheModel(args.url, args.modelId)
 
     const client = createGeminiCachedContentsClient({
         cachedContentsUrl,
@@ -142,6 +147,7 @@ function beginTurn(args: Parameters<typeof beginGeminiCacheTurn>[0]): GeminiCach
                 client,
                 config,
                 modelId: args.modelId,
+                cacheModel,
                 credentialFp,
                 systemInstruction,
                 contents,
@@ -161,6 +167,7 @@ async function runPostResponse(args: {
     client: GeminiCachedContentsClient
     config: ResolvedGeminiCacheConfig
     modelId: string
+    cacheModel: string   // resource-name shape of modelId for the create body (Studio vs Vertex)
     credentialFp: string
     systemInstruction: unknown
     contents: readonly unknown[]
@@ -191,7 +198,7 @@ async function runPostResponse(args: {
     if (post.create) {
         const boundaryIndex = post.create.boundaryIndex
         const result = await args.client.create(buildGeminiCacheCreateBody({
-            modelId: args.modelId,
+            model: args.cacheModel,
             ttlSec: args.config.ttlSec,
             systemInstruction: args.systemInstruction,
             contents: args.contents,

@@ -12,6 +12,7 @@ import {
     createGeminiCachedContentsClient,
     decideGeminiCacheAfterResponse,
     deriveCachedContentsUrl,
+    deriveGeminiCacheModel,
     disableGeminiCacheSession,
     evaluateGeminiCacheBeforeRequest,
     getGeminiCacheEntry,
@@ -450,7 +451,7 @@ describe('body transforms', () => {
     test('buildGeminiCacheCreateBody shapes the creation payload', () => {
         const contents = makeContents(6)
         const body = buildGeminiCacheCreateBody({
-            modelId: 'gemini-demo',
+            model: 'models/gemini-demo',
             ttlSec: 600,
             systemInstruction: { parts: [{ text: 'sys' }] },
             contents,
@@ -465,9 +466,21 @@ describe('body transforms', () => {
         expect(contents).toHaveLength(6)
     })
 
+    test('buildGeminiCacheCreateBody passes a Vertex resource-name model through verbatim', () => {
+        const body = buildGeminiCacheCreateBody({
+            model: 'projects/my-proj/locations/global/publishers/google/models/gemini-3-flash-preview',
+            ttlSec: 600,
+            contents: makeContents(4),
+            boundaryIndex: 4,
+        })
+        expect(body['model']).toBe(
+            'projects/my-proj/locations/global/publishers/google/models/gemini-3-flash-preview',
+        )
+    })
+
     test('buildGeminiCacheCreateBody omits systemInstruction when absent', () => {
         const body = buildGeminiCacheCreateBody({
-            modelId: 'gemini-demo',
+            model: 'models/gemini-demo',
             ttlSec: 600,
             contents: makeContents(4),
             boundaryIndex: 4,
@@ -491,6 +504,56 @@ describe('deriveCachedContentsUrl', () => {
 
     test('returns null for unrecognized shapes', () => {
         expect(deriveCachedContentsUrl('https://demo.test/v1/chat/completions')).toBeNull()
+    })
+
+    test('roots a global Vertex URL at the location, not the publisher', () => {
+        const url = 'https://aiplatform.googleapis.com/v1/projects/my-proj/locations/global'
+            + '/publishers/google/models/gemini-3-flash-preview:generateContent'
+        expect(deriveCachedContentsUrl(url))
+            .toBe('https://aiplatform.googleapis.com/v1/projects/my-proj/locations/global/cachedContents')
+    })
+
+    test('handles a regional Vertex host and the stream suffix', () => {
+        const url = 'https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1'
+            + '/publishers/google/models/gemini-3.1-pro-preview:streamGenerateContent?alt=sse'
+        expect(deriveCachedContentsUrl(url))
+            .toBe('https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1/cachedContents')
+    })
+
+    test('converts the bare Vertex publisher base', () => {
+        const url = 'https://aiplatform.googleapis.com/v1/projects/p/locations/global/publishers/google/models'
+        expect(deriveCachedContentsUrl(url))
+            .toBe('https://aiplatform.googleapis.com/v1/projects/p/locations/global/cachedContents')
+    })
+})
+
+describe('deriveGeminiCacheModel', () => {
+    test('Studio shape returns models/{id}', () => {
+        expect(deriveGeminiCacheModel('https://demo.test/v1beta/models/gemini-demo:generateContent', 'gemini-demo'))
+            .toBe('models/gemini-demo')
+        expect(deriveGeminiCacheModel('https://demo.test/v1beta/models', 'gemini-demo'))
+            .toBe('models/gemini-demo')
+    })
+
+    test('Vertex shape returns the full resource path from the URL', () => {
+        const url = 'https://aiplatform.googleapis.com/v1/projects/my-proj/locations/global'
+            + '/publishers/google/models/gemini-3-flash-preview:generateContent'
+        expect(deriveGeminiCacheModel(url, 'gemini-3-flash-preview'))
+            .toBe('projects/my-proj/locations/global/publishers/google/models/gemini-3-flash-preview')
+    })
+
+    test('Vertex stream suffix and regional host still yield the resource path', () => {
+        const url = 'https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1'
+            + '/publishers/google/models/gemini-3.1-pro-preview:streamGenerateContent?alt=sse'
+        expect(deriveGeminiCacheModel(url, 'gemini-3.1-pro-preview'))
+            .toBe('projects/p/locations/us-central1/publishers/google/models/gemini-3.1-pro-preview')
+    })
+
+    test('falls back to models/{id} when the Vertex path lacks a /v1/ segment', () => {
+        // Defensive: a publisher marker without a parseable version segment must
+        // not produce a broken resource path — degrade to the Studio shape.
+        const url = 'https://aiplatform.googleapis.com/publishers/google/models/gemini-demo:generateContent'
+        expect(deriveGeminiCacheModel(url, 'gemini-demo')).toBe('models/gemini-demo')
     })
 })
 
