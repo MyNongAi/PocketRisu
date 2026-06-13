@@ -585,4 +585,62 @@ describe('buildPreparedRequest', () => {
         const result = buildPreparedRequest({ preset, credential: { apiKey: 'sk' } })
         expect(result.body).toEqual({ reasoning_effort: null })
     })
+
+    test('header mapsTo overrides a value baked into headerTemplate', () => {
+        const preset = makePreset({
+            profileSnapshot: makeSnapshot({
+                headerTemplate: {
+                    'Content-Type': 'application/json',
+                    'X-Vertex-AI-LLM-Shared-Request-Type': 'flex',
+                },
+                schema: [
+                    {
+                        key: 'apiKey',
+                        type: 'string',
+                        label: 'API Key',
+                        secret: true,
+                        mapsTo: { target: 'auth', path: 'apiKey' },
+                    },
+                    {
+                        key: 'sharedRequestType',
+                        type: 'string',
+                        label: 'Shared Request Type',
+                        mapsTo: { target: 'header', path: 'X-Vertex-AI-LLM-Shared-Request-Type' },
+                    },
+                ],
+            }),
+            userValues: { sharedRequestType: 'on-demand' },
+        })
+        const result = buildPreparedRequest({ preset, credential: { apiKey: 'sk' } })
+        expect(result.headers['X-Vertex-AI-LLM-Shared-Request-Type']).toBe('on-demand')
+    })
+
+    test('empty header mapsTo value keeps the headerTemplate default', () => {
+        const preset = makePreset({
+            profileSnapshot: makeSnapshot({
+                headerTemplate: {
+                    'Content-Type': 'application/json',
+                    'X-Vertex-AI-LLM-Shared-Request-Type': 'flex',
+                },
+                schema: [
+                    {
+                        key: 'apiKey',
+                        type: 'string',
+                        label: 'API Key',
+                        secret: true,
+                        mapsTo: { target: 'auth', path: 'apiKey' },
+                    },
+                    {
+                        key: 'sharedRequestType',
+                        type: 'string',
+                        label: 'Shared Request Type',
+                        mapsTo: { target: 'header', path: 'X-Vertex-AI-LLM-Shared-Request-Type' },
+                    },
+                ],
+            }),
+            userValues: { sharedRequestType: '' },
+        })
+        const result = buildPreparedRequest({ preset, credential: { apiKey: 'sk' } })
+        expect(result.headers['X-Vertex-AI-LLM-Shared-Request-Type']).toBe('flex')
+    })
 })
