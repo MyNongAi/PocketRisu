@@ -14,7 +14,7 @@ import {
 
 export function buildPreparedRequest(ctx: AdapterRequestContext): AdapterPreparedRequest {
     const snapshot = ctx.preset.profileSnapshot
-    const baseUrl = resolveEndpointUrl(snapshot, ctx.preset.userValues)
+    const baseUrl = resolveEndpointUrl(snapshot, ctx.preset.userValues, ctx.serviceAccountJson)
 
     const body: Record<string, unknown> = structuredClone({
         ...(snapshot.defaults ?? {}),
@@ -80,6 +80,7 @@ export function buildPreparedRequest(ctx: AdapterRequestContext): AdapterPrepare
 function resolveEndpointUrl(
     snapshot: ResolvedModelProfileSnapshot,
     userValues: Record<string, unknown>,
+    serviceAccountJson?: string,
 ): string {
     // Endpoint override primitive: a schema field with
     // `mapsTo: { target: 'custom', path: 'endpointUrl' }` lets users plug in
@@ -114,10 +115,14 @@ function resolveEndpointUrl(
         return snapshot.endpoint.url
     }
     if (snapshot.endpoint.kind === 'vertex-openai') {
-        return buildVertexOpenAIEndpointUrl(resolveVertexEndpointInput(snapshot, userValues))
+        return buildVertexOpenAIEndpointUrl(
+            resolveVertexEndpointInput(snapshot, userValues, serviceAccountJson),
+        )
     }
     if (snapshot.endpoint.kind === 'vertex-gemini') {
-        return buildVertexGeminiEndpointUrl(resolveVertexEndpointInput(snapshot, userValues))
+        return buildVertexGeminiEndpointUrl(
+            resolveVertexEndpointInput(snapshot, userValues, serviceAccountJson),
+        )
     }
     throw new ModelPresetAdapterError(
         'unsupported',
@@ -131,15 +136,28 @@ function resolveEndpointUrl(
 // Service Account JSON's `project_id` (resolveVertexProject throws a clear
 // invalid-request if neither is available). location: custom.location, or
 // 'global' when the schema default is absent / the field was cleared to blank.
+//
+// SA JSON source: the direct-mode userValues field is preferred, falling back to
+// `credentialServiceAccountJson` (threaded from the credential chain by
+// prepareAdapterRequest). The fallback is what covers pooled / inline SA keys,
+// where the JSON is stored in db.apiKeyPool / preset.inlineCredential and never
+// written to userValues.serviceAccountJson. Both sources carry the same
+// project_id, so preferring userValues keeps the direct-mode path unchanged.
 function resolveVertexEndpointInput(
     snapshot: ResolvedModelProfileSnapshot,
     userValues: Record<string, unknown>,
+    credentialServiceAccountJson?: string,
 ): VertexEndpointInput {
     const explicitProject = pickCustomString(snapshot, userValues, VERTEX_CUSTOM_PATH_PROJECT)
     const rawLocation = pickCustomString(snapshot, userValues, VERTEX_CUSTOM_PATH_LOCATION)
     const location =
         typeof rawLocation === 'string' && rawLocation.trim().length > 0 ? rawLocation : 'global'
-    const project = resolveVertexProject(explicitProject, userValues[VERTEX_SERVICE_ACCOUNT_JSON_KEY])
+    const userValuesSaJson = userValues[VERTEX_SERVICE_ACCOUNT_JSON_KEY]
+    const serviceAccountJson =
+        typeof userValuesSaJson === 'string' && userValuesSaJson.trim().length > 0
+            ? userValuesSaJson
+            : credentialServiceAccountJson
+    const project = resolveVertexProject(explicitProject, serviceAccountJson)
     return { project, location }
 }
 

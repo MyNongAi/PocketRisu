@@ -11,6 +11,13 @@ export interface AdapterRequestContext {
     credential?: AdapterCredential
     abortSignal?: AbortSignal
     stream?: boolean
+    // Raw Service Account JSON string as it stood BEFORE `resolveAdapterCredential`
+    // swapped it for an OAuth access token. Threaded through by
+    // `prepareAdapterRequest` so the Vertex endpoint builder can recover the GCP
+    // `project_id` for pooled / inline SA credentials (where the JSON never lands
+    // in `userValues.serviceAccountJson`). Only populated for the
+    // google-service-account auth kind; ignored by every other endpoint kind.
+    serviceAccountJson?: string
 }
 
 export interface AdapterPreparedRequest {

@@ -833,4 +833,60 @@ describe('buildPreparedRequest — Vertex project/location resolution', () => {
             'https://aiplatform.googleapis.com/v1/projects/safe-proj/locations/global/endpoints/openapi/chat/completions',
         )
     })
+
+    // Pooled / inline credentials: the SA JSON lives in db.apiKeyPool or
+    // preset.inlineCredential, so userValues.serviceAccountJson is ABSENT. The
+    // raw JSON is threaded in via ctx.serviceAccountJson (prepareAdapterRequest
+    // captures it from the credential chain before the OAuth swap). With Project
+    // ID blank — the documented normal case — project_id must still resolve from
+    // that threaded JSON instead of throwing.
+    test('vertex-openai: extracts project_id from threaded credential SA JSON when userValues lacks it (pool/inline path)', () => {
+        const preset = vertexPreset('vertex-openai', {})
+        const result = buildPreparedRequest({
+            preset,
+            credential: { apiKey: 'ya29.token' },
+            serviceAccountJson: SA_JSON,
+        })
+        expect(result.url).toBe(
+            'https://aiplatform.googleapis.com/v1/projects/sa-project/locations/global/endpoints/openapi/chat/completions',
+        )
+    })
+
+    test('vertex-gemini: extracts project_id from threaded credential SA JSON when userValues lacks it (pool/inline path)', () => {
+        const preset = vertexPreset('vertex-gemini', { location: 'us-east5' })
+        const result = buildPreparedRequest({
+            preset,
+            credential: { apiKey: 'ya29.token' },
+            serviceAccountJson: SA_JSON,
+        })
+        expect(result.url).toBe(
+            'https://us-east5-aiplatform.googleapis.com/v1/projects/sa-project/locations/us-east5/publishers/google/models',
+        )
+    })
+
+    test('explicit projectId in userValues still wins over the threaded credential SA JSON', () => {
+        const preset = vertexPreset('vertex-openai', { projectId: 'explicit-proj' })
+        const result = buildPreparedRequest({
+            preset,
+            credential: { apiKey: 'ya29.token' },
+            serviceAccountJson: SA_JSON,
+        })
+        expect(result.url).toBe(
+            'https://aiplatform.googleapis.com/v1/projects/explicit-proj/locations/global/endpoints/openapi/chat/completions',
+        )
+    })
+
+    test('throws invalid-request when neither userValues, projectId, nor threaded SA JSON yields a project', () => {
+        const preset = vertexPreset('vertex-gemini', {})
+        try {
+            buildPreparedRequest({ preset, credential: { apiKey: 'ya29.token' } })
+            throw new Error('expected throw')
+        } catch (err) {
+            expect(err).toBeInstanceOf(ModelPresetAdapterError)
+            if (err instanceof ModelPresetAdapterError) {
+                expect(err.kind).toBe('invalid-request')
+                expect(err.message).toMatch(/project/i)
+            }
+        }
+    })
 })
