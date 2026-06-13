@@ -370,6 +370,37 @@ describe('decideGeminiCacheAfterResponse', () => {
         expect(atMin.reason).toBe('create')
     })
 
+    test('miss gates on the prefix estimate, not the full prompt', () => {
+        // Full prompt is well above the minimum, but the cached prefix (short
+        // system + early turns) is estimated below it: must NOT attempt a create
+        // that Google would reject for being below the minimum cacheable tokens.
+        const tooSmallPrefix = decideGeminiCacheAfterResponse({
+            pre: miss,
+            entry: undefined,
+            now: NOW,
+            promptTokens: 40_000,
+            prefixTokenEstimate: 1_200,
+            boundaryIndex: 4,
+            consecutiveInvalidations: 0,
+            config: makeConfig(),
+        })
+        expect(tooSmallPrefix.create).toBeNull()
+        expect(tooSmallPrefix.reason).toBe('below-min-tokens')
+        // Prefix estimate above the minimum → create even though it's a fraction
+        // of the full prompt.
+        const bigEnoughPrefix = decideGeminiCacheAfterResponse({
+            pre: miss,
+            entry: undefined,
+            now: NOW,
+            promptTokens: 40_000,
+            prefixTokenEstimate: 8_000,
+            boundaryIndex: 4,
+            consecutiveInvalidations: 0,
+            config: makeConfig(),
+        })
+        expect(bigEnoughPrefix.reason).toBe('create')
+    })
+
     test('invalidation guard fires at the limit instead of creating', () => {
         const below = decideGeminiCacheAfterResponse({
             pre: miss,
@@ -797,6 +828,20 @@ describe('cachedContents REST client', () => {
         // Vertex cachedContents.patch 400s without updateMask.
         expect(calls[0].url).toBe(`${vertexUrl}/abc123?updateMask=ttl`)
         expect(calls[0].method).toBe('PATCH')
+    })
+
+    test('extend detects Vertex by path so a proxy/PSC endpoint host still gets updateMask', async () => {
+        // endpointUrl override can route Vertex through a non-aiplatform host;
+        // the Vertex resource PATH (/locations/.../cachedContents) is what counts.
+        const proxyUrl = 'https://vertex.internal.example/v1/projects/p/locations/global/cachedContents'
+        const { fetchImpl, calls } = captureFetch(jsonResponse({}))
+        const client = createGeminiCachedContentsClient({
+            ...clientOpts,
+            cachedContentsUrl: proxyUrl,
+            fetchImpl,
+        })
+        await client.extend('cachedContents/abc123', 600)
+        expect(calls[0].url).toBe(`${proxyUrl}/abc123?updateMask=ttl`)
     })
 
     test('remove DELETEs the resource URL without a body', async () => {

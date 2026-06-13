@@ -163,6 +163,33 @@ function beginTurn(args: Parameters<typeof beginGeminiCacheTurn>[0]): GeminiCach
     }
 }
 
+// Estimate the token count of the cached PREFIX (systemInstruction +
+// contents[0..boundary]) by apportioning the observed prompt-token total by the
+// prefix's share of the serialized character length. Cheap (no tokenizer) and
+// good enough for the minimum-size gate, which only needs to avoid attempting a
+// create whose prefix is below the model's minimum cacheable tokens. Returns
+// undefined when there's no usage or no boundary, so the gate falls back to the
+// full prompt-token count.
+function estimatePrefixTokens(
+    systemInstruction: unknown,
+    contents: readonly unknown[],
+    boundaryIndex: number | null,
+    promptTokens: number | undefined,
+): number | undefined {
+    if (promptTokens === undefined || boundaryIndex === null) return undefined
+    const charLen = (v: unknown): number => (v === undefined ? 0 : JSON.stringify(v).length)
+    const sysChars = charLen(systemInstruction)
+    let prefixChars = sysChars
+    let totalChars = sysChars
+    for (let i = 0; i < contents.length; i++) {
+        const c = charLen(contents[i])
+        totalChars += c
+        if (i < boundaryIndex) prefixChars += c
+    }
+    if (totalChars === 0) return promptTokens
+    return Math.round(promptTokens * (prefixChars / totalChars))
+}
+
 // Post-response side effects, driven by the pure after-response decision.
 // Runs detached from the chat request; every cache API call resolves to a
 // result object (the client never throws).
@@ -186,6 +213,7 @@ async function runPostResponse(args: {
         entry,
         now,
         promptTokens: args.promptTokens,
+        prefixTokenEstimate: estimatePrefixTokens(args.systemInstruction, args.contents, args.boundaryIndex, args.promptTokens),
         boundaryIndex: args.boundaryIndex,
         consecutiveInvalidations: getGeminiCacheInvalidationCount(args.key),
         config: args.config,
@@ -210,16 +238,21 @@ async function runPostResponse(args: {
             boundaryIndex,
         }))
         if (!result.ok || !result.name) {
-            // Status-classified handling (spec §4-6 Phase 4): a 403 means the
-            // project/key is not permitted to use cachedContents — retrying every
-            // turn is futile, so disable caching for this session immediately. A
-            // 429 is genuinely transient (rate limit) — don't penalize. Everything
-            // else (notably 400 "below the model's minimum cacheable tokens",
-            // which recurs every turn when the cachePoint prefix is small) counts
-            // toward the auto-off guard, so a session that can never create a cache
-            // stops re-attempting after a few turns instead of churning forever.
-            if (result.status === 403) disableGeminiCacheSession(args.key)
-            else if (result.status !== 429) bumpGeminiCacheInvalidationCount(args.key)
+            // Status-classified handling. 403 = project/key not permitted to use
+            // cachedContents → futile to retry, disable this session immediately.
+            // Other DETERMINISTIC client errors (4xx except 403/429 — e.g. a 400
+            // for a malformed request that recurs every turn) count toward the
+            // auto-off guard so a session that can never create a cache stops
+            // re-attempting. TRANSIENT failures must NOT count: a network error
+            // (no status), a 5xx, or a 429 rate-limit can succeed next turn, so
+            // penalizing them would wrongly disable caching after a blip. (The
+            // below-minimum-tokens 400 is now pre-empted by the prefix-size gate,
+            // so it rarely reaches here.)
+            if (result.status === 403) {
+                disableGeminiCacheSession(args.key)
+            } else if (typeof result.status === 'number' && result.status >= 400 && result.status < 500 && result.status !== 429) {
+                bumpGeminiCacheInvalidationCount(args.key)
+            }
             console.warn('[gemini-cache] cache creation failed', result.status)
             return
         }

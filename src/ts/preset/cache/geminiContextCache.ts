@@ -326,6 +326,13 @@ export interface GeminiCachePostResponseInput {
     entry: GeminiCacheStateEntry | undefined
     now: number
     promptTokens: number | undefined        // response usage (undefined = no usage observed)
+    // Estimated token count of the prefix that would actually be cached
+    // (systemInstruction + contents[0..boundary]), NOT the whole prompt. The
+    // minimum-size gate must judge this, not promptTokens — a short prefix under
+    // a long suffix would otherwise pass the gate and then be rejected by Google
+    // with a 400 (below the model's minimum cacheable tokens). Undefined → the
+    // gate falls back to promptTokens (pre-estimate behavior).
+    prefixTokenEstimate?: number
     boundaryIndex: number | null            // last cachePoint of THIS request
     consecutiveInvalidations: number        // count after any pre-request bump
     config: ResolvedGeminiCacheConfig
@@ -376,7 +383,9 @@ export function decideGeminiCacheAfterResponse(
     }
     // Bypass / miss / invalidated — consider creating a cache for next turn.
     if (promptTokens === undefined) return noCreate('no-usage')
-    if (promptTokens < config.minPromptTokens) return noCreate('below-min-tokens')
+    // Gate on the cached-prefix size, not the whole prompt (see prefixTokenEstimate).
+    const minGateTokens = input.prefixTokenEstimate ?? promptTokens
+    if (minGateTokens < config.minPromptTokens) return noCreate('below-min-tokens')
     if (input.consecutiveInvalidations >= GEMINI_CACHE_INVALIDATION_LIMIT) {
         return {
             resetInvalidations: false,
@@ -525,10 +534,11 @@ export function createGeminiCachedContentsClient(opts: {
     fetchImpl?: typeof fetch
 }): GeminiCachedContentsClient {
     const fetchImpl = opts.fetchImpl ?? globalThis.fetch
-    // Vertex (aiplatform.googleapis.com, global or regional) vs AI Studio
-    // (generativelanguage.googleapis.com): the PATCH below needs different query
-    // params per host (see extend()).
-    const isVertex = /aiplatform\.googleapis\.com/i.test(opts.cachedContentsUrl)
+    // Vertex vs AI Studio: the PATCH below needs different query params (see
+    // extend()). Detect by the resource PATH (".../locations/{l}/cachedContents",
+    // the Vertex shape) rather than the host — a supported endpointUrl override
+    // can route Vertex through a proxy / PSC domain that isn't aiplatform.*.
+    const isVertex = /\/locations\/[^/]+\/cachedContents/.test(opts.cachedContentsUrl)
     const resourceUrl = (cacheName: string): string => {
         const id = cacheName.slice(cacheName.lastIndexOf('/') + 1)
         return `${opts.cachedContentsUrl}/${encodeURIComponent(id)}`
