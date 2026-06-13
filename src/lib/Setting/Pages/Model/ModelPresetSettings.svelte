@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { ArrowLeftIcon, BellIcon, CopyIcon, PlusIcon, TrashIcon } from "@lucide/svelte";
+    import { ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, BellIcon, CopyIcon, PlusIcon, TrashIcon } from "@lucide/svelte";
     import SettingPage from "src/lib/UI/GUI/SettingPage.svelte";
     import ShAlert from "src/lib/UI/GUI/ShAlert.svelte";
     import SettingTabs from "src/lib/UI/GUI/SettingTabs.svelte";
@@ -123,6 +123,15 @@
         next.splice(index, 1);
         DBState.db.modelPresets = next;
         notifySuccess(language.presetDeleted);
+    }
+
+    function move(index: number, dir: -1 | 1) {
+        const target = index + dir;
+        const presets = DBState.db.modelPresets;
+        if (target < 0 || target >= presets.length) return;
+        const next = [...presets];
+        [next[index], next[target]] = [next[target], next[index]];
+        DBState.db.modelPresets = next;
     }
 
     function createNew() {
@@ -398,6 +407,26 @@
                                 {/if}
                             </div>
                             <div class="flex gap-2 shrink-0 ml-2">
+                                <div class="text-textcolor2 hover:text-primary cursor-pointer aria-disabled:opacity-30 aria-disabled:pointer-events-none" role="button" tabindex="0" aria-disabled={i === 0} onclick={(e) => {
+                                    e.stopPropagation()
+                                    move(i, -1)
+                                }} onkeydown={(e) => {
+                                    if (e.key === 'Enter' && e.currentTarget instanceof HTMLElement) {
+                                        e.currentTarget.click()
+                                    }
+                                }} aria-label="move up">
+                                    <ArrowUpIcon size={18}/>
+                                </div>
+                                <div class="text-textcolor2 hover:text-primary cursor-pointer aria-disabled:opacity-30 aria-disabled:pointer-events-none" role="button" tabindex="0" aria-disabled={i === DBState.db.modelPresets.length - 1} onclick={(e) => {
+                                    e.stopPropagation()
+                                    move(i, 1)
+                                }} onkeydown={(e) => {
+                                    if (e.key === 'Enter' && e.currentTarget instanceof HTMLElement) {
+                                        e.currentTarget.click()
+                                    }
+                                }} aria-label="move down">
+                                    <ArrowDownIcon size={18}/>
+                                </div>
                                 <div class="text-textcolor2 hover:text-primary cursor-pointer" role="button" tabindex="0" onclick={(e) => {
                                     e.stopPropagation()
                                     duplicate(i)
