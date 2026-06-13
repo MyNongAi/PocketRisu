@@ -604,10 +604,10 @@ describe('buildPreparedRequest', () => {
                     },
                 ],
             }),
-            userValues: { sharedRequestType: 'on-demand' },
+            userValues: { sharedRequestType: 'priority' },
         })
         const result = buildPreparedRequest({ preset, credential: { apiKey: 'sk' } })
-        expect(result.headers['X-Vertex-AI-LLM-Shared-Request-Type']).toBe('on-demand')
+        expect(result.headers['X-Vertex-AI-LLM-Shared-Request-Type']).toBe('priority')
     })
 
     test('empty header mapsTo value keeps the headerTemplate default', () => {

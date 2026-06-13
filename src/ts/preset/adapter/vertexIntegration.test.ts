@@ -5,6 +5,7 @@ import { buildPreparedRequest } from './buildRequest'
 import { createServiceAccountTokenCache } from './googleServiceAccount/cache'
 import type { ExchangeServiceAccountInput } from './googleServiceAccount/token'
 import { prepareAdapterRequest, resolveAdapterCredential } from './resolveCredential'
+import { resolveWireModelId } from './wireInvariants'
 
 const VALID_SA_JSON = JSON.stringify({
     type: 'service_account',
@@ -127,5 +128,48 @@ describe('Vertex Gemini native end-to-end (bundled registry)', () => {
         // The OAuth swap ran (project_id had to come from the raw SA JSON, not
         // the post-swap token credential).
         expect(calls).toHaveLength(1)
+    })
+
+    // The modelId combobox added to the base provider drives the Vertex URL path
+    // the same way it does for AI Studio. resolveWireModelId is the exact helper
+    // googleGemini.ts uses to pick the model that gets appended to the
+    // '.../publishers/google/models' base URL; assert it directly so the test
+    // needs no OAuth exchange. With no user override, the field default backfilled
+    // from the profile's modelId wins; a userValues.modelId redirects it to any
+    // (bare) Gemini id WITHOUT touching the adapter.
+    test('profile modelId becomes the resolved wire model (gemini-35-flash default)', () => {
+        const preset = bundledPreset('vertex-gemini-native:gemini-35-flash', {})
+        // Snapshot resolution backfills the base modelId field default from the
+        // profile's top-level modelId, so the resolver returns it with no input.
+        const field = preset.profileSnapshot.schema.find((f) => f.key === 'modelId')
+        expect(field?.default).toBe('gemini-3.5-flash')
+        expect(resolveWireModelId(preset, { vendorName: 'Google Gemini' })).toBe('gemini-3.5-flash')
+    })
+
+    test('userValues.modelId overrides the profile default wire model', () => {
+        const preset = bundledPreset('vertex-gemini-native:gemini-35-flash', {
+            modelId: 'gemini-2.5-pro',
+        })
+        expect(resolveWireModelId(preset, { vendorName: 'Google Gemini' })).toBe('gemini-2.5-pro')
+    })
+
+    // sharedRequestType 'priority' maps to the documented Vertex header; the base
+    // URL assembles from userValues.projectId so no OAuth swap is needed. Passing
+    // the bearer token directly as the credential is safe here because the SA
+    // JSON is supplied separately via serviceAccountJson (unused since projectId
+    // is explicit).
+    test('sharedRequestType priority maps to the Vertex shared-request header', () => {
+        const preset = bundledPreset('vertex-gemini-native:gemini-35-flash', {
+            projectId: 'demo',
+            sharedRequestType: 'priority',
+        })
+        const prepared = buildPreparedRequest({
+            preset,
+            credential: { apiKey: 'ya29.tok' },
+        })
+        expect(prepared.url).toBe(
+            'https://aiplatform.googleapis.com/v1/projects/demo/locations/global/publishers/google/models',
+        )
+        expect(prepared.headers['X-Vertex-AI-LLM-Shared-Request-Type']).toBe('priority')
     })
 })
