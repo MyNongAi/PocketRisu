@@ -387,7 +387,7 @@ export function setDatabase(data:Database){
     data.globalscript ??= []
     data.sendWithEnter ??= true
     data.sendKeyPC ??= 'enter'
-    data.sendKeyMobile ??= 'button'
+    data.sendKeyMobile ??= 'ctrl-enter'
     data.autoSuggestPrompt ??= defaultAutoSuggestPrompt
     data.autoSuggestPrefix ??= ""
     data.OAIPrediction ??= ''
@@ -1085,9 +1085,11 @@ export interface Database{
      * 'ctrl-enter'/'shift-enter': that combo sends (Enter newline);
      * 'button': only the send button (Enter newline). Replaces sendWithEnter. */
     sendKeyPC: 'enter' | 'ctrl-enter' | 'shift-enter' | 'button'
-    /** Mobile send-key mode. 'button': only the send button (Enter newline);
-     * 'enter': Enter sends (Shift+Enter newline). */
-    sendKeyMobile: 'button' | 'enter'
+    /** Mobile send-key mode. Same options as sendKeyPC for users with a
+     * Bluetooth/external keyboard. 'enter': Enter sends (Shift+Enter newline);
+     * 'ctrl-enter'/'shift-enter': that combo sends (Enter newline);
+     * 'button': only the send button (Enter newline). */
+    sendKeyMobile: 'enter' | 'ctrl-enter' | 'shift-enter' | 'button'
     fixedChatTextarea:boolean
     clickToEdit: boolean
     enableBlockPartialEdit: boolean
