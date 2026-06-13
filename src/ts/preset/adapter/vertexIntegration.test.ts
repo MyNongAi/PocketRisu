@@ -153,6 +153,26 @@ describe('Vertex Gemini native end-to-end (bundled registry)', () => {
         expect(resolveWireModelId(preset, { vendorName: 'Google Gemini' })).toBe('gemini-2.5-pro')
     })
 
+    // Locks the spec contract end-to-end: a user-supplied arbitrary modelId must
+    // land in the Vertex URL path 'publishers/google/models/{id}'. The base URL
+    // assembles from userValues.projectId (no OAuth swap needed), and the model
+    // append mirrors googleGemini.ts:240 (encodeURIComponent(resolveWireModelId)
+    // + suffix) — the exact step prepareGeminiBody runs before sending. Asserting
+    // the composed path here pins the base-builder + resolver to the wire shape
+    // without the SSR/OAuth dependencies an adapter-level send would pull in.
+    test('override modelId lands in the publishers/google/models/{id} URL path', () => {
+        const preset = bundledPreset('vertex-gemini-native:gemini-35-flash', {
+            projectId: 'demo',
+            modelId: 'gemini-2.5-pro',
+        })
+        const base = buildPreparedRequest({ preset, credential: { apiKey: 'ya29.tok' } }).url
+        const modelId = resolveWireModelId(preset, { vendorName: 'Google Gemini' })
+        const url = `${base}/${encodeURIComponent(modelId)}:generateContent`
+        expect(url).toBe(
+            'https://aiplatform.googleapis.com/v1/projects/demo/locations/global/publishers/google/models/gemini-2.5-pro:generateContent',
+        )
+    })
+
     // sharedRequestType 'priority' maps to the documented Vertex header; the base
     // URL assembles from userValues.projectId so no OAuth swap is needed. Passing
     // the bearer token directly as the credential is safe here because the SA
