@@ -67,7 +67,7 @@ describe('Vertex OpenAI end-to-end (bundled registry)', () => {
 
         expect(prepared.method).toBe('POST')
         expect(prepared.url).toBe(
-            'https://us-central1-aiplatform.googleapis.com/v1/projects/my-proj/locations/us-central1/endpoints/openapi/chat/completions',
+            'https://aiplatform.googleapis.com/v1/projects/my-proj/locations/global/endpoints/openapi/chat/completions',
         )
         expect(prepared.headers.Authorization).toBe('Bearer ya29.integration')
         expect(prepared.body.model).toBe('google/gemini-2.5-pro')

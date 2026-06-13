@@ -3,9 +3,13 @@ import { appendQuery, applyAuth } from './auth'
 import { ModelPresetAdapterError } from './error'
 import type { AdapterPreparedRequest, AdapterRequestContext } from './types'
 import {
+    buildVertexGeminiEndpointUrl,
     buildVertexOpenAIEndpointUrl,
+    resolveVertexProject,
     VERTEX_CUSTOM_PATH_LOCATION,
     VERTEX_CUSTOM_PATH_PROJECT,
+    VERTEX_SERVICE_ACCOUNT_JSON_KEY,
+    type VertexEndpointInput,
 } from './vertexEndpoint'
 
 export function buildPreparedRequest(ctx: AdapterRequestContext): AdapterPreparedRequest {
@@ -82,8 +86,14 @@ function resolveEndpointUrl(
     // a base URL on profiles that ship with an empty endpoint.url
     // (e.g. openai-compatible:custom). Migration analyzer writes this value
     // into `userValues.endpointUrl` for custom OpenAI-compatible providers.
+    // Vertex kinds assemble their URL from project/location, so an absent or
+    // blank `endpointUrl` field there means "no override → assemble", not an
+    // error. For other kinds (e.g. openai-compatible:custom whose only URL
+    // source IS this field) a present-but-empty override stays a hard error.
+    const overrideOptional =
+        snapshot.endpoint.kind === 'vertex-openai' || snapshot.endpoint.kind === 'vertex-gemini'
     const override = pickEndpointOverride(snapshot, userValues)
-    if (override !== undefined) {
+    if (override !== undefined && !(overrideOptional && override.trim().length === 0)) {
         if (override.length === 0) {
             throw new ModelPresetAdapterError(
                 'invalid-request',
@@ -104,29 +114,33 @@ function resolveEndpointUrl(
         return snapshot.endpoint.url
     }
     if (snapshot.endpoint.kind === 'vertex-openai') {
-        const project = pickCustomString(snapshot, userValues, VERTEX_CUSTOM_PATH_PROJECT)
-        const location = pickCustomString(snapshot, userValues, VERTEX_CUSTOM_PATH_LOCATION)
-        if (project === undefined) {
-            throw new ModelPresetAdapterError(
-                'invalid-request',
-                `Vertex endpoint requires a project value (schema field with mapsTo custom.${VERTEX_CUSTOM_PATH_PROJECT})`,
-                { retryable: false, fallbackEligible: false },
-            )
-        }
-        if (location === undefined) {
-            throw new ModelPresetAdapterError(
-                'invalid-request',
-                `Vertex endpoint requires a location value (schema field with mapsTo custom.${VERTEX_CUSTOM_PATH_LOCATION})`,
-                { retryable: false, fallbackEligible: false },
-            )
-        }
-        return buildVertexOpenAIEndpointUrl({ project, location })
+        return buildVertexOpenAIEndpointUrl(resolveVertexEndpointInput(snapshot, userValues))
+    }
+    if (snapshot.endpoint.kind === 'vertex-gemini') {
+        return buildVertexGeminiEndpointUrl(resolveVertexEndpointInput(snapshot, userValues))
     }
     throw new ModelPresetAdapterError(
         'unsupported',
         `Endpoint kind '${snapshot.endpoint.kind}' is not supported by the shared request builder yet`,
         { retryable: false },
     )
+}
+
+// Resolve the { project, location } pair for either Vertex endpoint kind.
+// project: explicit custom.project wins; when blank it is recovered from the
+// Service Account JSON's `project_id` (resolveVertexProject throws a clear
+// invalid-request if neither is available). location: custom.location, or
+// 'global' when the schema default is absent / the field was cleared to blank.
+function resolveVertexEndpointInput(
+    snapshot: ResolvedModelProfileSnapshot,
+    userValues: Record<string, unknown>,
+): VertexEndpointInput {
+    const explicitProject = pickCustomString(snapshot, userValues, VERTEX_CUSTOM_PATH_PROJECT)
+    const rawLocation = pickCustomString(snapshot, userValues, VERTEX_CUSTOM_PATH_LOCATION)
+    const location =
+        typeof rawLocation === 'string' && rawLocation.trim().length > 0 ? rawLocation : 'global'
+    const project = resolveVertexProject(explicitProject, userValues[VERTEX_SERVICE_ACCOUNT_JSON_KEY])
+    return { project, location }
 }
 
 function pickEndpointOverride(

@@ -37,6 +37,7 @@ export type AuthKind =
 export type EndpointKind =
     | 'static'
     | 'vertex-openai'
+    | 'vertex-gemini'
 
 export type RegistryFieldType =
     | 'string'
