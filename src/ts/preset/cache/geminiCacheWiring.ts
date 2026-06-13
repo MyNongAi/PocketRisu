@@ -35,6 +35,15 @@ export interface GeminiCacheTurn {
     // Request body to send (cache applied on a hit; the input body otherwise).
     // The input body is never mutated.
     body: Record<string, unknown>
+    // True when `body` carries a cachedContent reference (the 'apply' path). The
+    // adapter uses this to recognise a chat failure that the applied cache may
+    // have caused (server evicted it ahead of the local expiry) and fall back to
+    // an uncached send — caching must never break the chat (spec §4-4).
+    appliedCache: boolean
+    // Drop the local cache entry that `appliedCache` referenced. Called by the
+    // adapter before an uncached retry so the stale cacheName is not reused next
+    // turn; the next turn recreates the cache. No-op when nothing was applied.
+    invalidateAppliedCache(): void
     // Post-response hook: pass the response's usage promptTokens (undefined when
     // no usage was observed). Fire-and-forget — returns immediately and never
     // throws; cache create/extend/remove run in the background.
@@ -96,6 +105,7 @@ function beginTurn(args: Parameters<typeof beginGeminiCacheTurn>[0]): GeminiCach
     })
 
     let body = args.body
+    let appliedCache = false
     if (pre.action === 'invalidate') {
         // Stored cache no longer matches: drop state, delete the remote cache in
         // the background, send uncached. Only prefix-mismatch counts toward the
@@ -110,10 +120,21 @@ function beginTurn(args: Parameters<typeof beginGeminiCacheTurn>[0]): GeminiCach
         // entry — the next turn's longer prompt applies it normally.
         if (pre.boundaryIndex >= contents.length) return null
         body = applyGeminiCacheToBody(args.body, pre)
+        appliedCache = true
     }
 
     return {
         body,
+        appliedCache,
+        invalidateAppliedCache: () => {
+            // The applied cachedContent was rejected by the chat call (server
+            // evicted it before the local expiry). Drop the local entry and the
+            // remote cache so the next turn recreates it; the adapter retries
+            // this turn uncached.
+            if (!appliedCache || pre.action !== 'apply') return
+            removeGeminiCacheEntry(key)
+            void client.remove(pre.cacheName)
+        },
         finish: (promptTokens) => {
             void runPostResponse({
                 key,
@@ -177,8 +198,12 @@ async function runPostResponse(args: {
             boundaryIndex,
         }))
         if (!result.ok || !result.name) {
-            // e.g. 400 below the model's minimum cacheable tokens — log and try
-            // again on a later turn.
+            // Status-classified handling (spec §4-6 Phase 4): a 403 means the
+            // project/key is not permitted to use cachedContents — retrying every
+            // turn is futile, so disable caching for this session. 404/429/400
+            // (e.g. below the model's minimum cacheable tokens) are transient or
+            // self-healing: log and try again on a later turn.
+            if (result.status === 403) disableGeminiCacheSession(args.key)
             console.warn('[gemini-cache] cache creation failed', result.status)
             return
         }

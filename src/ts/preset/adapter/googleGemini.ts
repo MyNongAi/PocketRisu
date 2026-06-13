@@ -66,6 +66,15 @@ function beginCacheTurn(
     })
 }
 
+// A chat call that carried a cachedContent can fail because the cache resource
+// is gone (server evicted it ahead of the local expiry) rather than because the
+// prompt is bad. Gemini surfaces a missing/forbidden cachedContent as 404 (not
+// found) or 403 (permission denied); these are the only statuses we retry
+// uncached, so a genuine prompt error (e.g. 400) still propagates unchanged.
+function isCacheRejection(status: number): boolean {
+    return status === 404 || status === 403
+}
+
 export async function sendGoogleChatRequest(
     preset: ModelPreset,
     options: AdapterChatOptions,
@@ -74,14 +83,23 @@ export async function sendGoogleChatRequest(
     const prepared = await prepareGeminiBody(preset, options, credential, false)
     const cacheTurn = beginCacheTurn(prepared, options, credential)
     const fetchImpl = options.fetchImpl ?? globalThis.fetch
+    const send = (body: Record<string, unknown>): Promise<Response> => fetchImpl(prepared.url, {
+        method: prepared.method,
+        headers: prepared.headers,
+        body: JSON.stringify(body),
+        signal: options.abortSignal,
+    })
     let response: Response
     try {
-        response = await fetchImpl(prepared.url, {
-            method: prepared.method,
-            headers: prepared.headers,
-            body: JSON.stringify(cacheTurn ? cacheTurn.body : prepared.body),
-            signal: options.abortSignal,
-        })
+        response = await send(cacheTurn ? cacheTurn.body : prepared.body)
+        // If an applied cachedContent was rejected (server evicted it before the
+        // local expiry), the cache — not the prompt — broke this turn. Drop the
+        // stale cache and retry once with the uncached body so caching never
+        // takes the chat down (spec §4-4).
+        if (!response.ok && cacheTurn?.appliedCache && isCacheRejection(response.status)) {
+            cacheTurn.invalidateAppliedCache()
+            response = await send(prepared.body)
+        }
     } catch (err) {
         throw normalizeFetchError(err)
     }
@@ -114,14 +132,21 @@ export async function* streamGoogleChatRequest(
     const prepared = await prepareGeminiBody(preset, options, credential, true)
     const cacheTurn = beginCacheTurn(prepared, options, credential)
     const fetchImpl = options.fetchImpl ?? globalThis.fetch
+    const send = (body: Record<string, unknown>): Promise<Response> => fetchImpl(prepared.url, {
+        method: prepared.method,
+        headers: { ...prepared.headers, Accept: 'text/event-stream' },
+        body: JSON.stringify(body),
+        signal: options.abortSignal,
+    })
     let response: Response
     try {
-        response = await fetchImpl(prepared.url, {
-            method: prepared.method,
-            headers: { ...prepared.headers, Accept: 'text/event-stream' },
-            body: JSON.stringify(cacheTurn ? cacheTurn.body : prepared.body),
-            signal: options.abortSignal,
-        })
+        response = await send(cacheTurn ? cacheTurn.body : prepared.body)
+        // Same fallback as the non-stream path: a rejected applied cache drops
+        // the stale entry and retries uncached (spec §4-4).
+        if (!response.ok && cacheTurn?.appliedCache && isCacheRejection(response.status)) {
+            cacheTurn.invalidateAppliedCache()
+            response = await send(prepared.body)
+        }
     } catch (err) {
         throw normalizeFetchError(err)
     }

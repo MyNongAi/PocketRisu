@@ -891,6 +891,81 @@ describe('context caching wiring', () => {
         expect(calls[1].url).toBe('https://demo.test/v1beta/cachedContents')
     })
 
+    test('a cache-API failure never disturbs the chat (creation POST fails, response still resolves)', async () => {
+        // Chat call always 200; the cachedContents POST fails. The first turn must
+        // resolve normally and the failed create must not surface on the chat path.
+        const calls: CapturedCall[] = []
+        const fetchImpl: typeof fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+            calls.push({
+                url,
+                method: (init?.method ?? 'GET') as string,
+                headers: (init?.headers as Record<string, string>) ?? {},
+                body: init?.body != null ? JSON.parse(init.body as string) : {},
+            })
+            if (url.includes('/cachedContents')) return jsonResponse({}, { status: 403 })
+            return chatJson(10_000)()
+        }
+        const result = await sendGoogleChatRequest(
+            makePreset(),
+            { messages: turnOneMessages, fetchImpl, cache: makeCacheContext() },
+            { apiKey: 'k' },
+        )
+        expect(result.text).toBe('ok')
+        // chat (1) + failed create POST (2). No retry, no extra chat call.
+        await vi.waitFor(() => expect(calls).toHaveLength(2))
+        await new Promise((r) => setTimeout(r, 20))
+        expect(calls).toHaveLength(2)
+        const chatCalls = calls.filter((c) => c.url.includes(':generateContent'))
+        expect(chatCalls).toHaveLength(1)
+    })
+
+    test('an applied cache the server evicted falls back to an uncached chat (no thrown error)', async () => {
+        // Turn 1 creates the cache; turn 2 applies it but the server has evicted
+        // it → 404 on the cached chat call. The adapter must drop the cache and
+        // retry uncached so the turn succeeds.
+        let createdName = ''
+        const calls: CapturedCall[] = []
+        const fetchImpl: typeof fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
+            const body = init?.body != null ? JSON.parse(init.body as string) : {}
+            calls.push({ url, method: (init?.method ?? 'GET') as string, headers: (init?.headers as Record<string, string>) ?? {}, body })
+            if (url.includes('/cachedContents')) {
+                if (init?.method === 'POST') {
+                    createdName = 'cachedContents/evicted-1'
+                    return jsonResponse({ name: createdName })
+                }
+                return jsonResponse({})
+            }
+            // A chat call carrying the evicted cachedContent → 404. Uncached → 200.
+            if (body.cachedContent) return jsonResponse({ error: { message: 'cache not found' } }, { status: 404 })
+            return chatJson(10_000)()
+        }
+        await sendGoogleChatRequest(
+            makePreset(),
+            { messages: turnOneMessages, fetchImpl, cache: makeCacheContext() },
+            { apiKey: 'k' },
+        )
+        await vi.waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true))
+        const turnTwoMessages: AdapterChatMessage[] = [
+            ...turnOneMessages,
+            { role: 'assistant', content: 'reply 2' },
+            { role: 'user', content: 'turn 3' },
+        ]
+        const result = await sendGoogleChatRequest(
+            makePreset(),
+            { messages: turnTwoMessages, fetchImpl, cache: makeCacheContext() },
+            { apiKey: 'k' },
+        )
+        // The turn succeeds via the uncached retry rather than throwing the 404.
+        expect(result.text).toBe('ok')
+        // The cached attempt (404) then an uncached retry (200) both fired.
+        const turn2Chats = calls.filter((c, i) => i >= 2 && c.url.includes(':generateContent'))
+        expect(turn2Chats).toHaveLength(2)
+        expect(turn2Chats[0].body.cachedContent).toBe(createdName)
+        expect(turn2Chats[1].body.cachedContent).toBeUndefined()
+    })
+
     test('parses cachedContentTokenCount into usage.cachedTokens', async () => {
         const { fetchImpl } = captureFetch(jsonResponse({
             candidates: [{ content: { parts: [{ text: 'ok' }], role: 'model' } }],
