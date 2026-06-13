@@ -41,8 +41,10 @@ export const accessibilitySettingsItems: SettingItem[] = [
         helpKey: 'sendKeyMobile',
         options: {
             selectOptions: [
-                { value: 'button', labelKey: 'sendKeyButton' },
                 { value: 'enter', labelKey: 'sendKeyEnter' },
+                { value: 'ctrl-enter', labelKey: 'sendKeyCtrlEnter' },
+                { value: 'shift-enter', labelKey: 'sendKeyShiftEnter' },
+                { value: 'button', labelKey: 'sendKeyButton' },
             ],
         },
         keywords: ['send', 'enter', 'keyboard', 'submit', 'mobile']
