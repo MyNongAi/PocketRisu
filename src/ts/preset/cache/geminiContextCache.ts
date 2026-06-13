@@ -346,10 +346,15 @@ export function decideGeminiCacheAfterResponse(
 ): GeminiCachePostDecision {
     const { pre, entry, now, promptTokens, boundaryIndex, config } = input
     if (pre.action === 'apply' && entry) {
-        // Confirmed hit. Recreate when the prompt grew past the threshold
-        // (folds the grown prefix into a fresh cache); otherwise extend the
-        // TTL when less than half of it remains.
-        const grown = promptTokens !== undefined
+        // Confirmed hit. Recreate ONLY when the cacheable prefix actually
+        // advanced (a deeper cachePoint) AND the prompt grew past the threshold —
+        // folding the larger prefix into a fresh cache is worthwhile. A fixed
+        // cachePoint whose suffix merely grows must NOT regrow: the prefix is
+        // identical, so re-caching it wastes a creation. Otherwise extend the TTL
+        // when less than half of it remains.
+        const boundaryAdvanced = boundaryIndex !== null && boundaryIndex > entry.boundaryIndex
+        const grown = boundaryAdvanced
+            && promptTokens !== undefined
             && promptTokens - entry.promptTokensAtCreation >= config.growthTokens
         if (grown && boundaryIndex !== null) {
             return {
@@ -520,6 +525,10 @@ export function createGeminiCachedContentsClient(opts: {
     fetchImpl?: typeof fetch
 }): GeminiCachedContentsClient {
     const fetchImpl = opts.fetchImpl ?? globalThis.fetch
+    // Vertex (aiplatform.googleapis.com, global or regional) vs AI Studio
+    // (generativelanguage.googleapis.com): the PATCH below needs different query
+    // params per host (see extend()).
+    const isVertex = /aiplatform\.googleapis\.com/i.test(opts.cachedContentsUrl)
     const resourceUrl = (cacheName: string): string => {
         const id = cacheName.slice(cacheName.lastIndexOf('/') + 1)
         return `${opts.cachedContentsUrl}/${encodeURIComponent(id)}`
@@ -558,7 +567,13 @@ export function createGeminiCachedContentsClient(opts: {
             }
         },
         async extend(cacheName, ttlSec) {
-            const response = await call(resourceUrl(cacheName), 'PATCH', { ttl: `${ttlSec}s` })
+            // Vertex's cachedContents.patch REQUIRES ?updateMask=ttl (returns 400
+            // without it); AI Studio's patch does not need it. Append only for
+            // Vertex so the Studio request stays byte-identical.
+            const url = isVertex
+                ? `${resourceUrl(cacheName)}?updateMask=ttl`
+                : resourceUrl(cacheName)
+            const response = await call(url, 'PATCH', { ttl: `${ttlSec}s` })
             if (!response) return { ok: false }
             return { ok: response.ok, status: response.status }
         },

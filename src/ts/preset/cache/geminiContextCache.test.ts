@@ -301,6 +301,23 @@ describe('decideGeminiCacheAfterResponse', () => {
         })
     })
 
+    test('hit past the growth threshold does NOT recreate when the cachePoint did not advance', () => {
+        // Fixed cachePoint (boundary stays at the cached entry's 4) with a growing
+        // suffix: the prefix is identical, so re-caching it is wasteful. Must fall
+        // through to a plain hit, never a regrow — even well past the token threshold.
+        const decision = decideGeminiCacheAfterResponse({
+            pre: apply,
+            entry: makeEntry({ promptTokensAtCreation: 10_000, boundaryIndex: 4, expiresAt: NOW + 400_000 }),
+            now: NOW,
+            promptTokens: 20_000,
+            boundaryIndex: 4,
+            consecutiveInvalidations: 0,
+            config: makeConfig(),
+        })
+        expect(decision.create).toBeNull()
+        expect(decision.reason).toBe('hit-fresh')
+    })
+
     test('hit just below the growth threshold does not recreate', () => {
         const decision = decideGeminiCacheAfterResponse({
             pre: apply,
@@ -766,6 +783,20 @@ describe('cachedContents REST client', () => {
         expect(calls[0].url).toBe('https://demo.test/v1beta/cachedContents/abc123')
         expect(calls[0].method).toBe('PATCH')
         expect(calls[0].body).toEqual({ ttl: '900s' })
+    })
+
+    test('extend appends ?updateMask=ttl on Vertex (required) but not on AI Studio', async () => {
+        const vertexUrl = 'https://aiplatform.googleapis.com/v1/projects/p/locations/global/cachedContents'
+        const { fetchImpl, calls } = captureFetch(jsonResponse({}))
+        const client = createGeminiCachedContentsClient({
+            ...clientOpts,
+            cachedContentsUrl: vertexUrl,
+            fetchImpl,
+        })
+        await client.extend('cachedContents/abc123', 600)
+        // Vertex cachedContents.patch 400s without updateMask.
+        expect(calls[0].url).toBe(`${vertexUrl}/abc123?updateMask=ttl`)
+        expect(calls[0].method).toBe('PATCH')
     })
 
     test('remove DELETEs the resource URL without a body', async () => {

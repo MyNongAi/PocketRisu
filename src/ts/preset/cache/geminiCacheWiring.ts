@@ -212,10 +212,14 @@ async function runPostResponse(args: {
         if (!result.ok || !result.name) {
             // Status-classified handling (spec §4-6 Phase 4): a 403 means the
             // project/key is not permitted to use cachedContents — retrying every
-            // turn is futile, so disable caching for this session. 404/429/400
-            // (e.g. below the model's minimum cacheable tokens) are transient or
-            // self-healing: log and try again on a later turn.
+            // turn is futile, so disable caching for this session immediately. A
+            // 429 is genuinely transient (rate limit) — don't penalize. Everything
+            // else (notably 400 "below the model's minimum cacheable tokens",
+            // which recurs every turn when the cachePoint prefix is small) counts
+            // toward the auto-off guard, so a session that can never create a cache
+            // stops re-attempting after a few turns instead of churning forever.
             if (result.status === 403) disableGeminiCacheSession(args.key)
+            else if (result.status !== 429) bumpGeminiCacheInvalidationCount(args.key)
             console.warn('[gemini-cache] cache creation failed', result.status)
             return
         }
