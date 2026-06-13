@@ -549,11 +549,21 @@ describe('deriveGeminiCacheModel', () => {
             .toBe('projects/p/locations/us-central1/publishers/google/models/gemini-3.1-pro-preview')
     })
 
-    test('falls back to models/{id} when the Vertex path lacks a /v1/ segment', () => {
-        // Defensive: a publisher marker without a parseable version segment must
+    test('falls back to models/{id} when the Vertex path lacks a /projects/ segment', () => {
+        // Defensive: a publisher marker without a parseable resource root must
         // not produce a broken resource path — degrade to the Studio shape.
         const url = 'https://aiplatform.googleapis.com/publishers/google/models/gemini-demo:generateContent'
         expect(deriveGeminiCacheModel(url, 'gemini-demo')).toBe('models/gemini-demo')
+    })
+
+    test('Vertex resource path is version-agnostic (v1beta1 still parses)', () => {
+        // The derivation keys off "/projects/", not a literal "/v1/", so a
+        // user-edited endpoint on a different API version still yields the full
+        // resource name (matching deriveCachedContentsUrl's invariant).
+        const url = 'https://aiplatform.googleapis.com/v1beta1/projects/my-proj/locations/global'
+            + '/publishers/google/models/gemini-3-flash-preview:generateContent'
+        expect(deriveGeminiCacheModel(url, 'gemini-3-flash-preview'))
+            .toBe('projects/my-proj/locations/global/publishers/google/models/gemini-3-flash-preview')
     })
 })
 

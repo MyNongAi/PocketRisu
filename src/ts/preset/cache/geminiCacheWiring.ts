@@ -95,6 +95,11 @@ function beginTurn(args: Parameters<typeof beginGeminiCacheTurn>[0]): GeminiCach
         fetchImpl: args.fetchImpl,
     })
     const now = Date.now()
+    // For Vertex (google-service-account) credentialKey is the rotating OAuth
+    // access token resolveAdapterCredential swapped in, not the SA identity —
+    // a token refresh mid-TTL changes the fingerprint and forces a cache rebuild
+    // (graceful: misses uncached, never deletes the remote cache). AI Studio keys
+    // are stable, so this only affects Vertex caching effectiveness.
     const credentialFp = computeGeminiCredentialFp(args.credentialKey ?? '')
     const contents = Array.isArray(args.body.contents) ? (args.body.contents as unknown[]) : []
     const systemInstruction = args.body.systemInstruction

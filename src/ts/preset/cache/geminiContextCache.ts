@@ -468,21 +468,23 @@ export function deriveCachedContentsUrl(preparedUrl: string): string | null {
 // in the shape that endpoint family expects:
 //   AI Studio: "models/{id}"
 //   Vertex:    "projects/{p}/locations/{l}/publishers/google/models/{id}"
-//              (the full resource path that lives in the chat URL after "/v1/").
+//              (the full resource path that lives in the chat URL).
 // Falls back to "models/{modelId}" for the Studio shape so behavior there is
 // unchanged. The id is taken from the URL for Vertex (it already carries the
 // percent-encoded model id) and from modelId otherwise.
 export function deriveGeminiCacheModel(preparedUrl: string, modelId: string): string {
     const vertexIdx = preparedUrl.indexOf(VERTEX_PUBLISHER_MARKER)
     if (vertexIdx >= 0) {
-        // Path after "/v1/" up to the ":generateContent"/":streamGenerateContent"
-        // (and any "?alt=sse") suffix is exactly the model resource name.
-        const versionMarker = '/v1/'
-        const versionIdx = preparedUrl.indexOf(versionMarker)
-        if (versionIdx >= 0) {
-            const afterVersion = preparedUrl.slice(versionIdx + versionMarker.length)
-            const colonIdx = afterVersion.indexOf(':')
-            const resource = colonIdx >= 0 ? afterVersion.slice(0, colonIdx) : afterVersion
+        // The resource name starts at "projects/" (the segment just before the
+        // publisher marker) and runs to the ":generateContent"/":streamGenerateContent"
+        // (and any "?alt=sse") suffix. Keying off "/projects/" — not a literal
+        // "/v1/" — keeps this version-agnostic, matching deriveCachedContentsUrl
+        // (Vertex historically also exposes /v1beta1/).
+        const projectsIdx = preparedUrl.lastIndexOf('/projects/', vertexIdx)
+        if (projectsIdx >= 0) {
+            const afterSlash = preparedUrl.slice(projectsIdx + 1)
+            const colonIdx = afterSlash.indexOf(':')
+            const resource = colonIdx >= 0 ? afterSlash.slice(0, colonIdx) : afterSlash
             if (resource.length > 0) return resource
         }
     }
