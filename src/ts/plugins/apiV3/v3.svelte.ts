@@ -620,9 +620,41 @@ type PluginV3ProviderOptions = PluginV2ProviderOptions & {
 
 export const customV3ProviderMetaStore:LLMModel[] = []
 
+// Serializes permission dialogs. Every plugin shares the single global
+// alertStore, so when several plugins request permission at boot they would
+// otherwise overwrite each other's dialog — only the last one stays clickable
+// and a single click resolves all of them. The chain makes each dialog wait
+// for the previous one to finish, showing them one at a time.
+let pluginPermissionDialogChain: Promise<unknown> = Promise.resolve()
+
+const isPermissionResolved = async (
+    pluginName: string,
+    permissionDesc: 'fetchLogs'|'db'|'mainDom'|'replacer'|'provider'|'sendChat',
+    requiresReconfirm: boolean,
+): Promise<{ resolved: boolean; value: boolean; pluginHash: string }> => {
+    if (!requiresReconfirm && permissionGivenPlugins.has(pluginName)) {
+        return { resolved: true, value: true, pluginHash: '' }
+    }
+    if (!requiresReconfirm && permissionDeniedPlugins.has(pluginName)) {
+        return { resolved: true, value: false, pluginHash: '' }
+    }
+
+    const pluginHash = await hasher(
+        new TextEncoder().encode(
+            DBState.db.plugins.find(p => p.name === pluginName)?.script
+        )
+    ) + `_${permissionDesc}`;
+
+    if (!requiresReconfirm && permissionCache.get(pluginHash)) {
+        permissionGivenPlugins.add(pluginName);
+        return { resolved: true, value: true, pluginHash }
+    }
+
+    return { resolved: false, value: false, pluginHash }
+}
+
 const getPluginPermission = async (pluginName: string, permissionDesc: 'fetchLogs'|'db'|'mainDom'|'replacer'|'provider'|'sendChat', reconfirm: boolean|'periodically' = false) => {
     await ensurePluginPermissionStateLoaded()
-    let pluginHash = ''
 
     let requiresReconfirm = false;
 
@@ -637,50 +669,57 @@ const getPluginPermission = async (pluginName: string, permissionDesc: 'fetchLog
         requiresReconfirm = true;
     }
 
-    if (!requiresReconfirm && permissionGivenPlugins.has(pluginName)) {
-        return true;
-    }
-    if (!requiresReconfirm && permissionDeniedPlugins.has(pluginName)) {
-        return false;
+    // Fast path: if the answer is already known, skip the serialization queue
+    // entirely so cached/granted permissions never block on a pending dialog.
+    const early = await isPermissionResolved(pluginName, permissionDesc, requiresReconfirm)
+    if (early.resolved) {
+        return early.value
     }
 
-    pluginHash = await hasher(
-        new TextEncoder().encode(
-            DBState.db.plugins.find(p => p.name === pluginName)?.script
-        )
-    ) + `_${permissionDesc}`;
-
-    if(!requiresReconfirm && permissionCache.get(pluginHash)){
-        permissionGivenPlugins.add(pluginName);
-        return true;
-    }
-    
-
-    let alertTitle =
-        permissionDesc === 'fetchLogs' ? language.fetchLogConsent.replace("{}", pluginName)
-        : permissionDesc === 'db' ? language.getFullDatabaseConsent.replace("{}", pluginName)
-        : permissionDesc === 'mainDom' ? language.mainDomAccessConsent.replace("{}", pluginName)
-        : permissionDesc === 'replacer' ? language.replacerPermissionConsent.replace("{}", pluginName)
-        : permissionDesc === 'provider' ? language.providerPermissionConsent.replace("{}", pluginName)
-        : permissionDesc === 'sendChat' ? language.sendChatConsent.replace("{}", pluginName)
-        : `Error`
-    if(alertTitle === 'Error'){
-        return false;
-    }
-    const conf = await alertConfirm(alertTitle)
-    if(conf && pluginHash){
-        permissionGivenPlugins.add(pluginName);
-        permissionDeniedPlugins.delete(pluginName);
-        permissionCache.set(pluginHash, true);
-        if(reconfirm === 'periodically'){
-            permissionCache.set(pluginName + '_' + permissionDesc + '_lastGrantTime', Date.now());
+    const showDialog = async (): Promise<boolean> => {
+        // Re-check under the lock: an earlier queued dialog for the same plugin
+        // may have already granted/denied while we were waiting our turn.
+        const recheck = await isPermissionResolved(pluginName, permissionDesc, requiresReconfirm)
+        if (recheck.resolved) {
+            return recheck.value
         }
+        const pluginHash = recheck.pluginHash
+
+        let alertTitle =
+            permissionDesc === 'fetchLogs' ? language.fetchLogConsent.replace("{}", pluginName)
+            : permissionDesc === 'db' ? language.getFullDatabaseConsent.replace("{}", pluginName)
+            : permissionDesc === 'mainDom' ? language.mainDomAccessConsent.replace("{}", pluginName)
+            : permissionDesc === 'replacer' ? language.replacerPermissionConsent.replace("{}", pluginName)
+            : permissionDesc === 'provider' ? language.providerPermissionConsent.replace("{}", pluginName)
+            : permissionDesc === 'sendChat' ? language.sendChatConsent.replace("{}", pluginName)
+            : `Error`
+        if(alertTitle === 'Error'){
+            return false;
+        }
+        const conf = await alertConfirm(alertTitle)
+        if(conf && pluginHash){
+            permissionGivenPlugins.add(pluginName);
+            permissionDeniedPlugins.delete(pluginName);
+            permissionCache.set(pluginHash, true);
+            if(reconfirm === 'periodically'){
+                permissionCache.set(pluginName + '_' + permissionDesc + '_lastGrantTime', Date.now());
+            }
+            await persistPluginPermissionState()
+            return true;
+        }
+        permissionDeniedPlugins.add(pluginName);
         await persistPluginPermissionState()
-        return true;
+        return false;
     }
-    permissionDeniedPlugins.add(pluginName);
-    await persistPluginPermissionState()
-    return false;
+
+    // Append to the dialog chain so only one permission dialog is shown at a
+    // time. finally restores the chain even if showDialog throws, so a single
+    // failure never deadlocks every later permission request.
+    const run = pluginPermissionDialogChain
+        .catch(() => {})
+        .then(() => showDialog())
+    pluginPermissionDialogChain = run.catch(() => {})
+    return run
 }
 
 const urlBlacklist = [
