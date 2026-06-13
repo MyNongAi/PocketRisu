@@ -722,8 +722,8 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
     // adapter with AI Studio key auth (x-goog-api-key) only — Vertex/SA auth,
     // tool runs and previews are excluded. The context carries everything the
     // cache layer needs so the adapter never reads the database (SSR rule). The
-    // state key is chat.id (assigned at bootstrap for every chat); a chat
-    // without one cannot be keyed, so caching is skipped. All defaults off →
+    // state key is chat.id (present for chats created in current versions; a
+    // chat without one is simply not cached). All defaults off →
     // cache undefined → requests byte-identical to before.
     let cache: AdapterCacheContext | undefined
     if (kind === 'google-gemini' && preset.promptCaching?.enabled && mode === 'model'
