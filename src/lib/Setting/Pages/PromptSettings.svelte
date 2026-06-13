@@ -266,8 +266,10 @@
             <Help unrecommended key='customChainOfThought' />
         </Check>
     {/if}
-    <span class="text-textcolor mt-4">{language.maxThoughtTagDepth} <Help key="maxThoughtTagDepth"/></span>
-    <NumberInput className="mt-2" bind:value={DBState.db.promptSettings.maxThoughtTagDepth}/>
+    <div>
+        <span class="text-textcolor mt-4">{language.maxThoughtTagDepth} <Help key="maxThoughtTagDepth"/></span>
+        <NumberInput className="mt-2" bind:value={DBState.db.promptSettings.maxThoughtTagDepth}/>
+    </div>
     <span class="text-textcolor mt-4">{language.customPromptTemplateToggle} <Help key='customPromptTemplateToggle' /></span>
     <TextAreaInput className="mt-2 mb-4" bind:value={DBState.db.customPromptTemplateToggle}/>
     <span class="text-textcolor mt-4">{language.defaultVariables} <Help key='defaultVariables' /></span>
