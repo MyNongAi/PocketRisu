@@ -5,7 +5,6 @@
     import { convertCharacterToModule } from "src/ts/interchangeability";
     import { notifySuccess } from "src/ts/alert";
     import { DBState } from 'src/ts/stores.svelte';
-    import { untrack } from 'svelte';
     import { CharConfigSubMenu, MobileGUI, selectedCharID, hypaV3ModalOpen } from "../../ts/stores.svelte";
     import { PlusIcon, SmileIcon, TrashIcon, UserIcon, ActivityIcon, BookIcon, Braces, Volume2Icon, DownloadIcon, HardDriveUploadIcon, Share2Icon, ImageIcon, ImageOffIcon, ArrowUp, ArrowDown, TriangleAlertIcon } from '@lucide/svelte'
     import Check from "../UI/GUI/CheckInput.svelte";
@@ -49,31 +48,37 @@
         charaNote: 0
     })
 
-    let lasttokens = {
-        desc: '',
-        firstMsg: '',
-        localNote: '',
-        charaNote: ''
+    // Per-field debounced token counts. Each field is its own effect so a change
+    // to one can't disturb another, and the generation is bumped in the effect
+    // (on input change) — not in the timer — so an in-flight tokenize is
+    // invalidated the moment the input changes, not 400ms later when the timer
+    // fires. Tokenizing is heavy (full CBS parse + encode), so it stays debounced
+    // off the keystroke path.
+    const tokenizeField = (
+        getValue: () => string,
+        apply: (n: number) => void,
+        timerRef: { t: ReturnType<typeof setTimeout> | null, seq: number }
+    ) => {
+        const value = getValue()
+        const seq = ++timerRef.seq
+        if (timerRef.t) clearTimeout(timerRef.t)
+        timerRef.t = setTimeout(() => {
+            tokenizeAccurate(value).then(n => { if (seq === timerRef.seq) apply(n) })
+        }, 400)
     }
-
-    async function loadTokenize(
-        desc: string | null,
-        firstMsg: string | null,
-        localNote: string
-    ) {
-        if (desc !== null && lasttokens.desc !== desc) {
-            lasttokens.desc = desc
-            tokens.desc = await tokenizeAccurate(desc)
-        }
-        if (firstMsg !== null && lasttokens.firstMsg !== firstMsg) {
-            lasttokens.firstMsg = firstMsg
-            tokens.firstMsg = await tokenizeAccurate(firstMsg)
-        }
-        if (lasttokens.localNote !== localNote) {
-            lasttokens.localNote = localNote
-            tokens.localNote = await tokenizeAccurate(localNote)
-        }
-    }
+    const descTok = { t: null as ReturnType<typeof setTimeout> | null, seq: 0 }
+    const firstMsgTok = { t: null as ReturnType<typeof setTimeout> | null, seq: 0 }
+    const localNoteTok = { t: null as ReturnType<typeof setTimeout> | null, seq: 0 }
+    $effect.pre(() => {
+        tokenizeField(() => (DBState.db.characters[$selectedCharID] as character).desc ?? '', n => tokens.desc = n, descTok)
+    });
+    $effect.pre(() => {
+        tokenizeField(() => DBState.db.characters[$selectedCharID].firstMessage ?? '', n => tokens.firstMsg = n, firstMsgTok)
+    });
+    $effect.pre(() => {
+        const chara = DBState.db.characters[$selectedCharID]
+        tokenizeField(() => chara.chats[chara.chatPage].note ?? '', n => tokens.localNote = n, localNoteTok)
+    });
 
 
     let assetFileExtensions:string[] = $state([])
@@ -84,17 +89,6 @@
         emos = DBState.db.characters[$selectedCharID].emotionImages
     });
 
-
-    $effect.pre(() => {
-        const chara = DBState.db.characters[$selectedCharID]
-        const desc = (chara as character).desc
-        const firstMsg = chara.firstMessage
-        const localNote = chara.chats[chara.chatPage].note
-
-        untrack(() => {
-            loadTokenize(desc, firstMsg, localNote)
-        })
-    });
 
     $effect.pre(() => {
         if(DBState.db.characters[$selectedCharID].type ==='character' && DBState.db.useAdditionalAssetsPreview){

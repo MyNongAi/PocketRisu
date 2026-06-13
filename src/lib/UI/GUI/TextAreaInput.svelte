@@ -219,6 +219,7 @@
     let inpa = $state(0)
     let highlightDom: HTMLDivElement = $state()
     let optiValue = $state(value)
+    let hlTimer: ReturnType<typeof setTimeout> | null = null
     let autoCompleteDom: HTMLDivElement = $state()
     let autocompleteContents:string[] = $state([])
     let inputDom: HTMLDivElement = $state()
@@ -314,13 +315,9 @@
     })
 
     onDestroy(() => {
+        if (hlTimer) clearTimeout(hlTimer)
         removeHighlight(highlightId)
     })
-
-    const highlightChange = async (value:string, highlightId:number) => {
-        await sleep(1)
-        highlighter(highlightDom, highlightId)
-    }
 
     const handleKeyDown = (e:KeyboardEvent) => {
         if(autocompleteContents.length >= 1){
@@ -376,8 +373,13 @@
     $effect.pre(() => {
         optiValue = value
     });
+    // Re-highlight on a debounce instead of every keystroke, and only when
+    // highlighting is actually on for this editor.
     $effect.pre(() => {
-        highlightChange(value, highlightId)
+        value
+        if (!highlight || $disableHighlight) return
+        if (hlTimer) clearTimeout(hlTimer)
+        hlTimer = setTimeout(() => highlighter(highlightDom, highlightId), 200)
     });
 
 </script>
