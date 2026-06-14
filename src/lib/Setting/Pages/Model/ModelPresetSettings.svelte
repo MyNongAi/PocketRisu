@@ -229,7 +229,7 @@
             {:else if submenu === 2}
                 {#if showAbilities}
                     <div class="flex flex-col gap-4 mb-6">
-                        <span class="text-sm font-medium text-textcolor">{language.modelPresetAbilities}</span>
+                        <h3 class="text-sm font-semibold text-textcolor2 uppercase tracking-wide">{language.modelPresetAbilities}</h3>
                         {#if showImageInputToggle}
                             <div class="flex items-center justify-between gap-3">
                                 <div class="flex flex-col gap-0.5 min-w-0">
@@ -298,7 +298,7 @@
                 {/if}
                 {#if showCacheSection}
                     <div class="flex flex-col gap-4 mb-6">
-                        <span class="text-sm font-medium text-textcolor">{language.modelPresetCacheSection}</span>
+                        <h3 class="text-sm font-semibold text-textcolor2 uppercase tracking-wide">{language.modelPresetCacheSection}</h3>
                         <div class="flex items-center justify-between gap-3">
                             <div class="flex flex-col gap-0.5 min-w-0">
                                 <span class="text-sm text-textcolor">{language.modelPresetCacheEnable}</span>
