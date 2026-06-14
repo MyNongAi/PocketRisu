@@ -82,6 +82,14 @@ export const accessibilitySettingsItems: SettingItem[] = [
         keywords: ['long', 'press', 'popup', 'editor']
     },
     {
+        id: 'acc.showInputActionBar',
+        type: 'check',
+        labelKey: 'showInputActionBar',
+        bindKey: 'showInputActionBar',
+        helpKey: 'showInputActionBar',
+        keywords: ['input', 'action', 'bar', 'toolbar', 'copy', 'reset', 'expand', 'editor']
+    },
+    {
         id: 'acc.enableDragPartialEdit',
         type: 'check',
         labelKey: 'enableDragPartialEdit',
@@ -363,6 +371,7 @@ export const accessibilityEditingItems = pick([
     'acc.enableBlockPartialEdit',
     'acc.enableDragPartialEdit',
     'acc.longPressToPopupEditor',
+    'acc.showInputActionBar',
 ]);
 
 export const accessibilityScrollItems = pick([

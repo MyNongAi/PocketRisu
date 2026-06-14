@@ -289,6 +289,7 @@ export const helpEn = {
         clickToEdit: "Enter edit mode immediately when clicking a chat message.",
         enableBlockPartialEdit: "Show per-block edit controls when hovering over a paragraph/block in a message.",
         longPressToPopupEditor: "Open the popup editor when long-pressing a message.",
+        showInputActionBar: "Show a bottom toolbar on multiline text fields with copy, reset, and expand-to-editor buttons.",
         enableDragPartialEdit: "Allow editing only the text selected by dragging inside a message.",
         botSettingAtStart: "Open the bot settings page automatically whenever the app starts.",
         showMenuChatList: "Show the current character's chat list directly in the sidebar menu.",

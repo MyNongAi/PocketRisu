@@ -1349,6 +1349,7 @@ export const languageKorean = {
   subtitlesWarning2:
     "이 기능을 사용하려면 스트리밍 기능을 지원하는 모델을 사용해야 합니다.",
   reset: "초기화",
+  clearInputConfirm: "이 입력란의 내용을 모두 지울까요?",
   assetMaxDifference: "에셋 최대 차이",
   sourceLanguage: "원본 언어",
   destinationLanguage: "목표 언어",
@@ -1719,6 +1720,7 @@ export const languageKorean = {
   newMessageButtonRightCenter: "우측 중앙",
   newMessageButtonTopBar: "상단 바",
   longPressToPopupEditor: "길게 눌러 팝업 편집기 열기",
+  showInputActionBar: "입력창 액션 바 표시",
   createFolderOnBranch: "분기 시 폴더 생성",
   goToChat: "채팅으로 이동",
   duplicatePluginFoundUpdateIt:
