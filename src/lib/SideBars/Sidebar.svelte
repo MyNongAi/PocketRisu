@@ -659,7 +659,7 @@
     {/if}
   </div>
   {/if}
-  <div class="flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0" class:max-xs:hidden={$leftBarCollapsed} use:touchDragContainer>
+  <div class="character-list flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0" class:max-xs:hidden={$leftBarCollapsed} use:touchDragContainer>
     <div class="h-4 min-h-4 w-14" role="listitem" data-spacer-index="0" ondragover={(e) => {
       e.preventDefault()
       e.dataTransfer.dropEffect = 'move'
@@ -1280,6 +1280,12 @@
     overscroll-behavior: none;
   }
   .hamburger-menu::-webkit-scrollbar {
+    display: none;
+  }
+  .character-list {
+    scrollbar-width: none;
+  }
+  .character-list::-webkit-scrollbar {
     display: none;
   }
 </style>
