@@ -27,8 +27,11 @@ import {
     type GeminiCacheStateEntry,
     type ResolvedGeminiCacheConfig,
 } from './geminiContextCache'
+import { beginGeminiCacheTurn, resetGeminiCacheWiringRuntime } from './geminiCacheWiring'
+import type { AdapterCacheContext } from '../adapter/types'
 
 const STORAGE_KEY = 'nodeOnlyGeminiCacheState'
+const flushMicrotasks = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0))
 const NOW = 1_750_000_000_000
 
 function makeContents(count: number): unknown[] {
@@ -49,7 +52,6 @@ function makeEntry(overrides: Partial<GeminiCacheStateEntry> = {}): GeminiCacheS
         prefixHash: computeGeminiPrefixHash({ parts: [{ text: 'sys' }] }, contents, 4),
         promptTokensAtCreation: 10_000,
         credentialFp: 'fp-aaaa',
-        consecutiveInvalidations: 0,
         ...overrides,
     }
 }
@@ -80,6 +82,7 @@ function makeConfig(overrides: Partial<ResolvedGeminiCacheConfig> = {}): Resolve
 beforeEach(() => {
     localStorage.clear()
     resetGeminiContextCacheRuntime()
+    resetGeminiCacheWiringRuntime()
 })
 
 afterEach(() => {
@@ -370,37 +373,6 @@ describe('decideGeminiCacheAfterResponse', () => {
         expect(atMin.reason).toBe('create')
     })
 
-    test('miss gates on the prefix estimate, not the full prompt', () => {
-        // Full prompt is well above the minimum, but the cached prefix (short
-        // system + early turns) is estimated below it: must NOT attempt a create
-        // that Google would reject for being below the minimum cacheable tokens.
-        const tooSmallPrefix = decideGeminiCacheAfterResponse({
-            pre: miss,
-            entry: undefined,
-            now: NOW,
-            promptTokens: 40_000,
-            prefixTokenEstimate: 1_200,
-            boundaryIndex: 4,
-            consecutiveInvalidations: 0,
-            config: makeConfig(),
-        })
-        expect(tooSmallPrefix.create).toBeNull()
-        expect(tooSmallPrefix.reason).toBe('below-min-tokens')
-        // Prefix estimate above the minimum → create even though it's a fraction
-        // of the full prompt.
-        const bigEnoughPrefix = decideGeminiCacheAfterResponse({
-            pre: miss,
-            entry: undefined,
-            now: NOW,
-            promptTokens: 40_000,
-            prefixTokenEstimate: 8_000,
-            boundaryIndex: 4,
-            consecutiveInvalidations: 0,
-            config: makeConfig(),
-        })
-        expect(bigEnoughPrefix.reason).toBe('create')
-    })
-
     test('invalidation guard fires at the limit instead of creating', () => {
         const below = decideGeminiCacheAfterResponse({
             pre: miss,
@@ -683,8 +655,6 @@ describe('state store', () => {
         }
         expect(buildGeminiCacheEntry(base).expiresAt).toBe(NOW + 600_000)
         expect(buildGeminiCacheEntry({ ...base, expireTimeMs: NOW + 123_000 }).expiresAt).toBe(NOW + 123_000)
-        expect(buildGeminiCacheEntry(base).consecutiveInvalidations).toBe(0)
-        expect(buildGeminiCacheEntry({ ...base, consecutiveInvalidations: 2 }).consecutiveInvalidations).toBe(2)
     })
 
     test('buildGeminiCacheKey joins with ::', () => {
@@ -704,10 +674,12 @@ describe('session guards', () => {
     })
 
     test('invalidation count is in-memory only: a reload starts the guard at zero', () => {
-        // The guard never reads the persisted consecutiveInvalidations field, so
-        // a restart cannot resurrect a stale count and disable caching early.
+        // The guard lives only in memory, so a restart cannot resurrect a stale
+        // count and disable caching early. Nothing about it is persisted.
         const key = 'chat-1::model::p1'
-        setGeminiCacheEntry(key, makeEntry({ expiresAt: Date.now() + 600_000, consecutiveInvalidations: 2 }))
+        bumpGeminiCacheInvalidationCount(key)
+        bumpGeminiCacheInvalidationCount(key)
+        expect(getGeminiCacheInvalidationCount(key)).toBe(2)
         resetGeminiContextCacheRuntime()
         expect(getGeminiCacheInvalidationCount(key)).toBe(0)
     })
@@ -859,5 +831,124 @@ describe('cachedContents REST client', () => {
         const client = createGeminiCachedContentsClient({ ...clientOpts, fetchImpl })
         expect(await client.extend('cachedContents/gone', 600)).toEqual({ ok: false, status: 404 })
         expect(await client.remove('cachedContents/gone')).toEqual({ ok: false, status: 404 })
+    })
+})
+
+// Reproduces the stale-write race the in-flight lock could not prevent: an
+// earlier turn's detached create/extend resolves AFTER a newer turn has already
+// invalidated/removed the cache. The per-key generation guard must make the
+// newer turn win — no resurrection, no double count, no orphan left behind.
+describe('beginGeminiCacheTurn — stale-write race (generation guard)', () => {
+    const CHAT_URL = 'https://demo.test/v1beta/models/gemini-demo:generateContent'
+    const sys = { parts: [{ text: 'sys' }] }
+
+    function makeCache(chatKey: string): AdapterCacheContext {
+        return { promptCaching: { enabled: true, ttlSec: 600 }, chatKey, task: 'model', presetId: 'preset-1' }
+    }
+    function startTurn(chatKey: string, contents: unknown[], fetchImpl: typeof fetch) {
+        return beginGeminiCacheTurn({
+            cache: makeCache(chatKey),
+            url: CHAT_URL,
+            headers: { 'x-goog-api-key': 'secret' },
+            body: { systemInstruction: sys, contents },
+            modelId: 'gemini-demo',
+            credentialKey: 'key1',
+            boundaryIndex: 2,
+            fetchImpl,
+        })
+    }
+
+    test('a late TTL-extend from an earlier turn does not resurrect a cache a newer turn removed', async () => {
+        const key = buildGeminiCacheKey('chat-race-1', 'model', 'preset-1')
+        const contents1 = makeContents(4)
+        // Seed a valid, near-expiry cache matching turn 1's prefix → forces extend.
+        setGeminiCacheEntry(key, {
+            cacheName: 'cachedContents/A',
+            modelId: 'gemini-demo',
+            createdAt: Date.now() - 10_000,
+            expiresAt: Date.now() + 100_000,   // < ttl/2 → extend on hit
+            boundaryIndex: 2,
+            prefixHash: computeGeminiPrefixHash(sys, contents1, 2),
+            promptTokensAtCreation: 10_000,
+            credentialFp: computeGeminiCredentialFp('key1'),
+        })
+
+        // Hold the PATCH (extend) open until we release it.
+        let releaseExtend!: () => void
+        const extendGate = new Promise<void>((r) => { releaseExtend = r })
+        const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+            if ((init?.method ?? 'GET') === 'PATCH') await extendGate
+            return new Response('{}', { status: 200 })
+        }) as typeof fetch
+
+        const turn1 = startTurn('chat-race-1', contents1, fetchImpl)
+        expect(turn1?.appliedCache).toBe(true)           // hit on A
+        turn1!.finish(10_000)                            // kicks off the held extend
+        await Promise.resolve()
+
+        // Turn 2: a DIFFERENT prefix → mismatch → removes A, counts the guard once.
+        const contents2 = [{ role: 'user', parts: [{ text: 'CHANGED' }] }, ...contents1.slice(1)]
+        const turn2 = startTurn('chat-race-1', contents2, fetchImpl)
+        expect(turn2?.appliedCache).toBe(false)          // miss (A was removed)
+        expect(getGeminiCacheEntry(key)).toBeUndefined()
+        expect(getGeminiCacheInvalidationCount(key)).toBe(1)
+
+        // Earlier turn's PATCH finally resolves — must NOT re-write A.
+        releaseExtend()
+        await flushMicrotasks()
+        expect(getGeminiCacheEntry(key)).toBeUndefined()      // not resurrected
+        expect(getGeminiCacheInvalidationCount(key)).toBe(1)  // not double-counted
+    })
+
+    test('a late create from a superseded turn is discarded and its orphan deleted', async () => {
+        const key = buildGeminiCacheKey('chat-race-2', 'model', 'preset-1')
+        const contents1 = makeContents(4)
+
+        let releaseCreate!: () => void
+        const createGate = new Promise<void>((r) => { releaseCreate = r })
+        const seen: { method: string; url: string }[] = []
+        const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+            const method = init?.method ?? 'GET'
+            seen.push({ method, url: String(input) })
+            if (method === 'POST') await createGate
+            return new Response(JSON.stringify({ name: 'cachedContents/B' }), { status: 200 })
+        }) as typeof fetch
+
+        const turn1 = startTurn('chat-race-2', contents1, fetchImpl)
+        expect(turn1?.appliedCache).toBe(false)          // miss → will create
+        turn1!.finish(10_000)                            // 10k ≥ minPromptTokens → create (held)
+        await Promise.resolve()
+
+        // A newer turn starts (bumps the generation); we don't finish it.
+        startTurn('chat-race-2', contents1, fetchImpl)
+
+        releaseCreate()
+        await flushMicrotasks()
+        // Turn 1's create resolved stale → no entry, and B is deleted remotely.
+        expect(getGeminiCacheEntry(key)).toBeUndefined()
+        expect(seen.some((c) => c.method === 'DELETE' && c.url.includes('B'))).toBe(true)
+    })
+
+    test('a late 403 from a superseded turn does not disable the newest session', async () => {
+        const key = buildGeminiCacheKey('chat-race-3', 'model', 'preset-1')
+        const contents1 = makeContents(4)
+
+        let release403!: () => void
+        const gate = new Promise<void>((r) => { release403 = r })
+        const fetchImpl = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+            if ((init?.method ?? 'GET') === 'POST') { await gate; return new Response('{}', { status: 403 }) }
+            return new Response('{}', { status: 200 })
+        }) as typeof fetch
+
+        const turn1 = startTurn('chat-race-3', contents1, fetchImpl)
+        turn1!.finish(10_000)                            // miss → create (held, will 403)
+        await Promise.resolve()
+        startTurn('chat-race-3', contents1, fetchImpl)   // newer turn bumps the generation
+
+        release403()
+        await flushMicrotasks()
+        // The 403 belongs to the superseded turn — it must NOT kill the newest
+        // session (which may use a different, working credential).
+        expect(isGeminiCacheSessionDisabled(key)).toBe(false)
     })
 })

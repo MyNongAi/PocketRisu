@@ -2304,6 +2304,6 @@ export const languageKorean = {
     outputTokens: "출력",
     thinkingTokensLabel: "사고",
     tokensPerSec: "tok/s",
-    cacheHit: "캐시 적중 · {n} 토큰 절약",
+    cacheHit: "캐시 적중 · {n} 토큰",
   },
 } satisfies DeepPartial<typeof import("./en").languageEnglish>;

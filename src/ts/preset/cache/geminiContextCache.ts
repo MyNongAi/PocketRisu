@@ -21,7 +21,9 @@ const STORAGE_KEY = 'nodeOnlyGeminiCacheState'
 
 // Consecutive prefix-hash invalidations before caching auto-disables for the
 // chat session (dynamic-prompt guard: a prefix that changes every turn would
-// only ever pay creation cost without hitting).
+// only ever pay creation cost without hitting). Only genuine prefix mismatches
+// count — cache-API failures never do (the server is the authority on whether a
+// create can succeed; a transient failure must not disable a healthy session).
 export const GEMINI_CACHE_INVALIDATION_LIMIT = 3
 
 export const GEMINI_CACHE_DEFAULTS = {
@@ -75,7 +77,6 @@ export interface GeminiCacheStateEntry {
     prefixHash: string              // hash(JSON({systemInstruction, contents[0..boundary)}))
     promptTokensAtCreation: number
     credentialFp: string            // key fingerprint — detects key-pool rotation
-    consecutiveInvalidations: number
 }
 
 export function buildGeminiCacheKey(chatKey: string, task: string, presetId: string): string {
@@ -98,11 +99,9 @@ function loadEntries(): Map<string, GeminiCacheStateEntry> {
                 for (const [key, value] of Object.entries(parsed)) {
                     if (!isValidEntry(value) || value.expiresAt <= now) continue
                     entries.set(key, value)
-                    // The consecutive-invalidation guard is in-memory only (it
-                    // resets on reload by design — see the session-guards block):
-                    // do NOT restore the persisted count, or a stale count could
-                    // disable caching prematurely after a restart. The persisted
-                    // consecutiveInvalidations field stays (harmless, always 0).
+                    // The consecutive-invalidation guard is in-memory only and
+                    // resets on reload by design (see the session-guards block) —
+                    // nothing about it is restored here.
                 }
             }
         }
@@ -131,7 +130,6 @@ function isValidEntry(value: unknown): value is GeminiCacheStateEntry {
         && typeof value['prefixHash'] === 'string'
         && typeof value['promptTokensAtCreation'] === 'number'
         && typeof value['credentialFp'] === 'string'
-        && typeof value['consecutiveInvalidations'] === 'number'
 }
 
 // Expired entries are pruned on read so callers never see a stale cacheName.
@@ -168,7 +166,6 @@ export function buildGeminiCacheEntry(args: {
     prefixHash: string
     promptTokensAtCreation: number
     credentialFp: string
-    consecutiveInvalidations?: number
 }): GeminiCacheStateEntry {
     return {
         cacheName: args.cacheName,
@@ -179,7 +176,6 @@ export function buildGeminiCacheEntry(args: {
         prefixHash: args.prefixHash,
         promptTokensAtCreation: args.promptTokensAtCreation,
         credentialFp: args.credentialFp,
-        consecutiveInvalidations: args.consecutiveInvalidations ?? 0,
     }
 }
 
@@ -204,13 +200,14 @@ export function isGeminiCacheSessionDisabled(key: string): boolean {
     return disabledSessions.has(key)
 }
 
-export function disableGeminiCacheSession(key: string): void {
+// Disables caching for the rest of this chat session. Two callers: the
+// dynamic-prompt guard (GEMINI_CACHE_INVALIDATION_LIMIT consecutive prefix
+// mismatches) and a 403 on cache creation (the project/key cannot use
+// cachedContents at all). Both are futile to keep retrying.
+export function disableGeminiCacheSession(key: string, reason = 'unrecoverable cache state'): void {
     if (disabledSessions.has(key)) return
     disabledSessions.add(key)
-    console.warn(
-        `[gemini-cache] context caching disabled for this chat session after ${GEMINI_CACHE_INVALIDATION_LIMIT} consecutive prefix invalidations (${key}). `
-        + 'A prompt section before the cache point likely changes every turn.',
-    )
+    console.warn(`[gemini-cache] context caching disabled for this chat session — ${reason} (${key}).`)
 }
 
 // Test-only: drop all in-memory state and force a localStorage reload.
@@ -326,13 +323,6 @@ export interface GeminiCachePostResponseInput {
     entry: GeminiCacheStateEntry | undefined
     now: number
     promptTokens: number | undefined        // response usage (undefined = no usage observed)
-    // Estimated token count of the prefix that would actually be cached
-    // (systemInstruction + contents[0..boundary]), NOT the whole prompt. The
-    // minimum-size gate must judge this, not promptTokens — a short prefix under
-    // a long suffix would otherwise pass the gate and then be rejected by Google
-    // with a 400 (below the model's minimum cacheable tokens). Undefined → the
-    // gate falls back to promptTokens (pre-estimate behavior).
-    prefixTokenEstimate?: number
     boundaryIndex: number | null            // last cachePoint of THIS request
     consecutiveInvalidations: number        // count after any pre-request bump
     config: ResolvedGeminiCacheConfig
@@ -383,9 +373,12 @@ export function decideGeminiCacheAfterResponse(
     }
     // Bypass / miss / invalidated — consider creating a cache for next turn.
     if (promptTokens === undefined) return noCreate('no-usage')
-    // Gate on the cached-prefix size, not the whole prompt (see prefixTokenEstimate).
-    const minGateTokens = input.prefixTokenEstimate ?? promptTokens
-    if (minGateTokens < config.minPromptTokens) return noCreate('below-min-tokens')
+    // Cheap lower-bound filter on the observed whole-prompt tokens: if even the
+    // full prompt is below the minimum, the cached prefix (a subset) certainly
+    // is, so skip. We deliberately do NOT estimate the prefix's own token count —
+    // the server is the authority on the prefix minimum, and a create whose
+    // prefix turns out too small fails recoverably (caching just skips that turn).
+    if (promptTokens < config.minPromptTokens) return noCreate('below-min-tokens')
     if (input.consecutiveInvalidations >= GEMINI_CACHE_INVALIDATION_LIMIT) {
         return {
             resetInvalidations: false,

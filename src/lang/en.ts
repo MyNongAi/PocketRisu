@@ -2109,7 +2109,7 @@ export const languageEnglish = {
         outputTokens: "out",
         thinkingTokensLabel: "think",
         tokensPerSec: "tok/s",
-        cacheHit: "Cache hit · {n} tokens saved",
+        cacheHit: "Cache hit · {n} tokens",
     },
 
 } satisfies I18nTranslation;
