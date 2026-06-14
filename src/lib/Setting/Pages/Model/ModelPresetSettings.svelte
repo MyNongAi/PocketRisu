@@ -1,6 +1,7 @@
 <script lang="ts">
-    import { ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, BellIcon, CopyIcon, PlusIcon, TrashIcon } from "@lucide/svelte";
+    import { ArrowDownIcon, ArrowLeftIcon, ArrowUpIcon, BellIcon, CopyIcon, PlusIcon, TrashIcon, TriangleAlertIcon } from "@lucide/svelte";
     import SettingPage from "src/lib/UI/GUI/SettingPage.svelte";
+    import ShAccordion from "src/lib/UI/GUI/ShAccordion.svelte";
     import ShAlert from "src/lib/UI/GUI/ShAlert.svelte";
     import SettingTabs from "src/lib/UI/GUI/SettingTabs.svelte";
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
@@ -92,6 +93,15 @@
         && TOOL_CAPABLE_ADAPTER_KINDS.includes(editingPreset.profileSnapshot.adapterKind)
     );
     const showAbilities = $derived(showImageInputToggle || showFoldToggles || showSequenceToggles || showToolUseToggle);
+    // Gemini context caching section. Gated like the tool-use toggle: the profile
+    // must declare the 'cache' capability AND the adapter must be the one that
+    // implements the cache wire (google-gemini). v1 main-chat scope; see
+    // gemini-cache-keeper-internalization.md §4-3.
+    const showCacheSection = $derived(
+        !!editingPreset
+        && (editingPreset.profileSnapshot.capabilities ?? []).includes('cache')
+        && editingPreset.profileSnapshot.adapterKind === 'google-gemini'
+    );
 
     // Open a freshly-created preset directly in its editor.
     $effect(() => {
@@ -283,6 +293,60 @@
                                     <ShSwitch checked={!!editingPreset.toolUse} onCheckedChange={(v) => { editingPreset.toolUse = v }} />
                                 </div>
                             </div>
+                        {/if}
+                    </div>
+                {/if}
+                {#if showCacheSection}
+                    <div class="flex flex-col gap-4 mb-6">
+                        <span class="text-sm font-medium text-textcolor">{language.modelPresetCacheSection}</span>
+                        <div class="flex items-center justify-between gap-3">
+                            <div class="flex flex-col gap-0.5 min-w-0">
+                                <span class="text-sm text-textcolor">{language.modelPresetCacheEnable}</span>
+                                <span class="text-xs text-textcolor2">{language.modelPresetCacheEnableHelp}</span>
+                            </div>
+                            <div class="shrink-0">
+                                <ShSwitch checked={!!editingPreset.promptCaching?.enabled} onCheckedChange={(v) => { editingPreset.promptCaching = { ...(editingPreset.promptCaching ?? {}), enabled: v } }} />
+                            </div>
+                        </div>
+                        <ShAlert variant="warning">
+                            {#snippet icon()}<TriangleAlertIcon />{/snippet}
+                            {language.modelPresetCachePluginWarning}
+                        </ShAlert>
+                        {#if editingPreset.promptCaching?.enabled}
+                            <div class="flex items-center justify-between gap-3 pl-4">
+                                <div class="flex flex-col gap-0.5 min-w-0">
+                                    <span class="text-sm text-textcolor">{language.modelPresetCacheTtl}</span>
+                                    <span class="text-xs text-textcolor2">{language.modelPresetCacheTtlHelp}</span>
+                                </div>
+                                <NumberInput bind:value={editingPreset.promptCaching.ttlSec as number} placeholder="600" min={1} className="w-32 shrink-0" />
+                            </div>
+                            <div class="flex items-center justify-between gap-3 pl-4">
+                                <div class="flex flex-col gap-0.5 min-w-0">
+                                    <span class="text-sm text-textcolor">{language.modelPresetCacheExtend}</span>
+                                    <span class="text-xs text-textcolor2">{language.modelPresetCacheExtendHelp}</span>
+                                </div>
+                                <div class="shrink-0">
+                                    <ShSwitch checked={editingPreset.promptCaching.extendTtlOnHit ?? true} onCheckedChange={(v) => { editingPreset.promptCaching = { ...editingPreset.promptCaching, enabled: true, extendTtlOnHit: v } }} />
+                                </div>
+                            </div>
+                            <ShAccordion name={language.modelPresetCacheAdvanced} variant="card" class="ml-4">
+                                <div class="flex flex-col gap-4 p-2">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <div class="flex flex-col gap-0.5 min-w-0">
+                                            <span class="text-sm text-textcolor">{language.modelPresetCacheMinTokens}</span>
+                                            <span class="text-xs text-textcolor2">{language.modelPresetCacheMinTokensHelp}</span>
+                                        </div>
+                                        <NumberInput bind:value={editingPreset.promptCaching.minPromptTokens as number} placeholder="4096" min={1} className="w-32 shrink-0" />
+                                    </div>
+                                    <div class="flex items-center justify-between gap-3">
+                                        <div class="flex flex-col gap-0.5 min-w-0">
+                                            <span class="text-sm text-textcolor">{language.modelPresetCacheGrowth}</span>
+                                            <span class="text-xs text-textcolor2">{language.modelPresetCacheGrowthHelp}</span>
+                                        </div>
+                                        <NumberInput bind:value={editingPreset.promptCaching.growthTokens as number} placeholder="4096" min={1} className="w-32 shrink-0" />
+                                    </div>
+                                </div>
+                            </ShAccordion>
                         {/if}
                     </div>
                 {/if}

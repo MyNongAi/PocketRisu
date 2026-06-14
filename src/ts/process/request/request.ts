@@ -26,6 +26,7 @@ import {
     sendAnthropicChatRequest, streamAnthropicChatRequest, previewAnthropicChatRequest,
     sendGoogleChatRequest, streamGoogleChatRequest, previewGoogleChatRequest,
     runToolLoop,
+    type AdapterCacheContext,
     type AdapterChatMessage, type AdapterChatOptions, type AdapterChatResponse,
     type AdapterChatStreamDelta, type AdapterCredential,
     type AdapterReasoningPart, type AdapterToolCall, type AdapterToolDef,
@@ -36,7 +37,7 @@ import { resolveChatModelBinding, buildModelPresetCredential, applyPromptPresetP
 import { expandAdapterMessages, toAdapterMessage, toolResponseText } from "./modelPresetMessages";
 import { isLocalNetworkUrl } from "src/ts/network/localNetwork";
 import {
-    startStatus, appendText, endStatus, setStatusTokenCounter,
+    startStatus, appendText, endStatus, setStatusTokenCounter, addBadge,
     type RequestKind,
 } from "src/ts/status/requestStatus";
 
@@ -717,6 +718,40 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
     const supportsVision = VISION_CAPABLE_ADAPTER_KINDS.includes(kind)
         && ((caps?.includes('vision') ?? false) || preset.imageInput === true)
 
+    // Gemini context caching: MAIN chat requests on the google-gemini adapter
+    // (AI Studio key auth OR Vertex native service-account auth) — tool runs and
+    // previews are excluded. Both auth kinds share the cachedContents wire; the
+    // adapter derives the Studio-vs-Vertex URL/model shape from the prepared
+    // chat URL, so the only difference here is admitting google-service-account.
+    // The profile must EXPLICITLY declare the 'cache' capability (same gate the
+    // editor toggle uses, ModelPresetSettings.svelte): a profile swap that kept
+    // promptCaching.enabled but landed on a cache-less profile can never engage
+    // caching — otherwise the cachedContents API would be hit every turn on a
+    // model that does not support it.
+    // Vertex-OpenAI stays out: it routes through openai-compatible, not this
+    // adapter kind. The context carries everything the cache layer needs so the
+    // adapter never reads the database (SSR rule). The state key is chat.id
+    // (present for chats created in current versions; a chat without one is
+    // simply not cached). All defaults off → cache undefined → requests
+    // byte-identical to before.
+    const cacheAuthKind = preset.profileSnapshot.auth.kind
+    let cache: AdapterCacheContext | undefined
+    if (kind === 'google-gemini' && preset.promptCaching?.enabled && mode === 'model'
+        && (caps?.includes('cache') ?? false)
+        && !tools && !arg.previewBody
+        && (cacheAuthKind === 'x-goog-api-key' || cacheAuthKind === 'google-service-account')) {
+        const cacheChatKey = getCurrentChat()?.id
+        if (cacheChatKey) {
+            cache = {
+                promptCaching: preset.promptCaching,
+                chatKey: cacheChatKey,
+                task: mode,
+                presetId: preset.id,
+                generationId: genId,
+            }
+        }
+    }
+
     // System/role normalization. The classic path always runs reformater() before
     // dispatch (~431); the preset path skipped it, so models without a native system
     // role (e.g. Ollama Gemma3) never saw bot/persona info folded into user turns.
@@ -789,7 +824,7 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
         }
 
         const useStreaming = resolvePresetStreaming(preset, arg)
-        const options: AdapterChatOptions = { messages, abortSignal: abortSignal ?? undefined, fetchImpl, generationId: genId }
+        const options: AdapterChatOptions = { messages, abortSignal: abortSignal ?? undefined, fetchImpl, generationId: genId, cache }
         if (reportStatus) {
             safeStatus(() => startStatus(genId, { kind: statusKind, label: preset.name, chatId: arg.chatId, phase: 'connecting', now: Date.now() }))
         }
@@ -814,6 +849,13 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
                             // generator → 'failed'; reclassify as 'aborted' so the
                             // toast shows "Cancelled" rather than an error.
                             const finalOutcome = outcome === 'failed' && abortSignal?.aborted ? 'aborted' : outcome
+                            // Confirmed cache hit (usageMetadata.cachedContentTokenCount
+                            // > 0) → savings badge on the status toast. Gated on the
+                            // cache context so behavior is unchanged with caching off.
+                            const cachedTokens = lastUsage?.cachedTokens ?? 0
+                            if (cache && cachedTokens > 0) {
+                                addBadge(genId, { key: 'cache', text: language.requestStatus.cacheHit.replace('{n}', cachedTokens.toLocaleString()), tone: 'success' })
+                            }
                             endStatus(genId, finalOutcome, {
                                 now: Date.now(),
                                 usage: lastUsage?.completionTokens !== undefined
@@ -840,12 +882,19 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
         }
         const response = await sendModelPreset(kind, preset, options, credential)
         if (reportStatus) {
-            safeStatus(() => endStatus(genId, 'done', {
-                now: Date.now(),
-                usage: response.usage?.completionTokens !== undefined
-                    ? { responseTokens: response.usage.completionTokens }
-                    : undefined,
-            }))
+            safeStatus(() => {
+                // Cache-hit badge: same rule as the streaming onFinish above.
+                const cachedTokens = response.usage?.cachedTokens ?? 0
+                if (cache && cachedTokens > 0) {
+                    addBadge(genId, { key: 'cache', text: language.requestStatus.cacheHit.replace('{n}', cachedTokens.toLocaleString()), tone: 'success' })
+                }
+                endStatus(genId, 'done', {
+                    now: Date.now(),
+                    usage: response.usage?.completionTokens !== undefined
+                        ? { responseTokens: response.usage.completionTokens }
+                        : undefined,
+                })
+            })
         }
         return { type: 'success', result: formatPresetReasoning(response.reasoning) + response.text, model: preset.name }
     } catch (err) {

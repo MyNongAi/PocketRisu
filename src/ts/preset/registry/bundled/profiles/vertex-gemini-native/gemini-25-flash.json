@@ -1,14 +1,13 @@
 {
-  "id": "vertex-gemini-native:flash",
-  "version": 5,
+  "id": "vertex-gemini-native:gemini-25-flash",
+  "version": 1,
   "updatedAt": 1781399379992,
-  "displayName": "Vertex AI - Gemini 3 Flash",
+  "displayName": "Vertex AI - Gemini 2.5 Flash",
   "providerBaseId": "vertex-gemini-native",
-  "description": "Vertex AI native Gemini 3 Flash via streamGenerateContent.",
-  "modelId": "gemini-3-flash-preview",
+  "description": "Vertex AI native Gemini 2.5 Flash via streamGenerateContent. Requires PocketRisu 1.8.0+.",
+  "modelId": "gemini-2.5-flash",
   "endpoint": {
-    "kind": "static",
-    "url": ""
+    "kind": "vertex-gemini"
   },
   "auth": {
     "kind": "google-service-account",
@@ -39,14 +38,14 @@
     "vertex",
     "gemini"
   ],
-  "sortOrder": 830,
+  "sortOrder": 837,
   "displayNameI18n": {
-    "ko": "Vertex AI - Gemini 3 Flash"
+    "ko": "Vertex AI - Gemini 2.5 Flash"
   },
   "descriptionI18n": {
-    "ko": "streamGenerateContent를 쓰는 Vertex AI 네이티브 Gemini 3 Flash."
+    "ko": "streamGenerateContent를 쓰는 Vertex AI 네이티브 Gemini 2.5 Flash. PocketRisu 1.8.0 이상 필요."
   },
   "recommendedTokenizer": "gemma",
   "profileStatus": "outdated",
-  "statusReason": "Superseded by the vertex-gemini-native:gemini-3-flash profile, which carries the same model under the shared Gemini naming."
+  "statusReason": "Previous-generation model, one major version below the current Gemini 3 lineup."
 }
