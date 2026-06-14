@@ -103,17 +103,18 @@ describe('Vertex OpenAI end-to-end (bundled registry)', () => {
 })
 
 describe('Vertex Gemini native end-to-end (bundled registry)', () => {
-    // Pins the shipped vertex-gemini-native:flash profile to the resolver
+    // Pins a shipped vertex-gemini-native profile (gemini-3-flash) to the resolver
     // contract: mapsTo paths (custom.project / custom.location / serviceAccountJson
     // -> auth.apiKey) and the 'vertex-gemini' endpoint kind must all line up, or
     // the native '.../publishers/google/models' URL would not assemble. Goes
     // through prepareAdapterRequest, so the SA JSON is swapped for an OAuth token
     // BEFORE the URL is built — exercising the credential-threaded project_id
     // recovery for the pooled/inline path (Project ID blank, SA JSON NOT in
-    // userValues), the documented normal case.
-    test('resolves the bundled flash profile to the native base URL with project_id recovered from the credential SA JSON', async () => {
+    // userValues), the documented normal case. (The legacy :flash profile is now a
+    // deprecated 'static' shim, so a current native profile drives this test.)
+    test('resolves a bundled native profile to the native base URL with project_id recovered from the credential SA JSON', async () => {
         const { cache, calls } = stubCache('ya29.gemini')
-        const preset = bundledPreset('vertex-gemini-native:flash', {})
+        const preset = bundledPreset('vertex-gemini-native:gemini-3-flash', {})
 
         const prepared = await prepareAdapterRequest({
             preset,
