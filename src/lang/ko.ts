@@ -2162,6 +2162,7 @@ export const languageKorean = {
   storageCharactersImage: "미디어",
   storageCharactersChat: "채팅",
   storageCharactersTrashed: "휴지통",
+  storageCharactersGoTo: "이 캐릭터로 이동",
   storageCharactersOrphan: (count: number, size: number) =>
     `고아 미디어 (어떤 캐릭터도 참조하지 않음): ${count}개, ${(size / 1024 / 1024).toFixed(1)} MB`,
   storageCharactersEmpty: "캐릭터 없음",

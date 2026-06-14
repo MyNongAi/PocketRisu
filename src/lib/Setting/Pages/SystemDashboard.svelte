@@ -20,7 +20,9 @@
     } from '@lucide/svelte'
     import { alertConfirm, alertMd, notifyError, notifySuccess } from 'src/ts/alert'
     import { forageStorage } from 'src/ts/globalApi.svelte'
-    import { SystemSubmenuIndex } from 'src/ts/stores.svelte'
+    import { SystemSubmenuIndex, settingsOpen } from 'src/ts/stores.svelte'
+    import { getDatabase } from 'src/ts/storage/database.svelte'
+    import { changeChar } from 'src/ts/characters'
     import { SystemTab } from 'src/ts/routing'
     import { language, getCurrentLocale } from 'src/lang'
 
@@ -335,6 +337,16 @@
         return Math.max(0, Math.min(100, (part / whole) * 100))
     }
 
+    // Close the dashboard and select the character this row represents.
+    // Trashed rows aren't in the live characters array, so there's nothing to jump to.
+    function jumpToCharacter(c: CharBreakdown) {
+        if (c.trashed) return
+        const index = getDatabase().characters.findIndex((ch) => ch.chaId === c.chaId)
+        if (index === -1) return
+        changeChar(index)
+        settingsOpen.set(false)
+    }
+
     const charSlice = $derived(characters?.characters.slice(0, charShown) ?? [])
     const charRemaining = $derived((characters?.characters.length ?? 0) - charShown)
     const modSlice = $derived(modules?.modules.slice(0, modShown) ?? [])
@@ -621,13 +633,19 @@
             {:else}
                 <div class="flex flex-col gap-2 mb-3">
                     {#each charSlice as c (c.chaId || c.name)}
-                        <div class="border border-darkborderc/50 rounded-md p-2">
+                        <button
+                            type="button"
+                            disabled={c.trashed}
+                            onclick={() => jumpToCharacter(c)}
+                            aria-label={c.trashed ? undefined : language.storageCharactersGoTo}
+                            class="block w-full text-left border border-darkborderc/50 rounded-md p-2 transition-colors enabled:cursor-pointer enabled:hover:border-borderc enabled:hover:bg-selected/10 disabled:cursor-default"
+                        >
                             <div class="flex items-baseline justify-between gap-2 mb-1">
                                 <div class="flex items-center gap-2 min-w-0">
-                                    <span class="text-textcolor text-sm truncate">{c.name || '(unnamed)'}</span>
                                     {#if c.trashed}
                                         <ShBadge variant="secondary">{language.storageCharactersTrashed}</ShBadge>
                                     {/if}
+                                    <span class="text-textcolor text-sm truncate">{c.name || '(unnamed)'}</span>
                                 </div>
                                 <span class="text-textcolor text-sm tabular-nums shrink-0">{fmtBytes(c.totalBytes)}</span>
                             </div>
@@ -641,7 +659,7 @@
                                 <span><span class="inline-block size-2 bg-amber-500 rounded-sm align-middle mr-1"></span>{language.storageCharactersImage} {fmtBytes(c.imgBytes)}</span>
                                 <span><span class="inline-block size-2 bg-cyan-500 rounded-sm align-middle mr-1"></span>{language.storageCharactersChat} {fmtBytes(c.chatBytes)}</span>
                             </div>
-                        </div>
+                        </button>
                     {/each}
                 </div>
                 {#if charRemaining > 0}

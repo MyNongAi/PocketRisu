@@ -1980,6 +1980,7 @@ export const languageEnglish = {
     storageCharactersImage: "media",
     storageCharactersChat: "chat",
     storageCharactersTrashed: "trashed",
+    storageCharactersGoTo: "Go to this character",
     storageCharactersOrphan: (count: number, size: number) =>
         `Orphan media (not referenced by any character): ${count} item(s), ${(size / 1024 / 1024).toFixed(1)} MB`,
     storageCharactersEmpty: "No characters",
