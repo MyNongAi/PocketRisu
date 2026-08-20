@@ -770,6 +770,10 @@ export function setDatabase(data:Database){
     data.moveInsteadOfCopyOnCMPConvert ??= false
     data.chatLoadInitialPages = normalizeChatLoadPages(data.chatLoadInitialPages, DEFAULT_CHAT_LOAD_INITIAL_PAGES)
     data.chatLoadAdditionalPages = normalizeChatLoadPages(data.chatLoadAdditionalPages, DEFAULT_CHAT_LOAD_ADDITIONAL_PAGES)
+    const externalAssetRecentOutputs = Number(data.externalAssetRecentOutputs)
+    data.externalAssetRecentOutputs = Number.isFinite(externalAssetRecentOutputs) && externalAssetRecentOutputs >= 0
+        ? Math.floor(externalAssetRecentOutputs)
+        : 5
     // NodeOnly default: 'balanced' (upstream defaults to 'off') — remote/mobile
     // usage benefits from coalesced streaming updates out of the box.
     data.streamingDisplayOptimizationMode ??= (data as {largeChatPerformanceMode?: StreamingDisplayOptimizationMode}).largeChatPerformanceMode ?? 'balanced'
@@ -1511,6 +1515,10 @@ export interface Database{
     moveInsteadOfCopyOnCMPConvert?:boolean
     chatLoadInitialPages?: number
     chatLoadAdditionalPages?: number
+    /** Resolve media macros only in the most recent N character outputs on the
+     * active chat page. 0 disables the window and keeps legacy all-message
+     * rendering. */
+    externalAssetRecentOutputs?: number
     streamingDisplayOptimizationMode?: StreamingDisplayOptimizationMode
     ImagenModel:string
     ImagenImageSize:string

@@ -845,9 +845,10 @@ async function processInlayQueue() {
 }
 
 export function resolveInlayPlaceholders(root: HTMLElement) {
-    if (!root) return
+    if (!root) return () => {}
     const placeholders = Array.from(root.querySelectorAll('[data-inlay-id]')) as HTMLElement[]
-    if (placeholders.length === 0) return
+    if (placeholders.length === 0) return () => {}
+    const placeholderSet = new Set(placeholders)
 
     const observer = new IntersectionObserver((entries) => {
         entries.forEach(entry => {
@@ -865,6 +866,15 @@ export function resolveInlayPlaceholders(root: HTMLElement) {
     }, { rootMargin: '200px' }) // Start loading a bit before they scroll into view
 
     placeholders.forEach(el => observer.observe(el))
+
+    return () => {
+        observer.disconnect()
+        for(let index = resolveQueue.length - 1; index >= 0; index--){
+            if(placeholderSet.has(resolveQueue[index].el)){
+                resolveQueue.splice(index, 1)
+            }
+        }
+    }
 }
 
 export interface simpleCharacterArgument{
@@ -875,6 +885,15 @@ export interface simpleCharacterArgument{
     virtualscript?: string
     emotionImages?: [string, string][]
     triggerscript?: triggerscript[]
+}
+
+export interface ParseMarkdownOptions {
+    /**
+     * When false, asset and inlay macros are intentionally left as text. This
+     * must be checked before parseAdditionalAssets/parseInlayAssets so an old
+     * chat message cannot reach getFileSrc or enqueue an inlay request.
+     */
+    resolveAssets?: boolean
 }
 
 function parseThoughtsAndTools(data:string){
@@ -905,13 +924,15 @@ export async function ParseMarkdown(
     charArg:(character|simpleCharacterArgument | string) = null,
     mode:'normal'|'back'|'pretranslate'|'notrim' = 'normal',
     chatID=-1,
-    cbsConditions:CbsConditions = {}
+    cbsConditions:CbsConditions = {},
+    options:ParseMarkdownOptions = {},
 ) {
     let firstParsed = ''
+    const resolveAssets = options.resolveAssets !== false
     const additionalAssetMode = (mode === 'back') ? 'back' : 'normal'
     let char = (typeof(charArg) === 'string') ? (findCharacterbyId(charArg)) : (charArg)
 
-    if(char){
+    if(char && resolveAssets){
         data = await parseAdditionalAssets(data, char, additionalAssetMode, {
             ch: chatID
         })
@@ -922,13 +943,16 @@ export async function ParseMarkdown(
         data = (await processScriptFull(char, data, 'editdisplay', chatID, cbsConditions)).data
     }
 
-    if(firstParsed !== data && char){
+    if(firstParsed !== data && char && resolveAssets){
         data = await parseAdditionalAssets(data, char, additionalAssetMode, {
             ch: chatID
         })
     }
 
-    data = parseInlayAssets(data ?? '')
+    data = data ?? ''
+    if(resolveAssets){
+        data = parseInlayAssets(data)
+    }
 
     data = parseThoughtsAndTools(data)
 

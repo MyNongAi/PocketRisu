@@ -210,18 +210,9 @@
                 <div class="flex w-full items-start flex-wrap gap-2 justify-start">
                     {#each DBState.db.characters as char, i}
                         {#if char.image}
-                            {#await getCharImage(DBState.db.characters[i].image, 'css')}
-                                <BarIcon onClick={() => {
-                                    alertStore.set({type: 'none',msg: char.chaId})
-                                }}>
-                                    <User/>
-                                </BarIcon>
-                            {:then im} 
-                                <BarIcon onClick={() => {
-                                    alertStore.set({type: 'none',msg: char.chaId})
-                                }} additionalStyle={im} />
-                                
-                            {/await}
+                            <BarIcon onClick={() => {
+                                alertStore.set({type: 'none',msg: char.chaId})
+                            }} additionalStyle={() => getCharImage(DBState.db.characters[i].image, 'css')} />
                         {:else}
                             <BarIcon onClick={() => {
                                 alertStore.set({type: 'none',msg: char.chaId})

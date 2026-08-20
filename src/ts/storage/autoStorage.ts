@@ -79,6 +79,15 @@ export class AutoStorage{
     async getItems(keys: string[]) { return this.realStorage.getItems(keys) }
     async setItems(entries: {key: string, value: Uint8Array}[]) { return this.realStorage.setItems(entries) }
 
+    // ─── External asset store ───────────────────────────────────────────────
+    async readExternalAsset(uri: string) { await this.Init(); return this.realStorage.readExternalAsset(uri) }
+    async externalAssetStatus() { await this.Init(); return this.realStorage.externalAssetStatus() }
+    async updateExternalAssetConfig(config: Parameters<NodeStorage['updateExternalAssetConfig']>[0]) { await this.Init(); return this.realStorage.updateExternalAssetConfig(config) }
+    async scanExternalAssetMigration() { await this.Init(); return this.realStorage.scanExternalAssetMigration() }
+    async migrateExternalAssets(providerId?: string) { await this.Init(); return this.realStorage.migrateExternalAssets(providerId) }
+    async verifyExternalAssets(migrationId?: string) { await this.Init(); return this.realStorage.verifyExternalAssets(migrationId) }
+    async purgeExternalAssetTrash(migrationId?: string) { await this.Init(); return this.realStorage.purgeExternalAssetTrash(migrationId) }
+
     // ── Server-side backup ─────────────────────────────────────────────────────
     async saveServerBackup(onProgress?: (current: number, total: number, bytes: number, totalBytes: number) => void) { await this.Init(); return this.realStorage.saveServerBackup(onProgress) }
     async listServerBackups() { await this.Init(); return this.realStorage.listServerBackups() }

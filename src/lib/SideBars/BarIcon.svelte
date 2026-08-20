@@ -1,19 +1,51 @@
 <!-- TODO: REMOVE AND REFACTOR TO BASE BUTTON UI COMPONENT -->
 
 <script lang="ts">
+  import { onMount } from "svelte";
+
+  type ResolvedStyle = string | null | undefined;
+  type DeferredStyle = ResolvedStyle | Promise<ResolvedStyle> | (() => ResolvedStyle | Promise<ResolvedStyle>);
+
   interface Props {
     onClick?: any;
-    additionalStyle?: string | Promise<string>;
+    additionalStyle?: DeferredStyle;
     children?: import('svelte').Snippet;
   }
 
   let { onClick = () => {}, additionalStyle = "", children }: Props = $props();
+  let observerTarget: HTMLButtonElement = $state();
+  let shouldResolve = $state(false);
+  let resolvedStyle = $derived.by(() => {
+    if (typeof additionalStyle === "function") {
+      return shouldResolve ? additionalStyle() : "";
+    }
+    return additionalStyle;
+  });
+
+  onMount(() => {
+    if (typeof additionalStyle !== "function") {
+      return;
+    }
+    if (typeof IntersectionObserver === "undefined") {
+      shouldResolve = true;
+      return;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        shouldResolve = true;
+        observer.disconnect();
+      }
+    }, { rootMargin: "240px 0px" });
+    observer.observe(observerTarget);
+    return () => observer.disconnect();
+  });
 </script>
 
-{#await additionalStyle}
-  <button onclick={onClick} class="ico">{@render children?.()}</button>
+{#await resolvedStyle}
+  <button bind:this={observerTarget} onclick={onClick} class="ico">{@render children?.()}</button>
 {:then as}
-  <button onclick={onClick} class="ico" style={as}>{@render children?.()}</button>
+  <button bind:this={observerTarget} onclick={onClick} class="ico" style={as}>{@render children?.()}</button>
 {/await}
 
 <style>

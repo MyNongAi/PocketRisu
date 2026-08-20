@@ -3,7 +3,7 @@
     import { DBState } from 'src/ts/stores.svelte'
     import { sleep } from "src/ts/util"
     import { alertError } from "../../ts/alert"
-    import { tick } from 'svelte'
+    import { onDestroy, tick } from 'svelte'
     import { addMetadataToElement, getDistance, ParseMarkdown, postTranslationParse, resolveInlayPlaceholders, trimMarkdown, type CbsConditions, type simpleCharacterArgument } from "../../ts/parser/parser.svelte"
     import { getLLMCache, translateHTML } from "../../ts/translator/translator"
     import { getModuleAssets } from "src/ts/process/modules";
@@ -24,6 +24,7 @@
         modelShortName: string
         renderRawStreaming?: boolean
         rawStreamingText?: string
+        resolveAssets?: boolean
     }
 
     let {
@@ -39,12 +40,15 @@
         modelShortName = '',
         renderRawStreaming = false,
         rawStreamingText = '',
+        resolveAssets = true,
     }: Props =  $props()
 
     // svelte-ignore non_reactive_update
     let lastParsed = ''
     let lastCharArg:string|simpleCharacterArgument = null
     let lastChatId = -10
+    let stopInlayResolution = () => {}
+    let destroyed = false
 
     function getCbsCondition(){
         try{
@@ -82,8 +86,8 @@
                             const cache = DBState.db.translateBeforeHTMLFormatting
                             ? await getLLMCache(data)
                             : !DBState.db.legacyTranslation
-                            ? await getLLMCache(await ParseMarkdown(data, charArg, 'pretranslate', chatID, getCbsCondition()))
-                            : await getLLMCache(await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition()))
+                            ? await getLLMCache(await ParseMarkdown(data, charArg, 'pretranslate', chatID, getCbsCondition(), { resolveAssets }))
+                            : await getLLMCache(await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), { resolveAssets }))
                   
                             translateText = cache !== null
                         }
@@ -119,13 +123,13 @@
                     translating = true
                     data = await translateHTML(data, false, charArg, chatID, retranslate)
                     translating = false
-                    const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition())
+                    const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), { resolveAssets })
                     lastParsedQueue = marked
                     lastCharArg = charArg
                     transResult = marked
                 }
                 else if(!DBState.db.legacyTranslation){
-                    const marked = await ParseMarkdown(data, charArg, 'pretranslate', chatID, getCbsCondition())
+                    const marked = await ParseMarkdown(data, charArg, 'pretranslate', chatID, getCbsCondition(), { resolveAssets })
                     translating = true
                     const translated = await postTranslationParse(await translateHTML(marked, false, charArg, chatID, retranslate))
                     translating = false
@@ -134,7 +138,7 @@
                     transResult = translated
                 }
                 else{
-                    const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition())
+                    const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), { resolveAssets })
                     translating = true
                     const translated = await translateHTML(marked, false, charArg, chatID, retranslate)
                     translating = false
@@ -150,7 +154,7 @@
                 return transResult
             }
             else{
-                const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition())
+                const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), { resolveAssets })
                 lastParsedQueue = marked
                 lastCharArg = charArg
                 return marked
@@ -171,7 +175,7 @@
     }
 
     const checkImg = () => {
-        if(!DBState.db.newImageHandlingBeta || !bodyRoot){
+        if(!resolveAssets || !DBState.db.newImageHandlingBeta || !bodyRoot){
             return
         }
         const imgs = bodyRoot.querySelectorAll('img:not([src^="data:"]):not([src^="http:"]):not([src^="https:"]):not([src^="blob:"]):not([src^="file:"]):not([src^="tauri:"]):not([src^="/"]):not([noimage])') as NodeListOf<HTMLImageElement>
@@ -205,7 +209,10 @@
                 if(foundAsset){
                     img.classList.add('root-loaded-image')
                     img.classList.add('root-loaded-image-' + styl)
-                    img.src = await getFileSrc(foundAsset)
+                    const got = await getFileSrc(foundAsset)
+                    if(resolveAssets && img.isConnected){
+                        img.src = got
+                    }
                     return
                 }
 
@@ -230,7 +237,7 @@
                 if(currentFound){
                     const got = await getFileSrc(currentFound)
                     const name2 = img.getAttribute('src')?.toLocaleLowerCase() || ''
-                    if(name === name2){
+                    if(resolveAssets && img.isConnected && name === name2){
                         img.setAttribute('src', got)
                     }
 
@@ -247,18 +254,86 @@
         }
     }
 
+    function releaseRenderedAssets(){
+        stopInlayResolution()
+        stopInlayResolution = () => {}
+        if(!bodyRoot) return
+
+        const media = Array.from(bodyRoot.querySelectorAll('img, video, audio, source'))
+        media.forEach((element) => {
+            if(element instanceof HTMLMediaElement){
+                element.pause()
+            }
+        })
+        media.forEach((element) => {
+            const src = element.getAttribute('src')
+            element.removeAttribute('src')
+            element.removeAttribute('srcset')
+
+            // Chat-owned blob URLs must not survive after the message leaves
+            // the active asset window.
+            if(src?.startsWith('blob:')){
+                URL.revokeObjectURL(src)
+            }
+
+        })
+        media.forEach((element) => {
+            if(element instanceof HTMLMediaElement) element.load()
+        })
+    }
+
+    function showExternalAssetError(event: Event){
+        const element = event.target
+        if(!(element instanceof HTMLImageElement || element instanceof HTMLMediaElement || element instanceof HTMLSourceElement)) return
+        const src = element.getAttribute('src') ?? ''
+        if(!src.includes('/api/external-assets/content/')) return
+        const displayTarget = element instanceof HTMLSourceElement
+            ? element.closest('video, audio')
+            : element
+        if(!displayTarget || displayTarget.getAttribute('data-external-asset-error') === 'true') return
+
+        displayTarget.setAttribute('data-external-asset-error', 'true')
+        if(displayTarget instanceof HTMLMediaElement) displayTarget.pause()
+        element.removeAttribute('src')
+        displayTarget.removeAttribute('src')
+        const placeholder = document.createElement('span')
+        placeholder.className = 'risu-external-asset-error'
+        placeholder.textContent = 'External asset unavailable'
+        placeholder.title = 'The external store and its internal/trash fallbacks could not provide this asset.'
+        displayTarget.replaceWith(placeholder)
+    }
+
+    $effect(() => {
+        if(!bodyRoot) return
+        bodyRoot.addEventListener('error', showExternalAssetError, true)
+        return () => bodyRoot?.removeEventListener('error', showExternalAssetError, true)
+    })
+
+    onDestroy(() => {
+        destroyed = true
+        releaseRenderedAssets()
+    })
+
     let markParsingResult = $derived.by(() => markParsing(msgDisplay, character, idx))
 
     $effect(() => {
+        if(!resolveAssets){
+            releaseRenderedAssets()
+        }
+
         if(shouldRenderRawStreaming){
             return
         }
         markParsingResult
         checkImg()
         markParsingResult.then(async () => {
+            if(destroyed || !resolveAssets || !bodyRoot?.isConnected) return
             checkImg()
             await tick() // Wait for Svelte to re-render the {:then} block into DOM
-            if (bodyRoot) resolveInlayPlaceholders(bodyRoot)
+            if (!destroyed && resolveAssets && bodyRoot?.isConnected){
+                stopInlayResolution()
+                stopInlayResolution = resolveInlayPlaceholders(bodyRoot)
+            }
         })
     })
 </script>
@@ -272,3 +347,16 @@
         {@html addMetadataToElement(trimMarkdown(md), modelShortName)}
     {/await}
 {/if}
+
+<style>
+    :global(.risu-external-asset-error) {
+        display: inline-flex;
+        align-items: center;
+        min-height: 2rem;
+        padding: 0.35rem 0.6rem;
+        border: 1px solid rgb(248 113 113 / 0.65);
+        border-radius: 0.375rem;
+        color: rgb(248 113 113);
+        font-size: 0.75rem;
+    }
+</style>

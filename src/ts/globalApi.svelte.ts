@@ -15,6 +15,7 @@ import { decodeRisuSave, encodeRisuSaveLegacy, findDangerousChatOps, RisuSaveEnc
 import { isHydrating, saveChatToServer, ensureChatHydrated, chatToStub, classifyChat } from "./storage/chatStorage";
 import { AutoStorage } from "./storage/autoStorage";
 import { ConflictError, type PersistWarning } from "./storage/nodeStorage";
+import { getExternalAssetContentUrl, isExternalAssetLocation } from "./storage/externalAssets";
 import { supportsPatchSync } from "./platform";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
@@ -101,6 +102,12 @@ function buildTimeoutSignal(signal: AbortSignal | undefined, timeoutMs: number |
  * @returns {Promise<string>} - A promise that resolves to the source URL of the file.
  */
 export async function getFileSrc(loc: string) {
+    // External assets stay lazy: returning the authenticated content endpoint
+    // does not read, decode, or cache the binary in JavaScript. The browser only
+    // requests it if a live DOM node actually uses the URL.
+    if (isExternalAssetLocation(loc)) {
+        return getExternalAssetContentUrl(loc)
+    }
     // NodeOnly: return a direct server URL instead of fetching + base64-encoding.
     // The browser will cache the response using HTTP Cache-Control headers,
     // so repeated renders (sidebar, chat) cost zero network after first load.
@@ -179,6 +186,9 @@ export async function getFileSrc(loc: string) {
  * @returns {Promise<Uint8Array>} - A promise that resolves to the data of the image file.
  */
 export async function readImage(data: string) {
+    if (isExternalAssetLocation(data)) {
+        return await forageStorage.readExternalAsset(data)
+    }
     return (await forageStorage.getItem(data) as unknown as Uint8Array)
 }
 
@@ -221,6 +231,9 @@ export async function saveAsset(data: Uint8Array, customId: string = '', fileNam
  * @returns {Promise<Uint8Array>} - A promise that resolves to the data of the loaded asset file.
  */
 export async function loadAsset(id: string) {
+    if (isExternalAssetLocation(id)) {
+        return await forageStorage.readExternalAsset(id)
+    }
     return await forageStorage.getItem(id) as unknown as Uint8Array
 }
 

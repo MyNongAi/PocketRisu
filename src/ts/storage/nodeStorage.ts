@@ -74,6 +74,75 @@ export interface SettingsBackupEstimate {
     moduleAssets: { count: number, bytes: number, moduleCount: number }
 }
 
+export type ExternalAssetProviderConfig =
+    | { type: 'filesystem', root: string }
+    | {
+        type: 'http'
+        baseUrl: string
+        headers?: Record<string, string>
+        hasCredentials?: boolean
+        readOnly?: boolean
+        timeoutMs?: number
+    }
+    | { type: 'android-saf', treeUri?: string }
+
+export interface ExternalAssetConfig {
+    version?: number
+    enabled: boolean
+    activeProvider: string
+    cacheMaxBytes: number
+    retryCount: number
+    providers: Record<string, ExternalAssetProviderConfig>
+}
+
+export interface ExternalAssetStatus {
+    config: ExternalAssetConfig
+    providerCapabilities: Record<string, {
+        read: boolean
+        write: boolean
+        available: boolean
+        reason?: string
+    }>
+    manifest: {
+        count: number
+        bytes: number
+        verified: number
+        fallback: number
+        migrations: Array<Record<string, unknown>>
+        missingProviders?: string[]
+    }
+    cache: { entries: number, bytes: number, maxBytes: number }
+}
+
+export interface ExternalAssetMigrationScan {
+    references: number
+    uniqueAssets: number
+    bytes: number
+    missing: string[]
+    alreadyExternal: number
+}
+
+export interface ExternalAssetRestoreHealth {
+    references: number
+    mapped: number
+    missingManifest: number
+    missingManifestSamples?: string[]
+    missingProviders: string[]
+    unavailableProviders?: string[]
+    unavailableAssets?: number
+    unavailableSamples?: Array<{ uri?: string, error: string }>
+    availabilityChecked?: number
+    healthCheckError?: string
+    requiresConfiguration?: boolean
+}
+
+export interface BackupImportResult {
+    ok: boolean
+    assetsRestored: number
+    coldStorageFailed?: number
+    externalAssets?: ExternalAssetRestoreHealth
+}
+
 export class NodeStorage{
     private static readonly BULK_WRITE_CLIENT_BATCH = 20
 
@@ -479,6 +548,78 @@ export class NodeStorage{
         }
     }
 
+    // ─── External asset store ───────────────────────────────────────────────
+    async readExternalAsset(uri: string): Promise<Buffer> {
+        const encoded = Buffer.from(uri, 'utf-8').toString('hex')
+        const response = await this.authFetch(`/api/external-assets/content/${encoded}`, {
+            headers: { 'cache-control': 'no-cache' },
+        })
+        if (!response.ok) {
+            let message = `external asset read failed: ${response.status}`
+            try { message = (await response.json())?.error ?? message } catch {}
+            throw new Error(message)
+        }
+        return Buffer.from(await response.arrayBuffer())
+    }
+
+    async externalAssetStatus(): Promise<ExternalAssetStatus> {
+        const response = await this.authFetch('/api/external-assets/status')
+        if (!response.ok) throw new Error(`external asset status failed: ${response.status}`)
+        return await response.json()
+    }
+
+    async updateExternalAssetConfig(config: Partial<ExternalAssetConfig>): Promise<ExternalAssetStatus> {
+        const response = await this.authFetch('/api/external-assets/config', {
+            method: 'PUT',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(config),
+        })
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({}))
+            throw new Error(body.error || `external asset config failed: ${response.status}`)
+        }
+        return await response.json()
+    }
+
+    async scanExternalAssetMigration(): Promise<ExternalAssetMigrationScan> {
+        const response = await this.authFetch('/api/external-assets/migrate/scan', { method: 'POST' })
+        if (!response.ok) throw new Error(`external asset migration scan failed: ${response.status}`)
+        return await response.json()
+    }
+
+    async migrateExternalAssets(providerId?: string): Promise<Record<string, any>> {
+        const response = await this.authFetch('/api/external-assets/migrate/execute', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ providerId }),
+        })
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(body.error || `external asset migration failed: ${response.status}`)
+        return body
+    }
+
+    async verifyExternalAssets(migrationId?: string): Promise<Record<string, any>> {
+        const response = await this.authFetch('/api/external-assets/verify', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ migrationId }),
+        })
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(body.error || `external asset verification failed: ${response.status}`)
+        return body
+    }
+
+    async purgeExternalAssetTrash(migrationId?: string): Promise<Record<string, any>> {
+        const response = await this.authFetch('/api/external-assets/trash/purge', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ migrationId, userVerified: true }),
+        })
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(body.error || `external asset trash purge failed: ${response.status}`)
+        return body
+    }
+
     async exportBackup(opts?: ExportBackupOptions): Promise<Response> {
         const params = new URLSearchParams()
         if (opts?.target === 'upstream') params.set('target', 'upstream')
@@ -516,7 +657,7 @@ export class NodeStorage{
     async importBackup(
         file: Blob,
         onProgress?: (loaded: number, total: number) => void
-    ): Promise<{ok: boolean, assetsRestored: number, coldStorageFailed?: number}> {
+    ): Promise<BackupImportResult> {
         await this.prepareImport(file.size)
         const authHeader = await this.createAuth()
 
@@ -541,7 +682,7 @@ export class NodeStorage{
 
             let parsedIndex = 0
             let leftover = ''
-            let result: {ok: boolean, assetsRestored: number, coldStorageFailed?: number} | null = null
+            let result: BackupImportResult | null = null
             let serverErrorMsg: string | null = null
 
             const drainNdjson = () => {
@@ -643,7 +784,7 @@ export class NodeStorage{
     async restoreServerBackup(
         filename: string,
         onProgress?: (bytes: number, totalBytes: number) => void
-    ): Promise<{ok: boolean, assetsRestored: number, coldStorageFailed?: number}> {
+    ): Promise<BackupImportResult> {
         const da = await this.authFetch('/api/backup/server/restore', {
             method: 'POST',
             headers: {
@@ -662,7 +803,7 @@ export class NodeStorage{
         const reader = da.body!.getReader()
         const decoder = new TextDecoder()
         let buffer = ''
-        let result: {ok: boolean, assetsRestored: number, coldStorageFailed?: number} | null = null
+        let result: BackupImportResult | null = null
 
         while (true) {
             const { done, value } = await reader.read()
