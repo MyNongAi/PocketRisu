@@ -53,6 +53,14 @@ export const advancedSettingsItems: SettingItem[] = [
         id: 'adv.assetAlloc', type: 'number', labelKey: 'assetMaxDifference', bindKey: 'assetMaxDifference',
         helpKey: 'assetMaxDifference'
     },
+    {
+        id: 'adv.externalAssetRecentOutputs', type: 'number',
+        fallbackLabel: 'Asset render window (recent character outputs; 0 = unlimited)',
+        bindKey: 'externalAssetRecentOutputs',
+        options: { min: 0, max: 100 },
+        classes: 'mt-4',
+        keywords: ['external asset', 'lazy image', 'recent outputs', 'asset window']
+    },
 
     // Vision Quality
     {
@@ -224,6 +232,7 @@ export const advancedSettingsItems: SettingItem[] = [
     },
 
     // Custom Components
+    { type: 'custom', id: 'adv.externalAssets', componentId: 'ExternalAssetSettings' },
     { type: 'custom', id: 'adv.banChar', componentId: 'BanCharacterSetSettings' },
     { type: 'custom', id: 'adv.export', componentId: 'SettingsExportButtons' },
 ];

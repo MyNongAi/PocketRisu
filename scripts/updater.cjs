@@ -1,7 +1,7 @@
 /**
  * Portable updater — runs with the bundled bin/node, no npm dependencies.
  * Downloads the latest portable zip/tar.gz from GitHub Releases,
- * replaces app files while preserving save/.
+ * replaces app files while preserving save/ and the default external-assets/ store.
  * On Windows, bundled Node (bin/) is staged and copied by update.bat
  * after this process exits, to avoid self-replacement file locks.
  */
@@ -21,6 +21,29 @@ const REQUIRED_ENTRIES = ['dist', 'server', 'package.json'];
 const REQUIRED_DIST_FILES = ['index.html'];
 const REQUIRED_WIN_ENTRIES = ['bin'];
 const MANAGED_BACKUP_PATH_ROOTS = new Set(['server', 'dist', 'scripts', 'bin', 'node_modules', '.update-tmp']);
+const EXTERNAL_ASSET_ROOT = 'external-assets';
+
+function createKeepEntries({ windows = isWin, skipBinReplacement = false } = {}) {
+    const keep = new Set([
+        'save',
+        'backups',
+        EXTERNAL_ASSET_ROOT,
+        '.installed-version',
+        '.update-tmp',
+        'scripts',
+        '.env',
+        '.npmrc',
+        '.portable',
+    ]);
+    if (windows || skipBinReplacement) keep.add('bin');
+    return keep;
+}
+
+function createSkipMoveEntries({ windows = isWin, skipBinReplacement = false } = {}) {
+    const skipMove = new Set(['save', 'scripts', EXTERNAL_ASSET_ROOT]);
+    if (windows || skipBinReplacement) skipMove.add('bin');
+    return skipMove;
+}
 
 function log(msg) { process.stdout.write(`[updater] ${msg}\n`); }
 function error(msg) { process.stderr.write(`[ERROR] ${msg}\n`); process.exit(1); }
@@ -267,8 +290,7 @@ async function main() {
 
     // Phase 1: move old files to backup (safer than immediate delete)
     log('Replacing files...');
-    const keep = new Set(['save', 'backups', '.installed-version', '.update-tmp', 'scripts', '.env', '.npmrc', '.portable']);
-    if (isWin || skipBinReplacement) keep.add('bin');
+    const keep = createKeepEntries({ windows: isWin, skipBinReplacement });
     const customBackupKeep = getCustomBackupKeepEntry();
     if (customBackupKeep && !keep.has(customBackupKeep)) {
         log(`Preserving custom backup directory: ${customBackupKeep}/`);
@@ -293,8 +315,7 @@ async function main() {
 
     // Phase 2: move new files from extracted to root
     const moved = [];
-    const skipMove = new Set(['save', 'scripts']);
-    if (isWin || skipBinReplacement) skipMove.add('bin');
+    const skipMove = createSkipMoveEntries({ windows: isWin, skipBinReplacement });
     try {
         for (const entry of fs.readdirSync(extractedRoot)) {
             if (skipMove.has(entry)) continue;
@@ -378,4 +399,11 @@ async function main() {
     }
 }
 
-main().catch((e) => error(e.message));
+if (require.main === module) {
+    main().catch((e) => error(e.message));
+}
+
+module.exports = {
+    createKeepEntries,
+    createSkipMoveEntries,
+};

@@ -37,6 +37,7 @@ import { isMobile } from 'src/ts/platform'
     import { getInlayAsset } from 'src/ts/process/files/inlays';
     import { quickMenu } from 'src/ts/hotkey';
     import { loadChatDraft, scheduleSaveChatDraft, flushChatDraft, removeChatDraft } from 'src/ts/storage/chatDraft';
+    import { getChatAssetRenderWindow } from 'src/ts/chatAssetWindow';
 
     import Chats from './Chats.svelte';
     import Button from '../UI/GUI/Button.svelte';
@@ -82,6 +83,11 @@ import { isMobile } from 'src/ts/platform'
     let currentChatReady = $derived(!!currentChatSlot && !currentChatSlot._placeholder)
     let currentChat = $derived(currentChatReady ? currentChatSlot.message : [])
     let currentChatFmIndex = $derived(currentChatReady ? (currentChatSlot.fmIndex ?? -1) : -1)
+    let resolveFirstMessageAssets = $derived.by(() => getChatAssetRenderWindow(
+        currentChat,
+        DBState.db.externalAssetRecentOutputs,
+        currentChatSlot?.firstMessageDisabled !== true,
+    ).firstMessage)
 
     // ─── Per-chat composer draft ────────────────────────────────────────────
     // The message input is kept per chat, stored outside the chat body, so it
@@ -1336,7 +1342,9 @@ import { isMobile } from 'src/ts/platform'
                     message={currentChatFmIndex === -1 ? DBState.db.characters[$selectedCharID].firstMessage :
                         DBState.db.characters[$selectedCharID].alternateGreetings[currentChatFmIndex]}
                     role='char'
-                    img={getCharImage(DBState.db.characters[$selectedCharID].image, 'css')}
+                    img={resolveFirstMessageAssets ? getCharImage(DBState.db.characters[$selectedCharID].image, 'css') : ''}
+                    resolveChatAssets={resolveFirstMessageAssets}
+                    resolveSenderIcon={resolveFirstMessageAssets}
                     idx={-1}
                     altGreeting={DBState.db.characters[$selectedCharID].alternateGreetings.length > 0}
                     disabled={DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].firstMessageDisabled === true}

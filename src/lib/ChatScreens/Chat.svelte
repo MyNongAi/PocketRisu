@@ -24,6 +24,7 @@
     import ChatBody from './ChatBody.svelte'
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
+    import { getChatAssetRenderWindow } from '../../ts/chatAssetWindow';
 
     let translating = $state(false)
     let editMode = $state(false)
@@ -57,6 +58,8 @@
         isOptimizedStreamingMessage?: boolean;
         streamingOptimizationMode?: StreamingDisplayOptimizationMode;
         rawStreamingText?: string;
+        resolveChatAssets?: boolean;
+        resolveSenderIcon?: boolean;
     }
 
     let {
@@ -84,7 +87,22 @@
         isOptimizedStreamingMessage = false,
         streamingOptimizationMode = 'off',
         rawStreamingText = message,
+        resolveChatAssets,
+        resolveSenderIcon,
     }: Props = $props();
+
+    let effectiveResolveChatAssets = $derived.by(() => {
+        if(resolveChatAssets !== undefined) return resolveChatAssets
+        if(!firstMessage) return true
+
+        const chat = getCurrentChat()
+        return getChatAssetRenderWindow(
+            chat?.message ?? [],
+            DBState.db.externalAssetRecentOutputs,
+            chat?.firstMessageDisabled !== true,
+        ).firstMessage
+    })
+    let effectiveResolveSenderIcon = $derived(resolveSenderIcon ?? effectiveResolveChatAssets)
 
     let msgDisplay = $state('')
     let translated = $state(false)
@@ -168,9 +186,9 @@
             return msgDisplay
         }
         if(!DBState.db.legacyTranslation){
-            return await ParseMarkdown(msgDisplay, character, 'pretranslate', idx, getCbsCondition())
+            return await ParseMarkdown(msgDisplay, character, 'pretranslate', idx, getCbsCondition(), { resolveAssets: effectiveResolveChatAssets })
         }
-        return await ParseMarkdown(msgDisplay, character, 'notrim', idx, getCbsCondition())
+        return await ParseMarkdown(msgDisplay, character, 'notrim', idx, getCbsCondition(), { resolveAssets: effectiveResolveChatAssets })
     }
 
     async function loadTranslationForEdit() {
@@ -443,7 +461,7 @@
             style:font-size="{0.875 * (DBState.db.zoomsize / 100)}rem"
             style:line-height="{(DBState.db.lineHeight ?? 1.25) * (DBState.db.zoomsize / 100)}rem"
         >
-            {#key `${totalLengthPointer}|${chatReloadPointer}`}
+            {#key `${totalLengthPointer}|${chatReloadPointer}|${effectiveResolveChatAssets}`}
                 <ChatBody
                     {character}
                     {firstMessage}
@@ -459,7 +477,8 @@
                     bind:translating={translating}
                     bind:retranslate={retranslate}
                     {renderRawStreaming}
-                    {rawStreamingText} />
+                    {rawStreamingText}
+                    resolveAssets={effectiveResolveChatAssets} />
             {/key}
             {#if idx >= 0 && !editMode && !isOptimizedStreamingMessage && partialEditEnabled && (DBState.db.enableBlockPartialEdit || DBState.db.enableDragPartialEdit)}
                 <PartialEditController
@@ -543,7 +562,7 @@
 
                 const parser = new DOMParser()
                 const doc = parser.parseFromString(
-                    await ParseMarkdown(copyText, getCurrentCharacter(), 'normal', idx, getCbsCondition())
+                    await ParseMarkdown(copyText, getCurrentCharacter(), 'normal', idx, getCbsCondition(), { resolveAssets: effectiveResolveChatAssets })
                 , 'text/html')
                 
                 doc.querySelectorAll('mark').forEach((el) => {
@@ -960,7 +979,7 @@
                     <UserIcon />
                 {/if}
             </div>
-        {:else}
+        {:else if effectiveResolveSenderIcon}
             {#await img}
                 <div class="shadow-lg bg-textcolor2" style={options?.styleFix ??`height:${DBState.db.iconsize * 3.5 / 100}rem;width:${DBState.db.iconsize * 3.5 / 100}rem;min-width:${DBState.db.iconsize * 3.5 / 100}rem`}
                 class:rounded-md={!options?.rounded} class:rounded-full={options?.rounded}></div>
@@ -973,6 +992,9 @@
                     class:rounded-md={!options?.rounded} class:rounded-full={options?.rounded}></div>
                 {/if}
             {/await}
+        {:else}
+            <div class="shadow-lg bg-textcolor2" style={options?.styleFix ??`height:${DBState.db.iconsize * 3.5 / 100}rem;width:${DBState.db.iconsize * 3.5 / 100}rem;min-width:${DBState.db.iconsize * 3.5 / 100}rem`}
+            class:rounded-md={!options?.rounded} class:rounded-full={options?.rounded}></div>
         {/if}
     {/if}
 {/snippet}

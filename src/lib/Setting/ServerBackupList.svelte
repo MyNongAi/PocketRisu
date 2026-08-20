@@ -54,6 +54,20 @@
                     alertWait(`${language.serverBackupRestoring} (${pct}%)`);
                 }
             });
+            if (result.externalAssets && (result.externalAssets.missingManifest > 0 || result.externalAssets.requiresConfiguration)) {
+                const providerIds = [...new Set([
+                    ...result.externalAssets.missingProviders,
+                    ...(result.externalAssets.unavailableProviders ?? []),
+                ])];
+                const providers = providerIds.length > 0
+                    ? ` Configure or reconnect these provider IDs in Advanced Settings: ${providerIds.join(', ')}.`
+                    : '';
+                const unavailable = result.externalAssets.unavailableAssets
+                    ? ` ${result.externalAssets.unavailableAssets} sampled external asset(s) could not be reached.`
+                    : '';
+                alertError(`Warning: ${result.externalAssets.missingManifest} external asset mapping(s) are missing.${unavailable}${providers} External images may remain unavailable after reload.`);
+                await waitAlert();
+            }
             if (result.coldStorageFailed && result.coldStorageFailed > 0) {
                 alertError(`Warning: ${result.coldStorageFailed} character(s) could not be restored from cold storage. The restored save may be incomplete. The app will now reload.`);
                 await waitAlert();

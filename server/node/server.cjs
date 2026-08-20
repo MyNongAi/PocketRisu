@@ -31,6 +31,22 @@ const {
     logger, installProcessHandlers, expressErrorMiddleware,
 } = require('./logs.cjs');
 const { createRequestLogs } = require('./request-logs.cjs');
+const {
+    createAndroidSafProvider,
+    createExternalAssetService,
+    createFilesystemProvider,
+    createHttpProvider,
+    createManifestStore,
+    isExternalAssetUri,
+    parseExternalAssetUri,
+} = require('./external-assets.cjs');
+const {
+    collectAssetReferences,
+    collectEmbeddedInternalAssetNames,
+    collectExternalAssetReferences,
+    rewriteAssetReferences,
+    rewriteExternalAssetReferences,
+} = require('./external-asset-references.cjs');
 const { applyPatch } = require('fast-json-patch');
 const { decodeRisuSave, encodeRisuSaveLegacy, calculateHash, normalizeJSON, normalizeForwardHeaders, hasRemoteBlocks } = require('./utils.cjs');
 const { spawn, execSync } = require('child_process');
@@ -73,6 +89,25 @@ function queueStorageOperation(operation) {
     const operationRun = storageOperationQueue.then(operation, operation);
     storageOperationQueue = operationRun.catch(() => {});
     return operationRun;
+}
+
+function storageLockedError() {
+    const reason = typeof exclusiveStorageReason === 'string' && exclusiveStorageReason
+        ? exclusiveStorageReason
+        : 'an exclusive storage operation';
+    return Object.assign(new Error(`Storage is temporarily locked for ${reason}`), {
+        code: 'STORAGE_LOCKED',
+        status: 409,
+        statusCode: 409,
+    });
+}
+
+// Admission is checked when the operation actually joins the queue, not only
+// when its HTTP route starts. A request may spend time authenticating or doing
+// disk preflight while an import claims the exclusive lock in the meantime.
+function queueMutableStorageOperation(operation) {
+    if (exclusiveStorageReason) return Promise.reject(storageLockedError());
+    return queueStorageOperation(operation);
 }
 
 const DB_HEX_KEY = Buffer.from('database/database.bin', 'utf-8').toString('hex');
@@ -215,9 +250,9 @@ function createBackupAndRotate() {
 }
 
 async function flushPendingDb() {
-    if (saveTimers[DB_HEX_KEY]) {
-        clearTimeout(saveTimers[DB_HEX_KEY]);
-        delete saveTimers[DB_HEX_KEY];
+    const pendingTimer = saveTimers[DB_HEX_KEY];
+    if (pendingTimer) {
+        clearTimeout(pendingTimer);
         if (dbCache[DB_HEX_KEY]) {
             await persistDbCacheWithChats(DB_HEX_KEY, 'database/database.bin');
         } else if (fullChatStore && fullChatStore.size > 0) {
@@ -230,6 +265,7 @@ async function flushPendingDb() {
             }
         }
         createBackupAndRotate();
+        if (saveTimers[DB_HEX_KEY] === pendingTimer) delete saveTimers[DB_HEX_KEY];
     }
 }
 
@@ -782,6 +818,361 @@ if(!existsSync(savePath)){
     mkdirSync(savePath)
 }
 
+// Patch sync normally persists only database.bin, but the protocol accepts
+// other KV paths too. Drain every accepted debounce before an import/migration
+// barrier starts so an old delayed write cannot land in the replacement DB.
+async function flushPendingStorageOperations() {
+    const pendingPaths = Object.keys(saveTimers);
+    if (pendingPaths.includes(DB_HEX_KEY)) await flushPendingDb();
+
+    for (const filePath of pendingPaths) {
+        if (filePath === DB_HEX_KEY || !saveTimers[filePath]) continue;
+        const pendingTimer = saveTimers[filePath];
+        clearTimeout(pendingTimer);
+        if (!Object.prototype.hasOwnProperty.call(dbCache, filePath)) continue;
+        const decodedKey = Buffer.from(filePath, 'hex').toString('utf-8');
+        const data = Buffer.from(encodeRisuSaveLegacy(dbCache[filePath]));
+        try {
+            kvSet(decodedKey, data);
+        } catch (error) {
+            if (error && typeof error === 'object') {
+                try { error.attemptedSize = data.length; } catch {}
+            }
+            throw error;
+        }
+        if (saveTimers[filePath] === pendingTimer) delete saveTimers[filePath];
+    }
+}
+
+let exclusiveStorageReason = null;
+function rejectDuringExclusiveStorage(req, res, next) {
+    if (!exclusiveStorageReason) return next();
+    res.status(409).json({ error: `Storage is temporarily locked for ${exclusiveStorageReason}` });
+}
+
+function beginExclusiveStorage(reason) {
+    if (exclusiveStorageReason) return false;
+    exclusiveStorageReason = reason;
+    return true;
+}
+
+async function acquireExclusiveStorage(reason) {
+    if (!beginExclusiveStorage(reason)) return false;
+    try {
+        // Reserving the flag first prevents new mutable queue admissions. The
+        // barrier then waits for operations admitted earlier and persists every
+        // accepted debounce before the exclusive caller touches SQLite/files.
+        await queueStorageOperation(flushPendingStorageOperations);
+        return true;
+    } catch (error) {
+        endExclusiveStorage(reason);
+        throw error;
+    }
+}
+
+function endExclusiveStorage(reason) {
+    if (exclusiveStorageReason === reason) exclusiveStorageReason = null;
+}
+
+// ─── External asset providers ───────────────────────────────────────────────
+// Provider credentials/config stay server-side and are intentionally excluded
+// from backups. The portable backup entry contains only the small content
+// manifest; a restored instance can point the same provider ID at a new root.
+const EXTERNAL_ASSET_MANIFEST_KEY = 'external-assets/manifest.v1.json';
+const EXTERNAL_ASSET_BACKUP_NAME = 'external_manifest.v1.json';
+const externalAssetStateDir = path.join(savePath, 'external-assets');
+const externalAssetConfigPath = path.join(externalAssetStateDir, 'config.json');
+const externalAssetTrashDir = path.join(externalAssetStateDir, 'trash');
+// Keep the built-in store under save/, which both portable updater paths
+// preserve. A user may still configure another filesystem folder explicitly.
+const defaultExternalAssetRoot = 'save/external-assets/store';
+let externalAssetRuntime = null;
+let externalAssetRuntimePromise = null;
+let externalAssetConfigGeneration = 0;
+let externalAssetMigrationInProgress = false;
+
+function defaultExternalAssetConfig() {
+    return {
+        version: 1,
+        enabled: true,
+        activeProvider: 'local',
+        cacheMaxBytes: 64 * 1024 * 1024,
+        retryCount: 2,
+        providers: {
+            local: { type: 'filesystem', root: defaultExternalAssetRoot },
+        },
+    };
+}
+
+function normalizeExternalAssetConfig(input) {
+    const source = input && typeof input === 'object' ? input : {};
+    const defaults = defaultExternalAssetConfig();
+    const providers = source.providers && typeof source.providers === 'object' && !Array.isArray(source.providers)
+        ? source.providers
+        : defaults.providers;
+    const activeProvider = typeof source.activeProvider === 'string' && source.activeProvider
+        ? source.activeProvider
+        : defaults.activeProvider;
+    const cacheMaxBytesRaw = Number(source.cacheMaxBytes);
+    const retryCountRaw = Number(source.retryCount);
+    return {
+        version: 1,
+        enabled: source.enabled !== false,
+        activeProvider,
+        cacheMaxBytes: Number.isFinite(cacheMaxBytesRaw)
+            ? Math.min(2 * 1024 * 1024 * 1024, Math.max(0, Math.floor(cacheMaxBytesRaw)))
+            : defaults.cacheMaxBytes,
+        retryCount: Number.isFinite(retryCountRaw)
+            ? Math.min(10, Math.max(0, Math.floor(retryCountRaw)))
+            : defaults.retryCount,
+        providers,
+    };
+}
+
+async function readExternalAssetConfig() {
+    try {
+        return normalizeExternalAssetConfig(JSON.parse(await fs.readFile(externalAssetConfigPath, 'utf-8')));
+    } catch (error) {
+        if (error?.code !== 'ENOENT') logger.warn('[ExternalAssets] Invalid config; using safe defaults', error);
+        return defaultExternalAssetConfig();
+    }
+}
+
+async function writeExternalAssetConfig(input) {
+    const current = await readExternalAssetConfig();
+    const incomingProviders = input?.providers && typeof input.providers === 'object' && !Array.isArray(input.providers)
+        ? input.providers
+        : null;
+    const mergedProviders = { ...current.providers };
+    if (incomingProviders) {
+        for (const [id, incoming] of Object.entries(incomingProviders)) {
+            const previous = current.providers[id];
+            const cleanIncoming = incoming && typeof incoming === 'object'
+                ? Object.fromEntries(Object.entries(incoming).filter(([key]) => key !== 'hasCredentials'))
+                : incoming;
+            const sameType = previous && cleanIncoming && typeof cleanIncoming === 'object'
+                && previous.type === cleanIncoming.type;
+            const merged = sameType
+                ? { ...previous, ...cleanIncoming }
+                : cleanIncoming;
+            // Status responses never expose credential values. Omitting the
+            // field on update means "keep the server-side headers"; an
+            // explicit {} still clears them.
+            if (sameType && previous?.headers && incoming && typeof incoming === 'object'
+                && !Object.prototype.hasOwnProperty.call(incoming, 'headers')) {
+                merged.headers = previous.headers;
+            }
+            mergedProviders[id] = merged;
+        }
+    }
+    const next = normalizeExternalAssetConfig({ ...current, ...input, providers: mergedProviders });
+    if (!next.providers[next.activeProvider]) throw new Error('Active external asset provider is not configured');
+    // Validate every provider before replacing the last known-good config.
+    Object.entries(next.providers).forEach(([id, provider]) => {
+        createConfiguredExternalProvider(id, provider, next.retryCount);
+    });
+    await fs.mkdir(externalAssetStateDir, { recursive: true });
+    const tempPath = `${externalAssetConfigPath}.${process.pid}.${Date.now()}.tmp`;
+    await fs.writeFile(tempPath, JSON.stringify(next, null, 2), 'utf-8');
+    await fs.rename(tempPath, externalAssetConfigPath);
+    externalAssetConfigGeneration++;
+    externalAssetRuntime = null;
+    externalAssetRuntimePromise = null;
+    return next;
+}
+
+function publicExternalAssetConfig(config) {
+    return {
+        ...config,
+        providers: Object.fromEntries(Object.entries(config.providers || {}).map(([id, provider]) => {
+            if (!provider || typeof provider !== 'object') return [id, provider];
+            const { headers, ...safeProvider } = provider;
+            return [id, {
+                ...safeProvider,
+                hasCredentials: !!headers && Object.keys(headers).length > 0,
+            }];
+        })),
+    };
+}
+
+function createConfiguredExternalProvider(id, provider, retryCount) {
+    if (!provider || typeof provider !== 'object') throw new Error(`Invalid external asset provider: ${id}`);
+    switch (provider.type) {
+        case 'filesystem':
+            return createFilesystemProvider({ id, rootDir: provider.root || defaultExternalAssetRoot });
+        case 'http':
+            if (provider.headers !== undefined) {
+                if (!provider.headers || typeof provider.headers !== 'object' || Array.isArray(provider.headers)
+                    || Object.values(provider.headers).some((value) => typeof value !== 'string')) {
+                    throw new Error(`HTTP provider headers must be a string-to-string object: ${id}`);
+                }
+            }
+            return createHttpProvider({
+                id,
+                baseUrl: provider.baseUrl,
+                headers: provider.headers || {},
+                allowPut: provider.readOnly !== true,
+                publicRead: provider.publicRead === true,
+                timeoutMs: provider.timeoutMs,
+                retry: { attempts: retryCount + 1 },
+            });
+        case 'android-saf':
+            return createAndroidSafProvider({ id });
+        default:
+            throw new Error(`Unsupported external asset provider type: ${String(provider.type)}`);
+    }
+}
+
+async function getExternalAssetRuntime() {
+    if (externalAssetRuntime) return externalAssetRuntime;
+    if (externalAssetRuntimePromise) return externalAssetRuntimePromise;
+    const generation = externalAssetConfigGeneration;
+    const building = (async () => {
+        const config = await readExternalAssetConfig();
+        const providers = Object.entries(config.providers).map(([id, provider]) => (
+            createConfiguredExternalProvider(id, provider, config.retryCount)
+        ));
+        const manifestStore = createManifestStore({
+            key: EXTERNAL_ASSET_MANIFEST_KEY,
+            getValue: async (key) => kvGet(key),
+            setValue: async (key, value) => kvSet(key, value),
+        });
+        const service = createExternalAssetService({
+            providers,
+            manifestStore,
+            trashDir: externalAssetTrashDir,
+            readInternal: async (key) => kvGet(key),
+            cacheMaxBytes: config.cacheMaxBytes,
+            retry: { attempts: config.retryCount + 1 },
+        });
+        const runtime = { config, providers, manifestStore, service };
+        if (generation === externalAssetConfigGeneration) externalAssetRuntime = runtime;
+        return runtime;
+    })();
+    externalAssetRuntimePromise = building;
+    try {
+        const runtime = await building;
+        if (generation !== externalAssetConfigGeneration) return getExternalAssetRuntime();
+        return runtime;
+    } finally {
+        if (externalAssetRuntimePromise === building) externalAssetRuntimePromise = null;
+    }
+}
+
+async function externalAssetStatus() {
+    const runtime = await getExternalAssetRuntime();
+    const records = await runtime.manifestStore.list();
+    const migrationIds = [...new Set(records.flatMap((entry) => entry.migrationIds || (entry.migrationId ? [entry.migrationId] : [])))];
+    const configuredProviderIds = new Set(runtime.providers.map((provider) => provider.id));
+    const missingProviders = [...new Set(records
+        .map((entry) => entry.providerId)
+        .filter((id) => typeof id === 'string' && !configuredProviderIds.has(id)))];
+    return {
+        config: publicExternalAssetConfig(runtime.config),
+        providerCapabilities: Object.fromEntries(runtime.providers.map((provider) => [provider.id, {
+            ...provider.capabilities,
+            type: provider.type,
+            available: provider.capabilities?.unsupported !== true,
+        }])),
+        manifest: {
+            count: records.length,
+            bytes: records.reduce((sum, entry) => sum + (Number(entry.size) || 0), 0),
+            verified: records.filter((entry) => entry.status === 'verified' && entry.lastVerifiedAt).length,
+            fallback: records.filter((entry) => Array.isArray(entry.fallbacks) && entry.fallbacks.length > 0).length,
+            migrations: migrationIds.map((id) => ({ id })),
+            missingProviders,
+        },
+        cache: {
+            entries: runtime.service.cache.size,
+            bytes: runtime.service.cache.sizeBytes,
+            maxBytes: runtime.service.cache.maxBytes,
+        },
+    };
+}
+
+async function externalAssetReferenceHealth(dbObj) {
+    const uris = [...new Set(collectExternalAssetReferences(dbObj).map((reference) => reference.value))];
+    if (uris.length === 0) {
+        return {
+            references: 0,
+            mapped: 0,
+            missingManifest: 0,
+            missingProviders: [],
+            unavailableProviders: [],
+            unavailableAssets: 0,
+            availabilityChecked: 0,
+            requiresConfiguration: false,
+        };
+    }
+    const runtime = await getExternalAssetRuntime();
+    const records = new Map((await runtime.manifestStore.list()).map((entry) => [entry.uri, entry]));
+    const missingManifestUris = uris.filter((uri) => !records.has(uri));
+    const providers = new Map(runtime.providers.map((provider) => [provider.id, provider]));
+    const configured = new Set(providers.keys());
+    const missingProviders = [...new Set(uris
+        .map((uri) => parseExternalAssetUri(uri).providerId)
+        .filter((providerId) => !configured.has(providerId)))];
+
+    // A fresh install always has a provider named `local`, so checking IDs
+    // alone incorrectly reports a restored manifest as healthy even when none
+    // of its content-addressed files were copied. Probe a bounded sample per
+    // provider (all current providers support cheap HEAD/stat) and surface a
+    // configuration warning before the UI reloads into broken images.
+    const RESTORE_HEALTH_SAMPLE_PER_PROVIDER = 8;
+    const candidatesByProvider = new Map();
+    for (const uri of uris) {
+        const record = records.get(uri);
+        if (!record) continue;
+        const parsed = parseExternalAssetUri(uri);
+        if (!providers.has(parsed.providerId)) continue;
+        if (!candidatesByProvider.has(parsed.providerId)) candidatesByProvider.set(parsed.providerId, []);
+        const candidates = candidatesByProvider.get(parsed.providerId);
+        if (candidates.length < RESTORE_HEALTH_SAMPLE_PER_PROVIDER) candidates.push({ parsed, record });
+    }
+
+    const unavailableProviders = new Set();
+    const unavailableSamples = [];
+    let availabilityChecked = 0;
+    for (const [providerId, candidates] of candidatesByProvider) {
+        const provider = providers.get(providerId);
+        if (!provider?.capabilities || provider.capabilities.stat !== true || provider.capabilities.unsupported) {
+            unavailableProviders.add(providerId);
+            unavailableSamples.push({ uri: candidates[0]?.parsed.uri, error: 'Provider does not support availability checks' });
+            continue;
+        }
+        for (const { parsed, record } of candidates) {
+            availabilityChecked++;
+            try {
+                const info = await provider.stat(parsed.hash);
+                if (Number.isInteger(record.size) && Number.isFinite(info?.size) && info.size !== record.size) {
+                    throw new Error(`size mismatch: expected ${record.size}, received ${info.size}`);
+                }
+            } catch (error) {
+                unavailableProviders.add(providerId);
+                unavailableSamples.push({
+                    uri: parsed.uri,
+                    error: error?.message || String(error),
+                });
+                // One inaccessible object is enough to make this provider's
+                // restore health uncertain; avoid more remote retries here.
+                break;
+            }
+        }
+    }
+    return {
+        references: uris.length,
+        mapped: uris.length - missingManifestUris.length,
+        missingManifest: missingManifestUris.length,
+        missingManifestSamples: missingManifestUris.slice(0, 20),
+        missingProviders,
+        unavailableProviders: [...unavailableProviders],
+        unavailableAssets: unavailableSamples.length,
+        unavailableSamples: unavailableSamples.slice(0, 20),
+        availabilityChecked,
+        requiresConfiguration: missingProviders.length > 0 || unavailableProviders.size > 0,
+    };
+}
+
 // Server-side backup directory (outside save/ to avoid bloating updater copies).
 // Configurable at runtime via the kv key `config/server-backup-path`. When the
 // user changes the path the old directory is left in place (existing backups
@@ -873,6 +1264,31 @@ const BACKUP_NDJSON_HEARTBEAT_MS = Math.max(
     100,
     Number(process.env.BACKUP_NDJSON_HEARTBEAT_MS ?? '5000') || 5000,
 );
+const BACKUP_UPLOAD_IDLE_TIMEOUT_MS = Math.max(
+    30_000,
+    Number(process.env.BACKUP_UPLOAD_IDLE_TIMEOUT_MS ?? '300000') || 300_000,
+);
+
+function installUploadIdleWatchdog(req) {
+    let timer = null;
+    const refresh = () => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => {
+            if (!req.complete && !req.destroyed) {
+                req.destroy(new Error('Upload timed out while waiting for more data'));
+            }
+        }, BACKUP_UPLOAD_IDLE_TIMEOUT_MS);
+    };
+    const clear = () => {
+        if (timer) clearTimeout(timer);
+        timer = null;
+    };
+    req.once('end', clear);
+    req.once('aborted', clear);
+    req.once('close', clear);
+    refresh();
+    return { refresh, clear };
+}
 
 let importInProgress = false;
 
@@ -1346,7 +1762,7 @@ async function migrateInlaysToFilesystem() {
     await fs.writeFile(inlayMigrationMarker, new Date().toISOString(), 'utf-8');
 }
 
-async function fetchLatestRelease(lang) {
+async function fetchLatestRelease(lang, { signal } = {}) {
     if (UPDATE_CHECK_DISABLED) return null;
     try {
         const currentVersion = getCurrentVersion();
@@ -1358,7 +1774,9 @@ async function fetchLatestRelease(lang) {
         });
         if (lang) params.set('l', String(lang).slice(0, 16));
         const url = `${UPDATE_CHECK_URL}?${params}`;
-        const res = await fetch(url);
+        const timeoutSignal = AbortSignal.timeout(20_000);
+        const requestSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+        const res = await fetch(url, { signal: requestSignal });
         if (!res.ok) return null;
         const data = await res.json();
         if (data.hasUpdate) {
@@ -1920,12 +2338,19 @@ function setupProxyStreamWebSocket(server) {
 }
 
 function encodeBackupEntry(name, data) {
+    return Buffer.concat([encodeBackupEntryHeader(name, data.length), data]);
+}
+
+function encodeBackupEntryHeader(name, dataLength) {
+    if (!Number.isSafeInteger(dataLength) || dataLength < 0 || dataLength > 0xffffffff) {
+        throw new Error(`Backup entry exceeds the 4 GiB format limit: ${name}`);
+    }
     const encodedName = Buffer.from(name, 'utf-8');
     const nameLength = Buffer.allocUnsafe(4);
     nameLength.writeUInt32LE(encodedName.length, 0);
-    const dataLength = Buffer.allocUnsafe(4);
-    dataLength.writeUInt32LE(data.length, 0);
-    return Buffer.concat([nameLength, encodedName, dataLength, data]);
+    const dataLengthBuffer = Buffer.allocUnsafe(4);
+    dataLengthBuffer.writeUInt32LE(dataLength, 0);
+    return Buffer.concat([nameLength, encodedName, dataLengthBuffer]);
 }
 
 function isInvalidBackupPathSegment(name) {
@@ -2095,6 +2520,10 @@ function resolveBackupStorageKey(name) {
         return name;
     }
 
+    if (name === EXTERNAL_ASSET_BACKUP_NAME) {
+        return EXTERNAL_ASSET_MANIFEST_KEY;
+    }
+
     if (name.startsWith('inlay/')) {
         const parsed = parseInlayBackupName(name);
         if (!parsed || !isSafeInlayId(parsed.id)) {
@@ -2152,8 +2581,7 @@ function parseBackupChunk(buffer, onEntry) {
 
 // ─── Shared backup import logic ─────────────────────────────────────────────
 // Accepts any async iterable of Buffer chunks (HTTP request body, file stream, etc.)
-async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0, onProgress = null } = {}) {
-    const BATCH_SIZE = 5000;
+async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0, onProgress = null, onChunk = null } = {}) {
     // Defer Buffer.concat until enough bytes for the next entry are buffered.
     // Concatenating on every chunk arrival is O(n²) when a single entry (e.g.
     // database.risudat) far exceeds chunk size.
@@ -2163,7 +2591,6 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
     let hasDatabase = false;
     let assetsRestored = 0;
     let bytesReceived = 0;
-    let batchCount = 0;
     const seenEntryNames = new Set();
     const importedInlayIds = new Set();
     const importedSidecarIds = new Set();
@@ -2207,11 +2634,16 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
 
     await flushPendingDb();
     createBackupAndRotate();
+    // Manifest is small and external objects live outside this replacement
+    // transaction. Keep an exact copy so a truncated/malformed import cannot
+    // strand the still-current DB's external:// references.
+    const previousExternalManifest = kvGet(EXTERNAL_ASSET_MANIFEST_KEY);
 
     sqliteDb.pragma('synchronous = OFF');
 
     sqliteDb.exec('BEGIN');
     kvDelPrefix('assets/');
+    kvDel(EXTERNAL_ASSET_MANIFEST_KEY);
     kvDelPrefix('inlay/');
     kvDelPrefix('inlay_thumb/');
     kvDelPrefix('inlay_meta/');
@@ -2235,6 +2667,7 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
 
     try {
         for await (const chunk of dataSource) {
+            if (onChunk) onChunk(chunk);
             bytesReceived += chunk.length;
             if (maxBytes > 0 && bytesReceived > maxBytes) {
                 throw new Error(`Backup exceeds max allowed size (${maxBytes} bytes)`);
@@ -2319,6 +2752,9 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
                     // Skip deprecated thumbnail entries from legacy backups
                 } else {
                     const storageKey = resolveBackupStorageKey(name);
+                    if (storageKey === EXTERNAL_ASSET_MANIFEST_KEY) {
+                        validateExternalAssetManifestValue(data);
+                    }
                     const storageValue = storageKey.startsWith('coldstorage/')
                         ? encodeColdStorageCanonicalBuffer(
                             parseColdStorageJsonBuffer(data, name, { allowPlainJson: true }).coldData
@@ -2332,12 +2768,10 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
                     }
                 }
 
-                batchCount++;
-                if (batchCount >= BATCH_SIZE) {
-                    sqliteDb.exec('COMMIT');
-                    sqliteDb.exec('BEGIN');
-                    batchCount = 0;
-                }
+                // Keep one transaction for the entire replacement. The disk
+                // preflight reserves 2x headroom for SQLite's rollback/WAL
+                // pages; committing every few thousand entries would make a
+                // later malformed entry impossible to roll back atomically.
             });
 
             if (remaining.length === 0) {
@@ -2366,6 +2800,15 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
         if (!hasDatabase) {
             throw new Error('Backup does not contain database.risudat');
         }
+        // Validate the replacement DB before making the destructive import
+        // transaction durable. A complete-length but corrupt risudat must not
+        // erase the currently working database and assets.
+        const candidateDatabase = kvGet('database/database.bin');
+        if (!candidateDatabase) throw new Error('Imported database.risudat is empty');
+        const candidateDbObject = normalizeJSON(await decodeRisuSave(candidateDatabase));
+        if (!candidateDbObject || typeof candidateDbObject !== 'object' || Array.isArray(candidateDbObject)) {
+            throw new Error('Imported database.risudat did not decode to a database object');
+        }
         for (const [id, info] of legacyInlayInfoMap.entries()) {
             if (importedInlayIds.has(id) && !importedSidecarIds.has(id)) {
                 writeStagingSidecarSync(id, info);
@@ -2374,6 +2817,15 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
         sqliteDb.exec('COMMIT');
     } catch (error) {
         try { sqliteDb.exec('ROLLBACK'); } catch (_) {}
+        try {
+            if (previousExternalManifest) kvSet(EXTERNAL_ASSET_MANIFEST_KEY, previousExternalManifest);
+            else kvDel(EXTERNAL_ASSET_MANIFEST_KEY);
+            externalAssetConfigGeneration++;
+            externalAssetRuntime = null;
+            externalAssetRuntimePromise = null;
+        } catch (restoreError) {
+            logger.error('[Backup Import] Failed to restore the prior external asset manifest', restoreError);
+        }
         await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => {});
         await fs.rm(backupInlayDir, { recursive: true, force: true }).catch(() => {});
         throw error;
@@ -2399,10 +2851,14 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
     }
 
     invalidateDbCache();
+    externalAssetConfigGeneration++;
+    externalAssetRuntime = null;
+    externalAssetRuntimePromise = null;
 
     // Trigger cold storage migration now so import result includes failure count.
     const dbRaw = kvGet('database/database.bin');
     let coldStorageFailed = 0;
+    let restoredDbObj = null;
     if (dbRaw) {
         const migration = {};
         const dbObj = await decodeDatabaseWithPersistentChatIds(dbRaw, {
@@ -2411,6 +2867,35 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
         });
         coldStorageFailed = migration.coldStorageFailed || 0;
         initChatStore(dbObj);
+        restoredDbObj = dbObj;
+    }
+    let externalAssets = {
+            references: 0,
+            mapped: 0,
+            missingManifest: 0,
+            missingProviders: [],
+            unavailableProviders: [],
+            unavailableAssets: 0,
+            availabilityChecked: 0,
+            requiresConfiguration: false,
+        };
+    if (restoredDbObj) {
+        try {
+            externalAssets = await externalAssetReferenceHealth(restoredDbObj);
+        } catch (healthError) {
+            // The replacement transaction and inlay swap have already
+            // succeeded. Provider diagnostics are best-effort and must never
+            // turn a committed restore into a reported import failure.
+            logger.warn('[Backup Import] External asset health check failed:', healthError?.message || healthError);
+            const references = collectExternalAssetReferences(restoredDbObj).length;
+            externalAssets = {
+                ...externalAssets,
+                references,
+                unavailableAssets: references,
+                requiresConfiguration: references > 0,
+                healthCheckError: healthError?.message || String(healthError),
+            };
+        }
     }
 
     try {
@@ -2423,7 +2908,7 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
     if (coldStorageFailed > 0) {
         logger.error(`[Backup Import] ${coldStorageFailed} cold storage character(s) could not be restored`);
     }
-    return { assetsRestored, bytesReceived, coldStorageFailed };
+    return { assetsRestored, bytesReceived, coldStorageFailed, externalAssets };
 }
 
 app.get('/', async (req, res, next) => {
@@ -3085,6 +3570,57 @@ function resolveAssetPayload(key, rawValue) {
     return { binary: rawValue, contentType }
 }
 
+function validateExternalAssetManifestValue(rawValue) {
+    let manifest;
+    try {
+        manifest = JSON.parse(Buffer.from(rawValue).toString('utf-8'));
+    } catch (error) {
+        throw new Error(`Invalid external asset manifest JSON: ${error?.message || error}`);
+    }
+    if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)
+        || manifest.version !== 1 || !manifest.assets
+        || typeof manifest.assets !== 'object' || Array.isArray(manifest.assets)) {
+        throw new Error('Invalid or unsupported external asset manifest structure');
+    }
+    for (const [uri, entry] of Object.entries(manifest.assets)) {
+        if (!isExternalAssetUri(uri) || !entry || typeof entry !== 'object' || Array.isArray(entry)) {
+            throw new Error(`Invalid external asset manifest entry: ${uri.slice(0, 160)}`);
+        }
+        const parsed = parseExternalAssetUri(uri);
+        if (entry.uri !== parsed.uri) {
+            throw new Error(`External asset manifest URI mismatch: ${uri}`);
+        }
+        if (entry.providerId !== parsed.providerId) {
+            throw new Error(`External asset manifest provider mismatch: ${uri}`);
+        }
+        if (entry.hash !== parsed.hash) {
+            throw new Error(`External asset manifest hash mismatch: ${uri}`);
+        }
+        if (!Number.isSafeInteger(entry.size) || entry.size < 0) {
+            throw new Error(`External asset manifest has invalid size: ${uri}`);
+        }
+    }
+    return manifest;
+}
+
+async function readMigratedInternalAssetFallback(internalKey) {
+    if (!internalKey.startsWith('assets/')) return null;
+    const runtime = await getExternalAssetRuntime();
+    const entries = await runtime.manifestStore.list();
+    const record = entries.find((entry) => (
+        Array.isArray(entry.fallbacks)
+        && entry.fallbacks.some((fallback) => fallback?.internalKey === internalKey)
+    ));
+    if (!record) return null;
+    const result = await runtime.service.readWithMeta(record.uri);
+    return {
+        binary: result.data,
+        contentType: record.mimeType || detectMime(result.data),
+        source: result.source,
+        hash: record.hash,
+    };
+}
+
 const THUMB_MAX_SIDE = 320;
 const THUMB_QUALITY = 75;
 const THUMB_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
@@ -3148,7 +3684,22 @@ app.get('/api/asset/:hexKey', sessionAuthMiddleware, async (req, res) => {
 
         // Fast-path 304: check updated_at BEFORE loading the blob.
         const updatedAt = kvGetUpdatedAt(key)
-        if (updatedAt === null) return res.status(404).set('Cache-Control', 'no-store').end()
+        if (updatedAt === null) {
+            // A pre-migration safety DB (or an unknown embedded legacy
+            // reference) may still request the old assets/... key after its KV
+            // value moved to recoverable trash. Resolve it through the same
+            // verified external -> trash -> internal fallback chain.
+            const fallback = await readMigratedInternalAssetFallback(key)
+            if (!fallback) return res.status(404).set('Cache-Control', 'no-store').end()
+            const fallbackHeaders = {
+                'Content-Type': fallback.contentType,
+                'Cache-Control': 'private, no-store',
+                'X-PocketRisu-Asset-Source': fallback.source,
+            }
+            if (fallback.hash) fallbackHeaders.ETag = `"external-${fallback.hash}"`
+            res.set(fallbackHeaders)
+            return res.send(fallback.binary)
+        }
 
         const etag = `"${updatedAt}"`
         if (req.headers['if-none-match'] === etag) {
@@ -3170,6 +3721,287 @@ app.get('/api/asset/:hexKey', sessionAuthMiddleware, async (req, res) => {
         res.status(500).end()
     }
 })
+
+// External asset URLs are authenticated like ordinary <img src> assets. The
+// response is deliberately `private, no-store`: the bounded server LRU is the
+// cache budget, so a browser disk cache cannot silently rebuild the full store.
+app.get('/api/external-assets/content/:hexUri', sessionAuthMiddleware, async (req, res) => {
+    try {
+        const uri = Buffer.from(req.params.hexUri, 'hex').toString('utf-8');
+        if (!isExternalAssetUri(uri)) return res.status(400).json({ error: 'Invalid external asset URI' });
+        const runtime = await getExternalAssetRuntime();
+        const entry = await runtime.manifestStore.get(uri);
+        if (!entry) return res.status(404).json({ error: 'External asset is missing from manifest' });
+        const result = await runtime.service.readWithMeta(uri);
+        res.set({
+            'Content-Type': entry.mimeType || detectMime(result.data),
+            'Cache-Control': 'private, no-store',
+            'X-PocketRisu-Asset-Source': result.source,
+        });
+        res.send(result.data);
+    } catch (error) {
+        logger.error('[ExternalAssets] Content read failed', error);
+        res.status(502).set('Cache-Control', 'no-store').json({
+            error: error?.message || 'External asset unavailable',
+            code: error?.code || 'EXTERNAL_ASSET_ERROR',
+        });
+    }
+});
+
+app.get('/api/external-assets/status', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    try { res.json(await externalAssetStatus()); }
+    catch (error) { next(error); }
+});
+
+app.put('/api/external-assets/config', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!checkActiveSession(req, res)) return;
+    if (externalAssetMigrationInProgress || importInProgress) {
+        return res.status(409).json({ error: 'External asset configuration is locked during migration/import' });
+    }
+    const storageReason = 'external asset configuration';
+    if (!await acquireExclusiveStorage(storageReason)) {
+        return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
+    }
+    try {
+        await writeExternalAssetConfig(req.body || {});
+        res.json(await externalAssetStatus());
+    } catch (error) {
+        res.status(400).json({ error: error?.message || 'Invalid external asset configuration' });
+    } finally {
+        endExclusiveStorage(storageReason);
+    }
+});
+
+async function decodedFullDatabaseForAssetMigration() {
+    return await queueStorageOperation(async () => {
+        await flushPendingDb();
+        const raw = kvGet('database/database.bin');
+        if (!raw) throw new Error('database.bin missing');
+        return {
+            dbObj: normalizeJSON(await decodeRisuSave(raw)),
+            databaseHash: nodeCrypto.createHash('sha256').update(raw).digest('hex'),
+        };
+    });
+}
+
+function externalMigrationConflict(message) {
+    return Object.assign(new Error(message), { statusCode: 409 });
+}
+
+function externalMigrationPlan(dbObj) {
+    const references = collectAssetReferences(dbObj);
+    const uniquePaths = [...new Set(references.map((reference) => reference.value))];
+    const missing = [];
+    let bytes = 0;
+    for (const key of uniquePaths) {
+        const size = kvSize(key);
+        if (size === null || size === undefined) missing.push(key);
+        else bytes += size;
+    }
+    return { references, uniquePaths, missing, bytes };
+}
+
+app.post('/api/external-assets/migrate/scan', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (externalAssetMigrationInProgress || importInProgress) {
+        return res.status(409).json({ error: 'External asset scan is locked during migration/import' });
+    }
+    const storageReason = 'external asset scan';
+    if (!await acquireExclusiveStorage(storageReason)) {
+        return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
+    }
+    try {
+        const { dbObj } = await decodedFullDatabaseForAssetMigration();
+        const plan = externalMigrationPlan(dbObj);
+        res.json({
+            references: plan.references.length,
+            uniqueAssets: plan.uniquePaths.length,
+            bytes: plan.bytes,
+            missing: plan.missing,
+            alreadyExternal: collectExternalAssetReferences(dbObj).length,
+        });
+    } catch (error) { next(error); }
+    finally { endExclusiveStorage(storageReason); }
+});
+
+app.post('/api/external-assets/migrate/execute', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!checkActiveSession(req, res)) return;
+    if (externalAssetMigrationInProgress) return res.status(409).json({ error: 'External asset migration already in progress' });
+    if (importInProgress) return res.status(409).json({ error: 'A backup import or restore is already in progress' });
+    if (!await acquireExclusiveStorage('external asset migration')) {
+        return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
+    }
+    externalAssetMigrationInProgress = true;
+    // Reuse the existing global import/restore mutex. Those flows replace the
+    // database and manifest wholesale and must not overlap network staging.
+    importInProgress = true;
+    try {
+        const runtime = await getExternalAssetRuntime();
+        if (!runtime.config.enabled) return res.status(400).json({ error: 'External asset storage is disabled' });
+        const providerId = typeof req.body?.providerId === 'string' && req.body.providerId
+            ? req.body.providerId
+            : runtime.config.activeProvider;
+        if (!runtime.config.providers[providerId]) return res.status(400).json({ error: 'External asset provider not configured' });
+
+        const { dbObj, databaseHash } = await decodedFullDatabaseForAssetMigration();
+        const plan = externalMigrationPlan(dbObj);
+        if (plan.missing.length > 0) {
+            return res.status(409).json({
+                error: 'Migration aborted because referenced internal assets are missing',
+                missing: plan.missing,
+            });
+        }
+
+        const migrationId = `${Date.now()}-${nodeCrypto.randomUUID()}`;
+        const replacements = new Map();
+        // No live reference is changed during staging. Each source uploads,
+        // re-download verifies, and receives a trash copy one at a time; only
+        // the small mapping metadata is committed in one manifest write.
+        async function* stageInputs() {
+            for (const internalKey of plan.uniquePaths) {
+                const data = kvGet(internalKey);
+                if (!data) throw new Error(`Internal asset disappeared during migration: ${internalKey}`);
+                const { binary, contentType } = resolveAssetPayload(internalKey, data);
+                yield {
+                    providerId,
+                    data: binary,
+                    internalKey,
+                    assetName: path.basename(internalKey),
+                    mimeType: contentType,
+                    migrationId,
+                };
+            }
+        }
+        const stagedResults = await runtime.service.stageMany(stageInputs());
+        const staged = stagedResults.map((result, index) => ({
+            ...result,
+            internalKey: plan.uniquePaths[index],
+        }));
+        for (const item of staged) replacements.set(item.internalKey, item.uri);
+
+        const rewritten = rewriteAssetReferences(dbObj, replacements);
+        const encoded = Buffer.from(encodeRisuSaveLegacy(rewritten));
+        const safetyBackupKey = `migration-backup/pre-external-assets-${Date.now()}.bin`;
+        // A character/module asset may also be referenced by a non-migrated
+        // field (for example a user icon). Keep that internal KV value until
+        // every remaining legacy reference has gone away.
+        const remainingInternalNames = buildUncleanableSet(rewritten);
+        for (const name of collectEmbeddedInternalAssetNames(rewritten)) remainingInternalNames.add(name);
+        const removableInternalKeys = plan.uniquePaths.filter(
+            (internalKey) => !remainingInternalNames.has(path.basename(internalKey)),
+        );
+
+        // Publish under the ordinary storage queue. Staging may take hours, so
+        // writes are not blocked while bytes upload; instead we re-check both
+        // the DB snapshot and every source byte here and abort on any change.
+        await queueStorageOperation(async () => {
+            await flushPendingDb();
+            const currentRaw = kvGet('database/database.bin');
+            if (!currentRaw) throw externalMigrationConflict('Migration aborted because database.bin disappeared');
+            const currentDatabaseHash = nodeCrypto.createHash('sha256').update(currentRaw).digest('hex');
+            if (currentDatabaseHash !== databaseHash) {
+                throw externalMigrationConflict('Migration aborted because the database changed during staging; no references or originals were replaced');
+            }
+            for (const item of staged) {
+                const source = kvGet(item.internalKey);
+                if (!source) {
+                    throw externalMigrationConflict(`Migration aborted because an internal source disappeared: ${item.internalKey}`);
+                }
+                const { binary } = resolveAssetPayload(item.internalKey, source);
+                const currentHash = nodeCrypto.createHash('sha256').update(binary).digest('hex');
+                if (currentHash !== item.hash || binary.length !== item.size) {
+                    throw externalMigrationConflict(`Migration aborted because an internal source changed: ${item.internalKey}`);
+                }
+            }
+
+            // Atomic publish: safety snapshot + rewritten DB + source KV removal.
+            // Trash/external copies were independently hash-verified above, so
+            // the loader can fall back to trash after internal bytes are released.
+            sqliteDb.transaction(() => {
+                kvCopyValue('database/database.bin', safetyBackupKey);
+                kvSet('database/database.bin', encoded);
+                for (const internalKey of removableInternalKeys) kvDel(internalKey);
+            })();
+            invalidateDbCache();
+            dbEtag = computeBufferEtag(encoded);
+        });
+
+        res.json({
+            ok: true,
+            migrationId,
+            migrated: staged.length,
+            references: plan.references.length,
+            bytes: staged.reduce((sum, item) => sum + item.size, 0),
+            safetyBackupKey,
+            retainedInternalAssets: plan.uniquePaths.length - removableInternalKeys.length,
+        });
+    } catch (error) {
+        logger.error('[ExternalAssets] Migration failed without publishing references', error);
+        res.status(error?.statusCode || 500).json({ error: error?.message || 'External asset migration failed' });
+    } finally {
+        externalAssetMigrationInProgress = false;
+        importInProgress = false;
+        endExclusiveStorage('external asset migration');
+    }
+});
+
+app.post('/api/external-assets/verify', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (externalAssetMigrationInProgress || importInProgress) return res.status(409).json({ error: 'Verification is locked during migration/import' });
+    const storageReason = 'external asset verification';
+    if (!await acquireExclusiveStorage(storageReason)) {
+        return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
+    }
+    try {
+        const runtime = await getExternalAssetRuntime();
+        const entries = await runtime.manifestStore.list();
+        const migrationId = typeof req.body?.migrationId === 'string' ? req.body.migrationId : null;
+        const selected = migrationId
+            ? entries.filter((entry) => (entry.migrationIds || []).includes(migrationId))
+            : entries;
+        const verified = await runtime.service.verifyMany(selected.map((entry) => entry.uri));
+        const results = verified.map((result) => result.ok
+            ? { uri: result.uri, ok: true, size: result.size }
+            : { uri: result.uri, ok: false, error: result.error?.message || String(result.error) });
+        res.json({ ok: results.every((result) => result.ok), results });
+    } catch (error) { next(error); }
+    finally { endExclusiveStorage(storageReason); }
+});
+
+app.post('/api/external-assets/trash/purge', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!checkActiveSession(req, res)) return;
+    if (externalAssetMigrationInProgress || importInProgress) return res.status(409).json({ error: 'Trash purge is locked during migration/import' });
+    if (req.body?.userVerified !== true) {
+        return res.status(400).json({ error: 'Explicit user verification is required before permanent trash deletion' });
+    }
+    const storageReason = 'external asset trash purge';
+    if (!await acquireExclusiveStorage(storageReason)) {
+        return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
+    }
+    try {
+        const runtime = await getExternalAssetRuntime();
+        const entries = await runtime.manifestStore.list();
+        const migrationId = typeof req.body?.migrationId === 'string' ? req.body.migrationId : null;
+        const selected = migrationId
+            ? entries.filter((entry) => (entry.migrationIds || []).includes(migrationId))
+            : entries;
+        // The service preflights every selected entry before unlinking any
+        // file, then commits manifest cleanup in one batch.
+        const result = await runtime.service.purgeTrashMany(
+            selected.map((entry) => entry.uri),
+            { userVerified: true },
+        );
+        res.json({ ok: true, removed: result.files, bytes: result.bytes });
+    } catch (error) {
+        res.status(409).json({ error: error?.message || 'External asset trash purge rejected' });
+    } finally {
+        endExclusiveStorage(storageReason);
+    }
+});
 
 app.post('/api/crypto', async (req, res) => {
     try {
@@ -3296,6 +4128,7 @@ app.get('/api/read', async (req, res, next) => {
     }
     try {
         const key = Buffer.from(filePath, 'hex').toString('utf-8');
+        const performRead = async () => {
         // Flush pending patches before reading database.bin
         if (key === 'database/database.bin') {
             await flushPendingDb();
@@ -3338,12 +4171,15 @@ app.get('/api/read', async (req, res, next) => {
             res.setHeader('Content-Type', 'application/octet-stream');
             res.send(value);
         }
+        };
+        if (key === 'database/database.bin') await queueMutableStorageOperation(performRead);
+        else await performRead();
     } catch (error) {
         next(error);
     }
 });
 
-app.get('/api/remove', async (req, res, next) => {
+app.get('/api/remove', rejectDuringExclusiveStorage, async (req, res, next) => {
     if(!await checkAuth(req, res)){
         return;
     }
@@ -3357,20 +4193,22 @@ app.get('/api/remove', async (req, res, next) => {
         return;
     }
     try {
-        const key = Buffer.from(filePath, 'hex').toString('utf-8');
-        if (key.startsWith('inlay/')) {
-            const id = key.slice('inlay/'.length)
-            await deleteInlayFile(id)
+        await queueMutableStorageOperation(async () => {
+            const key = Buffer.from(filePath, 'hex').toString('utf-8');
+            if (key.startsWith('inlay/')) {
+                const id = key.slice('inlay/'.length)
+                await deleteInlayFile(id)
+                kvDel(key);
+                kvDel(`inlay_thumb/${id}`);
+                kvDel(`inlay_info/${id}`);
+                return res.send({ success: true });
+            }
+            if (key.startsWith('inlay_info/')) {
+                await fs.unlink(getInlaySidecarPath(key.slice('inlay_info/'.length))).catch(() => {});
+            }
             kvDel(key);
-            kvDel(`inlay_thumb/${id}`);
-            kvDel(`inlay_info/${id}`);
-            return res.send({ success: true });
-        }
-        if (key.startsWith('inlay_info/')) {
-            await fs.unlink(getInlaySidecarPath(key.slice('inlay_info/'.length))).catch(() => {});
-        }
-        kvDel(key);
-        res.send({ success: true });
+            res.send({ success: true });
+        });
     } catch (error) {
         next(error);
     }
@@ -3474,7 +4312,7 @@ app.delete('/api/logs', async (req, res, next) => {
 const requestLogs = createRequestLogs({ saveDir: savePath });
 requestLogs.registerRoutes(app, { auth: checkAuth, activeSession: checkActiveSession });
 
-app.post('/api/write', async (req, res, next) => {
+app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
     if(!await checkAuth(req, res)){
         return;
     }
@@ -3490,7 +4328,7 @@ app.post('/api/write', async (req, res, next) => {
         return;
     }
     try {
-        await queueStorageOperation(async () => {
+        await queueMutableStorageOperation(async () => {
             const key = Buffer.from(filePath, 'hex').toString('utf-8');
 
             // ETag conflict detection for database.bin
@@ -3599,9 +4437,9 @@ app.post('/api/write', async (req, res, next) => {
 // fsync what it already has. It fires automatically on tab-hide from EVERY
 // device, so gating it on the write lock made a phone going to background
 // steal (or trip over) the lock without any user action.
-app.post('/api/db/flush', sessionAuthMiddleware, async (req, res, next) => {
+app.post('/api/db/flush', rejectDuringExclusiveStorage, sessionAuthMiddleware, async (req, res, next) => {
     try {
-        await queueStorageOperation(async () => {
+        await queueMutableStorageOperation(async () => {
             await flushPendingDb();
             res.send({
                 success: true,
@@ -3614,7 +4452,7 @@ app.post('/api/db/flush', sessionAuthMiddleware, async (req, res, next) => {
 });
 
 // ─── Patch sync endpoint ──────────────────────────────────────────────────────
-app.post('/api/patch', async (req, res, next) => {
+app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
     if (!enablePatchSync) {
         res.status(404).send({ error: 'Patch sync is not enabled' });
         return;
@@ -3637,7 +4475,7 @@ app.post('/api/patch', async (req, res, next) => {
     }
 
     try {
-        await queueStorageOperation(async () => {
+        await queueMutableStorageOperation(async () => {
             const decodedKey = Buffer.from(filePath, 'hex').toString('utf-8');
 
             // Load database into memory if not already cached
@@ -3724,8 +4562,13 @@ app.post('/api/patch', async (req, res, next) => {
             if (saveTimers[filePath]) {
                 clearTimeout(saveTimers[filePath]);
             }
-            saveTimers[filePath] = setTimeout(async () => {
+            const saveTimer = setTimeout(async () => {
+                if (saveTimers[filePath] !== saveTimer) return;
+                let admitted = false;
                 try {
+                    await queueMutableStorageOperation(async () => {
+                        if (saveTimers[filePath] !== saveTimer) return;
+                        admitted = true;
                     if (decodedKey === 'database/database.bin') {
                         await persistDbCacheWithChats(filePath, decodedKey);
                     } else {
@@ -3749,13 +4592,20 @@ app.post('/api/patch', async (req, res, next) => {
                             logger.warn(`[Patch] Backup rotation failed for ${decodedKey}:`, backupErr);
                         }
                     }
+                    });
                 } catch (error) {
+                    if (error?.code === 'STORAGE_LOCKED') return;
                     logger.error(`[Patch] Error saving ${decodedKey}:`, error);
                     recordPersistFailure(error, `patch:${decodedKey}`);
                 } finally {
-                    delete saveTimers[filePath];
+                    // Leave a failed accepted write pending so the next
+                    // exclusive barrier retries it before replacing storage.
+                    if (admitted && !currentPersistWarning() && saveTimers[filePath] === saveTimer) {
+                        delete saveTimers[filePath];
+                    }
                 }
             }, SAVE_INTERVAL);
+            saveTimers[filePath] = saveTimer;
 
             // Update ETag after successful patch (based on stripped version)
             if (decodedKey === 'database/database.bin') {
@@ -3774,6 +4624,9 @@ app.post('/api/patch', async (req, res, next) => {
             res.send(responsePayload);
         });
     } catch (error) {
+        if (error?.code === 'STORAGE_LOCKED') {
+            return res.status(409).send({ error: error.message, code: error.code });
+        }
         logger.error(`[Patch] Error applying patch to ${filePath}:`, error.name);
         res.status(500).send({
             error: 'Patch application failed: ' + (error && error.message ? error.message : error)
@@ -3852,7 +4705,7 @@ app.post('/api/assets/bulk-read', async (req, res, next) => {
     } catch(error){ next(error); }
 });
 
-app.post('/api/assets/bulk-write', async (req, res, next) => {
+app.post('/api/assets/bulk-write', rejectDuringExclusiveStorage, async (req, res, next) => {
     if(!await checkAuth(req, res)){ return; }
     if (!checkActiveSession(req, res)) return;
     try {
@@ -3861,16 +4714,18 @@ app.post('/api/assets/bulk-write', async (req, res, next) => {
             res.status(400).send({ error: 'Body must be a JSON array of {key, value}' });
             return;
         }
-        for(let i = 0; i < entries.length; i += BULK_BATCH){
-            const batch = entries.slice(i, i + BULK_BATCH);
-            const writeBatch = sqliteDb.transaction(() => {
-                for(const { key, value } of batch){
-                    kvSet(key, Buffer.from(value, 'base64'));
-                }
-            });
-            writeBatch();
-        }
-        res.json({ success: true, count: entries.length });
+        await queueMutableStorageOperation(async () => {
+            for(let i = 0; i < entries.length; i += BULK_BATCH){
+                const batch = entries.slice(i, i + BULK_BATCH);
+                const writeBatch = sqliteDb.transaction(() => {
+                    for(const { key, value } of batch){
+                        kvSet(key, Buffer.from(value, 'base64'));
+                    }
+                });
+                writeBatch();
+            }
+            res.json({ success: true, count: entries.length });
+        });
     } catch(error){ next(error); }
 });
 
@@ -3920,7 +4775,6 @@ async function buildSettingsOnlyPlan({ includeModuleAssets = true } = {}) {
     // variant runs chat-id and cold-storage migrations and can persist. Both
     // concern data we are about to drop anyway.
     const trimmed = stripToSettingsOnly(await decodeRisuSave(raw));
-    const dbValue = Buffer.from(encodeRisuSaveLegacy(trimmed, 'compression'));
 
     const withModules = buildUncleanableSet(trimmed);
     const withoutModules = buildUncleanableSet(trimmed, { includeModuleAssets: false });
@@ -3941,8 +4795,23 @@ async function buildSettingsOnlyPlan({ includeModuleAssets = true } = {}) {
     const modulesWithAssets = (trimmed.modules ?? [])
         .filter((m) => Array.isArray(m?.assets) && m.assets.length > 0).length;
 
+    // Omitting module asset packs must remove their references as well. This
+    // keeps both ordinary and external:// settings exports self-consistent.
+    const exported = includeModuleAssets ? trimmed : {
+        ...trimmed,
+        modules: Array.isArray(trimmed.modules)
+            ? trimmed.modules.map((module) => module && typeof module === 'object' ? { ...module, assets: [] } : module)
+            : trimmed.modules,
+        personas: Array.isArray(trimmed.personas)
+            ? trimmed.personas.map((persona) => persona?.embeddedModule
+                ? { ...persona, embeddedModule: { ...persona.embeddedModule, assets: [] } }
+                : persona)
+            : trimmed.personas,
+    };
+    const dbValue = Buffer.from(encodeRisuSaveLegacy(exported, 'compression'));
+
     return {
-        trimmed,
+        trimmed: exported,
         dbValue,
         keepNames,
         breakdown: {
@@ -3953,14 +4822,74 @@ async function buildSettingsOnlyPlan({ includeModuleAssets = true } = {}) {
     };
 }
 
+function externalBackupExtension(entry) {
+    const original = Array.isArray(entry?.fallbacks)
+        ? entry.fallbacks.find((fallback) => typeof fallback?.internalKey === 'string')?.internalKey
+        : null;
+    const originalExt = original ? path.extname(original).slice(1).toLowerCase() : '';
+    if (/^[a-z0-9]{1,10}$/.test(originalExt)) return originalExt;
+    const byMime = {
+        'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif', 'image/webp': 'webp',
+        'video/mp4': 'mp4', 'video/webm': 'webm',
+        'audio/mpeg': 'mp3', 'audio/ogg': 'ogg', 'audio/wav': 'wav',
+        'application/json': 'json',
+    };
+    return byMime[entry?.mimeType] || 'bin';
+}
+
+// Upstream Risu does not understand external://. Its explicit-compatible
+// export is the one path that needs original bytes: download each referenced
+// object on demand, add it as an ordinary asset entry, and rewrite only the
+// temporary exported DB. The live PocketRisu DB/manifest are untouched.
+async function materializeExternalAssetsForUpstream(dbObj, occupiedBackupNames) {
+    const references = collectExternalAssetReferences(dbObj);
+    if (references.length === 0) return { dbValue: Buffer.from(encodeRisuSaveLegacy(dbObj, 'compression')), entries: [] };
+
+    const runtime = await getExternalAssetRuntime();
+    const mapping = new Map();
+    const entries = [];
+    const occupied = new Set(occupiedBackupNames);
+    const manifestEntries = new Map((await runtime.manifestStore.list()).map((entry) => [entry.uri, entry]));
+
+    for (const uri of [...new Set(references.map((reference) => reference.value))]) {
+        const manifestEntry = manifestEntries.get(uri);
+        if (!manifestEntry) throw new Error(`Cannot export upstream: manifest entry missing for ${uri}`);
+        const externalSize = Number(manifestEntry.size);
+        if (!Number.isSafeInteger(externalSize) || externalSize < 0 || externalSize > 0xffffffff) {
+            throw new Error(`Cannot export upstream: invalid or unsupported asset size for ${uri}`);
+        }
+        const ext = externalBackupExtension(manifestEntry);
+        let backupName = `external-${manifestEntry.hash}.${ext}`;
+        let suffix = 1;
+        while (occupied.has(backupName)) backupName = `external-${manifestEntry.hash}-${suffix++}.${ext}`;
+        occupied.add(backupName);
+        mapping.set(uri, `assets/${backupName}`);
+        entries.push({
+            kind: 'external',
+            uri,
+            backupName,
+            sortKey: `assets/${backupName}`,
+            size: externalSize,
+        });
+    }
+
+    const rewritten = rewriteExternalAssetReferences(dbObj, mapping);
+    return {
+        dbValue: Buffer.from(encodeRisuSaveLegacy(rewritten, 'compression')),
+        entries,
+    };
+}
+
 // Size breakdown for the settings-only confirm dialog. Kept separate from
 // /api/db/stats because it has to decode and re-encode the DB, which that
 // dashboard poll should not pay for on every load.
 app.get('/api/backup/export/settings-estimate', async (req, res, next) => {
     if (!await checkAuth(req, res)) { return; }
     try {
-        await flushPendingDb();
-        const plan = await buildSettingsOnlyPlan({ includeModuleAssets: true });
+        const plan = await queueMutableStorageOperation(async () => {
+            await flushPendingDb();
+            return await buildSettingsOnlyPlan({ includeModuleAssets: true });
+        });
         if (!plan) {
             res.status(500).json({ error: 'database.bin missing' });
             return;
@@ -3973,6 +4902,15 @@ app.get('/api/backup/export/settings-estimate', async (req, res, next) => {
 
 app.get('/api/backup/export', async (req, res, next) => {
     if(!await checkAuth(req, res)){ return; }
+    if (externalAssetMigrationInProgress || importInProgress) {
+        return res.status(409).json({ error: 'Backup export is unavailable during migration/import' });
+    }
+    const storageReason = 'backup export';
+    if (!await acquireExclusiveStorage(storageReason)) {
+        return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
+    }
+    let closed = req.destroyed || res.destroyed || res.writableEnded;
+    res.once('close', () => { closed = true; });
     try {
         // ?target=upstream excludes NodeOnly-only inlay namespaces (inlay/,
         // inlay_sidecar/, inlay_meta/). Their entry names contain a slash,
@@ -3994,6 +4932,7 @@ app.get('/api/backup/export', async (req, res, next) => {
         // orders of magnitude smaller than the live blob.
         let settingsDbValue = null;
         let settingsAssetNames = null;
+        let exportDbObject = null;
         if (settingsOnly) {
             const plan = await buildSettingsOnlyPlan({ includeModuleAssets });
             if (!plan) {
@@ -4002,6 +4941,21 @@ app.get('/api/backup/export', async (req, res, next) => {
             }
             settingsDbValue = plan.dbValue;
             settingsAssetNames = plan.keepNames;
+            exportDbObject = plan.trimmed;
+        }
+
+        let upstreamExternalEntries = [];
+        let exportDbValue = settingsDbValue;
+        if (target === 'upstream') {
+            if (!exportDbObject) {
+                const raw = kvGet('database/database.bin');
+                if (!raw) throw new Error('database.bin missing');
+                exportDbObject = normalizeJSON(await decodeRisuSave(raw));
+            }
+            const occupiedNames = kvListWithSizes('assets/').map((entry) => path.basename(entry.key));
+            const upstreamPlan = await materializeExternalAssetsForUpstream(exportDbObject, occupiedNames);
+            upstreamExternalEntries = upstreamPlan.entries;
+            exportDbValue = upstreamPlan.dbValue;
         }
 
         // Inlay images only ever attach to chat messages, so a settings-only
@@ -4041,6 +4995,16 @@ app.get('/api/backup/export', async (req, res, next) => {
             size: entry.size,
         }));
         const namespacedEntries = [
+            ...(target === 'nodeonly' && kvSize(EXTERNAL_ASSET_MANIFEST_KEY)
+                ? [{
+                    kind: 'kv',
+                    key: EXTERNAL_ASSET_MANIFEST_KEY,
+                    backupName: EXTERNAL_ASSET_BACKUP_NAME,
+                    sortKey: EXTERNAL_ASSET_MANIFEST_KEY,
+                    size: kvSize(EXTERNAL_ASSET_MANIFEST_KEY),
+                }]
+                : []),
+            ...upstreamExternalEntries,
             ...kvListWithSizes('assets/')
                 // Settings-only keeps just the assets the trimmed DB still
                 // points at — persona icons, theme background, notification
@@ -4061,7 +5025,9 @@ app.get('/api/backup/export', async (req, res, next) => {
             ...inlayEntries,
             ...sidecarEntries.filter(Boolean),
         ].sort((a, b) => a.sortKey.localeCompare(b.sortKey));
-        const dbSize = settingsOnly ? settingsDbValue.length : kvSize('database/database.bin');
+        const dbSize = exportDbValue ? exportDbValue.length : kvSize('database/database.bin');
+        for (const entry of namespacedEntries) encodeBackupEntryHeader(entry.backupName, entry.size);
+        if (dbSize) encodeBackupEntryHeader('database.risudat', dbSize);
         const totalBytes = namespacedEntries.reduce((sum, entry) => {
             return sum + 8 + Buffer.byteLength(entry.backupName, 'utf-8') + entry.size;
         }, 0) + (dbSize ? 8 + Buffer.byteLength('database.risudat', 'utf-8') + dbSize : 0);
@@ -4076,51 +5042,80 @@ app.get('/api/backup/export', async (req, res, next) => {
         res.setHeader('content-length', totalBytes);
         res.setHeader('x-risu-backup-assets', namespacedEntries.length);
 
-        let closed = false;
-        res.once('close', () => { closed = true; });
-
         function waitForDrain() {
-            if (closed) return Promise.resolve();
+            if (closed || res.destroyed || res.writableEnded) return Promise.resolve();
             return new Promise(resolve => {
+                let settled = false;
+                const timeout = setTimeout(() => {
+                    closed = true;
+                    // Close without an error argument; removing the temporary
+                    // error listener before destroy(error) emits asynchronously
+                    // could otherwise surface an unhandled stream error.
+                    res.destroy();
+                    done();
+                }, 30_000);
                 function done() {
+                    if (settled) return;
+                    settled = true;
+                    clearTimeout(timeout);
                     res.removeListener('drain', done);
                     res.removeListener('close', done);
+                    res.removeListener('error', done);
+                    if (res.destroyed || res.writableEnded) closed = true;
                     resolve();
                 }
                 res.once('drain', done);
                 res.once('close', done);
+                res.once('error', done);
             });
+        }
+
+        async function writeResponseChunk(chunk) {
+            if (closed) return false;
+            const ok = res.write(chunk);
+            if (!ok) await waitForDrain();
+            return !closed;
+        }
+
+        async function writeResponseEntry(name, value) {
+            if (!await writeResponseChunk(encodeBackupEntryHeader(name, value.length))) return false;
+            return await writeResponseChunk(value);
         }
 
         for (const entry of namespacedEntries) {
             if (closed) break;
+            let externalRuntime = null;
             const value = entry.kind === 'kv'
                 ? kvGet(entry.key)
-                : entry.kind === 'buffer'
-                    ? entry.buffer
-                    : await fs.readFile(entry.sourcePath);
-            if (closed) break;
-            if (value) {
-                const ok = res.write(encodeBackupEntry(entry.backupName, value));
-                if (!ok) {
-                    await waitForDrain();
-                    if (closed) break;
-                }
+                : entry.kind === 'external'
+                    ? await (async () => {
+                        externalRuntime = await getExternalAssetRuntime();
+                        return await externalRuntime.service.read(entry.uri);
+                    })()
+                    : entry.kind === 'buffer'
+                        ? entry.buffer
+                        : await fs.readFile(entry.sourcePath);
+            if (!value) throw new Error(`Backup entry disappeared during export: ${entry.backupName}`);
+            try {
+                if (!await writeResponseEntry(entry.backupName, value)) break;
+            } finally {
+                // Export is intentionally streaming. Do not let sequential
+                // downloads accumulate in the bounded render cache either.
+                if (externalRuntime) externalRuntime.service.cache.delete(entry.uri);
             }
         }
 
         if (!closed && dbSize) {
-            const dbValue = settingsOnly ? settingsDbValue : kvGet('database/database.bin');
+            const dbValue = exportDbValue || kvGet('database/database.bin');
             if (dbValue) {
-                const ok = res.write(encodeBackupEntry('database.risudat', dbValue));
-                if (!ok) {
-                    await waitForDrain();
-                }
+                await writeResponseEntry('database.risudat', dbValue);
             }
         }
         if (!closed) res.end();
     } catch (error) {
         next(error);
+    } finally {
+        endExclusiveStorage(storageReason);
     }
 });
 
@@ -4166,6 +5161,10 @@ app.post('/api/backup/import', async (req, res, next) => {
         res.status(409).json({ error: 'Another import is already in progress' });
         return;
     }
+    if (!await acquireExclusiveStorage('backup import')) {
+        res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
+        return;
+    }
     importInProgress = true;
 
     // Disable timeouts for large backup uploads
@@ -4180,6 +5179,7 @@ app.post('/api/backup/import', async (req, res, next) => {
     // and bounce the request back to the client as 502 Bad Gateway.
     const wantsNdjson = String(req.headers['accept'] ?? '').includes('application/x-ndjson');
     let heartbeatTimer = null;
+    const uploadIdleWatchdog = installUploadIdleWatchdog(req);
 
     try {
         const contentType = String(req.headers['content-type'] ?? '');
@@ -4218,20 +5218,26 @@ app.post('/api/backup/import', async (req, res, next) => {
                     lastProgressWrite = now;
                     res.write(JSON.stringify({ type: 'progress', bytes: received, totalBytes: total }) + '\n');
                 },
+                onChunk: uploadIdleWatchdog.refresh,
             });
             res.write(JSON.stringify({
                 type: 'done',
                 ok: true,
                 assetsRestored: result.assetsRestored,
                 coldStorageFailed: result.coldStorageFailed,
+                externalAssets: result.externalAssets,
             }) + '\n');
             res.end();
         } else {
-            const result = await importBackupFromSource(req, { maxBytes: BACKUP_IMPORT_MAX_BYTES });
+            const result = await importBackupFromSource(req, {
+                maxBytes: BACKUP_IMPORT_MAX_BYTES,
+                onChunk: uploadIdleWatchdog.refresh,
+            });
             res.json({
                 ok: true,
                 assetsRestored: result.assetsRestored,
                 coldStorageFailed: result.coldStorageFailed,
+                externalAssets: result.externalAssets,
             });
         }
     } catch (error) {
@@ -4244,8 +5250,10 @@ app.post('/api/backup/import', async (req, res, next) => {
             next(error);
         }
     } finally {
+        uploadIdleWatchdog.clear();
         if (heartbeatTimer) clearInterval(heartbeatTimer);
         importInProgress = false;
+        endExclusiveStorage('backup import');
         if (req.socket.server && prevRequestTimeout !== undefined) {
             req.socket.server.requestTimeout = prevRequestTimeout;
         }
@@ -4258,6 +5266,15 @@ app.post('/api/backup/import', async (req, res, next) => {
 app.post('/api/backup/server/save', async (req, res, next) => {
     if (!await checkAuth(req, res)) { return; }
     if (!checkActiveSession(req, res)) return;
+    if (externalAssetMigrationInProgress || importInProgress) {
+        return res.status(409).json({ error: 'Server backup is unavailable during migration/import' });
+    }
+    const storageReason = 'server backup';
+    if (!await acquireExclusiveStorage(storageReason)) {
+        return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
+    }
+    let closed = req.destroyed || res.destroyed || res.writableEnded;
+    res.once('close', () => { closed = true; });
     try {
         await flushPendingDb();
 
@@ -4296,12 +5313,18 @@ app.post('/api/backup/server/save', async (req, res, next) => {
         }))).filter(Boolean);
 
         const namespacedEntries = [
+            ...(kvSize(EXTERNAL_ASSET_MANIFEST_KEY)
+                ? [{ kind: 'kv', key: EXTERNAL_ASSET_MANIFEST_KEY, backupName: EXTERNAL_ASSET_BACKUP_NAME, size: kvSize(EXTERNAL_ASSET_MANIFEST_KEY) }]
+                : []),
             ...kvListWithSizes('assets/').map((e) => ({ kind: 'kv', key: e.key, backupName: path.basename(e.key), size: e.size })),
             ...listColdStorageBackupEntries(),
             ...kvListWithSizes('inlay_meta/').map((e) => ({ kind: 'kv', key: e.key, backupName: e.key, size: e.size })),
             ...inlayEntries,
             ...sidecarEntries,
         ];
+        for (const entry of namespacedEntries) encodeBackupEntryHeader(entry.backupName, entry.size);
+        const liveDbSize = kvSize('database/database.bin');
+        if (liveDbSize) encodeBackupEntryHeader('database.risudat', liveDbSize);
 
         const totalEntries = namespacedEntries.length + 1; // +1 for database
         const totalBytes = namespacedEntries.reduce((sum, e) => sum + e.size, 0);
@@ -4316,9 +5339,7 @@ app.post('/api/backup/server/save', async (req, res, next) => {
         const { createWriteStream: createFsWriteStream } = require('fs');
         const writeStream = createFsWriteStream(tmpPath);
 
-        let closed = false;
         let writeComplete = false;
-        res.once('close', () => { closed = true; });
 
         try {
             await new Promise((resolve, reject) => {
@@ -4378,6 +5399,8 @@ app.post('/api/backup/server/save', async (req, res, next) => {
             res.write(JSON.stringify({ type: 'error', message: error.message }) + '\n');
             res.end();
         }
+    } finally {
+        endExclusiveStorage(storageReason);
     }
 });
 
@@ -4417,6 +5440,10 @@ app.post('/api/backup/server/restore', async (req, res, next) => {
 
     if (importInProgress) {
         res.status(409).json({ error: 'Another import is already in progress' });
+        return;
+    }
+    if (!await acquireExclusiveStorage('backup restore')) {
+        res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
         return;
     }
     importInProgress = true;
@@ -4466,6 +5493,7 @@ app.post('/api/backup/server/restore', async (req, res, next) => {
             ok: true,
             assetsRestored: result.assetsRestored,
             coldStorageFailed: result.coldStorageFailed,
+            externalAssets: result.externalAssets,
         }) + '\n');
         res.end();
     } catch (error) {
@@ -4477,6 +5505,7 @@ app.post('/api/backup/server/restore', async (req, res, next) => {
         }
     } finally {
         importInProgress = false;
+        endExclusiveStorage('backup restore');
     }
 });
 
@@ -4656,9 +5685,10 @@ function restoreColdStorageChat(chat) {
 }
 
 // GET /api/chat-content/:chaId/:chatIndex — retrieve full chat from server
-app.get('/api/chat-content/:chaId/:chatIndex', async (req, res, next) => {
+app.get('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, async (req, res, next) => {
     if (!await checkAuth(req, res)) { return; }
     try {
+        await queueMutableStorageOperation(async () => {
         const chaId = req.params.chaId;
         const chatIndex = parseInt(req.params.chatIndex, 10);
         const expectedChatId = req.headers['x-chat-id'];
@@ -4699,17 +5729,18 @@ app.get('/api/chat-content/:chaId/:chatIndex', async (req, res, next) => {
         const encoded = Buffer.from(encodeRisuSaveLegacy(chat));
         res.setHeader('Content-Type', 'application/octet-stream');
         res.send(encoded);
+        });
     } catch (error) {
         next(error);
     }
 });
 
 // POST /api/chat-content/:chaId/:chatIndex — save chat content to server
-app.post('/api/chat-content/:chaId/:chatIndex', async (req, res, next) => {
+app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, async (req, res, next) => {
     if (!await checkAuth(req, res)) { return; }
     if (!checkActiveSession(req, res)) return;
     try {
-        await queueStorageOperation(async () => {
+        await queueMutableStorageOperation(async () => {
             const chaId = req.params.chaId;
             const chatIndex = parseInt(req.params.chatIndex, 10);
             const expectedChatId = req.headers['x-chat-id'];
@@ -4742,8 +5773,13 @@ app.post('/api/chat-content/:chaId/:chatIndex', async (req, res, next) => {
             if (saveTimers[DB_HEX_KEY]) {
                 clearTimeout(saveTimers[DB_HEX_KEY]);
             }
-            saveTimers[DB_HEX_KEY] = setTimeout(async () => {
+            const saveTimer = setTimeout(async () => {
+                if (saveTimers[DB_HEX_KEY] !== saveTimer) return;
+                let admitted = false;
                 try {
+                    await queueMutableStorageOperation(async () => {
+                        if (saveTimers[DB_HEX_KEY] !== saveTimer) return;
+                        admitted = true;
                     // If dbCache has stripped DB, persist with merged chats
                     if (dbCache[DB_HEX_KEY]) {
                         await persistDbCacheWithChats(DB_HEX_KEY, 'database/database.bin');
@@ -4772,13 +5808,18 @@ app.post('/api/chat-content/:chaId/:chatIndex', async (req, res, next) => {
                     } catch (backupErr) {
                         logger.warn('[ChatContent] Backup rotation failed:', backupErr);
                     }
+                    });
                 } catch (error) {
+                    if (error?.code === 'STORAGE_LOCKED') return;
                     logger.error('[ChatContent] Error persisting chat:', error);
                     recordPersistFailure(error, 'chat-content');
                 } finally {
-                    delete saveTimers[DB_HEX_KEY];
+                    if (admitted && !currentPersistWarning() && saveTimers[DB_HEX_KEY] === saveTimer) {
+                        delete saveTimers[DB_HEX_KEY];
+                    }
                 }
             }, SAVE_INTERVAL);
+            saveTimers[DB_HEX_KEY] = saveTimer;
 
             res.json({ success: true });
         });
@@ -4814,6 +5855,7 @@ function scanHexFilesInDir(dirPath) {
 
 function clearExistingData() {
     kvDelPrefix('assets/');
+    kvDel(EXTERNAL_ASSET_MANIFEST_KEY);
     kvDelPrefix('inlay/');
     kvDelPrefix('inlay_thumb/');
     kvDelPrefix('inlay_meta/');
@@ -4844,6 +5886,21 @@ async function importHexFilesFromDir(dirPath) {
     if (hexFiles.length === 0) return { imported: 0 };
     if (!hasDatabase) throw new Error('Save folder does not contain database/database.bin');
 
+    const decodedKeys = new Set();
+    const sourceEntries = hexFiles.map((hexFile) => {
+        const key = Buffer.from(hexFile, 'hex').toString('utf-8');
+        if (decodedKeys.has(key)) throw new Error(`Duplicate imported key: ${key}`);
+        decodedKeys.add(key);
+        return { hexFile, key };
+    });
+    const databaseEntry = sourceEntries.find((entry) => entry.key === DB_BLOB_KEY);
+    if (!databaseEntry) throw new Error('Save folder does not contain database/database.bin');
+    const candidateDatabase = readFileSync(path.join(dirPath, databaseEntry.hexFile));
+    const candidateDbObject = normalizeJSON(await decodeRisuSave(candidateDatabase));
+    if (!candidateDbObject || typeof candidateDbObject !== 'object' || Array.isArray(candidateDbObject)) {
+        throw new Error('Save folder database.bin did not decode to a database object');
+    }
+
     await flushPendingDb();
     createBackupAndRotate();
     invalidateDbCache();
@@ -4855,9 +5912,12 @@ async function importHexFilesFromDir(dirPath) {
 
     const run = sqliteDb.transaction(() => {
         clearExistingData();
-        for (const hexFile of hexFiles) {
-            const key = Buffer.from(hexFile, 'hex').toString('utf-8');
-            const value = readFileSync(path.join(dirPath, hexFile));
+        for (const { hexFile, key } of sourceEntries) {
+            // Commit exactly the database bytes that passed decode validation;
+            // do not re-read a concurrently replaced source file here.
+            const value = key === DB_BLOB_KEY
+                ? candidateDatabase
+                : readFileSync(path.join(dirPath, hexFile));
             // Chunk the DB blob so an oversized database.bin imports instead of
             // failing the BLOB bind limit; other keys keep the bulk fast path.
             if (key === DB_BLOB_KEY) { kvSet(key, value); continue; }
@@ -4874,6 +5934,16 @@ async function importHexEntries(entries) {
     if (entries.length === 0) return { imported: 0 };
     const hasDb = entries.some(e => e.key === 'database/database.bin');
     if (!hasDb) throw new Error('Data does not contain database/database.bin');
+    const decodedKeys = new Set();
+    for (const entry of entries) {
+        if (decodedKeys.has(entry.key)) throw new Error(`Duplicate imported key: ${entry.key}`);
+        decodedKeys.add(entry.key);
+    }
+    const candidateDatabase = entries.find((entry) => entry.key === DB_BLOB_KEY)?.value;
+    const candidateDbObject = normalizeJSON(await decodeRisuSave(candidateDatabase));
+    if (!candidateDbObject || typeof candidateDbObject !== 'object' || Array.isArray(candidateDbObject)) {
+        throw new Error('Uploaded database.bin did not decode to a database object');
+    }
 
     await flushPendingDb();
     createBackupAndRotate();
@@ -4929,6 +5999,10 @@ app.post('/api/migrate/save-folder/execute', async (req, res, next) => {
         res.status(409).json({ error: 'Another import is already in progress' });
         return;
     }
+    const storageReason = 'save folder import';
+    if (!await acquireExclusiveStorage(storageReason)) {
+        return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
+    }
     importInProgress = true;
     try {
         const folderPath = req.body?.path || savePath;
@@ -4949,6 +6023,7 @@ app.post('/api/migrate/save-folder/execute', async (req, res, next) => {
         res.status(400).json({ error: error.message || 'Import failed' });
     } finally {
         importInProgress = false;
+        endExclusiveStorage(storageReason);
     }
 });
 
@@ -4959,17 +6034,23 @@ app.post('/api/migrate/save-folder/upload', async (req, res, next) => {
         res.status(409).json({ error: 'Another import is already in progress' });
         return;
     }
+    const storageReason = 'save folder upload import';
+    if (!await acquireExclusiveStorage(storageReason)) {
+        return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
+    }
     importInProgress = true;
 
     req.socket.setTimeout(0);
     req.socket.setKeepAlive(true);
     const prevRequestTimeout = req.socket.server?.requestTimeout;
     if (req.socket.server) req.socket.server.requestTimeout = 0;
+    const uploadIdleWatchdog = installUploadIdleWatchdog(req);
 
     try {
         const chunks = [];
         let totalSize = 0;
         for await (const chunk of req) {
+            uploadIdleWatchdog.refresh();
             totalSize += chunk.length;
             if (BACKUP_IMPORT_MAX_BYTES > 0 && totalSize > BACKUP_IMPORT_MAX_BYTES) {
                 res.status(413).json({ error: 'Zip file exceeds max allowed size' });
@@ -5009,7 +6090,9 @@ app.post('/api/migrate/save-folder/upload', async (req, res, next) => {
     } catch (error) {
         res.status(400).json({ error: error.message || 'Import failed' });
     } finally {
+        uploadIdleWatchdog.clear();
         importInProgress = false;
+        endExclusiveStorage(storageReason);
         if (req.socket.server && prevRequestTimeout !== undefined) {
             req.socket.server.requestTimeout = prevRequestTimeout;
         }
@@ -5031,9 +6114,13 @@ app.post('/api/migrate/save-folder/cleanup/scan', async (req, res, next) => {
     }
 });
 
-app.post('/api/migrate/save-folder/cleanup/execute', async (req, res, next) => {
+app.post('/api/migrate/save-folder/cleanup/execute', rejectDuringExclusiveStorage, async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
     if (!checkActiveSession(req, res)) return;
+    const storageReason = 'save folder cleanup';
+    if (!await acquireExclusiveStorage(storageReason)) {
+        return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
+    }
     try {
         if (!existsSync(migrationMarkerPath)) {
             res.status(400).json({ error: 'Migration has not been completed yet' });
@@ -5054,6 +6141,8 @@ app.post('/api/migrate/save-folder/cleanup/execute', async (req, res, next) => {
         res.json({ ok: true, removed, freedBytes });
     } catch (error) {
         next(error);
+    } finally {
+        endExclusiveStorage(storageReason);
     }
 });
 
@@ -5111,6 +6200,7 @@ function buildUncleanableSet(dbObj, { includeModuleAssets = true } = {}) {
             if (Array.isArray(cha.additionalAssets)) for (const em of cha.additionalAssets) add(em?.[1]);
             if (cha.vits?.files) for (const k of Object.keys(cha.vits.files)) add(cha.vits.files[k]);
             if (Array.isArray(cha.ccAssets)) for (const a of cha.ccAssets) add(a?.uri);
+            add(cha.gptSoVitsConfig?.ref_audio_data?.assetId);
         }
     }
     if (Array.isArray(dbObj.modules)) {
@@ -5175,6 +6265,7 @@ async function sumInlayFsBytes() {
 async function estimateServerBackupSize() {
     let total = 0;
     total += kvSize(DB_BLOB_KEY) || 0;
+    total += kvSize(EXTERNAL_ASSET_MANIFEST_KEY) || 0;
     for (const it of kvListWithSizes('assets/')) total += it.size;
     for (const it of kvListWithSizes('inlay_meta/')) total += it.size;
     for (const e of listColdStorageBackupEntries()) total += e.size;
@@ -5330,9 +6421,10 @@ app.get('/api/db/stats', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
-app.get('/api/db/stats/characters', async (req, res, next) => {
+app.get('/api/db/stats/characters', rejectDuringExclusiveStorage, async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
     try {
+        await queueMutableStorageOperation(async () => {
         await ensureChatStore();
         const raw = kvGet(DB_BLOB_KEY);
         if (!raw) {
@@ -5422,6 +6514,7 @@ app.get('/api/db/stats/characters', async (req, res, next) => {
             chatBytesNote: 'JSON.stringify estimate; on-disk msgpack ~0.6×',
             etag: dbEtag,
         });
+        });
     } catch (err) { next(err); }
 });
 
@@ -5481,7 +6574,7 @@ app.get('/api/db/stats/modules', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
-app.post('/api/db/optimize', async (req, res, next) => {
+app.post('/api/db/optimize', rejectDuringExclusiveStorage, async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
     if (!checkActiveSession(req, res)) return;
     try {
@@ -5498,7 +6591,7 @@ app.post('/api/db/optimize', async (req, res, next) => {
             });
         }
 
-        const result = await queueStorageOperation(async () => {
+        const result = await queueMutableStorageOperation(async () => {
             await flushPendingDb();
             const t0 = Date.now();
             // Reclaim chunks orphaned by edits/snapshot rotation before VACUUM, so
@@ -5526,7 +6619,7 @@ app.post('/api/db/optimize', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
-app.post('/api/db/wal-checkpoint', async (req, res, next) => {
+app.post('/api/db/wal-checkpoint', rejectDuringExclusiveStorage, async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
     if (!checkActiveSession(req, res)) return;
     try {
@@ -5534,7 +6627,7 @@ app.post('/api/db/wal-checkpoint', async (req, res, next) => {
         const walFilePath = path.join(saveDir, 'risuai.db-wal');
         const preWalSize = statSafe(walFilePath)?.size ?? 0;
 
-        const result = await queueStorageOperation(async () => {
+        const result = await queueMutableStorageOperation(async () => {
             await flushPendingDb();
             const t0 = Date.now();
             checkpointWal('TRUNCATE');
@@ -5579,7 +6672,7 @@ app.get('/api/db/snapshots/limits', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
-app.put('/api/db/snapshots/limits', async (req, res, next) => {
+app.put('/api/db/snapshots/limits', rejectDuringExclusiveStorage, async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
     if (!checkActiveSession(req, res)) return;
     try {
@@ -5593,16 +6686,18 @@ app.put('/api/db/snapshots/limits', async (req, res, next) => {
         }
         const maxCount = Math.floor(rawCount);
         const maxBytes = Math.floor(rawBytes);
-        kvSet(SNAPSHOT_LIMIT_COUNT_KEY, Buffer.from(String(maxCount), 'utf-8'));
-        kvSet(SNAPSHOT_LIMIT_BYTES_KEY, Buffer.from(String(maxBytes), 'utf-8'));
-        const trim = trimSnapshotsToLimits();
-        const usage = snapshotUsage();
-        res.json({
-            maxCount, maxBytes,
-            currentCount: usage.count,
-            currentBytes: usage.bytes,
-            logicalBytes: usage.logicalBytes,
-            removed: trim.removed,
+        await queueMutableStorageOperation(async () => {
+            kvSet(SNAPSHOT_LIMIT_COUNT_KEY, Buffer.from(String(maxCount), 'utf-8'));
+            kvSet(SNAPSHOT_LIMIT_BYTES_KEY, Buffer.from(String(maxBytes), 'utf-8'));
+            const trim = trimSnapshotsToLimits();
+            const usage = snapshotUsage();
+            res.json({
+                maxCount, maxBytes,
+                currentCount: usage.count,
+                currentBytes: usage.bytes,
+                logicalBytes: usage.logicalBytes,
+                removed: trim.removed,
+            });
         });
     } catch (err) { next(err); }
 });
@@ -5625,7 +6720,7 @@ app.get('/api/db/snapshots', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
-app.delete('/api/db/snapshots', async (req, res, next) => {
+app.delete('/api/db/snapshots', rejectDuringExclusiveStorage, async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
     if (!checkActiveSession(req, res)) return;
     try {
@@ -5634,8 +6729,10 @@ app.delete('/api/db/snapshots', async (req, res, next) => {
         if (!key.startsWith(DB_BACKUP_PREFIX)) {
             return res.status(400).json({ error: 'Invalid snapshot key' });
         }
-        kvDel(key);
-        res.json({ ok: true });
+        await queueMutableStorageOperation(async () => {
+            kvDel(key);
+            res.json({ ok: true });
+        });
     } catch (err) { next(err); }
 });
 
@@ -5643,7 +6740,7 @@ app.delete('/api/db/snapshots', async (req, res, next) => {
 // invalidate caches, rebuild chat store. Client-side setDatabase + reload is
 // racy because the patch-sync save loop is debounced and the reload can fire
 // before the snapshot data lands on disk.
-app.post('/api/db/snapshots/restore', async (req, res, next) => {
+app.post('/api/db/snapshots/restore', rejectDuringExclusiveStorage, async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
     if (!checkActiveSession(req, res)) return;
     try {
@@ -5655,7 +6752,7 @@ app.post('/api/db/snapshots/restore', async (req, res, next) => {
         if (!blob) {
             return res.status(404).json({ error: 'Snapshot not found' });
         }
-        await queueStorageOperation(async () => {
+        await queueMutableStorageOperation(async () => {
             // Drain any pending debounced persist first — same pattern as
             // /api/db/optimize. Without this, an in-flight save could land
             // after kvCopyValue and overwrite the restored snapshot.
@@ -5710,13 +6807,15 @@ app.get('/api/backup/boot-reminder', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
-app.put('/api/backup/boot-reminder', async (req, res, next) => {
+app.put('/api/backup/boot-reminder', rejectDuringExclusiveStorage, async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
     if (!checkActiveSession(req, res)) return;
     try {
         const enabled = !!req.body?.enabled;
-        kvSet(BOOT_REMINDER_KEY, Buffer.from(enabled ? '1' : '0', 'utf-8'));
-        res.json({ enabled });
+        await queueMutableStorageOperation(async () => {
+            kvSet(BOOT_REMINDER_KEY, Buffer.from(enabled ? '1' : '0', 'utf-8'));
+            res.json({ enabled });
+        });
     } catch (err) { next(err); }
 });
 
@@ -5733,7 +6832,7 @@ app.get('/api/backup/server/path', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
-app.put('/api/backup/server/path', async (req, res, next) => {
+app.put('/api/backup/server/path', rejectDuringExclusiveStorage, async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
     if (!checkActiveSession(req, res)) return;
     try {
@@ -5747,27 +6846,28 @@ app.put('/api/backup/server/path', async (req, res, next) => {
                 error: 'Backup path cannot be inside PocketRisu app files. Choose a separate folder such as data/backups.',
             });
         }
-        // Ensure parent exists / target is writable. Create the dir if missing.
-        try {
-            if (!existsSync(resolved)) {
-                mkdirSync(resolved, { recursive: true });
+        await queueMutableStorageOperation(async () => {
+            // Ensure parent exists / target is writable. Create the dir if missing.
+            try {
+                if (!existsSync(resolved)) {
+                    mkdirSync(resolved, { recursive: true });
+                }
+                const probe = path.join(resolved, `.risu-write-probe-${Date.now()}`);
+                require('fs').writeFileSync(probe, '');
+                require('fs').unlinkSync(probe);
+            } catch (e) {
+                return res.status(400).json({ error: 'Path is not writable: ' + (e?.message || String(e)) });
             }
-            // Probe writability with a tmpfile.
-            const probe = path.join(resolved, `.risu-write-probe-${Date.now()}`);
-            require('fs').writeFileSync(probe, '');
-            require('fs').unlinkSync(probe);
-        } catch (e) {
-            return res.status(400).json({ error: 'Path is not writable: ' + (e?.message || String(e)) });
-        }
-        const previous = backupsDir;
-        backupsDir = resolved;
-        kvSet(BACKUP_PATH_CONFIG_KEY, Buffer.from(resolved, 'utf-8'));
-        writeBackupPathMarker(resolved);
-        res.json({
-            path: backupsDir,
-            previous,
-            default: DEFAULT_BACKUPS_DIR,
-            isDefault: backupsDir === DEFAULT_BACKUPS_DIR,
+            const previous = backupsDir;
+            backupsDir = resolved;
+            kvSet(BACKUP_PATH_CONFIG_KEY, Buffer.from(resolved, 'utf-8'));
+            writeBackupPathMarker(resolved);
+            res.json({
+                path: backupsDir,
+                previous,
+                default: DEFAULT_BACKUPS_DIR,
+                isDefault: backupsDir === DEFAULT_BACKUPS_DIR,
+            });
         });
     } catch (err) { next(err); }
 });
@@ -5778,6 +6878,10 @@ const COMPRESS_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'bmp']);
 app.post('/api/inlays/compress', sessionAuthMiddleware, async (req, res) => {
     if (!checkActiveSession(req, res)) return;
     const quality = typeof req.body?.quality === 'number' ? req.body.quality : 85;
+    const storageReason = 'inlay compression';
+    if (!await acquireExclusiveStorage(storageReason)) {
+        return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
+    }
 
     res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -5842,6 +6946,8 @@ app.post('/api/inlays/compress', sessionAuthMiddleware, async (req, res) => {
         send({ type: 'done', total, compressed, skipped, totalSaved });
     } catch (err) {
         send({ type: 'error', message: err?.message || 'Unknown error' });
+    } finally {
+        endExclusiveStorage(storageReason);
     }
 
     res.end();
@@ -5890,7 +6996,16 @@ app.post('/api/self-update', async (req, res) => {
         res.status(409).json({ error: 'Update already in progress' });
         return;
     }
+    const storageReason = 'self update';
+    if (!await acquireExclusiveStorage(storageReason)) {
+        return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
+    }
     selfUpdateInProgress = true;
+    const updateAbort = new AbortController();
+    const updateTimeout = setTimeout(
+        () => updateAbort.abort(new Error('Self update timed out')),
+        Math.max(60_000, Number(process.env.RISU_SELF_UPDATE_TIMEOUT_MS) || 30 * 60 * 1000),
+    );
 
     // Track client disconnect — used to abort download, but NOT to release the lock.
     // The lock stays held until the update fully completes or fails, preventing
@@ -5898,6 +7013,7 @@ app.post('/api/self-update', async (req, res) => {
     let clientDisconnected = false;
     res.on('close', () => {
         clientDisconnected = true;
+        updateAbort.abort(new Error('Client disconnected'));
         console.log('[Update] Client disconnected (update continues if past download stage).');
     });
 
@@ -5915,11 +7031,13 @@ app.post('/api/self-update', async (req, res) => {
     try {
         // 1. Check update
         send('checking', 0, 'Checking for updates...');
-        const updateInfo = await fetchLatestRelease();
+        const updateInfo = await fetchLatestRelease(undefined, { signal: updateAbort.signal });
         if (!updateInfo?.hasUpdate) {
             send('done', 100, 'Already up to date.');
             res.end();
             selfUpdateInProgress = false;
+            clearTimeout(updateTimeout);
+            endExclusiveStorage(storageReason);
             return;
         }
 
@@ -5935,7 +7053,7 @@ app.post('/api/self-update', async (req, res) => {
         const archivePath = path.join(tmpDir, assetInfo.filename);
 
         send('downloading', 0, 'Starting download...');
-        const dlRes = await fetch(assetInfo.url, { redirect: 'follow' });
+        const dlRes = await fetch(assetInfo.url, { redirect: 'follow', signal: updateAbort.signal });
         if (!dlRes.ok) throw new Error(`Download failed: ${dlRes.status} ${dlRes.statusText}`);
 
         const totalSize = parseInt(dlRes.headers.get('content-length'), 10) || 0;
@@ -6033,7 +7151,7 @@ app.post('/api/self-update', async (req, res) => {
         } catch { /* no user certs */ }
 
         // Keep set — matches updater.cjs + user data/config that must survive updates
-        const keep = new Set(['save', 'backups', '.installed-version', '.update-tmp', 'scripts', '.env', '.npmrc', '.portable']);
+        const keep = new Set(['save', 'backups', 'external-assets', '.installed-version', '.update-tmp', 'scripts', '.env', '.npmrc', '.portable']);
         if (isWin) keep.add('bin');
 
         // Phase 1: move old files to backup — rollback immediately on any failure
@@ -6056,7 +7174,7 @@ app.post('/api/self-update', async (req, res) => {
         }
 
         // Phase 2: move new files from extracted to app root
-        const skipMove = new Set(['save', 'scripts']);
+        const skipMove = new Set(['save', 'scripts', 'external-assets']);
         if (isWin) skipMove.add('bin');
         const moved = [];
         try {
@@ -6116,6 +7234,7 @@ app.post('/api/self-update', async (req, res) => {
         }
 
         send('restarting', 100, 'Update complete. Restarting...');
+        clearTimeout(updateTimeout);
         res.end();
 
         // 6. Flush DB and restart
@@ -6195,6 +7314,8 @@ app.post('/api/self-update', async (req, res) => {
             } catch (restartErr) {
                 logger.error('[Update] Restart failed:', restartErr);
                 selfUpdateInProgress = false;
+                clearTimeout(updateTimeout);
+                endExclusiveStorage(storageReason);
             }
         }, 500);
 
@@ -6203,6 +7324,8 @@ app.post('/api/self-update', async (req, res) => {
         send('error', null, `Update failed: ${e.message}`);
         res.end();
         selfUpdateInProgress = false;
+        clearTimeout(updateTimeout);
+        endExclusiveStorage(storageReason);
         if (tmpDir) fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
     }
 });
@@ -6448,8 +7571,9 @@ for (const sig of ['SIGTERM', 'SIGINT']) {
     // TRUNCATE (vs RESTART) shrinks the -wal file on disk, not just the writer
     // pointer — required for journal_size_limit to actually take effect.
     setInterval(() => {
-        try { checkpointWal('TRUNCATE'); }
-        catch { /* non-fatal */ }
+        queueMutableStorageOperation(() => checkpointWal('TRUNCATE')).catch(() => {
+            // Busy imports/migrations deliberately skip this maintenance pass.
+        });
     }, 5 * 60 * 1000); // every 5 minutes
 
 })();

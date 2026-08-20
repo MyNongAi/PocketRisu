@@ -1,15 +1,19 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { tooltipRight } from "src/ts/gui/tooltip";
+
+  type ResolvedImage = string | null | undefined;
+  type DeferredImage = ResolvedImage | Promise<ResolvedImage> | (() => ResolvedImage | Promise<ResolvedImage>);
 
   interface Props {
     rounded: boolean;
-    src: string|Promise<string>;
+    src: DeferredImage;
     name: string;
     size?: string;
     onClick?: any;
     bordered?: boolean;
     color?: string;
-    backgroundimg?: string|Promise<string>;
+    backgroundimg?: DeferredImage;
     children?: import('svelte').Snippet;
     oncontextmenu?: (event: MouseEvent & {
         currentTarget: EventTarget & HTMLDivElement;
@@ -37,10 +41,44 @@
     e.preventDefault();
     oncontextmenu?.(e);
   }
+
+  let observerTarget: HTMLSpanElement = $state();
+  let shouldResolve = $state(false);
+  let resolvedSrc = $derived.by(() => {
+    if (typeof src === "function") {
+      return shouldResolve ? src() : "";
+    }
+    return src;
+  });
+  let resolvedBackground = $derived.by(() => {
+    if (typeof backgroundimg === "function") {
+      return shouldResolve ? backgroundimg() : "";
+    }
+    return backgroundimg;
+  });
+
+  onMount(() => {
+    if (typeof src !== "function" && typeof backgroundimg !== "function") {
+      return;
+    }
+    if (typeof IntersectionObserver === "undefined") {
+      shouldResolve = true;
+      return;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        shouldResolve = true;
+        observer.disconnect();
+      }
+    }, { rootMargin: "240px 0px" });
+    observer.observe(observerTarget);
+    return () => observer.disconnect();
+  });
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
-<span class="flex shrink-0 items-center justify-center avatar sidebar-touch-target"
+<span bind:this={observerTarget} class="flex shrink-0 items-center justify-center avatar sidebar-touch-target"
       class:border = {bordered}
       class:border-selected={bordered}
       class:rounded-md={bordered}
@@ -52,7 +90,7 @@
 >
   {#if src}
     {#if src === "slot"}
-      {#await backgroundimg}
+      {#await resolvedBackground}
         <div
         class="bg-skin-border sidebar-avatar sidebar-touch-target rounded-md bg-top flex items-center justify-center {
           color === 'red' ? 'bg-red-700/50' :
@@ -97,7 +135,7 @@
         </div>
     {/await}
     {:else}
-      {#await src}
+      {#await resolvedSrc}
         <div
           class="bg-skin-border sidebar-avatar rounded-md bg-top"
           style:width={size + "px"}
@@ -107,8 +145,10 @@
           class:rounded-md={!rounded} class:rounded-full={rounded} 
 ></div>
       {:then img}
+        {#if img}
         <img
           src={img}
+          loading="lazy"
           class="bg-skin-border sidebar-avatar sidebar-touch-target rounded-md object-cover object-top"
           style:width={size + "px"}
           style:height={size + "px"}
@@ -117,6 +157,16 @@
           class:rounded-md={!rounded} class:rounded-full={rounded} 
           alt="avatar"
         />
+        {:else}
+        <div
+          class="bg-skin-border sidebar-avatar rounded-md bg-top"
+          style:width={size + "px"}
+          style:height={size + "px"}
+          style:min-width={size + "px"}
+          style:min-height={size + "px"}
+          class:rounded-md={!rounded} class:rounded-full={rounded}
+        ></div>
+        {/if}
       {/await}
     {/if}
   {:else}

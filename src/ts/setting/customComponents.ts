@@ -34,6 +34,7 @@ import PromptToolsBlock from 'src/lib/Setting/Pages/PromptPreset/PromptToolsBloc
 import PromptRegexBlock from 'src/lib/Setting/Pages/PromptPreset/PromptRegexBlock.svelte';
 import ModelRegistryRefresh from 'src/lib/Setting/Pages/Model/ModelRegistryRefresh.svelte';
 import ModuleModelBindingList from 'src/lib/Setting/Pages/Model/ModuleModelBindingList.svelte';
+import ExternalAssetSettings from 'src/lib/Setting/Pages/Advanced/ExternalAssetSettings.svelte';
 
 /**
  * Registry of custom components.
@@ -59,6 +60,7 @@ export const customComponents: Record<string, Component<any>> = {
     'PromptRegexBlock': PromptRegexBlock,
     'ModelRegistryRefresh': ModelRegistryRefresh,
     'ModuleModelBindingList': ModuleModelBindingList,
+    'ExternalAssetSettings': ExternalAssetSettings,
     // Add more as we migrate complex settings
 } as const;
 
