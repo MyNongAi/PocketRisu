@@ -3,6 +3,11 @@ export interface SortableModule {
     name: string
 }
 
+export interface ModuleSortOptions {
+    activeOrders?: Array<ReadonlyArray<string> | undefined>
+    activationHistory?: ReadonlyArray<string>
+}
+
 function mergeActivationOrders(orders: ReadonlyArray<ReadonlyArray<string> | undefined>) {
     const merged: string[] = []
 
@@ -22,27 +27,48 @@ function mergeActivationOrders(orders: ReadonlyArray<ReadonlyArray<string> | und
 export function sortModulesByActivation<T extends SortableModule>(
     modules: ReadonlyArray<T>,
     search: string,
-    ...activationOrders: Array<ReadonlyArray<string> | undefined>
+    options: ModuleSortOptions = {},
 ): T[] {
     const normalizedSearch = search.trim().toLocaleLowerCase()
-    const activationOrder = mergeActivationOrders(activationOrders)
-    const activationRank = new Map(activationOrder.map((id, index) => [id, index]))
+    const activeOrder = mergeActivationOrders(options.activeOrders ?? [])
+    const activeIds = new Set(activeOrder)
+    const recencyOrder = mergeActivationOrders([
+        activeOrder,
+        options.activationHistory,
+    ])
+    const recencyRank = new Map(recencyOrder.map((id, index) => [id, index]))
 
     return modules.filter((module) => {
         if(normalizedSearch === '') return true
         return module.name.toLocaleLowerCase().includes(normalizedSearch)
     }).sort((a, b) => {
-        const aRank = activationRank.get(a.id)
-        const bRank = activationRank.get(b.id)
-        const aActive = aRank !== undefined
-        const bActive = bRank !== undefined
+        const aRank = recencyRank.get(a.id)
+        const bRank = recencyRank.get(b.id)
+        const aActive = activeIds.has(a.id)
+        const bActive = activeIds.has(b.id)
 
         if(aActive !== bActive){
             return aActive ? -1 : 1
         }
-        if(aActive && bActive && aRank !== bRank){
+        if(aRank !== undefined && bRank === undefined){
+            return -1
+        }
+        if(aRank === undefined && bRank !== undefined){
+            return 1
+        }
+        if(aRank !== undefined && bRank !== undefined && aRank !== bRank){
             return bRank - aRank
         }
         return a.name.localeCompare(b.name)
     })
+}
+
+export function recordModuleActivation(
+    history: ReadonlyArray<string> | undefined,
+    moduleId: string,
+): string[] {
+    return [
+        ...(history ?? []).filter((id) => id !== moduleId),
+        moduleId,
+    ]
 }
