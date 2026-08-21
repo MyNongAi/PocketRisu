@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { recordModuleActivation, sortModulesByActivation } from './moduleSort'
+import {
+    recordModuleActivation,
+    seedModuleActivationHistory,
+    sortModulesByActivation,
+} from './moduleSort'
 
 const modules = [
     { id: 'bravo', name: 'Bravo' },
@@ -9,9 +13,9 @@ const modules = [
 ]
 
 describe('sortModulesByActivation', () => {
-    it('puts active modules first with the newest activation at the top', () => {
+    it('uses existing module order as a fallback when no history exists', () => {
         const sorted = sortModulesByActivation(modules, '', {
-            activeOrders: [['alpha', 'charlie']],
+            fallbackOrders: [['alpha', 'charlie']],
         })
 
         expect(sorted.map((module) => module.id)).toEqual([
@@ -27,7 +31,7 @@ describe('sortModulesByActivation', () => {
             modules,
             '',
             {
-                activeOrders: [
+                fallbackOrders: [
                     ['charlie', 'alpha'],
                     ['bravo', 'charlie'],
                 ],
@@ -44,7 +48,7 @@ describe('sortModulesByActivation', () => {
 
     it('keeps search filtering while preserving activation sorting', () => {
         const sorted = sortModulesByActivation(modules, 'ha', {
-            activeOrders: [['alpha', 'charlie']],
+            fallbackOrders: [['alpha', 'charlie']],
         })
 
         expect(sorted.map((module) => module.id)).toEqual([
@@ -55,13 +59,13 @@ describe('sortModulesByActivation', () => {
 
     it('keeps recently deactivated modules ahead of never-used modules', () => {
         const sorted = sortModulesByActivation(modules, '', {
-            activeOrders: [['alpha']],
+            fallbackOrders: [['alpha']],
             activationHistory: ['charlie', 'alpha', 'delta'],
         })
 
         expect(sorted.map((module) => module.id)).toEqual([
-            'alpha',
             'delta',
+            'alpha',
             'charlie',
             'bravo',
         ])
@@ -72,5 +76,12 @@ describe('sortModulesByActivation', () => {
             'charlie',
             'alpha',
         ])
+    })
+
+    it('seeds legacy active modules before recording later changes', () => {
+        expect(seedModuleActivationHistory(
+            ['charlie'],
+            ['alpha', 'bravo'],
+        )).toEqual(['alpha', 'bravo', 'charlie'])
     })
 })

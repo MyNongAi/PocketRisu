@@ -4,7 +4,7 @@ export interface SortableModule {
 }
 
 export interface ModuleSortOptions {
-    activeOrders?: Array<ReadonlyArray<string> | undefined>
+    fallbackOrders?: Array<ReadonlyArray<string> | undefined>
     activationHistory?: ReadonlyArray<string>
 }
 
@@ -30,10 +30,8 @@ export function sortModulesByActivation<T extends SortableModule>(
     options: ModuleSortOptions = {},
 ): T[] {
     const normalizedSearch = search.trim().toLocaleLowerCase()
-    const activeOrder = mergeActivationOrders(options.activeOrders ?? [])
-    const activeIds = new Set(activeOrder)
     const recencyOrder = mergeActivationOrders([
-        activeOrder,
+        ...options.fallbackOrders ?? [],
         options.activationHistory,
     ])
     const recencyRank = new Map(recencyOrder.map((id, index) => [id, index]))
@@ -44,12 +42,7 @@ export function sortModulesByActivation<T extends SortableModule>(
     }).sort((a, b) => {
         const aRank = recencyRank.get(a.id)
         const bRank = recencyRank.get(b.id)
-        const aActive = activeIds.has(a.id)
-        const bActive = activeIds.has(b.id)
 
-        if(aActive !== bActive){
-            return aActive ? -1 : 1
-        }
         if(aRank !== undefined && bRank === undefined){
             return -1
         }
@@ -61,6 +54,16 @@ export function sortModulesByActivation<T extends SortableModule>(
         }
         return a.name.localeCompare(b.name)
     })
+}
+
+export function seedModuleActivationHistory(
+    history: ReadonlyArray<string> | undefined,
+    ...fallbackOrders: Array<ReadonlyArray<string> | undefined>
+): string[] {
+    return mergeActivationOrders([
+        ...fallbackOrders,
+        history,
+    ])
 }
 
 export function recordModuleActivation(
