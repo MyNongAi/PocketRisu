@@ -35,35 +35,56 @@
         })
     }
 
+    function createModule(){
+        tempModule = {
+            name: '',
+            description: '',
+            id: v4(),
+        }
+        mode = 1
+    }
+
     onDestroy(() => {
         refreshModules()
     })
 </script>
+
+{#snippet moduleActions()}
+    <button
+        type="button"
+        class="text-textcolor2 hover:text-primary cursor-pointer"
+        aria-label={language.createModule}
+        use:tooltip={language.createModule}
+        onclick={createModule}
+    >
+        <PlusIcon />
+    </button>
+    <button
+        type="button"
+        class="text-textcolor2 hover:text-primary cursor-pointer"
+        aria-label={`MCP ${language.importModule}`}
+        use:tooltip={`MCP ${language.importModule}`}
+        onclick={() => { void importMCPModule() }}
+    >
+        <Waypoints />
+    </button>
+    <button
+        type="button"
+        class="text-textcolor2 hover:text-primary cursor-pointer"
+        aria-label={language.importModule}
+        use:tooltip={language.importModule}
+        onclick={() => { void importModule() }}
+    >
+        <HardDriveUpload />
+    </button>
+{/snippet}
+
 {#if mode === 0}
     <SettingPage title={language.modules}>
 
     <div class="mt-4 flex gap-2 items-center">
         <TextInput className="grow" placeholder={language.search} bind:value={moduleSearch} />
-        <button class="text-textcolor2 hover:text-primary cursor-pointer" onclick={async () => {
-            tempModule = {
-                name: '',
-                description: '',
-                id: v4(),
-            }
-            mode = 1
-        }}>
-            <PlusIcon />
-        </button>
-        <button class="text-textcolor2 hover:text-primary cursor-pointer" onclick={async () => {
-            importMCPModule()
-        }}>
-            <Waypoints />
-        </button>
-        <button class="text-textcolor2 hover:text-primary cursor-pointer" onclick={async () => {
-            importModule()
-        }}>
-            <HardDriveUpload  />
-        </button>
+        {@render moduleActions()}
     </div>
 
     <div class="contain w-full max-w-full mt-4 flex flex-col border-selected border-1 rounded-md flex-1 overflow-y-auto">
@@ -148,6 +169,10 @@
         {/if}
     </div>
 
+    <div class="mt-3 flex shrink-0 items-center justify-end gap-3 border-t border-selected py-3">
+        {@render moduleActions()}
+    </div>
+
     </SettingPage>
 {:else if mode === 1}
     <SettingPage title={language.createModule}>
@@ -167,7 +192,9 @@
             notifySuccess(language.moduleUpdated)
             mode = 0
         }}>{language.editModule}</Button>
-        <Button className="mt-2" onclick={() => {
+        <Button className="mt-2" onclick={async () => {
+            const confirmed = await alertConfirm(`${language.convertToCharacter}: ${tempModule.name}`)
+            if(!confirmed) return
             const char = convertModuleToCharacter(tempModule)
             DBState.db.characters.push(char)
             checkCharOrder()
