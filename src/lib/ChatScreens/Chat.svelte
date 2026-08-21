@@ -1157,11 +1157,13 @@
                 DBState.db.nodeOnlyStandardChatWidth === 'wide' ? 'max-w-6xl' :
                 'max-w-3xl'}
             <div class="flex flex-col w-full min-w-0 {nodeOnlyWidthClass} mx-auto py-6 px-4 sm:px-8 bg-bgcolor sm:rounded-lg">
-                <!-- Header: icon + name -->
+                <!-- Header: icon + name + mirrored actions. The footer remains
+                     available for long messages while the header keeps the
+                     official-Risu-style controls close to the sender name. -->
                 <div class="flex items-center gap-3 mb-4">
                     {@render senderIcon({rounded: DBState.db.roundIcons})}
                     {#if DBState.db.characters[selIdState.selId]?.chaId === "§playground" && DBState.db.characters[selIdState.selId]?.chats?.[DBState.db.characters[selIdState.selId]?.chatPage]?.message?.[idx]}
-                        <span class="text-lg sm:text-xl text-textcolor flex items-center">
+                        <span class="text-lg sm:text-xl text-textcolor flex items-center min-w-0">
                             <span>{DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].role === 'char' ? 'Assistant' : 'User'}</span>
                             <button class="ml-2 text-textcolor2 hover:text-textcolor" onclick={() => {
                                 DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].role = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].role === 'char' ? 'user' : 'char'
@@ -1172,8 +1174,11 @@
                             }}><ArrowLeftRightIcon size="18" /></button>
                         </span>
                     {:else if !$HideIconStore}
-                        <span class="text-lg sm:text-xl text-textcolor">{name}</span>
+                        <span class="text-lg sm:text-xl text-textcolor min-w-0 truncate">{name}</span>
                     {/if}
+                    <div class="ml-auto min-w-0 text-textcolor2">
+                        {@render iconButtons()}
+                    </div>
                 </div>
                 <!-- Body: message text -->
                 <div class="mb-3 leading-relaxed">
