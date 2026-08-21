@@ -15,6 +15,7 @@
     import { importMCPModule } from "src/ts/process/mcp/mcp";
     import { convertModuleToCharacter } from "src/ts/interchangeability";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
+    import { sortModulesByActivation } from "src/ts/process/moduleSort";
     let tempModule:RisuModule = $state({
         name: '',
         description: '',
@@ -25,14 +26,7 @@
     let moduleSearch = $state('')
 
     function sortModules(modules:RisuModule[], search:string){
-        return modules.filter((v) => {
-            if(search === '') return true
-            return v.name.toLowerCase().includes(search.toLowerCase())
-        
-        }).sort((a, b) => {
-            let score = a.name.toLowerCase().localeCompare(b.name.toLowerCase())
-            return score
-        })
+        return sortModulesByActivation(modules, search, DBState.db.enabledModules)
     }
 
     function createModule(){

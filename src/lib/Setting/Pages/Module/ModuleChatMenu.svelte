@@ -8,6 +8,7 @@
     import { DBState, ReloadGUIPointer } from 'src/ts/stores.svelte';
     import { selectedCharID } from "src/ts/stores.svelte";
     import { openSettings, SettingsRoute } from "src/ts/routing";
+    import { sortModulesByActivation } from "src/ts/process/moduleSort";
     interface Props {
         close?: any;
         alertMode?: boolean;
@@ -18,14 +19,16 @@
 
     function sortModules(modules:RisuModule[], search:string){
         const db = DBState.db
-        return modules.filter((v) => {
-            if(search === '') return true
-            return v.name.toLowerCase().includes(search.toLowerCase())
-        
-        }).sort((a, b) => {
-            let score = a.name.toLowerCase().localeCompare(b.name.toLowerCase())
-            return score
-        })
+        const character = db.characters[$selectedCharID]
+        const chat = character?.chats?.[character.chatPage]
+
+        return sortModulesByActivation(
+            modules,
+            search,
+            db.enabledModules,
+            character?.modules,
+            chat?.modules,
+        )
     }
 
 </script>
