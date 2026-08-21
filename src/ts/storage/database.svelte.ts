@@ -1260,6 +1260,7 @@ export interface Database{
     memoryLimitThickness?:number
     modules: RisuModule[]
     enabledModules: string[]
+    moduleActivationHistory?: string[]
     sideMenuRerollButton?:boolean
     requestInfoInsideChat?:boolean
     additionalParams:[string, string][]

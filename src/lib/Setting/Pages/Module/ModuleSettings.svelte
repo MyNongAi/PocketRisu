@@ -15,7 +15,7 @@
     import { importMCPModule } from "src/ts/process/mcp/mcp";
     import { convertModuleToCharacter } from "src/ts/interchangeability";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
-    import { sortModulesByActivation } from "src/ts/process/moduleSort";
+    import { recordModuleActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
     let tempModule:RisuModule = $state({
         name: '',
         description: '',
@@ -26,7 +26,10 @@
     let moduleSearch = $state('')
 
     function sortModules(modules:RisuModule[], search:string){
-        return sortModulesByActivation(modules, search, DBState.db.enabledModules)
+        return sortModulesByActivation(modules, search, {
+            activeOrders: [DBState.db.enabledModules],
+            activationHistory: DBState.db.moduleActivationHistory,
+        })
     }
 
     function createModule(){
@@ -109,6 +112,10 @@
                             }
                             else{
                                 DBState.db.enabledModules.push(rmodule.id)
+                                DBState.db.moduleActivationHistory = recordModuleActivation(
+                                    DBState.db.moduleActivationHistory,
+                                    rmodule.id,
+                                )
                             }
                             DBState.db.enabledModules = DBState.db.enabledModules
                         }}>
@@ -149,6 +156,7 @@
                                 const index = DBState.db.modules.findIndex((v) => v.id === rmodule.id)
                                 DBState.db.modules.splice(index, 1)
                                 DBState.db.modules = DBState.db.modules
+                                DBState.db.moduleActivationHistory = DBState.db.moduleActivationHistory?.filter((id) => id !== rmodule.id) ?? []
                                 notifySuccess(language.moduleDeleted)
                             }
                         }}>

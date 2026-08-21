@@ -8,7 +8,7 @@
     import { DBState, ReloadGUIPointer } from 'src/ts/stores.svelte';
     import { selectedCharID } from "src/ts/stores.svelte";
     import { openSettings, SettingsRoute } from "src/ts/routing";
-    import { sortModulesByActivation } from "src/ts/process/moduleSort";
+    import { recordModuleActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
     interface Props {
         close?: any;
         alertMode?: boolean;
@@ -25,9 +25,14 @@
         return sortModulesByActivation(
             modules,
             search,
-            db.enabledModules,
-            character?.modules,
-            chat?.modules,
+            {
+                activeOrders: [
+                    db.enabledModules,
+                    character?.modules,
+                    chat?.modules,
+                ],
+                activationHistory: db.moduleActivationHistory,
+            },
         )
     }
 
@@ -95,6 +100,10 @@
                                     }
                                     else{
                                         DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].modules.push(rmodule.id)
+                                        DBState.db.moduleActivationHistory = recordModuleActivation(
+                                            DBState.db.moduleActivationHistory,
+                                            rmodule.id,
+                                        )
                                     }
                                     DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].modules = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].modules
                                     $ReloadGUIPointer += 1
@@ -110,6 +119,10 @@
                                     }
                                     else{
                                         DBState.db.characters[$selectedCharID].modules.push(rmodule.id)
+                                        DBState.db.moduleActivationHistory = recordModuleActivation(
+                                            DBState.db.moduleActivationHistory,
+                                            rmodule.id,
+                                        )
                                     }
                                     $ReloadGUIPointer += 1
                                 }}>
