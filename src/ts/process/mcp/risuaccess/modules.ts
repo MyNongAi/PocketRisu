@@ -3,7 +3,7 @@ import { alertConfirm } from 'src/ts/alert'
 import { DBState } from 'src/ts/stores.svelte'
 import { pickHashRand } from 'src/ts/util'
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
-import { recordModuleActivation } from '../../moduleSort'
+import { recordModuleActivation, seedModuleActivationHistory } from '../../moduleSort'
 
 const moduleNotFound = (id: string): RPCToolCallContent[] => [
   {
@@ -445,18 +445,23 @@ export class ModuleHandler extends MCPToolHandler {
 
       if (key === 'enabled') {
         const enabledModules = new Set(DBState.db.enabledModules || [])
+        let activationHistory = seedModuleActivationHistory(
+          DBState.db.moduleActivationHistory,
+          DBState.db.enabledModules,
+        )
         if (value) {
           const wasEnabled = enabledModules.has(id)
           enabledModules.add(id)
           if (!wasEnabled) {
-            DBState.db.moduleActivationHistory = recordModuleActivation(
-              DBState.db.moduleActivationHistory,
+            activationHistory = recordModuleActivation(
+              activationHistory,
               id,
             )
           }
         } else {
           enabledModules.delete(id)
         }
+        DBState.db.moduleActivationHistory = activationHistory
         DBState.db.enabledModules = Array.from(enabledModules)
       } else {
         // @ts-ignore

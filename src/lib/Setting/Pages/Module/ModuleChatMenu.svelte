@@ -8,7 +8,7 @@
     import { DBState, ReloadGUIPointer } from 'src/ts/stores.svelte';
     import { selectedCharID } from "src/ts/stores.svelte";
     import { openSettings, SettingsRoute } from "src/ts/routing";
-    import { recordModuleActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
+    import { recordModuleActivation, seedModuleActivationHistory, sortModulesByActivation } from "src/ts/process/moduleSort";
     interface Props {
         close?: any;
         alertMode?: boolean;
@@ -26,7 +26,7 @@
             modules,
             search,
             {
-                activeOrders: [
+                fallbackOrders: [
                     db.enabledModules,
                     character?.modules,
                     chat?.modules,
@@ -94,18 +94,27 @@
                                         "text-textcolor2 hover:text-blue-400 mr-2 cursor-pointer"
                                 } onclick={async (e) => {
                                     e.stopPropagation()
-                                    if(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].modules.includes(rmodule.id)){
-                                        DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].modules.splice(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].modules.indexOf(rmodule.id), 1)
+                                    const character = DBState.db.characters[$selectedCharID]
+                                    const chat = character.chats[character.chatPage]
+                                    let activationHistory = seedModuleActivationHistory(
+                                        DBState.db.moduleActivationHistory,
+                                        DBState.db.enabledModules,
+                                        character.modules,
+                                        chat.modules,
+                                    )
+                                    if(chat.modules.includes(rmodule.id)){
+                                        chat.modules.splice(chat.modules.indexOf(rmodule.id), 1)
 
                                     }
                                     else{
-                                        DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].modules.push(rmodule.id)
-                                        DBState.db.moduleActivationHistory = recordModuleActivation(
-                                            DBState.db.moduleActivationHistory,
+                                        chat.modules.push(rmodule.id)
+                                        activationHistory = recordModuleActivation(
+                                            activationHistory,
                                             rmodule.id,
                                         )
                                     }
-                                    DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].modules = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].modules
+                                    DBState.db.moduleActivationHistory = activationHistory
+                                    chat.modules = chat.modules
                                     $ReloadGUIPointer += 1
                                 }}
                                 oncontextmenu={(e) => {
@@ -114,16 +123,25 @@
                                     if(!DBState.db.characters[$selectedCharID].modules){
                                         DBState.db.characters[$selectedCharID].modules = []
                                     }
-                                    if(DBState.db.characters[$selectedCharID].modules.includes(rmodule.id)){
-                                        DBState.db.characters[$selectedCharID].modules.splice(DBState.db.characters[$selectedCharID].modules.indexOf(rmodule.id), 1)
+                                    const character = DBState.db.characters[$selectedCharID]
+                                    const chat = character.chats[character.chatPage]
+                                    let activationHistory = seedModuleActivationHistory(
+                                        DBState.db.moduleActivationHistory,
+                                        DBState.db.enabledModules,
+                                        character.modules,
+                                        chat.modules,
+                                    )
+                                    if(character.modules.includes(rmodule.id)){
+                                        character.modules.splice(character.modules.indexOf(rmodule.id), 1)
                                     }
                                     else{
-                                        DBState.db.characters[$selectedCharID].modules.push(rmodule.id)
-                                        DBState.db.moduleActivationHistory = recordModuleActivation(
-                                            DBState.db.moduleActivationHistory,
+                                        character.modules.push(rmodule.id)
+                                        activationHistory = recordModuleActivation(
+                                            activationHistory,
                                             rmodule.id,
                                         )
                                     }
+                                    DBState.db.moduleActivationHistory = activationHistory
                                     $ReloadGUIPointer += 1
                                 }}>
 

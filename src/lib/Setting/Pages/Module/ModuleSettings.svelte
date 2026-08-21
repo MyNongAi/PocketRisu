@@ -15,7 +15,7 @@
     import { importMCPModule } from "src/ts/process/mcp/mcp";
     import { convertModuleToCharacter } from "src/ts/interchangeability";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
-    import { recordModuleActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
+    import { recordModuleActivation, seedModuleActivationHistory, sortModulesByActivation } from "src/ts/process/moduleSort";
     let tempModule:RisuModule = $state({
         name: '',
         description: '',
@@ -27,7 +27,7 @@
 
     function sortModules(modules:RisuModule[], search:string){
         return sortModulesByActivation(modules, search, {
-            activeOrders: [DBState.db.enabledModules],
+            fallbackOrders: [DBState.db.enabledModules],
             activationHistory: DBState.db.moduleActivationHistory,
         })
     }
@@ -107,16 +107,21 @@
                                 "text-textcolor2 hover:text-primary mr-2 cursor-pointer"
                             } use:tooltip={language.enableGlobal} onclick={async (e) => {
                             e.stopPropagation()
+                            let activationHistory = seedModuleActivationHistory(
+                                DBState.db.moduleActivationHistory,
+                                DBState.db.enabledModules,
+                            )
                             if(DBState.db.enabledModules.includes(rmodule.id)){
                                 DBState.db.enabledModules.splice(DBState.db.enabledModules.indexOf(rmodule.id), 1)
                             }
                             else{
                                 DBState.db.enabledModules.push(rmodule.id)
-                                DBState.db.moduleActivationHistory = recordModuleActivation(
-                                    DBState.db.moduleActivationHistory,
+                                activationHistory = recordModuleActivation(
+                                    activationHistory,
                                     rmodule.id,
                                 )
                             }
+                            DBState.db.moduleActivationHistory = activationHistory
                             DBState.db.enabledModules = DBState.db.enabledModules
                         }}>
                             <Globe size={18}/>
