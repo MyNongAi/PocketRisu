@@ -47,6 +47,8 @@
                                 path={additionalAsset[1]}
                                 {extension}
                                 alt={additionalAsset[0]}
+                                draggableOriginal={['png', 'webp', 'jpeg', 'jpg', 'gif', 'svg', 'avif', 'bmp'].includes(extension)}
+                                dragFileName={additionalAsset[0]}
                                 mediaClass="w-16 h-16 m-1 rounded-md object-cover"
                             />
                         {/if}

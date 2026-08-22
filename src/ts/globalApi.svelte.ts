@@ -180,6 +180,20 @@ export async function getFileSrc(loc: string) {
 }
 
 /**
+ * Gets a lightweight preview URL for an image asset.
+ *
+ * PocketRisu's Node server generates a bounded, disposable 320px WebP cache
+ * on demand. Browser/Tauri builds without that endpoint keep the legacy
+ * original URL behavior for compatibility.
+ */
+export async function getFileThumbnailSrc(loc: string) {
+    if ((globalThis as any).__NODE__) {
+        return `/api/asset-thumbnail/${Buffer.from(loc, 'utf-8').toString('hex')}`
+    }
+    return getFileSrc(loc)
+}
+
+/**
  * Reads an image file and returns its data.
  * 
  * @param {string} data - The path to the image file.
