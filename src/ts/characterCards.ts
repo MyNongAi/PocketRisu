@@ -16,11 +16,17 @@ import { PngChunk } from "./pngChunk"
 import type { OnnxModelFiles } from "./process/transformers"
 import { CharXImporter, CharXSkippableChecker, CharXWriter } from "./process/processzip"
 import { exportModuleLegacy, readModule, type RisuModule } from "./process/modules"
+import { promoteNewlyImportedCharacter } from "./characterRecentOrder"
 
 
 const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz';
 const NIGHTLY_HUB_URL = 'https://nightly.sv.risuai.xyz'
 export const hubURL = '/hub-proxy';
+
+function appendImportedCharacter(db: ReturnType<typeof getDatabase>, char: character) {
+    db.characters.push(char)
+    db.characterOrder = promoteNewlyImportedCharacter(db.characterOrder ?? [], char.chaId)
+}
 
 export async function importCharacter() {
     try {
@@ -60,7 +66,7 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
         }
         if((da.char_name || da.name) && (da.char_persona || da.description) && (da.char_greeting || da.first_mes)){
             let db = getDatabase()
-            db.characters.push(convertOffSpecCards(da))
+            appendImportedCharacter(db, convertOffSpecCards(da))
             setDatabaseLite(db)
             notifySuccess(language.importedCharacter)
             return
@@ -326,7 +332,7 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
     if(parsed.spec !== 'chara_card_v2' && parsed.spec !== 'chara_card_v3'){
         const charaData:OldTavernChar = JSON.parse(Buffer.from(readedChara, 'base64').toString('utf-8'))
         const imgp = await saveAsset(img)
-        db.characters.push(convertOffSpecCards(charaData, imgp))
+        appendImportedCharacter(db, convertOffSpecCards(charaData, imgp))
         setDatabaseLite(db)
         notifySuccess(language.importedCharacter)
         return db.characters.length - 1
@@ -942,7 +948,7 @@ async function importCharacterCardSpec<T extends boolean = false>(card:Character
         return char as any
     }
 
-    db.characters.push(char)
+    appendImportedCharacter(db, char)
     notifySuccess(language.importedCharacter)
     return true as any
 

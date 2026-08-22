@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { folder } from './storage/database.svelte'
-import { promoteRecentlyViewedCharacter } from './characterRecentOrder'
+import { promoteNewlyImportedCharacter, promoteRecentlyViewedCharacter } from './characterRecentOrder'
 
 function makeFolder(id: string, data: string[]): folder {
     return { id, name: id, color: '', data }
@@ -40,5 +40,29 @@ describe('promoteRecentlyViewedCharacter', () => {
     it('does not disturb the order when the character is missing', () => {
         const order = ['a', makeFolder('bots', ['b'])]
         expect(promoteRecentlyViewedCharacter(order, 'missing')).toBe(order)
+    })
+})
+
+describe('promoteNewlyImportedCharacter', () => {
+    it('inserts a newly imported character at the front', () => {
+        const order = ['a', makeFolder('bots', ['b']), 'c']
+        const promoted = promoteNewlyImportedCharacter(order, 'new')
+
+        expect(promoted).toEqual(['new', 'a', makeFolder('bots', ['b']), 'c'])
+        expect(order).toEqual(['a', makeFolder('bots', ['b']), 'c'])
+    })
+
+    it('uses the existing folder-aware promotion when the character is already ordered', () => {
+        const order = ['standalone', makeFolder('bots', ['a', 'b'])]
+        expect(promoteNewlyImportedCharacter(order, 'b')).toEqual([
+            makeFolder('bots', ['b', 'a']),
+            'standalone',
+        ])
+    })
+
+    it('does not insert runtime-only characters', () => {
+        const order = ['a']
+        expect(promoteNewlyImportedCharacter(order, '§temp')).toBe(order)
+        expect(promoteNewlyImportedCharacter(order, '§playground')).toBe(order)
     })
 })

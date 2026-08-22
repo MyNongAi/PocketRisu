@@ -15,6 +15,7 @@ import { getInlayAsset, setInlayAsset, getInlayInfosBatch, type InlayAsset } fro
 import { getInlayMeta, setInlayMeta, type InlayAssetMeta } from './process/files/inlayMeta'
 import { PngChunk } from './pngChunk'
 import { reencodeImage } from './process/files/inlays'
+import { promoteNewlyImportedCharacter } from './characterRecentOrder'
 
 // ── Types ──
 
@@ -655,6 +656,7 @@ export async function importCharacterPackage(): Promise<void> {
             const blankChar = createBlankChar()
             blankChar.name = manifest.character.name || ''
             db.characters.push(blankChar)
+            db.characterOrder = promoteNewlyImportedCharacter(db.characterOrder ?? [], blankChar.chaId)
             setDatabase(db)
             newCharIndex = db.characters.length - 1
         } else {
@@ -684,12 +686,14 @@ export async function importCharacterPackage(): Promise<void> {
             importChatsToCharacter(manifest, unzipped, newChar, personaIdMap, importProgress)
             await importInlays(manifest, unzipped, newChar.chaId, importCurrentStep, importTotalSteps, progressLabel)
 
+            db.characterOrder = promoteNewlyImportedCharacter(db.characterOrder ?? [], newChar.chaId)
             setDatabase(db)
             checkCharOrder()
             notifySuccess(language.characterPackageImportSuccess)
         } catch (error) {
             db.characters.splice(newCharIndex, 1)
             setDatabase(db)
+            checkCharOrder()
             throw error
         }
     } catch (error) {
