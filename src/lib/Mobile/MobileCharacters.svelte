@@ -2,7 +2,7 @@
     import { type Database } from "src/ts/storage/database.svelte";
     import { DBState } from 'src/ts/stores.svelte';
     import BarIcon from "../SideBars/BarIcon.svelte";
-    import { addCharacter, changeChar, getCharImage, removeChar } from "src/ts/characters";
+    import { addCharacter, cancelCharacterChatPrefetch, changeChar, getCharImage, prefetchCharacterChat, removeChar, scheduleCharacterChatPrefetch } from "src/ts/characters";
     import { makeAgoText } from "src/ts/util";
     import { MessageSquareIcon, PlusIcon, SquareMousePointer, TrashIcon } from "@lucide/svelte";
     import { language } from "src/lang";
@@ -42,6 +42,9 @@
         <div class="flex items-center border-t-darkborderc w-full" class:border-t={i !== 0}>
             <div class="shrink-0 p-2 pr-0">
                 <BarIcon
+                    onPrefetch={() => scheduleCharacterChatPrefetch(char.i)}
+                    onPrefetchCancel={() => cancelCharacterChatPrefetch(char.i)}
+                    onPrefetchImmediate={() => void prefetchCharacterChat(char.i)}
                     onClick={() => {
                         changeChar(char.i)
                         endGrid()
@@ -49,7 +52,14 @@
                     additionalStyle={() => getCharImage(char.image, 'css')}
                 />
             </div>
-            <button class="flex min-w-0 flex-1 p-2 text-left" onclick={() => {
+            <button
+                class="flex min-w-0 flex-1 p-2 text-left"
+                onpointerenter={() => scheduleCharacterChatPrefetch(char.i)}
+                onpointerleave={() => cancelCharacterChatPrefetch(char.i)}
+                onpointerdown={() => void prefetchCharacterChat(char.i)}
+                onfocus={() => scheduleCharacterChatPrefetch(char.i)}
+                onblur={() => cancelCharacterChatPrefetch(char.i)}
+                onclick={() => {
                     changeChar(char.i)
                     endGrid()
                 }}>
@@ -69,6 +79,9 @@
                         class="rounded-md p-2 text-textcolor2 transition-colors hover:bg-selected hover:text-textcolor"
                         title={language.selectChar}
                         aria-label={language.selectChar}
+                        onpointerenter={() => scheduleCharacterChatPrefetch(char.i)}
+                        onpointerleave={() => cancelCharacterChatPrefetch(char.i)}
+                        onpointerdown={() => void prefetchCharacterChat(char.i)}
                         onclick={() => {
                             changeChar(char.i)
                             endGrid()

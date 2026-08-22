@@ -1348,6 +1348,7 @@ export const languageKorean = {
   clearTranslationCacheConfirm:
     "모든 번역 캐시 항목이 삭제됩니다. 되돌릴 수 없습니다. 계속하시겠습니까?",
   loading: "로딩중",
+  chatLoading: "채팅 불러오는 중",
   autoTranslateCachedOnly: "캐시된 메시지만 자동 번역",
   notification: "알림",
   permissionDenied: "브라우저 또는 OS에 의해 권한이 거부되었습니다",

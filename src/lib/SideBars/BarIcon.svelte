@@ -8,11 +8,21 @@
 
   interface Props {
     onClick?: any;
+    onPrefetch?: any;
+    onPrefetchCancel?: any;
+    onPrefetchImmediate?: any;
     additionalStyle?: DeferredStyle;
     children?: import('svelte').Snippet;
   }
 
-  let { onClick = () => {}, additionalStyle = "", children }: Props = $props();
+  let {
+    onClick = () => {},
+    onPrefetch = () => {},
+    onPrefetchCancel = () => {},
+    onPrefetchImmediate = () => {},
+    additionalStyle = "",
+    children,
+  }: Props = $props();
   let observerTarget: HTMLButtonElement = $state();
   let shouldResolve = $state(false);
   let resolvedStyle = $derived.by(() => {
@@ -43,9 +53,9 @@
 </script>
 
 {#await resolvedStyle}
-  <button bind:this={observerTarget} onclick={onClick} class="ico">{@render children?.()}</button>
+  <button bind:this={observerTarget} onclick={onClick} onpointerenter={onPrefetch} onpointerleave={onPrefetchCancel} onpointerdown={onPrefetchImmediate} onfocus={onPrefetch} onblur={onPrefetchCancel} class="ico">{@render children?.()}</button>
 {:then as}
-  <button bind:this={observerTarget} onclick={onClick} class="ico" style={as}>{@render children?.()}</button>
+  <button bind:this={observerTarget} onclick={onClick} onpointerenter={onPrefetch} onpointerleave={onPrefetchCancel} onpointerdown={onPrefetchImmediate} onfocus={onPrefetch} onblur={onPrefetchCancel} class="ico" style={as}>{@render children?.()}</button>
 {/await}
 
 <style>

@@ -170,6 +170,18 @@ export const loadingOverlayStore = writable<{
     onCancel: null,
 })
 
+export const chatHydrationOverlayStore = writable<{
+    active: boolean,
+    text: string,
+    onCancel?: (() => void) | null,
+    requestId?: string | null,
+}>({
+    active: false,
+    text: '',
+    onCancel: null,
+    requestId: null,
+})
+
 export const QuickSettings = $state({
     open: false,
     index: 0
