@@ -48,3 +48,24 @@ export function promoteRecentlyViewedCharacter(
 
     return order
 }
+
+/**
+ * Places a newly imported character at the start of the catalog. Unlike the
+ * viewed-character helper, this intentionally inserts an ID that is not in
+ * characterOrder yet. Existing entries still preserve folder semantics.
+ */
+export function promoteNewlyImportedCharacter(
+    order: CharacterOrderEntry[],
+    characterId: string,
+): CharacterOrderEntry[] {
+    if (!characterId || characterId === '§temp' || characterId === '§playground') return order
+
+    const exists = order.some((entry) => (
+        typeof entry === 'string'
+            ? entry === characterId
+            : entry.data.includes(characterId)
+    ))
+    if (exists) return promoteRecentlyViewedCharacter(order, characterId)
+
+    return [characterId, ...order]
+}
