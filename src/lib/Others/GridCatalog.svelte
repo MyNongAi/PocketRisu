@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { changeChar, getCharImage, removeChar } from "../../ts/characters";
+    import { cancelCharacterChatPrefetch, changeChar, getCharImage, prefetchCharacterChat, removeChar, scheduleCharacterChatPrefetch } from "../../ts/characters";
     import { type Database } from "../../ts/storage/database.svelte";
     import { DBState } from 'src/ts/stores.svelte';
     import { findCharacterIndexbyId } from "../../ts/util";
@@ -109,9 +109,21 @@
                     {#each formatChars(search, DBState.db) as char}
                         <div class="flex items-center text-textcolor">
                             {#if char.image}
-                                <BarIcon onClick={() => {selectAndClose(char.index)}} additionalStyle={() => getCharImage(char.image, 'css')}></BarIcon>
+                                <BarIcon
+                                    onPrefetch={() => scheduleCharacterChatPrefetch(char.index)}
+                                    onPrefetchCancel={() => cancelCharacterChatPrefetch(char.index)}
+                                    onPrefetchImmediate={() => void prefetchCharacterChat(char.index)}
+                                    onClick={() => {selectAndClose(char.index)}}
+                                    additionalStyle={() => getCharImage(char.image, 'css')}
+                                ></BarIcon>
                             {:else}
-                                <BarIcon onClick={() => {selectAndClose(char.index)}} additionalStyle={char.index === $selectedCharID ? 'background:var(--risu-theme-selected)' : ''}>
+                                <BarIcon
+                                    onPrefetch={() => scheduleCharacterChatPrefetch(char.index)}
+                                    onPrefetchCancel={() => cancelCharacterChatPrefetch(char.index)}
+                                    onPrefetchImmediate={() => void prefetchCharacterChat(char.index)}
+                                    onClick={() => {selectAndClose(char.index)}}
+                                    additionalStyle={char.index === $selectedCharID ? 'background:var(--risu-theme-selected)' : ''}
+                                >
                                             <User/>
                                 </BarIcon>
                             {/if}
@@ -122,7 +134,13 @@
         {:else if selected === 1}
             {#each formatChars(search, DBState.db) as char}
                 <div class="flex p-2 border border-darkborderc rounded-md mb-2">
-                    <BarIcon onClick={() => {selectAndClose(char.index)}} additionalStyle={() => getCharImage(char.image, 'css')}></BarIcon>
+                    <BarIcon
+                        onPrefetch={() => scheduleCharacterChatPrefetch(char.index)}
+                        onPrefetchCancel={() => cancelCharacterChatPrefetch(char.index)}
+                        onPrefetchImmediate={() => void prefetchCharacterChat(char.index)}
+                        onClick={() => {selectAndClose(char.index)}}
+                        additionalStyle={() => getCharImage(char.image, 'css')}
+                    ></BarIcon>
                     <div class="flex-1 flex flex-col ml-2">
                         <h4 class="text-textcolor font-bold text-lg mb-1">{char.name || "Unnamed"}</h4>
                         <span class="text-textcolor2">{parseMultilangString(char.desc)['en'] || parseMultilangString(char.desc)['xx'] || 'No description'}</span>
@@ -133,7 +151,14 @@
                             <span>{char.agoText}</span>
                         </div>
                         <div class="flex gap-2 justify-end">
-                            <button class="hover:text-textcolor text-textcolor2" title={language.selectChar} aria-label={language.selectChar} onclick={() => {
+                            <button
+                                class="hover:text-textcolor text-textcolor2"
+                                title={language.selectChar}
+                                aria-label={language.selectChar}
+                                onpointerenter={() => scheduleCharacterChatPrefetch(char.index)}
+                                onpointerleave={() => cancelCharacterChatPrefetch(char.index)}
+                                onpointerdown={() => void prefetchCharacterChat(char.index)}
+                                onclick={() => {
                                 selectAndClose(char.index)
                             }}>
                                 <SquareMousePointer />

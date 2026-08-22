@@ -2,7 +2,7 @@ import { get, writable } from "svelte/store";
 import { saveImage, setDatabase, type character, type Chat, defaultSdDataFunc, type loreBook, getDatabase, getCharacterByIndex, setCharacterByIndex, getCurrentChat, loadTogglesFromChat, normalizeChat, newChatModelDefaults } from "./storage/database.svelte";
 import { ensureChatHydrated } from "./storage/chatStorage";
 import { alertAddCharacter, alertConfirm, alertError, alertSelect, alertStore, alertWait, notifySuccess, notifyInfo } from "./alert";
-import { loadingOverlayStore, chatDeselected } from "./stores.svelte";
+import { chatHydrationOverlayStore, chatDeselected } from "./stores.svelte";
 import { language } from "../lang";
 import { checkNullish, findCharacterbyId, findCharacterIndexbyId, getUserName, selectMultipleFile, selectSingleFile } from "./util";
 import { v4 as uuidv4, v4 } from 'uuid';
@@ -17,6 +17,64 @@ import { importCharacter } from "./characterCards";
 import { importCharacterPackage } from "./characterPackage";
 import { PngChunk } from "./pngChunk";
 import { promoteRecentlyViewedCharacter } from "./characterRecentOrder";
+
+const CHAT_HYDRATION_INDICATOR_DELAY_MS = 180
+const CHAT_PREFETCH_DELAY_MS = 110
+let characterSelectionHydrationSerial = 0
+let characterPrefetchTimer: ReturnType<typeof setTimeout> | null = null
+let characterPrefetchIndex = -1
+
+function hideChatHydrationIndicator(requestId?: string) {
+    chatHydrationOverlayStore.update((current) => {
+        if(requestId && current.requestId !== requestId) return current
+        return { active: false, text: '', onCancel: null, requestId: null }
+    })
+}
+
+export function prefetchCharacterChat(index: number): Promise<Chat | null> {
+    const char = getDatabase().characters[index]
+    const chat = char?.chats?.[char.chatPage]
+    if(!char || !chat || !chat._placeholder) return Promise.resolve(chat ?? null)
+    return ensureChatHydrated(char.chats, char.chatPage, char.chaId).catch((error) => {
+        console.warn('[prefetchCharacterChat] hydration failed:', error)
+        return null
+    })
+}
+
+export function scheduleCharacterChatPrefetch(index: number) {
+    if(characterPrefetchTimer && characterPrefetchIndex === index) return
+    cancelCharacterChatPrefetch()
+    characterPrefetchIndex = index
+    characterPrefetchTimer = setTimeout(() => {
+        characterPrefetchTimer = null
+        characterPrefetchIndex = -1
+        void prefetchCharacterChat(index)
+    }, CHAT_PREFETCH_DELAY_MS)
+}
+
+export function cancelCharacterChatPrefetch(index?: number) {
+    if(index !== undefined && characterPrefetchIndex !== index) return
+    if(characterPrefetchTimer) clearTimeout(characterPrefetchTimer)
+    characterPrefetchTimer = null
+    characterPrefetchIndex = -1
+}
+
+async function waitForChatWarmupIdle() {
+    if(typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+        await new Promise<void>((resolve) => window.requestIdleCallback(() => resolve(), { timeout: 1200 }))
+        return
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 50))
+}
+
+export async function warmRecentCharacterChats(indices: number[], shouldContinue: () => boolean = () => true) {
+    for(const index of [...new Set(indices)]) {
+        if(!shouldContinue()) return
+        await waitForChatWarmupIdle()
+        if(!shouldContinue()) return
+        await prefetchCharacterChat(index)
+    }
+}
 
 export function createNewCharacter() {
     let db = getDatabase()
@@ -773,6 +831,10 @@ export function changeChar(index: number, arg:{
     if(get(doingChat)){
       return
     }
+    cancelCharacterChatPrefetch(index)
+    const hydrationSerial = ++characterSelectionHydrationSerial
+    const hydrationRequestId = `character:${hydrationSerial}`
+    hideChatHydrationIndicator()
     reseter();
     chatDeselected.set(false)
     characterFormatUpdate(index, {
@@ -796,13 +858,20 @@ export function changeChar(index: number, arg:{
             const capturedChatId = chat.id
             if(char){
                 let cancelled = false
-                loadingOverlayStore.set({ active: true, text: language.loading ?? '', onCancel: () => {
-                    cancelled = true
-                    chatDeselected.set(true)
-                    loadingOverlayStore.set({ active: false, text: '', onCancel: null })
-                }})
+                const indicatorTimer = setTimeout(() => {
+                    if(cancelled || hydrationSerial !== characterSelectionHydrationSerial) return
+                    const currentChar = getDatabase().characters[capturedIndex]
+                    const activeChatId = currentChar?.chats?.[currentChar.chatPage]?.id
+                    if(get(selectedCharID) !== capturedIndex || activeChatId !== capturedChatId) return
+                    chatHydrationOverlayStore.set({ active: true, text: language.chatLoading ?? language.loading ?? '', requestId: hydrationRequestId, onCancel: () => {
+                        cancelled = true
+                        characterSelectionHydrationSerial++
+                        chatDeselected.set(true)
+                        hideChatHydrationIndicator(hydrationRequestId)
+                    }})
+                }, CHAT_HYDRATION_INDICATOR_DELAY_MS)
                 void ensureChatHydrated(char.chats, char.chatPage, char.chaId).then((hydrated) => {
-                    if(cancelled) return
+                    if(cancelled || hydrationSerial !== characterSelectionHydrationSerial) return
                     const currentChar = getDatabase().characters[capturedIndex]
                     const activeChatId = currentChar?.chats?.[currentChar.chatPage]?.id
                     if(hydrated && get(selectedCharID) === capturedIndex && activeChatId === capturedChatId) {
@@ -811,7 +880,8 @@ export function changeChar(index: number, arg:{
                 }).catch((e) => {
                     console.error('[selectCharacter] hydration failed:', e)
                 }).finally(() => {
-                    if(!cancelled) loadingOverlayStore.set({ active: false, text: '', onCancel: null })
+                    clearTimeout(indicatorTimer)
+                    if(!cancelled && hydrationSerial === characterSelectionHydrationSerial) hideChatHydrationIndicator(hydrationRequestId)
                 })
             }
         } else {

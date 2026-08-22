@@ -5,7 +5,7 @@ import { get } from "svelte/store";
 import streamSaver from 'streamsaver';
 import { setDatabase, type Database, defaultSdDataFunc, getDatabase, appVer, nodeOnlyVer, getCurrentCharacter, loadTogglesFromChat } from "./storage/database.svelte";
 import { checkRisuUpdate } from "./update";
-import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore, loadingOverlayStore, chatDeselected } from "./stores.svelte";
+import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore, loadingOverlayStore, chatHydrationOverlayStore, chatDeselected } from "./stores.svelte";
 import { loadPlugins } from "./plugins/plugins.svelte";
 import { alertConfirm, alertError, alertMd, alertNormalWait, alertSelect, alertTOS, waitAlert, notifySuccess, notifyError, notifyInfo } from "./alert";
 import { hasher } from "./parser/parser.svelte";
@@ -2801,6 +2801,16 @@ export function foldChatToMessage(targetMessageIdOrIndex: string | number) {
     }
 }
 
+const CHAT_HYDRATION_INDICATOR_DELAY_MS = 180
+let chatSwitchHydrationSerial = 0
+
+function hideChatSwitchHydrationIndicator(requestId?: string) {
+    chatHydrationOverlayStore.update((current) => {
+        if(requestId && current.requestId !== requestId) return current
+        return { active: false, text: '', onCancel: null, requestId: null }
+    })
+}
+
 export function changeChatTo(IdOrIndex: string | number) {
     let index = -1
     if (typeof IdOrIndex === 'number') {
@@ -2818,6 +2828,9 @@ export function changeChatTo(IdOrIndex: string | number) {
         return
     }
 
+    const hydrationSerial = ++chatSwitchHydrationSerial
+    const hydrationRequestId = `chat:${hydrationSerial}`
+    hideChatSwitchHydrationIndicator()
     chatDeselected.set(false)
     const char = DBState.db.characters[selIdState.selId]
     char.chatPage = index
@@ -2826,18 +2839,23 @@ export function changeChatTo(IdOrIndex: string | number) {
         if(newChat._placeholder){
             const capturedIndex = index
             let cancelled = false
-            loadingOverlayStore.set({ active: true, text: language.loading ?? '', onCancel: () => {
-                cancelled = true
-                chatDeselected.set(true)
-                loadingOverlayStore.set({ active: false, text: '', onCancel: null })
-            }})
+            const indicatorTimer = setTimeout(() => {
+                if(cancelled || hydrationSerial !== chatSwitchHydrationSerial || char.chatPage !== capturedIndex) return
+                chatHydrationOverlayStore.set({ active: true, text: language.chatLoading ?? language.loading ?? '', requestId: hydrationRequestId, onCancel: () => {
+                    cancelled = true
+                    chatSwitchHydrationSerial++
+                    chatDeselected.set(true)
+                    hideChatSwitchHydrationIndicator(hydrationRequestId)
+                }})
+            }, CHAT_HYDRATION_INDICATOR_DELAY_MS)
             void ensureChatHydrated(char.chats, capturedIndex, char.chaId).then((hydrated) => {
-                if(cancelled) return
+                if(cancelled || hydrationSerial !== chatSwitchHydrationSerial) return
                 if(hydrated && char.chatPage === capturedIndex) loadTogglesFromChat(hydrated)
             }).catch((e) => {
                 console.error('[changeChatTo] hydration failed:', e)
             }).finally(() => {
-                if(!cancelled) loadingOverlayStore.set({ active: false, text: '', onCancel: null })
+                clearTimeout(indicatorTimer)
+                if(!cancelled && hydrationSerial === chatSwitchHydrationSerial) hideChatSwitchHydrationIndicator(hydrationRequestId)
             })
         } else {
             loadTogglesFromChat(newChat)

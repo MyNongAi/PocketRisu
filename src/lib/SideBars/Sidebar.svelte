@@ -37,8 +37,12 @@
   } from "@lucide/svelte";
     import {
   addCharacter,
+    cancelCharacterChatPrefetch,
     changeChar,
     getCharImage,
+    prefetchCharacterChat,
+    scheduleCharacterChatPrefetch,
+    warmRecentCharacterChats,
   } from "../../ts/characters";
     import CharConfig from "./CharConfig.svelte";
     import { language } from "../../lang";
@@ -48,6 +52,7 @@
     import BaseRoundedButton from "../UI/BaseRoundedButton.svelte";
     import { getCharacterIndexObject, makeAgoText, selectSingleFile } from "src/ts/util";
     import { v4 } from "uuid";
+    import { onMount } from "svelte";
     import { checkCharOrder, getFileSrc, saveAsset } from "src/ts/globalApi.svelte";
     import { alertInput, alertSelect } from "src/ts/alert";
     import SideChatList from "./SideChatList.svelte";
@@ -97,6 +102,18 @@
   }
 
   let { openGrid = () => {}, hidden = false }: Props = $props();
+
+  onMount(() => {
+    let active = true
+    const timer = setTimeout(() => {
+      const recentIndices = recentChars.slice(0, recentVisible).map((recent) => recent.index)
+      void warmRecentCharacterChats(recentIndices, () => active)
+    }, 900)
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  })
 
   sideBarClosing.set(false)
 
@@ -741,6 +758,11 @@
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div
             role="button" tabindex="0"
+            onpointerenter={() => char.type === "normal" && scheduleCharacterChatPrefetch(char.index)}
+            onpointerleave={() => char.type === "normal" && cancelCharacterChatPrefetch(char.index)}
+            onpointerdown={() => char.type === "normal" && void prefetchCharacterChat(char.index)}
+            onfocus={() => char.type === "normal" && scheduleCharacterChatPrefetch(char.index)}
+            onblur={() => char.type === "normal" && cancelCharacterChatPrefetch(char.index)}
             onclick={() => {
               if(suppressNextClick) return
               if(char.type === "normal"){
@@ -909,6 +931,11 @@
               <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
               <div
                   role="button" tabindex="0"
+                  onpointerenter={() => char2.type === "normal" && scheduleCharacterChatPrefetch(char2.index)}
+                  onpointerleave={() => char2.type === "normal" && cancelCharacterChatPrefetch(char2.index)}
+                  onpointerdown={() => char2.type === "normal" && void prefetchCharacterChat(char2.index)}
+                  onfocus={() => char2.type === "normal" && scheduleCharacterChatPrefetch(char2.index)}
+                  onblur={() => char2.type === "normal" && cancelCharacterChatPrefetch(char2.index)}
                   onclick={() => {
                     if(suppressNextClick) return
                     if(char2.type === "normal"){
@@ -1139,6 +1166,11 @@
             <button
               type="button"
               class="group flex items-center gap-2.5 rounded-md border border-borderc/10 bg-darkbg p-2 text-left transition-colors hover:border-borderc/30 hover:bg-selected/50"
+              onpointerenter={() => scheduleCharacterChatPrefetch(rc.index)}
+              onpointerleave={() => cancelCharacterChatPrefetch(rc.index)}
+              onpointerdown={() => void prefetchCharacterChat(rc.index)}
+              onfocus={() => scheduleCharacterChatPrefetch(rc.index)}
+              onblur={() => cancelCharacterChatPrefetch(rc.index)}
               onclick={() => changeChar(rc.index, {reseter})}
             >
               <div class="shrink-0">

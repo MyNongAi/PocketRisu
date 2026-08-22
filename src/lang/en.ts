@@ -1240,6 +1240,7 @@ export const languageEnglish = {
     clearTranslationCacheSuccess: "Translation cache cleared successfully.",
     clearTranslationCacheConfirm: "This will delete all translation cache entries. This cannot be undone. Continue?",
     loading: "Loading",
+    chatLoading: "Loading chat...",
     autoTranslateCachedOnly: "Auto-translate Cached Messages Only",
     notification: "Notification",
     permissionDenied: "Permission Denied by Your Browser or OS",

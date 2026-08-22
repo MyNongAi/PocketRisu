@@ -6,7 +6,7 @@
     import ShDropdownMenuTrigger from 'src/lib/UI/GUI/ShDropdownMenuTrigger.svelte';
     import ShDropdownMenuContent from 'src/lib/UI/GUI/ShDropdownMenuContent.svelte';
     import ShDropdownMenuItem from 'src/lib/UI/GUI/ShDropdownMenuItem.svelte';
-    import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, chatDeselected, chatPanelStore } from "../../ts/stores.svelte";
+    import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, chatDeselected, chatHydrationOverlayStore, chatPanelStore } from "../../ts/stores.svelte";
     import { tick, untrack } from 'svelte';
     import Chat from "./Chat.svelte";
     import { getAdditionalChatLoadPages, getInitialChatLoadPages } from 'src/ts/chatLoadPages';
@@ -77,6 +77,7 @@ import { isMobile } from 'src/ts/platform'
     let scrollNavTimer: ReturnType<typeof setTimeout> | null = null
     let chatsInstance: any = $state()
     let isScrollingToMessage = $state(false)
+    let showHydrationCancel = $state(false)
     let { openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props();
     let currentCharacter = $derived(DBState.db.characters[$selectedCharID])
     let currentChatSlot = $derived(currentCharacter?.chats[currentCharacter.chatPage])
@@ -88,6 +89,19 @@ import { isMobile } from 'src/ts/platform'
         DBState.db.externalAssetRecentOutputs,
         currentChatSlot?.firstMessageDisabled !== true,
     ).firstMessage)
+
+    $effect(() => {
+        const active = $chatHydrationOverlayStore.active
+        const requestId = $chatHydrationOverlayStore.requestId
+        showHydrationCancel = false
+        if(!active || !requestId) return
+        const timer = setTimeout(() => {
+            if($chatHydrationOverlayStore.active && $chatHydrationOverlayStore.requestId === requestId) {
+                showHydrationCancel = true
+            }
+        }, 1200)
+        return () => clearTimeout(timer)
+    })
 
     // ─── Per-chat composer draft ────────────────────────────────────────────
     // The message input is kept per chat, stored outside the chat body, so it
@@ -870,6 +884,23 @@ import { isMobile } from 'src/ts/platform'
 
 
 <div class="w-full h-full relative" style={customStyle}>
+    {#if $chatHydrationOverlayStore.active}
+        <div class="absolute inset-0 z-[55] flex items-center justify-center bg-bgcolor/45 backdrop-blur-[1px]" aria-live="polite" aria-busy="true">
+            <div class="flex items-center gap-2.5 rounded-full border border-darkborderc bg-bgcolor/90 px-4 py-2.5 text-textcolor shadow-lg">
+                <svg class="h-5 w-5 animate-spin text-primary" style="will-change: transform;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                </svg>
+                <span class="text-sm">{$chatHydrationOverlayStore.text || language.chatLoading}</span>
+                {#if showHydrationCancel && $chatHydrationOverlayStore.onCancel}
+                    <button
+                        class="ml-1 rounded-full border border-darkborderc px-2.5 py-1 text-xs text-textcolor2 transition-colors hover:bg-selected hover:text-textcolor"
+                        onclick={() => $chatHydrationOverlayStore.onCancel?.()}
+                    >{language.cancel}</button>
+                {/if}
+            </div>
+        </div>
+    {/if}
     
     {#if DBState.db.nodeOnlyScrollButtonType !== 'off' && currentChat.length > 0}
         <div
