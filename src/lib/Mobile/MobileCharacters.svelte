@@ -1,10 +1,11 @@
 <script lang="ts">
-    import { type character } from "src/ts/storage/database.svelte";
+    import { type Database } from "src/ts/storage/database.svelte";
     import { DBState } from 'src/ts/stores.svelte';
     import BarIcon from "../SideBars/BarIcon.svelte";
-    import { addCharacter, changeChar, getCharImage } from "src/ts/characters";
+    import { addCharacter, changeChar, getCharImage, removeChar } from "src/ts/characters";
     import { makeAgoText } from "src/ts/util";
-    import { MessageSquareIcon, PlusIcon } from "@lucide/svelte";
+    import { MessageSquareIcon, PlusIcon, SquareMousePointer, TrashIcon } from "@lucide/svelte";
+    import { language } from "src/lang";
 
     interface Props {
         search: string;
@@ -14,16 +15,21 @@
 
     let {search, gridMode = false, endGrid = () => {}}: Props = $props();
 
-    function sortChar(char: (character)[]) {
+    function sortChar(char: Database['characters'], searchText: string) {
+        const normalizedSearch = searchText.replace(/ /g, "").toLocaleLowerCase()
         return char.map((c, i) => ({
                 name: c.name || "Unnamed",
                 image: c.image,
                 chats: c.chats.length,
                 i: i,
                 type: c.type,
+                chaId: c.chaId,
+                trashTime: c.trashTime,
                 interaction: c.lastInteraction || 0,
                 agoText: makeAgoText(c.lastInteraction || 0),
-            })).sort((a, b) => {
+            }))
+            .filter((c) => !c.trashTime && c.name.replace(/ /g, "").toLocaleLowerCase().includes(normalizedSearch))
+            .sort((a, b) => {
             if (a.interaction === b.interaction) {
                 return a.name.localeCompare(b.name);
             }
@@ -32,13 +38,21 @@
     }
 </script>
 <div class="flex flex-col items-center w-full overflow-y-auto h-full">
-    {#each sortChar(DBState.db.characters) as char, i}
-        {#if char.name.replace(/ /g,"").toLocaleLowerCase().includes(search.replace(/ /g,"").toLocaleLowerCase())}
-            <button class="flex p-2 border-t-darkborderc gap-2 w-full" class:border-t={i !== 0} onclick={() => {
-                changeChar(char.i)
-                endGrid()
-            }}>
-                <BarIcon additionalStyle={() => getCharImage(char.image, 'css')}></BarIcon>
+    {#each sortChar(DBState.db.characters, search) as char, i (char.chaId)}
+        <div class="flex items-center border-t-darkborderc w-full" class:border-t={i !== 0}>
+            <div class="shrink-0 p-2 pr-0">
+                <BarIcon
+                    onClick={() => {
+                        changeChar(char.i)
+                        endGrid()
+                    }}
+                    additionalStyle={() => getCharImage(char.image, 'css')}
+                />
+            </div>
+            <button class="flex min-w-0 flex-1 p-2 text-left" onclick={() => {
+                    changeChar(char.i)
+                    endGrid()
+                }}>
                 <div class="flex flex-1 w-full flex-col justify-start items-start text-start">
                     <span>{char.name}</span>
                     <div class="text-sm text-textcolor2 flex items-center w-full flex-wrap">
@@ -49,7 +63,30 @@
                     </div>
                 </div>
             </button>
-        {/if}
+            {#if gridMode}
+                <div class="flex shrink-0 items-center gap-1 pr-2">
+                    <button
+                        class="rounded-md p-2 text-textcolor2 transition-colors hover:bg-selected hover:text-textcolor"
+                        title={language.selectChar}
+                        aria-label={language.selectChar}
+                        onclick={() => {
+                            changeChar(char.i)
+                            endGrid()
+                        }}
+                    >
+                        <SquareMousePointer size={20} />
+                    </button>
+                    <button
+                        class="rounded-md p-2 text-textcolor2 transition-colors hover:bg-red-500/10 hover:text-red-400"
+                        title={language.trash}
+                        aria-label={language.trash}
+                        onclick={() => removeChar(char.chaId, char.name)}
+                    >
+                        <TrashIcon size={20} />
+                    </button>
+                </div>
+            {/if}
+        </div>
     {/each}
 </div>
 

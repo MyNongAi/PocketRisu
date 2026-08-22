@@ -4,12 +4,12 @@
     import { DBState } from 'src/ts/stores.svelte';
     import { findCharacterIndexbyId } from "../../ts/util";
     import BarIcon from "../SideBars/BarIcon.svelte";
-    import { ArrowLeft, User, SquareMousePointer, TrashIcon, Undo2Icon } from "@lucide/svelte";
+    import { ArrowLeft, MessageSquareIcon, User, SquareMousePointer, TrashIcon, Undo2Icon } from "@lucide/svelte";
     import { selectedCharID } from "../../ts/stores.svelte";
     import TextInput from "../UI/GUI/TextInput.svelte";
     import Button from "../UI/GUI/Button.svelte";
     import { language } from "src/lang";
-    import { parseMultilangString } from "src/ts/util";
+    import { makeAgoText, parseMultilangString } from "src/ts/util";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
   import MobileCharacters from "../Mobile/MobileCharacters.svelte";
     interface Props {
@@ -33,6 +33,9 @@
             name:string
             desc:string
             chaId:string
+            chats:number
+            interaction:number
+            agoText:string
         }[] = []
 
         for(let i=0;i<db.characters.length;i++){
@@ -50,11 +53,19 @@
                     type: c.type,
                     name: c.name,
                     desc: c.creatorNotes ?? 'No description',
-                    chaId: c.chaId
+                    chaId: c.chaId,
+                    chats: c.chats.length,
+                    interaction: c.lastInteraction ?? 0,
+                    agoText: makeAgoText(c.lastInteraction ?? 0)
                 })
             }
         }
-        return charas
+        return charas.sort((a, b) => {
+            if(a.interaction === b.interaction){
+                return a.name.localeCompare(b.name)
+            }
+            return b.interaction - a.interaction
+        })
     }
 </script>
 
@@ -115,13 +126,19 @@
                     <div class="flex-1 flex flex-col ml-2">
                         <h4 class="text-textcolor font-bold text-lg mb-1">{char.name || "Unnamed"}</h4>
                         <span class="text-textcolor2">{parseMultilangString(char.desc)['en'] || parseMultilangString(char.desc)['xx'] || 'No description'}</span>
+                        <div class="mt-1 flex items-center text-sm text-textcolor2">
+                            <span class="mr-1">{char.chats}</span>
+                            <MessageSquareIcon size={14} />
+                            <span class="mx-1">|</span>
+                            <span>{char.agoText}</span>
+                        </div>
                         <div class="flex gap-2 justify-end">
-                            <button class="hover:text-textcolor text-textcolor2" onclick={() => {
+                            <button class="hover:text-textcolor text-textcolor2" title={language.selectChar} aria-label={language.selectChar} onclick={() => {
                                 selectAndClose(char.index)
                             }}>
                                 <SquareMousePointer />
                             </button>
-                            <button class="hover:text-textcolor text-textcolor2" onclick={() => {
+                            <button class="hover:text-textcolor text-textcolor2" title={language.trash} aria-label={language.trash} onclick={() => {
                                 removeChar(char.chaId, char.name)
                             }}>
                                 <TrashIcon />
