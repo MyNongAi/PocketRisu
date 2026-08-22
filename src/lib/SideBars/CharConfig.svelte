@@ -14,8 +14,8 @@
     import Help from "../Others/Help.svelte";
     import { exportChar } from "src/ts/characterCards";
     import { getElevenTTSVoices, getWebSpeechTTSVoices, getVOICEVOXVoices, oaiVoices, getNovelAIVoices } from "src/ts/process/tts";
-    import { getFileSrc } from "src/ts/globalApi.svelte";
 import { openAssetViewer, hasImageAssets } from "src/ts/assetViewer.svelte";
+    import LazyAssetPreview from "src/lib/Others/LazyAssetPreview.svelte";
     import TextInput from "../UI/GUI/TextInput.svelte";
     import ShInput from "../UI/GUI/ShInput.svelte";
 import ShButton from "../UI/GUI/ShButton.svelte";
@@ -83,29 +83,10 @@ import ShButton from "../UI/GUI/ShButton.svelte";
     });
 
 
-    let assetFileExtensions:string[] = $state([])
-    let assetFilePath:string[] = $state([])
     let licensed = $state((DBState.db.characters[$selectedCharID].type === 'character') ? (DBState.db.characters[$selectedCharID] as character).license : '')
 
     $effect.pre(() => {
         emos = DBState.db.characters[$selectedCharID].emotionImages
-    });
-
-
-    $effect.pre(() => {
-        if(DBState.db.characters[$selectedCharID].type ==='character' && DBState.db.useAdditionalAssetsPreview){
-            if((DBState.db.characters[$selectedCharID] as character).additionalAssets){
-                for(let i = 0; i < (DBState.db.characters[$selectedCharID] as character).additionalAssets.length; i++){
-                    if((DBState.db.characters[$selectedCharID] as character).additionalAssets[i].length > 2 && (DBState.db.characters[$selectedCharID] as character).additionalAssets[i][2]) {
-                        assetFileExtensions[i] = (DBState.db.characters[$selectedCharID] as character).additionalAssets[i][2]
-                    } else
-                        assetFileExtensions[i] = (DBState.db.characters[$selectedCharID] as character).additionalAssets[i][1].split('.').pop()
-                    getFileSrc((DBState.db.characters[$selectedCharID] as character).additionalAssets[i][1]).then((filePath) => {
-                        assetFilePath[i] = filePath
-                    })
-                }
-            }
-        }
     });
 
     $effect.pre(() => {
@@ -432,11 +413,9 @@ import ShButton from "../UI/GUI/ShButton.svelte";
                     {:else}
                         {#each emos as emo, i}
                             <tr>
-                                {#await getCharImage(emo[1], 'plain')}
-                                    <td class="font-medium truncate w-1/3"></td>
-                                {:then im}
-                                    <td class="font-medium truncate w-1/3"><img src={im} alt="img" class="w-full"></td>                        
-                                {/await}
+                                <td class="font-medium truncate w-1/3">
+                                    <LazyAssetPreview path={emo[1]} kind="image" alt={emo[0]} mediaClass="w-full min-h-16 max-h-48 object-contain" />
+                                </td>
                                 <td class="font-medium truncate w-1/2">
                                     <TextInput marginBottom size='lg' bind:value={DBState.db.characters[$selectedCharID].emotionImages[i][0]} />
                                 </td>
@@ -545,17 +524,22 @@ import ShButton from "../UI/GUI/ShButton.svelte";
                         </tr>
                     {:else}
                         {#each DBState.db.characters[$selectedCharID].additionalAssets as assets, i}
+                            {@const extension = (assets[2] ?? assets[1].split('.').pop() ?? '').toLowerCase()}
                             <tr>
                                 <td class="font-medium truncate">
-                                    {#if assetFilePath[i] && DBState.db.useAdditionalAssetsPreview}
-                                        {#if assetFileExtensions[i] === 'mp4'}
-                                        <!-- svelte-ignore a11y_media_has_caption -->
-                                            <video controls class="mt-2 px-2 w-full m-1 rounded-md"><source src={assetFilePath[i]} type="video/mp4"></video>
-                                        {:else if assetFileExtensions[i] === 'mp3'}
-                                            <audio controls class="mt-2 px-2 w-full h-16 m-1 rounded-md" loop><source src={assetFilePath[i]} type="audio/mpeg"></audio>
-                                        {:else if ['png', 'webp', 'jpeg', 'jpg', 'gif'].includes(assetFileExtensions[i])}
-                                            <img src={assetFilePath[i]} class="w-16 h-16 m-1 rounded-md" alt={assets[0]}/>
-                                        {/if}
+                                    {#if DBState.db.useAdditionalAssetsPreview}
+                                        <LazyAssetPreview
+                                            path={assets[1]}
+                                            {extension}
+                                            alt={assets[0]}
+                                            controls
+                                            loop
+                                            mediaClass={['mp4', 'webm', 'mov', 'm4v'].includes(extension)
+                                                ? 'mt-2 px-2 w-full max-h-48 m-1 rounded-md object-contain'
+                                                : ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac'].includes(extension)
+                                                    ? 'mt-2 px-2 w-full h-16 m-1 rounded-md'
+                                                    : 'w-16 h-16 m-1 rounded-md object-cover'}
+                                        />
                                     {/if}
                                     <ShInput className="mb-4" autocomplete="off" bind:value={DBState.db.characters[$selectedCharID].additionalAssets[i][0]} placeholder="..." />
                                 </td>

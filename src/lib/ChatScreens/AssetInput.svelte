@@ -1,7 +1,8 @@
 <script lang="ts">
     import { FileMusicIcon, PlusIcon } from "@lucide/svelte";
     import { type character } from "src/ts/storage/database.svelte";
-    import { getFileSrc, saveAsset } from "src/ts/globalApi.svelte";
+    import { saveAsset } from "src/ts/globalApi.svelte";
+    import LazyAssetPreview from "src/lib/Others/LazyAssetPreview.svelte";
     import { selectMultipleFile } from "src/ts/util";
     interface Props {
         currentCharacter: character;
@@ -9,27 +10,6 @@
     }
 
     const { currentCharacter, onSelect }: Props = $props();
-
-    let assetFileExtensions:string[] = $state([])
-    let assetFilePath:string[] = $state([])
-
-    $effect.pre(() => {
-        if(currentCharacter.type ==='character'){
-            if(currentCharacter.additionalAssets){
-                for(let i = 0; i < currentCharacter.additionalAssets.length; i++){
-                    // console.log('check content type ...', currentCharacter.additionalAssets[i][0], currentCharacter.additionalAssets[i][1]);
-                    if(currentCharacter.additionalAssets[i].length > 2 && currentCharacter.additionalAssets[i][2]) {
-                        assetFileExtensions[i] = currentCharacter.additionalAssets[i][2]
-                    } else {
-                        assetFileExtensions[i] = currentCharacter.additionalAssets[i][1].split('.').pop()
-                    }
-                    getFileSrc(currentCharacter.additionalAssets[i][1]).then((filePath) => {
-                        assetFilePath[i] = filePath
-                    })
-                }
-            }
-        }
-    });
 </script>
 {#if currentCharacter.type ==='character'}
     <button class="hover:text-primary bg-textcolor2 flex justify-center items-center w-16 h-16 m-1 rounded-md" onclick={async () => {
@@ -53,23 +33,23 @@
     </button>
     {#if currentCharacter.additionalAssets}
         {#each currentCharacter.additionalAssets as additionalAsset, i}
+                {@const extension = (additionalAsset[2] ?? additionalAsset[1].split('.').pop() ?? '').toLowerCase()}
                 <button onclick={()=>{
                     onSelect(additionalAsset)
                 }}>
-                    {#if assetFilePath[i]}
-                        {#if assetFileExtensions[i] === 'mp4'}
-                            <!-- svelte-ignore a11y_media_has_caption -->
-                            <video class="w-16 h-16 m-1 rounded-md"><source src={assetFilePath[i]} type="video/mp4"></video>
-                        {:else if assetFileExtensions[i] === 'mp3'}
+                        {#if ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac'].includes(extension)}
                             <div class='w-16 h-16 m-1 rounded-md bg-slate-500 flex flex-col justify-center items-center'>
                                 <FileMusicIcon/>
                                 <div class='w-16 px-1 text-ellipsis whitespace-nowrap overflow-hidden'>{additionalAsset[0]}</div>
                             </div>
-                            <!-- <audio controls class="w-16 h-16 m-1 rounded-md"><source src={assetPath} type="audio/mpeg"></audio> -->
                         {:else}
-                        <img src={assetFilePath[i]} class="w-16 h-16 m-1 rounded-md" alt={additionalAsset[0]}/>
+                            <LazyAssetPreview
+                                path={additionalAsset[1]}
+                                {extension}
+                                alt={additionalAsset[0]}
+                                mediaClass="w-16 h-16 m-1 rounded-md object-cover"
+                            />
                         {/if}
-                    {/if}
                 </button>
         {/each}
     {/if}
