@@ -31,6 +31,7 @@ const {
     logger, installProcessHandlers, expressErrorMiddleware,
 } = require('./logs.cjs');
 const { createRequestLogs } = require('./request-logs.cjs');
+const { cacheFileName, createThumbnailCache } = require('./thumbnail-cache.cjs');
 const {
     createAndroidSafProvider,
     createExternalAssetService,
@@ -3623,7 +3624,8 @@ async function readMigratedInternalAssetFallback(internalKey) {
 
 const THUMB_MAX_SIDE = 320;
 const THUMB_QUALITY = 75;
-const THUMB_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp']);
+const THUMB_CACHE_VERSION = 1;
+const THUMB_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp']);
 
 async function generateThumbnail(buffer) {
     const vips = await getVips()
@@ -3638,6 +3640,115 @@ async function generateThumbnail(buffer) {
         img.delete()
     }
 }
+
+const configuredThumbnailCacheBytes = Number.parseInt(process.env.RISU_THUMBNAIL_CACHE_MAX_BYTES || '', 10);
+const assetThumbnailCache = createThumbnailCache({
+    rootDir: path.join(savePath, 'thumbnail-cache'),
+    maxBytes: Number.isSafeInteger(configuredThumbnailCacheBytes) && configuredThumbnailCacheBytes > 0
+        ? configuredThumbnailCacheBytes
+        : 256 * 1024 * 1024,
+    maxConcurrent: 2,
+    generate: generateThumbnail,
+    logger,
+});
+assetThumbnailCache.prune().catch((error) => logger.warn('[ThumbnailCache] startup prune failed', error));
+
+function thumbnailRouteError(statusCode, message) {
+    const error = new Error(message);
+    error.statusCode = statusCode;
+    return error;
+}
+
+function isThumbnailableImage(reference, contentType = '') {
+    if (/^image\/(?:png|jpe?g|gif|webp|avif|bmp)(?:;|$)/i.test(contentType)) return true;
+    const extension = String(reference).split(/[?#]/, 1)[0].split('.').pop()?.toLowerCase();
+    return THUMB_IMAGE_EXTS.has(extension);
+}
+
+async function describeAssetThumbnail(reference) {
+    if (isExternalAssetUri(reference)) {
+        const runtime = await getExternalAssetRuntime();
+        const entry = await runtime.manifestStore.get(reference);
+        if (!entry) throw thumbnailRouteError(404, 'External asset is missing from manifest');
+        if (entry.mimeType && !isThumbnailableImage('', entry.mimeType)) {
+            throw thumbnailRouteError(415, 'External asset is not a supported thumbnail image');
+        }
+        return {
+            identity: `external:${entry.hash}:${THUMB_MAX_SIDE}:${THUMB_QUALITY}:v${THUMB_CACHE_VERSION}`,
+            loadSource: async () => {
+                const result = await runtime.service.readWithMeta(reference);
+                const contentType = entry.mimeType || detectMime(result.data);
+                if (!isThumbnailableImage('', contentType)) {
+                    throw thumbnailRouteError(415, 'External asset is not a supported thumbnail image');
+                }
+                return result.data;
+            },
+        };
+    }
+
+    if (!reference.startsWith('assets/')) {
+        throw thumbnailRouteError(400, 'Only ordinary or external assets can be thumbnailed');
+    }
+    if (!isThumbnailableImage(reference)) {
+        throw thumbnailRouteError(415, 'Asset is not a supported thumbnail image');
+    }
+
+    const updatedAt = kvGetUpdatedAt(reference);
+    if (updatedAt !== null) {
+        return {
+            identity: `internal:${reference}:${updatedAt}:${THUMB_MAX_SIDE}:${THUMB_QUALITY}:v${THUMB_CACHE_VERSION}`,
+            loadSource: async () => {
+                const data = kvGet(reference);
+                if (!data) throw thumbnailRouteError(404, 'Asset not found');
+                const { binary, contentType } = resolveAssetPayload(reference, data);
+                if (!isThumbnailableImage(reference, contentType)) {
+                    throw thumbnailRouteError(415, 'Asset is not a supported thumbnail image');
+                }
+                return binary;
+            },
+        };
+    }
+
+    // Pre-migration safety backups may still reference the former internal key.
+    // This rare path reads through the verified external -> trash -> internal
+    // fallback chain before consulting the derived thumbnail cache.
+    const fallback = await readMigratedInternalAssetFallback(reference);
+    if (!fallback) throw thumbnailRouteError(404, 'Asset not found');
+    if (!isThumbnailableImage(reference, fallback.contentType)) {
+        throw thumbnailRouteError(415, 'Asset is not a supported thumbnail image');
+    }
+    return {
+        identity: `fallback:${fallback.hash || reference}:${THUMB_MAX_SIDE}:${THUMB_QUALITY}:v${THUMB_CACHE_VERSION}`,
+        loadSource: async () => fallback.binary,
+    };
+}
+
+app.get('/api/asset-thumbnail/:hexKey', sessionAuthMiddleware, async (req, res) => {
+    try {
+        const reference = Buffer.from(req.params.hexKey, 'hex').toString('utf-8');
+        const descriptor = await describeAssetThumbnail(reference);
+        const etag = `"thumb-${cacheFileName(descriptor.identity).slice(0, -5)}"`;
+        if (req.headers['if-none-match'] === etag) {
+            return res.status(304).set('Cache-Control', 'private, max-age=86400').end();
+        }
+
+        const thumbnail = await assetThumbnailCache.get(descriptor.identity, descriptor.loadSource);
+        res.set({
+            'Content-Type': 'image/webp',
+            'Content-Length': String(thumbnail.data.length),
+            'Cache-Control': 'private, max-age=86400',
+            'ETag': etag,
+            'X-PocketRisu-Thumbnail-Source': thumbnail.source,
+        });
+        res.send(thumbnail.data);
+    } catch (error) {
+        const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+        if (statusCode >= 500) logger.error('[AssetThumbnail] Failed to serve thumbnail:', error);
+        res.status(statusCode).set('Cache-Control', 'no-store').json({
+            error: error?.message || 'Thumbnail unavailable',
+        });
+    }
+});
 
 app.get('/api/asset/:hexKey', sessionAuthMiddleware, async (req, res) => {
     try {

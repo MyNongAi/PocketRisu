@@ -532,6 +532,8 @@ import ShButton from "../UI/GUI/ShButton.svelte";
                                             path={assets[1]}
                                             {extension}
                                             alt={assets[0]}
+                                            draggableOriginal={['png', 'webp', 'jpeg', 'jpg', 'gif', 'svg', 'avif', 'bmp'].includes(extension)}
+                                            dragFileName={assets[0]}
                                             controls
                                             loop
                                             mediaClass={['mp4', 'webm', 'mov', 'm4v'].includes(extension)

@@ -104,6 +104,8 @@
               path={item.path}
               kind="image"
               alt={item.name}
+              draggableOriginal
+              dragFileName={item.name}
               wrapperClass="w-full h-full"
               mediaClass="w-full h-full object-cover"
             />
@@ -162,6 +164,9 @@
               kind="image"
               alt={item.name}
               eager
+              thumbnail={false}
+              draggableOriginal
+              dragFileName={item.name}
               wrapperClass="w-full h-full flex items-center justify-center"
               mediaClass="max-w-full max-h-full object-contain shadow-2xl sm:rounded select-none"
             />

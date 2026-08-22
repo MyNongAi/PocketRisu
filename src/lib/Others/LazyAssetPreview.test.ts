@@ -3,9 +3,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount, tick, unmount } from 'svelte'
 
-vi.mock('src/ts/globalApi.svelte', () => ({
-  getFileSrc: vi.fn(async (path: string) => path),
+const apiMocks = vi.hoisted(() => ({
+  getFileSrc: vi.fn(async (path: string) => `/original/${path}`),
+  getFileThumbnailSrc: vi.fn(async (path: string) => `/thumbnail/${path}`),
 }))
+
+vi.mock('src/ts/globalApi.svelte', () => apiMocks)
 
 import LazyAssetPreview from './LazyAssetPreview.svelte'
 
@@ -37,6 +40,8 @@ afterEach(async () => {
   document.body.replaceChildren()
   TestIntersectionObserver.latest = undefined
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
+  vi.clearAllMocks()
 })
 
 describe('LazyAssetPreview', () => {
@@ -90,5 +95,73 @@ describe('LazyAssetPreview', () => {
 
     expect(resolveSrc).not.toHaveBeenCalled()
     expect(target.querySelector('img,video,audio')).toBeNull()
+  })
+
+  it('uses a real thumbnail URL for an image preview by default', async () => {
+    vi.stubGlobal('IntersectionObserver', TestIntersectionObserver)
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    mounted.push(mount(LazyAssetPreview, {
+      target,
+      props: { path: 'assets/large.png', extension: 'png' },
+    }))
+
+    await tick()
+    TestIntersectionObserver.latest?.setIntersecting(true)
+    await tick()
+    await Promise.resolve()
+    await tick()
+
+    expect(apiMocks.getFileThumbnailSrc).toHaveBeenCalledWith('assets/large.png')
+    expect(apiMocks.getFileSrc).not.toHaveBeenCalled()
+    expect(target.querySelector('img')?.getAttribute('src')).toBe('/thumbnail/assets/large.png')
+  })
+
+  it('places the original File in drag data after drag intent', async () => {
+    vi.stubGlobal('IntersectionObserver', TestIntersectionObserver)
+    const fetchMock = vi.fn(async () => new Response(
+      new Blob(['original-pixels'], { type: 'image/png' }),
+      { status: 200 },
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:original-file')
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    mounted.push(mount(LazyAssetPreview, {
+      target,
+      props: {
+        path: 'assets/reference.png',
+        extension: 'png',
+        eager: true,
+        draggableOriginal: true,
+        dragFileName: 'NAI reference.png',
+      },
+    }))
+
+    await vi.waitFor(() => expect(target.querySelector('img')).not.toBeNull())
+    const image = target.querySelector('img') as HTMLImageElement
+    expect(image.getAttribute('draggable')).toBe('true')
+
+    image.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }))
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(target.querySelector('[data-drag-preparing="true"]')).toBeNull())
+
+    const add = vi.fn()
+    const setData = vi.fn()
+    const clearData = vi.fn()
+    const dataTransfer = { effectAllowed: 'none', items: { add }, setData, clearData }
+    const dragEvent = new Event('dragstart', { bubbles: true, cancelable: true })
+    Object.defineProperty(dragEvent, 'dataTransfer', { value: dataTransfer })
+    image.dispatchEvent(dragEvent)
+
+    expect(add).toHaveBeenCalledOnce()
+    expect(clearData).toHaveBeenCalledOnce()
+    const originalFile = add.mock.calls[0][0] as File
+    expect(originalFile.name).toBe('NAI reference.png')
+    expect(originalFile.type).toBe('image/png')
+    expect(originalFile.size).toBeGreaterThan(0)
+    expect(setData).toHaveBeenCalledWith('DownloadURL', 'image/png:NAI reference.png:blob:original-file')
   })
 })
