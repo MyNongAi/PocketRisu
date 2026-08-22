@@ -16,6 +16,7 @@ import { doingChat } from "./process/index.svelte";
 import { importCharacter } from "./characterCards";
 import { importCharacterPackage } from "./characterPackage";
 import { PngChunk } from "./pngChunk";
+import { promoteRecentlyViewedCharacter } from "./characterRecentOrder";
 
 export function createNewCharacter() {
     let db = getDatabase()
@@ -772,12 +773,19 @@ export function changeChar(index: number, arg:{
     if(get(doingChat)){
       return
     }
-    const char = getDatabase().characters[index]
     reseter();
     chatDeselected.set(false)
     characterFormatUpdate(index, {
       updateInteraction: true,
     });
+    const db = getDatabase()
+    const characterId = db.characters[index]?.chaId
+    if(characterId){
+        const promotedOrder = promoteRecentlyViewedCharacter(db.characterOrder, characterId)
+        if(promotedOrder !== db.characterOrder){
+            db.characterOrder = promotedOrder
+        }
+    }
     selectedCharID.set(index);
     const chat = getCurrentChat()
     if(chat){
