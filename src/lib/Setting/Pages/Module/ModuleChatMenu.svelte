@@ -64,19 +64,19 @@
                     {#if i !== 0}
                         <div class="border-t-1 border-selected"></div>
                     {/if}
-                    <div class="pl-3 py-3 text-left flex items-center">
+                    <div class="group pl-3 py-3 text-left flex items-center">
                         {#if rmodule.mcp}
                             <Waypoints size={18} class="mr-2" />
                         {/if}
                         {#if !alertMode && DBState.db.enabledModules.includes(rmodule.id)}
                             <span class="text-textcolor2">{rmodule.name}</span>
                         {:else}
-                            <span class="">{rmodule.name}</span>
+                            <span class="group-hover:text-success transition-colors">{rmodule.name}</span>
                         {/if}
                         <div class="grow flex justify-end">
 
                             {#if alertMode}
-                                <button class={"text-textcolor2 mr-2 cursor-pointer hover:text-success transition-colors"} onclick={async (e) => {
+                                <button class={"text-textcolor2 mr-2 cursor-pointer group-hover:text-success hover:text-success transition-colors"} onclick={async (e) => {
                                     e.stopPropagation()
 
                                     close(rmodule.id)
@@ -88,10 +88,10 @@
                                 </button>
                             {:else}
                                 <button class={(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].modules.includes(rmodule.id)) ?
-                                        "mr-2 cursor-pointer text-blue-500 hover:text-success transition-colors" :
+                                        "mr-2 cursor-pointer text-blue-500 group-hover:text-success hover:text-success transition-colors" :
                                         (DBState.db.characters[$selectedCharID]?.modules?.includes(rmodule.id)) ?
-                                        "mr-2 cursor-pointer text-violet-500 hover:text-success transition-colors" :
-                                        "text-textcolor2 hover:text-success mr-2 cursor-pointer transition-colors"
+                                        "mr-2 cursor-pointer text-violet-500 group-hover:text-success hover:text-success transition-colors" :
+                                        "text-textcolor2 group-hover:text-success hover:text-success mr-2 cursor-pointer transition-colors"
                                 } onclick={async (e) => {
                                     e.stopPropagation()
                                     const character = DBState.db.characters[$selectedCharID]
