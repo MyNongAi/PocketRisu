@@ -2,24 +2,13 @@
   import { untrack } from 'svelte'
   import { ChevronLeft, ChevronRight, X, Search as SearchIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
-  import { getFileSrc } from 'src/ts/globalApi.svelte'
   import { assetViewerStore, closeAssetViewer } from 'src/ts/assetViewer.svelte'
+  import LazyAssetPreview from './LazyAssetPreview.svelte'
 
   let search = $state('')
   let zoomIndex = $state(-1) // index into the filtered list; -1 means grid view
-  let srcs = $state<string[]>([]) // resolved asset URL per source item index
   let track = $state<HTMLDivElement | null>(null) // the horizontal scroll-snap container
   let scrollRaf = 0 // rAF guard so the scroll handler runs at most once per frame
-
-  // Resolve asset URLs whenever the source items change. getFileSrc returns an
-  // /api/asset/ URL on NodeOnly, so the browser fetches lazily per thumbnail.
-  $effect(() => {
-    const items = assetViewerStore.items
-    srcs = new Array(items.length).fill('')
-    items.forEach((item, i) => {
-      getFileSrc(item.path).then((url) => { srcs[i] = url })
-    })
-  })
 
   const filtered = $derived.by(() => {
     const query = search.trim().toLowerCase()
@@ -111,9 +100,13 @@
             class="relative group aspect-square rounded-lg overflow-hidden bg-darkbg border border-darkborderc hover:border-borderc/70 transition-colors"
             onclick={() => (zoomIndex = i)}
           >
-            {#if srcs[item.origIndex]}
-              <img alt={item.name} class="w-full h-full object-cover" src={srcs[item.origIndex]} loading="lazy" />
-            {/if}
+            <LazyAssetPreview
+              path={item.path}
+              kind="image"
+              alt={item.name}
+              wrapperClass="w-full h-full"
+              mediaClass="w-full h-full object-cover"
+            />
             <div class="absolute inset-x-0 bottom-0 pt-6 pb-1.5 px-2 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-150">
               <p class="text-white text-[11px] truncate leading-tight">{item.name}</p>
             </div>
@@ -163,12 +156,14 @@
         <!-- snap-always (scroll-snap-stop: always) forbids the scroll from passing
              a snap point, so even a fast flick advances exactly one slide. -->
         <div class="snap-center snap-always shrink-0 w-full h-full flex items-center justify-center px-0 py-2 sm:px-16 sm:py-14">
-          {#if Math.abs(i - zoomIndex) <= 1 && srcs[item.origIndex]}
-            <img
+          {#if Math.abs(i - zoomIndex) <= 1}
+            <LazyAssetPreview
+              path={item.path}
+              kind="image"
               alt={item.name}
-              class="max-w-full max-h-full object-contain shadow-2xl sm:rounded select-none"
-              src={srcs[item.origIndex]}
-              draggable="false"
+              eager
+              wrapperClass="w-full h-full flex items-center justify-center"
+              mediaClass="max-w-full max-h-full object-contain shadow-2xl sm:rounded select-none"
             />
           {/if}
         </div>

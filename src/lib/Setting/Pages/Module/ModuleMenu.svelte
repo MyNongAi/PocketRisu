@@ -11,12 +11,13 @@
     import Check from "src/lib/UI/GUI/CheckInput.svelte";
     import Help from "src/lib/Others/Help.svelte";
     import TextAreaInput from "src/lib/UI/GUI/TextAreaInput.svelte";
-    import { getFileSrc, saveAsset, downloadFile } from "src/ts/globalApi.svelte";
+    import { saveAsset, downloadFile } from "src/ts/globalApi.svelte";
     import { alertError, notifySuccess } from "src/ts/alert";
     import { exportRegex, importRegex } from "src/ts/process/scripts";
     import { selectMultipleFile } from "src/ts/util";
     import { openAssetViewer, hasImageAssets } from "src/ts/assetViewer.svelte";
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
+    import LazyAssetPreview from "src/lib/Others/LazyAssetPreview.svelte";
     
     import { DBState } from 'src/ts/stores.svelte';
   import { v4 } from "uuid";
@@ -27,25 +28,6 @@
     }
 
     let { currentModule = $bindable() }: Props = $props();
-    let assetFileExtensions:string[] = $state([])
-    let assetFilePath:string[] = $state([])
-
-    $effect.pre(() => {
-        if(DBState.db.useAdditionalAssetsPreview){
-            if(currentModule?.assets){
-                for(let i = 0; i < currentModule.assets.length; i++){
-                    if(currentModule.assets[i].length > 2 && currentModule.assets[i][2]) {
-                        assetFileExtensions[i] = currentModule.assets[i][2]
-                    } else 
-                        assetFileExtensions[i] = currentModule.assets[i][1].split('.').pop()
-                        getFileSrc(currentModule.assets[i][1]).then((filePath) => {
-                        assetFilePath[i] = filePath
-                    })
-                }
-            }
-        }
-    });
-
     function addLorebook(){
         if(Array.isArray(currentModule.lorebook)){
             currentModule.lorebook.push({
@@ -290,17 +272,22 @@
                 </tr>
             {:else}
                 {#each currentModule.assets as assets, i}
+                    {@const extension = (assets[2] ?? assets[1].split('.').pop() ?? '').toLowerCase()}
                     <tr>
                         <td class="font-medium truncate">
-                            {#if assetFilePath[i] && DBState.db.useAdditionalAssetsPreview}
-                                {#if assetFileExtensions[i] === 'mp4'}
-                                <!-- svelte-ignore a11y_media_has_caption -->
-                                    <video controls class="mt-2 px-2 w-full m-1 rounded-md"><source src={assetFilePath[i]} type="video/mp4"></video>
-                                {:else if assetFileExtensions[i] === 'mp3'}
-                                    <audio controls class="mt-2 px-2 w-full h-16 m-1 rounded-md" loop><source src={assetFilePath[i]} type="audio/mpeg"></audio>
-                                {:else}
-                                    <img src={assetFilePath[i]} class="w-16 h-16 m-1 rounded-md" alt={assets[0]}/>
-                                {/if}
+                            {#if DBState.db.useAdditionalAssetsPreview}
+                                <LazyAssetPreview
+                                    path={assets[1]}
+                                    {extension}
+                                    alt={assets[0]}
+                                    controls
+                                    loop
+                                    mediaClass={['mp4', 'webm', 'mov', 'm4v'].includes(extension)
+                                        ? 'mt-2 px-2 w-full max-h-48 m-1 rounded-md object-contain'
+                                        : ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac'].includes(extension)
+                                            ? 'mt-2 px-2 w-full h-16 m-1 rounded-md'
+                                            : 'w-16 h-16 m-1 rounded-md object-cover'}
+                                />
                             {/if}
                             <TextInput fullwidth marginBottom bind:value={currentModule.assets[i][0]} placeholder="..." />
                         </td>
