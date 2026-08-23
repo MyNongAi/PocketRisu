@@ -38,8 +38,10 @@
     import LoadingOverlay from './lib/Others/LoadingOverlay.svelte';
     import Toaster from './lib/UI/GUI/Toaster.svelte';
     import RequestStatusToaster from './lib/UI/GUI/RequestStatusToaster.svelte';
+    import ImportProgressToaster from './lib/UI/GUI/ImportProgressToaster.svelte';
     import sendSound from './etc/send.mp3'
     import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
+    import { runImportBatch } from './ts/importProgress';
 
     let gridOpen = $state(false)
     let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
@@ -61,6 +63,49 @@
         e.dataTransfer?.setData(RISU_APP_INTERNAL_DRAG_TYPE, 'true')
     }
 
+    const importDroppedFiles = async (files:FileList) => {
+        let importedCharacter = false
+        const batch = Array.from(files)
+
+        // Keep the file picker behavior: accept the whole batch, but import
+        // entries sequentially so asset writes and character ordering cannot
+        // race each other on the shared PocketRisu database.
+        const result = await runImportBatch(batch, async (file, report) => {
+            const name = file.name.toLowerCase()
+
+            if(name.endsWith('.risup')){
+                report({ label: language.importProgress.readingPreset, progress: 20 })
+                const data = new Uint8Array(await file.arrayBuffer())
+                await importPreset({ name: file.name, data })
+                report({ label: language.importProgress.savingPreset, progress: 90 })
+            }
+            else if(name.endsWith('.risum')){
+                report({ label: language.importProgress.readingModule, progress: 20 })
+                const data = new Uint8Array(await file.arrayBuffer())
+                const module = await readModule(Buffer.from(data))
+                const db = getDatabase()
+                db.modules.push(module)
+                report({ label: language.importProgress.savingModule, progress: 90 })
+            }
+            else{
+                await importCharacterProcess({
+                    name: file.name,
+                    data: file,
+                    onProgress: report,
+                    suppressSuccess: true,
+                })
+                importedCharacter = true
+            }
+        })
+
+        if(importedCharacter){
+            checkCharOrder()
+        }
+        if(result.completed > 0){
+            notifySuccess(`${result.completed}/${result.total} ${language.successImport}`)
+        }
+    }
+
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -70,36 +115,15 @@
     e.preventDefault()
     e.dataTransfer.dropEffect = dropEffect
 }} ondragstart={markAppInternalDrag} ondrop={async (e) => {
+    e.preventDefault()
     const types = Array.from(e.dataTransfer.types ?? [])
     if (types.includes(RISU_APP_INTERNAL_DRAG_TYPE) || types.includes(RISU_SIDEBAR_DRAG_TYPE)) {
-        e.preventDefault()
         return
     }
-    const file = e.dataTransfer.files[0]
-    if (!file) {
-        e.preventDefault()
+    if (e.dataTransfer.files.length === 0) {
         return
     }
-    e.preventDefault()
-    const name = file.name.toLowerCase()
-
-    if (name.endsWith('.risup')) {
-        const data = new Uint8Array(await file.arrayBuffer())
-        await importPreset({ name: file.name, data })
-        notifySuccess(language.successImport)
-    } else if (name.endsWith('.risum')) {
-        const data = new Uint8Array(await file.arrayBuffer())
-        const module = await readModule(Buffer.from(data))
-        const db = getDatabase()
-        db.modules.push(module)
-        notifySuccess(language.successImport)
-    } else {
-        await importCharacterProcess({
-            name: file.name,
-            data: file
-        })
-        checkCharOrder()
-    }
+    await importDroppedFiles(e.dataTransfer.files)
 }} onclick={() => {
     if(keepingSessionAlive){
         return
@@ -277,4 +301,5 @@
     {/if}
     <Toaster />
     <RequestStatusToaster />
+    <ImportProgressToaster />
 </main>

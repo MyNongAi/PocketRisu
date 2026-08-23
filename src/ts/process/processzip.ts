@@ -192,6 +192,7 @@ export class CharXImporter{
 
     // Configuration
     alertInfo:boolean = false  // Show progress alerts to user
+    progressCallback?: (done: number, total: number) => void
     skipSaving: boolean = false  // If true, only compute hashes without saving
     hashSignal: string|undefined  // Hash to signal server for sync (when skipSaving is false)
 
@@ -202,6 +203,7 @@ export class CharXImporter{
 
         this.semaphore = new Semaphore(MAX_CONCURRENT_ASSET_SAVES)
         this.onProgress = (done, total) => {
+            this.progressCallback?.(done, total)
             if(this.alertInfo){
                 alertStore.set({
                     type: 'wait',
