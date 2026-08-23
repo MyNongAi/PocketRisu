@@ -17,6 +17,7 @@ import type { OnnxModelFiles } from "./process/transformers"
 import { CharXImporter, CharXSkippableChecker, CharXWriter } from "./process/processzip"
 import { exportModuleLegacy, readModule, type RisuModule } from "./process/modules"
 import { promoteNewlyImportedCharacter } from "./characterRecentOrder"
+import { runImportBatch, type ImportProgressReporter } from "./importProgress"
 
 
 const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz';
@@ -28,22 +29,60 @@ function appendImportedCharacter(db: ReturnType<typeof getDatabase>, char: chara
     db.characterOrder = promoteNewlyImportedCharacter(db.characterOrder ?? [], char.chaId)
 }
 
+function reportCharacterImport(
+    reporter: ImportProgressReporter | undefined,
+    label: string,
+    progress: number | null = null,
+): void {
+    if(reporter){
+        reporter({ label, progress })
+        return
+    }
+    if(progress === null){
+        alertWait(label)
+        return
+    }
+    alertStore.set({
+        type: 'progress',
+        msg: label,
+        submsg: progress.toFixed(2),
+    })
+}
+
+function rejectCharacterImport(reporter: ImportProgressReporter | undefined, message: unknown): void {
+    if(reporter){
+        throw message instanceof Error ? message : new Error(String(message))
+    }
+    alertError(message)
+}
+
+function notifyCharacterImported(suppressSuccess: boolean | undefined): void {
+    if(!suppressSuccess){
+        notifySuccess(language.importedCharacter)
+    }
+}
+
 export async function importCharacter() {
     try {
         const files = await selectFileByDom(["*"], 'multiple')
-        if(!files){
+        if(!files || files.length === 0){
             return
         }
 
-        for(const f of files){
+        const result = await runImportBatch(files, async (f, report) => {
             await importCharacterProcess({
                 name: f.name,
-                data: f
+                data: f,
+                onProgress: report,
+                suppressSuccess: true,
             })
             checkCharOrder()
+        })
+        if(result.completed > 0){
+            notifySuccess(`${result.completed}/${result.total} ${language.importedCharacter}`)
         }
     } catch (error) {
-        alertError(error)
+        notifyError(error)
         return null
     }
 }
@@ -53,14 +92,18 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
     data: Uint8Array|File|ReadableStream<Uint8Array>
     lightningRealmImport?:boolean
     returnCharacter?:T //note That this option only works with v3 charx
+    onProgress?:ImportProgressReporter
+    suppressSuccess?:boolean
 }):Promise<T extends true ? character | number | null : number | null>{
+    const progress = f.onProgress
+    reportCharacterImport(progress, language.importProgress.readingFile, 2)
     if(f.name.endsWith('json')){
         if(f.data instanceof ReadableStream){
             return null
         }
         const data = f.data instanceof Uint8Array ? f.data : new Uint8Array(await f.data.arrayBuffer())
         const da = JSON.parse(Buffer.from(data).toString('utf-8'))
-        if(await importCharacterCardSpec(da)){
+        if(await importCharacterCardSpec(da, undefined, 'normal', {}, null, false, progress, f.suppressSuccess)){
             let db = getDatabase()
             return db.characters.length - 1 as any
         }
@@ -68,11 +111,11 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
             let db = getDatabase()
             appendImportedCharacter(db, convertOffSpecCards(da))
             setDatabaseLite(db)
-            notifySuccess(language.importedCharacter)
+            notifyCharacterImported(f.suppressSuccess)
             return
         }
         else{
-            alertError(language.errors.noData)
+            rejectCharacterImport(progress, language.errors.noData)
             return
         }
     }
@@ -81,22 +124,26 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
 
     if(f.name.endsWith('charx') || f.name.endsWith('jpg') || f.name.endsWith('jpeg')){
         console.log('reading charx')
-        alertStore.set({
-            type: 'wait',
-            msg: 'Loading... (Reading)'
-        })
+        reportCharacterImport(progress, language.importProgress.readingCharx)
 
         const importer = new CharXImporter()
-        importer.alertInfo = true
+        importer.alertInfo = !progress
+        importer.progressCallback = progress
+            ? (done, total) => reportCharacterImport(
+                progress,
+                `${language.importProgress.savingAssets} (${done}/${total})`,
+                total > 0 ? 5 + (done / total * 45) : 5,
+            )
+            : undefined
         await importer.parse(f.data)
         const cardData = importer.cardData
         if(!cardData){
-            alertError(language.errors.noData)
+            rejectCharacterImport(progress, language.errors.noData)
             return
         }
         const card:CharacterCardV3 = JSON.parse(cardData)
         if(card.spec !== 'chara_card_v3'){
-            alertError(language.errors.noData)
+            rejectCharacterImport(progress, language.errors.noData)
             return
         }
         let lorebook:loreBook[] = null
@@ -111,7 +158,16 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
             }
         }
         await importer.done()
-        let v = await importCharacterCardSpec(card, undefined, 'normal', importer.assets, lorebook, f.returnCharacter)
+        let v = await importCharacterCardSpec(
+            card,
+            undefined,
+            'normal',
+            importer.assets,
+            lorebook,
+            f.returnCharacter,
+            progress,
+            f.suppressSuccess,
+        )
         if(f.returnCharacter){
             return v as any
         }
@@ -120,15 +176,12 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
     }
 
     if(!f.name.endsWith('png')){
-        alertError(language.errors.noData)
+        rejectCharacterImport(progress, language.errors.noData)
         return
     }
     
 
-    alertStore.set({
-        type: 'wait',
-        msg: 'Loading... (Reading)'
-    })
+    reportCharacterImport(progress, language.importProgress.readingPng)
     await sleep(10)
     
     // const readed = PngChunk.read(img, ['chara'])?.['chara']
@@ -196,16 +249,11 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
         if(chunk.key.startsWith('chara-ext-asset_')){
             const assetIndex = chunk.key.replace('chara-ext-asset_:', '').replace('chara-ext-asset_', '')
             const assetData = Buffer.from(chunk.value, 'base64')
-            if(pngChunks === 0){
-                alertWait('Loading... (Loaded ' + readedPngChunks + ' Assets)')
-            }
-            else{
-                alertStore.set({
-                    type: 'progress',
-                    msg: 'Loading... (Loading Assets)',
-                    submsg: (readedPngChunks / pngChunks * 100).toFixed(2)
-                })
-            }
+            reportCharacterImport(
+                progress,
+                `${language.importProgress.savingEmbeddedAssets} (${readedPngChunks}/${pngChunks || '?'})`,
+                pngChunks > 0 ? 5 + (readedPngChunks / pngChunks * 45) : null,
+            )
 
             readedPngChunks++
 
@@ -257,7 +305,7 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
     }
 
     if(!readedChara && !readedCCv3){
-        alertError(language.errors.noData)
+        rejectCharacterImport(progress, language.errors.noData)
         return
     }
 
@@ -266,7 +314,7 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
     }
 
     if(!img){
-        alertError(language.errors.noData)
+        rejectCharacterImport(progress, language.errors.noData)
         return
     }
 
@@ -275,13 +323,13 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
         const type = parts[1]
         if(type === 'rccv1'){
             if(parts.length !== 5){
-                alertError(language.errors.noData)
+                rejectCharacterImport(progress, language.errors.noData)
                 return
             }
             const encrypted = Buffer.from(parts[2], 'base64')
             const hashed = await hasher(encrypted)
             if(hashed !== parts[3]){
-                alertError(language.errors.noData)
+                rejectCharacterImport(progress, language.errors.noData)
                 return
             }
             const metaData:RccCardMetaData = JSON.parse(Buffer.from(parts[4], 'base64').toString('utf-8'))
@@ -294,7 +342,7 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
                     try {
                         const decrypted = await decryptBuffer(encrypted, password)         
                         const charaData:CharacterCardV2Risu = JSON.parse(Buffer.from(decrypted).toString('utf-8'))
-                        if(await importCharacterCardSpec(charaData, img, "normal", assets)){
+                        if(await importCharacterCardSpec(charaData, img, "normal", assets, null, false, progress, f.suppressSuccess)){
                             let db = getDatabase()
                             return db.characters.length - 1
                         }
@@ -302,7 +350,7 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
                             throw new Error('Error while importing')
                         }
                     } catch (error) {
-                        alertError(language.errors.wrongPassword)
+                        rejectCharacterImport(progress, language.errors.wrongPassword)
                         return
                     }
                 }
@@ -311,12 +359,12 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
                 const decrypted = await decryptBuffer(encrypted, 'RISU_NONE')
                 try {
                     const charaData:CharacterCardV2Risu = JSON.parse(Buffer.from(decrypted).toString('utf-8'))
-                    if(await importCharacterCardSpec(charaData, img, "normal", assets)){
+                    if(await importCharacterCardSpec(charaData, img, "normal", assets, null, false, progress, f.suppressSuccess)){
                         let db = getDatabase()
                         return db.characters.length - 1
                     }   
                 } catch (error) {
-                    alertError(language.errors.noData)
+                    rejectCharacterImport(progress, language.errors.noData)
                     return
                 }
             }
@@ -334,10 +382,10 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
         const imgp = await saveAsset(img)
         appendImportedCharacter(db, convertOffSpecCards(charaData, imgp))
         setDatabaseLite(db)
-        notifySuccess(language.importedCharacter)
+        notifyCharacterImported(f.suppressSuccess)
         return db.characters.length - 1
     }
-    await importCharacterCardSpec(parsed, img, "normal", assets)
+    await importCharacterCardSpec(parsed, img, "normal", assets, null, false, progress, f.suppressSuccess)
     
     db = getDatabase()
     return db.characters.length - 1
@@ -638,7 +686,16 @@ export async function exportChar(charaID:number):Promise<string> {
 }
 
 
-async function importCharacterCardSpec<T extends boolean = false>(card:CharacterCardV2Risu|CharacterCardV3, img?:Uint8Array, mode:'hub'|'normal' = 'normal', assetDict:{[key:string]:string} = {}, overrideLorebook: loreBook[] = null, returnValue:T = false as T):Promise<T extends true ? character|false : boolean>{
+async function importCharacterCardSpec<T extends boolean = false>(
+    card:CharacterCardV2Risu|CharacterCardV3,
+    img?:Uint8Array,
+    mode:'hub'|'normal' = 'normal',
+    assetDict:{[key:string]:string} = {},
+    overrideLorebook: loreBook[] = null,
+    returnValue:T = false as T,
+    progress?:ImportProgressReporter,
+    suppressSuccess:boolean = false,
+):Promise<T extends true ? character|false : boolean>{
     if(!card ||(card.spec !== 'chara_card_v2' && card.spec !== 'chara_card_v3' )){
         return false
     }
@@ -646,6 +703,7 @@ async function importCharacterCardSpec<T extends boolean = false>(card:Character
     console.log(`Importing ${card.spec}, mode is ${mode}`)
 
     const data = card.data
+    reportCharacterImport(progress, language.importProgress.savingProfileImage, 52)
     let im = img ? await saveAsset(img) : undefined
     let db = getDatabase()
 
@@ -668,11 +726,11 @@ async function importCharacterCardSpec<T extends boolean = false>(card:Character
     if(risuext && card.spec === 'chara_card_v2'){
         if(risuext.emotions){
             for(let i=0;i<risuext.emotions.length;i++){
-                alertStore.set({
-                    type: 'progress',
-                    msg: `Loading... (Loading Emotions)`,
-                    submsg: (i / risuext.emotions.length * 100).toFixed(2)
-                })
+                reportCharacterImport(
+                    progress,
+                    `${language.importProgress.savingEmotions} (${i + 1}/${risuext.emotions.length})`,
+                    55 + (i / Math.max(1, risuext.emotions.length) * 12),
+                )
                 await sleep(10)
                 if(risuext.emotions[i][1].startsWith('__asset:')){
                     const key = risuext.emotions[i][1].replace('__asset:', '')
@@ -689,11 +747,11 @@ async function importCharacterCardSpec<T extends boolean = false>(card:Character
         }
         if(risuext.additionalAssets){
             for(let i=0;i<risuext.additionalAssets.length;i++){
-                alertStore.set({
-                    type: 'progress',
-                    msg: `Loading... (Loading Assets)`,
-                    submsg: (i / risuext.additionalAssets.length * 100).toFixed(2)
-                })
+                reportCharacterImport(
+                    progress,
+                    `${language.importProgress.savingAdditionalAssets} (${i + 1}/${risuext.additionalAssets.length})`,
+                    68 + (i / Math.max(1, risuext.additionalAssets.length) * 17),
+                )
 
                 if(i % 100 === 0){
                     await sleep(10)
@@ -717,11 +775,11 @@ async function importCharacterCardSpec<T extends boolean = false>(card:Character
         if(risuext.vits){
             const keys = Object.keys(risuext.vits)
             for(let i=0;i<keys.length;i++){
-                alertStore.set({
-                    type: 'progress',
-                    msg: `Loading... (Loading VITS)`,
-                    submsg: (i / keys.length * 100).toFixed(2)
-                })
+                reportCharacterImport(
+                    progress,
+                    `${language.importProgress.savingVoiceAssets} (${i + 1}/${keys.length})`,
+                    86 + (i / Math.max(1, keys.length) * 8),
+                )
                 await sleep(10)
                 const key = keys[i]
                 if(risuext.vits[key].startsWith('__asset:')){
@@ -760,11 +818,11 @@ async function importCharacterCardSpec<T extends boolean = false>(card:Character
         const data = card.data //required for type checking
         if(data.assets){
             for(let i=0;i<data.assets.length;i++){
-                alertStore.set({
-                    type: 'progress',
-                    msg: `Loading... (Assets)`,
-                    submsg: (i / data.assets.length * 100).toFixed(2)
-                })
+                reportCharacterImport(
+                    progress,
+                    `${language.importProgress.savingCardAssets} (${i + 1}/${data.assets.length})`,
+                    55 + (i / Math.max(1, data.assets.length) * 39),
+                )
                 if(i % 100 === 0){
                     await sleep(10)
                 }
@@ -797,7 +855,12 @@ async function importCharacterCardSpec<T extends boolean = false>(card:Character
                         imgp = await saveAsset(Buffer.from(b64, 'base64'))
                     }
                     else{
-                        alertError('Data URI too large')
+                        if(progress){
+                            notifyError('Data URI too large')
+                        }
+                        else{
+                            alertError('Data URI too large')
+                        }
                         continue
                     }
                 }
@@ -948,8 +1011,9 @@ async function importCharacterCardSpec<T extends boolean = false>(card:Character
         return char as any
     }
 
+    reportCharacterImport(progress, language.importProgress.addingCharacter, 98)
     appendImportedCharacter(db, char)
-    notifySuccess(language.importedCharacter)
+    notifyCharacterImported(suppressSuccess)
     return true as any
 
 }
