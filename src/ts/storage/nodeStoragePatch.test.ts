@@ -61,3 +61,34 @@ describe('NodeStorage.patchItem 409 contract', () => {
         })
     })
 })
+
+describe('NodeStorage asset doctor contract', () => {
+    test('starts a read-only diagnosis with bounded sample options', async () => {
+        const storage = storageReturning(202, {
+            job: { id: 'doctor-1', status: 'queued', progress: { phase: 'queued', current: 0, total: 0 } },
+        })
+        await expect(storage.startAssetDiagnosis({ sampleLimit: 8, maxSampleBytes: 1024 })).resolves.toMatchObject({
+            id: 'doctor-1',
+            status: 'queued',
+        })
+        expect((storage as any).authFetch).toHaveBeenCalledWith('/api/external-assets/doctor/scan', expect.objectContaining({
+            method: 'POST',
+            body: JSON.stringify({ sampleLimit: 8, maxSampleBytes: 1024 }),
+        }))
+    })
+
+    test('requires the explicit repair endpoint payload from the client', async () => {
+        const storage = storageReturning(200, {
+            ok: true,
+            repair: { id: 'repair-1', status: 'completed', repaired: 1, failed: 0, results: [] },
+        })
+        await storage.repairAssetDiagnosis('doctor/unsafe', ['issue-a'])
+        expect((storage as any).authFetch).toHaveBeenCalledWith(
+            '/api/external-assets/doctor/jobs/doctor%2Funsafe/repair',
+            expect.objectContaining({
+                method: 'POST',
+                body: JSON.stringify({ confirmed: true, issueIds: ['issue-a'] }),
+            }),
+        )
+    })
+})

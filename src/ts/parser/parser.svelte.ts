@@ -1,6 +1,6 @@
 import DOMPurify from 'dompurify';
 import markdownit from 'markdown-it'
-import { appVer, getCurrentCharacter, getDatabase, type Database, type character, type customscript, type triggerscript } from '../storage/database.svelte';
+import { appVer, getCurrentCharacter, getDatabase, type Chat, type Database, type character, type customscript, type triggerscript } from '../storage/database.svelte';
 import { DBState, selIdState } from '../stores.svelte';
 import { aiWatermarkingLawApplies, getFileSrc } from '../globalApi.svelte';
 import { isNodeServer } from "src/ts/platform"
@@ -13,7 +13,7 @@ import { calcString } from '../process/infunctions';
 import { findCharacterbyId, getPersonaPrompt, getUserIcon, getUserName, pickHashRand, replaceAsync} from '../util';
 
 import { getInlayInfosBatch } from '../process/files/inlays';
-import { getModuleAssets, getModuleLorebooks, getModules } from '../process/modules';
+import { getModuleAssets, getModuleLorebooks, getModules, type RisuModule } from '../process/modules';
 import hljs from 'highlight.js/lib/core'
 import 'highlight.js/styles/atom-one-dark.min.css'
 import { language } from 'src/lang';
@@ -1740,6 +1740,13 @@ export function risuChatParser(da:string, arg:{
     functions?:Map<string,{data:string,arg:string[]}>
     callStack?:number
     cbsConditions?:CbsConditions
+    /** Request-local manual trigger id; avoids the shared UI store in concurrent runs. */
+    triggerId?:string
+    /** Request-local chat/persona context for concurrent generation. */
+    chat?:Chat
+    userName?:string
+    personaPrompt?:string
+    modules?:readonly RisuModule[]
 } = {}):string{
     if (da == null) return ''
     const chatID = arg.chatID ?? -1
@@ -1797,6 +1804,11 @@ export function risuChatParser(da:string, arg:{
         runVar: arg.runVar ?? false,
         consistantChar: arg.consistantChar ?? false,
         cbsConditions: arg.cbsConditions ?? {},
+        triggerId: arg.triggerId,
+        chat: arg.chat,
+        userName: arg.userName,
+        personaPrompt: arg.personaPrompt,
+        modules: arg.modules,
         callStack: arg.callStack,
         getNested: () => {
             return nested

@@ -8,12 +8,14 @@ import {
     endAllGenerations,
     endGeneration,
     generationStates,
+    getGenerationAdmission,
     isAnyGenerating,
     isChatGenerating,
     registerAbort,
     setGenerationStage,
     startGeneration,
     syncDoingChat,
+    tryStartGeneration,
 } from './generationState'
 
 beforeEach(() => {
@@ -73,6 +75,60 @@ describe('map lifecycle', () => {
         expect(isChatGenerating('c1')).toBe(false)
         expect(isChatGenerating('bg')).toBe(true)
         expect(get(generationStates).get('bg')?.kind).toBe('background')
+    })
+})
+
+describe('bounded user-send admission', () => {
+    it('claims two distinct chats and rejects a third', () => {
+        expect(tryStartGeneration('c1', 'g1', { providerKey: 'openai' })).toEqual({ allowed: true })
+        expect(tryStartGeneration('c2', 'g2', { providerKey: 'openai' })).toEqual({ allowed: true })
+        expect(tryStartGeneration('c3', 'g3', { providerKey: 'anthropic' })).toMatchObject({
+            allowed: false,
+            reason: 'global-limit',
+            limit: 2,
+        })
+        expect(get(generationStates).has('c3')).toBe(false)
+    })
+
+    it('rejects a second request for the same chat without replacing its identity', () => {
+        tryStartGeneration('c1', 'original', { providerKey: 'openai' })
+        expect(tryStartGeneration('c1', 'replacement', { providerKey: 'openai' })).toMatchObject({
+            allowed: false,
+            reason: 'same-chat',
+        })
+        expect(get(generationStates).get('c1')?.generationId).toBe('original')
+    })
+
+    it('stores the immutable route identity with the claimed chat', () => {
+        const context = {
+            characterId: 'char-a',
+            chatId: 'c1',
+            presetId: 'preset-a',
+            providerKey: 'openai',
+            modelId: 'gpt-x',
+        }
+        expect(tryStartGeneration('c1', 'g1', context)).toEqual({ allowed: true })
+        expect(get(generationStates).get('c1')?.context).toEqual(context)
+    })
+
+    it('offers a side-effect-free preflight', () => {
+        startGeneration('c1', 'g1')
+        startGeneration('c2', 'g2')
+        expect(getGenerationAdmission('c3')).toMatchObject({ allowed: false, reason: 'global-limit' })
+        expect(get(generationStates).size).toBe(2)
+    })
+
+    it('supports provider-specific policies without changing registry code', () => {
+        const policy = {
+            maxConcurrentChats: 2,
+            defaultProviderLimit: 2,
+            providerLimits: { local: 1 },
+        }
+        expect(tryStartGeneration('c1', 'g1', { providerKey: 'local' }, policy)).toEqual({ allowed: true })
+        expect(tryStartGeneration('c2', 'g2', { providerKey: 'local' }, policy)).toMatchObject({
+            allowed: false,
+            reason: 'provider-limit',
+        })
     })
 })
 

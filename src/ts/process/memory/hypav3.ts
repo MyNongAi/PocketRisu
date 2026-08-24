@@ -15,12 +15,13 @@ import {
 } from "src/ts/storage/database.svelte";
 import { type OpenAIChat } from "../index.svelte";
 import { requestChatData } from "../request/request";
-import { resolveChatMaxResponseTokens } from "../request/modelPresetBinding";
+import { resolveChatMaxResponseTokens, type RequestModelRouteSnapshot } from "../request/modelPresetBinding";
 import { isLocalNetworkUrl } from "src/ts/network/localNetwork";
 import { chatCompletion, unloadEngine } from "../webllm";
 import { hypaV3ProgressStore } from "src/ts/stores.svelte";
 import { type ChatTokenizer } from "src/ts/tokenizer";
 import { inlayTokenRegex } from "src/ts/util/inlayTokens";
+import type { ModuleRuntimeContext } from "../modules";
 
 export interface HypaV3Preset {
     name: string;
@@ -99,6 +100,21 @@ export interface HypaV3Result {
     memory?: SerializableHypaV3Data;
 }
 
+/**
+ * Request identity owned by the chat generation that invoked HypaV3.
+ *
+ * HypaV3 can await tokenization and rate-limited summary jobs for a long time.
+ * Keeping these references explicit prevents a tab switch (or a later preset
+ * edit) from redirecting an in-flight summary request through the newly
+ * selected chat/provider.
+ */
+export interface HypaV3RequestContext {
+    currentChar: character;
+    currentChat: Chat;
+    routeSnapshot?: RequestModelRouteSnapshot;
+    moduleContext?: ModuleRuntimeContext;
+}
+
 const logPrefix = "[HypaV3]";
 const memoryPromptTag = "Past Events Summary";
 const summarySeparator = "\n\n";
@@ -122,9 +138,17 @@ export async function hypaMemoryV3(
     maxContextTokens: number,
     room: Chat,
     char: character,
-    tokenizer: ChatTokenizer
+    tokenizer: ChatTokenizer,
+    routeSnapshot?: RequestModelRouteSnapshot,
+    moduleContext?: ModuleRuntimeContext,
 ): Promise<HypaV3Result> {
     const settings = getCurrentHypaV3Preset().settings;
+    const requestContext: HypaV3RequestContext = {
+        currentChar: char,
+        currentChat: room,
+        routeSnapshot,
+        moduleContext,
+    };
 
     try {
         if (settings.useExperimentalImpl) {
@@ -136,7 +160,8 @@ export async function hypaMemoryV3(
                 maxContextTokens,
                 room,
                 char,
-                tokenizer
+                tokenizer,
+                requestContext
             );
         }
 
@@ -146,7 +171,8 @@ export async function hypaMemoryV3(
             maxContextTokens,
             room,
             char,
-            tokenizer
+            tokenizer,
+            requestContext
         );
     } catch (error) {
         if (error instanceof Error) {
@@ -180,7 +206,8 @@ async function hypaMemoryV3MainExp(
     maxContextTokens: number,
     room: Chat,
     char: character,
-    tokenizer: ChatTokenizer
+    tokenizer: ChatTokenizer,
+    requestContext: HypaV3RequestContext
 ): Promise<HypaV3Result> {
     const db = getDatabase();
     const settings = getCurrentHypaV3Preset().settings;
@@ -404,7 +431,7 @@ async function hypaMemoryV3MainExp(
         };
 
         const summarizationTasks = toSummarizeArray.map(
-            (item) => () => summarize(item)
+            (item) => () => summarize(item, false, requestContext)
         );
 
         // Start of performance measurement: summarize
@@ -960,7 +987,8 @@ async function hypaMemoryV3Main(
     maxContextTokens: number,
     room: Chat,
     char: character,
-    tokenizer: ChatTokenizer
+    tokenizer: ChatTokenizer,
+    requestContext: HypaV3RequestContext
 ): Promise<HypaV3Result> {
     const db = getDatabase();
     const settings = getCurrentHypaV3Preset().settings;
@@ -1151,7 +1179,7 @@ async function hypaMemoryV3Main(
             );
 
             try {
-                const summarizeResult = await summarize(toSummarize);
+                const summarizeResult = await summarize(toSummarize, false, requestContext);
 
                 data.summaries.push({
                     text: summarizeResult,
@@ -1384,7 +1412,7 @@ async function hypaMemoryV3Main(
                 );
 
                 try {
-                    const summarizeResult = await summarize(recentChats);
+                    const summarizeResult = await summarize(recentChats, false, requestContext);
 
                     queries.push(summarizeResult);
                 } catch (error) {
@@ -1681,7 +1709,11 @@ function sanitizeSummaryContent(content: string): string {
     return content.replace(inlayTokenRegex, "[Image]");
 }
 
-export async function summarize(oaiMessages: OpenAIChat[], isResummarize: boolean = false): Promise<string> {
+export async function summarize(
+    oaiMessages: OpenAIChat[],
+    isResummarize: boolean = false,
+    requestContext?: HypaV3RequestContext,
+): Promise<string> {
     const db = getDatabase();
     const settings = getCurrentHypaV3Preset().settings;
 
@@ -1731,6 +1763,10 @@ export async function summarize(oaiMessages: OpenAIChat[], isResummarize: boolea
                 useStreaming: false,
                 noMultiGen: true,
                 forceLocalNetwork: isLocalNetworkUrl(subModelUrl),
+                currentChar: requestContext?.currentChar,
+                currentChat: requestContext?.currentChat,
+                routeSnapshot: requestContext?.routeSnapshot,
+                moduleContext: requestContext?.moduleContext,
             },
             "memory"
         );

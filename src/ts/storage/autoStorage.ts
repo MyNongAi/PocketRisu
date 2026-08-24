@@ -82,6 +82,10 @@ export class AutoStorage{
     // ─── External asset store ───────────────────────────────────────────────
     async readExternalAsset(uri: string) { await this.Init(); return this.realStorage.readExternalAsset(uri) }
     async externalAssetStatus() { await this.Init(); return this.realStorage.externalAssetStatus() }
+    async startAssetDiagnosis(options?: Parameters<NodeStorage['startAssetDiagnosis']>[0]) { await this.Init(); return this.realStorage.startAssetDiagnosis(options) }
+    async listAssetDiagnosisJobs() { await this.Init(); return this.realStorage.listAssetDiagnosisJobs() }
+    async getAssetDiagnosisJob(jobId: string) { await this.Init(); return this.realStorage.getAssetDiagnosisJob(jobId) }
+    async repairAssetDiagnosis(jobId: string, issueIds?: string[]) { await this.Init(); return this.realStorage.repairAssetDiagnosis(jobId, issueIds) }
     async updateExternalAssetConfig(config: Parameters<NodeStorage['updateExternalAssetConfig']>[0]) { await this.Init(); return this.realStorage.updateExternalAssetConfig(config) }
     async scanExternalAssetMigration(providerId?: string) { await this.Init(); return this.realStorage.scanExternalAssetMigration(providerId) }
     async migrateExternalAssets(providerId?: string) { await this.Init(); return this.realStorage.migrateExternalAssets(providerId) }

@@ -1,5 +1,5 @@
 import { get } from "svelte/store";
-import { getCurrentCharacter, getCurrentChat, getDatabase, setCurrentChat, setDatabase } from "../storage/database.svelte";
+import { getDatabase, setCurrentChat, setDatabase, type Chat, type character } from "../storage/database.svelte";
 import { selectedCharID } from "../stores.svelte";
 import { alertInput, alertMd, alertNormal, alertSelect } from "../alert";
 import { sayTTS } from "./tts";
@@ -8,8 +8,16 @@ import { sendChat } from "./index.svelte";
 import { chatGenKey, endGeneration } from "./generationState";
 import { loadLoreBookV3Prompt } from "./lorebook.svelte";
 import { runTrigger } from "./triggers";
+import { captureGenerationTarget } from "./generationTarget";
+import type { ModuleRuntimeContext } from "./modules";
 
-export async function processMultiCommand(command:string) {
+export interface CommandExecutionContext {
+    character: character
+    chat: Chat
+    moduleContext?: ModuleRuntimeContext
+}
+
+export async function processMultiCommand(command:string, context?:CommandExecutionContext) {
     let pipe = ''
     const splited:string[] = []
     let lastIndex = 0
@@ -27,7 +35,7 @@ export async function processMultiCommand(command:string) {
     splited.push(command.slice(lastIndex))
     console.log(splited)
     for(let i = 0; i<splited.length; i++){
-        const result = await processCommand(splited[i].trim(), pipe)
+        const result = await processCommand(splited[i].trim(), pipe, context)
         console.log(pipe)
         if(result === false){
             return false
@@ -40,10 +48,11 @@ export async function processMultiCommand(command:string) {
 }
 
 
-async function processCommand(command:string, pipe:string):Promise<false | string>{
+async function processCommand(command:string, pipe:string, context?:CommandExecutionContext):Promise<false | string>{
     const db = getDatabase()
-    const currentChar = db.characters[get(selectedCharID)]
-    const currentChat = currentChar.chats[currentChar.chatPage]
+    const currentChar = context?.character ?? db.characters[get(selectedCharID)]
+    const currentChat = context?.chat ?? currentChar?.chats?.[currentChar.chatPage]
+    if(!currentChar || !currentChat) return false
     let {commandName, arg, namedArg} = commandParser(command, pipe)
 
     if(!arg){
@@ -171,7 +180,13 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
                     role: 'user',
                     data: e
                 })
-                await sendChat(-1)
+                const attachedCharacter = db.characters.find((entry) => entry === currentChar)
+                const attachedChat = attachedCharacter?.chats?.find((entry) => entry === currentChat)
+                // A trigger may execute commands against an isolated clone.
+                // Never fall back to the selected UI chat in that case.
+                if(!attachedCharacter || !attachedChat) return false
+                const generationTarget = captureGenerationTarget(attachedCharacter, attachedChat)
+                await sendChat(-1, { generationTarget, moduleContext: context?.moduleContext })
                 // sendChat leaves its generation entry for the caller to release
                 // (DefaultChatScreen does the same after its own send). Without
                 // this the per-chat guard stays held and every later iteration
@@ -182,56 +197,47 @@ async function processCommand(command:string, pipe:string):Promise<false | strin
         }
         case 'setvar':{
             console.log(namedArg, arg)
-            const db = getDatabase()
-            const selectedChar = get(selectedCharID)
-            const char = db.characters[selectedChar]
-            const chat = char.chats[char.chatPage]
-            chat.scriptstate = chat.scriptstate ?? {}
-            chat.scriptstate['$' + namedArg['key']] = arg
-            console.log(chat.scriptstate)
-
-            char.chats[char.chatPage] = chat
-            db.characters[selectedChar] = char
+            currentChat.scriptstate = currentChat.scriptstate ?? {}
+            currentChat.scriptstate['$' + namedArg['key']] = arg
+            console.log(currentChat.scriptstate)
             setDatabase(db)
             return ''
         }
         case 'addvar':{
-            const db = getDatabase()
-            const selectedChar = get(selectedCharID)
-            const char = db.characters[selectedChar]
-            const chat = char.chats[char.chatPage]
-            chat.scriptstate = chat.scriptstate ?? {}
-            chat.scriptstate['$' + namedArg['key']] = (Number(chat.scriptstate['$' + namedArg['key']]) + Number(arg)).toString()
-
-            char.chats[char.chatPage] = chat
-            db.characters[selectedChar] = char
+            currentChat.scriptstate = currentChat.scriptstate ?? {}
+            currentChat.scriptstate['$' + namedArg['key']] = (Number(currentChat.scriptstate['$' + namedArg['key']]) + Number(arg)).toString()
             setDatabase(db)
             return ''
         }
         case 'getvar':{
-            const db = getDatabase()
-            const selectedChar = get(selectedCharID)
-            const char = db.characters[selectedChar]
-            const chat = char.chats[char.chatPage]
-            chat.scriptstate = chat.scriptstate ?? {}
-            pipe = (chat.scriptstate['$' + namedArg['key']]).toString() ?? 'null'
+            currentChat.scriptstate = currentChat.scriptstate ?? {}
+            pipe = currentChat.scriptstate['$' + namedArg['key']]?.toString() ?? 'null'
             return pipe
         }
         case 'test_lorebook':{
-            const p = await loadLoreBookV3Prompt()
+            const p = await loadLoreBookV3Prompt(context?.moduleContext
+                ? { ...context.moduleContext, character: currentChar, chat: currentChat }
+                : { character: currentChar, chat: currentChat })
             console.log(p)
             alertNormal(p.actives.map((e)=>e.prompt).join('§'))
             return JSON.stringify(p)
         }
         case 'trigger':{
-            const currentChar = getCurrentCharacter()
             const triggerResult = await runTrigger(currentChar, 'manual', {
-                chat: getCurrentChat(),
-                manualName: arg
+                chat: currentChat,
+                manualName: arg,
+                targetCharacter: currentChar,
+                targetChat: currentChat,
+                moduleContext: context?.moduleContext,
             });
 
             if(triggerResult){
-               setCurrentChat(triggerResult.chat);
+                if(context){
+                    Object.assign(currentChat, triggerResult.chat)
+                }
+                else{
+                    setCurrentChat(triggerResult.chat)
+                }
             }
             return
         }

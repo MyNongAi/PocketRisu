@@ -1,7 +1,7 @@
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { MCPClient, type JsonRPC, type MCPTool, type RPCToolCallContent } from "./mcplib";
 import { DBState } from "src/ts/stores.svelte";
-import { getModuleMcps } from "../modules";
+import { getModuleMcps, type ModuleRuntimeContext } from "../modules";
 import { alertInput, notifySuccess, notifyError } from "src/ts/alert";
 import { v4 } from "uuid";
 import type { MCPClientLike } from "./internalmcp";
@@ -15,9 +15,9 @@ export type MCPToolWithURL = MCPTool & {
 
 export const MCPs:Record<string,MCPClient|MCPClientLike> = {};
 
-export async function initializeMCPs(additionalMCPs?:string[]) {
+export async function initializeMCPs(additionalMCPs?:string[], moduleContext?:ModuleRuntimeContext):Promise<string[]> {
     const db = getDatabase()
-    const mcpUrls = getModuleMcps()
+    const mcpUrls = [...new Set(getModuleMcps(moduleContext))]
     if(additionalMCPs && additionalMCPs.length > 0) {
         for(const mcp of additionalMCPs) {
             if(!mcpUrls.includes(mcp)) {
@@ -126,18 +126,17 @@ export async function initializeMCPs(additionalMCPs?:string[]) {
         }
     }
 
-    for(const key of Object.keys(MCPs)) {
-        if(!mcpUrls.includes(key)) {
-            MCPs[key].destroy()
-            delete MCPs[key];
-        }
-    }
+    // Do not destroy clients merely because another simultaneous chat has a
+    // different module set. Tool discovery below is filtered to this request's
+    // captured URL list, while initialized clients may be safely reused.
+    return mcpUrls
 }
 
-export async function getMCPTools(additionalMCPs?:string[]) {
-    await initializeMCPs(additionalMCPs);
+export async function getMCPTools(additionalMCPs?:string[], moduleContext?:ModuleRuntimeContext) {
+    const activeUrls = await initializeMCPs(additionalMCPs, moduleContext);
     const tools:MCPToolWithURL[] = [];
-    for(const key of Object.keys(MCPs)) {
+    for(const key of activeUrls) {
+        if(!MCPs[key]) continue
         const t = (await MCPs[key].getToolList()).map(tool => {
             return {
                 ...tool,
@@ -150,18 +149,22 @@ export async function getMCPTools(additionalMCPs?:string[]) {
     return tools;
 }
 
-export async function getMCPMeta(additionalMCPs?:string[]) {
-    await initializeMCPs(additionalMCPs);
+export async function getMCPMeta(additionalMCPs?:string[], moduleContext?:ModuleRuntimeContext) {
+    const activeUrls = await initializeMCPs(additionalMCPs, moduleContext);
     const meta:Record<string, typeof MCPClient.prototype.serverInfo> = {};
-    for(const key of Object.keys(MCPs)) {
+    for(const key of activeUrls) {
+        if(!MCPs[key]) continue
         meta[key] = MCPs[key].serverInfo
     }
     return meta;
 }
 
-export async function callMCPTool(methodName:string, args:any):Promise<RPCToolCallContent[]> {
-    await initializeMCPs();
-    for(const key of Object.keys(MCPs)) {
+export async function callMCPTool(methodName:string, args:any, mcpURL?:string):Promise<RPCToolCallContent[]> {
+    const activeUrls = mcpURL
+        ? await initializeMCPs([mcpURL])
+        : await initializeMCPs();
+    for(const key of mcpURL ? [mcpURL] : activeUrls) {
+        if(!MCPs[key]) continue
         const tools = await MCPs[key].getToolList();
         const tool = tools.find(t => t.name === methodName);
         if(tool) {
@@ -175,13 +178,13 @@ export async function callMCPTool(methodName:string, args:any):Promise<RPCToolCa
 }
 
 //Currently just a wrapper for getMCPTools, but can be extended later for more than MCPs
-export async function getTools(){
-    return await getMCPTools();
+export async function getTools(moduleContext?:ModuleRuntimeContext){
+    return await getMCPTools(undefined, moduleContext);
 }
 
 //Currently just a wrapper for callMCPTool, but can be extended later for more than MCPs
-export async function callTool(methodName:string, args:any) {
-    return await callMCPTool(methodName, args);
+export async function callTool(methodName:string, args:any, mcpURL?:string) {
+    return await callMCPTool(methodName, args, mcpURL);
 }
 
 export async function importMCPModule(){

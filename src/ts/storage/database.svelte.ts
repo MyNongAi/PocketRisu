@@ -1020,6 +1020,8 @@ export interface RisuPersona {
     id?:string
     note?:string
     embeddedModule?:RisuModule
+    /** PocketRisu collection provenance. Ignored by upstream clients. */
+    sourceInfo?: import('../sourceCollection').SourceImportInfo
 }
 
 export interface Database{
@@ -1642,6 +1644,8 @@ export interface loreBook{
 export interface character{
     type?:"character"
     name:string
+    /** PocketRisu collection provenance. Ignored by upstream clients. */
+    sourceInfo?: import('../sourceCollection').SourceImportInfo
     image?:string
     firstMessage:string
     desc:string
@@ -2008,6 +2012,8 @@ export interface folder{
     id:string
     imgFile?:string
     img?:string
+    /** PocketRisu collection provenance for a generated source folder. */
+    sourceInfo?: import('../sourceCollection').SourceImportInfo
 }
 
 

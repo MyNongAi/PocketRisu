@@ -38,6 +38,14 @@
         type ModuleFolder,
     } from "src/ts/process/moduleFolders";
     import { resolveModuleEditTargetIndex } from "src/ts/process/moduleEditing";
+    import MeasuredVirtualList from "src/lib/UI/Virtual/MeasuredVirtualList.svelte";
+    import type { ModuleCatalogEntry } from "src/ts/process/moduleFolders";
+
+    type ModuleCatalogRow =
+        | { kind: 'module'; module: RisuModule; nested: boolean }
+        | { kind: 'folder'; entry: Extract<ModuleCatalogEntry<RisuModule>, { kind: 'folder' }> }
+        | { kind: 'empty-folder'; folderId: string }
+
     let tempModule:RisuModule = $state({
         name: '',
         description: '',
@@ -50,6 +58,8 @@
     let folderPickerModule:RisuModule|null = $state(null)
     let { quickPanel = false }: { quickPanel?: boolean } = $props()
     let moduleFolders = $derived(normalizeModuleFolders(DBState.db.moduleFolders))
+    const moduleVirtualKeys = new WeakMap<RisuModule, string>()
+    let nextModuleVirtualKey = 0
 
     function moduleCatalog(modules:RisuModule[], search:string){
         const sortedModules = sortModulesByActivation(modules, '', {
@@ -58,6 +68,43 @@
         })
         return buildModuleFolderCatalog(sortedModules, moduleFolders, search)
     }
+
+    function moduleVirtualKey(module: RisuModule){
+        let key = moduleVirtualKeys.get(module)
+        if(!key){
+            key = `module-object:${nextModuleVirtualKey++}`
+            moduleVirtualKeys.set(module, key)
+        }
+        return key
+    }
+
+    function catalogRowKey(row: ModuleCatalogRow){
+        if(row.kind === 'module') return moduleVirtualKey(row.module)
+        if(row.kind === 'folder') return `folder:${row.entry.folder.id}`
+        return `folder-empty:${row.folderId}`
+    }
+
+    let moduleCatalogRows = $derived.by<ModuleCatalogRow[]>(() => {
+        const rows: ModuleCatalogRow[] = []
+        const searchActive = moduleSearch.trim() !== ''
+        for(const entry of moduleCatalog(DBState.db.modules, moduleSearch)){
+            if(entry.kind === 'module'){
+                rows.push({ kind: 'module', module: entry.module, nested: false })
+                continue
+            }
+
+            rows.push({ kind: 'folder', entry })
+            if(entry.folder.collapsed && !searchActive) continue
+            if(entry.modules.length === 0){
+                rows.push({ kind: 'empty-folder', folderId: entry.folder.id })
+                continue
+            }
+            for(const module of entry.modules){
+                rows.push({ kind: 'module', module, nested: true })
+            }
+        }
+        return rows
+    })
 
     function updateFolders(updater: (folders: ModuleFolder[]) => ModuleFolder[]){
         DBState.db.moduleFolders = normalizeModuleFolders(updater(moduleFolders))
@@ -158,8 +205,11 @@
     </button>
 {/snippet}
 
-{#snippet moduleRow(rmodule: RisuModule)}
-    <div class="border-b border-selected last:border-b-0">
+{#snippet moduleRow(rmodule: RisuModule, nested = false)}
+    <div class={nested
+        ? "ml-4 border-b border-l border-selected"
+        : "border-b border-selected"
+    }>
         <div class="pl-3 pt-3 text-left flex items-center">
             {#if rmodule.mcp}
                 <Waypoints size={18} class="mr-2" />
@@ -297,18 +347,34 @@
         {@render moduleActions()}
     </div>
 
-    <div class="contain w-full max-w-full mt-4 flex flex-col border-selected border-1 rounded-md flex-1 overflow-y-auto">
-        {#if DBState.db.modules.length === 0 && moduleFolders.length === 0}
+    {#if moduleCatalogRows.length === 0}
+        <div
+            class={`contain w-full max-w-full mt-4 border-selected border-1 rounded-md ${quickPanel ? 'min-h-0 flex-1' : ''}`}
+            role="status"
+        >
             <div class="text-textcolor2 p-3">{language.noModules}</div>
+        </div>
+    {:else}
+    <MeasuredVirtualList
+        items={moduleCatalogRows}
+        estimatedItemHeight={84}
+        overscan={5}
+        smallListThreshold={24}
+        className={`contain w-full max-w-full mt-4 border-selected border-1 rounded-md ${quickPanel ? 'min-h-0 flex-1' : 'h-[min(60vh,40rem)]'}`}
+        ariaLabel={language.modules}
+        resetKey={moduleSearch}
+        key={catalogRowKey}
+    >
+        {#snippet children(row)}
+        {#if row.kind === 'module'}
+            {@render moduleRow(row.module, row.nested)}
+        {:else if row.kind === 'empty-folder'}
+            <div class="ml-4 border-b border-l border-selected px-3 py-2 text-sm text-textcolor2">
+                {language.noModules}
+            </div>
         {:else}
-            <!-- TODO: use measured/variable-height virtualization. The current
-                 fixed-height VirtualList would clip descriptions and an open
-                 folder picker, so it is not safe for this catalog yet. -->
-            {#each moduleCatalog(DBState.db.modules, moduleSearch) as entry (entry.kind === 'module' ? entry.module : `folder:${entry.folder.id}`)}
-                {#if entry.kind === 'module'}
-                    {@render moduleRow(entry.module)}
-                {:else}
-                    <section class="border-b border-selected last:border-b-0">
+            {@const entry = row.entry}
+            <div class="border-b border-selected">
                         <div class="flex min-h-12 items-center gap-2 bg-selected/25 px-3 py-2">
                             <button
                                 type="button"
@@ -344,22 +410,11 @@
                                 <TrashIcon size={17}/>
                             </button>
                         </div>
-                        {#if !entry.folder.collapsed || moduleSearch.trim() !== ''}
-                            <div class="ml-4 border-l border-selected">
-                                {#if entry.modules.length === 0}
-                                    <div class="px-3 py-2 text-sm text-textcolor2">{language.noModules}</div>
-                                {:else}
-                                    {#each entry.modules as rmodule (rmodule)}
-                                        {@render moduleRow(rmodule)}
-                                    {/each}
-                                {/if}
-                            </div>
-                        {/if}
-                    </section>
-                {/if}
-            {/each}
+            </div>
         {/if}
-    </div>
+        {/snippet}
+    </MeasuredVirtualList>
+    {/if}
 
     <div class="mt-3 flex shrink-0 items-center justify-end gap-3 border-t border-selected py-3">
         {@render moduleActions()}

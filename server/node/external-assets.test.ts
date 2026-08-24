@@ -104,6 +104,16 @@ describe('ByteLruCache', () => {
         expect(cache.size).toBe(0)
         expect(cache.sizeBytes).toBe(0)
     })
+
+    it('can inspect an entry without changing LRU recency', () => {
+        const cache = new ByteLruCache(4)
+        cache.set('old', Buffer.from('aa'))
+        cache.set('new', Buffer.from('bb'))
+        expect(cache.peek('old')).toEqual(Buffer.from('aa'))
+        cache.set('third', Buffer.from('cc'))
+        expect(cache.has('old')).toBe(false)
+        expect(cache.has('new')).toBe(true)
+    })
 })
 
 describe('retry helper', () => {
@@ -457,6 +467,79 @@ describe('safe migration staging and fallback lifecycle', () => {
         await expect(service.readWithMeta(uri)).resolves.toMatchObject({ data, source: 'trash' })
         fs.rmSync(path.join(trashDir, entry.fallbacks[0].trashPath), { force: true })
         await expect(service.readWithMeta(uri)).resolves.toMatchObject({ data, source: 'internal' })
+    })
+
+    it('repairs an unavailable provider object only from hash-verified fallback bytes', async () => {
+        const providerRoot = tempDir('external-provider')
+        const trashDir = tempDir('external-trash')
+        const provider = createFilesystemProvider({ id: 'local', rootDir: providerRoot })
+        const data = Buffer.from('doctor recovery bytes')
+        const { store } = memoryManifest(() => '2026-08-25T00:00:00.000Z')
+        const service = createExternalAssetService({
+            providers: [provider], manifestStore: store, trashDir, retry: { attempts: 1 },
+            now: () => '2026-08-25T00:00:00.000Z',
+        })
+        const staged = await service.stage({
+            providerId: 'local', data, internalKey: 'assets/recover.png', mimeType: 'image/png',
+        })
+        service.cache.clear()
+        fs.rmSync(path.join(providerRoot, staged.hash.slice(0, 2), staged.hash), { force: true })
+
+        await expect(service.repairFromFallback(staged.uri)).resolves.toMatchObject({
+            uri: staged.uri,
+            hash: staged.hash,
+            size: data.length,
+            source: 'trash',
+        })
+        await expect(provider.get(staged.hash)).resolves.toEqual(data)
+        expect(await store.get(staged.uri)).toMatchObject({
+            status: 'verified',
+            repairedAt: '2026-08-25T00:00:00.000Z',
+        })
+    })
+
+    it('quarantines a corrupt filesystem object instead of deleting it during repair', async () => {
+        const providerRoot = tempDir('external-provider')
+        const trashDir = tempDir('external-trash')
+        const provider = createFilesystemProvider({ id: 'local', rootDir: providerRoot })
+        const data = Buffer.from('known healthy bytes')
+        const internal = new Map([['assets/recover.png', data]])
+        const { store } = memoryManifest()
+        const service = createExternalAssetService({
+            providers: [provider], manifestStore: store, trashDir, retry: { attempts: 1 },
+            readInternal: async (key: string) => internal.get(key) ?? null,
+        })
+        const staged = await service.stage({
+            providerId: 'local', data, internalKey: 'assets/recover.png',
+        })
+        service.cache.clear()
+        const objectPath = path.join(providerRoot, staged.hash.slice(0, 2), staged.hash)
+        fs.writeFileSync(objectPath, Buffer.from('corrupt but preserved'))
+
+        const repaired = await service.repairFromFallback(staged.uri)
+        expect(repaired.providerResult).toMatchObject({ repaired: true, quarantinePath: expect.any(String) })
+        expect(fs.readFileSync(objectPath)).toEqual(data)
+        expect(fs.readFileSync(repaired.providerResult.quarantinePath)).toEqual(Buffer.from('corrupt but preserved'))
+    })
+
+    it('refuses provider repair when every fallback fails hash validation', async () => {
+        const providerRoot = tempDir('external-provider')
+        const provider = createFilesystemProvider({ id: 'local', rootDir: providerRoot })
+        const trashDir = tempDir('external-trash')
+        const good = Buffer.from('expected bytes')
+        const { store } = memoryManifest()
+        const service = createExternalAssetService({
+            providers: [provider], manifestStore: store, trashDir, retry: { attempts: 1 },
+        })
+        const staged = await service.stage({
+            providerId: 'local', data: good, internalKey: 'assets/recover.png',
+        })
+        service.cache.clear()
+        fs.rmSync(path.join(providerRoot, staged.hash.slice(0, 2), staged.hash), { force: true })
+        const manifestEntry = await store.get(staged.uri)
+        fs.writeFileSync(path.join(trashDir, manifestEntry.fallbacks[0].trashPath), Buffer.from('corrupt'))
+
+        await expect(service.repairFromFallback(staged.uri)).rejects.toMatchObject({ code: 'FALLBACK_UNAVAILABLE' })
     })
 
     it('requires explicit user verification before purging verified trash', async () => {

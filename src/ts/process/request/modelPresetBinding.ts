@@ -34,6 +34,33 @@ export type ResolvedBinding =
     | { kind: 'modelPreset'; preset: ModelPreset }
     | { kind: 'block'; reason: 'main-unset' | 'sub-unset' }
 
+/**
+ * Request-scoped route captured before the send pipeline performs its first
+ * await. Unlike `ResolvedBinding`, a preset route owns a deep snapshot: editing
+ * or switching presets while another chat is generating cannot redirect that
+ * in-flight request to a different provider/model.
+ */
+export type RequestModelRouteSnapshot =
+    | {
+        kind: 'classic'
+        aiModel: string
+        providerKey: string
+        fallbackModels: string[]
+    }
+    | {
+        kind: 'modelPreset'
+        preset: ModelPreset
+        presetId: string
+        providerKey: string
+        modelId: string
+        fallbackModels: string[]
+    }
+    | {
+        kind: 'block'
+        reason: 'main-unset' | 'sub-unset'
+        fallbackModels: string[]
+    }
+
 function findPreset(id: string | undefined, presets: ModelPreset[]): ModelPreset | undefined {
     if (!id) return undefined
     return presets.find((p) => p.id === id)
@@ -107,6 +134,60 @@ export function resolveChatModelBinding(
     return sub
         ? { kind: 'modelPreset', preset: sub }
         : { kind: 'block', reason: 'sub-unset' }
+}
+
+function resolveClassicModelId(db: Database, mode: ModelModeExtended): string {
+    let modelId = mode === 'model' ? db.aiModel : db.subModel
+    if (db.seperateModelsForAxModels && db.seperateModels?.[mode]) {
+        modelId = db.seperateModels[mode]
+    }
+    return modelId
+}
+
+function classicProviderKey(modelId: string, db: Database): string {
+    if (modelId === 'reverse_proxy') {
+        return `classic:reverse_proxy:${db.forceReplaceUrl || 'default'}`
+    }
+    if (modelId.startsWith('xcustom:::')) {
+        const custom = db.customModels?.find((entry) => entry.id === modelId)
+        return `classic:xcustom:${custom?.url || modelId}`
+    }
+    if (modelId.startsWith('pluginmodel:::')) {
+        return `classic:${modelId}`
+    }
+    return `classic:${modelId}`
+}
+
+export function captureChatModelRoute(
+    chat: Chat | null | undefined,
+    mode: ModelModeExtended,
+    moduleId?: string,
+): RequestModelRouteSnapshot {
+    const db = getDatabase()
+    const fallbackModels = safeStructuredClone(db.fallbackModels?.[mode] ?? [])
+    const binding = resolveChatModelBinding(chat, mode, moduleId)
+    if (binding.kind === 'block') {
+        return { ...binding, fallbackModels }
+    }
+    if (binding.kind === 'modelPreset') {
+        const prepared = applyPromptPresetParams(binding.preset, chat, mode)
+        const preset = safeStructuredClone(prepared)
+        return {
+            kind: 'modelPreset',
+            preset,
+            presetId: preset.id,
+            providerKey: `preset:${preset.profileSnapshot.providerBaseId}`,
+            modelId: preset.profileSnapshot.modelId,
+            fallbackModels,
+        }
+    }
+    const aiModel = resolveClassicModelId(db, mode)
+    return {
+        kind: 'classic',
+        aiModel,
+        providerKey: classicProviderKey(aiModel, db),
+        fallbackModels,
+    }
 }
 
 /**

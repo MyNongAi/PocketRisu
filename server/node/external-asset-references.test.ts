@@ -6,6 +6,7 @@ const {
     collectAssetReferenceSummary,
     collectEmbeddedInternalAssetNames,
     collectExternalAssetReferences,
+    collectMalformedExternalAssetReferences,
     isInternalAssetPath,
     rewriteAssetReferences,
     rewriteAssetReferencesInPlace,
@@ -27,6 +28,7 @@ const {
         changes: number
     }
     collectExternalAssetReferences: (db: unknown) => Array<{ value: string }>
+    collectMalformedExternalAssetReferences: (db: unknown) => Array<{ value: string }>
     rewriteExternalAssetReferences: (db: unknown, mapping: Map<string, string> | Record<string, string>) => any
 }
 
@@ -57,6 +59,7 @@ describe('large migration reference traversal', () => {
 
 function fixture() {
     return {
+        userIcon: 'assets/persona-selected.webp',
         characters: [
             {
                 chaId: 'char-a',
@@ -114,6 +117,7 @@ function fixture() {
         personas: [
             {
                 id: 'persona-a',
+                icon: 'assets/persona-a.webp',
                 embeddedModule: {
                     id: 'embedded-a',
                     assets: [['embedded', 'assets/embedded.png', 'png']],
@@ -132,6 +136,7 @@ describe('collectAssetReferences', () => {
         const references = collectAssetReferences(fixture())
 
         expect(references.map((reference) => reference.path)).toEqual([
+            '/userIcon',
             '/characters/0/image',
             '/characters/0/emotionImages/0/1',
             '/characters/0/emotionImages/1/1',
@@ -144,6 +149,7 @@ describe('collectAssetReferences', () => {
             '/modules/0/assets/1/1',
             '/modules/0/icon',
             '/modules/0/backgroundEmbedding',
+            '/personas/0/icon',
             '/personas/0/embeddedModule/assets/0/1',
             '/personas/0/embeddedModule/icon',
         ])
@@ -208,6 +214,26 @@ describe('rewriteAssetReferences', () => {
         expect(rewritten.characters[0].additionalAssets[0][1]).toBe('assets/background.jpg')
         expect(rewritten.characters[0].emotionImages[2][1]).toBe('external://disk/external-hash')
         expect(rewritten.characters[0].gptSoVitsConfig.ref_audio_data.assetId).toBe('assets/reference.wav')
+    })
+
+    it('reports malformed external references separately from canonical URIs', () => {
+        const malformed = collectMalformedExternalAssetReferences(fixture()).map((reference) => reference.value)
+        expect(malformed).toContain('external://disk/external-hash')
+        expect(malformed).toContain('external://disk/cc-image')
+        expect(malformed).not.toContain(`external://local/${'a'.repeat(64)}`)
+    })
+
+    it('collects and safely rewrites legacy and per-persona icons', () => {
+        const source = fixture()
+        const rewritten = rewriteAssetReferences(source, new Map([
+            ['assets/persona-selected.webp', `external://local/${'c'.repeat(64)}`],
+            ['assets/persona-a.webp', `external://local/${'d'.repeat(64)}`],
+        ]))
+
+        expect(rewritten.userIcon).toBe(`external://local/${'c'.repeat(64)}`)
+        expect(rewritten.personas[0].icon).toBe(`external://local/${'d'.repeat(64)}`)
+        expect(source.userIcon).toBe('assets/persona-selected.webp')
+        expect(source.personas[0].icon).toBe('assets/persona-a.webp')
     })
 
     it('rewrites the GPT-SoVITS reference audio asset without mutating the source', () => {
