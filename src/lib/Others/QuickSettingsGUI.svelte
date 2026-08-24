@@ -1,33 +1,42 @@
 <script lang="ts">
     import { BotIcon, PackageIcon, Sailboat } from "@lucide/svelte";
-    import { QuickSettings } from "src/ts/stores.svelte";
+    import { QuickSettings, selectedCharID } from "src/ts/stores.svelte";
     import BotSettings from "../Setting/Pages/BotSettings.svelte";
     import OtherBotSettings from "../Setting/Pages/OtherBotSettings.svelte";
     import ModuleSettings from "../Setting/Pages/Module/ModuleSettings.svelte";
+
+    interface Props {
+        modulesOnly?: boolean;
+    }
+
+    let { modulesOnly = false }: Props = $props();
+    let activeIndex = $derived(modulesOnly ? 2 : QuickSettings.index);
 </script>
 
 <div class="mb-2 flex shrink-0 gap-2">
-    <button class={QuickSettings.index === 0 ? 'text-textcolor ' : 'text-textcolor2'} onclick={() => {QuickSettings.index = 0}}>
-        <BotIcon />
-    </button>
-    <button class={QuickSettings.index === 1 ? 'text-textcolor ' : 'text-textcolor2'} onclick={() => {QuickSettings.index = 1}}>
-        <Sailboat />
-    </button>
-    <button class={QuickSettings.index === 2 ? 'text-textcolor ' : 'text-textcolor2'} onclick={() => {QuickSettings.index = 2}}>
+    {#if !modulesOnly && $selectedCharID >= 0}
+        <button class={activeIndex === 0 ? 'text-textcolor ' : 'text-textcolor2'} onclick={() => {QuickSettings.index = 0}}>
+            <BotIcon />
+        </button>
+        <button class={activeIndex === 1 ? 'text-textcolor ' : 'text-textcolor2'} onclick={() => {QuickSettings.index = 1}}>
+            <Sailboat />
+        </button>
+    {/if}
+    <button class={activeIndex === 2 ? 'text-textcolor ' : 'text-textcolor2'} onclick={() => {QuickSettings.index = 2}}>
         <PackageIcon />
     </button>
 </div>
 
 <div
     class="relative flex min-h-0 flex-1 flex-col px-4 py-6 text-textcolor rs-setting-cont-5"
-    class:overflow-y-auto={QuickSettings.index !== 2}
-    class:overflow-y-hidden={QuickSettings.index === 2}
+    class:overflow-y-auto={activeIndex !== 2}
+    class:overflow-y-hidden={activeIndex === 2}
 >
-    {#if QuickSettings.index === 0}
+    {#if activeIndex === 0 && $selectedCharID >= 0}
         <BotSettings />
-    {:else if QuickSettings.index === 1}
+    {:else if activeIndex === 1 && $selectedCharID >= 0}
         <OtherBotSettings />
-    {:else if QuickSettings.index === 2}
+    {:else}
         <ModuleSettings quickPanel />
     {/if}
 </div>
