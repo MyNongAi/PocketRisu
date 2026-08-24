@@ -13,8 +13,10 @@
     import { type Chat as ChatData, type Message } from "../../ts/storage/database.svelte";
     import { DBState } from 'src/ts/stores.svelte';
     import { getCharImage } from "../../ts/characters";
-    import { chatProcessStage, doingChat, sendChat } from "../../ts/process/index.svelte";
-    import { abortGeneration, chatGenKey, endGeneration, generationStates, registerAbort } from "../../ts/process/generationState";
+    import { sendChat } from "../../ts/process/index.svelte";
+    import { abortGeneration, chatGenKey, endGeneration, generationStates, getGenerationAdmission, registerAbort } from "../../ts/process/generationState";
+    import { captureGenerationTarget, resolveGenerationTarget, type GenerationTargetIdentity } from '../../ts/process/generationTarget';
+    import { captureChatModelRoute, type RequestModelRouteSnapshot } from '../../ts/process/request/modelPresetBinding';
     import { claimPendingSend, clearPendingSend, markResumable, resumableSends, takeResumable } from "../../ts/process/request/pendingSends";
     import { ensureCurrentChatReady } from "../../ts/storage/chatStorage";
     import { sleep } from "../../ts/util";
@@ -24,6 +26,7 @@
     import { playNotificationSound } from '../../ts/notificationSound'
 import { isMobile } from 'src/ts/platform'
     import { processScript } from "src/ts/process/scripts";
+    import { captureModuleRuntimeContext, type ModuleRuntimeContext } from 'src/ts/process/modules';
     import CreatorQuote from "./CreatorQuote.svelte";
     import { stopTTS } from "src/ts/process/tts";
     import MainMenu from '../UI/MainMenu.svelte';
@@ -70,6 +73,7 @@ import { isMobile } from 'src/ts/platform'
     let openMenu = $state(false)
     let loadPages = $state(getInitialChatLoadPages(DBState.db))
     let doingChatInputTranslate = false
+    const preparingChatSends = new Set<string>()
     let toggleStickers:boolean = $state(false)
     let fileInput:string[] = $state([])
     let showNewMessageButton = $state(false)
@@ -172,14 +176,29 @@ import { isMobile } from 'src/ts/platform'
         }
     })
 
-    /** Await hydration of active chat. Returns full Chat or null on failure. */
-    async function ensureActiveChatReady(selectedChar = $selectedCharID): Promise<ChatData | null> {
-        const char = DBState.db.characters[selectedChar]
-        if (!char) return null
-        const chat = char.chats[char.chatPage]
-        if (!chat) return null
-        if (!chat._placeholder) return chat
-        return await ensureCurrentChatReady(char.chats, char.chatPage, char.chaId)
+    /** Hydrate the chat captured by a send, never the tab selected afterwards. */
+    async function ensureGenerationTargetReady(target: GenerationTargetIdentity): Promise<{
+        target: GenerationTargetIdentity,
+        character: typeof target.characterRef,
+        chat: ChatData,
+    } | null> {
+        let resolved = resolveGenerationTarget(DBState.db.characters, target)
+        if (!resolved) return null
+        if (resolved.chat._placeholder) {
+            const hydrated = await ensureCurrentChatReady(
+                resolved.character.chats,
+                resolved.chatIndex,
+                resolved.character.chaId,
+            )
+            if (!hydrated) return null
+            resolved = resolveGenerationTarget(DBState.db.characters, target)
+            if (!resolved) return null
+        }
+        return {
+            target: captureGenerationTarget(resolved.character, resolved.chat),
+            character: resolved.character,
+            chat: resolved.chat,
+        }
     }
 
     function scrollToBottom() {
@@ -348,34 +367,78 @@ import { isMobile } from 'src/ts/platform'
     }
 
     async function sendMain(continueResponse:boolean) {
-        let selectedChar = $selectedCharID
-        if($doingChat){
+        const selectedCharacter = DBState.db.characters[$selectedCharID]
+        const selectedChatRoom = selectedCharacter?.chats?.[selectedCharacter.chatPage]
+        if(!selectedCharacter || !selectedChatRoom) return
+
+        let generationTarget = captureGenerationTarget(selectedCharacter, selectedChatRoom)
+        const genKey = chatGenKey(generationTarget.chatId)
+        const route = captureChatModelRoute(selectedChatRoom, 'model')
+        const emotionRoute = captureChatModelRoute(selectedChatRoom, 'emotion')
+        const memoryRoute = captureChatModelRoute(selectedChatRoom, 'memory')
+        const admission = getGenerationAdmission(genKey, {
+            characterId: generationTarget.characterId,
+            chatId: generationTarget.chatId,
+            presetId: route.kind === 'modelPreset' ? route.presetId : undefined,
+            providerKey: route.kind === 'block' ? undefined : route.providerKey,
+            modelId: route.kind === 'modelPreset'
+                ? route.modelId
+                : route.kind === 'classic'
+                    ? route.aiModel
+                    : undefined,
+        })
+        if(admission.allowed === false){
+            if(admission.reason !== 'same-chat'){
+                alertError('At most two chats can generate at the same time.')
+            }
             return
         }
+        const occupiedChatKeys = new Set([...$generationStates.keys(), ...preparingChatSends])
+        if(preparingChatSends.has(genKey) || occupiedChatKeys.size >= 2){
+            if(!preparingChatSends.has(genKey)) alertError('At most two chats can generate at the same time.')
+            return
+        }
+        preparingChatSends.add(genKey)
 
-        const activeChat = await ensureActiveChatReady(selectedChar)
-        if(!activeChat) return
+        try {
+        const capturedInput = messageInput
+        const capturedFiles = [...fileInput]
+        const capturedDraftChaId = draftChaId
+        const capturedDraftChatId = draftChatId
+        const ready = await ensureGenerationTargetReady(generationTarget)
+        if(!ready) return
+        generationTarget = ready.target
+        const targetCharacter = ready.character
+        const activeChat = ready.chat
+        const moduleContext = captureModuleRuntimeContext(targetCharacter, activeChat)
 
         let cha = activeChat.message
 
-        if(messageInput.startsWith('/')){
-            const commandProcessed = await processMultiCommand(messageInput)
+        if(capturedInput.startsWith('/')){
+            const commandProcessed = await processMultiCommand(capturedInput, {
+                character: targetCharacter,
+                chat: activeChat,
+                moduleContext,
+            })
             if(commandProcessed !== false){
-                messageInput = ''
-                messageInputTranslate = ''
-                removeChatDraft(draftChaId, draftChatId)
+                const selected = resolveGenerationTarget(DBState.db.characters, generationTarget)
+                if(selected && $selectedCharID === selected.characterIndex && selected.character.chatPage === selected.chatIndex){
+                    messageInput = ''
+                    messageInputTranslate = ''
+                }
+                removeChatDraft(capturedDraftChaId, capturedDraftChatId)
                 return
             }
         }
 
-        if(fileInput.length > 0){
-            for(const file of fileInput){
-                messageInput += `{{inlayed::${file}}}`
+        let inputToSend = capturedInput
+        if(capturedFiles.length > 0){
+            for(const file of capturedFiles){
+                inputToSend += `{{inlayed::${file}}}`
             }
-            fileInput = []
         }
 
-        if(messageInput === ''){
+        if(inputToSend === ''){
             if(cha.length === 0 || cha[cha.length - 1].role !== 'user'){
                 if(DBState.db.useSayNothing){
                     cha.push({
@@ -387,16 +450,20 @@ import { isMobile } from 'src/ts/platform'
             }
         }
         else{
-            const char = DBState.db.characters[selectedChar]
-            if(char.type === 'character'){
-                let triggerResult = await runTrigger(char,'input', {chat: activeChat})
+            if(targetCharacter.type === 'character'){
+                let triggerResult = await runTrigger(targetCharacter,'input', {
+                    chat: activeChat,
+                    targetCharacter,
+                    targetChat: activeChat,
+                    moduleContext,
+                })
                 if(triggerResult){
                     cha = triggerResult.chat.message
                 }
 
                 cha.push({
                     role: 'user',
-                    data: await processScript(char,messageInput,'editinput'),
+                    data: await processScript(targetCharacter,inputToSend,'editinput', {}, moduleContext),
                     time: Date.now(),
                     name: null
                 })
@@ -404,20 +471,44 @@ import { isMobile } from 'src/ts/platform'
             else{
                 cha.push({
                     role: 'user',
-                    data: messageInput,
+                    data: inputToSend,
                     time: Date.now(),
                     name: null
                 })
             }
         }
-        messageInput = ''
-        messageInputTranslate = ''
-        removeChatDraft(draftChaId, draftChatId)
-        DBState.db.characters[selectedChar].chats[DBState.db.characters[selectedChar].chatPage].message = cha
+
+        const attached = resolveGenerationTarget(DBState.db.characters, generationTarget)
+        if(!attached) return
+        attached.chat.message = cha
+        generationTarget = captureGenerationTarget(attached.character, attached.chat)
+        if($selectedCharID === attached.characterIndex && attached.character.chatPage === attached.chatIndex){
+            messageInput = ''
+            messageInputTranslate = ''
+            fileInput = []
+        }
+        removeChatDraft(capturedDraftChaId, capturedDraftChatId)
 
         await sleep(10)
-        updateInputSizeAll()
-        await sendChatMain(continueResponse)
+        const stillSelected = resolveGenerationTarget(DBState.db.characters, generationTarget)
+        if(stillSelected && $selectedCharID === stillSelected.characterIndex && stillSelected.character.chatPage === stillSelected.chatIndex){
+            updateInputSizeAll()
+        }
+        // sendChat claims generation state synchronously before its first
+        // await, so releasing the pre-send guard immediately before this call
+        // leaves no event-loop gap for a duplicate click.
+        preparingChatSends.delete(genKey)
+        return await sendChatMain(
+            continueResponse,
+            generationTarget,
+            moduleContext,
+            route,
+            emotionRoute,
+            memoryRoute,
+        )
+        } finally {
+            preparingChatSends.delete(genKey)
+        }
 
     }
 
@@ -458,8 +549,8 @@ import { isMobile } from 'src/ts/platform'
         return msgs[msgs.length - 1].role === 'user'
     })
 
-    function getLastCharMsg() {
-        const msgs = DBState.db.characters[$selectedCharID]?.chats[DBState.db.characters[$selectedCharID].chatPage]?.message
+    function getLastCharMsgIn(chat: ChatData | null | undefined) {
+        const msgs = chat?.message
         if (!msgs || msgs.length === 0) return null
         for (let i = msgs.length - 1; i >= 0; i--) {
             if (msgs[i].role === 'char' && !msgs[i].isComment && !msgs[i].disabled) return msgs[i]
@@ -467,9 +558,23 @@ import { isMobile } from 'src/ts/platform'
         return null
     }
 
+    function getLastCharMsg() {
+        const char = DBState.db.characters[$selectedCharID]
+        return getLastCharMsgIn(char?.chats?.[char.chatPage])
+    }
+
     async function reroll() {
-        if($doingChat) return
-        const lastMsg = getLastCharMsg()
+        if(currentChatGenerating) return
+        const targetCharacter = DBState.db.characters[$selectedCharID]
+        const targetChat = targetCharacter?.chats?.[targetCharacter.chatPage]
+        if(!targetCharacter || !targetChat) return
+        let generationTarget = captureGenerationTarget(targetCharacter, targetChat)
+        const genKey = chatGenKey(generationTarget.chatId)
+        const occupiedChatKeys = new Set([...$generationStates.keys(), ...preparingChatSends])
+        if(preparingChatSends.has(genKey) || occupiedChatKeys.size >= 2) return
+        preparingChatSends.add(genKey)
+        try {
+        const lastMsg = getLastCharMsgIn(targetChat)
         if (!lastMsg) return
 
         // Save existing swipes before clone replaces the array
@@ -477,7 +582,7 @@ import { isMobile } from 'src/ts/platform'
 
         // Generate new response
         // Preserve trailing comment/disabled messages (e.g. branch comments)
-        let cha = safeStructuredClone(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message)
+        let cha = safeStructuredClone(targetChat.message)
         const originalMessages = safeStructuredClone(cha)
         if(cha.length === 0) return
         openMenu = false
@@ -498,33 +603,40 @@ import { isMobile } from 'src/ts/platform'
             let msg = cha.pop()
             if(!msg) return
         }
-        DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message = cha
-        const generated = await sendChatMain()
+        targetChat.message = cha
+        preparingChatSends.delete(genKey)
+        const generated = await sendChatMain(false, generationTarget)
 
-        const currentMsgs = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message
+        const attached = resolveGenerationTarget(DBState.db.characters, generationTarget)
+        if(!attached) return
+        generationTarget = captureGenerationTarget(attached.character, attached.chat)
+        const currentMsgs = attached.chat.message
 
         // If generation failed, restore original messages
         if (!generated) {
-            DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message = originalMessages
+            attached.chat.message = originalMessages
             return
         }
 
         // Restore trailing comments after the new message
         if (trailingComments.length > 0) {
             currentMsgs.push(...trailingComments)
-            DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message = currentMsgs
+            attached.chat.message = currentMsgs
         }
 
         // Save new response to swipes
-        const newLastMsg = getLastCharMsg()
+        const newLastMsg = getLastCharMsgIn(attached.chat)
         if (newLastMsg && !newLastMsg.swipes) {
             newLastMsg.swipes = [...savedSwipes, newLastMsg.data]
             newLastMsg.swipeId = newLastMsg.swipes.length - 1
         }
+        } finally {
+            preparingChatSends.delete(genKey)
+        }
     }
 
     async function unReroll() {
-        if($doingChat) return
+        if(currentChatGenerating) return
         const lastMsg = getLastCharMsg()
         if (!lastMsg || !lastMsg.swipes || lastMsg.swipeId === undefined) return
 
@@ -575,11 +687,33 @@ import { isMobile } from 'src/ts/platform'
     // Send while A (revisited) still shows a working Stop. Recomputes on chat
     // switch because currentChatGenKey reads the selected char/chatPage.
     let currentChatGenerating = $derived($generationStates.has(currentChatGenKey()))
+    let currentChatProcessStage = $derived($generationStates.get(currentChatGenKey())?.stage ?? 0)
 
-    async function sendChatMain(continued:boolean = false) {
+    async function sendChatMain(
+        continued:boolean = false,
+        capturedTarget?:GenerationTargetIdentity,
+        capturedModuleContext?:ModuleRuntimeContext,
+        capturedRoute?:RequestModelRouteSnapshot,
+        capturedEmotionRoute?:RequestModelRouteSnapshot,
+        capturedMemoryRoute?:RequestModelRouteSnapshot,
+    ) {
 
-        messageInput = ''
-        const genKey = currentChatGenKey()
+        let generationTarget = capturedTarget
+        if(!generationTarget){
+            const char = DBState.db.characters[$selectedCharID]
+            const chat = char?.chats?.[char.chatPage]
+            if(!char || !chat) return false
+            generationTarget = captureGenerationTarget(char, chat)
+        }
+        if(!capturedModuleContext || !capturedRoute || !capturedEmotionRoute || !capturedMemoryRoute){
+            const target = resolveGenerationTarget(DBState.db.characters, generationTarget)
+            if(!target) return false
+            capturedModuleContext ??= captureModuleRuntimeContext(target.character, target.chat)
+            capturedRoute ??= captureChatModelRoute(target.chat, 'model')
+            capturedEmotionRoute ??= captureChatModelRoute(target.chat, 'emotion')
+            capturedMemoryRoute ??= captureChatModelRoute(target.chat, 'memory')
+        }
+        const genKey = chatGenKey(generationTarget.chatId)
         // Mirror sendChat's per-chat guard BEFORE any side effects: a blocked
         // send must not run the unconditional conclude below, which would tear
         // down the RUNNING generation's guard entry and tombstone (e.g. Enter
@@ -593,7 +727,12 @@ import { isMobile } from 'src/ts/platform'
         try {
             generated = await sendChat(-1, {
                 signal:abortController.signal,
-                continue:continued
+                continue:continued,
+                generationTarget,
+                moduleContext: capturedModuleContext,
+                routeSnapshot: capturedRoute,
+                emotionRouteSnapshot: capturedEmotionRoute,
+                memoryRouteSnapshot: capturedMemoryRoute,
             })
         } catch (error) {
             console.error(error)
@@ -636,10 +775,14 @@ import { isMobile } from 'src/ts/platform'
         if (!last || last.role !== 'user') return        // tail changed — concluded
         if (!await claimPendingSend(chatId)) return      // another client won (or server unreachable)
         if (currentChatGenKey() !== chatId || $generationStates.has(chatId)) return
+        const resumedChar = DBState.db.characters[$selectedCharID]
+        const resumedChat = resumedChar?.chats?.[resumedChar.chatPage]
+        if (!resumedChar || !resumedChat || resumedChat.id !== chatId) return
+        const generationTarget = captureGenerationTarget(resumedChar, resumedChat)
         const abortController = new AbortController()
         registerAbort(chatId, abortController)
         try {
-            await sendChat(-1, { signal: abortController.signal })
+            await sendChat(-1, { signal: abortController.signal, generationTarget })
         } catch (error) {
             console.error(error)
         }
@@ -1093,7 +1236,7 @@ import { isMobile } from 'src/ts/platform'
                         </ShDropdownMenuContent>
                     </ShDropdownMenu>
                 {:else}
-                    <div onclick={(e) => {
+                    <button type="button" aria-label="Add empty assistant message" onclick={(e) => {
                         DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.push({
                             role: 'char',
                             data: ''
@@ -1103,14 +1246,14 @@ import { isMobile } from 'src/ts/platform'
                          class="shrink-0 flex justify-center items-center w-9 h-9 rounded-full text-textcolor hover:bg-primary/20 transition-colors cursor-pointer"
                     >
                         <Plus size={20} />
-                    </div>
+                    </button>
                 {/if}
 
                 {#if DBState.db.useChatSticker}
-                    <div onclick={()=>{toggleStickers = !toggleStickers}}
+                    <button type="button" aria-label="Toggle stickers" onclick={()=>{toggleStickers = !toggleStickers}}
                          class={"shrink-0 flex justify-center items-center w-9 h-9 rounded-full hover:bg-primary/20 transition-colors cursor-pointer "+(toggleStickers ? 'text-green-500':'text-textcolor')}>
                         <Laugh size={20}/>
-                    </div>
+                    </button>
                 {/if}
 
                 <textarea class="text-input-area outline-hidden text-textcolor px-2 py-1.5 min-w-0 bg-transparent input-text text-base resize-none overflow-x-hidden max-w-full"
@@ -1192,7 +1335,7 @@ import { isMobile } from 'src/ts/platform'
                             aria-labelledby="cancel"
                             class="order-2 shrink-0 flex justify-center items-center w-9 h-9 rounded-full text-textcolor hover:bg-primary/20 transition-colors" onclick={abortChat}
                     >
-                        <div class="loadmove chat-process-stage-{$chatProcessStage}"></div>
+                        <div class="loadmove chat-process-stage-{currentChatProcessStage}"></div>
                     </button>
                 {:else}
                     <button

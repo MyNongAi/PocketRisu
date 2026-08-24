@@ -5,7 +5,7 @@
     import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
     import { alertConfirm, notifyError, notifySuccess } from 'src/ts/alert'
     import { forageStorage } from 'src/ts/globalApi.svelte'
-    import type { ExternalAssetMigrationJob, ExternalAssetStatus } from 'src/ts/storage/nodeStorage'
+    import type { AssetDoctorJob, ExternalAssetMigrationJob, ExternalAssetStatus } from 'src/ts/storage/nodeStorage'
 
     let status: ExternalAssetStatus | null = $state(null)
     let loading = $state(false)
@@ -21,6 +21,8 @@
     let cacheMb = $state(64)
     let retryCount = $state(2)
     let migrationJob: ExternalAssetMigrationJob | null = $state(null)
+    let doctorJob: AssetDoctorJob | null = $state(null)
+    let doctorSampleLimit = $state(12)
     let pollTimer: number | null = null
 
     const terminalMigrationStatuses = new Set(['published', 'verified', 'cleaned', 'canceled'])
@@ -37,6 +39,12 @@
         try {
             migrationJob = await forageStorage.getExternalAssetMigrationJob(migrationJob.id)
         } catch { /* the next manual action will surface a useful error */ }
+    }
+
+    async function refreshDoctorJob() {
+        if (!doctorJob || ['completed', 'failed'].includes(doctorJob.status)) return
+        try { doctorJob = await forageStorage.getAssetDiagnosisJob(doctorJob.id) }
+        catch { /* keep the last visible progress; a manual retry surfaces the error */ }
     }
 
     function hasSavedHttpCredentials() {
@@ -190,6 +198,36 @@
         }
     }
 
+    async function diagnoseAssets() {
+        const job = await run('Starting a read-only asset diagnosis…', () => forageStorage.startAssetDiagnosis({
+            sampleLimit: Math.max(0, Math.min(100, doctorSampleLimit)),
+            maxSampleBytes: 16 * 1024 * 1024,
+        }))
+        if (job) {
+            doctorJob = job
+            message = 'Reference collection and stat/HEAD checks are running in the background. Chat remains available.'
+        }
+    }
+
+    async function repairDiagnosedAssets() {
+        if (!doctorJob?.result) return
+        const repairable = doctorJob.result.issues.filter((issue) => issue.repairable)
+        if (repairable.length === 0) {
+            notifyError('No sampled issue has a safe automatic repair. Missing originals remain listed for manual recovery.')
+            return
+        }
+        if (!await alertConfirm(`Repair ${repairable.length} sampled asset problem(s)? Cache entries are invalidated or exact-hash objects are restored from verified trash/internal fallbacks. No Risu references are changed and no original is deleted.`)) return
+        const result = await run('Repairing selected exact-hash assets with a manifest backup and journal…', () => (
+            forageStorage.repairAssetDiagnosis(doctorJob!.id, repairable.map((issue) => issue.id))
+        ))
+        if (result) {
+            doctorJob = await forageStorage.getAssetDiagnosisJob(doctorJob.id)
+            const repair = result.repair
+            message = `Repair finished: ${repair.repaired} restored, ${repair.failed} failed. Run diagnosis again to verify current storage.`
+            if (repair.failed === 0) notifySuccess(message)
+        }
+    }
+
     onMount(() => {
         void (async () => {
             await refresh()
@@ -197,8 +235,15 @@
                 const jobs = await forageStorage.listExternalAssetMigrationJobs()
                 migrationJob = jobs.find((job) => !terminalMigrationStatuses.has(job.status)) ?? jobs[0] ?? null
             } catch { /* status remains usable even if the journal is unavailable */ }
+            try {
+                const jobs = await forageStorage.listAssetDiagnosisJobs()
+                doctorJob = jobs.find((job) => !['completed', 'failed'].includes(job.status)) ?? jobs[0] ?? null
+            } catch { /* external storage controls remain usable */ }
         })()
-        pollTimer = window.setInterval(() => { void refreshMigrationJob() }, 1000)
+        pollTimer = window.setInterval(() => {
+            void refreshMigrationJob()
+            void refreshDoctorJob()
+        }, 1000)
         return () => {
             if (pollTimer !== null) window.clearInterval(pollTimer)
         }
@@ -314,5 +359,89 @@
             </p>
         {/if}
     {/if}
+
+    <div class="mt-4 rounded-md border border-darkborderc p-3">
+        <div class="flex flex-wrap items-end justify-between gap-3">
+            <div>
+                <h4 class="text-sm font-semibold">Asset diagnosis and safe recovery</h4>
+                <p class="mt-1 max-w-3xl text-xs text-textcolor2">
+                    Read-only by default. Every character, module, persona and embedded chat/text asset reference receives a size/availability check. Only a bounded sample is downloaded sequentially for SHA-256 and real image decoding, so a 45 GB library is never loaded into memory at once.
+                </p>
+            </div>
+            <label class="w-32 text-xs text-textcolor2">Hash/decode samples
+                <NumberInput className="mt-1 w-full" min={0} max={100} bind:value={doctorSampleLimit} />
+            </label>
+        </div>
+
+        <div class="mt-3 flex flex-wrap gap-2">
+            <Button
+                styled="outlined"
+                onclick={diagnoseAssets}
+                disabled={loading || !!doctorJob && ['queued', 'running'].includes(doctorJob.status) || !!migrationJob && ['planning', 'running', 'finalizing'].includes(migrationJob.status)}
+            >Run read-only diagnosis</Button>
+            {#if doctorJob?.status === 'completed' && doctorJob.result?.issues.some((issue) => issue.repairable)}
+                <Button onclick={repairDiagnosedAssets} disabled={loading}>Repair safe sampled issues</Button>
+            {/if}
+        </div>
+
+        {#if doctorJob}
+            <div class="mt-3 rounded-md bg-bgcolor p-3 text-xs text-textcolor2">
+                <div class="flex flex-wrap justify-between gap-2">
+                    <span>Diagnosis {doctorJob.id}</span>
+                    <span class="font-semibold text-textcolor">{doctorJob.status}</span>
+                </div>
+                {#if ['queued', 'running'].includes(doctorJob.status)}
+                    <div class="mt-2 h-2 overflow-hidden rounded bg-darkborderc">
+                        <div
+                            class="h-full bg-green-600 transition-[width] duration-300"
+                            style={`width: ${doctorJob.progress.total > 0 ? Math.max(2, Math.min(100, doctorJob.progress.current / doctorJob.progress.total * 100)) : 2}%`}
+                        ></div>
+                    </div>
+                    <p class="mt-2">{doctorJob.progress.phase}: {doctorJob.progress.current.toLocaleString()} / {doctorJob.progress.total.toLocaleString()}</p>
+                {/if}
+                {#if doctorJob.error}<p class="mt-2 text-red-400">{doctorJob.error}</p>{/if}
+                {#if doctorJob.result}
+                    {@const summary = doctorJob.result.summary}
+                    <p class="mt-2 text-textcolor">
+                        {summary.references.toLocaleString()} references · {summary.uniqueAssets.toLocaleString()} unique ·
+                        {summary.healthy.toLocaleString()} healthy · {summary.problems.toLocaleString()} problem records
+                    </p>
+                    <p class="mt-1">
+                        Missing {summary.missing.toLocaleString()} · provider/size {summary.providerProblems.toLocaleString()} · integrity/hash {summary.integrityProblems.toLocaleString()} ·
+                        malformed external {summary.invalidExternalAssets.toLocaleString()} · cache {summary.cacheProblems.toLocaleString()} · decodes failed {summary.decodeFailures.toLocaleString()} ·
+                        verified sample hashes {summary.hashVerifiedSamples.toLocaleString()}
+                    </p>
+                    <p class="mt-1">{doctorJob.result.samplePolicy.note}</p>
+
+                    {#if doctorJob.result.issues.length > 0}
+                        <div class="mt-3 max-h-72 space-y-2 overflow-y-auto pr-1">
+                            {#each doctorJob.result.issues as issue (issue.id)}
+                                <div class="rounded border border-darkborderc p-2">
+                                    <div class="flex flex-wrap justify-between gap-2">
+                                        <span class={issue.repairable ? 'text-yellow-300' : 'text-red-400'}>{issue.code}</span>
+                                        <span>{issue.occurrences.toLocaleString()} reference(s)</span>
+                                    </div>
+                                    <p class="mt-1 break-all font-mono text-[11px] text-textcolor">{issue.reference}</p>
+                                    <p class="mt-1">{issue.message}</p>
+                                    {#if issue.fallbackAvailable}
+                                        <p class="mt-1 text-green-400">Verified-size fallback candidate: {issue.fallbackSource}{issue.repairable ? ' · safe repair available' : ' · used for serving only'}</p>
+                                    {/if}
+                                    {#if issue.error?.message}<p class="mt-1 text-red-400">{issue.error.message}</p>{/if}
+                                </div>
+                            {/each}
+                        </div>
+                        {#if doctorJob.result.issuesTruncated > 0}
+                            <p class="mt-2 text-yellow-400">{doctorJob.result.issuesTruncated.toLocaleString()} additional issues are omitted from this screen. Repair remains limited to the displayed, explicitly confirmed sample.</p>
+                        {/if}
+                    {/if}
+                    {#if doctorJob.repair}
+                        <p class="mt-2 text-green-400">
+                            Last repair: {doctorJob.repair.repaired} restored, {doctorJob.repair.failed} failed · manifest backup {doctorJob.repair.manifestBackupKey ?? 'not required'}
+                        </p>
+                    {/if}
+                {/if}
+            </div>
+        {/if}
+    </div>
     {#if message}<p class="mt-2 text-xs text-textcolor2">{message}</p>{/if}
 </section>

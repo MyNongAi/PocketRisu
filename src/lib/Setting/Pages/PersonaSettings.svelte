@@ -117,11 +117,20 @@
     })
 </script>
 <SettingPage title={language.persona}>
+{#if DBState.db.personas.some((persona) => persona.sourceInfo?.label)}
+    <div class="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-darkborderc p-3 text-xs text-textcolor2">
+        <span class="font-semibold text-textcolor">병합 출처</span>
+        {#each [...new Set(DBState.db.personas.map((persona) => persona.sourceInfo?.label).filter(Boolean))] as source}
+            <span class="rounded-full bg-primary/15 px-2 py-1 text-primary">{source}</span>
+        {/each}
+    </div>
+{/if}
 {#key sorted}
 <div class="p-4 rounded-md border-darkborderc border mb-2 flex-wrap flex gap-2 w-full max-w-full min-w-0" bind:this={ele}>
     {#each DBState.db.personas as persona, i}
         <button
             type="button"
+            class="relative"
             data-risu-idx={i}
             aria-label={persona.name}
             class:drop-persona-image={personaImageDropTarget === i}
@@ -140,6 +149,11 @@
                 {:then im} 
                     <div class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-primary" style={im} class:ring-3={i === DBState.db.selectedPersona}></div>                
                 {/await}
+            {/if}
+            {#if persona.sourceInfo?.label}
+                <span class="persona-source-badge" title={`병합 출처: ${persona.sourceInfo.label}`}>
+                    {persona.sourceInfo.label}
+                </span>
             {/if}
         </button>
     {/each}
@@ -199,6 +213,11 @@
         </button>
     </div>
     <div class="flex grow flex-col p-2 max-w-full">
+        {#if DBState.db.personas[DBState.db.selectedPersona].sourceInfo?.label}
+            <div class="mb-2 w-fit rounded-full bg-primary/15 px-2 py-1 text-xs font-semibold text-primary">
+                병합 출처 · {DBState.db.personas[DBState.db.selectedPersona].sourceInfo.label}
+            </div>
+        {/if}
         <span class="text-sm text-textcolor2">{language.name} <Help key="personaName" /></span>
         <TextInput className="mt-2" marginBottom placeholder="User" bind:value={DBState.db.username}/>
         <span class="text-sm text-textcolor2">{language.note} <Help key="personaNote" /></span>
@@ -248,5 +267,22 @@
         border-radius: 0.375rem;
         outline: 3px solid var(--risu-theme-primary);
         outline-offset: 3px;
+    }
+
+    .persona-source-badge {
+        position: absolute;
+        left: 0.2rem;
+        right: 0.2rem;
+        bottom: 0.2rem;
+        overflow: hidden;
+        border-radius: 9999px;
+        background: color-mix(in srgb, var(--risu-theme-bgcolor) 84%, transparent);
+        padding: 0.1rem 0.3rem;
+        color: var(--risu-theme-textcolor);
+        font-size: 0.65rem;
+        line-height: 1rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        pointer-events: none;
     }
 </style>

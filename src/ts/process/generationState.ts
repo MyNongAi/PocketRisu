@@ -1,4 +1,11 @@
 import { derived, get, writable, type Readable } from "svelte/store"
+import {
+    DEFAULT_GENERATION_CONCURRENCY_POLICY,
+    evaluateGenerationAdmission,
+    type GenerationAdmissionDecision,
+    type GenerationConcurrencyPolicy,
+    type GenerationKind,
+} from './generationConcurrency'
 
 // Per-chat generation state, keyed by the REAL chat id (chat.id) — not the
 // per-request generationId that flows through request args as `chatId` (see
@@ -18,10 +25,22 @@ export interface GenState {
     // 'live' = a send running in this client (feeds the global doingChat
     // compat store). 'background' = a server-side job reattached by
     // jobRecovery: it holds the per-chat send guard but must NOT flip the
-    // global doingChat (that would lock every send UI and character switching
-    // for up to the job-poll deadline).
-    kind: 'live' | 'background'
+    // global doingChat (that would lock legacy global-only consumers for up to
+    // the job-poll deadline).
+    kind: GenerationKind
+    /** Pipeline stage for this chat; UI must not display another chat's stage. */
+    stage: number
     abortController?: AbortController
+    /** Immutable routing/target identity captured before the first await. */
+    context?: GenerationContextIdentity
+}
+
+export interface GenerationContextIdentity {
+    characterId?: string
+    chatId?: string
+    presetId?: string
+    providerKey?: string
+    modelId?: string
 }
 
 export const generationStates = writable<Map<string, GenState>>(new Map())
@@ -69,19 +88,86 @@ export function isChatGenerating(chatKey: string): boolean {
     return get(generationStates).has(chatKey)
 }
 
-export function startGeneration(chatKey: string, generationId: string, kind: 'live' | 'background' = 'live'): void {
+function activeDescriptors(states: ReadonlyMap<string, GenState>) {
+    return [...states].map(([chatKey, state]) => ({
+        chatKey,
+        kind: state.kind,
+        providerKey: state.context?.providerKey,
+    }))
+}
+
+/** Side-effect-free preflight. `tryStartGeneration` repeats this atomically. */
+export function getGenerationAdmission(
+    chatKey: string,
+    context?: GenerationContextIdentity,
+    kind: GenerationKind = 'live',
+    policy: GenerationConcurrencyPolicy = DEFAULT_GENERATION_CONCURRENCY_POLICY,
+): GenerationAdmissionDecision {
+    return evaluateGenerationAdmission(activeDescriptors(get(generationStates)), {
+        chatKey,
+        kind,
+        providerKey: context?.providerKey,
+    }, policy)
+}
+
+/**
+ * Atomically claims a generation slot. This is the user-send entry point;
+ * `startGeneration` remains the unconditional administrative path used when a
+ * pre-existing server job is reattached during recovery.
+ */
+export function tryStartGeneration(
+    chatKey: string,
+    generationId: string,
+    context?: GenerationContextIdentity,
+    policy: GenerationConcurrencyPolicy = DEFAULT_GENERATION_CONCURRENCY_POLICY,
+): GenerationAdmissionDecision {
+    let decision: GenerationAdmissionDecision = { allowed: false, reason: 'global-limit', limit: 0 }
+    generationStates.update((states) => {
+        decision = evaluateGenerationAdmission(activeDescriptors(states), {
+            chatKey,
+            kind: 'live',
+            providerKey: context?.providerKey,
+        }, policy)
+        if (!decision.allowed) {
+            // A newly registered UI controller must not become a stale abort
+            // target when a different chat already occupies the global/API cap.
+            if (!states.has(chatKey)) pendingAborts.delete(chatKey)
+            return states
+        }
+        const next = new Map(states)
+        next.set(chatKey, {
+            generationId,
+            kind: 'live',
+            stage: 0,
+            abortController: pendingAborts.get(chatKey),
+            context,
+        })
+        return next
+    })
+    if (decision.allowed) syncDoingChat()
+    return decision
+}
+
+export function startGeneration(chatKey: string, generationId: string, kind: GenerationKind = 'live'): void {
     const abortController = pendingAborts.get(chatKey)
     generationStates.update((m) => {
         const next = new Map(m)
-        next.set(chatKey, { generationId, kind, abortController })
+        next.set(chatKey, { generationId, kind, stage: 0, abortController })
         return next
     })
     syncDoingChat()
 }
 
-// Thin wrapper over the global compat store (the per-key stage field had no
-// consumers; last writer wins, same as the previous global-only behavior).
-export function setGenerationStage(_chatKey: string, stage: number): void {
+// Keep the legacy global stage for old consumers, while the chat screen reads
+// its own keyed stage so concurrent chat B cannot repaint chat A's loader.
+export function setGenerationStage(chatKey: string, stage: number): void {
+    generationStates.update((states) => {
+        const current = states.get(chatKey)
+        if (!current) return states
+        const next = new Map(states)
+        next.set(chatKey, { ...current, stage })
+        return next
+    })
     chatProcessStage.set(stage)
 }
 

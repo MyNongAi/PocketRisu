@@ -3,6 +3,8 @@ export interface ModuleFolder {
     name: string
     moduleIds: string[]
     collapsed?: boolean
+    /** PocketRisu collection provenance for a generated source folder. */
+    sourceInfo?: import('../sourceCollection').SourceImportInfo
 }
 
 export interface FolderableModule {

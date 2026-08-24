@@ -4,7 +4,7 @@ import { globalFetch, fetchNative } from "../../globalApi.svelte";
 import { getModelInfo, LLMFlags, LLMFormat, type LLMModel } from "../../model/modellist";
 import { risuChatParser, risuEscape, risuUnescape } from "../../parser/parser.svelte";
 import { pluginProcess, pluginV2 } from "../../plugins/plugins.svelte";
-import { getCurrentCharacter, getCurrentChat, getDatabase, type character } from "../../storage/database.svelte";
+import { getCurrentCharacter, getCurrentChat, getDatabase, type character, type Chat } from "../../storage/database.svelte";
 import { tokenizeNum, encodeWithTokenizer } from "../../tokenizer";
 import { v4 as uuidv4 } from "uuid";
 import { simplifySchema, sleep } from "../../util";
@@ -36,7 +36,7 @@ import { TOOL_CAPABLE_ADAPTER_KINDS, VISION_CAPABLE_ADAPTER_KINDS, type AdapterK
 import { resolveWireModelId } from "src/ts/preset/adapter/wireInvariants";
 import { pumpPresetStream } from "./presetStreamPump";
 import { makeJobFetch } from "./jobFetch";
-import { resolveChatModelBinding, buildModelPresetCredential, applyPromptPresetParams } from "./modelPresetBinding";
+import { resolveChatModelBinding, buildModelPresetCredential, applyPromptPresetParams, type RequestModelRouteSnapshot } from "./modelPresetBinding";
 import { expandAdapterMessages, toAdapterMessage, toolResponseText } from "./modelPresetMessages";
 import { isLocalNetworkUrl } from "src/ts/network/localNetwork";
 import { createRequestLogScope, type RequestLogRoute, type RequestLogSource, type RequestLogUsage } from "src/ts/requestLog";
@@ -44,6 +44,7 @@ import {
     startStatus, appendText, endStatus, setStatusTokenCounter, addBadge,
     type RequestKind,
 } from "src/ts/status/requestStatus";
+import type { ModuleRuntimeContext } from "../modules";
 
 export type ToolCall = {
     name: string;
@@ -55,6 +56,10 @@ interface requestDataArgument{
     bias: {[key:number]:number}
     biasString?: [string,number][]
     currentChar?: character
+    /** Chat object captured by the caller; never follows the selected UI tab. */
+    currentChat?: Chat
+    /** Provider/model route captured before the send pipeline's first await. */
+    routeSnapshot?: RequestModelRouteSnapshot
     temperature?: number
     maxTokens?:number
     PresensePenalty?: number
@@ -86,6 +91,8 @@ interface requestDataArgument{
     // it to the ModelPreset bound to that module (db.moduleModelBindings).
     // Absent for character-owned scripts and normal chat sends.
     moduleId?: string
+    /** Generation-owned module/persona snapshot. */
+    moduleContext?: ModuleRuntimeContext
 }
 
 export interface RequestDataArgumentExtended extends requestDataArgument{
@@ -136,8 +143,8 @@ export interface StreamResponseChunk{[key:string]:string}
 
 export async function requestChatData(arg:requestDataArgument, model:ModelModeExtended, abortSignal:AbortSignal=null):Promise<requestDataResponse> {
     const db = getDatabase()
-    const fallBackModels:string[] = safeStructuredClone(db?.fallbackModels?.[model] ?? [])
-    const tools = arg.tools ?? (await getTools())
+    const fallBackModels:string[] = safeStructuredClone(arg.routeSnapshot?.fallbackModels ?? db?.fallbackModels?.[model] ?? [])
+    const tools = arg.tools ?? (await getTools(arg.moduleContext))
     fallBackModels.push('')
     let da:requestDataResponse
 
@@ -175,13 +182,17 @@ export async function requestChatData(arg:requestDataArgument, model:ModelModeEx
             }
             
             try{
-                const currentChar = getCurrentCharacter()
+                const currentChar = arg.currentChar ?? getCurrentCharacter()
+                const currentChat = arg.currentChat ?? getCurrentChat()
                 if(currentChar){
                     const perf = performance.now()
                     const d = await runTrigger(currentChar, 'request', {
-                        chat: getCurrentChat(),
+                        chat: currentChat,
                         displayMode: true,
-                        displayData: JSON.stringify(arg.formated)
+                        displayData: JSON.stringify(arg.formated),
+                        targetCharacter: currentChar,
+                        targetChat: currentChat,
+                        moduleContext: arg.moduleContext,
                     })
         
                     const got = JSON.parse(d.displayData)
@@ -395,10 +406,13 @@ export async function requestChatDataMain(arg:requestDataArgument, model:ModelMo
     // db.aiModel / db.seperateModels. Skipped when a staticModel (fallback retry)
     // is forced — fallbacks are classic model ids.
     if(!arg.staticModel){
-        const currentChat = getCurrentChat()
-        const binding = resolveChatModelBinding(currentChat, model, arg.moduleId)
+        const currentChat = arg.currentChat ?? getCurrentChat()
+        const binding = arg.routeSnapshot ?? resolveChatModelBinding(currentChat, model, arg.moduleId)
         if(binding.kind === 'modelPreset'){
-            return requestModelPreset(targ, applyPromptPresetParams(binding.preset, currentChat, model), abortSignal, model)
+            const preset = arg.routeSnapshot
+                ? binding.preset
+                : applyPromptPresetParams(binding.preset, currentChat, model)
+            return requestModelPreset(targ, preset, abortSignal, model)
         }
         if(binding.kind === 'block'){
             return {
@@ -412,9 +426,13 @@ export async function requestChatDataMain(arg:requestDataArgument, model:ModelMo
         // binding.kind === 'classic' → fall through to the classic path below.
     }
 
-    targ.aiModel = arg.staticModel ? arg.staticModel : (model === 'model' ? db.aiModel : db.subModel)
+    targ.aiModel = arg.staticModel
+        ? arg.staticModel
+        : arg.routeSnapshot?.kind === 'classic'
+            ? arg.routeSnapshot.aiModel
+            : (model === 'model' ? db.aiModel : db.subModel)
     targ.modelInfo = getModelInfo(targ.aiModel)
-    if(db.seperateModelsForAxModels && !arg.staticModel){
+    if(db.seperateModelsForAxModels && !arg.staticModel && !arg.routeSnapshot){
         if(db.seperateModels[model]){
             targ.aiModel = db.seperateModels[model]
             targ.modelInfo = getModelInfo(targ.aiModel)
@@ -839,7 +857,7 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
         && (caps?.includes('cache') ?? false)
         && !tools && !arg.previewBody
         && (cacheAuthKind === 'x-goog-api-key' || cacheAuthKind === 'google-service-account')) {
-        const cacheChatKey = getCurrentChat()?.id
+        const cacheChatKey = arg.currentChat?.id ?? getCurrentChat()?.id
         if (cacheChatKey) {
             cache = {
                 promptCaching: preset.promptCaching,
@@ -1153,7 +1171,10 @@ async function executeModelPresetTool(
         return { text: 'Tool call has invalid JSON arguments: ' + (e instanceof Error ? e.message : String(e)), response: [] }
     }
     try {
-        const response = await callTool(call.name, parsedArgs)
+        const mcpURL = 'mcpURL' in tool && typeof tool.mcpURL === 'string'
+            ? tool.mcpURL
+            : undefined
+        const response = await callTool(call.name, parsedArgs, mcpURL)
         const text = toolResponseText(response)
         return { text: text.length > 0 ? text : 'Tool call returned no text response', response }
     } catch (e) {
@@ -1169,7 +1190,7 @@ async function requestNovelAI(arg:RequestDataArgumentExtended):Promise<requestDa
     const temperature = arg.temperature
     const maxTokens = arg.maxTokens
     const biasString = arg.biasString
-    const currentChar = getCurrentCharacter()
+    const currentChar = arg.currentChar ?? getCurrentCharacter()
     const prompt = stringlizeNAIChat(formated, currentChar?.name ?? '', arg.continue)
     const abortSignal = arg.abortSignal
     let logit_bias_exp:{
@@ -1277,7 +1298,7 @@ async function requestOobaLegacy(arg:RequestDataArgumentExtended):Promise<reques
     const db = getDatabase()
     const aiModel = arg.aiModel
     const maxTokens = arg.maxTokens
-    const currentChar = getCurrentCharacter()
+    const currentChar = arg.currentChar ?? getCurrentCharacter()
     const useStreaming = arg.useStreaming
     const abortSignal = arg.abortSignal
     let streamUrl = db.textgenWebUIStreamURL.replace(/\/api.*/, "/api/v1/stream")
@@ -1659,7 +1680,7 @@ async function requestNovelList(arg:RequestDataArgumentExtended):Promise<request
     const maxTokens = arg.maxTokens
     const temperature = arg.temperature
     const biasString = arg.biasString
-    const currentChar = getCurrentCharacter()
+    const currentChar = arg.currentChar ?? getCurrentCharacter()
     const aiModel = arg.aiModel
     const auth_key = db.novellistAPI;
     const api_server_url = 'https://api.tringpt.com/';
@@ -1920,7 +1941,7 @@ async function requestHorde(arg:RequestDataArgumentExtended):Promise<requestData
     const formated = arg.formated
     const db = getDatabase()
     const aiModel = arg.aiModel
-    const currentChar = getCurrentCharacter()
+    const currentChar = arg.currentChar ?? getCurrentCharacter()
     const abortSignal = arg.abortSignal
 
     if(arg.previewBody){
@@ -2025,7 +2046,7 @@ async function requestWebLLM(arg:RequestDataArgumentExtended):Promise<requestDat
     const formated = arg.formated
     const db = getDatabase()
     const aiModel = arg.aiModel
-    const currentChar = getCurrentCharacter()
+    const currentChar = arg.currentChar ?? getCurrentCharacter()
     const maxTokens = arg.maxTokens
     const temperature = arg.temperature
     const realModel = aiModel.split(":::")[1]

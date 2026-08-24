@@ -1,15 +1,14 @@
 import { get } from "svelte/store";
-import { getChatVar, setChatVar } from '../parser/chatVar.svelte';
 import {selectedCharID} from '../stores.svelte'
-import { type Message, type loreBook } from "../storage/database.svelte";
+import { type Chat, type character, type Message, type loreBook } from "../storage/database.svelte";
 import { DBState } from '../stores.svelte';
 import { tokenize } from "../tokenizer";
 import { risuChatParser } from "../parser/parser.svelte";
-import { findCharacterbyId, pickHashRand, selectSingleFile } from "../util";
+import { findCharacterbyId, parseKeyValue, pickHashRand, selectSingleFile } from "../util";
 import { alertError, notifySuccess } from "../alert";
 import { language } from "../../lang";
 import { downloadFile } from "../globalApi.svelte";
-import { getModuleLorebooks } from "./modules";
+import { getModuleLorebooks, type ModuleRuntimeContext } from "./modules";
 import { CCardLib } from "@risuai/ccardlib";
 import { v4 } from "uuid";
 
@@ -72,20 +71,37 @@ export function addLorebookFolder(type:number) {
     }
 }
 
-export async function loadLoreBookV3Prompt(){
+export async function loadLoreBookV3Prompt(context?: ModuleRuntimeContext){
     const selectedID = get(selectedCharID)
-    const char = DBState.db.characters[selectedID]
-    const page = char.chatPage
+    const char = context?.character ?? DBState.db.characters[selectedID]
+    const page = context ? char.chats.indexOf(context.chat) : char.chatPage
+    if (page < 0) throw new Error('Lorebook target chat is no longer available')
+    const targetChat = context?.chat ?? char.chats[page]
     const characterLore = char.globalLore ?? []
-    const chatLore = char.chats[page].localLore ?? []
-    const moduleLorebook = getModuleLorebooks()
+    const chatLore = targetChat.localLore ?? []
+    const moduleLorebook = getModuleLorebooks(context)
+    const generationUserName = context?.userName ?? DBState.db.username
     const fullLore = safeStructuredClone(characterLore.concat(chatLore).concat(moduleLorebook))
-    const currentChat = char.chats[page].message
+    const currentChat = targetChat.message
     const loreDepth = char.loreSettings?.scanDepth ?? DBState.db.loreBookDepth
     const loreToken = char.loreSettings?.tokenBudget ?? DBState.db.loreBookToken
     const fullWordMatchingSetting = char.loreSettings?.fullWordMatching ?? false
     const chatLength = currentChat.length + 1 //includes first message
     const recursiveScanning = char.loreSettings?.recursiveScanning ?? true
+    const getScopedChatVar = (key: string): string => {
+        const chat = targetChat
+        chat.scriptstate ??= {}
+        const state = chat.scriptstate['$' + key]
+        if (state !== undefined && state !== null) return state.toString()
+        const defaults = parseKeyValue(char.defaultVariables)
+            .concat(parseKeyValue(DBState.db.templateDefaultVariables))
+        return defaults.find((entry) => entry[0] === key)?.[1] ?? 'null'
+    }
+    const setScopedChatVar = (key: string, value: string): void => {
+        const chat = targetChat
+        chat.scriptstate ??= {}
+        chat.scriptstate['$' + key] = value
+    }
     let recursivePrompt:{
         prompt: string,
         source: string,
@@ -122,7 +138,7 @@ export async function loadLoreBookV3Prompt(){
             if(msg.role === 'user'){
                 return {
                     source: `message ${i} by user`,
-                    prompt: `\x01{{${DBState.db.username}}}:` + msg.data + '\x01',
+                    prompt: `\x01{{${generationUserName}}}:` + msg.data + '\x01',
                     data: msg.data
                 }
             }
@@ -325,7 +341,7 @@ export async function loadLoreBookV3Prompt(){
                         return
                     }
                     case 'keep_activate_after_match':{
-                        const vara = getChatVar('__internal_ka_' + (fullLore[i].id ?? pickHashRand(5555,fullLore[i].content).toString()))
+                        const vara = getScopedChatVar('__internal_ka_' + (fullLore[i].id ?? pickHashRand(5555,fullLore[i].content).toString()))
                         if(vara === 'true'){
                             forceState = 'activate'
                         }
@@ -335,7 +351,7 @@ export async function loadLoreBookV3Prompt(){
                         return false
                     }
                     case 'dont_activate_after_match': {
-                        const vara = getChatVar('__internal_da_' + (fullLore[i].id ?? pickHashRand(5555,fullLore[i].content).toString()))
+                        const vara = getScopedChatVar('__internal_da_' + (fullLore[i].id ?? pickHashRand(5555,fullLore[i].content).toString()))
                         if(vara === 'true'){
                             forceState = 'deactivate'
                         }
@@ -376,7 +392,7 @@ export async function loadLoreBookV3Prompt(){
                         if(Number.isNaN(int)){
                             return false
                         }
-                        if(((char.chats[page].fmIndex ?? -1) + 1) !== int){
+                        if(((targetChat.fmIndex ?? -1) + 1) !== int){
                             activated = false
                         }
                         return
@@ -581,10 +597,10 @@ export async function loadLoreBookV3Prompt(){
                 activatedIndexes.push(i)
 
                 if(keepActivateAfterMatch){
-                    setChatVar('__internal_ka_' + (fullLore[i].id ?? pickHashRand(5555,fullLore[i].content).toString()), 'true')
+                    setScopedChatVar('__internal_ka_' + (fullLore[i].id ?? pickHashRand(5555,fullLore[i].content).toString()), 'true')
                 }
                 if(dontActivateAfterMatch){
-                    setChatVar('__internal_da_' + (fullLore[i].id ?? pickHashRand(5555,fullLore[i].content).toString()), 'true')
+                    setScopedChatVar('__internal_da_' + (fullLore[i].id ?? pickHashRand(5555,fullLore[i].content).toString()), 'true')
                 }
 
 

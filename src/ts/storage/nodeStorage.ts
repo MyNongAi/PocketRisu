@@ -181,6 +181,73 @@ export interface ExternalAssetRestoreHealth {
     requiresConfiguration?: boolean
 }
 
+export type AssetDoctorJobStatus = 'queued' | 'running' | 'completed' | 'failed'
+
+export interface AssetDoctorIssue {
+    id: string
+    code: 'internal-missing' | 'manifest-missing' | 'provider-missing' | 'provider-unavailable'
+        | 'size-mismatch' | 'hash-mismatch' | 'cache-corrupt' | 'decode-failed' | 'invalid-external-reference'
+        | 'internal-read-failed'
+    message: string
+    reference: string
+    kind: 'internal' | 'external' | 'invalid-external'
+    occurrences: number
+    owners: Array<{ ownerType: string, ownerId: string | null, field: string | null, path: string | null }>
+    providerId?: string
+    expectedSize?: number | null
+    actualSize?: number | null
+    expectedHash?: string
+    actualHash?: string
+    fallbackAvailable?: boolean
+    fallbackSource?: 'trash' | 'internal' | null
+    servingFallback?: boolean
+    repairable: boolean
+    repairAction?: 'invalidate-cache' | 'restore-exact-hash' | null
+    error?: { code?: string | null, message: string }
+}
+
+export interface AssetDoctorResult {
+    summary: {
+        references: number
+        uniqueAssets: number
+        internalAssets: number
+        externalAssets: number
+        invalidExternalAssets: number
+        healthy: number
+        problems: number
+        missing: number
+        cacheProblems: number
+        providerProblems: number
+        integrityProblems: number
+        fallbackCandidates: number
+        hashVerifiedSamples: number
+        decodedSamples: number
+        decodeFailures: number
+        skippedLargeSamples: number
+    }
+    issues: AssetDoctorIssue[]
+    issuesTruncated: number
+    samplePolicy: { maxSamples: number, maxBytesPerSample: number, note: string }
+}
+
+export interface AssetDoctorJob {
+    id: string
+    status: AssetDoctorJobStatus
+    createdAt: number
+    updatedAt: number
+    progress: { phase: string, current: number, total: number }
+    result: AssetDoctorResult | null
+    error: string | null
+    repair?: {
+        id: string
+        status: string
+        manifestBackupKey: string | null
+        repaired: number
+        failed: number
+        results: Array<Record<string, unknown>>
+    } | null
+}
+
 export interface BackupImportResult {
     ok: boolean
     assetsRestored: number
@@ -645,6 +712,45 @@ export class NodeStorage{
         const body = await response.json().catch(() => ({}))
         if (!response.ok) throw new Error(body.error || `external asset migration scan failed: ${response.status}`)
         return body.job
+    }
+
+    async startAssetDiagnosis(options: { sampleLimit?: number, maxSampleBytes?: number } = {}): Promise<AssetDoctorJob> {
+        const response = await this.authFetch('/api/external-assets/doctor/scan', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(options),
+        })
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(body.error || `asset diagnosis failed to start: ${response.status}`)
+        return body.job
+    }
+
+    async listAssetDiagnosisJobs(): Promise<AssetDoctorJob[]> {
+        const response = await this.authFetch('/api/external-assets/doctor/jobs')
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(body.error || `asset diagnosis list failed: ${response.status}`)
+        return body.jobs ?? []
+    }
+
+    async getAssetDiagnosisJob(jobId: string): Promise<AssetDoctorJob> {
+        const response = await this.authFetch(`/api/external-assets/doctor/jobs/${encodeURIComponent(jobId)}`)
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(body.error || `asset diagnosis status failed: ${response.status}`)
+        return body.job
+    }
+
+    async repairAssetDiagnosis(jobId: string, issueIds?: string[]): Promise<{
+        ok: boolean
+        repair: NonNullable<AssetDoctorJob['repair']>
+    }> {
+        const response = await this.authFetch(`/api/external-assets/doctor/jobs/${encodeURIComponent(jobId)}/repair`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ confirmed: true, issueIds }),
+        })
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(body.error || `asset repair failed: ${response.status}`)
+        return body
     }
 
     async migrateExternalAssets(providerId?: string): Promise<{ migrationId: string, job: ExternalAssetMigrationJob }> {

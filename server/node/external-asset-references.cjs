@@ -9,7 +9,9 @@ function isInternalAssetPath(value) {
 }
 
 function isExternalAssetPath(value) {
-    return typeof value === 'string' && /^external:\/\/[a-z0-9][a-z0-9._-]*\/[a-f0-9]{64}$/.test(value)
+    if (typeof value !== 'string') return false
+    const match = /^external:\/\/([a-z0-9](?:[a-z0-9._-]{0,62}[a-z0-9])?)\/([a-f0-9]{64})$/.exec(value)
+    return !!match && !match[1].includes('..')
 }
 
 // Stored Risu assets are flat `assets/<id>.<extension>` keys. Match those
@@ -18,20 +20,27 @@ function isExternalAssetPath(value) {
 // URLs, longer identifiers such as `notassets/...`, and nested paths from
 // retaining an unrelated local object.
 const embeddedInternalAssetPattern = /(?:^|[\s"'`([{=,:>])assets\/([A-Za-z0-9][A-Za-z0-9._~-]*)(?=$|[\s"'`()\]}>,;!?&#])/g
+// Keep the whole token for malformed references as well. The doctor must be
+// able to report a broken external URI embedded in chat HTML/CSS instead of
+// silently skipping it just because it is not a structured asset field.
+const embeddedExternalAssetPattern = /external:\/\/[^\s"'`()\]}>,;!?&#]+/g
 
 /**
- * Conservatively collect the basenames of exact internal asset references
- * embedded anywhere in a decoded database. The input is not mutated, cycles
- * are supported, and accessors are not invoked.
+ * Count exact asset tokens in every data string. Unlike the legacy Set helper,
+ * this retains occurrence counts so a value used both in a structured field
+ * and in chat text can be de-duplicated without losing the chat occurrence.
  */
-function collectEmbeddedInternalAssetNames(db) {
-    const names = new Set()
+function collectEmbeddedAssetReferenceCounts(db) {
+    const counts = new Map()
     const seen = new WeakSet()
+    const add = (value) => counts.set(value, (counts.get(value) || 0) + 1)
 
     const collectString = (value) => {
         embeddedInternalAssetPattern.lastIndex = 0
         let match
-        while ((match = embeddedInternalAssetPattern.exec(value)) !== null) names.add(match[1])
+        while ((match = embeddedInternalAssetPattern.exec(value)) !== null) add(`assets/${match[1]}`)
+        embeddedExternalAssetPattern.lastIndex = 0
+        while ((match = embeddedExternalAssetPattern.exec(value)) !== null) add(match[0])
     }
 
     const visit = (value) => {
@@ -62,7 +71,18 @@ function collectEmbeddedInternalAssetNames(db) {
     }
 
     visit(db)
-    return names
+    return counts
+}
+
+/**
+ * Conservatively collect the basenames of exact internal asset references
+ * embedded anywhere in a decoded database. The input is not mutated, cycles
+ * are supported, and accessors are not invoked.
+ */
+function collectEmbeddedInternalAssetNames(db) {
+    return new Set([...collectEmbeddedAssetReferenceCounts(db).keys()]
+        .filter((value) => value.startsWith('assets/'))
+        .map((value) => value.slice('assets/'.length)))
 }
 
 function jsonPointer(segments) {
@@ -99,6 +119,11 @@ function enumerateAssetReferences(db, predicate = isInternalAssetPath) {
     }
 
     if (!db || typeof db !== 'object') return references
+
+    // `userIcon` is the legacy mirror of the selected persona icon. Keep it in
+    // the supported surface because older databases and plugins may still read
+    // it directly even when `personas[].icon` is present.
+    add('persona', 'selected-persona', 'userIcon', ['userIcon'], db.userIcon)
 
     if (Array.isArray(db.characters)) {
         for (let characterIndex = 0; characterIndex < db.characters.length; characterIndex++) {
@@ -210,13 +235,16 @@ function enumerateAssetReferences(db, predicate = isInternalAssetPath) {
     if (Array.isArray(db.personas)) {
         for (let personaIndex = 0; personaIndex < db.personas.length; personaIndex++) {
             const persona = db.personas[personaIndex]
-            if (!persona || typeof persona !== 'object' || !persona.embeddedModule) continue
+            if (!persona || typeof persona !== 'object') continue
             const personaId = ownerId(persona.id ?? persona.name, `personas[${personaIndex}]`)
-            visitModule(
-                persona.embeddedModule,
-                ['personas', personaIndex, 'embeddedModule'],
-                `${personaId}:embeddedModule`,
-            )
+            add('persona', personaId, 'icon', ['personas', personaIndex, 'icon'], persona.icon)
+            if (persona.embeddedModule) {
+                visitModule(
+                    persona.embeddedModule,
+                    ['personas', personaIndex, 'embeddedModule'],
+                    `${personaId}:embeddedModule`,
+                )
+            }
         }
     }
 
@@ -243,6 +271,18 @@ function collectExternalAssetReferences(db) {
     }))
 }
 
+function collectMalformedExternalAssetReferences(db) {
+    return enumerateAssetReferences(db, (value) => (
+        typeof value === 'string' && value.startsWith('external://') && !isExternalAssetPath(value)
+    )).map((reference) => ({
+        ownerType: reference.ownerType,
+        ownerId: reference.ownerId,
+        field: reference.field,
+        path: reference.path,
+        value: reference.value,
+    }))
+}
+
 // Allocation-light traversal for very large databases. The detailed collector
 // above intentionally builds an owner object and JSON pointer for every
 // occurrence; a migration plan with hundreds of thousands of assets only needs
@@ -250,6 +290,8 @@ function collectExternalAssetReferences(db) {
 // gigabytes and keep the Node event loop busy for minutes.
 function visitAssetSlots(db, visitor) {
     if (!db || typeof db !== 'object' || typeof visitor !== 'function') return
+
+    visitor(db.userIcon, (value) => { db.userIcon = value })
 
     const visitModule = (module) => {
         if (!module || typeof module !== 'object') return
@@ -298,7 +340,11 @@ function visitAssetSlots(db, visitor) {
         for (const module of db.modules) visitModule(module)
     }
     if (Array.isArray(db.personas)) {
-        for (const persona of db.personas) visitModule(persona?.embeddedModule)
+        for (const persona of db.personas) {
+            if (!persona || typeof persona !== 'object') continue
+            visitor(persona.icon, (value) => { persona.icon = value })
+            visitModule(persona.embeddedModule)
+        }
     }
 }
 
@@ -447,8 +493,10 @@ function rewriteExternalAssetReferences(db, mapping) {
 module.exports = {
     collectAssetReferences,
     collectAssetReferenceSummary,
+    collectEmbeddedAssetReferenceCounts,
     collectEmbeddedInternalAssetNames,
     collectExternalAssetReferences,
+    collectMalformedExternalAssetReferences,
     isExternalAssetPath,
     isInternalAssetPath,
     rewriteAssetReferences,

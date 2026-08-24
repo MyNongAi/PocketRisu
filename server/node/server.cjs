@@ -45,6 +45,7 @@ const {
     collectExternalAssetReferences,
     rewriteExternalAssetReferences,
 } = require('./external-asset-references.cjs');
+const { diagnoseAssetReferences } = require('./asset-doctor.cjs');
 const { createExternalAssetMigrationJournal } = require('./external-asset-migration-journal.cjs');
 const { applyPatch } = require('fast-json-patch');
 const { decodeRisuSave, encodeRisuSaveLegacy, calculateHash, normalizeJSON, normalizeForwardHeaders, hasRemoteBlocks } = require('./utils.cjs');
@@ -1063,6 +1064,10 @@ async function getExternalAssetRuntime() {
             manifestStore,
             trashDir: config.trashRoot,
             readInternal: async (key) => kvGet(key),
+            statInternal: async (key) => {
+                const size = kvSize(key);
+                return Number.isFinite(size) ? { size } : null;
+            },
             cacheMaxBytes: config.cacheMaxBytes,
             retry: { attempts: config.retryCount + 1 },
         });
@@ -1192,6 +1197,120 @@ async function externalAssetReferenceHealth(dbObj) {
         availabilityChecked,
         requiresConfiguration: missingProviders.length > 0 || unavailableProviders.size > 0,
     };
+}
+
+// ─── Read-only asset doctor ────────────────────────────────────────────────
+// Jobs keep only references and small result records. Asset bytes are never
+// accumulated: a bounded sample is loaded one object at a time for hash/decode
+// verification, while every unique object receives a cheap KV size or
+// provider stat/HEAD check.
+const assetDoctorJobs = new Map();
+let activeAssetDoctorJobId = null;
+const ASSET_DOCTOR_MAX_PUBLIC_ISSUES = 200;
+const ASSET_DOCTOR_MAX_JOBS = 6;
+
+function publicAssetDoctorJob(job) {
+    if (!job) return null;
+    const result = job.result ? {
+        summary: job.result.summary,
+        samplePolicy: job.result.samplePolicy,
+        issues: job.result.issues.slice(0, ASSET_DOCTOR_MAX_PUBLIC_ISSUES),
+        issuesTruncated: (job.result.issuesOmitted || 0)
+            + Math.max(0, job.result.issues.length - ASSET_DOCTOR_MAX_PUBLIC_ISSUES),
+    } : null;
+    return {
+        id: job.id,
+        status: job.status,
+        createdAt: job.createdAt,
+        updatedAt: job.updatedAt,
+        progress: job.progress,
+        result,
+        error: job.error,
+        repair: job.repair || null,
+    };
+}
+
+function trimAssetDoctorJobs() {
+    const completed = [...assetDoctorJobs.values()]
+        .filter((job) => job.id !== activeAssetDoctorJobId && ['completed', 'failed'].includes(job.status))
+        .sort((a, b) => b.updatedAt - a.updatedAt);
+    for (const job of completed.slice(ASSET_DOCTOR_MAX_JOBS)) assetDoctorJobs.delete(job.id);
+}
+
+async function captureAssetDoctorReferences(job) {
+    // Flush accepted writes first, then let a worker thread decode and walk a
+    // SQLite WAL snapshot. Large chats therefore cannot freeze the Node event
+    // loop or prevent ordinary chat/API traffic while references are gathered.
+    await queueStorageOperation(flushPendingDb);
+    const result = await runExternalAssetWorker(
+        'asset-doctor-reference-worker.cjs',
+        { dbPath: path.join(savePath, 'risuai.db') },
+        (progress) => {
+            job.progress = {
+                phase: progress.phase || 'collecting-references',
+                current: Number(progress.current) || 0,
+                total: Number(progress.total) || 1,
+            };
+            job.updatedAt = Date.now();
+        },
+    );
+    job.progress = { phase: 'references-collected', current: 1, total: 1 };
+    job.updatedAt = Date.now();
+    return result.references;
+}
+
+async function runAssetDoctorJob(job, scanOptions) {
+    try {
+        job.status = 'running';
+        job.updatedAt = Date.now();
+        const references = await captureAssetDoctorReferences(job);
+        const runtime = await getExternalAssetRuntime();
+        const manifestEntries = await runtime.manifestStore.list();
+        job.progress = { phase: 'checking', current: 0, total: new Set(references.map((ref) => ref.value)).size };
+        job.result = await diagnoseAssetReferences({
+            references,
+            manifestEntries,
+            providers: runtime.service.providers,
+            service: runtime.service,
+            statInternal: async (key) => {
+                const size = kvSize(key);
+                return Number.isFinite(size) ? { size } : null;
+            },
+            readInternal: async (key) => kvGet(key),
+            // wasm-vips performs a real decode. The generated 320px buffer is
+            // immediately discarded; only the bounded sample reaches here.
+            decodeImage: async (data) => { await generateThumbnail(Buffer.from(data)); },
+            sampleLimit: scanOptions.sampleLimit,
+            maxSampleBytes: scanOptions.maxSampleBytes,
+            concurrency: 4,
+            onProgress: (progress) => {
+                job.progress = progress;
+                job.updatedAt = Date.now();
+            },
+        });
+        job.status = 'completed';
+        job.progress = {
+            phase: 'completed',
+            current: job.result.summary.uniqueAssets,
+            total: job.result.summary.uniqueAssets,
+        };
+        job.updatedAt = Date.now();
+    } catch (error) {
+        logger.error('[AssetDoctor] Diagnosis failed', error);
+        job.status = 'failed';
+        job.error = error?.message || String(error);
+        job.updatedAt = Date.now();
+    } finally {
+        if (activeAssetDoctorJobId === job.id) activeAssetDoctorJobId = null;
+        trimAssetDoctorJobs();
+    }
+}
+
+async function writeAssetDoctorJournal(file, value) {
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const temp = `${file}.${process.pid}.${Date.now()}.tmp`;
+    await fs.writeFile(temp, JSON.stringify(value, null, 2), 'utf-8');
+    await fs.rename(temp, file);
 }
 
 // Server-side backup directory (outside save/ to avoid bloating updater copies).
@@ -3650,6 +3769,10 @@ const THUMB_MAX_SIDE = 320;
 const THUMB_QUALITY = 75;
 const THUMB_CACHE_VERSION = 1;
 const THUMB_IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'bmp']);
+// Asset keys are normally content hashes, but imports and legacy plugins can
+// overwrite a stable key. Force cheap ETag revalidation so a year-long browser
+// cache cannot preserve old/corrupt bytes after the server has been repaired.
+const REVALIDATING_ASSET_CACHE_CONTROL = 'private, no-cache';
 
 async function generateThumbnail(buffer) {
     const vips = await getVips()
@@ -3753,14 +3876,14 @@ app.get('/api/asset-thumbnail/:hexKey', sessionAuthMiddleware, async (req, res) 
         const descriptor = await describeAssetThumbnail(reference);
         const etag = `"thumb-${cacheFileName(descriptor.identity).slice(0, -5)}"`;
         if (req.headers['if-none-match'] === etag) {
-            return res.status(304).set('Cache-Control', 'private, max-age=86400').end();
+            return res.status(304).set('Cache-Control', REVALIDATING_ASSET_CACHE_CONTROL).end();
         }
 
         const thumbnail = await assetThumbnailCache.get(descriptor.identity, descriptor.loadSource);
         res.set({
             'Content-Type': 'image/webp',
             'Content-Length': String(thumbnail.data.length),
-            'Cache-Control': 'private, max-age=86400',
+            'Cache-Control': REVALIDATING_ASSET_CACHE_CONTROL,
             'ETag': etag,
             'X-PocketRisu-Thumbnail-Source': thumbnail.source,
         });
@@ -3784,11 +3907,11 @@ app.get('/api/asset/:hexKey', sessionAuthMiddleware, async (req, res) => {
             if (file) {
                 const etag = `"${Math.floor(file.mtimeMs)}"`
                 if (req.headers['if-none-match'] === etag) {
-                    return res.status(304).set('Cache-Control', 'public, max-age=31536000, immutable').end()
+                    return res.status(304).set('Cache-Control', REVALIDATING_ASSET_CACHE_CONTROL).end()
                 }
                 res.set({
                     'Content-Type': file.mime,
-                    'Cache-Control': 'public, max-age=31536000, immutable',
+                    'Cache-Control': REVALIDATING_ASSET_CACHE_CONTROL,
                     'ETag': etag,
                 })
                 return res.send(file.buffer)
@@ -3806,12 +3929,12 @@ app.get('/api/asset/:hexKey', sessionAuthMiddleware, async (req, res) => {
             if (!file) return res.status(404).set('Cache-Control', 'no-store').end()
             const etag = `"thumb-${Math.floor(file.mtimeMs)}"`
             if (req.headers['if-none-match'] === etag) {
-                return res.status(304).set('Cache-Control', 'public, max-age=31536000, immutable').end()
+                return res.status(304).set('Cache-Control', REVALIDATING_ASSET_CACHE_CONTROL).end()
             }
             const thumb = await generateThumbnail(file.buffer)
             res.set({
                 'Content-Type': 'image/webp',
-                'Cache-Control': 'public, max-age=31536000, immutable',
+                'Cache-Control': REVALIDATING_ASSET_CACHE_CONTROL,
                 'ETag': etag,
             })
             return res.send(thumb)
@@ -3838,7 +3961,7 @@ app.get('/api/asset/:hexKey', sessionAuthMiddleware, async (req, res) => {
 
         const etag = `"${updatedAt}"`
         if (req.headers['if-none-match'] === etag) {
-            return res.status(304).set('Cache-Control', 'public, max-age=31536000, immutable').end()
+            return res.status(304).set('Cache-Control', REVALIDATING_ASSET_CACHE_CONTROL).end()
         }
 
         const data = kvGet(key)
@@ -3847,7 +3970,7 @@ app.get('/api/asset/:hexKey', sessionAuthMiddleware, async (req, res) => {
         const { binary, contentType } = resolveAssetPayload(key, data)
         res.set({
             'Content-Type': contentType,
-            'Cache-Control': 'public, max-age=31536000, immutable',
+            'Cache-Control': REVALIDATING_ASSET_CACHE_CONTROL,
             'ETag': etag,
         })
         res.send(binary)
@@ -3887,6 +4010,181 @@ app.get('/api/external-assets/status', async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
     try { res.json(await externalAssetStatus()); }
     catch (error) { next(error); }
+});
+
+app.post('/api/external-assets/doctor/scan', async (req, res) => {
+    if (!await checkAuth(req, res)) return;
+    if (exclusiveStorageReason) {
+        return res.status(409).json({ error: `Asset diagnosis is unavailable while storage is locked for ${exclusiveStorageReason}` });
+    }
+    if (externalAssetMigrationInProgress || importInProgress) {
+        return res.status(409).json({ error: 'Asset diagnosis is unavailable during migration/import' });
+    }
+    if (activeAssetDoctorJobId) {
+        return res.status(409).json({
+            error: 'An asset diagnosis is already running',
+            job: publicAssetDoctorJob(assetDoctorJobs.get(activeAssetDoctorJobId)),
+        });
+    }
+    const sampleLimitRaw = Number(req.body?.sampleLimit);
+    const maxSampleBytesRaw = Number(req.body?.maxSampleBytes);
+    const scanOptions = {
+        sampleLimit: Number.isSafeInteger(sampleLimitRaw) ? Math.max(0, Math.min(100, sampleLimitRaw)) : 12,
+        maxSampleBytes: Number.isSafeInteger(maxSampleBytesRaw)
+            ? Math.max(1, Math.min(32 * 1024 * 1024, maxSampleBytesRaw))
+            : 16 * 1024 * 1024,
+    };
+    const now = Date.now();
+    const job = {
+        id: nodeCrypto.randomUUID(),
+        status: 'queued',
+        createdAt: now,
+        updatedAt: now,
+        progress: { phase: 'queued', current: 0, total: 0 },
+        result: null,
+        error: null,
+        repair: null,
+    };
+    assetDoctorJobs.set(job.id, job);
+    activeAssetDoctorJobId = job.id;
+    void runAssetDoctorJob(job, scanOptions);
+    res.status(202).json({ job: publicAssetDoctorJob(job) });
+});
+
+app.get('/api/external-assets/doctor/jobs', async (req, res) => {
+    if (!await checkAuth(req, res)) return;
+    const jobs = [...assetDoctorJobs.values()]
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .slice(0, ASSET_DOCTOR_MAX_JOBS)
+        .map(publicAssetDoctorJob);
+    res.json({ jobs });
+});
+
+app.get('/api/external-assets/doctor/jobs/:jobId', async (req, res) => {
+    if (!await checkAuth(req, res)) return;
+    const job = assetDoctorJobs.get(req.params.jobId);
+    if (!job) return res.status(404).json({ error: 'Asset diagnosis job not found' });
+    res.json({ job: publicAssetDoctorJob(job) });
+});
+
+app.post('/api/external-assets/doctor/jobs/:jobId/repair', async (req, res) => {
+    if (!await checkAuth(req, res)) return;
+    if (!checkActiveSession(req, res)) return;
+    if (req.body?.confirmed !== true) {
+        return res.status(400).json({ error: 'Explicit confirmation is required before asset repair' });
+    }
+    if (externalAssetMigrationInProgress || importInProgress) {
+        return res.status(409).json({ error: 'Asset repair is unavailable during migration/import' });
+    }
+    const job = assetDoctorJobs.get(req.params.jobId);
+    if (!job || job.status !== 'completed' || !job.result) {
+        return res.status(409).json({ error: 'A completed diagnosis job is required before repair' });
+    }
+    const requestedIds = Array.isArray(req.body?.issueIds)
+        ? new Set(req.body.issueIds.filter((value) => typeof value === 'string'))
+        : null;
+    const repairable = job.result.issues.filter((issue) => (
+        issue.repairable && (!requestedIds || requestedIds.has(issue.id))
+    ));
+    // One reference may have both a corrupt-cache and provider issue. Prefer
+    // exact-hash restore, which also refreshes the cache, and touch each object
+    // at most once per confirmed batch.
+    const selectedByReference = new Map();
+    for (const issue of repairable) {
+        const previous = selectedByReference.get(issue.reference);
+        if (!previous || issue.repairAction === 'restore-exact-hash') {
+            selectedByReference.set(issue.reference, issue);
+        }
+    }
+    const selected = [...selectedByReference.values()];
+    if (selected.length === 0) return res.status(400).json({ error: 'No selected issue has a safe automatic repair' });
+    if (selected.length > 100) return res.status(400).json({ error: 'Repair batches are limited to 100 assets' });
+
+    const storageReason = `asset doctor repair ${job.id}`;
+    if (!await acquireExclusiveStorage(storageReason)) {
+        return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
+    }
+    const repairId = nodeCrypto.randomUUID();
+    const manifestBackupKey = `external-assets/doctor-backups/${Date.now()}-${repairId}.json`;
+    const journalFile = path.join(externalAssetStateDir, 'doctor-journals', `${repairId}.json`);
+    const journal = {
+        version: 1,
+        id: repairId,
+        jobId: job.id,
+        status: 'running',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        manifestBackupKey: null,
+        referencesChanged: 0,
+        originalsDeleted: 0,
+        requested: selected.map((issue) => ({
+            issueId: issue.id,
+            reference: issue.reference,
+            action: issue.repairAction,
+        })),
+        results: [],
+    };
+    try {
+        if (Number.isFinite(kvSize(EXTERNAL_ASSET_MANIFEST_KEY))) {
+            kvCopyValue(EXTERNAL_ASSET_MANIFEST_KEY, manifestBackupKey);
+            journal.manifestBackupKey = manifestBackupKey;
+        }
+        await writeAssetDoctorJournal(journalFile, journal);
+        const runtime = await getExternalAssetRuntime();
+        for (const issue of selected) {
+            try {
+                let result;
+                if (issue.repairAction === 'invalidate-cache') {
+                    runtime.service.invalidateCache(issue.reference);
+                    result = await runtime.service.verify(issue.reference);
+                } else if (issue.repairAction === 'restore-exact-hash') {
+                    result = await runtime.service.repairFromFallback(issue.reference);
+                } else {
+                    throw new Error(`Unsupported repair action: ${issue.repairAction}`);
+                }
+                journal.results.push({
+                    issueId: issue.id,
+                    reference: issue.reference,
+                    action: issue.repairAction,
+                    ok: true,
+                    source: result.source || 'external',
+                    size: result.size,
+                });
+            } catch (error) {
+                journal.results.push({
+                    issueId: issue.id,
+                    reference: issue.reference,
+                    action: issue.repairAction,
+                    ok: false,
+                    error: error?.message || String(error),
+                    code: error?.code || null,
+                });
+            }
+            journal.updatedAt = Date.now();
+            await writeAssetDoctorJournal(journalFile, journal);
+        }
+        journal.status = journal.results.every((result) => result.ok) ? 'completed' : 'completed-with-errors';
+        journal.updatedAt = Date.now();
+        await writeAssetDoctorJournal(journalFile, journal);
+        job.repair = {
+            id: repairId,
+            status: journal.status,
+            manifestBackupKey: journal.manifestBackupKey,
+            repaired: journal.results.filter((result) => result.ok).length,
+            failed: journal.results.filter((result) => !result.ok).length,
+            results: journal.results,
+        };
+        job.updatedAt = Date.now();
+        res.json({ ok: job.repair.failed === 0, repair: job.repair });
+    } catch (error) {
+        journal.status = 'failed';
+        journal.updatedAt = Date.now();
+        journal.error = error?.message || String(error);
+        await writeAssetDoctorJournal(journalFile, journal).catch(() => {});
+        res.status(500).json({ error: journal.error, repairId });
+    } finally {
+        endExclusiveStorage(storageReason);
+    }
 });
 
 app.put('/api/external-assets/config', async (req, res, next) => {
@@ -4091,6 +4389,9 @@ function createExternalAssetPlanningJob(providerId, options = {}) {
 app.post('/api/external-assets/migrate/scan', async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
     try {
+        if (exclusiveStorageReason) {
+            return res.status(409).json({ error: `External asset planning is unavailable while storage is locked for ${exclusiveStorageReason}` });
+        }
         if (externalAssetMigrationInProgress || importInProgress) {
             return res.status(409).json({ error: 'External asset planning is locked during another migration/import' });
         }
@@ -4099,6 +4400,9 @@ app.post('/api/external-assets/migrate/scan', async (req, res, next) => {
             ? req.body.providerId
             : runtime.config.activeProvider;
         if (!runtime.config.providers[providerId]) return res.status(400).json({ error: 'External asset provider not configured' });
+        if (exclusiveStorageReason) {
+            return res.status(409).json({ error: `External asset planning is unavailable while storage is locked for ${exclusiveStorageReason}` });
+        }
         res.status(202).json({ job: createExternalAssetPlanningJob(providerId, { planOnly: true }) });
     } catch (error) { next(error); }
 });
@@ -4106,6 +4410,7 @@ app.post('/api/external-assets/migrate/scan', async (req, res, next) => {
 app.post('/api/external-assets/migrate/execute', async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
     if (!checkActiveSession(req, res)) return;
+    if (exclusiveStorageReason) return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
     if (externalAssetMigrationInProgress) return res.status(409).json({ error: 'External asset migration already in progress' });
     if (importInProgress) return res.status(409).json({ error: 'A backup import or restore is already in progress' });
     try {
@@ -4115,6 +4420,9 @@ app.post('/api/external-assets/migrate/execute', async (req, res, next) => {
             ? req.body.providerId
             : runtime.config.activeProvider;
         if (!runtime.config.providers[providerId]) return res.status(400).json({ error: 'External asset provider not configured' });
+        if (exclusiveStorageReason) {
+            return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
+        }
 
         const job = createExternalAssetPlanningJob(providerId);
         res.status(202).json({ ok: true, migrationId: job.id, job });
@@ -4147,6 +4455,7 @@ app.post('/api/external-assets/migrate/jobs/:jobId/pause', async (req, res) => {
 app.post('/api/external-assets/migrate/jobs/:jobId/resume', async (req, res) => {
     if (!await checkAuth(req, res)) return;
     if (!checkActiveSession(req, res)) return;
+    if (exclusiveStorageReason) return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
     try {
         const current = externalAssetMigrationJournal.getJob(req.params.jobId);
         if (!current) return res.status(404).json({ error: 'Migration job not found' });

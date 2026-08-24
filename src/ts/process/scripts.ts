@@ -1,12 +1,12 @@
 import { get } from "svelte/store";
-import { CharEmotion, selectedCharID } from "../stores.svelte";
-import { type character, type customscript, getDatabase, getCurrentCharacter, getCurrentChat } from "../storage/database.svelte";
+import { CharEmotion } from "../stores.svelte";
+import { type Chat, type character, type customscript, getDatabase, getCurrentCharacter, getCurrentChat } from "../storage/database.svelte";
 import { downloadFile } from "../globalApi.svelte";
 import { alertError, notifySuccess } from "../alert";
 import { language } from "src/lang";
 import { selectSingleFile } from "../util";
 import { assetRegex, type CbsConditions, risuChatParser as risuChatParserOrg, type simpleCharacterArgument } from "../parser/parser.svelte";
-import { getModuleAssets, getModuleRegexScripts } from "./modules";
+import { getModuleAssets, getModuleRegexScripts, type ModuleRuntimeContext } from "./modules";
 import { HypaProcesser } from "./memory/hypamemory";
 import { runLuaEditTrigger } from "./scriptings";
 import { pluginV2 } from "../plugins/plugins.svelte";
@@ -23,8 +23,14 @@ type pScript = {
     actions: string[]
 }
 
-export async function processScript(char:character, data:string, mode:ScriptMode, cbsConditions:CbsConditions = {}){
-    return (await processScriptFull(char, data, mode, -1, cbsConditions)).data
+export async function processScript(
+    char:character,
+    data:string,
+    mode:ScriptMode,
+    cbsConditions:CbsConditions = {},
+    context?:ModuleRuntimeContext,
+){
+    return (await processScriptFull(char, data, mode, -1, cbsConditions, context)).data
 }
 
 export function exportRegex(s?:customscript[]){
@@ -68,13 +74,21 @@ export async function importRegex(o?:customscript[]):Promise<customscript[]>{
 let bestMatchCache = new Map<string, string>()
 let processScriptCache = new Map<string, string>()
 
-function generateScriptCacheKey(scripts: customscript[], data: string, mode: ScriptMode, chatID = -1, cbsConditions: CbsConditions = {}) {
-    let hash = data + '|||' + mode + '|||';
+function generateScriptCacheKey(
+    scripts: customscript[],
+    data: string,
+    mode: ScriptMode,
+    chatID = -1,
+    cbsConditions: CbsConditions = {},
+    parser: typeof risuChatParserOrg = risuChatParserOrg,
+    runtimeScope = '',
+) {
+    let hash = data + '|||' + mode + '|||' + runtimeScope + '|||';
     for (const script of scripts) {
         if(script.type !== mode){
             continue
         }
-        hash += `${script.flag?.includes('<cbs>') ? risuChatParser(script.in, { chatID: chatID, cbsConditions }) : script.in}|||${script.out}${chatID}|||${script.flag ?? ''}|||${script.ableFlag ? 1 : 0}`;
+        hash += `${script.flag?.includes('<cbs>') ? parser(script.in, { chatID: chatID, cbsConditions }) : script.in}|||${script.out}${chatID}|||${script.flag ?? ''}|||${script.ableFlag ? 1 : 0}`;
     }
     return hash;
 }
@@ -96,20 +110,44 @@ export function resetScriptCache(){
     processScriptCache = new Map()
 }
 
-export async function processScriptFull(char:character|simpleCharacterArgument, data:string, mode:ScriptMode, chatID = -1, cbsConditions:CbsConditions = {}){
+export async function processScriptFull(
+    char:character|simpleCharacterArgument,
+    data:string,
+    mode:ScriptMode,
+    chatID = -1,
+    cbsConditions:CbsConditions = {},
+    context?:ModuleRuntimeContext,
+){
     let db = getDatabase()
     let emoChanged = false
-    data = await runLuaEditTrigger(char, mode, data, { index:chatID })
+    const targetCharacter:character = context?.character
+        ?? (char.type === 'simple' ? getCurrentCharacter() : char as character)
+    const targetChat:Chat = context?.chat ?? targetCharacter?.chats?.[targetCharacter.chatPage] ?? getCurrentChat()
+    const risuChatParser = (
+        text:string,
+        parserArg:Parameters<typeof risuChatParserOrg>[1] = {},
+    ) => risuChatParserOrg(text, {
+        chara: targetCharacter,
+        chat: targetChat,
+        userName: context?.userName,
+        personaPrompt: context?.personaPrompt,
+        modules: context?.modules,
+        ...parserArg,
+    })
+    data = await runLuaEditTrigger(char, mode, data, { index:chatID }, targetChat, context)
 
     if(mode === 'editdisplay'){
-        const currentChar = getCurrentCharacter()
+        const currentChar = targetCharacter
         if(currentChar){
             try{
                 const perf = performance.now()
                 const d = await runTrigger(currentChar, 'display', {
-                    chat: getCurrentChat(),
+                    chat: targetChat,
                     displayMode: true,
-                    displayData: data
+                    displayData: data,
+                    targetCharacter: currentChar,
+                    targetChat,
+                    moduleContext: context,
                 })
     
                 data = d?.displayData ?? data
@@ -131,8 +169,15 @@ export async function processScriptFull(char:character|simpleCharacterArgument, 
     }
 
     data = risuChatParser(data, { chatID: chatID, cbsConditions })
-    const scripts = (db.presetRegex ?? []).concat(char.customscript).concat(getModuleRegexScripts())
-    const hash = generateScriptCacheKey(scripts, data, mode, chatID, cbsConditions)
+    const scripts = (db.presetRegex ?? []).concat(char.customscript).concat(getModuleRegexScripts(context))
+    const runtimeScope = JSON.stringify([
+        targetCharacter.chaId,
+        targetChat?.id,
+        context?.userName,
+        context?.personaPrompt,
+        context?.modules?.map((module) => module.id),
+    ])
+    const hash = generateScriptCacheKey(scripts, data, mode, chatID, cbsConditions, risuChatParser, runtimeScope)
     const cached = getScriptCache(hash)
     if(cached){
         return {data: cached, emoChanged: false}
@@ -205,8 +250,7 @@ export async function processScriptFull(char:character|simpleCharacterArgument, 
                         }
                     }
                     else if((outScript.startsWith('@@inject') || pscript.actions.includes('inject')) && chatID !== -1){
-                        const selchar = db.characters[get(selectedCharID)]
-                        selchar.chats[selchar.chatPage].message[chatID].data = data
+                        if(targetChat?.message?.[chatID]) targetChat.message[chatID].data = data
                         data = data.replace(reg, "")
                     }
                     else if(
@@ -252,8 +296,8 @@ export async function processScriptFull(char:character|simpleCharacterArgument, 
                 else{
                     if((outScript.startsWith('@@repeat_back') || pscript.actions.includes('repeat_back'))  && chatID !== -1){
                         const v = outScript.split(' ', 2)[1]
-                        const selchar = db.characters[get(selectedCharID)]
-                        const chat = selchar.chats[selchar.chatPage]
+                        const selchar = targetCharacter
+                        const chat = targetChat
                         let lastChat = chat.fmIndex === -1 ? selchar.firstMessage : selchar.alternateGreetings[chat.fmIndex]
                         let pointer = chatID - 1
                         while(pointer >= 0){
@@ -351,7 +395,7 @@ export async function processScriptFull(char:character|simpleCharacterArgument, 
         }
         const assetNames = char.additionalAssets.map((v) => v[0])
 
-        const moduleAssets = getModuleAssets()
+        const moduleAssets = getModuleAssets(context)
         if(moduleAssets.length > 0){
             for(const asset of moduleAssets){
                 assetNames.push(asset[0])
@@ -365,7 +409,7 @@ export async function processScriptFull(char:character|simpleCharacterArgument, 
         for(const match of matches){
             const type = match[1]
             const assetName = match[2]
-            const cacheKey = char.chaId + '::' + assetName
+            const cacheKey = runtimeScope + '::' + assetName
             if(type !== 'emotion' && type !== 'source'){
                 if(bestMatchCache.has(cacheKey)){
                     data = data.replaceAll(match[0], `{{${type}::${bestMatchCache.get(cacheKey)}}}`)

@@ -1,6 +1,6 @@
 import { language } from "src/lang"
 import { alertClear, alertConfirm, alertError, alertModuleSelect, alertNormal, alertStore, alertWait, notifySuccess } from "../alert"
-import { getCurrentCharacter, getCurrentChat, getDatabase, setCurrentCharacter, setDatabase, type customscript, type loreBook, type triggerscript } from "../storage/database.svelte"
+import { getCurrentCharacter, getCurrentChat, getDatabase, setCurrentCharacter, setDatabase, type Chat, type character, type customscript, type loreBook, type RisuPersona, type triggerscript } from "../storage/database.svelte"
 import { AppendableBuffer, downloadFile, forageStorage, LocalWriter, readImage, saveAsset, VirtualWriter } from "../globalApi.svelte"
 import { checkPersonaBinded, selectSingleFile, sleep } from "../util"
 import { v4 } from "uuid"
@@ -11,7 +11,7 @@ import { HideIconStore, moduleBackgroundEmbedding, ReloadGUIPointer } from "../s
 import {get} from "svelte/store"
 import { convertCharacterToModule, convertModuleToCharacter } from "../interchangeability"
 import { exportCharacterCard, importCharacterProcess } from "../characterCards"
-import { collectModuleRuntimeUi } from "./moduleRuntime"
+import { collectModuleRuntimeIds, collectModuleRuntimeUi } from "./moduleRuntime"
 
 export interface MCPModule{
     url: string
@@ -33,6 +33,19 @@ export interface RisuModule{
     customModuleToggle?:string
     mcp?:MCPModule
     icon?:string
+    /** PocketRisu collection provenance. Ignored by upstream clients. */
+    sourceInfo?: import('../sourceCollection').SourceImportInfo
+}
+
+/** Stable module selection owned by one generation target. */
+export interface ModuleRuntimeContext {
+    character: character
+    chat: Chat
+    persona?: RisuPersona | null
+    userName?: string
+    personaPrompt?: string
+    /** Captured once before request awaits; prevents later UI/module toggles from changing this send. */
+    modules?: readonly RisuModule[]
 }
 
 export async function exportModule(module:RisuModule, arg:{
@@ -402,40 +415,62 @@ function deduplicateModuleById(modules:RisuModule[]){
 
 let lastModules = ''
 let lastModuleData:RisuModule[] = []
-export function getModules(){
-    const currentChat = getCurrentChat()
-    const character = getCurrentCharacter()
-    const persona = checkPersonaBinded()
+export function getModules(context?:ModuleRuntimeContext){
+    if(context?.modules) return [...context.modules]
+
+    const currentChat = context?.chat ?? getCurrentChat()
+    const character = context?.character ?? getCurrentCharacter()
     const db = getDatabase()
-    let ids = db.enabledModules ?? []
-    if (currentChat){
-        ids = ids.concat(currentChat.modules ?? [])
-    }
-    if(character && character.modules){
-        ids = ids.concat(character.modules)
-    }
-    if(persona && persona.embeddedModule){
-        ids = ids.concat([persona.embeddedModule?.id])
-    }
-    if(db.moduleIntergration){
-        const intList = db.moduleIntergration.split(',').map((s) => s.trim())
-        ids = ids.concat(intList)
-    }
+    const persona = context
+        ? (context.persona !== undefined
+            ? context.persona
+            : (currentChat.bindedPersona ? db.personas.find((value) => value.id === currentChat.bindedPersona) : null))
+        : checkPersonaBinded()
+    const ids = collectModuleRuntimeIds({
+        enabledModules: db.enabledModules,
+        chatModules: currentChat?.modules,
+        characterModules: character?.modules,
+        embeddedModuleId: persona?.embeddedModule?.id,
+        moduleIntegration: db.moduleIntergration,
+    })
     const idsJoined = ids.join('-')
-    if(lastModules === idsJoined){
+    // Explicit generation contexts deliberately bypass the UI cache. Two
+    // persona-embedded modules may share the conventional `$embedded` id, and
+    // a cache keyed only by ids would leak the previously selected persona.
+    if(!context && lastModules === idsJoined){
         return lastModuleData
     }
 
     let modules:RisuModule[] = getModuleByIds(ids)
-    lastModules = idsJoined
-    lastModuleData = modules
+    if(persona?.embeddedModule && ids.includes(persona.embeddedModule.id)
+        && !modules.some((module) => module === persona.embeddedModule)){
+        modules.push(persona.embeddedModule)
+    }
+    if(!context){
+        lastModules = idsJoined
+        lastModuleData = modules
+    }
     return modules
 
 }
 
+export function captureModuleRuntimeContext(character:character, chat:Chat):ModuleRuntimeContext {
+    const db = getDatabase()
+    const persona = chat.bindedPersona
+        ? db.personas.find((value) => value.id === chat.bindedPersona) ?? null
+        : db.personas?.[db.selectedPersona] ?? null
+    const context:ModuleRuntimeContext = {
+        character,
+        chat,
+        persona,
+        userName: persona?.name ?? db.username ?? 'User',
+        personaPrompt: persona?.personaPrompt ?? db.personaPrompt ?? '',
+    }
+    return { ...context, modules: getModules(context) }
+}
 
-export function getModuleLorebooks() {
-    const modules = getModules()
+export function getModuleLorebooks(context?:ModuleRuntimeContext) {
+    const modules = getModules(context)
     let lorebooks: loreBook[] = []
     for (const module of modules) {
         if(!module){
@@ -448,8 +483,8 @@ export function getModuleLorebooks() {
     return lorebooks
 }
 
-export function getModuleAssets() {
-    const modules = getModules()
+export function getModuleAssets(context?:ModuleRuntimeContext) {
+    const modules = getModules(context)
     let assets: [string,string,string][] = []
     for (const module of modules) {
         if(!module){
@@ -463,8 +498,8 @@ export function getModuleAssets() {
 }
 
 
-export function getModuleTriggers() {
-    const modules = getModules()
+export function getModuleTriggers(context?:ModuleRuntimeContext) {
+    const modules = getModules(context)
     let triggers: triggerscript[] = []
     for (const module of modules) {
         if(!module){
@@ -484,8 +519,8 @@ export function getModuleTriggers() {
     return triggers
 }
 
-export function getModuleRegexScripts() {
-    const modules = getModules()
+export function getModuleRegexScripts(context?:ModuleRuntimeContext) {
+    const modules = getModules(context)
     let customscripts: customscript[] = []
     for (const module of modules) {
         if(!module){
@@ -498,8 +533,8 @@ export function getModuleRegexScripts() {
     return customscripts
 }
 
-export function getModuleToggles() {
-    const modules = getModules()
+export function getModuleToggles(context?:ModuleRuntimeContext) {
+    const modules = getModules(context)
     let costomModuleToggles: string = ''
     for (const module of modules) {
         if(!module){
@@ -512,8 +547,8 @@ export function getModuleToggles() {
     return costomModuleToggles
 }
 
-export function getModuleMcps() {
-    const modules = getModules()
+export function getModuleMcps(context?:ModuleRuntimeContext) {
+    const modules = getModules(context)
 
     return modules.map((v) => v.mcp?.url).filter((v) => v)
 }

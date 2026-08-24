@@ -168,6 +168,12 @@ class ByteLruCache {
         return entry.value;
     }
 
+    // Inspection without changing recency. Used by the read-only asset doctor
+    // so a diagnosis does not perturb normal rendering's eviction order.
+    peek(key) {
+        return this.entries.get(key)?.value;
+    }
+
     set(key, value) {
         const data = toBuffer(value, 'cache value');
         this.delete(key);
@@ -285,6 +291,65 @@ function createFilesystemProvider(options = {}) {
                     `Could not stat external asset ${key}.`,
                     { cause: error, retryable: error && ['EBUSY', 'EMFILE', 'ENFILE'].includes(error.code) },
                 );
+            }
+        },
+
+        // Explicit repair path. Ordinary put() never overwrites an existing
+        // content-addressed object; repair instead preserves corrupt bytes in
+        // a quarantine sibling, installs verified bytes atomically, and rolls
+        // the old object back if installation fails.
+        async repair(hash, value) {
+            const key = normalizeHash(hash);
+            const data = verifyContent(value, key);
+            const destination = contentPath(rootDir, key);
+            await fsp.mkdir(path.dirname(destination), { recursive: true });
+            let quarantinePath = null;
+            try {
+                const existing = await fsp.readFile(destination).catch((error) => {
+                    if (error?.code === 'ENOENT') return null;
+                    throw error;
+                });
+                if (existing) {
+                    try {
+                        verifyContent(existing, key, data.length);
+                        return { hash: key, size: data.length, existed: true, repaired: false };
+                    } catch (error) {
+                        if (!(error instanceof ExternalAssetError) || !['HASH_MISMATCH', 'SIZE_MISMATCH'].includes(error.code)) {
+                            throw error;
+                        }
+                        quarantinePath = `${destination}.corrupt-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+                        await fsp.rename(destination, quarantinePath);
+                    }
+                }
+                try {
+                    await atomicWrite(destination, data);
+                    verifyContent(await fsp.readFile(destination), key, data.length);
+                } catch (error) {
+                    if (quarantinePath) {
+                        // atomicWrite never exposes a partial destination. If a
+                        // surprising destination exists, retain it as another
+                        // quarantine object rather than deleting bytes.
+                        const failed = await fsp.stat(destination).then(() => true).catch(() => false);
+                        if (failed) {
+                            await fsp.rename(destination, `${destination}.failed-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`);
+                        }
+                        await fsp.rename(quarantinePath, destination).catch(() => {});
+                    }
+                    throw error;
+                }
+                return {
+                    hash: key,
+                    size: data.length,
+                    existed: false,
+                    repaired: !!quarantinePath,
+                    quarantinePath,
+                };
+            } catch (error) {
+                if (error instanceof ExternalAssetError) throw error;
+                throw new ExternalAssetError('FILESYSTEM_REPAIR_FAILED', `Could not repair external asset ${key}.`, {
+                    cause: error,
+                    retryable: error && ['EBUSY', 'EMFILE', 'ENFILE'].includes(error.code),
+                });
             }
         },
 
@@ -624,6 +689,7 @@ function createExternalAssetService(options = {}) {
     }
     const trashDir = options.trashDir ? path.resolve(options.trashDir) : null;
     const readInternal = options.readInternal;
+    const statInternal = options.statInternal;
     const cache = options.cache || new ByteLruCache(options.cacheMaxBytes ?? 64 * 1024 * 1024);
     const retryOptions = { attempts: 3, ...options.retry };
     const now = options.now || (() => new Date().toISOString());
@@ -724,6 +790,42 @@ function createExternalAssetService(options = {}) {
         return { data: null, failures };
     }
 
+    async function inspectFallbacks(uri) {
+        const parsed = parseExternalAssetUri(uri);
+        const record = await manifest.get(parsed.uri);
+        const candidates = [];
+        for (const fallback of record && Array.isArray(record.fallbacks) ? record.fallbacks : []) {
+            if (fallback.trashPath && trashDir) {
+                try {
+                    const info = await fsp.stat(resolveInside(trashDir, fallback.trashPath));
+                    candidates.push({
+                        source: 'trash',
+                        available: info.isFile() && (!Number.isFinite(record.size) || info.size === record.size),
+                        size: info.size,
+                        internalKey: fallback.internalKey || null,
+                    });
+                } catch (error) {
+                    candidates.push({ source: 'trash', available: false, error: error?.code || error?.message || String(error) });
+                }
+            }
+            if (fallback.internalKey && typeof statInternal === 'function') {
+                try {
+                    const info = await statInternal(fallback.internalKey);
+                    const size = typeof info === 'number' ? info : info?.size;
+                    candidates.push({
+                        source: 'internal',
+                        available: Number.isFinite(size) && (!Number.isFinite(record.size) || size === record.size),
+                        size: Number.isFinite(size) ? size : null,
+                        internalKey: fallback.internalKey,
+                    });
+                } catch (error) {
+                    candidates.push({ source: 'internal', available: false, internalKey: fallback.internalKey, error: error?.code || error?.message || String(error) });
+                }
+            }
+        }
+        return candidates;
+    }
+
     async function readWithMeta(uri, readOptions = {}) {
         const parsed = parseExternalAssetUri(uri);
         const cached = readOptions.bypassCache ? undefined : cache.get(parsed.uri);
@@ -731,7 +833,7 @@ function createExternalAssetService(options = {}) {
         const record = await manifest.get(parsed.uri);
         try {
             const data = await readExternalOnly(parsed, record);
-            cache.set(parsed.uri, data);
+            if (readOptions.populateCache !== false) cache.set(parsed.uri, data);
             return { data, source: 'external', uri: parsed.uri };
         } catch (externalError) {
             if (readOptions.allowFallback === false) throw externalError;
@@ -995,6 +1097,61 @@ function createExternalAssetService(options = {}) {
         return results;
     }
 
+    /**
+     * Recreate an unavailable external object from an already recorded
+     * internal/trash fallback. The fallback bytes are verified against the
+     * immutable hash in the URI before the provider is touched, and the write
+     * is re-downloaded and verified before the manifest is marked healthy.
+     * This never changes a Risu database reference or deletes a fallback.
+     */
+    async function repairFromFallback(uri) {
+        const parsed = parseExternalAssetUri(uri);
+        const record = await manifest.get(parsed.uri);
+        if (!record) {
+            throw new ExternalAssetError('ASSET_NOT_IN_MANIFEST', `Manifest entry missing for ${parsed.uri}.`);
+        }
+        const provider = providerFor(parsed.providerId, 'write');
+        providerFor(parsed.providerId, 'read');
+        const fallback = await tryFallbacks(parsed, record);
+        if (!fallback.data) {
+            throw new ExternalAssetError('FALLBACK_UNAVAILABLE', `No verified fallback is available for ${parsed.uri}.`, {
+                details: { fallbackFailures: fallback.failures },
+            });
+        }
+
+        // tryFallbacks() has already checked the hash and size. Do it once more
+        // at this trust boundary so a future fallback implementation cannot
+        // accidentally turn this into a blind overwrite.
+        const data = verifyContent(fallback.data, parsed.hash, record.size);
+        cache.delete(parsed.uri);
+        const providerResult = await callProvider(provider, () => (
+            typeof provider.repair === 'function'
+                ? provider.repair(parsed.hash, data, { mimeType: record.mimeType })
+                : provider.put(parsed.hash, data, { mimeType: record.mimeType })
+        ));
+        const downloaded = await callProvider(provider, () => provider.get(parsed.hash));
+        verifyContent(downloaded, parsed.hash, record.size);
+
+        const repairedAt = now();
+        const entry = await manifest.upsert(parsed.uri, (current) => ({
+            ...(current || record),
+            status: 'verified',
+            repairedAt,
+            lastVerifiedAt: repairedAt,
+            size: data.length,
+        }));
+        cache.set(parsed.uri, downloaded);
+        return {
+            uri: parsed.uri,
+            hash: parsed.hash,
+            size: data.length,
+            source: fallback.source,
+            providerResult,
+            repairedAt,
+            entry,
+        };
+    }
+
     async function purgeTrashMany(uris, purgeOptions = {}) {
         if (purgeOptions.userVerified !== true) {
             throw new ExternalAssetError(
@@ -1098,9 +1255,15 @@ function createExternalAssetService(options = {}) {
         stageMany,
         verify,
         verifyMany,
+        repairFromFallback,
+        inspectFallbacks,
         purgeTrash,
         purgeTrashMany,
         readWithMeta,
+        invalidateCache(uri) {
+            const parsed = parseExternalAssetUri(uri);
+            return cache.delete(parsed.uri);
+        },
         async read(uri, readOptions) {
             return (await readWithMeta(uri, readOptions)).data;
         },

@@ -13,6 +13,7 @@ import {
     resolvePresetMaxOutputTokens,
     resolveChatMaxResponseTokens,
     applyPromptPresetParams,
+    captureChatModelRoute,
 } from './modelPresetBinding'
 import { emptyModelBinding } from 'src/ts/preset/types'
 
@@ -75,6 +76,55 @@ describe('resolveChatModelBinding — regime gate', () => {
         mockDb.nodeOnlyModelModeLock = 'preset'
         const chat = { useModelPreset: false, modelBinding: undefined } as any
         expect(resolveChatModelBinding(chat, 'model')).toEqual({ kind: 'block', reason: 'main-unset' })
+    })
+})
+
+describe('captureChatModelRoute — in-flight routing snapshot', () => {
+    test('deep-snapshots a model preset so later edits cannot redirect the request', () => {
+        const preset = {
+            id: 'route-preset',
+            name: 'Route',
+            profileSnapshot: {
+                providerBaseId: 'openai',
+                modelId: 'gpt-before',
+                schema: [],
+                defaults: {},
+            },
+            userValues: { endpoint: 'https://before.invalid' },
+        } as any
+        mockDb.modelPresets = [preset]
+        mockDb.fallbackModels = { model: ['fallback-before'] }
+        const chat = { useModelPreset: true, modelBinding: bindingWith('route-preset') } as any
+
+        const snapshot = captureChatModelRoute(chat, 'model')
+        preset.profileSnapshot.modelId = 'gpt-after'
+        preset.userValues.endpoint = 'https://after.invalid'
+        mockDb.fallbackModels.model[0] = 'fallback-after'
+
+        expect(snapshot).toMatchObject({
+            kind: 'modelPreset',
+            presetId: 'route-preset',
+            providerKey: 'preset:openai',
+            modelId: 'gpt-before',
+            fallbackModels: ['fallback-before'],
+        })
+        if (snapshot.kind === 'modelPreset') {
+            expect(snapshot.preset.userValues.endpoint).toBe('https://before.invalid')
+        }
+    })
+
+    test('captures the effective classic model instead of following later preset switches', () => {
+        mockDb.aiModel = 'classic-before'
+        mockDb.subModel = 'sub-before'
+        mockDb.seperateModelsForAxModels = false
+        mockDb.fallbackModels = { model: [] }
+        const snapshot = captureChatModelRoute({ useModelPreset: false } as any, 'model')
+        mockDb.aiModel = 'classic-after'
+        expect(snapshot).toMatchObject({
+            kind: 'classic',
+            aiModel: 'classic-before',
+            providerKey: 'classic:classic-before',
+        })
     })
 })
 

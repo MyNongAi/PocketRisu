@@ -1,5 +1,26 @@
 import { describe, expect, test } from 'vitest'
-import { collectModuleRuntimeUi } from './moduleRuntime'
+import { collectModuleRuntimeIds, collectModuleRuntimeUi } from './moduleRuntime'
+
+describe('collectModuleRuntimeIds', () => {
+    test('keeps simultaneous chat targets independent of the selected UI chat', () => {
+        const common = { enabledModules: ['global'], moduleIntegration: 'integrated' }
+        const chatA = collectModuleRuntimeIds({
+            ...common,
+            chatModules: ['chat-a'],
+            characterModules: ['character-a'],
+            embeddedModuleId: 'persona-a',
+        })
+        const chatB = collectModuleRuntimeIds({
+            ...common,
+            chatModules: ['chat-b'],
+            characterModules: ['character-b'],
+            embeddedModuleId: 'persona-b',
+        })
+
+        expect(chatA).toEqual(['global', 'chat-a', 'character-a', 'persona-a', 'integrated'])
+        expect(chatB).toEqual(['global', 'chat-b', 'character-b', 'persona-b', 'integrated'])
+    })
+})
 
 describe('collectModuleRuntimeUi', () => {
     test('returns an empty background after the final embedding is removed', () => {

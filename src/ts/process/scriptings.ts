@@ -2,9 +2,9 @@ import { asBuffer } from 'src/ts/util';
 import { getChatVar, getGlobalChatVar, setChatVar } from "../parser/chatVar.svelte";
 import { hasher, type simpleCharacterArgument, risuChatParser } from "../parser/parser.svelte";
 import { LuaEngine, LuaFactory } from "wasmoon";
-import { getCurrentCharacter, getCurrentChat, getDatabase, setDatabase, type Chat, type character, type triggerscript } from "../storage/database.svelte";
+import { getCurrentCharacter, getCurrentChat, getDatabase, type Chat, type character, type triggerscript } from "../storage/database.svelte";
 import { get } from "svelte/store";
-import { ReloadChatPointer, ReloadGUIPointer, selectedCharID } from "../stores.svelte";
+import { ReloadChatPointer, ReloadGUIPointer } from "../stores.svelte";
 import { alertSelect, alertError, alertInput, alertNormal, alertConfirm } from "../alert";
 import { HypaProcesser } from "./memory/hypamemory";
 import { generateAIImage } from "./stableDiff";
@@ -12,7 +12,7 @@ import { writeInlayImage, getInlayAsset } from "./files/inlays";
 import type { OpenAIChat, MultiModal } from "./index.svelte";
 import { requestChatData, type StreamResponseChunk } from "./request/request";
 import { v4 } from "uuid";
-import { getModuleLorebooks, getModuleTriggers } from "./modules";
+import { getModuleLorebooks, getModuleTriggers, type ModuleRuntimeContext } from "./modules";
 import { Mutex } from "../mutex";
 import { tokenize } from "../tokenizer";
 import { fetchNative, readImage } from "../globalApi.svelte";
@@ -29,6 +29,8 @@ interface BasicScriptingEngineState {
     code?: string;
     mutex: Mutex;
     chat?: Chat;
+    char?: character|simpleCharacterArgument;
+    moduleContext?: ModuleRuntimeContext;
     setVar?: (key:string, value:string) => void,
     getVar?: (key:string) => string,
     /**
@@ -67,16 +69,17 @@ export async function runScripted(code:string, arg:{
     mode?: string,
     type?: 'lua'|'py',
     moduleId?: string
+    moduleContext?: ModuleRuntimeContext
 }){
     const type: 'lua'|'py' = arg.type ?? 'lua'
-    const char = arg.char ?? getCurrentCharacter()
+    const char = arg.char ?? arg.moduleContext?.character ?? getCurrentCharacter()
     const data = arg.data ?? ''
     const setVar = arg.setVar ?? setChatVar
     const getVar = arg.getVar ?? getChatVar
     const meta = arg.meta ?? {}
     const mode = arg.mode ?? 'manual'
 
-    let chat = arg.chat ?? getCurrentChat()
+    let chat = arg.chat ?? arg.moduleContext?.chat ?? getCurrentChat()
     let stopSending = false
     let lowLevelAccess = arg.lowLevelAccess ?? false
 
@@ -87,9 +90,23 @@ export async function runScripted(code:string, arg:{
     
     return await ScriptingEngineState.mutex.runExclusive(async () => {
         ScriptingEngineState.moduleId = arg.moduleId
+        ScriptingEngineState.moduleContext = arg.moduleContext
+        ScriptingEngineState.char = char
         ScriptingEngineState.chat = chat
         ScriptingEngineState.setVar = setVar
         ScriptingEngineState.getVar = getVar
+        const runtimeCharacter = (): character | null => {
+            const value = ScriptingEngineState.char
+            return value && value.type !== 'simple' ? value as character : null
+        }
+        const runtimeChat = (): Chat | null => ScriptingEngineState.chat ?? null
+        const runtimeParserArgs = () => ({
+            chara: runtimeCharacter() ?? ScriptingEngineState.moduleContext?.character ?? getCurrentCharacter(),
+            chat: runtimeChat() ?? undefined,
+            userName: ScriptingEngineState.moduleContext?.userName,
+            personaPrompt: ScriptingEngineState.moduleContext?.personaPrompt,
+            modules: ScriptingEngineState.moduleContext?.modules,
+        })
         if (code !== ScriptingEngineState.code) {
             let declareAPI:(name: string, func:Function) => void
 
@@ -252,7 +269,7 @@ export async function runScripted(code:string, arg:{
             })
 
             declareAPI('cbs', (value) => {
-                return risuChatParser(value, { chara: getCurrentCharacter() })
+                return risuChatParser(value, runtimeParserArgs())
             })
             
             declareAPI('setFullChatMain', (id:string, value:string) => {
@@ -385,14 +402,7 @@ export async function runScripted(code:string, arg:{
 
             declareAPI('getCharacterImageMain', async (id:string) => {
                 try {
-                    const db = getDatabase()
-                    const selectedChar = get(selectedCharID)
-
-                    if (selectedChar < 0 || selectedChar >= db.characters.length) {
-                        return ''
-                    }
-
-                    const character = db.characters[selectedChar]
+                    const character = runtimeCharacter()
                     
                     if (!character || !character.image) {
                         return ''
@@ -419,7 +429,7 @@ export async function runScripted(code:string, arg:{
 
             declareAPI('getPersonaImageMain', async (id:string) => {
                 try {
-                    const icon = getUserIcon()
+                    const icon = ScriptingEngineState.moduleContext?.persona?.icon ?? getUserIcon()
 
                     if(!icon) {
                         return ''
@@ -554,6 +564,9 @@ export async function runScripted(code:string, arg:{
                     forceStreaming: options.streaming === true,
                     noMultiGen: true,
                     moduleId: ScriptingEngineState.moduleId,
+                    currentChar: runtimeCharacter() ?? undefined,
+                    currentChat: runtimeChat() ?? undefined,
+                    moduleContext: ScriptingEngineState.moduleContext,
                 }, 'model')
 
                 if(result.type === 'fail'){
@@ -603,6 +616,9 @@ export async function runScripted(code:string, arg:{
                     useStreaming: false,
                     noMultiGen: true,
                     moduleId: ScriptingEngineState.moduleId,
+                    currentChar: runtimeCharacter() ?? undefined,
+                    currentChat: runtimeChat() ?? undefined,
+                    moduleContext: ScriptingEngineState.moduleContext,
                 }, 'model')
 
                 if(result.type === 'fail'){
@@ -626,80 +642,62 @@ export async function runScripted(code:string, arg:{
             })
             
             declareAPI('getName', (id:string) => {
-                const db = getDatabase()
-                const selectedChar = get(selectedCharID)
-                const char = db.characters[selectedChar]
-                return char.name
+                return runtimeCharacter()?.name ?? ''
             })
 
             declareAPI('setName', (id:string, name:string) => {
                 if(!ScriptingSafeIds.has(id)){
                     return
                 }
-                const db = getDatabase()
-                const selectedChar = get(selectedCharID)
                 if(typeof name !== 'string'){
                     throw('Invalid data type')
                 }
-                db.characters[selectedChar].name = name
+                const target = runtimeCharacter()
+                if(target) target.name = name
             })
 
             declareAPI('getDescription', (id:string) => {
                 if(!ScriptingSafeIds.has(id)){
                     return
                 }
-                const db = getDatabase()
-                const selectedChar = get(selectedCharID)
-                const char = db.characters[selectedChar]
-                return char.desc
+                return runtimeCharacter()?.desc ?? ''
             })
 
             declareAPI('setDescription', (id:string, desc:string) => {
                 if(!ScriptingSafeIds.has(id)){
                     return
                 }
-                const db = getDatabase()
-                const selectedChar = get(selectedCharID)
-                const char =db.characters[selectedChar]
-                if(typeof data !== 'string'){
+                const target = runtimeCharacter()
+                if(typeof desc !== 'string'){
                     throw('Invalid data type')
                 }
-                char.desc = desc
-                db.characters[selectedChar] = char
+                if(target) target.desc = desc
             })
 
             declareAPI('getCharacterFirstMessage', (id:string) => {
-                const db = getDatabase()
-                const selectedChar = get(selectedCharID)
-                const char = db.characters[selectedChar]
-                return char.firstMessage
+                return runtimeCharacter()?.firstMessage ?? ''
             })
 
             declareAPI('setCharacterFirstMessage', (id:string, data:string) => {
                 if(!ScriptingSafeIds.has(id)){
                     return
                 }
-                const db = getDatabase()
-                const selectedChar = get(selectedCharID)
-                const char = db.characters[selectedChar]
                 if(typeof data !== 'string'){
                     return false
                 }
-                char.firstMessage = data
-                db.characters[selectedChar] = char
+                const target = runtimeCharacter()
+                if(!target) return false
+                target.firstMessage = data
                 return true
             })
 
             declareAPI('getPersonaName', (id:string) => {
-                return getUserName()
+                return ScriptingEngineState.moduleContext?.userName ?? getUserName()
             })
 
             declareAPI('getPersonaDescription', (id:string) => {
-                const db = getDatabase()
-                const selectedChar = get(selectedCharID)
-                const char = db.characters[selectedChar]
-
-                return risuChatParser(getPersonaPrompt(), { chara: char })
+                const prompt = ScriptingEngineState.moduleContext?.personaPrompt ?? getPersonaPrompt()
+                return risuChatParser(prompt, runtimeParserArgs())
             })
 
             declareAPI('getAuthorsNote', (id:string) => {
@@ -710,44 +708,41 @@ export async function runScripted(code:string, arg:{
                 if(!ScriptingSafeIds.has(id)){
                     return
                 }
-                const db = getDatabase()
-                const selectedChar = get(selectedCharID)
-                const char = db.characters[selectedChar]
-                return char.backgroundHTML
+                return runtimeCharacter()?.backgroundHTML ?? ''
             })
 
             declareAPI('setBackgroundEmbedding', (id:string, data:string) => {
                 if(!ScriptingSafeIds.has(id)){
                     return
                 }
-                const db = getDatabase()
-                const selectedChar = get(selectedCharID)
                 if(typeof data !== 'string'){
                     return false
                 }
-                db.characters[selectedChar].backgroundHTML = data
+                const target = runtimeCharacter()
+                if(!target) return false
+                target.backgroundHTML = data
                 return true
             })
 
             // Lore books
             declareAPI('getLoreBooksMain', (id:string, search:string) => {
-                const db = getDatabase()
-                const selectedChar = db.characters[get(selectedCharID)]
-                if (selectedChar.type !== 'character') {
+                const selectedChar = runtimeCharacter()
+                const selectedChat = runtimeChat()
+                if (!selectedChar || !selectedChat) {
                     return
                 }
 
                 const loreSources = [
-                    selectedChar.chats[selectedChar.chatPage]?.localLore ?? [],
+                    selectedChat.localLore ?? [],
                     selectedChar.globalLore,
-                    getModuleLorebooks()
+                    getModuleLorebooks(ScriptingEngineState.moduleContext)
                 ]
 
                 const found = []
                 for (const source of loreSources) {
                     for (const b of source) {
                         if (b.comment === search) {
-                            found.push({ ...b, content: risuChatParser(b.content, { chara: selectedChar }) })
+                            found.push({ ...b, content: risuChatParser(b.content, runtimeParserArgs()) })
                         }
                     }
                 }
@@ -803,14 +798,12 @@ export async function runScripted(code:string, arg:{
                 }
 
                 const db = getDatabase()
-
-                const selectedChar = db.characters[get(selectedCharID)]
-
-                if (selectedChar.type !== 'character') {
+                const selectedChar = runtimeCharacter()
+                if (!selectedChar) {
                     return
                 }
 
-                const fullLoreBooks = (await loadLoreBookV3Prompt()).actives
+                const fullLoreBooks = (await loadLoreBookV3Prompt(ScriptingEngineState.moduleContext)).actives
                 const maxContext = db.maxContext - reserve
                 if (maxContext < 0) {
                     return JSON.stringify([])
@@ -820,7 +813,7 @@ export async function runScripted(code:string, arg:{
                 const loreBooks = []
 
                 for (const book of fullLoreBooks) {
-                    const parsed = risuChatParser(book.prompt, { chara: selectedChar }).trim()
+                    const parsed = risuChatParser(book.prompt, runtimeParserArgs()).trim()
                     if (parsed.length === 0) {
                         continue
                     }
@@ -916,6 +909,9 @@ export async function runScripted(code:string, arg:{
                     forceStreaming: options.streaming === true,
                     noMultiGen: true,
                     moduleId: ScriptingEngineState.moduleId,
+                    currentChar: runtimeCharacter() ?? undefined,
+                    currentChat: runtimeChat() ?? undefined,
+                    moduleContext: ScriptingEngineState.moduleContext,
                 }, 'otherAx')
 
                 if(result.type === 'fail'){
@@ -958,8 +954,7 @@ export async function runScripted(code:string, arg:{
                     return ''
                 }
 
-                const db = getDatabase()
-                const selchar = db.characters[get(selectedCharID)]
+                const selchar = runtimeCharacter()
 
                 let pointer = chat.message.length - 1
                 while (pointer >= 0) {
@@ -970,7 +965,7 @@ export async function runScripted(code:string, arg:{
                     pointer--
                 }
 
-                return selchar.firstMessage
+                return selchar?.firstMessage ?? ''
             })
 
             declareAPI('getUserLastMessage', (id: string) => {
@@ -997,8 +992,7 @@ export async function runScripted(code:string, arg:{
                     return ''
                 }
 
-                const db = getDatabase()
-                const selchar = db.characters[get(selectedCharID)]
+                const selchar = runtimeCharacter()
 
                 let pointer = chat.message.length - 1
                 while (pointer >= 0) {
@@ -1009,7 +1003,7 @@ export async function runScripted(code:string, arg:{
                     pointer--
                 }
 
-                return selchar.firstMessage
+                return selchar?.firstMessage ?? ''
             })
 
             declareAPI('getUserLastMessage', (id: string) => {
@@ -1373,7 +1367,14 @@ ${code}
 `
 }
 
-export async function runLuaEditTrigger<T extends string|OpenAIChat[]>(char:character|simpleCharacterArgument, mode:string, content:T, meta?:object):Promise<T>{
+export async function runLuaEditTrigger<T extends string|OpenAIChat[]>(
+    char:character|simpleCharacterArgument,
+    mode:string,
+    content:T,
+    meta?:object,
+    chat?:Chat,
+    moduleContext?:ModuleRuntimeContext,
+):Promise<T>{
     switch(mode){
         case 'editinput':
             mode = 'editInput'
@@ -1394,16 +1395,19 @@ export async function runLuaEditTrigger<T extends string|OpenAIChat[]>(char:char
         const triggers = char.triggerscript.map((v) => {
             v.lowLevelAccess = false
             return v
-        }).concat(getModuleTriggers())
+        }).concat(getModuleTriggers(moduleContext))
     
         for(let trigger of triggers){
             if(trigger?.effect?.[0]?.type === 'triggerlua'){
                 const runResult = await runScripted(trigger.effect[0].code, {
                     char: char,
+                    chat,
                     lowLevelAccess: false,
                     mode: mode,
                     data,
                     meta,
+                    moduleId: trigger.moduleId,
+                    moduleContext,
                 })
                 data = runResult.res ?? data
             }
