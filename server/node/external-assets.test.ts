@@ -148,6 +148,18 @@ describe('filesystem provider', () => {
         await expect(Promise.all(Array.from({ length: 8 }, () => provider.put(hash, data)))).resolves.toHaveLength(8)
         await expect(provider.get(hash)).resolves.toEqual(data)
     })
+
+    it('can preserve same-volume trash as a hard link without duplicating payload blocks', async () => {
+        const root = tempDir('external-provider')
+        const provider = createFilesystemProvider({ id: 'local', rootDir: root })
+        const data = Buffer.from('hard-linked recovery bytes')
+        const hash = sha256(data)
+        await provider.put(hash, data)
+        const linked = path.join(root, 'trash', 'recovery.bin')
+        await expect(provider.linkTo(hash, linked)).resolves.toBe(true)
+        expect(fs.readFileSync(linked)).toEqual(data)
+        expect(fs.statSync(linked).nlink).toBeGreaterThanOrEqual(2)
+    })
 })
 
 describe('HTTP provider', () => {

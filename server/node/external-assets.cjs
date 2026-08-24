@@ -223,7 +223,7 @@ function createFilesystemProvider(options = {}) {
     return {
         id,
         type: 'filesystem',
-        capabilities: Object.freeze({ read: true, write: true, stat: true, directUrl: false, androidSaf: false }),
+        capabilities: Object.freeze({ read: true, write: true, stat: true, directUrl: false, androidSaf: false, hardLinkTrash: true }),
 
         async get(hash) {
             const key = normalizeHash(hash);
@@ -285,6 +285,29 @@ function createFilesystemProvider(options = {}) {
                     `Could not stat external asset ${key}.`,
                     { cause: error, retryable: error && ['EBUSY', 'EMFILE', 'ENFILE'].includes(error.code) },
                 );
+            }
+        },
+
+        // A trash entry on the same filesystem can be another directory entry
+        // for the already verified content-addressed file. This preserves an
+        // independently deletable recovery path without duplicating tens of GB.
+        async linkTo(hash, destination) {
+            const key = normalizeHash(hash);
+            const source = contentPath(rootDir, key);
+            await fsp.mkdir(path.dirname(destination), { recursive: true });
+            try {
+                await fsp.link(source, destination);
+                return true;
+            } catch (error) {
+                if (error?.code === 'EEXIST') {
+                    verifyContent(await fsp.readFile(destination), key);
+                    return true;
+                }
+                if (['EXDEV', 'EPERM', 'ENOTSUP', 'EOPNOTSUPP'].includes(error?.code)) return false;
+                throw new ExternalAssetError('FILESYSTEM_LINK_FAILED', `Could not hard-link external asset ${key} into trash.`, {
+                    cause: error,
+                    retryable: error && ['EBUSY', 'EMFILE', 'ENFILE'].includes(error.code),
+                });
             }
         },
     };
@@ -637,12 +660,16 @@ function createExternalAssetService(options = {}) {
         return path.join(providerId, hash.slice(0, 2), `${hash}-${sourceDigest}.bin`).replace(/\\/g, '/');
     }
 
-    async function writeTrash(providerId, hash, internalKey, data) {
+    async function writeTrash(provider, providerId, hash, internalKey, data) {
         if (!trashDir) {
             throw new ExternalAssetError('TRASH_UNAVAILABLE', 'A trashDir is required before migration staging.');
         }
         const relativePath = trashRelativePath(providerId, hash, internalKey);
         const destination = resolveInside(trashDir, relativePath);
+        if (typeof provider?.linkTo === 'function') {
+            const linked = await provider.linkTo(hash, destination);
+            if (linked) return relativePath;
+        }
         const existing = await fsp.readFile(destination).catch((error) => {
             if (error && error.code === 'ENOENT') return null;
             throw error;
@@ -776,7 +803,7 @@ function createExternalAssetService(options = {}) {
         await callProvider(provider, () => provider.put(hash, data, { mimeType: stageOptions.mimeType }));
         const downloaded = await callProvider(provider, () => provider.get(hash));
         verifyContent(downloaded, hash, data.length);
-        const trashPath = await writeTrash(providerId, hash, internalKey, data);
+        const trashPath = await writeTrash(provider, providerId, hash, internalKey, data);
         const timestamp = now();
 
         return {
@@ -838,10 +865,46 @@ function createExternalAssetService(options = {}) {
 
     async function stage(stageOptions = {}) {
         const prepared = await prepareStage(stageOptions);
-
-        const entry = await manifest.upsert(prepared.uri, stagedManifestUpdater(prepared));
+        const [published] = await publishStaged([prepared]);
+        const entry = published.entry;
         cache.set(prepared.uri, prepared.downloaded);
         return { uri: prepared.uri, hash: prepared.hash, size: prepared.size, entry };
+    }
+
+    // Upload, re-download verify, and write the recoverable trash copy without
+    // growing the manifest yet. Large resumable migrations persist this small
+    // receipt in their SQLite journal and publish every mapping once, together
+    // with the final DB reference rewrite. This avoids rewriting a hundreds-of-
+    // MB JSON manifest for every small transfer batch.
+    async function stageDetached(stageOptions = {}) {
+        const { downloaded: _downloaded, ...prepared } = await prepareStage(stageOptions);
+        return cloneJson(prepared);
+    }
+
+    async function publishStaged(preparedEntries) {
+        if (!Array.isArray(preparedEntries)) {
+            throw new ExternalAssetError('INVALID_STAGE_BATCH', 'publishStaged requires an array of staged receipts.');
+        }
+        if (preparedEntries.length === 0) return [];
+        const normalized = preparedEntries.map((prepared) => ({
+            ...prepared,
+            manifestMetadata: prepared?.manifestMetadata || {},
+            migrationIds: Array.isArray(prepared?.migrationIds) ? prepared.migrationIds : [],
+        }));
+        const entries = await upsertManifestEntries(normalized.map((prepared) => ({
+            uri: prepared.uri,
+            updater: stagedManifestUpdater(prepared),
+        })));
+        const finalEntries = new Map();
+        for (let index = entries.length - 1; index >= 0; index--) {
+            if (!finalEntries.has(entries[index].uri)) finalEntries.set(entries[index].uri, entries[index]);
+        }
+        return normalized.map((prepared) => ({
+            uri: prepared.uri,
+            hash: prepared.hash,
+            size: prepared.size,
+            entry: cloneJson(finalEntries.get(prepared.uri)),
+        }));
     }
 
     // The iterable form lets migrations read and release one large internal
@@ -862,20 +925,7 @@ function createExternalAssetService(options = {}) {
         }
         if (preparedEntries.length === 0) return [];
 
-        const entries = await upsertManifestEntries(preparedEntries.map((prepared) => ({
-            uri: prepared.uri,
-            updater: stagedManifestUpdater(prepared),
-        })));
-        const finalEntries = new Map();
-        for (let index = entries.length - 1; index >= 0; index--) {
-            if (!finalEntries.has(entries[index].uri)) finalEntries.set(entries[index].uri, entries[index]);
-        }
-        return preparedEntries.map((prepared) => ({
-            uri: prepared.uri,
-            hash: prepared.hash,
-            size: prepared.size,
-            entry: cloneJson(finalEntries.get(prepared.uri)),
-        }));
+        return publishStaged(preparedEntries);
     }
 
     async function verify(uri) {
@@ -1043,6 +1093,8 @@ function createExternalAssetService(options = {}) {
         manifest,
         providers,
         stage,
+        stageDetached,
+        publishStaged,
         stageMany,
         verify,
         verifyMany,

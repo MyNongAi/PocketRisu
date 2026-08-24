@@ -73,6 +73,12 @@ export type toSaveType = {
     root: boolean;
     botPreset: boolean;
     modules: boolean;
+    /**
+     * Exact module ids dirtied since the last save. `null` means the array was
+     * structurally changed (or the ids were unsafe), while `undefined` keeps
+     * legacy callers on the conservative full-scan path.
+     */
+    moduleIds?: string[] | null;
     plugins: boolean;
     pluginCustomStorage: boolean;
 }
@@ -859,6 +865,36 @@ export class RisuSavePatcher {
     private lastModuleJsons = new Map<string, string>();
     private moduleItemHashes = new Map<string, number>();
 
+    /**
+     * Create an isolated patch calculation draft without deep-cloning the DB.
+     * `set()` replaces array slots/whole blocks but never mutates baseline item
+     * objects in place, so copying the top-level DB, mutable arrays, hash table
+     * and Maps is sufficient copy-on-write isolation. This is intentionally
+     * O(number of characters/modules), not O(total nested DB bytes).
+     *
+     * Callers must publish the returned draft only after the server accepts the
+     * patch. Discarding it leaves this patcher's expected hash and baselines
+     * untouched for an identical retry after a network failure.
+     */
+    fork(): RisuSavePatcher {
+        const draft = new RisuSavePatcher()
+        const baseline = this.lastSyncedDb
+        draft.lastSyncedDb = baseline && typeof baseline === 'object'
+            ? {
+                ...baseline,
+                characters: Array.isArray(baseline.characters) ? [...baseline.characters] : [],
+                botPresets: Array.isArray(baseline.botPresets) ? [...baseline.botPresets] : baseline.botPresets,
+                modules: Array.isArray(baseline.modules) ? [...baseline.modules] : baseline.modules,
+            }
+            : baseline
+        draft.hashBlocks = { ...this.hashBlocks }
+        draft.lastRootKeyJsons = new Map(this.lastRootKeyJsons)
+        draft.lastCharJsons = new Map(this.lastCharJsons)
+        draft.lastModuleJsons = new Map(this.lastModuleJsons)
+        draft.moduleItemHashes = new Map(this.moduleItemHashes)
+        return draft
+    }
+
     hash(): string {
         this.hashBlocks['characters'] = SEED_ARRAY;
         for (const character of this.lastSyncedDb.characters) {
@@ -1051,9 +1087,18 @@ export class RisuSavePatcher {
                     }
                 }
             } else {
+                // New save tracking supplies exact dirty ids. Legacy callers
+                // omit the hint and deliberately retain the old full scan.
+                // A structural/unsafe change uses null and is handled above.
+                const hintedModuleIds = Array.isArray(toSave.moduleIds)
+                    ? new Set(toSave.moduleIds)
+                    : null
                 // Same structure (all ids valid, string-typed, aligned) → element-wise.
                 for (let i = 0; i < curModulesArr.length; i++) {
                     const id = curModulesArr[i].id
+                    if (hintedModuleIds && !hintedModuleIds.has(id)) {
+                        continue
+                    }
                     let curModJson: string | null = null
                     try { curModJson = JSON.stringify(curModulesArr[i]) } catch { curModJson = null }
                     if (curModJson !== null && curModJson === this.lastModuleJsons.get(id) && this.moduleItemHashes.has(id)) {

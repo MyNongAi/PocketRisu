@@ -7,14 +7,15 @@
     import Help from "src/lib/Others/Help.svelte";
     import TextAreaInput from "src/lib/UI/GUI/TextAreaInput.svelte";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
-    import { alertConfirm, alertSelect } from "src/ts/alert";
+    import { alertConfirm, alertError, alertSelect } from "src/ts/alert";
     import { getCharImage } from "src/ts/characters";
-    import { changeUserPersona, exportUserPersona, importUserPersona, saveUserPersona, selectUserImg } from "src/ts/persona";
+    import { changeUserPersona, exportUserPersona, importUserPersona, saveUserPersona, selectUserImg, setUserPersonaImage } from "src/ts/persona";
     import Sortable from 'sortablejs/modular/sortable.core.esm.js';
     import { onDestroy, onMount } from "svelte";
     import { sleep, sortableOptions } from "src/ts/util";
     import { DBState } from 'src/ts/stores.svelte';
     import { requestImmediateSave } from "src/ts/globalApi.svelte";
+    import { MAX_PERSONA_IMAGE_BYTES } from "src/ts/personaImage";
     import { v4 } from "uuid"
 
     // selectedPersona can point past the array (persona removed by a plugin or
@@ -27,6 +28,45 @@
     let ele: HTMLDivElement = $state()
     let sorted = $state(0)
     let selectedId:string = null
+    let personaImageDropTarget = $state<number | null>(null)
+
+    function isFileDrag(event: DragEvent) {
+        return Array.from(event.dataTransfer?.types ?? []).includes('Files')
+    }
+
+    function markPersonaImageDrop(event: DragEvent, personaIndex: number) {
+        if (!isFileDrag(event)) return
+        event.preventDefault()
+        event.stopPropagation()
+        if (event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+        personaImageDropTarget = personaIndex
+    }
+
+    function clearPersonaImageDrop(event: DragEvent, personaIndex: number) {
+        const relatedTarget = event.relatedTarget
+        if (relatedTarget instanceof Node && (event.currentTarget as HTMLElement).contains(relatedTarget)) return
+        if (personaImageDropTarget === personaIndex) personaImageDropTarget = null
+    }
+
+    async function dropPersonaImage(event: DragEvent, personaIndex: number) {
+        const file = event.dataTransfer?.files?.[0]
+        if (!file) return
+
+        event.preventDefault()
+        event.stopPropagation()
+        personaImageDropTarget = null
+
+        try {
+            if (file.size > MAX_PERSONA_IMAGE_BYTES) {
+                const maxMegabytes = Math.floor(MAX_PERSONA_IMAGE_BYTES / (1024 * 1024))
+                throw new Error(`Persona image must be ${maxMegabytes} MB or smaller`)
+            }
+            await setUserPersonaImage(new Uint8Array(await file.arrayBuffer()), personaIndex)
+        } catch (error) {
+            alertError(error)
+        }
+    }
+
     const createStb = () => {
         stb = Sortable.create(ele, {
             onStart: async () => {
@@ -80,9 +120,18 @@
 {#key sorted}
 <div class="p-4 rounded-md border-darkborderc border mb-2 flex-wrap flex gap-2 w-full max-w-full min-w-0" bind:this={ele}>
     {#each DBState.db.personas as persona, i}
-        <button data-risu-idx={i} onclick={() => {
-            changeUserPersona(i)
-        }}>
+        <button
+            type="button"
+            data-risu-idx={i}
+            aria-label={persona.name}
+            class:drop-persona-image={personaImageDropTarget === i}
+            ondragenter={(event) => markPersonaImageDrop(event, i)}
+            ondragover={(event) => markPersonaImageDrop(event, i)}
+            ondragleave={(event) => clearPersonaImageDrop(event, i)}
+            ondrop={(event) => dropPersonaImage(event, i)}
+            onclick={() => {
+                changeUserPersona(i)
+            }}>
             {#if persona.icon === ''}
                 <div class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-primary" class:ring-3={i === DBState.db.selectedPersona}></div>
             {:else}
@@ -129,7 +178,15 @@
 
 <div class="flex w-full items-starts rounded-md border-darkborderc border p-4 max-w-full flex-wrap">
     <div class="flex flex-col mt-4 mr-4">
-        <button onclick={() => {selectUserImg()}}>
+        <button
+            type="button"
+            aria-label={DBState.db.username}
+            class:drop-persona-image={personaImageDropTarget === DBState.db.selectedPersona}
+            ondragenter={(event) => markPersonaImageDrop(event, DBState.db.selectedPersona)}
+            ondragover={(event) => markPersonaImageDrop(event, DBState.db.selectedPersona)}
+            ondragleave={(event) => clearPersonaImageDrop(event, DBState.db.selectedPersona)}
+            ondrop={(event) => dropPersonaImage(event, DBState.db.selectedPersona)}
+            onclick={() => {selectUserImg()}}>
             {#if DBState.db.userIcon === ''}
                 <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-primary"></div>
             {:else}
@@ -185,3 +242,11 @@
     </div>
 </div>
 </SettingPage>
+
+<style>
+    .drop-persona-image {
+        border-radius: 0.375rem;
+        outline: 3px solid var(--risu-theme-primary);
+        outline-offset: 3px;
+    }
+</style>

@@ -3,7 +3,6 @@ import type { character, Database } from "./storage/database.svelte";
 import { type simpleCharacterArgument } from "./parser/parser.svelte";
 import type { alertData } from "./alert";
 import { moduleUpdate } from "./process/modules";
-import { deepTouch } from "./gui/deepTouch.svelte";
 import { resetScriptCache } from "./process/scripts";
 import type { hubType } from "./characterCards";
 import type { PluginSafetyErrors } from "./plugins/pluginSafety";
@@ -35,6 +34,10 @@ export const ViewBoxsize = writable({ width: 12 * 16, height: 12 * 16 }); // Def
 export const settingsOpen = writable(false)
 export const botMakerMode = writable(false)
 export const moduleBackgroundEmbedding = writable('')
+// Scalar bridge from the per-module save tracker. Keeping this separate from
+// the modules tree lets moduleUpdate react without deep-walking that tree a
+// second time.
+export const moduleTreeRevision = $state({ value: 0 })
 export const openPresetList = writable(false)
 export const presetSelectCallback = writable<((index: number) => void) | null>(null)
 export const openModelPresetList = writable(false)
@@ -254,10 +257,11 @@ $effect.root(() => {
         }
     })
     $effect(() => {
-        try { deepTouch(DBState.db.modules) } catch (e) {
-            console.warn('[ModuleUpdate] deepTouch(modules) failed:', e)
-            return
-        }
+        // moduleUpdate() itself reads every value that affects its result
+        // (module ids/namespaces plus enabled hideIcon/backgroundEmbedding).
+        // Deep-subscribing to every field of every module here duplicated the
+        // save tracker's traversal on each keystroke without changing output.
+        moduleTreeRevision.value
         DBState?.db?.enabledModules
         DBState?.db?.enabledModules?.length
         DBState?.db?.characters?.[selIdState.selId]?.chats?.[DBState?.db?.characters?.[selIdState.selId]?.chatPage]?.modules?.length

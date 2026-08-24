@@ -1,14 +1,13 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
   import { ChevronLeft, ChevronRight, X, Search as SearchIcon } from '@lucide/svelte'
   import { language } from 'src/lang'
   import { assetViewerStore, closeAssetViewer } from 'src/ts/assetViewer.svelte'
   import LazyAssetPreview from './LazyAssetPreview.svelte'
+  import VirtualGrid from 'src/lib/UI/Virtual/VirtualGrid.svelte'
 
   let search = $state('')
   let zoomIndex = $state(-1) // index into the filtered list; -1 means grid view
-  let track = $state<HTMLDivElement | null>(null) // the horizontal scroll-snap container
-  let scrollRaf = 0 // rAF guard so the scroll handler runs at most once per frame
+  let swipeStartX: number | null = null
 
   const filtered = $derived.by(() => {
     const query = search.trim().toLowerCase()
@@ -24,32 +23,18 @@
   // source of truth for zoomIndex. Buttons/keys scroll, swipes scroll — both
   // converge through onTrackScroll, so there is no index⇄scroll feedback loop.
   function go(offset: -1 | 1) {
-    scrollToIndex(zoomIndex + offset)
+    const next = zoomIndex + offset
+    if (next >= 0 && next < filtered.length) zoomIndex = next
   }
 
-  function scrollToIndex(i: number) {
-    if (!track || i < 0 || i >= filtered.length) return
-    track.scrollLeft = i * track.clientWidth // instant jump — buttons/keys switch immediately
+  function finishSwipe(event: PointerEvent) {
+    if (swipeStartX === null || event.pointerType !== 'touch') return
+    const delta = event.clientX - swipeStartX
+    swipeStartX = null
+    if (Math.abs(delta) < 48) return
+    if (delta < 0 && canNext) go(1)
+    else if (delta > 0 && canPrev) go(-1)
   }
-
-  function onTrackScroll() {
-    if (scrollRaf) return
-    scrollRaf = requestAnimationFrame(() => {
-      scrollRaf = 0
-      if (!track || !track.clientWidth) return
-      const i = Math.round(track.scrollLeft / track.clientWidth)
-      if (i >= 0 && i < filtered.length && i !== zoomIndex) zoomIndex = i
-    })
-  }
-
-  // When the zoom view opens, jump to the tapped image without animation.
-  // untrack keeps zoomIndex out of the dependency set, so the user's own swipes
-  // (which update zoomIndex via onTrackScroll) never trigger a re-scroll fight.
-  $effect(() => {
-    const el = track
-    if (!el) return
-    untrack(() => { el.scrollLeft = zoomIndex * el.clientWidth })
-  })
 
   // Arrows navigate the zoom view; Escape closes the zoom, then the whole viewer.
   $effect(() => {
@@ -90,14 +75,14 @@
   </div>
 
   <!-- Thumbnail grid -->
-  <div class="flex-1 min-h-0 overflow-y-auto p-4">
+  <div class="flex-1 min-h-0 p-4">
     {#if filtered.length === 0}
       <div class="h-full flex items-center justify-center text-textcolor2 text-sm">{language.noData}</div>
     {:else}
-      <div class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
-        {#each filtered as item, i (item.origIndex)}
+      <VirtualGrid items={filtered} minItemWidth={112} gap={12} className="h-full" key={(item) => item.origIndex}>
+        {#snippet children(item, i)}
           <button
-            class="relative group aspect-square rounded-lg overflow-hidden bg-darkbg border border-darkborderc hover:border-borderc/70 transition-colors"
+            class="relative group w-full h-full rounded-lg overflow-hidden bg-darkbg border border-darkborderc hover:border-borderc/70 transition-colors"
             onclick={() => (zoomIndex = i)}
           >
             <LazyAssetPreview
@@ -113,8 +98,8 @@
               <p class="text-white text-[11px] truncate leading-tight">{item.name}</p>
             </div>
           </button>
-        {/each}
-      </div>
+        {/snippet}
+      </VirtualGrid>
     {/if}
   </div>
 </div>
@@ -146,33 +131,30 @@
       </button>
     {/if}
 
-    <!-- Swipe track: every image is a full-width snap slide, so the browser drives
-         the swipe physics (follow-finger, momentum, snap) natively. Only images
-         within ±1 of the current slide are mounted to bound memory. -->
+    <!-- A single full-size original is mounted. Touch swipes change the index;
+         unlike the old scroll-snap track this never creates one blank slide DOM
+         node per asset in a 100k-image module. -->
     <div
-      bind:this={track}
-      onscroll={onTrackScroll}
-      class="asset-zoom-track w-full h-full flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory overscroll-x-contain"
+      role="region"
+      aria-label={current?.name || assetViewerStore.title}
+      class="w-full h-full flex items-center justify-center px-0 py-2 sm:px-16 sm:py-14 touch-pan-y"
+      onpointerdown={(event) => { if (event.pointerType === 'touch') swipeStartX = event.clientX }}
+      onpointerup={finishSwipe}
+      onpointercancel={() => { swipeStartX = null }}
     >
-      {#each filtered as item, i (item.origIndex)}
-        <!-- snap-always (scroll-snap-stop: always) forbids the scroll from passing
-             a snap point, so even a fast flick advances exactly one slide. -->
-        <div class="snap-center snap-always shrink-0 w-full h-full flex items-center justify-center px-0 py-2 sm:px-16 sm:py-14">
-          {#if Math.abs(i - zoomIndex) <= 1}
-            <LazyAssetPreview
-              path={item.path}
-              kind="image"
-              alt={item.name}
-              eager
-              thumbnail={false}
-              draggableOriginal
-              dragFileName={item.name}
-              wrapperClass="w-full h-full flex items-center justify-center"
-              mediaClass="max-w-full max-h-full object-contain shadow-2xl sm:rounded select-none"
-            />
-          {/if}
-        </div>
-      {/each}
+      {#if current}
+        <LazyAssetPreview
+          path={current.path}
+          kind="image"
+          alt={current.name}
+          eager
+          thumbnail={false}
+          draggableOriginal
+          dragFileName={current.name}
+          wrapperClass="w-full h-full flex items-center justify-center"
+          mediaClass="max-w-full max-h-full object-contain shadow-2xl sm:rounded select-none"
+        />
+      {/if}
     </div>
 
     {#if canNext}
@@ -185,15 +167,3 @@
     {/if}
   </div>
 {/if}
-
-<style>
-  /* Hide the horizontal scrollbar of the swipe track (it only exists to drive
-     scroll-snap navigation). Matches the SettingTabs scrollbar-hiding pattern. */
-  .asset-zoom-track {
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-  }
-  .asset-zoom-track::-webkit-scrollbar {
-    display: none;
-  }
-</style>

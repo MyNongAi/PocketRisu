@@ -1089,6 +1089,14 @@ export const languageKorean = {
   confirmRemoveModuleFeature: "정말로 이 기능을 삭제하시겠습니까?",
   editModule: "모듈 수정",
   importModule: "모듈 임포트",
+  createModuleFolder: "모듈 폴더 생성",
+  moveToModuleFolder: "폴더로 이동",
+  moduleFolderRoot: "폴더 없음",
+  moduleFolderDeleteConfirm:
+    "이 폴더를 삭제하시겠습니까? 폴더 안의 모듈은 기본 목록에 그대로 보존됩니다.",
+  moduleFolderContentsKept: "폴더가 삭제되었으며 모듈은 보존되었습니다.",
+  moduleEditTargetMissing:
+    "편집하던 모듈이 사라졌거나 대상을 구분할 수 없어 변경사항을 저장하지 않았습니다.",
   download: "다운로드",
   edit: "수정",
   enableGlobal: "글로벌 활성화",

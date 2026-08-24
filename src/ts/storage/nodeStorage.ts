@@ -50,6 +50,8 @@ export interface PatchItemResult {
     success: boolean
     etag?: string
     persistWarning?: PersistWarning
+    /** Hash-baseline 409. Must rebase; never reuse its ETag for a blind full write. */
+    conflict?: boolean
     /** Set when the server's chat-internal-field guard rejected the patch. */
     chatGuardRejected?: boolean
 }
@@ -90,6 +92,7 @@ export interface ExternalAssetConfig {
     version?: number
     enabled: boolean
     activeProvider: string
+    trashRoot: string
     cacheMaxBytes: number
     retryCount: number
     providers: Record<string, ExternalAssetProviderConfig>
@@ -120,6 +123,48 @@ export interface ExternalAssetMigrationScan {
     bytes: number
     missing: string[]
     alreadyExternal: number
+}
+
+export type ExternalAssetMigrationJobStatus =
+    | 'planning' | 'queued' | 'running' | 'paused' | 'staged' | 'finalizing'
+    | 'published' | 'verified' | 'cleaned' | 'canceled' | 'failed'
+
+export interface ExternalAssetMigrationJob {
+    id: string
+    providerId: string
+    databaseHash: string | null
+    status: ExternalAssetMigrationJobStatus
+    totalItems: number
+    totalBytes: number
+    stagedItems: number
+    stagedBytes: number
+    failedItems: number
+    staleItems: number
+    publishedItems: number
+    cleanedItems: number
+    createdAt: number
+    updatedAt: number
+    error: string | null
+    safetyBackupKey: string | null
+    progress: number
+    metadata?: {
+        references?: number
+        alreadyExternal?: number
+        uniqueAssets?: number
+        missingCount?: number
+        missingSamples?: string[]
+        databaseBytes?: number
+        [key: string]: unknown
+    } | null
+    planning?: {
+        phase?: string
+        current?: number
+        total?: number
+        databaseBytes?: number
+        uniqueAssets?: number
+        items?: number
+        bytes?: number
+    }
 }
 
 export interface ExternalAssetRestoreHealth {
@@ -479,7 +524,12 @@ export class NodeStorage{
             const rejectedByChatGuard = data.chatGuardRejected === true
                 || data.code === 'CHAT_GUARD_REJECTED'
                 || (typeof data.error === 'string' && data.error.includes('chat-internal field ops'))
-            return { success: false, etag: currentEtag, chatGuardRejected: rejectedByChatGuard }
+            return {
+                success: false,
+                etag: currentEtag,
+                conflict: !rejectedByChatGuard,
+                chatGuardRejected: rejectedByChatGuard,
+            }
         }
         if (da.status < 200 || da.status >= 300) {
             // Surface the server's error detail — without this the browser
@@ -586,13 +636,18 @@ export class NodeStorage{
         return await response.json()
     }
 
-    async scanExternalAssetMigration(): Promise<ExternalAssetMigrationScan> {
-        const response = await this.authFetch('/api/external-assets/migrate/scan', { method: 'POST' })
-        if (!response.ok) throw new Error(`external asset migration scan failed: ${response.status}`)
-        return await response.json()
+    async scanExternalAssetMigration(providerId?: string): Promise<ExternalAssetMigrationJob> {
+        const response = await this.authFetch('/api/external-assets/migrate/scan', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ providerId }),
+        })
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(body.error || `external asset migration scan failed: ${response.status}`)
+        return body.job
     }
 
-    async migrateExternalAssets(providerId?: string): Promise<Record<string, any>> {
+    async migrateExternalAssets(providerId?: string): Promise<{ migrationId: string, job: ExternalAssetMigrationJob }> {
         const response = await this.authFetch('/api/external-assets/migrate/execute', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
@@ -601,6 +656,45 @@ export class NodeStorage{
         const body = await response.json().catch(() => ({}))
         if (!response.ok) throw new Error(body.error || `external asset migration failed: ${response.status}`)
         return body
+    }
+
+    async listExternalAssetMigrationJobs(limit = 20): Promise<ExternalAssetMigrationJob[]> {
+        const response = await this.authFetch(`/api/external-assets/migrate/jobs?limit=${encodeURIComponent(limit)}`)
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(body.error || `external asset migration jobs failed: ${response.status}`)
+        return body.jobs ?? []
+    }
+
+    async getExternalAssetMigrationJob(jobId: string): Promise<ExternalAssetMigrationJob> {
+        const response = await this.authFetch(`/api/external-assets/migrate/jobs/${encodeURIComponent(jobId)}`)
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(body.error || `external asset migration job failed: ${response.status}`)
+        return body.job
+    }
+
+    private async externalAssetMigrationAction(jobId: string, action: 'pause'|'resume'|'cancel'|'finalize'): Promise<Record<string, any>> {
+        const response = await this.authFetch(`/api/external-assets/migrate/jobs/${encodeURIComponent(jobId)}/${action}`, {
+            method: 'POST',
+        })
+        const body = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(body.error || `external asset migration ${action} failed: ${response.status}`)
+        return body
+    }
+
+    async pauseExternalAssetMigration(jobId: string): Promise<ExternalAssetMigrationJob> {
+        return (await this.externalAssetMigrationAction(jobId, 'pause')).job
+    }
+
+    async resumeExternalAssetMigration(jobId: string): Promise<ExternalAssetMigrationJob> {
+        return (await this.externalAssetMigrationAction(jobId, 'resume')).job
+    }
+
+    async cancelExternalAssetMigration(jobId: string): Promise<ExternalAssetMigrationJob> {
+        return (await this.externalAssetMigrationAction(jobId, 'cancel')).job
+    }
+
+    async finalizeExternalAssetMigration(jobId: string): Promise<Record<string, any>> {
+        return await this.externalAssetMigrationAction(jobId, 'finalize')
     }
 
     async verifyExternalAssets(migrationId?: string): Promise<Record<string, any>> {

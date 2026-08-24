@@ -243,6 +243,92 @@ function collectExternalAssetReferences(db) {
     }))
 }
 
+// Allocation-light traversal for very large databases. The detailed collector
+// above intentionally builds an owner object and JSON pointer for every
+// occurrence; a migration plan with hundreds of thousands of assets only needs
+// the value count and unique keys, so constructing those paths can consume
+// gigabytes and keep the Node event loop busy for minutes.
+function visitAssetSlots(db, visitor) {
+    if (!db || typeof db !== 'object' || typeof visitor !== 'function') return
+
+    const visitModule = (module) => {
+        if (!module || typeof module !== 'object') return
+        if (Array.isArray(module.assets)) {
+            for (const asset of module.assets) {
+                if (Array.isArray(asset)) visitor(asset[1], (value) => { asset[1] = value })
+            }
+        }
+        visitor(module.icon, (value) => { module.icon = value })
+        visitor(module.backgroundEmbedding, (value) => { module.backgroundEmbedding = value })
+    }
+
+    if (Array.isArray(db.characters)) {
+        for (const character of db.characters) {
+            if (!character || typeof character !== 'object') continue
+            visitor(character.image, (value) => { character.image = value })
+            if (Array.isArray(character.emotionImages)) {
+                for (const asset of character.emotionImages) {
+                    if (Array.isArray(asset)) visitor(asset[1], (value) => { asset[1] = value })
+                }
+            }
+            if (Array.isArray(character.additionalAssets)) {
+                for (const asset of character.additionalAssets) {
+                    if (Array.isArray(asset)) visitor(asset[1], (value) => { asset[1] = value })
+                }
+            }
+            const vitsFiles = character.vits?.files
+            if (vitsFiles && typeof vitsFiles === 'object' && !Array.isArray(vitsFiles)) {
+                for (const key of Object.keys(vitsFiles)) {
+                    visitor(vitsFiles[key], (value) => { vitsFiles[key] = value })
+                }
+            }
+            if (Array.isArray(character.ccAssets)) {
+                for (const asset of character.ccAssets) {
+                    if (asset && typeof asset === 'object') visitor(asset.uri, (value) => { asset.uri = value })
+                }
+            }
+            const refAudio = character.gptSoVitsConfig?.ref_audio_data
+            if (refAudio && typeof refAudio === 'object') {
+                visitor(refAudio.assetId, (value) => { refAudio.assetId = value })
+            }
+        }
+    }
+
+    if (Array.isArray(db.modules)) {
+        for (const module of db.modules) visitModule(module)
+    }
+    if (Array.isArray(db.personas)) {
+        for (const persona of db.personas) visitModule(persona?.embeddedModule)
+    }
+}
+
+function collectAssetReferenceSummary(db, predicate = isInternalAssetPath) {
+    let references = 0
+    const uniquePaths = new Set()
+    visitAssetSlots(db, (value) => {
+        if (!predicate(value)) return
+        references++
+        uniquePaths.add(value)
+    })
+    return { references, uniquePaths }
+}
+
+/**
+ * Rewrite a detached decoded snapshot without cloning it again. Intended for
+ * migration workers: callers must never pass the live in-memory client DB.
+ */
+function rewriteAssetReferencesInPlace(db, mapping, predicate = isInternalAssetPath) {
+    let changes = 0
+    visitAssetSlots(db, (value, setValue) => {
+        if (!predicate(value)) return
+        const replacement = replacementFor(mapping, value)
+        if (replacement === undefined || replacement === value) return
+        setValue(replacement)
+        changes++
+    })
+    return { database: db, changes }
+}
+
 function deepClone(value, seen = new WeakMap()) {
     if (value === null || typeof value !== 'object') return value
     if (seen.has(value)) return seen.get(value)
@@ -360,10 +446,12 @@ function rewriteExternalAssetReferences(db, mapping) {
 
 module.exports = {
     collectAssetReferences,
+    collectAssetReferenceSummary,
     collectEmbeddedInternalAssetNames,
     collectExternalAssetReferences,
     isExternalAssetPath,
     isInternalAssetPath,
     rewriteAssetReferences,
+    rewriteAssetReferencesInPlace,
     rewriteExternalAssetReferences,
 }

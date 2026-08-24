@@ -6,7 +6,7 @@
     import ModuleSettings from "../Setting/Pages/Module/ModuleSettings.svelte";
 </script>
 
-<div class="flex mb-2 gap-2">
+<div class="mb-2 flex shrink-0 gap-2">
     <button class={QuickSettings.index === 0 ? 'text-textcolor ' : 'text-textcolor2'} onclick={() => {QuickSettings.index = 0}}>
         <BotIcon />
     </button>
@@ -18,12 +18,16 @@
     </button>
 </div>
 
-<div class="py-6 px-4 flex flex-col text-textcolor overflow-y-auto relative rs-setting-cont-5">
+<div
+    class="relative flex min-h-0 flex-1 flex-col px-4 py-6 text-textcolor rs-setting-cont-5"
+    class:overflow-y-auto={QuickSettings.index !== 2}
+    class:overflow-y-hidden={QuickSettings.index === 2}
+>
     {#if QuickSettings.index === 0}
         <BotSettings />
     {:else if QuickSettings.index === 1}
         <OtherBotSettings />
     {:else if QuickSettings.index === 2}
-        <ModuleSettings />
+        <ModuleSettings quickPanel />
     {/if}
 </div>

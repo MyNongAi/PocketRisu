@@ -259,6 +259,87 @@ const emptyToSave = () => ({
 })
 
 describe('RisuSavePatcher.set — modules path', () => {
+    test('discarded draft keeps retry patch and expected hash identical after network throw', async () => {
+        const patcher = new RisuSavePatcher()
+        const initial = {
+            characters: [],
+            botPresets: [],
+            modules: [makeMod('a', { description: 'old' }), makeMod('b')],
+        }
+        const changed = {
+            characters: [],
+            botPresets: [],
+            modules: [makeMod('a', { description: 'new' }), makeMod('b')],
+        }
+        await patcher.init(initial)
+
+        const discardedDraft = patcher.fork()
+        const firstAttempt = await discardedDraft.set(
+            changed,
+            { ...emptyToSave(), modules: true, moduleIds: ['a'] },
+        )
+        await expect((async () => {
+            throw new Error('simulated network failure')
+        })()).rejects.toThrow('simulated network failure')
+
+        const retryDraft = patcher.fork()
+        const retry = await retryDraft.set(
+            changed,
+            { ...emptyToSave(), modules: true, moduleIds: ['a'] },
+        )
+        expect(retry).toEqual(firstAttempt)
+    })
+
+    test('publishing a successful draft advances the baseline exactly once', async () => {
+        let patcher = new RisuSavePatcher()
+        const initial = {
+            characters: [],
+            botPresets: [],
+            modules: [makeMod('a', { description: 'old' })],
+        }
+        const changed = {
+            characters: [],
+            botPresets: [],
+            modules: [makeMod('a', { description: 'new' })],
+        }
+        await patcher.init(initial)
+
+        const draft = patcher.fork()
+        const accepted = await draft.set(
+            changed,
+            { ...emptyToSave(), modules: true, moduleIds: ['a'] },
+        )
+        expect(accepted.patch.length).toBeGreaterThan(0)
+        patcher = draft // equivalent to committing after HTTP success
+
+        const nextDraft = patcher.fork()
+        const noChange = await nextDraft.set(
+            changed,
+            { ...emptyToSave(), modules: true, moduleIds: ['a'] },
+        )
+        expect(noChange.patch).toEqual([])
+        expect(noChange.expectedHash).not.toBe(accepted.expectedHash)
+    })
+
+    test('fork is shallow copy-on-write rather than a nested DB clone', async () => {
+        const patcher = new RisuSavePatcher()
+        await patcher.init({
+            characters: [{ chaId: 'c', chats: [], nested: { large: 'value' } }],
+            botPresets: [{ id: 'p', nested: { large: 'value' } }],
+            modules: [makeMod('a', { nested: { large: 'value' } })],
+        })
+        const draft = patcher.fork()
+        const originalState = (patcher as any).lastSyncedDb
+        const draftState = (draft as any).lastSyncedDb
+
+        expect(draftState).not.toBe(originalState)
+        expect(draftState.characters).not.toBe(originalState.characters)
+        expect(draftState.modules).not.toBe(originalState.modules)
+        expect(draftState.characters[0]).toBe(originalState.characters[0])
+        expect(draftState.modules[0]).toBe(originalState.modules[0])
+        expect((draft as any).lastModuleJsons).not.toBe((patcher as any).lastModuleJsons)
+    })
+
     test('deleting a front-loaded module emits a single replace op, no RangeError', async () => {
         const patcher = new RisuSavePatcher()
         const initialModules = [makeMod('a'), makeMod('b'), makeMod('c'), makeMod('d')]
@@ -293,6 +374,67 @@ describe('RisuSavePatcher.set — modules path', () => {
         for (const op of moduleOps) expect(op.path.startsWith('/modules/1')).toBe(true)
         // No structural replace under those circumstances.
         expect(patch.find((p: any) => p.path === '/modules')).toBeUndefined()
+    })
+
+    test('dirty-id hint serializes only the edited module', async () => {
+        const count = 80
+        const reads = Array.from({ length: count }, () => 0)
+        const observableModule = (i: number, description = 'old') => {
+            const module: any = {
+                id: `m${i}`,
+                name: `Module ${i}`,
+                description,
+            }
+            Object.defineProperty(module, 'largePayload', {
+                enumerable: true,
+                get() {
+                    reads[i] += 1
+                    return { text: 'x'.repeat(2_000), nested: { index: i } }
+                },
+            })
+            return module
+        }
+
+        const patcher = new RisuSavePatcher()
+        await patcher.init({
+            characters: [],
+            botPresets: [],
+            modules: Array.from({ length: count }, (_, i) => observableModule(i)),
+        })
+        reads.fill(0)
+
+        const editedIndex = 47
+        const current = Array.from(
+            { length: count },
+            (_, i) => observableModule(i, i === editedIndex ? 'new' : 'old'),
+        )
+        const { patch } = await patcher.set(
+            { characters: [], botPresets: [], modules: current },
+            { ...emptyToSave(), modules: true, moduleIds: [`m${editedIndex}`] },
+        )
+
+        expect(patch.some((op: any) => op.path === `/modules/${editedIndex}/description`)).toBe(true)
+        expect(reads[editedIndex]).toBeGreaterThan(0)
+        expect(reads.reduce((sum, value, i) => i === editedIndex ? sum : sum + value, 0)).toBe(0)
+    })
+
+    test('dirty-id hint cannot bypass structural safety detection', async () => {
+        const patcher = new RisuSavePatcher()
+        await patcher.init({
+            characters: [],
+            botPresets: [],
+            modules: [makeMod('a'), makeMod('b')],
+        })
+
+        const reordered = [makeMod('b'), makeMod('a')]
+        const { patch } = await patcher.set(
+            { characters: [], botPresets: [], modules: reordered },
+            { ...emptyToSave(), modules: true, moduleIds: ['b'] },
+        )
+
+        expect(patch.filter((op: any) => op.path === '/modules')).toEqual([
+            { op: 'replace', path: '/modules', value: reordered },
+        ])
     })
 
     test('does not throw on a pathological array that would crash the original code path', async () => {

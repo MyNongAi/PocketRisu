@@ -2,10 +2,11 @@
     import { type Database } from "src/ts/storage/database.svelte";
     import { DBState } from 'src/ts/stores.svelte';
     import BarIcon from "../SideBars/BarIcon.svelte";
-    import { addCharacter, cancelCharacterChatPrefetch, changeChar, getCharImage, prefetchCharacterChat, removeChar, scheduleCharacterChatPrefetch } from "src/ts/characters";
+    import { addCharacter, cancelCharacterChatPrefetch, changeChar, getCharThumbnail, prefetchCharacterChat, removeChar, scheduleCharacterChatPrefetch } from "src/ts/characters";
     import { makeAgoText } from "src/ts/util";
     import { MessageSquareIcon, PlusIcon, SquareMousePointer, TrashIcon } from "@lucide/svelte";
     import { language } from "src/lang";
+    import VirtualList from "../UI/Virtual/VirtualList.svelte";
 
     interface Props {
         search: string;
@@ -36,10 +37,11 @@
             return b.interaction - a.interaction;
         });
     }
+    let sortedCharacters = $derived(sortChar(DBState.db.characters, search))
 </script>
-<div class="flex flex-col items-center w-full overflow-y-auto h-full">
-    {#each sortChar(DBState.db.characters, search) as char, i (char.chaId)}
-        <div class="flex items-center border-t-darkborderc w-full" class:border-t={i !== 0}>
+<VirtualList items={sortedCharacters} itemHeight={76} className="w-full h-full" key={(char) => char.chaId}>
+    {#snippet children(char, i)}
+        <div class="flex h-full items-center border-t-darkborderc w-full" class:border-t={i !== 0}>
             <div class="shrink-0 p-2 pr-0">
                 <BarIcon
                     onPrefetch={() => scheduleCharacterChatPrefetch(char.i)}
@@ -49,7 +51,7 @@
                         changeChar(char.i)
                         endGrid()
                     }}
-                    additionalStyle={() => getCharImage(char.image, 'css')}
+                    additionalStyle={() => getCharThumbnail(char.image, 'css')}
                 />
             </div>
             <button
@@ -100,8 +102,8 @@
                 </div>
             {/if}
         </div>
-    {/each}
-</div>
+    {/snippet}
+</VirtualList>
 
 {#if gridMode}
     <button class="p-4 rounded-full absolute bottom-2 right-2 bg-borderc" onclick={() => {

@@ -3,10 +3,12 @@ import pkg from './external-asset-references.cjs'
 
 const {
     collectAssetReferences,
+    collectAssetReferenceSummary,
     collectEmbeddedInternalAssetNames,
     collectExternalAssetReferences,
     isInternalAssetPath,
     rewriteAssetReferences,
+    rewriteAssetReferencesInPlace,
     rewriteExternalAssetReferences,
 } = pkg as {
     collectAssetReferences: (db: unknown) => Array<{
@@ -16,12 +18,42 @@ const {
         path: string
         value: string
     }>
+    collectAssetReferenceSummary: (db: unknown) => { references: number, uniquePaths: Set<string> }
     collectEmbeddedInternalAssetNames: (db: unknown) => Set<string>
     isInternalAssetPath: (value: unknown) => boolean
     rewriteAssetReferences: (db: unknown, mapping: Map<string, string> | Record<string, string>) => any
+    rewriteAssetReferencesInPlace: (db: any, mapping: Map<string, string> | Record<string, string>) => {
+        database: any
+        changes: number
+    }
     collectExternalAssetReferences: (db: unknown) => Array<{ value: string }>
     rewriteExternalAssetReferences: (db: unknown, mapping: Map<string, string> | Record<string, string>) => any
 }
+
+describe('large migration reference traversal', () => {
+    it('matches the detailed collector without allocating occurrence paths', () => {
+        const db = fixture()
+        const detailed = collectAssetReferences(db)
+        const summary = collectAssetReferenceSummary(db)
+
+        expect(summary.references).toBe(detailed.length)
+        expect(summary.uniquePaths).toEqual(new Set(detailed.map((reference) => reference.value)))
+    })
+
+    it('rewrites a detached snapshot in place and reports occurrence count', () => {
+        const db = fixture()
+        const before = collectAssetReferenceSummary(db)
+        const mapping = new Map([...before.uniquePaths].map((value, index) => [
+            value,
+            `external://local/${String(index).padStart(64, 'a').slice(-64)}`,
+        ]))
+
+        const result = rewriteAssetReferencesInPlace(db, mapping)
+        expect(result.database).toBe(db)
+        expect(result.changes).toBe(before.references)
+        expect(collectAssetReferenceSummary(db).references).toBe(0)
+    })
+})
 
 function fixture() {
     return {

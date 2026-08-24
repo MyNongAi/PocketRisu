@@ -8,7 +8,7 @@ import { checkNullish, findCharacterbyId, findCharacterIndexbyId, getUserName, s
 import { v4 as uuidv4, v4 } from 'uuid';
 import { getImageType } from "./media";
 import { MobileGUIStack, OpenRealmStore, selectedCharID } from "./stores.svelte";
-import { AppendableBuffer, changeChatTo, checkCharOrder, downloadFile, getFileSrc, requiresFullEncoderReload } from "./globalApi.svelte";
+import { AppendableBuffer, changeChatTo, checkCharOrder, downloadFile, getFileSrc, getFileThumbnailSrc, requiresFullEncoderReload } from "./globalApi.svelte";
 import { updateInlayScreen } from "./process/inlayScreen";
 import { parseMarkdownSafe } from "./parser/parser.svelte";
 import { translateHTML } from "./translator/translator";
@@ -115,6 +115,17 @@ export async function getCharImage(loc:string, type:'plain'|'css'|'contain'|'lgc
     else{
         return `background: url("${filesrc}");background-size: contain;background-repeat: no-repeat;background-position: center;`
     }
+}
+
+/** Lightweight character-list image. Full character/profile views keep using getCharImage. */
+export async function getCharThumbnail(loc: string, type: 'plain'|'css' = 'plain') {
+    const db = getDatabase()
+    if(db.hideAllImages) return type === 'plain' ? '/none.webp' : ''
+    if(!loc) return type === 'plain' ? null : ''
+    const src = await getFileThumbnailSrc(loc)
+    return type === 'plain'
+        ? src
+        : `background: url("${src}");background-size: cover;background-position: center;`
 }
 
 export async function selectCharImg(charIndex:number) {

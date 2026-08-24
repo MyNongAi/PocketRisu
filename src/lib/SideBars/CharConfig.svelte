@@ -34,6 +34,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
     import { exportCharacterPackage, importPackageToCharacter } from "src/ts/characterPackage";
     import { exportRegex, importRegex } from "src/ts/process/scripts";
     import SliderInput from "../UI/GUI/SliderInput.svelte";
+    import VirtualList from "../UI/Virtual/VirtualList.svelte";
 
     let iconRemoveMode = $state(false)
     let pkgIncludeCharacter = $state(true)
@@ -398,39 +399,32 @@ import ShButton from "../UI/GUI/ShButton.svelte";
             <span class="text-textcolor2 text-xs">{language.emotionWarn}</span>
 
             <div class="w-full max-w-full border border-selected p-2 rounded-md">
-
-                <table class="w-full max-w-full tabler">
-                    <tbody>
-                    <tr>
-                        <th class="font-medium w-1/3">{language.image}</th>
-                        <th class="font-medium w-1/2">{language.emotion}</th>
-                        <th class="font-medium"></th>
-                    </tr>
+                    <div class="grid grid-cols-[1fr_1.5fr_2rem] gap-2 font-medium">
+                        <span>{language.image}</span>
+                        <span>{language.emotion}</span>
+                        <span></span>
+                    </div>
                     {#if DBState.db.characters[$selectedCharID].emotionImages.length === 0}
-                        <tr>
-                            <td colspan="3">{language.noImages}</td>
-                        </tr>
+                        <p class="py-3 text-textcolor2">{language.noImages}</p>
                     {:else}
-                        {#each emos as emo, i}
-                            <tr>
-                                <td class="font-medium truncate w-1/3">
-                                    <LazyAssetPreview path={emo[1]} kind="image" alt={emo[0]} mediaClass="w-full min-h-16 max-h-48 object-contain" />
-                                </td>
-                                <td class="font-medium truncate w-1/2">
+                        <VirtualList items={emos} itemHeight={92} className="mt-2 h-[min(32rem,60vh)]">
+                          {#snippet children(emo, i)}
+                            <div class="grid h-full grid-cols-[1fr_1.5fr_2rem] items-center gap-2 border-t border-darkborderc">
+                                <div class="min-w-0 truncate font-medium">
+                                    <LazyAssetPreview path={emo[1]} kind="image" alt={emo[0]} mediaClass="h-16 w-full object-contain" />
+                                </div>
+                                <div class="min-w-0 truncate font-medium">
                                     <TextInput marginBottom size='lg' bind:value={DBState.db.characters[$selectedCharID].emotionImages[i][0]} />
-                                </td>
-                                <td>
+                                </div>
+                                <div>
                                     <button class="font-medium cursor-pointer hover:text-draculared" onclick={() => {
                                         rmCharEmotion($selectedCharID,i)
                                     }}><TrashIcon /></button>
-                                </td>
-
-                            </tr>
-                        {/each}
+                                </div>
+                            </div>
+                          {/snippet}
+                        </VirtualList>
                     {/if}
-                    </tbody>
-                </table>
-
             </div>
 
             <div class="text-textcolor2 hover:text-textcolor mt-2 flex">
@@ -492,11 +486,8 @@ import ShButton from "../UI/GUI/ShButton.svelte";
             {/if}
             {/if}
             <div class="w-full max-w-full border border-selected rounded-md p-2 mt-2">
-                <table class="contain w-full max-w-full tabler mt-2">
-                <tbody>
-                    <tr>
-                        <th class="font-medium">{language.value}</th>
-                        <th class="font-medium cursor-pointer w-10">
+                    <div class="flex items-center justify-between font-medium">
+                        <span>{language.value}</span>
                             <button class="hover:text-primary" onclick={async () => {
                                 if(DBState.db.characters[$selectedCharID].type === 'character'){
                                     const da = await selectMultipleFile(['png', 'webp', 'mp4', 'mp3', 'gif', 'jpeg', 'jpg', 'ttf', 'otf', 'css', 'webm', 'woff', 'woff2', 'svg', 'avif'])
@@ -516,17 +507,19 @@ import ShButton from "../UI/GUI/ShButton.svelte";
                             }}>
                                 <PlusIcon />
                             </button>
-                        </th>
-                    </tr>
+                    </div>
                     {#if (!DBState.db.characters[$selectedCharID].additionalAssets) || DBState.db.characters[$selectedCharID].additionalAssets.length === 0}
-                        <tr>
-                            <td class="text-textcolor2"> No Assets</td>
-                        </tr>
+                        <p class="py-3 text-textcolor2">No Assets</p>
                     {:else}
-                        {#each DBState.db.characters[$selectedCharID].additionalAssets as assets, i}
+                        <VirtualList
+                            items={DBState.db.characters[$selectedCharID].additionalAssets}
+                            itemHeight={104}
+                            className="mt-2 h-[min(32rem,60vh)]"
+                        >
+                          {#snippet children(assets, i)}
                             {@const extension = (assets[2] ?? assets[1].split('.').pop() ?? '').toLowerCase()}
-                            <tr>
-                                <td class="font-medium truncate">
+                            <div class="flex h-full items-center gap-2 border-t border-darkborderc px-1 font-medium">
+                                <div class="min-w-0 flex-1 truncate">
                                     {#if DBState.db.useAdditionalAssetsPreview}
                                         <LazyAssetPreview
                                             path={assets[1]}
@@ -537,16 +530,16 @@ import ShButton from "../UI/GUI/ShButton.svelte";
                                             controls
                                             loop
                                             mediaClass={['mp4', 'webm', 'mov', 'm4v'].includes(extension)
-                                                ? 'mt-2 px-2 w-full max-h-48 m-1 rounded-md object-contain'
+                                                ? 'w-20 h-16 rounded-md object-contain'
                                                 : ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac'].includes(extension)
-                                                    ? 'mt-2 px-2 w-full h-16 m-1 rounded-md'
-                                                    : 'w-16 h-16 m-1 rounded-md object-cover'}
+                                                    ? 'w-full h-12 rounded-md'
+                                                    : 'w-16 h-16 rounded-md object-cover'}
                                         />
                                     {/if}
-                                    <ShInput className="mb-4" autocomplete="off" bind:value={DBState.db.characters[$selectedCharID].additionalAssets[i][0]} placeholder="..." />
-                                </td>
+                                    <ShInput autocomplete="off" bind:value={DBState.db.characters[$selectedCharID].additionalAssets[i][0]} placeholder="..." />
+                                </div>
                                 
-                                <th class="font-medium cursor-pointer w-10">
+                                <div class="flex w-10 shrink-0 flex-col items-center gap-2 font-medium">
                                     <button class="hover:text-draculared" onclick={() => {
                                         if(DBState.db.characters[$selectedCharID].type === 'character'){
                                             DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].fmIndex = -1
@@ -574,12 +567,11 @@ import ShButton from "../UI/GUI/ShButton.svelte";
                                             {/if}
                                         </button>
                                     {/if}
-                                </th>
-                            </tr>
-                        {/each}
+                                </div>
+                            </div>
+                          {/snippet}
+                        </VirtualList>
                     {/if}
-                </tbody>
-                </table>
             </div>
     {/if}
 {:else if $CharConfigSubMenu === 3}

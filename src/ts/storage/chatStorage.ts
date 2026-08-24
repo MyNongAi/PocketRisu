@@ -103,6 +103,88 @@ export const hydrationJustApplied = new Set<string>()
 /** Track in-flight hydration promises to avoid duplicate fetches */
 const hydrationPromises = new Map<string, Promise<Chat | null>>()
 
+// Only server-hydrated chats enter this LRU. Boot placeholders remain tiny,
+// while the active/recent working set stays instant. Eviction runs only after
+// a successful save cycle, so replacing an inactive full chat with its stub
+// can never discard unsaved content.
+const MAX_HYDRATED_CHAT_CACHE = 12
+let hydrationAccessSerial = 0
+const hydratedChatCache = new Map<string, {
+    chaId: string
+    chatId: string
+    chats: Chat[]
+    access: number
+    dirty: boolean
+}>()
+
+function recordHydratedChat(chaId: string, chatId: string, chats: Chat[]) {
+    hydratedChatCache.set(chatKey(chaId, chatId), {
+        chaId,
+        chatId,
+        chats,
+        access: ++hydrationAccessSerial,
+        dirty: false,
+    })
+}
+
+export function markHydratedChatDirty(chaId: string, chatId: string) {
+    const entry = hydratedChatCache.get(chatKey(chaId, chatId))
+    if (entry) entry.dirty = true
+}
+
+export function markHydratedChatPersisted(chaId: string, chatId: string) {
+    const entry = hydratedChatCache.get(chatKey(chaId, chatId))
+    if (entry) entry.dirty = false
+}
+
+export function touchHydratedChat(chaId: string, chatId: string | undefined) {
+    if (!chatId) return
+    const entry = hydratedChatCache.get(chatKey(chaId, chatId))
+    if (entry) entry.access = ++hydrationAccessSerial
+}
+
+export async function evictHydratedChatCache(
+    protectedChat?: { chaId?: string, chatId?: string },
+    maxEntries = MAX_HYDRATED_CHAT_CACHE,
+): Promise<number> {
+    const protectedKey = protectedChat?.chaId && protectedChat.chatId
+        ? chatKey(protectedChat.chaId, protectedChat.chatId)
+        : null
+    const entries = [...hydratedChatCache.entries()].sort((a, b) => a[1].access - b[1].access)
+    let evicted = 0
+    const evictedKeys: string[] = []
+    for (const [key, entry] of entries) {
+        if (hydratedChatCache.size <= Math.max(0, maxEntries)) break
+        if (key === protectedKey || hydrationInFlight.has(key) || entry.dirty) continue
+        const index = entry.chats.findIndex((chat) => chat?.id === entry.chatId)
+        const chat = index >= 0 ? entry.chats[index] : null
+        if (!chat || chat._placeholder) {
+            hydratedChatCache.delete(key)
+            continue
+        }
+        if (chat.isStreaming || chat.activeStreamingDisplayOptimizationMode) continue
+        hydrationJustApplied.add(key)
+        entry.chats[index] = stubToPlaceholder(chatToStub(chat))
+        hydratedChatCache.delete(key)
+        evictedKeys.push(key)
+        evicted++
+    }
+    if (evicted > 0) {
+        await tick()
+        for (const key of evictedKeys) hydrationJustApplied.delete(key)
+    }
+    return evicted
+}
+
+export function hydratedChatCacheSize(): number {
+    return hydratedChatCache.size
+}
+
+export function resetHydratedChatCache() {
+    hydratedChatCache.clear()
+    hydrationAccessSerial = 0
+}
+
 // ── Server fetch/save ───────────────────────────────────────────────────────
 
 export async function fetchChatFromServer(chaId: string, chatIndex: number, chatId: string): Promise<Chat | null> {
@@ -137,7 +219,10 @@ export async function ensureChatHydrated(
 ): Promise<Chat | null> {
     const slot = chats[index]
     if (!slot) return null
-    if (!slot._placeholder) return slot
+    if (!slot._placeholder) {
+        touchHydratedChat(chaId, slot.id)
+        return slot
+    }
 
     const chatId = slot.id
     if (!chatId) return null
@@ -179,10 +264,16 @@ export async function ensureChatHydrated(
             // Apply to memory — mark JustApplied to suppress the reactive write-back
             hydrationJustApplied.add(key)
             chats[currentIndex] = full
+            recordHydratedChat(chaId, chatId, chats)
 
             // Wait one tick so Svelte reactivity settles before allowing dirty tracking
             await tick()
             hydrationJustApplied.delete(key)
+
+            // Browsing many bots without editing does not start a save cycle,
+            // so enforce the clean-chat bound immediately as well. Dirty chats
+            // are pinned until saveChatToServer succeeds.
+            await evictHydratedChatCache({ chaId, chatId })
 
             return full
         } finally {
