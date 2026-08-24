@@ -163,8 +163,14 @@ export function initHotkey(){
                     break
                 }
                 case 'quickSettings':{
-                    QuickSettings.open = !QuickSettings.open
-                    QuickSettings.index = 0
+                    const opening = !QuickSettings.open
+                    QuickSettings.open = opening
+                    // Character-specific quick settings cannot be rendered on the
+                    // recent-chats home. Open its safe, global Modules page there.
+                    const selected = get(selectedCharID)
+                    const canOpenCharacterSettings = selected >= 0
+                        && database.characters[selected]?.chaId !== '§playground'
+                    QuickSettings.index = opening && !canOpenCharacterSettings ? 2 : 0
                     break
                 }
                 case 'scrollToActiveChar':{

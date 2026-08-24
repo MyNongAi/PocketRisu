@@ -66,12 +66,13 @@
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
 
   let sideBarMode = $state(0);
+  let hasEditableCharacter = $derived(
+    $selectedCharID >= 0
+      && DBState.db.characters[$selectedCharID]?.chaId !== '§playground'
+  )
   let quickSettingsVisible = $derived(
     QuickSettings.open
       && sideBarMode === 0
-      && $selectedCharID >= 0
-      && !$settingsOpen
-      && DBState.db.characters[$selectedCharID]?.chaId !== '§playground'
   )
   let editMode = $state(false);
   let menuMode = $state(0);
@@ -81,8 +82,31 @@
     menuMode = 0;
     sideBarMode = 0;
     editMode = false;
+    QuickSettings.open = false;
     settingsOpen.set(false);
     CharEmotion.set({});
+  }
+
+  function openChatTab() {
+    QuickSettings.open = false;
+    devTool = false;
+    botMakerMode.set(false);
+  }
+
+  function openCharacterTab() {
+    QuickSettings.open = false;
+    devTool = false;
+    if (!hasEditableCharacter) {
+      openGrid();
+      return;
+    }
+    botMakerMode.set(true);
+  }
+
+  function openModuleTab() {
+    devTool = false;
+    QuickSettings.open = true;
+    QuickSettings.index = 2;
   }
 
   type sortTypeNormal = { type:'normal',img: string, index: number, name:string }
@@ -1156,7 +1180,45 @@
     </button>
   {/if}
   {#if sideBarMode === 0}
-    {#if $selectedCharID < 0 || $settingsOpen}
+    {#if hasEditableCharacter || QuickSettings.open}
+      <div class="w-full h-8 min-h-8 border-l border-b border-r border-selected relative bottom-6 rounded-b-md flex">
+        <button
+          type="button"
+          onclick={openChatTab}
+          class="grow border-r border-r-selected rounded-bl-md"
+          class:text-textcolor2={QuickSettings.open || $botMakerMode || devTool}
+        >{language.Chat}</button>
+        <button
+          type="button"
+          onclick={openCharacterTab}
+          class="grow border-r border-r-selected"
+          class:text-textcolor2={QuickSettings.open || !$botMakerMode || devTool}
+        >{language.character}</button>
+        <button
+          type="button"
+          onclick={openModuleTab}
+          class="grow rounded-br-md"
+          class:text-textcolor2={!QuickSettings.open || (hasEditableCharacter && QuickSettings.index !== 2)}
+        >{language.module}</button>
+        {#if DBState.db.enableDevTools}
+          <button
+            type="button"
+            onclick={() => {
+              QuickSettings.open = false
+              devTool = true
+            }}
+            class="border-l border-l-selected rounded-br-md px-1"
+            class:text-textcolor2={!devTool || QuickSettings.open}
+            aria-label="Developer tools"
+          >
+            <WrenchIcon size={18} />
+          </button>
+        {/if}
+      </div>
+    {/if}
+    {#if QuickSettings.open}
+      <QuickSettingsGui modulesOnly={!hasEditableCharacter} />
+    {:else if $selectedCharID < 0 || $settingsOpen}
       <span class="block text-base font-semibold text-textcolor mt-2">{language.recentChatsTitle}</span>
       <div class="flex items-center justify-between gap-2 mt-2">
         <span class="text-sm text-textcolor2">{language.hideRecentChats}</span>
@@ -1211,26 +1273,7 @@
     {:else if DBState.db.characters[$selectedCharID]?.chaId === '§playground'}
       <SideChatList bind:chara={ DBState.db.characters[$selectedCharID]} />
     {:else}
-      <div class="w-full h-8 min-h-8 border-l border-b border-r border-selected relative bottom-6 rounded-b-md flex">
-        <button onclick={() => {
-          devTool = false
-          botMakerMode.set(false)
-        }} class="grow border-r border-r-selected rounded-bl-md" class:text-textcolor2={$botMakerMode || devTool}>{language.Chat}</button>
-        <button onclick={() => {
-          devTool = false
-          botMakerMode.set(true)
-        }} class="grow rounded-br-md" class:text-textcolor2={!$botMakerMode || devTool}>{language.character}</button>
-        {#if DBState.db.enableDevTools}
-          <button onclick={() => {
-            devTool = true
-          }} class="border-l border-l-selected rounded-br-md px-1" class:text-textcolor2={!devTool}>
-            <WrenchIcon size={18} />
-          </button>
-        {/if}
-      </div>
-      {#if QuickSettings.open}
-        <QuickSettingsGui />
-      {:else if devTool}
+      {#if devTool}
         <DevTool />
       {:else if $botMakerMode}
         <CharConfig />
