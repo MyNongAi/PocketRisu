@@ -3070,7 +3070,11 @@ app.get('/', async (req, res, next) => {
         const mainIndex = await fs.readFile(path.join(process.cwd(), 'dist', 'index.html'))
         const root = htmlparser.parse(mainIndex)
         const head = root.querySelector('head')
-        head.innerHTML = `<script>globalThis.__NODE__ = true; globalThis.__PATCH_SYNC__ = ${enablePatchSync}</script>` + head.innerHTML
+        // Some mobile WebViews remove the Web Crypto object entirely on LAN
+        // HTTP origins.  Give the plugin sandbox a per-page, server-generated
+        // 256-bit seed so CSP nonces remain unpredictable even there.
+        const pluginNonceSeed = nodeCrypto.randomBytes(32).toString('hex')
+        head.innerHTML = `<script>globalThis.__NODE__ = true; globalThis.__PATCH_SYNC__ = ${enablePatchSync}; globalThis.__POCKETRISU_PLUGIN_NONCE_SEED__ = "${pluginNonceSeed}"</script>` + head.innerHTML
         
         res.send(root.toString())
     } catch (error) {

@@ -38,23 +38,40 @@ interface AbortSignalRef {
  * Build the nonce used by the sandbox iframe's Content Security Policy.
  *
  * `Crypto.randomUUID()` is restricted to secure contexts in several mobile
- * browsers. PocketRisu is commonly opened from a phone over a LAN HTTP URL,
- * where `crypto` and `getRandomValues()` are available but `randomUUID()` is
- * not. Falling back to cryptographically secure random bytes keeps the CSP
- * nonce strong without preventing every V3 plugin from starting on mobile.
+ * browsers. PocketRisu is commonly opened from a phone over a LAN HTTP URL.
+ * Prefer Web Crypto when the browser exposes it; a few mobile WebViews hide
+ * the entire API on insecure origins, so Node mode also injects a fresh
+ * server-generated 256-bit page seed. The counter makes every iframe nonce
+ * distinct while the random seed keeps it unpredictable.
  */
-export function createSandboxNonce(cryptoSource: Crypto = globalThis.crypto): string {
+let pageNonceCounter = 0;
+
+function injectedPageNonceSeed(): string | undefined {
+    return (globalThis as typeof globalThis & {
+        __POCKETRISU_PLUGIN_NONCE_SEED__?: string
+    }).__POCKETRISU_PLUGIN_NONCE_SEED__;
+}
+
+export function createSandboxNonce(
+    cryptoSource: Crypto | undefined = globalThis.crypto,
+    pageSeed: string | undefined = injectedPageNonceSeed(),
+): string {
     if (typeof cryptoSource?.randomUUID === 'function') {
         return cryptoSource.randomUUID();
     }
 
-    if (typeof cryptoSource?.getRandomValues !== 'function') {
-        throw new Error('A cryptographically secure random source is required for the plugin sandbox.');
+    if (typeof cryptoSource?.getRandomValues === 'function') {
+        const bytes = new Uint8Array(16);
+        cryptoSource.getRandomValues(bytes);
+        return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
     }
 
-    const bytes = new Uint8Array(16);
-    cryptoSource.getRandomValues(bytes);
-    return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+    if (/^[0-9a-f]{64}$/i.test(pageSeed ?? '')) {
+        pageNonceCounter = (pageNonceCounter + 1) >>> 0;
+        return `${pageSeed}${pageNonceCounter.toString(16).padStart(8, '0')}`;
+    }
+
+    throw new Error('A cryptographically secure random source is required for the plugin sandbox.');
 }
 
 
