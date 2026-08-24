@@ -19,6 +19,7 @@ import { spawnServer, type ServerHandle } from './helpers/spawnServer.js'
 import { createClient, type RisuClient } from './helpers/client.js'
 import { createSeedBackup } from './helpers/seed.js'
 import { decodeBackup } from './helpers/decode.js'
+import { normalizeBackup } from './helpers/normalize.js'
 
 function dbBlobFromExport(exported: Buffer): Buffer {
   const entry = decodeBackup(exported).find((e) => e.name === 'database.risudat')
@@ -64,6 +65,14 @@ function bigDbBlob(salt = ''): Buffer {
 const DB_BLOB_HEX = Buffer.from('database/database.bin', 'utf-8').toString('hex')
 function saveFolderZip(blob: Buffer): Buffer {
   return Buffer.from(zipSync({ [DB_BLOB_HEX]: new Uint8Array(blob) }))
+}
+function saveFolderZipEntries(entries: Record<string, Buffer>): Buffer {
+  return Buffer.from(zipSync(Object.fromEntries(
+    Object.entries(entries).map(([key, value]) => [
+      Buffer.from(key, 'utf-8').toString('hex'),
+      new Uint8Array(value),
+    ]),
+  )))
 }
 async function uploadZip(client: RisuClient, blob: Buffer): Promise<Response> {
   return client.fetch('/api/migrate/save-folder/upload', {
@@ -193,6 +202,77 @@ describe('chunking lifecycle (real server, low threshold)', () => {
     expect(restored.includes(Buffer.from('AAA'))).toBe(true)
     expect((await getStats(client)).chunks.liveChunked).toBe(true)
   })
+
+  test('restore protects the selected oldest snapshot while a pending save rotates the set', async () => {
+    const { client } = await boot({ POCKETRISU_BACKUP_INTERVAL_MS: '0' })
+    const oldestKey = 'database/dbbackup-1000.bin'
+    const newerKey = 'database/dbbackup-2000.bin'
+    const sessionHeaders = {
+      'x-session-id': 'snapshot-restore-regression',
+      'x-user-active': '1',
+    }
+
+    // Seed exactly two snapshots plus a distinct live DB in one save-folder
+    // import. A pending chat save below creates snapshot #3; with maxCount=2,
+    // the unprotected implementation used to evict `oldestKey` before copying
+    // it to the live key and still report a successful restore.
+    const seedRes = await client.fetch('/api/migrate/save-folder/upload', {
+      method: 'POST',
+      headers: { 'content-type': 'application/zip', ...sessionHeaders },
+      body: new Uint8Array(saveFolderZipEntries({
+        'database/database.bin': bigDbBlob('LIVE'),
+        [oldestKey]: bigDbBlob('SNAP-OLDEST'),
+        [newerKey]: bigDbBlob('SNAP-NEWER'),
+      })),
+    })
+    expect(seedRes.status).toBe(200)
+
+    const limitsRes = await client.fetch('/api/db/snapshots/limits', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json', ...sessionHeaders },
+      body: JSON.stringify({ maxCount: 2, maxBytes: 500 * 1024 * 1024 }),
+    })
+    expect(limitsRes.status).toBe(200)
+
+    // Populate dbCache/fullChatStore, then enqueue a real DB persist without
+    // waiting for its 5-second debounce. The restore endpoint must flush it.
+    const readRes = await client.fetch('/api/read', {
+      headers: { 'file-path': DB_BLOB_HEX },
+    })
+    expect(readRes.status).toBe(200)
+    const pendingChat = {
+      id: 'chat0', name: 'pending', lastDate: Date.now(), localLore: [], scriptstate: {}, note: '',
+      message: [{ role: 'user', data: 'PENDING-SAVE' }],
+    }
+    const pendingChatBody = Buffer.concat([MAGIC_RAW, packr.encode(pendingChat)])
+    const chatSaveRes = await client.fetch('/api/chat-content/c0/0', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/octet-stream',
+        'x-chat-id': 'chat0',
+        ...sessionHeaders,
+      },
+      body: new Uint8Array(pendingChatBody),
+    })
+    expect(chatSaveRes.status).toBe(200)
+
+    const restoreRes = await client.fetch('/api/db/snapshots/restore', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...sessionHeaders },
+      body: JSON.stringify({ key: oldestKey }),
+    })
+    expect(restoreRes.status).toBe(200)
+
+    const { raw } = normalizeBackup(await client.exportBackup())
+    const restoredMessage = (raw.characters as any[])[0].chats[0].message[0].data
+    expect(restoredMessage).toContain('SNAP-OLDEST')
+    expect(restoredMessage).not.toContain('PENDING-SAVE')
+
+    const snapshots = (await (await client.fetch('/api/db/snapshots')).json()).snapshots
+    expect(snapshots).toHaveLength(2)
+    expect(snapshots.some((snapshot: any) => snapshot.key !== oldestKey && snapshot.key !== newerKey)).toBe(true)
+    expect(snapshots.some((snapshot: any) => snapshot.key === oldestKey)).toBe(false)
+  }, 30_000)
 
   test('optimize reclaims orphan chunks left by re-imports', async () => {
     const { client } = await boot() // default cooldown → 2nd import takes no snapshot

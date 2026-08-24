@@ -4,6 +4,7 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 const { createChunkStore } = require('./chunkStore.cjs');
+const { createKvPrefixQueries } = require('./kv-prefix.cjs');
 
 const saveDir = path.join(process.cwd(), 'save');
 if (!fs.existsSync(saveDir)) {
@@ -116,6 +117,12 @@ const stmtKvPrefix = db.prepare(`SELECT key FROM kv WHERE key LIKE ? ESCAPE '\\'
 const stmtKvPrefixSizes = db.prepare(`SELECT key, LENGTH(value) as size FROM kv WHERE key LIKE ? ESCAPE '\\'`);
 const stmtKvDelPrefix = db.prepare(`DELETE FROM kv WHERE key LIKE ? ESCAPE '\\'`);
 const stmtKvUpdatedAt = db.prepare(`SELECT updated_at FROM kv WHERE key = ?`);
+const {
+    prefixStats: kvPrefixStats,
+    iterateWithSizes: kvIterateWithSizes,
+    storedSize: kvStoredSize,
+    summarizePrefixes: kvSummarizePrefixes,
+} = createKvPrefixQueries(db);
 
 function kvGet(key) {
     // Reassembles chunked values; returns raw value for everything else.
@@ -215,7 +222,9 @@ function clearEntities() {
 module.exports = {
     db,
     // KV
-    kvGet, kvSet, kvDel, kvList, kvDelPrefix, kvListWithSizes, kvSize, kvGetUpdatedAt, kvCopyValue,
+    kvGet, kvSet, kvDel, kvList, kvDelPrefix, kvListWithSizes, kvPrefixStats, kvIterateWithSizes,
+    kvStoredSize, kvSummarizePrefixes,
+    kvSize, kvGetUpdatedAt, kvCopyValue,
     clearEntities,
     checkpointWal,
     gcChunks,

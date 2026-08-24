@@ -47,7 +47,10 @@
             file: { count: number; totalSize: number; oldest: number | null; newest: number | null }
         }
         trashed: { count: number; expiredCount: number; available: boolean }
-        orphan: { count: number; totalSize: number; available: boolean }
+        orphan: {
+            count: number; totalSize: number; available: boolean
+            totalCount?: number; scanLimit?: number; reason?: string | null
+        }
         etag: string | null
     }
     interface CharBreakdown {
@@ -653,7 +656,9 @@
         {#if !stats.orphan.available}
             <ShAlert variant="default">
                 {#snippet icon()}<InfoIcon />{/snippet}
-                {language.storageOrphanUnavailable}
+                {stats.orphan.reason === 'asset-count-limit'
+                    ? language.storageOrphanSkippedLarge(stats.orphan.totalCount ?? 0, stats.orphan.scanLimit ?? 0)
+                    : language.storageOrphanUnavailable}
             </ShAlert>
         {/if}
 

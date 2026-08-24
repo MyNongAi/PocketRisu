@@ -2274,6 +2274,8 @@ export const languageKorean = {
     "삭제된 파일은 복구할 수 없습니다. 중요한 데이터가 있다면 백업을 먼저 만드세요. 정리 후에는 위의 \"SQLite 오버헤드 정리\"까지 실행해야 파일 크기가 실제로 줄어듭니다.",
   storageOrphanUnavailable:
     "아직 검사할 수 없습니다. 데이터베이스가 서버 메모리에 올라온 뒤 새로고침하세요.",
+  storageOrphanSkippedLarge: (count: number, limit: number) =>
+    `대형 라이브러리의 자동 고아 검사를 생략했습니다(에셋 ${count.toLocaleString()}개, 자동 검사 한도 ${limit.toLocaleString()}개). 시작 시 메모리 폭증을 막기 위한 조치입니다.`,
   storageOrphanPurge: "고아 미디어 정리",
   storageOrphanPurging: "고아 미디어 정리 중...",
   storageOrphanConfirm: (count: number, size: number) =>

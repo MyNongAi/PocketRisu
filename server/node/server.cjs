@@ -24,7 +24,8 @@ const getVips = () => {
     return _vipsPromise
 }
 const { kvGet, kvSet, kvDel, kvList,
-        kvDelPrefix, kvListWithSizes, kvSize, kvGetUpdatedAt, kvCopyValue, clearEntities, checkpointWal,
+        kvDelPrefix, kvListWithSizes, kvPrefixStats, kvIterateWithSizes, kvStoredSize, kvSummarizePrefixes,
+        kvSize, kvGetUpdatedAt, kvCopyValue, clearEntities, checkpointWal,
         gcChunks, reclaimableChunkBytes, isDbBlobChunked, snapshotFootprint, db: sqliteDb } = require('./db.cjs');
 const {
     addLogBatch, queryLogs, clearLogs, countLogs,
@@ -192,7 +193,7 @@ function getSnapshotLimits() {
 // Walk newest → oldest; keep within both limits, delete the rest. The most
 // recent snapshot is always kept (even if it alone exceeds the byte limit) so
 // we never end up with zero backups after a config change.
-function trimSnapshotsToLimits() {
+function trimSnapshotsToLimits(protectedSnapshotKey = null) {
     const { maxCount, maxBytes } = getSnapshotLimits();
     // Size each snapshot by its marginal disk cost (chunks not shared with the
     // live blob), not its logical size — chunked snapshots share chunks, so a
@@ -209,9 +210,13 @@ function trimSnapshotsToLimits() {
     for (let i = 0; i < entries.length; i++) {
         const e = entries[i];
         const isFirst = i === 0;
+        // A restore may flush a pending save before copying the selected
+        // snapshot back to the live key.  That flush can create snapshot #21;
+        // keep the user's selected source alive until the restore completes.
+        const isProtected = protectedSnapshotKey === e.key;
         const fitsByCount = i < maxCount;
         const fitsByBytes = runningBytes + e.size <= maxBytes;
-        if (isFirst || (fitsByCount && fitsByBytes)) {
+        if (isFirst || isProtected || (fitsByCount && fitsByBytes)) {
             runningBytes += e.size;
         } else {
             toDelete.push(e.key);
@@ -238,7 +243,7 @@ function snapshotUsage() {
     return { count: keys.length, bytes, logicalBytes };
 }
 
-function createBackupAndRotate() {
+function createBackupAndRotate(protectedSnapshotKey = null) {
     const now = Date.now();
     if (lastBackupTime && now - lastBackupTime < BACKUP_INTERVAL_MS) {
         return;
@@ -247,10 +252,10 @@ function createBackupAndRotate() {
 
     const backupKey = `${DB_BACKUP_PREFIX}${(now / 100).toFixed()}.bin`;
     kvCopyValue('database/database.bin', backupKey);
-    trimSnapshotsToLimits();
+    trimSnapshotsToLimits(protectedSnapshotKey);
 }
 
-async function flushPendingDb() {
+async function flushPendingDb({ protectedSnapshotKey = null } = {}) {
     const pendingTimer = saveTimers[DB_HEX_KEY];
     if (pendingTimer) {
         clearTimeout(pendingTimer);
@@ -265,7 +270,7 @@ async function flushPendingDb() {
                 kvSet('database/database.bin', Buffer.from(encodeRisuSaveLegacy(fullDb)));
             }
         }
-        createBackupAndRotate();
+        createBackupAndRotate(protectedSnapshotKey);
         if (saveTimers[DB_HEX_KEY] === pendingTimer) delete saveTimers[DB_HEX_KEY];
     }
 }
@@ -5045,7 +5050,7 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
     const patch = req.body.patch;
     const expectedHash = req.body.expectedHash;
 
-    if (!filePath || !patch || !expectedHash) {
+    if (!filePath || !Array.isArray(patch) || !expectedHash) {
         res.status(400).send({ error: 'File path, patch, and expected hash required' });
         return;
     }
@@ -5130,6 +5135,24 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
                     error: 'Hash mismatch - data out of sync',
                     currentEtag
                 });
+                return;
+            }
+
+            // A reactive watcher can occasionally submit an empty JSON Patch.
+            // The hash check above is still important (it proves the caller's
+            // baseline is current), but cloning a hundreds-of-MB database and
+            // scheduling a persist/snapshot when there are zero operations is
+            // pure churn.  Keep any already-pending timer intact and finish.
+            if (patch.length === 0) {
+                patchStage = 'noop';
+                const responsePayload = {
+                    success: true,
+                    appliedOperations: 0,
+                    etag: decodedKey === 'database/database.bin' ? dbEtag ?? undefined : undefined,
+                };
+                const persistWarning = currentPersistWarning();
+                if (persistWarning) responsePayload.persistWarning = persistWarning;
+                res.send(responsePayload);
                 return;
             }
 
@@ -5381,7 +5404,7 @@ async function buildSettingsOnlyPlan({ includeModuleAssets = true } = {}) {
     const keepNames = includeModuleAssets ? withModules : withoutModules;
 
     let baseCount = 0, baseBytes = 0, moduleCount = 0, moduleBytes = 0;
-    for (const entry of kvListWithSizes('assets/')) {
+    for (const entry of kvIterateWithSizes('assets/')) {
         const name = path.basename(entry.key);
         if (withoutModules.has(name)) {
             baseCount++;
@@ -6755,6 +6778,14 @@ app.post('/api/migrate/save-folder/cleanup/execute', rejectDuringExclusiveStorag
 const DB_BLOB_KEY = 'database/database.bin';
 const DB_BACKUP_PREFIX = 'database/dbbackup-';
 const ASSET_PREFIXES = ['assets/', 'remotes/', 'inlay/', 'inlay_thumb/', 'inlay_meta/', 'inlay_info/', 'coldstorage/'];
+// The summary endpoint runs during bootstrap as well as on the dashboard.  An
+// exact orphan scan has to visit every asset key, so beyond this count it is an
+// explicitly requested maintenance task rather than hidden startup work.  Zero
+// disables summary scans; operators with fast storage may raise the limit.
+const parsedStatsOrphanLimit = Number(process.env.POCKETRISU_STATS_ORPHAN_SCAN_LIMIT ?? 100000);
+const STATS_ORPHAN_SCAN_LIMIT = Number.isFinite(parsedStatsOrphanLimit)
+    ? Math.max(0, Math.floor(parsedStatsOrphanLimit))
+    : 100000;
 
 function statsBasename(s) {
     if (!s) return '';
@@ -6909,14 +6940,14 @@ async function sumInlayFsBytes() {
 // /api/backup/server/save without writing anything. Inlay files live on the
 // filesystem (post-migration), so we have to fs.stat them rather than read
 // kvSize. Cost: ~5-50 ms typical, ~200 ms for users with thousands of inlays.
-async function estimateServerBackupSize() {
+async function estimateServerBackupSize({ inlayFsBytes = null, assetBytes = null, inlayMetaBytes = null } = {}) {
     let total = 0;
     total += kvSize(DB_BLOB_KEY) || 0;
     total += kvSize(EXTERNAL_ASSET_MANIFEST_KEY) || 0;
-    for (const it of kvListWithSizes('assets/')) total += it.size;
-    for (const it of kvListWithSizes('inlay_meta/')) total += it.size;
+    total += assetBytes ?? kvPrefixStats('assets/').totalSize;
+    total += inlayMetaBytes ?? kvPrefixStats('inlay_meta/').totalSize;
     for (const e of listColdStorageBackupEntries()) total += e.size;
-    total += await sumInlayFsBytes();
+    total += inlayFsBytes ?? await sumInlayFsBytes();
     return total;
 }
 
@@ -6990,15 +7021,16 @@ app.get('/api/db/stats', async (req, res, next) => {
             }
         }
         prefixes[DB_BACKUP_PREFIX] = { totalSize: backupTotal, count: backupKeys.length };
+        // One bounded SQL result and one table pass replace seven JS arrays plus
+        // separate full-KV and backup-estimate scans.
+        const kvSummary = kvSummarizePrefixes(ASSET_PREFIXES);
         for (const p of ASSET_PREFIXES) {
-            const items = kvListWithSizes(p);
-            let total = 0;
-            for (const it of items) total += it.size;
-            prefixes[p] = { totalSize: total, count: items.length };
+            const summary = kvSummary.prefixes[p];
+            prefixes[p] = { totalSize: summary.totalSize, count: summary.count };
         }
 
-        const kvRows = sqliteDb.prepare('SELECT COUNT(*) AS c FROM kv').get().c;
-        const kvTotalBytes = sqliteDb.prepare('SELECT COALESCE(SUM(LENGTH(value)), 0) AS s FROM kv').get().s;
+        const kvRows = kvSummary.all.count;
+        const kvTotalBytes = kvSummary.all.totalSize;
 
         let fileBackups = { count: 0, totalSize: 0, oldest: null, newest: null };
         try {
@@ -7016,7 +7048,15 @@ app.get('/api/db/stats', async (req, res, next) => {
 
         // Quick estimates from in-memory cache only — never decode the BLOB just for stats.
         let trashed = { count: 0, expiredCount: 0, available: false };
-        let orphan = { count: 0, totalSize: 0, available: false };
+        const assetCount = prefixes['assets/']?.count || 0;
+        let orphan = {
+            count: 0,
+            totalSize: 0,
+            available: false,
+            totalCount: assetCount,
+            scanLimit: STATS_ORPHAN_SCAN_LIMIT,
+            reason: assetCount > STATS_ORPHAN_SCAN_LIMIT ? 'asset-count-limit' : 'database-unavailable',
+        };
         const stripped = dbCache[DB_HEX_KEY];
         if (stripped?.characters) {
             const now = Date.now();
@@ -7032,23 +7072,30 @@ app.get('/api/db/stats', async (req, res, next) => {
         // `characters` must be an array: a decode failure parks `{}` in dbCache,
         // and walking that yields an empty reference set — which would report
         // every stored asset as an orphan.
-        if (stripped && Array.isArray(stripped.characters)) {
+        if (stripped && Array.isArray(stripped.characters) && assetCount <= STATS_ORPHAN_SCAN_LIMIT) {
             const uncleanable = buildUncleanableSet(stripped);
             for (const bn of collectPluginStorageAssetRefs()) uncleanable.add(bn);
-            for (const it of kvListWithSizes('assets/')) {
+            for (const it of kvIterateWithSizes('assets/')) {
                 if (!uncleanable.has(statsBasename(it.key))) {
                     orphan.count++;
                     orphan.totalSize += it.size;
                 }
             }
             orphan.available = true;
+            orphan.reason = null;
         }
 
-        const estimatedBackupSize = await estimateServerBackupSize();
         // Inlay payload now lives on the filesystem (post-migration) rather
         // than in kv `inlay/*` prefixes. Surface explicitly so the dashboard
         // chart can include it in the inlay slice instead of underreporting.
         const inlayFsBytes = await sumInlayFsBytes();
+        // Reuse the filesystem scan instead of walking the inlay directory a
+        // second time inside the backup estimator.
+        const estimatedBackupSize = await estimateServerBackupSize({
+            inlayFsBytes,
+            assetBytes: prefixes['assets/'].totalSize,
+            inlayMetaBytes: prefixes['inlay_meta/'].totalSize,
+        });
 
         res.json({
             files,
@@ -7084,13 +7131,9 @@ app.get('/api/db/stats/characters', rejectDuringExclusiveStorage, async (req, re
         }
         const dbObj = await decodeRisuSave(raw);
 
-        const assetSize = new Map();
-        for (const it of kvListWithSizes('assets/')) {
-            assetSize.set(statsBasename(it.key), it.size);
-        }
         // remotes/<chaId>.local.bin (+ optional .meta sidecar) → bucket by chaId.
         const remoteSize = new Map();
-        for (const it of kvListWithSizes('remotes/')) {
+        for (const it of kvIterateWithSizes('remotes/')) {
             const bn = statsBasename(it.key).replace(/\.meta$/, '');
             const chaId = bn.replace(/\.local\.bin$/, '');
             if (chaId) remoteSize.set(chaId, (remoteSize.get(chaId) || 0) + it.size);
@@ -7113,7 +7156,7 @@ app.get('/api/db/stats/characters', rejectDuringExclusiveStorage, async (req, re
             let imgBytes = 0;
             for (const bn of refs) {
                 if (!bn || claimed.has(bn)) continue;
-                const sz = assetSize.get(bn);
+                const sz = kvStoredSize(`assets/${bn}`);
                 if (sz != null) {
                     imgBytes += sz;
                     claimed.add(bn);
@@ -7152,7 +7195,7 @@ app.get('/api/db/stats/characters', rejectDuringExclusiveStorage, async (req, re
         const uncleanable = buildUncleanableSet(dbObj);
         for (const bn of collectPluginStorageAssetRefs()) uncleanable.add(bn);
         let orphanCount = 0, orphanTotal = 0;
-        for (const it of kvListWithSizes('assets/')) {
+        for (const it of kvIterateWithSizes('assets/')) {
             if (!uncleanable.has(statsBasename(it.key))) {
                 orphanCount++;
                 orphanTotal += it.size;
@@ -7185,11 +7228,6 @@ app.get('/api/db/stats/modules', async (req, res, next) => {
         const dbObj = await decodeRisuSave(raw);
         const list = Array.isArray(dbObj.modules) ? dbObj.modules : [];
 
-        const assetSize = new Map();
-        for (const it of kvListWithSizes('assets/')) {
-            assetSize.set(statsBasename(it.key), it.size);
-        }
-
         const modules = [];
         for (const m of list) {
             if (!m) continue;
@@ -7207,7 +7245,7 @@ app.get('/api/db/stats/modules', async (req, res, next) => {
                     const bn = statsBasename(a?.[1]);
                     if (!bn || seen.has(bn)) continue;
                     seen.add(bn);
-                    const sz = assetSize.get(bn);
+                    const sz = kvStoredSize(`assets/${bn}`);
                     if (sz != null) assetBytes += sz;
                 }
             }
@@ -7460,15 +7498,25 @@ app.post('/api/db/snapshots/restore', rejectDuringExclusiveStorage, async (req, 
         if (!key.startsWith(DB_BACKUP_PREFIX)) {
             return res.status(400).json({ error: 'Invalid snapshot key' });
         }
-        const blob = kvGet(key);
-        if (!blob) {
-            return res.status(404).json({ error: 'Snapshot not found' });
-        }
+        // Fast preflight only.  The authoritative check is repeated inside the
+        // storage queue below so a queued delete cannot race this restore.
+        if (kvSize(key) == null) return res.status(404).json({ error: 'Snapshot not found' });
+        let snapshotMissing = false;
         await queueMutableStorageOperation(async () => {
             // Drain any pending debounced persist first — same pattern as
             // /api/db/optimize. Without this, an in-flight save could land
-            // after kvCopyValue and overwrite the restored snapshot.
-            await flushPendingDb();
+            // after kvCopyValue and overwrite the restored snapshot.  If that
+            // flush creates snapshot #21, protect the user's selected source
+            // from rotation until its bytes have become the live database.
+            if (kvSize(key) == null) {
+                snapshotMissing = true;
+                return;
+            }
+            await flushPendingDb({ protectedSnapshotKey: key });
+            if (kvSize(key) == null) {
+                snapshotMissing = true;
+                return;
+            }
             kvCopyValue(key, DB_BLOB_KEY);
             invalidateDbCache();
             // Snapshot may pre-date the remote-block migration. Clear the marker
@@ -7495,7 +7543,11 @@ app.post('/api/db/snapshots/restore', rejectDuringExclusiveStorage, async (req, 
             } catch (e) {
                 logger.warn('[Snapshot restore] post-restore decode failed:', e?.message || e);
             }
+            // The selected source no longer needs temporary protection.  Bring
+            // the snapshot set back within the configured count/byte limits.
+            trimSnapshotsToLimits();
         });
+        if (snapshotMissing) return res.status(404).json({ error: 'Snapshot not found' });
         res.json({ ok: true });
     } catch (err) { next(err); }
 });
