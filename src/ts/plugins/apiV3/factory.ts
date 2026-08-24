@@ -34,6 +34,29 @@ interface AbortSignalRef {
     aborted: boolean;
 }
 
+/**
+ * Build the nonce used by the sandbox iframe's Content Security Policy.
+ *
+ * `Crypto.randomUUID()` is restricted to secure contexts in several mobile
+ * browsers. PocketRisu is commonly opened from a phone over a LAN HTTP URL,
+ * where `crypto` and `getRandomValues()` are available but `randomUUID()` is
+ * not. Falling back to cryptographically secure random bytes keeps the CSP
+ * nonce strong without preventing every V3 plugin from starting on mobile.
+ */
+export function createSandboxNonce(cryptoSource: Crypto = globalThis.crypto): string {
+    if (typeof cryptoSource?.randomUUID === 'function') {
+        return cryptoSource.randomUUID();
+    }
+
+    if (typeof cryptoSource?.getRandomValues !== 'function') {
+        throw new Error('A cryptographically secure random source is required for the plugin sandbox.');
+    }
+
+    const bytes = new Uint8Array(16);
+    cryptoSource.getRandomValues(bytes);
+    return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
 
 const GUEST_BRIDGE_SCRIPT = `
 await (async function() {
@@ -434,7 +457,7 @@ await (async function() {
 export class SandboxHost {
     private iframe: HTMLIFrameElement;
     private apiFactory: any;
-    private nonce = crypto.randomUUID();
+    private nonce = createSandboxNonce();
     private csp = `connect-src 'none'; script-src 'nonce-${this.nonce}' 'wasm-unsafe-eval'; frame-src 'none'; object-src 'none'; style-src * 'unsafe-inline'; default-src 'none'; img-src * data: blob:; font-src * data: blob:; media-src * data: blob:; base-uri 'none';`;
 
     private instanceRegistry = new Map<string, any>();

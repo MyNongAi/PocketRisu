@@ -416,11 +416,23 @@
     </MeasuredVirtualList>
     {/if}
 
-    <div class="mt-3 flex shrink-0 items-center justify-end gap-3 border-t border-selected py-3">
-        {@render moduleActions()}
-    </div>
+    {#if !quickPanel}
+        <div class="mt-3 flex shrink-0 items-center justify-end gap-3 border-t border-selected py-3">
+            {@render moduleActions()}
+        </div>
+    {/if}
 
     </SettingPage>
+    {#if quickPanel}
+        <!-- Keep quick-panel actions outside SettingPage's scrollable content.
+             This is a real sidebar footer, not the last row of the module list. -->
+        <div
+            class="z-10 -mx-4 -mb-6 mt-3 flex min-h-14 shrink-0 items-center justify-end gap-4 border-t border-selected bg-darkbg px-4 py-3"
+            data-quick-module-footer
+        >
+            {@render moduleActions()}
+        </div>
+    {/if}
 {:else if mode === 1}
     <SettingPage
         title={language.createModule}
