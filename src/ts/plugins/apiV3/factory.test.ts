@@ -25,8 +25,18 @@ describe('createSandboxNonce', () => {
         expect(getRandomValues).toHaveBeenCalledOnce()
     })
 
+    it('uses the server page seed when an insecure WebView hides Web Crypto entirely', () => {
+        const seed = 'ab'.repeat(32)
+        const first = createSandboxNonce({} as Crypto, seed)
+        const second = createSandboxNonce({} as Crypto, seed)
+
+        expect(first).toMatch(new RegExp(`^${seed}[0-9a-f]{8}$`))
+        expect(second).toMatch(new RegExp(`^${seed}[0-9a-f]{8}$`))
+        expect(second).not.toBe(first)
+    })
+
     it('does not weaken the CSP nonce when no secure random source exists', () => {
-        expect(() => createSandboxNonce({} as Crypto)).toThrow(
+        expect(() => createSandboxNonce({} as Crypto, undefined)).toThrow(
             'A cryptographically secure random source is required for the plugin sandbox.',
         )
     })
