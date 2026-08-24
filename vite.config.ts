@@ -10,6 +10,10 @@ const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
 // https://vitejs.dev/config/
 export default defineConfig(({command, mode}) => {
   return {
+    // Keep optimizer/config metadata in the project workspace instead of
+    // assuming node_modules is writable (portable installs and linked
+    // dependency runtimes commonly make it read-only).
+    cacheDir: '.vite-cache',
     define: {
       '__APP_VERSION__': JSON.stringify(pkg.version),
     },

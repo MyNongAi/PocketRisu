@@ -2,6 +2,7 @@ import { svelte } from "@sveltejs/vite-plugin-svelte"
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  cacheDir: '.vite-cache/vitest',
   plugins: [
     svelte(),
   ],
@@ -17,6 +18,13 @@ export default defineConfig({
     // compat/server suites have their own node-environment configs
     // (vitest.config.compat.ts / vitest.config.server.ts); exclude here so
     // `pnpm test` doesn't pick them up under the wrong environment.
-    exclude: ['node_modules/**', 'test/compat/**', 'server/node/**'],
+    exclude: [
+      'node_modules/**',
+      'test/compat/**',
+      'server/node/**',
+      // This utility deliberately uses Node's built-in test runner so it can
+      // be copied and verified without installing the web app toolchain.
+      'tools/risu-migration-exporter/**/*.test.cjs',
+    ],
   },
 })

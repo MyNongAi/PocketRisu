@@ -42,17 +42,16 @@ const {
     parseExternalAssetUri,
 } = require('./external-assets.cjs');
 const {
-    collectAssetReferences,
-    collectEmbeddedInternalAssetNames,
     collectExternalAssetReferences,
-    rewriteAssetReferences,
     rewriteExternalAssetReferences,
 } = require('./external-asset-references.cjs');
+const { createExternalAssetMigrationJournal } = require('./external-asset-migration-journal.cjs');
 const { applyPatch } = require('fast-json-patch');
 const { decodeRisuSave, encodeRisuSaveLegacy, calculateHash, normalizeJSON, normalizeForwardHeaders, hasRemoteBlocks } = require('./utils.cjs');
 const { spawn, execSync } = require('child_process');
 const os = require('os');
 const { Readable, Transform } = require('stream');
+const { Worker } = require('worker_threads');
 
 // Install process-level error handlers before any other init so early crashes get logged.
 installProcessHandlers();
@@ -883,7 +882,7 @@ const EXTERNAL_ASSET_MANIFEST_KEY = 'external-assets/manifest.v1.json';
 const EXTERNAL_ASSET_BACKUP_NAME = 'external_manifest.v1.json';
 const externalAssetStateDir = path.join(savePath, 'external-assets');
 const externalAssetConfigPath = path.join(externalAssetStateDir, 'config.json');
-const externalAssetTrashDir = path.join(externalAssetStateDir, 'trash');
+const defaultExternalAssetTrashDir = 'save/external-assets/trash';
 // Keep the built-in store under save/, which both portable updater paths
 // preserve. A user may still configure another filesystem folder explicitly.
 const defaultExternalAssetRoot = 'save/external-assets/store';
@@ -891,12 +890,29 @@ let externalAssetRuntime = null;
 let externalAssetRuntimePromise = null;
 let externalAssetConfigGeneration = 0;
 let externalAssetMigrationInProgress = false;
+const externalAssetMigrationJournal = createExternalAssetMigrationJournal({ db: sqliteDb });
+const recoveredExternalAssetMigrations = externalAssetMigrationJournal.recoverInterrupted();
+if (recoveredExternalAssetMigrations > 0) {
+    logger.warn(`[ExternalAssets] Paused ${recoveredExternalAssetMigrations} interrupted migration job(s)`);
+}
+const externalAssetPlanningWorkers = new Map();
+const externalAssetPlanningProgress = new Map();
+let externalAssetStageRunner = null;
+let externalAssetStageJobId = null;
+let externalAssetFinalizeWorker = null;
+
+function refreshExternalAssetMigrationBusy() {
+    externalAssetMigrationInProgress = externalAssetPlanningWorkers.size > 0
+        || externalAssetStageRunner !== null
+        || externalAssetFinalizeWorker !== null;
+}
 
 function defaultExternalAssetConfig() {
     return {
         version: 1,
         enabled: true,
         activeProvider: 'local',
+        trashRoot: defaultExternalAssetTrashDir,
         cacheMaxBytes: 64 * 1024 * 1024,
         retryCount: 2,
         providers: {
@@ -916,10 +932,14 @@ function normalizeExternalAssetConfig(input) {
         : defaults.activeProvider;
     const cacheMaxBytesRaw = Number(source.cacheMaxBytes);
     const retryCountRaw = Number(source.retryCount);
+    const trashRoot = typeof source.trashRoot === 'string' && source.trashRoot.trim()
+        ? source.trashRoot.trim()
+        : defaults.trashRoot;
     return {
         version: 1,
         enabled: source.enabled !== false,
         activeProvider,
+        trashRoot,
         cacheMaxBytes: Number.isFinite(cacheMaxBytesRaw)
             ? Math.min(2 * 1024 * 1024 * 1024, Math.max(0, Math.floor(cacheMaxBytesRaw)))
             : defaults.cacheMaxBytes,
@@ -1041,7 +1061,7 @@ async function getExternalAssetRuntime() {
         const service = createExternalAssetService({
             providers,
             manifestStore,
-            trashDir: externalAssetTrashDir,
+            trashDir: config.trashRoot,
             readInternal: async (key) => kvGet(key),
             cacheMaxBytes: config.cacheMaxBytes,
             retry: { attempts: config.retryCount + 1 },
@@ -2852,6 +2872,10 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
     }
 
     invalidateDbCache();
+    const discardedMigrationJobs = externalAssetMigrationJournal.resetForStorageReplacement();
+    if (discardedMigrationJobs > 0) {
+        logger.info(`[Backup Import] Discarded ${discardedMigrationJobs} external asset migration job(s) from the replaced storage generation`);
+    }
     externalAssetConfigGeneration++;
     externalAssetRuntime = null;
     externalAssetRuntimePromise = null;
@@ -3885,56 +3909,198 @@ app.put('/api/external-assets/config', async (req, res, next) => {
     }
 });
 
-async function decodedFullDatabaseForAssetMigration() {
-    return await queueStorageOperation(async () => {
-        await flushPendingDb();
-        const raw = kvGet('database/database.bin');
-        if (!raw) throw new Error('database.bin missing');
-        return {
-            dbObj: normalizeJSON(await decodeRisuSave(raw)),
-            databaseHash: nodeCrypto.createHash('sha256').update(raw).digest('hex'),
-        };
-    });
-}
-
 function externalMigrationConflict(message) {
     return Object.assign(new Error(message), { statusCode: 409 });
 }
 
-function externalMigrationPlan(dbObj) {
-    const references = collectAssetReferences(dbObj);
-    const uniquePaths = [...new Set(references.map((reference) => reference.value))];
-    const missing = [];
-    let bytes = 0;
-    for (const key of uniquePaths) {
-        const size = kvSize(key);
-        if (size === null || size === undefined) missing.push(key);
-        else bytes += size;
+function publicExternalMigrationJob(job) {
+    if (!job) return null;
+    const planning = externalAssetPlanningProgress.get(job.id);
+    return planning ? { ...job, planning } : job;
+}
+
+function runExternalAssetWorker(scriptName, data, onProgress) {
+    const worker = new Worker(path.join(__dirname, scriptName), { workerData: data });
+    const promise = new Promise((resolve, reject) => {
+        let settled = false;
+        const finish = (callback, value) => {
+            if (settled) return;
+            settled = true;
+            callback(value);
+        };
+        worker.on('message', (message) => {
+            if (message?.type === 'progress') onProgress?.(message);
+            else if (message?.type === 'done') finish(resolve, message.result ?? message);
+            else if (message?.type === 'error') {
+                const error = new Error(message.error || 'External asset worker failed');
+                if (message.stack) error.stack = message.stack;
+                finish(reject, error);
+            }
+        });
+        worker.once('error', (error) => finish(reject, error));
+        worker.once('exit', (code) => {
+            if (!settled && code !== 0) finish(reject, new Error(`External asset worker exited with code ${code}`));
+            else if (!settled) finish(reject, new Error('External asset worker exited without a result'));
+        });
+    });
+    promise.worker = worker;
+    return promise;
+}
+
+async function stageExternalAssetItem(runtime, job, item, data) {
+    if (!data) throw new Error(`Internal asset is missing: ${item.internalKey}`);
+    const { binary, contentType } = resolveAssetPayload(item.internalKey, data);
+    if (binary.length !== item.size) {
+        throw externalMigrationConflict(`Internal asset changed size before staging: ${item.internalKey}`);
     }
-    return { references, uniquePaths, missing, bytes };
+    const receipt = await runtime.service.stageDetached({
+        providerId: job.providerId,
+        data: binary,
+        internalKey: item.internalKey,
+        assetName: path.basename(item.internalKey),
+        mimeType: contentType,
+        migrationId: job.id,
+    });
+    externalAssetMigrationJournal.markItemStaged(job.id, item.ordinal, {
+        uri: receipt.uri,
+        hash: receipt.hash,
+        size: receipt.size,
+        trashPath: receipt.trashPath,
+        mimeType: receipt.mimeType,
+        assetName: receipt.assetName,
+        stagedAt: receipt.timestamp,
+    });
+}
+
+async function runExternalAssetStaging(jobId) {
+    const runtime = await getExternalAssetRuntime();
+    const initial = externalAssetMigrationJournal.getJob(jobId);
+    if (!initial) throw new Error(`Migration job not found: ${jobId}`);
+    if (!runtime.config.enabled) throw new Error('External asset storage is disabled');
+    if (!runtime.config.providers[initial.providerId]) {
+        throw new Error(`External asset provider is not configured: ${initial.providerId}`);
+    }
+
+    let current = initial;
+    if (current.status === 'queued' || current.status === 'paused' || current.status === 'failed') {
+        current = externalAssetMigrationJournal.resumeJob(jobId);
+    }
+    while (true) {
+        current = externalAssetMigrationJournal.getJob(jobId);
+        if (!current || current.status === 'paused' || current.status === 'canceled') return current;
+        if (current.status !== 'running') throw new Error(`Migration staging stopped in ${current.status}`);
+
+        const batch = externalAssetMigrationJournal.pendingBatch(jobId, { limit: 8, maxBytes: 64 * 1024 * 1024 });
+        if (batch.length === 0) {
+            current = externalAssetMigrationJournal.getJob(jobId);
+            if (current.failedItems > 0) {
+                return externalAssetMigrationJournal.updateJobStatus(jobId, 'failed', {
+                    error: `${current.failedItems} asset(s) failed; resume retries only those items`,
+                });
+            }
+            return externalAssetMigrationJournal.updateJobStatus(jobId, 'staged');
+        }
+
+        // Hold the ordinary storage queue only while copying a bounded batch
+        // into memory. Network/disk provider I/O happens after the lock is
+        // released, so chat saves continue throughout a multi-hour migration.
+        const sources = await queueStorageOperation(() => batch.map((item) => kvGet(item.internalKey)));
+        const concurrency = Math.min(4, batch.length);
+        let cursor = 0;
+        const workers = Array.from({ length: concurrency }, async () => {
+            while (cursor < batch.length) {
+                const index = cursor++;
+                const item = batch[index];
+                try {
+                    await stageExternalAssetItem(runtime, current, item, sources[index]);
+                } catch (error) {
+                    logger.warn(`[ExternalAssets] Failed to stage ${item.internalKey}`, error);
+                    externalAssetMigrationJournal.markItemFailed(jobId, item.ordinal, error);
+                } finally {
+                    sources[index] = null;
+                }
+            }
+        });
+        await Promise.all(workers);
+    }
+}
+
+function startExternalAssetStaging(jobId) {
+    if (externalAssetStageRunner) {
+        if (externalAssetStageJobId === jobId) return externalAssetStageRunner;
+        throw externalMigrationConflict(`Migration ${externalAssetStageJobId} is already copying assets`);
+    }
+    externalAssetStageJobId = jobId;
+    externalAssetStageRunner = runExternalAssetStaging(jobId)
+        .catch((error) => {
+            logger.error(`[ExternalAssets] Background migration ${jobId} failed`, error);
+            const current = externalAssetMigrationJournal.getJob(jobId);
+            if (current && !['paused', 'canceled', 'published', 'verified', 'cleaned'].includes(current.status)) {
+                externalAssetMigrationJournal.updateJobStatus(jobId, 'failed', { error: error?.message || String(error) });
+            }
+        })
+        .finally(() => {
+            externalAssetStageRunner = null;
+            externalAssetStageJobId = null;
+            refreshExternalAssetMigrationBusy();
+        });
+    refreshExternalAssetMigrationBusy();
+    return externalAssetStageRunner;
+}
+
+function startExternalAssetPlanning(jobId, { planOnly = false } = {}) {
+    if (externalAssetPlanningWorkers.has(jobId)) return;
+    const promise = runExternalAssetWorker(
+        'external-asset-plan-worker.cjs',
+        { dbPath: path.join(savePath, 'risuai.db'), jobId },
+        (progress) => externalAssetPlanningProgress.set(jobId, {
+            phase: progress.phase,
+            current: progress.current,
+            total: progress.total,
+            databaseBytes: progress.databaseBytes,
+            uniqueAssets: progress.uniqueAssets,
+            items: progress.items,
+            bytes: progress.bytes,
+        }),
+    );
+    externalAssetPlanningWorkers.set(jobId, promise);
+    refreshExternalAssetMigrationBusy();
+    promise.then(() => {
+        if (planOnly) externalAssetMigrationJournal.pauseJob(jobId);
+        else startExternalAssetStaging(jobId);
+    }).catch((error) => {
+        logger.error(`[ExternalAssets] Migration planning ${jobId} failed`, error);
+        externalAssetMigrationJournal.updateJobStatus(jobId, 'failed', { error: error?.message || String(error) });
+    }).finally(() => {
+        externalAssetPlanningWorkers.delete(jobId);
+        externalAssetPlanningProgress.delete(jobId);
+        refreshExternalAssetMigrationBusy();
+    });
+}
+
+function createExternalAssetPlanningJob(providerId, options = {}) {
+    const job = externalAssetMigrationJournal.createJob({
+        providerId,
+        initialStatus: 'planning',
+        items: [],
+    });
+    startExternalAssetPlanning(job.id, options);
+    return publicExternalMigrationJob(job);
 }
 
 app.post('/api/external-assets/migrate/scan', async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
-    if (externalAssetMigrationInProgress || importInProgress) {
-        return res.status(409).json({ error: 'External asset scan is locked during migration/import' });
-    }
-    const storageReason = 'external asset scan';
-    if (!await acquireExclusiveStorage(storageReason)) {
-        return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
-    }
     try {
-        const { dbObj } = await decodedFullDatabaseForAssetMigration();
-        const plan = externalMigrationPlan(dbObj);
-        res.json({
-            references: plan.references.length,
-            uniqueAssets: plan.uniquePaths.length,
-            bytes: plan.bytes,
-            missing: plan.missing,
-            alreadyExternal: collectExternalAssetReferences(dbObj).length,
-        });
+        if (externalAssetMigrationInProgress || importInProgress) {
+            return res.status(409).json({ error: 'External asset planning is locked during another migration/import' });
+        }
+        const runtime = await getExternalAssetRuntime();
+        const providerId = typeof req.body?.providerId === 'string' && req.body.providerId
+            ? req.body.providerId
+            : runtime.config.activeProvider;
+        if (!runtime.config.providers[providerId]) return res.status(400).json({ error: 'External asset provider not configured' });
+        res.status(202).json({ job: createExternalAssetPlanningJob(providerId, { planOnly: true }) });
     } catch (error) { next(error); }
-    finally { endExclusiveStorage(storageReason); }
 });
 
 app.post('/api/external-assets/migrate/execute', async (req, res, next) => {
@@ -3942,13 +4108,6 @@ app.post('/api/external-assets/migrate/execute', async (req, res, next) => {
     if (!checkActiveSession(req, res)) return;
     if (externalAssetMigrationInProgress) return res.status(409).json({ error: 'External asset migration already in progress' });
     if (importInProgress) return res.status(409).json({ error: 'A backup import or restore is already in progress' });
-    if (!await acquireExclusiveStorage('external asset migration')) {
-        return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
-    }
-    externalAssetMigrationInProgress = true;
-    // Reuse the existing global import/restore mutex. Those flows replace the
-    // database and manifest wholesale and must not overlap network staging.
-    importInProgress = true;
     try {
         const runtime = await getExternalAssetRuntime();
         if (!runtime.config.enabled) return res.status(400).json({ error: 'External asset storage is disabled' });
@@ -3957,105 +4116,93 @@ app.post('/api/external-assets/migrate/execute', async (req, res, next) => {
             : runtime.config.activeProvider;
         if (!runtime.config.providers[providerId]) return res.status(400).json({ error: 'External asset provider not configured' });
 
-        const { dbObj, databaseHash } = await decodedFullDatabaseForAssetMigration();
-        const plan = externalMigrationPlan(dbObj);
-        if (plan.missing.length > 0) {
-            return res.status(409).json({
-                error: 'Migration aborted because referenced internal assets are missing',
-                missing: plan.missing,
-            });
-        }
-
-        const migrationId = `${Date.now()}-${nodeCrypto.randomUUID()}`;
-        const replacements = new Map();
-        // No live reference is changed during staging. Each source uploads,
-        // re-download verifies, and receives a trash copy one at a time; only
-        // the small mapping metadata is committed in one manifest write.
-        async function* stageInputs() {
-            for (const internalKey of plan.uniquePaths) {
-                const data = kvGet(internalKey);
-                if (!data) throw new Error(`Internal asset disappeared during migration: ${internalKey}`);
-                const { binary, contentType } = resolveAssetPayload(internalKey, data);
-                yield {
-                    providerId,
-                    data: binary,
-                    internalKey,
-                    assetName: path.basename(internalKey),
-                    mimeType: contentType,
-                    migrationId,
-                };
-            }
-        }
-        const stagedResults = await runtime.service.stageMany(stageInputs());
-        const staged = stagedResults.map((result, index) => ({
-            ...result,
-            internalKey: plan.uniquePaths[index],
-        }));
-        for (const item of staged) replacements.set(item.internalKey, item.uri);
-
-        const rewritten = rewriteAssetReferences(dbObj, replacements);
-        const encoded = Buffer.from(encodeRisuSaveLegacy(rewritten));
-        const safetyBackupKey = `migration-backup/pre-external-assets-${Date.now()}.bin`;
-        // A character/module asset may also be referenced by a non-migrated
-        // field (for example a user icon). Keep that internal KV value until
-        // every remaining legacy reference has gone away.
-        const remainingInternalNames = buildUncleanableSet(rewritten);
-        for (const name of collectEmbeddedInternalAssetNames(rewritten)) remainingInternalNames.add(name);
-        const removableInternalKeys = plan.uniquePaths.filter(
-            (internalKey) => !remainingInternalNames.has(path.basename(internalKey)),
-        );
-
-        // Publish under the ordinary storage queue. Staging may take hours, so
-        // writes are not blocked while bytes upload; instead we re-check both
-        // the DB snapshot and every source byte here and abort on any change.
-        await queueStorageOperation(async () => {
-            await flushPendingDb();
-            const currentRaw = kvGet('database/database.bin');
-            if (!currentRaw) throw externalMigrationConflict('Migration aborted because database.bin disappeared');
-            const currentDatabaseHash = nodeCrypto.createHash('sha256').update(currentRaw).digest('hex');
-            if (currentDatabaseHash !== databaseHash) {
-                throw externalMigrationConflict('Migration aborted because the database changed during staging; no references or originals were replaced');
-            }
-            for (const item of staged) {
-                const source = kvGet(item.internalKey);
-                if (!source) {
-                    throw externalMigrationConflict(`Migration aborted because an internal source disappeared: ${item.internalKey}`);
-                }
-                const { binary } = resolveAssetPayload(item.internalKey, source);
-                const currentHash = nodeCrypto.createHash('sha256').update(binary).digest('hex');
-                if (currentHash !== item.hash || binary.length !== item.size) {
-                    throw externalMigrationConflict(`Migration aborted because an internal source changed: ${item.internalKey}`);
-                }
-            }
-
-            // Atomic publish: safety snapshot + rewritten DB + source KV removal.
-            // Trash/external copies were independently hash-verified above, so
-            // the loader can fall back to trash after internal bytes are released.
-            sqliteDb.transaction(() => {
-                kvCopyValue('database/database.bin', safetyBackupKey);
-                kvSet('database/database.bin', encoded);
-                for (const internalKey of removableInternalKeys) kvDel(internalKey);
-            })();
-            invalidateDbCache();
-            dbEtag = computeBufferEtag(encoded);
-        });
-
-        res.json({
-            ok: true,
-            migrationId,
-            migrated: staged.length,
-            references: plan.references.length,
-            bytes: staged.reduce((sum, item) => sum + item.size, 0),
-            safetyBackupKey,
-            retainedInternalAssets: plan.uniquePaths.length - removableInternalKeys.length,
-        });
+        const job = createExternalAssetPlanningJob(providerId);
+        res.status(202).json({ ok: true, migrationId: job.id, job });
     } catch (error) {
-        logger.error('[ExternalAssets] Migration failed without publishing references', error);
+        logger.error('[ExternalAssets] Migration could not start', error);
         res.status(error?.statusCode || 500).json({ error: error?.message || 'External asset migration failed' });
+    }
+});
+
+app.get('/api/external-assets/migrate/jobs', async (req, res) => {
+    if (!await checkAuth(req, res)) return;
+    const limit = Number(req.query.limit) || 20;
+    res.json({ jobs: externalAssetMigrationJournal.listJobs(limit).map(publicExternalMigrationJob) });
+});
+
+app.get('/api/external-assets/migrate/jobs/:jobId', async (req, res) => {
+    if (!await checkAuth(req, res)) return;
+    const job = publicExternalMigrationJob(externalAssetMigrationJournal.getJob(req.params.jobId));
+    if (!job) return res.status(404).json({ error: 'Migration job not found' });
+    res.json({ job });
+});
+
+app.post('/api/external-assets/migrate/jobs/:jobId/pause', async (req, res) => {
+    if (!await checkAuth(req, res)) return;
+    if (!checkActiveSession(req, res)) return;
+    try { res.json({ job: externalAssetMigrationJournal.pauseJob(req.params.jobId) }); }
+    catch (error) { res.status(409).json({ error: error?.message || 'Migration could not be paused' }); }
+});
+
+app.post('/api/external-assets/migrate/jobs/:jobId/resume', async (req, res) => {
+    if (!await checkAuth(req, res)) return;
+    if (!checkActiveSession(req, res)) return;
+    try {
+        const current = externalAssetMigrationJournal.getJob(req.params.jobId);
+        if (!current) return res.status(404).json({ error: 'Migration job not found' });
+        if (current.status === 'planning') return res.status(409).json({ error: 'Migration plan is still being built' });
+        const job = externalAssetMigrationJournal.resumeJob(req.params.jobId);
+        startExternalAssetStaging(job.id);
+        res.status(202).json({ job });
+    } catch (error) { res.status(409).json({ error: error?.message || 'Migration could not resume' }); }
+});
+
+app.post('/api/external-assets/migrate/jobs/:jobId/cancel', async (req, res) => {
+    if (!await checkAuth(req, res)) return;
+    if (!checkActiveSession(req, res)) return;
+    try {
+        const workerPromise = externalAssetPlanningWorkers.get(req.params.jobId);
+        if (workerPromise?.worker) await workerPromise.worker.terminate();
+        res.json({ job: externalAssetMigrationJournal.cancelJob(req.params.jobId) });
+    } catch (error) { res.status(409).json({ error: error?.message || 'Migration could not be canceled' }); }
+});
+
+app.post('/api/external-assets/migrate/jobs/:jobId/finalize', async (req, res) => {
+    if (!await checkAuth(req, res)) return;
+    if (!checkActiveSession(req, res)) return;
+    const jobId = req.params.jobId;
+    const current = externalAssetMigrationJournal.getJob(jobId);
+    if (!current) return res.status(404).json({ error: 'Migration job not found' });
+    if (current.status !== 'staged') return res.status(409).json({ error: `Migration cannot finalize from ${current.status}` });
+    if (externalAssetMigrationInProgress || importInProgress) {
+        return res.status(409).json({ error: 'Another migration/import is already running' });
+    }
+    const storageReason = `external asset finalization ${jobId}`;
+    if (!await acquireExclusiveStorage(storageReason)) {
+        return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
+    }
+    try {
+        externalAssetMigrationJournal.updateJobStatus(jobId, 'finalizing');
+        externalAssetFinalizeWorker = runExternalAssetWorker(
+            'external-asset-finalize-worker.cjs',
+            { dbPath: path.join(savePath, 'risuai.db'), jobId },
+            (progress) => externalAssetPlanningProgress.set(jobId, { phase: progress.phase, ...progress }),
+        );
+        refreshExternalAssetMigrationBusy();
+        const result = await externalAssetFinalizeWorker;
+        invalidateDbCache();
+        const raw = kvGet('database/database.bin');
+        if (raw) dbEtag = computeBufferEtag(raw);
+        res.json({ ok: true, ...result, job: publicExternalMigrationJob(externalAssetMigrationJournal.getJob(jobId)) });
+    } catch (error) {
+        logger.error(`[ExternalAssets] Finalization ${jobId} failed`, error);
+        externalAssetMigrationJournal.updateJobStatus(jobId, 'staged', { error: error?.message || String(error) });
+        res.status(500).json({ error: error?.message || 'External asset finalization failed' });
     } finally {
-        externalAssetMigrationInProgress = false;
-        importInProgress = false;
-        endExclusiveStorage('external asset migration');
+        externalAssetFinalizeWorker = null;
+        externalAssetPlanningProgress.delete(jobId);
+        refreshExternalAssetMigrationBusy();
+        endExclusiveStorage(storageReason);
     }
 });
 
@@ -4077,6 +4224,10 @@ app.post('/api/external-assets/verify', async (req, res, next) => {
         const results = verified.map((result) => result.ok
             ? { uri: result.uri, ok: true, size: result.size }
             : { uri: result.uri, ok: false, error: result.error?.message || String(result.error) });
+        if (migrationId && results.length > 0 && results.every((result) => result.ok)) {
+            const job = externalAssetMigrationJournal.getJob(migrationId);
+            if (job?.status === 'published') externalAssetMigrationJournal.updateJobStatus(migrationId, 'verified');
+        }
         res.json({ ok: results.every((result) => result.ok), results });
     } catch (error) { next(error); }
     finally { endExclusiveStorage(storageReason); }
@@ -4106,6 +4257,15 @@ app.post('/api/external-assets/trash/purge', async (req, res, next) => {
             selected.map((entry) => entry.uri),
             { userVerified: true },
         );
+        if (migrationId) {
+            const job = externalAssetMigrationJournal.getJob(migrationId);
+            if (job?.status === 'verified') {
+                const ordinals = externalAssetMigrationJournal.stagedItems(migrationId)
+                    .filter((item) => item.status === 'published')
+                    .map((item) => item.ordinal);
+                externalAssetMigrationJournal.markCleaned(migrationId, ordinals);
+            }
+        }
         res.json({ ok: true, removed: result.files, bytes: result.bytes });
     } catch (error) {
         res.status(409).json({ error: error?.message || 'External asset trash purge rejected' });
@@ -6057,6 +6217,8 @@ async function importHexFilesFromDir(dirPath) {
     });
     run();
 
+    externalAssetMigrationJournal.resetForStorageReplacement();
+
     writeFileSync(migrationMarkerPath, new Date().toISOString(), 'utf-8');
     return { imported: hexFiles.length };
 }
@@ -6095,6 +6257,8 @@ async function importHexEntries(entries) {
         }
     });
     run();
+
+    externalAssetMigrationJournal.resetForStorageReplacement();
 
     writeFileSync(migrationMarkerPath, new Date().toISOString(), 'utf-8');
     return { imported: entries.length };

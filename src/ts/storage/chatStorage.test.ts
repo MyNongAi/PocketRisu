@@ -1,19 +1,51 @@
-import { describe, test, expect, vi } from 'vitest'
+import { beforeEach, describe, test, expect, vi } from 'vitest'
 
 // Stub out the heavy reactive modules so loading chatStorage.ts doesn't trigger
 // unrelated $effect chains that fail in a stripped-down test environment.
 // Mirror the production isChatStub semantics including the hybrid guard so
 // the chat-data-loss tests below exercise the real intent.
-vi.mock('../globalApi.svelte', () => ({ forageStorage: { realStorage: null } }))
+const mocks = vi.hoisted(() => ({
+    fetchChatContent: vi.fn(),
+}))
+vi.mock('../globalApi.svelte', () => ({
+    forageStorage: {
+        realStorage: {
+            fetchChatContent: (...args: any[]) => mocks.fetchChatContent(...args),
+        },
+    },
+}))
 vi.mock('./database.svelte', () => ({
     isChatStub: (chat: any) => chat
         && chat._stub === true
         && !Array.isArray(chat.message),
 }))
 
-const { chatToStub, stubToPlaceholder, convertStubsToPlaceholders, classifyChat } = await import('./chatStorage')
+const {
+    chatToStub,
+    stubToPlaceholder,
+    convertStubsToPlaceholders,
+    classifyChat,
+    ensureChatHydrated,
+    hydratedChatCacheSize,
+    markHydratedChatDirty,
+    markHydratedChatPersisted,
+    evictHydratedChatCache,
+    resetHydratedChatCache,
+} = await import('./chatStorage')
 type Chat = any
 type ChatStub = any
+
+beforeEach(() => {
+    resetHydratedChatCache()
+    mocks.fetchChatContent.mockReset()
+    mocks.fetchChatContent.mockImplementation(async (chaId: string, _index: number, chatId: string) => ({
+        message: [{ role: 'char', data: `${chaId}/${chatId}` }],
+        note: '',
+        name: chatId,
+        localLore: [],
+        id: chatId,
+    }))
+})
 
 // Round-trip tests for stub ↔ placeholder conversions. The server merge layer
 // relies on key presence ('in' semantics) to distinguish "user cleared this
@@ -213,5 +245,35 @@ describe('hybrid corruption (chat with _stub:true + message)', () => {
         expect('note' in stub).toBe(false)
         // Once stripped, the chat-data guard would see no chat-internal field
         // ops in a baseline-vs-current diff between two of these stubs.
+    })
+})
+
+describe('bounded hydrated-chat LRU', () => {
+    test('keeps only twelve clean server-hydrated chats while browsing', async () => {
+        const arrays: Chat[][] = []
+        for (let i = 0; i < 15; i++) {
+            const chats = [stubToPlaceholder({ id: `chat-${i}`, name: `${i}`, _stub: true })]
+            arrays.push(chats)
+            await ensureChatHydrated(chats, 0, `char-${i}`)
+        }
+        expect(hydratedChatCacheSize()).toBe(12)
+        expect(arrays.slice(0, 3).every((chats) => chats[0]._placeholder)).toBe(true)
+        expect(arrays.slice(3).every((chats) => !chats[0]._placeholder)).toBe(true)
+    })
+
+    test('pins dirty chats until their server save succeeds', async () => {
+        const dirtyChats = [stubToPlaceholder({ id: 'dirty-chat', name: 'dirty', _stub: true })]
+        await ensureChatHydrated(dirtyChats, 0, 'dirty-char')
+        markHydratedChatDirty('dirty-char', 'dirty-chat')
+
+        for (let i = 0; i < 14; i++) {
+            const chats = [stubToPlaceholder({ id: `other-${i}`, name: `${i}`, _stub: true })]
+            await ensureChatHydrated(chats, 0, `other-char-${i}`)
+        }
+        expect(dirtyChats[0]._placeholder).not.toBe(true)
+
+        markHydratedChatPersisted('dirty-char', 'dirty-chat')
+        await evictHydratedChatCache(undefined, 0)
+        expect(dirtyChats[0]._placeholder).toBe(true)
     })
 })

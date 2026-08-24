@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { cancelCharacterChatPrefetch, changeChar, getCharImage, prefetchCharacterChat, removeChar, scheduleCharacterChatPrefetch } from "../../ts/characters";
+    import { cancelCharacterChatPrefetch, changeChar, getCharThumbnail, prefetchCharacterChat, removeChar, scheduleCharacterChatPrefetch } from "../../ts/characters";
     import { type Database } from "../../ts/storage/database.svelte";
     import { DBState } from 'src/ts/stores.svelte';
     import { findCharacterIndexbyId } from "../../ts/util";
@@ -11,7 +11,9 @@
     import { language } from "src/lang";
     import { makeAgoText, parseMultilangString } from "src/ts/util";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
-  import MobileCharacters from "../Mobile/MobileCharacters.svelte";
+    import MobileCharacters from "../Mobile/MobileCharacters.svelte";
+    import VirtualGrid from "../UI/Virtual/VirtualGrid.svelte";
+    import VirtualList from "../UI/Virtual/VirtualList.svelte";
     interface Props {
         endGrid?: any;
     }
@@ -67,11 +69,13 @@
             return b.interaction - a.interaction
         })
     }
+    let characters = $derived(formatChars(search, DBState.db))
+    let trashedCharacters = $derived(formatChars(search, DBState.db, true))
 </script>
 
 <div class="h-full w-full flex justify-center">
-    <div class="h-full p-6 bg-darkbg max-w-full w-2xl flex flex-col overflow-y-auto">
-        <div class="mx-4 mb-6 flex flex-col">
+    <div class="h-full p-6 bg-darkbg max-w-full w-2xl flex flex-col overflow-hidden">
+        <div class="mx-4 mb-6 flex shrink-0 flex-col">
             <div class="flex items-center gap-3 mb-2">
                 <button 
                     class="flex items-center justify-center p-2 rounded-lg hover:bg-selected transition-colors shrink-0"
@@ -99,22 +103,21 @@
                 </Button>
                 <div class="grow"></div>
                 <span class="text-textcolor2 text-sm">
-                    {formatChars(search, DBState.db).length} {language.character}
+                    {characters.length} {language.character}
                 </span>
             </div>
         </div>
         {#if selected === 0}
-            <div class="w-full flex justify-center">
-                <div class="flex flex-wrap gap-2 w-full justify-center">
-                    {#each formatChars(search, DBState.db) as char}
-                        <div class="flex items-center text-textcolor">
+            <VirtualGrid items={characters} minItemWidth={64} gap={8} className="min-h-0 flex-1" key={(char) => char.chaId}>
+                {#snippet children(char)}
+                        <div class="flex h-full w-full items-center justify-center text-textcolor">
                             {#if char.image}
                                 <BarIcon
                                     onPrefetch={() => scheduleCharacterChatPrefetch(char.index)}
                                     onPrefetchCancel={() => cancelCharacterChatPrefetch(char.index)}
                                     onPrefetchImmediate={() => void prefetchCharacterChat(char.index)}
                                     onClick={() => {selectAndClose(char.index)}}
-                                    additionalStyle={() => getCharImage(char.image, 'css')}
+                                    additionalStyle={() => getCharThumbnail(char.image, 'css')}
                                 ></BarIcon>
                             {:else}
                                 <BarIcon
@@ -128,22 +131,22 @@
                                 </BarIcon>
                             {/if}
                         </div>
-                    {/each}
-                </div>
-            </div>
+                {/snippet}
+            </VirtualGrid>
         {:else if selected === 1}
-            {#each formatChars(search, DBState.db) as char}
-                <div class="flex p-2 border border-darkborderc rounded-md mb-2">
+            <VirtualList items={characters} itemHeight={142} className="min-h-0 flex-1" key={(char) => char.chaId}>
+              {#snippet children(char)}
+                <div class="m-1 flex h-[134px] p-2 border border-darkborderc rounded-md">
                     <BarIcon
                         onPrefetch={() => scheduleCharacterChatPrefetch(char.index)}
                         onPrefetchCancel={() => cancelCharacterChatPrefetch(char.index)}
                         onPrefetchImmediate={() => void prefetchCharacterChat(char.index)}
                         onClick={() => {selectAndClose(char.index)}}
-                        additionalStyle={() => getCharImage(char.image, 'css')}
+                        additionalStyle={() => getCharThumbnail(char.image, 'css')}
                     ></BarIcon>
                     <div class="flex-1 flex flex-col ml-2">
                         <h4 class="text-textcolor font-bold text-lg mb-1">{char.name || "Unnamed"}</h4>
-                        <span class="text-textcolor2">{parseMultilangString(char.desc)['en'] || parseMultilangString(char.desc)['xx'] || 'No description'}</span>
+                        <span class="line-clamp-2 text-textcolor2">{parseMultilangString(char.desc)['en'] || parseMultilangString(char.desc)['xx'] || 'No description'}</span>
                         <div class="mt-1 flex items-center text-sm text-textcolor2">
                             <span class="mr-1">{char.chats}</span>
                             <MessageSquareIcon size={14} />
@@ -171,15 +174,17 @@
                         </div>
                     </div>
                 </div>
-            {/each}
+              {/snippet}
+            </VirtualList>
         {:else if selected === 2}
-            <span class="text-textcolor2 text-sm mb-2">{language.trashDesc}</span>
-            {#each formatChars(search, DBState.db, true) as char}
-                <div class="flex p-2 border border-darkborderc rounded-md mb-2">
-                    <BarIcon onClick={() => {selectAndClose(char.index)}} additionalStyle={() => getCharImage(char.image, 'css')}></BarIcon>
+            <span class="shrink-0 text-textcolor2 text-sm mb-2">{language.trashDesc}</span>
+            <VirtualList items={trashedCharacters} itemHeight={126} className="min-h-0 flex-1" key={(char) => char.chaId}>
+              {#snippet children(char)}
+                <div class="m-1 flex h-[118px] p-2 border border-darkborderc rounded-md">
+                    <BarIcon onClick={() => {selectAndClose(char.index)}} additionalStyle={() => getCharThumbnail(char.image, 'css')}></BarIcon>
                     <div class="flex-1 flex flex-col ml-2">
                         <h4 class="text-textcolor font-bold text-lg mb-1">{char.name || "Unnamed"}</h4>
-                        <span class="text-textcolor2">{parseMultilangString(char.desc)['en'] || parseMultilangString(char.desc)['xx'] || 'No description'}</span>
+                        <span class="line-clamp-2 text-textcolor2">{parseMultilangString(char.desc)['en'] || parseMultilangString(char.desc)['xx'] || 'No description'}</span>
                         <div class="flex gap-2 justify-end">
                             <button class="hover:text-textcolor text-textcolor2" onclick={() => {
                                 const restoreIdx = findCharacterIndexbyId(char.chaId)
@@ -198,7 +203,8 @@
                         </div>
                     </div>
                 </div>
-            {/each}
+              {/snippet}
+            </VirtualList>
         {:else if selected === 3}
             <MobileCharacters {search} gridMode endGrid={endGrid} />
         {/if}

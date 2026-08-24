@@ -6,33 +6,106 @@
     import Button from "src/lib/UI/GUI/Button.svelte";
     import ModuleMenu from "src/lib/Setting/Pages/Module/ModuleMenu.svelte";
     import { exportModule, importModule, refreshModules, type RisuModule } from "src/ts/process/modules";
-    import { SquarePen, TrashIcon, Globe, Share2Icon, PlusIcon, HardDriveUpload, Waypoints } from "@lucide/svelte";
+    import {
+        ChevronDownIcon,
+        ChevronRightIcon,
+        FolderIcon,
+        FolderInputIcon,
+        FolderPlusIcon,
+        Globe,
+        HardDriveUpload,
+        PlusIcon,
+        Share2Icon,
+        SquarePen,
+        TrashIcon,
+        Waypoints,
+        XIcon,
+    } from "@lucide/svelte";
     import { v4 } from "uuid";
     import { tooltip } from "src/ts/gui/tooltip";
-    import { alertConfirm, notifySuccess } from "src/ts/alert";
+    import { alertConfirm, alertInput, notifyError, notifySuccess } from "src/ts/alert";
     import TextInput from "src/lib/UI/GUI/TextInput.svelte";
     import { onDestroy } from "svelte";
     import { importMCPModule } from "src/ts/process/mcp/mcp";
     import { convertModuleToCharacter } from "src/ts/interchangeability";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
     import { recordModuleActivation, seedModuleActivationHistory, sortModulesByActivation } from "src/ts/process/moduleSort";
+    import {
+        assignModuleToFolder,
+        buildModuleFolderCatalog,
+        findModuleFolderId,
+        normalizeModuleFolders,
+        type ModuleFolder,
+    } from "src/ts/process/moduleFolders";
+    import { resolveModuleEditTargetIndex } from "src/ts/process/moduleEditing";
     let tempModule:RisuModule = $state({
         name: '',
         description: '',
         id: v4(),
     })
     let mode = $state(0)
-    let editModuleIndex = $state(-1)
+    let editModuleId = $state('')
+    let editModuleOriginal:RisuModule|null = null
     let moduleSearch = $state('')
+    let folderPickerModule:RisuModule|null = $state(null)
+    let { quickPanel = false }: { quickPanel?: boolean } = $props()
+    let moduleFolders = $derived(normalizeModuleFolders(DBState.db.moduleFolders))
 
-    function sortModules(modules:RisuModule[], search:string){
-        return sortModulesByActivation(modules, search, {
+    function moduleCatalog(modules:RisuModule[], search:string){
+        const sortedModules = sortModulesByActivation(modules, '', {
             fallbackOrders: [DBState.db.enabledModules],
             activationHistory: DBState.db.moduleActivationHistory,
         })
+        return buildModuleFolderCatalog(sortedModules, moduleFolders, search)
+    }
+
+    function updateFolders(updater: (folders: ModuleFolder[]) => ModuleFolder[]){
+        DBState.db.moduleFolders = normalizeModuleFolders(updater(moduleFolders))
+    }
+
+    async function createFolder(){
+        const name = (await alertInput(language.folderNameInput)).trim()
+        if(!name) return
+        updateFolders((folders) => [
+            ...folders,
+            { id: v4(), name, moduleIds: [] },
+        ])
+    }
+
+    async function renameFolder(folder: ModuleFolder){
+        const name = (await alertInput(language.changeFolderName, [], folder.name)).trim()
+        if(!name || name === folder.name) return
+        updateFolders((folders) => folders.map((item) => item.id === folder.id
+            ? { ...item, name }
+            : item,
+        ))
+    }
+
+    async function deleteFolder(folder: ModuleFolder){
+        if(!await alertConfirm(`${folder.name}\n\n${language.moduleFolderDeleteConfirm}`)) return
+        updateFolders((folders) => folders.filter((item) => item.id !== folder.id))
+        notifySuccess(language.moduleFolderContentsKept)
+    }
+
+    function toggleFolder(folder: ModuleFolder){
+        updateFolders((folders) => folders.map((item) => item.id === folder.id
+            ? { ...item, collapsed: !item.collapsed }
+            : item,
+        ))
+    }
+
+    function moveModuleToFolder(moduleId: string, folderId: string){
+        DBState.db.moduleFolders = assignModuleToFolder(
+            moduleFolders,
+            moduleId,
+            folderId,
+        )
+        folderPickerModule = null
     }
 
     function createModule(){
+        editModuleId = ''
+        editModuleOriginal = null
         tempModule = {
             name: '',
             description: '',
@@ -47,6 +120,15 @@
 </script>
 
 {#snippet moduleActions()}
+    <button
+        type="button"
+        class="text-textcolor2 hover:text-primary cursor-pointer"
+        aria-label={language.createModuleFolder}
+        use:tooltip={language.createModuleFolder}
+        onclick={() => { void createFolder() }}
+    >
+        <FolderPlusIcon />
+    </button>
     <button
         type="button"
         class="text-textcolor2 hover:text-primary cursor-pointer"
@@ -76,8 +158,139 @@
     </button>
 {/snippet}
 
+{#snippet moduleRow(rmodule: RisuModule)}
+    <div class="border-b border-selected last:border-b-0">
+        <div class="pl-3 pt-3 text-left flex items-center">
+            {#if rmodule.mcp}
+                <Waypoints size={18} class="mr-2" />
+            {/if}
+            <span class="font-bold min-w-0 truncate">{rmodule.name}</span>
+            <div class="grow flex justify-end">
+                <button
+                    class={folderPickerModule === rmodule
+                        ? "mr-2 cursor-pointer text-primary"
+                        : "text-textcolor2 hover:text-primary mr-2 cursor-pointer"
+                    }
+                    aria-label={language.moveToModuleFolder}
+                    use:tooltip={language.moveToModuleFolder}
+                    onclick={(e) => {
+                        e.stopPropagation()
+                        folderPickerModule = folderPickerModule === rmodule ? null : rmodule
+                    }}
+                >
+                    <FolderInputIcon size={18}/>
+                </button>
+                <button class={(DBState.db.enabledModules.includes(rmodule.id)) ?
+                        "mr-2 cursor-pointer text-blue-500" :
+                        rmodule.namespace &&
+                        DBState.db.moduleIntergration?.split(',').map((s) => s.trim()).includes(rmodule.namespace) ?
+                        "text-amber-500 hover:text-primary mr-2 cursor-pointer" :
+                        "text-textcolor2 hover:text-primary mr-2 cursor-pointer"
+                    } use:tooltip={language.enableGlobal} onclick={async (e) => {
+                    e.stopPropagation()
+                    let activationHistory = seedModuleActivationHistory(
+                        DBState.db.moduleActivationHistory,
+                        DBState.db.enabledModules,
+                    )
+                    if(DBState.db.enabledModules.includes(rmodule.id)){
+                        DBState.db.enabledModules.splice(DBState.db.enabledModules.indexOf(rmodule.id), 1)
+                    }
+                    else{
+                        DBState.db.enabledModules.push(rmodule.id)
+                        activationHistory = recordModuleActivation(
+                            activationHistory,
+                            rmodule.id,
+                        )
+                    }
+                    DBState.db.moduleActivationHistory = activationHistory
+                    DBState.db.enabledModules = DBState.db.enabledModules
+                }}>
+                    <Globe size={18}/>
+                </button>
+                {#if !rmodule.mcp}
+                    <button class="text-textcolor2 hover:text-primary mr-2 cursor-pointer" use:tooltip={language.download} onclick={async (e) => {
+                        e.stopPropagation()
+                        exportModule(rmodule)
+                    }}>
+                        <Share2Icon size={18}/>
+                    </button>
+                    <button class="text-textcolor2 hover:text-primary mr-2 cursor-pointer" use:tooltip={language.edit} onclick={async (e) => {
+                        e.stopPropagation()
+                        tempModule = safeStructuredClone(rmodule)
+                        editModuleId = rmodule.id
+                        editModuleOriginal = rmodule
+                        mode = 2
+                    }}>
+                        <SquarePen size={18}/>
+                    </button>
+                {:else}
+                    <button class="text-textcolor2 mr-2 cursor-not-allowed" aria-disabled="true">
+                        <Share2Icon size={18}/>
+                    </button>
+                    <button class="text-textcolor2 mr-2 cursor-not-allowed" aria-disabled="true">
+                        <SquarePen size={18}/>
+                    </button>
+                {/if}
+                <button class="text-textcolor2 hover:text-red-400 mr-2 cursor-pointer" use:tooltip={language.remove} onclick={async (e) => {
+                    e.stopPropagation()
+                    const d = await alertConfirm(`${language.removeConfirm}` + rmodule.name)
+                    if(d){
+                        if(DBState.db.enabledModules.includes(rmodule.id)){
+                            DBState.db.enabledModules.splice(DBState.db.enabledModules.indexOf(rmodule.id), 1)
+                            DBState.db.enabledModules = DBState.db.enabledModules
+                        }
+                        const index = resolveModuleEditTargetIndex(DBState.db.modules, rmodule.id, rmodule)
+                        if(index !== -1) DBState.db.modules.splice(index, 1)
+                        DBState.db.modules = DBState.db.modules
+                        DBState.db.moduleActivationHistory = DBState.db.moduleActivationHistory?.filter((id) => id !== rmodule.id) ?? []
+                        DBState.db.moduleFolders = moduleFolders.map((folder) => ({
+                            ...folder,
+                            moduleIds: folder.moduleIds.filter((id) => id !== rmodule.id),
+                        }))
+                        if(folderPickerModule === rmodule) folderPickerModule = null
+                        notifySuccess(language.moduleDeleted)
+                    }
+                }}>
+                    <TrashIcon size={18}/>
+                </button>
+            </div>
+        </div>
+        <div class="mt-1 mb-3 px-3">
+            <span class="text-sm text-textcolor2">{rmodule.description || 'No description provided'}</span>
+        </div>
+        {#if folderPickerModule === rmodule}
+            <div class="mx-3 mb-3 flex items-center gap-2 rounded-md border border-selected bg-darkbg p-2">
+                <FolderInputIcon size={16} class="shrink-0 text-textcolor2" />
+                <select
+                    class="min-w-0 grow rounded-md border border-darkborderc bg-transparent px-2 py-1 text-textcolor"
+                    value={findModuleFolderId(moduleFolders, rmodule.id)}
+                    aria-label={language.moveToModuleFolder}
+                    onchange={(event) => moveModuleToFolder(rmodule.id, event.currentTarget.value)}
+                >
+                    <option class="bg-darkbg" value="">{language.moduleFolderRoot}</option>
+                    {#each moduleFolders as folder (folder.id)}
+                        <option class="bg-darkbg" value={folder.id}>{folder.name}</option>
+                    {/each}
+                </select>
+                <button
+                    type="button"
+                    class="shrink-0 cursor-pointer text-textcolor2 hover:text-primary"
+                    aria-label={language.cancel}
+                    onclick={() => folderPickerModule = null}
+                >
+                    <XIcon size={18}/>
+                </button>
+            </div>
+        {/if}
+    </div>
+{/snippet}
+
+<div class={quickPanel ? 'flex h-full min-h-0 flex-col' : 'contents'}>
 {#if mode === 0}
-    <SettingPage title={language.modules}>
+    <SettingPage
+        title={language.modules}
+        contentClassName={quickPanel ? 'min-h-0 flex-1 overflow-hidden' : ''}
+    >
 
     <div class="mt-4 flex gap-2 items-center">
         <TextInput className="grow" placeholder={language.search} bind:value={moduleSearch} />
@@ -85,93 +298,65 @@
     </div>
 
     <div class="contain w-full max-w-full mt-4 flex flex-col border-selected border-1 rounded-md flex-1 overflow-y-auto">
-        {#if DBState.db.modules.length === 0}
+        {#if DBState.db.modules.length === 0 && moduleFolders.length === 0}
             <div class="text-textcolor2 p-3">{language.noModules}</div>
         {:else}
-            {#each sortModules(DBState.db.modules, moduleSearch) as rmodule, i}
-                {#if i !== 0}
-                    <div class="border-t-1 border-selected"></div>
-                {/if}
-
-                <div class="pl-3 pt-3 text-left flex items-center">
-                    {#if rmodule.mcp}
-                        <Waypoints size={18} class="mr-2" />
-                    {/if}
-                    <span class="font-bold">{rmodule.name}</span>
-                    <div class="grow flex justify-end">
-                        <button class={(DBState.db.enabledModules.includes(rmodule.id)) ?
-                                "mr-2 cursor-pointer text-blue-500" :
-                                rmodule.namespace && 
-                                DBState.db.moduleIntergration?.split(',').map((s) => s.trim()).includes(rmodule.namespace) ?
-                                "text-amber-500 hover:text-primary mr-2 cursor-pointer" :
-                                "text-textcolor2 hover:text-primary mr-2 cursor-pointer"
-                            } use:tooltip={language.enableGlobal} onclick={async (e) => {
-                            e.stopPropagation()
-                            let activationHistory = seedModuleActivationHistory(
-                                DBState.db.moduleActivationHistory,
-                                DBState.db.enabledModules,
-                            )
-                            if(DBState.db.enabledModules.includes(rmodule.id)){
-                                DBState.db.enabledModules.splice(DBState.db.enabledModules.indexOf(rmodule.id), 1)
-                            }
-                            else{
-                                DBState.db.enabledModules.push(rmodule.id)
-                                activationHistory = recordModuleActivation(
-                                    activationHistory,
-                                    rmodule.id,
-                                )
-                            }
-                            DBState.db.moduleActivationHistory = activationHistory
-                            DBState.db.enabledModules = DBState.db.enabledModules
-                        }}>
-                            <Globe size={18}/>
-                        </button>
-                        {#if !rmodule.mcp}
-                            <button class="text-textcolor2 hover:text-primary mr-2 cursor-pointer" use:tooltip={language.download} onclick={async (e) => {
-                                e.stopPropagation()
-                                exportModule(rmodule)
-                            }}>
-                                <Share2Icon size={18}/>
+            <!-- TODO: use measured/variable-height virtualization. The current
+                 fixed-height VirtualList would clip descriptions and an open
+                 folder picker, so it is not safe for this catalog yet. -->
+            {#each moduleCatalog(DBState.db.modules, moduleSearch) as entry (entry.kind === 'module' ? entry.module : `folder:${entry.folder.id}`)}
+                {#if entry.kind === 'module'}
+                    {@render moduleRow(entry.module)}
+                {:else}
+                    <section class="border-b border-selected last:border-b-0">
+                        <div class="flex min-h-12 items-center gap-2 bg-selected/25 px-3 py-2">
+                            <button
+                                type="button"
+                                class="flex min-w-0 grow cursor-pointer items-center gap-2 text-left hover:text-primary"
+                                aria-expanded={!entry.folder.collapsed}
+                                onclick={() => toggleFolder(entry.folder)}
+                            >
+                                {#if entry.folder.collapsed}
+                                    <ChevronRightIcon size={18} class="shrink-0" />
+                                {:else}
+                                    <ChevronDownIcon size={18} class="shrink-0" />
+                                {/if}
+                                <FolderIcon size={18} class="shrink-0" />
+                                <span class="truncate font-bold">{entry.folder.name}</span>
+                                <span class="shrink-0 text-xs text-textcolor2">{entry.modules.length}</span>
                             </button>
-                            <button class="text-textcolor2 hover:text-primary mr-2 cursor-pointer" use:tooltip={language.edit} onclick={async (e) => {
-                                e.stopPropagation()
-                                const index = DBState.db.modules.findIndex((v) => v.id === rmodule.id)
-                                tempModule = rmodule
-                                editModuleIndex = index
-                                mode = 2
-                            }}>
-                                <SquarePen size={18}/>
+                            <button
+                                type="button"
+                                class="shrink-0 cursor-pointer text-textcolor2 hover:text-primary"
+                                aria-label={language.renameFolder}
+                                use:tooltip={language.renameFolder}
+                                onclick={() => { void renameFolder(entry.folder) }}
+                            >
+                                <SquarePen size={17}/>
                             </button>
-                        {:else}
-                            <button class="text-textcolor2 mr-2 cursor-not-allowed">
-                                <Share2Icon size={18}/>
+                            <button
+                                type="button"
+                                class="shrink-0 cursor-pointer text-textcolor2 hover:text-red-400"
+                                aria-label={language.remove}
+                                use:tooltip={language.remove}
+                                onclick={() => { void deleteFolder(entry.folder) }}
+                            >
+                                <TrashIcon size={17}/>
                             </button>
-                            <button class="text-textcolor2 mr-2 cursor-not-allowed">
-                                <SquarePen size={18}/>
-                            </button>
+                        </div>
+                        {#if !entry.folder.collapsed || moduleSearch.trim() !== ''}
+                            <div class="ml-4 border-l border-selected">
+                                {#if entry.modules.length === 0}
+                                    <div class="px-3 py-2 text-sm text-textcolor2">{language.noModules}</div>
+                                {:else}
+                                    {#each entry.modules as rmodule (rmodule)}
+                                        {@render moduleRow(rmodule)}
+                                    {/each}
+                                {/if}
+                            </div>
                         {/if}
-                        <button class="text-textcolor2 hover:text-red-400 mr-2 cursor-pointer" use:tooltip={language.remove} onclick={async (e) => {
-                            e.stopPropagation()
-                            const d = await alertConfirm(`${language.removeConfirm}` + rmodule.name)
-                            if(d){
-                                if(DBState.db.enabledModules.includes(rmodule.id)){
-                                    DBState.db.enabledModules.splice(DBState.db.enabledModules.indexOf(rmodule.id), 1)
-                                    DBState.db.enabledModules = DBState.db.enabledModules
-                                }
-                                const index = DBState.db.modules.findIndex((v) => v.id === rmodule.id)
-                                DBState.db.modules.splice(index, 1)
-                                DBState.db.modules = DBState.db.modules
-                                DBState.db.moduleActivationHistory = DBState.db.moduleActivationHistory?.filter((id) => id !== rmodule.id) ?? []
-                                notifySuccess(language.moduleDeleted)
-                            }
-                        }}>
-                            <TrashIcon size={18}/>
-                        </button>
-                    </div>
-                </div>
-                <div class="mt-1 mb-3 pl-3">
-                    <span class="text-sm text-textcolor2">{rmodule.description || 'No description provided'}</span>
-                </div>
+                    </section>
+                {/if}
             {/each}
         {/if}
     </div>
@@ -182,7 +367,10 @@
 
     </SettingPage>
 {:else if mode === 1}
-    <SettingPage title={language.createModule}>
+    <SettingPage
+        title={language.createModule}
+        contentClassName={quickPanel ? 'min-h-0 flex-1 overflow-y-auto' : ''}
+    >
     <ModuleMenu bind:currentModule={tempModule}/>
     <Button className="mt-6" onclick={() => {
         DBState.db.modules.push(tempModule)
@@ -191,12 +379,27 @@
     }}>{language.createModule}</Button>
     </SettingPage>
 {:else if mode === 2}
-    <SettingPage title={language.editModule}>
+    <SettingPage
+        title={language.editModule}
+        contentClassName={quickPanel ? 'min-h-0 flex-1 overflow-y-auto' : ''}
+    >
     <ModuleMenu bind:currentModule={tempModule}/>
     {#if tempModule.name !== ''}
         <Button className="mt-6" onclick={() => {
+            const editModuleIndex = resolveModuleEditTargetIndex(
+                DBState.db.modules,
+                editModuleId,
+                editModuleOriginal,
+            )
+            if(editModuleIndex === -1){
+                notifyError(language.moduleEditTargetMissing)
+                return
+            }
             DBState.db.modules[editModuleIndex] = tempModule
+            refreshModules()
             notifySuccess(language.moduleUpdated)
+            editModuleId = ''
+            editModuleOriginal = null
             mode = 0
         }}>{language.editModule}</Button>
         <Button className="mt-2" onclick={async () => {
@@ -210,3 +413,4 @@
     {/if}
     </SettingPage>
 {/if}
+</div>

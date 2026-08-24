@@ -18,6 +18,7 @@
     import { openAssetViewer, hasImageAssets } from "src/ts/assetViewer.svelte";
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
     import LazyAssetPreview from "src/lib/Others/LazyAssetPreview.svelte";
+    import VirtualList from "src/lib/UI/Virtual/VirtualList.svelte";
     
     import { DBState } from 'src/ts/stores.svelte';
   import { v4 } from "uuid";
@@ -242,11 +243,8 @@
     {/if}
     <span class="mb-2 flex items-center">{language.additionalAssets} <Help key="moduleAdditionalAssets" /></span>
     <div class="w-full max-w-full border border-selected rounded-md p-2">
-        <table class="contain w-full max-w-full tabler mt-2">
-            <tbody>
-            <tr>
-                <th class="font-medium">{language.value}</th>
-                <th class="font-medium cursor-pointer w-10">
+            <div class="flex items-center justify-between font-medium">
+                <span>{language.value}</span>
                     <button class="hover:text-primary" onclick={async () => {
                         const da = await selectMultipleFile(['png', 'webp', 'mp4', 'mp3', 'gif', 'jpeg', 'jpg', 'ttf', 'otf', 'css', 'webm', 'woff', 'woff2', 'svg', 'avif'])
                         currentModule.assets = currentModule.assets ?? []
@@ -264,17 +262,15 @@
                     }}>
                         <PlusIcon />
                     </button>
-                </th>
-            </tr>
+            </div>
             {#if (!currentModule.assets) || currentModule.assets.length === 0}
-                <tr>
-                    <td colspan="3">{language.noData}</td>
-                </tr>
+                <p class="py-3 text-textcolor2">{language.noData}</p>
             {:else}
-                {#each currentModule.assets as assets, i}
+                <VirtualList items={currentModule.assets} itemHeight={104} className="mt-2 h-[min(32rem,60vh)]">
+                  {#snippet children(assets, i)}
                     {@const extension = (assets[2] ?? assets[1].split('.').pop() ?? '').toLowerCase()}
-                    <tr>
-                        <td class="font-medium truncate">
+                    <div class="flex h-full items-center gap-2 border-t border-darkborderc px-1 font-medium">
+                        <div class="min-w-0 flex-1 truncate">
                             {#if DBState.db.useAdditionalAssetsPreview}
                                 <LazyAssetPreview
                                     path={assets[1]}
@@ -285,16 +281,16 @@
                                     controls
                                     loop
                                     mediaClass={['mp4', 'webm', 'mov', 'm4v'].includes(extension)
-                                        ? 'mt-2 px-2 w-full max-h-48 m-1 rounded-md object-contain'
+                                        ? 'w-20 h-16 rounded-md object-contain'
                                         : ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac'].includes(extension)
-                                            ? 'mt-2 px-2 w-full h-16 m-1 rounded-md'
-                                            : 'w-16 h-16 m-1 rounded-md object-cover'}
+                                            ? 'w-full h-12 rounded-md'
+                                            : 'w-16 h-16 rounded-md object-cover'}
                                 />
                             {/if}
                             <TextInput fullwidth marginBottom bind:value={currentModule.assets[i][0]} placeholder="..." />
-                        </td>
+                        </div>
                         
-                        <th class="font-medium cursor-pointer w-10">
+                        <div class="w-10 shrink-0 font-medium cursor-pointer">
                             <button class="hover:text-red-400" onclick={() => {
                                 let additionalAssets = currentModule.assets
                                 additionalAssets.splice(i, 1)
@@ -302,12 +298,11 @@
                             }}>
                                 <TrashIcon />
                             </button>
-                        </th>
-                    </tr>
-                {/each}
+                        </div>
+                    </div>
+                  {/snippet}
+                </VirtualList>
             {/if}
-            </tbody>
-        </table>
     </div>
 {/if}
 

@@ -20,6 +20,7 @@ import { applyModelPresetDefaults } from '../preset/dbDefaults';
 import type { ApiKeyPoolEntry, ModelBindingFields, ModelBindingSet, ModelPreset, ModelPresetMigrationSummary, RegistryCache } from '../preset/types';
 import { emptyModelBinding } from '../preset/types';
 import { isChatStub } from './chatStub';
+import { normalizeModuleFolders, type ModuleFolder } from '../process/moduleFolders';
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
 export let appVer = "2026.2.291" //<APP_VERSION_POINT>
@@ -528,6 +529,7 @@ export function setDatabase(data:Database){
     data.memoryLimitThickness ??= 1
     data.modules ??= []
     data.enabledModules ??= []
+    data.moduleFolders = normalizeModuleFolders(data.moduleFolders)
     data.additionalParams ??= []
     data.heightMode ??= 'normal'
     data.antiClaudeOverload ??= false
@@ -1266,6 +1268,8 @@ export interface Database{
     modules: RisuModule[]
     enabledModules: string[]
     moduleActivationHistory?: string[]
+    /** Optional overlay metadata; omitted databases retain the legacy flat module list. */
+    moduleFolders?: ModuleFolder[]
     sideMenuRerollButton?:boolean
     requestInfoInsideChat?:boolean
     additionalParams:[string, string][]

@@ -11,6 +11,7 @@ import { HideIconStore, moduleBackgroundEmbedding, ReloadGUIPointer } from "../s
 import {get} from "svelte/store"
 import { convertCharacterToModule, convertModuleToCharacter } from "../interchangeability"
 import { exportCharacterCard, importCharacterProcess } from "../characterCards"
+import { collectModuleRuntimeUi } from "./moduleRuntime"
 
 export interface MCPModule{
     url: string
@@ -559,32 +560,16 @@ export function moduleUpdate(){
 
 
     const m = getModules()
+    const runtimeUi = collectModuleRuntimeUi(m)
 
-    const ids = m.map((m) => m.id).join('-')
-    
-    let moduleHideIcon = false
-    let backgroundEmbedding = ''
-    m.forEach((module) => {
-        if(!module){
-            return
-        }
+    // Always publish, including ''. Otherwise disabling/removing the final
+    // embedding leaves the previous module background stuck in the store.
+    moduleBackgroundEmbedding.set(runtimeUi.backgroundEmbedding)
+    HideIconStore.set(getCurrentCharacter()?.hideChatIcon || runtimeUi.hideIcon)
 
-        if(module.hideIcon){
-            moduleHideIcon = true
-        }
-        if(module.backgroundEmbedding){
-            backgroundEmbedding += '\n' + module.backgroundEmbedding + '\n'
-        }
-    })
-
-    if(backgroundEmbedding){
-        moduleBackgroundEmbedding.set(backgroundEmbedding)
-    }
-    HideIconStore.set(getCurrentCharacter()?.hideChatIcon || moduleHideIcon)
-
-    if(lastModuleIds !== ids){
+    if(lastModuleIds !== runtimeUi.ids){
         ReloadGUIPointer.set(get(ReloadGUIPointer) + 1)
-        lastModuleIds = ids
+        lastModuleIds = runtimeUi.ids
     }
 }
 

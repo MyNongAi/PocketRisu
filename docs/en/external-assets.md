@@ -32,7 +32,7 @@ Create a backup first, then use this sequence:
 1. Select **Scan** to inspect character and module references, unique asset count, total size, and missing files.
 2. Select **Migrate safely**. PocketRisu copies each file to the external store, downloads it again, and verifies its hash and size.
 3. On success, the database references are switched to `external://...` in one publish step and the page reloads. Existing references are not changed unless every staging step succeeds.
-4. Internal originals are not permanently deleted. Recoverable copies remain in `save/external-assets/trash`.
+4. Internal originals are not permanently deleted. Recoverable copies remain at the configured trash path (default `save/external-assets/trash`). When a filesystem provider and trash share a volume, hard links avoid consuming the payload bytes twice.
 5. Select **Verify again** to re-download and check the external files, then manually open the affected characters and modules.
 6. Only after user verification, select **Purge verified trash**. PocketRisu rejects deletion of unverified entries.
 

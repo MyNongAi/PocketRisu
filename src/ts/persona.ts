@@ -1,28 +1,77 @@
 import { getDatabase, saveImage, setDatabase } from "./storage/database.svelte"
 import { selectSingleFile, sleep } from "./util"
 import { alertError, alertStore, notifySuccess, notifyError } from "./alert"
-import { AppendableBuffer, downloadFile, readImage } from "./globalApi.svelte"
+import { AppendableBuffer, downloadFile, readImage, requestImmediateSave } from "./globalApi.svelte"
 import { language } from "src/lang"
 import { reencodeImage } from "./process/files/inlays"
 import { PngChunk } from "./pngChunk"
 import { v4 } from "uuid"
+import { PERSONA_IMAGE_EXTENSIONS, validatePersonaImage } from "./personaImage"
+
+/**
+ * Shared persona-image write path for the picker and drag-and-drop UI.
+ * Non-selected persona cards can be updated without changing the active
+ * persona; the active card also mirrors its icon into the legacy root field.
+ */
+export async function setUserPersonaImage(img: Uint8Array, personaIndex?: number) {
+    const db = getDatabase()
+    const targetIndex = personaIndex ?? db.selectedPersona
+    const target = db.personas[targetIndex]
+    if (!target) {
+        throw new Error('Persona not found')
+    }
+
+    // The image write can take long enough for the user to reorder personas.
+    // Pin the target by a unique id before the first await; an array index is
+    // not a stable identity across Sortable operations.
+    const duplicateTargetId = target.id
+        && db.personas.some((persona, index) => index !== targetIndex && persona.id === target.id)
+    const targetId = !target.id || duplicateTargetId ? v4() : target.id
+    if (target.id !== targetId) target.id = targetId
+
+    const imageInfo = await validatePersonaImage(img)
+    const imgp = await saveImage(img, '', `persona.${imageInfo.extension}`)
+    const currentIndex = db.personas.findIndex((persona) => persona.id === targetId)
+    if (currentIndex === -1) {
+        // The persona was removed while its bytes were being stored. Leaving
+        // the remaining array untouched is safer than reusing the stale slot.
+        throw new Error('Persona was removed before the image finished saving')
+    }
+
+    const currentTarget = db.personas[currentIndex]
+    const selectedTargetId = db.personas[db.selectedPersona]?.id
+    if (selectedTargetId === targetId) {
+        db.userIcon = imgp
+        db.personas[currentIndex] = {
+            ...currentTarget,
+            name: db.username,
+            icon: imgp,
+            personaPrompt: db.personaPrompt,
+            note: db.userNote,
+            id: targetId,
+        }
+    } else {
+        db.personas[currentIndex] = {
+            ...currentTarget,
+            icon: imgp,
+            id: targetId,
+        }
+    }
+
+    void requestImmediateSave()
+    return imgp
+}
 
 export async function selectUserImg() {
-    const selected = await selectSingleFile(['png'])
+    const selected = await selectSingleFile([...PERSONA_IMAGE_EXTENSIONS])
     if (!selected) {
         return
     }
-    const img = selected.data
-    let db = getDatabase()
-    const imgp = await saveImage(img)
-    db.userIcon = imgp
-    db.personas[db.selectedPersona] = {
-        ...db.personas[db.selectedPersona],
-        name: db.username,
-        icon: db.userIcon,
-        personaPrompt: db.personaPrompt,
-        note: db.userNote,
-        id: db.personas[db.selectedPersona].id ?? v4()
+
+    try {
+        await setUserPersonaImage(selected.data)
+    } catch (error) {
+        alertError(error)
     }
 }
 

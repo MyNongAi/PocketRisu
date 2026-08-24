@@ -39,7 +39,7 @@
   addCharacter,
     cancelCharacterChatPrefetch,
     changeChar,
-    getCharImage,
+    getCharThumbnail,
     prefetchCharacterChat,
     scheduleCharacterChatPrefetch,
     warmRecentCharacterChats,
@@ -66,6 +66,13 @@
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
 
   let sideBarMode = $state(0);
+  let quickSettingsVisible = $derived(
+    QuickSettings.open
+      && sideBarMode === 0
+      && $selectedCharID >= 0
+      && !$settingsOpen
+      && DBState.db.characters[$selectedCharID]?.chaId !== '§playground'
+  )
   let editMode = $state(false);
   let menuMode = $state(0);
   let devTool = $state(false)
@@ -779,7 +786,7 @@
           >
           {#if char.type === 'normal'}
             <SidebarAvatar 
-              src={char.img ? () => getCharImage(char.img, "plain") : "/none.webp"}
+              src={char.img ? () => getCharThumbnail(char.img, "plain") : "/none.webp"}
               size="56" 
               rounded={IconRounded} 
               name={char.name}
@@ -788,7 +795,7 @@
           {:else if char.type === "folder"}
             {#key char.color}
             {#key char.name}
-              <SidebarAvatar src="slot" size="56" rounded={IconRounded} bordered name={char.name} color={char.color} backgroundimg={char.img ? () => getCharImage(char.img, "plain") : ""}
+              <SidebarAvatar src="slot" size="56" rounded={IconRounded} bordered name={char.name} color={char.color} backgroundimg={char.img ? () => getCharThumbnail(char.img, "plain") : ""}
               oncontextmenu={async (e) => {
                 e.preventDefault()
                 const sel = parseInt(await alertSelect([language.renameFolder,language.changeFolderColor,language.changeFolderImage,language.cancel]))
@@ -951,7 +958,7 @@
                   }}
                 >
                 <SidebarAvatar 
-                  src={char2.img ? () => getCharImage(char2.img, "plain") : "/none.webp"}
+                  src={char2.img ? () => getCharThumbnail(char2.img, "plain") : "/none.webp"}
                   size="56" 
                   rounded={IconRounded} 
                   name={char2.name}
@@ -1103,7 +1110,9 @@
 </div>
 {/if}
 <div
-  class="setting-area h-full max-xs:relative flex-col overflow-y-auto overflow-x-hidden bg-darkbg py-6 text-textcolor max-h-full"
+  class="setting-area h-full max-xs:relative flex-col overflow-x-hidden bg-darkbg py-6 text-textcolor max-h-full"
+  class:overflow-y-auto={!quickSettingsVisible}
+  class:overflow-y-hidden={quickSettingsVisible}
   class:risu-sidebar={!$sideBarClosing}
   class:w-96={$sideBarSize === 0}
   class:w-110={$sideBarSize === 1}
@@ -1175,7 +1184,7 @@
             >
               <div class="shrink-0">
                 <SidebarAvatar
-                  src={rc.image ? () => getCharImage(rc.image, "plain") : "/none.webp"}
+                  src={rc.image ? () => getCharThumbnail(rc.image, "plain") : "/none.webp"}
                   size="36"
                   rounded={IconRounded}
                   name={rc.name}

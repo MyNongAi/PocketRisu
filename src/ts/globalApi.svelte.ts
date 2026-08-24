@@ -5,14 +5,14 @@ import { get } from "svelte/store";
 import streamSaver from 'streamsaver';
 import { setDatabase, type Database, defaultSdDataFunc, getDatabase, appVer, nodeOnlyVer, getCurrentCharacter, loadTogglesFromChat } from "./storage/database.svelte";
 import { checkRisuUpdate } from "./update";
-import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore, loadingOverlayStore, chatHydrationOverlayStore, chatDeselected } from "./stores.svelte";
+import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore, loadingOverlayStore, chatHydrationOverlayStore, chatDeselected, moduleTreeRevision } from "./stores.svelte";
 import { loadPlugins } from "./plugins/plugins.svelte";
 import { alertConfirm, alertError, alertMd, alertNormalWait, alertSelect, alertTOS, waitAlert, notifySuccess, notifyError, notifyInfo } from "./alert";
 import { hasher } from "./parser/parser.svelte";
 import { characterURLImport, hubURL } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
 import { decodeRisuSave, encodeRisuSaveLegacy, findDangerousChatOps, RisuSaveEncoder, RisuSavePatcher, type toSaveType } from "./storage/risuSave";
-import { isHydrating, saveChatToServer, ensureChatHydrated, chatToStub, classifyChat } from "./storage/chatStorage";
+import { isHydrating, saveChatToServer, ensureChatHydrated, chatToStub, classifyChat, evictHydratedChatCache, markHydratedChatDirty, markHydratedChatPersisted } from "./storage/chatStorage";
 import { AutoStorage } from "./storage/autoStorage";
 import { ConflictError, type PersistWarning } from "./storage/nodeStorage";
 import { getExternalAssetContentUrl, isExternalAssetLocation } from "./storage/externalAssets";
@@ -25,9 +25,13 @@ import { updateGuisize } from "./gui/guisize";
 import { deepTouch } from "./gui/deepTouch.svelte";
 import { updateLorebooks } from "./characters";
 import { initMobileGesture } from "./hotkey";
-import { moduleUpdate } from "./process/modules";
+import { moduleUpdate, refreshModules } from "./process/modules";
+import { trackModuleTreeChanges } from "./process/moduleChangeTracker.svelte";
+import { classifyPatchWriteResult, mergeTrackedDatabaseChanges } from "./storage/saveConflict";
 import { isLocalNetworkUrl } from "./network/localNetwork";
 import { decodeProxyJobWsChunk, formatProxyStreamErrorMessage, parseProxyJobWsEvent } from "./network/proxyJobWs";
+import { getInlineImageMimeType } from "./media/imageMime";
+export { getInlineImageMimeType } from "./media/imageMime";
 import {
     createRequestLogScope, recordRequestLog, fetchRequestLogs,
     type RequestLogCategory, type RequestLogSource, type RequestLogRoute,
@@ -69,6 +73,10 @@ let fileCache: {
 
 let pathCache: { [key: string]: string } = {}
 let checkedPaths: string[] = []
+
+function toInlineImageDataUri(loc: string, data: Uint8Array): string {
+    return `data:${getInlineImageMimeType(loc, data)};base64,${Buffer.from(data).toString('base64')}`
+}
 
 function buildTimeoutSignal(signal: AbortSignal | undefined, timeoutMs: number | undefined) {
     if (!timeoutMs || timeoutMs <= 0) {
@@ -160,17 +168,25 @@ export async function getFileSrc(loc: string) {
                 fileCache.res.push('loading')
                 const f: Uint8Array = await forageStorage.getItem(loc) as unknown as Uint8Array
                 fileCache.res[ind] = f
-                return `data:image/png;base64,${Buffer.from(f).toString('base64')}`
+                return toInlineImageDataUri(loc, f)
             }
             else {
-                const f = fileCache.res[ind]
-                if (f === 'loading') {
+                let cached = fileCache.res[ind]
+                if (cached === 'loading') {
                     while (fileCache.res[ind] === 'loading') {
                         await sleep(10)
                     }
-                    return `data:image/png;base64,${Buffer.from(fileCache.res[ind]).toString('base64')}`
+                    cached = fileCache.res[ind]
                 }
-                return `data:image/png;base64,${Buffer.from(f).toString('base64')}`
+                // The shared cache may contain the service-worker sentinel if
+                // SW mode changed at runtime. Fetch the bytes instead of
+                // treating that sentinel string as image data.
+                if (cached === 'done') {
+                    cached = await forageStorage.getItem(loc) as unknown as Uint8Array
+                    fileCache.res[ind] = cached
+                }
+                if (cached === 'loading') throw new Error('Asset cache did not finish loading')
+                return toInlineImageDataUri(loc, cached)
             }
         }
     } catch (error) {
@@ -469,6 +485,7 @@ export async function saveDb() {
         root: false,
         botPreset: false,
         modules: false,
+        moduleIds: [],
         plugins: false,
         pluginCustomStorage: false
     }
@@ -503,6 +520,7 @@ export async function saveDb() {
         changeTracker.root = false
         changeTracker.botPreset = false
         changeTracker.modules = false
+        changeTracker.moduleIds = []
         changeTracker.plugins = false
         changeTracker.pluginCustomStorage = false
         return toSave
@@ -526,7 +544,6 @@ export async function saveDb() {
         let knownCharacterIds = new Set<string>((getDatabase()?.characters ?? []).map((character) => character?.chaId).filter(Boolean))
         let didInitRootEffect = false
         let didInitBotPresetEffect = false
-        let didInitModulesEffect = false
         let didInitPluginsEffect = false
         let didInitPluginStorageEffect = false
         let didInitGeneralEffect = false
@@ -594,18 +611,25 @@ export async function saveDb() {
             changeTracker.botPreset = true
             saveTimeoutExecute()
         })
-        $effect(() => {
-            try { deepTouch(DBState.db.modules) } catch (e) {
-                console.warn('[Save] deepTouch(modules) failed:', e)
-                return
-            }
-            if (!didInitModulesEffect) {
-                didInitModulesEffect = true
-                return
-            }
-            changeTracker.modules = true
-            saveTimeoutExecute()
-        })
+        trackModuleTreeChanges(
+            () => DBState.db.modules,
+            (moduleChange) => {
+                // An id list lets the patch writer serialize only the module
+                // that changed. Structural/unsafe changes deliberately fall
+                // back to a conservative whole-array save.
+                if (moduleChange.kind === 'structure' || !moduleChange.moduleId) {
+                    changeTracker.moduleIds = null
+                } else if (changeTracker.moduleIds !== null && !changeTracker.moduleIds?.includes(moduleChange.moduleId)) {
+                    changeTracker.moduleIds = [...(changeTracker.moduleIds ?? []), moduleChange.moduleId]
+                }
+                if (moduleChange.kind === 'structure' || moduleChange.replaced || moduleChange.routingChanged) {
+                    refreshModules()
+                }
+                changeTracker.modules = true
+                moduleTreeRevision.value += 1
+                saveTimeoutExecute()
+            },
+        )
         $effect(() => {
             deepTouch(DBState.db.plugins)
             if (!didInitPluginsEffect) {
@@ -694,6 +718,7 @@ export async function saveDb() {
             ) {
                 changeTracker.chat.unshift([activeChaId, activeChatId])
             }
+            markHydratedChatDirty(activeChaId, activeChatId)
             saveTimeoutExecute()
         })
     })
@@ -711,6 +736,14 @@ export async function saveDb() {
         })
         changeTracker.botPreset = changeTracker.botPreset || toSave.botPreset
         changeTracker.modules = changeTracker.modules || toSave.modules
+        if (changeTracker.moduleIds === null || toSave.moduleIds === null) {
+            changeTracker.moduleIds = null
+        } else {
+            changeTracker.moduleIds = [...new Set([
+                ...(toSave.moduleIds ?? []),
+                ...(changeTracker.moduleIds ?? []),
+            ])]
+        }
         changeTracker.plugins = changeTracker.plugins || toSave.plugins
         changeTracker.pluginCustomStorage = changeTracker.pluginCustomStorage || toSave.pluginCustomStorage
         changeTracker.root = changeTracker.root || toSave.root
@@ -772,62 +805,23 @@ export async function saveDb() {
         const latestData = await forageStorage.getItem('database/database.bin') as unknown as Uint8Array
         if (latestData && latestData.length > 0) {
             const latestDb = await decodeRisuSave(latestData) as Database
-            const mergedDb = safeStructuredClone(latestDb) as Database
-            const localDb = safeStructuredClone(db) as Database
-
-            for (const key in localDb) {
-                if (
-                    key !== 'characters' && key !== 'botPresets' && key !== 'modules' &&
-                    key !== 'plugins' && key !== 'pluginCustomStorage'
-                ) {
-                    mergedDb[key] = safeStructuredClone(localDb[key])
-                }
-            }
-
-            if (toSave.botPreset) {
-                mergedDb.botPresets = safeStructuredClone(localDb.botPresets)
-                mergedDb.botPresetsId = localDb.botPresetsId
-            }
-            if (toSave.modules) {
-                mergedDb.modules = safeStructuredClone(localDb.modules)
-            }
-
-            const trackedCharIds = new Set<string>(toSave.character.filter(Boolean))
-            for (const trackedChat of toSave.chat) {
-                if (trackedChat?.[0]) {
-                    trackedCharIds.add(trackedChat[0])
-                }
-            }
-            const mergedCharacters = Array.isArray(mergedDb.characters) ? mergedDb.characters : []
-            const localCharacters = Array.isArray(localDb.characters) ? localDb.characters : []
-
-            for (const charId of trackedCharIds) {
-                const localChar = localCharacters.find((char) => char?.chaId === charId)
-                const mergedIndex = mergedCharacters.findIndex((char) => char?.chaId === charId)
-                if (localChar) {
-                    const clonedLocalChar = safeStructuredClone(localChar)
-                    if (mergedIndex >= 0) {
-                        mergedCharacters[mergedIndex] = clonedLocalChar
-                    }
-                    else {
-                        mergedCharacters.push(clonedLocalChar)
-                    }
-                }
-                else if (mergedIndex >= 0) {
-                    mergedCharacters.splice(mergedIndex, 1)
-                }
-            }
-            mergedDb.characters = mergedCharacters
-            const mergedBaseline = safeStructuredClone(mergedDb) as Database
+            // Keep a pristine server baseline for the retry patcher. Initializing
+            // it from mergedDb would make the retry expect a hash the server has
+            // never seen and cause an endless 409 loop.
+            const latestBaseline = safeStructuredClone(latestDb) as Database
+            const mergedDb = mergeTrackedDatabaseChanges(
+                safeStructuredClone(latestDb) as Database,
+                safeStructuredClone(db) as Database,
+                toSave,
+            ) as Database
             setDatabase(mergedDb)
 
-            encoder = new RisuSaveEncoder()
-            await encoder.init(getDatabase(), {
-                compression: false
-            })
             if (supportsPatchSync) {
                 patcher = new RisuSavePatcher()
-                await patcher.init(mergedBaseline)
+                await patcher.init(latestBaseline)
+            } else {
+                encoder = new RisuSaveEncoder()
+                await encoder.init(getDatabase(), { compression: false })
             }
         }
         requeueTrackedChanges(toSave)
@@ -868,6 +862,7 @@ export async function saveDb() {
             if (!chat || chat._placeholder) continue
             try {
                 await saveChatToServer(chaId, chatIndex, chatId, chat)
+                markHydratedChatPersisted(chaId, chatId)
             } catch (e) {
                 console.error(`[Save] Failed to save chat ${chaId}/${chatId}:`, e)
                 failedChats.push([chaId, chatId])
@@ -877,20 +872,15 @@ export async function saveDb() {
             throw new Error(`Failed to save ${failedChats.length} chat${failedChats.length === 1 ? '' : 's'}`)
         }
 
-        // ── database.bin: exclude chat payload (stubs only via encoder) ──
-        await encoder.set(db, safeStructuredClone(toSave))
-        const encoded = encoder.encode()
-        if (!encoded) {
-            await sleep(1000)
-            return 'noop'
-        }
-        const dbData = new Uint8Array(encoded)
-
         let saved = false
         let newEtag: string | undefined
 
         if (supportsPatchSync && !options?.forceFullWrite) {
-            const patchData = await patcher.set(db, safeStructuredClone(toSave))
+            // `set()` advances its baseline. Calculate on an isolated draft and
+            // publish that draft only after /api/patch succeeds; a thrown fetch
+            // or rejected response must leave the original retry baseline intact.
+            const patchDraft = patcher.fork()
+            const patchData = await patchDraft.set(db, safeStructuredClone(toSave))
             // Refuse to send patches that would corrupt server-side lazy chats.
             // chatToStub strips chats to metadata before diffing, so the only
             // way these ops appear is a baseline desync. Falling through to a
@@ -921,7 +911,7 @@ export async function saveDb() {
                 // chat object has.
                 const affectedChats: Record<string, any> = {}
                 const seen = new Set<string>()
-                const baselineCharsLen = (patcher as any).lastSyncedDb?.characters?.length ?? -1
+                const baselineCharsLen = (patchDraft as any).lastSyncedDb?.characters?.length ?? -1
                 const currentCharsLen = db.characters?.length ?? -1
 
                 const summarize = (c: any) => {
@@ -976,7 +966,7 @@ export async function saveDb() {
                     seen.add(key)
                     if (seen.size > 5) break
                     const ci = +m[1], chi = +m[2]
-                    const baselineChar = (patcher as any).lastSyncedDb?.characters?.[ci]
+                    const baselineChar = (patchDraft as any).lastSyncedDb?.characters?.[ci]
                     const currentChar = db.characters?.[ci]
                     const baselineChat = baselineChar?.chats?.[chi]
                     const currentChat = currentChar?.chats?.[chi]
@@ -1013,7 +1003,7 @@ export async function saveDb() {
                 const charsDistribution: Record<string, any> = {}
                 for (const k of Array.from(seen).slice(0, 3)) {
                     const ci = +k.split('/')[0]
-                    const baselineChats = (patcher as any).lastSyncedDb?.characters?.[ci]?.chats ?? []
+                    const baselineChats = (patchDraft as any).lastSyncedDb?.characters?.[ci]?.chats ?? []
                     const currentChats = db.characters?.[ci]?.chats ?? []
                     const tally = (chats: any[]) => {
                         const t = { total: chats.length, stub: 0, placeholder: 0, hybrid: 0, full: 0, neither: 0 }
@@ -1052,9 +1042,22 @@ export async function saveDb() {
                 // Leave saved=false so the full-write path below kicks in.
             } else {
                 const patchResult = await forageStorage.patchItem('database/database.bin', patchData)
-                saved = patchResult.success
-                if (patchResult.etag) {
-                    newEtag = patchResult.etag
+                const patchOutcome = classifyPatchWriteResult(patchResult)
+                saved = patchOutcome === 'saved'
+                if (saved) {
+                    patcher = patchDraft
+                    if (patchResult.etag) {
+                        newEtag = patchResult.etag
+                        forageStorage.setDbEtag(patchResult.etag)
+                    }
+                } else if (patchOutcome === 'rebase') {
+                    console.warn('[Save] Patch hash conflict detected, rebasing tracked local changes...')
+                    await rebaseTrackedLocalChangesOnLatestServerDb(patchResult.etag ?? null, db, toSave)
+                    await sleep(Math.min(500 * (savetrys + 1), 3000))
+                    return 'retry'
+                } else if (patchResult.chatGuardRejected && patchResult.etag) {
+                    // Chat guard is not a hash conflict. Its full-write recovery
+                    // may use the server-provided current ETag.
                     forageStorage.setDbEtag(patchResult.etag)
                 }
                 if (patchResult.persistWarning) {
@@ -1073,6 +1076,27 @@ export async function saveDb() {
             if (supportsPatchSync && !options?.forceFullWrite) {
                 console.warn('[Save] Patch conflict, falling through to full write...')
             }
+
+            // Building database.bin serializes every module and character.
+            // PocketRisu normally persists a small JSON patch, so doing this
+            // eagerly made the expensive full-DB work run after every edit even
+            // when the bytes were immediately discarded. Build it only for a
+            // real full-write fallback. The patch-capable path recreates the
+            // encoder from the current DB because successful prior patches did
+            // not need to keep its monolithic blocks in sync.
+            if (supportsPatchSync) {
+                encoder = new RisuSaveEncoder()
+                await encoder.init(db, { compression: false })
+            } else {
+                await encoder.set(db, safeStructuredClone(toSave))
+            }
+            const encoded = encoder.encode()
+            if (!encoded) {
+                await sleep(1000)
+                return 'noop'
+            }
+            const dbData = new Uint8Array(encoded)
+
             try {
                 const currentEtag = forageStorage.getDbEtag()
                 await forageStorage.setItem('database/database.bin', dbData, currentEtag ?? undefined)
@@ -1095,6 +1119,14 @@ export async function saveDb() {
         }
 
         updateKnownChatsAfterSuccessfulSave(db, toSave)
+
+        // The server now owns every full chat payload. After a successful save,
+        // fold old server-hydrated chats back to metadata-only placeholders so
+        // a long browsing session cannot grow memory without bound.
+        const activeIndex = get(selectedCharID)
+        const activeCharacter = db.characters[activeIndex]
+        const activeChat = activeCharacter?.chats?.[activeCharacter.chatPage]
+        await evictHydratedChatCache({ chaId: activeCharacter?.chaId, chatId: activeChat?.id })
 
         if (newEtag) {
             forageStorage.setDbEtag(newEtag)
