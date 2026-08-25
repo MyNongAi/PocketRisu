@@ -26,6 +26,14 @@
     let pollTimer: number | null = null
 
     const terminalMigrationStatuses = new Set(['published', 'verified', 'cleaned', 'canceled'])
+    const copyBlockingStatuses = new Set([
+        'planning', 'running', 'staged', 'verifying', 'verification-failed',
+        'staged-verified', 'finalizing',
+    ])
+    const cancelableMigrationStatuses = new Set([
+        'planning', 'queued', 'running', 'paused', 'failed', 'staged',
+        'verifying', 'verification-failed', 'staged-verified',
+    ])
 
     function formatBytes(value: number) {
         if (!Number.isFinite(value) || value <= 0) return '0 B'
@@ -169,13 +177,24 @@
     }
 
     async function finalizeMigration() {
-        if (!migrationJob || migrationJob.status !== 'staged') return
-        if (!await alertConfirm('Atomically switch current character/module references to their verified external mappings? A safety DB snapshot and recoverable trash remain; permanent deletion is still a separate step.')) return
+        if (!migrationJob || migrationJob.status !== 'staged-verified') return
+        if (!await alertConfirm('Publish the mappings that just passed the full staged-copy hash/size recheck? Character/module references change atomically, while a safety DB snapshot and recoverable trash remain.')) return
         const result = await run('Publishing external mappings and rewriting current references…', () => forageStorage.finalizeExternalAssetMigration(migrationJob!.id))
         if (result?.job) {
             migrationJob = result.job
             notifySuccess(`Published ${result.referencesRewritten ?? 0} references. Reloading the current database.`)
             setTimeout(() => location.reload(), 500)
+        }
+    }
+
+    async function verifyStagedMigration() {
+        if (!migrationJob || !['staged', 'verification-failed', 'staged-verified'].includes(migrationJob.status)) return
+        const job = await run('Starting a bounded background recheck of every staged copy…', () => (
+            forageStorage.verifyStagedExternalAssetMigration(migrationJob!.id)
+        ))
+        if (job) {
+            migrationJob = job
+            message = 'Staged copies are being checked sequentially with provider stat, download, size, and SHA-256. Successful receipts are resumable.'
         }
     }
 
@@ -302,17 +321,24 @@
 
     <div class="mt-4 flex flex-wrap gap-2">
         <Button onclick={saveConfig} disabled={loading}>Save provider</Button>
-        <Button styled="outlined" onclick={scan} disabled={loading || !!migrationJob && ['planning', 'running', 'finalizing'].includes(migrationJob.status)}>Analyze</Button>
-        <Button onclick={migrate} disabled={loading || !enabled || providerType === 'android-saf' || migrationJob?.status === 'planning' || migrationJob?.status === 'running' || migrationJob?.status === 'finalizing' || migrationJob?.status === 'staged'}>
+        <Button styled="outlined" onclick={scan} disabled={loading || !!migrationJob && copyBlockingStatuses.has(migrationJob.status)}>Analyze</Button>
+        <Button onclick={migrate} disabled={loading || !enabled || providerType === 'android-saf' || !!migrationJob && copyBlockingStatuses.has(migrationJob.status)}>
             {migrationJob && ['queued', 'paused', 'failed'].includes(migrationJob.status) ? 'Resume copies' : 'Start migration'}
         </Button>
         {#if migrationJob?.status === 'running'}
             <Button styled="outlined" onclick={pauseMigration} disabled={loading}>Pause</Button>
         {/if}
-        {#if migrationJob?.status === 'staged'}
+        {#if migrationJob && ['staged', 'verification-failed', 'staged-verified'].includes(migrationJob.status)}
+            <Button styled="outlined" onclick={verifyStagedMigration} disabled={loading}>
+                {migrationJob.status === 'staged-verified' ? 'Verify staged copies again' : 'Verify staged copies'}
+            </Button>
+        {:else if migrationJob?.status === 'verifying'}
+            <Button styled="outlined" disabled={true}>Verifying staged copies…</Button>
+        {/if}
+        {#if migrationJob?.status === 'staged-verified'}
             <Button onclick={finalizeMigration} disabled={loading}>Publish mappings</Button>
         {/if}
-        {#if migrationJob && ['planning', 'queued', 'running', 'paused', 'failed'].includes(migrationJob.status)}
+        {#if migrationJob && cancelableMigrationStatuses.has(migrationJob.status)}
             <Button styled="danger" onclick={cancelMigration} disabled={loading}>Cancel</Button>
         {/if}
         <Button styled="outlined" onclick={verify} disabled={loading || migrationJob?.status !== 'published'}>Verify again</Button>
@@ -333,11 +359,25 @@
                 {formatBytes(migrationJob.stagedBytes)} / {formatBytes(migrationJob.totalBytes)}
                 {#if migrationJob.failedItems > 0} · failed {migrationJob.failedItems.toLocaleString()}{/if}
             </p>
+            {#if ['verifying', 'verification-failed', 'staged-verified', 'finalizing'].includes(migrationJob.status) || migrationJob.verifiedStagedItems > 0}
+                <div class="mt-2 h-2 overflow-hidden rounded bg-bgcolor">
+                    <div class="h-full bg-blue-500 transition-[width] duration-300" style={`width: ${Math.max(0, Math.min(100, migrationJob.verificationProgress * 100))}%`}></div>
+                </div>
+                <p class="mt-2">
+                    Pre-publish verified {migrationJob.verifiedStagedItems.toLocaleString()} / {migrationJob.totalItems.toLocaleString()} assets ·
+                    {formatBytes(migrationJob.verifiedStagedBytes)} / {formatBytes(migrationJob.totalBytes)}
+                    {#if migrationJob.verificationFailedItems > 0} · failed {migrationJob.verificationFailedItems.toLocaleString()}{/if}
+                </p>
+            {/if}
             {#if migrationJob.planning?.phase}<p class="mt-1">Planning: {migrationJob.planning.phase}</p>{/if}
             {#if migrationJob.metadata?.missingCount}<p class="mt-1 text-yellow-400">Missing internal references skipped: {migrationJob.metadata.missingCount}</p>{/if}
             {#if migrationJob.error}<p class="mt-1 text-red-400">{migrationJob.error}</p>{/if}
             {#if migrationJob.status === 'staged'}
-                <p class="mt-1 text-green-400">Every queued asset has an upload, re-download hash check, and recoverable trash copy. Publishing is still explicit.</p>
+                <p class="mt-1 text-yellow-400">Copies and recovery trash are staged. Run “Verify staged copies” to re-read every provider object before Publish is unlocked.</p>
+            {:else if migrationJob.status === 'verification-failed'}
+                <p class="mt-1 text-red-400">Publish remains locked. Restore the bad provider object from its retained internal original/recovery trash (or repair the remote store), then retry; successful receipts are kept. If direct repair is impractical, cancel and start migration again from the retained originals. Cancel leaves every Risu reference and internal original untouched.</p>
+            {:else if migrationJob.status === 'staged-verified'}
+                <p class="mt-1 text-green-400">Every staged provider object passed the fresh stat, size, download, and SHA-256 check. Publish is now unlocked.</p>
             {/if}
         </div>
     {/if}
@@ -377,7 +417,7 @@
             <Button
                 styled="outlined"
                 onclick={diagnoseAssets}
-                disabled={loading || !!doctorJob && ['queued', 'running'].includes(doctorJob.status) || !!migrationJob && ['planning', 'running', 'finalizing'].includes(migrationJob.status)}
+                disabled={loading || !!doctorJob && ['queued', 'running'].includes(doctorJob.status) || !!migrationJob && ['planning', 'running', 'verifying', 'finalizing'].includes(migrationJob.status)}
             >Run read-only diagnosis</Button>
             {#if doctorJob?.status === 'completed' && doctorJob.result?.issues.some((issue) => issue.repairable)}
                 <Button onclick={repairDiagnosedAssets} disabled={loading}>Repair safe sampled issues</Button>

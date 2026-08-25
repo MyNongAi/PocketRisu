@@ -1,4 +1,20 @@
-# PocketRisu 이주 내보내기 플러그인
+# PocketRisu 이주 내보내기 플러그인 (구형 실험본·사용 중단)
+
+> 이 폴더의 `.prisumigrate` 도구는 현재 병합 UI와 호환되지 않는 구형
+> 실험본입니다. 새 작업에 사용하지 마십시오. 특히 아래의 256MB 형식과
+> “가져오기 미구현” 설명은 현재 상태가 아닙니다.
+
+현재 사용하는 도구와 형식은 다음 문서를 기준으로 합니다.
+
+- 플러그인: `public/plugins/pocketrisu-source-collection-exporter.js`
+- 설치 안내: `extras/risu-source-collection-exporter/README.ko.md`
+- PocketRisu 병합 안내: `docs/ko/source-collection-merge.md`
+- 형식: `.risu-characters`, `.risu-modules`, `.risu-personas`
+- 기본 조각 목표: 12MB, part 상한: 32MB
+
+이 구형 코드는 과거 형식 참고와 회귀 추적을 위해서만 남겨 둡니다.
+
+## 아래 내용은 구형 형식 기록입니다
 
 RisuAI에 있는 봇과 모듈을 PocketRisu 병합용 파일로 각각 내보내는 API v3 플러그인입니다.
 

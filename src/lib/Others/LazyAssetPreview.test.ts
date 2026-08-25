@@ -37,6 +37,7 @@ const mounted: unknown[] = []
 
 afterEach(async () => {
   await Promise.all(mounted.splice(0).map((component) => unmount(component as never)))
+  vi.useRealTimers()
   document.body.replaceChildren()
   TestIntersectionObserver.latest = undefined
   vi.unstubAllGlobals()
@@ -117,7 +118,28 @@ describe('LazyAssetPreview', () => {
     expect(target.querySelector('img')?.getAttribute('src')).toBe('/thumbnail/assets/large.png')
   })
 
-  it('places the original File in drag data after drag intent', async () => {
+  it('does not fetch an original merely because a draggable thumbnail is visible', async () => {
+    vi.stubGlobal('IntersectionObserver', TestIntersectionObserver)
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    mounted.push(mount(LazyAssetPreview, {
+      target,
+      props: {
+        path: 'assets/large.png',
+        extension: 'png',
+        eager: true,
+        draggableOriginal: true,
+      },
+    }))
+
+    await vi.waitFor(() => expect(target.querySelector('img')).not.toBeNull())
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('prefetches on hover intent so the first drag can carry the original File', async () => {
+    vi.useFakeTimers()
     vi.stubGlobal('IntersectionObserver', TestIntersectionObserver)
     const fetchMock = vi.fn(async () => new Response(
       new Blob(['original-pixels'], { type: 'image/png' }),
@@ -142,11 +164,16 @@ describe('LazyAssetPreview', () => {
 
     await vi.waitFor(() => expect(target.querySelector('img')).not.toBeNull())
     const image = target.querySelector('img') as HTMLImageElement
+    const wrapper = target.querySelector('[data-lazy-asset-preview]') as HTMLDivElement
     expect(image.getAttribute('draggable')).toBe('true')
 
-    image.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, button: 0 }))
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce())
-    await vi.waitFor(() => expect(target.querySelector('[data-drag-preparing="true"]')).toBeNull())
+    wrapper.dispatchEvent(new MouseEvent('pointerenter', { bubbles: true }))
+    await vi.advanceTimersByTimeAsync(119)
+    expect(fetchMock).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    await Promise.resolve()
+    await tick()
+    expect(fetchMock).toHaveBeenCalledOnce()
 
     const add = vi.fn()
     const setData = vi.fn()
@@ -163,5 +190,48 @@ describe('LazyAssetPreview', () => {
     expect(originalFile.type).toBe('image/png')
     expect(originalFile.size).toBeGreaterThan(0)
     expect(setData).toHaveBeenCalledWith('DownloadURL', 'image/png:NAI reference.png:blob:original-file')
+
+    image.dispatchEvent(new Event('dragend', { bubbles: true }))
+    await vi.advanceTimersByTimeAsync(10_000)
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:original-file')
+  })
+
+  it('cancels a hover prefetch and releases its state when pointer intent leaves', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('IntersectionObserver', TestIntersectionObserver)
+    let requestSignal: AbortSignal | undefined
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      requestSignal = init?.signal as AbortSignal
+      return new Promise<Response>((_resolve, reject) => {
+        requestSignal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const target = document.createElement('div')
+    document.body.appendChild(target)
+    mounted.push(mount(LazyAssetPreview, {
+      target,
+      props: {
+        path: 'assets/cancel.png',
+        extension: 'png',
+        eager: true,
+        draggableOriginal: true,
+      },
+    }))
+
+    await vi.waitFor(() => expect(target.querySelector('img')).not.toBeNull())
+    const wrapper = target.querySelector('[data-lazy-asset-preview]') as HTMLDivElement
+    wrapper.dispatchEvent(new MouseEvent('pointerenter', { bubbles: true }))
+    await vi.advanceTimersByTimeAsync(120)
+    await Promise.resolve()
+    expect(fetchMock).toHaveBeenCalledOnce()
+
+    wrapper.dispatchEvent(new MouseEvent('pointerleave', { bubbles: true }))
+    await Promise.resolve()
+    await tick()
+
+    expect(requestSignal?.aborted).toBe(true)
+    expect(wrapper.dataset.dragPreparing).toBe('false')
   })
 })

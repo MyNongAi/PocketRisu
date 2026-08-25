@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { getFileSrc, getFileThumbnailSrc } from 'src/ts/globalApi.svelte'
+  import { assetDragPrefetchQueue, type AssetDragPrefetchLease } from './assetDragPrefetch'
 
   type MediaKind = 'image' | 'video' | 'audio' | 'unsupported'
 
@@ -18,6 +19,7 @@
     thumbnail?: boolean
     draggableOriginal?: boolean
     dragFileName?: string
+    originalIntentActive?: boolean
     resolveSrc?: (path: string) => Promise<string>
     resolveOriginalSrc?: (path: string) => Promise<string>
   }
@@ -36,6 +38,7 @@
     thumbnail = true,
     draggableOriginal = false,
     dragFileName = '',
+    originalIntentActive = false,
     resolveSrc,
     resolveOriginalSrc = getFileSrc,
   }: Props = $props()
@@ -45,9 +48,13 @@
   let resolvedSrc = $state('')
   let previewUsingOriginal = $state(false)
   let dragPreparing = $state(false)
+  let pointerIntent = $state(false)
+  let dragActive = false
   let preparedDragFile: File | null = $state(null)
   let preparedDragPath = ''
   let dragPreparePromise: Promise<File | null> | null = null
+  let dragPrefetchLease: AssetDragPrefetchLease<File> | null = null
+  let dragIntentTimer: ReturnType<typeof setTimeout> | null = null
   let dragObjectUrl = ''
   let dragReleaseTimer: ReturnType<typeof setTimeout> | null = null
   let requestGeneration = 0
@@ -136,9 +143,16 @@
 
   function releasePreparedDrag() {
     dragGeneration += 1
+    dragPrefetchLease?.cancel()
+    dragPrefetchLease = null
+    dragPreparePromise = null
     preparedDragFile = null
     preparedDragPath = ''
     dragPreparing = false
+    if (dragIntentTimer) {
+      clearTimeout(dragIntentTimer)
+      dragIntentTimer = null
+    }
     if (dragReleaseTimer) {
       clearTimeout(dragReleaseTimer)
       dragReleaseTimer = null
@@ -165,13 +179,16 @@
     const generation = ++dragGeneration
     dragPreparing = true
 
-    let pending: Promise<File | null>
-    pending = (async () => {
+    const lease = assetDragPrefetchQueue.schedule(async (signal) => {
       const originalUrl = await resolveOriginalSrc(currentPath)
-      const response = await fetch(originalUrl, { credentials: 'include' })
+      if (signal.aborted) throw new DOMException('Drag prefetch canceled', 'AbortError')
+      const response = await fetch(originalUrl, { credentials: 'include', signal })
       if (!response.ok) throw new Error(`Original asset request failed (${response.status})`)
       const blob = await response.blob()
-      if (generation !== dragGeneration || currentPath !== path) return null
+      if (signal.aborted) throw new DOMException('Drag prefetch canceled', 'AbortError')
+      if (generation !== dragGeneration || currentPath !== path) {
+        throw new DOMException('Drag prefetch became stale', 'AbortError')
+      }
 
       const file = new File([blob], normalizedDragFileName(), {
         type: blob.type || dragMimeType(),
@@ -181,19 +198,52 @@
       preparedDragPath = currentPath
       schedulePreparedDragRelease(30_000)
       return file
-    })().catch((error) => {
-      if (generation === dragGeneration) {
+    })
+    dragPrefetchLease = lease
+
+    let pending: Promise<File | null>
+    pending = lease.promise.catch((error) => {
+      if (generation === dragGeneration && !(error instanceof DOMException && error.name === 'AbortError')) {
         console.warn('[LazyAssetPreview] failed to prepare original drag file:', error)
       }
       return null
     }).finally(() => {
       if (generation === dragGeneration) dragPreparing = false
+      if (dragPrefetchLease === lease) dragPrefetchLease = null
       if (dragPreparePromise === pending) dragPreparePromise = null
     })
 
     dragPreparePromise = pending
     return pending
   }
+
+  function scheduleOriginalIntent(delayMs = 120) {
+    if (!draggableOriginal || mediaKind !== 'image' || preparedDragPath === path || dragPreparePromise) return
+    if (dragIntentTimer) clearTimeout(dragIntentTimer)
+    dragIntentTimer = setTimeout(() => {
+      dragIntentTimer = null
+      if (!pointerIntent && !originalIntentActive) return
+      void prepareOriginalForDrag()
+    }, delayMs)
+  }
+
+  function enterOriginalIntent(event: PointerEvent) {
+    if (event.pointerType === 'touch') return
+    pointerIntent = true
+    scheduleOriginalIntent()
+  }
+
+  function leaveOriginalIntent(event: PointerEvent) {
+    if (event.pointerType === 'touch') return
+    pointerIntent = false
+    if (!originalIntentActive && !dragActive) releasePreparedDrag()
+  }
+
+  $effect(() => {
+    const focusedIntent = originalIntentActive
+    if (focusedIntent) scheduleOriginalIntent(0)
+    else if (!pointerIntent && !dragActive) releasePreparedDrag()
+  })
 
   function startOriginalDrag(event: DragEvent) {
     if (!draggableOriginal || mediaKind !== 'image') return
@@ -205,6 +255,7 @@
     }
 
     event.dataTransfer.effectAllowed = 'copy'
+    dragActive = true
     try { event.dataTransfer.clearData() } catch { /* keep browser defaults if unavailable */ }
     try { event.dataTransfer.items.add(file) } catch { /* URL fallbacks below */ }
 
@@ -217,6 +268,7 @@
   }
 
   function finishOriginalDrag() {
+    dragActive = false
     // Keep the object URL alive briefly so a cross-tab drop target can finish
     // consuming it, then release both the Blob URL and the original File bytes.
     schedulePreparedDragRelease(10_000)
@@ -243,10 +295,13 @@
 
 <div
   bind:this={observerTarget}
+  role="presentation"
   class={wrapperClass}
   data-lazy-asset-preview
   data-active={nearViewport ? 'true' : 'false'}
   data-drag-preparing={dragPreparing ? 'true' : 'false'}
+  onpointerenter={enterOriginalIntent}
+  onpointerleave={leaveOriginalIntent}
 >
   {#if resolvedSrc}
     {#if mediaKind === 'video'}

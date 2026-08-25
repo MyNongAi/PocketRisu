@@ -1,5 +1,5 @@
 import { allowedDbKeys, customProviderStore, getV2PluginAPIs, handlePluginInstallViaPlugin, pluginV2, type PluginV2ProviderArgument, type PluginV2ProviderOptions, type RisuPlugin } from "../plugins.svelte";
-import { SandboxHost } from "./factory";
+import { createPluginSecureRandomBytes, SandboxHost } from "./factory";
 import { getDatabase, normalizeChat } from "src/ts/storage/database.svelte";
 import { SafeLocalPluginStorage, tagWhitelist } from "../pluginSafeClass";
 import { recordOwner, removeOwner, clearOwners } from "../pluginStorageMeta";
@@ -1309,6 +1309,14 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
                     forageStorage.isAccount ? 'account' :
                     'local',
             }
+        },
+        /**
+         * Entropy bridge for sandboxed plugins on LAN HTTP. The srcdoc guest
+         * cannot see the server-injected parent seed, so generation must stay
+         * in the trusted host and only the requested bytes cross the bridge.
+         */
+        getSecureRandomBytes: (length: number) => {
+            return createPluginSecureRandomBytes(length)
         },
         getLocalPluginStorage: () => {
             return new SafeLocalPluginStorage(plugin.name)

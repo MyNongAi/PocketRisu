@@ -17,7 +17,11 @@ import {
     type SourceCollectionHeader,
     type SourceCollectionPart,
 } from './sourceCollection'
-import { applySourceCollectionEntities, type SourceCollectionMergeResult } from './sourceCollectionMerge'
+import {
+    applySourceCollectionEntities,
+    reconcileSourceCollectionModuleReferences,
+    type SourceCollectionMergeResult,
+} from './sourceCollectionMerge'
 import { getDatabase } from './storage/database.svelte'
 
 interface IndexedCollectionPart {
@@ -25,6 +29,7 @@ interface IndexedCollectionPart {
     header: SourceCollectionHeader
     entities: unknown[]
     assetMetadata: { path: string, size: number, sha256: string }[]
+    omittedAssetMetadata: { path: string, size: number, reason: 'too-large' }[]
 }
 
 export interface SourceCollectionImportSummary {
@@ -33,6 +38,8 @@ export interface SourceCollectionImportSummary {
     modules: number
     personas: number
     assets: number
+    omittedAssets: number
+    droppedModuleReferences: number
 }
 
 async function parseFile(file: File): Promise<SourceCollectionPart> {
@@ -58,6 +65,7 @@ async function indexFiles(files: readonly File[]): Promise<Map<string, IndexedCo
             header: sourceCollectionHeader(parsed),
             entities: parsed.entities,
             assetMetadata: parsed.assets.map(({ path, size, sha256 }) => ({ path, size, sha256 })),
+            omittedAssetMetadata: parsed.omittedAssets,
         }
         const list = groups.get(parsed.bundleId) ?? []
         list.push(part)
@@ -71,10 +79,18 @@ async function indexFiles(files: readonly File[]): Promise<Map<string, IndexedCo
         const assetMetadata = new Map<string, string>()
         for (const part of list) {
             for (const asset of part.assetMetadata) {
-                const signature = `${asset.size}:${asset.sha256}`
+                const signature = `supplied:${asset.size}:${asset.sha256}`
                 const previous = assetMetadata.get(asset.path)
                 if (previous && previous !== signature) {
                     throw new Error(`Conflicting copies of ${asset.path} exist in one collection`)
+                }
+                assetMetadata.set(asset.path, signature)
+            }
+            for (const asset of part.omittedAssetMetadata) {
+                const signature = `omitted:${asset.size}:${asset.reason}`
+                const previous = assetMetadata.get(asset.path)
+                if (previous && previous !== signature) {
+                    throw new Error(`Conflicting supplied/omitted copies of ${asset.path} exist in one collection`)
                 }
                 assetMetadata.set(asset.path, signature)
             }
@@ -95,15 +111,26 @@ export async function importSourceCollectionFiles(files: readonly File[]): Promi
         entities: unknown[]
     }[] = []
     let savedAssets = 0
+    let omittedAssets = 0
 
     // Assets are staged first. A failure can leave harmless unreferenced,
     // content-addressed blobs, but never half-attaches entities to missing data.
     for (const parts of groups.values()) {
         const mapping = new Map<string, string>()
         const seenHashes = new Map<string, string>()
+        const seenOmissions = new Set<string>()
         for (let partIndex = 0; partIndex < parts.length; partIndex++) {
             alertWait(`${parts[0].header.sourceLabel} 에셋 검증·저장 중… (${partIndex + 1}/${parts.length})`)
             const parsed = await parseFile(parts[partIndex].file)
+            for (const omitted of parsed.omittedAssets) {
+                if (seenOmissions.has(omitted.path)) continue
+                // Never leave a source asset id behind: it could coincidentally
+                // resolve to an unrelated target asset. The exact omission stays
+                // recorded in the collection JSON for later recovery.
+                mapping.set(omitted.path, '')
+                seenOmissions.add(omitted.path)
+                omittedAssets += 1
+            }
             for (const asset of parsed.assets) {
                 const previousHash = seenHashes.get(asset.path)
                 if (previousHash === asset.sha256) continue
@@ -138,6 +165,8 @@ export async function importSourceCollectionFiles(files: readonly File[]): Promi
         modules: 0,
         personas: 0,
         assets: savedAssets,
+        omittedAssets,
+        droppedModuleReferences: 0,
     }
     // Only the five shallow collection arrays need rollback snapshots. Existing
     // giant characters/chats/modules are not deep-cloned.
@@ -149,20 +178,88 @@ export async function importSourceCollectionFiles(files: readonly File[]): Promi
         hadModuleFolders: db.moduleFolders !== undefined,
         personas: [...db.personas],
     }
+    const moduleReferenceRollback = new Map<Record<string, any>, { hadModules: boolean, modules: unknown }>()
     try {
-        for (const group of prepared) {
+        type ScopedModuleMap = { mapping: Map<string, string>, ambiguous: Set<string> }
+        const scopedModuleMaps = new Map<string, ScopedModuleMap>()
+        const changedModuleScopes = new Set<string>()
+        const addModuleMapping = (scope: ScopedModuleMap, sourceId: string, targetId: string) => {
+            if (scope.ambiguous.has(sourceId)) return
+            if (scope.mapping.has(sourceId)) {
+                scope.mapping.delete(sourceId)
+                scope.ambiguous.add(sourceId)
+                return
+            }
+            scope.mapping.set(sourceId, targetId)
+        }
+        for (const module of db.modules) {
+            const info = module?.sourceInfo
+            if (
+                typeof info?.collectionId !== 'string' ||
+                typeof info?.originalId !== 'string' ||
+                typeof module?.id !== 'string'
+            ) continue
+            let scope = scopedModuleMaps.get(info.collectionId)
+            if (!scope) {
+                scope = { mapping: new Map(), ambiguous: new Set() }
+                scopedModuleMaps.set(info.collectionId, scope)
+            }
+            addModuleMapping(scope, info.originalId, module.id)
+        }
+
+        // Modules must receive their fresh ids before related characters are
+        // attached, regardless of the user's file-picker ordering.
+        const orderedGroups = prepared.map((group, index) => ({ group, index }))
+            .sort((left, right) => {
+                const priority = (kind: SourceCollectionHeader['kind']) => kind === 'modules' ? 0 : kind === 'characters' ? 1 : 2
+                return priority(left.group.header.kind) - priority(right.group.header.kind) || left.index - right.index
+            })
+
+        for (const { group } of orderedGroups) {
+            const collectionId = group.header.collectionId
+            const relatedModules = collectionId ? scopedModuleMaps.get(collectionId)?.mapping : undefined
             const merged: SourceCollectionMergeResult = applySourceCollectionEntities(db, {
                 kind: group.header.kind,
                 sourceLabel: group.header.sourceLabel,
                 bundleId: group.header.bundleId,
+                collectionId,
                 importedAt: Date.now(),
                 entities: group.entities,
+                moduleIdMapping: relatedModules,
                 createId: v4,
                 createBlankCharacter: createBlankChar,
             })
             summary.characters += merged.characters
             summary.modules += merged.modules
             summary.personas += merged.personas
+            summary.droppedModuleReferences += merged.droppedModuleReferences
+            if (group.header.kind === 'modules' && collectionId) {
+                let scope = scopedModuleMaps.get(collectionId)
+                if (!scope) {
+                    scope = { mapping: new Map(), ambiguous: new Set() }
+                    scopedModuleMaps.set(collectionId, scope)
+                }
+                for (const [sourceId, targetId] of merged.moduleIdMap) {
+                    addModuleMapping(scope, sourceId, targetId)
+                }
+                changedModuleScopes.add(collectionId)
+            }
+        }
+
+        // Also repairs characters from an earlier, character-only import. If a
+        // source id became ambiguous, this pass clears the formerly resolved
+        // live id again instead of leaving a possibly wrong module attached.
+        for (const collectionId of changedModuleScopes) {
+            const scope = scopedModuleMaps.get(collectionId)
+            if (!scope) continue
+            for (const character of db.characters) {
+                if (character?.sourceInfo?.collectionId !== collectionId || moduleReferenceRollback.has(character)) continue
+                moduleReferenceRollback.set(character, {
+                    hadModules: Object.hasOwn(character, 'modules'),
+                    modules: character.modules,
+                })
+            }
+            reconcileSourceCollectionModuleReferences(db, collectionId, scope.mapping)
         }
 
         if (summary.characters > 0) checkCharOrder()
@@ -178,6 +275,10 @@ export async function importSourceCollectionFiles(files: readonly File[]): Promi
         if (rollback.hadModuleFolders) db.moduleFolders = rollback.moduleFolders
         else delete db.moduleFolders
         db.personas = rollback.personas
+        for (const [character, previous] of moduleReferenceRollback) {
+            if (previous.hadModules) character.modules = previous.modules
+            else delete character.modules
+        }
         if (summary.modules > 0) refreshModules()
         throw error
     }
@@ -196,7 +297,7 @@ export async function selectAndImportSourceCollections(): Promise<void> {
         try {
             const summary = await importSourceCollectionFiles(files)
             notifySuccess(
-                `출처 묶음 ${summary.bundles}개 병합 완료 · 봇 ${summary.characters} · 모듈 ${summary.modules} · 페르소나 ${summary.personas} · 에셋 ${summary.assets}`,
+                `출처 묶음 ${summary.bundles}개 병합 완료 · 봇 ${summary.characters} · 모듈 ${summary.modules} · 페르소나 ${summary.personas} · 에셋 ${summary.assets} · 큰 에셋 누락 ${summary.omittedAssets} · 모듈 연결 제외 ${summary.droppedModuleReferences}`,
             )
         } catch (error) {
             console.error(error)

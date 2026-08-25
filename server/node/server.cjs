@@ -34,11 +34,20 @@ const {
 const { createRequestLogs } = require('./request-logs.cjs');
 const { cacheFileName, createThumbnailCache } = require('./thumbnail-cache.cjs');
 const {
+    SNAPSHOT_INTERVAL_DEFAULT_MS,
+    SNAPSHOT_INTERVAL_OPTIONS_MS,
+    isAllowedSnapshotInterval,
+    latestSnapshotTimestamp,
+    parseConfiguredSnapshotInterval,
+    parseSnapshotIntervalOverride,
+} = require('./snapshot-policy.cjs');
+const {
     createAndroidSafProvider,
     createExternalAssetService,
     createFilesystemProvider,
     createHttpProvider,
     createManifestStore,
+    externalAssetProviderFingerprint,
     isExternalAssetUri,
     parseExternalAssetUri,
 } = require('./external-assets.cjs');
@@ -48,6 +57,7 @@ const {
 } = require('./external-asset-references.cjs');
 const { diagnoseAssetReferences } = require('./asset-doctor.cjs');
 const { createExternalAssetMigrationJournal } = require('./external-asset-migration-journal.cjs');
+const { verifyStagedMigration } = require('./external-asset-staged-verifier.cjs');
 const { applyPatch } = require('fast-json-patch');
 const { decodeRisuSave, encodeRisuSaveLegacy, calculateHash, normalizeJSON, normalizeForwardHeaders, hasRemoteBlocks } = require('./utils.cjs');
 const { spawn, execSync } = require('child_process');
@@ -151,10 +161,11 @@ function currentPersistWarning() {
 // ─── Server-side database backup (DB-only snapshots) ────────────────────────
 //
 // Snapshots live as `database/dbbackup-{ts}.bin` keys inside the kv table.
-// They're created on every successful persist (with a cooldown) and rotated
-// to fit user-configured count/size limits — see SNAPSHOT_LIMIT_* below.
+// They're created after successful persists (with a persistent cooldown) and
+// rotated to fit user-configured count/size limits — see SNAPSHOT_LIMIT_* below.
 const SNAPSHOT_LIMIT_COUNT_KEY = 'config/snapshot-max-count';
 const SNAPSHOT_LIMIT_BYTES_KEY = 'config/snapshot-max-bytes';
+const SNAPSHOT_INTERVAL_KEY = 'config/snapshot-interval-ms';
 const SNAPSHOT_LIMIT_DEFAULT_COUNT = 20;
 const SNAPSHOT_LIMIT_DEFAULT_BYTES = 500 * 1024 * 1024; // 500 MB
 // Safety bounds to keep a stray PUT from making the system unusable.
@@ -162,10 +173,11 @@ const SNAPSHOT_LIMIT_MIN_COUNT = 1;
 const SNAPSHOT_LIMIT_MAX_COUNT = 100;
 const SNAPSHOT_LIMIT_MIN_BYTES = 10 * 1024 * 1024;        // 10 MB
 const SNAPSHOT_LIMIT_MAX_BYTES = 50 * 1024 * 1024 * 1024; // 50 GB
-const BACKUP_INTERVAL_MS = process.env.POCKETRISU_BACKUP_INTERVAL_MS
-    ? Number(process.env.POCKETRISU_BACKUP_INTERVAL_MS)
-    : 5 * 60 * 1000; // 5 minutes (override for tests to force snapshot creation)
-let lastBackupTime = null;
+// Legacy test/operator override. Unlike the persisted value, 0 means "no
+// cooldown" here so existing compat tests can still force every snapshot.
+const SNAPSHOT_INTERVAL_OVERRIDE_MS = parseSnapshotIntervalOverride(
+    process.env.POCKETRISU_BACKUP_INTERVAL_MS,
+);
 
 function readSnapshotConfigInt(key, fallback, min, max) {
     try {
@@ -188,6 +200,22 @@ function getSnapshotLimits() {
             SNAPSHOT_LIMIT_MIN_BYTES, SNAPSHOT_LIMIT_MAX_BYTES,
         ),
     };
+}
+
+function getConfiguredSnapshotIntervalMs() {
+    try {
+        return parseConfiguredSnapshotInterval(kvGet(SNAPSHOT_INTERVAL_KEY));
+    } catch {
+        return SNAPSHOT_INTERVAL_DEFAULT_MS;
+    }
+}
+
+function getEffectiveSnapshotSchedule() {
+    if (SNAPSHOT_INTERVAL_OVERRIDE_MS !== null) {
+        return { enabled: true, intervalMs: SNAPSHOT_INTERVAL_OVERRIDE_MS };
+    }
+    const intervalMs = getConfiguredSnapshotIntervalMs();
+    return { enabled: intervalMs !== 0, intervalMs };
 }
 
 // Walk newest → oldest; keep within both limits, delete the rest. The most
@@ -245,14 +273,33 @@ function snapshotUsage() {
 
 function createBackupAndRotate(protectedSnapshotKey = null) {
     const now = Date.now();
-    if (lastBackupTime && now - lastBackupTime < BACKUP_INTERVAL_MS) {
-        return;
+    const schedule = getEffectiveSnapshotSchedule();
+    if (!schedule.enabled) {
+        return { created: false, reason: 'disabled' };
     }
-    lastBackupTime = now;
+
+    // Derive the cooldown anchor from persisted keys rather than process
+    // memory. A server restart therefore cannot manufacture an extra snapshot
+    // on its first save and prematurely rotate the oldest recovery point.
+    const previousSnapshotTime = latestSnapshotTimestamp(
+        kvList(DB_BACKUP_PREFIX),
+        DB_BACKUP_PREFIX,
+    );
+    if (previousSnapshotTime !== null && now - previousSnapshotTime < schedule.intervalMs) {
+        return { created: false, reason: 'cooldown' };
+    }
 
     const backupKey = `${DB_BACKUP_PREFIX}${(now / 100).toFixed()}.bin`;
     kvCopyValue('database/database.bin', backupKey);
-    trimSnapshotsToLimits(protectedSnapshotKey);
+    // kvCopyValue intentionally no-ops for a missing source. Treat that as a
+    // failed attempt: without a persisted key there is no timestamp to advance,
+    // so the next successful DB persist can retry immediately.
+    if (kvSize(backupKey) === null) {
+        logger.warn('[Snapshots] Skipped snapshot because database/database.bin is missing.');
+        return { created: false, reason: 'missing-source' };
+    }
+    const trim = trimSnapshotsToLimits(protectedSnapshotKey);
+    return { created: true, key: backupKey, removed: trim.removed };
 }
 
 async function flushPendingDb({ protectedSnapshotKey = null } = {}) {
@@ -899,17 +946,20 @@ let externalAssetMigrationInProgress = false;
 const externalAssetMigrationJournal = createExternalAssetMigrationJournal({ db: sqliteDb });
 const recoveredExternalAssetMigrations = externalAssetMigrationJournal.recoverInterrupted();
 if (recoveredExternalAssetMigrations > 0) {
-    logger.warn(`[ExternalAssets] Paused ${recoveredExternalAssetMigrations} interrupted migration job(s)`);
+    logger.warn(`[ExternalAssets] Recovered ${recoveredExternalAssetMigrations} interrupted migration job(s)`);
 }
 const externalAssetPlanningWorkers = new Map();
 const externalAssetPlanningProgress = new Map();
 let externalAssetStageRunner = null;
 let externalAssetStageJobId = null;
+let externalAssetVerificationRunner = null;
+let externalAssetVerificationJobId = null;
 let externalAssetFinalizeWorker = null;
 
 function refreshExternalAssetMigrationBusy() {
     externalAssetMigrationInProgress = externalAssetPlanningWorkers.size > 0
         || externalAssetStageRunner !== null
+        || externalAssetVerificationJobId !== null
         || externalAssetFinalizeWorker !== null;
 }
 
@@ -1001,10 +1051,26 @@ async function writeExternalAssetConfig(input) {
     await fs.mkdir(externalAssetStateDir, { recursive: true });
     const tempPath = `${externalAssetConfigPath}.${process.pid}.${Date.now()}.tmp`;
     await fs.writeFile(tempPath, JSON.stringify(next, null, 2), 'utf-8');
-    await fs.rename(tempPath, externalAssetConfigPath);
+    let invalidatedJobs = 0;
+    try {
+        // Invalidate first. If this SQLite write fails, the new provider config
+        // must not become visible while an old staged-verified receipt remains
+        // publishable. A later rename failure merely causes a conservative
+        // recheck against the unchanged provider, which is safe.
+        invalidatedJobs = externalAssetMigrationJournal.invalidateStagedVerifications();
+        await fs.rename(tempPath, externalAssetConfigPath);
+    } catch (error) {
+        await fs.unlink(tempPath).catch(() => {});
+        throw error;
+    }
+    // Once the atomic rename commits, runtime invalidation is unconditional;
+    // no later bookkeeping is allowed to leave the file and memory divergent.
     externalAssetConfigGeneration++;
     externalAssetRuntime = null;
     externalAssetRuntimePromise = null;
+    if (invalidatedJobs > 0) {
+        logger.warn(`[ExternalAssets] Provider configuration changed; invalidated ${invalidatedJobs} unpublished verification receipt set(s)`);
+    }
     return next;
 }
 
@@ -4355,6 +4421,70 @@ function startExternalAssetStaging(jobId) {
     return externalAssetStageRunner;
 }
 
+async function runExternalAssetStagedVerification(jobId, context) {
+    const runtime = context.runtime;
+    const current = externalAssetMigrationJournal.getJob(jobId);
+    if (!current) throw new Error(`Migration job not found: ${jobId}`);
+    if (current.status !== 'verifying') {
+        throw new Error(`Staged verification stopped in ${current.status}`);
+    }
+    if (!runtime.config.enabled) throw new Error('External asset storage is disabled');
+    if (!runtime.config.providers[current.providerId]) {
+        throw new Error(`External asset provider is not configured: ${current.providerId}`);
+    }
+    return verifyStagedMigration({
+        journal: externalAssetMigrationJournal,
+        service: runtime.service,
+        jobId,
+        providerFingerprint: context.providerFingerprint,
+        assertContext: async (expectedFingerprint) => {
+            if (context.configGeneration !== externalAssetConfigGeneration) {
+                throw new Error('External asset provider configuration changed during staged verification');
+            }
+            // Also detect an operator editing config.json directly. The route
+            // reservation blocks API changes, while this disk fingerprint
+            // makes manual edits and restart/resume equally conservative.
+            const diskConfig = await readExternalAssetConfig();
+            const diskFingerprint = externalAssetProviderFingerprint(diskConfig, current.providerId);
+            if (diskFingerprint !== expectedFingerprint) {
+                throw new Error('External asset provider configuration changed during staged verification');
+            }
+        },
+        contextCheckEveryItems: 256,
+        // Sequential provider reads plus a byte-bounded query keep memory at
+        // one asset, never the whole (potentially 47 GB) migration.
+        batchLimit: 4,
+        maxBatchBytes: 64 * 1024 * 1024,
+    });
+}
+
+function startExternalAssetStagedVerification(jobId, context) {
+    if (externalAssetVerificationRunner) {
+        if (externalAssetVerificationJobId === jobId) return externalAssetVerificationRunner;
+        throw externalMigrationConflict(`Migration ${externalAssetVerificationJobId} is already verifying staged copies`);
+    }
+    if (externalAssetVerificationJobId !== jobId) {
+        throw externalMigrationConflict(`Migration ${externalAssetVerificationJobId} reserved staged verification`);
+    }
+    externalAssetVerificationRunner = runExternalAssetStagedVerification(jobId, context)
+        .catch((error) => {
+            logger.error(`[ExternalAssets] Pre-publish verification ${jobId} failed`, error);
+            const current = externalAssetMigrationJournal.getJob(jobId);
+            if (current?.status === 'verifying') {
+                externalAssetMigrationJournal.updateJobStatus(jobId, 'verification-failed', {
+                    error: error?.message || String(error),
+                });
+            }
+        })
+        .finally(() => {
+            externalAssetVerificationRunner = null;
+            externalAssetVerificationJobId = null;
+            refreshExternalAssetMigrationBusy();
+        });
+    refreshExternalAssetMigrationBusy();
+    return externalAssetVerificationRunner;
+}
+
 function startExternalAssetPlanning(jobId, { planOnly = false } = {}) {
     if (externalAssetPlanningWorkers.has(jobId)) return;
     const promise = runExternalAssetWorker(
@@ -4485,13 +4615,69 @@ app.post('/api/external-assets/migrate/jobs/:jobId/cancel', async (req, res) => 
     } catch (error) { res.status(409).json({ error: error?.message || 'Migration could not be canceled' }); }
 });
 
+app.post('/api/external-assets/migrate/jobs/:jobId/verify-staged', async (req, res) => {
+    if (!await checkAuth(req, res)) return;
+    if (!checkActiveSession(req, res)) return;
+    const jobId = req.params.jobId;
+    const current = externalAssetMigrationJournal.getJob(jobId);
+    if (!current) return res.status(404).json({ error: 'Migration job not found' });
+    if (externalAssetVerificationRunner && externalAssetVerificationJobId === jobId) {
+        return res.status(202).json({ job: publicExternalMigrationJob(current) });
+    }
+    if (!['staged', 'verification-failed', 'staged-verified'].includes(current.status)) {
+        return res.status(409).json({ error: `Staged copies cannot be verified from ${current.status}` });
+    }
+    if (externalAssetMigrationInProgress || importInProgress) {
+        return res.status(409).json({ error: 'Another migration/import is already running' });
+    }
+    if (exclusiveStorageReason) {
+        return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
+    }
+    // Reserve synchronously before the first await. Configuration updates use
+    // externalAssetMigrationInProgress as their gate, so they cannot slip into
+    // the gap between runtime lookup and verification-runner creation.
+    externalAssetVerificationJobId = jobId;
+    refreshExternalAssetMigrationBusy();
+    let started = false;
+    try {
+        const runtime = await getExternalAssetRuntime();
+        if (!runtime.config.enabled) return res.status(400).json({ error: 'External asset storage is disabled' });
+        if (!runtime.config.providers[current.providerId]) {
+            return res.status(400).json({ error: `External asset provider is not configured: ${current.providerId}` });
+        }
+        const providerFingerprint = externalAssetProviderFingerprint(runtime.config, current.providerId);
+        const job = externalAssetMigrationJournal.beginStagedVerification(jobId, {
+            // An explicit recheck after a completed pass starts from item zero;
+            // failed/interrupted passes retain successful receipts and resume.
+            restart: current.status === 'staged-verified',
+            providerFingerprint,
+        });
+        startExternalAssetStagedVerification(jobId, {
+            runtime,
+            providerFingerprint,
+            configGeneration: externalAssetConfigGeneration,
+        });
+        started = true;
+        res.status(202).json({ job: publicExternalMigrationJob(job) });
+    } catch (error) {
+        res.status(error?.statusCode || 409).json({ error: error?.message || 'Staged verification could not start' });
+    } finally {
+        if (!started && externalAssetVerificationJobId === jobId && !externalAssetVerificationRunner) {
+            externalAssetVerificationJobId = null;
+            refreshExternalAssetMigrationBusy();
+        }
+    }
+});
+
 app.post('/api/external-assets/migrate/jobs/:jobId/finalize', async (req, res) => {
     if (!await checkAuth(req, res)) return;
     if (!checkActiveSession(req, res)) return;
     const jobId = req.params.jobId;
     const current = externalAssetMigrationJournal.getJob(jobId);
     if (!current) return res.status(404).json({ error: 'Migration job not found' });
-    if (current.status !== 'staged') return res.status(409).json({ error: `Migration cannot finalize from ${current.status}` });
+    if (current.status !== 'staged-verified') {
+        return res.status(409).json({ error: `Migration cannot finalize from ${current.status}; verify staged copies first` });
+    }
     if (externalAssetMigrationInProgress || importInProgress) {
         return res.status(409).json({ error: 'Another migration/import is already running' });
     }
@@ -4500,10 +4686,18 @@ app.post('/api/external-assets/migrate/jobs/:jobId/finalize', async (req, res) =
         return res.status(409).json({ error: `Storage is already locked for ${exclusiveStorageReason}` });
     }
     try {
+        const finalizeConfig = await readExternalAssetConfig();
+        const providerFingerprint = externalAssetProviderFingerprint(finalizeConfig, current.providerId);
+        externalAssetMigrationJournal.assertReadyForPublish(jobId, { providerFingerprint });
         externalAssetMigrationJournal.updateJobStatus(jobId, 'finalizing');
         externalAssetFinalizeWorker = runExternalAssetWorker(
             'external-asset-finalize-worker.cjs',
-            { dbPath: path.join(savePath, 'risuai.db'), jobId },
+            {
+                dbPath: path.join(savePath, 'risuai.db'),
+                jobId,
+                providerFingerprint,
+                trashDir: path.resolve(finalizeConfig.trashRoot),
+            },
             (progress) => externalAssetPlanningProgress.set(jobId, { phase: progress.phase, ...progress }),
         );
         refreshExternalAssetMigrationBusy();
@@ -4514,7 +4708,7 @@ app.post('/api/external-assets/migrate/jobs/:jobId/finalize', async (req, res) =
         res.json({ ok: true, ...result, job: publicExternalMigrationJob(externalAssetMigrationJournal.getJob(jobId)) });
     } catch (error) {
         logger.error(`[ExternalAssets] Finalization ${jobId} failed`, error);
-        externalAssetMigrationJournal.updateJobStatus(jobId, 'staged', { error: error?.message || String(error) });
+        externalAssetMigrationJournal.recoverFinalizeFailure(jobId, error);
         res.status(500).json({ error: error?.message || 'External asset finalization failed' });
     } finally {
         externalAssetFinalizeWorker = null;
@@ -7405,10 +7599,13 @@ app.get('/api/db/snapshots/limits', async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
     try {
         const { maxCount, maxBytes } = getSnapshotLimits();
+        const intervalMs = getConfiguredSnapshotIntervalMs();
         const usage = snapshotUsage();
         res.json({
             maxCount,
             maxBytes,
+            intervalMs,
+            intervalOptions: SNAPSHOT_INTERVAL_OPTIONS_MS,
             currentCount: usage.count,
             currentBytes: usage.bytes,
             logicalBytes: usage.logicalBytes,
@@ -7421,6 +7618,7 @@ app.get('/api/db/snapshots/limits', async (req, res, next) => {
             defaults: {
                 count: SNAPSHOT_LIMIT_DEFAULT_COUNT,
                 bytes: SNAPSHOT_LIMIT_DEFAULT_BYTES,
+                intervalMs: SNAPSHOT_INTERVAL_DEFAULT_MS,
             },
         });
     } catch (err) { next(err); }
@@ -7432,21 +7630,33 @@ app.put('/api/db/snapshots/limits', rejectDuringExclusiveStorage, async (req, re
     try {
         const rawCount = Number(req.body?.maxCount);
         const rawBytes = Number(req.body?.maxBytes);
+        const hasInterval = Object.prototype.hasOwnProperty.call(req.body ?? {}, 'intervalMs');
+        const rawInterval = hasInterval ? Number(req.body.intervalMs) : null;
         if (!Number.isFinite(rawCount) || rawCount < SNAPSHOT_LIMIT_MIN_COUNT || rawCount > SNAPSHOT_LIMIT_MAX_COUNT) {
             return res.status(400).json({ error: `maxCount out of range (${SNAPSHOT_LIMIT_MIN_COUNT}-${SNAPSHOT_LIMIT_MAX_COUNT})` });
         }
         if (!Number.isFinite(rawBytes) || rawBytes < SNAPSHOT_LIMIT_MIN_BYTES || rawBytes > SNAPSHOT_LIMIT_MAX_BYTES) {
             return res.status(400).json({ error: `maxBytes out of range` });
         }
+        if (hasInterval && !isAllowedSnapshotInterval(rawInterval)) {
+            return res.status(400).json({
+                error: `intervalMs must be one of: ${SNAPSHOT_INTERVAL_OPTIONS_MS.join(', ')}`,
+            });
+        }
         const maxCount = Math.floor(rawCount);
         const maxBytes = Math.floor(rawBytes);
         await queueMutableStorageOperation(async () => {
             kvSet(SNAPSHOT_LIMIT_COUNT_KEY, Buffer.from(String(maxCount), 'utf-8'));
             kvSet(SNAPSHOT_LIMIT_BYTES_KEY, Buffer.from(String(maxBytes), 'utf-8'));
+            if (hasInterval) {
+                kvSet(SNAPSHOT_INTERVAL_KEY, Buffer.from(String(rawInterval), 'utf-8'));
+            }
             const trim = trimSnapshotsToLimits();
             const usage = snapshotUsage();
             res.json({
                 maxCount, maxBytes,
+                intervalMs: getConfiguredSnapshotIntervalMs(),
+                intervalOptions: SNAPSHOT_INTERVAL_OPTIONS_MS,
                 currentCount: usage.count,
                 currentBytes: usage.bytes,
                 logicalBytes: usage.logicalBytes,

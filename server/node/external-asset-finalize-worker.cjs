@@ -2,6 +2,7 @@
 
 const path = require('path');
 const nodeCrypto = require('crypto');
+const fs = require('fs/promises');
 const Database = require('better-sqlite3');
 const { isMainThread, parentPort, workerData } = require('worker_threads');
 const { createChunkStore } = require('./chunkStore.cjs');
@@ -11,6 +12,7 @@ const {
     rewriteAssetReferencesInPlace,
 } = require('./external-asset-references.cjs');
 const { createExternalAssetMigrationJournal } = require('./external-asset-migration-journal.cjs');
+const { resolveInside } = require('./external-assets.cjs');
 
 const DB_BLOB_KEY = 'database/database.bin';
 const EXTERNAL_ASSET_MANIFEST_KEY = 'external-assets/manifest.v1.json';
@@ -72,7 +74,7 @@ function buildPublishedManifest(existingRaw, job, stagedItems, staleOrdinals) {
             status: 'staged',
             createdAt: old.createdAt || item.stagedAt || now,
             stagedAt: item.stagedAt || now,
-            lastVerifiedAt: item.stagedAt || now,
+            lastVerifiedAt: item.prepublishVerifiedAt || item.stagedAt || now,
             fallbacks,
             migrationIds,
         };
@@ -81,9 +83,31 @@ function buildPublishedManifest(existingRaw, job, stagedItems, staleOrdinals) {
     return Buffer.from(JSON.stringify(manifest), 'utf8');
 }
 
+async function assertRecoveryTrashReady(stagedItems, trashDir) {
+    if (typeof trashDir !== 'string' || !trashDir) {
+        throw new Error('Recovery trash directory is required before publish');
+    }
+    for (let index = 0; index < stagedItems.length; index++) {
+        const item = stagedItems[index];
+        if (!item.prepublishVerifiedAt || !item.prepublishProviderFingerprint) {
+            throw new Error(`Recovery receipt is missing for staged item ${item.ordinal}`);
+        }
+        const file = resolveInside(trashDir, item.trashPath);
+        const info = await fs.stat(file);
+        if (!info.isFile() || info.size !== Number(item.size)) {
+            throw new Error(`Recovery trash copy changed after verification: ${item.internalKey}`);
+        }
+        if (index > 0 && index % 10000 === 0) {
+            postProgress('checking-recovery-trash', { current: index, total: stagedItems.length });
+        }
+    }
+}
+
 async function finalizeExternalAssetMigration(options = {}) {
     const db = options.db;
     const jobId = options.jobId;
+    const providerFingerprint = options.providerFingerprint;
+    const trashDir = options.trashDir;
     if (!db || typeof db.prepare !== 'function') throw new TypeError('db is required');
     if (typeof jobId !== 'string' || !jobId) throw new TypeError('jobId is required');
 
@@ -91,11 +115,23 @@ async function finalizeExternalAssetMigration(options = {}) {
     const journal = options.journal || createExternalAssetMigrationJournal({ db });
     const job = journal.getJob(jobId);
     if (!job) throw new Error(`Migration job not found: ${jobId}`);
-    if (job.status !== 'staged' && job.status !== 'finalizing') {
+    if (job.status !== 'staged-verified' && job.status !== 'finalizing') {
         throw new Error(`Migration job cannot be finalized from ${job.status}`);
     }
+    // The provider verification runs outside this worker and records a durable
+    // receipt per staged item. Refuse to touch DB references, the manifest, or
+    // internal originals unless every current receipt matches its staged hash
+    // and size.
+    journal.assertReadyForPublish(jobId, { providerFingerprint });
     const stagedItems = journal.stagedItems(jobId).filter((item) => item.status === 'staged');
     if (stagedItems.length === 0) throw new Error('Migration job has no staged assets');
+
+    // The full staged-verification pass hashed both the external object and
+    // trash copy. Immediately before deletion, cheaply re-stat every recovery
+    // file so a missing/replaced copy cannot leave the provider as the sole
+    // surviving original.
+    postProgress('checking-recovery-trash', { current: 0, total: stagedItems.length });
+    await assertRecoveryTrashReady(stagedItems, trashDir);
 
     postProgress('reading-current-database');
     const raw = chunkStore.getValue(DB_BLOB_KEY);
@@ -172,7 +208,12 @@ async function finalizeExternalAssetMigration(options = {}) {
         `).run(EXTERNAL_ASSET_MANIFEST_KEY, manifestBuffer, Date.now());
         const deleteAsset = db.prepare('DELETE FROM kv WHERE key = ?');
         for (const item of removableItems) deleteAsset.run(item.internalKey);
-        journal.markPublished(jobId, { staleOrdinals, safetyBackupKey, metadata });
+        journal.markPublished(jobId, {
+            staleOrdinals,
+            safetyBackupKey,
+            metadata,
+            providerFingerprint,
+        });
     })();
 
     return {
@@ -196,7 +237,12 @@ async function runWorker(input) {
     try {
         db.pragma('busy_timeout = 30000');
         db.pragma('journal_mode = WAL');
-        return await finalizeExternalAssetMigration({ db, jobId });
+        return await finalizeExternalAssetMigration({
+            db,
+            jobId,
+            providerFingerprint: input.providerFingerprint,
+            trashDir: input.trashDir,
+        });
     } finally {
         db.close();
     }
@@ -217,6 +263,7 @@ if (!isMainThread) {
 
 module.exports = {
     buildPublishedManifest,
+    assertRecoveryTrashReady,
     collectPluginStorageAssetNames,
     finalizeExternalAssetMigration,
     runWorker,

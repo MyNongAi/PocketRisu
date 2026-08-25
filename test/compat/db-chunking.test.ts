@@ -275,7 +275,21 @@ describe('chunking lifecycle (real server, low threshold)', () => {
   }, 30_000)
 
   test('optimize reclaims orphan chunks left by re-imports', async () => {
-    const { client } = await boot() // default cooldown → 2nd import takes no snapshot
+    const { client } = await boot()
+    // This test specifically needs an unreferenced old DB. A failed snapshot
+    // attempt (the first import has no live source) no longer consumes the
+    // cooldown, so explicitly disable automatic snapshots instead of relying
+    // on that former failure side effect.
+    const disableSnapshots = await client.fetch('/api/db/snapshots/limits', {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/json',
+        'x-session-id': 'orphan-gc-regression',
+        'x-user-active': '1',
+      },
+      body: JSON.stringify({ maxCount: 20, maxBytes: 500 * 1024 * 1024, intervalMs: 0 }),
+    })
+    expect(disableSnapshots.status).toBe(200)
     await uploadZip(client, bigDbBlob('AAA')) // v1 chunked
     await uploadZip(client, bigDbBlob('BBB')) // v2 chunked; v1's chunks now unreferenced
 

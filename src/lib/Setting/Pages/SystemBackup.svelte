@@ -6,7 +6,9 @@
     import ShAlert from 'src/lib/UI/GUI/ShAlert.svelte'
     import ShDialog from 'src/lib/UI/GUI/ShDialog.svelte'
     import ShInput from 'src/lib/UI/GUI/ShInput.svelte'
+    import ShSelect from 'src/lib/UI/GUI/ShSelect.svelte'
     import ShSwitch from 'src/lib/UI/GUI/ShSwitch.svelte'
+    import OptionInput from 'src/lib/UI/GUI/OptionInput.svelte'
     import Help from 'src/lib/Others/Help.svelte'
     import ServerBackupList from 'src/lib/Setting/ServerBackupList.svelte'
     import {
@@ -34,11 +36,13 @@
     interface SnapshotLimits {
         maxCount: number
         maxBytes: number
+        intervalMs?: number
+        intervalOptions?: number[]
         currentCount: number
         currentBytes: number
         logicalBytes: number
         bounds: { minCount: number; maxCount: number; minBytes: number; maxBytes: number }
-        defaults: { count: number; bytes: number }
+        defaults: { count: number; bytes: number; intervalMs?: number }
     }
 
     // ── State ────────────────────────────────────────────────────────────────
@@ -60,6 +64,7 @@
     // ShInput is string-typed; we parse in submitLimits.
     let limitsDraftCount = $state('20')
     let limitsDraftMB = $state('500')
+    let limitsDraftInterval = $state(String(12 * 60 * 60 * 1000))
     let limitsDialogError = $state<string | null>(null)
     let limitsDialogBusy = $state(false)
 
@@ -73,6 +78,8 @@
     let diskFree = $state<number | null>(null)
     let diskTotal = $state<number | null>(null)
     let estimatedBackupSize = $state<number | null>(null)
+
+    const fallbackSnapshotIntervals = [0, 1, 6, 12, 24].map(hours => hours * 60 * 60 * 1000)
 
     const diskUsedPct = $derived(
         diskFree != null && diskTotal != null && diskTotal > 0
@@ -174,6 +181,7 @@
         if (!limits) return
         limitsDraftCount = String(limits.maxCount)
         limitsDraftMB = String(Math.round(limits.maxBytes / 1024 / 1024))
+        limitsDraftInterval = String(limits.intervalMs ?? limits.defaults.intervalMs ?? 12 * 60 * 60 * 1000)
         limitsDialogError = null
         limitsDialogOpen = true
     }
@@ -182,6 +190,7 @@
         if (!limits) return
         const c = Math.floor(Number(limitsDraftCount))
         const mb = Math.floor(Number(limitsDraftMB))
+        const intervalMs = Number(limitsDraftInterval)
         const minC = limits.bounds.minCount
         const maxC = limits.bounds.maxCount
         const minMB = Math.round(limits.bounds.minBytes / 1024 / 1024)
@@ -194,6 +203,11 @@
             limitsDialogError = language.backupSnapshotLimitsBytesRange(minMB, maxMB)
             return
         }
+        const intervalOptions = limits.intervalOptions ?? fallbackSnapshotIntervals
+        if (!Number.isInteger(intervalMs) || !intervalOptions.includes(intervalMs)) {
+            limitsDialogError = language.backupSnapshotIntervalInvalid
+            return
+        }
         limitsDialogBusy = true
         limitsDialogError = null
         try {
@@ -201,7 +215,7 @@
             const res = await fetch('/api/db/snapshots/limits', {
                 method: 'PUT',
                 headers: { 'risu-auth': auth, 'content-type': 'application/json' },
-                body: JSON.stringify({ maxCount: c, maxBytes: mb * 1024 * 1024 }),
+                body: JSON.stringify({ maxCount: c, maxBytes: mb * 1024 * 1024, intervalMs }),
             })
             const json = await res.json().catch(() => ({}))
             if (!res.ok) {
@@ -438,7 +452,9 @@
             <!-- Stacked so the (now longer) "current/savings" line wraps to as many
                  lines as it needs on a narrow phone instead of being truncated. -->
             <div class="flex flex-col gap-0.5 flex-1 min-w-0">
-                <span class="text-textcolor2 text-xs">{language.backupSnapshotLimits(limits.maxCount, limits.maxBytes)}</span>
+                <span class="text-textcolor2 text-xs">
+                    {language.backupSnapshotLimits(limits.maxCount, limits.maxBytes, limits.intervalMs ?? limits.defaults.intervalMs)}
+                </span>
                 <span class="text-textcolor2 text-xs opacity-70 wrap-break-word">
                     {language.backupSnapshotLimitsCurrent(limits.currentCount, limits.currentBytes, limits.logicalBytes)}
                 </span>
@@ -558,6 +574,21 @@
     <p class="text-textcolor2 text-sm leading-relaxed mb-3">{language.backupSnapshotLimitsDialogDesc}</p>
     {#if limits}
         <div class="flex flex-col gap-3">
+            <label class="flex flex-col gap-1">
+                <span class="text-textcolor2 text-sm">{language.backupSnapshotInterval}</span>
+                <ShSelect bind:value={limitsDraftInterval}>
+                    {#each limits.intervalOptions ?? fallbackSnapshotIntervals as interval}
+                        <OptionInput value={interval}>
+                            {interval === 0
+                                ? language.backupSnapshotIntervalOff
+                                : language.backupSnapshotIntervalHours(interval / 60 / 60 / 1000)}
+                        </OptionInput>
+                    {/each}
+                </ShSelect>
+                <span class="text-textcolor2 text-xs opacity-70">
+                    {language.backupSnapshotIntervalHint}
+                </span>
+            </label>
             <label class="flex flex-col gap-1">
                 <span class="text-textcolor2 text-sm">{language.backupSnapshotLimitsCount}</span>
                 <ShInput type="number" bind:value={limitsDraftCount}

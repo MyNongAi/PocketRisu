@@ -1,3 +1,5 @@
+import { secureRandomBytes } from '../../cryptoFallback';
+
 type MsgType =
     | 'CALL_ROOT'
     | 'CALL_INSTANCE'
@@ -72,6 +74,15 @@ export function createSandboxNonce(
     }
 
     throw new Error('A cryptographically secure random source is required for the plugin sandbox.');
+}
+
+/** Serializable host-side entropy for the opaque srcdoc guest bridge. */
+export function createPluginSecureRandomBytes(
+    length: number,
+    cryptoSource: Crypto | undefined = globalThis.crypto,
+    pageSeed: string | undefined = injectedPageNonceSeed(),
+): number[] {
+    return Array.from(secureRandomBytes(length, cryptoSource, pageSeed));
 }
 
 

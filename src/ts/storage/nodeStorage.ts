@@ -126,7 +126,8 @@ export interface ExternalAssetMigrationScan {
 }
 
 export type ExternalAssetMigrationJobStatus =
-    | 'planning' | 'queued' | 'running' | 'paused' | 'staged' | 'finalizing'
+    | 'planning' | 'queued' | 'running' | 'paused' | 'staged'
+    | 'verifying' | 'verification-failed' | 'staged-verified' | 'finalizing'
     | 'published' | 'verified' | 'cleaned' | 'canceled' | 'failed'
 
 export interface ExternalAssetMigrationJob {
@@ -139,6 +140,10 @@ export interface ExternalAssetMigrationJob {
     stagedItems: number
     stagedBytes: number
     failedItems: number
+    verifiedStagedItems: number
+    verifiedStagedBytes: number
+    verificationFailedItems: number
+    verificationProgress: number
     staleItems: number
     publishedItems: number
     cleanedItems: number
@@ -778,7 +783,7 @@ export class NodeStorage{
         return body.job
     }
 
-    private async externalAssetMigrationAction(jobId: string, action: 'pause'|'resume'|'cancel'|'finalize'): Promise<Record<string, any>> {
+    private async externalAssetMigrationAction(jobId: string, action: 'pause'|'resume'|'cancel'|'verify-staged'|'finalize'): Promise<Record<string, any>> {
         const response = await this.authFetch(`/api/external-assets/migrate/jobs/${encodeURIComponent(jobId)}/${action}`, {
             method: 'POST',
         })
@@ -797,6 +802,10 @@ export class NodeStorage{
 
     async cancelExternalAssetMigration(jobId: string): Promise<ExternalAssetMigrationJob> {
         return (await this.externalAssetMigrationAction(jobId, 'cancel')).job
+    }
+
+    async verifyStagedExternalAssetMigration(jobId: string): Promise<ExternalAssetMigrationJob> {
+        return (await this.externalAssetMigrationAction(jobId, 'verify-staged')).job
     }
 
     async finalizeExternalAssetMigration(jobId: string): Promise<Record<string, any>> {

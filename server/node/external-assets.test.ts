@@ -12,6 +12,7 @@ const {
     createFilesystemProvider,
     createHttpProvider,
     createManifestStore,
+    externalAssetProviderFingerprint,
     isExternalAssetUri,
     makeExternalAssetUri,
     parseExternalAssetUri,
@@ -240,6 +241,100 @@ describe('Android SAF capability', () => {
         const provider = createAndroidSafProvider({ id: 'saf' })
         expect(provider.capabilities).toMatchObject({ unsupported: true, read: false, write: false, androidSaf: false })
         await expect(provider.get('a'.repeat(64))).rejects.toMatchObject({ code: 'UNSUPPORTED_PROVIDER' })
+    })
+})
+
+describe('provider verification fingerprint', () => {
+    it('binds receipts to destination, credentials, and trash while ignoring cache tuning', () => {
+        const base = {
+            enabled: true,
+            trashRoot: 'H:/PocketRisu-Assets/trash',
+            cacheMaxBytes: 64,
+            retryCount: 2,
+            providers: {
+                remote: {
+                    type: 'http',
+                    baseUrl: 'https://assets.example.test/',
+                    headers: { authorization: 'Bearer one' },
+                },
+            },
+        }
+        const fingerprint = externalAssetProviderFingerprint(base, 'remote')
+        expect(externalAssetProviderFingerprint({ ...base, cacheMaxBytes: 128, retryCount: 9 }, 'remote'))
+            .toBe(fingerprint)
+        expect(externalAssetProviderFingerprint({ ...base, trashRoot: 'H:/other-trash' }, 'remote'))
+            .not.toBe(fingerprint)
+        expect(externalAssetProviderFingerprint({
+            ...base,
+            providers: { remote: { ...base.providers.remote, headers: { authorization: 'Bearer two' } } },
+        }, 'remote')).not.toBe(fingerprint)
+    })
+})
+
+describe('detached pre-publish receipt verification', () => {
+    it('stats then reads and hashes one provider object without populating the LRU', async () => {
+        const data = Buffer.from('verify directly from provider')
+        const hash = sha256(data)
+        const order: string[] = []
+        const provider = {
+            id: 'external',
+            capabilities: { read: true, stat: true },
+            async stat() { order.push('stat'); return { hash, size: data.length } },
+            async get() { order.push('get'); return Buffer.from(data) },
+        }
+        const { store } = memoryManifest()
+        const service = createExternalAssetService({ providers: [provider], manifestStore: store, retry: { attempts: 1 } })
+
+        await expect(service.verifyDetachedReceipt({
+            uri: makeExternalAssetUri('external', hash),
+            providerId: 'external',
+            hash,
+            size: data.length,
+        })).resolves.toMatchObject({ hash, size: data.length, statSize: data.length })
+        expect(order).toEqual(['stat', 'get'])
+        expect(service.cache.size).toBe(0)
+    })
+
+    it('rejects a stat size mismatch before downloading bytes', async () => {
+        const data = Buffer.from('expected')
+        const hash = sha256(data)
+        const get = vi.fn(async () => data)
+        const provider = {
+            id: 'external',
+            capabilities: { read: true, stat: true },
+            async stat() { return { hash, size: data.length + 1 } },
+            get,
+        }
+        const { store } = memoryManifest()
+        const service = createExternalAssetService({ providers: [provider], manifestStore: store, retry: { attempts: 1 } })
+
+        await expect(service.verifyDetachedReceipt({
+            uri: makeExternalAssetUri('external', hash),
+            hash,
+            size: data.length,
+        })).rejects.toMatchObject({ code: 'SIZE_MISMATCH' })
+        expect(get).not.toHaveBeenCalled()
+    })
+
+    it('stream-verifies the retained trash copy and rejects a changed copy', async () => {
+        const trashDir = tempDir('external-recovery-receipt')
+        const data = Buffer.from('recoverable migration copy')
+        const hash = sha256(data)
+        const trashPath = 'job/receipt.bin'
+        await fsp.mkdir(path.join(trashDir, 'job'), { recursive: true })
+        await fsp.writeFile(path.join(trashDir, trashPath), data)
+        const { store } = memoryManifest()
+        const service = createExternalAssetService({
+            providers: [],
+            manifestStore: store,
+            trashDir,
+        })
+
+        await expect(service.verifyRecoveryReceipt({ trashPath, hash, size: data.length }))
+            .resolves.toMatchObject({ trashPath, hash, size: data.length })
+        await fsp.writeFile(path.join(trashDir, trashPath), Buffer.from('tampered migration copy'))
+        await expect(service.verifyRecoveryReceipt({ trashPath, hash, size: data.length }))
+            .rejects.toMatchObject({ code: expect.stringMatching(/SIZE_MISMATCH|HASH_MISMATCH/) })
     })
 })
 

@@ -2114,7 +2114,7 @@ export const languageEnglish = {
     storageBackups: "Backups",
     storageBackupsManage: "Manage backups",
     storageBackupsAuto: "Snapshot (DB only)",
-    storageBackupsAutoDesc: "Periodic automatic snapshots for quick recovery. Stored inside risuai.db; oldest are pruned first based on the configured limits. Character assets and inlay images are not included.",
+    storageBackupsAutoDesc: "Automatic DB recovery points created at most once per configured interval, and only after data is saved. The interval survives server restarts. Snapshots stay inside risuai.db; oldest are pruned first when a retention limit is reached. Character assets and inlay images are not included.",
     storageBackupsManual: "Server backup",
     storageBackupsManualDesc: "A full backup including character assets and inlay images. Stored directly on the server; the location can be changed.",
     storageBackupsCount: (count: number, size: number) =>
@@ -2173,8 +2173,12 @@ export const languageEnglish = {
     backupSnapshotDeleteConfirm: (when: string) => `Delete the ${when} snapshot? This cannot be undone.`,
     backupSnapshotDeleted: "Snapshot deleted.",
     backupSnapshotDeleteFailed: "Failed to delete snapshot",
-    backupSnapshotLimits: (count: number, bytes: number) =>
-        `Up to ${count} · ${(bytes / 1024 / 1024).toFixed(0)} MB`,
+    backupSnapshotLimits: (count: number, bytes: number, intervalMs?: number) => {
+        const retention = `up to ${count} · ${(bytes / 1024 / 1024).toFixed(0)} MB`
+        if (intervalMs === 0) return `Automatic creation off · existing snapshots ${retention}`
+        const hours = (intervalMs ?? 12 * 60 * 60 * 1000) / 60 / 60 / 1000
+        return `At most one every ${hours} hour${hours === 1 ? '' : 's'} · ${retention}`
+    },
     backupSnapshotLimitsCurrent: (count: number, bytes: number, logicalBytes?: number) => {
         const disk = (bytes / 1024 / 1024).toFixed(1)
         const saved = (logicalBytes ?? 0) - bytes
@@ -2188,9 +2192,14 @@ export const languageEnglish = {
         }
         return `Currently ${count} · ${disk} MB used`
     },
-    backupSnapshotLimitsChange: "Configure limits",
-    backupSnapshotLimitsDialog: "Snapshot retention limits",
-    backupSnapshotLimitsDialogDesc: "Whichever limit is reached first applies. Snapshots are rotated as new ones are created; reducing a limit trims immediately (the most recent snapshot is always kept regardless).",
+    backupSnapshotLimitsChange: "Configure schedule and limits",
+    backupSnapshotLimitsDialog: "Snapshot schedule and retention",
+    backupSnapshotLimitsDialogDesc: "The schedule is the minimum gap between automatic snapshots, not a timer that writes unchanged data. Whichever retention limit is reached first applies. Reducing a limit trims immediately; the most recent snapshot is always kept.",
+    backupSnapshotInterval: "Automatic snapshot interval",
+    backupSnapshotIntervalOff: "Off (keep existing snapshots)",
+    backupSnapshotIntervalHours: (hours: number) => `Every ${hours} hour${hours === 1 ? '' : 's'}`,
+    backupSnapshotIntervalHint: "Default: 12 hours. A snapshot is considered only after a successful data save, and restarting the server does not reset the interval.",
+    backupSnapshotIntervalInvalid: "Choose a supported snapshot interval.",
     backupSnapshotLimitsCount: "Max count",
     backupSnapshotLimitsBytes: "Max size (MB)",
     backupSnapshotLimitsSuccess: (removed: number) =>

@@ -1,3 +1,5 @@
+import { sha256HexPortable } from './cryptoFallback'
+
 export const SOURCE_COLLECTION_FORMAT = 'pocketrisu-source-collection'
 export const SOURCE_COLLECTION_VERSION = 1
 /**
@@ -13,6 +15,12 @@ export interface SourceImportInfo {
     label: string
     bundleId: string
     importedAt: number
+    /** Links independently downloaded character/module bundles from one export session. */
+    collectionId?: string
+    /** Original source id, retained only where another imported entity may reference it. */
+    originalId?: string
+    /** Pending source module ids; never used directly by the live module loader. */
+    originalModuleIds?: string[]
 }
 
 export interface SourceCollectionAsset {
@@ -22,10 +30,18 @@ export interface SourceCollectionAsset {
     sha256: string
 }
 
+export interface SourceCollectionOmittedAsset {
+    path: string
+    size: number
+    reason: 'too-large'
+}
+
 export interface SourceCollectionPart {
     format: typeof SOURCE_COLLECTION_FORMAT
     version: typeof SOURCE_COLLECTION_VERSION
     bundleId: string
+    /** Optional in v1 for compatibility with collection files made before relationship support. */
+    collectionId?: string
     kind: SourceCollectionKind
     sourceLabel: string
     createdAt: number
@@ -33,10 +49,12 @@ export interface SourceCollectionPart {
     last: boolean
     entities: unknown[]
     assets: SourceCollectionAsset[]
+    omittedAssets: SourceCollectionOmittedAsset[]
 }
 
 export interface SourceCollectionHeader {
     bundleId: string
+    collectionId?: string
     kind: SourceCollectionKind
     sourceLabel: string
     createdAt: number
@@ -49,6 +67,7 @@ const sha256Pattern = /^[a-f0-9]{64}$/
 const embeddedAssetPattern = /(^|[^a-zA-Z0-9_/])assets\/[^\s"'`()<>\\{}\[\],;]+/g
 const MAX_ENTITIES_PER_PART = 10_000
 const MAX_ASSETS_PER_PART = 10_000
+const MAX_OMITTED_ASSETS_PER_PART = 10_000
 const MAX_ENTITY_GRAPH_NODES = 2_000_000
 const MAX_ENTITY_DEPTH = 64
 const MAX_ENTITY_STRING_LENGTH = 8 * 1024 * 1024
@@ -134,6 +153,11 @@ export function parseSourceCollectionPart(value: unknown): SourceCollectionPart 
     if (typeof source.bundleId !== 'string' || !bundleIdPattern.test(source.bundleId)) {
         throw new Error('Invalid collection bundle id')
     }
+    if (source.collectionId !== undefined && (
+        typeof source.collectionId !== 'string' || !bundleIdPattern.test(source.collectionId)
+    )) {
+        throw new Error('Invalid collection relationship id')
+    }
     if (source.kind !== 'characters' && source.kind !== 'modules' && source.kind !== 'personas') {
         throw new Error('Invalid collection kind')
     }
@@ -151,10 +175,20 @@ export function parseSourceCollectionPart(value: unknown): SourceCollectionPart 
     if (!Number.isSafeInteger(source.partIndex) || Number(source.partIndex) < 0) {
         throw new Error('Invalid collection part index')
     }
-    if (typeof source.last !== 'boolean' || !Array.isArray(source.entities) || !Array.isArray(source.assets)) {
+    if (
+        typeof source.last !== 'boolean' ||
+        !Array.isArray(source.entities) ||
+        !Array.isArray(source.assets) ||
+        (source.omittedAssets !== undefined && !Array.isArray(source.omittedAssets))
+    ) {
         throw new Error('Invalid collection part payload')
     }
-    if (source.entities.length > MAX_ENTITIES_PER_PART || source.assets.length > MAX_ASSETS_PER_PART) {
+    const rawOmittedAssets = (source.omittedAssets ?? []) as unknown[]
+    if (
+        source.entities.length > MAX_ENTITIES_PER_PART ||
+        source.assets.length > MAX_ASSETS_PER_PART ||
+        rawOmittedAssets.length > MAX_OMITTED_ASSETS_PER_PART
+    ) {
         throw new Error('Collection part contains too many entries')
     }
     validateEntityPayloads(source.entities)
@@ -186,10 +220,30 @@ export function parseSourceCollectionPart(value: unknown): SourceCollectionPart 
         }
     })
 
+    const omittedAssets = rawOmittedAssets.map((rawAsset, index): SourceCollectionOmittedAsset => {
+        const asset = requireRecord(rawAsset, `Invalid omitted asset at index ${index}`)
+        if (typeof asset.path !== 'string' || !isSafeAssetPath(asset.path)) {
+            throw new Error(`Invalid omitted asset path at index ${index}`)
+        }
+        if (!Number.isSafeInteger(asset.size) || Number(asset.size) <= SOURCE_COLLECTION_MAX_ASSET_BYTES) {
+            throw new Error(`Invalid omitted asset size at index ${index}`)
+        }
+        if (asset.reason !== 'too-large') throw new Error(`Invalid omitted asset reason at index ${index}`)
+        return { path: asset.path, size: Number(asset.size), reason: 'too-large' }
+    })
+
+    const suppliedPaths = new Set(assets.map((asset) => asset.path))
+    for (const omitted of omittedAssets) {
+        if (suppliedPaths.has(omitted.path)) {
+            throw new Error(`Asset cannot be both supplied and omitted: ${omitted.path}`)
+        }
+    }
+
     return {
         format: SOURCE_COLLECTION_FORMAT,
         version: SOURCE_COLLECTION_VERSION,
         bundleId: source.bundleId,
+        collectionId: source.collectionId as string | undefined,
         kind: source.kind,
         sourceLabel: source.sourceLabel.trim(),
         createdAt: Number(source.createdAt),
@@ -197,12 +251,14 @@ export function parseSourceCollectionPart(value: unknown): SourceCollectionPart 
         last: source.last,
         entities: source.entities,
         assets,
+        omittedAssets,
     }
 }
 
 export function sourceCollectionHeader(part: SourceCollectionPart): SourceCollectionHeader {
     return {
         bundleId: part.bundleId,
+        collectionId: part.collectionId,
         kind: part.kind,
         sourceLabel: part.sourceLabel,
         createdAt: part.createdAt,
@@ -217,6 +273,7 @@ export function validateSourceCollectionHeaders(headers: readonly SourceCollecti
     for (const header of headers) {
         if (
             header.bundleId !== first.bundleId ||
+            header.collectionId !== first.collectionId ||
             header.kind !== first.kind ||
             header.sourceLabel !== first.sourceLabel ||
             header.createdAt !== first.createdAt
@@ -281,13 +338,12 @@ export function safeCollectionAssetFileName(path: string): string {
 }
 
 function rewriteString(value: string, mapping: ReadonlyMap<string, string>): string {
-    const exact = mapping.get(value)
-    if (exact) return exact
+    if (mapping.has(value)) return mapping.get(value) ?? value
     embeddedAssetPattern.lastIndex = 0
     return value.replace(embeddedAssetPattern, (match, prefix: string) => {
         const token = match.slice(prefix.length)
         const replacement = mapping.get(token)
-        return replacement ? `${prefix}${replacement}` : match
+        return replacement !== undefined ? `${prefix}${replacement}` : match
     })
 }
 
@@ -335,8 +391,18 @@ export function base64ToBytes(value: string): Uint8Array {
 }
 
 export async function sha256Hex(bytes: Uint8Array): Promise<string> {
-    const digest = await crypto.subtle.digest('SHA-256', bytes as BufferSource)
-    return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+    const subtle = globalThis.crypto?.subtle
+    if (typeof subtle?.digest === 'function') {
+        try {
+            const digest = await subtle.digest('SHA-256', bytes as BufferSource)
+            return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('')
+        } catch {
+            // Insecure mobile WebViews sometimes expose a partial Crypto object
+            // whose digest still rejects. The constant-memory fallback below is
+            // deterministic and does not weaken integrity verification.
+        }
+    }
+    return sha256HexPortable(bytes)
 }
 
 export async function decodeAndVerifyCollectionAsset(asset: SourceCollectionAsset): Promise<Uint8Array> {

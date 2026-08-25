@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { applySourceCollectionEntities, type SourceMergeDatabase } from './sourceCollectionMerge'
+import {
+    applySourceCollectionEntities,
+    reconcileSourceCollectionModuleReferences,
+    type SourceMergeDatabase,
+} from './sourceCollectionMerge'
 
 function db(): SourceMergeDatabase {
     return {
@@ -119,5 +123,67 @@ describe('applySourceCollectionEntities', () => {
             sourceInfo: { label: '로컬리스' },
         })
         expect(folders[1]).toMatchObject({ id: 'user-folder', data: [] })
+    })
+
+    it('remaps character module ids without ever activating an unrelated target id', () => {
+        const target = db()
+        target.modules.push({ id: 'source-module', name: 'unrelated target module' })
+        const moduleResult = applySourceCollectionEntities(target, {
+            kind: 'modules',
+            sourceLabel: '모바일웹리스',
+            bundleId: 'module-bundle-123',
+            collectionId: 'collection-12345678',
+            entities: [{ id: 'source-module', name: 'related source module' }],
+            createId: ids(),
+            createBlankCharacter: blankCharacter,
+        })
+        const importedModuleId = moduleResult.moduleIdMap.get('source-module')!
+        expect(importedModuleId).not.toBe('source-module')
+
+        const result = applySourceCollectionEntities(target, {
+            kind: 'characters',
+            sourceLabel: '모바일웹리스',
+            bundleId: 'character-bundle-1',
+            collectionId: 'collection-12345678',
+            entities: [{ name: 'linked bot', modules: ['source-module', 'missing-module'] }],
+            moduleIdMapping: moduleResult.moduleIdMap,
+            createId: ids(),
+            createBlankCharacter: blankCharacter,
+        })
+        const character = target.characters.at(-1)!
+        expect(character.modules).toEqual([importedModuleId])
+        expect(character.modules).not.toContain('source-module')
+        expect(character.sourceInfo.originalModuleIds).toEqual(['source-module', 'missing-module'])
+        expect(result.droppedModuleReferences).toBe(1)
+    })
+
+    it('keeps unresolved ids pending and reconnects only the exact collection later', () => {
+        const target = db()
+        target.modules.push({ id: 'source-module', name: 'unrelated target module' })
+        applySourceCollectionEntities(target, {
+            kind: 'characters',
+            sourceLabel: '모바일웹리스',
+            bundleId: 'character-bundle-1',
+            collectionId: 'collection-A-1234',
+            entities: [{ name: 'pending bot', modules: ['source-module'] }],
+            createId: ids(),
+            createBlankCharacter: blankCharacter,
+        })
+        const character = target.characters.at(-1)!
+        expect(character.modules).toEqual([])
+
+        expect(reconcileSourceCollectionModuleReferences(
+            target,
+            'collection-B-1234',
+            new Map([['source-module', 'wrong-new-id']]),
+        )).toBe(0)
+        expect(character.modules).toEqual([])
+
+        expect(reconcileSourceCollectionModuleReferences(
+            target,
+            'collection-A-1234',
+            new Map([['source-module', 'right-new-id']]),
+        )).toBe(1)
+        expect(character.modules).toEqual(['right-new-id'])
     })
 })
