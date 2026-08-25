@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createSandboxNonce } from './factory'
+import { createPluginSecureRandomBytes, createSandboxNonce } from './factory'
 
 describe('createSandboxNonce', () => {
     it('uses randomUUID when the browser exposes it', () => {
@@ -39,5 +39,16 @@ describe('createSandboxNonce', () => {
         expect(() => createSandboxNonce({} as Crypto, undefined)).toThrow(
             'A cryptographically secure random source is required for the plugin sandbox.',
         )
+    })
+
+    it('bridges server-seeded CSPRNG bytes into a no-WebCrypto plugin iframe', () => {
+        const seed = 'cd'.repeat(32)
+        const first = createPluginSecureRandomBytes(16, {} as Crypto, seed)
+        const second = createPluginSecureRandomBytes(16, {} as Crypto, seed)
+
+        expect(first).toHaveLength(16)
+        expect(second).toHaveLength(16)
+        expect(first).not.toEqual(second)
+        expect(first.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255)).toBe(true)
     })
 })

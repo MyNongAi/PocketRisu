@@ -94,6 +94,7 @@ export class AutoStorage{
     async pauseExternalAssetMigration(jobId: string) { await this.Init(); return this.realStorage.pauseExternalAssetMigration(jobId) }
     async resumeExternalAssetMigration(jobId: string) { await this.Init(); return this.realStorage.resumeExternalAssetMigration(jobId) }
     async cancelExternalAssetMigration(jobId: string) { await this.Init(); return this.realStorage.cancelExternalAssetMigration(jobId) }
+    async verifyStagedExternalAssetMigration(jobId: string) { await this.Init(); return this.realStorage.verifyStagedExternalAssetMigration(jobId) }
     async finalizeExternalAssetMigration(jobId: string) { await this.Init(); return this.realStorage.finalizeExternalAssetMigration(jobId) }
     async verifyExternalAssets(migrationId?: string) { await this.Init(); return this.realStorage.verifyExternalAssets(migrationId) }
     async purgeExternalAssetTrash(migrationId?: string) { await this.Init(); return this.realStorage.purgeExternalAssetTrash(migrationId) }

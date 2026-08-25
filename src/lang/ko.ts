@@ -2306,7 +2306,7 @@ export const languageKorean = {
   storageBackupsManage: "백업 관리",
   storageBackupsAuto: "스냅샷 (DB만)",
   storageBackupsAutoDesc:
-    "주기적으로 자동 생성되는 빠른 복구용 스냅샷입니다. risuai.db 안에 저장되며, 설정된 한도에 따라 오래된 것부터 자동으로 정리됩니다. 캐릭터 에셋과 inlay는 포함되지 않습니다.",
+    "데이터가 저장된 뒤 설정한 간격당 최대 한 번 생성되는 DB 복구 지점입니다. 서버를 다시 켜도 생성 간격이 이어집니다. risuai.db 안에 보관되며, 보관 한도에 닿으면 오래된 것부터 정리됩니다. 캐릭터 에셋과 inlay는 포함되지 않습니다.",
   storageBackupsManual: "서버 백업",
   storageBackupsManualDesc:
     "캐릭터 에셋과 inlay 이미지를 모두 포함하는 풀 백업입니다. 서버 스토리지에 직접 저장되며, 보관 위치는 변경 가능합니다.",
@@ -2375,8 +2375,12 @@ export const languageKorean = {
     `${when} 스냅샷을 삭제할까요? 되돌릴 수 없습니다.`,
   backupSnapshotDeleted: "스냅샷이 삭제되었습니다.",
   backupSnapshotDeleteFailed: "스냅샷 삭제 실패",
-  backupSnapshotLimits: (count: number, bytes: number) =>
-    `최대 ${count}개 · ${(bytes / 1024 / 1024).toFixed(0)} MB`,
+  backupSnapshotLimits: (count: number, bytes: number, intervalMs?: number) => {
+    const retention = `최대 ${count}개 · ${(bytes / 1024 / 1024).toFixed(0)} MB`
+    if (intervalMs === 0) return `자동 생성 꺼짐 · 기존 스냅샷 ${retention} 보관`
+    const hours = (intervalMs ?? 12 * 60 * 60 * 1000) / 60 / 60 / 1000
+    return `${hours}시간마다 최대 1개 · ${retention}`
+  },
   backupSnapshotLimitsCurrent: (count: number, bytes: number, logicalBytes?: number) => {
     const disk = (bytes / 1024 / 1024).toFixed(1)
     const saved = (logicalBytes ?? 0) - bytes
@@ -2390,10 +2394,16 @@ export const languageKorean = {
     }
     return `현재 ${count}개 · ${disk} MB 사용`
   },
-  backupSnapshotLimitsChange: "한도 설정",
-  backupSnapshotLimitsDialog: "스냅샷 보관 한도",
+  backupSnapshotLimitsChange: "주기·한도 설정",
+  backupSnapshotLimitsDialog: "스냅샷 생성 주기 및 보관 한도",
   backupSnapshotLimitsDialogDesc:
-    "두 한도 중 먼저 도달하는 쪽이 적용됩니다. 새 스냅샷이 생성될 때 자동으로 회전되며, 한도를 줄이면 즉시 정리됩니다 (가장 최신 1개는 한도 무관 보존).",
+    "생성 주기는 변경 없는 데이터를 시간마다 쓰는 타이머가 아니라, 저장이 발생했을 때 새 스냅샷을 허용하는 최소 간격입니다. 두 보관 한도 중 먼저 도달하는 쪽이 적용됩니다. 한도를 줄이면 즉시 정리되며, 최신 1개는 항상 남습니다.",
+  backupSnapshotInterval: "자동 스냅샷 생성 주기",
+  backupSnapshotIntervalOff: "사용 안 함 (기존 스냅샷 유지)",
+  backupSnapshotIntervalHours: (hours: number) => `${hours}시간마다`,
+  backupSnapshotIntervalHint:
+    "기본값은 12시간입니다. 데이터 저장이 성공한 뒤에만 생성 여부를 판단하며, 서버를 다시 켜도 주기가 초기화되지 않습니다.",
+  backupSnapshotIntervalInvalid: "지원되는 스냅샷 생성 주기를 선택하세요.",
   backupSnapshotLimitsCount: "최대 개수",
   backupSnapshotLimitsBytes: "최대 용량 (MB)",
   backupSnapshotLimitsSuccess: (removed: number) =>

@@ -9,6 +9,7 @@
 // but never rewrites a character/module reference or deletes the original.
 
 const crypto = require('crypto');
+const fs = require('fs');
 const fsp = require('fs/promises');
 const path = require('path');
 
@@ -108,6 +109,93 @@ function verifyContent(value, expectedHash, expectedSize) {
         });
     }
     return data;
+}
+
+function canonicalJson(value) {
+    if (value === null || typeof value !== 'object') return JSON.stringify(value);
+    if (Array.isArray(value)) return `[${value.map((entry) => canonicalJson(entry === undefined ? null : entry)).join(',')}]`;
+    return `{${Object.keys(value)
+        .filter((key) => value[key] !== undefined)
+        .sort()
+        .map((key) => `${JSON.stringify(key)}:${canonicalJson(value[key])}`)
+        .join(',')}}`;
+}
+
+/**
+ * Bind verification receipts to the exact provider destination and recovery
+ * trash root. Cache/retry tuning is intentionally excluded because it cannot
+ * redirect content, while credentials are included because they may select a
+ * different remote tenant even when the base URL is unchanged.
+ */
+function externalAssetProviderFingerprint(config, providerId) {
+    const id = assertProviderId(providerId);
+    const provider = config?.providers?.[id];
+    if (!provider || typeof provider !== 'object' || Array.isArray(provider)) {
+        throw new ExternalAssetError('PROVIDER_NOT_FOUND', `External asset provider ${id} is not configured.`);
+    }
+    return crypto.createHash('sha256').update(canonicalJson({
+        schema: 1,
+        providerId: id,
+        enabled: config?.enabled !== false,
+        trashRoot: typeof config?.trashRoot === 'string' ? config.trashRoot : '',
+        provider,
+    })).digest('hex');
+}
+
+async function verifyReadableContent(readable, expectedHash, expectedSize, options = {}) {
+    if (!readable || typeof readable[Symbol.asyncIterator] !== 'function') {
+        throw new ExternalAssetError('INVALID_ASSET_STREAM', 'Asset verifier requires an async-readable stream.');
+    }
+    const normalizedHash = normalizeHash(expectedHash);
+    const normalizedSize = expectedSize === null || expectedSize === undefined ? null : Number(expectedSize);
+    if (normalizedSize !== null && (!Number.isSafeInteger(normalizedSize) || normalizedSize < 0)) {
+        throw new ExternalAssetError('INVALID_ASSET_SIZE', 'Expected asset size must be a non-negative safe integer.');
+    }
+    const rawMaxBytes = options.maxBytes ?? Number.POSITIVE_INFINITY;
+    const maxBytes = rawMaxBytes === Number.POSITIVE_INFINITY
+        ? rawMaxBytes
+        : Math.max(0, Number(rawMaxBytes));
+    if (maxBytes !== Number.POSITIVE_INFINITY && !Number.isSafeInteger(maxBytes)) {
+        throw new ExternalAssetError('INVALID_ASSET_SIZE', 'Asset stream limit must be a non-negative safe integer.');
+    }
+    const digest = crypto.createHash('sha256');
+    let size = 0;
+    for await (const chunk of readable) {
+        const data = toBuffer(chunk, 'asset stream chunk');
+        size += data.length;
+        if (!Number.isSafeInteger(size) || size > maxBytes) {
+            if (typeof readable.destroy === 'function') readable.destroy();
+            throw new ExternalAssetError('ASSET_TOO_LARGE', 'Asset exceeds the bounded verification limit.', {
+                details: { maxBytes, actualSize: size },
+            });
+        }
+        digest.update(data);
+    }
+    const actualHash = digest.digest('hex');
+    if (actualHash !== normalizedHash) {
+        throw new ExternalAssetError('HASH_MISMATCH', 'External asset SHA-256 verification failed.', {
+            details: { expectedHash: normalizedHash, actualHash },
+        });
+    }
+    if (normalizedSize !== null && size !== normalizedSize) {
+        throw new ExternalAssetError('SIZE_MISMATCH', 'External asset size verification failed.', {
+            details: { expectedSize: normalizedSize, actualSize: size },
+        });
+    }
+    return { hash: actualHash, size };
+}
+
+async function verifyFileContent(file, expectedHash, expectedSize, options = {}) {
+    const info = await fsp.stat(file);
+    if (!info.isFile()) {
+        throw new ExternalAssetError('ASSET_NOT_FOUND', 'Verified recovery path is not a file.');
+    }
+    if (expectedSize !== null && expectedSize !== undefined && info.size !== Number(expectedSize)) {
+        throw new ExternalAssetError('SIZE_MISMATCH', 'External asset file size verification failed.', {
+            details: { expectedSize: Number(expectedSize), actualSize: info.size },
+        });
+    }
+    return verifyReadableContent(fs.createReadStream(file), expectedHash, expectedSize, options);
 }
 
 function defaultShouldRetry(error) {
@@ -229,7 +317,7 @@ function createFilesystemProvider(options = {}) {
     return {
         id,
         type: 'filesystem',
-        capabilities: Object.freeze({ read: true, write: true, stat: true, directUrl: false, androidSaf: false, hardLinkTrash: true }),
+        capabilities: Object.freeze({ read: true, write: true, stat: true, verify: true, directUrl: false, androidSaf: false, hardLinkTrash: true }),
 
         async get(hash) {
             const key = normalizeHash(hash);
@@ -289,6 +377,20 @@ function createFilesystemProvider(options = {}) {
                 throw new ExternalAssetError(
                     error && error.code === 'ENOENT' ? 'ASSET_NOT_FOUND' : 'FILESYSTEM_STAT_FAILED',
                     `Could not stat external asset ${key}.`,
+                    { cause: error, retryable: error && ['EBUSY', 'EMFILE', 'ENFILE'].includes(error.code) },
+                );
+            }
+        },
+
+        async verify(hash, expectedSize) {
+            const key = normalizeHash(hash);
+            try {
+                return await verifyFileContent(contentPath(rootDir, key), key, expectedSize);
+            } catch (error) {
+                if (error instanceof ExternalAssetError) throw error;
+                throw new ExternalAssetError(
+                    error && error.code === 'ENOENT' ? 'ASSET_NOT_FOUND' : 'FILESYSTEM_READ_FAILED',
+                    `Could not stream-verify external asset ${key}.`,
                     { cause: error, retryable: error && ['EBUSY', 'EMFILE', 'ENFILE'].includes(error.code) },
                 );
             }
@@ -455,6 +557,7 @@ function createHttpProvider(options = {}) {
             read: true,
             write: allowPut,
             stat: true,
+            verify: true,
             directUrl: options.publicRead === true,
             androidSaf: false,
         }),
@@ -475,6 +578,26 @@ function createHttpProvider(options = {}) {
                     throw new ExternalAssetError('ASSET_TOO_LARGE', 'Remote asset exceeds maxAssetBytes.');
                 }
                 return data;
+            });
+        },
+
+        async verify(hash, expectedSize) {
+            const key = normalizeHash(hash);
+            return await request('GET', key, undefined, {}, async (response) => {
+                const declared = Number(response.headers.get('content-length'));
+                if (Number.isFinite(declared) && declared > maxAssetBytes) {
+                    throw new ExternalAssetError('ASSET_TOO_LARGE', 'Remote asset exceeds maxAssetBytes.');
+                }
+                if (Number.isFinite(declared) && expectedSize !== null && expectedSize !== undefined
+                    && declared !== Number(expectedSize)) {
+                    throw new ExternalAssetError('SIZE_MISMATCH', 'Remote asset content-length verification failed.', {
+                        details: { expectedSize: Number(expectedSize), actualSize: declared },
+                    });
+                }
+                if (!response.body) {
+                    throw new ExternalAssetError('INVALID_ASSET_STREAM', 'Remote asset response has no readable body.');
+                }
+                return verifyReadableContent(response.body, key, expectedSize, { maxBytes: maxAssetBytes });
             });
         },
 
@@ -693,6 +816,12 @@ function createExternalAssetService(options = {}) {
     const cache = options.cache || new ByteLruCache(options.cacheMaxBytes ?? 64 * 1024 * 1024);
     const retryOptions = { attempts: 3, ...options.retry };
     const now = options.now || (() => new Date().toISOString());
+    const maxVerificationBufferBytes = Math.max(1, Math.floor(
+        Number(options.maxVerificationBufferBytes ?? 256 * 1024 * 1024),
+    ));
+    if (!Number.isSafeInteger(maxVerificationBufferBytes)) {
+        throw new ExternalAssetError('INVALID_ASSET_SIZE', 'maxVerificationBufferBytes must be a positive safe integer.');
+    }
 
     async function upsertManifestEntries(updates) {
         if (typeof manifest.upsertMany === 'function') return manifest.upsertMany(updates);
@@ -1030,6 +1159,89 @@ function createExternalAssetService(options = {}) {
         return publishStaged(preparedEntries);
     }
 
+    // Revalidate a detached staging receipt immediately before publishing it.
+    // This deliberately bypasses both the manifest and LRU cache: stat/HEAD is
+    // checked first, then exactly one provider object is downloaded and hashed.
+    // The returned result contains no payload, so callers can release each
+    // asset before advancing through a multi-gigabyte migration.
+    async function verifyDetachedReceipt(receipt = {}) {
+        const parsed = parseExternalAssetUri(receipt.uri);
+        const expectedHash = normalizeHash(receipt.hash);
+        const expectedSize = Number(receipt.size);
+        if (parsed.hash !== expectedHash) {
+            throw new ExternalAssetError('INVALID_STAGE_RECEIPT', 'Staged URI and hash do not match.');
+        }
+        if (typeof receipt.providerId === 'string' && receipt.providerId !== parsed.providerId) {
+            throw new ExternalAssetError('INVALID_STAGE_RECEIPT', 'Staged URI and provider do not match.');
+        }
+        if (!Number.isSafeInteger(expectedSize) || expectedSize < 0) {
+            throw new ExternalAssetError('INVALID_STAGE_RECEIPT', 'Staged receipt size must be a non-negative safe integer.');
+        }
+        const provider = providerFor(parsed.providerId, 'read');
+        providerFor(parsed.providerId, 'stat');
+        const info = await callProvider(provider, () => provider.stat(parsed.hash));
+        if (info?.hash && normalizeHash(info.hash) !== parsed.hash) {
+            throw new ExternalAssetError('HASH_MISMATCH', 'External provider stat returned a different asset hash.');
+        }
+        if (Number.isFinite(info?.size) && Number(info.size) !== expectedSize) {
+            throw new ExternalAssetError('SIZE_MISMATCH', 'External asset stat size verification failed.', {
+                details: { expectedSize, actualSize: Number(info.size) },
+            });
+        }
+        let verification;
+        if (typeof provider.verify === 'function') {
+            verification = await callProvider(provider, () => provider.verify(parsed.hash, expectedSize));
+            if (normalizeHash(verification?.hash) !== parsed.hash || Number(verification?.size) !== expectedSize) {
+                throw new ExternalAssetError('INVALID_STAGE_RECEIPT', 'Provider streaming verification returned mismatched metadata.');
+            }
+        } else {
+            // Custom/legacy providers expose only Buffer-based get(). Refuse a
+            // single unbounded allocation rather than risking an OOM.
+            if (expectedSize > maxVerificationBufferBytes) {
+                throw new ExternalAssetError(
+                    'ASSET_TOO_LARGE',
+                    `Provider ${parsed.providerId} cannot stream verification and the asset exceeds maxVerificationBufferBytes.`,
+                    { details: { expectedSize, maxVerificationBufferBytes } },
+                );
+            }
+            const data = await callProvider(provider, () => provider.get(parsed.hash));
+            verifyContent(data, parsed.hash, expectedSize);
+            verification = { hash: parsed.hash, size: data.length };
+        }
+        return {
+            uri: parsed.uri,
+            providerId: parsed.providerId,
+            hash: parsed.hash,
+            size: expectedSize,
+            statSize: Number.isFinite(info?.size) ? Number(info.size) : null,
+            verifiedAt: now(),
+        };
+    }
+
+    /**
+     * Revalidate the recoverable trash copy recorded by a detached migration
+     * receipt. This is deliberately streaming and bypasses manifest/LRU state,
+     * so a library-sized verification never accumulates payloads in memory.
+     */
+    async function verifyRecoveryReceipt(receipt = {}) {
+        if (!trashDir) {
+            throw new ExternalAssetError('TRASH_UNAVAILABLE', 'A recoverable trash directory is required before publishing.');
+        }
+        const expectedHash = normalizeHash(receipt.hash);
+        const expectedSize = Number(receipt.size);
+        if (!Number.isSafeInteger(expectedSize) || expectedSize < 0) {
+            throw new ExternalAssetError('INVALID_STAGE_RECEIPT', 'Recovery receipt size must be a non-negative safe integer.');
+        }
+        const file = resolveInside(trashDir, receipt.trashPath);
+        const verified = await verifyFileContent(file, expectedHash, expectedSize);
+        return {
+            trashPath: receipt.trashPath,
+            hash: verified.hash,
+            size: verified.size,
+            verifiedAt: now(),
+        };
+    }
+
     async function verify(uri) {
         const parsed = parseExternalAssetUri(uri);
         const old = await manifest.get(parsed.uri);
@@ -1074,9 +1286,16 @@ function createExternalAssetService(options = {}) {
                 continue;
             }
             try {
-                const data = await readExternalOnly(parsed, record);
-                successful.push({ parsed, data });
-                results.push({ uri: parsed.uri, ok: true, hash: parsed.hash, size: data.length });
+                const checked = await verifyDetachedReceipt({
+                    uri: parsed.uri,
+                    providerId: parsed.providerId,
+                    hash: parsed.hash,
+                    size: record.size,
+                });
+                // Keep metadata only. Holding every successful Buffer made a
+                // 47 GB verify pass consume O(total bytes) memory.
+                successful.push({ parsed, size: checked.size });
+                results.push({ uri: parsed.uri, ok: true, hash: parsed.hash, size: checked.size });
             } catch (error) {
                 results.push({ uri: parsed.uri, ok: false, error });
             }
@@ -1084,13 +1303,13 @@ function createExternalAssetService(options = {}) {
 
         if (successful.length > 0) {
             const timestamp = now();
-            await upsertManifestEntries(successful.map(({ parsed, data }) => ({
+            await upsertManifestEntries(successful.map(({ parsed, size }) => ({
                 uri: parsed.uri,
                 updater: (current) => ({
                     ...current,
                     status: 'verified',
                     lastVerifiedAt: timestamp,
-                    size: data.length,
+                    size,
                 }),
             })));
         }
@@ -1253,6 +1472,8 @@ function createExternalAssetService(options = {}) {
         stageDetached,
         publishStaged,
         stageMany,
+        verifyDetachedReceipt,
+        verifyRecoveryReceipt,
         verify,
         verifyMany,
         repairFromFallback,
@@ -1287,6 +1508,10 @@ module.exports = {
     parseExternalAssetUri,
     sha256,
     verifyContent,
+    verifyReadableContent,
+    verifyFileContent,
+    externalAssetProviderFingerprint,
+    resolveInside,
     withRetry,
     createFilesystemProvider,
     createHttpProvider,

@@ -1395,6 +1395,12 @@ interface RisuaiPluginAPI {
     setArgument(key: string, value: string | number): Promise<void>;
 
     /**
+     * Returns cryptographically secure random bytes. PocketRisu bridges this
+     * from the trusted parent when an insecure LAN iframe has no Web Crypto.
+     */
+    getSecureRandomBytes(length: number): Promise<number[]>;
+
+    /**
      * @deprecated Use getArgument() instead
      */
     getArg(arg: string): any;

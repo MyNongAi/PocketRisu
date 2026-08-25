@@ -8,6 +8,7 @@
   let search = $state('')
   let zoomIndex = $state(-1) // index into the filtered list; -1 means grid view
   let swipeStartX: number | null = null
+  let focusedPreviewIndex = $state<number | null>(null)
 
   const filtered = $derived.by(() => {
     const query = search.trim().toLowerCase()
@@ -84,6 +85,8 @@
           <button
             class="relative group w-full h-full rounded-lg overflow-hidden bg-darkbg border border-darkborderc hover:border-borderc/70 transition-colors"
             onclick={() => (zoomIndex = i)}
+            onfocus={() => (focusedPreviewIndex = item.origIndex)}
+            onblur={() => { if (focusedPreviewIndex === item.origIndex) focusedPreviewIndex = null }}
           >
             <LazyAssetPreview
               path={item.path}
@@ -91,6 +94,7 @@
               alt={item.name}
               draggableOriginal
               dragFileName={item.name}
+              originalIntentActive={focusedPreviewIndex === item.origIndex}
               wrapperClass="w-full h-full"
               mediaClass="w-full h-full object-cover"
             />
