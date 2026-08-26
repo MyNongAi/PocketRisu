@@ -21,6 +21,11 @@ export type ModuleDropTarget =
     | { kind: 'folder'; folderId: string }
     | { kind: 'root' }
 
+export type ModuleFolderDropTarget =
+    | { kind: 'module'; moduleId: string; position: 'before' | 'after' }
+    | { kind: 'folder'; folderId: string; position: 'before' | 'after' }
+    | { kind: 'root' }
+
 export interface ModuleDropResult {
     folders: ModuleFolder[]
     /** Top-to-bottom visual module order after the drop. */
@@ -288,4 +293,90 @@ export function moveModuleByDrop(
     }))
 
     return { folders: nextFolders, orderedModuleIds: nextOrder }
+}
+
+/** Move an entire folder block without nesting folders or touching db.modules. */
+export function moveModuleFolderByDrop(
+    orderedModuleIds: ReadonlyArray<string>,
+    folders: unknown,
+    draggedFolderId: string,
+    target: ModuleFolderDropTarget,
+): ModuleDropResult {
+    const currentOrder = uniqueModuleIds(orderedModuleIds)
+    const normalizedFolders = normalizeModuleFolders(folders)
+    const sourceFolder = normalizedFolders.find((folder) => folder.id === draggedFolderId)
+    if(!sourceFolder) return { folders: normalizedFolders, orderedModuleIds: currentOrder }
+
+    const targetFolderId = target.kind === 'folder'
+        ? target.folderId
+        : target.kind === 'module'
+            ? findModuleFolderId(normalizedFolders, target.moduleId)
+            : ''
+    const targetPosition = target.kind === 'root' ? 'after' : target.position
+    if(targetFolderId === draggedFolderId){
+        return { folders: normalizedFolders, orderedModuleIds: currentOrder }
+    }
+
+    const sourceMembers = new Set(sourceFolder.moduleIds)
+    const movedModuleIds = currentOrder.filter((id) => sourceMembers.has(id))
+    const nextOrder = currentOrder.filter((id) => !sourceMembers.has(id))
+    let insertionIndex = nextOrder.length
+
+    if(targetFolderId){
+        const targetFolder = normalizedFolders.find((folder) => folder.id === targetFolderId)
+        if(!targetFolder){
+            return { folders: normalizedFolders, orderedModuleIds: currentOrder }
+        }
+        const targetMembers = new Set(targetFolder.moduleIds)
+        const memberIndexes = nextOrder
+            .map((id, index) => targetMembers.has(id) ? index : -1)
+            .filter((index) => index !== -1)
+        if(memberIndexes.length > 0){
+            insertionIndex = targetPosition === 'before'
+                ? Math.min(...memberIndexes)
+                : Math.max(...memberIndexes) + 1
+        }
+    }
+    else if(target.kind === 'module'){
+        const targetIndex = nextOrder.indexOf(target.moduleId)
+        if(targetIndex === -1){
+            return { folders: normalizedFolders, orderedModuleIds: currentOrder }
+        }
+        insertionIndex = targetIndex + (target.position === 'after' ? 1 : 0)
+    }
+
+    nextOrder.splice(insertionIndex, 0, ...movedModuleIds)
+
+    // Folder metadata order is the fallback for empty folders and ties. Moving
+    // beside another folder updates it too; dropping at root sends it last.
+    const sourceIndex = normalizedFolders.findIndex((folder) => folder.id === draggedFolderId)
+    const nextFolders = normalizedFolders.filter((folder) => folder.id !== draggedFolderId)
+    let folderInsertionIndex = Math.min(sourceIndex, nextFolders.length)
+    if(targetFolderId){
+        const targetIndex = nextFolders.findIndex((folder) => folder.id === targetFolderId)
+        if(targetIndex !== -1){
+            folderInsertionIndex = targetIndex + (targetPosition === 'after' ? 1 : 0)
+        }
+    }
+    else if(target.kind === 'root'){
+        folderInsertionIndex = nextFolders.length
+    }
+    nextFolders.splice(folderInsertionIndex, 0, sourceFolder)
+
+    const orderRank = new Map(nextOrder.map((id, index) => [id, index]))
+    return {
+        orderedModuleIds: nextOrder,
+        folders: nextFolders.map((folder) => ({
+            ...folder,
+            moduleIds: folder.moduleIds
+                .map((id, index) => ({ id, index, rank: orderRank.get(id) }))
+                .sort((a, b) => {
+                    if(a.rank !== undefined && b.rank !== undefined) return a.rank - b.rank
+                    if(a.rank !== undefined) return -1
+                    if(b.rank !== undefined) return 1
+                    return a.index - b.index
+                })
+                .map(({ id }) => id),
+        })),
+    }
 }
