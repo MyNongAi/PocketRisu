@@ -1223,7 +1223,10 @@
       {/if}
     </div>
     {#if QuickSettings.open}
-      <QuickSettingsGui modulesOnly={!hasEditableCharacter} />
+      <QuickSettingsGui
+        canEditCharacter={hasEditableCharacter}
+        onCharacterRequired={openCharacterTab}
+      />
     {:else if $selectedCharID < 0 || $settingsOpen}
       <span class="block text-base font-semibold text-textcolor mt-2">{language.recentChatsTitle}</span>
       <div class="flex items-center justify-between gap-2 mt-2">
