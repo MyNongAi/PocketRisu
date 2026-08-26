@@ -90,12 +90,6 @@
             if(destroyed || generation !== scrollAdjustmentGeneration || !viewport) return
             if(Math.abs(viewport.scrollTop - target) > 0.5) viewport.scrollTop = target
             scrollTop = viewport.scrollTop
-        }).catch((error: unknown) => {
-            // Svelte can reject a pending tick with null when a measured row
-            // is replaced during the same flush (for example, opening a
-            // module-folder picker). That is cancellation, not an app error.
-            if(error == null || destroyed || generation !== scrollAdjustmentGeneration) return
-            queueMicrotask(() => { throw error })
         })
     }
 

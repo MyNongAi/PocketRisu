@@ -207,8 +207,8 @@
 
 {#snippet moduleRow(rmodule: RisuModule, nested = false)}
     <div class={nested
-        ? "ml-4 border-b border-l border-selected"
-        : "border-b border-selected"
+        ? "relative ml-4 border-b border-l border-selected"
+        : "relative border-b border-selected"
     }>
         <div class="pl-3 pt-3 text-left flex items-center">
             {#if rmodule.mcp}
@@ -309,7 +309,10 @@
             <span class="text-sm text-textcolor2">{rmodule.description || 'No description provided'}</span>
         </div>
         {#if folderPickerModule === rmodule}
-            <div class="mx-3 mb-3 flex items-center gap-2 rounded-md border border-selected bg-darkbg p-2">
+            <!-- Overlay the picker inside the existing row instead of growing
+                 a measured virtual row. Row-height mutations during the same
+                 Svelte flush produced a spurious null rejection in long lists. -->
+            <div class="absolute inset-x-3 top-10 z-30 flex items-center gap-2 rounded-md border border-selected bg-darkbg p-2 shadow-lg">
                 <FolderInputIcon size={16} class="shrink-0 text-textcolor2" />
                 <select
                     class="min-w-0 grow rounded-md border border-darkborderc bg-transparent px-2 py-1 text-textcolor"
