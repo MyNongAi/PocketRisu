@@ -36,6 +36,7 @@
         buildModuleFolderCatalog,
         findModuleFolderId,
         moveModuleByDrop,
+        moveModuleFolderByDrop,
         normalizeModuleFolders,
         type ModuleFolder,
     } from "src/ts/process/moduleFolders";
@@ -43,6 +44,7 @@
     import MeasuredVirtualList from "src/lib/UI/Virtual/MeasuredVirtualList.svelte";
     import type { ModuleCatalogEntry } from "src/ts/process/moduleFolders";
     import type { ModuleDropTarget } from "src/ts/process/moduleFolders";
+    import type { ModuleFolderDropTarget } from "src/ts/process/moduleFolders";
 
     type ModuleCatalogRow =
         | { kind: 'module'; module: RisuModule; nested: boolean }
@@ -60,7 +62,9 @@
     let moduleSearch = $state('')
     let folderPickerModule:RisuModule|null = $state(null)
     let draggedModuleId = $state('')
+    let draggedFolderId = $state('')
     let moduleDropIndicator = $state('')
+    let draggingModuleCatalogItem = $derived(!!draggedModuleId || !!draggedFolderId)
     let { quickPanel = false }: { quickPanel?: boolean } = $props()
     let moduleFolders = $derived(normalizeModuleFolders(DBState.db.moduleFolders))
     const moduleVirtualKeys = new WeakMap<RisuModule, string>()
@@ -166,6 +170,7 @@
 
     function clearModuleDrag(){
         draggedModuleId = ''
+        draggedFolderId = ''
         moduleDropIndicator = ''
     }
 
@@ -175,6 +180,7 @@
             return
         }
         draggedModuleId = module.id
+        draggedFolderId = ''
         folderPickerModule = null
         if(event.dataTransfer){
             event.dataTransfer.effectAllowed = 'move'
@@ -182,8 +188,22 @@
         }
     }
 
+    function beginFolderDrag(event: DragEvent, folder: ModuleFolder){
+        if(moduleSearch.trim() !== ''){
+            event.preventDefault()
+            return
+        }
+        draggedFolderId = folder.id
+        draggedModuleId = ''
+        folderPickerModule = null
+        if(event.dataTransfer){
+            event.dataTransfer.effectAllowed = 'move'
+            event.dataTransfer.setData('text/plain', `folder:${folder.id}`)
+        }
+    }
+
     function allowModuleDrop(event: DragEvent, indicator: string){
-        if(!draggedModuleId) return
+        if(!draggingModuleCatalogItem) return
         event.preventDefault()
         if(event.dataTransfer) event.dataTransfer.dropEffect = 'move'
         moduleDropIndicator = indicator
@@ -206,6 +226,21 @@
         clearModuleDrag()
     }
 
+    function applyFolderDrop(event: DragEvent, target: ModuleFolderDropTarget){
+        if(!draggedFolderId) return
+        event.preventDefault()
+        event.stopPropagation()
+        const moved = moveModuleFolderByDrop(
+            currentOrderedModuleIds(),
+            moduleFolders,
+            draggedFolderId,
+            target,
+        )
+        DBState.db.moduleFolders = moved.folders
+        DBState.db.moduleActivationHistory = [...moved.orderedModuleIds].reverse()
+        clearModuleDrag()
+    }
+
     function moduleDropPosition(event: DragEvent, moduleId: string){
         const bounds = event.currentTarget instanceof HTMLElement
             ? event.currentTarget.getBoundingClientRect()
@@ -220,14 +255,55 @@
     }
 
     function previewModuleDrop(event: DragEvent, moduleId: string){
-        if(!draggedModuleId || draggedModuleId === moduleId) return
+        if(draggedModuleId === moduleId) return
+        if(draggedFolderId && findModuleFolderId(moduleFolders, moduleId) === draggedFolderId) return
+        if(!draggingModuleCatalogItem) return
         const placement = moduleDropPosition(event, moduleId)
         allowModuleDrop(event, placement.indicator)
     }
 
     function dropBesideModule(event: DragEvent, moduleId: string){
-        if(!draggedModuleId || draggedModuleId === moduleId) return
-        applyModuleDrop(event, moduleDropPosition(event, moduleId).target)
+        if(draggedModuleId === moduleId) return
+        if(draggedFolderId && findModuleFolderId(moduleFolders, moduleId) === draggedFolderId) return
+        const target = moduleDropPosition(event, moduleId).target
+        if(draggedModuleId) applyModuleDrop(event, target)
+        else if(draggedFolderId) applyFolderDrop(event, target)
+    }
+
+    function folderDropPosition(event: DragEvent, folderId: string){
+        const bounds = event.currentTarget instanceof HTMLElement
+            ? event.currentTarget.getBoundingClientRect()
+            : null
+        const position = bounds && event.clientY > bounds.top + bounds.height / 2
+            ? 'after'
+            : 'before'
+        return {
+            target: { kind: 'folder', folderId, position } as const,
+            indicator: `folder-order:${folderId}:${position}`,
+        }
+    }
+
+    function previewFolderDrop(event: DragEvent, folderId: string){
+        if(draggedModuleId){
+            allowModuleDrop(event, `folder:${folderId}`)
+            return
+        }
+        if(!draggedFolderId || draggedFolderId === folderId) return
+        allowModuleDrop(event, folderDropPosition(event, folderId).indicator)
+    }
+
+    function dropOnFolder(event: DragEvent, folderId: string){
+        if(draggedModuleId){
+            applyModuleDrop(event, { kind: 'folder', folderId })
+            return
+        }
+        if(!draggedFolderId || draggedFolderId === folderId) return
+        applyFolderDrop(event, folderDropPosition(event, folderId).target)
+    }
+
+    function dropAtRoot(event: DragEvent){
+        if(draggedModuleId) applyModuleDrop(event, { kind: 'root' })
+        else if(draggedFolderId) applyFolderDrop(event, { kind: 'root' })
     }
 
     function createModule(){
@@ -456,16 +532,16 @@
 
     <div
         class={`flex items-center justify-center gap-2 overflow-hidden rounded-md border border-dashed transition-all
-            ${draggedModuleId ? 'mt-3 h-10 px-3 opacity-100' : 'h-0 border-transparent opacity-0'}
+            ${draggingModuleCatalogItem ? 'mt-3 h-10 px-3 opacity-100' : 'h-0 border-transparent opacity-0'}
             ${moduleDropIndicator === 'root' ? 'border-primary bg-primary/15 text-primary' : 'border-selected text-textcolor2'}`}
         data-module-root-drop
         role="group"
         aria-label={language.moduleFolderRoot}
         ondragover={(event) => allowModuleDrop(event, 'root')}
-        ondrop={(event) => applyModuleDrop(event, { kind: 'root' })}
+        ondrop={dropAtRoot}
     >
         <FolderInputIcon size={17}/>
-        <span class="text-sm font-bold">{language.moduleFolderRoot}</span>
+        <span class="text-sm font-bold">{draggedFolderId ? language.modules : language.moduleFolderRoot}</span>
     </div>
 
     {#if moduleCatalogRows.length === 0}
@@ -492,24 +568,43 @@
         {:else if row.kind === 'empty-folder'}
             <div
                 class={`ml-4 border-b border-l px-3 py-2 text-sm text-textcolor2
-                    ${moduleDropIndicator === `folder:${row.folderId}` ? 'border-primary bg-primary/15' : 'border-selected'}`}
+                    ${moduleDropIndicator === `folder:${row.folderId}` ? 'border-primary bg-primary/15' : 'border-selected'}
+                    ${moduleDropIndicator.startsWith(`folder-order:${row.folderId}:`) ? 'border-2 border-primary' : ''}`}
                 role="group"
-                ondragover={(event) => allowModuleDrop(event, `folder:${row.folderId}`)}
-                ondrop={(event) => applyModuleDrop(event, { kind: 'folder', folderId: row.folderId })}
+                ondragover={(event) => previewFolderDrop(event, row.folderId)}
+                ondrop={(event) => dropOnFolder(event, row.folderId)}
             >
                 {language.noModules}
             </div>
         {:else}
             {@const entry = row.entry}
             <div
-                class={`border-b ${moduleDropIndicator === `folder:${entry.folder.id}` ? 'border-primary bg-primary/15' : 'border-selected'}`}
+                class={`border-b ${moduleDropIndicator === `folder:${entry.folder.id}` ? 'border-primary bg-primary/15' : 'border-selected'}
+                    ${moduleDropIndicator === `folder-order:${entry.folder.id}:before` ? 'border-t-2 border-t-primary' : ''}
+                    ${moduleDropIndicator === `folder-order:${entry.folder.id}:after` ? 'border-b-2 border-b-primary' : ''}
+                    ${draggedFolderId === entry.folder.id ? 'opacity-55' : ''}`}
                 data-module-folder-drop={entry.folder.id}
                 role="group"
                 aria-label={entry.folder.name}
-                ondragover={(event) => allowModuleDrop(event, `folder:${entry.folder.id}`)}
-                ondrop={(event) => applyModuleDrop(event, { kind: 'folder', folderId: entry.folder.id })}
+                ondragover={(event) => previewFolderDrop(event, entry.folder.id)}
+                ondrop={(event) => dropOnFolder(event, entry.folder.id)}
             >
                         <div class="flex min-h-12 items-center gap-2 bg-selected/25 px-3 py-2">
+                            <button
+                                type="button"
+                                class={moduleSearch.trim() === ''
+                                    ? "shrink-0 cursor-grab touch-none text-textcolor2 hover:text-primary active:cursor-grabbing"
+                                    : "shrink-0 cursor-not-allowed text-textcolor2/40"
+                                }
+                                draggable={moduleSearch.trim() === ''}
+                                aria-label={`${language.moveToModuleFolder}: ${entry.folder.name}`}
+                                use:tooltip={moduleSearch.trim() === '' ? language.moveToModuleFolder : language.search}
+                                onclick={(event) => event.stopPropagation()}
+                                ondragstart={(event) => beginFolderDrag(event, entry.folder)}
+                                ondragend={clearModuleDrag}
+                            >
+                                <GripVerticalIcon size={18}/>
+                            </button>
                             <button
                                 type="button"
                                 class="flex min-w-0 grow cursor-pointer items-center gap-2 text-left hover:text-primary"

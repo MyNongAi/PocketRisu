@@ -4,6 +4,7 @@ import {
     buildModuleFolderCatalog,
     findModuleFolderId,
     moveModuleByDrop,
+    moveModuleFolderByDrop,
     normalizeModuleFolders,
     type ModuleFolder,
 } from './moduleFolders'
@@ -215,6 +216,51 @@ describe('module drag and drop', () => {
 
         expect(contaminated[0].moduleIds).toEqual(['alpha', 'stale', 'omega'])
         expect(moved.folders[0].moduleIds).toEqual(['alpha', 'omega', 'recent', 'stale'])
+    })
+})
+
+describe('module folder drag and drop', () => {
+    const folders: ModuleFolder[] = [
+        { id: 'first', name: 'First', moduleIds: ['alpha', 'omega'] },
+        { id: 'second', name: 'Second', moduleIds: ['middle'] },
+        { id: 'empty', name: 'Empty', moduleIds: [] },
+    ]
+
+    it('moves every member as one block beside a root module', () => {
+        const moved = moveModuleFolderByDrop(
+            ['recent', 'alpha', 'omega', 'middle'],
+            folders,
+            'first',
+            { kind: 'module', moduleId: 'recent', position: 'before' },
+        )
+
+        expect(moved.orderedModuleIds).toEqual(['alpha', 'omega', 'recent', 'middle'])
+        expect(moved.folders.find((folder) => folder.id === 'first')?.moduleIds)
+            .toEqual(['alpha', 'omega'])
+    })
+
+    it('moves a folder before another folder as a complete block', () => {
+        const moved = moveModuleFolderByDrop(
+            ['recent', 'alpha', 'omega', 'middle'],
+            folders,
+            'second',
+            { kind: 'folder', folderId: 'first', position: 'before' },
+        )
+
+        expect(moved.orderedModuleIds).toEqual(['recent', 'middle', 'alpha', 'omega'])
+        expect(moved.folders.map((folder) => folder.id)).toEqual(['second', 'first', 'empty'])
+    })
+
+    it('reorders empty folders without inventing module ids', () => {
+        const moved = moveModuleFolderByDrop(
+            ['recent', 'alpha', 'omega', 'middle'],
+            folders,
+            'empty',
+            { kind: 'folder', folderId: 'first', position: 'before' },
+        )
+
+        expect(moved.orderedModuleIds).toEqual(['recent', 'alpha', 'omega', 'middle'])
+        expect(moved.folders.map((folder) => folder.id)).toEqual(['empty', 'first', 'second'])
     })
 })
 
