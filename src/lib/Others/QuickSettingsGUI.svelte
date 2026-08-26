@@ -13,8 +13,9 @@
     let activeIndex = $derived(modulesOnly ? 2 : QuickSettings.index);
 </script>
 
+{#if !modulesOnly}
 <div class="mb-2 flex shrink-0 gap-2">
-    {#if !modulesOnly && $selectedCharID >= 0}
+    {#if $selectedCharID >= 0}
         <button class={activeIndex === 0 ? 'text-textcolor ' : 'text-textcolor2'} onclick={() => {QuickSettings.index = 0}}>
             <BotIcon />
         </button>
@@ -26,6 +27,7 @@
         <PackageIcon />
     </button>
 </div>
+{/if}
 
 <div
     class="relative flex min-h-0 flex-1 flex-col px-4 py-6 text-textcolor rs-setting-cont-5"
