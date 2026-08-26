@@ -62,6 +62,9 @@
     async function getMaxMemoryRatio(): Promise<number> {
         const promptTemplateToken = await tokenizePreset(DBState.db.promptTemplate);
         const char = DBState.db.characters[$selectedCharID];
+        if (!char) {
+            return 0;
+        }
         const charToken = await getCharToken(char);
         const maxLoreToken = char.loreSettings?.tokenBudget ?? DBState.db.loreBookToken;
         const maxResponse = DBState.db.maxResponse;

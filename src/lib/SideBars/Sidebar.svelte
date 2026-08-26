@@ -592,6 +592,27 @@
     }
   }
 </script>
+
+{#snippet addCharacterButton(position: 'top' | 'bottom')}
+  <div class="flex flex-col items-center gap-2 px-2" data-add-character-button={position}>
+    <BaseRoundedButton
+      onClick={async () => {
+        addCharacter({reseter})
+      }}
+      ><svg viewBox="0 0 24 24" width="1.2em" height="1.2em"
+        ><path
+          fill="none"
+          stroke="currentColor"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          stroke-width="2"
+          d="M12 6v6m0 0v6m0-6h6m-6 0H6"
+        /></svg
+      ></BaseRoundedButton
+    >
+  </div>
+{/snippet}
+
 {#if DBState.db.menuSideBar}
 <div
   class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
@@ -751,6 +772,7 @@
   </div>
   {/if}
   <div class="character-list flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0" class:max-xs:hidden={$leftBarCollapsed} use:touchDragContainer>
+    {@render addCharacterButton('top')}
     <div class="h-4 min-h-4 w-14" role="listitem" data-spacer-index="0" ondragover={(e) => {
       if(!getCurrentSidebarDrag(e)){ return }
       e.preventDefault()
@@ -1037,23 +1059,7 @@
         }
       }} ondragenter={preventAll}></div>
     {/each}
-    <div class="flex flex-col items-center gap-2 px-2">
-      <BaseRoundedButton
-        onClick={async () => {
-          addCharacter({reseter}) 
-        }}
-        ><svg viewBox="0 0 24 24" width="1.2em" height="1.2em"
-          ><path
-            fill="none"
-            stroke="currentColor"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-          /></svg
-        ></BaseRoundedButton
-      >
-    </div>
+    {@render addCharacterButton('bottom')}
   </div>
   {#if DBState.db.hamburgerButtonBottom}
   <div class="border-t border-t-selected w-full relative text-white" class:max-xs:hidden={$leftBarCollapsed}>
@@ -1223,10 +1229,7 @@
       {/if}
     </div>
     {#if QuickSettings.open}
-      <QuickSettingsGui
-        canEditCharacter={hasEditableCharacter}
-        onCharacterRequired={openCharacterTab}
-      />
+      <QuickSettingsGui />
     {:else if $selectedCharID < 0 || $settingsOpen}
       <span class="block text-base font-semibold text-textcolor mt-2">{language.recentChatsTitle}</span>
       <div class="flex items-center justify-between gap-2 mt-2">
