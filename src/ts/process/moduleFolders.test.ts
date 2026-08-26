@@ -3,6 +3,7 @@ import {
     assignModuleToFolder,
     buildModuleFolderCatalog,
     findModuleFolderId,
+    moveModuleByDrop,
     normalizeModuleFolders,
     type ModuleFolder,
 } from './moduleFolders'
@@ -142,6 +143,78 @@ describe('module folder membership', () => {
     it('treats an unknown target as no folder', () => {
         const folders: ModuleFolder[] = [{ id: 'a', name: 'A', moduleIds: ['alpha'] }]
         expect(assignModuleToFolder(folders, 'alpha', 'missing')[0].moduleIds).toEqual([])
+    })
+})
+
+describe('module drag and drop', () => {
+    const folders: ModuleFolder[] = [
+        { id: 'favorites', name: 'Favorites', moduleIds: ['alpha', 'omega'] },
+        { id: 'empty', name: 'Empty', moduleIds: [] },
+    ]
+
+    it('reorders root modules without changing their folder membership', () => {
+        const moved = moveModuleByDrop(
+            ['recent', 'alpha', 'omega', 'middle'],
+            folders,
+            'middle',
+            { kind: 'module', moduleId: 'recent', position: 'before' },
+        )
+
+        expect(moved.orderedModuleIds).toEqual(['middle', 'recent', 'alpha', 'omega'])
+        expect(findModuleFolderId(moved.folders, 'middle')).toBe('')
+    })
+
+    it('moves a module into a folder and appends it after that folder members', () => {
+        const moved = moveModuleByDrop(
+            ['recent', 'alpha', 'omega', 'middle'],
+            folders,
+            'recent',
+            { kind: 'folder', folderId: 'favorites' },
+        )
+
+        expect(moved.orderedModuleIds).toEqual(['alpha', 'omega', 'recent', 'middle'])
+        expect(moved.folders[0].moduleIds).toEqual(['alpha', 'omega', 'recent'])
+    })
+
+    it('moves between folders by dropping beside a member', () => {
+        const moved = moveModuleByDrop(
+            ['recent', 'alpha', 'omega', 'middle'],
+            folders,
+            'middle',
+            { kind: 'module', moduleId: 'alpha', position: 'after' },
+        )
+
+        expect(moved.orderedModuleIds).toEqual(['recent', 'alpha', 'middle', 'omega'])
+        expect(moved.folders[0].moduleIds).toEqual(['alpha', 'middle', 'omega'])
+    })
+
+    it('returns a nested module to the root list', () => {
+        const moved = moveModuleByDrop(
+            ['recent', 'alpha', 'omega', 'middle'],
+            folders,
+            'alpha',
+            { kind: 'root' },
+        )
+
+        expect(moved.orderedModuleIds).toEqual(['recent', 'omega', 'middle', 'alpha'])
+        expect(findModuleFolderId(moved.folders, 'alpha')).toBe('')
+    })
+
+    it('does not mutate inputs or lose stale folder metadata', () => {
+        const contaminated: ModuleFolder[] = [{
+            id: 'favorites',
+            name: 'Favorites',
+            moduleIds: ['alpha', 'stale', 'omega'],
+        }]
+        const moved = moveModuleByDrop(
+            ['recent', 'alpha', 'omega'],
+            contaminated,
+            'recent',
+            { kind: 'folder', folderId: 'favorites' },
+        )
+
+        expect(contaminated[0].moduleIds).toEqual(['alpha', 'stale', 'omega'])
+        expect(moved.folders[0].moduleIds).toEqual(['alpha', 'omega', 'recent', 'stale'])
     })
 })
 

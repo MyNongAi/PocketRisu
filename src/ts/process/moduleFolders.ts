@@ -16,6 +16,17 @@ export type ModuleCatalogEntry<T extends FolderableModule> =
     | { kind: 'module'; module: T }
     | { kind: 'folder'; folder: ModuleFolder; modules: T[] }
 
+export type ModuleDropTarget =
+    | { kind: 'module'; moduleId: string; position: 'before' | 'after' }
+    | { kind: 'folder'; folderId: string }
+    | { kind: 'root' }
+
+export interface ModuleDropResult {
+    folders: ModuleFolder[]
+    /** Top-to-bottom visual module order after the drop. */
+    orderedModuleIds: string[]
+}
+
 function normalizeSearch(search: string) {
     return search.trim().toLocaleLowerCase()
 }
@@ -186,4 +197,95 @@ export function assignModuleToFolder(
         if(targetExists && folder.id === targetFolderId) moduleIds.push(moduleId)
         return { ...folder, moduleIds }
     })
+}
+
+function uniqueModuleIds(moduleIds: ReadonlyArray<string>) {
+    const seen = new Set<string>()
+    return moduleIds.filter((id) => {
+        if(typeof id !== 'string' || id === '' || seen.has(id)) return false
+        seen.add(id)
+        return true
+    })
+}
+
+/**
+ * Apply a module drag/drop to the small ordering and folder overlays only.
+ *
+ * `orderedModuleIds` is the current top-to-bottom visual order. The caller can
+ * persist its reverse as `moduleActivationHistory`, whose newest item is stored
+ * last. This keeps a manual drag immediately visible while preserving the
+ * existing rule that the next activated module moves to the top.
+ */
+export function moveModuleByDrop(
+    orderedModuleIds: ReadonlyArray<string>,
+    folders: unknown,
+    draggedModuleId: string,
+    target: ModuleDropTarget,
+): ModuleDropResult {
+    const currentOrder = uniqueModuleIds(orderedModuleIds)
+    const normalizedFolders = normalizeModuleFolders(folders)
+    if(!currentOrder.includes(draggedModuleId)){
+        return { folders: normalizedFolders, orderedModuleIds: currentOrder }
+    }
+
+    if(target.kind === 'module' && target.moduleId === draggedModuleId){
+        return { folders: normalizedFolders, orderedModuleIds: currentOrder }
+    }
+
+    let targetFolderId = ''
+    if(target.kind === 'folder'){
+        targetFolderId = normalizedFolders.some((folder) => folder.id === target.folderId)
+            ? target.folderId
+            : ''
+    }
+    else if(target.kind === 'module'){
+        targetFolderId = findModuleFolderId(normalizedFolders, target.moduleId)
+    }
+
+    let nextFolders = assignModuleToFolder(
+        normalizedFolders,
+        draggedModuleId,
+        targetFolderId,
+    )
+    const nextOrder = currentOrder.filter((id) => id !== draggedModuleId)
+    let insertionIndex = nextOrder.length
+
+    if(target.kind === 'module'){
+        const targetIndex = nextOrder.indexOf(target.moduleId)
+        if(targetIndex === -1){
+            return { folders: normalizedFolders, orderedModuleIds: currentOrder }
+        }
+        insertionIndex = targetIndex + (target.position === 'after' ? 1 : 0)
+    }
+    else if(target.kind === 'folder' && targetFolderId){
+        const targetMembers = new Set(
+            nextFolders.find((folder) => folder.id === targetFolderId)?.moduleIds ?? [],
+        )
+        const lastMemberIndex = nextOrder.reduce(
+            (last, id, index) => targetMembers.has(id) ? index : last,
+            -1,
+        )
+        insertionIndex = lastMemberIndex === -1 ? nextOrder.length : lastMemberIndex + 1
+    }
+
+    nextOrder.splice(insertionIndex, 0, draggedModuleId)
+
+    // Keep folder metadata useful to exports and future catalog implementations:
+    // known members follow the same visual order, while stale ids retain their
+    // original relative order at the end.
+    const orderRank = new Map(nextOrder.map((id, index) => [id, index]))
+    nextFolders = nextFolders.map((folder) => ({
+        ...folder,
+        moduleIds: folder.moduleIds
+            .map((id, index) => ({ id, index, rank: orderRank.get(id) }))
+            .sort((a, b) => {
+                if(a.rank !== undefined && b.rank !== undefined) return a.rank - b.rank
+                if(a.rank !== undefined) return -1
+                if(b.rank !== undefined) return 1
+                return a.index - b.index
+            })
+            .map(({ id }) => id),
+    }))
+
+    return { folders: nextFolders, orderedModuleIds: nextOrder }
 }
