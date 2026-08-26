@@ -1180,42 +1180,48 @@
     </button>
   {/if}
   {#if sideBarMode === 0}
-    {#if hasEditableCharacter || QuickSettings.open}
-      <div class="w-full h-8 min-h-8 border-l border-b border-r border-selected relative bottom-6 rounded-b-md flex">
+    <!-- Keep the primary sidebar destinations stable on the recent-chat home,
+         selected-character views, and the module panel alike. Previously the
+         home hid this row until Modules was opened, which made navigation
+         appear as a one-off module-only control. -->
+    <div class="w-full h-8 min-h-8 border-l border-b border-r border-selected relative bottom-6 rounded-b-md flex">
+      <button
+        type="button"
+        onclick={openChatTab}
+        class="grow border-r border-r-selected rounded-bl-md"
+        class:text-textcolor2={QuickSettings.open || $botMakerMode || devTool}
+        aria-pressed={!QuickSettings.open && !$botMakerMode && !devTool}
+      >{language.Chat}</button>
+      <button
+        type="button"
+        onclick={openCharacterTab}
+        class="grow border-r border-r-selected"
+        class:text-textcolor2={QuickSettings.open || !$botMakerMode || devTool}
+        aria-pressed={!QuickSettings.open && $botMakerMode && !devTool}
+      >{language.character}</button>
+      <button
+        type="button"
+        onclick={openModuleTab}
+        class="grow rounded-br-md"
+        class:text-textcolor2={!QuickSettings.open || (hasEditableCharacter && QuickSettings.index !== 2)}
+        aria-pressed={QuickSettings.open && (!hasEditableCharacter || QuickSettings.index === 2)}
+      >{language.module}</button>
+      {#if DBState.db.enableDevTools}
         <button
           type="button"
-          onclick={openChatTab}
-          class="grow border-r border-r-selected rounded-bl-md"
-          class:text-textcolor2={QuickSettings.open || $botMakerMode || devTool}
-        >{language.Chat}</button>
-        <button
-          type="button"
-          onclick={openCharacterTab}
-          class="grow border-r border-r-selected"
-          class:text-textcolor2={QuickSettings.open || !$botMakerMode || devTool}
-        >{language.character}</button>
-        <button
-          type="button"
-          onclick={openModuleTab}
-          class="grow rounded-br-md"
-          class:text-textcolor2={!QuickSettings.open || (hasEditableCharacter && QuickSettings.index !== 2)}
-        >{language.module}</button>
-        {#if DBState.db.enableDevTools}
-          <button
-            type="button"
-            onclick={() => {
-              QuickSettings.open = false
-              devTool = true
-            }}
-            class="border-l border-l-selected rounded-br-md px-1"
-            class:text-textcolor2={!devTool || QuickSettings.open}
-            aria-label="Developer tools"
-          >
-            <WrenchIcon size={18} />
-          </button>
-        {/if}
-      </div>
-    {/if}
+          onclick={() => {
+            QuickSettings.open = false
+            devTool = true
+          }}
+          class="border-l border-l-selected rounded-br-md px-1"
+          class:text-textcolor2={!devTool || QuickSettings.open}
+          aria-label="Developer tools"
+          aria-pressed={devTool && !QuickSettings.open}
+        >
+          <WrenchIcon size={18} />
+        </button>
+      {/if}
+    </div>
     {#if QuickSettings.open}
       <QuickSettingsGui modulesOnly={!hasEditableCharacter} />
     {:else if $selectedCharID < 0 || $settingsOpen}
