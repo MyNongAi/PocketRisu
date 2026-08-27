@@ -107,7 +107,6 @@ describe('buildModuleFolderCatalog', () => {
                 id: 'similar',
                 name: '[유사 후보] Similar',
                 moduleIds: ['omega'],
-                duplicateCandidate: { kind: 'module', key: 'similar' },
             },
         ])
 
