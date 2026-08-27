@@ -99,14 +99,20 @@ describe('buildModuleFolderCatalog', () => {
             .toEqual(['alpha', 'omega'])
     })
 
-    it('keeps empty folders at the top in metadata order and ignores stale module ids', () => {
+    it('keeps similarity folders above empty folders and ignores stale module ids', () => {
         const entries = buildModuleFolderCatalog(modules, [
             { id: 'stale', name: 'Stale', moduleIds: ['missing'] },
             { id: 'empty', name: 'Empty', moduleIds: [] },
+            {
+                id: 'similar',
+                name: '[유사 후보] Similar',
+                moduleIds: ['omega'],
+                duplicateCandidate: { kind: 'module', key: 'similar' },
+            },
         ])
 
-        expect(entries.slice(0, 2).map((entry) => entry.kind === 'folder' ? entry.folder.id : 'module'))
-            .toEqual(['stale', 'empty'])
+        expect(entries.slice(0, 3).map((entry) => entry.kind === 'folder' ? entry.folder.id : 'module'))
+            .toEqual(['similar', 'stale', 'empty'])
     })
 
     it('uses the first folder when malformed metadata duplicates membership', () => {
