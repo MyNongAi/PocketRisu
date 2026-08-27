@@ -30,7 +30,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
     import { updateInlayScreen } from "src/ts/process/inlayScreen";
     import { registerOnnxModel } from "src/ts/process/transformers";
     import MultiLangInput from "../UI/GUI/MultiLangInput.svelte";
-    import { applyModule } from "src/ts/process/modules";
+    import { addModuleToDatabase, applyModule } from "src/ts/process/modules";
     import { exportCharacterPackage, importPackageToCharacter } from "src/ts/characterPackage";
     import { exportRegex, importRegex } from "src/ts/process/scripts";
     import SliderInput from "../UI/GUI/SliderInput.svelte";
@@ -644,7 +644,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
     <Button size="md" className="mt-2" onclick={async () => {
         const char = getCurrentCharacter()
         const m = convertCharacterToModule(char)
-        DBState.db.modules.push(m)
+        addModuleToDatabase(m)
         notifySuccess(language.successfullyConverted)
     }}>{language.convertToModule}</Button>
 

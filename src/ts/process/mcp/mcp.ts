@@ -1,7 +1,7 @@
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { MCPClient, type JsonRPC, type MCPTool, type RPCToolCallContent } from "./mcplib";
 import { DBState } from "src/ts/stores.svelte";
-import { getModuleMcps, type ModuleRuntimeContext } from "../modules";
+import { addModuleToDatabase, getModuleMcps, type ModuleRuntimeContext } from "../modules";
 import { alertInput, notifySuccess, notifyError } from "src/ts/alert";
 import { v4 } from "uuid";
 import type { MCPClientLike } from "./internalmcp";
@@ -221,8 +221,7 @@ export async function importMCPModule(){
             notifyError('MCP module not found or invalid URL');
             return;
         }
-        const db = getDatabase();
-        db.modules.push({
+        addModuleToDatabase({
             name: meta.serverInfo.name,
             description: "MCP from " + x,
             mcp: {

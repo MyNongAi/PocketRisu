@@ -75,3 +75,20 @@ export function recordModuleActivation(
         moduleId,
     ]
 }
+
+/**
+ * Adds newly created/imported modules to the same newest-first catalog used by
+ * module activation. The stored history remains oldest -> newest.
+ */
+export function recordNewModules(
+    history: ReadonlyArray<string> | undefined,
+    fallbackOrders: Array<ReadonlyArray<string> | undefined>,
+    moduleIds: ReadonlyArray<string>,
+): string[] {
+    let next = seedModuleActivationHistory(history, ...fallbackOrders)
+    for(const moduleId of moduleIds){
+        if(!moduleId) continue
+        next = recordModuleActivation(next, moduleId)
+    }
+    return next
+}

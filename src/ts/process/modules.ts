@@ -12,6 +12,8 @@ import {get} from "svelte/store"
 import { convertCharacterToModule, convertModuleToCharacter } from "../interchangeability"
 import { exportCharacterCard, importCharacterProcess } from "../characterCards"
 import { collectModuleRuntimeIds, collectModuleRuntimeUi } from "./moduleRuntime"
+import { recordNewModules } from "./moduleSort"
+import type { ImportProgressReporter } from "../importProgress"
 
 export interface MCPModule{
     url: string
@@ -35,6 +37,23 @@ export interface RisuModule{
     icon?:string
     /** PocketRisu collection provenance. Ignored by upstream clients. */
     sourceInfo?: import('../sourceCollection').SourceImportInfo
+}
+
+/** Inserts modules and records them as the newest catalog entries. */
+export function addModulesToDatabase(modules: readonly RisuModule[]): void {
+    if(modules.length === 0) return
+    const db = getDatabase()
+    db.modules.push(...modules)
+    db.moduleActivationHistory = recordNewModules(
+        db.moduleActivationHistory,
+        [db.enabledModules],
+        modules.map((module) => module.id),
+    )
+    refreshModules()
+}
+
+export function addModuleToDatabase(module: RisuModule): void {
+    addModulesToDatabase([module])
 }
 
 /** Stable module selection owned by one generation target. */
@@ -136,7 +155,10 @@ export async function exportModuleLegacy(module:RisuModule, arg:{
     return apb.buffer
 }
 
-export async function readModule(buf:Buffer):Promise<RisuModule> {
+export async function readModule(
+    buf: Buffer,
+    options: { onProgress?: ImportProgressReporter } = {},
+):Promise<RisuModule> {
     let pos = 0
 
     const readLength = () => {
@@ -210,7 +232,14 @@ export async function readModule(buf:Buffer):Promise<RisuModule> {
                 } catch (error) {
                     failed.push(task)
                 } finally {
-                    alertWait(`Loading... (Adding Assets ${completed} / ${totalAssets})`)
+                    if(options.onProgress){
+                        options.onProgress({
+                            label: `${language.importProgress.savingAssets} (${completed}/${totalAssets})`,
+                            progress: totalAssets > 0 ? 20 + (completed / totalAssets * 65) : 85,
+                        })
+                    } else {
+                        alertWait(`Loading... (Adding Assets ${completed} / ${totalAssets})`)
+                    }
                 }
             })()
             inFlight.add(promise)
@@ -260,118 +289,119 @@ export async function readModule(buf:Buffer):Promise<RisuModule> {
             throw new Error(`Failed to save ${failed.length} assets`)
         }
     } finally {
-        alertClear()
+        if(!options.onProgress) alertClear()
     }
 
     module.id = v4()
     return module
 }
 
-export async function importModule(){
-    const f = await selectSingleFile(['json', 'lorebook', 'risum', 'charx'])
-    if(!f){
-        return
-    }
-    let fileData = f.data
-    const db = getDatabase()
-    if(f.name.endsWith('.charx')){
-        try {
-            const buf = Buffer.from(fileData)
-            const char = await importCharacterProcess({
-                name: f.name,
-                data: buf,
-                returnCharacter: true
-            })
-            if(!char || typeof char === 'number'){
-                alertError(language.errors.noData)
-                return
-            }
-            const module = convertCharacterToModule(char)
-            db.modules.push(module)
-        } catch (error) {
-            console.error(error)
-            alertError(language.errors.noData)
-        }
-        notifySuccess(language.successImport)
-        return
-    }
-    if(f.name.endsWith('.risum')){
-        try {
-            const buf = Buffer.from(fileData)
-            const module = await readModule(buf)
-            db.modules.push(module)
-            notifySuccess(language.successImport)
-        } catch (error) {
-            console.error(error)
-            alertError(language.errors.noData)
-        }
-        return
-    }
-    try {
-        const importData = JSON.parse(Buffer.from(fileData).toString())
-        if(importData.type === 'risuModule'){
-            if(
-                (!importData.name)
-                || (!importData.id)
-            ){
-                alertError(language.errors.noData)
-                return
-            }
-            importData.id = v4()
+export interface ImportModuleFileOptions {
+    suppressSuccess?: boolean
+    onProgress?: ImportProgressReporter
+}
 
-            if(importData.lowLevelAccess){
-                const conf = await alertConfirm(language.lowLevelAccessConfirm)
-                if(!conf){
-                    return false
-                }
-            }
-            db.modules.push(importData)
-            notifySuccess(language.successImport)
-            return
+export async function importModuleFile(
+    file: { name: string, data: Uint8Array },
+    options: ImportModuleFileOptions = {},
+): Promise<RisuModule | undefined> {
+    const fileName = file.name.toLocaleLowerCase()
+    const finish = (module: RisuModule) => {
+        addModuleToDatabase(module)
+        options.onProgress?.({
+            label: language.importProgress.savingModule,
+            progress: 90,
+        })
+        if(!options.suppressSuccess) notifySuccess(language.successImport)
+        return module
+    }
+
+    if(fileName.endsWith('.charx')){
+        options.onProgress?.({
+            label: language.importProgress.readingModule,
+            progress: 20,
+        })
+        const char = await importCharacterProcess({
+            name: file.name,
+            data: Buffer.from(file.data),
+            returnCharacter: true,
+            onProgress: options.onProgress,
+            suppressSuccess: true,
+        })
+        if(!char || typeof char === 'number'){
+            throw new Error(language.errors.noData)
         }
-        // importData.type === 'risu' in conflict with HypaV3 preset exports
-        // difference: record vs. array
-        if(importData.type === 'risu' && importData.data && Array.isArray(importData.data)){
-            const lores:loreBook[] = importData.data
-            const importModule = {
-                name: importData.name || 'Imported Lorebook',
-                description: importData.description || 'Converted from risu lorebook',
-                lorebook: lores,
-                id: v4()
-            }
-            db.modules.push(importModule)
-            notifySuccess(language.successImport)
-            return
+        return finish(convertCharacterToModule(char))
+    }
+
+    if(fileName.endsWith('.risum')){
+        options.onProgress?.({
+            label: language.importProgress.readingModule,
+            progress: 20,
+        })
+        const module = await readModule(Buffer.from(file.data), {
+            onProgress: options.onProgress,
+        })
+        if(!module) throw new Error(language.errors.noData)
+        return finish(module)
+    }
+
+    const importData = JSON.parse(Buffer.from(file.data).toString())
+    if(importData.type === 'risuModule'){
+        if((!importData.name) || (!importData.id)){
+            throw new Error(language.errors.noData)
         }
-        if(importData.entries){
-            const lores:loreBook[] = convertExternalLorebook(importData.entries)
-            const importModule = {
-                name: importData.name || 'Imported Lorebook',
-                description: importData.description || 'Converted from external lorebook',
-                lorebook: lores,
-                id: v4()
-            }
-            db.modules.push(importModule)
-            notifySuccess(language.successImport)
-            return
+        importData.id = v4()
+
+        if(importData.lowLevelAccess){
+            const conf = await alertConfirm(language.lowLevelAccessConfirm)
+            if(!conf) return
         }
-        if(importData.type === 'regex'  && importData.data){
-            const regexs:customscript[] = importData.data
-            const importModule = {
-                name: importData.name || 'Imported Regex',
-                description: importData.description || 'Converted from risu regex',
-                regex: regexs,
-                id: v4()
-            }
-            db.modules.push(importModule)
-            notifySuccess(language.successImport)
-            return
-        }
+        return finish(importData)
+    }
+
+    // importData.type === 'risu' conflicts with HypaV3 preset exports.
+    // Risu lorebooks use an array while presets use a record.
+    if(importData.type === 'risu' && importData.data && Array.isArray(importData.data)){
+        const lores:loreBook[] = importData.data
+        return finish({
+            name: importData.name || 'Imported Lorebook',
+            description: importData.description || 'Converted from risu lorebook',
+            lorebook: lores,
+            id: v4(),
+        })
+    }
+    if(importData.entries){
+        const lores:loreBook[] = convertExternalLorebook(importData.entries)
+        return finish({
+            name: importData.name || 'Imported Lorebook',
+            description: importData.description || 'Converted from external lorebook',
+            lorebook: lores,
+            id: v4(),
+        })
+    }
+    if(importData.type === 'regex' && importData.data){
+        const regexs:customscript[] = importData.data
+        return finish({
+            name: importData.name || 'Imported Regex',
+            description: importData.description || 'Converted from risu regex',
+            regex: regexs,
+            id: v4(),
+        })
+    }
+
+    throw new Error(language.errors.noData)
+}
+
+export async function importModule(){
+    const file = await selectSingleFile(['json', 'lorebook', 'risum', 'charx'])
+    if(!file) return
+    try {
+        await importModuleFile(file)
     } catch (error) {
         console.error(error)
+        alertError(language.errors.noData)
     }
-
-    alertNormal(language.errors.noData)
 }
 
 function getModuleById(id:string){

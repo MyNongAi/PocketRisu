@@ -5,7 +5,7 @@
     import { DBState } from 'src/ts/stores.svelte';
     import Button from "src/lib/UI/GUI/Button.svelte";
     import ModuleMenu from "src/lib/Setting/Pages/Module/ModuleMenu.svelte";
-    import { exportModule, importModule, refreshModules, type RisuModule } from "src/ts/process/modules";
+    import { addModuleToDatabase, exportModule, importModule, refreshModules, type RisuModule } from "src/ts/process/modules";
     import {
         ChevronDownIcon,
         ChevronRightIcon,
@@ -45,6 +45,8 @@
     import type { ModuleCatalogEntry } from "src/ts/process/moduleFolders";
     import type { ModuleDropTarget } from "src/ts/process/moduleFolders";
     import type { ModuleFolderDropTarget } from "src/ts/process/moduleFolders";
+    import { importDroppedFiles } from "src/ts/dropImport";
+    import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
 
     type ModuleCatalogRow =
         | { kind: 'module'; module: RisuModule; nested: boolean }
@@ -64,6 +66,7 @@
     let draggedModuleId = $state('')
     let draggedFolderId = $state('')
     let moduleDropIndicator = $state('')
+    let externalModuleDropActive = $state(false)
     let draggingModuleCatalogItem = $derived(!!draggedModuleId || !!draggedFolderId)
     let { quickPanel = false }: { quickPanel?: boolean } = $props()
     let moduleFolders = $derived(normalizeModuleFolders(DBState.db.moduleFolders))
@@ -175,16 +178,15 @@
     }
 
     function beginModuleDrag(event: DragEvent, module: RisuModule){
-        if(moduleSearch.trim() !== ''){
-            event.preventDefault()
-            return
-        }
         draggedModuleId = module.id
         draggedFolderId = ''
         folderPickerModule = null
         if(event.dataTransfer){
             event.dataTransfer.effectAllowed = 'move'
-            event.dataTransfer.setData('text/plain', module.id)
+            // The visible drag label should never expose a malformed legacy id
+            // as the literal string "null". Internal routing uses component
+            // state and the app-wide custom drag marker, not this text payload.
+            event.dataTransfer.setData('text/plain', module.name || language.modules)
         }
     }
 
@@ -317,6 +319,37 @@
         mode = 1
     }
 
+    function isExternalFileDrag(event: DragEvent){
+        const types = Array.from(event.dataTransfer?.types ?? [])
+        return types.includes('Files')
+            && !types.includes(RISU_APP_INTERNAL_DRAG_TYPE)
+            && !types.includes(RISU_SIDEBAR_DRAG_TYPE)
+    }
+
+    function previewExternalModuleImport(event: DragEvent){
+        if(!isExternalFileDrag(event)) return
+        event.preventDefault()
+        event.stopPropagation()
+        if(event.dataTransfer) event.dataTransfer.dropEffect = 'copy'
+        externalModuleDropActive = true
+    }
+
+    function leaveExternalModuleImport(event: DragEvent){
+        if(!externalModuleDropActive) return
+        const nextTarget = event.relatedTarget
+        const surface = event.currentTarget as HTMLElement
+        if(nextTarget instanceof Node && surface.contains(nextTarget)) return
+        externalModuleDropActive = false
+    }
+
+    async function dropExternalFilesAsModules(event: DragEvent){
+        if(!isExternalFileDrag(event) || !event.dataTransfer?.files.length) return
+        event.preventDefault()
+        event.stopPropagation()
+        externalModuleDropActive = false
+        await importDroppedFiles(Array.from(event.dataTransfer.files), 'module')
+    }
+
     onDestroy(() => {
         refreshModules()
     })
@@ -378,13 +411,10 @@
         <div class="pl-3 pt-3 text-left flex items-center">
             <button
                 type="button"
-                class={moduleSearch.trim() === ''
-                    ? "mr-2 shrink-0 cursor-grab touch-none text-textcolor2 hover:text-primary active:cursor-grabbing"
-                    : "mr-2 shrink-0 cursor-not-allowed text-textcolor2/40"
-                }
-                draggable={moduleSearch.trim() === ''}
+                class="mr-2 shrink-0 cursor-grab touch-none text-textcolor2 hover:text-primary active:cursor-grabbing"
+                draggable={true}
                 aria-label={`${language.moveToModuleFolder}: ${rmodule.name}`}
-                use:tooltip={moduleSearch.trim() === '' ? language.moveToModuleFolder : language.search}
+                use:tooltip={language.moveToModuleFolder}
                 onclick={(event) => event.stopPropagation()}
                 ondragstart={(event) => beginModuleDrag(event, rmodule)}
                 ondragend={clearModuleDrag}
@@ -518,7 +548,16 @@
     </div>
 {/snippet}
 
-<div class={quickPanel ? 'flex h-full min-h-0 flex-col' : 'contents'}>
+<div
+    class={quickPanel ? 'relative flex h-full min-h-0 flex-col' : 'contents'}
+    data-module-file-drop-surface
+    role="region"
+    aria-label={language.modules}
+    ondragenter={previewExternalModuleImport}
+    ondragover={previewExternalModuleImport}
+    ondragleave={leaveExternalModuleImport}
+    ondrop={dropExternalFilesAsModules}
+>
 {#if mode === 0}
     <SettingPage
         title={language.modules}
@@ -528,6 +567,16 @@
     <div class="mt-4 flex gap-2 items-center">
         <TextInput className="grow" placeholder={language.search} bind:value={moduleSearch} />
         {@render moduleActions()}
+    </div>
+
+    <div
+        class={`flex items-center justify-center gap-2 overflow-hidden rounded-md border border-dashed transition-all
+            ${externalModuleDropActive ? 'mt-3 h-12 border-primary bg-primary/15 px-3 text-primary opacity-100' : 'h-0 border-transparent opacity-0'}`}
+        data-module-file-drop-indicator
+        role="status"
+    >
+        <HardDriveUpload size={18}/>
+        <span class="text-sm font-bold">{language.importModule} · CHARX / RISUM</span>
     </div>
 
     <div
@@ -669,7 +718,7 @@
     >
     <ModuleMenu bind:currentModule={tempModule}/>
     <Button className="mt-6" onclick={() => {
-        DBState.db.modules.push(tempModule)
+        addModuleToDatabase(tempModule)
         notifySuccess(language.moduleCreated)
         mode = 0
     }}>{language.createModule}</Button>

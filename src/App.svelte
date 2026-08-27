@@ -8,11 +8,7 @@
     import GridChars from './lib/Others/GridCatalog.svelte';
     import BookmarkList from './lib/Others/BookmarkList.svelte';
     import Settings from './lib/Setting/Settings.svelte';
-    import { showRealmInfoStore, importCharacterProcess } from './ts/characterCards';
-    import { importPreset, getDatabase, setDatabase } from './ts/storage/database.svelte';
-    import { readModule } from './ts/process/modules';
-    import { notifySuccess } from './ts/alert';
-    import { language } from './lang';
+    import { showRealmInfoStore } from './ts/characterCards';
     import SavePopupIconComp from './lib/Others/SavePopupIcon.svelte';
     import Botpreset from './lib/Setting/botpreset.svelte';
     import Modelpreset from './lib/Setting/modelpreset.svelte';
@@ -23,7 +19,6 @@
     import MobileHeader from './lib/Mobile/MobileHeader.svelte';
     import MobileBody from './lib/Mobile/MobileBody.svelte';
     import MobileFooter from './lib/Mobile/MobileFooter.svelte';
-    import { checkCharOrder } from './ts/globalApi.svelte';
     import { ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte';
     import { hypaV3ModalOpen, hypaV3ProgressStore } from "./ts/stores.svelte";
     import { assetViewerStore } from './ts/assetViewer.svelte';
@@ -41,7 +36,7 @@
     import ImportProgressToaster from './lib/UI/GUI/ImportProgressToaster.svelte';
     import sendSound from './etc/send.mp3'
     import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
-    import { runImportBatch } from './ts/importProgress';
+    import { importDroppedFiles } from './ts/dropImport';
 
     let gridOpen = $state(false)
     let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
@@ -63,54 +58,29 @@
         e.dataTransfer?.setData(RISU_APP_INTERNAL_DRAG_TYPE, 'true')
     }
 
-    const importDroppedFiles = async (files:FileList) => {
-        let importedCharacter = false
-        const batch = Array.from(files)
+    const captureLegacyModuleDrop = async (e: DragEvent) => {
+        const types = Array.from(e.dataTransfer?.types ?? [])
+        if(
+            types.includes(RISU_APP_INTERNAL_DRAG_TYPE)
+            || types.includes(RISU_SIDEBAR_DRAG_TYPE)
+            || !e.dataTransfer?.files.length
+        ) return
 
-        // Keep the file picker behavior: accept the whole batch, but import
-        // entries sequentially so asset writes and character ordering cannot
-        // race each other on the shared PocketRisu database.
-        const result = await runImportBatch(batch, async (file, report) => {
-            const name = file.name.toLowerCase()
-
-            if(name.endsWith('.risup')){
-                report({ label: language.importProgress.readingPreset, progress: 20 })
-                const data = new Uint8Array(await file.arrayBuffer())
-                await importPreset({ name: file.name, data })
-                report({ label: language.importProgress.savingPreset, progress: 90 })
-            }
-            else if(name.endsWith('.risum')){
-                report({ label: language.importProgress.readingModule, progress: 20 })
-                const data = new Uint8Array(await file.arrayBuffer())
-                const module = await readModule(Buffer.from(data))
-                const db = getDatabase()
-                db.modules.push(module)
-                report({ label: language.importProgress.savingModule, progress: 90 })
-            }
-            else{
-                await importCharacterProcess({
-                    name: file.name,
-                    data: file,
-                    onProgress: report,
-                    suppressSuccess: true,
-                })
-                importedCharacter = true
-            }
-        })
-
-        if(importedCharacter){
-            checkCharOrder()
-        }
-        if(result.completed > 0){
-            notifySuccess(`${result.completed}/${result.total} ${language.successImport}`)
-        }
+        const files = Array.from(e.dataTransfer.files)
+        // A dedicated image/persona drop target may stop bubbling. Capture a
+        // pure RISUM batch first so the legacy module format truly works from
+        // anywhere without stealing mixed/image drops from those editors.
+        if(!files.every((file) => file.name.toLocaleLowerCase().endsWith('.risum'))) return
+        e.preventDefault()
+        e.stopPropagation()
+        await importDroppedFiles(files)
     }
 
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-<main class="flex bg-bg w-full h-full max-w-100vw text-textcolor" ondragover={(e) => {
+<main class="flex bg-bg w-full h-full max-w-100vw text-textcolor" ondropcapture={captureLegacyModuleDrop} ondragover={(e) => {
     const dropEffect = getMainDropEffect(e)
     e.preventDefault()
     e.dataTransfer.dropEffect = dropEffect
@@ -123,7 +93,7 @@
     if (e.dataTransfer.files.length === 0) {
         return
     }
-    await importDroppedFiles(e.dataTransfer.files)
+    await importDroppedFiles(Array.from(e.dataTransfer.files))
 }} onclick={() => {
     if(keepingSessionAlive){
         return
