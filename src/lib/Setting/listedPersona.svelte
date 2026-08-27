@@ -53,14 +53,14 @@
                 </button>
             </div>
         </div>
-        <div class="grid min-h-0 flex-1 grid-cols-2 gap-3 overflow-y-auto p-4 sm:grid-cols-3 md:grid-cols-4">
+        <div class="grid min-h-0 flex-1 auto-rows-max content-start grid-cols-2 gap-3 overflow-y-auto p-4 sm:grid-cols-3 md:grid-cols-4">
             {#each DBState.db.personas as persona, i}
                 <button
                     type="button"
                     aria-label={persona.name || 'User'}
                     aria-pressed={i === DBState.db.selectedPersona}
                     onclick={() => selectPersona(i)}
-                    class={`group min-w-0 cursor-pointer overflow-hidden rounded-xl border bg-selected/20 text-left text-textcolor transition-colors hover:border-primary hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-primary
+                    class={`group min-w-0 self-start cursor-pointer overflow-hidden rounded-xl border bg-selected/20 text-left text-textcolor transition-colors hover:border-primary hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-primary
                         ${i === DBState.db.selectedPersona ? 'border-primary ring-2 ring-primary/40' : 'border-darkborderc'}`}
                 >
                     <div class="relative aspect-square w-full overflow-hidden bg-selected/45">
