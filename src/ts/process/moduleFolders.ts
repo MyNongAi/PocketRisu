@@ -91,9 +91,11 @@ export function normalizeModuleFolders(value: unknown): ModuleFolder[] {
  *
  * Important ordering contract:
  * - With no folders, the incoming visible order is returned unchanged.
+ * - Automatically generated similarity-review folders stay at the top in
+ *   folder metadata order.
+ * - Empty manual folders follow them in folder metadata order.
  * - A folder is anchored where its first member appeared in that order.
  * - Members keep their relative incoming order inside the folder.
- * - Empty folders appear after the module list in folder metadata order.
  *
  * Folder metadata therefore never rewrites the underlying `db.modules` array,
  * and activation-recency sorting can continue to run before this function.
@@ -148,10 +150,23 @@ export function buildModuleFolderCatalog<T extends FolderableModule>(
     const result: ModuleCatalogEntry<T>[] = []
     const emittedFolders = new Set<string>()
 
+    // Similarity folders are explicitly review queues, so keep them above all
+    // ordinary folders and root modules regardless of activation recency.
+    for(const folder of validFolders){
+        if(folder.duplicateCandidate?.kind !== 'module') continue
+        const visibleMembers = visibleFolderMembers.get(folder.id) ?? []
+        const folderMatches = normalizedSearch !== '' && folder.name.toLocaleLowerCase().includes(normalizedSearch)
+        if(visibleMembers.length > 0 || folderMatches){
+            emittedFolders.add(folder.id)
+            result.push({ kind: 'folder', folder, modules: visibleMembers })
+        }
+    }
+
     // A newly created folder has no member from which to derive an anchor.
     // Render those folders first in metadata order so the create action has an
     // immediate, predictable result at the top of the catalog.
     for(const folder of validFolders){
+        if(emittedFolders.has(folder.id)) continue
         if((folderMembers.get(folder.id)?.length ?? 0) !== 0) continue
         const folderMatches = normalizedSearch !== '' && folder.name.toLocaleLowerCase().includes(normalizedSearch)
         if(normalizedSearch === '' || folderMatches){
