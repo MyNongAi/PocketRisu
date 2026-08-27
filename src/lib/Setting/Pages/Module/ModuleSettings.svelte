@@ -55,6 +55,15 @@
         | { kind: 'folder'; entry: Extract<ModuleCatalogEntry<RisuModule>, { kind: 'folder' }> }
         | { kind: 'empty-folder'; folderId: string }
 
+    type ModulePointerDrag = {
+        pointerId: number
+        startX: number
+        startY: number
+        kind: 'module' | 'folder'
+        id: string
+        active: boolean
+    }
+
     let tempModule:RisuModule = $state({
         name: '',
         description: '',
@@ -71,6 +80,7 @@
     let externalModuleDropActive = $state(false)
     let folderCreateOpen = $state(false)
     let newFolderName = $state('')
+    let modulePointerDrag:ModulePointerDrag|null = null
     let draggingModuleCatalogItem = $derived(!!draggedModuleId || !!draggedFolderId)
     let { quickPanel = false }: { quickPanel?: boolean } = $props()
     let moduleFolders = $derived(normalizeModuleFolders(DBState.db.moduleFolders))
@@ -193,10 +203,14 @@
         moduleDropIndicator = ''
     }
 
-    function beginModuleDrag(event: DragEvent, module: RisuModule){
-        draggedModuleId = module.id
-        draggedFolderId = ''
+    function setModuleDragSource(kind: 'module' | 'folder', id: string){
+        draggedModuleId = kind === 'module' ? id : ''
+        draggedFolderId = kind === 'folder' ? id : ''
         folderPickerModule = null
+    }
+
+    function beginModuleDrag(event: DragEvent, module: RisuModule){
+        setModuleDragSource('module', module.id)
         if(event.dataTransfer){
             event.dataTransfer.effectAllowed = 'move'
             event.dataTransfer.setData(RISU_APP_INTERNAL_DRAG_TYPE, 'module')
@@ -212,9 +226,7 @@
             event.preventDefault()
             return
         }
-        draggedFolderId = folder.id
-        draggedModuleId = ''
-        folderPickerModule = null
+        setModuleDragSource('folder', folder.id)
         if(event.dataTransfer){
             event.dataTransfer.effectAllowed = 'move'
             event.dataTransfer.setData(RISU_APP_INTERNAL_DRAG_TYPE, 'module-folder')
@@ -241,6 +253,11 @@
         if(!draggedModuleId) return
         event.preventDefault()
         event.stopPropagation()
+        commitModuleDrop(target)
+    }
+
+    function commitModuleDrop(target: ModuleDropTarget){
+        if(!draggedModuleId) return
         const moved = moveModuleByDrop(
             currentOrderedModuleIds(),
             moduleFolders,
@@ -258,6 +275,11 @@
         if(!draggedFolderId) return
         event.preventDefault()
         event.stopPropagation()
+        commitFolderDrop(target)
+    }
+
+    function commitFolderDrop(target: ModuleFolderDropTarget){
+        if(!draggedFolderId) return
         const moved = moveModuleFolderByDrop(
             currentOrderedModuleIds(),
             moduleFolders,
@@ -334,6 +356,110 @@
         else if(draggedFolderId) applyFolderDrop(event, { kind: 'root' })
     }
 
+    function pointerDropTarget(clientX: number, clientY: number):ModuleDropTarget|ModuleFolderDropTarget|null{
+        const hit = document.elementFromPoint(clientX, clientY)
+        if(!(hit instanceof Element)) return null
+
+        if(hit.closest('[data-module-root-drop]')) return { kind: 'root' }
+
+        const folderTarget = hit.closest<HTMLElement>('[data-module-folder-drop]')
+        if(folderTarget){
+            const folderId = folderTarget.dataset.moduleFolderDrop
+            if(!folderId) return null
+            if(draggedModuleId) return { kind: 'folder', folderId }
+            if(draggedFolderId && draggedFolderId !== folderId){
+                const bounds = folderTarget.getBoundingClientRect()
+                return {
+                    kind: 'folder',
+                    folderId,
+                    position: clientY > bounds.top + bounds.height / 2 ? 'after' : 'before',
+                }
+            }
+            return null
+        }
+
+        const moduleTarget = hit.closest<HTMLElement>('[data-module-drop-id]')
+        const moduleId = moduleTarget?.dataset.moduleDropId
+        if(!moduleTarget || !moduleId || draggedModuleId === moduleId) return null
+        if(draggedFolderId && findModuleFolderId(moduleFolders, moduleId) === draggedFolderId) return null
+        const bounds = moduleTarget.getBoundingClientRect()
+        return {
+            kind: 'module',
+            moduleId,
+            position: clientY > bounds.top + bounds.height / 2 ? 'after' : 'before',
+        }
+    }
+
+    function pointerDropIndicator(target: ModuleDropTarget|ModuleFolderDropTarget|null){
+        if(!target) return ''
+        if(target.kind === 'root') return 'root'
+        if(target.kind === 'module') return `module:${target.moduleId}:${target.position}`
+        if('position' in target) return `folder-order:${target.folderId}:${target.position}`
+        return `folder:${target.folderId}`
+    }
+
+    function removeModulePointerListeners(){
+        window.removeEventListener('pointermove', moveModulePointerDrag)
+        window.removeEventListener('pointerup', finishModulePointerDrag)
+        window.removeEventListener('pointercancel', cancelModulePointerDrag)
+    }
+
+    function startModulePointerDrag(event: PointerEvent, kind: 'module'|'folder', id: string){
+        if(!event.isPrimary || event.button !== 0) return
+        if(kind === 'folder' && moduleSearch.trim() !== '') return
+        removeModulePointerListeners()
+        modulePointerDrag = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            kind,
+            id,
+            active: false,
+        }
+        window.addEventListener('pointermove', moveModulePointerDrag, { passive: false })
+        window.addEventListener('pointerup', finishModulePointerDrag)
+        window.addEventListener('pointercancel', cancelModulePointerDrag)
+        event.preventDefault()
+        event.stopPropagation()
+    }
+
+    function moveModulePointerDrag(event: PointerEvent){
+        const drag = modulePointerDrag
+        if(!drag || event.pointerId !== drag.pointerId) return
+        if(!drag.active){
+            if(Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 5) return
+            drag.active = true
+            setModuleDragSource(drag.kind, drag.id)
+        }
+        if(event.cancelable) event.preventDefault()
+        moduleDropIndicator = pointerDropIndicator(pointerDropTarget(event.clientX, event.clientY))
+    }
+
+    function finishModulePointerDrag(event: PointerEvent){
+        const drag = modulePointerDrag
+        if(!drag || event.pointerId !== drag.pointerId) return
+        const target = drag.active ? pointerDropTarget(event.clientX, event.clientY) : null
+        modulePointerDrag = null
+        removeModulePointerListeners()
+        if(target){
+            if(drag.kind === 'module') commitModuleDrop(target as ModuleDropTarget)
+            else commitFolderDrop(target as ModuleFolderDropTarget)
+        } else {
+            clearModuleDrag()
+        }
+        if(drag.active){
+            event.preventDefault()
+            event.stopPropagation()
+        }
+    }
+
+    function cancelModulePointerDrag(event?: PointerEvent){
+        if(event && modulePointerDrag && event.pointerId !== modulePointerDrag.pointerId) return
+        modulePointerDrag = null
+        removeModulePointerListeners()
+        clearModuleDrag()
+    }
+
     function createModule(){
         editModuleId = ''
         editModuleOriginal = null
@@ -377,6 +503,7 @@
     }
 
     onDestroy(() => {
+        cancelModulePointerDrag()
         refreshModules()
     })
 </script>
@@ -442,6 +569,7 @@
                 aria-label={`${language.moveToModuleFolder}: ${rmodule.name}`}
                 use:tooltip={language.moveToModuleFolder}
                 onclick={(event) => event.stopPropagation()}
+                onpointerdown={(event) => startModulePointerDrag(event, 'module', rmodule.id)}
                 ondragstart={(event) => beginModuleDrag(event, rmodule)}
                 ondragend={clearModuleDrag}
             >
@@ -675,6 +803,7 @@
                                 aria-label={`${language.moveToModuleFolder}: ${entry.folder.name}`}
                                 use:tooltip={moduleSearch.trim() === '' ? language.moveToModuleFolder : language.search}
                                 onclick={(event) => event.stopPropagation()}
+                                onpointerdown={(event) => startModulePointerDrag(event, 'folder', entry.folder.id)}
                                 ondragstart={(event) => beginFolderDrag(event, entry.folder)}
                                 ondragend={clearModuleDrag}
                             >
