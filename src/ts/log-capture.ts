@@ -76,6 +76,9 @@ function installGlobalHandlers() {
 
     window.addEventListener('unhandledrejection', (ev) => {
         const reason = ev.reason
+        // Browser drag/ResizeObserver races can reject without a reason. Keep
+        // the diagnostics database useful instead of recording a bare "null".
+        if (reason === null || reason === undefined) return
         const err = reason instanceof Error ? reason : null
         addLog({
             level: 'error',

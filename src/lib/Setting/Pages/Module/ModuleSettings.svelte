@@ -200,7 +200,11 @@
         folderPickerModule = null
         if(event.dataTransfer){
             event.dataTransfer.effectAllowed = 'move'
-            event.dataTransfer.setData('text/plain', `folder:${folder.id}`)
+            // Folder ids are internal metadata. Imported legacy data can carry
+            // malformed ids such as the literal string "null", which browsers
+            // expose as the visible drag label. The component state is the
+            // source of truth, so only show a human-readable folder name here.
+            event.dataTransfer.setData('text/plain', folder.name || language.modules)
         }
     }
 

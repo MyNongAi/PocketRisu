@@ -277,7 +277,6 @@ function updateErrorHandling() {
         }
     };
     const rejectHandler = (event: PromiseRejectionEvent) => {
-        console.error(event.reason);
         // Some browser drag/ResizeObserver combinations reject with no reason
         // while Svelte replaces a measured virtual row. There is no actionable
         // message to show, and rendering it produced a misleading "null" toast.
@@ -285,6 +284,7 @@ function updateErrorHandling() {
             event.preventDefault()
             return
         }
+        console.error(event.reason);
         alertError(event.reason);
     };
     window.addEventListener('error', errorHandler);
