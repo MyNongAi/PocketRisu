@@ -13,9 +13,9 @@ const {
 } = require('./external-asset-references.cjs');
 const { createExternalAssetMigrationJournal } = require('./external-asset-migration-journal.cjs');
 const { resolveInside } = require('./external-assets.cjs');
+const { createSqliteManifestStore } = require('./external-asset-manifest-store.cjs');
 
 const DB_BLOB_KEY = 'database/database.bin';
-const EXTERNAL_ASSET_MANIFEST_KEY = 'external-assets/manifest.v1.json';
 
 function postProgress(phase, detail = {}) {
     if (parentPort) parentPort.postMessage({ type: 'progress', phase, ...detail });
@@ -83,6 +83,49 @@ function buildPublishedManifest(existingRaw, job, stagedItems, staleOrdinals) {
     return Buffer.from(JSON.stringify(manifest), 'utf8');
 }
 
+function buildPublishedManifestValues(manifestStore, job, stagedItems, staleOrdinals) {
+    const now = new Date().toISOString();
+    const staleSet = new Set(staleOrdinals);
+    const values = [];
+    for (const item of stagedItems) {
+        if (staleSet.has(item.ordinal)) continue;
+        const old = manifestStore.getSync(item.uri) || {};
+        const fallbacks = Array.isArray(old.fallbacks) ? old.fallbacks.slice() : [];
+        const fallback = {
+            internalKey: item.internalKey,
+            trashPath: item.trashPath,
+            stagedAt: item.stagedAt || now,
+        };
+        const oldFallbackIndex = fallbacks.findIndex((value) => value?.internalKey === item.internalKey);
+        if (oldFallbackIndex >= 0) fallbacks[oldFallbackIndex] = fallback;
+        else fallbacks.push(fallback);
+        const migrationIds = [...new Set([
+            ...(Array.isArray(old.migrationIds) ? old.migrationIds : []),
+            ...(typeof old.migrationId === 'string' ? [old.migrationId] : []),
+            job.id,
+        ])];
+        values.push({
+            uri: item.uri,
+            value: {
+                ...old,
+                uri: item.uri,
+                providerId: job.providerId,
+                hash: item.hash,
+                size: item.size,
+                mimeType: item.mimeType || old.mimeType || 'application/octet-stream',
+                assetName: item.assetName || old.assetName || null,
+                status: 'staged',
+                createdAt: old.createdAt || item.stagedAt || now,
+                stagedAt: item.stagedAt || now,
+                lastVerifiedAt: item.prepublishVerifiedAt || item.stagedAt || now,
+                fallbacks,
+                migrationIds,
+            },
+        });
+    }
+    return values;
+}
+
 async function assertRecoveryTrashReady(stagedItems, trashDir) {
     if (typeof trashDir !== 'string' || !trashDir) {
         throw new Error('Recovery trash directory is required before publish');
@@ -113,6 +156,7 @@ async function finalizeExternalAssetMigration(options = {}) {
 
     const chunkStore = options.chunkStore || createChunkStore(db);
     const journal = options.journal || createExternalAssetMigrationJournal({ db });
+    const manifestStore = options.manifestStore || createSqliteManifestStore({ db });
     const job = journal.getJob(jobId);
     if (!job) throw new Error(`Migration job not found: ${jobId}`);
     if (job.status !== 'staged-verified' && job.status !== 'finalizing') {
@@ -196,16 +240,13 @@ async function finalizeExternalAssetMigration(options = {}) {
     };
 
     postProgress('building-manifest');
-    const existingManifest = chunkStore.getValue(EXTERNAL_ASSET_MANIFEST_KEY);
-    const manifestBuffer = buildPublishedManifest(existingManifest, job, stagedItems, staleOrdinals);
+    const manifestValues = buildPublishedManifestValues(manifestStore, job, stagedItems, staleOrdinals);
 
     postProgress('publishing', { removableItems: removableItems.length });
     db.transaction(() => {
         chunkStore.snapshotValue(DB_BLOB_KEY, safetyBackupKey);
         chunkStore.putValue(DB_BLOB_KEY, encoded);
-        db.prepare(`
-            INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES (?, ?, ?)
-        `).run(EXTERNAL_ASSET_MANIFEST_KEY, manifestBuffer, Date.now());
+        manifestStore.upsertManyValuesSync(manifestValues, { returnEntries: false });
         const deleteAsset = db.prepare('DELETE FROM kv WHERE key = ?');
         for (const item of removableItems) deleteAsset.run(item.internalKey);
         journal.markPublished(jobId, {
@@ -216,10 +257,12 @@ async function finalizeExternalAssetMigration(options = {}) {
         });
     })();
 
+    const manifestBytes = manifestStore.exportByteLengthSync();
+
     return {
         job: journal.getJob(jobId),
         encodedBytes: encoded.length,
-        manifestBytes: manifestBuffer.length,
+        manifestBytes,
         referencesRewritten: rewrite.changes,
         removedInternalAssets: removableItems.length,
         retainedInternalAssets: stagedItems.length - removableItems.length,
@@ -263,6 +306,7 @@ if (!isMainThread) {
 
 module.exports = {
     buildPublishedManifest,
+    buildPublishedManifestValues,
     assertRecoveryTrashReady,
     collectPluginStorageAssetNames,
     finalizeExternalAssetMigration,

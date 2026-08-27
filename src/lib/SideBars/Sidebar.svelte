@@ -56,6 +56,7 @@
     import { checkCharOrder, getFileSrc, saveAsset } from "src/ts/globalApi.svelte";
     import { alertInput, alertSelect } from "src/ts/alert";
     import SideChatList from "./SideChatList.svelte";
+    import MeasuredVirtualList from "../UI/Virtual/MeasuredVirtualList.svelte";
 
   import { sideBarSize } from "src/ts/gui/guisize";
   import DevTool from "./DevTool.svelte";
@@ -110,8 +111,18 @@
   }
 
   type sortTypeNormal = { type:'normal',img: string, index: number, name:string }
-  type sortType =  sortTypeNormal|{type:'folder',folder:sortTypeNormal[],id:string, name:string, color:string, img?:string}
+  type sortType = sortTypeNormal | {type:'folder',folder:sortTypeNormal[],id:string, name:string, color:string, img?:string}
+  type sidebarCatalogBlock =
+    | { type: 'control', position: 'top' | 'bottom' }
+    | { type: 'character', char: sortType, index: number }
   let charImages: sortType[] = $state([]);
+  let sidebarCatalogBlocks = $derived<sidebarCatalogBlock[]>([
+    { type: 'control', position: 'top' },
+    ...charImages.map((char, index) => ({ type: 'character' as const, char, index })),
+    { type: 'control', position: 'bottom' },
+  ])
+  let sidebarScrollIndex = $state<number | null>(null)
+  let sidebarScrollRequest = $state(0)
   // Recently interacted characters for the home sidebar. Character-level
   // `lastInteraction` is already in memory (no chat hydration needed), so this
   // sort is cheap; the $derived is only read while on the home screen.
@@ -297,14 +308,21 @@
     if (!characterId) return
     
     let targetFolderId: string | null = null
+    let targetTopLevelIndex = -1
     
-    for (const item of charImages) {
+    for (let index = 0; index < charImages.length; index++) {
+      const item = charImages[index]
+      if (item.type === 'normal' && DBState.db.characters[item.index]?.chaId === characterId) {
+        targetTopLevelIndex = index
+        break
+      }
       if (item.type === 'folder') {
         const foundChar = item.folder.find(c => 
           DBState.db.characters[c.index]?.chaId === characterId
         )
         if (foundChar) {
           targetFolderId = item.id
+          targetTopLevelIndex = index
           break
         }
       }
@@ -314,16 +332,16 @@
       openFolders.push(targetFolderId)
       openFolders = openFolders
     }
-    
+
+    if (targetTopLevelIndex >= 0) {
+      // +1 accounts for the virtual catalog's top add-character control.
+      sidebarScrollIndex = targetTopLevelIndex + 1
+      sidebarScrollRequest += 1
+    }
     setTimeout(() => {
       const activeElement = document.querySelector(`[data-char-id="${characterId}"]`)
-      if (activeElement) {
-        activeElement.scrollIntoView({ 
-          behavior: 'smooth', 
-          block: 'start' 
-        })
-      }
-    }, 100)
+      activeElement?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }, 160)
   }
 
   $effect(() => {
@@ -771,8 +789,27 @@
     {/if}
   </div>
   {/if}
-  <div class="character-list flex grow w-full flex-col items-center overflow-x-hidden overflow-y-auto pr-0" class:max-xs:hidden={$leftBarCollapsed} use:touchDragContainer>
-    {@render addCharacterButton('top')}
+  <div class="flex grow min-h-0 w-full" class:max-xs:hidden={$leftBarCollapsed} use:touchDragContainer>
+  <MeasuredVirtualList
+    items={sidebarCatalogBlocks}
+    estimatedItemHeight={76}
+    overscan={5}
+    smallListThreshold={36}
+    className="character-list h-full w-full pr-0"
+    ariaLabel="Characters"
+    scrollToIndex={sidebarScrollIndex}
+    scrollRequestKey={sidebarScrollRequest}
+    key={(block) => block.type === 'control'
+      ? `control-${block.position}`
+      : block.char.type === 'folder'
+        ? `folder-${block.char.id}`
+        : `character-${DBState.db.characters[block.char.index]?.chaId ?? block.index}`}
+  >
+    {#snippet children(block)}
+    {#if block.type === 'control'}
+      <div class="flex w-full flex-col items-center">
+      {#if block.position === 'top'}
+      {@render addCharacterButton('top')}
     <div class="h-4 min-h-4 w-14" role="listitem" data-spacer-index="0" ondragover={(e) => {
       if(!getCurrentSidebarDrag(e)){ return }
       e.preventDefault()
@@ -793,7 +830,14 @@
         clearCurrentDrag()
       }
     }} ondragenter={preventAll}></div>
-    {#each charImages as char, ind}
+      {:else}
+        {@render addCharacterButton('bottom')}
+      {/if}
+      </div>
+    {:else}
+      {@const char = block.char}
+      {@const ind = block.index}
+      <div class="flex w-full flex-col items-center">
       <div class="group relative flex items-center px-2"
         role="listitem"
         data-drag-index={ind}
@@ -966,7 +1010,7 @@
             }
           }} ondragenter={preventAll}></div>
           {#each char.folder as char2, ind}
-              <div class="group relative flex items-center px-2 z-10"
+              <div class="sidebar-folder-character group relative flex items-center px-2 z-10"
               role="listitem"
               data-drag-index={ind}
               data-drag-folder={char.type === 'folder' ? char.id : undefined}
@@ -1058,8 +1102,10 @@
           clearCurrentDrag()
         }
       }} ondragenter={preventAll}></div>
-    {/each}
-    {@render addCharacterButton('bottom')}
+      </div>
+    {/if}
+    {/snippet}
+  </MeasuredVirtualList>
   </div>
   {#if DBState.db.hamburgerButtonBottom}
   <div class="border-t border-t-selected w-full relative text-white" class:max-xs:hidden={$leftBarCollapsed}>
@@ -1451,10 +1497,14 @@
   .hamburger-menu::-webkit-scrollbar {
     display: none;
   }
-  .character-list {
+  :global(.character-list) {
     scrollbar-width: none;
   }
-  .character-list::-webkit-scrollbar {
+  :global(.character-list::-webkit-scrollbar) {
     display: none;
+  }
+  .sidebar-folder-character {
+    content-visibility: auto;
+    contain-intrinsic-size: 56px 56px;
   }
 </style>

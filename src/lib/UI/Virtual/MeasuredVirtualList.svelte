@@ -20,6 +20,9 @@
         ariaLabel?: string
         /** Changing this value intentionally returns the catalog to its top. */
         resetKey?: string | number
+        /** Optional imperative-style target driven by a changing request key. */
+        scrollToIndex?: number | null
+        scrollRequestKey?: string | number
         key: (item: T, index: number) => string | number
         children: Snippet<[T, number]>
     }
@@ -40,6 +43,8 @@
         className = '',
         ariaLabel = '',
         resetKey,
+        scrollToIndex = null,
+        scrollRequestKey,
         key,
         children,
     }: Props = $props()
@@ -56,6 +61,8 @@
     let destroyed = false
     let resetKeyInitialized = false
     let previousResetKey: string | number | undefined
+    let scrollRequestInitialized = false
+    let previousScrollRequestKey: string | number | undefined
 
     const plainList = $derived(records.length <= Math.max(0, Math.floor(smallListThreshold)))
     const range = $derived(variableVirtualWindow(
@@ -223,6 +230,23 @@
         setScroll(target)
     }
 
+    function revealIndex(index: number) {
+        if(!viewport || records.length === 0) return
+        const targetIndex = Math.max(0, Math.min(Math.floor(index), records.length - 1))
+        if(plainList){
+            void tick().then(() => {
+                const target = viewport?.querySelector(`[data-virtual-index="${targetIndex}"]`) as HTMLElement | null
+                target?.scrollIntoView({ block: 'nearest' })
+                if(viewport) scrollTop = viewport.scrollTop
+            })
+            return
+        }
+        const start = layout.offsets[targetIndex] ?? 0
+        const end = layout.offsets[targetIndex + 1] ?? start + estimatedItemHeight
+        if(start < scrollTop) setScroll(start)
+        else if(end > scrollTop + viewportHeight) setScroll(end - viewportHeight)
+    }
+
     $effect(() => {
         const source = items
         const currentResetKey = resetKey
@@ -232,6 +256,20 @@
             previousResetKey = currentResetKey
             resetKeyInitialized = true
             replaceRecords(nextRecords, shouldReset)
+        })
+    })
+
+    $effect(() => {
+        const requestKey = scrollRequestKey
+        const targetIndex = scrollToIndex
+        const ready = viewport && records.length > 0
+        if(!ready || targetIndex === null || targetIndex === undefined) return
+        untrack(() => {
+            const changed = scrollRequestInitialized && requestKey !== previousScrollRequestKey
+            const firstRequest = !scrollRequestInitialized
+            previousScrollRequestKey = requestKey
+            scrollRequestInitialized = true
+            if(firstRequest || changed) revealIndex(targetIndex)
         })
     })
 

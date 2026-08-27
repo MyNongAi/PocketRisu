@@ -46,11 +46,11 @@ const {
     createExternalAssetService,
     createFilesystemProvider,
     createHttpProvider,
-    createManifestStore,
     externalAssetProviderFingerprint,
     isExternalAssetUri,
     parseExternalAssetUri,
 } = require('./external-assets.cjs');
+const { createSqliteManifestStore } = require('./external-asset-manifest-store.cjs');
 const {
     collectExternalAssetReferences,
     rewriteExternalAssetReferences,
@@ -933,6 +933,10 @@ function endExclusiveStorage(reason) {
 // manifest; a restored instance can point the same provider ID at a new root.
 const EXTERNAL_ASSET_MANIFEST_KEY = 'external-assets/manifest.v1.json';
 const EXTERNAL_ASSET_BACKUP_NAME = 'external_manifest.v1.json';
+const externalAssetManifestStore = createSqliteManifestStore({
+    db: sqliteDb,
+    key: EXTERNAL_ASSET_MANIFEST_KEY,
+});
 const externalAssetStateDir = path.join(savePath, 'external-assets');
 const externalAssetConfigPath = path.join(externalAssetStateDir, 'config.json');
 const defaultExternalAssetTrashDir = 'save/external-assets/trash';
@@ -1125,11 +1129,7 @@ async function getExternalAssetRuntime() {
         const providers = Object.entries(config.providers).map(([id, provider]) => (
             createConfiguredExternalProvider(id, provider, config.retryCount)
         ));
-        const manifestStore = createManifestStore({
-            key: EXTERNAL_ASSET_MANIFEST_KEY,
-            getValue: async (key) => kvGet(key),
-            setValue: async (key, value) => kvSet(key, value),
-        });
+        const manifestStore = externalAssetManifestStore;
         const service = createExternalAssetService({
             providers,
             manifestStore,
@@ -1158,11 +1158,9 @@ async function getExternalAssetRuntime() {
 
 async function externalAssetStatus() {
     const runtime = await getExternalAssetRuntime();
-    const records = await runtime.manifestStore.list();
-    const migrationIds = [...new Set(records.flatMap((entry) => entry.migrationIds || (entry.migrationId ? [entry.migrationId] : [])))];
+    const stats = await runtime.manifestStore.stats();
     const configuredProviderIds = new Set(runtime.providers.map((provider) => provider.id));
-    const missingProviders = [...new Set(records
-        .map((entry) => entry.providerId)
+    const missingProviders = [...new Set(stats.providerIds
         .filter((id) => typeof id === 'string' && !configuredProviderIds.has(id)))];
     return {
         config: publicExternalAssetConfig(runtime.config),
@@ -1172,11 +1170,11 @@ async function externalAssetStatus() {
             available: provider.capabilities?.unsupported !== true,
         }])),
         manifest: {
-            count: records.length,
-            bytes: records.reduce((sum, entry) => sum + (Number(entry.size) || 0), 0),
-            verified: records.filter((entry) => entry.status === 'verified' && entry.lastVerifiedAt).length,
-            fallback: records.filter((entry) => Array.isArray(entry.fallbacks) && entry.fallbacks.length > 0).length,
-            migrations: migrationIds.map((id) => ({ id })),
+            count: stats.count,
+            bytes: stats.bytes,
+            verified: stats.verified,
+            fallback: stats.fallback,
+            migrations: stats.migrationIds.map((id) => ({ id })),
             missingProviders,
         },
         cache: {
@@ -1202,7 +1200,7 @@ async function externalAssetReferenceHealth(dbObj) {
         };
     }
     const runtime = await getExternalAssetRuntime();
-    const records = new Map((await runtime.manifestStore.list()).map((entry) => [entry.uri, entry]));
+    const records = new Map((await runtime.manifestStore.getMany(uris)).map((entry) => [entry.uri, entry]));
     const missingManifestUris = uris.filter((uri) => !records.has(uri));
     const providers = new Map(runtime.providers.map((provider) => [provider.id, provider]));
     const configured = new Set(providers.keys());
@@ -2845,16 +2843,12 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
 
     await flushPendingDb();
     createBackupAndRotate();
-    // Manifest is small and external objects live outside this replacement
-    // transaction. Keep an exact copy so a truncated/malformed import cannot
-    // strand the still-current DB's external:// references.
-    const previousExternalManifest = kvGet(EXTERNAL_ASSET_MANIFEST_KEY);
-
     sqliteDb.pragma('synchronous = OFF');
 
     sqliteDb.exec('BEGIN');
     kvDelPrefix('assets/');
     kvDel(EXTERNAL_ASSET_MANIFEST_KEY);
+    externalAssetManifestStore.clearSync();
     kvDelPrefix('inlay/');
     kvDelPrefix('inlay_thumb/');
     kvDelPrefix('inlay_meta/');
@@ -2964,7 +2958,10 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
                 } else {
                     const storageKey = resolveBackupStorageKey(name);
                     if (storageKey === EXTERNAL_ASSET_MANIFEST_KEY) {
-                        validateExternalAssetManifestValue(data);
+                        const importedManifest = validateExternalAssetManifestValue(data);
+                        externalAssetManifestStore.replaceManifestSync(importedManifest);
+                        assetsRestored += 1;
+                        return;
                     }
                     const storageValue = storageKey.startsWith('coldstorage/')
                         ? encodeColdStorageCanonicalBuffer(
@@ -3028,15 +3025,6 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
         sqliteDb.exec('COMMIT');
     } catch (error) {
         try { sqliteDb.exec('ROLLBACK'); } catch (_) {}
-        try {
-            if (previousExternalManifest) kvSet(EXTERNAL_ASSET_MANIFEST_KEY, previousExternalManifest);
-            else kvDel(EXTERNAL_ASSET_MANIFEST_KEY);
-            externalAssetConfigGeneration++;
-            externalAssetRuntime = null;
-            externalAssetRuntimePromise = null;
-        } catch (restoreError) {
-            logger.error('[Backup Import] Failed to restore the prior external asset manifest', restoreError);
-        }
         await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => {});
         await fs.rm(backupInlayDir, { recursive: true, force: true }).catch(() => {});
         throw error;
@@ -3825,11 +3813,7 @@ function validateExternalAssetManifestValue(rawValue) {
 async function readMigratedInternalAssetFallback(internalKey) {
     if (!internalKey.startsWith('assets/')) return null;
     const runtime = await getExternalAssetRuntime();
-    const entries = await runtime.manifestStore.list();
-    const record = entries.find((entry) => (
-        Array.isArray(entry.fallbacks)
-        && entry.fallbacks.some((fallback) => fallback?.internalKey === internalKey)
-    ));
+    const record = await runtime.manifestStore.findByInternalKey(internalKey);
     if (!record) return null;
     const result = await runtime.service.readWithMeta(record.uri);
     return {
@@ -4200,8 +4184,8 @@ app.post('/api/external-assets/doctor/jobs/:jobId/repair', async (req, res) => {
         results: [],
     };
     try {
-        if (Number.isFinite(kvSize(EXTERNAL_ASSET_MANIFEST_KEY))) {
-            kvCopyValue(EXTERNAL_ASSET_MANIFEST_KEY, manifestBackupKey);
+        if (externalAssetManifestStore.statsSync().count > 0) {
+            kvSet(manifestBackupKey, externalAssetManifestStore.exportBufferSync());
             journal.manifestBackupKey = manifestBackupKey;
         }
         await writeAssetDoctorJournal(journalFile, journal);
@@ -5815,14 +5799,17 @@ app.get('/api/backup/export', async (req, res, next) => {
             sortKey: entry.key,
             size: entry.size,
         }));
+        const externalManifestBuffer = target === 'nodeonly' && externalAssetManifestStore.statsSync().count > 0
+            ? externalAssetManifestStore.exportBufferSync()
+            : null;
         const namespacedEntries = [
-            ...(target === 'nodeonly' && kvSize(EXTERNAL_ASSET_MANIFEST_KEY)
+            ...(externalManifestBuffer
                 ? [{
-                    kind: 'kv',
-                    key: EXTERNAL_ASSET_MANIFEST_KEY,
+                    kind: 'buffer',
+                    buffer: externalManifestBuffer,
                     backupName: EXTERNAL_ASSET_BACKUP_NAME,
                     sortKey: EXTERNAL_ASSET_MANIFEST_KEY,
-                    size: kvSize(EXTERNAL_ASSET_MANIFEST_KEY),
+                    size: externalManifestBuffer.length,
                 }]
                 : []),
             ...upstreamExternalEntries,
@@ -6133,9 +6120,12 @@ app.post('/api/backup/server/save', async (req, res, next) => {
             } catch { return null; }
         }))).filter(Boolean);
 
+        const externalManifestBuffer = externalAssetManifestStore.statsSync().count > 0
+            ? externalAssetManifestStore.exportBufferSync()
+            : null;
         const namespacedEntries = [
-            ...(kvSize(EXTERNAL_ASSET_MANIFEST_KEY)
-                ? [{ kind: 'kv', key: EXTERNAL_ASSET_MANIFEST_KEY, backupName: EXTERNAL_ASSET_BACKUP_NAME, size: kvSize(EXTERNAL_ASSET_MANIFEST_KEY) }]
+            ...(externalManifestBuffer
+                ? [{ kind: 'buffer', buffer: externalManifestBuffer, backupName: EXTERNAL_ASSET_BACKUP_NAME, size: externalManifestBuffer.length }]
                 : []),
             ...kvListWithSizes('assets/').map((e) => ({ kind: 'kv', key: e.key, backupName: path.basename(e.key), size: e.size })),
             ...listColdStorageBackupEntries(),
@@ -6677,6 +6667,7 @@ function scanHexFilesInDir(dirPath) {
 function clearExistingData() {
     kvDelPrefix('assets/');
     kvDel(EXTERNAL_ASSET_MANIFEST_KEY);
+    externalAssetManifestStore.clearSync();
     kvDelPrefix('inlay/');
     kvDelPrefix('inlay_thumb/');
     kvDelPrefix('inlay_meta/');
@@ -6717,6 +6708,10 @@ async function importHexFilesFromDir(dirPath) {
     const databaseEntry = sourceEntries.find((entry) => entry.key === DB_BLOB_KEY);
     if (!databaseEntry) throw new Error('Save folder does not contain database/database.bin');
     const candidateDatabase = readFileSync(path.join(dirPath, databaseEntry.hexFile));
+    const manifestSourceEntry = sourceEntries.find((entry) => entry.key === EXTERNAL_ASSET_MANIFEST_KEY);
+    const importedManifest = manifestSourceEntry
+        ? validateExternalAssetManifestValue(readFileSync(path.join(dirPath, manifestSourceEntry.hexFile)))
+        : null;
     const candidateDbObject = normalizeJSON(await decodeRisuSave(candidateDatabase));
     if (!candidateDbObject || typeof candidateDbObject !== 'object' || Array.isArray(candidateDbObject)) {
         throw new Error('Save folder database.bin did not decode to a database object');
@@ -6734,6 +6729,10 @@ async function importHexFilesFromDir(dirPath) {
     const run = sqliteDb.transaction(() => {
         clearExistingData();
         for (const { hexFile, key } of sourceEntries) {
+            if (key === EXTERNAL_ASSET_MANIFEST_KEY) {
+                externalAssetManifestStore.replaceManifestSync(importedManifest);
+                continue;
+            }
             // Commit exactly the database bytes that passed decode validation;
             // do not re-read a concurrently replaced source file here.
             const value = key === DB_BLOB_KEY
@@ -6763,6 +6762,10 @@ async function importHexEntries(entries) {
         decodedKeys.add(entry.key);
     }
     const candidateDatabase = entries.find((entry) => entry.key === DB_BLOB_KEY)?.value;
+    const manifestEntry = entries.find((entry) => entry.key === EXTERNAL_ASSET_MANIFEST_KEY);
+    const importedManifest = manifestEntry
+        ? validateExternalAssetManifestValue(manifestEntry.value)
+        : null;
     const candidateDbObject = normalizeJSON(await decodeRisuSave(candidateDatabase));
     if (!candidateDbObject || typeof candidateDbObject !== 'object' || Array.isArray(candidateDbObject)) {
         throw new Error('Uploaded database.bin did not decode to a database object');
@@ -6780,6 +6783,10 @@ async function importHexEntries(entries) {
     const run = sqliteDb.transaction(() => {
         clearExistingData();
         for (const { key, value } of entries) {
+            if (key === EXTERNAL_ASSET_MANIFEST_KEY) {
+                externalAssetManifestStore.replaceManifestSync(importedManifest);
+                continue;
+            }
             // Chunk the DB blob so an oversized database.bin imports instead of
             // failing the BLOB bind limit; other keys keep the bulk fast path.
             if (key === DB_BLOB_KEY) { kvSet(key, value); continue; }
@@ -7141,7 +7148,9 @@ async function sumInlayFsBytes() {
 async function estimateServerBackupSize({ inlayFsBytes = null, assetBytes = null, inlayMetaBytes = null } = {}) {
     let total = 0;
     total += kvSize(DB_BLOB_KEY) || 0;
-    total += kvSize(EXTERNAL_ASSET_MANIFEST_KEY) || 0;
+    if (externalAssetManifestStore.statsSync().count > 0) {
+        total += externalAssetManifestStore.exportBufferSync().length;
+    }
     total += assetBytes ?? kvPrefixStats('assets/').totalSize;
     total += inlayMetaBytes ?? kvPrefixStats('inlay_meta/').totalSize;
     for (const e of listColdStorageBackupEntries()) total += e.size;
