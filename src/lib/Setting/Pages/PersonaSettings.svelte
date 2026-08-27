@@ -142,7 +142,9 @@
                 changeUserPersona(i)
             }}>
             {#if persona.icon === ''}
-                <div class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-primary" class:ring-3={i === DBState.db.selectedPersona}></div>
+                <div class="flex h-20 w-20 cursor-pointer items-center justify-center rounded-md bg-textcolor2 p-2 text-center text-xs font-semibold leading-tight text-darkbg shadow-lg hover:text-primary" class:ring-3={i === DBState.db.selectedPersona}>
+                    <span class="line-clamp-4 wrap-break-word">{persona.name || 'User'}</span>
+                </div>
             {:else}
                 {#await getCharImage(persona.icon, 'css')}
                     <div class="rounded-md h-20 w-20 shadow-lg bg-textcolor2 cursor-pointer hover:text-primary" class:ring-3={i === DBState.db.selectedPersona}></div>

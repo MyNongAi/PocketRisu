@@ -876,7 +876,7 @@
           >
           {#if char.type === 'normal'}
             <SidebarAvatar 
-              src={char.img ? () => getCharThumbnail(char.img, "plain") : "/none.webp"}
+              src={char.img ? () => getCharThumbnail(char.img, "plain") : ""}
               size="56" 
               rounded={IconRounded} 
               name={char.name}
@@ -1048,7 +1048,7 @@
                   }}
                 >
                 <SidebarAvatar 
-                  src={char2.img ? () => getCharThumbnail(char2.img, "plain") : "/none.webp"}
+                  src={char2.img ? () => getCharThumbnail(char2.img, "plain") : ""}
                   size="56" 
                   rounded={IconRounded} 
                   name={char2.name}
@@ -1304,7 +1304,7 @@
             >
               <div class="shrink-0">
                 <SidebarAvatar
-                  src={rc.image ? () => getCharThumbnail(rc.image, "plain") : "/none.webp"}
+                  src={rc.image ? () => getCharThumbnail(rc.image, "plain") : ""}
                   size="36"
                   rounded={IconRounded}
                   name={rc.name}

@@ -46,8 +46,8 @@ describe('applySourceCollectionEntities', () => {
         expect(target.characters[1].chats[0].message).toEqual([])
         expect(target.characters[1].sourceInfo.label).toBe('모바일웹리스')
         expect(target.characterOrder[0]).toMatchObject({
-            name: expect.stringContaining('[중복 후보]'),
-            data: [target.characters[1].chaId],
+            name: expect.stringContaining('[유사 후보]'),
+            data: ['existing', target.characters[1].chaId],
         })
         expect(target.characterOrder).toContainEqual(expect.objectContaining({ name: '[출처] 모바일웹리스' }))
     })
@@ -212,7 +212,7 @@ describe('applySourceCollectionEntities', () => {
 
         expect(target.modules).toHaveLength(2)
         expect(target.moduleFolders?.[0]).toMatchObject({
-            name: expect.stringContaining('[중복 후보]'),
+            name: expect.stringContaining('[유사 후보]'),
             moduleIds: target.modules.map((module) => module.id),
         })
     })

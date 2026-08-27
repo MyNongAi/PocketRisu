@@ -1,11 +1,9 @@
 import type { SourceCollectionKind, SourceImportInfo } from './sourceCollection'
 import { recordNewModules } from './process/moduleSort'
-import { findHighSimilarityNameGroups } from './sourceCollectionDuplicates'
-
-interface DuplicateCandidateInfo {
-    kind: 'character' | 'module'
-    key: string
-}
+import {
+    organizeAllCharacterSimilarityFolders,
+    organizeAllModuleSimilarityFolders,
+} from './process/similarityFolders'
 
 export interface SourceMergeFolder {
     name: string
@@ -13,7 +11,7 @@ export interface SourceMergeFolder {
     color: string
     id: string
     sourceInfo?: SourceImportInfo
-    duplicateCandidate?: DuplicateCandidateInfo
+    duplicateCandidate?: { kind: 'character', key: string }
 }
 
 export interface SourceMergeModuleFolder {
@@ -22,7 +20,7 @@ export interface SourceMergeModuleFolder {
     moduleIds: string[]
     collapsed?: boolean
     sourceInfo?: SourceImportInfo
-    duplicateCandidate?: DuplicateCandidateInfo
+    duplicateCandidate?: { kind: 'module', key: string }
 }
 
 export interface SourceMergeDatabase {
@@ -78,93 +76,6 @@ function createUniqueId(createId: () => string, used: Set<string>): string {
 
 export function sourceCollectionFolderName(sourceLabel: string): string {
     return `[출처] ${sourceLabel.trim()}`
-}
-
-function duplicateCandidateFolderName(
-    label: string,
-    totalMatches: number,
-    sourceLabels: readonly string[],
-): string {
-    const sources = [...new Set(sourceLabels.filter(Boolean))].join(' · ')
-    return `[중복 후보] ${label} · ${totalMatches}개${sources ? ` · ${sources}` : ''}`
-}
-
-/**
- * Imported duplicates are moved out of source folders into visible review
- * folders. Non-imported user items can be a match but are never moved.
- */
-function organizeCharacterDuplicateCandidates(db: SourceMergeDatabase, createId: () => string): void {
-    const groups = findHighSimilarityNameGroups(db.characters)
-        .map((group) => ({
-            ...group,
-            imported: group.members.filter((character) => typeof character?.sourceInfo?.label === 'string'),
-        }))
-        .filter((group) => group.imported.length > 0)
-    const candidateIds = new Set(groups.flatMap((group) => group.imported.map((character) => character.chaId)))
-    const oldFolders = new Map(
-        db.characterOrder
-            .filter((entry): entry is SourceMergeFolder => typeof entry !== 'string' && entry.duplicateCandidate?.kind === 'character')
-            .map((folder) => [folder.duplicateCandidate!.key, folder]),
-    )
-    const usedIds = new Set([
-        ...db.characters.map((character) => character.chaId),
-        ...db.characterOrder.flatMap((entry) => typeof entry === 'string' ? [entry] : [entry.id]),
-    ].filter((id): id is string => typeof id === 'string' && !!id))
-    const baseOrder: (string | SourceMergeFolder)[] = []
-    for (const entry of db.characterOrder) {
-        if (typeof entry === 'string') {
-            if (!candidateIds.has(entry)) baseOrder.push(entry)
-            continue
-        }
-        if (entry.duplicateCandidate?.kind === 'character') continue
-        baseOrder.push({ ...entry, data: entry.data.filter((id) => !candidateIds.has(id)) })
-    }
-    const duplicateFolders = groups.map((group) => {
-        const existing = oldFolders.get(group.key)
-        const labels = group.members.map((member) => member?.sourceInfo?.label ?? '')
-        return {
-            id: existing?.id ?? createUniqueId(createId, usedIds),
-            name: duplicateCandidateFolderName(group.label, group.members.length, labels),
-            data: [...new Set(group.imported.map((character) => character.chaId))],
-            color: existing?.color ?? 'yellow',
-            duplicateCandidate: { kind: 'character', key: group.key } as const,
-        }
-    })
-    db.characterOrder = [...duplicateFolders, ...baseOrder]
-}
-
-function organizeModuleDuplicateCandidates(db: SourceMergeDatabase, createId: () => string): void {
-    const groups = findHighSimilarityNameGroups(db.modules)
-        .map((group) => ({
-            ...group,
-            imported: group.members.filter((module) => typeof module?.sourceInfo?.label === 'string'),
-        }))
-        .filter((group) => group.imported.length > 0)
-    const candidateIds = new Set(groups.flatMap((group) => group.imported.map((module) => module.id)))
-    const oldFolders = new Map(
-        (db.moduleFolders ?? [])
-            .filter((folder) => folder.duplicateCandidate?.kind === 'module')
-            .map((folder) => [folder.duplicateCandidate!.key, folder]),
-    )
-    const usedIds = new Set([
-        ...db.modules.map((module) => module.id),
-        ...(db.moduleFolders ?? []).map((folder) => folder.id),
-    ].filter((id): id is string => typeof id === 'string' && !!id))
-    const baseFolders = (db.moduleFolders ?? [])
-        .filter((folder) => folder.duplicateCandidate?.kind !== 'module')
-        .map((folder) => ({ ...folder, moduleIds: folder.moduleIds.filter((id) => !candidateIds.has(id)) }))
-    const duplicateFolders = groups.map((group) => {
-        const existing = oldFolders.get(group.key)
-        const labels = group.members.map((member) => member?.sourceInfo?.label ?? '')
-        return {
-            id: existing?.id ?? createUniqueId(createId, usedIds),
-            name: duplicateCandidateFolderName(group.label, group.members.length, labels),
-            moduleIds: [...new Set(group.imported.map((module) => module.id))],
-            collapsed: existing?.collapsed ?? false,
-            duplicateCandidate: { kind: 'module', key: group.key } as const,
-        }
-    })
-    db.moduleFolders = [...duplicateFolders, ...baseFolders]
 }
 
 function remapModuleReferenceList(
@@ -286,7 +197,7 @@ export function applySourceCollectionEntities(
             db.characterOrder.unshift(folder)
         }
         folder.data.push(...ids)
-        organizeCharacterDuplicateCandidates(db, options.createId)
+        organizeAllCharacterSimilarityFolders(db, options.createId)
         result.characters = characters.length
     } else if (options.kind === 'modules') {
         const usedIds = new Set([
@@ -329,7 +240,7 @@ export function applySourceCollectionEntities(
             db.moduleFolders.push(folder)
         }
         folder.moduleIds.push(...modules.map((module) => module.id))
-        organizeModuleDuplicateCandidates(db, options.createId)
+        organizeAllModuleSimilarityFolders(db, options.createId)
         result.modules = modules.length
     } else {
         const usedIds = new Set(db.personas.map((persona) => persona.id).filter(

@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, CodeIcon, CogIcon, ContactIcon, FlaskConicalIcon, GripVerticalIcon, ImageIcon, LanguagesIcon, MonitorIcon, MonitorSmartphoneIcon, Sailboat, ScrollTextIcon, SearchIcon, CircleXIcon, KeyboardIcon, TruckIcon, FileBoxIcon, Volume2Icon } from "@lucide/svelte";
+    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, CodeIcon, CogIcon, ContactIcon, FlaskConicalIcon, GripVerticalIcon, ImageIcon, LanguagesIcon, MonitorIcon, MonitorSmartphoneIcon, Sailboat, ScrollTextIcon, SearchIcon, CircleXIcon, KeyboardIcon, TruckIcon, FileBoxIcon, Volume2Icon, TriangleAlertIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import DisplaySettings from "./Pages/DisplaySettings.svelte";
     import NotificationSoundSettings from "./Pages/NotificationSoundSettings.svelte";
@@ -43,6 +43,8 @@
         readSettingsSidebarWidth,
         writeSettingsSidebarWidth,
     } from 'src/ts/setting/paneSize';
+    import { isSecureContext } from 'src/ts/secureContext';
+    import { SettingsRoute } from 'src/ts/routing';
 
     // Dev panel is opt-in via localStorage['risu-dev-panel']='1' in devtools.
     // Read once on mount — flag changes require reload. Gates both the menu
@@ -254,6 +256,18 @@
                 </div>
                 <span class="sr-only" aria-live="polite" aria-atomic="true">{settingsMenuAnnouncement}</span>
                 {#if !$isLite}
+                    {#if !isSecureContext && (DBState.db.plugins ?? []).some((plugin) => plugin.enabled) && additionalSettingsMenu.length === 0}
+                        <div class="mt-2 border-t border-yellow-700/40 pt-2">
+                            <button
+                                type="button"
+                                class="flex w-full items-center gap-2 rounded-md px-1 py-1.5 text-left text-yellow-300 hover:bg-yellow-900/25"
+                                onclick={() => openSettingsMenu(SettingsRoute.RemoteAccess)}
+                            >
+                                <TriangleAlertIcon size={18} class="shrink-0" />
+                                <span class="min-w-0 text-sm">{language.plugin} · HTTPS</span>
+                            </button>
+                        </div>
+                    {/if}
                     {#if additionalSettingsMenu.length > 0}
                         <div class="border-t border-selected mt-2 pt-2">
                             <span class="text-textcolor2 text-xs ml-1">{language.plugin}</span>

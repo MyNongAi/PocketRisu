@@ -99,13 +99,13 @@ describe('buildModuleFolderCatalog', () => {
             .toEqual(['alpha', 'omega'])
     })
 
-    it('keeps empty folders at the end and ignores stale module ids', () => {
+    it('keeps empty folders at the top in metadata order and ignores stale module ids', () => {
         const entries = buildModuleFolderCatalog(modules, [
             { id: 'stale', name: 'Stale', moduleIds: ['missing'] },
             { id: 'empty', name: 'Empty', moduleIds: [] },
         ])
 
-        expect(entries.slice(-2).map((entry) => entry.kind === 'folder' ? entry.folder.id : 'module'))
+        expect(entries.slice(0, 2).map((entry) => entry.kind === 'folder' ? entry.folder.id : 'module'))
             .toEqual(['stale', 'empty'])
     })
 

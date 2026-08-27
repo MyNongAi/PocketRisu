@@ -18,6 +18,7 @@ import { CharXImporter, CharXSkippableChecker, CharXWriter } from "./process/pro
 import { addModuleToDatabase, exportModuleLegacy, readModule, type RisuModule } from "./process/modules"
 import { promoteNewlyImportedCharacter } from "./characterRecentOrder"
 import { runImportBatch, type ImportProgressReporter } from "./importProgress"
+import { organizeImportedCharacterSimilarity } from "./process/similarityFolders"
 
 
 const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz';
@@ -27,6 +28,7 @@ export const hubURL = '/hub-proxy';
 function appendImportedCharacter(db: ReturnType<typeof getDatabase>, char: character) {
     db.characters.push(char)
     db.characterOrder = promoteNewlyImportedCharacter(db.characterOrder ?? [], char.chaId)
+    organizeImportedCharacterSimilarity(db, char.chaId, uuidv4)
 }
 
 function reportCharacterImport(

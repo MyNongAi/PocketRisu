@@ -1272,6 +1272,8 @@ export interface Database{
     moduleActivationHistory?: string[]
     /** Optional overlay metadata; omitted databases retain the legacy flat module list. */
     moduleFolders?: ModuleFolder[]
+    /** One-shot migration marker for grouping pre-existing high-similarity names. */
+    similarityFolderMigrationVersion?: number
     sideMenuRerollButton?:boolean
     requestInfoInsideChat?:boolean
     additionalParams:[string, string][]

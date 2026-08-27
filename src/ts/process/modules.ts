@@ -13,6 +13,7 @@ import { convertCharacterToModule, convertModuleToCharacter } from "../interchan
 import { exportCharacterCard, importCharacterProcess } from "../characterCards"
 import { collectModuleRuntimeIds, collectModuleRuntimeUi } from "./moduleRuntime"
 import { recordNewModules } from "./moduleSort"
+import { organizeImportedModuleSimilarity } from "./similarityFolders"
 import type { ImportProgressReporter } from "../importProgress"
 
 export interface MCPModule{
@@ -49,6 +50,9 @@ export function addModulesToDatabase(modules: readonly RisuModule[]): void {
         [db.enabledModules],
         modules.map((module) => module.id),
     )
+    for(const module of modules){
+        organizeImportedModuleSimilarity(db, module.id, v4)
+    }
     refreshModules()
 }
 
