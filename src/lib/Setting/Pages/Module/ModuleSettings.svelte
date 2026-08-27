@@ -199,6 +199,7 @@
         folderPickerModule = null
         if(event.dataTransfer){
             event.dataTransfer.effectAllowed = 'move'
+            event.dataTransfer.setData(RISU_APP_INTERNAL_DRAG_TYPE, 'module')
             // The visible drag label should never expose a malformed legacy id
             // as the literal string "null". Internal routing uses component
             // state and the app-wide custom drag marker, not this text payload.
@@ -216,6 +217,7 @@
         folderPickerModule = null
         if(event.dataTransfer){
             event.dataTransfer.effectAllowed = 'move'
+            event.dataTransfer.setData(RISU_APP_INTERNAL_DRAG_TYPE, 'module-folder')
             // Folder ids are internal metadata. Imported legacy data can carry
             // malformed ids such as the literal string "null", which browsers
             // expose as the visible drag label. The component state is the
@@ -227,6 +229,10 @@
     function allowModuleDrop(event: DragEvent, indicator: string){
         if(!draggingModuleCatalogItem) return
         event.preventDefault()
+        // App.svelte owns the global file-import surface and marks every
+        // internal drag as dropEffect=none. Stop here after accepting a module
+        // catalog drop so that outer fallback cannot cancel the valid target.
+        event.stopPropagation()
         if(event.dataTransfer) event.dataTransfer.dropEffect = 'move'
         moduleDropIndicator = indicator
     }
