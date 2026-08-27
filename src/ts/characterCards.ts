@@ -15,7 +15,7 @@ import { reencodeImage } from "./process/files/inlays"
 import { PngChunk } from "./pngChunk"
 import type { OnnxModelFiles } from "./process/transformers"
 import { CharXImporter, CharXSkippableChecker, CharXWriter } from "./process/processzip"
-import { exportModuleLegacy, readModule, type RisuModule } from "./process/modules"
+import { addModuleToDatabase, exportModuleLegacy, readModule, type RisuModule } from "./process/modules"
 import { promoteNewlyImportedCharacter } from "./characterRecentOrder"
 import { runImportBatch, type ImportProgressReporter } from "./importProgress"
 
@@ -148,7 +148,9 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
         }
         let lorebook:loreBook[] = null
         if(importer.moduleData){
-            const md = await readModule(Buffer.from(importer.moduleData))
+            const md = await readModule(Buffer.from(importer.moduleData), {
+                onProgress: progress,
+            })
             card.data.extensions ??= {}
             card.data.extensions.risuai ??= {}
             card.data.extensions.risuai.triggerscript = md.trigger ?? []
@@ -468,14 +470,13 @@ export async function characterURLImport() {
         const importData = JSON.parse(Buffer.from(decodeURIComponent(data), 'base64').toString('utf-8'))
         importData.id = v4()
 
-        const db = getDatabase()
         if(importData.lowLevelAccess){
             const conf = await alertConfirm(language.lowLevelAccessConfirm)
             if(!conf){
                 return false
             }
         }
-        db.modules.push(importData)
+        addModuleToDatabase(importData)
         notifySuccess(language.successImport)
         openSettings(SettingsRoute.Module)
         return
@@ -509,8 +510,7 @@ export async function characterURLImport() {
         const module = new Uint8Array(await data.arrayBuffer())
         const md = await readModule(Buffer.from(module))
         md.id = v4()
-        const db = getDatabase()
-        db.modules.push(md)
+        addModuleToDatabase(md)
         notifySuccess(language.successImport)
         openSettings(SettingsRoute.Module)
     }
@@ -563,8 +563,7 @@ export async function characterURLImport() {
         if(name.endsWith('risum')){
             const md = await readModule(Buffer.from(data))
             md.id = v4()
-            const db = getDatabase()
-            db.modules.push(md)
+            addModuleToDatabase(md)
             notifySuccess(language.successImport)
             openSettings(SettingsRoute.Module)
             return

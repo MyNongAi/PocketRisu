@@ -45,7 +45,11 @@ describe('applySourceCollectionEntities', () => {
         expect(target.characters[1].chaId).not.toBe('old')
         expect(target.characters[1].chats[0].message).toEqual([])
         expect(target.characters[1].sourceInfo.label).toBe('모바일웹리스')
-        expect(target.characterOrder[0]).toMatchObject({ name: '[출처] 모바일웹리스', data: [target.characters[1].chaId] })
+        expect(target.characterOrder[0]).toMatchObject({
+            name: expect.stringContaining('[중복 후보]'),
+            data: [target.characters[1].chaId],
+        })
+        expect(target.characterOrder).toContainEqual(expect.objectContaining({ name: '[출처] 모바일웹리스' }))
     })
 
     it('creates module folders without changing prior module order', () => {
@@ -185,5 +189,31 @@ describe('applySourceCollectionEntities', () => {
             new Map([['source-module', 'right-new-id']]),
         )).toBe(1)
         expect(character.modules).toEqual(['right-new-id'])
+    })
+
+    it('collects imported module duplicates in a review folder without deleting either module', () => {
+        const target = db()
+        applySourceCollectionEntities(target, {
+            kind: 'modules',
+            sourceLabel: '웹리스',
+            bundleId: 'web-bundle',
+            entities: [{ id: 'web-id', name: 'Nahida Module' }],
+            createId: ids(),
+            createBlankCharacter: blankCharacter,
+        })
+        applySourceCollectionEntities(target, {
+            kind: 'modules',
+            sourceLabel: '모바일웹리스',
+            bundleId: 'mobile-bundle',
+            entities: [{ id: 'mobile-id', name: 'nahida-module' }],
+            createId: ids(),
+            createBlankCharacter: blankCharacter,
+        })
+
+        expect(target.modules).toHaveLength(2)
+        expect(target.moduleFolders?.[0]).toMatchObject({
+            name: expect.stringContaining('[중복 후보]'),
+            moduleIds: target.modules.map((module) => module.id),
+        })
     })
 })

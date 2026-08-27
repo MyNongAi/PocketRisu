@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
     recordModuleActivation,
+    recordNewModules,
     seedModuleActivationHistory,
     sortModulesByActivation,
 } from './moduleSort'
@@ -76,6 +77,14 @@ describe('sortModulesByActivation', () => {
             'charlie',
             'alpha',
         ])
+    })
+
+    it('records newly added modules as the newest catalog entries', () => {
+        expect(recordNewModules(
+            ['old'],
+            [['enabled']],
+            ['import-a', 'import-b'],
+        )).toEqual(['enabled', 'old', 'import-a', 'import-b'])
     })
 
     it('seeds legacy active modules before recording later changes', () => {

@@ -174,6 +174,8 @@ export async function importSourceCollectionFiles(files: readonly File[]): Promi
         characters: [...db.characters],
         characterOrder: safeStructuredClone(db.characterOrder),
         modules: [...db.modules],
+        moduleActivationHistory: [...(db.moduleActivationHistory ?? [])],
+        hadModuleActivationHistory: db.moduleActivationHistory !== undefined,
         moduleFolders: safeStructuredClone(db.moduleFolders ?? []),
         hadModuleFolders: db.moduleFolders !== undefined,
         personas: [...db.personas],
@@ -272,6 +274,8 @@ export async function importSourceCollectionFiles(files: readonly File[]): Promi
         db.characters = rollback.characters
         db.characterOrder = rollback.characterOrder
         db.modules = rollback.modules
+        if (rollback.hadModuleActivationHistory) db.moduleActivationHistory = rollback.moduleActivationHistory
+        else delete db.moduleActivationHistory
         if (rollback.hadModuleFolders) db.moduleFolders = rollback.moduleFolders
         else delete db.moduleFolders
         db.personas = rollback.personas
