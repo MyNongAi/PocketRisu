@@ -7,7 +7,7 @@ import { setDatabase, type Database, defaultSdDataFunc, getDatabase, appVer, nod
 import { checkRisuUpdate } from "./update";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore, loadingOverlayStore, chatHydrationOverlayStore, chatDeselected, moduleTreeRevision } from "./stores.svelte";
 import { loadPlugins } from "./plugins/plugins.svelte";
-import { alertConfirm, alertError, alertMd, alertNormalWait, alertSelect, alertTOS, waitAlert, notifySuccess, notifyError, notifyInfo } from "./alert";
+import { alertConfirm, alertError, alertMd, alertSelect, alertTOS, waitAlert, notifySuccess, notifyError, notifyInfo } from "./alert";
 import { hasher } from "./parser/parser.svelte";
 import { characterURLImport, hubURL } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
@@ -399,7 +399,7 @@ export function setPatchSyncBaseline(data: Database | null) {
 
 export async function saveDb() {
     let changed = false
-    let gotChannel = false
+    let sessionRefreshPending = false
     const sessionID = v4()
     let saveInFlight: Promise<void> | null = null
     const knownChatIdsByCharacter = new Map<string, Set<string>>(
@@ -414,32 +414,49 @@ export async function saveDb() {
     if (window.BroadcastChannel) {
         channel = new BroadcastChannel('risu-db')
     }
+
+    // A peer tab/device has committed a newer database. The old blocking
+    // confirmation interrupted nearly every sidebar/settings action while a
+    // second client was alive. Refresh quietly instead, but never interrupt a
+    // running generation. `sessionRefreshPending` also freezes this stale
+    // page's save loop until the reload, so it cannot overwrite the newer DB.
+    const requestQuietSessionRefresh = () => {
+        if (sessionRefreshPending) return
+        sessionRefreshPending = true
+
+        const refreshWhenIdle = () => {
+            void (async () => {
+                // Dynamic import avoids the globalApi <-> process circular
+                // dependency. Once startup is complete this resolves instantly.
+                const { doingChat } = await import("./process/index.svelte")
+                if (get(doingChat)) {
+                    setTimeout(refreshWhenIdle, 1000)
+                    return
+                }
+                try { sessionStorage.setItem('risu-session-handoff-reload', '1') } catch { /* toast is best-effort */ }
+                location.reload()
+            })().catch(() => {
+                // An import/runtime race during startup must not re-enable stale
+                // writes. Retry quietly after the app has had time to settle.
+                setTimeout(refreshWhenIdle, 1500)
+            })
+        }
+
+        setTimeout(refreshWhenIdle, 250)
+    }
+
     if (channel) {
         channel.onmessage = (ev) => {
             if (ev.data === sessionID) {
                 return
             }
-            if (!gotChannel) {
-                gotChannel = true
-                alertNormalWait(language.activeTabChange).then(() => {
-                    location.reload()
-                })
-            }
+            requestQuietSessionRefresh()
         }
     }
-    // Cross-device single-writer lock: mirrors BroadcastChannel behavior
-    // across devices via server-side session check (423 → deactivate).
-    // With reload-on-return below, a write actually reaching 423 means TRUE
-    // simultaneous use of two devices — rare, and the attempted change cannot
-    // be saved — so it stays an explicit blocking modal, never an automatic
-    // reload that would eat the user's action without a word.
+    // Cross-device single-writer lock: a rejected stale writer (HTTP 423)
+    // follows the same quiet handoff path as a same-browser peer tab.
     window.addEventListener('risu-session-deactivated', () => {
-        if (!gotChannel) {
-            gotChannel = true
-            alertNormalWait(language.activeTabChange).then(() => {
-                location.reload()
-            })
-        }
+        requestQuietSessionRefresh()
     })
 
     // Reload-on-return: while this tab was hidden, another device may have
@@ -461,8 +478,7 @@ export async function saveDb() {
             if (get(doingChat)) return // never yank a running generation
             const state = await forageStorage.getWriterLockState()
             if (state !== 'stale') return
-            try { sessionStorage.setItem('risu-session-handoff-reload', '1') } catch { /* toast is best-effort */ }
-            location.reload()
+            requestQuietSessionRefresh()
         })().catch(() => { /* status check failed — do nothing, write path 423 still guards */ })
     }
     window.addEventListener('focus', checkWriterLockOnReturn)
@@ -835,13 +851,10 @@ export async function saveDb() {
             skipBroadcast?: boolean
         }
     ): Promise<'saved' | 'retry' | 'noop'> {
-        if (gotChannel) {
+        if (sessionRefreshPending) {
             // Data is saved in another tab.
             await sleep(1000)
             return 'noop'
-        }
-        if (channel && !options?.skipBroadcast) {
-            channel.postMessage(sessionID)
         }
 
         const db = getDatabase()
@@ -1130,6 +1143,12 @@ export async function saveDb() {
 
         if (newEtag) {
             forageStorage.setDbEtag(newEtag)
+        }
+
+        // Tell peer tabs only after persistence has completed. Broadcasting
+        // before the write made an automatic handoff race against old bytes.
+        if (channel && !options?.skipBroadcast) {
+            channel.postMessage(sessionID)
         }
 
 

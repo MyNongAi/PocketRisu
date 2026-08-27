@@ -74,7 +74,18 @@ function normalizeErrorMessage(msg: unknown): { message: string; stack?: string 
     }
 }
 
+// Some browser/DnD APIs reject cancellation paths with `null` instead of a
+// real Error. Turning those sentinels into a literal "null" toast/modal is
+// pure noise and used to appear during harmless sidebar open/close actions.
+function isEmptyNotification(msg: unknown, normalizedMessage?: string): boolean {
+    if (msg === null || msg === undefined) return true
+    if (normalizedMessage === undefined && typeof msg !== 'string') return false
+    const message = (normalizedMessage !== undefined ? normalizedMessage : msg as string).trim().toLowerCase()
+    return message === '' || message === 'null' || message === 'undefined' || message === '{}'
+}
+
 export function alertError(msg: unknown) {
+    if (isEmptyNotification(msg)) return
     // Use nativeConsoleError (pre-monkey-patch) so devtools still shows the error
     // but log-capture does not also persist it — alertError below calls addLog
     // explicitly with source='blocking-alert', avoiding a duplicate entry.
@@ -83,17 +94,7 @@ export function alertError(msg: unknown) {
 
     let { message: errorMessage, stack: stackTrace } = normalizeErrorMessage(msg)
     errorMessage = errorMessage.trim()
-    if (!errorMessage) {
-        errorMessage = 'Unknown error'
-    }
-
-    const ignoredErrors = [
-        '{}'
-    ]
-
-    if(ignoredErrors.includes(errorMessage)){
-        return
-    }
+    if (isEmptyNotification(msg, errorMessage)) return
 
     let submsg = ''
 
@@ -223,6 +224,7 @@ function clearTransitionalAlert() {
 export function notifyError(msg: unknown, opts?: NotifyOptions) {
     clearTransitionalAlert()
     const { message, stack } = normalizeErrorMessage(msg)
+    if (isEmptyNotification(msg, message)) return
     const description = opts?.description ?? stack
     addLog({ level: 'error', message, description, source: opts?.source })
     toast.error(message, description ? { description } : undefined)
@@ -231,6 +233,7 @@ export function notifyError(msg: unknown, opts?: NotifyOptions) {
 export function notifyWarning(msg: unknown, opts?: NotifyOptions) {
     clearTransitionalAlert()
     const { message, stack } = normalizeErrorMessage(msg)
+    if (isEmptyNotification(msg, message)) return
     const description = opts?.description ?? stack
     addLog({ level: 'warning', message, description, source: opts?.source })
     toast.warning(message, description ? { description } : undefined)
@@ -239,6 +242,7 @@ export function notifyWarning(msg: unknown, opts?: NotifyOptions) {
 export function notifyInfo(msg: unknown, opts?: NotifyOptions) {
     clearTransitionalAlert()
     const { message } = normalizeErrorMessage(msg)
+    if (isEmptyNotification(msg, message)) return
     addLog({ level: 'info', message, description: opts?.description, source: opts?.source })
     toast.info(message, opts?.description ? { description: opts.description } : undefined)
 }
@@ -247,6 +251,7 @@ export function notifySuccess(msg: unknown, opts?: Pick<NotifyOptions, 'descript
     // Intentionally not logged (decision 4-2): success feedback has low timeline value.
     clearTransitionalAlert()
     const { message } = normalizeErrorMessage(msg)
+    if (isEmptyNotification(msg, message)) return
     toast.success(message, opts?.description ? { description: opts.description } : undefined)
 }
 
