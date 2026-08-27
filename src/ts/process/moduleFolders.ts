@@ -41,6 +41,14 @@ function normalizeSearch(search: string) {
     return search.trim().toLocaleLowerCase()
 }
 
+function isSimilarityReviewFolder(folder: ModuleFolder): boolean {
+    // Older database serializers can preserve the generated display name while
+    // dropping newer optional metadata. The prefix keeps those folders pinned
+    // after a save/reload without changing ordinary user folders.
+    return folder.duplicateCandidate?.kind === 'module'
+        || folder.name.trimStart().startsWith('[유사 후보]')
+}
+
 /**
  * Sanitize folder metadata loaded from backups/plugins without changing any
  * module ids. The first valid folder id and first membership win, matching the
@@ -153,7 +161,7 @@ export function buildModuleFolderCatalog<T extends FolderableModule>(
     // Similarity folders are explicitly review queues, so keep them above all
     // ordinary folders and root modules regardless of activation recency.
     for(const folder of validFolders){
-        if(folder.duplicateCandidate?.kind !== 'module') continue
+        if(!isSimilarityReviewFolder(folder)) continue
         const visibleMembers = visibleFolderMembers.get(folder.id) ?? []
         const folderMatches = normalizedSearch !== '' && folder.name.toLocaleLowerCase().includes(normalizedSearch)
         if(visibleMembers.length > 0 || folderMatches){
