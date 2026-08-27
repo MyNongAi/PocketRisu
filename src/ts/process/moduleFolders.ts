@@ -5,6 +5,11 @@ export interface ModuleFolder {
     collapsed?: boolean
     /** PocketRisu collection provenance for a generated source folder. */
     sourceInfo?: import('../sourceCollection').SourceImportInfo
+    /** Automatically generated review folder for highly similar names. */
+    duplicateCandidate?: {
+        kind: 'module'
+        key: string
+    }
 }
 
 export interface FolderableModule {
@@ -143,6 +148,18 @@ export function buildModuleFolderCatalog<T extends FolderableModule>(
     const result: ModuleCatalogEntry<T>[] = []
     const emittedFolders = new Set<string>()
 
+    // A newly created folder has no member from which to derive an anchor.
+    // Render those folders first in metadata order so the create action has an
+    // immediate, predictable result at the top of the catalog.
+    for(const folder of validFolders){
+        if((folderMembers.get(folder.id)?.length ?? 0) !== 0) continue
+        const folderMatches = normalizedSearch !== '' && folder.name.toLocaleLowerCase().includes(normalizedSearch)
+        if(normalizedSearch === '' || folderMatches){
+            emittedFolders.add(folder.id)
+            result.push({ kind: 'folder', folder, modules: [] })
+        }
+    }
+
     for(let index = 0; index < sortedModules.length; index++){
         const module = sortedModules[index]
         const folderId = moduleFolderId.get(module.id)
@@ -165,8 +182,8 @@ export function buildModuleFolderCatalog<T extends FolderableModule>(
         }
     }
 
-    // A folder with no existing members has no natural anchor, so keep it at
-    // the end without disturbing the visible order of existing modules.
+    // A malformed folder can lose its anchor after filtering. Preserve it
+    // instead of silently dropping its metadata.
     for(const folder of validFolders){
         if(emittedFolders.has(folder.id)) continue
         const folderMatches = normalizedSearch !== '' && folder.name.toLocaleLowerCase().includes(normalizedSearch)

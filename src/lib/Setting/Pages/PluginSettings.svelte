@@ -16,11 +16,26 @@
     import CheckInput from "src/lib/UI/GUI/CheckInput.svelte";
     import TextAreaInput from "src/lib/UI/GUI/TextAreaInput.svelte";
     import { hotReloadPluginFiles } from "src/ts/plugins/apiV3/developMode";
+    import { isSecureContext } from "src/ts/secureContext";
+    import { openSettings, SettingsRoute } from "src/ts/routing";
+    import ShButton from "src/lib/UI/GUI/ShButton.svelte";
 
     let showParams = $state([])
 </script>
 
 <SettingPage title={language.plugin}>
+{#if !isSecureContext}
+    <div class="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-yellow-700/40 bg-yellow-900/30 px-3 py-3 text-yellow-300">
+        <TriangleAlert size={18} class="shrink-0 text-yellow-400" />
+        <div class="min-w-0 flex-1">
+            <div class="text-sm font-semibold">{language.httpInsecureWarningTitle}</div>
+            <div class="mt-0.5 text-xs opacity-90">{language.httpInsecureWarningBody}</div>
+        </div>
+        <ShButton variant="outline" size="sm" onclick={() => openSettings(SettingsRoute.RemoteAccess)}>
+            {language.httpInsecureOpenRemoteAccess}
+        </ShButton>
+    </div>
+{/if}
 <span class="text-draculared text-xs mb-4">{language.pluginWarn}</span>
 
 <div class="text-textcolor2 mb-2 flex gap-2 justify-end">

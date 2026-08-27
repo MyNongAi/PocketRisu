@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { UserRoundIcon, XIcon } from "@lucide/svelte";
+    import { XIcon } from "@lucide/svelte";
     import { language } from "../../lang";
     import { DBState } from 'src/ts/stores.svelte';
     import { changeUserPersona } from "src/ts/persona";
@@ -53,17 +53,17 @@
                 </button>
             </div>
         </div>
-        <div class="grid min-h-0 flex-1 auto-rows-max content-start grid-cols-2 gap-3 overflow-y-auto p-4 sm:grid-cols-3 md:grid-cols-4">
+        <div class="flex min-h-0 flex-1 content-start flex-wrap gap-3 overflow-y-auto p-4">
             {#each DBState.db.personas as persona, i}
                 <button
                     type="button"
                     aria-label={persona.name || 'User'}
                     aria-pressed={i === DBState.db.selectedPersona}
                     onclick={() => selectPersona(i)}
-                    class={`group min-w-0 self-start cursor-pointer overflow-hidden rounded-xl border bg-selected/20 text-left text-textcolor transition-colors hover:border-primary hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-primary
+                    class={`group relative h-20 w-20 shrink-0 cursor-pointer overflow-hidden rounded-md border bg-selected/20 text-textcolor shadow-lg transition-colors hover:border-primary hover:bg-primary/10 focus-visible:outline-2 focus-visible:outline-primary
                         ${i === DBState.db.selectedPersona ? 'border-primary ring-2 ring-primary/40' : 'border-darkborderc'}`}
                 >
-                    <div class="relative aspect-square w-full overflow-hidden bg-selected/45">
+                    <div class="relative h-full w-full overflow-hidden bg-selected/45">
                         {#if persona.icon}
                             <LazyAssetPreview
                                 path={persona.icon}
@@ -74,8 +74,8 @@
                                 rootMargin="160px"
                             />
                         {:else}
-                            <div class="flex h-full w-full items-center justify-center text-textcolor2">
-                                <UserRoundIcon size={42}/>
+                            <div class="flex h-full w-full items-center justify-center p-2 text-center text-xs font-semibold leading-tight text-textcolor">
+                                <span class="line-clamp-4 wrap-break-word">{persona.name || 'User'}</span>
                             </div>
                         {/if}
                         {#if persona.sourceInfo?.label}
@@ -84,10 +84,6 @@
                             </span>
                         {/if}
                     </div>
-                    <span class="block truncate px-3 pt-2 text-sm font-semibold">{persona.name || 'User'}</span>
-                    <span class="block min-h-8 truncate px-3 pb-2 text-xs text-textcolor2">
-                        {persona.note || '\u00a0'}
-                    </span>
                 </button>
             {/each}
         </div>

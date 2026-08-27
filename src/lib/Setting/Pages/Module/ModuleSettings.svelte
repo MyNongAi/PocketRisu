@@ -47,6 +47,8 @@
     import type { ModuleFolderDropTarget } from "src/ts/process/moduleFolders";
     import { importDroppedFiles } from "src/ts/dropImport";
     import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
+    import ShDialog from "src/lib/UI/GUI/ShDialog.svelte";
+    import ShButton from "src/lib/UI/GUI/ShButton.svelte";
 
     type ModuleCatalogRow =
         | { kind: 'module'; module: RisuModule; nested: boolean }
@@ -67,6 +69,8 @@
     let draggedFolderId = $state('')
     let moduleDropIndicator = $state('')
     let externalModuleDropActive = $state(false)
+    let folderCreateOpen = $state(false)
+    let newFolderName = $state('')
     let draggingModuleCatalogItem = $derived(!!draggedModuleId || !!draggedFolderId)
     let { quickPanel = false }: { quickPanel?: boolean } = $props()
     let moduleFolders = $derived(normalizeModuleFolders(DBState.db.moduleFolders))
@@ -122,13 +126,25 @@
         DBState.db.moduleFolders = normalizeModuleFolders(updater(moduleFolders))
     }
 
-    async function createFolder(){
-        const name = (await alertInput(language.folderNameInput)).trim()
+    function openFolderCreator(){
+        newFolderName = ''
+        folderCreateOpen = true
+    }
+
+    function createFolder(){
+        const name = newFolderName.trim()
         if(!name) return
         updateFolders((folders) => [
-            ...folders,
             { id: v4(), name, moduleIds: [] },
+            ...folders,
         ])
+        folderCreateOpen = false
+        newFolderName = ''
+    }
+
+    function modulesInFolder(folder: ModuleFolder){
+        const ids = new Set(folder.moduleIds)
+        return DBState.db.modules.filter((module) => ids.has(module.id))
     }
 
     async function renameFolder(folder: ModuleFolder){
@@ -365,7 +381,7 @@
         class="text-textcolor2 hover:text-primary cursor-pointer"
         aria-label={language.createModuleFolder}
         use:tooltip={language.createModuleFolder}
-        onclick={() => { void createFolder() }}
+        onclick={openFolderCreator}
     >
         <FolderPlusIcon />
     </button>
@@ -763,3 +779,49 @@
     </SettingPage>
 {/if}
 </div>
+
+<ShDialog bind:open={folderCreateOpen} size="lg" tier="alert" closeOnEscape={true}>
+    {#snippet title()}{language.createModuleFolder}{/snippet}
+    {#snippet description()}
+        폴더 {moduleFolders.length}개 · 모듈 {DBState.db.modules.length}개
+    {/snippet}
+
+    <div class="flex flex-col gap-3">
+        <div class="max-h-64 overflow-y-auto rounded-md border border-darkborderc bg-selected/10">
+            {#if moduleFolders.length === 0}
+                <div class="p-3 text-sm text-textcolor2">{language.noModules}</div>
+            {:else}
+                {#each moduleFolders as folder (folder.id)}
+                    {@const members = modulesInFolder(folder)}
+                    <div class="border-b border-selected px-3 py-2 last:border-b-0">
+                        <div class="flex items-center gap-2">
+                            <FolderIcon size={16} class="shrink-0 text-textcolor2" />
+                            <span class="min-w-0 grow truncate font-semibold">{folder.name}</span>
+                            <span class="shrink-0 text-xs text-textcolor2">{members.length}</span>
+                        </div>
+                        <div class="mt-1 truncate pl-6 text-xs text-textcolor2" title={members.map((module) => module.name).join(' · ')}>
+                            {members.length > 0 ? members.map((module) => module.name).join(' · ') : language.noModules}
+                        </div>
+                    </div>
+                {/each}
+            {/if}
+        </div>
+
+        <div class="flex flex-col gap-1">
+            <label for="new-module-folder-name" class="text-sm text-textcolor2">{language.folderNameInput}</label>
+            <TextInput
+                id="new-module-folder-name"
+                bind:value={newFolderName}
+                fullwidth
+                onkeydown={(event) => {
+                    if(event.key === 'Enter' && !event.isComposing) createFolder()
+                }}
+            />
+        </div>
+    </div>
+
+    {#snippet footer()}
+        <ShButton variant="outline" onclick={() => { folderCreateOpen = false }}>{language.cancel}</ShButton>
+        <ShButton disabled={!newFolderName.trim()} onclick={createFolder}>{language.confirm}</ShButton>
+    {/snippet}
+</ShDialog>

@@ -159,25 +159,25 @@
         />
         {:else}
         <div
-          class="bg-skin-border sidebar-avatar rounded-md bg-top"
+          class="bg-skin-border sidebar-avatar flex items-center justify-center rounded-md bg-top p-1 text-center text-[9px] font-semibold leading-tight text-textcolor"
           style:width={size + "px"}
           style:height={size + "px"}
           style:min-width={size + "px"}
           style:min-height={size + "px"}
           class:rounded-md={!rounded} class:rounded-full={rounded}
-        ></div>
+        ><span class="line-clamp-3 wrap-break-word">{name}</span></div>
         {/if}
       {/await}
     {/if}
   {:else}
     <div
-      class="bg-skin-border sidebar-avatar sidebar-touch-target rounded-md bg-top"
+      class="bg-skin-border sidebar-avatar sidebar-touch-target flex items-center justify-center rounded-md bg-top p-1 text-center text-[9px] font-semibold leading-tight text-textcolor"
       style:width={size + "px"}
       style:height={size + "px"}
       style:min-width={size + "px"}
       style:min-height={size + "px"}
       class:rounded-md={!rounded} class:rounded-full={rounded} 
-></div>
+    ><span class="line-clamp-3 wrap-break-word">{name}</span></div>
   {/if}
 </span>
 

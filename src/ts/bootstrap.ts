@@ -34,6 +34,9 @@ import { registerModelDynamic } from "./model/modellist";
 import { initModelJobRecovery } from "./process/request/jobRecovery";
 import { convertStubsToPlaceholders } from "./storage/chatStorage";
 import { isChatStub, purgeUnsupportedGroupChats } from "./storage/database.svelte";
+import { organizeAllSimilarityFolders } from "./process/similarityFolders";
+
+const SIMILARITY_FOLDER_MIGRATION_VERSION = 1
 
 /**
  * Loads the application data.
@@ -417,6 +420,12 @@ async function checkNewFormat(): Promise<void> {
     db.modules = db.modules.filter((v) => {
         return v !== null && v !== undefined;
     });
+
+    db.characterOrder ??= []
+    if((db.similarityFolderMigrationVersion ?? 0) < SIMILARITY_FOLDER_MIGRATION_VERSION){
+        organizeAllSimilarityFolders(db, uuidv4)
+        db.similarityFolderMigrationVersion = SIMILARITY_FOLDER_MIGRATION_VERSION
+    }
 
     db.personas = (db.personas ?? []).map((v) => {
         v.id ??= uuidv4()
