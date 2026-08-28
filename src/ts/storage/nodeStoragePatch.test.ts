@@ -17,12 +17,45 @@ const { NodeStorage } = await import('./nodeStorage')
 function storageReturning(status: number, body: any) {
     const storage = Object.create(NodeStorage.prototype) as InstanceType<typeof NodeStorage>
     ;(storage as any)._lastDbEtag = null
+    ;(storage as any).chatEtags = new Map()
     ;(storage as any).authFetch = vi.fn(async () => new Response(JSON.stringify(body), {
         status,
         headers: { 'content-type': 'application/json' },
     }))
     return storage
 }
+
+describe('NodeStorage per-chat optimistic concurrency', () => {
+    test('sends the hydrated chat ETag and advances it after a save', async () => {
+        const storage = storageReturning(200, { success: true, etag: 'chat-v2' })
+        ;(storage as any).chatEtags.set('char-a/chat-a', 'chat-v1')
+
+        await storage.saveChatContent('char-a', 0, 'chat-a', { id: 'chat-a', message: [] })
+
+        expect((storage as any).authFetch).toHaveBeenCalledWith(
+            '/api/chat-content/char-a/0',
+            expect.objectContaining({
+                method: 'POST',
+                headers: expect.objectContaining({
+                    'x-chat-id': 'chat-a',
+                    'x-if-match': 'chat-v1',
+                }),
+            }),
+        )
+        expect((storage as any).chatEtags.get('char-a/chat-a')).toBe('chat-v2')
+    })
+
+    test('surfaces a same-chat conflict instead of overwriting it', async () => {
+        const storage = storageReturning(409, {
+            error: 'Chat changed on another device',
+            currentEtag: 'remote-chat-v2',
+        })
+        ;(storage as any).chatEtags.set('char-a/chat-a', 'chat-v1')
+
+        await expect(storage.saveChatContent('char-a', 0, 'chat-a', { id: 'chat-a', message: [] }))
+            .rejects.toMatchObject({ name: 'ConflictError', currentEtag: 'remote-chat-v2' })
+    })
+})
 
 describe('NodeStorage.patchItem 409 contract', () => {
     test('marks an ordinary hash 409 as a rebase conflict', async () => {

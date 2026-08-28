@@ -781,12 +781,14 @@
             </div>
         {:else}
             {@const entry = row.entry}
+            {@const enabledModuleCount = entry.modules.filter((module) => DBState.db.enabledModules.includes(module.id)).length}
             <div
                 class={`border-b ${moduleDropIndicator === `folder:${entry.folder.id}` ? 'border-primary bg-primary/15' : 'border-selected'}
                     ${moduleDropIndicator === `folder-order:${entry.folder.id}:before` ? 'border-t-2 border-t-primary' : ''}
                     ${moduleDropIndicator === `folder-order:${entry.folder.id}:after` ? 'border-b-2 border-b-primary' : ''}
                     ${draggedFolderId === entry.folder.id ? 'opacity-55' : ''}`}
                 data-module-folder-drop={entry.folder.id}
+                data-module-active-count={enabledModuleCount}
                 role="group"
                 aria-label={entry.folder.name}
                 ondragover={(event) => previewFolderDrop(event, entry.folder.id)}
@@ -822,7 +824,16 @@
                                 {/if}
                                 <FolderIcon size={18} class="shrink-0" />
                                 <span class="truncate font-bold">{entry.folder.name}</span>
-                                <span class="shrink-0 text-xs text-textcolor2">{entry.modules.length}</span>
+                                <span
+                                    class={enabledModuleCount > 0
+                                        ? "shrink-0 rounded-full bg-blue-500/15 px-1.5 py-0.5 text-xs text-blue-400"
+                                        : "shrink-0 text-xs text-textcolor2"
+                                    }
+                                    aria-label={`${language.active}: ${enabledModuleCount}/${entry.modules.length}`}
+                                    use:tooltip={`${language.active}: ${enabledModuleCount}/${entry.modules.length}`}
+                                >
+                                    {enabledModuleCount > 0 ? `${language.active} ${enabledModuleCount}/` : ''}{entry.modules.length}
+                                </span>
                             </button>
                             <button
                                 type="button"
