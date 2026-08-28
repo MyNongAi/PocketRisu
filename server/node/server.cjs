@@ -5083,7 +5083,6 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
     if(!await checkAuth(req, res)){
         return;
     }
-    if (!checkActiveSession(req, res)) return;
     const filePath = req.headers['file-path'];
     const fileContent = req.body;
     if (!filePath || !fileContent) {
@@ -5094,9 +5093,18 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
         res.status(400).send({ error:'Invaild Path' });
         return;
     }
+    const decodedWriteKey = Buffer.from(filePath, 'hex').toString('utf-8');
+    // database.bin carries an ETag precondition. Let stale browser sessions
+    // reach that optimistic-concurrency check instead of rejecting them with
+    // 423 first; a mismatched copy receives 409 and the client rebases its
+    // tracked edits. Unversioned writes retain the conservative session lock.
+    const conditionalDatabaseWrite = decodedWriteKey === 'database/database.bin'
+        && typeof req.headers['x-if-match'] === 'string'
+        && req.headers['x-if-match'].length > 0;
+    if (!conditionalDatabaseWrite && !checkActiveSession(req, res)) return;
     try {
         await queueMutableStorageOperation(async () => {
-            const key = Buffer.from(filePath, 'hex').toString('utf-8');
+            const key = decodedWriteKey;
 
             // ETag conflict detection for database.bin
             if (key === 'database/database.bin') {
@@ -5227,7 +5235,6 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
     if(!await checkAuth(req, res)){
         return;
     }
-    if (!checkActiveSession(req, res)) return;
     const filePath = req.headers['file-path'];
     const patch = req.body.patch;
     const expectedHash = req.body.expectedHash;
@@ -6515,6 +6522,7 @@ app.get('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, asy
                 }
                 const encoded = Buffer.from(encodeRisuSaveLegacy(chat));
                 res.setHeader('Content-Type', 'application/octet-stream');
+                res.setHeader('ETag', computeBufferEtag(encoded));
                 return res.send(encoded);
             }
         }
@@ -6539,6 +6547,7 @@ app.get('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, asy
         }
         const encoded = Buffer.from(encodeRisuSaveLegacy(chat));
         res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('ETag', computeBufferEtag(encoded));
         res.send(encoded);
         });
     } catch (error) {
@@ -6549,7 +6558,6 @@ app.get('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, asy
 // POST /api/chat-content/:chaId/:chatIndex — save chat content to server
 app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, async (req, res, next) => {
     if (!await checkAuth(req, res)) { return; }
-    if (!checkActiveSession(req, res)) return;
     try {
         await queueMutableStorageOperation(async () => {
             const chaId = req.params.chaId;
@@ -6573,6 +6581,32 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
             }
 
             await ensureChatStore();
+
+            const currentChat = fullChatStore.get(chaId)?.get(expectedChatId);
+            const ifMatch = req.headers['x-if-match'];
+            if (typeof ifMatch === 'string' && ifMatch.length > 0) {
+                if (!currentChat) {
+                    return res.status(409).json({
+                        error: 'Chat no longer exists on the server',
+                        currentEtag: null,
+                    });
+                }
+                if (!restoreColdStorageChat(currentChat)) {
+                    return res.status(500).json({ error: 'Cold storage restore failed' });
+                }
+                const currentEtag = computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(currentChat)));
+                if (ifMatch !== currentEtag) {
+                    return res.status(409).json({
+                        error: 'Chat changed on another device',
+                        currentEtag,
+                    });
+                }
+            } else if (currentChat && !checkActiveSession(req, res)) {
+                // Legacy clients have no per-chat precondition, so preserve the
+                // old single-writer protection. A brand-new chat id is safe to
+                // create because there is nothing for it to overwrite.
+                return;
+            }
 
             // Update fullChatStore
             if (!fullChatStore.has(chaId)) {
@@ -6632,7 +6666,9 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
             }, SAVE_INTERVAL);
             saveTimers[DB_HEX_KEY] = saveTimer;
 
-            res.json({ success: true });
+            const nextEtag = computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(chatData)));
+            res.setHeader('ETag', nextEtag);
+            res.json({ success: true, etag: nextEtag });
         });
     } catch (error) {
         next(error);

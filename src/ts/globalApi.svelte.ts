@@ -459,34 +459,14 @@ export async function saveDb() {
         requestQuietSessionRefresh()
     })
 
-    // Reload-on-return: while this tab was hidden, another device may have
-    // taken the writer lock and changed data. Check the moment the user comes
-    // BACK — right then nothing is in progress, so a refresh costs nothing —
-    // instead of at the next write, where a 423 would eat the very change
-    // being saved. Only 'stale' reloads (the other device actually wrote);
-    // 'fresh' means our copy is still current and the next user action simply
-    // takes the lock back with no reload at all.
-    let lastLockReturnCheck = 0
-    const checkWriterLockOnReturn = () => {
-        const nowMs = Date.now()
-        if (nowMs - lastLockReturnCheck < 5000) return
-        lastLockReturnCheck = nowMs
-        void (async () => {
-            // Dynamic import: process/index.svelte imports this module, so a
-            // static import here would be circular. Already loaded → instant.
-            const { doingChat } = await import("./process/index.svelte")
-            if (get(doingChat)) return // never yank a running generation
-            const state = await forageStorage.getWriterLockState()
-            if (state !== 'stale') return
-            requestQuietSessionRefresh()
-        })().catch(() => { /* status check failed — do nothing, write path 423 still guards */ })
-    }
-    window.addEventListener('focus', checkWriterLockOnReturn)
-    document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') checkWriterLockOnReturn()
-    })
+    // Do not reload merely because the window regained focus. Database and
+    // chat writes now carry optimistic-concurrency preconditions, so an
+    // unrelated device can safely update another chat without invalidating
+    // this page. Truly unsafe legacy writes still receive 423 and follow the
+    // quiet refresh path above; version conflicts return 409 instead of
+    // discarding an in-memory reroll/input during a surprise reload.
 
-    // Post-handoff notice from a reload-on-return in the previous page life.
+    // Post-handoff notice from a real 423/same-tab handoff in the previous page life.
     // Delayed so the toast container is mounted before it fires.
     try {
         if (sessionStorage.getItem('risu-session-handoff-reload')) {

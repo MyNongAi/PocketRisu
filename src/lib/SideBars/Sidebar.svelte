@@ -196,7 +196,10 @@
           id: folder.id,
           name: folder.name,
           color: folder.color,
-          img: folder.imgFile,
+          // A folder without a custom cover borrows its top member's
+          // thumbnail. SidebarAvatar clips it into a folder silhouette so it
+          // remains visibly distinct from an ordinary character card.
+          img: folder.imgFile || folderCharImages[0]?.img || '',
         });
       }
     }
@@ -885,7 +888,7 @@
           {:else if char.type === "folder"}
             {#key char.color}
             {#key char.name}
-              <SidebarAvatar src="slot" size="56" rounded={IconRounded} bordered name={char.name} color={char.color} backgroundimg={char.img ? () => getCharThumbnail(char.img, "plain") : ""}
+              <SidebarAvatar src="slot" size="56" rounded={IconRounded} folderShape name={char.name} color={char.color} backgroundimg={char.img ? () => getCharThumbnail(char.img, "plain") : ""}
               oncontextmenu={async (e) => {
                 e.preventDefault()
                 const sel = parseInt(await alertSelect([language.renameFolder,language.changeFolderColor,language.changeFolderImage,language.cancel]))

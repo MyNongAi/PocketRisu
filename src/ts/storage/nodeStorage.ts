@@ -261,6 +261,11 @@ export interface BackupImportResult {
 }
 
 export class NodeStorage{
+    private chatEtags = new Map<string, string>()
+
+    private chatEtagKey(chaId: string, chatId: string) {
+        return `${chaId}/${chatId}`
+    }
     private static readonly BULK_WRITE_CLIENT_BATCH = 20
 
     // Cross-device single-writer lock identity. Persisted in sessionStorage so
@@ -1064,21 +1069,34 @@ export class NodeStorage{
         })
         if (da.status === 404) return null
         if (da.status < 200 || da.status >= 300) throw new Error(`fetchChatContent error: ${da.status}`)
+        const etag = da.headers.get('etag')
+        if (etag) this.chatEtags.set(this.chatEtagKey(chaId, chatId), etag)
         const buffer = new Uint8Array(await da.arrayBuffer())
         return normalizeChat(await decodeRisuSave(buffer))
     }
 
     async saveChatContent(chaId: string, chatIndex: number, chatId: string, chat: any): Promise<void> {
         const encoded = encodeRisuSaveLegacy(chat)
+        const headers: Record<string, string> = {
+            'content-type': 'application/octet-stream',
+            'x-chat-id': chatId,
+        }
+        const etagKey = this.chatEtagKey(chaId, chatId)
+        const baselineEtag = this.chatEtags.get(etagKey)
+        if (baselineEtag) headers['x-if-match'] = baselineEtag
         const da = await this.authFetch(`/api/chat-content/${encodeURIComponent(chaId)}/${chatIndex}`, {
             method: 'POST',
-            headers: {
-                'content-type': 'application/octet-stream',
-                'x-chat-id': chatId,
-            },
+            headers,
             body: encoded,
         })
+        if (da.status === 409) {
+            const data = await da.json().catch(() => ({}))
+            throw new ConflictError(data.error || 'Chat changed on another device', data.currentEtag || '')
+        }
         if (da.status < 200 || da.status >= 300) throw new Error(`saveChatContent error: ${da.status}`)
+        const data = await da.json().catch(() => ({}))
+        const nextEtag = data.etag || da.headers.get('etag')
+        if (nextEtag) this.chatEtags.set(etagKey, nextEtag)
     }
 
     // ── Save-folder migration ─────────────────────────────────────────────────

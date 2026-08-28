@@ -12,6 +12,7 @@
     size?: string;
     onClick?: any;
     bordered?: boolean;
+    folderShape?: boolean;
     color?: string;
     backgroundimg?: DeferredImage;
     children?: import('svelte').Snippet;
@@ -28,6 +29,7 @@
     size = "22",
     onClick = () => {},
     bordered = false,
+    folderShape = false,
     color = '',
     backgroundimg = '',
     children,
@@ -107,6 +109,7 @@
         style:min-width={size + "px"}
         style:min-height={size + "px"}
         class:rounded-md={!rounded} class:rounded-full={rounded}
+        class:sidebar-folder-shape={folderShape}
       ></div>
       {:then resolvedBgImg}
       <div
@@ -128,6 +131,7 @@
         style:background-size={resolvedBgImg ? "cover" : undefined}
         style:background-position={resolvedBgImg ? "center" : undefined}
         class:rounded-md={!rounded} class:rounded-full={rounded}
+        class:sidebar-folder-shape={folderShape}
       >
       {#if !resolvedBgImg}
         {@render children?.()}
@@ -186,5 +190,20 @@
     -webkit-touch-callout: none;
     -webkit-user-drag: none;
     user-select: none;
+  }
+
+  .sidebar-folder-shape {
+    position: relative;
+    border-radius: 0.35rem !important;
+    clip-path: polygon(0 15%, 8% 15%, 16% 3%, 46% 3%, 53% 15%, 100% 15%, 100% 100%, 0 100%);
+    filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--risu-theme-textcolor) 45%, transparent));
+  }
+
+  .sidebar-folder-shape::after {
+    position: absolute;
+    inset: 0;
+    content: "";
+    pointer-events: none;
+    box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--risu-theme-textcolor) 35%, transparent);
   }
 </style>
