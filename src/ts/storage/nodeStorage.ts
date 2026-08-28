@@ -579,6 +579,22 @@ export class NodeStorage{
         }
     }
 
+    /** Claim the single-writer session for an explicit user action. The
+     *  x-user-active override is intentional: callers invoke this only from a
+     *  send/reroll gesture, and a long model request must not let the ordinary
+     *  15-second gesture window expire before persistence begins. */
+    async claimWriterSession(): Promise<boolean> {
+        try {
+            const res = await this.authFetch('/api/session/claim', {
+                method: 'POST',
+                headers: { 'x-user-active': '1' },
+            })
+            return res.ok
+        } catch {
+            return false
+        }
+    }
+
     async patchItem(key: string, patchData: { patch: any[], expectedHash: string }): Promise<PatchItemResult> {
         const da = await this.authFetch('/api/patch', {
             method: "POST",

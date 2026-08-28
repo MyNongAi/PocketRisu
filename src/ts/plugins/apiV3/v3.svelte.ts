@@ -1049,7 +1049,11 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
                     iframe.style.width = "100%";
                     iframe.style.height = "100%";
                     iframe.style.border = "none";
-                    iframe.style.zIndex = "1000";
+                    // Host permission/alert dialogs use z-50. Keeping the
+                    // fullscreen guest below them lets getDatabase() and other
+                    // permission prompts remain visible and clickable instead
+                    // of leaving the plugin awaiting a hidden dialog forever.
+                    iframe.style.zIndex = "40";
                     break;
                 }
                 default: {

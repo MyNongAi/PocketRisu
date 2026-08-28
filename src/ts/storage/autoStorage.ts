@@ -63,6 +63,12 @@ export class AutoStorage{
         return this.realStorage.getWriterLockState()
     }
 
+    /** Claim the Node server writer lock before a user starts a chat action. */
+    async claimWriterSession() {
+        await this.Init()
+        return this.realStorage.claimWriterSession()
+    }
+
     /** Get the last known ETag for database.bin */
     getDbEtag(): string | null {
         return this.realStorage._lastDbEtag

@@ -192,29 +192,8 @@
 </div>
 {/key}
 
-<div class="flex w-full items-starts rounded-md border-darkborderc border p-4 max-w-full flex-wrap">
-    <div class="flex flex-col mt-4 mr-4">
-        <button
-            type="button"
-            aria-label={DBState.db.username}
-            class:drop-persona-image={personaImageDropTarget === DBState.db.selectedPersona}
-            ondragenter={(event) => markPersonaImageDrop(event, DBState.db.selectedPersona)}
-            ondragover={(event) => markPersonaImageDrop(event, DBState.db.selectedPersona)}
-            ondragleave={(event) => clearPersonaImageDrop(event, DBState.db.selectedPersona)}
-            ondrop={(event) => dropPersonaImage(event, DBState.db.selectedPersona)}
-            onclick={() => {selectUserImg()}}>
-            {#if DBState.db.userIcon === ''}
-                <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-primary"></div>
-            {:else}
-                {#await getCharImage(DBState.db.userIcon, DBState.db.personas[DBState.db.selectedPersona].largePortrait ? 'lgcss' : 'css')}
-                    <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-primary"></div>
-                {:then im} 
-                    <div class="rounded-md h-28 w-28 shadow-lg bg-textcolor2 cursor-pointer hover:text-primary" style={im}></div>                
-                {/await}
-            {/if}
-        </button>
-    </div>
-    <div class="flex grow flex-col p-2 max-w-full">
+<div class="persona-detail-panel flex w-full rounded-md border border-darkborderc bg-darkbg p-4 max-w-full">
+    <div class="flex min-w-0 grow flex-col">
         {#if DBState.db.personas[DBState.db.selectedPersona].sourceInfo?.label}
             <div class="mb-2 w-fit rounded-full bg-primary/15 px-2 py-1 text-xs font-semibold text-primary">
                 병합 출처 · {DBState.db.personas[DBState.db.selectedPersona].sourceInfo.label}
@@ -228,37 +207,62 @@
         {/if}
         <span class="text-sm text-textcolor2">{language.description} <Help key="personaDescription" /></span>
         <TextAreaInput className="mt-2 mb-4" autocomplete="off" bind:value={DBState.db.personaPrompt} placeholder={`Put the description of this persona here.\nExample: [<user> is a 20 year old girl.]`} />
-        <div class="flex gap-2 mt-4 max-w-full flex-wrap">
-            <Button onclick={exportUserPersona}>{language.export}</Button>
-            <Button onclick={importUserPersona}>{language.import}</Button>
-            <Button onclick={() => {
-                saveUserPersona()
-                const clone = $state.snapshot(DBState.db.personas[DBState.db.selectedPersona])
-                DBState.db.personas.push({
-                    ...clone,
-                    name: clone.name + ' (Copy)',
-                    id: v4()
-                })
-                changeUserPersona(DBState.db.personas.length - 1, 'noSave')
-                void requestImmediateSave()
-            }}>{language.personaDuplicate}</Button>
-
-            <Button styled="danger" onclick={async () => {
-                if(DBState.db.personas.length === 1){
-                    return
-                }
-                const d = await alertConfirm(`${language.removeConfirm}${DBState.db.personas[DBState.db.selectedPersona].name}`)
-                if(d){
+        <div class="mt-4 flex max-w-full items-end justify-between gap-3 border-t border-darkborderc pt-3">
+            <div class="flex min-w-0 flex-wrap items-center gap-2">
+                <Button onclick={exportUserPersona}>{language.export}</Button>
+                <Button onclick={importUserPersona}>{language.import}</Button>
+                <Button onclick={() => {
                     saveUserPersona()
-                    let personas = DBState.db.personas
-                    personas.splice(DBState.db.selectedPersona, 1)
-                    DBState.db.personas = personas
-                    changeUserPersona(0, 'noSave')
+                    const clone = $state.snapshot(DBState.db.personas[DBState.db.selectedPersona])
+                    DBState.db.personas.push({
+                        ...clone,
+                        name: clone.name + ' (Copy)',
+                        id: v4()
+                    })
+                    changeUserPersona(DBState.db.personas.length - 1, 'noSave')
                     void requestImmediateSave()
-                }
-            }}>{language.remove}</Button>
-            <Check bind:check={DBState.db.personas[DBState.db.selectedPersona].largePortrait} name={language.largePortrait}/>
-            <Help key="personaLargePortrait" />
+                }}>{language.personaDuplicate}</Button>
+
+                <Button styled="danger" onclick={async () => {
+                    if(DBState.db.personas.length === 1){
+                        return
+                    }
+                    const d = await alertConfirm(`${language.removeConfirm}${DBState.db.personas[DBState.db.selectedPersona].name}`)
+                    if(d){
+                        saveUserPersona()
+                        let personas = DBState.db.personas
+                        personas.splice(DBState.db.selectedPersona, 1)
+                        DBState.db.personas = personas
+                        changeUserPersona(0, 'noSave')
+                        void requestImmediateSave()
+                    }
+                }}>{language.remove}</Button>
+                <Check bind:check={DBState.db.personas[DBState.db.selectedPersona].largePortrait} name={language.largePortrait}/>
+                <Help key="personaLargePortrait" />
+            </div>
+            <button
+                type="button"
+                aria-label={DBState.db.username}
+                class="shrink-0"
+                class:drop-persona-image={personaImageDropTarget === DBState.db.selectedPersona}
+                ondragenter={(event) => markPersonaImageDrop(event, DBState.db.selectedPersona)}
+                ondragover={(event) => markPersonaImageDrop(event, DBState.db.selectedPersona)}
+                ondragleave={(event) => clearPersonaImageDrop(event, DBState.db.selectedPersona)}
+                ondrop={(event) => dropPersonaImage(event, DBState.db.selectedPersona)}
+                onclick={() => {selectUserImg()}}
+            >
+                {#if DBState.db.userIcon === ''}
+                    <div class="flex h-24 w-24 cursor-pointer items-center justify-center rounded-md bg-textcolor2 p-2 text-center text-xs font-semibold leading-tight text-darkbg shadow-lg hover:text-primary">
+                        <span class="line-clamp-4 wrap-break-word">{DBState.db.username || 'User'}</span>
+                    </div>
+                {:else}
+                    {#await getCharImage(DBState.db.userIcon, DBState.db.personas[DBState.db.selectedPersona].largePortrait ? 'lgcss' : 'css')}
+                        <div class="h-24 w-24 cursor-pointer rounded-md bg-textcolor2 shadow-lg hover:text-primary"></div>
+                    {:then im}
+                        <div class="h-24 w-24 cursor-pointer rounded-md bg-textcolor2 shadow-lg hover:text-primary" style={im}></div>
+                    {/await}
+                {/if}
+            </button>
         </div>
     </div>
 </div>
@@ -269,6 +273,15 @@
         border-radius: 0.375rem;
         outline: 3px solid var(--risu-theme-primary);
         outline-offset: 3px;
+    }
+
+    .persona-detail-panel {
+        position: sticky;
+        z-index: 20;
+        bottom: 0;
+        max-height: min(72vh, 44rem);
+        overflow-y: auto;
+        box-shadow: 0 -0.4rem 1.2rem color-mix(in srgb, var(--risu-theme-bgcolor) 82%, transparent);
     }
 
     .persona-source-badge {

@@ -21,6 +21,7 @@ import katex from 'katex'
 import { getModelInfo } from '../model/modellist';
 import { registerCBS, type matcherArg, type RegisterCallback } from '../cbs';
 import cssSelectorParser from 'postcss-selector-parser'
+import { sha256HexPortable } from '../cryptoFallback';
 
 const markdownItOptions = {
     html: true,
@@ -1160,7 +1161,17 @@ function decodeStyle(text:string){
 }
 
 export async function hasher(data:Uint8Array){
-    return Buffer.from(await crypto.subtle.digest("SHA-256", data as any)).toString('hex');
+    const subtle = globalThis.crypto?.subtle
+    if (typeof subtle?.digest === 'function') {
+        try {
+            return Buffer.from(await subtle.digest("SHA-256", data as BufferSource)).toString('hex')
+        } catch {
+            // Samsung Internet and several Android WebViews expose a partial
+            // Crypto object on LAN HTTP origins. Fall through to the portable
+            // implementation so V2.1 safety checks cannot abort all plugins.
+        }
+    }
+    return sha256HexPortable(data)
 }
 
 export type CbsConditions = {

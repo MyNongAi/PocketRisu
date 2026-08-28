@@ -179,6 +179,31 @@
         ))
     }
 
+    function toggleFolderModules(modules: RisuModule[]){
+        const moduleIds = modules.map((module) => module.id)
+        if(moduleIds.length === 0) return
+
+        const enabledModules = new Set(DBState.db.enabledModules)
+        const shouldEnableAll = moduleIds.some((id) => !enabledModules.has(id))
+        let activationHistory = seedModuleActivationHistory(
+            DBState.db.moduleActivationHistory,
+            DBState.db.enabledModules,
+        )
+
+        if(shouldEnableAll){
+            for(const id of moduleIds){
+                enabledModules.add(id)
+                activationHistory = recordModuleActivation(activationHistory, id)
+            }
+        }
+        else{
+            for(const id of moduleIds) enabledModules.delete(id)
+        }
+
+        DBState.db.moduleActivationHistory = activationHistory
+        DBState.db.enabledModules = [...enabledModules]
+    }
+
     function moveModuleToFolder(moduleId: string, folderId: string){
         DBState.db.moduleFolders = assignModuleToFolder(
             moduleFolders,
@@ -782,6 +807,7 @@
         {:else}
             {@const entry = row.entry}
             {@const enabledModuleCount = entry.modules.filter((module) => DBState.db.enabledModules.includes(module.id)).length}
+            {@const allFolderModulesEnabled = entry.modules.length > 0 && enabledModuleCount === entry.modules.length}
             <div
                 class={`border-b ${moduleDropIndicator === `folder:${entry.folder.id}` ? 'border-primary bg-primary/15' : 'border-selected'}
                     ${moduleDropIndicator === `folder-order:${entry.folder.id}:before` ? 'border-t-2 border-t-primary' : ''}
@@ -825,8 +851,10 @@
                                 <FolderIcon size={18} class="shrink-0" />
                                 <span class="truncate font-bold">{entry.folder.name}</span>
                                 <span
-                                    class={enabledModuleCount > 0
-                                        ? "shrink-0 rounded-full bg-blue-500/15 px-1.5 py-0.5 text-xs text-blue-400"
+                                    class={allFolderModulesEnabled
+                                        ? "shrink-0 rounded-full bg-blue-500/20 px-1.5 py-0.5 text-xs font-bold text-blue-400"
+                                        : enabledModuleCount > 0
+                                            ? "shrink-0 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-xs font-bold text-amber-400"
                                         : "shrink-0 text-xs text-textcolor2"
                                     }
                                     aria-label={`${language.active}: ${enabledModuleCount}/${entry.modules.length}`}
@@ -834,6 +862,24 @@
                                 >
                                     {enabledModuleCount}/{entry.modules.length}
                                 </span>
+                            </button>
+                            <button
+                                type="button"
+                                class={allFolderModulesEnabled
+                                    ? "shrink-0 cursor-pointer text-blue-400 hover:text-primary"
+                                    : enabledModuleCount > 0
+                                        ? "shrink-0 cursor-pointer text-amber-400 hover:text-primary"
+                                        : "shrink-0 cursor-pointer text-textcolor2 hover:text-primary"
+                                }
+                                aria-label={`${language.enableGlobal}: ${entry.folder.name}`}
+                                use:tooltip={`${language.enableGlobal}: ${entry.folder.name}`}
+                                onclick={(event) => {
+                                    event.stopPropagation()
+                                    toggleFolderModules(entry.modules)
+                                }}
+                                disabled={entry.modules.length === 0}
+                            >
+                                <Globe size={18}/>
                             </button>
                             <button
                                 type="button"

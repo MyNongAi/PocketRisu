@@ -32,7 +32,7 @@ import { isMobile } from 'src/ts/platform'
     import MainMenu from '../UI/MainMenu.svelte';
     import AssetInput from './AssetInput.svelte';
     import { scrollWithinContainer } from './scrollWithin';
-    import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile } from 'src/ts/globalApi.svelte';
+    import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile, forageStorage } from 'src/ts/globalApi.svelte';
     import { runTrigger } from 'src/ts/process/triggers';
     import { v4 } from 'uuid';
     import { processMultiCommand } from 'src/ts/process/command';
@@ -371,6 +371,11 @@ import { isMobile } from 'src/ts/platform'
         const selectedChatRoom = selectedCharacter?.chats?.[selectedCharacter.chatPage]
         if(!selectedCharacter || !selectedChatRoom) return
 
+        // Detect a stale cross-device tab before touching the chat or clearing
+        // its composer draft. A 423 here triggers the existing quiet handoff;
+        // the user's typed input remains in the per-chat draft for the reload.
+        if (!await forageStorage.claimWriterSession()) return
+
         let generationTarget = captureGenerationTarget(selectedCharacter, selectedChatRoom)
         const genKey = chatGenKey(generationTarget.chatId)
         const route = captureChatModelRoute(selectedChatRoom, 'model')
@@ -568,6 +573,7 @@ import { isMobile } from 'src/ts/platform'
         const targetCharacter = DBState.db.characters[$selectedCharID]
         const targetChat = targetCharacter?.chats?.[targetCharacter.chatPage]
         if(!targetCharacter || !targetChat) return
+        if (!await forageStorage.claimWriterSession()) return
         let generationTarget = captureGenerationTarget(targetCharacter, targetChat)
         const genKey = chatGenKey(generationTarget.chatId)
         const occupiedChatKeys = new Set([...$generationStates.keys(), ...preparingChatSends])
