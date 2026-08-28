@@ -832,7 +832,7 @@
                                     aria-label={`${language.active}: ${enabledModuleCount}/${entry.modules.length}`}
                                     use:tooltip={`${language.active}: ${enabledModuleCount}/${entry.modules.length}`}
                                 >
-                                    {enabledModuleCount > 0 ? `${language.active} ${enabledModuleCount}/` : ''}{entry.modules.length}
+                                    {enabledModuleCount}/{entry.modules.length}
                                 </span>
                             </button>
                             <button
