@@ -194,9 +194,25 @@
 
   .sidebar-folder-shape {
     position: relative;
+    isolation: isolate;
+    overflow: visible;
     border-radius: 0.35rem !important;
-    clip-path: polygon(0 15%, 8% 15%, 16% 3%, 46% 3%, 53% 15%, 100% 15%, 100% 100%, 0 100%);
-    filter: drop-shadow(0 1px 1px color-mix(in srgb, var(--risu-theme-textcolor) 45%, transparent));
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--risu-theme-textcolor) 35%, transparent);
+  }
+
+  .sidebar-folder-shape::before {
+    position: absolute;
+    z-index: -1;
+    top: -0.4rem;
+    right: 0.28rem;
+    width: 1.45rem;
+    height: 0.65rem;
+    border: 2px solid color-mix(in srgb, var(--risu-theme-textcolor) 35%, transparent);
+    border-bottom: 0;
+    border-radius: 0.32rem 0.32rem 0 0;
+    background: color-mix(in srgb, var(--risu-theme-bgcolor) 86%, var(--risu-theme-textcolor));
+    content: "";
+    pointer-events: none;
   }
 
   .sidebar-folder-shape::after {
@@ -204,6 +220,7 @@
     inset: 0;
     content: "";
     pointer-events: none;
+    border-radius: inherit;
     box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--risu-theme-textcolor) 35%, transparent);
   }
 </style>

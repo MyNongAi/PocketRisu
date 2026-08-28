@@ -3711,6 +3711,18 @@ app.get('/api/session/lock-status', async (req, res) => {
     res.json({ state: sessionLock.peek(typeof id === 'string' ? id : '') })
 })
 
+// Claim the writer lock at the start of an explicit user action, before the
+// client mutates a chat or starts a potentially long model request. Previously
+// a stale tab was discovered only when the generated reply was finally saved;
+// that produced "Failed to save 1 chat" after the user had already waited for
+// the model. A stale client still receives 423 and reloads, while an active or
+// freshly-booted client claims the lock without writing any data.
+app.post('/api/session/claim', async (req, res) => {
+    if (!await checkAuth(req, res)) return
+    if (!checkActiveSession(req, res)) return
+    res.json({ ok: true })
+})
+
 // ── Session cookie issuance (F-0) ──────────────────────────────────────────
 // Called once after JWT auth succeeds. Issues a long-lived cookie so that
 // <img src="/api/asset/..."> requests can be authenticated without JS.
