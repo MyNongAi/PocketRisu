@@ -1,0 +1,70 @@
+import assert from 'node:assert/strict'
+import test from 'node:test'
+import {
+    collectAssetPaths,
+    mergeSourceCollections,
+    prepareSourceDatabase,
+    rewriteAssetPathsInPlace,
+} from './absorb-local-risu.mjs'
+
+test('embedded and structured asset paths are collected and rewritten', () => {
+    const value = {
+        image: 'assets/a.png',
+        css: 'x{background:url(\x22assets/b.webp\x22)}',
+        remote: 'https://example.test/assets/no.png',
+    }
+    assert.deepEqual(collectAssetPaths(value), ['assets/a.png', 'assets/b.webp'])
+    const changes = rewriteAssetPathsInPlace(value, new Map([
+        ['assets/a.png', `external://main-assets/${'a'.repeat(64)}`],
+        ['assets/b.webp', `external://main-assets/${'b'.repeat(64)}`],
+    ]))
+    assert.equal(changes, 2)
+    assert.match(value.image, /^external:\/\/main-assets\//)
+    assert.match(value.css, /external:\/\/main-assets\//)
+    assert.equal(value.remote, 'https://example.test/assets/no.png')
+})
+
+test('source preparation drops chats but keeps duplicate entities', () => {
+    const source = prepareSourceDatabase({
+        characters: [
+            { chaId: 'a', name: 'Same', chats: [{ secret: true }] },
+            { chaId: 'b', name: 'Same', chats: [{ secret: true }] },
+        ],
+        modules: [{ id: 'm', name: 'Module' }],
+        personas: [{ id: 'p', name: 'Persona' }],
+    })
+    assert.equal(source.characters.length, 2)
+    assert.equal(source.characters[0].chats.length, 0)
+})
+
+test('merge appends every duplicate with fresh ids and source folders', () => {
+    let nextId = 0
+    const target = {
+        characters: [{ chaId: 'existing', name: 'Same' }],
+        characterOrder: ['existing'],
+        modules: [{ id: 'existing-module', name: 'Module' }],
+        moduleFolders: [],
+        personas: [{ id: 'existing-persona', name: 'Persona' }],
+    }
+    const source = prepareSourceDatabase({
+        characters: [
+            { chaId: 'a', name: 'Same', chats: [] },
+            { chaId: 'b', name: 'Same', chats: [] },
+        ],
+        characterOrder: ['a', 'b'],
+        modules: [{ id: 'm', name: 'Module' }],
+        personas: [{ id: 'p', name: 'Persona' }],
+    })
+    const result = mergeSourceCollections(target, source, {
+        sourceLabel: '로컬리스',
+        importId: 'import-1',
+        createId: () => `new-${++nextId}`,
+    })
+    assert.equal(target.characters.length, 3)
+    assert.equal(target.characters.filter((value) => value.name === 'Same').length, 3)
+    assert.equal(target.modules.length, 2)
+    assert.equal(target.personas.length, 2)
+    assert.equal(new Set(result.characterIds).size, 2)
+    assert.equal(target.characterOrder[0].name, '[출처] 로컬리스')
+    assert.equal(target.moduleFolders[0].name, '[출처] 로컬리스')
+})
