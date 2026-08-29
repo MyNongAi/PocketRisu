@@ -1,7 +1,7 @@
 //@name pocketrisu_source_collection_exporter
 //@display-name PocketRisu 병합용 컬렉션 내보내기
 //@api 3.0
-//@version 1.2.0
+//@version 1.2.1
 //@arg source_label string 이 기기의 출처 이름 (예: 로컬리스, 모바일웹리스)
 //@arg part_size_mb int 조각당 목표 크기(MB, 권장 12)
 
@@ -403,8 +403,12 @@
         bytes = normalizeAsset(await risuai.readImage(path))
         if (bytes.byteLength > MAX_SINGLE_ASSET_BYTES) throw new OversizedAssetError(bytes.byteLength)
       } catch (error) {
-        if (!(error instanceof OversizedAssetError)) throw error
-        const omission = { path, size: error.size, reason: 'too-large' }
+        const omission = error instanceof OversizedAssetError
+          ? { path, size: error.size, reason: 'too-large' }
+          : { path, size: 0, reason: 'read-failed' }
+        if (!(error instanceof OversizedAssetError)) {
+          console.warn(`[PocketRisu Source Collection Exporter] skipped unreadable asset: ${path}`, error)
+        }
         const estimatedOmissionBytes = path.length + 96
         if ((currentAssets.length > 0 || currentOmittedAssets.length > 0) && (
           currentAssets.length + currentOmittedAssets.length >= MAX_ENTRIES_PER_PART ||
@@ -460,7 +464,7 @@
     await emit(currentEntities, [], [], true)
     // The manifest itself preserves the complete list. The status stays short
     // enough to remain responsive even for pathological collections.
-    const omittedText = omittedCount > 0 ? ` · 큰 에셋 누락 ${omittedCount}` : ''
+    const omittedText = omittedCount > 0 ? ` · 에셋 누락 ${omittedCount}` : ''
     const identityWarning = collectionIdentity.persistent
       ? ''
       : '\n주의: 이 기기에서는 관계 ID를 저장하지 못했으므로, 봇과 모듈을 이 화면을 닫기 전에 모두 내보내십시오.'

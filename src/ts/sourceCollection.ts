@@ -33,7 +33,7 @@ export interface SourceCollectionAsset {
 export interface SourceCollectionOmittedAsset {
     path: string
     size: number
-    reason: 'too-large'
+    reason: 'too-large' | 'read-failed'
 }
 
 export interface SourceCollectionPart {
@@ -225,11 +225,22 @@ export function parseSourceCollectionPart(value: unknown): SourceCollectionPart 
         if (typeof asset.path !== 'string' || !isSafeAssetPath(asset.path)) {
             throw new Error(`Invalid omitted asset path at index ${index}`)
         }
-        if (!Number.isSafeInteger(asset.size) || Number(asset.size) <= SOURCE_COLLECTION_MAX_ASSET_BYTES) {
+        if (!Number.isSafeInteger(asset.size) || Number(asset.size) < 0) {
             throw new Error(`Invalid omitted asset size at index ${index}`)
         }
-        if (asset.reason !== 'too-large') throw new Error(`Invalid omitted asset reason at index ${index}`)
-        return { path: asset.path, size: Number(asset.size), reason: 'too-large' }
+        if (asset.reason === 'too-large') {
+            if (Number(asset.size) <= SOURCE_COLLECTION_MAX_ASSET_BYTES) {
+                throw new Error(`Invalid oversized omitted asset size at index ${index}`)
+            }
+            return { path: asset.path, size: Number(asset.size), reason: 'too-large' }
+        }
+        if (asset.reason === 'read-failed') {
+            if (Number(asset.size) !== 0) {
+                throw new Error(`Invalid unreadable omitted asset size at index ${index}`)
+            }
+            return { path: asset.path, size: 0, reason: 'read-failed' }
+        }
+        throw new Error(`Invalid omitted asset reason at index ${index}`)
     })
 
     const suppliedPaths = new Set(assets.map((asset) => asset.path))

@@ -98,6 +98,17 @@ describe('source collection validation', () => {
         expect(parsed.omittedAssets).toEqual([
             { path: 'assets/large.png', size: SOURCE_COLLECTION_MAX_ASSET_BYTES + 1, reason: 'too-large' },
         ])
+        expect(parseSourceCollectionPart({
+            ...part(0, true),
+            entities: [{ name: 'missing icon', icon: 'assets/missing.png' }],
+            omittedAssets: [{ path: 'assets/missing.png', size: 0, reason: 'read-failed' }],
+        }).omittedAssets).toEqual([
+            { path: 'assets/missing.png', size: 0, reason: 'read-failed' },
+        ])
+        expect(() => parseSourceCollectionPart({
+            ...part(0, true),
+            omittedAssets: [{ path: 'assets/missing.png', size: 1, reason: 'read-failed' }],
+        })).toThrow(/unreadable omitted asset size/)
         expect(() => parseSourceCollectionPart({
             ...parsed,
             assets: [{ path: 'assets/large.png', data: '', size: 0, sha256: '0'.repeat(64) }],
