@@ -445,7 +445,7 @@ export async function saveDb() {
         setTimeout(refreshWhenIdle, 250)
     }
 
-    if (channel) {
+    if (channel && !supportsPatchSync) {
         channel.onmessage = (ev) => {
             if (ev.data === sessionID) {
                 return
@@ -1125,9 +1125,10 @@ export async function saveDb() {
             forageStorage.setDbEtag(newEtag)
         }
 
-        // Tell peer tabs only after persistence has completed. Broadcasting
-        // before the write made an automatic handoff race against old bytes.
-        if (channel && !options?.skipBroadcast) {
+        // Legacy stores still need the coarse same-browser handoff. Node mode
+        // uses database/chat ETags plus per-chat leases, so broadcasting every
+        // chat save would needlessly reload an unrelated conversation tab.
+        if (channel && !supportsPatchSync && !options?.skipBroadcast) {
             channel.postMessage(sessionID)
         }
 

@@ -69,6 +69,17 @@ export class AutoStorage{
         return this.realStorage.claimWriterSession()
     }
 
+    /** Claim/release only the chat that is about to generate. */
+    async claimChatWriterSession(chaId: string, chatId: string) {
+        await this.Init()
+        return this.realStorage.claimChatWriterSession(chaId, chatId)
+    }
+
+    async releaseChatWriterSession(chaId: string, chatId: string) {
+        await this.Init()
+        return this.realStorage.releaseChatWriterSession(chaId, chatId)
+    }
+
     /** Get the last known ETag for database.bin */
     getDbEtag(): string | null {
         return this.realStorage._lastDbEtag

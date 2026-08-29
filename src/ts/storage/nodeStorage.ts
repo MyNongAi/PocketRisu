@@ -262,6 +262,7 @@ export interface BackupImportResult {
 
 export class NodeStorage{
     private chatEtags = new Map<string, string>()
+    private chatLeaseHeartbeats = new Map<string, ReturnType<typeof setInterval>>()
 
     private chatEtagKey(chaId: string, chatId: string) {
         return `${chaId}/${chatId}`
@@ -284,6 +285,11 @@ export class NodeStorage{
         } catch { /* storage unavailable (rare privacy modes) — per-load id */ }
         return minted
     })()
+    // Per-page identity for chat leases. Unlike sessionId this is deliberately
+    // not persisted: duplicated browser tabs can inherit sessionStorage, but
+    // they must never be treated as the same live chat writer.
+    private static readonly chatClientId: string = globalThis.crypto?.randomUUID?.()
+        ?? (Date.now().toString(36) + Math.random().toString(36).slice(2))
 
     _lastDbEtag: string | null = null
     authChecked = false
@@ -405,6 +411,7 @@ export class NodeStorage{
         const headers = new Headers(init.headers)
         headers.set('risu-auth', await this.createAuth())
         headers.set('x-session-id', NodeStorage.sessionId)
+        headers.set('x-chat-client-id', NodeStorage.chatClientId)
         if (isUserActive()) headers.set('x-user-active', '1')
 
         const response = await fetch(input, {
@@ -592,6 +599,64 @@ export class NodeStorage{
             return res.ok
         } catch {
             return false
+        }
+    }
+
+    /** Claim only one conversation for a model request. Other conversations
+     * remain writable on other devices. The cached ETag makes this a preflight
+     * version check as well as a short-lived lease. */
+    async claimChatWriterSession(chaId: string, chatId: string): Promise<boolean> {
+        const key = this.chatEtagKey(chaId, chatId)
+        const headers: Record<string, string> = {}
+        const baselineEtag = this.chatEtags.get(key)
+        if (baselineEtag) headers['x-chat-etag'] = baselineEtag
+        try {
+            const res = await this.authFetch(
+                `/api/chat-session/${encodeURIComponent(chaId)}/${encodeURIComponent(chatId)}/claim`,
+                { method: 'POST', headers },
+            )
+            if (!res.ok) return false
+            const data = await res.json().catch(() => ({}))
+            if (data.etag) this.chatEtags.set(key, data.etag)
+
+            const previous = this.chatLeaseHeartbeats.get(key)
+            if (previous) clearInterval(previous)
+            const timer = setInterval(() => {
+                const currentEtag = this.chatEtags.get(key)
+                const heartbeatHeaders: Record<string, string> = {}
+                if (currentEtag) heartbeatHeaders['x-chat-etag'] = currentEtag
+                void this.authFetch(
+                    `/api/chat-session/${encodeURIComponent(chaId)}/${encodeURIComponent(chatId)}/claim`,
+                    { method: 'POST', headers: heartbeatHeaders },
+                ).then(async (heartbeat) => {
+                    if (!heartbeat.ok) {
+                        clearInterval(timer)
+                        this.chatLeaseHeartbeats.delete(key)
+                        return
+                    }
+                    const data = await heartbeat.json().catch(() => ({}))
+                    if (data.etag) this.chatEtags.set(key, data.etag)
+                }).catch(() => {})
+            }, 45_000)
+            this.chatLeaseHeartbeats.set(key, timer)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    async releaseChatWriterSession(chaId: string, chatId: string): Promise<void> {
+        const key = this.chatEtagKey(chaId, chatId)
+        const timer = this.chatLeaseHeartbeats.get(key)
+        if (timer) clearInterval(timer)
+        this.chatLeaseHeartbeats.delete(key)
+        try {
+            await this.authFetch(
+                `/api/chat-session/${encodeURIComponent(chaId)}/${encodeURIComponent(chatId)}`,
+                { method: 'DELETE' },
+            )
+        } catch {
+            // The server lease expires automatically; release is best-effort.
         }
     }
 
