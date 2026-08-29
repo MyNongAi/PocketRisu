@@ -63,8 +63,8 @@
         </p>
         <p class="mt-2 text-xs leading-relaxed text-textcolor2">
             한 번에 여러 출처와 종류를 골라도 되지만, 각 묶음의 part는 마지막 번호까지 빠짐없이 선택해야 합니다.
-            32MB를 넘는 part는 거부되며, 16MB를 넘는 단일 에셋은 나머지 항목을 살리기 위해 누락 목록에 기록하고
-            해당 참조만 비운 채 병합합니다. 모듈보다 봇을 먼저 가져와도 같은 출처 관계 ID로 나중에 자동 연결됩니다.
+            32MB를 넘는 part는 거부되며, 16MB를 넘거나 원본에서 읽을 수 없는 단일 에셋은 나머지 항목을 살리기 위해
+            누락 목록에 기록하고 해당 참조만 비운 채 병합합니다. 모듈보다 봇을 먼저 가져와도 같은 출처 관계 ID로 나중에 자동 연결됩니다.
         </p>
         <Button onclick={selectAndImportSourceCollections} className="mt-3 w-full">
             컬렉션 part 파일 선택·병합

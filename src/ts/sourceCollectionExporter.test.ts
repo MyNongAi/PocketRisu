@@ -190,7 +190,7 @@ describe('API v3 source collection exporter', () => {
         await settingCallback!()
         document.querySelector<HTMLButtonElement>('button[data-kind="characters"]')!.click()
         await vi.waitFor(() => {
-            expect(document.querySelector('#status')?.textContent).toContain('큰 에셋 누락 1')
+            expect(document.querySelector('#status')?.textContent).toContain('에셋 누락 1')
         }, { timeout: 5_000 })
 
         const parts = await Promise.all(blobs.map(async (blob) => JSON.parse(await blob.text())))
@@ -201,5 +201,48 @@ describe('API v3 source collection exporter', () => {
         }])
         expect(parts.some((part) => part.last)).toBe(true)
         expect(parts.flatMap((part) => part.entities)[0].image).toBe('assets/large.bin')
+    })
+
+    it('finishes a persona export while recording an unreadable host asset', async () => {
+        const blobs: Blob[] = []
+        vi.spyOn(URL, 'createObjectURL').mockImplementation((blob: Blob | MediaSource) => {
+            blobs.push(blob as Blob)
+            return `blob:read-failed-${blobs.length}`
+        })
+        vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+        vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+        vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+        let settingCallback: (() => Promise<void> | void) | undefined
+        const risuai = {
+            getArgument: vi.fn(async (key: string) => key === 'source_label' ? '로컬리스' : 12),
+            setArgument: vi.fn(async () => undefined),
+            getDatabase: vi.fn(async () => ({
+                personas: [{ id: 'persona-1', name: 'Persona', icon: 'assets/missing.png' }],
+            })),
+            readImage: vi.fn(async () => { throw new Error('Host execution error') }),
+            getLocalPluginStorage: vi.fn(async () => ({ getItem: async () => null, setItem: async () => undefined })),
+            showContainer: vi.fn(),
+            registerSetting: vi.fn(async (_name: string, callback: () => Promise<void> | void) => {
+                settingCallback = callback
+                return { id: 'source-exporter' }
+            }),
+        }
+
+        new Function('risuai', exporterCode)(risuai)
+        await vi.waitFor(() => expect(settingCallback).toBeTypeOf('function'))
+        await settingCallback!()
+        document.querySelector<HTMLButtonElement>('button[data-kind="personas"]')!.click()
+        await vi.waitFor(() => {
+            expect(document.querySelector('#status')?.textContent).toContain('완료: 1개 항목')
+        }, { timeout: 5_000 })
+
+        const parts = await Promise.all(blobs.map(async (blob) => JSON.parse(await blob.text())))
+        expect(parts.flatMap((part) => part.omittedAssets)).toEqual([{
+            path: 'assets/missing.png',
+            size: 0,
+            reason: 'read-failed',
+        }])
+        expect(parts.some((part) => part.last)).toBe(true)
+        expect(parts.flatMap((part) => part.entities)[0].icon).toBe('assets/missing.png')
     })
 })

@@ -29,7 +29,7 @@ interface IndexedCollectionPart {
     header: SourceCollectionHeader
     entities: unknown[]
     assetMetadata: { path: string, size: number, sha256: string }[]
-    omittedAssetMetadata: { path: string, size: number, reason: 'too-large' }[]
+    omittedAssetMetadata: { path: string, size: number, reason: 'too-large' | 'read-failed' }[]
 }
 
 export interface SourceCollectionImportSummary {
@@ -301,7 +301,7 @@ export async function selectAndImportSourceCollections(): Promise<void> {
         try {
             const summary = await importSourceCollectionFiles(files)
             notifySuccess(
-                `출처 묶음 ${summary.bundles}개 병합 완료 · 봇 ${summary.characters} · 모듈 ${summary.modules} · 페르소나 ${summary.personas} · 에셋 ${summary.assets} · 큰 에셋 누락 ${summary.omittedAssets} · 모듈 연결 제외 ${summary.droppedModuleReferences}`,
+                `출처 묶음 ${summary.bundles}개 병합 완료 · 봇 ${summary.characters} · 모듈 ${summary.modules} · 페르소나 ${summary.personas} · 에셋 ${summary.assets} · 에셋 누락 ${summary.omittedAssets} · 모듈 연결 제외 ${summary.droppedModuleReferences}`,
             )
         } catch (error) {
             console.error(error)
