@@ -449,6 +449,7 @@ type AssetPaths = {[key:string]:{
 
 let assetsCache: AssetPaths | null = null
 let emoAssetsCache: AssetPaths | null = null
+const simpleAssetCaches = new WeakMap<object, { assets: AssetPaths, emotions: AssetPaths }>()
 
 export function resetAssetsCache(charAssets: string[][], emoAssets: string[][], moduleAssets: string[][]) {
     const assetPaths: AssetPaths = {}
@@ -489,8 +490,22 @@ async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|c
         resetAssetsCache(char.additionalAssets ?? [], char.emotionImages, getModuleAssets())
     }
 
-    const assetPaths = assetsCache ?? {}
-    const emoPaths = emoAssetsCache ?? {}
+    let assetPaths = assetsCache ?? {}
+    let emoPaths = emoAssetsCache ?? {}
+    if (char.type === 'simple') {
+        let cache = simpleAssetCaches.get(char)
+        if (!cache) {
+            const assets: AssetPaths = {}
+            const emotions: AssetPaths = {}
+            getAssetSrc(char.additionalAssets ?? [], assets)
+            getAssetSrc(char.moduleAssets ?? [], assets)
+            getEmoSrc(char.emotionImages ?? [], emotions)
+            cache = { assets, emotions }
+            simpleAssetCaches.set(char, cache)
+        }
+        assetPaths = cache.assets
+        emoPaths = cache.emotions
+    }
 
     let needsSourceAccess = false
     let cx: number|null = null
@@ -881,6 +896,8 @@ export function resolveInlayPlaceholders(root: HTMLElement) {
 export interface simpleCharacterArgument{
     type: 'simple'
     additionalAssets?: [string, string, string][]
+    moduleAssets?: [string, string, string][]
+    prebuiltAssetStyle?: string
     customscript: customscript[]
     chaId: string,
     virtualscript?: string

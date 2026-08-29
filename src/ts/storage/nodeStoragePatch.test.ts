@@ -32,7 +32,7 @@ describe('NodeStorage per-chat optimistic concurrency', () => {
         const storage = storageReturning(200, { ok: true, etag: 'chat-v1' })
         ;(storage as any).chatEtags.set('char-a/chat-a', 'chat-v1')
 
-        await expect(storage.claimChatWriterSession('char-a', 'chat-a')).resolves.toBe(true)
+        await expect(storage.claimChatWriterSession('char-a', 'chat-a')).resolves.toEqual({ ok: true })
 
         expect((storage as any).authFetch).toHaveBeenCalledWith(
             '/api/chat-session/char-a/chat-a/claim',
@@ -49,7 +49,10 @@ describe('NodeStorage per-chat optimistic concurrency', () => {
         const storage = storageReturning(409, { code: 'CHAT_BUSY' })
         ;(storage as any).chatEtags.set('char-a/chat-a', 'chat-v1')
 
-        await expect(storage.claimChatWriterSession('char-a', 'chat-a')).resolves.toBe(false)
+        await expect(storage.claimChatWriterSession('char-a', 'chat-a')).resolves.toMatchObject({
+            ok: false,
+            reason: 'busy',
+        })
         expect((storage as any).chatEtags.get('char-a/chat-a')).toBe('chat-v1')
     })
 
@@ -70,6 +73,25 @@ describe('NodeStorage per-chat optimistic concurrency', () => {
             }),
         )
         expect((storage as any).chatEtags.get('char-a/chat-a')).toBe('chat-v2')
+    })
+
+    test('creates a new chat with an explicit collision precondition', async () => {
+        const storage = storageReturning(200, { success: true, etag: 'chat-v1' })
+
+        await storage.saveChatContent(
+            'char-new',
+            0,
+            'chat-new',
+            { id: 'chat-new', message: [] },
+            'create',
+        )
+
+        const [, init] = (storage as any).authFetch.mock.calls[0]
+        expect(init.headers).toMatchObject({
+            'x-chat-id': 'chat-new',
+            'if-none-match': '*',
+        })
+        expect(init.headers).not.toHaveProperty('x-if-match')
     })
 
     test('surfaces a same-chat conflict instead of overwriting it', async () => {

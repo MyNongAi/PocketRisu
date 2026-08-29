@@ -12,6 +12,9 @@
     onPrefetchCancel?: any;
     onPrefetchImmediate?: any;
     additionalStyle?: DeferredStyle;
+    ariaLabel?: string;
+    title?: string;
+    pressed?: boolean;
     children?: import('svelte').Snippet;
   }
 
@@ -21,6 +24,9 @@
     onPrefetchCancel = () => {},
     onPrefetchImmediate = () => {},
     additionalStyle = "",
+    ariaLabel,
+    title,
+    pressed,
     children,
   }: Props = $props();
   let observerTarget: HTMLButtonElement = $state();
@@ -53,9 +59,9 @@
 </script>
 
 {#await resolvedStyle}
-  <button bind:this={observerTarget} onclick={onClick} onpointerenter={onPrefetch} onpointerleave={onPrefetchCancel} onpointerdown={onPrefetchImmediate} onfocus={onPrefetch} onblur={onPrefetchCancel} class="ico">{@render children?.()}</button>
+  <button bind:this={observerTarget} onclick={onClick} onpointerenter={onPrefetch} onpointerleave={onPrefetchCancel} onpointerdown={onPrefetchImmediate} onfocus={onPrefetch} onblur={onPrefetchCancel} class="ico" aria-label={ariaLabel} {title} aria-pressed={pressed}>{@render children?.()}</button>
 {:then as}
-  <button bind:this={observerTarget} onclick={onClick} onpointerenter={onPrefetch} onpointerleave={onPrefetchCancel} onpointerdown={onPrefetchImmediate} onfocus={onPrefetch} onblur={onPrefetchCancel} class="ico" style={as}>{@render children?.()}</button>
+  <button bind:this={observerTarget} onclick={onClick} onpointerenter={onPrefetch} onpointerleave={onPrefetchCancel} onpointerdown={onPrefetchImmediate} onfocus={onPrefetch} onblur={onPrefetchCancel} class="ico" style={as} aria-label={ariaLabel} {title} aria-pressed={pressed}>{@render children?.()}</button>
 {/await}
 
 <style>

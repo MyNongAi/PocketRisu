@@ -181,9 +181,15 @@
         const imgs = bodyRoot.querySelectorAll('img:not([src^="data:"]):not([src^="http:"]):not([src^="https:"]):not([src^="blob:"]):not([src^="file:"]):not([src^="tauri:"]):not([src^="/"]):not([noimage])') as NodeListOf<HTMLImageElement>
         
         if (imgs.length > 0) {
-            const currentCharacter = getCurrentCharacter()
-            const styl = currentCharacter.prebuiltAssetStyle
-            const assets = getModuleAssets().concat(currentCharacter.additionalAssets ?? [])
+            const currentCharacter = typeof character === 'object' && character?.type === 'simple'
+                ? character
+                : getCurrentCharacter()
+            if(!currentCharacter) return
+            const styl = currentCharacter.prebuiltAssetStyle ?? 'contain'
+            const moduleAssets = currentCharacter.type === 'simple'
+                ? (currentCharacter.moduleAssets ?? [])
+                : getModuleAssets()
+            const assets = moduleAssets.concat(currentCharacter.additionalAssets ?? [])
             const normalizedAssets = assets.map((asset) => {
                 return {
                     name: asset[0].toLocaleLowerCase(),

@@ -14,6 +14,31 @@ afterEach(() => {
 })
 
 describe('API v3 source collection exporter', () => {
+    it('requests DB permission before opening fullscreen so old hosts cannot hide the prompt', async () => {
+        let settingCallback: (() => Promise<void> | void) | undefined
+        const calls: string[] = []
+        const risuai = {
+            getArgument: vi.fn(async () => ''),
+            setArgument: vi.fn(async () => undefined),
+            getDatabase: vi.fn(async (keys: string[]) => {
+                calls.push(`database:${keys.length}`)
+                return {}
+            }),
+            showContainer: vi.fn(async () => { calls.push('show') }),
+            registerSetting: vi.fn(async (_name: string, callback: () => Promise<void> | void) => {
+                settingCallback = callback
+                return { id: 'source-exporter' }
+            }),
+        }
+
+        new Function('risuai', exporterCode)(risuai)
+        await vi.waitFor(() => expect(settingCallback).toBeTypeOf('function'))
+        await settingCallback!()
+
+        expect(calls).toEqual(['database:0', 'show'])
+        expect(document.querySelector('#status')?.textContent).toContain('권한 확인은 완료')
+    })
+
     it('uses the public subset API, excludes non-bots, and respects the 10,000 entry part contract', async () => {
         const characters = Array.from({ length: 10_001 }, (_, index) => ({
             type: 'character',

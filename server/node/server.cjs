@@ -6613,20 +6613,19 @@ app.get('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, asy
             }
         }
 
-        // Fallback: load from disk and find by index
+        // Fallback: load from disk. Stable chat identity is authoritative when
+        // supplied; array indices can shift before a new chat's metadata save.
         const raw = kvGet('database/database.bin');
         if (!raw) {
             return res.status(404).json({ error: 'Database not found' });
         }
         const dbObj = await decodeRisuSave(raw);
         const char = dbObj.characters?.find(c => c?.chaId === chaId);
-        if (!char?.chats?.[chatIndex]) {
+        const chat = expectedChatId
+            ? char?.chats?.find(candidate => candidate?.id === expectedChatId)
+            : char?.chats?.[chatIndex];
+        if (!chat) {
             return res.status(404).json({ error: 'Chat not found' });
-        }
-        const chat = char.chats[chatIndex];
-        // Verify chatId matches if provided
-        if (expectedChatId && chat.id !== expectedChatId) {
-            return res.status(409).json({ error: 'Chat ID mismatch — index may have shifted' });
         }
         if (!restoreColdStorageChat(chat)) {
             return res.status(500).json({ error: 'Cold storage restore failed' });
@@ -6669,6 +6668,16 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
             await ensureChatStore();
 
             const currentChat = fullChatStore.get(chaId)?.get(expectedChatId);
+            const createOnly = req.headers['if-none-match'] === '*';
+            if (createOnly && currentChat) {
+                if (!restoreColdStorageChat(currentChat)) {
+                    return res.status(500).json({ error: 'Cold storage restore failed' });
+                }
+                return res.status(409).json({
+                    error: 'A chat with this ID already exists on the server',
+                    currentEtag: computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(currentChat))),
+                });
+            }
             const chatLease = chatSessionLock.checkWrite(
                 chatSessionKey(chaId, expectedChatId),
                 chatClientId(req),

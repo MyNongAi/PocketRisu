@@ -1,7 +1,7 @@
 //@name pocketrisu_source_collection_exporter
 //@display-name PocketRisu 병합용 컬렉션 내보내기
 //@api 3.0
-//@version 1.1.0
+//@version 1.2.0
 //@arg source_label string 이 기기의 출처 이름 (예: 로컬리스, 모바일웹리스)
 //@arg part_size_mb int 조각당 목표 크기(MB, 권장 12)
 
@@ -78,6 +78,25 @@
 
   function setStatus(message) {
     status.textContent = message
+  }
+
+  let databasePermissionReady = false
+
+  async function ensureDatabasePermission() {
+    if (databasePermissionReady) return true
+    setStatus('데이터 접근 권한을 확인하는 중…')
+    // Ask while the plugin iframe is still hidden. Older Risu builds place a
+    // fullscreen plugin above the host permission dialog, which made the
+    // exporter appear to wait forever even though a confirmation was hidden
+    // behind it. An empty projection grants access without cloning the DB.
+    try {
+      const probe = await risuai.getDatabase([])
+      databasePermissionReady = !!probe
+    } catch (error) {
+      console.error('[PocketRisu Source Collection Exporter] permission probe failed', error)
+      databasePermissionReady = false
+    }
+    return databasePermissionReady
   }
 
   function safeName(value) {
@@ -332,7 +351,8 @@
     const targetBytes = Math.max(4, Math.min(24, Number(partSizeInput.value) || DEFAULT_PART_MB)) * 1024 * 1024
     await risuai.setArgument('part_size_mb', Math.round(targetBytes / 1024 / 1024))
 
-    setStatus('데이터 접근 권한을 확인하는 중…')
+    if (!await ensureDatabasePermission()) throw new Error('데이터 접근 권한이 거부되었습니다.')
+    setStatus(`${kind} 목록을 복사하는 중… 데이터가 많으면 잠시 걸릴 수 있습니다.`)
     const db = await risuai.getDatabase([kind])
     if (!db || !Array.isArray(db[kind])) throw new Error(`${kind} 데이터를 읽을 수 없습니다.`)
     const entities = db[kind]
@@ -463,7 +483,15 @@
 
   await risuai.registerSetting(
     'PocketRisu 병합용 백업',
-    async () => risuai.showContainer('fullscreen'),
+    async () => {
+      const granted = await ensureDatabasePermission()
+      await risuai.showContainer('fullscreen')
+      if (granted) {
+        setStatus('내보낼 종류를 고르십시오. 권한 확인은 완료되었습니다.')
+      } else {
+        setStatus('데이터 접근 권한이 거부되었습니다. 플러그인 권한을 초기화한 뒤 다시 여십시오.')
+      }
+    },
     '📦',
     'html',
     'pocketrisu-source-collection-exporter',
