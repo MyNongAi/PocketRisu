@@ -32,7 +32,7 @@ import { isMobile } from 'src/ts/platform'
     import MainMenu from '../UI/MainMenu.svelte';
     import AssetInput from './AssetInput.svelte';
     import { scrollWithinContainer } from './scrollWithin';
-    import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile, forageStorage } from 'src/ts/globalApi.svelte';
+    import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile, forageStorage, requestImmediateSave } from 'src/ts/globalApi.svelte';
     import { runTrigger } from 'src/ts/process/triggers';
     import { v4 } from 'uuid';
     import { processMultiCommand } from 'src/ts/process/command';
@@ -198,6 +198,22 @@ import { isMobile } from 'src/ts/platform'
             target: captureGenerationTarget(resolved.character, resolved.chat),
             character: resolved.character,
             chat: resolved.chat,
+        }
+    }
+
+    type ChatLeaseTarget = { chaId: string, chatId: string }
+
+    async function finishChatLease(target: ChatLeaseTarget | null) {
+        if (!target) return
+        try {
+            // Let Svelte's granular tracker observe the final reply/swipe state,
+            // then persist it before another device may enter this chat.
+            await tick()
+            await requestImmediateSave()
+        } catch (error) {
+            console.error('[ChatLease] final save failed:', error)
+        } finally {
+            await forageStorage.releaseChatWriterSession(target.chaId, target.chatId)
         }
     }
 
@@ -371,11 +387,6 @@ import { isMobile } from 'src/ts/platform'
         const selectedChatRoom = selectedCharacter?.chats?.[selectedCharacter.chatPage]
         if(!selectedCharacter || !selectedChatRoom) return
 
-        // Detect a stale cross-device tab before touching the chat or clearing
-        // its composer draft. A 423 here triggers the existing quiet handoff;
-        // the user's typed input remains in the per-chat draft for the reload.
-        if (!await forageStorage.claimWriterSession()) return
-
         let generationTarget = captureGenerationTarget(selectedCharacter, selectedChatRoom)
         const genKey = chatGenKey(generationTarget.chatId)
         const route = captureChatModelRoute(selectedChatRoom, 'model')
@@ -404,6 +415,7 @@ import { isMobile } from 'src/ts/platform'
             return
         }
         preparingChatSends.add(genKey)
+        let chatLease: ChatLeaseTarget | null = null
 
         try {
         const capturedInput = messageInput
@@ -415,6 +427,11 @@ import { isMobile } from 'src/ts/platform'
         generationTarget = ready.target
         const targetCharacter = ready.character
         const activeChat = ready.chat
+        if (!await forageStorage.claimChatWriterSession(targetCharacter.chaId, activeChat.id)) {
+            notifyError('This chat is already active on another page or device. Wait for it to finish, then try again.')
+            return
+        }
+        chatLease = { chaId: targetCharacter.chaId, chatId: activeChat.id }
         const moduleContext = captureModuleRuntimeContext(targetCharacter, activeChat)
 
         let cha = activeChat.message
@@ -513,6 +530,7 @@ import { isMobile } from 'src/ts/platform'
         )
         } finally {
             preparingChatSends.delete(genKey)
+            await finishChatLease(chatLease)
         }
 
     }
@@ -573,14 +591,23 @@ import { isMobile } from 'src/ts/platform'
         const targetCharacter = DBState.db.characters[$selectedCharID]
         const targetChat = targetCharacter?.chats?.[targetCharacter.chatPage]
         if(!targetCharacter || !targetChat) return
-        if (!await forageStorage.claimWriterSession()) return
         let generationTarget = captureGenerationTarget(targetCharacter, targetChat)
         const genKey = chatGenKey(generationTarget.chatId)
         const occupiedChatKeys = new Set([...$generationStates.keys(), ...preparingChatSends])
         if(preparingChatSends.has(genKey) || occupiedChatKeys.size >= 2) return
         preparingChatSends.add(genKey)
+        let chatLease: ChatLeaseTarget | null = null
         try {
-        const lastMsg = getLastCharMsgIn(targetChat)
+        const ready = await ensureGenerationTargetReady(generationTarget)
+        if(!ready) return
+        generationTarget = ready.target
+        const activeChat = ready.chat
+        if (!await forageStorage.claimChatWriterSession(ready.character.chaId, activeChat.id)) {
+            notifyError('This chat is already active on another page or device. Wait for it to finish, then try again.')
+            return
+        }
+        chatLease = { chaId: ready.character.chaId, chatId: activeChat.id }
+        const lastMsg = getLastCharMsgIn(activeChat)
         if (!lastMsg) return
 
         // Save existing swipes before clone replaces the array
@@ -588,7 +615,7 @@ import { isMobile } from 'src/ts/platform'
 
         // Generate new response
         // Preserve trailing comment/disabled messages (e.g. branch comments)
-        let cha = safeStructuredClone(targetChat.message)
+        let cha = safeStructuredClone(activeChat.message)
         const originalMessages = safeStructuredClone(cha)
         if(cha.length === 0) return
         openMenu = false
@@ -609,7 +636,7 @@ import { isMobile } from 'src/ts/platform'
             let msg = cha.pop()
             if(!msg) return
         }
-        targetChat.message = cha
+        activeChat.message = cha
         preparingChatSends.delete(genKey)
         const generated = await sendChatMain(false, generationTarget)
 
@@ -638,6 +665,7 @@ import { isMobile } from 'src/ts/platform'
         }
         } finally {
             preparingChatSends.delete(genKey)
+            await finishChatLease(chatLease)
         }
     }
 
@@ -784,6 +812,8 @@ import { isMobile } from 'src/ts/platform'
         const resumedChar = DBState.db.characters[$selectedCharID]
         const resumedChat = resumedChar?.chats?.[resumedChar.chatPage]
         if (!resumedChar || !resumedChat || resumedChat.id !== chatId) return
+        if (!await forageStorage.claimChatWriterSession(resumedChar.chaId, resumedChat.id)) return
+        const chatLease: ChatLeaseTarget = { chaId: resumedChar.chaId, chatId: resumedChat.id }
         const generationTarget = captureGenerationTarget(resumedChar, resumedChat)
         const abortController = new AbortController()
         registerAbort(chatId, abortController)
@@ -791,6 +821,8 @@ import { isMobile } from 'src/ts/platform'
             await sendChat(-1, { signal: abortController.signal, generationTarget })
         } catch (error) {
             console.error(error)
+        } finally {
+            await finishChatLease(chatLease)
         }
         endGeneration(chatId)
         clearPendingSend(chatId)

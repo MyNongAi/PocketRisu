@@ -18,6 +18,7 @@ function storageReturning(status: number, body: any) {
     const storage = Object.create(NodeStorage.prototype) as InstanceType<typeof NodeStorage>
     ;(storage as any)._lastDbEtag = null
     ;(storage as any).chatEtags = new Map()
+    ;(storage as any).chatLeaseHeartbeats = new Map()
     ;(storage as any).authFetch = vi.fn(async () => new Response(JSON.stringify(body), {
         status,
         headers: { 'content-type': 'application/json' },
@@ -26,6 +27,32 @@ function storageReturning(status: number, body: any) {
 }
 
 describe('NodeStorage per-chat optimistic concurrency', () => {
+    test('claims only the requested chat with its hydrated version', async () => {
+        vi.useFakeTimers()
+        const storage = storageReturning(200, { ok: true, etag: 'chat-v1' })
+        ;(storage as any).chatEtags.set('char-a/chat-a', 'chat-v1')
+
+        await expect(storage.claimChatWriterSession('char-a', 'chat-a')).resolves.toBe(true)
+
+        expect((storage as any).authFetch).toHaveBeenCalledWith(
+            '/api/chat-session/char-a/chat-a/claim',
+            expect.objectContaining({
+                method: 'POST',
+                headers: expect.objectContaining({ 'x-chat-etag': 'chat-v1' }),
+            }),
+        )
+        await storage.releaseChatWriterSession('char-a', 'chat-a')
+        vi.useRealTimers()
+    })
+
+    test('a busy same-chat lease fails without changing the cached version', async () => {
+        const storage = storageReturning(409, { code: 'CHAT_BUSY' })
+        ;(storage as any).chatEtags.set('char-a/chat-a', 'chat-v1')
+
+        await expect(storage.claimChatWriterSession('char-a', 'chat-a')).resolves.toBe(false)
+        expect((storage as any).chatEtags.get('char-a/chat-a')).toBe('chat-v1')
+    })
+
     test('sends the hydrated chat ETag and advances it after a save', async () => {
         const storage = storageReturning(200, { success: true, etag: 'chat-v2' })
         ;(storage as any).chatEtags.set('char-a/chat-a', 'chat-v1')

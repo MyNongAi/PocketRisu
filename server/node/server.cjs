@@ -2077,6 +2077,19 @@ async function checkDiskSpace(requiredBytes) {
 // freshly-booted session, and only stale sessions get 423.
 const { createSessionLock } = require('./session-lock.cjs');
 const sessionLock = createSessionLock();
+const { createChatSessionLock } = require('./chat-session-lock.cjs');
+const chatSessionLock = createChatSessionLock({
+    ttlMs: Math.max(60_000, Number(process.env.CHAT_SESSION_LEASE_TTL_MS) || 3 * 60 * 1000),
+});
+
+function chatSessionKey(chaId, chatId) {
+    return JSON.stringify([String(chaId || ''), String(chatId || '')]);
+}
+
+function chatClientId(req) {
+    const id = req.headers['x-chat-client-id'];
+    return typeof id === 'string' ? id : '';
+}
 
 function checkActiveSession(req, res) {
     const clientSessionId = req.headers['x-session-id']
@@ -3721,6 +3734,67 @@ app.post('/api/session/claim', async (req, res) => {
     if (!await checkAuth(req, res)) return
     if (!checkActiveSession(req, res)) return
     res.json({ ok: true })
+})
+
+// Per-chat generation lease. Unlike the legacy global writer claim above,
+// this blocks only the SAME chat and therefore permits PC + phone (or two
+// browsers) to work in different conversations at once. The ETag precondition
+// catches a chat that changed after this client hydrated it, before any model
+// tokens or local chat mutations are spent.
+app.post('/api/chat-session/:chaId/:chatId/claim', rejectDuringExclusiveStorage, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return
+    const clientId = chatClientId(req)
+    if (!clientId) return res.status(400).json({ error: 'x-chat-client-id required' })
+    try {
+        await queueMutableStorageOperation(async () => {
+            const chaId = req.params.chaId
+            const chatId = req.params.chatId
+            await ensureChatStore()
+            const result = chatSessionLock.claim(
+                chatSessionKey(chaId, chatId),
+                clientId,
+                typeof req.headers['x-session-id'] === 'string' ? req.headers['x-session-id'] : '',
+            )
+            if (!result.ok) {
+                return res.status(409).json({
+                    error: 'This chat is already generating on another page or device',
+                    code: 'CHAT_BUSY',
+                    retryAfterMs: result.retryAfterMs,
+                })
+            }
+            const currentChat = fullChatStore.get(chaId)?.get(chatId)
+            let currentEtag = null
+            if (currentChat) {
+                if (!restoreColdStorageChat(currentChat)) {
+                    return res.status(500).json({ error: 'Cold storage restore failed' })
+                }
+                currentEtag = computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(currentChat)))
+            }
+            const expectedEtag = req.headers['x-chat-etag']
+            // A heartbeat from the current owner may race its own successful
+            // chat save and carry the immediately previous ETag. Ownership is
+            // already exclusive, so only a NEW claimant needs the comparison.
+            if (!result.renewed && typeof expectedEtag === 'string' && expectedEtag.length > 0 && expectedEtag !== currentEtag) {
+                chatSessionLock.release(chatSessionKey(chaId, chatId), clientId)
+                return res.status(409).json({
+                    error: 'Chat changed on another device',
+                    code: 'CHAT_VERSION_CONFLICT',
+                    currentEtag,
+                })
+            }
+            res.json({ ok: true, etag: currentEtag, expiresInMs: result.expiresInMs })
+        })
+    } catch (error) { next(error) }
+})
+
+app.delete('/api/chat-session/:chaId/:chatId', async (req, res) => {
+    if (!await checkAuth(req, res)) return
+    const clientId = chatClientId(req)
+    if (!clientId) return res.status(400).json({ error: 'x-chat-client-id required' })
+    res.json(chatSessionLock.release(
+        chatSessionKey(req.params.chaId, req.params.chatId),
+        clientId,
+    ))
 })
 
 // ── Session cookie issuance (F-0) ──────────────────────────────────────────
@@ -6595,6 +6669,16 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
             await ensureChatStore();
 
             const currentChat = fullChatStore.get(chaId)?.get(expectedChatId);
+            const chatLease = chatSessionLock.checkWrite(
+                chatSessionKey(chaId, expectedChatId),
+                chatClientId(req),
+            );
+            if (!chatLease.ok) {
+                return res.status(409).json({
+                    error: 'This chat is generating on another page or device',
+                    code: 'CHAT_BUSY',
+                });
+            }
             const ifMatch = req.headers['x-if-match'];
             if (typeof ifMatch === 'string' && ifMatch.length > 0) {
                 if (!currentChat) {
