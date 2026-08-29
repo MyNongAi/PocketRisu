@@ -28,6 +28,7 @@ import { initMobileGesture } from "./hotkey";
 import { moduleUpdate, refreshModules } from "./process/modules";
 import { trackModuleTreeChanges } from "./process/moduleChangeTracker.svelte";
 import { classifyPatchWriteResult, mergeTrackedDatabaseChanges } from "./storage/saveConflict";
+import { classifyChatSaveIntent } from './storage/chatSaveIntent'
 import { isLocalNetworkUrl } from "./network/localNetwork";
 import { decodeProxyJobWsChunk, formatProxyStreamErrorMessage, parseProxyJobWsEvent } from "./network/proxyJobWs";
 import { getInlineImageMimeType } from "./media/imageMime";
@@ -844,7 +845,7 @@ export async function saveDb() {
         }
 
         // ── Save changed chat content to server ─────────────────────────
-        const failedChats: [string, string][] = []
+        const failedChats: { chaId: string, chatId: string, reason: string }[] = []
         for (const [chaId, chatId] of collectChatsToPersist(db, toSave)) {
             const char = db.characters.find(c => c.chaId === chaId)
             if (!char) continue
@@ -854,15 +855,24 @@ export async function saveDb() {
             // Skip placeholders — they have no real data to save
             if (!chat || chat._placeholder) continue
             try {
-                await saveChatToServer(chaId, chatIndex, chatId, chat)
+                const intent = classifyChatSaveIntent(knownChatIdsByCharacter, chaId, chatId)
+                await saveChatToServer(chaId, chatIndex, chatId, chat, intent)
                 markHydratedChatPersisted(chaId, chatId)
             } catch (e) {
                 console.error(`[Save] Failed to save chat ${chaId}/${chatId}:`, e)
-                failedChats.push([chaId, chatId])
+                failedChats.push({
+                    chaId,
+                    chatId,
+                    reason: e instanceof Error ? e.message : String(e),
+                })
             }
         }
         if (failedChats.length > 0) {
-            throw new Error(`Failed to save ${failedChats.length} chat${failedChats.length === 1 ? '' : 's'}`)
+            const details = [...new Set(failedChats.map(chat => chat.reason))].slice(0, 2).join(' / ')
+            throw new Error(
+                `Failed to save ${failedChats.length} chat${failedChats.length === 1 ? '' : 's'}`
+                + (details ? `: ${details}` : ''),
+            )
         }
 
         let saved = false

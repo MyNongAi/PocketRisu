@@ -1,7 +1,7 @@
 <script lang="ts">
     import { getCustomBackground, getEmotion } from "../../ts/util";
     
-    import { DBState } from 'src/ts/stores.svelte';
+    import { DBState, MobileGUI } from 'src/ts/stores.svelte';
     import { CharEmotion, selectedCharID, openModuleListStore } from "../../ts/stores.svelte";
     import ResizeBox from './ResizeBox.svelte'
     import DefaultChatScreen from "./DefaultChatScreen.svelte";
@@ -11,8 +11,49 @@
     import BackgroundDom from "./BackgroundDom.svelte";
     import SideBarArrow from "../UI/GUI/SideBarArrow.svelte";
     import ModuleChatMenu from "../Setting/Pages/Module/ModuleChatMenu.svelte";
+    import SecondaryChatPanel from './SecondaryChatPanel.svelte';
+    import { clampSplitWidth, splitChatOpen, splitChatWidth } from 'src/ts/chatSplitPane';
+    import { onDestroy, onMount } from 'svelte';
     let openChatList = $state(false)
     let openModuleList = $state(false)
+    let splitRoot: HTMLDivElement | null = $state(null)
+    let stopSplitResize: (() => void) | null = null
+
+    function beginSplitResize(event: PointerEvent) {
+        if (!splitRoot) return
+        event.preventDefault()
+        const pointerId = event.pointerId
+        const handle = event.currentTarget as HTMLElement
+        handle.setPointerCapture?.(pointerId)
+
+        const move = (moveEvent: PointerEvent) => {
+            if (!splitRoot) return
+            const rect = splitRoot.getBoundingClientRect()
+            splitChatWidth.set(clampSplitWidth(rect.right - moveEvent.clientX, rect.width))
+        }
+        const stop = () => {
+            window.removeEventListener('pointermove', move)
+            window.removeEventListener('pointerup', stop)
+            window.removeEventListener('pointercancel', stop)
+            stopSplitResize = null
+        }
+        stopSplitResize?.()
+        stopSplitResize = stop
+        window.addEventListener('pointermove', move)
+        window.addEventListener('pointerup', stop)
+        window.addEventListener('pointercancel', stop)
+    }
+
+    onDestroy(() => stopSplitResize?.())
+    onMount(() => {
+        const clampStoredWidth = () => {
+            if (!splitRoot) return
+            splitChatWidth.update((width) => clampSplitWidth(width, splitRoot?.clientWidth ?? window.innerWidth))
+        }
+        clampStoredWidth()
+        window.addEventListener('resize', clampStoredWidth)
+        return () => window.removeEventListener('resize', clampStoredWidth)
+    })
 
     $effect(() => {
         if ($openModuleListStore) {
@@ -39,6 +80,8 @@
     });
 </script>
 
+<div class="grow h-full min-w-0 flex relative" bind:this={splitRoot}>
+<section class="grow h-full min-w-0 relative">
 {#if DBState.db.theme === 'waifu'}
     <div class="grow h-full flex justify-center relative" style="{bgImg.length < 4 ? wallPaper : bgImg}">
         <SideBarArrow />
@@ -86,6 +129,20 @@
         </div>
     </div>
 {/if}
+</section>
+{#if $splitChatOpen && !$MobileGUI}
+    <div
+        class="split-chat-divider h-full w-1.5 shrink-0 cursor-col-resize bg-darkborderc transition-colors hover:bg-primary"
+        role="separator"
+        aria-label="Resize split chat"
+        aria-orientation="vertical"
+        onpointerdown={beginSplitResize}
+    ></div>
+    <div class="h-full min-w-0 shrink-0" style:width={`${$splitChatWidth}px`}>
+        <SecondaryChatPanel />
+    </div>
+{/if}
+</div>
 {#if openChatList}
     <ChatList close={() => {openChatList = false}}/>
 {:else if openModuleList}
@@ -101,5 +158,9 @@
     }
     .per33{
         height: 33.333333%;
+    }
+
+    .split-chat-divider {
+        touch-action: none;
     }
 </style>

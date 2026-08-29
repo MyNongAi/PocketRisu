@@ -9,6 +9,7 @@ import { language } from "src/lang"
 import { alertInput, waitAlert, notifyError } from "../alert"
 import { decodeRisuSave, encodeRisuSaveLegacy } from "./risuSave"
 import { normalizeChat } from "./database.svelte"
+import type { ChatSaveIntent } from './chatSaveIntent'
 
 // ── User-gesture recency for the write lock ─────────────────────────────────
 // The server moves the single-writer lock only on writes that follow a real
@@ -35,6 +36,31 @@ export class ConflictError extends Error {
         this.name = 'ConflictError'
         this.currentEtag = currentEtag
     }
+}
+
+export type ChatWriterClaimResult =
+    | { ok: true }
+    | {
+        ok: false
+        reason: 'busy' | 'conflict' | 'unavailable' | 'rejected'
+        retryAfterMs?: number
+        message?: string
+    }
+
+export function chatWriterClaimMessage(result: Exclude<ChatWriterClaimResult, { ok: true }>): string {
+    if (result.reason === 'busy') {
+        const seconds = result.retryAfterMs ? Math.max(1, Math.ceil(result.retryAfterMs / 1000)) : null
+        return seconds
+            ? `This chat is still generating on another page or device. Try again in up to ${seconds} seconds.`
+            : 'This chat is still generating on another page or device. Wait for it to finish, then try again.'
+    }
+    if (result.reason === 'conflict') {
+        return 'This chat changed on another page or device. Reload the page before sending so no messages are overwritten.'
+    }
+    if (result.reason === 'unavailable') {
+        return 'Could not check this chat with the server. Check the connection and try again.'
+    }
+    return result.message || 'The server rejected this chat request. Reload the page and try again.'
 }
 
 // Warning the server attaches to /api/patch responses when the most recent
@@ -605,7 +631,7 @@ export class NodeStorage{
     /** Claim only one conversation for a model request. Other conversations
      * remain writable on other devices. The cached ETag makes this a preflight
      * version check as well as a short-lived lease. */
-    async claimChatWriterSession(chaId: string, chatId: string): Promise<boolean> {
+    async claimChatWriterSession(chaId: string, chatId: string): Promise<ChatWriterClaimResult> {
         const key = this.chatEtagKey(chaId, chatId)
         const headers: Record<string, string> = {}
         const baselineEtag = this.chatEtags.get(key)
@@ -615,7 +641,17 @@ export class NodeStorage{
                 `/api/chat-session/${encodeURIComponent(chaId)}/${encodeURIComponent(chatId)}/claim`,
                 { method: 'POST', headers },
             )
-            if (!res.ok) return false
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}))
+                if (data.code === 'CHAT_BUSY') {
+                    return { ok: false, reason: 'busy', retryAfterMs: data.retryAfterMs }
+                }
+                if (data.code === 'CHAT_VERSION_CONFLICT') {
+                    if (data.currentEtag) this.chatEtags.set(key, data.currentEtag)
+                    return { ok: false, reason: 'conflict', message: data.error }
+                }
+                return { ok: false, reason: 'rejected', message: data.error }
+            }
             const data = await res.json().catch(() => ({}))
             if (data.etag) this.chatEtags.set(key, data.etag)
 
@@ -639,9 +675,9 @@ export class NodeStorage{
                 }).catch(() => {})
             }, 45_000)
             this.chatLeaseHeartbeats.set(key, timer)
-            return true
+            return { ok: true }
         } catch {
-            return false
+            return { ok: false, reason: 'unavailable' }
         }
     }
 
@@ -1156,15 +1192,32 @@ export class NodeStorage{
         return normalizeChat(await decodeRisuSave(buffer))
     }
 
-    async saveChatContent(chaId: string, chatIndex: number, chatId: string, chat: any): Promise<void> {
+    async saveChatContent(
+        chaId: string,
+        chatIndex: number,
+        chatId: string,
+        chat: any,
+        intent: ChatSaveIntent = 'update',
+    ): Promise<void> {
         const encoded = encodeRisuSaveLegacy(chat)
         const headers: Record<string, string> = {
             'content-type': 'application/octet-stream',
             'x-chat-id': chatId,
         }
         const etagKey = this.chatEtagKey(chaId, chatId)
-        const baselineEtag = this.chatEtags.get(etagKey)
-        if (baselineEtag) headers['x-if-match'] = baselineEtag
+        let baselineEtag = this.chatEtags.get(etagKey)
+        if (intent === 'update' && !baselineEtag) {
+            const current = await this.fetchChatContent(chaId, chatIndex, chatId)
+            if (!current) {
+                throw new ConflictError('Chat was removed on another page or device', '')
+            }
+            baselineEtag = this.chatEtags.get(etagKey)
+            if (!baselineEtag) {
+                throw new ConflictError('Could not establish a safe chat save baseline', '')
+            }
+        }
+        if (intent === 'create') headers['if-none-match'] = '*'
+        else if (baselineEtag) headers['x-if-match'] = baselineEtag
         const da = await this.authFetch(`/api/chat-content/${encodeURIComponent(chaId)}/${chatIndex}`, {
             method: 'POST',
             headers,

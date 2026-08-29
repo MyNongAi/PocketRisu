@@ -23,7 +23,7 @@
     import BarIcon from "./BarIcon.svelte";
     import SidebarIndicator from "./SidebarIndicator.svelte";
     import {
-    ShellIcon,
+    Columns2,
     Settings,
     ListIcon,
     LayoutGridIcon,
@@ -35,6 +35,7 @@
     ChevronsLeft,
     ArrowRight,
   } from "@lucide/svelte";
+    import { splitChatOpen, toggleSplitChat } from 'src/ts/chatSplitPane';
     import {
   addCharacter,
     cancelCharacterChatPrefetch,
@@ -692,18 +693,17 @@
 </button>
 <button
   class="flex items-center justify-center py-2 flex-col gap-1 w-full"
-  class:text-textcolor2={!(
-    $selectedCharID < 0 &&
-    $PlaygroundStore !== 0
-  )}
+  class:text-textcolor2={!$splitChatOpen}
+  class:text-primary={$splitChatOpen}
+  aria-pressed={$splitChatOpen}
+  aria-label="분할 채팅"
+  title="분할 채팅 켜기/끄기"
   onclick={() => {
-    reseter();
-    selectedCharID.set(-1)
-    PlaygroundStore.set(1)
+    toggleSplitChat()
   }}
 >
-  <ShellIcon />
-  <span class="text-xs">{language.playground.playground}</span>
+  <Columns2 />
+  <span class="text-xs">분할</span>
 </button>
 </div>
 {:else}
@@ -720,6 +720,7 @@
   <button
     class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-primary"
     class:max-xs:hidden={$leftBarCollapsed}
+    aria-label="사이드바 메뉴"
     onclick={() => {
       menuMode = 1 - menuMode;
     }}><ListIcon />
@@ -757,16 +758,13 @@
         }}><HomeIcon /></BarIcon>
       <div class="mt-2"></div>
       <BarIcon
+        ariaLabel="분할 채팅"
+        title="분할 채팅 켜기/끄기"
+        pressed={$splitChatOpen}
         onClick={() => {
-          reseter()
-          if($selectedCharID === -1 && $PlaygroundStore !== 0){
-            PlaygroundStore.set(0)
-            return
-          }
-          selectedCharID.set(-1)
-          PlaygroundStore.set(1)
+          toggleSplitChat()
         }}
-      ><ShellIcon /></BarIcon>
+      ><Columns2 class={$splitChatOpen ? 'text-primary' : ''} /></BarIcon>
       <div class="mt-2"></div>
       <BarIcon
         onClick={() => {
@@ -1135,16 +1133,13 @@
         }}><HomeIcon /></BarIcon>
       <div class="mt-2"></div>
       <BarIcon
+        ariaLabel="분할 채팅"
+        title="분할 채팅 켜기/끄기"
+        pressed={$splitChatOpen}
         onClick={() => {
-          reseter()
-          if($selectedCharID === -1 && $PlaygroundStore !== 0){
-            PlaygroundStore.set(0)
-            return
-          }
-          selectedCharID.set(-1)
-          PlaygroundStore.set(1)
+          toggleSplitChat()
         }}
-      ><ShellIcon /></BarIcon>
+      ><Columns2 class={$splitChatOpen ? 'text-primary' : ''} /></BarIcon>
       <div class="mt-2"></div>
       <BarIcon
         onClick={() => {
@@ -1181,6 +1176,7 @@
   <button
     class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer text-white mb-2 mt-2 items-center justify-center rounded-md bg-textcolor2 transition-colors hover:bg-primary"
     class:max-xs:hidden={$leftBarCollapsed}
+    aria-label="사이드바 메뉴"
     onclick={() => {
       menuMode = 1 - menuMode;
     }}><ListIcon />

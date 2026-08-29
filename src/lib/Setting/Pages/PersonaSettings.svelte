@@ -12,6 +12,7 @@
     import { changeUserPersona, exportUserPersona, importUserPersona, saveUserPersona, selectUserImg, setUserPersonaImage } from "src/ts/persona";
     import Sortable from 'sortablejs/modular/sortable.core.esm.js';
     import { onDestroy, onMount } from "svelte";
+    import { GripHorizontal, Maximize2, Minimize2, RotateCcw } from '@lucide/svelte';
     import { sleep, sortableOptions } from "src/ts/util";
     import { DBState } from 'src/ts/stores.svelte';
     import { requestImmediateSave } from "src/ts/globalApi.svelte";
@@ -29,6 +30,80 @@
     let sorted = $state(0)
     let selectedId:string = null
     let personaImageDropTarget = $state<number | null>(null)
+    let personaPanel: HTMLDivElement | null = $state(null)
+    let personaPanelCollapsed = $state(false)
+    let panelLayout = $state({ x: -1, y: -1, width: 640, height: 320 })
+    let stopPanelDrag: (() => void) | null = null
+    let panelResizeObserver: ResizeObserver | null = null
+
+    const PERSONA_PANEL_LAYOUT_KEY = 'pocketrisu:persona-panel-layout'
+
+    function clampPanelLayout(layout = panelLayout) {
+        if (typeof window === 'undefined') return layout
+        const margin = 12
+        const width = Math.min(Math.max(layout.width, 340), Math.max(340, window.innerWidth - margin * 2))
+        const height = Math.min(Math.max(layout.height, 190), Math.max(190, window.innerHeight - margin * 2))
+        return {
+            width,
+            height,
+            x: Math.min(Math.max(layout.x, margin), Math.max(margin, window.innerWidth - width - margin)),
+            y: Math.min(Math.max(layout.y, margin), Math.max(margin, window.innerHeight - height - margin)),
+        }
+    }
+
+    function savePanelLayout() {
+        try {
+            localStorage.setItem(PERSONA_PANEL_LAYOUT_KEY, JSON.stringify({
+                ...panelLayout,
+                collapsed: personaPanelCollapsed,
+            }))
+        } catch {
+            // The panel still works for this session when storage is denied.
+        }
+    }
+
+    function resetPanelLayout() {
+        const width = Math.min(640, Math.max(340, window.innerWidth - 32))
+        const height = Math.min(320, Math.max(190, window.innerHeight - 32))
+        panelLayout = clampPanelLayout({
+            width,
+            height,
+            x: window.innerWidth - width - 20,
+            y: window.innerHeight - height - 20,
+        })
+        personaPanelCollapsed = false
+        savePanelLayout()
+    }
+
+    function beginPanelDrag(event: PointerEvent) {
+        if (!personaPanel || window.matchMedia('(max-width: 640px)').matches) return
+        if ((event.target as HTMLElement).closest('button')) return
+        event.preventDefault()
+        const startX = event.clientX
+        const startY = event.clientY
+        const originX = panelLayout.x
+        const originY = panelLayout.y
+
+        const move = (moveEvent: PointerEvent) => {
+            panelLayout = clampPanelLayout({
+                ...panelLayout,
+                x: originX + moveEvent.clientX - startX,
+                y: originY + moveEvent.clientY - startY,
+            })
+        }
+        const stop = () => {
+            window.removeEventListener('pointermove', move)
+            window.removeEventListener('pointerup', stop)
+            window.removeEventListener('pointercancel', stop)
+            stopPanelDrag = null
+            savePanelLayout()
+        }
+        stopPanelDrag?.()
+        stopPanelDrag = stop
+        window.addEventListener('pointermove', move)
+        window.addEventListener('pointerup', stop)
+        window.addEventListener('pointercancel', stop)
+    }
 
     function isFileDrag(event: DragEvent) {
         return Array.from(event.dataTransfer?.types ?? []).includes('Files')
@@ -105,10 +180,52 @@
         })
     }
 
-    onMount(createStb)
+    onMount(() => {
+        createStb()
+        try {
+            const saved = JSON.parse(localStorage.getItem(PERSONA_PANEL_LAYOUT_KEY) ?? 'null')
+            if (saved && Number.isFinite(saved.width) && Number.isFinite(saved.height)) {
+                panelLayout = {
+                    x: Number.isFinite(saved.x) ? saved.x : -1,
+                    y: Number.isFinite(saved.y) ? saved.y : -1,
+                    width: saved.width,
+                    height: saved.height,
+                }
+                personaPanelCollapsed = saved.collapsed === true
+            }
+        } catch {
+            // Invalid old layout data falls back to the compact default.
+        }
+        if (panelLayout.x < 0 || panelLayout.y < 0) resetPanelLayout()
+        else panelLayout = clampPanelLayout(panelLayout)
+
+        const onWindowResize = () => {
+            panelLayout = clampPanelLayout(panelLayout)
+            savePanelLayout()
+        }
+        window.addEventListener('resize', onWindowResize)
+
+        if (personaPanel && typeof ResizeObserver !== 'undefined') {
+            panelResizeObserver = new ResizeObserver(([entry]) => {
+                if (personaPanelCollapsed || window.matchMedia('(max-width: 640px)').matches) return
+                const rect = personaPanel?.getBoundingClientRect()
+                const width = Math.round(rect?.width ?? entry.contentRect.width)
+                const height = Math.round(rect?.height ?? entry.contentRect.height)
+                if (Math.abs(width - panelLayout.width) < 2 && Math.abs(height - panelLayout.height) < 2) return
+                panelLayout = clampPanelLayout({ ...panelLayout, width, height })
+                savePanelLayout()
+            })
+            panelResizeObserver.observe(personaPanel)
+        }
+
+        return () => window.removeEventListener('resize', onWindowResize)
+    })
 
     onDestroy(() => {
         saveUserPersona()
+        stopPanelDrag?.()
+        panelResizeObserver?.disconnect()
+        savePanelLayout()
         if(stb){
             try {
                 stb.destroy()
@@ -192,8 +309,45 @@
 </div>
 {/key}
 
-<div class="persona-detail-panel flex w-full rounded-md border border-darkborderc bg-darkbg p-4 max-w-full">
-    <div class="flex min-w-0 grow flex-col">
+<div
+    class="persona-detail-panel flex rounded-md border border-darkborderc bg-darkbg"
+    class:persona-panel-collapsed={personaPanelCollapsed}
+    bind:this={personaPanel}
+    style:left={`${panelLayout.x}px`}
+    style:top={`${panelLayout.y}px`}
+    style:width={`${panelLayout.width}px`}
+    style:height={`${panelLayout.height}px`}
+>
+    <div
+        class="persona-panel-grip flex h-9 shrink-0 items-center gap-2 border-b border-darkborderc px-3 text-xs text-textcolor2"
+        role="toolbar"
+        aria-label="Persona panel controls"
+        tabindex="0"
+        onpointerdown={beginPanelDrag}
+    >
+        <GripHorizontal size={16} />
+        <span class="font-semibold text-textcolor">페르소나 정보</span>
+        <span class="grow truncate">드래그하여 이동 · 우측 아래에서 크기 조절</span>
+        <button
+            type="button"
+            class="rounded p-1 hover:bg-selected hover:text-textcolor"
+            title="기본 크기와 위치로 복원"
+            aria-label="Reset persona panel layout"
+            onclick={resetPanelLayout}
+        ><RotateCcw size={15} /></button>
+        <button
+            type="button"
+            class="rounded p-1 hover:bg-selected hover:text-textcolor"
+            title={personaPanelCollapsed ? '정보 패널 펼치기' : '정보 패널 접기'}
+            aria-label={personaPanelCollapsed ? 'Expand persona panel' : 'Collapse persona panel'}
+            onclick={() => {
+                personaPanelCollapsed = !personaPanelCollapsed
+                savePanelLayout()
+            }}
+        >{#if personaPanelCollapsed}<Maximize2 size={15} />{:else}<Minimize2 size={15} />{/if}</button>
+    </div>
+    {#if !personaPanelCollapsed}
+    <div class="flex min-h-0 min-w-0 grow flex-col overflow-y-auto p-4">
         {#if DBState.db.personas[DBState.db.selectedPersona].sourceInfo?.label}
             <div class="mb-2 w-fit rounded-full bg-primary/15 px-2 py-1 text-xs font-semibold text-primary">
                 병합 출처 · {DBState.db.personas[DBState.db.selectedPersona].sourceInfo.label}
@@ -265,6 +419,7 @@
             </button>
         </div>
     </div>
+    {/if}
 </div>
 </SettingPage>
 
@@ -276,12 +431,52 @@
     }
 
     .persona-detail-panel {
-        position: sticky;
-        z-index: 20;
-        bottom: 0;
-        max-height: min(72vh, 44rem);
-        overflow-y: auto;
+        position: fixed;
+        z-index: 50;
+        min-width: 21.25rem;
+        min-height: 11.875rem;
+        max-width: calc(100vw - 1.5rem);
+        max-height: calc(100vh - 1.5rem);
+        flex-direction: column;
+        overflow: hidden;
+        resize: both;
         box-shadow: 0 -0.4rem 1.2rem color-mix(in srgb, var(--risu-theme-bgcolor) 82%, transparent);
+    }
+
+    .persona-panel-collapsed {
+        height: 2.25rem !important;
+        min-height: 2.25rem;
+        resize: none;
+    }
+
+    .persona-panel-grip {
+        cursor: move;
+        touch-action: none;
+        user-select: none;
+    }
+
+    @media (max-width: 640px) {
+        .persona-detail-panel {
+            position: sticky;
+            left: auto !important;
+            top: auto !important;
+            bottom: 0;
+            width: 100% !important;
+            height: min(52vh, 24rem) !important;
+            min-width: 0;
+            max-width: 100%;
+            resize: vertical;
+        }
+
+        .persona-panel-collapsed {
+            height: 2.25rem !important;
+            min-height: 2.25rem;
+            resize: none;
+        }
+
+        .persona-panel-grip {
+            cursor: default;
+        }
     }
 
     .persona-source-badge {

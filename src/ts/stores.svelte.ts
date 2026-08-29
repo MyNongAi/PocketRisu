@@ -134,7 +134,7 @@ CustomCSSStore.subscribe((css) => {
     }
 })
 
-export function createSimpleCharacter(char:character){
+export function createSimpleCharacter(char:character, moduleAssets?: [string, string, string][]){
     if(!char){
         return null
     }
@@ -144,6 +144,8 @@ export function createSimpleCharacter(char:character){
         customscript: char.customscript,
         chaId: char.chaId,
         additionalAssets: char.additionalAssets,
+        moduleAssets,
+        prebuiltAssetStyle: char.prebuiltAssetStyle,
         virtualscript: char.virtualscript,
         emotionImages: char.emotionImages,
         triggerscript: char.triggerscript,

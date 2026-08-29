@@ -41,6 +41,7 @@ import { isMobile } from 'src/ts/platform'
     import { quickMenu } from 'src/ts/hotkey';
     import { loadChatDraft, scheduleSaveChatDraft, flushChatDraft, removeChatDraft } from 'src/ts/storage/chatDraft';
     import { getChatAssetRenderWindow } from 'src/ts/chatAssetWindow';
+    import { chatWriterClaimMessage } from 'src/ts/storage/nodeStorage';
 
     import Chats from './Chats.svelte';
     import Button from '../UI/GUI/Button.svelte';
@@ -427,8 +428,9 @@ import { isMobile } from 'src/ts/platform'
         generationTarget = ready.target
         const targetCharacter = ready.character
         const activeChat = ready.chat
-        if (!await forageStorage.claimChatWriterSession(targetCharacter.chaId, activeChat.id)) {
-            notifyError('This chat is already active on another page or device. Wait for it to finish, then try again.')
+        const claim = await forageStorage.claimChatWriterSession(targetCharacter.chaId, activeChat.id)
+        if (claim.ok === false) {
+            notifyError(chatWriterClaimMessage(claim))
             return
         }
         chatLease = { chaId: targetCharacter.chaId, chatId: activeChat.id }
@@ -602,8 +604,9 @@ import { isMobile } from 'src/ts/platform'
         if(!ready) return
         generationTarget = ready.target
         const activeChat = ready.chat
-        if (!await forageStorage.claimChatWriterSession(ready.character.chaId, activeChat.id)) {
-            notifyError('This chat is already active on another page or device. Wait for it to finish, then try again.')
+        const claim = await forageStorage.claimChatWriterSession(ready.character.chaId, activeChat.id)
+        if (claim.ok === false) {
+            notifyError(chatWriterClaimMessage(claim))
             return
         }
         chatLease = { chaId: ready.character.chaId, chatId: activeChat.id }
@@ -812,7 +815,11 @@ import { isMobile } from 'src/ts/platform'
         const resumedChar = DBState.db.characters[$selectedCharID]
         const resumedChat = resumedChar?.chats?.[resumedChar.chatPage]
         if (!resumedChar || !resumedChat || resumedChat.id !== chatId) return
-        if (!await forageStorage.claimChatWriterSession(resumedChar.chaId, resumedChat.id)) return
+        const claim = await forageStorage.claimChatWriterSession(resumedChar.chaId, resumedChat.id)
+        if (claim.ok === false) {
+            if (claim.reason === 'busy' || claim.reason === 'unavailable') markResumable(chatId)
+            return
+        }
         const chatLease: ChatLeaseTarget = { chaId: resumedChar.chaId, chatId: resumedChat.id }
         const generationTarget = captureGenerationTarget(resumedChar, resumedChat)
         const abortController = new AbortController()

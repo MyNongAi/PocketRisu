@@ -73,7 +73,7 @@ describe('persona image picker', () => {
         const beta = target.querySelector<HTMLButtonElement>('button[aria-label="Beta"]')
         expect(beta).not.toBeNull()
         expect(beta?.getAttribute('aria-pressed')).toBe('true')
-        expect(target.querySelector('button[aria-label="No Image"] svg')).not.toBeNull()
+        expect(target.querySelector('button[aria-label="No Image"]')?.textContent).toContain('No Image')
         expect(mocks.getFileThumbnailSrc).not.toHaveBeenCalled()
 
         TestIntersectionObserver.instances.forEach((observer) => observer.intersect())
