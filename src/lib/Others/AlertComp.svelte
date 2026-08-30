@@ -418,6 +418,28 @@
                             <ChevronRightIcon />
                         </div>
                     </button>
+                    <div class="mt-3 grid grid-cols-2 gap-2" aria-label="봇 목록 열 수">
+                        <button class="border-darkborderc border py-2 px-4 flex rounded-md hover:ring-2 items-center justify-center" onclick={(e) => {
+                            e.stopPropagation()
+                            e.preventDefault()
+                            alertStore.set({
+                                type: 'none',
+                                msg: 'sidebarLayoutSingle'
+                            })
+                        }}>
+                            <span>봇 목록 1열</span>
+                        </button>
+                        <button class="border-darkborderc border py-2 px-4 flex rounded-md hover:ring-2 items-center justify-center" onclick={(e) => {
+                            e.stopPropagation()
+                            e.preventDefault()
+                            alertStore.set({
+                                type: 'none',
+                                msg: 'sidebarLayoutSplit'
+                            })
+                        }}>
+                            <span>봇 목록 2열</span>
+                        </button>
+                    </div>
                     <button class="border-darkborderc border py-2 px-8 flex rounded-md hover:ring-2 items-center mt-2" onclick={(e) => {
                         e.stopPropagation()
                         e.preventDefault()
