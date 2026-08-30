@@ -37,6 +37,8 @@ test('existing content-addressed files without a surviving receipt are indexed, 
         })
         assert.equal(result.indexedExternal, 1)
         assert.equal(result.manifestValues[0].value.status, 'indexed')
+        assert.equal(result.manifestValues[0].value.size, 0)
+        assert.equal(result.manifestValues[0].value.sizeKnown, false)
         assert.equal('lastVerifiedAt' in result.manifestValues[0].value, false)
     } finally {
         fs.rmSync(root, { recursive: true, force: true })
