@@ -802,10 +802,16 @@ export async function removeChar(identifier:string|number,name:string, type:'nor
 
 export async function addCharacter(arg:{
     reseter?:()=>any,
+    setCatalogLayout?:(mode:'single'|'split')=>void,
 } = {}){
     MobileGUIStack.set(100)
     const reseter = arg.reseter ?? (() => {})
     const r = await alertAddCharacter()
+    if(r === 'sidebarLayoutSingle' || r === 'sidebarLayoutSplit'){
+        arg.setCatalogLayout?.(r === 'sidebarLayoutSplit' ? 'split' : 'single')
+        MobileGUIStack.set(1)
+        return
+    }
     if(r === 'importFromRealm'){
         selectedCharID.set(-1)
         OpenRealmStore.set(true)

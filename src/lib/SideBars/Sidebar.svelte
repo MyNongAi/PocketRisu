@@ -121,7 +121,6 @@
   let splitCatalogMode = $state(
     typeof localStorage !== 'undefined' && localStorage.getItem(splitCatalogStorageKey) === 'split'
   )
-  let selectedSplitFolderId = $state('')
   type splitCatalogCharacter = {
     type: 'character'
     char: sortTypeNormal
@@ -139,32 +138,16 @@
     .filter((item): item is { char: Extract<sortType, { type: 'folder' }>, sourceOrder: number } => item.char.type === 'folder'))
   let splitCharacterBlocks = $derived.by<splitCatalogBlock[]>(() => {
     const blocks: splitCatalogBlock[] = [{ type: 'control', position: 'top' }]
-    const selectedFolder = splitFolderItems.find((item) => item.char.id === selectedSplitFolderId)
-    if(selectedFolder){
-      selectedFolder.char.folder.forEach((char, index) => blocks.push({
+    charImages.forEach((char, sourceOrder) => {
+      if(char.type === 'normal') blocks.push({
         type: 'character',
         char,
-        drag: { index, folder: selectedFolder.char.id },
-        sourceOrder: index,
-      }))
-    }
-    else{
-      charImages.forEach((char, sourceOrder) => {
-        if(char.type === 'normal') blocks.push({
-          type: 'character',
-          char,
-          drag: { index: sourceOrder },
-          sourceOrder,
-        })
+        drag: { index: sourceOrder },
+        sourceOrder,
       })
-    }
+    })
     blocks.push({ type: 'control', position: 'bottom' })
     return blocks
-  })
-  $effect(() => {
-    if(selectedSplitFolderId && !splitFolderItems.some((item) => item.char.id === selectedSplitFolderId)){
-      selectedSplitFolderId = ''
-    }
   })
   let sidebarScrollIndex = $state<number | null>(null)
   let sidebarScrollRequest = $state(0)
@@ -348,8 +331,8 @@
     return -1
   }
 
-  function toggleSplitCatalogMode(){
-    splitCatalogMode = !splitCatalogMode
+  function setSplitCatalogMode(enabled:boolean){
+    splitCatalogMode = enabled
     localStorage.setItem(splitCatalogStorageKey, splitCatalogMode ? 'split' : 'normal')
   }
 
@@ -422,10 +405,7 @@
       }
     }
     
-    if(splitCatalogMode){
-      selectedSplitFolderId = targetFolderId ?? ''
-    }
-    else if (targetFolderId && !openFolders.includes(targetFolderId)) {
+    if (targetFolderId && !openFolders.includes(targetFolderId)) {
       openFolders.push(targetFolderId)
       openFolders = openFolders
     }
@@ -712,7 +692,10 @@
   <div class="flex flex-col items-center gap-2 px-2" data-add-character-button={position}>
     <BaseRoundedButton
       onClick={async () => {
-        addCharacter({reseter})
+        addCharacter({
+          reseter,
+          setCatalogLayout: (mode) => setSplitCatalogMode(mode === 'split'),
+        })
       }}
       ><svg viewBox="0 0 24 24" width="1.2em" height="1.2em"
         ><path
@@ -744,8 +727,6 @@
       <div class="flex w-full flex-col items-center">
         <div
           class="group relative flex items-center px-2"
-          class:ring-2={selectedSplitFolderId === item.char.id}
-          class:ring-primary={selectedSplitFolderId === item.char.id}
           role="listitem"
           data-drag-index={item.sourceOrder}
           draggable={!isTouchDevice ? "true" : undefined}
@@ -771,20 +752,95 @@
             oncontextmenu={(e) => { void editSidebarFolder(item.sourceOrder, item.char, e) }}
             onClick={() => {
               if(suppressNextClick) return
-              selectedSplitFolderId = selectedSplitFolderId === item.char.id ? '' : item.char.id
+              if(openFolders.includes(item.char.id)) openFolders.splice(openFolders.indexOf(item.char.id), 1)
+              else openFolders.push(item.char.id)
+              openFolders = openFolders
             }}
           >
             {#if DBState.db.showFolderName}
               <div class="flex h-full w-full items-center justify-center">
                 <span class="truncate font-bold">{item.char.name}</span>
               </div>
-            {:else if selectedSplitFolderId === item.char.id}
+            {:else if openFolders.includes(item.char.id)}
               <FolderOpenIcon />
             {:else}
               <FolderIcon />
             {/if}
           </SidebarAvatar>
         </div>
+        {#if openFolders.includes(item.char.id)}
+          <div class="relative mt-1 flex w-full flex-col items-center rounded-lg border border-selected py-1">
+            <div
+              class="h-4 min-h-4 w-full"
+              role="listitem"
+              data-spacer-index="0"
+              data-spacer-folder={item.char.id}
+              ondragover={(e) => {
+                if(!getCurrentSidebarDrag(e)) return
+                e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'
+                e.currentTarget.classList.add('bg-green-500')
+              }}
+              ondragleave={(e) => e.currentTarget.classList.remove('bg-green-500')}
+              ondrop={(e) => {
+                const drag = getCurrentSidebarDrag(e)
+                if(!drag) return
+                e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('bg-green-500')
+                try { inserter(drag, { index: 0, folder: item.char.id }) } finally { clearCurrentDrag() }
+              }}
+            ></div>
+            {#each item.char.folder as folderChar, folderIndex}
+              <div
+                class="sidebar-folder-character group relative flex items-center px-2"
+                role="listitem"
+                data-drag-index={folderIndex}
+                data-drag-folder={item.char.id}
+                draggable={!isTouchDevice ? "true" : undefined}
+                ondragstart={!isTouchDevice ? (e) => avatarDragStart({ index: folderIndex, folder: item.char.id }, e) : undefined}
+                ondragend={!isTouchDevice ? clearCurrentDrag : undefined}
+                ondragover={!isTouchDevice ? avatarDragOver : undefined}
+                ontouchstart={touchDragEnabled ? (e) => onTouchDragStart({ index: folderIndex, folder: item.char.id }, e) : undefined}
+              >
+                <SidebarIndicator isActive={$selectedCharID === folderChar.index && sideBarMode !== 1}/>
+                <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+                <div
+                  role="button"
+                  tabindex="0"
+                  onpointerenter={() => scheduleCharacterChatPrefetch(folderChar.index)}
+                  onpointerleave={() => cancelCharacterChatPrefetch(folderChar.index)}
+                  onpointerdown={() => void prefetchCharacterChat(folderChar.index)}
+                  onclick={() => { if(!suppressNextClick) changeChar(folderChar.index, { reseter }) }}
+                  onkeydown={(e) => { if(e.key === 'Enter') changeChar(folderChar.index, { reseter }) }}
+                >
+                  <SidebarAvatar
+                    src={folderChar.img ? () => getCharThumbnail(folderChar.img, "plain") : ""}
+                    size="56"
+                    rounded={IconRounded}
+                    name={folderChar.name}
+                    chaId={DBState.db.characters[folderChar.index]?.chaId}
+                  />
+                </div>
+              </div>
+              <div
+                class="h-4 min-h-4 w-full"
+                role="listitem"
+                data-spacer-index={folderIndex + 1}
+                data-spacer-folder={item.char.id}
+                ondragover={(e) => {
+                  if(!getCurrentSidebarDrag(e)) return
+                  e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'
+                  e.currentTarget.classList.add('bg-green-500')
+                }}
+                ondragleave={(e) => e.currentTarget.classList.remove('bg-green-500')}
+                ondrop={(e) => {
+                  const drag = getCurrentSidebarDrag(e)
+                  if(!drag) return
+                  e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('bg-green-500')
+                  try { inserter(drag, { index: folderIndex + 1, folder: item.char.id }) } finally { clearCurrentDrag() }
+                }}
+              ></div>
+            {/each}
+          </div>
+        {/if}
         <div class="h-4 min-h-4 w-full" role="listitem" data-spacer-index={item.sourceOrder + 1} ondragover={(e) => {
           if(!getCurrentSidebarDrag(e)) return
           e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'
@@ -804,6 +860,25 @@
   {#if block.type === 'control'}
     <div class="flex w-full flex-col items-center">
       {@render addCharacterButton(block.position)}
+      {#if block.position === 'top'}
+        <div
+          class="h-4 min-h-4 w-full"
+          role="listitem"
+          data-spacer-index="0"
+          ondragover={(e) => {
+            if(!getCurrentSidebarDrag(e)) return
+            e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'
+            e.currentTarget.classList.add('bg-green-500')
+          }}
+          ondragleave={(e) => e.currentTarget.classList.remove('bg-green-500')}
+          ondrop={(e) => {
+            const drag = getCurrentSidebarDrag(e)
+            if(!drag) return
+            e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('bg-green-500')
+            try { inserter(drag, { index: 0 }) } finally { clearCurrentDrag() }
+          }}
+        ></div>
+      {/if}
     </div>
   {:else}
     <div class="flex w-full flex-col items-center">
@@ -1024,17 +1099,6 @@
     {/if}
   </div>
   {/if}
-  <button
-    type="button"
-    class="my-1 flex h-7 min-h-7 w-14 items-center justify-center rounded-md border border-selected text-xs font-bold text-textcolor2 transition-colors hover:border-primary hover:text-primary"
-    class:text-primary={splitCatalogMode}
-    aria-pressed={splitCatalogMode}
-    aria-label="봇 사이드바 2열 보기"
-    title="기존 보기 / 왼쪽 폴더·오른쪽 봇 2열 보기"
-    onclick={toggleSplitCatalogMode}
-  >
-    {splitCatalogMode ? '1열' : '2열'}
-  </button>
   <div class="flex grow min-h-0 w-full" class:max-xs:hidden={$leftBarCollapsed} use:touchDragContainer>
   {#if splitCatalogMode}
     {@render splitFolderColumn()}
@@ -1044,10 +1108,10 @@
       overscan={5}
       smallListThreshold={36}
       className="character-list h-full w-20 min-w-20 pr-0"
-      ariaLabel={selectedSplitFolderId ? '선택한 폴더의 캐릭터' : '폴더 밖 캐릭터'}
+      ariaLabel="폴더 밖 개별 캐릭터"
       key={(block) => block.type === 'control'
         ? `split-control-${block.position}`
-        : `split-character-${block.drag.folder ?? 'root'}-${DBState.db.characters[block.char.index]?.chaId ?? block.sourceOrder}`}
+        : `split-character-root-${DBState.db.characters[block.char.index]?.chaId ?? block.sourceOrder}`}
     >
       {#snippet children(block)}
         {@render splitCharacterRow(block)}
