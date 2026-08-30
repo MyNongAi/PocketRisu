@@ -23,6 +23,29 @@ const getVips = () => {
     }
     return _vipsPromise
 }
+
+// Offline absorbers replace database.bin atomically after a long verified copy.
+// Refuse to boot while that process is alive, otherwise a stale in-memory
+// server can publish its pre-import cache afterward and silently undo the merge.
+const offlineImportLockPath = path.join(process.cwd(), 'save', '.offline-import.lock');
+if (existsSync(offlineImportLockPath)) {
+    let lock = null;
+    try { lock = JSON.parse(readFileSync(offlineImportLockPath, 'utf8')); } catch { /* stale malformed lock */ }
+    let active = false;
+    if (Number.isSafeInteger(Number(lock?.pid)) && Number(lock.pid) > 0) {
+        try {
+            process.kill(Number(lock.pid), 0);
+            active = true;
+        } catch (error) {
+            active = error?.code === 'EPERM';
+        }
+    }
+    if (active) {
+        throw new Error(`PocketRisu cannot start during offline data import (PID ${lock.pid})`);
+    }
+    try { unlinkSync(offlineImportLockPath); } catch { /* another process cleared it */ }
+}
+
 const { kvGet, kvSet, kvDel, kvList,
         kvDelPrefix, kvListWithSizes, kvPrefixStats, kvIterateWithSizes, kvStoredSize, kvSummarizePrefixes,
         kvSize, kvGetUpdatedAt, kvCopyValue, clearEntities, checkpointWal,
