@@ -4822,9 +4822,13 @@ app.post('/api/external-assets/verify', async (req, res, next) => {
         const runtime = await getExternalAssetRuntime();
         const entries = await runtime.manifestStore.list();
         const migrationId = typeof req.body?.migrationId === 'string' ? req.body.migrationId : null;
-        const selected = migrationId
+        const selectedForMigration = migrationId
             ? entries.filter((entry) => (entry.migrationIds || []).includes(migrationId))
             : entries;
+        const onlyUnverified = req.body?.onlyUnverified !== false;
+        const selected = onlyUnverified
+            ? selectedForMigration.filter((entry) => entry.status !== 'verified' || !entry.lastVerifiedAt)
+            : selectedForMigration;
         const verified = await runtime.service.verifyMany(selected.map((entry) => entry.uri));
         const results = verified.map((result) => result.ok
             ? { uri: result.uri, ok: true, size: result.size }
@@ -4833,7 +4837,15 @@ app.post('/api/external-assets/verify', async (req, res, next) => {
             const job = externalAssetMigrationJournal.getJob(migrationId);
             if (job?.status === 'published') externalAssetMigrationJournal.updateJobStatus(migrationId, 'verified');
         }
-        res.json({ ok: results.every((result) => result.ok), results });
+        const failures = results.filter((result) => !result.ok);
+        res.json({
+            ok: failures.length === 0,
+            checked: results.length,
+            verified: results.length - failures.length,
+            failed: failures.length,
+            failures: failures.slice(0, 100),
+            failuresTruncated: failures.length > 100,
+        });
     } catch (error) { next(error); }
     finally { endExclusiveStorage(storageReason); }
 });

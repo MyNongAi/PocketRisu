@@ -938,7 +938,7 @@ export class NodeStorage{
         const response = await this.authFetch('/api/external-assets/verify', {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ migrationId }),
+            body: JSON.stringify({ migrationId, onlyUnverified: true }),
         })
         const body = await response.json().catch(() => ({}))
         if (!response.ok) throw new Error(body.error || `external asset verification failed: ${response.status}`)

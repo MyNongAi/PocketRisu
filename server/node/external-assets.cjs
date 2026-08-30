@@ -1167,14 +1167,15 @@ function createExternalAssetService(options = {}) {
     async function verifyDetachedReceipt(receipt = {}) {
         const parsed = parseExternalAssetUri(receipt.uri);
         const expectedHash = normalizeHash(receipt.hash);
-        const expectedSize = Number(receipt.size);
+        const sizeKnown = receipt.sizeKnown !== false;
+        const expectedSize = sizeKnown ? Number(receipt.size) : null;
         if (parsed.hash !== expectedHash) {
             throw new ExternalAssetError('INVALID_STAGE_RECEIPT', 'Staged URI and hash do not match.');
         }
         if (typeof receipt.providerId === 'string' && receipt.providerId !== parsed.providerId) {
             throw new ExternalAssetError('INVALID_STAGE_RECEIPT', 'Staged URI and provider do not match.');
         }
-        if (!Number.isSafeInteger(expectedSize) || expectedSize < 0) {
+        if (sizeKnown && (!Number.isSafeInteger(expectedSize) || expectedSize < 0)) {
             throw new ExternalAssetError('INVALID_STAGE_RECEIPT', 'Staged receipt size must be a non-negative safe integer.');
         }
         const provider = providerFor(parsed.providerId, 'read');
@@ -1183,7 +1184,7 @@ function createExternalAssetService(options = {}) {
         if (info?.hash && normalizeHash(info.hash) !== parsed.hash) {
             throw new ExternalAssetError('HASH_MISMATCH', 'External provider stat returned a different asset hash.');
         }
-        if (Number.isFinite(info?.size) && Number(info.size) !== expectedSize) {
+        if (sizeKnown && Number.isFinite(info?.size) && Number(info.size) !== expectedSize) {
             throw new ExternalAssetError('SIZE_MISMATCH', 'External asset stat size verification failed.', {
                 details: { expectedSize, actualSize: Number(info.size) },
             });
@@ -1191,13 +1192,16 @@ function createExternalAssetService(options = {}) {
         let verification;
         if (typeof provider.verify === 'function') {
             verification = await callProvider(provider, () => provider.verify(parsed.hash, expectedSize));
-            if (normalizeHash(verification?.hash) !== parsed.hash || Number(verification?.size) !== expectedSize) {
+            if (normalizeHash(verification?.hash) !== parsed.hash
+                || (sizeKnown && Number(verification?.size) !== expectedSize)
+                || !Number.isSafeInteger(Number(verification?.size))
+                || Number(verification?.size) < 0) {
                 throw new ExternalAssetError('INVALID_STAGE_RECEIPT', 'Provider streaming verification returned mismatched metadata.');
             }
         } else {
             // Custom/legacy providers expose only Buffer-based get(). Refuse a
             // single unbounded allocation rather than risking an OOM.
-            if (expectedSize > maxVerificationBufferBytes) {
+            if (sizeKnown && expectedSize > maxVerificationBufferBytes) {
                 throw new ExternalAssetError(
                     'ASSET_TOO_LARGE',
                     `Provider ${parsed.providerId} cannot stream verification and the asset exceeds maxVerificationBufferBytes.`,
@@ -1205,6 +1209,13 @@ function createExternalAssetService(options = {}) {
                 );
             }
             const data = await callProvider(provider, () => provider.get(parsed.hash));
+            if (!sizeKnown && data.length > maxVerificationBufferBytes) {
+                throw new ExternalAssetError(
+                    'ASSET_TOO_LARGE',
+                    `Provider ${parsed.providerId} cannot stream verification and the asset exceeds maxVerificationBufferBytes.`,
+                    { details: { maxVerificationBufferBytes } },
+                );
+            }
             verifyContent(data, parsed.hash, expectedSize);
             verification = { hash: parsed.hash, size: data.length };
         }
@@ -1212,7 +1223,7 @@ function createExternalAssetService(options = {}) {
             uri: parsed.uri,
             providerId: parsed.providerId,
             hash: parsed.hash,
-            size: expectedSize,
+            size: Number(verification.size),
             statSize: Number.isFinite(info?.size) ? Number(info.size) : null,
             verifiedAt: now(),
         };
@@ -1253,6 +1264,7 @@ function createExternalAssetService(options = {}) {
                 status: 'verified',
                 lastVerifiedAt: timestamp,
                 size: data.length,
+                sizeKnown: true,
             }))
             : null;
         cache.set(parsed.uri, data);
@@ -1286,12 +1298,13 @@ function createExternalAssetService(options = {}) {
                 continue;
             }
             try {
-                const checked = await verifyDetachedReceipt({
-                    uri: parsed.uri,
-                    providerId: parsed.providerId,
-                    hash: parsed.hash,
-                    size: record.size,
-                });
+            const checked = await verifyDetachedReceipt({
+                uri: parsed.uri,
+                providerId: parsed.providerId,
+                hash: parsed.hash,
+                size: record.size,
+                sizeKnown: record.sizeKnown !== false,
+            });
                 // Keep metadata only. Holding every successful Buffer made a
                 // 47 GB verify pass consume O(total bytes) memory.
                 successful.push({ parsed, size: checked.size });
@@ -1310,6 +1323,7 @@ function createExternalAssetService(options = {}) {
                     status: 'verified',
                     lastVerifiedAt: timestamp,
                     size,
+                    sizeKnown: true,
                 }),
             })));
         }

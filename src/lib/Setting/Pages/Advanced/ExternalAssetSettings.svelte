@@ -208,7 +208,9 @@
     async function verify() {
         const result = await run('Re-downloading and verifying external assets…', () => forageStorage.verifyExternalAssets(migrationJob?.id))
         if (result) {
-            message = result.ok ? 'All external assets passed hash and size verification.' : 'Some external assets failed verification.'
+            message = result.ok
+                ? `${result.verified ?? 0} unverified external assets passed hash and size verification.`
+                : `${result.verified ?? 0} passed; ${result.failed ?? 0} external assets failed verification.`
             if (result.ok) notifySuccess(message)
             await refresh()
         }
