@@ -439,6 +439,42 @@ function listExternalHashes(root) {
     return hashes
 }
 
+function processIsRunning(pid) {
+    if (!Number.isSafeInteger(pid) || pid <= 0) return false
+    try {
+        process.kill(pid, 0)
+        return true
+    } catch (error) {
+        return error?.code === 'EPERM'
+    }
+}
+
+function acquireOfflineImportLock(targetRoot, details = {}) {
+    const lockPath = path.join(targetRoot, 'save', '.offline-import.lock')
+    const token = randomUUID()
+    if (fs.existsSync(lockPath)) {
+        let existing = null
+        try { existing = JSON.parse(fs.readFileSync(lockPath, 'utf8')) } catch { /* malformed means stale */ }
+        if (processIsRunning(Number(existing?.pid))) {
+            throw new Error(`PocketRisu offline import is already active as PID ${existing.pid}`)
+        }
+        fs.unlinkSync(lockPath)
+    }
+    fs.writeFileSync(lockPath, JSON.stringify({
+        version: 1,
+        token,
+        pid: process.pid,
+        createdAt: new Date().toISOString(),
+        ...details,
+    }, null, 2), { encoding: 'utf8', flag: 'wx' })
+    return () => {
+        try {
+            const current = JSON.parse(fs.readFileSync(lockPath, 'utf8'))
+            if (current?.token === token) fs.unlinkSync(lockPath)
+        } catch { /* another process already cleared or replaced it */ }
+    }
+}
+
 function mimeFromBytes(bytes, originalPath) {
     if (bytes?.length >= 12 && bytes.subarray(0, 4).toString('ascii') === 'RIFF' && bytes.subarray(8, 12).toString('ascii') === 'WEBP') return 'image/webp'
     if (bytes?.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) return 'image/png'
@@ -676,14 +712,23 @@ export async function absorbLocalRisu(options) {
     const sourceDatabaseHash = hashBuffer(sourceBytes)
     const importId = `${sourceBackup ? 'backup' : 'local'}-${sourceDatabaseHash.slice(0, 16)}-${Date.now().toString(36)}`
     const originalCwd = process.cwd()
-    process.chdir(targetRoot)
-    const targetRequire = createRequire(path.join(targetRoot, 'package.json'))
-    const dbApi = targetRequire('./server/node/db.cjs')
-    const { decodeRisuSave, encodeRisuSaveLegacy } = targetRequire('./server/node/utils.cjs')
-    const { createSqliteManifestStore } = targetRequire('./server/node/external-asset-manifest-store.cjs')
-    const manifestStore = createSqliteManifestStore({ db: dbApi.db })
-
+    let releaseOfflineImportLock = () => {}
+    let dbApi = null
     try {
+        if (options.execute) {
+            releaseOfflineImportLock = acquireOfflineImportLock(targetRoot, {
+                importId,
+                sourceDatabaseHash,
+                sourceKind: sourceBackup ? 'backup' : 'local',
+            })
+        }
+        process.chdir(targetRoot)
+        const targetRequire = createRequire(path.join(targetRoot, 'package.json'))
+        dbApi = targetRequire('./server/node/db.cjs')
+        const { decodeRisuSave, encodeRisuSaveLegacy } = targetRequire('./server/node/utils.cjs')
+        const { createSqliteManifestStore } = targetRequire('./server/node/external-asset-manifest-store.cjs')
+        const manifestStore = createSqliteManifestStore({ db: dbApi.db })
+
         const hasRunTable = Boolean(dbApi.db.prepare(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'local_absorb_runs'",
         ).get())
@@ -920,8 +965,9 @@ export async function absorbLocalRisu(options) {
         fs.writeFileSync(journalPath, `${JSON.stringify({ ...receipt, finalCounts }, null, 2)}\n`, 'utf8')
         return { mode: 'executed', ...receipt, finalCounts, journalPath }
     } finally {
-        dbApi.db.close()
+        dbApi?.db?.close()
         process.chdir(originalCwd)
+        releaseOfflineImportLock()
     }
 }
 
