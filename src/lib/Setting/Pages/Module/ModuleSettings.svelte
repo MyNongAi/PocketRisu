@@ -603,7 +603,7 @@
             {#if rmodule.mcp}
                 <Waypoints size={18} class="mr-2" />
             {/if}
-            <span class="font-bold min-w-0 truncate">{rmodule.name}</span>
+            <span class:text-red-400={(rmodule.sourceInfo?.missingAssetCount ?? 0) > 0} class="font-bold min-w-0 truncate">{rmodule.name}</span>
             <div class="grow flex justify-end">
                 <button
                     class={folderPickerModule === rmodule

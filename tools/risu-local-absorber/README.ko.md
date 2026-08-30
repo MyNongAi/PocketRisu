@@ -1,7 +1,8 @@
 # PC 로컬리스 무손실 흡수 도구
 
-PC 로컬 Risu의 봇·모듈·페르소나를 현재 PocketRisu에 **항목 중복을 제거하지
-않고** 모두 덧붙이는 오프라인 이주 도구입니다.
+PC 로컬 Risu 또는 원본 Risu `.bin` 백업의 봇·모듈·페르소나를 현재
+PocketRisu에 **항목 중복을 제거하지 않고** 모두 덧붙이는 오프라인 이주
+도구입니다.
 
 - 채팅은 제외합니다.
 - 모든 봇·모듈·페르소나는 새 ID를 받습니다.
@@ -25,3 +26,14 @@ node --max-old-space-size=4096 tools/risu-local-absorber/absorb-local-risu.mjs `
 검증 결과가 맞을 때만 `--execute`를 붙입니다. 실행 중 원본 로컬리스 파일은
 수정하거나 삭제하지 않습니다. 완료 장부는 PocketRisu의
 `backups/migration-journals`에 남습니다.
+
+에셋이 빠진 웹리스 백업도 먼저 dry-run으로 검사할 수 있습니다. 이 경우 현재
+PocketRisu 내부 저장소와 외부 저장소에 같은 해시의 파일이 있으면 재사용하고,
+찾지 못한 참조는 삭제하지 않고 누락 상태로 보존합니다.
+
+```powershell
+node --max-old-space-size=4096 tools/risu-local-absorber/absorb-local-risu.mjs `
+  --source-backup "H:\Download\웹리스백업\Binary (2).bin" `
+  --target-root "C:\Users\chae0_9ksma4k\PocketRisu" `
+  --source-label "모바일웹리스"
+```

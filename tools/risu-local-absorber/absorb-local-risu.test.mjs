@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
+    buildImportAssetHealth,
     collectAssetPaths,
     mergeSourceCollections,
+    organizeImportedMissingAssetFolders,
     prepareSourceDatabase,
     rewriteAssetPathsInPlace,
 } from './absorb-local-risu.mjs'
@@ -22,6 +24,50 @@ test('embedded and structured asset paths are collected and rewritten', () => {
     assert.match(value.image, /^external:\/\/main-assets\//)
     assert.match(value.css, /external:\/\/main-assets\//)
     assert.equal(value.remote, 'https://example.test/assets/no.png')
+})
+
+test('missing imported assets are marked and collected in top folders', () => {
+    let nextId = 0
+    const target = {
+        characters: [],
+        characterOrder: [],
+        modules: [],
+        moduleFolders: [],
+        personas: [],
+    }
+    const source = prepareSourceDatabase({
+        characters: [
+            { chaId: 'broken-char', name: 'Broken', image: 'assets/missing.png', chats: [] },
+            { chaId: 'safe-char', name: 'Safe', image: 'assets/safe.png', chats: [] },
+        ],
+        characterOrder: ['broken-char', 'safe-char'],
+        modules: [{ id: 'broken-module', name: 'Broken module', assets: [['x', 'assets/missing-module.png']] }],
+        moduleFolders: [],
+        personas: [],
+    })
+    const health = buildImportAssetHealth(source, ['assets/missing.png', 'assets/missing-module.png'])
+    const merge = mergeSourceCollections(target, source, {
+        sourceLabel: '모바일웹리스',
+        importId: 'import-broken',
+        collectionId: 'collection-broken',
+        importedAt: 123,
+        assetHealth: health,
+        createId: () => `new-${++nextId}`,
+    })
+    const organized = organizeImportedMissingAssetFolders(target, merge, health, {
+        sourceLabel: '모바일웹리스',
+        importId: 'import-broken',
+        collectionId: 'collection-broken',
+        importedAt: 123,
+    })
+
+    assert.deepEqual(organized, { characters: 1, modules: 1 })
+    assert.equal(target.characters[0].sourceInfo.missingAssetCount, 1)
+    assert.equal(target.characters[1].sourceInfo.missingAssetCount, 0)
+    assert.equal(target.characterOrder[0].name, '[에셋 누락] 모바일웹리스')
+    assert.deepEqual(target.characterOrder[0].data, [merge.characterIds[0]])
+    assert.equal(target.moduleFolders[0].name, '[에셋 누락] 모바일웹리스')
+    assert.deepEqual(target.moduleFolders[0].moduleIds, [merge.moduleIds[0]])
 })
 
 test('source preparation drops chats but keeps duplicate entities', () => {

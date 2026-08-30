@@ -5,6 +5,7 @@ import path from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { pathToFileURL } from 'node:url'
+import { decodeLegacyDatabase, findTrailingEntry } from '../risu-backup-extractor/extract-risu-backup.mjs'
 
 const DB_KEY = 'database/database.bin'
 const FORMAT_VERSION = 1
@@ -154,7 +155,8 @@ export function mergeSourceCollections(target, source, options = {}) {
 
     const moduleIdMap = new Map()
     const importedModules = []
-    for (const module of source.modules) {
+    for (let moduleIndex = 0; moduleIndex < source.modules.length; moduleIndex++) {
+        const module = source.modules[moduleIndex]
         const originalId = module.id
         const id = uniqueId(usedIds, createId)
         if (typeof originalId === 'string' && originalId) moduleIdMap.set(originalId, id)
@@ -162,7 +164,11 @@ export function mergeSourceCollections(target, source, options = {}) {
             description: '',
             ...module,
             id,
-            sourceInfo: { ...baseInfo, originalId: typeof originalId === 'string' ? originalId : null },
+            sourceInfo: {
+                ...baseInfo,
+                originalId: typeof originalId === 'string' ? originalId : null,
+                ...(options.assetHealth?.modules?.[moduleIndex] ?? {}),
+            },
         })
     }
     target.modules.push(...importedModules)
@@ -174,7 +180,8 @@ export function mergeSourceCollections(target, source, options = {}) {
 
     const characterIdMap = new Map()
     const importedCharacters = []
-    for (const character of source.characters) {
+    for (let characterIndex = 0; characterIndex < source.characters.length; characterIndex++) {
+        const character = source.characters[characterIndex]
         const originalId = character.chaId
         const id = uniqueId(usedIds, createId)
         if (typeof originalId === 'string' && originalId) characterIdMap.set(originalId, id)
@@ -191,12 +198,17 @@ export function mergeSourceCollections(target, source, options = {}) {
             chatPage: 0,
             trashTime: undefined,
             ...(Object.hasOwn(character, 'modules') ? { modules } : {}),
-            sourceInfo: { ...baseInfo, originalId, originalModuleIds },
+            sourceInfo: {
+                ...baseInfo,
+                originalId,
+                originalModuleIds,
+                ...(options.assetHealth?.characters?.[characterIndex] ?? {}),
+            },
         })
     }
     target.characters.push(...importedCharacters)
 
-    const importedPersonas = source.personas.map((persona) => {
+    const importedPersonas = source.personas.map((persona, personaIndex) => {
         const originalId = persona.id
         return {
             icon: '',
@@ -204,7 +216,11 @@ export function mergeSourceCollections(target, source, options = {}) {
             note: '',
             ...persona,
             id: uniqueId(usedIds, createId),
-            sourceInfo: { ...baseInfo, originalId },
+            sourceInfo: {
+                ...baseInfo,
+                originalId,
+                ...(options.assetHealth?.personas?.[personaIndex] ?? {}),
+            },
         }
     })
     target.personas.push(...importedPersonas)
@@ -290,6 +306,83 @@ export function mergeSourceCollections(target, source, options = {}) {
     }
 }
 
+function assetHealthForEntities(entities, unresolved) {
+    return entities.map((entity) => {
+        const references = collectAssetPaths(entity)
+        return {
+            assetReferenceCount: references.length,
+            missingAssetCount: references.filter((reference) => unresolved.has(reference)).length,
+        }
+    })
+}
+
+export function buildImportAssetHealth(source, unresolvedReferences) {
+    const unresolved = new Set(unresolvedReferences)
+    return {
+        characters: assetHealthForEntities(source.characters, unresolved),
+        modules: assetHealthForEntities(source.modules, unresolved),
+        personas: assetHealthForEntities(source.personas, unresolved),
+    }
+}
+
+export function organizeImportedMissingAssetFolders(target, merge, assetHealth, options = {}) {
+    const missingCharacterIds = new Set(merge.characterIds.filter((_, index) => assetHealth.characters[index]?.missingAssetCount > 0))
+    const missingModuleIds = new Set(merge.moduleIds.filter((_, index) => assetHealth.modules[index]?.missingAssetCount > 0))
+    const sourceLabel = String(options.sourceLabel || '가져온 데이터').trim() || '가져온 데이터'
+    const baseInfo = {
+        label: sourceLabel,
+        bundleId: options.importId || merge.importId,
+        collectionId: options.collectionId || merge.collectionId,
+        importedAt: options.importedAt ?? Date.now(),
+    }
+
+    if (missingCharacterIds.size > 0) {
+        target.characterOrder = target.characterOrder.flatMap((entry) => {
+            if (typeof entry === 'string') return missingCharacterIds.has(entry) ? [] : [entry]
+            if (!entry || typeof entry !== 'object' || !Array.isArray(entry.data)) return [entry]
+            const data = entry.data.filter((id) => !missingCharacterIds.has(id))
+            if (data.length === 0 && entry.sourceInfo?.bundleId === baseInfo.bundleId) return []
+            return [{ ...entry, data }]
+        })
+        const names = new Set(target.characterOrder.filter((entry) => entry && typeof entry === 'object').map((entry) => entry.name))
+        target.characterOrder.unshift({
+            id: randomUUID(),
+            name: uniqueFolderName(names, `[에셋 누락] ${sourceLabel}`),
+            data: [...missingCharacterIds],
+            color: 'red',
+            sourceInfo: {
+                ...baseInfo,
+                missingAssetCount: assetHealth.characters.reduce((sum, value) => sum + (value.missingAssetCount || 0), 0),
+            },
+        })
+    }
+
+    if (missingModuleIds.size > 0) {
+        target.moduleFolders = target.moduleFolders.flatMap((folder) => {
+            if (!folder || typeof folder !== 'object') return [folder]
+            const moduleIds = (Array.isArray(folder.moduleIds) ? folder.moduleIds : []).filter((id) => !missingModuleIds.has(id))
+            if (moduleIds.length === 0 && folder.sourceInfo?.bundleId === baseInfo.bundleId) return []
+            return [{ ...folder, moduleIds }]
+        })
+        const names = new Set(target.moduleFolders.map((folder) => folder?.name))
+        target.moduleFolders.unshift({
+            id: randomUUID(),
+            name: uniqueFolderName(names, `[에셋 누락] ${sourceLabel}`),
+            moduleIds: [...missingModuleIds],
+            collapsed: false,
+            sourceInfo: {
+                ...baseInfo,
+                missingAssetCount: assetHealth.modules.reduce((sum, value) => sum + (value.missingAssetCount || 0), 0),
+            },
+        })
+    }
+
+    return {
+        characters: missingCharacterIds.size,
+        modules: missingModuleIds.size,
+    }
+}
+
 function hashBuffer(value) {
     return createHash('sha256').update(value).digest('hex')
 }
@@ -312,8 +405,38 @@ function hashFile(filePath) {
     return { hash: hash.digest('hex'), size: bytes }
 }
 
+function readBackupDatabaseEntry(inputPath) {
+    const entry = findTrailingEntry(inputPath)
+    const fd = fs.openSync(inputPath, 'r')
+    try {
+        const bytes = Buffer.allocUnsafe(entry.dataLength)
+        let offset = 0
+        while (offset < bytes.length) {
+            const count = fs.readSync(fd, bytes, offset, bytes.length - offset, entry.dataOffset + offset)
+            if (count === 0) throw new Error(`Unexpected end of backup at byte ${entry.dataOffset + offset}`)
+            offset += count
+        }
+        return { entry, bytes }
+    } finally {
+        fs.closeSync(fd)
+    }
+}
+
 function externalFilePath(root, hash) {
     return path.join(root, hash.slice(0, 2), hash)
+}
+
+function listExternalHashes(root) {
+    const hashes = new Set()
+    if (!fs.existsSync(root)) return hashes
+    for (const prefix of fs.readdirSync(root, { withFileTypes: true })) {
+        if (!prefix.isDirectory() || !/^[a-f0-9]{2}$/i.test(prefix.name)) continue
+        const directory = path.join(root, prefix.name)
+        for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+            if (entry.isFile() && /^[a-f0-9]{64}$/i.test(entry.name)) hashes.add(entry.name.toLowerCase())
+        }
+    }
+    return hashes
 }
 
 function mimeFromBytes(bytes, originalPath) {
@@ -380,7 +503,8 @@ function resolveProviderRoot(targetRoot, config, providerId) {
 
 function planAndCopyAssets(options) {
     const {
-        references, sourceRoot, providerId, externalRoot, kvGet,
+        references, sourceRoot, providerId, externalRoot, externalHashes, verifiedExternalEntries,
+        kvGet, kvSize, targetAssetKeys,
         manifestStore, importId, execute, progress,
     } = options
     const mapping = new Map()
@@ -389,6 +513,7 @@ function planAndCopyAssets(options) {
     const createdFiles = []
     let sourceFiles = 0
     let recoveredFromExternal = 0
+    let reusedVerifiedExternal = 0
     let recoveredFromTarget = 0
     let totalSourceBytes = 0
 
@@ -408,33 +533,63 @@ function planAndCopyAssets(options) {
             totalSourceBytes += size
             if (execute) ensureExternalFileFromFile(sourcePath, externalRoot, hash, size, createdFiles)
         } else {
-            const existingManifest = manifestStore.findByInternalKeySync(reference)
-            if (existingManifest?.uri) {
-                mapping.set(reference, existingManifest.uri)
-                continue
-            }
             const expectedHash = /^assets\/([a-f0-9]{64})(?:\.[A-Za-z0-9._~-]+)?$/i.exec(reference)?.[1]?.toLowerCase()
             if (expectedHash) {
                 const expectedPath = externalFilePath(externalRoot, expectedHash)
-                if (fs.existsSync(expectedPath) && fs.statSync(expectedPath).isFile()) {
-                    const verified = hashFile(expectedPath)
-                    if (verified.hash === expectedHash) {
+                const knownExternal = externalHashes?.has(expectedHash)
+                if (knownExternal) {
+                    const verifiedEntry = verifiedExternalEntries?.get(expectedHash)
+                    const canReuseVerification = Boolean(
+                        verifiedEntry
+                        && verifiedEntry.providerId === providerId
+                        && verifiedEntry.status === 'verified'
+                        && verifiedEntry.hash === expectedHash
+                        && Number.isSafeInteger(verifiedEntry.size)
+                        && verifiedEntry.size >= 0
+                    )
+                    const verified = execute && !canReuseVerification
+                        ? hashFile(expectedPath)
+                        : { hash: expectedHash, size: canReuseVerification ? verifiedEntry.size : 0 }
+                    if (!execute || verified.hash === expectedHash) {
                         hash = expectedHash
                         size = verified.size
-                        mimeType = mimeFromBytes(readPrefix(expectedPath), reference)
+                        mimeType = canReuseVerification
+                            ? (verifiedEntry.mimeType || mimeFromBytes(null, reference))
+                            : (execute ? mimeFromBytes(readPrefix(expectedPath), reference) : mimeFromBytes(null, reference))
                         recoveredFromExternal++
+                        if (canReuseVerification) reusedVerifiedExternal++
                     }
                 }
             }
+            if (!hash && !expectedHash) {
+                const existingManifest = manifestStore.findByInternalKeySync(reference)
+                if (existingManifest?.uri) {
+                    mapping.set(reference, existingManifest.uri)
+                    continue
+                }
+            }
             if (!hash) {
-                const targetValue = kvGet(reference)
-                if (targetValue) {
-                    const value = Buffer.from(targetValue)
-                    hash = hashBuffer(value)
-                    size = value.length
-                    mimeType = mimeFromBytes(value.subarray(0, 16), reference)
-                    if (execute) ensureExternalFileFromBuffer(value, externalRoot, hash, createdFiles)
-                    recoveredFromTarget++
+                const mayExistInTarget = !targetAssetKeys || targetAssetKeys.has(reference)
+                if (mayExistInTarget) {
+                    if (!execute && expectedHash) {
+                        const storedSize = kvSize(reference)
+                        if (Number.isSafeInteger(storedSize) && storedSize >= 0) {
+                            hash = expectedHash
+                            size = storedSize
+                            mimeType = mimeFromBytes(null, reference)
+                            recoveredFromTarget++
+                        }
+                    } else {
+                        const targetValue = kvGet(reference)
+                        if (targetValue) {
+                            const value = Buffer.from(targetValue)
+                            hash = hashBuffer(value)
+                            size = value.length
+                            mimeType = mimeFromBytes(value.subarray(0, 16), reference)
+                            if (execute) ensureExternalFileFromBuffer(value, externalRoot, hash, createdFiles)
+                            recoveredFromTarget++
+                        }
+                    }
                 }
             }
         }
@@ -444,7 +599,7 @@ function planAndCopyAssets(options) {
         }
         const uri = `external://${providerId}/${hash}`
         mapping.set(reference, uri)
-        const old = manifestStore.getSync(uri) || {}
+        const old = verifiedExternalEntries?.get(hash) || manifestStore.getSync(uri) || {}
         const now = new Date().toISOString()
         entriesByUri.set(uri, {
             uri,
@@ -470,6 +625,7 @@ function planAndCopyAssets(options) {
         createdFiles,
         sourceFiles,
         recoveredFromExternal,
+        reusedVerifiedExternal,
         recoveredFromTarget,
         totalSourceBytes,
     }
@@ -489,28 +645,36 @@ function parseArgs(argv) {
         if (!value || value.startsWith('--')) throw new Error(`Missing value for --${key}`)
         values[key] = value
     }
-    if (!values['source-root']) throw new Error('--source-root is required')
+    if (Boolean(values['source-root']) === Boolean(values['source-backup'])) {
+        throw new Error('Specify exactly one of --source-root or --source-backup')
+    }
     if (!values['target-root']) throw new Error('--target-root is required')
     return {
-        sourceRoot: path.resolve(values['source-root']),
+        sourceRoot: values['source-root'] ? path.resolve(values['source-root']) : null,
+        sourceBackup: values['source-backup'] ? path.resolve(values['source-backup']) : null,
         targetRoot: path.resolve(values['target-root']),
-        sourceLabel: values['source-label'] || '로컬리스',
+        sourceLabel: values['source-label'] || (values['source-backup'] ? '백업리스' : '로컬리스'),
         providerId: values['provider-id'],
         execute: values.execute,
     }
 }
 
 export async function absorbLocalRisu(options) {
-    const sourceRoot = path.resolve(options.sourceRoot)
+    const sourceRoot = options.sourceRoot ? path.resolve(options.sourceRoot) : null
+    const sourceBackup = options.sourceBackup ? path.resolve(options.sourceBackup) : null
+    if (Boolean(sourceRoot) === Boolean(sourceBackup)) {
+        throw new Error('Specify exactly one sourceRoot or sourceBackup')
+    }
     const targetRoot = path.resolve(options.targetRoot)
-    const sourceDbPath = path.join(sourceRoot, 'database', 'database.bin')
+    const sourceDbPath = sourceRoot ? path.join(sourceRoot, 'database', 'database.bin') : sourceBackup
     const targetDbPath = path.join(targetRoot, 'save', 'risuai.db')
     if (!fs.statSync(sourceDbPath).isFile()) throw new Error(`Source database not found: ${sourceDbPath}`)
     if (!fs.statSync(targetDbPath).isFile()) throw new Error(`Target database not found: ${targetDbPath}`)
 
-    const sourceBytes = fs.readFileSync(sourceDbPath)
+    const backupEntry = sourceBackup ? readBackupDatabaseEntry(sourceBackup) : null
+    const sourceBytes = backupEntry?.bytes ?? fs.readFileSync(sourceDbPath)
     const sourceDatabaseHash = hashBuffer(sourceBytes)
-    const importId = `local-${sourceDatabaseHash.slice(0, 16)}-${Date.now().toString(36)}`
+    const importId = `${sourceBackup ? 'backup' : 'local'}-${sourceDatabaseHash.slice(0, 16)}-${Date.now().toString(36)}`
     const originalCwd = process.cwd()
     process.chdir(targetRoot)
     const targetRequire = createRequire(path.join(targetRoot, 'package.json'))
@@ -524,9 +688,26 @@ export async function absorbLocalRisu(options) {
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'local_absorb_runs'",
         ).get())
         const previous = hasRunTable
-            ? dbApi.db.prepare('SELECT import_id, created_at FROM local_absorb_runs WHERE source_hash = ?').get(sourceDatabaseHash)
+            ? dbApi.db.prepare('SELECT import_id, created_at, receipt_json FROM local_absorb_runs WHERE source_hash = ?').get(sourceDatabaseHash)
             : null
-        if (previous) throw new Error(`This exact local database was already absorbed as ${previous.import_id} at ${previous.created_at}`)
+        if (previous) {
+            const currentRaw = dbApi.kvGet(DB_KEY)
+            const currentDb = currentRaw ? await decodeRisuSave(currentRaw) : null
+            const retained = {
+                characters: (currentDb?.characters ?? []).filter((value) => value?.sourceInfo?.bundleId === previous.import_id).length,
+                modules: (currentDb?.modules ?? []).filter((value) => value?.sourceInfo?.bundleId === previous.import_id).length,
+                personas: (currentDb?.personas ?? []).filter((value) => value?.sourceInfo?.bundleId === previous.import_id).length,
+            }
+            const retainedTotal = retained.characters + retained.modules + retained.personas
+            if (retainedTotal > 0) {
+                throw new Error(
+                    `This exact source was already absorbed as ${previous.import_id} at ${previous.created_at}: ${JSON.stringify(retained)}`,
+                )
+            }
+            // A stale browser/server can overwrite the just-published DB while
+            // leaving the transaction journal intact. No imported provenance
+            // remains in the live DB, so it is safe to re-apply the source.
+        }
         if (options.execute && !hasRunTable) {
             dbApi.db.exec(`
                 CREATE TABLE local_absorb_runs (
@@ -540,10 +721,13 @@ export async function absorbLocalRisu(options) {
         }
 
         const readSourceRemote = async (name) => {
+            if (!sourceRoot) return null
             const remotePath = path.join(sourceRoot, 'remotes', `${name}.local.bin`)
             return fs.existsSync(remotePath) ? fs.readFileSync(remotePath) : null
         }
-        const sourceDecoded = await decodeRisuSave(sourceBytes, { resolveRemote: readSourceRemote })
+        const sourceDecoded = sourceBackup
+            ? decodeLegacyDatabase(sourceBytes).database
+            : await decodeRisuSave(sourceBytes, { resolveRemote: readSourceRemote })
         const source = prepareSourceDatabase(sourceDecoded)
         const sourceGraph = {
             characters: source.characters,
@@ -558,17 +742,34 @@ export async function absorbLocalRisu(options) {
         const config = JSON.parse(fs.readFileSync(configPath, 'utf8'))
         const providerId = options.providerId || config.activeProvider
         const externalRoot = resolveProviderRoot(targetRoot, config, providerId)
+        const targetAssetKeys = new Set(dbApi.kvList('assets/'))
+        const externalHashes = listExternalHashes(externalRoot)
+        const verifiedExternalEntries = new Map(
+            manifestStore.listSync()
+                .filter((entry) => entry?.providerId === providerId && typeof entry?.hash === 'string')
+                .map((entry) => [entry.hash, entry]),
+        )
         const assetPlan = planAndCopyAssets({
             references,
-            sourceRoot,
+            sourceRoot: sourceRoot ?? path.dirname(sourceBackup),
             providerId,
             externalRoot,
+            externalHashes,
+            verifiedExternalEntries,
             kvGet: dbApi.kvGet,
+            kvSize: dbApi.kvSize,
+            targetAssetKeys,
             manifestStore,
             importId,
             execute: options.execute,
             progress: options.progress,
         })
+        const assetHealth = buildImportAssetHealth(source, assetPlan.unresolved)
+        const missingEntities = {
+            characters: assetHealth.characters.filter((value) => value.missingAssetCount > 0).length,
+            modules: assetHealth.modules.filter((value) => value.missingAssetCount > 0).length,
+            personas: assetHealth.personas.filter((value) => value.missingAssetCount > 0).length,
+        }
         if (!options.execute) {
             return {
                 mode: 'dry-run',
@@ -578,12 +779,15 @@ export async function absorbLocalRisu(options) {
                     references: references.length,
                     sourceFiles: assetPlan.sourceFiles,
                     recoveredFromExternal: assetPlan.recoveredFromExternal,
+                    reusedVerifiedExternal: assetPlan.reusedVerifiedExternal,
                     recoveredFromTarget: assetPlan.recoveredFromTarget,
                     unresolved: assetPlan.unresolved.length,
                     bytes: assetPlan.totalSourceBytes,
+                    missingEntities,
                 },
                 targetRoot,
                 externalRoot,
+                sourceKind: sourceBackup ? 'backup' : 'local',
             }
         }
 
@@ -598,10 +802,20 @@ export async function absorbLocalRisu(options) {
             modules: targetDecoded.modules?.length ?? 0,
             personas: targetDecoded.personas?.length ?? 0,
         }
+        const mergeImportedAt = Date.now()
+        const collectionId = sourceDatabaseHash.slice(0, 24)
         const merge = mergeSourceCollections(targetDecoded, source, {
             sourceLabel: options.sourceLabel,
             importId,
-            collectionId: sourceDatabaseHash.slice(0, 24),
+            collectionId,
+            importedAt: mergeImportedAt,
+            assetHealth,
+        })
+        const missingFolders = organizeImportedMissingAssetFolders(targetDecoded, merge, assetHealth, {
+            sourceLabel: options.sourceLabel,
+            importId,
+            collectionId,
+            importedAt: mergeImportedAt,
         })
         const expected = {
             characters: before.characters + source.characters.length,
@@ -635,6 +849,8 @@ export async function absorbLocalRisu(options) {
             sourceLabel: options.sourceLabel,
             sourceDatabaseHash,
             sourceRoot,
+            sourceBackup,
+            sourceKind: sourceBackup ? 'backup' : 'local',
             targetRoot,
             externalRoot,
             createdAt,
@@ -647,10 +863,12 @@ export async function absorbLocalRisu(options) {
                 unresolved: assetPlan.unresolved,
                 sourceFiles: assetPlan.sourceFiles,
                 recoveredFromExternal: assetPlan.recoveredFromExternal,
+                reusedVerifiedExternal: assetPlan.reusedVerifiedExternal,
                 recoveredFromTarget: assetPlan.recoveredFromTarget,
                 totalSourceBytes: assetPlan.totalSourceBytes,
                 createdExternalFiles: assetPlan.createdFiles.length,
                 rewrittenOccurrences: rewritten,
+                missingEntities,
             },
             merge: {
                 characters: merge.characterIds.length,
@@ -658,6 +876,7 @@ export async function absorbLocalRisu(options) {
                 personas: merge.personaIds.length,
                 characterFolders: merge.characterFolders,
                 moduleFolders: merge.moduleFolders,
+                missingFolders,
             },
             snapshotKey,
             manifestBackupKey,
@@ -671,6 +890,11 @@ export async function absorbLocalRisu(options) {
             dbApi.db.prepare(`
                 INSERT INTO local_absorb_runs (source_hash, import_id, source_label, created_at, receipt_json)
                 VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(source_hash) DO UPDATE SET
+                    import_id = excluded.import_id,
+                    source_label = excluded.source_label,
+                    created_at = excluded.created_at,
+                    receipt_json = excluded.receipt_json
             `).run(sourceDatabaseHash, importId, options.sourceLabel, createdAt, JSON.stringify(receipt))
         })()
         dbApi.checkpointWal('TRUNCATE')

@@ -28,6 +28,7 @@
                 trashTime: c.trashTime,
                 interaction: c.lastInteraction || 0,
                 agoText: makeAgoText(c.lastInteraction || 0),
+                missingAssetCount: c.sourceInfo?.missingAssetCount ?? 0,
             }))
             .filter((c) => !c.trashTime && c.name.replace(/ /g, "").toLocaleLowerCase().includes(normalizedSearch))
             .sort((a, b) => {
@@ -66,7 +67,7 @@
                     endGrid()
                 }}>
                 <div class="flex flex-1 w-full flex-col justify-start items-start text-start">
-                    <span>{char.name}</span>
+                    <span class:text-red-400={char.missingAssetCount > 0}>{char.name}</span>
                     <div class="text-sm text-textcolor2 flex items-center w-full flex-wrap">
                         <span class="mr-1">{char.chats}</span>
                         <MessageSquareIcon size={14} />
