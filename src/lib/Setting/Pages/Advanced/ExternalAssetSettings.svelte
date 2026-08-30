@@ -3,9 +3,12 @@
     import Button from 'src/lib/UI/GUI/Button.svelte'
     import TextInput from 'src/lib/UI/GUI/TextInput.svelte'
     import NumberInput from 'src/lib/UI/GUI/NumberInput.svelte'
-    import { alertConfirm, notifyError, notifySuccess } from 'src/ts/alert'
+    import { alertConfirm, alertSelect, notifyError, notifySuccess } from 'src/ts/alert'
     import { forageStorage } from 'src/ts/globalApi.svelte'
     import type { AssetDoctorJob, ExternalAssetMigrationJob, ExternalAssetStatus } from 'src/ts/storage/nodeStorage'
+    import { DBState } from 'src/ts/stores.svelte'
+    import { getCharacterRealmId } from 'src/ts/characterCards'
+    import { findRealmRecoveryCandidates, recoverCharacterAssetsFromRealm } from 'src/ts/realmAssetRecovery'
 
     let status: ExternalAssetStatus | null = $state(null)
     let loading = $state(false)
@@ -24,6 +27,10 @@
     let doctorJob: AssetDoctorJob | null = $state(null)
     let doctorSampleLimit = $state(12)
     let pollTimer: number | null = null
+    let brokenCharacters = $derived((DBState.db.characters ?? []).filter((character) => (
+        !character?.trashTime && (Number(character?.sourceInfo?.missingAssetCount) || 0) > 0
+    )))
+    let exactRealmBrokenCount = $derived(brokenCharacters.filter((character) => Boolean(getCharacterRealmId(character))).length)
 
     const terminalMigrationStatuses = new Set(['published', 'verified', 'cleaned', 'canceled'])
     const copyBlockingStatuses = new Set([
@@ -247,6 +254,47 @@
         }
     }
 
+    async function recoverOneCharacterFromRealm() {
+        if (brokenCharacters.length === 0) {
+            notifyError('No character is currently marked with missing assets.')
+            return
+        }
+        const characterOptions = brokenCharacters.map((character, index) => (
+            `${index + 1}. ${character.name || '(untitled)'} · missing ${character.sourceInfo?.missingAssetCount ?? 0}`
+        ))
+        const selectedCharacterLabel = await alertSelect(characterOptions, 'Choose a character whose missing assets should be searched on Realm')
+        const selectedCharacterIndex = characterOptions.indexOf(selectedCharacterLabel)
+        if (selectedCharacterIndex < 0) return
+        const character = brokenCharacters[selectedCharacterIndex]
+
+        const candidates = await run('Searching Realm for matching character candidates…', () => findRealmRecoveryCandidates(character))
+        if (!candidates || candidates.length === 0) {
+            notifyError('No sufficiently similar Realm candidate was found. Nothing was changed.')
+            return
+        }
+        const candidateOptions = candidates.map((candidate, index) => {
+            const author = candidate.authorname ?? candidate.creatorName ?? candidate.creator ?? 'unknown author'
+            return `${index + 1}. ${candidate.name} · ${Math.round(candidate.score * 100)}% · ${author}`
+        })
+        const selectedCandidateLabel = await alertSelect(candidateOptions, 'Choose the Realm source to use for missing assets')
+        const selectedCandidateIndex = candidateOptions.indexOf(selectedCandidateLabel)
+        if (selectedCandidateIndex < 0) return
+        const candidate = candidates[selectedCandidateIndex]
+        const exactSource = getCharacterRealmId(character) === candidate.id
+        if (!await alertConfirm(
+            `${exactSource ? 'The saved Realm source ID matches exactly.' : `This is a similarity candidate (${Math.round(candidate.score * 100)}%).`} `
+            + 'Only currently missing profile/emotion/additional assets with matching names and types will be replaced. Existing assets, bot text, settings, and chats stay unchanged. Continue?'
+        )) return
+
+        const result = await run('Downloading the selected Realm card and restoring name-matched missing assets…', () => (
+            recoverCharacterAssetsFromRealm(character, candidate.id)
+        ))
+        if (!result) return
+        message = `Realm recovery finished for ${character.name}: ${result.recovered} restored, ${result.remainingKnownMissing} directly matched slots still missing.`
+        if (result.recovered > 0) notifySuccess(message)
+        else notifyError('The card was found, but no missing asset name/type matched. Nothing was replaced.')
+    }
+
     onMount(() => {
         void (async () => {
             await refresh()
@@ -422,7 +470,18 @@
             {#if doctorJob?.status === 'completed' && doctorJob.result?.issues.some((issue) => issue.repairable)}
                 <Button onclick={repairDiagnosedAssets} disabled={loading}>Repair safe sampled issues</Button>
             {/if}
+            <Button styled="outlined" onclick={recoverOneCharacterFromRealm} disabled={loading || brokenCharacters.length === 0}>
+                Find missing character assets on Realm
+            </Button>
         </div>
+
+        {#if brokenCharacters.length > 0}
+            <p class="mt-2 text-xs text-textcolor2">
+                {brokenCharacters.length.toLocaleString()} characters are marked as missing assets ·
+                {exactRealmBrokenCount.toLocaleString()} retain an exact Realm source ID ·
+                title/author similarity matches always require your confirmation.
+            </p>
+        {/if}
 
         {#if doctorJob}
             <div class="mt-3 rounded-md bg-bgcolor p-3 text-xs text-textcolor2">

@@ -2,6 +2,18 @@ import { writable } from 'svelte/store'
 
 const OPEN_KEY = 'pocketrisu:split-chat:open'
 const WIDTH_KEY = 'pocketrisu:split-chat:width'
+const EMBEDDED_PANE_PARAM = 'pocketrisuPane'
+
+export const isEmbeddedRisuPane = typeof window !== 'undefined'
+    && new URLSearchParams(window.location.search).get(EMBEDDED_PANE_PARAM) === 'secondary'
+
+export function getSecondaryRisuPaneUrl(): string {
+    if (typeof window === 'undefined') return '/?pocketrisuPane=secondary'
+    const url = new URL(window.location.href)
+    url.searchParams.set(EMBEDDED_PANE_PARAM, 'secondary')
+    url.hash = ''
+    return url.toString()
+}
 
 function readBoolean(key: string, fallback: boolean): boolean {
     if (typeof localStorage === 'undefined') return fallback
