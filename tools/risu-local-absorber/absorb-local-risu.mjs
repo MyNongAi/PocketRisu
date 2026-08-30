@@ -575,7 +575,6 @@ export function planAndCopyAssets(options) {
         } else {
             const expectedHash = /^assets\/([a-f0-9]{64})(?:\.[A-Za-z0-9._~-]+)?$/i.exec(reference)?.[1]?.toLowerCase()
             if (expectedHash) {
-                const expectedPath = externalFilePath(externalRoot, expectedHash)
                 const knownExternal = externalHashes?.has(expectedHash)
                 if (knownExternal) {
                     const verifiedEntry = verifiedExternalEntries?.get(expectedHash)
@@ -592,16 +591,17 @@ export function planAndCopyAssets(options) {
                     // rolled back, keep the file usable but do not pretend that
                     // it has passed a fresh verification in this run. A later
                     // provider audit may promote "indexed" back to "verified".
-                    const indexed = execute && !canReuseVerification
-                        ? fs.statSync(expectedPath)
-                        : null
-                    const present = !execute || canReuseVerification || indexed?.isFile()
+                    // listExternalHashes already admitted only regular files.
+                    // Opening hundreds of thousands of them again merely to
+                    // obtain size/MIME turns an HDD index pass into hours of
+                    // random I/O, so defer those values to the explicit audit.
+                    const present = !execute || canReuseVerification || knownExternal
                     if (present) {
                         hash = expectedHash
-                        size = canReuseVerification ? verifiedEntry.size : (indexed?.size ?? 0)
+                        size = canReuseVerification ? verifiedEntry.size : 0
                         mimeType = canReuseVerification
                             ? (verifiedEntry.mimeType || mimeFromBytes(null, reference))
-                            : (execute ? mimeFromBytes(readPrefix(expectedPath), reference) : mimeFromBytes(null, reference))
+                            : mimeFromBytes(null, reference)
                         verificationStatus = canReuseVerification ? 'verified' : 'indexed'
                         verifiedAt = canReuseVerification ? verifiedEntry.lastVerifiedAt : null
                         recoveredFromExternal++
@@ -660,6 +660,7 @@ export function planAndCopyAssets(options) {
             mimeType: mimeType || old.mimeType || 'application/octet-stream',
             assetName: old.assetName || path.basename(reference),
             status: verificationStatus,
+            sizeKnown: verificationStatus === 'verified',
             createdAt: old.createdAt || now,
             migrationIds: [...new Set([...(Array.isArray(old.migrationIds) ? old.migrationIds : []), importId])],
         }
