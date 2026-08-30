@@ -12,7 +12,7 @@
     import SideBarArrow from "../UI/GUI/SideBarArrow.svelte";
     import ModuleChatMenu from "../Setting/Pages/Module/ModuleChatMenu.svelte";
     import SecondaryChatPanel from './SecondaryChatPanel.svelte';
-    import { clampSplitWidth, splitChatOpen, splitChatWidth } from 'src/ts/chatSplitPane';
+    import { clampSplitWidth, isEmbeddedRisuPane, splitChatOpen, splitChatWidth } from 'src/ts/chatSplitPane';
     import { onDestroy, onMount } from 'svelte';
     let openChatList = $state(false)
     let openModuleList = $state(false)
@@ -130,7 +130,7 @@
     </div>
 {/if}
 </section>
-{#if $splitChatOpen && !$MobileGUI}
+{#if $splitChatOpen && !$MobileGUI && !isEmbeddedRisuPane}
     <div
         class="split-chat-divider h-full w-1.5 shrink-0 cursor-col-resize bg-darkborderc transition-colors hover:bg-primary"
         role="separator"

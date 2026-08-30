@@ -35,6 +35,7 @@ import { initModelJobRecovery } from "./process/request/jobRecovery";
 import { convertStubsToPlaceholders } from "./storage/chatStorage";
 import { isChatStub, purgeUnsupportedGroupChats } from "./storage/database.svelte";
 import { organizeAllSimilarityFolders } from "./process/similarityFolders";
+import { isEmbeddedRisuPane } from "./chatSplitPane";
 
 const SIMILARITY_FOLDER_MIGRATION_VERSION = 1
 
@@ -160,7 +161,7 @@ export async function loadData() {
             if (db.botSettingAtStart) {
                 botMakerMode.set(true)
             }
-            if ((db.betaMobileGUI && window.innerWidth <= 800) || import.meta.env.VITE_RISU_LITE === 'TRUE') {
+            if (!isEmbeddedRisuPane && ((db.betaMobileGUI && window.innerWidth <= 800) || import.meta.env.VITE_RISU_LITE === 'TRUE')) {
                 initMobileGesture()
                 MobileGUI.set(true)
             }

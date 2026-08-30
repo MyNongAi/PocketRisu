@@ -847,9 +847,9 @@ export async function saveDb() {
         // ── Save changed chat content to server ─────────────────────────
         const failedChats: { chaId: string, chatId: string, reason: string }[] = []
         for (const [chaId, chatId] of collectChatsToPersist(db, toSave)) {
-            const char = db.characters.find(c => c.chaId === chaId)
+            const char = db.characters.find(c => c?.chaId === chaId)
             if (!char) continue
-            const chatIndex = char.chats.findIndex(c => c.id === chatId)
+            const chatIndex = (char.chats ?? []).findIndex(c => c?.id === chatId)
             if (chatIndex === -1) continue
             const chat = char.chats[chatIndex]
             // Skip placeholders — they have no real data to save
