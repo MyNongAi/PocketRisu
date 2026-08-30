@@ -537,7 +537,7 @@ function resolveProviderRoot(targetRoot, config, providerId) {
     return path.isAbsolute(provider.root) ? path.resolve(provider.root) : path.resolve(targetRoot, provider.root)
 }
 
-function planAndCopyAssets(options) {
+export function planAndCopyAssets(options) {
     const {
         references, sourceRoot, providerId, externalRoot, externalHashes, verifiedExternalEntries,
         kvGet, kvSize, targetAssetKeys,
@@ -550,6 +550,7 @@ function planAndCopyAssets(options) {
     let sourceFiles = 0
     let recoveredFromExternal = 0
     let reusedVerifiedExternal = 0
+    let indexedExternal = 0
     let recoveredFromTarget = 0
     let totalSourceBytes = 0
 
@@ -560,6 +561,8 @@ function planAndCopyAssets(options) {
         let hash
         let size
         let mimeType
+        let verifiedAt = null
+        let verificationStatus = 'indexed'
         if (fs.existsSync(sourcePath) && fs.statSync(sourcePath).isFile()) {
             const result = hashFile(sourcePath)
             hash = result.hash
@@ -568,6 +571,7 @@ function planAndCopyAssets(options) {
             sourceFiles++
             totalSourceBytes += size
             if (execute) ensureExternalFileFromFile(sourcePath, externalRoot, hash, size, createdFiles)
+            verificationStatus = 'verified'
         } else {
             const expectedHash = /^assets\/([a-f0-9]{64})(?:\.[A-Za-z0-9._~-]+)?$/i.exec(reference)?.[1]?.toLowerCase()
             if (expectedHash) {
@@ -583,17 +587,26 @@ function planAndCopyAssets(options) {
                         && Number.isSafeInteger(verifiedEntry.size)
                         && verifiedEntry.size >= 0
                     )
-                    const verified = execute && !canReuseVerification
-                        ? hashFile(expectedPath)
-                        : { hash: expectedHash, size: canReuseVerification ? verifiedEntry.size : 0 }
-                    if (!execute || verified.hash === expectedHash) {
+                    // Files under the content-addressed store are created by an
+                    // atomic hash-verified writer. If the DB manifest was later
+                    // rolled back, keep the file usable but do not pretend that
+                    // it has passed a fresh verification in this run. A later
+                    // provider audit may promote "indexed" back to "verified".
+                    const indexed = execute && !canReuseVerification
+                        ? fs.statSync(expectedPath)
+                        : null
+                    const present = !execute || canReuseVerification || indexed?.isFile()
+                    if (present) {
                         hash = expectedHash
-                        size = verified.size
+                        size = canReuseVerification ? verifiedEntry.size : (indexed?.size ?? 0)
                         mimeType = canReuseVerification
                             ? (verifiedEntry.mimeType || mimeFromBytes(null, reference))
                             : (execute ? mimeFromBytes(readPrefix(expectedPath), reference) : mimeFromBytes(null, reference))
+                        verificationStatus = canReuseVerification ? 'verified' : 'indexed'
+                        verifiedAt = canReuseVerification ? verifiedEntry.lastVerifiedAt : null
                         recoveredFromExternal++
                         if (canReuseVerification) reusedVerifiedExternal++
+                        else indexedExternal++
                     }
                 }
             }
@@ -623,6 +636,7 @@ function planAndCopyAssets(options) {
                             size = value.length
                             mimeType = mimeFromBytes(value.subarray(0, 16), reference)
                             if (execute) ensureExternalFileFromBuffer(value, externalRoot, hash, createdFiles)
+                            verificationStatus = 'verified'
                             recoveredFromTarget++
                         }
                     }
@@ -637,21 +651,23 @@ function planAndCopyAssets(options) {
         mapping.set(reference, uri)
         const old = verifiedExternalEntries?.get(hash) || manifestStore.getSync(uri) || {}
         const now = new Date().toISOString()
+        const entry = {
+            ...old,
+            uri,
+            providerId,
+            hash,
+            size,
+            mimeType: mimeType || old.mimeType || 'application/octet-stream',
+            assetName: old.assetName || path.basename(reference),
+            status: verificationStatus,
+            createdAt: old.createdAt || now,
+            migrationIds: [...new Set([...(Array.isArray(old.migrationIds) ? old.migrationIds : []), importId])],
+        }
+        if (verificationStatus === 'verified') entry.lastVerifiedAt = verifiedAt || now
+        else delete entry.lastVerifiedAt
         entriesByUri.set(uri, {
             uri,
-            value: {
-                ...old,
-                uri,
-                providerId,
-                hash,
-                size,
-                mimeType: mimeType || old.mimeType || 'application/octet-stream',
-                assetName: old.assetName || path.basename(reference),
-                status: 'verified',
-                createdAt: old.createdAt || now,
-                lastVerifiedAt: now,
-                migrationIds: [...new Set([...(Array.isArray(old.migrationIds) ? old.migrationIds : []), importId])],
-            },
+            value: entry,
         })
     }
     return {
@@ -662,6 +678,7 @@ function planAndCopyAssets(options) {
         sourceFiles,
         recoveredFromExternal,
         reusedVerifiedExternal,
+        indexedExternal,
         recoveredFromTarget,
         totalSourceBytes,
     }
@@ -825,6 +842,7 @@ export async function absorbLocalRisu(options) {
                     sourceFiles: assetPlan.sourceFiles,
                     recoveredFromExternal: assetPlan.recoveredFromExternal,
                     reusedVerifiedExternal: assetPlan.reusedVerifiedExternal,
+                    indexedExternal: assetPlan.indexedExternal,
                     recoveredFromTarget: assetPlan.recoveredFromTarget,
                     unresolved: assetPlan.unresolved.length,
                     bytes: assetPlan.totalSourceBytes,
@@ -909,6 +927,7 @@ export async function absorbLocalRisu(options) {
                 sourceFiles: assetPlan.sourceFiles,
                 recoveredFromExternal: assetPlan.recoveredFromExternal,
                 reusedVerifiedExternal: assetPlan.reusedVerifiedExternal,
+                indexedExternal: assetPlan.indexedExternal,
                 recoveredFromTarget: assetPlan.recoveredFromTarget,
                 totalSourceBytes: assetPlan.totalSourceBytes,
                 createdExternalFiles: assetPlan.createdFiles.length,

@@ -1,13 +1,47 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import test from 'node:test'
 import {
     buildImportAssetHealth,
     collectAssetPaths,
     mergeSourceCollections,
     organizeImportedMissingAssetFolders,
+    planAndCopyAssets,
     prepareSourceDatabase,
     rewriteAssetPathsInPlace,
 } from './absorb-local-risu.mjs'
+
+test('existing content-addressed files without a surviving receipt are indexed, not falsely verified', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pocketrisu-absorber-'))
+    try {
+        const hash = 'a'.repeat(64)
+        const externalRoot = path.join(root, 'store')
+        const externalPath = path.join(externalRoot, hash.slice(0, 2), hash)
+        fs.mkdirSync(path.dirname(externalPath), { recursive: true })
+        fs.writeFileSync(externalPath, 'already copied by an earlier verified migration')
+        const result = planAndCopyAssets({
+            references: [`assets/${hash}.png`],
+            sourceRoot: path.join(root, 'empty-source'),
+            providerId: 'main-assets',
+            externalRoot,
+            externalHashes: new Set([hash]),
+            verifiedExternalEntries: new Map(),
+            kvGet: () => null,
+            kvSize: () => null,
+            targetAssetKeys: new Set(),
+            manifestStore: { findByInternalKeySync: () => null, getSync: () => null },
+            importId: 'test-import',
+            execute: true,
+        })
+        assert.equal(result.indexedExternal, 1)
+        assert.equal(result.manifestValues[0].value.status, 'indexed')
+        assert.equal('lastVerifiedAt' in result.manifestValues[0].value, false)
+    } finally {
+        fs.rmSync(root, { recursive: true, force: true })
+    }
+})
 
 test('embedded and structured asset paths are collected and rewritten', () => {
     const value = {
