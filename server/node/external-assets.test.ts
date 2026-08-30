@@ -681,13 +681,21 @@ describe('safe migration staging and fallback lifecycle', () => {
         const second = await service.stage({
             providerId: 'local', data: Buffer.from('verify-many-second'), internalKey: 'assets/second.png',
         })
+        await store.upsert(first.uri, (current: any) => {
+            const { lastVerifiedAt: _lastVerifiedAt, ...entry } = current
+            return { ...entry, status: 'indexed', size: 0, sizeKnown: false }
+        })
         fs.rmSync(path.join(providerRoot, second.hash.slice(0, 2), second.hash), { force: true })
 
         const writesBefore = writes
         const results = await service.verifyMany([first.uri, second.uri])
         expect(results.map((result: any) => result.ok)).toEqual([true, false])
         expect(writes - writesBefore).toBe(1)
-        expect(await store.get(first.uri)).toMatchObject({ status: 'verified' })
+        expect(await store.get(first.uri)).toMatchObject({
+            status: 'verified',
+            size: Buffer.byteLength('verify-many-first'),
+            sizeKnown: true,
+        })
         expect(await store.get(second.uri)).toMatchObject({ status: 'staged' })
     })
 
