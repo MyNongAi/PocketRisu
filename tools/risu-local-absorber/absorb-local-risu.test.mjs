@@ -11,7 +11,16 @@ import {
     planAndCopyAssets,
     prepareSourceDatabase,
     rewriteAssetPathsInPlace,
+    summarizeCliResult,
 } from './absorb-local-risu.mjs'
+
+test('CLI summary keeps the unresolved count without flooding stdout with every path', () => {
+    const summary = summarizeCliResult({
+        mode: 'executed',
+        assets: { unresolved: ['assets/a.png', 'assets/b.png'], mapped: 3 },
+    })
+    assert.deepEqual(summary.assets, { unresolved: 2, mapped: 3 })
+})
 
 test('existing content-addressed files without a surviving receipt are indexed, not falsely verified', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'pocketrisu-absorber-'))

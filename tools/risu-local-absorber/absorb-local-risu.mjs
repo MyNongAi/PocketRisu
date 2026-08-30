@@ -991,6 +991,15 @@ export async function absorbLocalRisu(options) {
     }
 }
 
+export function summarizeCliResult(result) {
+    if (result?.mode !== 'executed' || !Array.isArray(result?.assets?.unresolved)) return result
+    const { unresolved, ...assets } = result.assets
+    return {
+        ...result,
+        assets: { ...assets, unresolved: unresolved.length },
+    }
+}
+
 async function main() {
     try {
         const options = parseArgs(process.argv.slice(2))
@@ -998,7 +1007,9 @@ async function main() {
             ...options,
             progress: (current, total, asset) => console.log(`에셋 검증 ${current}/${total}: ${asset}`),
         })
-        console.log(JSON.stringify(result, null, 2))
+        // The complete unresolved list remains in the migration journal. Do not
+        // dump hundreds of thousands of paths into a terminal/Codex context.
+        console.log(JSON.stringify(summarizeCliResult(result), null, 2))
     } catch (error) {
         console.error(error instanceof Error ? error.stack || error.message : String(error))
         process.exitCode = 1
