@@ -69,9 +69,9 @@
                             <Waypoints size={18} class="mr-2" />
                         {/if}
                         {#if !alertMode && DBState.db.enabledModules.includes(rmodule.id)}
-                            <span class="text-textcolor2">{rmodule.name}</span>
+                            <span class:text-red-400={(rmodule.sourceInfo?.missingAssetCount ?? 0) > 0} class="text-textcolor2">{rmodule.name}</span>
                         {:else}
-                            <span class="group-hover:text-success transition-colors">{rmodule.name}</span>
+                            <span class:text-red-400={(rmodule.sourceInfo?.missingAssetCount ?? 0) > 0} class="group-hover:text-success transition-colors">{rmodule.name}</span>
                         {/if}
                         <div class="grow flex justify-end">
 

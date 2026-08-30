@@ -21,6 +21,10 @@ export interface SourceImportInfo {
     originalId?: string
     /** Pending source module ids; never used directly by the live module loader. */
     originalModuleIds?: string[]
+    /** Number of referenced assets known to be unavailable at import/audit time. */
+    missingAssetCount?: number
+    /** Total asset references checked when missingAssetCount was produced. */
+    assetReferenceCount?: number
 }
 
 export interface SourceCollectionAsset {

@@ -38,6 +38,7 @@
             chats:number
             interaction:number
             agoText:string
+            missingAssetCount:number
         }[] = []
 
         for(let i=0;i<db.characters.length;i++){
@@ -58,7 +59,8 @@
                     chaId: c.chaId,
                     chats: c.chats.length,
                     interaction: c.lastInteraction ?? 0,
-                    agoText: makeAgoText(c.lastInteraction ?? 0)
+                    agoText: makeAgoText(c.lastInteraction ?? 0),
+                    missingAssetCount: c.sourceInfo?.missingAssetCount ?? 0,
                 })
             }
         }
@@ -145,7 +147,7 @@
                         additionalStyle={() => getCharThumbnail(char.image, 'css')}
                     ></BarIcon>
                     <div class="flex-1 flex flex-col ml-2">
-                        <h4 class="text-textcolor font-bold text-lg mb-1">{char.name || "Unnamed"}</h4>
+                        <h4 class={`font-bold text-lg mb-1 ${char.missingAssetCount > 0 ? 'text-red-400' : 'text-textcolor'}`}>{char.name || "Unnamed"}</h4>
                         <span class="line-clamp-2 text-textcolor2">{parseMultilangString(char.desc)['en'] || parseMultilangString(char.desc)['xx'] || 'No description'}</span>
                         <div class="mt-1 flex items-center text-sm text-textcolor2">
                             <span class="mr-1">{char.chats}</span>
@@ -183,7 +185,7 @@
                 <div class="m-1 flex h-[118px] p-2 border border-darkborderc rounded-md">
                     <BarIcon onClick={() => {selectAndClose(char.index)}} additionalStyle={() => getCharThumbnail(char.image, 'css')}></BarIcon>
                     <div class="flex-1 flex flex-col ml-2">
-                        <h4 class="text-textcolor font-bold text-lg mb-1">{char.name || "Unnamed"}</h4>
+                        <h4 class={`font-bold text-lg mb-1 ${char.missingAssetCount > 0 ? 'text-red-400' : 'text-textcolor'}`}>{char.name || "Unnamed"}</h4>
                         <span class="line-clamp-2 text-textcolor2">{parseMultilangString(char.desc)['en'] || parseMultilangString(char.desc)['xx'] || 'No description'}</span>
                         <div class="flex gap-2 justify-end">
                             <button class="hover:text-textcolor text-textcolor2" onclick={() => {

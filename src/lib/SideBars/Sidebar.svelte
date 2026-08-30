@@ -35,7 +35,7 @@
     ChevronsLeft,
     ArrowRight,
   } from "@lucide/svelte";
-    import { splitChatOpen, toggleSplitChat } from 'src/ts/chatSplitPane';
+    import { isEmbeddedRisuPane, splitChatOpen, toggleSplitChat } from 'src/ts/chatSplitPane';
     import {
   addCharacter,
     cancelCharacterChatPrefetch,
@@ -117,11 +117,55 @@
     | { type: 'control', position: 'top' | 'bottom' }
     | { type: 'character', char: sortType, index: number }
   let charImages: sortType[] = $state([]);
+  const splitCatalogStorageKey = 'pocketrisu-sidebar-catalog-split-v1'
+  let splitCatalogMode = $state(
+    typeof localStorage !== 'undefined' && localStorage.getItem(splitCatalogStorageKey) === 'split'
+  )
+  let selectedSplitFolderId = $state('')
+  type splitCatalogCharacter = {
+    type: 'character'
+    char: sortTypeNormal
+    drag: DragData
+    sourceOrder: number
+  }
+  type splitCatalogBlock = { type: 'control', position: 'top' | 'bottom' } | splitCatalogCharacter
   let sidebarCatalogBlocks = $derived<sidebarCatalogBlock[]>([
     { type: 'control', position: 'top' },
     ...charImages.map((char, index) => ({ type: 'character' as const, char, index })),
     { type: 'control', position: 'bottom' },
   ])
+  let splitFolderItems = $derived(charImages
+    .map((char, sourceOrder) => ({ char, sourceOrder }))
+    .filter((item): item is { char: Extract<sortType, { type: 'folder' }>, sourceOrder: number } => item.char.type === 'folder'))
+  let splitCharacterBlocks = $derived.by<splitCatalogBlock[]>(() => {
+    const blocks: splitCatalogBlock[] = [{ type: 'control', position: 'top' }]
+    const selectedFolder = splitFolderItems.find((item) => item.char.id === selectedSplitFolderId)
+    if(selectedFolder){
+      selectedFolder.char.folder.forEach((char, index) => blocks.push({
+        type: 'character',
+        char,
+        drag: { index, folder: selectedFolder.char.id },
+        sourceOrder: index,
+      }))
+    }
+    else{
+      charImages.forEach((char, sourceOrder) => {
+        if(char.type === 'normal') blocks.push({
+          type: 'character',
+          char,
+          drag: { index: sourceOrder },
+          sourceOrder,
+        })
+      })
+    }
+    blocks.push({ type: 'control', position: 'bottom' })
+    return blocks
+  })
+  $effect(() => {
+    if(selectedSplitFolderId && !splitFolderItems.some((item) => item.char.id === selectedSplitFolderId)){
+      selectedSplitFolderId = ''
+    }
+  })
   let sidebarScrollIndex = $state<number | null>(null)
   let sidebarScrollRequest = $state(0)
   // Recently interacted characters for the home sidebar. Character-level
@@ -304,6 +348,52 @@
     return -1
   }
 
+  function toggleSplitCatalogMode(){
+    splitCatalogMode = !splitCatalogMode
+    localStorage.setItem(splitCatalogStorageKey, splitCatalogMode ? 'split' : 'normal')
+  }
+
+  async function editSidebarFolder(ind:number, char: Extract<sortType, { type: 'folder' }>, e:MouseEvent){
+    e.preventDefault()
+    const sel = parseInt(await alertSelect([language.renameFolder,language.changeFolderColor,language.changeFolderImage,language.cancel]))
+    if(sel === 0){
+      const value = await alertInput(language.changeFolderName, [], char.name)
+      const entry = DBState.db.characterOrder[ind]
+      if(value && typeof entry !== 'string'){
+        entry.name = value
+        DBState.db.characterOrder[ind] = entry
+      }
+      return
+    }
+    if(sel === 1){
+      const colors = ["red","green","blue","yellow","indigo","purple","pink","default"]
+      const colorIndex = parseInt(await alertSelect(colors))
+      const entry = DBState.db.characterOrder[ind]
+      if(typeof entry !== 'string' && colors[colorIndex]){
+        entry.color = colors[colorIndex].toLocaleLowerCase()
+        DBState.db.characterOrder[ind] = entry
+      }
+      return
+    }
+    if(sel !== 2) return
+    const imageChoice = parseInt(await alertSelect(['Reset to Default Image', 'Select Image File']))
+    const entry = DBState.db.characterOrder[ind]
+    if(typeof entry === 'string') return
+    if(imageChoice === 0){
+      entry.imgFile = null
+      entry.img = ''
+      DBState.db.characterOrder[ind] = entry
+      return
+    }
+    if(imageChoice !== 1) return
+    const folderImage = await selectSingleFile(['png','jpg','webp'])
+    if(!folderImage) return
+    const folderImageData = await saveAsset(folderImage.data)
+    entry.imgFile = folderImageData
+    entry.img = await getFileSrc(folderImageData)
+    DBState.db.characterOrder[ind] = entry
+  }
+
   function scrollToActiveCharacter() {
     const selectedId = $selectedCharID
     if (selectedId === -1) return
@@ -332,7 +422,10 @@
       }
     }
     
-    if (targetFolderId && !openFolders.includes(targetFolderId)) {
+    if(splitCatalogMode){
+      selectedSplitFolderId = targetFolderId ?? ''
+    }
+    else if (targetFolderId && !openFolders.includes(targetFolderId)) {
       openFolders.push(targetFolderId)
       openFolders = openFolders
     }
@@ -635,6 +728,139 @@
   </div>
 {/snippet}
 
+{#snippet splitFolderColumn()}
+  <div class="h-full w-20 min-w-20 overflow-y-auto overflow-x-hidden border-r border-selected" aria-label="캐릭터 폴더">
+    <div class="h-4 min-h-4 w-full" role="listitem" data-spacer-index="0" ondragover={(e) => {
+      if(!getCurrentSidebarDrag(e)) return
+      e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'
+      e.currentTarget.classList.add('bg-green-500')
+    }} ondragleave={(e) => e.currentTarget.classList.remove('bg-green-500')} ondrop={(e) => {
+      const drag = getCurrentSidebarDrag(e)
+      if(!drag) return
+      e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('bg-green-500')
+      try { inserter(drag, { index: 0 }) } finally { clearCurrentDrag() }
+    }}></div>
+    {#each splitFolderItems as item (item.char.id)}
+      <div class="flex w-full flex-col items-center">
+        <div
+          class="group relative flex items-center px-2"
+          class:ring-2={selectedSplitFolderId === item.char.id}
+          class:ring-primary={selectedSplitFolderId === item.char.id}
+          role="listitem"
+          data-drag-index={item.sourceOrder}
+          draggable={!isTouchDevice ? "true" : undefined}
+          ondragstart={!isTouchDevice ? (e) => avatarDragStart({ index: item.sourceOrder }, e) : undefined}
+          ondragend={!isTouchDevice ? clearCurrentDrag : undefined}
+          ondragover={!isTouchDevice ? avatarDragOver : undefined}
+          ondrop={!isTouchDevice ? (e) => {
+            const drag = getCurrentSidebarDrag(e)
+            if(!drag) return
+            e.preventDefault(); e.stopPropagation()
+            try { inserter(drag, { index: item.char.folder.length, folder: item.char.id }) } finally { clearCurrentDrag() }
+          } : undefined}
+          ontouchstart={touchDragEnabled ? (e) => onTouchDragStart({ index: item.sourceOrder }, e) : undefined}
+        >
+          <SidebarAvatar
+            src="slot"
+            size="56"
+            rounded={IconRounded}
+            folderShape
+            name={item.char.name}
+            color={item.char.color}
+            backgroundimg={item.char.img ? () => getCharThumbnail(item.char.img, "plain") : ""}
+            oncontextmenu={(e) => { void editSidebarFolder(item.sourceOrder, item.char, e) }}
+            onClick={() => {
+              if(suppressNextClick) return
+              selectedSplitFolderId = selectedSplitFolderId === item.char.id ? '' : item.char.id
+            }}
+          >
+            {#if DBState.db.showFolderName}
+              <div class="flex h-full w-full items-center justify-center">
+                <span class="truncate font-bold">{item.char.name}</span>
+              </div>
+            {:else if selectedSplitFolderId === item.char.id}
+              <FolderOpenIcon />
+            {:else}
+              <FolderIcon />
+            {/if}
+          </SidebarAvatar>
+        </div>
+        <div class="h-4 min-h-4 w-full" role="listitem" data-spacer-index={item.sourceOrder + 1} ondragover={(e) => {
+          if(!getCurrentSidebarDrag(e)) return
+          e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'
+          e.currentTarget.classList.add('bg-green-500')
+        }} ondragleave={(e) => e.currentTarget.classList.remove('bg-green-500')} ondrop={(e) => {
+          const drag = getCurrentSidebarDrag(e)
+          if(!drag) return
+          e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('bg-green-500')
+          try { inserter(drag, { index: item.sourceOrder + 1 }) } finally { clearCurrentDrag() }
+        }}></div>
+      </div>
+    {/each}
+  </div>
+{/snippet}
+
+{#snippet splitCharacterRow(block: splitCatalogBlock)}
+  {#if block.type === 'control'}
+    <div class="flex w-full flex-col items-center">
+      {@render addCharacterButton(block.position)}
+    </div>
+  {:else}
+    <div class="flex w-full flex-col items-center">
+      <div
+        class="group relative flex items-center px-2"
+        role="listitem"
+        data-drag-index={block.drag.index}
+        data-drag-folder={block.drag.folder}
+        draggable={!isTouchDevice ? "true" : undefined}
+        ondragstart={!isTouchDevice ? (e) => avatarDragStart(block.drag, e) : undefined}
+        ondragend={!isTouchDevice ? clearCurrentDrag : undefined}
+        ondragover={!isTouchDevice ? avatarDragOver : undefined}
+        ondrop={!isTouchDevice ? (e) => avatarDrop(block.drag, e) : undefined}
+        ontouchstart={touchDragEnabled ? (e) => onTouchDragStart(block.drag, e) : undefined}
+      >
+        <SidebarIndicator isActive={$selectedCharID === block.char.index && sideBarMode !== 1}/>
+        <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+        <div
+          role="button"
+          tabindex="0"
+          onpointerenter={() => scheduleCharacterChatPrefetch(block.char.index)}
+          onpointerleave={() => cancelCharacterChatPrefetch(block.char.index)}
+          onpointerdown={() => void prefetchCharacterChat(block.char.index)}
+          onclick={() => { if(!suppressNextClick) changeChar(block.char.index, { reseter }) }}
+          onkeydown={(e) => { if(e.key === 'Enter') changeChar(block.char.index, { reseter }) }}
+        >
+          <SidebarAvatar
+            src={block.char.img ? () => getCharThumbnail(block.char.img, "plain") : ""}
+            size="56"
+            rounded={IconRounded}
+            name={block.char.name}
+            chaId={DBState.db.characters[block.char.index]?.chaId}
+          />
+        </div>
+      </div>
+      <div
+        class="h-4 min-h-4 w-full"
+        role="listitem"
+        data-spacer-index={block.drag.index + 1}
+        data-spacer-folder={block.drag.folder}
+        ondragover={(e) => {
+          if(!getCurrentSidebarDrag(e)) return
+          e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'
+          e.currentTarget.classList.add('bg-green-500')
+        }}
+        ondragleave={(e) => e.currentTarget.classList.remove('bg-green-500')}
+        ondrop={(e) => {
+          const drag = getCurrentSidebarDrag(e)
+          if(!drag) return
+          e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('bg-green-500')
+          try { inserter(drag, { index: block.drag.index + 1, folder: block.drag.folder }) } finally { clearCurrentDrag() }
+        }}
+      ></div>
+    </div>
+  {/if}
+{/snippet}
+
 {#if DBState.db.menuSideBar}
 <div
   class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
@@ -691,24 +917,30 @@
   <User2Icon />
   <span class="text-xs">{language.character}</span>
 </button>
-<button
-  class="flex items-center justify-center py-2 flex-col gap-1 w-full"
-  class:text-textcolor2={!$splitChatOpen}
-  class:text-primary={$splitChatOpen}
-  aria-pressed={$splitChatOpen}
-  aria-label="분할 채팅"
-  title="분할 채팅 켜기/끄기"
-  onclick={() => {
-    toggleSplitChat()
-  }}
->
-  <Columns2 />
-  <span class="text-xs">분할</span>
-</button>
+{#if !isEmbeddedRisuPane}
+  <button
+    class="flex items-center justify-center py-2 flex-col gap-1 w-full"
+    class:text-textcolor2={!$splitChatOpen}
+    class:text-primary={$splitChatOpen}
+    aria-pressed={$splitChatOpen}
+    aria-label="분할 채팅"
+    title="분할 채팅 켜기/끄기"
+    onclick={() => {
+      toggleSplitChat()
+    }}
+  >
+    <Columns2 />
+    <span class="text-xs">분할</span>
+  </button>
+{/if}
 </div>
 {:else}
 <div
-  class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
+  class="h-full flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
+  class:w-40={splitCatalogMode}
+  class:min-w-40={splitCatalogMode}
+  class:w-20={!splitCatalogMode}
+  class:min-w-20={!splitCatalogMode}
   class:max-xs:hidden={$leftBarCollapsed}
   class:editMode
   class:risu-sub-sidebar={$sideBarClosing}
@@ -756,15 +988,17 @@
           PlaygroundStore.set(0)
           OpenRealmStore.set(false)
         }}><HomeIcon /></BarIcon>
-      <div class="mt-2"></div>
-      <BarIcon
-        ariaLabel="분할 채팅"
-        title="분할 채팅 켜기/끄기"
-        pressed={$splitChatOpen}
-        onClick={() => {
-          toggleSplitChat()
-        }}
-      ><Columns2 class={$splitChatOpen ? 'text-primary' : ''} /></BarIcon>
+      {#if !isEmbeddedRisuPane}
+        <div class="mt-2"></div>
+        <BarIcon
+          ariaLabel="분할 채팅"
+          title="분할 채팅 켜기/끄기"
+          pressed={$splitChatOpen}
+          onClick={() => {
+            toggleSplitChat()
+          }}
+        ><Columns2 class={$splitChatOpen ? 'text-primary' : ''} /></BarIcon>
+      {/if}
       <div class="mt-2"></div>
       <BarIcon
         onClick={() => {
@@ -790,7 +1024,36 @@
     {/if}
   </div>
   {/if}
+  <button
+    type="button"
+    class="my-1 flex h-7 min-h-7 w-14 items-center justify-center rounded-md border border-selected text-xs font-bold text-textcolor2 transition-colors hover:border-primary hover:text-primary"
+    class:text-primary={splitCatalogMode}
+    aria-pressed={splitCatalogMode}
+    aria-label="봇 사이드바 2열 보기"
+    title="기존 보기 / 왼쪽 폴더·오른쪽 봇 2열 보기"
+    onclick={toggleSplitCatalogMode}
+  >
+    {splitCatalogMode ? '1열' : '2열'}
+  </button>
   <div class="flex grow min-h-0 w-full" class:max-xs:hidden={$leftBarCollapsed} use:touchDragContainer>
+  {#if splitCatalogMode}
+    {@render splitFolderColumn()}
+    <MeasuredVirtualList
+      items={splitCharacterBlocks}
+      estimatedItemHeight={76}
+      overscan={5}
+      smallListThreshold={36}
+      className="character-list h-full w-20 min-w-20 pr-0"
+      ariaLabel={selectedSplitFolderId ? '선택한 폴더의 캐릭터' : '폴더 밖 캐릭터'}
+      key={(block) => block.type === 'control'
+        ? `split-control-${block.position}`
+        : `split-character-${block.drag.folder ?? 'root'}-${DBState.db.characters[block.char.index]?.chaId ?? block.sourceOrder}`}
+    >
+      {#snippet children(block)}
+        {@render splitCharacterRow(block)}
+      {/snippet}
+    </MeasuredVirtualList>
+  {:else}
   <MeasuredVirtualList
     items={sidebarCatalogBlocks}
     estimatedItemHeight={76}
@@ -887,66 +1150,7 @@
             {#key char.color}
             {#key char.name}
               <SidebarAvatar src="slot" size="56" rounded={IconRounded} folderShape name={char.name} color={char.color} backgroundimg={char.img ? () => getCharThumbnail(char.img, "plain") : ""}
-              oncontextmenu={async (e) => {
-                e.preventDefault()
-                const sel = parseInt(await alertSelect([language.renameFolder,language.changeFolderColor,language.changeFolderImage,language.cancel]))
-                if(sel === 0){
-                  const v = await alertInput(language.changeFolderName, [], char.name)
-                  const db = DBState.db
-                  if(v){
-                    const oder = db.characterOrder[ind]
-                    if(typeof(oder) === 'string'){
-                      return
-                    }
-                    oder.name = v
-                    db.characterOrder[ind] = oder
-                  }
-                }
-                else if(sel === 1){
-                  const colors = ["red","green","blue","yellow","indigo","purple","pink","default"]
-                  const sel = parseInt(await alertSelect(colors))
-                  const db = DBState.db
-                  const oder = db.characterOrder[ind]
-                  if(typeof(oder) === 'string'){
-                    return
-                  }
-                  oder.color = colors[sel].toLocaleLowerCase()
-                  db.characterOrder[ind] = oder
-                }
-                else if(sel === 2) {
-                  const sel = parseInt(await alertSelect(['Reset to Default Image', 'Select Image File']))
-                  const db = DBState.db
-                  const oder = db.characterOrder[ind]
-                  if(typeof(oder) === 'string'){
-                    return
-                  }
-
-                  switch (sel) {
-                    case 0:
-                      oder.imgFile = null
-                      oder.img = ''
-                      break;
-                  
-                    case 1:
-                      const folderImage = await selectSingleFile([
-                        'png',
-                        'jpg',
-                        'webp',
-                      ])
-
-                      if(!folderImage) {
-                        return
-                      }
-
-                      const folderImageData = await saveAsset(folderImage.data)
-
-                      oder.imgFile = folderImageData
-                      oder.img = await getFileSrc(folderImageData)
-                      db.characterOrder[ind] = oder
-                      break;
-                  }
-                }
-              }}
+              oncontextmenu={(e) => { void editSidebarFolder(ind, char, e) }}
               onClick={() => {
                 if(suppressNextClick) return
                 if(char.type !== 'folder'){
@@ -1107,6 +1311,7 @@
     {/if}
     {/snippet}
   </MeasuredVirtualList>
+  {/if}
   </div>
   {#if DBState.db.hamburgerButtonBottom}
   <div class="border-t border-t-selected w-full relative text-white" class:max-xs:hidden={$leftBarCollapsed}>
@@ -1131,15 +1336,17 @@
           PlaygroundStore.set(0)
           OpenRealmStore.set(false)
         }}><HomeIcon /></BarIcon>
-      <div class="mt-2"></div>
-      <BarIcon
-        ariaLabel="분할 채팅"
-        title="분할 채팅 켜기/끄기"
-        pressed={$splitChatOpen}
-        onClick={() => {
-          toggleSplitChat()
-        }}
-      ><Columns2 class={$splitChatOpen ? 'text-primary' : ''} /></BarIcon>
+      {#if !isEmbeddedRisuPane}
+        <div class="mt-2"></div>
+        <BarIcon
+          ariaLabel="분할 채팅"
+          title="분할 채팅 켜기/끄기"
+          pressed={$splitChatOpen}
+          onClick={() => {
+            toggleSplitChat()
+          }}
+        ><Columns2 class={$splitChatOpen ? 'text-primary' : ''} /></BarIcon>
+      {/if}
       <div class="mt-2"></div>
       <BarIcon
         onClick={() => {
