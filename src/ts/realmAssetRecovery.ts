@@ -1,7 +1,10 @@
 import type { character } from './storage/database.svelte'
 import { fetchRealmCharacter, getCharacterRealmId, getRisuHub, type hubType } from './characterCards'
 import { forageStorage, requestImmediateSave } from './globalApi.svelte'
+import { normalizeRealmName, scoreRealmCandidate } from './realmAssetRecoveryMatching'
 import { getDatabase } from './storage/database.svelte'
+
+export { scoreRealmCandidate } from './realmAssetRecoveryMatching'
 
 type AssetSlot = {
     key: string
@@ -18,18 +21,8 @@ export type RealmAssetRecoveryResult = {
     remainingKnownMissing: number
 }
 
-function normalizeName(value: unknown): string {
-    return String(value ?? '')
-        .normalize('NFKC')
-        .toLocaleLowerCase()
-        .replace(/[\[\](){}<>「」『』【】]/g, ' ')
-        .replace(/[^\p{L}\p{N}]+/gu, ' ')
-        .trim()
-        .replace(/\s+/g, ' ')
-}
-
 function slotKey(kind: string, name: unknown, extension: unknown = ''): string {
-    return `${kind}:${normalizeName(name)}:${normalizeName(extension)}`
+    return `${kind}:${normalizeRealmName(name)}:${normalizeRealmName(extension)}`
 }
 
 function characterAssetSlots(character: character): AssetSlot[] {
@@ -96,26 +89,6 @@ function candidateQueues(character: character): Map<string, string[]> {
         queues.set(slot.key, queue)
     }
     return queues
-}
-
-function tokenScore(left: string, right: string): number {
-    if (!left || !right) return 0
-    if (left === right) return 1
-    if (left.includes(right) || right.includes(left)) return 0.82
-    const a = new Set(left.split(' ').filter(Boolean))
-    const b = new Set(right.split(' ').filter(Boolean))
-    let intersection = 0
-    for (const token of a) if (b.has(token)) intersection++
-    return (2 * intersection) / Math.max(1, a.size + b.size)
-}
-
-export function scoreRealmCandidate(character: character, candidate: hubType): number {
-    const nameScore = tokenScore(normalizeName(character.name), normalizeName(candidate.name))
-    const creator = normalizeName(character.creator ?? character.additionalData?.creator)
-    const candidateCreator = normalizeName(candidate.creatorName ?? candidate.authorname ?? candidate.creator)
-    const creatorBonus = creator && candidateCreator && creator === candidateCreator ? 0.15 : 0
-    const assetBonus = candidate.hasAsset || candidate.hasEmotion ? 0.03 : 0
-    return Math.min(1, nameScore * 0.82 + creatorBonus + assetBonus)
 }
 
 export async function findRealmRecoveryCandidates(character: character): Promise<RealmRecoveryCandidate[]> {
