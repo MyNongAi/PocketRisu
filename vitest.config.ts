@@ -25,6 +25,7 @@ export default defineConfig({
       // This utility deliberately uses Node's built-in test runner so it can
       // be copied and verified without installing the web app toolchain.
       'tools/risu-migration-exporter/**/*.test.cjs',
+      'tools/**/*.test.mjs',
     ],
   },
 })

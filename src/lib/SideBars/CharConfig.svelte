@@ -1,9 +1,10 @@
 <script lang="ts">
+    import { getActiveHypaV3Preset } from "src/ts/process/memory/memoryPresets";
     import { language } from "../../lang";
     import { tokenizeAccurate } from "../../ts/tokenizer";
     import { saveImage as saveAsset, type character, getCurrentCharacter } from "../../ts/storage/database.svelte";
     import { convertCharacterToModule } from "src/ts/interchangeability";
-    import { notifySuccess } from "src/ts/alert";
+    import { alertError, notifySuccess } from "src/ts/alert";
     import { DBState } from 'src/ts/stores.svelte';
     import { CharConfigSubMenu, MobileGUI, selectedCharID, hypaV3ModalOpen } from "../../ts/stores.svelte";
     import { PlusIcon, SmileIcon, TrashIcon, UserIcon, ActivityIcon, BookIcon, Braces, Volume2Icon, DownloadIcon, HardDriveUploadIcon, Share2Icon, ImageIcon, ImageOffIcon, ArrowUp, ArrowDown, TriangleAlertIcon } from '@lucide/svelte'
@@ -12,8 +13,9 @@
     import LoreBook from "./LoreBook/LoreBookSetting.svelte";
     import { getAuthorNoteDefaultText, selectMultipleFile, selectSingleFile } from "../../ts/util";
     import Help from "../Others/Help.svelte";
-    import { exportChar } from "src/ts/characterCards";
+    import { exportChar, hydrateCharacterAssets } from "src/ts/characterCards";
     import { getElevenTTSVoices, getWebSpeechTTSVoices, getVOICEVOXVoices, oaiVoices, getNovelAIVoices } from "src/ts/process/tts";
+    import { appendAssetManifestItems, editAssetManifest, forageStorage, loadAssetManifestItems, recoverAssetManifestConflict } from "src/ts/globalApi.svelte";
 import { openAssetViewer, hasImageAssets } from "src/ts/assetViewer.svelte";
     import LazyAssetPreview from "src/lib/Others/LazyAssetPreview.svelte";
     import TextInput from "../UI/GUI/TextInput.svelte";
@@ -43,6 +45,10 @@ import ShButton from "../UI/GUI/ShButton.svelte";
     let pkgIncludeInlays = $state(false)
     let viewSubMenu = $state(0)
     let emos:[string, string][] = $state([])
+    // Undefined while no character is selected (id -1) or right after deletion —
+    // the mobile shell keeps this component mounted in that state, so every
+    // effect below and the template bail out instead of crashing on undefined.
+    const currentCharacter = $derived(DBState.db.characters[$selectedCharID])
     let iconButtonSize = window.innerWidth > 360 ? 24 as const : 20 as const
     let tokens = $state({
         desc: 0,
@@ -73,27 +79,127 @@ import ShButton from "../UI/GUI/ShButton.svelte";
     const firstMsgTok = { t: null as ReturnType<typeof setTimeout> | null, seq: 0 }
     const localNoteTok = { t: null as ReturnType<typeof setTimeout> | null, seq: 0 }
     $effect.pre(() => {
+        if (!currentCharacter) return
         tokenizeField(() => (DBState.db.characters[$selectedCharID] as character).desc ?? '', n => tokens.desc = n, descTok)
     });
     $effect.pre(() => {
+        if (!currentCharacter) return
         tokenizeField(() => DBState.db.characters[$selectedCharID].firstMessage ?? '', n => tokens.firstMsg = n, firstMsgTok)
     });
     $effect.pre(() => {
         const chara = DBState.db.characters[$selectedCharID]
+        if (!chara) return
         tokenizeField(() => chara.chats[chara.chatPage].note ?? '', n => tokens.localNote = n, localNoteTok)
     });
 
 
-    let licensed = $state((DBState.db.characters[$selectedCharID].type === 'character') ? (DBState.db.characters[$selectedCharID] as character).license : '')
+    // Starts empty and is filled by the effect below before first paint —
+    // initializing from the character directly crashes when none is selected.
+    let licensed = $state('')
+    let manifestItems:[string, string, string][] = $state([])
+    let manifestOffset = $state(0)
+    let manifestTotal = $state(0)
+    let manifestLoading = $state(false)
+    let converting = $state(false)
+    const manifestPageSize = 100
+
+    function currentChar(): character {
+        return DBState.db.characters[$selectedCharID] as character
+    }
+
+    async function loadCharacterManifestPage(offset = 0) {
+        const manifest = currentChar().additionalAssetManifest
+        if (!manifest) return
+        manifestLoading = true
+        try {
+            const page = await forageStorage.getAssetManifestPage(manifest, {
+                offset,
+                limit: manifestPageSize,
+            })
+            manifestItems = page.items as [string, string, string][]
+            manifestOffset = page.offset
+            manifestTotal = page.total
+        } finally {
+            manifestLoading = false
+        }
+    }
+
+    async function openCharacterAssetsTab() {
+        viewSubMenu = 2
+        if (currentChar().additionalAssetManifest) await loadCharacterManifestPage(0)
+        else currentChar().additionalAssets ??= []
+    }
+
+    async function addCharacterManifestAsset(item: [string, string, string]) {
+        const char = currentChar()
+        if (!char.additionalAssetManifest) {
+            char.additionalAssets ??= []
+            char.additionalAssets.push(item)
+            char.additionalAssets = char.additionalAssets
+            return
+        }
+        try {
+            char.additionalAssetManifest = await editAssetManifest(char.additionalAssetManifest, [
+                { type: 'append', item },
+            ])
+            const lastPageOffset = Math.floor((char.additionalAssetManifest.count - 1) / manifestPageSize) * manifestPageSize
+            await loadCharacterManifestPage(lastPageOffset)
+        } catch (error) {
+            if (!await recoverAssetManifestConflict(error, () => loadCharacterManifestPage(0))) throw error
+        }
+    }
+
+    async function renameCharacterManifestAsset(index: number, name: string) {
+        const char = currentChar()
+        if (!char.additionalAssetManifest) return
+        try {
+            char.additionalAssetManifest = await editAssetManifest(char.additionalAssetManifest, [
+                { type: 'rename', index: manifestOffset + index, name },
+            ])
+            await loadCharacterManifestPage(manifestOffset)
+        } catch (error) {
+            if (!await recoverAssetManifestConflict(error, () => loadCharacterManifestPage(0))) throw error
+        }
+    }
+
+    async function removeCharacterManifestAsset(index: number) {
+        const char = currentChar()
+        char.chats[char.chatPage].fmIndex = -1
+        if (!char.additionalAssetManifest) {
+            char.additionalAssets?.splice(index, 1)
+            char.additionalAssets = char.additionalAssets
+            return
+        }
+        try {
+            char.additionalAssetManifest = await editAssetManifest(char.additionalAssetManifest, [
+                { type: 'remove', index: manifestOffset + index },
+            ])
+            const nextOffset = Math.min(manifestOffset, Math.max(0, Math.floor((char.additionalAssetManifest.count - 1) / manifestPageSize) * manifestPageSize))
+            await loadCharacterManifestPage(nextOffset)
+        } catch (error) {
+            if (!await recoverAssetManifestConflict(error, () => loadCharacterManifestPage(0))) throw error
+        }
+    }
+
+    async function openCharacterAssetViewer() {
+        const char = currentChar()
+        const assets = char.additionalAssetManifest
+            ? await loadAssetManifestItems(char.additionalAssetManifest) as [string, string, string][]
+            : char.additionalAssets
+        openAssetViewer(char.name, assets)
+    }
 
     $effect.pre(() => {
+        if (!currentCharacter) return
         emos = DBState.db.characters[$selectedCharID].emotionImages
     });
 
     $effect.pre(() => {
+        if (!currentCharacter) return
         licensed = (DBState.db.characters[$selectedCharID].type === 'character') ? (DBState.db.characters[$selectedCharID] as character).license : ''
     });
     $effect.pre(() => {
+        if (!currentCharacter) return
         if (DBState.db.characters[$selectedCharID].ttsMode === 'novelai' && (DBState.db.characters[$selectedCharID] as character).naittsConfig === undefined) {
             (DBState.db.characters[$selectedCharID] as character).naittsConfig = {
                 customvoice: false,
@@ -103,6 +209,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
         }
     });
     $effect.pre(() => {
+        if (!currentCharacter) return
         if (DBState.db.characters[$selectedCharID].ttsMode === 'gptsovits' && (DBState.db.characters[$selectedCharID] as character).gptSoVitsConfig === undefined) {
             (DBState.db.characters[$selectedCharID] as character).gptSoVitsConfig = {
                 url: '',
@@ -134,6 +241,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
     }[] = $state([])
 
     $effect.pre(() => {
+        if (!currentCharacter) return
         if (DBState.db.characters[$selectedCharID].ttsMode === 'openai' && (DBState.db.characters[$selectedCharID] as character).oaiTTSConfig === undefined) {
             (DBState.db.characters[$selectedCharID] as character).oaiTTSConfig = {
                 enabled: false,
@@ -143,6 +251,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
     });
 
     $effect.pre(() => {
+        if (!currentCharacter) return
         if (DBState.db.characters[$selectedCharID].ttsMode === 'fishspeech' && (DBState.db.characters[$selectedCharID] as character).fishSpeechConfig === undefined) {
             (DBState.db.characters[$selectedCharID] as character).fishSpeechConfig = {
                 model: {
@@ -208,6 +317,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
 
 </script>
 
+{#if currentCharacter}
 {#if licensed !== 'private' && !$MobileGUI}
     <div class="flex mb-2" class:gap-2={iconButtonSize === 24} class:gap-1={iconButtonSize < 24}>
         <button class={$CharConfigSubMenu === 0 ? 'text-textcolor ' : 'text-textcolor2'} onclick={() => {$CharConfigSubMenu = 0}}>
@@ -240,10 +350,10 @@ import ShButton from "../UI/GUI/ShButton.svelte";
 
 
 {#snippet assetViewerButton()}
-    {#if DBState.db.characters[$selectedCharID].type === 'character' && hasImageAssets((DBState.db.characters[$selectedCharID] as character).additionalAssets)}
+    {#if DBState.db.characters[$selectedCharID].type === 'character' && (currentChar().additionalAssetManifest || hasImageAssets(currentChar().additionalAssets))}
         <ShButton
             className="w-full mb-3"
-            onclick={() => openAssetViewer(DBState.db.characters[$selectedCharID].name, (DBState.db.characters[$selectedCharID] as character).additionalAssets)}
+            onclick={openCharacterAssetViewer}
         >
             <ImageIcon size={16} />
             <span>{language.viewInAssetViewer}</span>
@@ -296,9 +406,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
         }} class="p2 flex-1 border-r border-l border-selected" class:bg-selected={viewSubMenu === 1}>
             <span>{language.viewScreen}</span>
         </button>
-        <button onclick={() => {
-            viewSubMenu = 2
-        }} class="p-2 flex-1" class:bg-selected={viewSubMenu === 2}>
+        <button onclick={openCharacterAssetsTab} class="p-2 flex-1" class:bg-selected={viewSubMenu === 2}>
             <span>{language.additionalAssets}</span>
         </button>
     </div>
@@ -444,9 +552,13 @@ import ShButton from "../UI/GUI/ShButton.svelte";
 
             <CheckInput bind:check={(DBState.db.characters[$selectedCharID] as character).inlayViewScreen} name={language.inlayViewScreen} onChange={() => {
                 if(DBState.db.characters[$selectedCharID].type === 'character'){
-                    if((DBState.db.characters[$selectedCharID] as character).inlayViewScreen && (DBState.db.characters[$selectedCharID] as character).additionalAssets === undefined){
+                    if((DBState.db.characters[$selectedCharID] as character).inlayViewScreen
+                        && (DBState.db.characters[$selectedCharID] as character).additionalAssets === undefined
+                        && !(DBState.db.characters[$selectedCharID] as character).additionalAssetManifest){
                         (DBState.db.characters[$selectedCharID] as character).additionalAssets = []
-                    }else if(!(DBState.db.characters[$selectedCharID] as character).inlayViewScreen && (DBState.db.characters[$selectedCharID] as character).additionalAssets.length === 0){
+                    }else if(!(DBState.db.characters[$selectedCharID] as character).inlayViewScreen
+                        && (DBState.db.characters[$selectedCharID] as character).additionalAssets?.length === 0
+                        && !(DBState.db.characters[$selectedCharID] as character).additionalAssetManifest){
                         (DBState.db.characters[$selectedCharID] as character).additionalAssets = undefined
                     }
                     
@@ -486,33 +598,45 @@ import ShButton from "../UI/GUI/ShButton.svelte";
             {/if}
             {/if}
             <div class="w-full max-w-full border border-selected rounded-md p-2 mt-2">
-                    <div class="flex items-center justify-between font-medium">
+                    <div class="flex items-center justify-between font-medium" data-risu-asset-actions data-risu-asset-scope="character">
                         <span>{language.value}</span>
                             <button class="hover:text-primary" onclick={async () => {
                                 if(DBState.db.characters[$selectedCharID].type === 'character'){
                                     const da = await selectMultipleFile(['png', 'webp', 'mp4', 'mp3', 'gif', 'jpeg', 'jpg', 'ttf', 'otf', 'css', 'webm', 'woff', 'woff2', 'svg', 'avif'])
-                                    DBState.db.characters[$selectedCharID].additionalAssets = DBState.db.characters[$selectedCharID].additionalAssets ?? []
                                     if(!da){
                                         return
                                     }
+                                    const appended: [string, string, string][] = []
                                     for(const f of da){
                                         const img = f.data
                                         const name = f.name
                                         const extension = name.split('.').pop().toLowerCase()
                                         const imgp = await saveAsset(img,'', extension)
-                                        DBState.db.characters[$selectedCharID].additionalAssets.push([name, imgp, extension])
-                                        DBState.db.characters[$selectedCharID].additionalAssets = DBState.db.characters[$selectedCharID].additionalAssets
+                                        if (currentChar().additionalAssetManifest) appended.push([name, imgp, extension])
+                                        else await addCharacterManifestAsset([name, imgp, extension])
+                                    }
+                                    const char = currentChar()
+                                    if (char.additionalAssetManifest && appended.length > 0) {
+                                        try {
+                                            char.additionalAssetManifest = await appendAssetManifestItems(char.additionalAssetManifest, appended)
+                                            const lastPageOffset = Math.floor((char.additionalAssetManifest.count - 1) / manifestPageSize) * manifestPageSize
+                                            await loadCharacterManifestPage(lastPageOffset)
+                                        } catch (error) {
+                                            if (!await recoverAssetManifestConflict(error, () => loadCharacterManifestPage(0))) throw error
+                                        }
                                     }
                                 }
                             }}>
                                 <PlusIcon />
                             </button>
                     </div>
-                    {#if (!DBState.db.characters[$selectedCharID].additionalAssets) || DBState.db.characters[$selectedCharID].additionalAssets.length === 0}
+                    {#if manifestLoading}
+                        <p class="py-3 text-textcolor2">{language.storageLoading}</p>
+                    {:else if currentChar().additionalAssetManifest ? manifestTotal === 0 : (!currentChar().additionalAssets || currentChar().additionalAssets.length === 0)}
                         <p class="py-3 text-textcolor2">No Assets</p>
                     {:else}
                         <VirtualList
-                            items={DBState.db.characters[$selectedCharID].additionalAssets}
+                            items={currentChar().additionalAssetManifest ? manifestItems : currentChar().additionalAssets}
                             itemHeight={104}
                             className="mt-2 h-[min(32rem,60vh)]"
                         >
@@ -536,18 +660,15 @@ import ShButton from "../UI/GUI/ShButton.svelte";
                                                     : 'w-16 h-16 rounded-md object-cover'}
                                         />
                                     {/if}
-                                    <ShInput autocomplete="off" bind:value={DBState.db.characters[$selectedCharID].additionalAssets[i][0]} placeholder="..." />
+                                    {#if currentChar().additionalAssetManifest}
+                                        <ShInput autocomplete="off" value={assets[0]} onchange={(event) => renameCharacterManifestAsset(i, event.currentTarget.value)} placeholder="..." />
+                                    {:else}
+                                        <ShInput autocomplete="off" bind:value={DBState.db.characters[$selectedCharID].additionalAssets[i][0]} placeholder="..." />
+                                    {/if}
                                 </div>
                                 
                                 <div class="flex w-10 shrink-0 flex-col items-center gap-2 font-medium">
-                                    <button class="hover:text-draculared" onclick={() => {
-                                        if(DBState.db.characters[$selectedCharID].type === 'character'){
-                                            DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].fmIndex = -1
-                                            let additionalAssets = DBState.db.characters[$selectedCharID].additionalAssets
-                                            additionalAssets.splice(i, 1)
-                                            DBState.db.characters[$selectedCharID].additionalAssets = additionalAssets
-                                        }
-                                    }}>
+                                    <button class="hover:text-draculared" onclick={() => removeCharacterManifestAsset(i)}>
                                         <TrashIcon />
                                     </button>
                                     {#if DBState.db.useAdditionalAssetsPreview}
@@ -570,7 +691,14 @@ import ShButton from "../UI/GUI/ShButton.svelte";
                                 </div>
                             </div>
                           {/snippet}
-                        </VirtualList>
+                          </VirtualList>
+                    {/if}
+                    {#if currentChar().additionalAssetManifest && manifestTotal > manifestPageSize}
+                        <div class="mt-2 flex items-center justify-between gap-2">
+                            <ShButton disabled={manifestOffset === 0 || manifestLoading} onclick={() => loadCharacterManifestPage(Math.max(0, manifestOffset - manifestPageSize))}>←</ShButton>
+                            <span>{manifestOffset + 1}–{Math.min(manifestOffset + manifestItems.length, manifestTotal)} / {manifestTotal}</span>
+                            <ShButton disabled={manifestOffset + manifestPageSize >= manifestTotal || manifestLoading} onclick={() => loadCharacterManifestPage(manifestOffset + manifestPageSize)}>→</ShButton>
+                        </div>
                     {/if}
             </div>
     {/if}
@@ -641,11 +769,24 @@ import ShButton from "../UI/GUI/ShButton.svelte";
         }} className="mt-2">{language.exportCharacter}</Button>
     {/if}
 
-    <Button size="md" className="mt-2" onclick={async () => {
-        const char = getCurrentCharacter()
-        const m = convertCharacterToModule(char)
-        addModuleToDatabase(m)
-        notifySuccess(language.successfullyConverted)
+    <Button size="md" className="mt-2" disabled={converting} onclick={async () => {
+        if(converting){
+            return
+        }
+        converting = true
+        try {
+            const char = getCurrentCharacter() as character
+            // Hydrate first: copying the descriptor would make the new module
+            // share the character's manifest, so editing one would change the
+            // other until the next reload.
+            const m = convertCharacterToModule(await hydrateCharacterAssets(char))
+            DBState.db.modules.push(m)
+            notifySuccess(language.successfullyConverted)
+        } catch (error) {
+            alertError(`${error}`)
+        } finally {
+            converting = false
+        }
     }}>{language.convertToModule}</Button>
 
     <Button onclick={async () => {
@@ -1160,7 +1301,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
             <Check bind:check={(DBState.db.characters[$selectedCharID] as import('src/ts/storage/database.svelte').character).escapeOutput} name={language.escapeOutput}/>
         </div>
 
-        {#if DBState.db.hypaV3}
+        {#if getActiveHypaV3Preset(DBState.db, DBState.db.characters[$selectedCharID], DBState.db.characters[$selectedCharID]?.chats?.[DBState.db.characters[$selectedCharID]?.chatPage])}
             <Button
                 onclick={() => {
                     $hypaV3ModalOpen = true
@@ -1178,6 +1319,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
             {language.applyModule}
         </Button>
 
+{/if}
 {/if}
 
 

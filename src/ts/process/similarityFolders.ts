@@ -4,7 +4,6 @@ import {
     findHighSimilarityNameGroups,
     normalizeDuplicateName,
 } from '../sourceCollectionDuplicates'
-import { normalizeModuleFolders, type ModuleFolder } from './moduleFolders'
 
 export interface SimilarityCandidateInfo {
     kind: 'character' | 'module'
@@ -19,11 +18,17 @@ export interface SimilarityCharacterFolder {
     duplicateCandidate?: SimilarityCandidateInfo
 }
 
+export interface SimilarityModuleFolder {
+    id: string
+    name: string
+    duplicateCandidate?: SimilarityCandidateInfo
+}
+
 export interface SimilarityFolderDatabase {
     characters: Array<{ chaId?: string, name?: unknown, sourceInfo?: { label?: string } }>
     characterOrder: Array<string | SimilarityCharacterFolder>
-    modules: Array<{ id?: string, name?: unknown, sourceInfo?: { label?: string } }>
-    moduleFolders?: ModuleFolder[]
+    modules: Array<{ id?: string, name?: unknown, folderId?: string, sourceInfo?: { label?: string } }>
+    moduleFolders?: SimilarityModuleFolder[]
     moduleActivationHistory?: string[]
 }
 
@@ -82,6 +87,24 @@ function promoteModuleGroups(db: SimilarityFolderDatabase, groups: readonly stri
     // the first generated folder receives the newest (topmost) anchor.
     for(const ids of [...groups].reverse()) history.push(...ids)
     db.moduleActivationHistory = history
+}
+
+function normalizeSimilarityModuleFolders(value: unknown): SimilarityModuleFolder[] {
+    if(!Array.isArray(value)) return []
+    const ids = new Set<string>()
+    const folders: SimilarityModuleFolder[] = []
+    for(const entry of value){
+        if(!entry || typeof entry !== 'object') continue
+        const folder = entry as Partial<SimilarityModuleFolder>
+        if(typeof folder.id !== 'string' || !folder.id || ids.has(folder.id)) continue
+        ids.add(folder.id)
+        folders.push({
+            ...folder,
+            id: folder.id,
+            name: typeof folder.name === 'string' ? folder.name : '',
+        })
+    }
+    return folders
 }
 
 export function organizeAllCharacterSimilarityFolders(
@@ -143,32 +166,41 @@ export function organizeAllModuleSimilarityFolders(
         }))
         .filter((group) => group.members.length > 1)
     const candidateIds = new Set(groups.flatMap((group) => group.members.map((module) => module.id!)))
-    const normalizedFolders = normalizeModuleFolders(db.moduleFolders)
+    const normalizedFolders = normalizeSimilarityModuleFolders(db.moduleFolders)
     const oldFolders = new Map(
         normalizedFolders
             .filter((folder) => folder.duplicateCandidate?.kind === 'module')
             .map((folder) => [folder.duplicateCandidate!.key, folder]),
     )
     const reservedIds = new Set<string>()
-    const baseFolders = normalizedFolders
-        .filter((folder) => folder.duplicateCandidate?.kind !== 'module')
-        .map((folder) => ({ ...folder, moduleIds: folder.moduleIds.filter((id) => !candidateIds.has(id)) }))
-    const folders: ModuleFolder[] = groups.map((group) => {
+    const oldGeneratedIds = new Set(
+        normalizedFolders
+            .filter((folder) => folder.duplicateCandidate?.kind === 'module')
+            .map((folder) => folder.id),
+    )
+    const baseFolders = normalizedFolders.filter((folder) => folder.duplicateCandidate?.kind !== 'module')
+    for(const module of db.modules){
+        if(module.folderId && oldGeneratedIds.has(module.folderId) && !candidateIds.has(module.id ?? '')){
+            delete module.folderId
+        }
+    }
+    const folderGroups = groups.map((group) => {
         const existing = oldFolders.get(group.key)
-        return {
+        const folder: SimilarityModuleFolder = {
             id: existing?.id ?? createUniqueId(db, createId, reservedIds),
             name: folderName(
                 group.label,
                 group.members.length,
                 group.members.map((member) => member.sourceInfo?.label ?? ''),
             ),
-            moduleIds: group.members.map((module) => module.id!),
-            collapsed: existing?.collapsed ?? false,
             duplicateCandidate: { kind: 'module', key: group.key },
         }
+        const moduleIds = group.members.map((module) => module.id!)
+        for(const module of group.members) module.folderId = folder.id
+        return { folder, moduleIds }
     })
-    db.moduleFolders = [...folders, ...baseFolders]
-    promoteModuleGroups(db, folders.map((folder) => folder.moduleIds))
+    db.moduleFolders = [...folderGroups.map((entry) => entry.folder), ...baseFolders]
+    promoteModuleGroups(db, folderGroups.map((entry) => entry.moduleIds))
 }
 
 export function organizeAllSimilarityFolders(
@@ -240,29 +272,30 @@ export function organizeImportedModuleSimilarity(
     if(members.length < 2) return
 
     const memberIds = new Set(members.map((module) => module.id!))
-    const folders = normalizeModuleFolders(db.moduleFolders)
+    const folders = normalizeSimilarityModuleFolders(db.moduleFolders)
+    const moduleById = new Map(db.modules.map((module) => [module.id, module]))
     const existing = folders.find((folder) =>
         folder.duplicateCandidate?.kind === 'module'
-        && folder.moduleIds.some((id) => memberIds.has(id)),
+        && [...memberIds].some((id) => moduleById.get(id)?.folderId === folder.id),
     )
-    const baseFolders = folders.flatMap((folder) => {
-        if(folder.id === existing?.id) return []
-        const remaining = folder.moduleIds.filter((id) => !memberIds.has(id))
-        return remaining.length > 0 ? [{ ...folder, moduleIds: remaining }] : []
-    })
+    const baseFolders = folders.filter((folder) => folder.id !== existing?.id)
     const representative = members[0]
     const key = normalizeDuplicateName(representative.name)
-    const generated: ModuleFolder = {
+    const generated: SimilarityModuleFolder = {
         id: existing?.id ?? createUniqueId(db, createId),
         name: folderName(
             typeof representative.name === 'string' ? representative.name.trim() : key,
             members.length,
             members.map((member) => member.sourceInfo?.label ?? ''),
         ),
-        moduleIds: members.map((module) => module.id!),
-        collapsed: existing?.collapsed ?? false,
         duplicateCandidate: { kind: 'module', key },
     }
+    if(existing){
+        for(const module of db.modules){
+            if(module.folderId === existing.id && !memberIds.has(module.id ?? '')) delete module.folderId
+        }
+    }
+    for(const module of members) module.folderId = generated.id
     db.moduleFolders = [generated, ...baseFolders]
-    promoteModuleGroups(db, [generated.moduleIds])
+    promoteModuleGroups(db, [members.map((module) => module.id!)])
 }

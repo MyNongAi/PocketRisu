@@ -17,8 +17,6 @@ export interface SourceMergeFolder {
 export interface SourceMergeModuleFolder {
     id: string
     name: string
-    moduleIds: string[]
-    collapsed?: boolean
     sourceInfo?: SourceImportInfo
     duplicateCandidate?: { kind: 'module', key: string }
 }
@@ -205,7 +203,7 @@ export function applySourceCollectionEntities(
             ...(db.moduleFolders ?? []).map((folder) => folder.id),
         ].filter((id): id is string => typeof id === 'string' && !!id))
         const sourceIds = new Set<string>()
-        const modules = entities.map((entity, index) => {
+        const modules: Record<string, any>[] = entities.map((entity, index) => {
             const originalId = entity.id
             if (typeof originalId !== 'string' || !originalId) {
                 throw new Error(`Missing modules entity id at index ${index}`)
@@ -233,13 +231,11 @@ export function applySourceCollectionEntities(
             folder = {
                 id: createUniqueId(options.createId, usedIds),
                 name: folderName,
-                moduleIds: [],
-                collapsed: false,
                 sourceInfo: { ...sourceInfo },
             }
             db.moduleFolders.push(folder)
         }
-        folder.moduleIds.push(...modules.map((module) => module.id))
+        for (const module of modules) module.folderId = folder.id
         organizeAllModuleSimilarityFolders(db, options.createId)
         result.modules = modules.length
     } else {
