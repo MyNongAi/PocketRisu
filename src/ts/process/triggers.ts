@@ -1124,13 +1124,13 @@ export async function runTrigger(char:character,mode:triggerMode, arg:{
         return null
     }
     
-    function setLocalVar(key: string, value: string, indent: number) {
+    function setLocalVar(key: string, value: string, indent: number): boolean {
         if (!localVarScopes || localVarScopes.length === 0) {
             localVarScopes = [{}]
         }
         const currentScope = localVarScopes[localVarScopes.length - 1]
         if (!currentScope) {
-            return
+            return false
         }
         
         const finalValue = (value === null || value === undefined) ? 'null' : value
@@ -1148,8 +1148,13 @@ export async function runTrigger(char:character,mode:triggerMode, arg:{
         if (!currentScope[targetIndent]) {
             currentScope[targetIndent] = {}
         }
+
+        if(currentScope[targetIndent][key] === finalValue){
+            return false
+        }
         
         currentScope[targetIndent][key] = finalValue
+        return true
     }
     
     function declareLocalVar(key: string, value: string, indent: number) {
@@ -1197,22 +1202,30 @@ export async function runTrigger(char:character,mode:triggerMode, arg:{
         return state.toString()
     }
 
-    function setVar(key:string, value:string){
+    function setVar(key:string, value:string): boolean {
         if(arg.displayMode){
+            if(tempVars[key] === value){
+                return false
+            }
             tempVars[key] = value
-            return
+            return true
         }
         
         const localVar = getLocalVar(key)
         if(localVar !== null){
-            setLocalVar(key, value, currentIndent)
-            return
+            return setLocalVar(key, value, currentIndent)
         }
         
-        varChanged = true
         chat.scriptstate ??= {}
-        chat.scriptstate['$' + key] = value
+        const stateKey = '$' + key
+        if(chat.scriptstate[stateKey] === value){
+            return false
+        }
+
+        varChanged = true
+        chat.scriptstate[stateKey] = value
         currentChat.scriptstate = chat.scriptstate
+        return true
     }
     
     

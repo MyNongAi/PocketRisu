@@ -1,6 +1,6 @@
 import { getDatabase, type Chat, type Database } from 'src/ts/storage/database.svelte'
 import type { AdapterCredential } from 'src/ts/preset/adapter'
-import type { ModelPreset } from 'src/ts/preset/types'
+import { VISION_CAPABLE_ADAPTER_KINDS, type ModelPreset } from 'src/ts/preset/types'
 import type { ModelModeExtended } from './shared'
 
 /**
@@ -188,6 +188,13 @@ export function captureChatModelRoute(
         providerKey: classicProviderKey(aiModel, db),
         fallbackModels,
     }
+}
+
+export function presetSupportsVision(preset: ModelPreset): boolean {
+    const kind = preset.profileSnapshot?.adapterKind
+    const caps = preset.profileSnapshot?.capabilities
+    return VISION_CAPABLE_ADAPTER_KINDS.includes(kind)
+        && ((caps?.includes('vision') ?? false) || preset.imageInput === true)
 }
 
 /**

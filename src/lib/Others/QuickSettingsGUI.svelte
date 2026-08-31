@@ -47,6 +47,6 @@
     {:else if activeIndex === 1}
         <OtherBotSettings />
     {:else}
-        <ModuleSettings quickPanel />
+        <ModuleSettings />
     {/if}
 </div>
