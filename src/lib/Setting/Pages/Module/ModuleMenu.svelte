@@ -11,14 +11,12 @@
     import Check from "src/lib/UI/GUI/CheckInput.svelte";
     import Help from "src/lib/Others/Help.svelte";
     import TextAreaInput from "src/lib/UI/GUI/TextAreaInput.svelte";
-    import { saveAsset, downloadFile } from "src/ts/globalApi.svelte";
+    import { appendAssetManifestItems, editAssetManifest, forageStorage, getFileSrc, loadAssetManifestItems, recoverAssetManifestConflict, saveAsset, downloadFile } from "src/ts/globalApi.svelte";
     import { alertError, notifySuccess } from "src/ts/alert";
     import { exportRegex, importRegex } from "src/ts/process/scripts";
     import { selectMultipleFile } from "src/ts/util";
     import { openAssetViewer, hasImageAssets } from "src/ts/assetViewer.svelte";
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
-    import LazyAssetPreview from "src/lib/Others/LazyAssetPreview.svelte";
-    import VirtualList from "src/lib/UI/Virtual/VirtualList.svelte";
     
     import { DBState } from 'src/ts/stores.svelte';
   import { v4 } from "uuid";
@@ -29,6 +27,109 @@
     }
 
     let { currentModule = $bindable() }: Props = $props();
+    let assetFileExtensions:string[] = $state([])
+    let assetFilePath:string[] = $state([])
+    let manifestItems:[string, string, string][] = $state([])
+    let manifestOffset = $state(0)
+    let manifestTotal = $state(0)
+    let manifestLoading = $state(false)
+    const manifestPageSize = 100
+
+    async function loadManifestPage(offset = 0) {
+        if (!currentModule.assetManifest) return
+        manifestLoading = true
+        try {
+            const page = await forageStorage.getAssetManifestPage(currentModule.assetManifest, {
+                offset,
+                limit: manifestPageSize,
+            })
+            manifestItems = page.items as [string, string, string][]
+            manifestOffset = page.offset
+            manifestTotal = page.total
+            assetFileExtensions = []
+            assetFilePath = []
+        } finally {
+            manifestLoading = false
+        }
+    }
+
+    async function openAssetsTab() {
+        if (!currentModule.assetManifest) currentModule.assets ??= []
+        submenu = 5
+        if (currentModule.assetManifest) await loadManifestPage(0)
+    }
+
+    async function addManifestAsset(item: [string, string, string]) {
+        if (!currentModule.assetManifest) {
+            currentModule.assets ??= []
+            currentModule.assets.push(item)
+            currentModule.assets = currentModule.assets
+            return
+        }
+        try {
+            currentModule.assetManifest = await editAssetManifest(currentModule.assetManifest, [
+                { type: 'append', item },
+            ])
+            const lastPageOffset = Math.floor((currentModule.assetManifest.count - 1) / manifestPageSize) * manifestPageSize
+            await loadManifestPage(lastPageOffset)
+        } catch (error) {
+            if (!await recoverAssetManifestConflict(error, () => loadManifestPage(0))) throw error
+        }
+    }
+
+    async function renameManifestAsset(index: number, name: string) {
+        if (!currentModule.assetManifest) return
+        try {
+            currentModule.assetManifest = await editAssetManifest(currentModule.assetManifest, [
+                { type: 'rename', index: manifestOffset + index, name },
+            ])
+            await loadManifestPage(manifestOffset)
+        } catch (error) {
+            if (!await recoverAssetManifestConflict(error, () => loadManifestPage(0))) throw error
+        }
+    }
+
+    async function removeManifestAsset(index: number) {
+        if (!currentModule.assetManifest) {
+            currentModule.assets?.splice(index, 1)
+            currentModule.assets = currentModule.assets
+            return
+        }
+        try {
+            currentModule.assetManifest = await editAssetManifest(currentModule.assetManifest, [
+                { type: 'remove', index: manifestOffset + index },
+            ])
+            const nextOffset = Math.min(manifestOffset, Math.max(0, Math.floor((currentModule.assetManifest.count - 1) / manifestPageSize) * manifestPageSize))
+            await loadManifestPage(nextOffset)
+        } catch (error) {
+            if (!await recoverAssetManifestConflict(error, () => loadManifestPage(0))) throw error
+        }
+    }
+
+    async function openCurrentAssetViewer() {
+        const assets = currentModule.assetManifest
+            ? await loadAssetManifestItems(currentModule.assetManifest) as [string, string, string][]
+            : currentModule.assets
+        openAssetViewer(currentModule.name, assets)
+    }
+
+    $effect.pre(() => {
+        if(DBState.db.useAdditionalAssetsPreview){
+            const assets = currentModule?.assetManifest ? manifestItems : currentModule?.assets
+            if(assets){
+                for(let i = 0; i < assets.length; i++){
+                    if(assets[i].length > 2 && assets[i][2]) {
+                        assetFileExtensions[i] = assets[i][2]
+                    } else
+                        assetFileExtensions[i] = assets[i][1].split('.').pop()
+                        getFileSrc(assets[i][1]).then((filePath) => {
+                        assetFilePath[i] = filePath
+                    })
+                }
+            }
+        }
+    });
+
     function addLorebook(){
         if(Array.isArray(currentModule.lorebook)){
             currentModule.lorebook.push({
@@ -171,10 +272,7 @@
     }} class="p-2 flex-1 border-r border-darkborderc" class:bg-darkbutton={submenu === 3}>
         <span>{language.triggerScript}</span>
     </button>
-    <button onclick={() => {
-        currentModule.assets ??= []
-        submenu = 5
-    }} class="p-2 flex-1" class:bg-darkbutton={submenu === 5}>
+    <button onclick={openAssetsTab} class="p-2 flex-1" class:bg-darkbutton={submenu === 5}>
         <span>{language.additionalAssets}</span>
     </button>
 </div>
@@ -231,11 +329,11 @@
     </div>
 {/if}
 
-{#if submenu === 5 && (Array.isArray(currentModule.assets))}
-    {#if hasImageAssets(currentModule.assets)}
+{#if submenu === 5 && (Array.isArray(currentModule.assets) || currentModule.assetManifest)}
+    {#if currentModule.assetManifest || hasImageAssets(currentModule.assets)}
         <ShButton
             className="w-full mb-3"
-            onclick={() => openAssetViewer(currentModule.name, currentModule.assets)}
+            onclick={openCurrentAssetViewer}
         >
             <ImageIcon size={16} />
             <span>{language.viewInAssetViewer}</span>
@@ -243,66 +341,95 @@
     {/if}
     <span class="mb-2 flex items-center">{language.additionalAssets} <Help key="moduleAdditionalAssets" /></span>
     <div class="w-full max-w-full border border-selected rounded-md p-2">
-            <div class="flex items-center justify-between font-medium">
-                <span>{language.value}</span>
+        <table class="contain w-full max-w-full tabler mt-2">
+            <tbody>
+            <tr>
+                <th class="font-medium">{language.value}</th>
+                <th class="font-medium cursor-pointer w-10" data-risu-asset-actions data-risu-asset-scope="module">
                     <button class="hover:text-primary" onclick={async () => {
                         const da = await selectMultipleFile(['png', 'webp', 'mp4', 'mp3', 'gif', 'jpeg', 'jpg', 'ttf', 'otf', 'css', 'webm', 'woff', 'woff2', 'svg', 'avif'])
-                        currentModule.assets = currentModule.assets ?? []
                         if(!da){
                             return
                         }
+                        const appended: [string, string, string][] = []
                         for(const f of da){
                             const img = f.data
                             const name = f.name
                             const extension = name.split('.').pop().toLowerCase()
                             const imgp = await saveAsset(img,'', extension)
-                            currentModule.assets.push([name, imgp, extension])
-                            currentModule.assets = currentModule.assets
+                            if (currentModule.assetManifest) appended.push([name, imgp, extension])
+                            else await addManifestAsset([name, imgp, extension])
+                        }
+                        if (currentModule.assetManifest && appended.length > 0) {
+                            try {
+                                currentModule.assetManifest = await appendAssetManifestItems(currentModule.assetManifest, appended)
+                                const lastPageOffset = Math.floor((currentModule.assetManifest.count - 1) / manifestPageSize) * manifestPageSize
+                                await loadManifestPage(lastPageOffset)
+                            } catch (error) {
+                                if (!await recoverAssetManifestConflict(error, () => loadManifestPage(0))) throw error
+                            }
                         }
                     }}>
                         <PlusIcon />
                     </button>
-            </div>
-            {#if (!currentModule.assets) || currentModule.assets.length === 0}
-                <p class="py-3 text-textcolor2">{language.noData}</p>
+                </th>
+            </tr>
+            {#if manifestLoading}
+                <tr><td colspan="3">{language.storageLoading}</td></tr>
+            {:else if currentModule.assetManifest ? manifestTotal === 0 : (!currentModule.assets || currentModule.assets.length === 0)}
+                <tr>
+                    <td colspan="3">{language.noData}</td>
+                </tr>
             {:else}
-                <VirtualList items={currentModule.assets} itemHeight={104} className="mt-2 h-[min(32rem,60vh)]">
-                  {#snippet children(assets, i)}
-                    {@const extension = (assets[2] ?? assets[1].split('.').pop() ?? '').toLowerCase()}
-                    <div class="flex h-full items-center gap-2 border-t border-darkborderc px-1 font-medium">
-                        <div class="min-w-0 flex-1 truncate">
-                            {#if DBState.db.useAdditionalAssetsPreview}
-                                <LazyAssetPreview
-                                    path={assets[1]}
-                                    {extension}
-                                    alt={assets[0]}
-                                    draggableOriginal={['png', 'webp', 'jpeg', 'jpg', 'gif', 'svg', 'avif', 'bmp'].includes(extension)}
-                                    dragFileName={assets[0]}
-                                    controls
-                                    loop
-                                    mediaClass={['mp4', 'webm', 'mov', 'm4v'].includes(extension)
-                                        ? 'w-20 h-16 rounded-md object-contain'
-                                        : ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'aac'].includes(extension)
-                                            ? 'w-full h-12 rounded-md'
-                                            : 'w-16 h-16 rounded-md object-cover'}
-                                />
+                {#each (currentModule.assetManifest ? manifestItems : currentModule.assets) as assets, i}
+                    <tr>
+                        <td class="font-medium truncate">
+                            {#if assetFilePath[i] && DBState.db.useAdditionalAssetsPreview}
+                                {#if assetFileExtensions[i] === 'mp4'}
+                                <!-- svelte-ignore a11y_media_has_caption -->
+                                    <video controls class="mt-2 px-2 w-full m-1 rounded-md"><source src={assetFilePath[i]} type="video/mp4"></video>
+                                {:else if assetFileExtensions[i] === 'mp3'}
+                                    <audio controls class="mt-2 px-2 w-full h-16 m-1 rounded-md" loop><source src={assetFilePath[i]} type="audio/mpeg"></audio>
+                                {:else}
+                                    <img src={assetFilePath[i]} class="w-16 h-16 m-1 rounded-md" alt={assets[0]}/>
+                                {/if}
                             {/if}
-                            <TextInput fullwidth marginBottom bind:value={currentModule.assets[i][0]} placeholder="..." />
-                        </div>
+                            {#if currentModule.assetManifest}
+                                <TextInput
+                                    fullwidth
+                                    marginBottom
+                                    value={assets[0]}
+                                    onchange={(event) => renameManifestAsset(i, event.currentTarget.value)}
+                                    placeholder="..."
+                                />
+                            {:else}
+                                <TextInput fullwidth marginBottom bind:value={currentModule.assets[i][0]} placeholder="..." />
+                            {/if}
+                        </td>
                         
-                        <div class="w-10 shrink-0 font-medium cursor-pointer">
-                            <button class="hover:text-red-400" onclick={() => {
-                                let additionalAssets = currentModule.assets
-                                additionalAssets.splice(i, 1)
-                                currentModule.assets = additionalAssets
-                            }}>
+                        <th class="font-medium cursor-pointer w-10">
+                            <button class="hover:text-red-400" onclick={() => removeManifestAsset(i)}>
                                 <TrashIcon />
                             </button>
-                        </div>
-                    </div>
-                  {/snippet}
-                </VirtualList>
+                        </th>
+                    </tr>
+                {/each}
             {/if}
+            </tbody>
+        </table>
+        {#if currentModule.assetManifest && manifestTotal > manifestPageSize}
+            <div class="mt-2 flex items-center justify-between gap-2">
+                <ShButton
+                    disabled={manifestOffset === 0 || manifestLoading}
+                    onclick={() => loadManifestPage(Math.max(0, manifestOffset - manifestPageSize))}
+                >←</ShButton>
+                <span>{manifestOffset + 1}–{Math.min(manifestOffset + manifestItems.length, manifestTotal)} / {manifestTotal}</span>
+                <ShButton
+                    disabled={manifestOffset + manifestPageSize >= manifestTotal || manifestLoading}
+                    onclick={() => loadManifestPage(manifestOffset + manifestPageSize)}
+                >→</ShButton>
+            </div>
+        {/if}
     </div>
 {/if}
 

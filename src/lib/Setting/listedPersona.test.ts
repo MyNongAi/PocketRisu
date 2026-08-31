@@ -6,6 +6,7 @@ import { mount, tick, unmount } from 'svelte'
 const mocks = vi.hoisted(() => ({
     db: {
         selectedPersona: 1,
+        characters: [{ chatPage: 0, chats: [{ bindedPersona: 'beta' }] }],
         personas: [
             { id: 'alpha', name: 'Alpha', note: 'First', icon: 'assets/alpha.png', personaPrompt: '' },
             { id: 'beta', name: 'Beta', note: 'Selected', icon: 'external://local/beta', personaPrompt: '' },
@@ -15,13 +16,24 @@ const mocks = vi.hoisted(() => ({
     changeUserPersona: vi.fn(),
     getFileThumbnailSrc: vi.fn(async (path: string) => `/thumbnail/${encodeURIComponent(path)}`),
     getFileSrc: vi.fn(async (path: string) => `/original/${encodeURIComponent(path)}`),
+    saveAsset: vi.fn(),
 }))
 
-vi.mock('src/ts/stores.svelte', () => ({ DBState: { db: mocks.db } }))
+vi.mock('src/ts/stores.svelte', () => ({
+    DBState: { db: mocks.db },
+    selIdState: { selId: -1 },
+    selectedCharID: {
+        subscribe(run: (value: number) => void) {
+            run(0)
+            return () => {}
+        },
+    },
+}))
 vi.mock('src/ts/persona', () => ({ changeUserPersona: mocks.changeUserPersona }))
 vi.mock('src/ts/globalApi.svelte', () => ({
     getFileThumbnailSrc: mocks.getFileThumbnailSrc,
     getFileSrc: mocks.getFileSrc,
+    saveAsset: mocks.saveAsset,
 }))
 
 import ListedPersona from './listedPersona.svelte'

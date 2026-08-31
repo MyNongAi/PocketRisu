@@ -1,12 +1,13 @@
 import { get } from "svelte/store";
-import { CharEmotion } from "../stores.svelte";
+import { CharEmotion, selectedCharID } from "../stores.svelte";
 import { type Chat, type character, type customscript, getDatabase, getCurrentCharacter, getCurrentChat } from "../storage/database.svelte";
-import { downloadFile } from "../globalApi.svelte";
+import { downloadFile, loadAssetManifestItems } from "../globalApi.svelte";
 import { alertError, notifySuccess } from "../alert";
 import { language } from "src/lang";
 import { selectSingleFile } from "../util";
 import { assetRegex, type CbsConditions, risuChatParser as risuChatParserOrg, type simpleCharacterArgument } from "../parser/parser.svelte";
-import { getModuleAssets, getModuleRegexScripts, type ModuleRuntimeContext } from "./modules";
+import { hydrateAssetListsForCbs } from "../parser/assetListHydration";
+import { getModuleAssets, getModuleRegexScripts, getModules, type ModuleRuntimeContext } from "./modules";
 import { HypaProcesser } from "./memory/hypamemory";
 import { runLuaEditTrigger } from "./scriptings";
 import { pluginV2 } from "../plugins/plugins.svelte";
@@ -168,8 +169,14 @@ export async function processScriptFull(
         }
     }
 
-    data = risuChatParser(data, { chatID: chatID, cbsConditions })
     const scripts = (db.presetRegex ?? []).concat(char.customscript).concat(getModuleRegexScripts(context))
+    // Script templates can introduce asset-list tokens after the initial
+    // parse, so hydrate only the manifests referenced by this request.
+    await hydrateAssetListsForCbs(char, [
+        data,
+        ...scripts.filter((script) => script.type === mode).flatMap((script) => [script.in, script.out]),
+    ])
+    data = risuChatParser(data, { chatID: chatID, cbsConditions })
     const runtimeScope = JSON.stringify([
         targetCharacter.chaId,
         targetChat?.id,
@@ -387,19 +394,30 @@ export async function processScriptFull(
 
     
 
-    if(db.dynamicAssets && (char.type === 'simple' || char.type === 'character') && char.additionalAssets && char.additionalAssets.length > 0){
+    if(db.dynamicAssets && (char.type === 'simple' || char.type === 'character')
+        && ((char.additionalAssets?.length ?? 0) > 0 || !!char.additionalAssetManifest)){
         if((!db.dynamicAssetsEditDisplay && mode === 'editdisplay')
             || mode === 'editinput' || mode === 'editprocess'){
             cacheScript(hash, data)
             return {data, emoChanged}
         }
-        const assetNames = char.additionalAssets.map((v) => v[0])
+        const assetNames = (char.additionalAssets ?? []).map((v) => v[0])
+
+        if (char.additionalAssetManifest) {
+            const items = await loadAssetManifestItems(char.additionalAssetManifest)
+            assetNames.push(...items.map((item) => item[0]))
+        }
 
         const moduleAssets = getModuleAssets(context)
         if(moduleAssets.length > 0){
             for(const asset of moduleAssets){
                 assetNames.push(asset[0])
             }
+        }
+        for (const module of getModules()) {
+            if (!module?.assetManifest) continue
+            const items = await loadAssetManifestItems(module.assetManifest)
+            assetNames.push(...items.map((item) => item[0]))
         }
 
         const processer = new HypaProcesser()

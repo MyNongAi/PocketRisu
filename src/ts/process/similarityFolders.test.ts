@@ -42,8 +42,9 @@ describe('similarity candidate folders', () => {
         })
         expect(db.moduleFolders?.[0]).toMatchObject({
             name: expect.stringContaining('[유사 후보]'),
-            moduleIds: ['m1', 'm2'],
         })
+        expect(db.modules.filter((module) => module.folderId).map((module) => module.id)).toEqual(['m1', 'm2'])
+        expect(db.modules[0].folderId).toBe(db.moduleFolders?.[0].id)
     })
 
     it('moves only a newly matched component into a top review folder', () => {
@@ -70,7 +71,10 @@ describe('similarity candidate folders', () => {
 
         db.modules.push({ id: 'copy', name: 'unique-module' })
         organizeImportedModuleSimilarity(db, 'copy', ids())
-        expect(db.moduleFolders?.[0].moduleIds).toEqual(['base', 'copy'])
+        expect(db.modules.map((module) => module.folderId)).toEqual([
+            db.moduleFolders?.[0].id,
+            db.moduleFolders?.[0].id,
+        ])
     })
 
     it('requires exact normalized equality for short names', () => {
@@ -131,14 +135,13 @@ describe('similarity candidate folders', () => {
     it('reuses an incremental module folder id without duplicating it', () => {
         const db = database()
         db.modules = [
-            { id: 'old', name: 'No Longer Similar' },
-            { id: 'base', name: 'Alice Module' },
+            { id: 'old', name: 'No Longer Similar', folderId: 'candidate-folder' },
+            { id: 'base', name: 'Alice Module', folderId: 'candidate-folder' },
             { id: 'new', name: 'alice-module' },
         ]
         db.moduleFolders = [{
             id: 'candidate-folder',
             name: '[유사 후보] old',
-            moduleIds: ['old', 'base'],
             duplicateCandidate: { kind: 'module', key: 'old' },
         }]
 
@@ -146,8 +149,10 @@ describe('similarity candidate folders', () => {
 
         expect(db.moduleFolders?.[0]).toMatchObject({
             id: 'candidate-folder',
-            moduleIds: ['base', 'new'],
         })
+        expect(db.modules.find((module) => module.id === 'old')?.folderId).toBeUndefined()
+        expect(db.modules.find((module) => module.id === 'base')?.folderId).toBe('candidate-folder')
+        expect(db.modules.find((module) => module.id === 'new')?.folderId).toBe('candidate-folder')
         expect(db.moduleFolders?.filter((folder) => folder.id === 'candidate-folder')).toHaveLength(1)
     })
 })

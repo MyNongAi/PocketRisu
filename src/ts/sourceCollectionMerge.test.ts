@@ -65,7 +65,7 @@ describe('applySourceCollectionEntities', () => {
         })
         expect(target.modules.map((module) => module.name)).toEqual(['old', 'mod'])
         expect(target.modules[1].id).not.toBe('source-id')
-        expect(target.moduleFolders?.[0].moduleIds).toEqual([target.modules[1].id])
+        expect(target.modules[1].folderId).toBe(target.moduleFolders?.[0].id)
     })
 
     it('keeps persona duplicates and records visible provenance', () => {
@@ -213,7 +213,10 @@ describe('applySourceCollectionEntities', () => {
         expect(target.modules).toHaveLength(2)
         expect(target.moduleFolders?.[0]).toMatchObject({
             name: expect.stringContaining('[유사 후보]'),
-            moduleIds: target.modules.map((module) => module.id),
         })
+        expect(target.modules.map((module) => module.folderId)).toEqual([
+            target.moduleFolders?.[0].id,
+            target.moduleFolders?.[0].id,
+        ])
     })
 })
