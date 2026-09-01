@@ -26,6 +26,7 @@ import { getModelInfo, LLMFlags } from "../model/modellist";
 import { captureChatModelRoute, resolvePresetMaxOutputTokens, presetSupportsVision, type RequestModelRouteSnapshot } from "./request/modelPresetBinding";
 import { hypaMemoryV3 } from "./memory/hypav3";
 import { getActiveHypaV3Preset } from "./memory/memoryPresets"
+import { resolveModelPresetContextBudget } from "./request/contextBudget"
 import { captureModuleRuntimeContext, getModuleAssets, getModuleLorebooks, getModules, getModuleToggles, getModuleTriggers, type ModuleRuntimeContext } from "./modules";
 import { hydrateAssetListsForCbs, serializeForCbsScan } from "../parser/assetListHydration";
 import { forageStorage, readImage, resolvePrioritizedAssetManifestNames } from "../globalApi.svelte";
@@ -436,6 +437,10 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     // when this chat is bound to a ModelPreset.
     let maxResponseTokens = DBState.db.maxResponse
     let presetVisionCapable = false
+    // Where maxContextTokens came from, for the token-limit errors below:
+    // users cannot otherwise tell a registry context-window cap from their
+    // own settings.
+    let maxContextSource = 'global max context setting'
     // When this chat is bound to a ModelPreset, use the preset's own input
     // budget (preset.maxContext, default 65000) instead of the global
     // db.maxContext — clamped to the model's context window when known.
@@ -443,10 +448,12 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     {
         const mainBinding = routeSnapshot
         if (mainBinding.kind === 'modelPreset') {
-            const ctxWindow = mainBinding.preset.profileSnapshot.limits?.contextWindowTokens
-            const set = mainBinding.preset.maxContext
-            const budget = set && set > 0 ? set : 65000
-            maxContextTokens = ctxWindow ? Math.min(budget, ctxWindow) : budget
+            const contextBudget = resolveModelPresetContextBudget(
+                mainBinding.preset,
+                mainBinding.preset.profileSnapshot.limits?.contextWindowTokens,
+            )
+            maxContextTokens = contextBudget.maxContextTokens
+            maxContextSource = contextBudget.source
             // Reserve output tokens from the preset's own max-output setting
             // rather than db.maxResponse — the legacy global value can be a
             // stray figure (e.g. 65535 carried over from an imported prompt
@@ -1138,8 +1145,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                             [p1],
                             { fuzzy: false },
                         )
-                        const key = p1.toLocaleLowerCase()
-                        const path = resolved.character[key] ?? resolved.modules[key]
+                        const path = resolved[p1.toLocaleLowerCase()]?.path
                         const source = path || (p1 === 'icon' ? currentChar.image ?? '' : '')
                         if (!source) return
                         const assetDataBuf = await readImage(source)
@@ -1204,7 +1210,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                 currentChat.hypaV3Data = sp.memory
             }
             console.log(sp)
-            throwError(sp.error)
+            throwError(sp.error + "\n\nMax context source: " + maxContextSource)
             if (realChatId) clearPendingSend(realChatId)
             return false
         }
@@ -1219,7 +1225,10 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         stageTimings.stage1Duration = Date.now() - stageTimings.stage1Start
         while(currentTokens > maxContextTokens){
             if(chats.length <= 1){
-                throwError(language.errors.toomuchtoken + "\n\nRequired Tokens: " + currentTokens)
+                // Spell out the budget: most reports of this error are a stray
+                // max-response (e.g. 65535 from an imported prompt preset) or
+                // a max-context far below the prompt, which the user can fix.
+                throwError(language.errors.toomuchtoken + "\n\nRequired Tokens: " + currentTokens + " / Max Context: " + maxContextTokens + " / Reserved Output: " + maxResponseTokens + "\nMax context source: " + maxContextSource)
 
                 if (realChatId) clearPendingSend(realChatId)
                 return false
@@ -1585,7 +1594,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         let pointer = 0
         while(inputTokens > maxContextTokens){
             if(pointer >= formated.length){
-                throwError(language.errors.toomuchtoken + "\n\nAt token rechecking. Required Tokens: " + inputTokens)
+                throwError(language.errors.toomuchtoken + "\n\nAt token rechecking. Required Tokens: " + inputTokens + " / Max Context: " + maxContextTokens + " / Reserved Output: " + maxResponseTokens + "\nMax context source: " + maxContextSource)
                 if (realChatId) clearPendingSend(realChatId)
                 return false
             }
