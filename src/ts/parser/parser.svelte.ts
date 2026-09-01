@@ -410,7 +410,7 @@ async function renderHighlightableMarkdown(data:string) {
 
 export const assetRegex = /{{(raw|path|img|image|video|audio|bgm|bg|emotion|asset|video-img|source)::(.+?)}}/gms
 
-function getAssetSrc(assetArr: string[][], assetPaths: AssetPaths) {
+function getAssetSrc(assetArr: string[][], assetPaths: AssetPaths, fuzzyIndex?: FuzzyAssetIndex) {
     for (const asset of assetArr) {
         const key = asset[0].toLocaleLowerCase()
         assetPaths[key] ??= {
@@ -419,6 +419,12 @@ function getAssetSrc(assetArr: string[][], assetPaths: AssetPaths) {
         }
         if(assetPaths[key].ext === asset[2]){
             assetPaths[key].srcPaths.push(asset[1])
+        }
+        if(fuzzyIndex){
+            const stem = trimmer(key)
+            const bucket = fuzzyIndex.get(stem) ?? []
+            bucket.push({ name: key, path: asset[1], ext: asset[2] })
+            fuzzyIndex.set(stem, bucket)
         }
     }
 }
@@ -432,14 +438,36 @@ function getEmoSrc(emoArr: string[][], emoPaths: AssetPaths) {
 }
 
 const fileSrcCache = new Map<string, string>()
+const fileSrcPending = new Map<string, Promise<string>>()
+const MAX_FILE_SRC_CACHE_ENTRIES = 256
 
 async function getFileSrcCached(path:string){
     let cached = fileSrcCache.get(path)
     if(cached){
+        fileSrcCache.delete(path)
+        fileSrcCache.set(path, cached)
         return cached
     }
-    const src = await getFileSrc(path)
+    let pending = fileSrcPending.get(path)
+    if(!pending){
+        pending = getFileSrc(path)
+        fileSrcPending.set(path, pending)
+        void pending.then(
+            () => {
+                if(fileSrcPending.get(path) === pending) fileSrcPending.delete(path)
+            },
+            () => {
+                if(fileSrcPending.get(path) === pending) fileSrcPending.delete(path)
+            },
+        )
+    }
+    const src = await pending
     fileSrcCache.set(path, src)
+    while(fileSrcCache.size > MAX_FILE_SRC_CACHE_ENTRIES){
+        const oldest = fileSrcCache.keys().next().value as string | undefined
+        if(oldest === undefined) break
+        fileSrcCache.delete(oldest)
+    }
     return src
 }
 
@@ -448,9 +476,19 @@ type AssetPaths = {[key:string]:{
     ext?:string
 }}
 
+type FuzzyAssetCandidate = { name: string, path: string, ext?: string }
+type FuzzyAssetIndex = Map<string, FuzzyAssetCandidate[]>
+
 let assetsCache: AssetPaths | null = null
 let emoAssetsCache: AssetPaths | null = null
-const simpleAssetCaches = new WeakMap<object, { assets: AssetPaths, emotions: AssetPaths }>()
+let fuzzyAssetCache: FuzzyAssetIndex | null = null
+let fuzzyAssetCount = 0
+const simpleAssetCaches = new WeakMap<object, {
+    assets: AssetPaths,
+    emotions: AssetPaths,
+    fuzzy: FuzzyAssetIndex,
+    fuzzyCount: number,
+}>()
 // Cache owner guard: parsing a character other than the one the cache was built
 // for (group members, previews, parses racing a selection switch) must rebuild
 // instead of reusing the previous character's assets.
@@ -459,13 +497,16 @@ let assetsCacheCharacterId = ''
 export function resetAssetsCache(charAssets: string[][], emoAssets: string[][], moduleAssets: string[][], characterId = '') {
     const assetPaths: AssetPaths = {}
     const charEmoPaths: AssetPaths = {}
+    const fuzzyIndex: FuzzyAssetIndex = new Map()
 
-    getAssetSrc(charAssets, assetPaths)
+    getAssetSrc(charAssets, assetPaths, fuzzyIndex)
     getAssetSrc(moduleAssets, assetPaths)
     getEmoSrc(emoAssets, charEmoPaths)
 
     assetsCache = assetPaths
     emoAssetsCache = charEmoPaths
+    fuzzyAssetCache = fuzzyIndex
+    fuzzyAssetCount = charAssets.length
     assetsCacheCharacterId = characterId
 }
 
@@ -502,19 +543,29 @@ async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|c
 
     let assetPaths = assetsCache ?? {}
     let emoPaths = emoAssetsCache ?? {}
+    let fuzzyIndex = fuzzyAssetCache
+    let fuzzyCount = fuzzyAssetCount
     if (char.type === 'simple') {
         let cache = simpleAssetCaches.get(char)
         if (!cache) {
             const assets: AssetPaths = {}
             const emotions: AssetPaths = {}
-            getAssetSrc(char.additionalAssets ?? [], assets)
+            const fuzzy: FuzzyAssetIndex = new Map()
+            getAssetSrc(char.additionalAssets ?? [], assets, fuzzy)
             getAssetSrc(char.moduleAssets ?? [], assets)
             getEmoSrc(char.emotionImages ?? [], emotions)
-            cache = { assets, emotions }
+            cache = {
+                assets,
+                emotions,
+                fuzzy,
+                fuzzyCount: char.additionalAssets?.length ?? 0,
+            }
             simpleAssetCaches.set(char, cache)
         }
         assetPaths = cache.assets
         emoPaths = cache.emotions
+        fuzzyIndex = cache.fuzzy
+        fuzzyCount = cache.fuzzyCount
     }
 
     const moduleManifests = getModules()
@@ -584,7 +635,7 @@ async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|c
             }
 
             if(assetPaths){
-                match = getClosestMatch(char, name, assetPaths)
+                match = getClosestMatch(char, name, assetPaths, fuzzyIndex, fuzzyCount)
             }
 
             if(!match){
@@ -650,23 +701,40 @@ async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|c
     return data
 }
 
-function getClosestMatch(char: simpleCharacterArgument|character, name:string, assetPaths:AssetPaths){   
+function getClosestMatch(
+    char: simpleCharacterArgument|character,
+    name:string,
+    assetPaths:AssetPaths,
+    fuzzyIndex: FuzzyAssetIndex | null,
+    fuzzyCount: number,
+){
     if(!char.additionalAssets) return null
 
-    let closest = ''
     let closestDist = 999999
     let targetPath = ''
     let targetExt = ''
 
     const trimmedName = trimmer(name)
-    for(const asset of char.additionalAssets) {
-        const key = asset[0].toLocaleLowerCase()
-        const dist = getDistance(trimmedName, trimmer(key))
+    // Large cards must not compare every macro against every asset. Same-stem
+    // candidates cover the common extension mismatch; small legacy lists keep
+    // the broad fuzzy behavior for compatibility.
+    const indexed = fuzzyIndex?.get(trimmedName)
+    const candidates: FuzzyAssetCandidate[] = indexed?.length
+        ? indexed
+        : fuzzyCount <= 2_000
+            ? char.additionalAssets.map((asset) => ({
+                name: asset[0].toLocaleLowerCase(),
+                path: asset[1],
+                ext: asset[2],
+            }))
+            : []
+
+    for(const candidate of candidates) {
+        const dist = getDistance(trimmedName, trimmer(candidate.name))
         if(dist < closestDist){
-            closest = key
             closestDist = dist
-            targetPath = asset[1]
-            targetExt = asset[2]
+            targetPath = candidate.path
+            targetExt = candidate.ext ?? ''
         }
     }
     
@@ -674,12 +742,12 @@ function getClosestMatch(char: simpleCharacterArgument|character, name:string, a
         return null
     }
 
-    assetPaths[closest] = {
+    assetPaths[name] = {
         srcPaths: [targetPath],
         ext: targetExt
     }
 
-    return assetPaths[closest]
+    return assetPaths[name]
 }
 
 //Levenshtein distance, new with 1d array

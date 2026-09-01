@@ -45,7 +45,6 @@
     scheduleCharacterChatPrefetch,
     warmRecentCharacterChats,
   } from "../../ts/characters";
-    import CharConfig from "./CharConfig.svelte";
     import { language } from "../../lang";
     import isEqual from "lodash/isEqual";
     import SidebarAvatar from "./SidebarAvatar.svelte";
@@ -56,12 +55,11 @@
     import { onMount } from "svelte";
     import { checkCharOrder, getFileSrc, saveAsset } from "src/ts/globalApi.svelte";
     import { alertInput, alertSelect } from "src/ts/alert";
-    import SideChatList from "./SideChatList.svelte";
     import MeasuredVirtualList from "../UI/Virtual/MeasuredVirtualList.svelte";
 
   import { sideBarSize } from "src/ts/gui/guisize";
-  import DevTool from "./DevTool.svelte";
-    import QuickSettingsGui from "../Others/QuickSettingsGUI.svelte";
+  import LazyComponent from "../Others/LazyComponent.svelte";
+    import { loadCharConfig, loadDevTool, loadQuickSettings, loadSideChatList, preloadCharacterSidebarPanel, preloadChatSidebarPanel } from "./sidebarPanelLoaders";
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
   const isTouchDevice = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
   const touchDragEnabled = $derived(isTouchDevice && !DBState.db.disableMobileDragDrop);
@@ -90,12 +88,14 @@
   }
 
   function openChatTab() {
+    void preloadChatSidebarPanel()
     QuickSettings.open = false;
     devTool = false;
     botMakerMode.set(false);
   }
 
   function openCharacterTab() {
+    void preloadCharacterSidebarPanel()
     QuickSettings.open = false;
     devTool = false;
     if (!hasEditableCharacter) {
@@ -1545,7 +1545,7 @@
       {/if}
     </div>
     {#if QuickSettings.open}
-      <QuickSettingsGui />
+      <LazyComponent loader={loadQuickSettings} />
     {:else if $selectedCharID < 0 || $settingsOpen}
       <span class="block text-base font-semibold text-textcolor mt-2">{language.recentChatsTitle}</span>
       <div class="flex items-center justify-between gap-2 mt-2">
@@ -1599,14 +1599,14 @@
         </div>
       {/if}
     {:else if DBState.db.characters[$selectedCharID]?.chaId === '§playground'}
-      <SideChatList bind:chara={ DBState.db.characters[$selectedCharID]} />
+      <LazyComponent loader={loadSideChatList} props={{ chara: DBState.db.characters[$selectedCharID] }} />
     {:else}
       {#if devTool}
-        <DevTool />
+        <LazyComponent loader={loadDevTool} />
       {:else if $botMakerMode}
-        <CharConfig />
+        <LazyComponent loader={loadCharConfig} />
       {:else}
-        <SideChatList bind:chara={ DBState.db.characters[$selectedCharID]} />
+        <LazyComponent loader={loadSideChatList} props={{ chara: DBState.db.characters[$selectedCharID] }} />
       {/if}
     {/if}
   {/if}
