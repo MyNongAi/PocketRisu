@@ -16,12 +16,22 @@ import { importCharacter } from "./characterCards";
 import { importCharacterPackage } from "./characterPackage";
 import { PngChunk } from "./pngChunk";
 import { promoteRecentlyViewedCharacter } from "./characterRecentOrder";
+import { BoundedObjectUrlCache, createDeduplicatedImageLoader } from "./storage/boundedObjectUrlCache";
 
 const CHAT_HYDRATION_INDICATOR_DELAY_MS = 180
 const CHAT_PREFETCH_DELAY_MS = 110
 let characterSelectionHydrationSerial = 0
 let characterPrefetchTimer: ReturnType<typeof setTimeout> | null = null
 let characterPrefetchIndex = -1
+
+// HaejeokRisu's bounded-avatar-cache principle, adapted to PocketRisu's
+// existing provider/thumbnail APIs. Keep only the visible/recent working set
+// and collapse concurrent requests for the same asset.
+const characterImageCache = new BoundedObjectUrlCache(
+    typeof window !== 'undefined' && window.innerWidth <= 800 ? 64 : 128,
+    typeof window !== 'undefined' && window.innerWidth <= 800 ? 8 : 16,
+)
+const loadCharacterImageSource = createDeduplicatedImageLoader(characterImageCache)
 
 function hideChatHydrationIndicator(requestId?: string) {
     chatHydrationOverlayStore.update((current) => {
@@ -99,7 +109,11 @@ export async function getCharImage(loc:string, type:'plain'|'css'|'contain'|'lgc
         }
         return null
     }
-    const filesrc = await getFileSrc(loc)
+    const filesrc = await loadCharacterImageSource(
+        `full:${loc}`,
+        () => getFileSrc(loc),
+        true,
+    )
     if(type === 'plain'){
         return filesrc
     }
@@ -121,10 +135,17 @@ export async function getCharThumbnail(loc: string, type: 'plain'|'css' = 'plain
     const db = getDatabase()
     if(db.hideAllImages) return type === 'plain' ? '/none.webp' : ''
     if(!loc) return type === 'plain' ? null : ''
-    const src = await getFileThumbnailSrc(loc)
+    const src = await loadCharacterImageSource(
+        `thumb:${loc}`,
+        () => getFileThumbnailSrc(loc),
+    )
     return type === 'plain'
         ? src
         : `background: url("${src}");background-size: cover;background-position: center;`
+}
+
+export function clearCharacterImageCache() {
+    characterImageCache.clear()
 }
 
 export async function selectCharImg(charIndex:number) {
