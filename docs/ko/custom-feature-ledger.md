@@ -26,7 +26,7 @@
 | 이동·크기 조절 페르소나 정보창 | 완료 | `79e347b4` | `PersonaSettings.svelte` | 데스크톱 UX 옵션 |
 | 상·하단 동작 버튼·사이드바 탭 | 완료 | `73da07e8`, `0b87d2f5`, `58595524` | Sidebar, Chat, Module UI | 순수 UI PR 후보 |
 | 내부 백업·스냅샷 보존 | 완료 | `104b6c43`, `e542b1ec` | node storage, 시스템 설정 | 보존 주기/개수 정책 분리 |
-| Haejeok식 패널 지연 로딩·이미지 LRU·에셋 이름 인덱스 | 완료, 배포 대기 | 현재 작업 | `Sidebar`, `characters`, `parser` | 작고 독립적인 성능 PR로 분리 |
+| Haejeok식 패널 지연 로딩·이미지 LRU·에셋 이름 인덱스 | 완료, C 설치본 배포 | `28ba044e` | `Sidebar`, `characters`, `parser` | 작고 독립적인 성능 PR로 분리 |
 
 ## 업데이트 충돌 판단 순서
 
