@@ -9,6 +9,8 @@
     import { getModuleAssets, getModules } from "src/ts/process/modules";
     import { getCurrentCharacter } from "src/ts/storage/database.svelte";
     import { getFileSrc, resolvePrioritizedAssetManifestNames } from "src/ts/globalApi.svelte";
+    import { get } from "svelte/store";
+    import { doingChat } from "src/ts/process/generationState";
 
     interface Props {
         character?: simpleCharacterArgument|string|null
@@ -154,7 +156,11 @@
         let finalResult = fallbackParsed
 
         translationFlight = (async () => {
-            if (DBState.db.showTranslationLoading && !hasRenderableResult(lastParsed)) {
+            // While a generation streams, every chunk re-parses; swapping the
+            // rendered text for the spinner each time is the flicker of #21,
+            // so the spinner then only fills an empty slot. A translation the
+            // user asked for, or one outside streaming, shows it as upstream.
+            if (DBState.db.showTranslationLoading && (!hasRenderableResult(lastParsed) || request.retranslate || !get(doingChat))) {
                 lastParsed = translationLoadingHTML
             }
             // Leave the $derived sync section before writing bound state (state_unsafe_mutation)
@@ -181,8 +187,9 @@
                 }
             }
             finally {
-                if(!hasRenderableResult(finalResult) && lastParsed === translationLoadingHTML){
-                    lastParsed = fallbackParsed
+                // A failed flight must never leave the spinner on screen.
+                if(lastParsed === translationLoadingHTML){
+                    lastParsed = hasRenderableResult(finalResult) ? finalResult : fallbackParsed
                 }
                 translating = false
                 translationActiveRequest = null
@@ -340,10 +347,7 @@
             const requestedNames = [...imgs]
                 .map((img) => img.getAttribute('src')?.toLocaleLowerCase() || '')
                 .filter((name) => name.length >= 3 && name.length <= 200 && !name.includes(':'))
-            let manifestResolved = { character: {}, modules: {} } as {
-                character: Record<string, string>
-                modules: Record<string, string>
-            }
+            let manifestResolved: Record<string, { path: string; fuzzy: boolean }> = {}
             if ((moduleManifests.length > 0 || currentCharacter.additionalAssetManifest) && requestedNames.length > 0) {
                 try {
                     manifestResolved = await resolvePrioritizedAssetManifestNames(
@@ -367,7 +371,10 @@
                     return
                 }
                 
-                const foundAsset = manifestResolved.character[name] ?? exactAssets.get(name) ?? manifestResolved.modules[name]
+                const manifestHit = manifestResolved[name]
+                // Exact manifest match, then the inline exact list; a fuzzy
+                // manifest match is only a last resort below.
+                const foundAsset = (manifestHit && !manifestHit.fuzzy ? manifestHit.path : undefined) ?? exactAssets.get(name)
                 if(foundAsset){
                     img.classList.add('root-loaded-image')
                     img.classList.add('root-loaded-image-' + styl)
@@ -396,7 +403,7 @@
                         currentFound = asset.path
                     }
                 }
-                if(!currentFound && manifestResolved.character[name]) currentFound = manifestResolved.character[name]
+                if(!currentFound && manifestHit?.fuzzy) currentFound = manifestHit.path
                 if(currentFound){
                     const got = await getFileSrc(currentFound)
                     const name2 = img.getAttribute('src')?.toLocaleLowerCase() || ''
