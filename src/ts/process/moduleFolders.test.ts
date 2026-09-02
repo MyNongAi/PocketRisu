@@ -6,6 +6,7 @@ import {
     moveModuleByDrop,
     moveModuleFolderByDrop,
     normalizeModuleFolders,
+    synchronizeModuleFolderMembership,
     type ModuleFolder,
 } from './moduleFolders'
 import { sortModulesByActivation } from './moduleSort'
@@ -293,5 +294,48 @@ describe('normalizeModuleFolders', () => {
         expect(buildModuleFolderCatalog(modules, { invalid: true })).toHaveLength(modules.length)
         expect(findModuleFolderId({ invalid: true }, 'alpha')).toBe('')
         expect(assignModuleToFolder({ invalid: true }, 'alpha', 'target')).toEqual([])
+    })
+})
+
+describe('synchronizeModuleFolderMembership', () => {
+    it('imports exact legacy member lists when module folderId values are empty', () => {
+        const items: Array<{ id: string, name: string, folderId?: string }> = [
+            { id: 'alpha', name: 'Alpha' },
+            { id: 'beta', name: 'Beta' },
+            { id: 'root', name: 'Root' },
+        ]
+        const folders = synchronizeModuleFolderMembership(items, [
+            { id: 'first', name: 'First', moduleIds: ['alpha'] },
+            { id: 'second', name: 'Second', moduleIds: ['beta'] },
+        ])
+
+        expect(items.map((item) => item.folderId)).toEqual(['first', 'second', undefined])
+        expect(folders.map((folder) => folder.moduleIds)).toEqual([['alpha'], ['beta']])
+    })
+
+    it('treats module folderId as canonical once current assignments exist', () => {
+        const items: Array<{ id: string, name: string, folderId?: string }> = [
+            { id: 'alpha', name: 'Alpha', folderId: 'second' },
+            { id: 'beta', name: 'Beta' },
+        ]
+        const folders = synchronizeModuleFolderMembership(items, [
+            { id: 'first', name: 'First', moduleIds: ['alpha', 'beta'] },
+            { id: 'second', name: 'Second', moduleIds: [] },
+        ])
+
+        expect(items.map((item) => item.folderId)).toEqual(['second', undefined])
+        expect(folders.map((folder) => folder.moduleIds)).toEqual([[], ['alpha']])
+    })
+
+    it('allows an intentional move of every module to uncategorized', () => {
+        const items: Array<{ id: string, name: string, folderId?: string }> = [{ id: 'alpha', name: 'Alpha' }]
+        const folders = synchronizeModuleFolderMembership(
+            items,
+            [{ id: 'first', name: 'First', moduleIds: ['alpha'] }],
+            { importLegacyWhenFolderIdsEmpty: false },
+        )
+
+        expect(items[0].folderId).toBeUndefined()
+        expect(folders[0].moduleIds).toEqual([])
     })
 })

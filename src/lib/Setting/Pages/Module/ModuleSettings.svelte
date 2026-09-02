@@ -8,7 +8,7 @@
     import ShDropdownMenuItem from "src/lib/UI/GUI/ShDropdownMenuItem.svelte";
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
     import ModuleMenu from "src/lib/Setting/Pages/Module/ModuleMenu.svelte";
-    import { exportModule, exportModuleLegacy, hydrateModuleAssets, importModule, refreshModules, type RisuModule } from "src/ts/process/modules";
+    import { addModuleToDatabase, exportModule, exportModuleLegacy, hydrateModuleAssets, importModule, refreshModules, type RisuModule } from "src/ts/process/modules";
     import { SquarePen, Globe, Share2Icon, PlusIcon, HardDriveUpload, Waypoints } from "@lucide/svelte";
     import { v4 } from "uuid";
     import { tooltip } from "src/ts/gui/tooltip";
@@ -17,6 +17,8 @@
     import { importMCPModule } from "src/ts/process/mcp/mcp";
     import { convertModuleToCharacter } from "src/ts/interchangeability";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
+    import { synchronizeModuleFolderMembership } from "src/ts/process/moduleFolders";
+    import { recordModuleActivation, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
     let tempModule:RisuModule = $state({
         name: '',
         description: '',
@@ -25,6 +27,18 @@
     let mode = $state(0)
     let editModuleIndex = $state(-1)
     let converting = $state(false)
+    let displayModules = $derived(sortModulesByActivation(DBState.db.modules, '', {
+        fallbackOrders: [DBState.db.enabledModules],
+        activationHistory: DBState.db.moduleActivationHistory,
+    }))
+    let displayFolders = $derived(sortModuleFoldersByActivation(
+        DBState.db.moduleFolders ?? [],
+        DBState.db.modules,
+        {
+            fallbackOrders: [DBState.db.enabledModules],
+            activationHistory: DBState.db.moduleActivationHistory,
+        },
+    ))
 
     function isGlobal(rmodule: RisuModule) {
         return DBState.db.enabledModules.includes(rmodule.id)
@@ -35,25 +49,58 @@
             && !!DBState.db.moduleIntergration?.split(',').map((s) => s.trim()).includes(rmodule.namespace)
     }
 
+    function hasMissingAssets(rmodule: RisuModule) {
+        return Number(rmodule.sourceInfo?.missingAssetCount) > 0
+    }
+
+    function rememberActivation(moduleId: string) {
+        DBState.db.moduleActivationHistory = recordModuleActivation(
+            seedModuleActivationHistory(DBState.db.moduleActivationHistory, DBState.db.enabledModules),
+            moduleId,
+        )
+    }
+
     function toggleGlobal(rmodule: RisuModule) {
         if (isGlobal(rmodule)) {
             DBState.db.enabledModules.splice(DBState.db.enabledModules.indexOf(rmodule.id), 1)
         } else {
             DBState.db.enabledModules.push(rmodule.id)
+            rememberActivation(rmodule.id)
         }
         DBState.db.enabledModules = DBState.db.enabledModules
     }
 
+    function toggleFolderGlobal(indexes: number[]) {
+        const ids = indexes.map((index) => displayModules[index]?.id).filter((id): id is string => !!id)
+        if (ids.length === 0) return
+        const enabled = new Set(DBState.db.enabledModules)
+        if (ids.every((id) => enabled.has(id))) {
+            DBState.db.enabledModules = DBState.db.enabledModules.filter((id) => !ids.includes(id))
+            return
+        }
+        for (const id of ids) {
+            if (!enabled.has(id)) DBState.db.enabledModules.push(id)
+            rememberActivation(id)
+        }
+        DBState.db.enabledModules = [...new Set(DBState.db.enabledModules)]
+    }
+
+    function originalModuleIndex(displayIndex: number) {
+        const id = displayModules[displayIndex]?.id
+        return id ? DBState.db.modules.findIndex((module) => module.id === id) : -1
+    }
+
     function openEditor(index: number) {
-        const rmodule = DBState.db.modules[index]
+        const originalIndex = originalModuleIndex(index)
+        const rmodule = DBState.db.modules[originalIndex]
         if (!rmodule || rmodule.mcp) return
         tempModule = rmodule
-        editModuleIndex = index
+        editModuleIndex = originalIndex
         mode = 2
     }
 
     async function exportModuleAt(index: number) {
-        const rmodule = DBState.db.modules[index]
+        const rmodule = displayModules[index]
         if (!rmodule || rmodule.mcp) return
         const sel = parseInt(await alertSelect([`CharX (${language.recommended})`, `RisuM (Legacy)`]))
         if (sel === 0) exportModule(rmodule)
@@ -61,7 +108,7 @@
     }
 
     async function removeModule(index: number) {
-        const rmodule = DBState.db.modules[index]
+        const rmodule = displayModules[index]
         if (!rmodule) return
         const d = await alertConfirm(`${language.removeConfirm}` + rmodule.name)
         if (!d) return
@@ -69,16 +116,44 @@
             DBState.db.enabledModules.splice(DBState.db.enabledModules.indexOf(rmodule.id), 1)
             DBState.db.enabledModules = DBState.db.enabledModules
         }
-        DBState.db.modules = DBState.db.modules.filter((_, i) => i !== index)
+        DBState.db.modules = DBState.db.modules.filter((module) => module.id !== rmodule.id)
+        DBState.db.moduleActivationHistory = DBState.db.moduleActivationHistory?.filter((id) => id !== rmodule.id) ?? []
+        DBState.db.moduleFolders = synchronizeModuleFolderMembership(
+            DBState.db.modules,
+            DBState.db.moduleFolders,
+            { importLegacyWhenFolderIdsEmpty: false },
+        )
         notifySuccess(language.moduleDeleted)
     }
 
-    /** Rebuilds `db.modules` from the folder list's reported order/membership. Ids are untouched. */
+    /**
+     * Persists only small catalog overlays. The upstream module array keeps its
+     * physical order; visual recency lives in moduleActivationHistory.
+     */
     function applyPlacements(placements: FolderedItemPlacement[]) {
-        const modules = DBState.db.modules
-        const next = placements.map(({ index, folderId }) => ({ ...modules[index], folderId }))
-        if (next.length !== modules.length) return
-        DBState.db.modules = next
+        if (placements.length !== displayModules.length) return
+        const folderById = new Map(placements.map(({ index, folderId }) => [displayModules[index]?.id, folderId]))
+        DBState.db.modules = DBState.db.modules.map((module) => ({
+            ...module,
+            folderId: folderById.get(module.id),
+        }))
+        DBState.db.moduleActivationHistory = placements
+            .map(({ index }) => displayModules[index]?.id)
+            .filter((id): id is string => !!id)
+            .reverse()
+        DBState.db.moduleFolders = synchronizeModuleFolderMembership(
+            DBState.db.modules,
+            DBState.db.moduleFolders,
+            { importLegacyWhenFolderIdsEmpty: false },
+        )
+    }
+
+    function applyFolders(next: typeof DBState.db.moduleFolders) {
+        DBState.db.moduleFolders = synchronizeModuleFolderMembership(
+            DBState.db.modules,
+            next,
+            { importLegacyWhenFolderIdsEmpty: false },
+        )
     }
 
     onDestroy(() => {
@@ -89,13 +164,13 @@
     <SettingPage title={language.modules}>
 
     <FolderedList
-        folders={DBState.db.moduleFolders ?? []}
-        itemFolderIds={DBState.db.modules.map(m => m.folderId)}
-        itemSearchTexts={DBState.db.modules.map(m => `${m.name}\n${m.description ?? ''}`)}
+        folders={displayFolders}
+        itemFolderIds={displayModules.map(m => m.folderId)}
+        itemSearchTexts={displayModules.map(m => `${m.name}\n${m.description ?? ''}`)}
         storageKey="risu-module-folders-collapsed"
         onSelect={openEditor}
         onItemsChange={applyPlacements}
-        onFoldersChange={(next) => { DBState.db.moduleFolders = next }}
+        onFoldersChange={applyFolders}
         onDelete={removeModule}
     >
         {#snippet actions()}
@@ -106,13 +181,22 @@
             <ShButton size="sm" variant="outline" onclick={() => importModule()}><HardDriveUpload />{language.importModule}</ShButton>
             <ShButton size="sm" variant="outline" onclick={() => importMCPModule()} title="MCP"><Waypoints /></ShButton>
         {/snippet}
+        {#snippet folderActions(_folder, indexes)}
+            {@const activeCount = indexes.filter((index) => DBState.db.enabledModules.includes(displayModules[index]?.id)).length}
+            <button
+                class="no-sort shrink-0 rounded-sm p-1 cursor-pointer {activeCount > 0 ? 'text-emerald-500 bg-emerald-500/15' : 'text-textcolor2 hover:text-primary'}"
+                title={`폴더 모듈 전체 활성화 (${activeCount}/${indexes.length})`}
+                aria-label={`폴더 모듈 전체 활성화 (${activeCount}/${indexes.length})`}
+                onclick={(event) => { event.stopPropagation(); toggleFolderGlobal(indexes) }}
+            ><Globe size={17}/></button>
+        {/snippet}
         {#snippet itemContent(index)}
-            {@const rmodule = DBState.db.modules[index]}
+            {@const rmodule = displayModules[index]}
             {#if rmodule.mcp}
                 <Waypoints size={18} class="shrink-0 text-textcolor2" />
             {/if}
             <div class="flex flex-col min-w-0 grow">
-                <span class="text-textcolor truncate">{rmodule.name}</span>
+                <span class="truncate {hasMissingAssets(rmodule) ? 'text-red-400' : 'text-textcolor'}">{rmodule.name}</span>
                 <span class="text-xs text-textcolor2 truncate">{rmodule.description || 'No description provided'}</span>
             </div>
             <button class="no-sort shrink-0 p-1 cursor-pointer {isGlobal(rmodule) ? 'text-blue-500' : isIntegrated(rmodule) ? 'text-amber-500 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
@@ -122,7 +206,7 @@
             </button>
         {/snippet}
         {#snippet itemMenu(index)}
-            {@const rmodule = DBState.db.modules[index]}
+            {@const rmodule = displayModules[index]}
             {#if !rmodule.mcp}
                 <ShDropdownMenuItem onSelect={() => openEditor(index)}><SquarePen /><span>{language.edit}</span></ShDropdownMenuItem>
                 <ShDropdownMenuItem onSelect={() => exportModuleAt(index)}><Share2Icon /><span>{language.download}</span></ShDropdownMenuItem>
@@ -138,7 +222,7 @@
     <SettingPage title={language.createModule}>
     <ModuleMenu bind:currentModule={tempModule}/>
     <Button className="mt-6" onclick={() => {
-        DBState.db.modules.push(tempModule)
+        addModuleToDatabase(tempModule)
         notifySuccess(language.moduleCreated)
         mode = 0
     }}>{language.createModule}</Button>

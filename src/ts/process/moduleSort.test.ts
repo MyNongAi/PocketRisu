@@ -3,6 +3,7 @@ import {
     recordModuleActivation,
     recordNewModules,
     seedModuleActivationHistory,
+    sortModuleFoldersByActivation,
     sortModulesByActivation,
 } from './moduleSort'
 
@@ -92,5 +93,29 @@ describe('sortModulesByActivation', () => {
             ['charlie'],
             ['alpha', 'bravo'],
         )).toEqual(['alpha', 'bravo', 'charlie'])
+    })
+
+    it('floats the folder containing the most recently activated module without mutating folders', () => {
+        const folders = [
+            { id: 'older', moduleIds: ['alpha'] },
+            { id: 'inactive', moduleIds: ['bravo'] },
+            { id: 'newer', moduleIds: ['charlie'] },
+        ]
+        const sorted = sortModuleFoldersByActivation(folders, modules, {
+            activationHistory: ['alpha', 'charlie'],
+        })
+
+        expect(sorted.map((folder) => folder.id)).toEqual(['newer', 'older', 'inactive'])
+        expect(folders.map((folder) => folder.id)).toEqual(['older', 'inactive', 'newer'])
+    })
+
+    it('also reads official module.folderId membership', () => {
+        const sorted = sortModuleFoldersByActivation(
+            [{ id: 'first' }, { id: 'second' }],
+            [{ id: 'alpha', name: 'Alpha', folderId: 'second' }],
+            { activationHistory: ['alpha'] },
+        )
+
+        expect(sorted.map((folder) => folder.id)).toEqual(['second', 'first'])
     })
 })
