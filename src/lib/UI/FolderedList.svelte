@@ -56,6 +56,8 @@
         itemMenu?: Snippet<[number]>;
         /** Toolbar content shown top-left, opposite the "new folder" button. */
         actions?: Snippet;
+        /** Optional controls rendered in a folder header before its count/menu. */
+        folderActions?: Snippet<[PromptPresetFolder, number[]]>;
     }
 
     let {
@@ -76,6 +78,7 @@
         isExpanded = () => false,
         itemMenu,
         actions,
+        folderActions,
     }: Props = $props();
 
     let rootEl: HTMLDivElement = $state();
@@ -224,6 +227,7 @@
                         {#if isCollapsed}<ChevronRightIcon size={16} class="shrink-0 text-textcolor2"/>{:else}<ChevronDownIcon size={16} class="shrink-0 text-textcolor2"/>{/if}
                         <FolderIcon size={16} class="shrink-0 text-textcolor2"/>
                         <span class="truncate grow">{folder.name}</span>
+                        {@render folderActions?.(folder, group.indexes)}
                         <span class="text-xs text-textcolor2">{group.indexes.length}</span>
                         {@render folderMenu(folder)}
                     </div>

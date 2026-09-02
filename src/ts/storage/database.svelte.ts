@@ -21,6 +21,7 @@ import { applyModelPresetDefaults } from '../preset/dbDefaults';
 import type { ApiKeyPoolEntry, ModelBindingFields, ModelBindingSet, ModelPreset, ModelPresetMigrationSummary, RegistryCache } from '../preset/types';
 import { emptyModelBinding } from '../preset/types';
 import { isChatStub } from './chatStub';
+import { synchronizeModuleFolderMembership } from '../process/moduleFolders';
 
 //APP_VERSION_POINT is to locate the app version in the database file for version bumping
 export let appVer = "2026.2.291" //<APP_VERSION_POINT>
@@ -535,6 +536,7 @@ export function setDatabase(data:Database){
     data.memoryLimitThickness ??= 1
     data.modules ??= []
     data.moduleFolders ??= []
+    data.moduleFolders = synchronizeModuleFolderMembership(data.modules, data.moduleFolders)
     data.enabledModules ??= []
     data.additionalParams ??= []
     data.heightMode ??= 'normal'
@@ -1046,6 +1048,8 @@ export interface RisuPersona {
 export interface PromptPresetFolder {
     id: string
     name: string
+    /** Legacy/compact module catalog membership; synchronized with module.folderId. */
+    moduleIds?: string[]
 }
 
 export interface Database{
