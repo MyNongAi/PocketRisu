@@ -127,6 +127,39 @@ describe('NodeStorage authFetch transient retry', () => {
     })
 })
 
+describe('NodeStorage direct external asset writes', () => {
+    beforeEach(() => {
+        vi.restoreAllMocks()
+    })
+
+    test('returns the external URI instead of writing a second internal copy', async () => {
+        const uri = `external://main-assets/${'a'.repeat(64)}`
+        const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, { uri }))
+        const { storage } = setUpStorage(fetchMock)
+
+        await expect(storage.setItem('assets/portrait.png', new Uint8Array([1, 2, 3])))
+            .resolves.toBe(uri)
+        expect(fetchMock).toHaveBeenCalledTimes(1)
+        expect(fetchMock.mock.calls[0][0]).toBe('/api/external-assets/write')
+    })
+
+    test('falls back to the internal write path when external storage is unavailable', async () => {
+        vi.spyOn(console, 'warn').mockImplementation(() => {})
+        const fetchMock = vi.fn()
+            .mockResolvedValueOnce(jsonResponse(409, { error: 'drive unavailable' }))
+            .mockResolvedValueOnce(jsonResponse(200, {}))
+        const { storage } = setUpStorage(fetchMock)
+
+        await expect(storage.setItem('assets/portrait.png', new Uint8Array([1, 2, 3])))
+            .resolves.toBeUndefined()
+        expect(fetchMock).toHaveBeenCalledTimes(2)
+        expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+            '/api/external-assets/write',
+            '/api/write',
+        ])
+    })
+})
+
 describe('NodeStorage manifest revision recovery', () => {
     beforeEach(() => {
         vi.restoreAllMocks()

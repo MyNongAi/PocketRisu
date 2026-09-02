@@ -1102,6 +1102,41 @@ function createExternalAssetService(options = {}) {
         return { uri: prepared.uri, hash: prepared.hash, size: prepared.size, entry };
     }
 
+    // New assets do not need the migration safety copy: their canonical
+    // reference is born as external:// and there is no older internal key to
+    // preserve. Upload, read-back verify and publish the manifest atomically
+    // from the caller's point of view, without duplicating every new file in
+    // the trash directory.
+    async function writeDirect(writeOptions = {}) {
+        const providerId = assertProviderId(writeOptions.providerId);
+        const provider = providerFor(providerId, 'write');
+        providerFor(providerId, 'read');
+        const data = toBuffer(writeOptions.data);
+        const hash = sha256(data);
+        const uri = makeExternalAssetUri(providerId, hash);
+        await callProvider(provider, () => provider.put(hash, data, { mimeType: writeOptions.mimeType }));
+        const downloaded = await callProvider(provider, () => provider.get(hash));
+        verifyContent(downloaded, hash, data.length);
+        const timestamp = now();
+        const [entry] = await upsertManifestEntries([{
+            uri,
+            updater: (old) => ({
+                ...(old || {}),
+                uri,
+                providerId,
+                hash,
+                size: data.length,
+                mimeType: writeOptions.mimeType || old?.mimeType || 'application/octet-stream',
+                assetName: writeOptions.assetName || old?.assetName || null,
+                status: 'verified',
+                createdAt: old?.createdAt || timestamp,
+                lastVerifiedAt: timestamp,
+            }),
+        }]);
+        cache.set(uri, downloaded);
+        return { uri, hash, size: data.length, entry };
+    }
+
     // Upload, re-download verify, and write the recoverable trash copy without
     // growing the manifest yet. Large resumable migrations persist this small
     // receipt in their SQLite journal and publish every mapping once, together
@@ -1483,6 +1518,7 @@ function createExternalAssetService(options = {}) {
         manifest,
         providers,
         stage,
+        writeDirect,
         stageDetached,
         publishStaged,
         stageMany,

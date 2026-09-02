@@ -12,8 +12,8 @@ export class AutoStorage{
     realStorage:NodeStorage
 
     async setItem(key:string, value:Uint8Array, etag?:string):Promise<string|null> {
-        await this.realStorage.setItem(key, value, etag)
-        return null
+        await this.Init()
+        return (await this.realStorage.setItem(key, value, etag)) ?? null
     }
     async getItem(key:string):Promise<Buffer> {
         return await this.realStorage.getItem(key)
