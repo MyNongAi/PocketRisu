@@ -50,6 +50,19 @@ export function promoteRecentlyViewedCharacter(
 }
 
 /**
+ * Commits recency when a character is left, not when it is entered. Reopening
+ * the current character is therefore a no-op; leaving for home uses no next id.
+ */
+export function promoteDepartedCharacter(
+    order: CharacterOrderEntry[],
+    departedCharacterId: string | undefined,
+    nextCharacterId?: string,
+): CharacterOrderEntry[] {
+    if (!departedCharacterId || departedCharacterId === nextCharacterId) return order
+    return promoteRecentlyViewedCharacter(order, departedCharacterId)
+}
+
+/**
  * Places a newly imported character at the start of the catalog. Unlike the
  * viewed-character helper, this intentionally inserts an ID that is not in
  * characterOrder yet. Existing entries still preserve folder semantics.

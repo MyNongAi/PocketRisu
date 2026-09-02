@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { folder } from './storage/database.svelte'
-import { promoteNewlyImportedCharacter, promoteRecentlyViewedCharacter } from './characterRecentOrder'
+import { promoteDepartedCharacter, promoteNewlyImportedCharacter, promoteRecentlyViewedCharacter } from './characterRecentOrder'
 
 function makeFolder(id: string, data: string[]): folder {
     return { id, name: id, color: '', data }
@@ -40,6 +40,25 @@ describe('promoteRecentlyViewedCharacter', () => {
     it('does not disturb the order when the character is missing', () => {
         const order = ['a', makeFolder('bots', ['b'])]
         expect(promoteRecentlyViewedCharacter(order, 'missing')).toBe(order)
+    })
+})
+
+describe('promoteDepartedCharacter', () => {
+    it('promotes only the character being left', () => {
+        expect(promoteDepartedCharacter(['a', 'b', 'c'], 'c', 'b')).toEqual(['c', 'a', 'b'])
+    })
+
+    it('does not move a character when it is selected again', () => {
+        const order = ['a', 'b']
+        expect(promoteDepartedCharacter(order, 'b', 'b')).toBe(order)
+    })
+
+    it('moves the departed character folder as one block', () => {
+        const order = ['a', { id: 'f', name: 'Folder', color: '', data: ['b', 'c'] }]
+        expect(promoteDepartedCharacter(order, 'c')).toEqual([
+            { id: 'f', name: 'Folder', color: '', data: ['c', 'b'] },
+            'a',
+        ])
     })
 })
 

@@ -29,6 +29,7 @@
     LayoutGridIcon,
     FolderIcon,
     FolderOpenIcon,
+    SearchIcon,
     HomeIcon,
     WrenchIcon,
     User2Icon,
@@ -40,8 +41,10 @@
   addCharacter,
     cancelCharacterChatPrefetch,
     changeChar,
+    deselectCharacter,
     getCharThumbnail,
     prefetchCharacterChat,
+    removeChar,
     scheduleCharacterChatPrefetch,
     warmRecentCharacterChats,
   } from "../../ts/characters";
@@ -111,12 +114,14 @@
     QuickSettings.index = 2;
   }
 
-  type sortTypeNormal = { type:'normal',img: string, index: number, name:string }
+  type sortTypeNormal = { type:'normal',img: string, index: number, name:string, folderIndex?:number }
   type sortType = sortTypeNormal | {type:'folder',folder:sortTypeNormal[],id:string, name:string, color:string, img?:string}
   type sidebarCatalogBlock =
     | { type: 'control', position: 'top' | 'bottom' }
     | { type: 'character', char: sortType, index: number }
   let charImages: sortType[] = $state([]);
+  let catalogSearch = $state('')
+  let catalogQuery = $derived(catalogSearch.trim().toLocaleLowerCase())
   const splitCatalogStorageKey = 'pocketrisu-sidebar-catalog-split-v1'
   let splitCatalogMode = $state(
     typeof localStorage !== 'undefined' && localStorage.getItem(splitCatalogStorageKey) === 'split'
@@ -128,17 +133,31 @@
     sourceOrder: number
   }
   type splitCatalogBlock = { type: 'control', position: 'top' | 'bottom' } | splitCatalogCharacter
+  let filteredCatalogItems = $derived.by(() => charImages
+    .map((char, sourceOrder) => {
+      if (!catalogQuery) return { char, sourceOrder }
+      if (char.type === 'normal') {
+        return char.name.toLocaleLowerCase().includes(catalogQuery) ? { char, sourceOrder } : null
+      }
+      const folderMatches = char.name.toLocaleLowerCase().includes(catalogQuery)
+      const matchingMembers = folderMatches
+        ? char.folder
+        : char.folder.filter((member) => member.name.toLocaleLowerCase().includes(catalogQuery))
+      return folderMatches || matchingMembers.length > 0
+        ? { char: { ...char, folder: matchingMembers }, sourceOrder }
+        : null
+    })
+    .filter((item): item is { char: sortType, sourceOrder: number } => !!item))
   let sidebarCatalogBlocks = $derived<sidebarCatalogBlock[]>([
     { type: 'control', position: 'top' },
-    ...charImages.map((char, index) => ({ type: 'character' as const, char, index })),
+    ...filteredCatalogItems.map(({ char, sourceOrder }) => ({ type: 'character' as const, char, index: sourceOrder })),
     { type: 'control', position: 'bottom' },
   ])
-  let splitFolderItems = $derived(charImages
-    .map((char, sourceOrder) => ({ char, sourceOrder }))
+  let splitFolderItems = $derived(filteredCatalogItems
     .filter((item): item is { char: Extract<sortType, { type: 'folder' }>, sourceOrder: number } => item.char.type === 'folder'))
   let splitCharacterBlocks = $derived.by<splitCatalogBlock[]>(() => {
     const blocks: splitCatalogBlock[] = [{ type: 'control', position: 'top' }]
-    charImages.forEach((char, sourceOrder) => {
+    filteredCatalogItems.forEach(({ char, sourceOrder }) => {
       if(char.type === 'normal') blocks.push({
         type: 'character',
         char,
@@ -206,7 +225,7 @@
       else{
         const folder = id
         let folderCharImages: sortTypeNormal[] = []
-        for(const id of folder.data){
+        for(const [folderIndex, id] of folder.data.entries()){
           const index = idObject[id] ?? -1
           if(index !== -1){
             const cha = DBState.db.characters[index]
@@ -214,7 +233,8 @@
               img:cha.image ?? "",
               index:index,
               type: "normal",
-              name: cha.name
+              name: cha.name,
+              folderIndex,
             });
           }
         }
@@ -375,6 +395,22 @@
     entry.imgFile = folderImageData
     entry.img = await getFileSrc(folderImageData)
     DBState.db.characterOrder[ind] = entry
+  }
+
+  async function editSidebarCharacter(characterIndex:number, e:MouseEvent){
+    e.preventDefault()
+    e.stopPropagation()
+    const character = DBState.db.characters[characterIndex]
+    if(!character) return
+    const selected = parseInt(await alertSelect([language.edit, language.remove, language.cancel]))
+    if(selected === 0){
+      changeChar(characterIndex, { reseter })
+      botMakerMode.set(true)
+      return
+    }
+    if(selected === 1){
+      await removeChar(character.chaId, character.name)
+    }
   }
 
   function scrollToActiveCharacter() {
@@ -789,16 +825,17 @@
               }}
             ></div>
             {#each item.char.folder as folderChar, folderIndex}
+              {@const sourceFolderIndex = folderChar.folderIndex ?? folderIndex}
               <div
                 class="sidebar-folder-character group relative flex items-center px-2"
                 role="listitem"
-                data-drag-index={folderIndex}
+                data-drag-index={sourceFolderIndex}
                 data-drag-folder={item.char.id}
                 draggable={!isTouchDevice ? "true" : undefined}
-                ondragstart={!isTouchDevice ? (e) => avatarDragStart({ index: folderIndex, folder: item.char.id }, e) : undefined}
+                ondragstart={!isTouchDevice ? (e) => avatarDragStart({ index: sourceFolderIndex, folder: item.char.id }, e) : undefined}
                 ondragend={!isTouchDevice ? clearCurrentDrag : undefined}
                 ondragover={!isTouchDevice ? avatarDragOver : undefined}
-                ontouchstart={touchDragEnabled ? (e) => onTouchDragStart({ index: folderIndex, folder: item.char.id }, e) : undefined}
+                ontouchstart={touchDragEnabled ? (e) => onTouchDragStart({ index: sourceFolderIndex, folder: item.char.id }, e) : undefined}
               >
                 <SidebarIndicator isActive={$selectedCharID === folderChar.index && sideBarMode !== 1}/>
                 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -817,13 +854,14 @@
                     rounded={IconRounded}
                     name={folderChar.name}
                     chaId={DBState.db.characters[folderChar.index]?.chaId}
+                    oncontextmenu={(e) => { void editSidebarCharacter(folderChar.index, e) }}
                   />
                 </div>
               </div>
               <div
                 class="h-4 min-h-4 w-full"
                 role="listitem"
-                data-spacer-index={folderIndex + 1}
+                data-spacer-index={sourceFolderIndex + 1}
                 data-spacer-folder={item.char.id}
                 ondragover={(e) => {
                   if(!getCurrentSidebarDrag(e)) return
@@ -835,7 +873,7 @@
                   const drag = getCurrentSidebarDrag(e)
                   if(!drag) return
                   e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('bg-green-500')
-                  try { inserter(drag, { index: folderIndex + 1, folder: item.char.id }) } finally { clearCurrentDrag() }
+                  try { inserter(drag, { index: sourceFolderIndex + 1, folder: item.char.id }) } finally { clearCurrentDrag() }
                 }}
               ></div>
             {/each}
@@ -911,6 +949,7 @@
             rounded={IconRounded}
             name={block.char.name}
             chaId={DBState.db.characters[block.char.index]?.chaId}
+            oncontextmenu={(e) => { void editSidebarCharacter(block.char.index, e) }}
           />
         </div>
       </div>
@@ -954,7 +993,7 @@
   )}
   onclick={() => {
     reseter();
-    selectedCharID.set(-1)
+    deselectCharacter()
     PlaygroundStore.set(0)
     OpenRealmStore.set(false)
   }}
@@ -1059,7 +1098,7 @@
       <BarIcon
         onClick={() => {
           reseter();
-          selectedCharID.set(-1)
+          deselectCharacter()
           PlaygroundStore.set(0)
           OpenRealmStore.set(false)
         }}><HomeIcon /></BarIcon>
@@ -1099,6 +1138,16 @@
     {/if}
   </div>
   {/if}
+  <div class="mx-1 mb-1 flex w-[calc(100%_-_0.5rem)] shrink-0 items-center gap-1 rounded-md border border-selected bg-darkbg px-1.5"
+    class:max-xs:hidden={$leftBarCollapsed}>
+    <SearchIcon size={13} class="shrink-0 text-textcolor2"/>
+    <input
+      bind:value={catalogSearch}
+      aria-label="캐릭터 검색"
+      placeholder={splitCatalogMode ? language.search : ''}
+      class="min-w-0 grow bg-transparent py-1 text-xs text-textcolor outline-none"
+    />
+  </div>
   <div class="flex grow min-h-0 w-full" class:max-xs:hidden={$leftBarCollapsed} use:touchDragContainer>
   {#if splitCatalogMode}
     {@render splitFolderColumn()}
@@ -1209,6 +1258,7 @@
               rounded={IconRounded} 
               name={char.name}
               chaId={DBState.db.characters[char.index]?.chaId}
+              oncontextmenu={(e) => { void editSidebarCharacter(char.index, e) }}
             />
           {:else if char.type === "folder"}
             {#key char.color}
@@ -1279,17 +1329,18 @@
             }
           }} ondragenter={preventAll}></div>
           {#each char.folder as char2, ind}
+              {@const sourceFolderIndex = char2.folderIndex ?? ind}
               <div class="sidebar-folder-character group relative flex items-center px-2 z-10"
               role="listitem"
-              data-drag-index={ind}
+              data-drag-index={sourceFolderIndex}
               data-drag-folder={char.type === 'folder' ? char.id : undefined}
               draggable={!isTouchDevice ? "true" : undefined}
-              ondragstart={!isTouchDevice ? (e) => {if(char.type === 'folder'){avatarDragStart({index: ind, folder:char.id}, e)}} : undefined}
+              ondragstart={!isTouchDevice ? (e) => {if(char.type === 'folder'){avatarDragStart({index: sourceFolderIndex, folder:char.id}, e)}} : undefined}
               ondragend={!isTouchDevice ? clearCurrentDrag : undefined}
               ondragover={!isTouchDevice ? avatarDragOver : undefined}
-              ondrop={!isTouchDevice ? (e) => {if(char.type === 'folder'){avatarDrop({index: ind, folder:char.id}, e)}} : undefined}
+              ondrop={!isTouchDevice ? (e) => {if(char.type === 'folder'){avatarDrop({index: sourceFolderIndex, folder:char.id}, e)}} : undefined}
               ondragenter={!isTouchDevice ? preventAll : undefined}
-              ontouchstart={touchDragEnabled && char.type === 'folder' ? (e) => {onTouchDragStart({index: ind, folder:char.id}, e)} : undefined}
+              ontouchstart={touchDragEnabled && char.type === 'folder' ? (e) => {onTouchDragStart({index: sourceFolderIndex, folder:char.id}, e)} : undefined}
             >
               <SidebarIndicator
                 isActive={$selectedCharID === char2.index && sideBarMode !== 1}
@@ -1322,10 +1373,11 @@
                   rounded={IconRounded} 
                   name={char2.name}
                   chaId={DBState.db.characters[char2.index]?.chaId}
+                  oncontextmenu={(e) => { void editSidebarCharacter(char2.index, e) }}
                 />
               </div>
             </div>
-            <div class="h-4 min-h-4 w-14 relative z-20" role="listitem" data-spacer-index={ind+1} data-spacer-folder={char.type === 'folder' ? char.id : undefined} ondragover={(e) => {
+            <div class="h-4 min-h-4 w-14 relative z-20" role="listitem" data-spacer-index={sourceFolderIndex+1} data-spacer-folder={char.type === 'folder' ? char.id : undefined} ondragover={(e) => {
               if(!getCurrentSidebarDrag(e)){ return }
               e.preventDefault()
               e.stopPropagation()
@@ -1341,7 +1393,7 @@
               e.currentTarget.classList.remove('bg-green-500')
               try {
                 if(char.type === 'folder'){
-                  inserter(drag,{index:ind+1,folder:char.id})
+                  inserter(drag,{index:sourceFolderIndex+1,folder:char.id})
                 }
               } finally {
                 clearCurrentDrag()
@@ -1396,7 +1448,7 @@
       <BarIcon
         onClick={() => {
           reseter();
-          selectedCharID.set(-1)
+          deselectCharacter()
           PlaygroundStore.set(0)
           OpenRealmStore.set(false)
         }}><HomeIcon /></BarIcon>
