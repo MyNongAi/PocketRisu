@@ -635,13 +635,35 @@ export class NodeStorage{
         )
     }
 
-    async setItem(key:string, value:Uint8Array, etag?:string) {
+    async setItem(key:string, value:Uint8Array, etag?:string): Promise<string|undefined> {
         const headers: Record<string, string> = {
             'content-type': 'application/octet-stream',
             'file-path': Buffer.from(key, 'utf-8').toString('hex')
         }
         if (etag) {
             headers['x-if-match'] = etag
+        }
+        if (key.startsWith('assets/')) {
+            try {
+                const external = await this.authFetch('/api/external-assets/write', {
+                    method: 'POST',
+                    body: value as any,
+                    headers,
+                })
+                if (external.ok) {
+                    const data = await external.json()
+                    if (typeof data?.uri === 'string' && data.uri.startsWith('external://')) {
+                        return data.uri
+                    }
+                } else {
+                    console.warn(
+                        `[ExternalAssets] Direct write failed (${external.status}); falling back to internal storage:`,
+                        await this.readStorageServerMessage(external),
+                    )
+                }
+            } catch (error) {
+                console.warn('[ExternalAssets] Direct write unavailable; falling back to internal storage:', error)
+            }
         }
         const da = await this.authFetch('/api/write', {
             method: "POST",
@@ -663,6 +685,7 @@ export class NodeStorage{
         if (key === 'database/database.bin' && nextEtag) {
             this._lastDbEtag = nextEtag
         }
+        return undefined
     }
     async getItem(key:string):Promise<Buffer> {
         const headers: Record<string, string> = {

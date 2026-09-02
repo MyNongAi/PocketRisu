@@ -492,6 +492,34 @@ describe('safe migration staging and fallback lifecycle', () => {
         expect(Object.keys(persisted.assets)).toHaveLength(2)
     })
 
+    it('writes a newly imported asset directly without creating a migration trash duplicate', async () => {
+        const providerRoot = tempDir('external-provider')
+        const trashDir = tempDir('external-trash')
+        const provider = createFilesystemProvider({ id: 'main-assets', rootDir: providerRoot })
+        const { store } = memoryManifest()
+        const service = createExternalAssetService({
+            providers: [provider], manifestStore: store, trashDir, retry: { attempts: 1 },
+        })
+        const data = Buffer.from('newly imported character portrait')
+
+        const result = await service.writeDirect({
+            providerId: 'main-assets',
+            data,
+            mimeType: 'image/png',
+            assetName: 'portrait.png',
+        })
+
+        expect(result.uri).toBe(makeExternalAssetUri('main-assets', sha256(data)))
+        expect(result.entry).toMatchObject({
+            status: 'verified',
+            size: data.length,
+            mimeType: 'image/png',
+            assetName: 'portrait.png',
+        })
+        expect(await provider.get(result.hash)).toEqual(data)
+        expect(await allFiles(trashDir)).toHaveLength(0)
+    })
+
     it('publishes no batch mappings when a later stage fails verification', async () => {
         const trashDir = tempDir('external-trash')
         const { store } = memoryManifest()

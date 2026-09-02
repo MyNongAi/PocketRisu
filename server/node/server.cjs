@@ -4746,6 +4746,38 @@ app.post('/api/external-assets/doctor/jobs/:jobId/repair', async (req, res) => {
     }
 });
 
+// New Node-environment assets are born directly in the active external
+// provider. If the provider is disabled or this request fails, nodeStorage
+// deliberately falls back to the ordinary /api/write path so imports remain
+// usable during an H: drive outage.
+app.post('/api/external-assets/write', rejectDuringExclusiveStorage, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    const filePath = normalizeFilePathHeader(req.headers['file-path']);
+    if (!filePath || !isHex(filePath) || !req.body) {
+        return res.status(400).json({ error: 'Asset path and body are required' });
+    }
+    const key = Buffer.from(filePath, 'hex').toString('utf-8');
+    if (!key.startsWith('assets/') || key.includes('..')) {
+        return res.status(400).json({ error: 'Only canonical assets/* paths may be externalized' });
+    }
+    try {
+        const runtime = await getExternalAssetRuntime();
+        if (!runtime.config.enabled) {
+            return res.status(409).json({ error: 'External asset storage is disabled' });
+        }
+        const { binary, contentType } = resolveAssetPayload(key, Buffer.from(req.body));
+        const result = await runtime.service.writeDirect({
+            providerId: runtime.config.activeProvider,
+            data: binary,
+            mimeType: contentType,
+            assetName: path.basename(key),
+        });
+        res.json({ success: true, uri: result.uri, hash: result.hash, size: result.size });
+    } catch (error) {
+        next(error);
+    }
+});
+
 app.put('/api/external-assets/config', async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
     if (!checkActiveSession(req, res)) return;
