@@ -38,28 +38,24 @@
             </ul>
             
             <details class="mb-4 text-gray-200">
-                
-                <details class="mb-4 text-gray-200">
-                    <summary class="cursor-pointer text-gray-200 mb-2">
-                        Dev Info
-                    </summary>
+                <summary class="cursor-pointer text-gray-200 mb-2">
+                    Dev Info
+                </summary>
 
-                    {#each pluginAlertModalStore.errors as error}
-                        <p class="text-gray-200">{error.message}</p>
-                    {/each}
-                    
-                </details>
-
-                <button 
-                    class="text-gray-200"
-                    onclick={() => {
-                        pluginAlertModalStore.open = false
-                        pluginAlertModalStore.errors = []
-                    }}
-                >
-                    {language.continueAnyway}
-                </button>
+                {#each pluginAlertModalStore.errors as error}
+                    <p class="text-gray-200">{error.message}</p>
+                {/each}
             </details>
+
+            <button
+                class="mb-3 w-full border border-orange-300/60 hover:bg-orange-700 text-gray-100 font-semibold py-2 px-4 rounded-sm transition-colors"
+                onclick={() => {
+                    pluginAlertModalStore.open = false
+                    pluginAlertModalStore.errors = []
+                }}
+            >
+                {language.continueAnyway}
+            </button>
             
             <button 
                 class="w-full bg-gray-700 hover:bg-gray-600 text-gray-100 font-semibold py-2 px-4 rounded-sm transition-colors"
