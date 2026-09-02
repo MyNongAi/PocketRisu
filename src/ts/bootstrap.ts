@@ -23,6 +23,7 @@ import { moduleUpdate } from "./process/modules";
 import {
     forageStorage,
     saveDb,
+    requestImmediateSave,
     setPatchSyncBaseline,
     getDbBackups,
     checkCharOrder
@@ -34,7 +35,11 @@ import { isChatStub, purgeUnsupportedGroupChats } from "./storage/database.svelt
 import { organizeAllSimilarityFolders } from "./process/similarityFolders";
 import { isEmbeddedRisuPane } from "./chatSplitPane";
 
-const SIMILARITY_FOLDER_MIGRATION_VERSION = 1
+// v2 reruns the one-shot grouping after the web/local/mobile collection merge.
+// v1 had already completed against the web collection alone, so later imports
+// remained isolated in source folders even when their names matched.
+const SIMILARITY_FOLDER_MIGRATION_VERSION = 2
+let similarityFolderMigrationAppliedAtBoot = false
 
 /**
  * Loads the application data.
@@ -204,6 +209,12 @@ export async function loadData() {
             assignIds()
             registerModelDynamic()
             saveDb()
+            if(similarityFolderMigrationAppliedAtBoot){
+                similarityFolderMigrationAppliedAtBoot = false
+                setTimeout(() => {
+                    void requestImmediateSave({ forceFullWrite: true })
+                }, 0)
+            }
             moduleUpdate()
             // cleanChunks는 화면 진입 후 유휴 시간에 실행 (부트 블로킹 제거)
             setTimeout(() => {
@@ -450,6 +461,7 @@ async function checkNewFormat(): Promise<void> {
     if((db.similarityFolderMigrationVersion ?? 0) < SIMILARITY_FOLDER_MIGRATION_VERSION){
         organizeAllSimilarityFolders(db, uuidv4)
         db.similarityFolderMigrationVersion = SIMILARITY_FOLDER_MIGRATION_VERSION
+        similarityFolderMigrationAppliedAtBoot = true
     }
 
     db.personas = (db.personas ?? []).map((v) => {

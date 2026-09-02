@@ -15,7 +15,7 @@ import { translateHTML } from "./translator/translator";
 import { importCharacter } from "./characterCards";
 import { importCharacterPackage } from "./characterPackage";
 import { PngChunk } from "./pngChunk";
-import { promoteRecentlyViewedCharacter } from "./characterRecentOrder";
+import { promoteDepartedCharacter } from "./characterRecentOrder";
 import { BoundedObjectUrlCache, createDeduplicatedImageLoader } from "./storage/boundedObjectUrlCache";
 
 const CHAT_HYDRATION_INDICATOR_DELAY_MS = 180
@@ -788,7 +788,20 @@ export function createBlankChar():character{
 }
 
 
+function commitDepartedCharacter(nextCharacterId?: string) {
+    const db = getDatabase()
+    const currentIndex = get(selectedCharID)
+    const departedCharacterId = db.characters[currentIndex]?.chaId
+    const promotedOrder = promoteDepartedCharacter(
+        db.characterOrder,
+        departedCharacterId,
+        nextCharacterId,
+    )
+    if (promotedOrder !== db.characterOrder) db.characterOrder = promotedOrder
+}
+
 export function deselectCharacter() {
+    commitDepartedCharacter()
     try {
         localStorage.removeItem('risu-last-active-character')
     } catch {
@@ -878,19 +891,14 @@ export function changeChar(index: number, arg:{
     const hydrationSerial = ++characterSelectionHydrationSerial
     const hydrationRequestId = `character:${hydrationSerial}`
     hideChatHydrationIndicator()
+    const nextCharacterId = getDatabase().characters[index]?.chaId
+    commitDepartedCharacter(nextCharacterId)
     reseter();
     chatDeselected.set(false)
     characterFormatUpdate(index, {
       updateInteraction: true,
     });
     const db = getDatabase()
-    const characterId = db.characters[index]?.chaId
-    if(characterId){
-        const promotedOrder = promoteRecentlyViewedCharacter(db.characterOrder, characterId)
-        if(promotedOrder !== db.characterOrder){
-            db.characterOrder = promotedOrder
-        }
-    }
     selectedCharID.set(index);
 
     // Remember only canonical, successfully selected characters.
