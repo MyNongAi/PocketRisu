@@ -15,6 +15,7 @@ export interface ModuleFolder {
 export interface FolderableModule {
     id: string
     name: string
+    folderId?: string
 }
 
 export type ModuleCatalogEntry<T extends FolderableModule> =
@@ -92,6 +93,50 @@ export function normalizeModuleFolders(value: unknown): ModuleFolder[] {
     }
 
     return folders
+}
+
+/**
+ * Keep the two historical module-folder representations in agreement.
+ *
+ * New settings screens use module.folderId, while the compact catalog and old
+ * backups use folder.moduleIds. On load, a legacy member list is imported only
+ * when no valid folderId exists. Afterwards folderId is canonical and both
+ * representations are rebuilt from it.
+ */
+export function synchronizeModuleFolderMembership<T extends FolderableModule>(
+    modules: T[],
+    folders: unknown,
+    options: { importLegacyWhenFolderIdsEmpty?: boolean } = {},
+): ModuleFolder[] {
+    const normalizedFolders = normalizeModuleFolders(folders)
+    const validFolderIds = new Set(normalizedFolders.map((folder) => folder.id))
+    const hasValidFolderIds = modules.some((module) => !!module.folderId && validFolderIds.has(module.folderId))
+
+    if((options.importLegacyWhenFolderIdsEmpty ?? true) && !hasValidFolderIds){
+        const folderByModule = new Map<string, string>()
+        for(const folder of normalizedFolders){
+            for(const moduleId of folder.moduleIds){
+                if(!folderByModule.has(moduleId)) folderByModule.set(moduleId, folder.id)
+            }
+        }
+        for(const module of modules){
+            const folderId = folderByModule.get(module.id)
+            if(folderId) module.folderId = folderId
+        }
+    }
+
+    for(const module of modules){
+        if(module.folderId && !validFolderIds.has(module.folderId)) delete module.folderId
+    }
+
+    const members = new Map(normalizedFolders.map((folder) => [folder.id, [] as string[]]))
+    for(const module of modules){
+        if(module.folderId) members.get(module.folderId)?.push(module.id)
+    }
+    return normalizedFolders.map((folder) => ({
+        ...folder,
+        moduleIds: members.get(folder.id) ?? [],
+    }))
 }
 
 /**

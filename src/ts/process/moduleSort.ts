@@ -1,6 +1,12 @@
 export interface SortableModule {
     id: string
     name: string
+    folderId?: string
+}
+
+export interface SortableModuleFolder {
+    id: string
+    moduleIds?: ReadonlyArray<string>
 }
 
 export interface ModuleSortOptions {
@@ -91,4 +97,42 @@ export function recordNewModules(
         next = recordModuleActivation(next, moduleId)
     }
     return next
+}
+
+/**
+ * Sorts only the catalog's folder overlay. The module array itself is never
+ * reordered: a folder whose newest member was activated most recently floats
+ * to the top, while inactive folders retain their manual relative order.
+ */
+export function sortModuleFoldersByActivation<T extends SortableModuleFolder>(
+    folders: ReadonlyArray<T>,
+    modules: ReadonlyArray<SortableModule>,
+    options: ModuleSortOptions = {},
+): T[] {
+    const recencyOrder = mergeActivationOrders([
+        ...options.fallbackOrders ?? [],
+        options.activationHistory,
+    ])
+    const recencyRank = new Map(recencyOrder.map((id, index) => [id, index]))
+    const membersByFolder = new Map<string, Set<string>>()
+
+    for(const folder of folders){
+        membersByFolder.set(folder.id, new Set(folder.moduleIds ?? []))
+    }
+    for(const module of modules){
+        if(module.folderId && membersByFolder.has(module.folderId)){
+            membersByFolder.get(module.folderId)!.add(module.id)
+        }
+    }
+
+    return folders
+        .map((folder, index) => {
+            let rank = -1
+            for(const moduleId of membersByFolder.get(folder.id) ?? []){
+                rank = Math.max(rank, recencyRank.get(moduleId) ?? -1)
+            }
+            return { folder, index, rank }
+        })
+        .sort((a, b) => b.rank - a.rank || a.index - b.index)
+        .map(({ folder }) => folder)
 }
