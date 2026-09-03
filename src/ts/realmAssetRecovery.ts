@@ -1,8 +1,14 @@
 import type { character } from './storage/database.svelte'
 import { fetchRealmCharacter, getCharacterRealmId, getRisuHub, type hubType } from './characterCards'
+import { moveCharacterToRecoveryFolder, releaseCharacterFromMissingFolders } from './characterRecoveryFolders'
 import { forageStorage, requestImmediateSave } from './globalApi.svelte'
-import { normalizeRealmName, scoreRealmCandidate } from './realmAssetRecoveryMatching'
+import {
+    normalizeRealmName,
+    scoreRealmCandidate,
+    selectStrictRealmRecoveryCandidate,
+} from './realmAssetRecoveryMatching'
 import { getDatabase } from './storage/database.svelte'
+import { v4 as uuidv4 } from 'uuid'
 
 export { scoreRealmCandidate } from './realmAssetRecoveryMatching'
 
@@ -21,8 +27,47 @@ export type RealmAssetRecoveryResult = {
     remainingKnownMissing: number
 }
 
+export const MOBILE_WEB_MISSING_ASSET_FOLDER = '[에셋 누락] 모바일웹리스'
+export const PROTON_RECOVERY_FOLDER = '프로톤'
+
+export type RealmFolderRecoveryProgress = {
+    current: number
+    total: number
+    characterName: string
+    phase: 'checking' | 'searching' | 'downloading' | 'saving'
+    recoveredCharacters: number
+    recoveredAssets: number
+    movedToProton: number
+    failed: number
+}
+
+export type RealmFolderRecoveryResult = {
+    targetFolder: string
+    total: number
+    processed: number
+    exactSourceIds: number
+    strictTitleMatches: number
+    recoveredCharacters: number
+    recoveredAssets: number
+    alreadyHealthy: number
+    movedToProton: number
+    noRealmMatch: number
+    ambiguous: number
+    failed: number
+    canceled: boolean
+    failures: { chaId: string, name: string, error: string }[]
+}
+
 function slotKey(kind: string, name: unknown, extension: unknown = ''): string {
     return `${kind}:${normalizeRealmName(name)}:${normalizeRealmName(extension)}`
+}
+
+function realmCardAssetSlotKey(asset: { type?: unknown, name?: unknown, ext?: unknown }): string {
+    const type = String(asset.type ?? 'asset')
+    if (type === 'icon' && asset.name === 'main') return 'profile'
+    if (type === 'emotion') return slotKey('emotion', asset.name, 'image')
+    if (type === 'x-risu-asset') return slotKey('asset', asset.name, asset.ext ?? 'unknown')
+    return slotKey(`cc-${type}`, asset.name, asset.ext ?? 'unknown')
 }
 
 function characterAssetSlots(character: character): AssetSlot[] {
@@ -122,13 +167,31 @@ export async function findRealmRecoveryCandidates(character: character): Promise
 export async function recoverCharacterAssetsFromRealm(
     character: character,
     realmId = getCharacterRealmId(character),
+    options: { save?: boolean } = {},
 ): Promise<RealmAssetRecoveryResult> {
     if (!realmId) throw new Error('Realm source ID is required for asset recovery')
-    const candidate = await fetchRealmCharacter(realmId)
+    const slots = characterAssetSlots(character)
+    const needed = new Map<string, number>()
+    for (const slot of slots) {
+        if (await assetExists(slot.reference)) continue
+        needed.set(slot.key, (needed.get(slot.key) ?? 0) + 1)
+    }
+    const candidate = await fetchRealmCharacter(realmId, {
+        includePrimaryImage: needed.has('profile'),
+        selectAssets: (assets) => {
+            const remaining = new Map(needed)
+            return assets.filter((asset) => {
+                const key = realmCardAssetSlotKey(asset)
+                const count = remaining.get(key) ?? 0
+                if (count <= 0) return false
+                remaining.set(key, count - 1)
+                return true
+            })
+        },
+    })
     if (!candidate) throw new Error('Realm character could not be decoded')
 
     const queues = candidateQueues(candidate)
-    const slots = characterAssetSlots(character)
     let recovered = 0
     let remainingKnownMissing = 0
     for (const slot of slots) {
@@ -151,8 +214,7 @@ export async function recoverCharacterAssetsFromRealm(
     character.extentions ??= {}
     character.extentions.risuRealmImportId = realmId
     if (character.sourceInfo) {
-        const previous = Number(character.sourceInfo.missingAssetCount) || 0
-        character.sourceInfo.missingAssetCount = Math.max(remainingKnownMissing, previous - recovered)
+        character.sourceInfo.missingAssetCount = remainingKnownMissing
         character.sourceInfo.assetReferenceCount = Math.max(
             Number(character.sourceInfo.assetReferenceCount) || 0,
             slots.length,
@@ -160,14 +222,144 @@ export async function recoverCharacterAssetsFromRealm(
     }
     if ((Number(character.sourceInfo?.missingAssetCount) || 0) === 0) {
         const db = getDatabase()
-        for (const entry of db.characterOrder ?? []) {
-            if (typeof entry === 'string' || !entry?.name?.startsWith('[에셋 누락]')) continue
-            entry.data = (entry.data ?? []).filter((chaId) => chaId !== character.chaId)
-        }
-        db.characterOrder = (db.characterOrder ?? []).filter((entry) => (
-            typeof entry === 'string' || !entry?.name?.startsWith('[에셋 누락]') || (entry.data?.length ?? 0) > 0
-        ))
+        db.characterOrder = releaseCharacterFromMissingFolders(db.characterOrder ?? [], character.chaId)
     }
-    if (recovered > 0) await requestImmediateSave()
+    if (recovered > 0 && options.save !== false) await requestImmediateSave()
     return { realmId, recovered, inspected: slots.length, remainingKnownMissing }
+}
+
+function throwIfAborted(signal?: AbortSignal) {
+    if (signal?.aborted) throw new DOMException('Realm folder recovery was canceled.', 'AbortError')
+}
+
+/**
+ * Sequential, resumable-in-practice recovery for one explicit source folder.
+ * No fuzzy candidate is ever downloaded automatically. Cards without a safe
+ * Realm match (or with still-missing slots after recovery) are moved into the
+ * Proton folder so they remain visible for a later Proton-card repair pass.
+ */
+export async function recoverCharacterFolderAssetsFromRealm(
+    targetFolderName = MOBILE_WEB_MISSING_ASSET_FOLDER,
+    options: {
+        signal?: AbortSignal
+        onProgress?: (progress: RealmFolderRecoveryProgress) => void
+    } = {},
+): Promise<RealmFolderRecoveryResult> {
+    const db = getDatabase()
+    const targetFolder = (db.characterOrder ?? []).find((entry) => (
+        typeof entry !== 'string' && entry.name === targetFolderName
+    ))
+    const targetIds = typeof targetFolder === 'string' || !targetFolder
+        ? []
+        : [...new Set(targetFolder.data ?? [])]
+    const characters = new Map((db.characters ?? []).map((character) => [character.chaId, character]))
+    const result: RealmFolderRecoveryResult = {
+        targetFolder: targetFolderName,
+        total: targetIds.length,
+        processed: 0,
+        exactSourceIds: 0,
+        strictTitleMatches: 0,
+        recoveredCharacters: 0,
+        recoveredAssets: 0,
+        alreadyHealthy: 0,
+        movedToProton: 0,
+        noRealmMatch: 0,
+        ambiguous: 0,
+        failed: 0,
+        canceled: false,
+        failures: [],
+    }
+
+    const progress = (characterName: string, phase: RealmFolderRecoveryProgress['phase']) => {
+        options.onProgress?.({
+            current: result.processed,
+            total: result.total,
+            characterName,
+            phase,
+            recoveredCharacters: result.recoveredCharacters,
+            recoveredAssets: result.recoveredAssets,
+            movedToProton: result.movedToProton,
+            failed: result.failed,
+        })
+    }
+
+    for (const chaId of targetIds) {
+        const character = characters.get(chaId)
+        if (!character || character.trashTime) {
+            result.processed++
+            continue
+        }
+        try {
+            throwIfAborted(options.signal)
+            progress(character.name, 'checking')
+            if ((Number(character.sourceInfo?.missingAssetCount) || 0) <= 0) {
+                db.characterOrder = releaseCharacterFromMissingFolders(db.characterOrder ?? [], chaId)
+                result.alreadyHealthy++
+                result.processed++
+                continue
+            }
+
+            let realmId = getCharacterRealmId(character)
+            if (realmId) {
+                result.exactSourceIds++
+            } else {
+                progress(character.name, 'searching')
+                const candidates = await getRisuHub({ search: character.name, page: 0, nsfw: true, sort: '' })
+                throwIfAborted(options.signal)
+                const exactTitles = candidates.filter((candidate) => (
+                    normalizeRealmName(candidate.name) === normalizeRealmName(character.name)
+                ))
+                const selected = selectStrictRealmRecoveryCandidate(character, candidates)
+                if (!selected) {
+                    if (exactTitles.length > 1) result.ambiguous++
+                    else result.noRealmMatch++
+                    db.characterOrder = moveCharacterToRecoveryFolder(
+                        db.characterOrder ?? [], chaId, PROTON_RECOVERY_FOLDER, uuidv4(),
+                    )
+                    result.movedToProton++
+                    result.processed++
+                    continue
+                }
+                realmId = selected.id
+                result.strictTitleMatches++
+            }
+
+            progress(character.name, 'downloading')
+            const recovered = await recoverCharacterAssetsFromRealm(character, realmId, { save: false })
+            result.recoveredAssets += recovered.recovered
+            if (recovered.remainingKnownMissing === 0) {
+                db.characterOrder = releaseCharacterFromMissingFolders(db.characterOrder ?? [], chaId)
+                result.recoveredCharacters++
+            } else {
+                db.characterOrder = moveCharacterToRecoveryFolder(
+                    db.characterOrder ?? [], chaId, PROTON_RECOVERY_FOLDER, uuidv4(),
+                )
+                result.movedToProton++
+            }
+            result.processed++
+        } catch (error) {
+            if (error instanceof DOMException && error.name === 'AbortError') {
+                result.canceled = true
+                break
+            }
+            result.failed++
+            result.processed++
+            result.failures.push({
+                chaId,
+                name: character.name,
+                error: error instanceof Error ? error.message : String(error),
+            })
+        }
+
+        if (result.processed > 0 && result.processed % 10 === 0) {
+            progress(character.name, 'saving')
+            await requestImmediateSave()
+        }
+    }
+
+    if (result.processed > 0) {
+        progress('', 'saving')
+        await requestImmediateSave()
+    }
+    return result
 }
