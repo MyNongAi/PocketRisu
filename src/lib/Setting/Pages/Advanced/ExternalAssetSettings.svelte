@@ -8,7 +8,15 @@
     import type { AssetDoctorJob, ExternalAssetMigrationJob, ExternalAssetStatus } from 'src/ts/storage/nodeStorage'
     import { DBState } from 'src/ts/stores.svelte'
     import { getCharacterRealmId } from 'src/ts/characterCards'
-    import { findRealmRecoveryCandidates, recoverCharacterAssetsFromRealm } from 'src/ts/realmAssetRecovery'
+    import {
+        findRealmRecoveryCandidates,
+        MOBILE_WEB_MISSING_ASSET_FOLDER,
+        PROTON_RECOVERY_FOLDER,
+        recoverCharacterAssetsFromRealm,
+        recoverCharacterFolderAssetsFromRealm,
+        type RealmFolderRecoveryProgress,
+        type RealmFolderRecoveryResult,
+    } from 'src/ts/realmAssetRecovery'
 
     let status: ExternalAssetStatus | null = $state(null)
     let loading = $state(false)
@@ -23,6 +31,9 @@
     let httpReadOnly = $state(false)
     let cacheMb = $state(64)
     let retryCount = $state(2)
+    let folderRecoveryProgress: RealmFolderRecoveryProgress | null = $state(null)
+    let folderRecoveryResult: RealmFolderRecoveryResult | null = $state(null)
+    let folderRecoveryController: AbortController | null = $state(null)
     let migrationJob: ExternalAssetMigrationJob | null = $state(null)
     let doctorJob: AssetDoctorJob | null = $state(null)
     let doctorSampleLimit = $state(12)
@@ -31,6 +42,12 @@
         !character?.trashTime && (Number(character?.sourceInfo?.missingAssetCount) || 0) > 0
     )))
     let exactRealmBrokenCount = $derived(brokenCharacters.filter((character) => Boolean(getCharacterRealmId(character))).length)
+    let mobileMissingFolderCount = $derived.by(() => {
+        const folder = (DBState.db.characterOrder ?? []).find((entry) => (
+            typeof entry !== 'string' && entry.name === MOBILE_WEB_MISSING_ASSET_FOLDER
+        ))
+        return typeof folder === 'string' || !folder ? 0 : (folder.data?.length ?? 0)
+    })
 
     const terminalMigrationStatuses = new Set(['published', 'verified', 'cleaned', 'canceled'])
     const copyBlockingStatuses = new Set([
@@ -297,6 +314,49 @@
         else notifyError('The card was found, but no missing asset name/type matched. Nothing was replaced.')
     }
 
+    async function recoverMobileWebFolderFromRealm() {
+        if (mobileMissingFolderCount === 0) {
+            notifyError(`The ${MOBILE_WEB_MISSING_ASSET_FOLDER} folder is empty or missing.`)
+            return
+        }
+        if (!await alertConfirm(
+            `Process ${mobileMissingFolderCount} cards in ${MOBILE_WEB_MISSING_ASSET_FOLDER} sequentially? `
+            + 'Saved Realm IDs are trusted. Otherwise only one normalized exact-title match is accepted; duplicate titles require one unique exact creator. '
+            + `Existing assets/text/chats are never overwritten. Cards with no safe match or still-missing slots move to ${PROTON_RECOVERY_FOLDER}.`
+        )) return
+
+        loading = true
+        folderRecoveryResult = null
+        folderRecoveryProgress = null
+        folderRecoveryController = new AbortController()
+        message = 'Starting strict mobile-web Realm asset recovery…'
+        try {
+            const result = await recoverCharacterFolderAssetsFromRealm(MOBILE_WEB_MISSING_ASSET_FOLDER, {
+                signal: folderRecoveryController.signal,
+                onProgress: (progress) => {
+                    folderRecoveryProgress = { ...progress }
+                    message = `${progress.phase}: ${progress.current} / ${progress.total} · ${progress.characterName}`
+                },
+            })
+            folderRecoveryResult = result
+            message = `Folder recovery ${result.canceled ? 'stopped' : 'finished'}: ${result.recoveredCharacters} cards / ${result.recoveredAssets} assets restored; ${result.movedToProton} moved to ${PROTON_RECOVERY_FOLDER}; ${result.failed} transient failures.`
+            if (!result.canceled && result.failed === 0) notifySuccess(message)
+            else if (result.failed > 0) notifyError(message)
+        } catch (error) {
+            const text = error instanceof Error ? error.message : String(error)
+            message = text
+            notifyError(text)
+        } finally {
+            loading = false
+            folderRecoveryController = null
+        }
+    }
+
+    function cancelFolderRecovery() {
+        folderRecoveryController?.abort()
+        message = 'Stopping after the current card…'
+    }
+
     onMount(() => {
         void (async () => {
             await refresh()
@@ -475,6 +535,14 @@
             <Button styled="outlined" onclick={recoverOneCharacterFromRealm} disabled={loading || brokenCharacters.length === 0}>
                 Find missing character assets on Realm
             </Button>
+            <Button
+                styled="outlined"
+                onclick={recoverMobileWebFolderFromRealm}
+                disabled={loading || mobileMissingFolderCount === 0}
+            >Recover mobile-web missing folder</Button>
+            {#if folderRecoveryController}
+                <Button styled="outlined" onclick={cancelFolderRecovery}>Stop after current card</Button>
+            {/if}
         </div>
 
         {#if brokenCharacters.length > 0}
@@ -482,6 +550,32 @@
                 {brokenCharacters.length.toLocaleString()} characters are marked as missing assets ·
                 {exactRealmBrokenCount.toLocaleString()} retain an exact Realm source ID ·
                 title/author similarity matches always require your confirmation.
+            </p>
+        {/if}
+
+        {#if folderRecoveryProgress}
+            <div class="mt-3 rounded-md bg-bgcolor p-3 text-xs text-textcolor2">
+                <div class="flex flex-wrap justify-between gap-2">
+                    <span>{folderRecoveryProgress.phase} · {folderRecoveryProgress.characterName || 'saving'}</span>
+                    <span>{folderRecoveryProgress.current.toLocaleString()} / {folderRecoveryProgress.total.toLocaleString()}</span>
+                </div>
+                <div class="mt-2 h-2 overflow-hidden rounded bg-darkborderc">
+                    <div
+                        class="h-full bg-green-600 transition-[width] duration-300"
+                        style={`width: ${folderRecoveryProgress.total > 0 ? Math.max(2, Math.min(100, folderRecoveryProgress.current / folderRecoveryProgress.total * 100)) : 2}%`}
+                    ></div>
+                </div>
+                <p class="mt-2">
+                    Restored {folderRecoveryProgress.recoveredCharacters.toLocaleString()} cards / {folderRecoveryProgress.recoveredAssets.toLocaleString()} assets ·
+                    Proton {folderRecoveryProgress.movedToProton.toLocaleString()} · failed {folderRecoveryProgress.failed.toLocaleString()}
+                </p>
+            </div>
+        {/if}
+        {#if folderRecoveryResult}
+            <p class="mt-2 rounded-md border border-darkborderc p-2 text-xs text-textcolor2">
+                Exact source IDs {folderRecoveryResult.exactSourceIds} · strict title/creator matches {folderRecoveryResult.strictTitleMatches} ·
+                no Realm match {folderRecoveryResult.noRealmMatch} · ambiguous {folderRecoveryResult.ambiguous} ·
+                already healthy {folderRecoveryResult.alreadyHealthy} · failures {folderRecoveryResult.failed}
             </p>
         {/if}
 

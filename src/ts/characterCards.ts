@@ -1752,7 +1752,46 @@ export async function getRisuHub(arg:{
     }
 }
 
-export async function fetchRealmCharacter(id: string): Promise<character | null> {
+type RealmCardAsset = NonNullable<CharacterCardV3['data']['assets']>[number]
+
+export type RealmCharacterFetchOptions = {
+    /** Core recovery uses this to keep only archive members that correspond to
+     * currently missing slots. Ordinary Realm downloads omit the option. */
+    selectAssets?: (assets: RealmCardAsset[]) => RealmCardAsset[]
+    includePrimaryImage?: boolean
+}
+
+function selectedRealmCard(card: CharacterCardV3, options: RealmCharacterFetchOptions): CharacterCardV3 {
+    if (!options.selectAssets) return card
+    const extensions = { ...(card.data.extensions ?? {}) } as any
+    extensions.risuai = {
+        ...(extensions.risuai ?? {}),
+        lowLevelAccess: false,
+        customScripts: [],
+        triggerscript: [],
+        virtualscript: '',
+    }
+    return {
+        ...card,
+        data: {
+            ...card.data,
+            extensions,
+            assets: options.selectAssets(card.data.assets ?? []),
+        },
+    }
+}
+
+function embeddedRealmAssetKey(asset: RealmCardAsset): string | null {
+    const uri = String(asset?.uri ?? '')
+    if (uri.startsWith('__asset:')) return uri.slice('__asset:'.length)
+    if (uri.startsWith('embeded://')) return uri.slice('embeded://'.length)
+    return null
+}
+
+export async function fetchRealmCharacter(
+    id: string,
+    options: RealmCharacterFetchOptions = {},
+): Promise<character | null> {
     const res = await fetch(`https://realm.risuai.net/api/v1/download/dynamic/${encodeURIComponent(id)}?cors=true`, {
         headers: { "x-risu-api-version": "4" },
     })
@@ -1761,14 +1800,42 @@ export async function fetchRealmCharacter(id: string): Promise<character | null>
     const contentType = (res.headers.get('content-type') || '').split(';', 1)[0].trim().toLowerCase()
     let character: character | null = null
     if (contentType === 'application/zip' || contentType === 'application/charx') {
-        const imported = await importCharacterProcess<true>({
-            name: 'realm.charx',
-            data: new Uint8Array(await res.arrayBuffer()),
-            lightningRealmImport: getDatabase().lightningRealmImport,
-            returnCharacter: true,
-            suppressSuccess: true,
-        })
-        character = imported && typeof imported === 'object' ? imported : null
+        const bytes = new Uint8Array(await res.arrayBuffer())
+        if (options.selectAssets) {
+            // Pass 1 reads only metadata. Pass 2 asks fflate to skip every
+            // unselected member, so a 700-image card can restore one missing
+            // image without writing/decompressing the other 699.
+            const metadata = new CharXImporter()
+            metadata.assetAllowlist = new Set()
+            await metadata.parse(bytes)
+            await metadata.done()
+            if (!metadata.cardData) throw new Error('Realm CharX did not contain card.json')
+            const card = selectedRealmCard(JSON.parse(metadata.cardData) as CharacterCardV3, options)
+            if (card.spec !== 'chara_card_v3') throw new Error('Realm CharX is not a v3 character card')
+
+            const allowlist = new Set(
+                (card.data.assets ?? [])
+                    .map(embeddedRealmAssetKey)
+                    .filter((key): key is string => Boolean(key)),
+            )
+            const assets = new CharXImporter()
+            assets.assetAllowlist = allowlist
+            await assets.parse(bytes)
+            await assets.done()
+
+            character = await importCharacterCardSpec(
+                card, undefined, 'normal', assets.assets, null, true, undefined, true,
+            ) || null
+        } else {
+            const imported = await importCharacterProcess<true>({
+                name: 'realm.charx',
+                data: bytes,
+                lightningRealmImport: getDatabase().lightningRealmImport,
+                returnCharacter: true,
+                suppressSuccess: true,
+            })
+            character = imported && typeof imported === 'object' ? imported : null
+        }
     } else if (contentType === 'image/png') {
         const imported = await importCharacterProcess<true>({
             name: 'realm.png',
@@ -1780,13 +1847,13 @@ export async function fetchRealmCharacter(id: string): Promise<character | null>
         character = imported && typeof imported === 'object' ? imported : null
     } else {
         const result = await res.json()
-        const card: CharacterCardV3 = result.card
+        const card = selectedRealmCard(result.card as CharacterCardV3, options)
         if (!card?.data) throw new Error('Realm response did not contain a character card')
         card.data.extensions ??= {}
         card.data.extensions.risuRealmImportId = id
         character = await importCharacterCardSpec(
             card,
-            await getHubResources(result.img),
+            options.includePrimaryImage === false ? undefined : await getHubResources(result.img),
             'hub',
             {},
             null,
