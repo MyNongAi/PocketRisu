@@ -38,9 +38,7 @@
 </div>
 
 <div
-    class="relative flex min-h-0 flex-1 flex-col px-4 py-6 text-textcolor rs-setting-cont-5"
-    class:overflow-y-auto={activeIndex !== 2}
-    class:overflow-y-hidden={activeIndex === 2}
+    class="relative flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-6 text-textcolor rs-setting-cont-5"
 >
     {#if activeIndex === 0}
         <BotSettings />

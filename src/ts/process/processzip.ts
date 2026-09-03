@@ -194,6 +194,9 @@ export class CharXImporter{
     alertInfo:boolean = false  // Show progress alerts to user
     progressCallback?: (done: number, total: number) => void
     skipSaving: boolean = false  // If true, only compute hashes without saving
+    /** When set, archive entries outside this exact allowlist are never
+     * decompressed. card.json/module.risum are always read. */
+    assetAllowlist?: ReadonlySet<string>
     hashSignal: string|undefined  // Hash to signal server for sync (when skipSaving is false)
 
     constructor(){
@@ -335,6 +338,10 @@ export class CharXImporter{
      * Sets up streaming handlers and starts processing if file size is acceptable.
      */
     #handleFile(file: fflate.UnzipFile) {
+        const metadata = file.name === 'card.json' || file.name === 'module.risum'
+        if (this.assetAllowlist && !metadata && !this.assetAllowlist.has(file.name)) {
+            return
+        }
         const assetIndex = file.name
         this.assetBuffers[assetIndex] = new AppendableBuffer()
 
