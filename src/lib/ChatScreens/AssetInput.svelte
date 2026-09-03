@@ -13,22 +13,44 @@
     let manifestItems:[string, string, string][] = $state([])
     let manifestOffset = $state(0)
     let manifestTotal = $state(0)
+    let manifestCharacterId: string | null = $state(null)
+    let manifestLoadSequence = 0
     const manifestPageSize = 100
 
     async function loadManifestPage(offset = 0) {
-        if (!currentCharacter.additionalAssetManifest) return
-        const page = await forageStorage.getAssetManifestPage(currentCharacter.additionalAssetManifest, {
+        const characterId = currentCharacter.chaId
+        const manifest = currentCharacter.additionalAssetManifest
+        if (!manifest) {
+            manifestItems = []
+            manifestOffset = 0
+            manifestTotal = 0
+            return
+        }
+        const manifestId = manifest.id
+        const sequence = ++manifestLoadSequence
+        const page = await forageStorage.getAssetManifestPage(manifest, {
             offset,
             limit: manifestPageSize,
         })
+        if (
+            sequence !== manifestLoadSequence
+            || currentCharacter.chaId !== characterId
+            || currentCharacter.additionalAssetManifest?.id !== manifestId
+        ) return
         manifestItems = page.items as [string, string, string][]
         manifestOffset = page.offset
         manifestTotal = page.total
     }
 
     $effect(() => {
-        const manifestId = currentCharacter.additionalAssetManifest?.id
-        if (manifestId) void loadManifestPage(0)
+        const characterId = currentCharacter.chaId
+        if (manifestCharacterId === characterId) return
+        manifestCharacterId = characterId
+        manifestLoadSequence++
+        manifestItems = []
+        manifestOffset = 0
+        manifestTotal = 0
+        if (currentCharacter.additionalAssetManifest) void loadManifestPage(0)
     })
 </script>
 {#if currentCharacter.type ==='character'}

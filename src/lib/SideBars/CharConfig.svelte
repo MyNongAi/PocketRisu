@@ -100,6 +100,8 @@ import ShButton from "../UI/GUI/ShButton.svelte";
     let manifestOffset = $state(0)
     let manifestTotal = $state(0)
     let manifestLoading = $state(false)
+    let manifestCharacterId: string | null = $state(null)
+    let manifestLoadSequence = 0
     let converting = $state(false)
     const manifestPageSize = 100
 
@@ -108,19 +110,34 @@ import ShButton from "../UI/GUI/ShButton.svelte";
     }
 
     async function loadCharacterManifestPage(offset = 0) {
-        const manifest = currentChar().additionalAssetManifest
-        if (!manifest) return
+        const character = currentCharacter as character | undefined
+        const manifest = character?.additionalAssetManifest
+        if (!character || !manifest) {
+            manifestItems = []
+            manifestOffset = 0
+            manifestTotal = 0
+            manifestLoading = false
+            return
+        }
+        const characterId = character.chaId
+        const manifestId = manifest.id
+        const sequence = ++manifestLoadSequence
         manifestLoading = true
         try {
             const page = await forageStorage.getAssetManifestPage(manifest, {
                 offset,
                 limit: manifestPageSize,
             })
+            if (
+                sequence !== manifestLoadSequence
+                || currentCharacter?.chaId !== characterId
+                || (currentCharacter as character).additionalAssetManifest?.id !== manifestId
+            ) return
             manifestItems = page.items as [string, string, string][]
             manifestOffset = page.offset
             manifestTotal = page.total
         } finally {
-            manifestLoading = false
+            if (sequence === manifestLoadSequence) manifestLoading = false
         }
     }
 
@@ -192,6 +209,25 @@ import ShButton from "../UI/GUI/ShButton.svelte";
     $effect.pre(() => {
         if (!currentCharacter) return
         emos = DBState.db.characters[$selectedCharID].emotionImages
+    });
+
+    // CharConfig stays mounted while the selected bot changes. Invalidate the
+    // old manifest request immediately, remove its previews from the DOM, and
+    // load page zero for the newly selected bot when the asset tab is open.
+    // The sequence check above also prevents a slow response for bot A from
+    // repainting the tab after the user has already switched to bot B.
+    $effect.pre(() => {
+        const characterId = currentCharacter?.chaId ?? null
+        if (manifestCharacterId === characterId) return
+        manifestCharacterId = characterId
+        manifestLoadSequence++
+        manifestItems = []
+        manifestOffset = 0
+        manifestTotal = 0
+        manifestLoading = false
+        if (!currentCharacter || viewSubMenu !== 2) return
+        if ((currentCharacter as character).additionalAssetManifest) void loadCharacterManifestPage(0)
+        else (currentCharacter as character).additionalAssets ??= []
     });
 
     $effect.pre(() => {
