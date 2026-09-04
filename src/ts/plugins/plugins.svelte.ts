@@ -634,6 +634,45 @@ export const getV2PluginAPIs = () => {
             }
             return await forageStorage.getAssetManifestPage(manifest, { offset, limit })
         },
+        // PocketRisu-only, narrow metadata write. A diagnosis plugin may
+        // refresh the warning count after a complete metadata scan without
+        // replacing character/module records or touching asset references.
+        updateAssetHealth: (records: unknown) => {
+            if (!Array.isArray(records) || records.length > 10_000) return { updated: 0, skipped: 0 }
+            const db = getDatabase()
+            let updated = 0
+            let skipped = 0
+            let charactersChanged = false
+            let modulesChanged = false
+            for (const raw of records) {
+                const record = raw as { kind?: unknown; id?: unknown; missing?: unknown; total?: unknown }
+                const missing = Number(record?.missing)
+                const total = Number(record?.total)
+                if ((record.kind !== 'character' && record.kind !== 'module') || typeof record.id !== 'string'
+                    || !Number.isSafeInteger(missing) || missing < 0
+                    || !Number.isSafeInteger(total) || total < missing) {
+                    skipped++
+                    continue
+                }
+                const owners = record.kind === 'character' ? db.characters : db.modules
+                const owner = record.kind === 'character'
+                    ? owners.find((item: any) => item?.chaId === record.id)
+                    : owners.find((item: any) => item?.id === record.id)
+                // Preserve provenance semantics: health metadata only updates
+                // imports that already own a sourceInfo record.
+                if (!owner?.sourceInfo) {
+                    skipped++
+                    continue
+                }
+                owner.sourceInfo.missingAssetCount = missing
+                owner.sourceInfo.assetReferenceCount = total
+                if (record.kind === 'character') charactersChanged = true
+                else modulesChanged = true
+                updated++
+            }
+            if (charactersChanged || modulesChanged) setDatabaseLite(db)
+            return { updated, skipped }
+        },
         setChar: (char: any) => {
             const db = getDatabase()
             const charid = get(selectedCharID)

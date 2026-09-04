@@ -15,6 +15,7 @@
     folderShape?: boolean;
     color?: string;
     titleColor?: string;
+    missingAssets?: boolean;
     backgroundimg?: DeferredImage;
     children?: import('svelte').Snippet;
     oncontextmenu?: (event: MouseEvent & {
@@ -33,6 +34,7 @@
     folderShape = false,
     color = '',
     titleColor,
+    missingAssets = false,
     backgroundimg = '',
     children,
     oncontextmenu,
@@ -82,7 +84,7 @@
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
-<span bind:this={observerTarget} class="flex shrink-0 items-center justify-center avatar sidebar-touch-target"
+<span bind:this={observerTarget} class="relative flex shrink-0 items-center justify-center avatar sidebar-touch-target"
       class:border = {bordered}
       class:border-selected={bordered}
       class:rounded-md={bordered}
@@ -92,6 +94,9 @@
       tabindex="0"
       data-char-id={chaId}
 >
+  {#if missingAssets}
+    <span class="pointer-events-none absolute -right-1 -top-1 z-10 text-sm leading-none drop-shadow" aria-label="에셋 누락" title="에셋 누락">❗</span>
+  {/if}
   {#if src}
     {#if src === "slot"}
       {#await resolvedBackground}

@@ -151,7 +151,7 @@
                         additionalStyle={() => getCharThumbnail(char.image, 'css')}
                     ></BarIcon>
                     <div class="flex-1 flex flex-col ml-2">
-                        <h4 class="font-bold text-lg mb-1 text-textcolor" style:color={listTitleColor(char.titleColor, char.missingAssetCount > 0)}>{char.name || "Unnamed"}</h4>
+                        <h4 class="font-bold text-lg mb-1 text-textcolor" style:color={listTitleColor(char.titleColor)}>{char.name || "Unnamed"}{#if char.missingAssetCount > 0} <span aria-label="에셋 누락" title="에셋 누락">❗</span>{/if}</h4>
                         <span class="line-clamp-2 text-textcolor2">{parseMultilangString(char.desc)['en'] || parseMultilangString(char.desc)['xx'] || 'No description'}</span>
                         <div class="mt-1 flex items-center text-sm text-textcolor2">
                             <span class="mr-1">{char.chats}</span>
@@ -192,7 +192,7 @@
                 <div class="m-1 flex h-[118px] p-2 border border-darkborderc rounded-md">
                     <BarIcon onClick={() => {selectAndClose(char.index)}} additionalStyle={() => getCharThumbnail(char.image, 'css')}></BarIcon>
                     <div class="flex-1 flex flex-col ml-2">
-                        <h4 class="font-bold text-lg mb-1 text-textcolor" style:color={listTitleColor(char.titleColor, char.missingAssetCount > 0)}>{char.name || "Unnamed"}</h4>
+                        <h4 class="font-bold text-lg mb-1 text-textcolor" style:color={listTitleColor(char.titleColor)}>{char.name || "Unnamed"}{#if char.missingAssetCount > 0} <span aria-label="에셋 누락" title="에셋 누락">❗</span>{/if}</h4>
                         <span class="line-clamp-2 text-textcolor2">{parseMultilangString(char.desc)['en'] || parseMultilangString(char.desc)['xx'] || 'No description'}</span>
                         <div class="flex gap-2 justify-end">
                             <button class="hover:text-textcolor text-textcolor2" onclick={() => {

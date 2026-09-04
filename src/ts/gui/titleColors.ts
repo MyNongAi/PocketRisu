@@ -5,9 +5,11 @@ export function normalizeTitleColor(value: unknown): string | undefined {
     return /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : undefined
 }
 
-export function listTitleColor(value: unknown, missing = false): string | undefined {
-    // A chosen display color must not hide a missing-asset warning.
-    return missing ? '#f87171' : normalizeTitleColor(value)
+export function listTitleColor(value: unknown, _missing = false): string | undefined {
+    // Missing assets are shown by a separate warning badge. Keeping that
+    // signal out of the title color means a successful repair can clear the
+    // badge without erasing the user's chosen catalog color.
+    return normalizeTitleColor(value)
 }
 
 export const TITLE_COLOR_OPTIONS = [

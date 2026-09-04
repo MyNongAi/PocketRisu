@@ -33,7 +33,7 @@ async function renderList(overrides: Record<string, unknown> = {}) {
     const instance = mount(FolderedList, { target, props: {
         folders, itemFolderIds: ['a', 'b'], itemSearchTexts: ['first', 'second'],
         defaultCollapsed: true, newFoldersFirst: true, storageKey,
-        itemContent: createRawSnippet(() => ({ render: () => '<span>Module</span>' })),
+        itemContent: createRawSnippet((getIndex) => ({ render: () => `<span>Module ${getIndex()}</span>` })),
         onSelect: vi.fn(), onItemsChange: vi.fn(), onFoldersChange,
         ...overrides,
     } })
@@ -68,10 +68,16 @@ describe('module folder display interactions', () => {
         input.dispatchEvent(new Event('input', { bubbles: true }))
         await tick()
         expect(target.querySelector('[data-folder-container="a"]')?.classList.contains('hidden')).toBe(false)
+        expect(target.querySelector('[data-folder-container="b"]')).toBeNull()
+        expect(target.textContent).toContain('Alpha')
+        expect(target.textContent).not.toContain('Beta')
+        expect(target.textContent).toContain('Module 0')
+        expect(target.textContent).not.toContain('Module 1')
         input.value = ''
         input.dispatchEvent(new Event('input', { bubbles: true }))
         await tick()
         expect(target.querySelector('[data-folder-container="a"]')?.classList.contains('hidden')).toBe(true)
+        expect(target.querySelector('[data-folder-container="b"]')).not.toBeNull()
         expect(localStorage.getItem(storageKey)).toBeNull()
     })
 

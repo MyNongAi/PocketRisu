@@ -70,7 +70,8 @@
                     endGrid()
                 }}>
                 <div class="flex flex-1 w-full flex-col justify-start items-start text-start">
-                    <span style:color={listTitleColor(char.titleColor, char.missingAssetCount > 0)}>{char.name}</span>
+                    <span style:color={listTitleColor(char.titleColor)}>{char.name}</span>
+                    {#if char.missingAssetCount > 0}<span aria-label="에셋 누락" title="에셋 누락">❗</span>{/if}
                     <div class="text-sm text-textcolor2 flex items-center w-full flex-wrap">
                         <span class="mr-1">{char.chats}</span>
                         <MessageSquareIcon size={14} />
