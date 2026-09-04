@@ -61,10 +61,10 @@ test('empty/truncated manifest fails instead of claiming complete diagnosis', as
     await assert.rejects(pages.next(), /Manifest/);
 });
 test('Pocket all scan excludes trash, includes modules, separates errors, and never touches browser cache or readImage', async () => {
-    const checked = [];
+    const checked = [], health = [];
     const { sandbox, run } = context({
         getDatabase: () => ({ characters: [{ chaId: 'a', name: 'active', image: 'assets/a.png' }, { chaId: 't', trashTime: 1, image: 'assets/trash.png' }], modules: [{ id: 'm', assets: [['x', 'assets/module.png']] }] }),
-        Risuai: { assetStorageInfo: () => ({ kind: 'pocket' }), inspectAssets: async paths => {
+        Risuai: { assetStorageInfo: () => ({ kind: 'pocket' }), updateAssetHealth: records => health.push(...records), inspectAssets: async paths => {
             checked.push(...paths);
             return paths.map(path => ({ path, status: path.includes('module') ? 'error' : 'exists', code: 'EACCES' }));
         } },
@@ -76,6 +76,7 @@ test('Pocket all scan excludes trash, includes modules, separates errors, and ne
     assert.equal(run('currentScanResult.summary.missing'), 0);
     assert.equal(run('currentScanResult.summary.error'), 1);
     assert.equal(run('currentScanResult.supportsCache'), false);
+    assert.deepEqual(JSON.parse(JSON.stringify(health)), [{ kind: 'character', id: 'a', missing: 0, total: 1 }]);
 });
 test('Pocket diagnosis failure never becomes missing and unknown module is rejected', async () => {
     const { sandbox, run } = context({ Risuai: { assetStorageInfo: () => ({ kind: 'pocket' }), inspectAssets: async () => [] } });
@@ -89,6 +90,7 @@ test('V2.1 runtime makes the bridge available through Risuai without global cred
     assert.match(core, /const Risuai = globalThis\.__pluginApis__/);
     assert.match(core, /inspectAssets: async/);
     assert.match(core, /forageStorage\.inspectAssetReferences\(paths\)/);
+    assert.match(core, /updateAssetHealth: \(records: unknown\)/);
     const server = fs.readFileSync(path.join(__dirname, '../server/node/server.cjs'), 'utf8');
     assert.match(server, /app\.post\('\/api\/assets\/inspect',[\s\S]*?if \(!await checkAuth\(req, res\)\) return/);
 });
@@ -104,6 +106,22 @@ test('recovery refuses to overwrite on access errors and supports external missi
     assert.equal(await sandbox.recoveryReferenceMissing(uri), false);
     status = 'missing';
     assert.equal(await sandbox.recoveryReferenceMissing(uri), true);
+});
+test('a complete post-recovery check clears stale missing metadata, but access errors preserve it', async () => {
+    let status = 'exists';
+    const { sandbox, run } = context({ Risuai: {
+        assetStorageInfo: () => ({ kind: 'pocket' }),
+        inspectAssets: async paths => paths.map(path => ({ path, status, code: 'EACCES' })),
+    } });
+    run("currentChar = { chaId: 'c', image: 'assets/profile.png', sourceInfo: { label: 'mobile', missingAssetCount: 9 } }");
+    const slots = run('characterRepairSlots(currentChar)');
+    assert.equal(await sandbox.refreshCurrentSourceAssetHealth(slots), true);
+    assert.equal(run('currentChar.sourceInfo.missingAssetCount'), 0);
+    assert.equal(run('currentChar.sourceInfo.assetReferenceCount'), 1);
+    run('currentChar.sourceInfo.missingAssetCount = 7');
+    status = 'error';
+    await assert.rejects(sandbox.refreshCurrentSourceAssetHealth(slots), /덮어쓰지/);
+    assert.equal(run('currentChar.sourceInfo.missingAssetCount'), 7);
 });
 test('switching characters cancels recovery and source manifest hydration is read-only', async () => {
     const { sandbox, run } = context({

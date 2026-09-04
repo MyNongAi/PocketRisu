@@ -112,6 +112,16 @@
         return !query || (itemSearchTexts[index] ?? '').toLocaleLowerCase().includes(query);
     }
 
+    // Filtering only the item rows left unrelated folder headers on screen and
+    // also mounted every hidden result. Build a display-only view instead;
+    // `groups` remains the complete source of truth for drag/menu operations.
+    const displayGroups = $derived.by(() => groups
+        .map((group) => ({
+            ...group,
+            indexes: query ? group.indexes.filter(matches) : group.indexes,
+        }))
+        .filter((group) => !query || group.indexes.length > 0));
+
     function loadCollapsed(): Set<string> {
         if (!storageKey) return new Set();
         try {
@@ -240,7 +250,7 @@
         options={{ group: 'foldered-list-folders' }}
         onReorder={onFolderDrop}
     >
-        {#each groups as group (group.folder?.id ?? '')}
+        {#each displayGroups as group (group.folder?.id ?? '')}
             {#if group.folder}
                 {@const folder = group.folder}
                 {@const isCollapsed = !query && isFolderCollapsed(folder.id, collapsed, defaultCollapsed)}
@@ -276,7 +286,7 @@
         {/each}
     </ShSortableList>
 
-    {#each groups as group (group.folder?.id ?? '')}
+    {#each displayGroups as group (group.folder?.id ?? '')}
         {#if !group.folder}
             {@const isCollapsed = !query && isFolderCollapsed('', collapsed, defaultCollapsed)}
             <div class="rounded-md border border-darkborderc bg-darkbg">
@@ -310,7 +320,7 @@
 </div>
 
 {#snippet row(index)}
-    <div data-sortable-key={String(index)} data-sortable-no-scale class:hidden={!matches(index)}>
+    <div data-sortable-key={String(index)} data-sortable-no-scale>
     <!-- Header line is the only click/hover target; an expanded panel below it is inert. -->
     <div
         class="flex items-center gap-2 rounded-md px-2 min-h-11 py-1 text-textcolor cursor-pointer {index === selectedIndex ? 'bg-selected' : 'risu-interactive-surface'}"

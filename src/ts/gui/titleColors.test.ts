@@ -12,8 +12,8 @@ describe('title colors', () => {
             expect(normalizeTitleColor(value)).toBeUndefined()
         }
     })
-    it('keeps missing-asset warnings visible above custom colors', () => {
-        expect(listTitleColor('#4ade80', true)).toBe('#f87171')
+    it('does not overwrite a chosen title color with asset health state', () => {
+        expect(listTitleColor('#4ade80', true)).toBe('#4ade80')
         expect(listTitleColor('#4ade80', false)).toBe('#4ade80')
         expect(listTitleColor('', false)).toBeUndefined()
     })
