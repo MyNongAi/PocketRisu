@@ -1,6 +1,6 @@
 //@name ImageRecoveryPerChar
 //@display-name 에셋 캐시 리매핑
-//@version 5.50
+//@version 5.51
 //@api 2.1
 
 // Extra asset wrench button for per-character/all asset cache remapping.
@@ -466,6 +466,22 @@ async function recoveryReferenceMissing(reference) {
     }
 }
 
+async function refreshCurrentSourceAssetHealth(slots) {
+    if (!currentChar || !currentChar.sourceInfo) return false;
+    let missing = 0;
+    let total = 0;
+    for (const slot of slots || []) {
+        const reference = slot.get();
+        // An intentionally empty optional image slot is not a broken file.
+        if (typeof reference !== 'string' || !reference) continue;
+        total++;
+        if (await recoveryReferenceMissing(reference)) missing++;
+    }
+    currentChar.sourceInfo.missingAssetCount = missing;
+    currentChar.sourceInfo.assetReferenceCount = total;
+    return true;
+}
+
 function sourceAssetsFromCharacter(char) {
     const assets = [];
     if (!char) return assets;
@@ -529,6 +545,9 @@ async function recoverMissingAssetsFromSources(sourceLabel, sources, realmId) {
         }
     }
     if (broken.length === 0) {
+        if (await refreshCurrentSourceAssetHealth(slots)) {
+            await Promise.resolve(setChar(currentChar));
+        }
         log('깨진 일반 에셋 참조가 없습니다. 정상 에셋은 덮어쓰지 않았습니다.');
         setStatus('복구 대상 없음');
         return { recovered: 0, broken: 0, unmatched: 0 };
@@ -537,6 +556,9 @@ async function recoverMissingAssetsFromSources(sourceLabel, sources, realmId) {
     const planned = broken.map(slot => ({ slot, source: chooseRecoverySource(slot, sources) }));
     const matched = planned.filter(item => item.source);
     if (matched.length === 0) {
+        if (await refreshCurrentSourceAssetHealth(slots)) {
+            await Promise.resolve(setChar(currentChar));
+        }
         log('깨진 참조 ' + broken.length + '개를 찾았지만 이름·종류가 정확히 일치하는 원본 에셋이 없습니다.');
         setStatus('일치 에셋 없음');
         return { recovered: 0, broken: broken.length, unmatched: broken.length };
@@ -575,6 +597,13 @@ async function recoverMissingAssetsFromSources(sourceLabel, sources, realmId) {
         await new Promise(resolve => setTimeout(resolve, 0));
     }
 
+    let healthUpdated = false;
+    try {
+        healthUpdated = await refreshCurrentSourceAssetHealth(slots);
+    } catch (error) {
+        // Access errors must never be converted into a false all-clear.
+        log('누락 표시 갱신 보류: 복구 후 원본 확인 실패 · ' + (error && error.message || error));
+    }
     if (recovered > 0) {
         if (realmId) {
             currentChar.realmId = realmId;
@@ -589,8 +618,8 @@ async function recoverMissingAssetsFromSources(sourceLabel, sources, realmId) {
             source: sourceLabel,
             changes
         });
-        await Promise.resolve(setChar(currentChar));
     }
+    if (recovered > 0 || healthUpdated) await Promise.resolve(setChar(currentChar));
     setProgress(100);
     setStatus('복구 완료: ' + recovered + '개');
     log('완료. 복구 ' + recovered + ', 불일치 ' + (broken.length - matched.length) + ', 오류 ' + errors);
@@ -3312,6 +3341,7 @@ async function runPocketAssetScan(mode) {
     const options = scanScopeOptions();
     const summary = { total: 0, exists: 0, missing: 0, error: 0, unsupported: 0, fallback: 0, ownerErrors: 0 };
     const issues = [];
+    const healthUpdates = [];
     try {
         if (!api || typeof api.inspectAssets !== 'function') {
             throw new Error('이 서버에 메타데이터 진단 API가 없습니다. 포켓리스 코어와 플러그인을 함께 업데이트해야 합니다.');
@@ -3340,6 +3370,8 @@ async function runPocketAssetScan(mode) {
         log('대상 ' + owners.length + '개, 휴지통 ' + (options.includeTrash ? '포함' : '제외') + ', 소유자별 중복 참조 제거');
         for (let index = 0; index < owners.length; index++) {
             const { owner, kind } = owners[index];
+            const ownerSummary = { total: 0, missing: 0, error: 0, unsupported: 0 };
+            let ownerComplete = true;
             try {
                 for await (const pageRefs of pocketOwnerReferencePages(owner, kind, api)) {
                     for (let offset = 0; offset < pageRefs.length; offset += 128) {
@@ -3364,6 +3396,10 @@ async function runPocketAssetScan(mode) {
                             const status = ['exists', 'missing', 'error', 'unsupported'].includes(record.status) ? record.status : 'error';
                             summary.total++;
                             summary[status]++;
+                            ownerSummary.total++;
+                            if (status === 'missing') ownerSummary.missing++;
+                            if (status === 'error') ownerSummary.error++;
+                            if (status === 'unsupported') ownerSummary.unsupported++;
                             if (record.source && record.source.startsWith('fallback-')) summary.fallback++;
                             if (status !== 'exists' && issues.length < 200) {
                                 issues.push({ ...record, source: refs[i].source, exists: status === 'missing' ? false : null, variants: [] });
@@ -3375,10 +3411,23 @@ async function runPocketAssetScan(mode) {
                     }
                 }
             } catch (error) {
+                ownerComplete = false;
                 summary.ownerErrors++;
                 log('목록 검사 불완전: ' + (owner.name || '?') + ' · ' + (error && error.message || error));
             }
+            if (ownerComplete && ownerSummary.error === 0 && ownerSummary.unsupported === 0) {
+                const id = kind === 'character' ? owner.chaId : owner.id;
+                if (typeof id === 'string' && id) healthUpdates.push({ kind, id, missing: ownerSummary.missing, total: ownerSummary.total });
+            }
             setProgress(((index + 1) / owners.length) * 100);
+        }
+        if (healthUpdates.length && typeof api.updateAssetHealth === 'function') {
+            try {
+                const refreshed = api.updateAssetHealth(healthUpdates);
+                if (refreshed && refreshed.updated) log('누락 표시 갱신: ' + refreshed.updated + '개');
+            } catch (error) {
+                log('누락 표시 갱신 실패(진단 결과는 유지): ' + (error && error.message || error));
+            }
         }
         log('요약: 확인 ' + summary.total + ', 존재 ' + summary.exists + ', 원본 없음 ' + summary.missing
             + ', 접근/검사 오류 ' + summary.error + ', 미지원 ' + summary.unsupported + ', 목록 실패 ' + summary.ownerErrors);

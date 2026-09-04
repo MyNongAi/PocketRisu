@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, CodeIcon, CogIcon, ContactIcon, FlaskConicalIcon, ImageIcon, LanguagesIcon, MonitorIcon, MonitorSmartphoneIcon, Sailboat, ScrollTextIcon, SearchIcon, UserIcon, CircleXIcon, KeyboardIcon, TruckIcon, FileBoxIcon, Volume2Icon, HeartIcon, BrainIcon } from "@lucide/svelte";
+    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, CodeIcon, CogIcon, ContactIcon, FlaskConicalIcon, GripVerticalIcon, ImageIcon, LanguagesIcon, MonitorIcon, MonitorSmartphoneIcon, Sailboat, ScrollTextIcon, SearchIcon, CircleXIcon, KeyboardIcon, TruckIcon, FileBoxIcon, Volume2Icon, HeartIcon, BrainIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import { supportDialogOpen, supportEnabled } from "src/ts/support";
     import DisplaySettings from "./Pages/DisplaySettings.svelte";
@@ -32,6 +32,13 @@
     import DevPanel from "src/lib/_dev/DevPanel.svelte";
     import SettingsSearch from "./SettingsSearch.svelte";
     import { MediaQuery } from "svelte/reactivity";
+    import Sortable from 'sortablejs/modular/sortable.core.esm.js';
+    import {
+        mergeVisibleSettingsMenuOrder,
+        moveVisibleSettingsMenuItem,
+        readSettingsMenuOrder,
+        writeSettingsMenuOrder,
+    } from "src/ts/setting/menuOrder";
 
     // Dev panel is opt-in via localStorage['risu-dev-panel']='1' in devtools.
     // Read once on mount — flag changes require reload. Gates both the menu
@@ -48,6 +55,95 @@
     const wide900 = new MediaQuery('(min-width: 900px)')
     const wide700 = new MediaQuery('(min-width: 700px)')
     const wide768 = new MediaQuery('(min-width: 768px)')
+
+    type SettingsMenuItem = {
+        id: string
+        index: number
+        label: () => string
+        icon: typeof BotIcon
+        fullOnly?: boolean
+        devOnly?: boolean
+        activeIndices?: number[]
+    }
+
+    const settingsMenuItems: SettingsMenuItem[] = [
+        { id: 'bot', index: 1, label: () => language.chatBot, icon: BotIcon, fullOnly: true, activeIndices: [1, 13] },
+        { id: 'model-preset', index: 16, label: () => language.modelPresetMenu, icon: FileBoxIcon, fullOnly: true },
+        { id: 'prompt-preset', index: 17, label: () => language.promptPresetMenu, icon: ScrollTextIcon, fullOnly: true },
+        { id: 'persona', index: 12, label: () => language.persona, icon: ContactIcon, fullOnly: true },
+        { id: 'memory', index: 24, label: () => language.longTermMemory, icon: BrainIcon, fullOnly: true },
+        { id: 'other-bots', index: 2, label: () => language.otherBots, icon: Sailboat, fullOnly: true },
+        { id: 'display', index: 3, label: () => language.display, icon: MonitorIcon, fullOnly: true },
+        { id: 'sound', index: 7, label: () => language.soundAndNotification, icon: Volume2Icon, fullOnly: true },
+        { id: 'language', index: 10, label: () => language.language, icon: LanguagesIcon },
+        { id: 'accessibility', index: 11, label: () => language.accessibility, icon: AccessibilityIcon, fullOnly: true },
+        { id: 'modules', index: 14, label: () => language.modules, icon: PackageIcon, fullOnly: true },
+        { id: 'plugins', index: 4, label: () => language.plugin, icon: CodeIcon, fullOnly: true },
+        { id: 'migration', index: 0, label: () => language.migration, icon: TruckIcon },
+        { id: 'hotkeys', index: 15, label: () => language.hotkey, icon: KeyboardIcon },
+        { id: 'inlay-gallery', index: 23, label: () => language.playground.inlayImageGallery, icon: ImageIcon, fullOnly: true },
+        { id: 'remote-access', index: 21, label: () => language.remoteAccess, icon: MonitorSmartphoneIcon, fullOnly: true },
+        { id: 'advanced', index: 6, label: () => language.advancedSettings, icon: ActivityIcon, fullOnly: true },
+        { id: 'system', index: 22, label: () => language.system, icon: CogIcon, fullOnly: true },
+        { id: 'dev-panel', index: 99, label: () => 'Dev Panel', icon: FlaskConicalIcon, fullOnly: true, devOnly: true },
+    ]
+    const settingsMenuById = new Map(settingsMenuItems.map((item) => [item.id, item]))
+    const settingsMenuStorage = typeof localStorage !== 'undefined' ? localStorage : null
+    let settingsMenuOrder = $state(readSettingsMenuOrder(settingsMenuItems.map((item) => item.id), settingsMenuStorage))
+    let settingsMenuDragging = $state(false)
+    let settingsMenuAnnouncement = $state('')
+    const visibleSettingsMenuItems = $derived.by(() => {
+        const result: SettingsMenuItem[] = []
+        for (const id of settingsMenuOrder) {
+            const item = settingsMenuById.get(id)
+            if (!item) continue
+            if (item.fullOnly && $isLite) continue
+            if (item.devOnly && !devPanelEnabled) continue
+            result.push(item)
+        }
+        return result
+    })
+
+    function sortableSettingsMenu(node: HTMLElement) {
+        const sortable = Sortable.create(node, {
+            animation: 150,
+            draggable: '[data-settings-menu-id]',
+            delay: 320,
+            delayOnTouchOnly: true,
+            touchStartThreshold: 5,
+            fallbackTolerance: 5,
+            ghostClass: 'settings-menu-ghost',
+            chosenClass: 'settings-menu-chosen',
+            onStart: () => { settingsMenuDragging = true },
+            onEnd: () => {
+                const visibleOrder = Array.from(node.querySelectorAll<HTMLElement>('[data-settings-menu-id]'))
+                    .map((element) => element.dataset.settingsMenuId)
+                    .filter((id): id is string => Boolean(id))
+                settingsMenuOrder = mergeVisibleSettingsMenuOrder(settingsMenuOrder, visibleOrder)
+                writeSettingsMenuOrder(settingsMenuOrder, settingsMenuStorage)
+                setTimeout(() => { settingsMenuDragging = false }, 0)
+            },
+        })
+        return { destroy: () => sortable.destroy() }
+    }
+
+    function openSettingsMenu(index: number) {
+        if (!settingsMenuDragging) $SettingsMenuIndex = index
+    }
+
+    function reorderSettingsMenuWithKeyboard(event: KeyboardEvent, item: SettingsMenuItem) {
+        if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown')) return
+        const visibleOrder = visibleSettingsMenuItems.map((visibleItem) => visibleItem.id)
+        const currentIndex = visibleOrder.indexOf(item.id)
+        const offset = event.key === 'ArrowUp' ? -1 : 1
+        const targetIndex = currentIndex + offset
+        if (currentIndex < 0 || targetIndex < 0 || targetIndex >= visibleOrder.length) return
+        event.preventDefault()
+        event.stopPropagation()
+        settingsMenuOrder = moveVisibleSettingsMenuItem(settingsMenuOrder, visibleOrder, item.id, offset)
+        writeSettingsMenuOrder(settingsMenuOrder, settingsMenuStorage)
+        settingsMenuAnnouncement = `${item.label()}: ${targetIndex + 1} / ${visibleOrder.length}`
+    }
 
     $effect(() => {
         if(wide900.current && $SettingsMenuIndex === -1 && !$MobileGUI){
@@ -81,192 +177,36 @@
                     <SearchIcon size={16} class="shrink-0" />
                     <span class="text-sm">{language.searchSettingsPlaceholder}</span>
                 </button>
+                <div class="flex flex-col gap-2" use:sortableSettingsMenu>
+                    {#each visibleSettingsMenuItems as item (item.id)}
+                        {@const MenuIcon = item.icon}
+                        {@const isActive = item.activeIndices
+                            ? item.activeIndices.includes($SettingsMenuIndex)
+                            : $SettingsMenuIndex === item.index}
+                        <button
+                            type="button"
+                            data-settings-menu-id={item.id}
+                            class="settings-menu-item flex gap-2 items-center hover:text-textcolor"
+                            class:text-textcolor={isActive}
+                            class:text-textcolor2={!isActive}
+                            aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+                            onclick={() => openSettingsMenu(item.index)}
+                            onkeydown={(event) => reorderSettingsMenuWithKeyboard(event, item)}
+                        >
+                            <MenuIcon />
+                            <span>{item.label()}</span>
+                            <span class="grow"></span>
+                            <GripVerticalIcon size={16} class="settings-menu-grip shrink-0 opacity-35" aria-hidden="true" />
+                        </button>
+                    {/each}
+                </div>
+                <span class="sr-only" aria-live="polite" aria-atomic="true">{settingsMenuAnnouncement}</span>
                 {#if !$isLite}
-                    <button class="flex gap-2 items-center hover:text-textcolor"
-                        class:text-textcolor={$SettingsMenuIndex === 1 || $SettingsMenuIndex === 13}
-                        class:text-textcolor2={$SettingsMenuIndex !== 1 && $SettingsMenuIndex !== 13}
-                        onclick={() => {
-                            $SettingsMenuIndex = 1
-
-                    }}>
-                        <BotIcon />
-                        <span>{language.chatBot}</span>
-                    </button>
-                    <button class="flex gap-2 items-center hover:text-textcolor"
-                        class:text-textcolor={$SettingsMenuIndex === 16}
-                        class:text-textcolor2={$SettingsMenuIndex !== 16}
-                        onclick={() => {
-                            $SettingsMenuIndex = 16
-                    }}>
-                        <FileBoxIcon />
-                        <span>{language.modelPresetMenu}</span>
-                    </button>
-                    <button class="flex gap-2 items-center hover:text-textcolor"
-                        class:text-textcolor={$SettingsMenuIndex === 17}
-                        class:text-textcolor2={$SettingsMenuIndex !== 17}
-                        onclick={() => {
-                            $SettingsMenuIndex = 17
-                    }}>
-                        <ScrollTextIcon />
-                        <span>{language.promptPresetMenu}</span>
-                    </button>
-                    <button class="flex gap-2 items-center hover:text-textcolor"
-                        class:text-textcolor={$SettingsMenuIndex === 12}
-                        class:text-textcolor2={$SettingsMenuIndex !== 12}
-                        onclick={() => {
-                            $SettingsMenuIndex = 12
-                    }}>
-                        <ContactIcon />
-                        <span>{language.persona}</span>
-                    </button>
-                    <button class="flex gap-2 items-center hover:text-textcolor"
-                        class:text-textcolor={$SettingsMenuIndex === 24}
-                        class:text-textcolor2={$SettingsMenuIndex !== 24}
-                        onclick={() => {
-                            $SettingsMenuIndex = 24
-                    }}>
-                        <BrainIcon />
-                        <span>{language.longTermMemory}</span>
-                    </button>
-                    <button class="flex gap-2 items-center hover:text-textcolor"
-                        class:text-textcolor={$SettingsMenuIndex === 2}
-                        class:text-textcolor2={$SettingsMenuIndex !== 2}
-                        onclick={() => {
-                            $SettingsMenuIndex = 2
-                    }}>
-                        <Sailboat />
-                        <span>{language.otherBots}</span>
-                    </button>
-                    <button class="flex gap-2 items-center hover:text-textcolor"
-                        class:text-textcolor={$SettingsMenuIndex === 3}
-                        class:text-textcolor2={$SettingsMenuIndex !== 3}
-                        onclick={() => {
-                            $SettingsMenuIndex = 3
-                    }}>
-                        <MonitorIcon />
-                        <span>{language.display}</span>
-                    </button>
-                    <button class="flex gap-2 items-center hover:text-textcolor"
-                        class:text-textcolor={$SettingsMenuIndex === 7}
-                        class:text-textcolor2={$SettingsMenuIndex !== 7}
-                        onclick={() => {
-                            $SettingsMenuIndex = 7
-                    }}>
-                        <Volume2Icon />
-                        <span>{language.soundAndNotification}</span>
-                    </button>
-                {/if}
-                <button class="flex gap-2 items-center hover:text-textcolor"
-                    class:text-textcolor={$SettingsMenuIndex === 10}
-                    class:text-textcolor2={$SettingsMenuIndex !== 10}
-                    onclick={() => {
-                        $SettingsMenuIndex = 10
-                }}>
-                    <LanguagesIcon />
-                    <span>{language.language}</span>
-                </button>
-                {#if !$isLite}
-                    <button class="flex gap-2 items-center hover:text-textcolor"
-                        class:text-textcolor={$SettingsMenuIndex === 11}
-                        class:text-textcolor2={$SettingsMenuIndex !== 11}
-                        onclick={() => {
-                            $SettingsMenuIndex = 11
-                    }}>
-                        <AccessibilityIcon />
-                        <span>{language.accessibility}</span>
-                    </button>
-                    <button class="flex gap-2 items-center hover:text-textcolor"
-                        class:text-textcolor={$SettingsMenuIndex === 14}
-                        class:text-textcolor2={$SettingsMenuIndex !== 14}
-                        onclick={() => {
-                            $SettingsMenuIndex = 14
-                    }}>
-                        <PackageIcon />
-                        <span>{language.modules}</span>
-                    </button>
-                    <button class="flex gap-2 items-center hover:text-textcolor"
-                        class:text-textcolor={$SettingsMenuIndex === 4}
-                        class:text-textcolor2={$SettingsMenuIndex !== 4}
-                        onclick={() => {
-                        $SettingsMenuIndex = 4
-                    }}>
-                        <CodeIcon />
-                        <span>{language.plugin}</span>
-                    </button>
-                {/if}
-                <button class="flex gap-2 items-center hover:text-textcolor"
-                    class:text-textcolor={$SettingsMenuIndex === 0}
-                    class:text-textcolor2={$SettingsMenuIndex !== 0}
-                    onclick={() => {
-                        $SettingsMenuIndex = 0
-                }}>
-                    <TruckIcon />
-                    <span>{language.migration}</span>
-                </button>
-                <button class="flex gap-2 items-center hover:text-textcolor"
-                        class:text-textcolor={$SettingsMenuIndex === 15}
-                        class:text-textcolor2={$SettingsMenuIndex !== 15}
-                        onclick={() => {
-                        $SettingsMenuIndex = 15
-                    }}>
-                        <KeyboardIcon />
-                        <span>{language.hotkey}</span>
-                    </button>
-                {#if !$isLite}
-                    <button class="flex gap-2 items-center hover:text-textcolor"
-                        class:text-textcolor={$SettingsMenuIndex === 23}
-                        class:text-textcolor2={$SettingsMenuIndex !== 23}
-                        onclick={() => {
-                        $SettingsMenuIndex = 23
-                    }}>
-                        <ImageIcon />
-                        <span>{language.playground.inlayImageGallery}</span>
-                    </button>
-                    <button class="flex gap-2 items-center hover:text-textcolor"
-                        class:text-textcolor={$SettingsMenuIndex === 21}
-                        class:text-textcolor2={$SettingsMenuIndex !== 21}
-                        onclick={() => {
-                        $SettingsMenuIndex = 21
-                    }}>
-                        <MonitorSmartphoneIcon />
-                        <span>{language.remoteAccess}</span>
-                    </button>
-                    <button class="flex gap-2 items-center hover:text-textcolor"
-                        class:text-textcolor={$SettingsMenuIndex === 6}
-                        class:text-textcolor2={$SettingsMenuIndex !== 6}
-                        onclick={() => {
-                        $SettingsMenuIndex = 6
-                    }}>
-                        <ActivityIcon />
-                        <span>{language.advancedSettings}</span>
-                    </button>
-                    <button class="flex gap-2 items-center hover:text-textcolor"
-                        class:text-textcolor={$SettingsMenuIndex === 22}
-                        class:text-textcolor2={$SettingsMenuIndex !== 22}
-                        onclick={() => {
-                        $SettingsMenuIndex = 22
-                    }}>
-                        <CogIcon />
-                        <span>{language.system}</span>
-                    </button>
                     {#if $supportEnabled}
                         <button class="flex gap-2 items-center hover:text-textcolor text-textcolor2"
-                            onclick={() => {
-                            supportDialogOpen.set(true)
-                        }}>
+                            onclick={() => supportDialogOpen.set(true)}>
                             <HeartIcon />
                             <span>{language.support}</span>
-                        </button>
-                    {/if}
-                    {#if devPanelEnabled}
-                        <button class="flex gap-2 items-center hover:text-textcolor"
-                            class:text-textcolor={$SettingsMenuIndex === 99}
-                            class:text-textcolor2={$SettingsMenuIndex !== 99}
-                            onclick={() => {
-                            $SettingsMenuIndex = 99
-                        }}>
-                            <FlaskConicalIcon />
-                            <span>Dev Panel</span>
                         </button>
                     {/if}
                     {#if additionalSettingsMenu.length > 0}
@@ -276,14 +216,11 @@
                     {/if}
                     {#each additionalSettingsMenu as menu}
                         <button class="flex gap-2 items-center hover:text-textcolor text-textcolor2"
-                            onclick={() => {
-                                menu.callback()
-                        }}>
+                            onclick={() => menu.callback()}>
                             <PluginDefinedIcon ico={menu} className="w-5 h-5 shrink-0" />
                             <span>{menu.name}</span>
                         </button>
                     {/each}
-
                 {/if}
                 {#if !wide700.current && !$MobileGUI}
                     <button class="absolute top-2 right-2 hover:text-primary text-textcolor" onclick={() => {
@@ -384,5 +321,19 @@
     .rs-setting-cont-3 :global(svg),
     .rs-setting-cont-3 :global(img){
         flex-shrink: 0;
+    }
+    .settings-menu-item {
+        min-height: 2rem;
+        cursor: grab;
+        touch-action: pan-y;
+        user-select: none;
+    }
+    :global(.settings-menu-chosen) {
+        border-radius: 0.375rem;
+        background: var(--risu-theme-darkborderc);
+        cursor: grabbing;
+    }
+    :global(.settings-menu-ghost) {
+        opacity: 0.35;
     }
 </style>

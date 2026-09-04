@@ -859,7 +859,8 @@
                     size="56"
                     rounded={IconRounded}
                     name={folderChar.name}
-                    titleColor={listTitleColor(DBState.db.characters[folderChar.index]?.titleColor, Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) > 0)}
+                    titleColor={listTitleColor(DBState.db.characters[folderChar.index]?.titleColor)}
+                    missingAssets={Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) > 0}
                     chaId={DBState.db.characters[folderChar.index]?.chaId}
                     oncontextmenu={(e) => { void editSidebarCharacter(folderChar.index, e) }}
                   />
@@ -955,7 +956,8 @@
             size="56"
             rounded={IconRounded}
             name={block.char.name}
-            titleColor={listTitleColor(DBState.db.characters[block.char.index]?.titleColor, Number(DBState.db.characters[block.char.index]?.sourceInfo?.missingAssetCount) > 0)}
+            titleColor={listTitleColor(DBState.db.characters[block.char.index]?.titleColor)}
+            missingAssets={Number(DBState.db.characters[block.char.index]?.sourceInfo?.missingAssetCount) > 0}
             chaId={DBState.db.characters[block.char.index]?.chaId}
             oncontextmenu={(e) => { void editSidebarCharacter(block.char.index, e) }}
           />
@@ -1265,7 +1267,8 @@
               size="56" 
               rounded={IconRounded} 
               name={char.name}
-              titleColor={listTitleColor(DBState.db.characters[char.index]?.titleColor, Number(DBState.db.characters[char.index]?.sourceInfo?.missingAssetCount) > 0)}
+              titleColor={listTitleColor(DBState.db.characters[char.index]?.titleColor)}
+              missingAssets={Number(DBState.db.characters[char.index]?.sourceInfo?.missingAssetCount) > 0}
               chaId={DBState.db.characters[char.index]?.chaId}
               oncontextmenu={(e) => { void editSidebarCharacter(char.index, e) }}
             />
@@ -1381,7 +1384,8 @@
                   size="56" 
                   rounded={IconRounded} 
                   name={char2.name}
-                  titleColor={listTitleColor(DBState.db.characters[char2.index]?.titleColor, Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) > 0)}
+                  titleColor={listTitleColor(DBState.db.characters[char2.index]?.titleColor)}
+                  missingAssets={Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) > 0}
                   chaId={DBState.db.characters[char2.index]?.chaId}
                   oncontextmenu={(e) => { void editSidebarCharacter(char2.index, e) }}
                 />
@@ -1640,12 +1644,13 @@
                   size="36"
                   rounded={IconRounded}
                   name={rc.name}
-                  titleColor={listTitleColor(DBState.db.characters[rc.index]?.titleColor, Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0)}
+                  titleColor={listTitleColor(DBState.db.characters[rc.index]?.titleColor)}
+                  missingAssets={Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0}
                   chaId={DBState.db.characters[rc.index]?.chaId}
                 />
               </div>
               <div class="flex-1 min-w-0">
-                <div class="text-sm font-semibold text-textcolor leading-tight truncate" style:color={listTitleColor(DBState.db.characters[rc.index]?.titleColor, Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0)}>{rc.name || "Unnamed"}</div>
+                <div class="text-sm font-semibold text-textcolor leading-tight truncate" style:color={listTitleColor(DBState.db.characters[rc.index]?.titleColor)}>{rc.name || "Unnamed"}{#if Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0} <span aria-label="에셋 누락" title="에셋 누락">❗</span>{/if}</div>
                 <div class="text-xs text-textcolor2 leading-tight truncate">{makeAgoText(rc.lastInteraction)}</div>
               </div>
             </button>

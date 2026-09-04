@@ -186,7 +186,7 @@
     }
 
     function folderColor(folder: PromptPresetFolder, indexes: number[]) {
-        return listTitleColor(folder.titleColor, indexes.some((index) => hasMissingAssets(displayModules[index])))
+        return listTitleColor(folder.titleColor)
     }
 
     onDestroy(() => {
@@ -224,6 +224,9 @@
         {/snippet}
         {#snippet folderActions(_folder, indexes)}
             {@const activeCount = indexes.filter((index) => DBState.db.enabledModules.includes(displayModules[index]?.id)).length}
+            {#if indexes.some((index) => hasMissingAssets(displayModules[index]))}
+                <span class="no-sort shrink-0" aria-label="에셋 누락" title="에셋 누락">❗</span>
+            {/if}
             <button
                 class="no-sort shrink-0 rounded-sm p-1 cursor-pointer {activeCount > 0 ? 'text-emerald-500 bg-emerald-500/15' : 'text-textcolor2 hover:text-primary'}"
                 title={`폴더 모듈 전체 활성화 (${activeCount}/${indexes.length})`}
@@ -237,7 +240,7 @@
                 <Waypoints size={18} class="shrink-0 text-textcolor2" />
             {/if}
             <div class="flex flex-col min-w-0 grow">
-                <span class="truncate text-textcolor" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(rmodule))}>{rmodule.favorite ? '★ ' : ''}{rmodule.name}</span>
+                <span class="truncate text-textcolor" style:color={listTitleColor(rmodule.titleColor)}>{rmodule.favorite ? '★ ' : ''}{rmodule.name}{#if hasMissingAssets(rmodule)} <span aria-label="에셋 누락" title="에셋 누락">❗</span>{/if}</span>
                 <span class="text-xs text-textcolor2 truncate">{rmodule.description || 'No description provided'}</span>
             </div>
             <button class="no-sort shrink-0 p-1 cursor-pointer {isGlobal(rmodule) ? 'text-blue-500' : isIntegrated(rmodule) ? 'text-amber-500 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"

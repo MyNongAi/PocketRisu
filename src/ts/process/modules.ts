@@ -2,7 +2,7 @@ import { language } from "src/lang"
 import { alertClear, alertConfirm, alertError, alertModuleSelect, alertNormal, alertStore, alertWait, notifySuccess } from "../alert"
 import { getCurrentCharacter, getCurrentChat, getDatabase, setCurrentCharacter, setDatabase, type Chat, type character, type customscript, type loreBook, type RisuPersona, type triggerscript } from "../storage/database.svelte"
 import { AppendableBuffer, downloadFile, forageStorage, loadAssetManifestItems, LocalWriter, readImage, saveAsset, VirtualWriter } from "../globalApi.svelte"
-import { checkPersonaBinded, selectSingleFile, sleep } from "../util"
+import { checkPersonaBinded, selectMultipleFile, sleep } from "../util"
 import { v4 } from "uuid"
 import { convertExternalLorebook } from "./lorebook.svelte"
 import { compressImage } from '../media'
@@ -15,7 +15,7 @@ import { exportCharacterCard, importCharacterProcess } from "../characterCards"
 import { collectModuleRuntimeIds, collectModuleRuntimeUi } from "./moduleRuntime"
 import { recordModuleFolderActivation, recordNewModules } from "./moduleSort"
 import { organizeImportedModuleSimilarity } from "./similarityFolders"
-import type { ImportProgressReporter } from "../importProgress"
+import { runImportBatch, type ImportProgressReporter } from "../importProgress"
 
 export interface MCPModule{
     url: string
@@ -429,14 +429,19 @@ export async function importModuleFile(
 }
 
 export async function importModule(){
-    const file = await selectSingleFile(['json', 'lorebook', 'risum', 'charx'])
-    if(!file) return
-    try {
-        await importModuleFile(file)
-    } catch (error) {
-        console.error(error)
-        alertError(language.errors.noData)
+    const files = await selectMultipleFile(['json', 'lorebook', 'risum', 'charx'])
+    if(!files || files.length === 0) return
+
+    const result = await runImportBatch(files, async (file, report) => {
+        await importModuleFile(file, {
+            suppressSuccess: true,
+            onProgress: report,
+        })
+    })
+    if(result.completed > 0){
+        notifySuccess(`${result.completed}/${result.total} ${language.successImport}`)
     }
+    return result
 }
 
 function getModuleById(id:string){
