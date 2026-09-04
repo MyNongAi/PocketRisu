@@ -6,6 +6,7 @@
     import { makeAgoText } from "src/ts/util";
     import { MessageSquareIcon, PlusIcon, SquareMousePointer, TrashIcon, PaletteIcon } from "@lucide/svelte";
     import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
+    import { getCharacterAssetCount } from "src/ts/gui/characterAssetCount";
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
     import { language } from "src/lang";
     import VirtualList from "../UI/Virtual/VirtualList.svelte";
@@ -30,6 +31,7 @@
                 trashTime: c.trashTime,
                 interaction: c.lastInteraction || 0,
                 agoText: makeAgoText(c.lastInteraction || 0),
+                assetCount: getCharacterAssetCount(c),
                 missingAssetCount: c.sourceInfo?.missingAssetCount ?? 0,
                 realmRecoveryAvailable: isRealmAssetRecoveryAvailable(c),
                 titleColor: c.titleColor,
@@ -71,15 +73,22 @@
                     endGrid()
                 }}>
                 <div class="flex flex-1 w-full flex-col justify-start items-start text-start">
-                    <span style:color={listTitleColor(char.titleColor, char.missingAssetCount > 0)}>{char.name}</span>
-                    {#if char.missingAssetCount > 0}
-                        {#if char.realmRecoveryAvailable}<span class="font-black text-emerald-400" aria-label="Realm 에셋 복구 가능" title="Realm 에셋 복구 가능">!</span>{:else}<span aria-label="에셋 누락" title="확인된 Realm 복구 원본 없음">❗</span>{/if}
-                    {/if}
+                    <div class="flex min-w-0 max-w-full items-center gap-1">
+                        <span class="truncate" style:color={listTitleColor(char.titleColor, char.missingAssetCount > 0)}>{char.name}</span>
+                        {#if char.missingAssetCount > 0}
+                            {#if char.realmRecoveryAvailable}<span class="shrink-0 font-black text-emerald-400" aria-label="Realm 에셋 복구 가능" title="Realm 에셋 복구 가능">!</span>{:else}<span class="shrink-0" aria-label="에셋 누락" title="확인된 Realm 복구 원본 없음">❗</span>{/if}
+                        {/if}
+                    </div>
                     <div class="text-sm text-textcolor2 flex items-center w-full flex-wrap">
                         <span class="mr-1">{char.chats}</span>
                         <MessageSquareIcon size={14} />
                         <span class="mr-1 ml-1">|</span>
                         <span>{char.agoText}</span>
+                        <span class="mr-1 ml-1">|</span>
+                        <span>에셋 {char.assetCount.toLocaleString()}개</span>
+                        {#if char.missingAssetCount > 0}
+                            <span class="ml-1 text-red-400">· 누락 {char.missingAssetCount.toLocaleString()}개</span>
+                        {/if}
                     </div>
                 </div>
             </button>

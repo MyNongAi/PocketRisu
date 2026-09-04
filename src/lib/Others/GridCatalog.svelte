@@ -6,6 +6,7 @@
     import BarIcon from "../SideBars/BarIcon.svelte";
     import { ArrowLeft, MessageSquareIcon, User, SquareMousePointer, TrashIcon, Undo2Icon, PaletteIcon } from "@lucide/svelte";
     import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
+    import { getCharacterAssetCount } from "src/ts/gui/characterAssetCount";
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
     import { selectedCharID } from "../../ts/stores.svelte";
     import TextInput from "../UI/GUI/TextInput.svelte";
@@ -40,6 +41,7 @@
             chats:number
             interaction:number
             agoText:string
+            assetCount:number
             missingAssetCount:number
             realmRecoveryAvailable:boolean
             titleColor?:string
@@ -64,6 +66,7 @@
                     chats: c.chats.length,
                     interaction: c.lastInteraction ?? 0,
                     agoText: makeAgoText(c.lastInteraction ?? 0),
+                    assetCount: getCharacterAssetCount(c),
                     missingAssetCount: c.sourceInfo?.missingAssetCount ?? 0,
                     realmRecoveryAvailable: isRealmAssetRecoveryAvailable(c),
                     titleColor: c.titleColor,
@@ -160,6 +163,11 @@
                             <MessageSquareIcon size={14} />
                             <span class="mx-1">|</span>
                             <span>{char.agoText}</span>
+                            <span class="mx-1">|</span>
+                            <span>에셋 {char.assetCount.toLocaleString()}개</span>
+                            {#if char.missingAssetCount > 0}
+                                <span class="ml-1 text-red-400">· 누락 {char.missingAssetCount.toLocaleString()}개</span>
+                            {/if}
                         </div>
                         <div class="flex gap-2 justify-end">
                             <button class="hover:text-textcolor text-textcolor2" title="제목 색변경" aria-label="제목 색변경" onclick={() => editCharacterTitleColor(char.chaId)}>
