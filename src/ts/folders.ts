@@ -7,6 +7,11 @@ export interface FolderGroup {
     indexes: number[]
 }
 
+/** The saved set records deviations from the default; uncategorized stays open. */
+export function isFolderCollapsed(folderId: string, toggled: ReadonlySet<string>, defaultCollapsed = false): boolean {
+    return defaultCollapsed && folderId !== '' ? !toggled.has(folderId) : toggled.has(folderId)
+}
+
 /**
  * Groups item indexes by folder. Items whose folderId points to a missing
  * folder are treated as uncategorized so nothing silently disappears from

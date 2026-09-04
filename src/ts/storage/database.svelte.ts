@@ -1048,6 +1048,10 @@ export interface RisuPersona {
 export interface PromptPresetFolder {
     id: string
     name: string
+    /** Optional catalog display metadata, independent of item contents. */
+    titleColor?: string
+    favorite?: boolean
+    sortOrder?: number
     /** Legacy/compact module catalog membership; synchronized with module.folderId. */
     moduleIds?: string[]
 }
@@ -1694,6 +1698,8 @@ export interface loreBook{
 export interface character{
     type?:"character"
     name:string
+    /** Optional list title color; missing-asset warnings take precedence. */
+    titleColor?:string
     /** PocketRisu collection provenance. Ignored by upstream clients. */
     sourceInfo?: import('../sourceCollection').SourceImportInfo
     image?:string

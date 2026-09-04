@@ -58,6 +58,8 @@
     import { onMount } from "svelte";
     import { checkCharOrder, getFileSrc, saveAsset } from "src/ts/globalApi.svelte";
     import { alertInput, alertSelect } from "src/ts/alert";
+    import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
+    import { listTitleColor } from "src/ts/gui/titleColors";
     import MeasuredVirtualList from "../UI/Virtual/MeasuredVirtualList.svelte";
 
   import { sideBarSize } from "src/ts/gui/guisize";
@@ -402,13 +404,17 @@
     e.stopPropagation()
     const character = DBState.db.characters[characterIndex]
     if(!character) return
-    const selected = parseInt(await alertSelect([language.edit, language.remove, language.cancel]))
+    const selected = parseInt(await alertSelect(['봇 설정 수정', '제목 색변경', language.remove, language.cancel]))
     if(selected === 0){
       changeChar(characterIndex, { reseter })
       botMakerMode.set(true)
       return
     }
     if(selected === 1){
+      await editCharacterTitleColor(character.chaId)
+      return
+    }
+    if(selected === 2){
       await removeChar(character.chaId, character.name)
     }
   }
@@ -853,6 +859,7 @@
                     size="56"
                     rounded={IconRounded}
                     name={folderChar.name}
+                    titleColor={listTitleColor(DBState.db.characters[folderChar.index]?.titleColor, Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) > 0)}
                     chaId={DBState.db.characters[folderChar.index]?.chaId}
                     oncontextmenu={(e) => { void editSidebarCharacter(folderChar.index, e) }}
                   />
@@ -948,6 +955,7 @@
             size="56"
             rounded={IconRounded}
             name={block.char.name}
+            titleColor={listTitleColor(DBState.db.characters[block.char.index]?.titleColor, Number(DBState.db.characters[block.char.index]?.sourceInfo?.missingAssetCount) > 0)}
             chaId={DBState.db.characters[block.char.index]?.chaId}
             oncontextmenu={(e) => { void editSidebarCharacter(block.char.index, e) }}
           />
@@ -1257,6 +1265,7 @@
               size="56" 
               rounded={IconRounded} 
               name={char.name}
+              titleColor={listTitleColor(DBState.db.characters[char.index]?.titleColor, Number(DBState.db.characters[char.index]?.sourceInfo?.missingAssetCount) > 0)}
               chaId={DBState.db.characters[char.index]?.chaId}
               oncontextmenu={(e) => { void editSidebarCharacter(char.index, e) }}
             />
@@ -1372,6 +1381,7 @@
                   size="56" 
                   rounded={IconRounded} 
                   name={char2.name}
+                  titleColor={listTitleColor(DBState.db.characters[char2.index]?.titleColor, Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) > 0)}
                   chaId={DBState.db.characters[char2.index]?.chaId}
                   oncontextmenu={(e) => { void editSidebarCharacter(char2.index, e) }}
                 />
@@ -1630,11 +1640,12 @@
                   size="36"
                   rounded={IconRounded}
                   name={rc.name}
+                  titleColor={listTitleColor(DBState.db.characters[rc.index]?.titleColor, Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0)}
                   chaId={DBState.db.characters[rc.index]?.chaId}
                 />
               </div>
               <div class="flex-1 min-w-0">
-                <div class="text-sm font-semibold text-textcolor leading-tight truncate">{rc.name || "Unnamed"}</div>
+                <div class="text-sm font-semibold text-textcolor leading-tight truncate" style:color={listTitleColor(DBState.db.characters[rc.index]?.titleColor, Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0)}>{rc.name || "Unnamed"}</div>
                 <div class="text-xs text-textcolor2 leading-tight truncate">{makeAgoText(rc.lastInteraction)}</div>
               </div>
             </button>

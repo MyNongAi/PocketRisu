@@ -22,6 +22,9 @@ export interface SimilarityModuleFolder {
     id: string
     name: string
     duplicateCandidate?: SimilarityCandidateInfo
+    titleColor?: string
+    favorite?: boolean
+    sortOrder?: number
 }
 
 export interface SimilarityFolderDatabase {
@@ -187,6 +190,7 @@ export function organizeAllModuleSimilarityFolders(
     const folderGroups = groups.map((group) => {
         const existing = oldFolders.get(group.key)
         const folder: SimilarityModuleFolder = {
+            ...existing,
             id: existing?.id ?? createUniqueId(db, createId, reservedIds),
             name: folderName(
                 group.label,
@@ -282,6 +286,7 @@ export function organizeImportedModuleSimilarity(
     const representative = members[0]
     const key = normalizeDuplicateName(representative.name)
     const generated: SimilarityModuleFolder = {
+        ...existing,
         id: existing?.id ?? createUniqueId(db, createId),
         name: folderName(
             typeof representative.name === 'string' ? representative.name.trim() : key,

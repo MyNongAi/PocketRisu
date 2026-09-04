@@ -110,6 +110,7 @@ export class AutoStorage{
     // ─── External asset store ───────────────────────────────────────────────
     async readExternalAsset(uri: string) { await this.Init(); return this.realStorage.readExternalAsset(uri) }
     async externalAssetStatus() { await this.Init(); return this.realStorage.externalAssetStatus() }
+    async inspectAssetReferences(paths: string[]) { await this.Init(); return this.realStorage.inspectAssetReferences(paths) }
     async startAssetDiagnosis(options?: Parameters<NodeStorage['startAssetDiagnosis']>[0]) { await this.Init(); return this.realStorage.startAssetDiagnosis(options) }
     async listAssetDiagnosisJobs() { await this.Init(); return this.realStorage.listAssetDiagnosisJobs() }
     async getAssetDiagnosisJob(jobId: string) { await this.Init(); return this.realStorage.getAssetDiagnosisJob(jobId) }

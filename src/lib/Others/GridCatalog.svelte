@@ -4,7 +4,9 @@
     import { DBState } from 'src/ts/stores.svelte';
     import { findCharacterIndexbyId } from "../../ts/util";
     import BarIcon from "../SideBars/BarIcon.svelte";
-    import { ArrowLeft, MessageSquareIcon, User, SquareMousePointer, TrashIcon, Undo2Icon } from "@lucide/svelte";
+    import { ArrowLeft, MessageSquareIcon, User, SquareMousePointer, TrashIcon, Undo2Icon, PaletteIcon } from "@lucide/svelte";
+    import { listTitleColor } from "src/ts/gui/titleColors";
+    import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
     import { selectedCharID } from "../../ts/stores.svelte";
     import TextInput from "../UI/GUI/TextInput.svelte";
     import Button from "../UI/GUI/Button.svelte";
@@ -39,6 +41,7 @@
             interaction:number
             agoText:string
             missingAssetCount:number
+            titleColor?:string
         }[] = []
 
         for(let i=0;i<db.characters.length;i++){
@@ -61,6 +64,7 @@
                     interaction: c.lastInteraction ?? 0,
                     agoText: makeAgoText(c.lastInteraction ?? 0),
                     missingAssetCount: c.sourceInfo?.missingAssetCount ?? 0,
+                    titleColor: c.titleColor,
                 })
             }
         }
@@ -147,7 +151,7 @@
                         additionalStyle={() => getCharThumbnail(char.image, 'css')}
                     ></BarIcon>
                     <div class="flex-1 flex flex-col ml-2">
-                        <h4 class={`font-bold text-lg mb-1 ${char.missingAssetCount > 0 ? 'text-red-400' : 'text-textcolor'}`}>{char.name || "Unnamed"}</h4>
+                        <h4 class="font-bold text-lg mb-1 text-textcolor" style:color={listTitleColor(char.titleColor, char.missingAssetCount > 0)}>{char.name || "Unnamed"}</h4>
                         <span class="line-clamp-2 text-textcolor2">{parseMultilangString(char.desc)['en'] || parseMultilangString(char.desc)['xx'] || 'No description'}</span>
                         <div class="mt-1 flex items-center text-sm text-textcolor2">
                             <span class="mr-1">{char.chats}</span>
@@ -156,6 +160,9 @@
                             <span>{char.agoText}</span>
                         </div>
                         <div class="flex gap-2 justify-end">
+                            <button class="hover:text-textcolor text-textcolor2" title="제목 색변경" aria-label="제목 색변경" onclick={() => editCharacterTitleColor(char.chaId)}>
+                                <PaletteIcon />
+                            </button>
                             <button
                                 class="hover:text-textcolor text-textcolor2"
                                 title={language.selectChar}
@@ -185,7 +192,7 @@
                 <div class="m-1 flex h-[118px] p-2 border border-darkborderc rounded-md">
                     <BarIcon onClick={() => {selectAndClose(char.index)}} additionalStyle={() => getCharThumbnail(char.image, 'css')}></BarIcon>
                     <div class="flex-1 flex flex-col ml-2">
-                        <h4 class={`font-bold text-lg mb-1 ${char.missingAssetCount > 0 ? 'text-red-400' : 'text-textcolor'}`}>{char.name || "Unnamed"}</h4>
+                        <h4 class="font-bold text-lg mb-1 text-textcolor" style:color={listTitleColor(char.titleColor, char.missingAssetCount > 0)}>{char.name || "Unnamed"}</h4>
                         <span class="line-clamp-2 text-textcolor2">{parseMultilangString(char.desc)['en'] || parseMultilangString(char.desc)['xx'] || 'No description'}</span>
                         <div class="flex gap-2 justify-end">
                             <button class="hover:text-textcolor text-textcolor2" onclick={() => {
