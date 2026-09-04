@@ -5,7 +5,7 @@
     import { addCharacter, cancelCharacterChatPrefetch, changeChar, getCharThumbnail, prefetchCharacterChat, removeChar, scheduleCharacterChatPrefetch } from "src/ts/characters";
     import { makeAgoText } from "src/ts/util";
     import { MessageSquareIcon, PlusIcon, SquareMousePointer, TrashIcon, PaletteIcon } from "@lucide/svelte";
-    import { listTitleColor } from "src/ts/gui/titleColors";
+    import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
     import { language } from "src/lang";
     import VirtualList from "../UI/Virtual/VirtualList.svelte";
@@ -31,6 +31,7 @@
                 interaction: c.lastInteraction || 0,
                 agoText: makeAgoText(c.lastInteraction || 0),
                 missingAssetCount: c.sourceInfo?.missingAssetCount ?? 0,
+                realmRecoveryAvailable: isRealmAssetRecoveryAvailable(c),
                 titleColor: c.titleColor,
             }))
             .filter((c) => !c.trashTime && c.name.replace(/ /g, "").toLocaleLowerCase().includes(normalizedSearch))
@@ -70,8 +71,10 @@
                     endGrid()
                 }}>
                 <div class="flex flex-1 w-full flex-col justify-start items-start text-start">
-                    <span style:color={listTitleColor(char.titleColor)}>{char.name}</span>
-                    {#if char.missingAssetCount > 0}<span aria-label="에셋 누락" title="에셋 누락">❗</span>{/if}
+                    <span style:color={listTitleColor(char.titleColor, char.missingAssetCount > 0)}>{char.name}</span>
+                    {#if char.missingAssetCount > 0}
+                        {#if char.realmRecoveryAvailable}<span class="font-black text-emerald-400" aria-label="Realm 에셋 복구 가능" title="Realm 에셋 복구 가능">!</span>{:else}<span aria-label="에셋 누락" title="확인된 Realm 복구 원본 없음">❗</span>{/if}
+                    {/if}
                     <div class="text-sm text-textcolor2 flex items-center w-full flex-wrap">
                         <span class="mr-1">{char.chats}</span>
                         <MessageSquareIcon size={14} />

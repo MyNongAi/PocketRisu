@@ -673,6 +673,20 @@ export const getV2PluginAPIs = () => {
             if (charactersChanged || modulesChanged) setDatabaseLite(db)
             return { updated, skipped }
         },
+        updateRealmAssetRecovery: (record: unknown) => {
+            const value = record as { id?: unknown; available?: unknown; realmId?: unknown }
+            if (typeof value?.id !== 'string' || typeof value.available !== 'boolean') return false
+            if (value.realmId !== undefined && typeof value.realmId !== 'string') return false
+            const db = getDatabase()
+            const owner = db.characters.find((item) => item?.chaId === value.id)
+            if (!owner?.sourceInfo) return false
+            const realmId = typeof value.realmId === 'string' ? value.realmId.trim() : ''
+            owner.sourceInfo.realmAssetRecoveryAvailable = value.available
+            owner.sourceInfo.realmAssetRecoveryId = value.available && realmId ? realmId : undefined
+            owner.sourceInfo.realmAssetRecoveryCheckedAt = Date.now()
+            setDatabaseLite(db)
+            return true
+        },
         setChar: (char: any) => {
             const db = getDatabase()
             const charid = get(selectedCharID)

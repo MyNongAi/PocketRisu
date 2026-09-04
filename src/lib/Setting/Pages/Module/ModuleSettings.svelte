@@ -186,7 +186,7 @@
     }
 
     function folderColor(folder: PromptPresetFolder, indexes: number[]) {
-        return listTitleColor(folder.titleColor)
+        return listTitleColor(folder.titleColor, indexes.some((index) => hasMissingAssets(displayModules[index])))
     }
 
     onDestroy(() => {
@@ -240,7 +240,7 @@
                 <Waypoints size={18} class="shrink-0 text-textcolor2" />
             {/if}
             <div class="flex flex-col min-w-0 grow">
-                <span class="truncate text-textcolor" style:color={listTitleColor(rmodule.titleColor)}>{rmodule.favorite ? '★ ' : ''}{rmodule.name}{#if hasMissingAssets(rmodule)} <span aria-label="에셋 누락" title="에셋 누락">❗</span>{/if}</span>
+                <span class="truncate text-textcolor" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(rmodule))}>{rmodule.favorite ? '★ ' : ''}{rmodule.name}{#if hasMissingAssets(rmodule)} <span aria-label="에셋 누락" title="에셋 누락">❗</span>{/if}</span>
                 <span class="text-xs text-textcolor2 truncate">{rmodule.description || 'No description provided'}</span>
             </div>
             <button class="no-sort shrink-0 p-1 cursor-pointer {isGlobal(rmodule) ? 'text-blue-500' : isIntegrated(rmodule) ? 'text-amber-500 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"

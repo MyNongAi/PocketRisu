@@ -173,7 +173,7 @@
                         onkeydown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(key) } }}>
                         {#if open}<ChevronDownIcon size={16} class="shrink-0 text-textcolor2"/>{:else}<ChevronRightIcon size={16} class="shrink-0 text-textcolor2"/>{/if}
                         <FolderIcon size={16} class="shrink-0 text-textcolor2"/>
-                        <span class="grow text-left truncate {group.folder ? '' : 'text-textcolor2'}" style:color={listTitleColor(group.folder?.titleColor)}>{group.folder?.favorite ? '★ ' : ''}{group.folder?.name ?? language.folderUncategorized}{#if visible.some(hasMissingAssets)} <span aria-label="에셋 누락" title="에셋 누락">❗</span>{/if}</span>
+                        <span class="grow text-left truncate {group.folder ? '' : 'text-textcolor2'}" style:color={listTitleColor(group.folder?.titleColor, visible.some(hasMissingAssets))}>{group.folder?.favorite ? '★ ' : ''}{group.folder?.name ?? language.folderUncategorized}{#if visible.some(hasMissingAssets)} <span aria-label="에셋 누락" title="에셋 누락">❗</span>{/if}</span>
                         {#if !alertMode}
                             <button
                                 class="shrink-0 rounded-sm p-1 {activeCount > 0 ? 'text-emerald-500 bg-emerald-500/15' : 'text-textcolor2 hover:text-primary'}"
@@ -197,7 +197,7 @@
                         {#if rmodule.mcp}
                             <Waypoints size={18} class="shrink-0 text-textcolor2" />
                         {/if}
-                        <span class="min-w-0 grow truncate {!alertMode && isGlobal ? 'text-textcolor2' : ''}" style:color={listTitleColor(rmodule.titleColor)}>{rmodule.favorite ? '★ ' : ''}{rmodule.name}{#if hasMissingAssets(i)} <span aria-label="에셋 누락" title="에셋 누락">❗</span>{/if}</span>
+                        <span class="min-w-0 grow truncate {!alertMode && isGlobal ? 'text-textcolor2' : ''}" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(i))}>{rmodule.favorite ? '★ ' : ''}{rmodule.name}{#if hasMissingAssets(i)} <span aria-label="에셋 누락" title="에셋 누락">❗</span>{/if}</span>
                         {#if alertMode}
                             <button class="text-textcolor2 cursor-pointer hover:text-success transition-colors shrink-0" onclick={(e) => {
                                 e.stopPropagation()

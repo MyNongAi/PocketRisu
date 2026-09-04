@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { chooseTitleColor, listTitleColor, normalizeTitleColor, TITLE_COLOR_OPTIONS } from './titleColors'
+import { chooseTitleColor, isRealmAssetRecoveryAvailable, listTitleColor, normalizeTitleColor, TITLE_COLOR_OPTIONS } from './titleColors'
 
 const prompts = vi.hoisted(() => ({ select: vi.fn(), input: vi.fn() }))
 vi.mock('../alert', () => ({ alertSelect: prompts.select, alertInput: prompts.input }))
@@ -12,8 +12,9 @@ describe('title colors', () => {
             expect(normalizeTitleColor(value)).toBeUndefined()
         }
     })
-    it('does not overwrite a chosen title color with asset health state', () => {
+    it('uses red as the missing default without overriding a manual title color', () => {
         expect(listTitleColor('#4ade80', true)).toBe('#4ade80')
+        expect(listTitleColor('', true)).toBe('#f87171')
         expect(listTitleColor('#4ade80', false)).toBe('#4ade80')
         expect(listTitleColor('', false)).toBeUndefined()
     })
@@ -21,6 +22,13 @@ describe('title colors', () => {
         for (const option of TITLE_COLOR_OPTIONS.slice(1)) {
             expect(normalizeTitleColor(option.value)).toBe(option.value)
         }
+    })
+    it('marks Realm recovery only from an explicit id or conclusive lookup', () => {
+        expect(isRealmAssetRecoveryAvailable({ realmId: 'realm-1' })).toBe(true)
+        expect(isRealmAssetRecoveryAvailable({ extentions: { risuRealmImportId: 'realm-2' } })).toBe(true)
+        expect(isRealmAssetRecoveryAvailable({ sourceInfo: { realmAssetRecoveryAvailable: true } })).toBe(true)
+        expect(isRealmAssetRecoveryAvailable({ sourceInfo: { realmAssetRecoveryAvailable: false } })).toBe(false)
+        expect(isRealmAssetRecoveryAvailable({ realmId: '   ' })).toBe(false)
     })
     it('does not confuse cancelled/null responses with the default selection', async () => {
         for (const value of ['', 'null', 'cancel', '-1', '2abc', null, undefined]) {
