@@ -2,11 +2,15 @@ export interface SortableModule {
     id: string
     name: string
     folderId?: string
+    favorite?: boolean
 }
 
 export interface SortableModuleFolder {
     id: string
     moduleIds?: ReadonlyArray<string>
+    favorite?: boolean
+    /** Explicit visual order; never reorders the source module array. */
+    sortOrder?: number
 }
 
 export interface ModuleSortOptions {
@@ -46,6 +50,8 @@ export function sortModulesByActivation<T extends SortableModule>(
         if(normalizedSearch === '') return true
         return module.name.toLocaleLowerCase().includes(normalizedSearch)
     }).sort((a, b) => {
+        const favoriteOrder = Number(!!b.favorite) - Number(!!a.favorite)
+        if (favoriteOrder) return favoriteOrder
         const aRank = recencyRank.get(a.id)
         const bRank = recencyRank.get(b.id)
 
@@ -115,6 +121,7 @@ export function sortModuleFoldersByActivation<T extends SortableModuleFolder>(
     ])
     const recencyRank = new Map(recencyOrder.map((id, index) => [id, index]))
     const membersByFolder = new Map<string, Set<string>>()
+    const hasExplicitOrder = folders.some((folder) => Number.isFinite(folder.sortOrder))
 
     for(const folder of folders){
         membersByFolder.set(folder.id, new Set(folder.moduleIds ?? []))
@@ -133,6 +140,36 @@ export function sortModuleFoldersByActivation<T extends SortableModuleFolder>(
             }
             return { folder, index, rank }
         })
-        .sort((a, b) => b.rank - a.rank || a.index - b.index)
+        .sort((a, b) => {
+            const favoriteOrder = Number(!!b.folder.favorite) - Number(!!a.folder.favorite)
+            if (favoriteOrder) return favoriteOrder
+            const aOrder = Number.isFinite(a.folder.sortOrder) ? a.folder.sortOrder! : undefined
+            const bOrder = Number.isFinite(b.folder.sortOrder) ? b.folder.sortOrder! : undefined
+            if (hasExplicitOrder) return (aOrder ?? Infinity) - (bOrder ?? Infinity) || a.index - b.index
+            return b.rank - a.rank || a.index - b.index
+        })
         .map(({ folder }) => folder)
+}
+
+/** Store a menu/drag order in the small folder overlay, not in db.modules. */
+export function recordModuleFolderOrder<T extends SortableModuleFolder>(folders: ReadonlyArray<T>): T[] {
+    return folders.map((folder, sortOrder) => ({ ...folder, sortOrder }))
+}
+
+/** A new activation supersedes manual order for that folder only. Pinned folders stay first. */
+export function recordModuleFolderActivation<T extends SortableModuleFolder>(
+    folders: ReadonlyArray<T>,
+    modules: ReadonlyArray<SortableModule>,
+    moduleId: string,
+    options: ModuleSortOptions = {},
+): T[] {
+    const module = modules.find((item) => item.id === moduleId)
+    const folderId = module?.folderId
+        || folders.find((folder) => folder.moduleIds?.includes(moduleId))?.id
+    if (!folderId || !folders.some((folder) => folder.id === folderId)) return [...folders]
+    const ordered = sortModuleFoldersByActivation(folders, modules, options)
+    const from = ordered.findIndex((folder) => folder.id === folderId)
+    const [folder] = ordered.splice(from, 1)
+    ordered.unshift(folder)
+    return recordModuleFolderOrder(ordered)
 }

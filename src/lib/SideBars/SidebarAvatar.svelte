@@ -14,6 +14,7 @@
     bordered?: boolean;
     folderShape?: boolean;
     color?: string;
+    titleColor?: string;
     backgroundimg?: DeferredImage;
     children?: import('svelte').Snippet;
     oncontextmenu?: (event: MouseEvent & {
@@ -31,6 +32,7 @@
     bordered = false,
     folderShape = false,
     color = '',
+    titleColor,
     backgroundimg = '',
     children,
     oncontextmenu,
@@ -169,7 +171,7 @@
           style:min-width={size + "px"}
           style:min-height={size + "px"}
           class:rounded-md={!rounded} class:rounded-full={rounded}
-        ><span class="line-clamp-3 wrap-break-word">{name}</span></div>
+        ><span class="line-clamp-3 wrap-break-word" style:color={titleColor}>{name}</span></div>
         {/if}
       {/await}
     {/if}
@@ -181,7 +183,7 @@
       style:min-width={size + "px"}
       style:min-height={size + "px"}
       class:rounded-md={!rounded} class:rounded-full={rounded} 
-    ><span class="line-clamp-3 wrap-break-word">{name}</span></div>
+    ><span class="line-clamp-3 wrap-break-word" style:color={titleColor}>{name}</span></div>
   {/if}
 </span>
 

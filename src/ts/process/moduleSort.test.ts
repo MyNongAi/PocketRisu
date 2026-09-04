@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
     recordModuleActivation,
+    recordModuleFolderActivation,
+    recordModuleFolderOrder,
     recordNewModules,
     seedModuleActivationHistory,
     sortModuleFoldersByActivation,
@@ -117,5 +119,53 @@ describe('sortModulesByActivation', () => {
         )
 
         expect(sorted.map((folder) => folder.id)).toEqual(['second', 'first'])
+    })
+
+    it('keeps favorites above recent modules without changing source order', () => {
+        const source = modules.map((module) => ({ ...module, favorite: module.id === 'bravo' }))
+        const sorted = sortModulesByActivation(source, '', { activationHistory: ['alpha', 'charlie'] })
+        expect(sorted.map((module) => module.id)).toEqual(['bravo', 'charlie', 'alpha', 'delta'])
+        expect(source.map((module) => module.id)).toEqual(modules.map((module) => module.id))
+    })
+
+    it('preserves manual folder order across rerenders despite old activation history', () => {
+        const folders = recordModuleFolderOrder([
+            { id: 'alpha-folder', moduleIds: ['alpha'] },
+            { id: 'charlie-folder', moduleIds: ['charlie'] },
+        ])
+        const options = { activationHistory: ['alpha', 'charlie'] }
+        const first = sortModuleFoldersByActivation(folders, modules, options)
+        const second = sortModuleFoldersByActivation(first, modules, options)
+        expect(first.map((folder) => folder.id)).toEqual(['alpha-folder', 'charlie-folder'])
+        expect(second).toEqual(first)
+    })
+
+    it('promotes only the activated folder after a manual move while favorites remain first', () => {
+        const folders = recordModuleFolderOrder([
+            { id: 'pinned', moduleIds: ['bravo'], favorite: true },
+            { id: 'alpha-folder', moduleIds: ['alpha'] },
+            { id: 'charlie-folder', moduleIds: ['charlie'] },
+        ])
+        const promoted = recordModuleFolderActivation(folders, modules, 'charlie', { activationHistory: ['charlie'] })
+        const sorted = sortModuleFoldersByActivation(promoted, modules)
+        expect(sorted.map((folder) => folder.id)).toEqual(['pinned', 'charlie-folder', 'alpha-folder'])
+        expect(folders.map((folder) => folder.id)).toEqual(['pinned', 'alpha-folder', 'charlie-folder'])
+        expect(sortModuleFoldersByActivation(sorted, modules)).toEqual(sorted)
+    })
+
+    it('leaves folders unchanged for uncategorized activation', () => {
+        const folders = [{ id: 'folder', moduleIds: ['alpha'] }]
+        expect(recordModuleFolderActivation(folders, modules, 'bravo')).toEqual(folders)
+    })
+
+    it('uses a deterministic order when older backups mix ranked and unranked folders', () => {
+        const folders = [
+            { id: 'unranked', moduleIds: ['charlie'] },
+            { id: 'ranked', moduleIds: ['alpha'], sortOrder: 0 },
+            { id: 'unranked-second', moduleIds: ['bravo'] },
+        ]
+        const first = sortModuleFoldersByActivation(folders, modules, { activationHistory: ['charlie'] })
+        expect(first.map((folder) => folder.id)).toEqual(['ranked', 'unranked', 'unranked-second'])
+        expect(sortModuleFoldersByActivation(first, modules, { activationHistory: ['bravo'] })).toEqual(first)
     })
 })

@@ -4,7 +4,9 @@ import { getCurrentCharacter, getDatabase, setDatabase, setDatabaseLite } from "
 import { alertConfirm, alertError, alertPluginConfirm } from "../alert";
 import { selectSingleFile, sleep } from "../util";
 import type { OpenAIChat } from "../process/index.svelte";
-import { fetchNative, globalFetch, readImage, requestImmediateSave, saveAsset, toGetter } from "../globalApi.svelte";
+import { fetchNative, forageStorage, globalFetch, readImage, requestImmediateSave, saveAsset, toGetter } from "../globalApi.svelte";
+import { isNodeServer } from '../platform';
+import { normalizePluginAssetReadPath } from './pluginAssetPaths';
 import { DBState, hotReloading, pluginAlertModalStore, selectedCharID } from "../stores.svelte";
 import type { ScriptMode } from "../process/scripts";
 import { checkCodeSafety } from "./pluginSafety";
@@ -616,6 +618,22 @@ export const getV2PluginAPIs = () => {
         getCharAsync: async () => {
             return await hydratePluginCharacterSnapshot(getCurrentCharacter({ snapshot: true }))
         },
+        // Read-only PocketRisu extensions. No credentials or host filesystem
+        // paths are handed to the plugin, and manifests stay paginated.
+        assetStorageInfo: () => ({ kind: isNodeServer ? 'pocket' : 'unsupported', metadataInspection: isNodeServer }),
+        inspectAssets: async (paths: string[]) => {
+            if (!isNodeServer) throw new Error('PocketRisu asset inspection is unavailable')
+            return await forageStorage.inspectAssetReferences(paths)
+        },
+        getAssetManifestPage: async (manifest: Parameters<typeof forageStorage.getAssetManifestPage>[0], options: { offset?: number; limit?: number } = {}) => {
+            if (!isNodeServer) throw new Error('PocketRisu asset manifests are unavailable')
+            const offset = options.offset ?? 0
+            const limit = options.limit ?? 128
+            if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 500) {
+                throw new Error('Invalid asset manifest page range')
+            }
+            return await forageStorage.getAssetManifestPage(manifest, { offset, limit })
+        },
         setChar: (char: any) => {
             const db = getDatabase()
             const charid = get(selectedCharID)
@@ -898,15 +916,7 @@ export const getV2PluginAPIs = () => {
         }),
         loadPlugins: loadPlugins,
         readImage: (path:string) => {
-            if(path.startsWith('assets/')){
-                //trim assets/ prefix temporarily
-                path = path.slice(7);
-            }
-            if(path.includes('/') || path.includes('\\')){
-                throw new Error("readImage path cannot contain '/' or '\\' for security reasons, except assets/ prefix.");
-            }
-            //re-add assets/ prefix
-            return readImage('assets/' + path);
+            return readImage(normalizePluginAssetReadPath(path));
         },
         saveAsset: (data:Uint8Array) => {
             return saveAsset(data);

@@ -1010,6 +1010,22 @@ export class NodeStorage{
         return Buffer.from(await response.arrayBuffer())
     }
 
+    async inspectAssetReferences(paths: string[]): Promise<Array<{
+        path: string; status: 'exists' | 'missing' | 'error' | 'unsupported' | 'unknown';
+        size: number | null; source?: string; code?: string; warning?: string; retryable?: boolean;
+    }>> {
+        if (!Array.isArray(paths) || paths.length > 128 || paths.some(path => typeof path !== 'string' || path.length > 2048)) {
+            throw new Error('Expected up to 128 asset references')
+        }
+        const response = await this.authFetch('/api/assets/inspect', {
+            method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ paths }),
+        })
+        if (!response.ok) throw new Error(`Asset inspection failed: HTTP ${response.status}`)
+        const body = await response.json()
+        if (!Array.isArray(body.results) || body.results.length !== paths.length) throw new Error('Invalid asset inspection response')
+        return body.results
+    }
+
     async externalAssetStatus(): Promise<ExternalAssetStatus> {
         const response = await this.authFetch('/api/external-assets/status')
         if (!response.ok) throw new Error(`external asset status failed: ${response.status}`)

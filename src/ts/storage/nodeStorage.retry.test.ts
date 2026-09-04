@@ -196,3 +196,23 @@ describe('NodeStorage manifest revision recovery', () => {
     })
 
 })
+
+describe('NodeStorage plugin asset metadata inspection', () => {
+    test('uses existing authenticated fetch and preserves unknown/error statuses', async () => {
+        const results = [{ path: 'assets/a.png', status: 'error', size: null, code: 'EACCES' }]
+        const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, { results, metadataOnly: true }))
+        const { storage } = setUpStorage(fetchMock)
+        await expect(storage.inspectAssetReferences(['assets/a.png'])).resolves.toEqual(results)
+        expect(fetchMock.mock.calls[0][0]).toBe('/api/assets/inspect')
+        const init = fetchMock.mock.calls[0][1] as RequestInit
+        expect(new Headers(init.headers).get('risu-auth')).toBe('token')
+        expect(JSON.parse(String(init.body))).toEqual({ paths: ['assets/a.png'] })
+    })
+    test('refuses oversized batches and malformed results', async () => {
+        const fetchMock = vi.fn().mockResolvedValueOnce(jsonResponse(200, { results: [] }))
+        const { storage } = setUpStorage(fetchMock)
+        await expect(storage.inspectAssetReferences(Array(129).fill('assets/a.png'))).rejects.toThrow('128')
+        expect(fetchMock).not.toHaveBeenCalled()
+        await expect(storage.inspectAssetReferences(['assets/a.png'])).rejects.toThrow('Invalid asset inspection response')
+    })
+})

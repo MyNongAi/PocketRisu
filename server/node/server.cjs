@@ -56,6 +56,7 @@ const {
 } = require('./logs.cjs');
 const { createRequestLogs } = require('./request-logs.cjs');
 const { cacheFileName, createThumbnailCache } = require('./thumbnail-cache.cjs');
+const { validateInspectionBatch, inspectAssetReferences } = require('./plugin-asset-inspection.cjs');
 const {
     SNAPSHOT_INTERVAL_DEFAULT_MS,
     SNAPSHOT_INTERVAL_OPTIONS_MS,
@@ -4428,6 +4429,25 @@ async function describeAssetThumbnail(reference) {
         loadSource: async () => fallback.binary,
     };
 }
+
+let activePluginAssetInspections = 0;
+app.post('/api/assets/inspect', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    try { validateInspectionBatch(req.body?.paths); }
+    catch (error) { return res.status(400).json({ error: error.message }); }
+    if (activePluginAssetInspections >= 2) {
+        return res.status(429).set('Retry-After', '1').json({ error: 'Asset inspection is busy' });
+    }
+    activePluginAssetInspections++;
+    try {
+        const results = await inspectAssetReferences(req.body.paths, {
+            statInternal: (key) => kvSize(key),
+            runtime: await getExternalAssetRuntime(),
+        });
+        res.set('Cache-Control', 'no-store').json({ results, metadataOnly: true });
+    } catch (error) { next(error); }
+    finally { activePluginAssetInspections--; }
+});
 
 app.get('/api/asset-thumbnail/:hexKey', sessionAuthMiddleware, async (req, res) => {
     try {
