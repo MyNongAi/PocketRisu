@@ -10,7 +10,8 @@
     import { selectedCharID } from "src/ts/stores.svelte";
     import { openSettings, SettingsRoute } from "src/ts/routing";
     import { onMount } from "svelte";
-    import { recordModuleActivation, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
+    import { recordModuleActivation, recordModuleFolderActivation, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
+    import { listTitleColor } from "src/ts/gui/titleColors";
     interface Props {
         close?: any;
         alertMode?: boolean;
@@ -77,6 +78,10 @@
                 currentChat()?.modules,
             ),
             moduleId,
+        )
+        DBState.db.moduleFolders = recordModuleFolderActivation(
+            DBState.db.moduleFolders ?? [], DBState.db.modules, moduleId,
+            { activationHistory: DBState.db.moduleActivationHistory },
         )
     }
 
@@ -168,7 +173,7 @@
                         onkeydown={(event) => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(key) } }}>
                         {#if open}<ChevronDownIcon size={16} class="shrink-0 text-textcolor2"/>{:else}<ChevronRightIcon size={16} class="shrink-0 text-textcolor2"/>{/if}
                         <FolderIcon size={16} class="shrink-0 text-textcolor2"/>
-                        <span class="grow text-left truncate {group.folder ? '' : 'text-textcolor2'}">{group.folder?.name ?? language.folderUncategorized}</span>
+                        <span class="grow text-left truncate {group.folder ? '' : 'text-textcolor2'}" style:color={listTitleColor(group.folder?.titleColor, visible.some(hasMissingAssets))}>{group.folder?.favorite ? '★ ' : ''}{group.folder?.name ?? language.folderUncategorized}</span>
                         {#if !alertMode}
                             <button
                                 class="shrink-0 rounded-sm p-1 {activeCount > 0 ? 'text-emerald-500 bg-emerald-500/15' : 'text-textcolor2 hover:text-primary'}"
@@ -177,7 +182,7 @@
                                 onclick={(event) => { event.stopPropagation(); toggleFolderGlobal(visible) }}
                             ><GlobeIcon size={16}/></button>
                         {/if}
-                        <span class="text-xs text-textcolor2">{visible.length}</span>
+                        <span class="text-xs {activeCount > 0 ? 'text-emerald-500' : 'text-textcolor2'}">{activeCount > 0 ? `${activeCount}/` : ''}{visible.length}</span>
                     </div>
                 {/if}
                 {#each open ? visible : [] as i}
@@ -192,7 +197,7 @@
                         {#if rmodule.mcp}
                             <Waypoints size={18} class="shrink-0 text-textcolor2" />
                         {/if}
-                        <span class="min-w-0 grow truncate {hasMissingAssets(i) ? 'text-red-400' : (!alertMode && isGlobal ? 'text-textcolor2' : '')}">{rmodule.name}</span>
+                        <span class="min-w-0 grow truncate {!alertMode && isGlobal ? 'text-textcolor2' : ''}" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(i))}>{rmodule.favorite ? '★ ' : ''}{rmodule.name}</span>
                         {#if alertMode}
                             <button class="text-textcolor2 cursor-pointer hover:text-success transition-colors shrink-0" onclick={(e) => {
                                 e.stopPropagation()

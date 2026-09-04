@@ -3,7 +3,7 @@ import { alertConfirm } from 'src/ts/alert'
 import { DBState } from 'src/ts/stores.svelte'
 import { pickHashRand } from 'src/ts/util'
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
-import { recordModuleActivation, seedModuleActivationHistory } from '../../moduleSort'
+import { recordModuleActivation, recordModuleFolderActivation, seedModuleActivationHistory } from '../../moduleSort'
 
 const moduleNotFound = (id: string): RPCToolCallContent[] => [
   {
@@ -456,6 +456,10 @@ export class ModuleHandler extends MCPToolHandler {
             activationHistory = recordModuleActivation(
               activationHistory,
               id,
+            )
+            DBState.db.moduleFolders = recordModuleFolderActivation(
+              DBState.db.moduleFolders ?? [], DBState.db.modules, id,
+              { activationHistory },
             )
           }
         } else {

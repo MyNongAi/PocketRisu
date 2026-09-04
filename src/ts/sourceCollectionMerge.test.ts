@@ -4,6 +4,7 @@ import {
     reconcileSourceCollectionModuleReferences,
     type SourceMergeDatabase,
 } from './sourceCollectionMerge'
+import { sortModuleFoldersByActivation } from './process/moduleSort'
 
 function db(): SourceMergeDatabase {
     return {
@@ -66,6 +67,19 @@ describe('applySourceCollectionEntities', () => {
         expect(target.modules.map((module) => module.name)).toEqual(['old', 'mod'])
         expect(target.modules[1].id).not.toBe('source-id')
         expect(target.modules[1].folderId).toBe(target.moduleFolders?.[0].id)
+    })
+
+    it('promotes imported module folders above an older manual folder order', () => {
+        const target = db()
+        target.modules.push({ id: 'old', name: 'old', folderId: 'old-folder' })
+        target.moduleFolders = [{ id: 'old-folder', name: 'Old', sortOrder: 0 }]
+        applySourceCollectionEntities(target, {
+            kind: 'modules', sourceLabel: '로컬리스', bundleId: 'bundle-12345678',
+            entities: [{ id: 'source-id', name: 'mod' }], createId: ids(), createBlankCharacter: blankCharacter,
+        })
+        const ordered = sortModuleFoldersByActivation(target.moduleFolders!, [], { activationHistory: target.moduleActivationHistory })
+        expect(ordered[0].id).toBe(target.modules[1].folderId)
+        expect(target.modules.map((module) => module.name)).toEqual(['old', 'mod'])
     })
 
     it('keeps persona duplicates and records visible provenance', () => {

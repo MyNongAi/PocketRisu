@@ -9,7 +9,7 @@
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
     import ModuleMenu from "src/lib/Setting/Pages/Module/ModuleMenu.svelte";
     import { addModuleToDatabase, exportModule, exportModuleLegacy, hydrateModuleAssets, importModule, refreshModules, type RisuModule } from "src/ts/process/modules";
-    import { SquarePen, Globe, Share2Icon, PlusIcon, HardDriveUpload, Waypoints } from "@lucide/svelte";
+    import { SquarePen, Globe, Share2Icon, PlusIcon, HardDriveUpload, PaletteIcon, StarIcon, Waypoints } from "@lucide/svelte";
     import { v4 } from "uuid";
     import { tooltip } from "src/ts/gui/tooltip";
     import { alertConfirm, alertError, alertSelect, notifySuccess } from "src/ts/alert";
@@ -18,7 +18,9 @@
     import { convertModuleToCharacter } from "src/ts/interchangeability";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
     import { synchronizeModuleFolderMembership } from "src/ts/process/moduleFolders";
-    import { recordModuleActivation, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
+    import { recordModuleActivation, recordModuleFolderActivation, recordModuleFolderOrder, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
+    import { chooseTitleColor, listTitleColor } from "src/ts/gui/titleColors";
+    import type { PromptPresetFolder } from "src/ts/storage/database.svelte";
     let tempModule:RisuModule = $state({
         name: '',
         description: '',
@@ -57,6 +59,10 @@
         DBState.db.moduleActivationHistory = recordModuleActivation(
             seedModuleActivationHistory(DBState.db.moduleActivationHistory, DBState.db.enabledModules),
             moduleId,
+        )
+        DBState.db.moduleFolders = recordModuleFolderActivation(
+            DBState.db.moduleFolders ?? [], DBState.db.modules, moduleId,
+            { activationHistory: DBState.db.moduleActivationHistory },
         )
     }
 
@@ -132,6 +138,7 @@
      */
     function applyPlacements(placements: FolderedItemPlacement[]) {
         if (placements.length !== displayModules.length) return
+        const currentFolders = displayFolders
         const folderById = new Map(placements.map(({ index, folderId }) => [displayModules[index]?.id, folderId]))
         DBState.db.modules = DBState.db.modules.map((module) => ({
             ...module,
@@ -141,19 +148,45 @@
             .map(({ index }) => displayModules[index]?.id)
             .filter((id): id is string => !!id)
             .reverse()
-        DBState.db.moduleFolders = synchronizeModuleFolderMembership(
+        DBState.db.moduleFolders = recordModuleFolderOrder(synchronizeModuleFolderMembership(
             DBState.db.modules,
-            DBState.db.moduleFolders,
+            currentFolders,
             { importLegacyWhenFolderIdsEmpty: false },
-        )
+        ))
     }
 
     function applyFolders(next: typeof DBState.db.moduleFolders) {
-        DBState.db.moduleFolders = synchronizeModuleFolderMembership(
+        DBState.db.moduleFolders = recordModuleFolderOrder(synchronizeModuleFolderMembership(
             DBState.db.modules,
             next,
             { importLegacyWhenFolderIdsEmpty: false },
-        )
+        ))
+    }
+
+    async function changeModuleColor(rmodule: RisuModule) {
+        const color = await chooseTitleColor(rmodule.titleColor)
+        if (color === null) return
+        const current = DBState.db.modules.find((module) => module.id === rmodule.id)
+        if (current) current.titleColor = color || undefined
+    }
+
+    async function changeFolderColor(folder: PromptPresetFolder) {
+        const color = await chooseTitleColor(folder.titleColor)
+        if (color === null) return
+        applyFolders(displayFolders.map((item) => item.id === folder.id ? { ...item, titleColor: color || undefined } : item))
+    }
+
+    function toggleFolderFavorite(folder: PromptPresetFolder) {
+        const changed = displayFolders.map((item) => item.id === folder.id ? { ...item, favorite: !item.favorite } : item)
+        if (!folder.favorite) {
+            const index = changed.findIndex((item) => item.id === folder.id)
+            changed.unshift(...changed.splice(index, 1))
+        }
+        applyFolders(changed)
+    }
+
+    function folderColor(folder: PromptPresetFolder, indexes: number[]) {
+        return listTitleColor(folder.titleColor, indexes.some((index) => hasMissingAssets(displayModules[index])))
     }
 
     onDestroy(() => {
@@ -167,7 +200,15 @@
         folders={displayFolders}
         itemFolderIds={displayModules.map(m => m.folderId)}
         itemSearchTexts={displayModules.map(m => `${m.name}\n${m.description ?? ''}`)}
-        storageKey="risu-module-folders-collapsed"
+        storageKey="risu-module-folders-expanded-v2"
+        defaultCollapsed
+        newFoldersFirst
+        folderTitleColor={folderColor}
+        onFolderColor={changeFolderColor}
+        onFolderFavorite={toggleFolderFavorite}
+        showFolderDelete={false}
+        showMenuCancel
+        folderRenameLabel="폴더이름변경하기"
         onSelect={openEditor}
         onItemsChange={applyPlacements}
         onFoldersChange={applyFolders}
@@ -196,7 +237,7 @@
                 <Waypoints size={18} class="shrink-0 text-textcolor2" />
             {/if}
             <div class="flex flex-col min-w-0 grow">
-                <span class="truncate {hasMissingAssets(rmodule) ? 'text-red-400' : 'text-textcolor'}">{rmodule.name}</span>
+                <span class="truncate text-textcolor" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(rmodule))}>{rmodule.favorite ? '★ ' : ''}{rmodule.name}</span>
                 <span class="text-xs text-textcolor2 truncate">{rmodule.description || 'No description provided'}</span>
             </div>
             <button class="no-sort shrink-0 p-1 cursor-pointer {isGlobal(rmodule) ? 'text-blue-500' : isIntegrated(rmodule) ? 'text-amber-500 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
@@ -211,6 +252,8 @@
                 <ShDropdownMenuItem onSelect={() => openEditor(index)}><SquarePen /><span>{language.edit}</span></ShDropdownMenuItem>
                 <ShDropdownMenuItem onSelect={() => exportModuleAt(index)}><Share2Icon /><span>{language.download}</span></ShDropdownMenuItem>
             {/if}
+            <ShDropdownMenuItem onSelect={() => changeModuleColor(rmodule)}><PaletteIcon /><span>색변경</span></ShDropdownMenuItem>
+            <ShDropdownMenuItem onSelect={() => { rmodule.favorite = !rmodule.favorite }}><StarIcon /><span>{rmodule.favorite ? '즐겨찾기 해제' : '즐겨찾기 (맨위로)'}</span></ShDropdownMenuItem>
         {/snippet}
     </FolderedList>
     {#if DBState.db.modules.length === 0}

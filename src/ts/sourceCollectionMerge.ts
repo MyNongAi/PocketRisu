@@ -1,5 +1,5 @@
 import type { SourceCollectionKind, SourceImportInfo } from './sourceCollection'
-import { recordNewModules } from './process/moduleSort'
+import { recordModuleFolderActivation, recordNewModules } from './process/moduleSort'
 import {
     organizeAllCharacterSimilarityFolders,
     organizeAllModuleSimilarityFolders,
@@ -19,6 +19,9 @@ export interface SourceMergeModuleFolder {
     name: string
     sourceInfo?: SourceImportInfo
     duplicateCandidate?: { kind: 'module', key: string }
+    titleColor?: string
+    favorite?: boolean
+    sortOrder?: number
 }
 
 export interface SourceMergeDatabase {
@@ -237,6 +240,15 @@ export function applySourceCollectionEntities(
         }
         for (const module of modules) module.folderId = folder.id
         organizeAllModuleSimilarityFolders(db, options.createId)
+        const sortableModules = db.modules.map((item) => ({ id: String(item.id ?? ''), name: String(item.name ?? ''), folderId: item.folderId }))
+        for (const module of modules) {
+            db.moduleFolders = recordModuleFolderActivation(
+                db.moduleFolders ?? [],
+                sortableModules,
+                module.id,
+                { activationHistory: db.moduleActivationHistory },
+            )
+        }
         result.modules = modules.length
     } else {
         const usedIds = new Set(db.personas.map((persona) => persona.id).filter(

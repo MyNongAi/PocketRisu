@@ -142,6 +142,9 @@ describe('similarity candidate folders', () => {
         db.moduleFolders = [{
             id: 'candidate-folder',
             name: '[유사 후보] old',
+            titleColor: '#00ff00',
+            favorite: true,
+            sortOrder: 2,
             duplicateCandidate: { kind: 'module', key: 'old' },
         }]
 
@@ -149,6 +152,9 @@ describe('similarity candidate folders', () => {
 
         expect(db.moduleFolders?.[0]).toMatchObject({
             id: 'candidate-folder',
+            titleColor: '#00ff00',
+            favorite: true,
+            sortOrder: 2,
         })
         expect(db.modules.find((module) => module.id === 'old')?.folderId).toBeUndefined()
         expect(db.modules.find((module) => module.id === 'base')?.folderId).toBe('candidate-folder')

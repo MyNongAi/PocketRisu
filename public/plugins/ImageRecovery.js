@@ -1,6 +1,6 @@
 //@name ImageRecoveryPerChar
 //@display-name 에셋 캐시 리매핑
-//@version 5.40
+//@version 5.50
 //@api 2.1
 
 // Extra asset wrench button for per-character/all asset cache remapping.
@@ -37,6 +37,68 @@ let selectedAssetFiles = [];
 let resolvedLocalAssetDir = '';
 let realmCandidates = [];
 let realmAvailabilityCache = new Map();
+
+function pocketAssetApi() {
+    return typeof Risuai !== 'undefined' && typeof Risuai.assetStorageInfo === 'function'
+        && Risuai.assetStorageInfo().kind === 'pocket' ? Risuai : null;
+}
+
+function retryableAssetError(error) {
+    if (error && typeof error.retryable === 'boolean') return error.retryable;
+    return /network|failed to fetch|timeout|timed out|HTTP (?:429|5\d\d)|ECONN|EBUSY/i.test(String(error && error.message || error));
+}
+
+// Shared philosophy of the fast importer / AssetGod: bounded lanes, reduce
+// pressure on transient failures, retry only failed work, and throttle UI.
+// No eager prefill is started by opening this plugin or by diagnosis.
+async function runAdaptiveAssetJobs(items, worker, options = {}) {
+    const mobile = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+    let concurrency = Math.max(1, Math.min(8, options.concurrency || (mobile ? 2 : 4)));
+    const maxRetries = options.maxRetries == null ? 2 : options.maxRetries;
+    const delay = options.delay || (ms => new Promise(resolve => setTimeout(resolve, ms)));
+    let pending = items.map((item, index) => ({ item, index, attempt: 0 }));
+    let completed = 0, retries = 0, failed = 0, lastProgress = 0;
+    const progress = force => {
+        if (!force && Date.now() - lastProgress < 120) return;
+        lastProgress = Date.now();
+        if (options.onProgress) options.onProgress({ completed, total: items.length, concurrency, retries, failed });
+    };
+    while (pending.length) {
+        let cursor = 0, pause = false;
+        const retry = [];
+        await Promise.all(Array.from({ length: Math.min(concurrency, pending.length) }, async () => {
+            while (!pause && cursor < pending.length) {
+                const job = pending[cursor++];
+                try {
+                    await worker(job.item, job.index);
+                    completed++;
+                } catch (error) {
+                    if (retryableAssetError(error) && job.attempt < maxRetries) {
+                        pause = true;
+                        retries++;
+                        retry.push({ ...job, attempt: job.attempt + 1 });
+                    } else {
+                        completed++;
+                        failed++;
+                        if (options.onFailure) options.onFailure(error, job.item, job.index);
+                    }
+                }
+                progress(false);
+            }
+        }));
+        const deferred = pending.slice(cursor);
+        pending = retry.concat(deferred);
+        if (pending.length) {
+            concurrency = Math.max(1, Math.floor(concurrency / 2));
+            const attempt = retry.reduce((max, item) => Math.max(max, item.attempt), 1);
+            const waitMs = Math.min(8000, 500 * Math.pow(2, attempt - 1));
+            if (options.onRetry) options.onRetry({ concurrency, retries, waitMs });
+            await delay(waitMs);
+        }
+    }
+    progress(true);
+    return { completed, failed, retries, concurrency };
+}
 
 function $id(id) { return document.getElementById(id); }
 
@@ -133,6 +195,7 @@ function getTauriInvoke() {
     return null;
 }
 function detectRuntimeMode() {
+    if (pocketAssetApi()) return 'pocket';
     const realWin = getRealWindow();
     try {
         if (realWin && (realWin.__TAURI__ || realWin.__TAURI_INTERNALS__ || realWin.__TAURI_IPC__)) {
@@ -145,6 +208,7 @@ function detectRuntimeMode() {
     return 'web';
 }
 function modeLabel(mode) {
+    if (mode === 'pocket') return '포켓리스 서버';
     if (mode === 'local') return '로컬리스(비검증)';
     return '웹리스';
 }
@@ -202,6 +266,8 @@ function hexToStr(hex) {
 }
 function assetPathFromSrc(src) {
     if (typeof src !== 'string' || !src) return '';
+    const pocket = src.match(/\/api\/(?:asset(?:-thumbnail)?|external-assets\/content)\/([0-9a-f]+)/i);
+    if (pocket) return hexToStr(pocket[1]);
     const sw = src.match(/\/sw\/img\/([0-9a-f]+)/i);
     if (sw) return hexToStr(sw[1]);
     let text = src;
@@ -214,7 +280,7 @@ function assetPathFromSrc(src) {
     return path;
 }
 function addRef(refs, seen, path, source) {
-    if (typeof path !== 'string' || !path.startsWith('assets/')) return;
+    if (typeof path !== 'string' || (!path.startsWith('assets/') && !path.startsWith('external://'))) return;
     if (seen.has(path)) return;
     seen.add(path);
     refs.push({ path, source });
@@ -251,6 +317,7 @@ function collectDeepAssetRefs(value, refs, seen, source, depth) {
 }
 function resultScopeText(result) {
     if (!result) return '현재 대상';
+    if (result.scopeLabel) return result.scopeLabel;
     if (result.mode === 'all') return '전체 캐릭터';
     if (result.mode === 'module') return '이 모듈';
     return '이 캐릭터';
@@ -379,6 +446,14 @@ function characterRepairSlots(char) {
 async function recoveryReferenceMissing(reference) {
     if (!reference) return true;
     if (typeof reference !== 'string') return true;
+    const api = pocketAssetApi();
+    if (api && typeof api.inspectAssets === 'function') {
+        if (!reference.startsWith('assets/') && !reference.startsWith('external://')) return false;
+        const result = await api.inspectAssets([reference]);
+        if (result && result[0] && result[0].status === 'missing') return true;
+        if (result && result[0] && result[0].status === 'exists') return false;
+        throw new Error('원본 존재 여부 미확인: 덮어쓰지 않습니다. ' + reference + ' · ' + (result && result[0] && result[0].code || '진단 오류'));
+    }
     // Plugin API 2.1 deliberately accepts only ordinary Risu asset paths.
     // Do not misdiagnose http/data/external references as missing merely
     // because the sandbox refuses to read them.
@@ -386,8 +461,8 @@ async function recoveryReferenceMissing(reference) {
     try {
         const bytes = normalizeBinary(await readImage(reference));
         return !bytes || byteSize(bytes) <= 0;
-    } catch (_) {
-        return true;
+    } catch (error) {
+        throw new Error('원본 읽기 오류: 파일 없음으로 간주하지 않습니다. ' + reference + ' · ' + (error && error.message || error));
     }
 }
 
@@ -806,6 +881,7 @@ async function runRealmAssetRecovery() {
     setProgress(0);
     setStatus('렐름 카드 다운로드 중...');
     try {
+        await refreshCurrentRecoveryCharacter();
         const realm = await downloadRealmRecoverySources(id);
         log('렐름 원본: ' + (realm.name || id) + ', 에셋 후보 ' + realm.sources.length + '개');
         await recoverMissingAssetsFromSources('RisuRealm ' + (realm.name || id), realm.sources, id);
@@ -832,7 +908,8 @@ async function runImportedBotAssetRecovery() {
     clearLog();
     setProgress(0);
     try {
-        const sources = sourceAssetsFromCharacter(sourceChar);
+        await refreshCurrentRecoveryCharacter();
+        const sources = sourceAssetsFromCharacter(await hydrateRecoverySourceCharacter(sourceChar));
         log('임포트 원본: ' + (sourceChar.name || '?') + ', 에셋 후보 ' + sources.length + '개');
         await recoverMissingAssetsFromSources('임포트된 봇 ' + (sourceChar.name || '?'), sources, recoveryRealmId(sourceChar));
     } catch (e) {
@@ -943,6 +1020,7 @@ function createLocalAssetStorage() {
     };
 }
 function createAssetStorage(mode) {
+    if (mode === 'pocket') throw new Error('포켓리스는 서버 메타데이터 진단을 사용합니다. 브라우저 저장소와 별개입니다.');
     if (mode === 'local') return createLocalAssetStorage();
     return createWebAssetStorage();
 }
@@ -1080,6 +1158,7 @@ function makePanel() {
         '<div class="irp-store-title"><span>에셋저장소</span><select class="irp-store-mode" id="' + PANEL_ID + '-mode" title="저장소 환경 선택">' +
         '<option value="web">웹리스</option>' +
         '<option value="local">로컬리스(비검증)</option>' +
+        '<option value="pocket">포켓리스 서버</option>' +
         '</select></div>' +
         '<div class="irp-store-row">' +
         '<button class="irp-store-btn" id="' + PANEL_ID + '-folder">폴더 열기</button>' +
@@ -1107,9 +1186,11 @@ function makePanel() {
         '</div>' +
         '</div>' +
         '<div class="irp-page" id="' + PANEL_ID + '-page-all">' +
-        '<div class="irp-page-note">전체 캐릭터의 자산 참조를 검사합니다. 캐릭터와 모듈 내 에셋이 많으면 모바일에서 오래 걸릴 수 있습니다.</div>' +
+        '<div class="irp-page-note">캐릭터와 선택한 모듈의 참조를 검사합니다. 휴지통은 기본 제외이며, 진단만으로 원본을 다운로드하거나 캐시를 채우지 않습니다.</div>' +
+        '<div class="irp-page-note"><label><input type="checkbox" id="' + PANEL_ID + '-include-modules" checked> 모듈 포함</label> · ' +
+        '<label><input type="checkbox" id="' + PANEL_ID + '-include-trash"> 휴지통 포함</label></div>' +
         '<div class="irp-actions">' +
-        '<button class="irp-btn irp-btn-scan" id="' + PANEL_ID + '-scanall">🌐 전체 캐릭터 진단 (비추천)</button>' +
+        '<button class="irp-btn irp-btn-scan" id="' + PANEL_ID + '-scanall">🌐 전체 캐릭터·모듈 진단</button>' +
         '</div>' +
         '</div>' +
         '<div class="irp-page" id="' + PANEL_ID + '-page-realm">' +
@@ -1309,7 +1390,10 @@ function updateAssetStorageUI() {
         filesBtn.disabled = true;
         filesBtn.title = '아직 실제 리매핑에 연결되지 않아 숨김 처리됨';
     }
-    if (assetStorageMode === 'web') {
+    if (assetStorageMode === 'pocket') {
+        if (row) row.style.display = 'none';
+        setStoreNote('포켓리스: 서버 내부/외부 저장소의 존재 여부만 검사. SW 캐시 누락은 원본 손실이 아닙니다.');
+    } else if (assetStorageMode === 'web') {
         if (row) row.style.display = 'none';
         if (folderBtn) folderBtn.style.display = 'none';
         setStoreNote('웹리스: IndexedDB/forage(risuai/keyvaluepairs)를 자동 기준으로 사용');
@@ -2664,6 +2748,13 @@ async function runPluginTrashEmpty() {
 
 function logRaw(line) {
     logBuf.push(line);
+    // Large broken collections must not grow the DOM/log buffer forever.
+    if (logBuf.length > 1200) {
+        logBuf.splice(0, logBuf.length - 1000);
+        const target = $id(PANEL_ID + '-log');
+        if (target) target.textContent = logBuf.join('\n') + '\n';
+        return;
+    }
     const el = $id(PANEL_ID + '-log');
     if (el) { el.textContent += line + '\n'; el.scrollTop = el.scrollHeight; }
 }
@@ -2726,6 +2817,11 @@ async function getStorageUsageBytes() {
 
 async function runStorageUsageScan() {
     if (isRunning) return;
+    if (assetStorageMode === 'pocket') {
+        log('포켓리스 전체 디스크 점유는 서버 설정에서 확인하세요. 브라우저 IndexedDB 용량을 서버 용량으로 표시하지 않습니다.');
+        setStatus('서버 저장소는 캐릭터·모듈 진단 지원');
+        return;
+    }
     setRunning(true);
     clearLog();
     clearUsageSummary();
@@ -2964,7 +3060,9 @@ function findModuleByAssetTable(table) {
 
 function resolveModuleTableContext(table) {
     const tableRefs = collectTableAssetRefs(table);
-    const matched = findModuleByAssetTable(table);
+    const host = table && table.querySelector ? table.querySelector('[data-risu-module-id]') : null;
+    const moduleId = host && host.getAttribute('data-risu-module-id');
+    const matched = moduleId ? getAllModules().find(item => item && item.id === moduleId) : findModuleByAssetTable(table);
     const refs = [];
     const seen = new Set();
     if (matched) {
@@ -2974,6 +3072,7 @@ function resolveModuleTableContext(table) {
     for (const r of tableRefs) addRef(refs, seen, r.path, r.source);
     return {
         type: 'module',
+        owner: matched || null,
         label: (matched && matched.name ? matched.name : '모듈 추가에셋'),
         refs
     };
@@ -3123,8 +3222,188 @@ async function scanCacheStateForRefs(refs, progressBase, progressSpan) {
 // =========================================
 // Scan current scope or all characters.
 // =========================================
+function scanScopeOptions() {
+    return {
+        includeTrash: !!($id(PANEL_ID + '-include-trash') && $id(PANEL_ID + '-include-trash').checked),
+        includeModules: !$id(PANEL_ID + '-include-modules') || $id(PANEL_ID + '-include-modules').checked,
+    };
+}
+
+async function refreshCurrentRecoveryCharacter() {
+    if (!pocketAssetApi() || typeof getCharAsync !== 'function') return;
+    const fresh = await getCharAsync();
+    if (!fresh || !currentChar || fresh.chaId !== currentChar.chaId) {
+        throw new Error('선택한 캐릭터가 변경되었습니다. 복구 패널을 다시 열어 주세요.');
+    }
+    if (fresh.additionalAssetManifest && !Array.isArray(fresh.additionalAssets)) {
+        throw new Error('현재 캐릭터 에셋 목록을 모두 읽지 못했습니다. 복구를 중단합니다.');
+    }
+    currentChar = fresh;
+}
+
+async function hydrateRecoverySourceCharacter(char) {
+    const api = pocketAssetApi();
+    if (!api || Array.isArray(char.additionalAssets) || !char.additionalAssetManifest) return char;
+    const manifest = { ...char.additionalAssetManifest };
+    const assets = [];
+    let total = null;
+    for (let offset = 0; total === null || offset < total;) {
+        const requestedId = manifest.id;
+        const page = await api.getAssetManifestPage(manifest, { offset, limit: 128 });
+        if (!page || !Array.isArray(page.items) || !Number.isSafeInteger(page.total)
+            || page.total < 0 || (offset > 0 && manifest.id !== requestedId)
+            || (total !== null && total !== page.total) || (!page.items.length && offset < page.total)) {
+            throw new Error('복구 원본의 에셋 목록을 모두 읽지 못했습니다.');
+        }
+        total = page.total;
+        assets.push(...page.items);
+        offset += page.items.length;
+        if (!total) break;
+    }
+    return { ...char, additionalAssets: assets };
+}
+
+async function* pocketOwnerReferencePages(owner, kind, api) {
+    const seen = new Set();
+    const label = '[' + (kind === 'module' ? '모듈' : '캐릭터') + ': ' + (owner.name || '?') + '] ';
+    const initial = kind === 'module' ? [] : collectCharRefs({ ...owner, additionalAssets: [] });
+    const filter = refs => refs.filter(ref => {
+        if (seen.has(ref.path)) return false;
+        seen.add(ref.path);
+        ref.source = label + ref.source;
+        return true;
+    });
+    if (initial.length) yield filter(initial);
+    const inline = kind === 'module' ? owner.assets : owner.additionalAssets;
+    const descriptor = kind === 'module' ? owner.assetManifest : owner.additionalAssetManifest;
+    const tupleRefs = items => {
+        const refs = [], localSeen = new Set();
+        for (const tuple of items) if (tuple && tuple[1]) addRef(refs, localSeen, tuple[1], 'additional: ' + (tuple[0] || '?'));
+        return filter(refs);
+    };
+    if (Array.isArray(inline)) {
+        for (let offset = 0; offset < inline.length; offset += 128) yield tupleRefs(inline.slice(offset, offset + 128));
+    } else if (descriptor) {
+        if (typeof api.getAssetManifestPage !== 'function') throw new Error('Manifest 페이지 API 미지원: 서버 업데이트 필요');
+        const manifest = { ...descriptor };
+        let total = null;
+        for (let offset = 0; total === null || offset < total;) {
+            const requestedId = manifest.id;
+            const page = await api.getAssetManifestPage(manifest, { offset, limit: 128 });
+            if (!page || !Array.isArray(page.items) || !Number.isSafeInteger(page.total) || page.total < 0
+                || (offset > 0 && manifest.id !== requestedId)
+                || (total !== null && total !== page.total) || (!page.items.length && offset < page.total)) {
+                throw new Error('Manifest 페이지가 누락되었거나 진단 중 변경되었습니다. 다시 진단하세요.');
+            }
+            total = page.total;
+            yield tupleRefs(page.items);
+            offset += page.items.length;
+            if (!total) break;
+        }
+    }
+}
+
+async function runPocketAssetScan(mode) {
+    setRunning(true);
+    clearLog();
+    currentScanResult = null;
+    setProgress(0);
+    const api = pocketAssetApi();
+    const options = scanScopeOptions();
+    const summary = { total: 0, exists: 0, missing: 0, error: 0, unsupported: 0, fallback: 0, ownerErrors: 0 };
+    const issues = [];
+    try {
+        if (!api || typeof api.inspectAssets !== 'function') {
+            throw new Error('이 서버에 메타데이터 진단 API가 없습니다. 포켓리스 코어와 플러그인을 함께 업데이트해야 합니다.');
+        }
+        const owners = [];
+        if (mode === 'all') {
+            for (const owner of getAllCharacters()) if (owner && (options.includeTrash || !owner.trashTime)) owners.push({ owner, kind: 'character' });
+            if (options.includeModules) for (const owner of getAllModules()) if (owner && (options.includeTrash || !owner.trashTime)) owners.push({ owner, kind: 'module' });
+        } else if (currentContext && currentContext.type === 'module') {
+            if (!currentContext.owner) throw new Error('현재 모듈 ID를 확인할 수 없습니다. 모듈을 다시 열거나 전체 모듈 진단을 사용하세요. 화면 일부만 보고 정상 판정하지 않습니다.');
+            const owner = getAllModules().find(item => item && item.id === currentContext.owner.id);
+            if (!owner) throw new Error('현재 모듈이 변경되거나 삭제되었습니다. 다시 열어 주세요.');
+            owners.push({ owner, kind: 'module' });
+        } else {
+            // Read a fresh owner, but leave manifest pages lazy. A snapshot
+            // captured before switching bots must not diagnose the old bot.
+            const selected = typeof getChar === 'function' ? getChar() : currentChar;
+            if (!selected) throw new Error('현재 캐릭터를 찾을 수 없습니다.');
+            const owner = getAllCharacters().find(item => item && item.chaId === selected.chaId) || selected;
+            currentChar = selected;
+            owners.push({ owner, kind: 'character' });
+        }
+        if (!owners.length) throw new Error('진단 대상이 없습니다.');
+        log('포켓리스 서버 진단: 원본 다운로드·SW 캐시 채우기 없이 존재 여부만 검사합니다.');
+        log('원본 없음, 접근 오류, 검사 미지원은 서로 다른 결과입니다. 해시·디코딩 검증은 별도입니다.');
+        log('대상 ' + owners.length + '개, 휴지통 ' + (options.includeTrash ? '포함' : '제외') + ', 소유자별 중복 참조 제거');
+        for (let index = 0; index < owners.length; index++) {
+            const { owner, kind } = owners[index];
+            try {
+                for await (const pageRefs of pocketOwnerReferencePages(owner, kind, api)) {
+                    for (let offset = 0; offset < pageRefs.length; offset += 128) {
+                        const refs = pageRefs.slice(offset, offset + 128);
+                        if (!refs.length) continue;
+                        let records = null;
+                        await runAdaptiveAssetJobs([refs], async batch => {
+                            const next = await api.inspectAssets(batch.map(ref => ref.path));
+                            if (!Array.isArray(next) || next.length !== batch.length
+                                || next.some((entry, i) => entry.path !== batch[i].path)) throw new Error('잘못된 서버 진단 응답');
+                            if (next.some(entry => entry.retryable)) throw Object.assign(new Error('서버 저장소 일시 오류'), { retryable: true });
+                            records = next;
+                        }, {
+                            concurrency: 1,
+                            onRetry: ({ waitMs }) => setStatus('저장소 일시 오류: ' + waitMs + 'ms 뒤 재시도'),
+                            onFailure: error => {
+                                records = refs.map(ref => ({ path: ref.path, status: 'error', code: String(error && error.message || error) }));
+                            },
+                        });
+                        for (let i = 0; i < records.length; i++) {
+                            const record = records[i];
+                            const status = ['exists', 'missing', 'error', 'unsupported'].includes(record.status) ? record.status : 'error';
+                            summary.total++;
+                            summary[status]++;
+                            if (record.source && record.source.startsWith('fallback-')) summary.fallback++;
+                            if (status !== 'exists' && issues.length < 200) {
+                                issues.push({ ...record, source: refs[i].source, exists: status === 'missing' ? false : null, variants: [] });
+                                log((status === 'missing' ? '원본 없음' : status === 'unsupported' ? '검사 미지원' : '접근/검사 오류') + ': ' + refs[i].source + ' · ' + record.path + ' · ' + (record.code || status));
+                            }
+                        }
+                        setStatus('서버 검사 ' + (index + 1) + '/' + owners.length + ' · 참조 ' + summary.total + '개');
+                        await new Promise(resolve => setTimeout(resolve, 0));
+                    }
+                }
+            } catch (error) {
+                summary.ownerErrors++;
+                log('목록 검사 불완전: ' + (owner.name || '?') + ' · ' + (error && error.message || error));
+            }
+            setProgress(((index + 1) / owners.length) * 100);
+        }
+        log('요약: 확인 ' + summary.total + ', 존재 ' + summary.exists + ', 원본 없음 ' + summary.missing
+            + ', 접근/검사 오류 ' + summary.error + ', 미지원 ' + summary.unsupported + ', 목록 실패 ' + summary.ownerErrors);
+        if (summary.fallback) log('내부/휴지통 fallback으로 사용 가능: ' + summary.fallback + '개');
+        log('문제 상세는 최대 200개만 보관합니다. 정상 에셋 바이트와 전체 키 목록은 보관하지 않습니다.');
+        log('포켓리스는 risuCache 일괄 채우기/덮어쓰기를 사용하지 않습니다. 서버 원본 복구와 브라우저 캐시는 별개입니다.');
+        currentScanResult = {
+            mode, storageMode: 'pocket', refs: issues, totalRefs: summary.total, summary,
+            actionable: [], byBase: new Map(), supportsCache: false, supportsRemap: false, supportsWrite: false,
+            scopeLabel: mode === 'all' ? '전체 캐릭터·모듈' : owners[0].owner.name,
+        };
+        setStatus(summary.error || summary.unsupported || summary.ownerErrors ? '진단 완료 · 확인하지 못한 항목 있음' : '서버 진단 완료');
+    } catch (error) {
+        log('진단 불가: ' + (error && error.message || error));
+        setStatus('진단 불가 — 원본 없음으로 판정하지 않음');
+    } finally { setRunning(false); }
+}
+
 async function runCharScan(mode) {
     if (isRunning) return;
+    if (pocketAssetApi() && assetStorageMode !== 'pocket') {
+        assetStorageMode = 'pocket';
+        updateAssetStorageUI();
+    }
+    if (assetStorageMode === 'pocket') return await runPocketAssetScan(mode);
     setRunning(true);
     clearLog();
     setProgress(0);
@@ -3132,6 +3411,8 @@ async function runCharScan(mode) {
     currentScanResult = null;
 
     let targetChars = [];
+    let targetModules = [];
+    const scopeOptions = scanScopeOptions();
     let contextRefs = null;
     let scopeLabel = '';
     let resultMode = mode;
@@ -3143,8 +3424,9 @@ async function runCharScan(mode) {
             setRunning(false);
             return;
         }
-        targetChars = all.filter(c => c);
-        scopeLabel = '전체 ' + targetChars.length + '명';
+        targetChars = all.filter(c => c && (scopeOptions.includeTrash || !c.trashTime));
+        targetModules = scopeOptions.includeModules ? getAllModules().filter(m => m && (scopeOptions.includeTrash || !m.trashTime)) : [];
+        scopeLabel = '캐릭터 ' + targetChars.length + '명 · 모듈 ' + targetModules.length + '개';
         setSub(scopeLabel);
     } else if (currentContext && Array.isArray(currentContext.refs)) {
         contextRefs = currentContext.refs;
@@ -3211,6 +3493,9 @@ async function runCharScan(mode) {
                 refs.push({ path: r.path, source });
             }
         }
+    }
+    for (const module of targetModules) {
+        for (const ref of collectModuleRefs(module)) addRef(refs, seenPaths, ref.path, '[모듈: ' + (module.name || '?') + '] ' + ref.source);
     }
     log('수집된 자산 참조: ' + refs.length + '개 (중복 제거)');
     if (refs.length === 0) {
@@ -3387,6 +3672,8 @@ async function runCharScan(mode) {
             actionable,
             byBase,
             mode: resultMode,
+            scopeLabel,
+            ...scopeOptions,
             storageMode: assetStorageMode,
             supportsCache: storage.supportsCache,
             supportsRemap: storage.supportsRemap,
@@ -3589,11 +3876,9 @@ async function runCharCacheFillMissing() {
         const origin = location.origin;
         let filled = 0, already = 0, empty = 0, errors = 0;
 
-        for (let i = 0; i < refs.length; i++) {
-            const ref = refs[i];
+        const job = await runAdaptiveAssetJobs(refs, async ref => {
             const encoded = strToHex(ref.path);
             const url = cacheUrlForAssetPath(ref.path, origin);
-            try {
                 const matched = await cache.match(url);
                 if (matched) {
                     already++;
@@ -3618,19 +3903,21 @@ async function runCharCacheFillMissing() {
                         }
                     }
                 }
-            } catch (e) {
+        }, {
+            onFailure: (e, ref) => {
                 errors++;
                 if (errors <= 20) log('error: ' + ref.path + ': ' + (e && e.message ? e.message : e));
-            }
-            setProgress(((i + 1) / Math.max(1, refs.length)) * 100);
-            if ((i + 1) % 100 === 0 || i === refs.length - 1) {
-                setStatus('누락 캐시 보충 ' + (i + 1) + '/' + refs.length);
-                await new Promise(resolve => setTimeout(resolve, 0));
-            }
-        }
+            },
+            onProgress: state => {
+                setProgress(state.completed / Math.max(1, state.total) * 100);
+                setStatus('누락 캐시 보충 ' + state.completed + '/' + state.total + ' · 병렬 ' + state.concurrency);
+            },
+            onRetry: state => log('일시 오류: 병렬 ' + state.concurrency + '개로 감속, ' + state.waitMs + 'ms 후 재시도'),
+        });
 
         log('');
         log('완료. 채움 ' + filled + ', 이미 있음 ' + already + ', 원본 없음/빈값 ' + empty + ', errors ' + errors);
+        log('재시도 ' + job.retries + '회. 정상 캐시는 덮어쓰지 않았습니다.');
         setStatus('누락 캐시 보충 완료');
     } catch (e) {
         log('예외: ' + (e && e.message ? e.message : e));
@@ -3784,9 +4071,11 @@ function commitLocalReferenceRemap(pathMap, scanResult) {
         } else if (mode === 'all') {
             const db = getDatabase();
             const chars = db.characters || [];
-            for (const ch of chars) changed += remapCharRefs(ch, pathMap);
+            for (const ch of chars) if (ch && (scanResult.includeTrash || !ch.trashTime)) changed += remapCharRefs(ch, pathMap);
+            const modules = db.modules || [];
+            if (scanResult.includeModules) for (const mod of modules) if (mod && (scanResult.includeTrash || !mod.trashTime)) changed += remapModuleRefs(mod, pathMap);
             if (changed > 0 && typeof setDatabaseLite === 'function') {
-                setDatabaseLite({ characters: chars });
+                setDatabaseLite(scanResult.includeModules ? { characters: chars, modules } : { characters: chars });
                 committed = true;
             }
         } else if (mode === 'module') {
@@ -3871,7 +4160,7 @@ async function openPanel(table) {
             currentContext = resolveModuleTableContext(table && table.closest ? (table.closest('table.tabler') || table) : table);
             setSub((currentContext.label || '모듈 추가에셋') + ' (module)');
         } else {
-            const ch = (typeof getCharAsync === 'function')
+            const ch = (!pocketAssetApi() && typeof getCharAsync === 'function')
                 ? await getCharAsync()
                 : ((typeof getChar === 'function') ? getChar() : null);
             if (!ch) {
@@ -4137,9 +4426,7 @@ async function runCharCacheRemap() {
         const origin = location.origin;
         let remapped = 0, skipped = 0, errors = 0;
 
-        for (let i = 0; i < refs.length; i++) {
-            const ref = refs[i];
-            try {
+        const job = await runAdaptiveAssetJobs(refs, async ref => {
                 const data = await storage.get(ref.path);
                 const size = byteSize(data);
                 if (!data || size <= 0) {
@@ -4161,19 +4448,21 @@ async function runCharCacheRemap() {
                         log('✓ ' + ref.path + ' -> /sw/img/' + encoded + ' (' + size + 'B, ' + contentType + ')');
                     }
                 }
-            } catch (e) {
+        }, {
+            onFailure: (e, ref) => {
                 errors++;
                 if (errors <= 20) log('error: ' + ref.path + ': ' + (e && e.message ? e.message : e));
-            }
-            setProgress(((i + 1) / refs.length) * 100);
-            if ((i + 1) % 100 === 0 || i === refs.length - 1) {
-                setStatus('캐시 덮어씌워 리매핑 ' + (i + 1) + '/' + refs.length);
-                await new Promise(resolve => setTimeout(resolve, 0));
-            }
-        }
+            },
+            onProgress: state => {
+                setProgress(state.completed / Math.max(1, state.total) * 100);
+                setStatus('캐시 덮어씌워 리매핑 ' + state.completed + '/' + state.total + ' · 병렬 ' + state.concurrency);
+            },
+            onRetry: state => log('일시 오류: 병렬 ' + state.concurrency + '개로 감속, ' + state.waitMs + 'ms 후 재시도'),
+        });
 
         log('');
         log('완료. remap ' + remapped + ', skipped ' + skipped + ', errors ' + errors);
+        log('재시도 ' + job.retries + '회');
         setStatus('캐시 덮어씌워 리매핑 완료');
     } catch (e) {
         log('예외: ' + (e && e.message ? e.message : e));

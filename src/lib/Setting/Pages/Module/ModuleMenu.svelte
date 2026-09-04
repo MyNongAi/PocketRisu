@@ -345,7 +345,7 @@
             <tbody>
             <tr>
                 <th class="font-medium">{language.value}</th>
-                <th class="font-medium cursor-pointer w-10" data-risu-asset-actions data-risu-asset-scope="module">
+                <th class="font-medium cursor-pointer w-10" data-risu-asset-actions data-risu-asset-scope="module" data-risu-module-id={currentModule.id}>
                     <button class="hover:text-primary" onclick={async () => {
                         const da = await selectMultipleFile(['png', 'webp', 'mp4', 'mp3', 'gif', 'jpeg', 'jpg', 'ttf', 'otf', 'css', 'webm', 'woff', 'woff2', 'svg', 'avif'])
                         if(!da){

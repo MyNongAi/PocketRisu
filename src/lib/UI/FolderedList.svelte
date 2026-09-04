@@ -9,12 +9,12 @@
     // reports the full new item order + folder membership via `onItemsChange`
     // and the folder array via `onFoldersChange`.
     import type { Snippet } from "svelte";
-    import { ChevronDownIcon, ChevronRightIcon, EllipsisVerticalIcon, FolderIcon, FolderPlusIcon, SearchIcon } from "@lucide/svelte";
+    import { ChevronDownIcon, ChevronRightIcon, EllipsisVerticalIcon, FolderIcon, FolderPlusIcon, PaletteIcon, SearchIcon, StarIcon } from "@lucide/svelte";
     import type { SortableEvent } from "sortablejs";
     import { v4 as uuidv4 } from "uuid";
     import { language } from "src/lang";
     import { alertConfirm, alertInput, alertSelect } from "src/ts/alert";
-    import { groupByFolder } from "src/ts/folders";
+    import { groupByFolder, isFolderCollapsed } from "src/ts/folders";
     import type { PromptPresetFolder } from "src/ts/storage/database.svelte";
     import ShSortableList from "./GUI/ShSortableList.svelte";
     import ShButton from "./GUI/ShButton.svelte";
@@ -40,6 +40,15 @@
         searchPlaceholder?: string;
         /** localStorage key for remembering collapsed folders on this device. */
         storageKey?: string;
+        /** Opt-in: saved IDs are expanded exceptions instead of collapsed ones. */
+        defaultCollapsed?: boolean;
+        newFoldersFirst?: boolean;
+        folderTitleColor?: (folder: PromptPresetFolder, indexes: number[]) => string | undefined;
+        onFolderColor?: (folder: PromptPresetFolder) => void;
+        onFolderFavorite?: (folder: PromptPresetFolder) => void;
+        showFolderDelete?: boolean;
+        showMenuCancel?: boolean;
+        folderRenameLabel?: string;
         onSelect: (index: number) => void;
         onItemsChange: (placements: FolderedItemPlacement[]) => void;
         onFoldersChange: (folders: PromptPresetFolder[]) => void;
@@ -67,6 +76,14 @@
         selectedIndex = -1,
         searchPlaceholder = language.search,
         storageKey,
+        defaultCollapsed = false,
+        newFoldersFirst = false,
+        folderTitleColor = () => undefined,
+        onFolderColor,
+        onFolderFavorite,
+        showFolderDelete = true,
+        showMenuCancel = false,
+        folderRenameLabel = language.renameFolder,
         onSelect,
         onItemsChange,
         onFoldersChange,
@@ -99,7 +116,8 @@
         if (!storageKey) return new Set();
         try {
             const raw = localStorage.getItem(storageKey);
-            return new Set(raw ? JSON.parse(raw) as string[] : []);
+            const value: unknown = raw ? JSON.parse(raw) : [];
+            return new Set(Array.isArray(value) ? value.filter((id): id is string => typeof id === 'string') : []);
         } catch {
             return new Set();
         }
@@ -146,7 +164,7 @@
         const name = (await alertInput(language.folderNameInput))?.trim();
         if (!name) return;
         const id = uuidv4();
-        onFoldersChange([...folders, { id, name }]);
+        onFoldersChange(newFoldersFirst ? [{ id, name }, ...folders] : [...folders, { id, name }]);
     }
 
     async function renameFolder(folder: PromptPresetFolder) {
@@ -162,6 +180,7 @@
     }
 
     function moveFolder(folder: PromptPresetFolder, delta: -1 | 1) {
+        if (!canMoveFolder(folder, delta)) return;
         const from = folders.findIndex(f => f.id === folder.id);
         const to = from + delta;
         if (from < 0 || to < 0 || to >= folders.length) return;
@@ -169,6 +188,12 @@
         next.splice(from, 1);
         next.splice(to, 0, folder);
         onFoldersChange(next);
+    }
+
+    function canMoveFolder(folder: PromptPresetFolder, delta: -1 | 1) {
+        const from = folders.findIndex(f => f.id === folder.id);
+        const neighbor = folders[from + delta];
+        return from >= 0 && !!neighbor && (!onFolderFavorite || !!folder.favorite === !!neighbor.favorite);
     }
 
     async function moveItemToFolder(index: number) {
@@ -218,7 +243,7 @@
         {#each groups as group (group.folder?.id ?? '')}
             {#if group.folder}
                 {@const folder = group.folder}
-                {@const isCollapsed = collapsed.has(folder.id)}
+                {@const isCollapsed = !query && isFolderCollapsed(folder.id, collapsed, defaultCollapsed)}
                 <div data-folder-key={folder.id} class="rounded-md border border-darkborderc bg-darkbg">
                     <div class="flex items-center gap-2 px-2 py-2 text-textcolor cursor-pointer select-none"
                         role="button" tabindex="0"
@@ -226,7 +251,8 @@
                         onkeydown={(e) => { if (e.key === 'Enter') toggleCollapsed(folder.id) }}>
                         {#if isCollapsed}<ChevronRightIcon size={16} class="shrink-0 text-textcolor2"/>{:else}<ChevronDownIcon size={16} class="shrink-0 text-textcolor2"/>{/if}
                         <FolderIcon size={16} class="shrink-0 text-textcolor2"/>
-                        <span class="truncate grow">{folder.name}</span>
+                        {#if folder.favorite}<StarIcon size={14} class="shrink-0 text-amber-400"/>{/if}
+                        <span class="truncate grow" style:color={folderTitleColor(folder, group.indexes)}>{folder.name}</span>
                         {@render folderActions?.(folder, group.indexes)}
                         <span class="text-xs text-textcolor2">{group.indexes.length}</span>
                         {@render folderMenu(folder)}
@@ -252,7 +278,7 @@
 
     {#each groups as group (group.folder?.id ?? '')}
         {#if !group.folder}
-            {@const isCollapsed = collapsed.has('')}
+            {@const isCollapsed = !query && isFolderCollapsed('', collapsed, defaultCollapsed)}
             <div class="rounded-md border border-darkborderc bg-darkbg">
                 <!-- Always shown (even with no folders) so users discover that folders exist. -->
                     <!-- Same structure/sizing as a folder header (icon + menu-width spacer) so rows line up. -->
@@ -316,6 +342,7 @@
                     {#if onExport}<ShDropdownMenuItem onSelect={() => onExport(index)}><span>{language.export}</span></ShDropdownMenuItem>{/if}
                     {#if onDelete}<ShDropdownMenuItem variant="destructive" onSelect={() => onDelete(index)}><span>{language.remove}</span></ShDropdownMenuItem>{/if}
                 {/if}
+                {#if showMenuCancel}<ShDropdownMenuItem><span>{language.cancel}</span></ShDropdownMenuItem>{/if}
             </ShDropdownMenuContent>
         </ShDropdownMenu>
     </div>
@@ -338,11 +365,16 @@
             {/snippet}
         </ShDropdownMenuTrigger>
         <ShDropdownMenuContent align="end" class="min-w-40">
-            <ShDropdownMenuItem onSelect={() => renameFolder(folder)}><span>{language.renameFolder}</span></ShDropdownMenuItem>
-            <ShDropdownMenuItem onSelect={() => moveFolder(folder, -1)}><span>{language.moveUp}</span></ShDropdownMenuItem>
-            <ShDropdownMenuItem onSelect={() => moveFolder(folder, 1)}><span>{language.moveDown}</span></ShDropdownMenuItem>
-            <ShDropdownMenuSeparator />
-            <ShDropdownMenuItem variant="destructive" onSelect={() => deleteFolder(folder)}><span>{language.remove}</span></ShDropdownMenuItem>
+            <ShDropdownMenuItem onSelect={() => renameFolder(folder)}><span>{folderRenameLabel}</span></ShDropdownMenuItem>
+            <ShDropdownMenuItem disabled={!canMoveFolder(folder, -1)} onSelect={() => moveFolder(folder, -1)}><span>{language.moveUp}</span></ShDropdownMenuItem>
+            <ShDropdownMenuItem disabled={!canMoveFolder(folder, 1)} onSelect={() => moveFolder(folder, 1)}><span>{language.moveDown}</span></ShDropdownMenuItem>
+            {#if onFolderColor}<ShDropdownMenuItem onSelect={() => onFolderColor(folder)}><PaletteIcon /><span>색변경</span></ShDropdownMenuItem>{/if}
+            {#if onFolderFavorite}<ShDropdownMenuItem onSelect={() => onFolderFavorite(folder)}><StarIcon /><span>{folder.favorite ? '즐겨찾기 해제' : '즐겨찾기 (맨위로)'}</span></ShDropdownMenuItem>{/if}
+            {#if showFolderDelete}
+                <ShDropdownMenuSeparator />
+                <ShDropdownMenuItem variant="destructive" onSelect={() => deleteFolder(folder)}><span>{language.remove}</span></ShDropdownMenuItem>
+            {/if}
+            {#if showMenuCancel}<ShDropdownMenuItem><span>{language.cancel}</span></ShDropdownMenuItem>{/if}
         </ShDropdownMenuContent>
     </ShDropdownMenu>
 {/snippet}
