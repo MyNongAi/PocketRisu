@@ -852,7 +852,10 @@ export class NodeStorage{
                 return { ok: false, reason: 'rejected', message: data.error }
             }
             const data = await res.json().catch(() => ({}))
-            if (data.etag) this.chatEtags.set(key, data.etag)
+            if ('etag' in data) {
+                if (data.etag) this.chatEtags.set(key, data.etag)
+                else this.chatEtags.delete(key)
+            }
 
             const previous = this.chatLeaseHeartbeats.get(key)
             if (previous) clearInterval(previous)
@@ -870,7 +873,10 @@ export class NodeStorage{
                         return
                     }
                     const data = await heartbeat.json().catch(() => ({}))
-                    if (data.etag) this.chatEtags.set(key, data.etag)
+                    if ('etag' in data) {
+                        if (data.etag) this.chatEtags.set(key, data.etag)
+                        else this.chatEtags.delete(key)
+                    }
                 }).catch(() => {})
             }, 45_000)
             this.chatLeaseHeartbeats.set(key, timer)
