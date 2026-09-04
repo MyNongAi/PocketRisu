@@ -59,7 +59,7 @@
     import { checkCharOrder, getFileSrc, saveAsset } from "src/ts/globalApi.svelte";
     import { alertInput, alertSelect } from "src/ts/alert";
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
-    import { listTitleColor } from "src/ts/gui/titleColors";
+    import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
     import MeasuredVirtualList from "../UI/Virtual/MeasuredVirtualList.svelte";
 
   import { sideBarSize } from "src/ts/gui/guisize";
@@ -859,8 +859,9 @@
                     size="56"
                     rounded={IconRounded}
                     name={folderChar.name}
-                    titleColor={listTitleColor(DBState.db.characters[folderChar.index]?.titleColor)}
+                    titleColor={listTitleColor(DBState.db.characters[folderChar.index]?.titleColor, Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) > 0)}
                     missingAssets={Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) > 0}
+                    realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[folderChar.index])}
                     chaId={DBState.db.characters[folderChar.index]?.chaId}
                     oncontextmenu={(e) => { void editSidebarCharacter(folderChar.index, e) }}
                   />
@@ -956,8 +957,9 @@
             size="56"
             rounded={IconRounded}
             name={block.char.name}
-            titleColor={listTitleColor(DBState.db.characters[block.char.index]?.titleColor)}
+            titleColor={listTitleColor(DBState.db.characters[block.char.index]?.titleColor, Number(DBState.db.characters[block.char.index]?.sourceInfo?.missingAssetCount) > 0)}
             missingAssets={Number(DBState.db.characters[block.char.index]?.sourceInfo?.missingAssetCount) > 0}
+            realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[block.char.index])}
             chaId={DBState.db.characters[block.char.index]?.chaId}
             oncontextmenu={(e) => { void editSidebarCharacter(block.char.index, e) }}
           />
@@ -1267,8 +1269,9 @@
               size="56" 
               rounded={IconRounded} 
               name={char.name}
-              titleColor={listTitleColor(DBState.db.characters[char.index]?.titleColor)}
+              titleColor={listTitleColor(DBState.db.characters[char.index]?.titleColor, Number(DBState.db.characters[char.index]?.sourceInfo?.missingAssetCount) > 0)}
               missingAssets={Number(DBState.db.characters[char.index]?.sourceInfo?.missingAssetCount) > 0}
+              realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[char.index])}
               chaId={DBState.db.characters[char.index]?.chaId}
               oncontextmenu={(e) => { void editSidebarCharacter(char.index, e) }}
             />
@@ -1384,8 +1387,9 @@
                   size="56" 
                   rounded={IconRounded} 
                   name={char2.name}
-                  titleColor={listTitleColor(DBState.db.characters[char2.index]?.titleColor)}
+                  titleColor={listTitleColor(DBState.db.characters[char2.index]?.titleColor, Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) > 0)}
                   missingAssets={Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) > 0}
+                  realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[char2.index])}
                   chaId={DBState.db.characters[char2.index]?.chaId}
                   oncontextmenu={(e) => { void editSidebarCharacter(char2.index, e) }}
                 />
@@ -1644,13 +1648,14 @@
                   size="36"
                   rounded={IconRounded}
                   name={rc.name}
-                  titleColor={listTitleColor(DBState.db.characters[rc.index]?.titleColor)}
+                  titleColor={listTitleColor(DBState.db.characters[rc.index]?.titleColor, Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0)}
                   missingAssets={Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0}
+                  realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[rc.index])}
                   chaId={DBState.db.characters[rc.index]?.chaId}
                 />
               </div>
               <div class="flex-1 min-w-0">
-                <div class="text-sm font-semibold text-textcolor leading-tight truncate" style:color={listTitleColor(DBState.db.characters[rc.index]?.titleColor)}>{rc.name || "Unnamed"}{#if Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0} <span aria-label="에셋 누락" title="에셋 누락">❗</span>{/if}</div>
+                <div class="text-sm font-semibold text-textcolor leading-tight truncate" style:color={listTitleColor(DBState.db.characters[rc.index]?.titleColor, Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0)}>{rc.name || "Unnamed"}</div>
                 <div class="text-xs text-textcolor2 leading-tight truncate">{makeAgoText(rc.lastInteraction)}</div>
               </div>
             </button>

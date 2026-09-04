@@ -5,7 +5,7 @@
     import { findCharacterIndexbyId } from "../../ts/util";
     import BarIcon from "../SideBars/BarIcon.svelte";
     import { ArrowLeft, MessageSquareIcon, User, SquareMousePointer, TrashIcon, Undo2Icon, PaletteIcon } from "@lucide/svelte";
-    import { listTitleColor } from "src/ts/gui/titleColors";
+    import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
     import { selectedCharID } from "../../ts/stores.svelte";
     import TextInput from "../UI/GUI/TextInput.svelte";
@@ -41,6 +41,7 @@
             interaction:number
             agoText:string
             missingAssetCount:number
+            realmRecoveryAvailable:boolean
             titleColor?:string
         }[] = []
 
@@ -64,6 +65,7 @@
                     interaction: c.lastInteraction ?? 0,
                     agoText: makeAgoText(c.lastInteraction ?? 0),
                     missingAssetCount: c.sourceInfo?.missingAssetCount ?? 0,
+                    realmRecoveryAvailable: isRealmAssetRecoveryAvailable(c),
                     titleColor: c.titleColor,
                 })
             }
@@ -151,7 +153,7 @@
                         additionalStyle={() => getCharThumbnail(char.image, 'css')}
                     ></BarIcon>
                     <div class="flex-1 flex flex-col ml-2">
-                        <h4 class="font-bold text-lg mb-1 text-textcolor" style:color={listTitleColor(char.titleColor)}>{char.name || "Unnamed"}{#if char.missingAssetCount > 0} <span aria-label="에셋 누락" title="에셋 누락">❗</span>{/if}</h4>
+                        <h4 class="font-bold text-lg mb-1 text-textcolor" style:color={listTitleColor(char.titleColor, char.missingAssetCount > 0)}>{char.name || "Unnamed"}{#if char.missingAssetCount > 0} {#if char.realmRecoveryAvailable}<span class="font-black text-emerald-400" aria-label="Realm 에셋 복구 가능" title="Realm 에셋 복구 가능">!</span>{:else}<span aria-label="에셋 누락" title="확인된 Realm 복구 원본 없음">❗</span>{/if}{/if}</h4>
                         <span class="line-clamp-2 text-textcolor2">{parseMultilangString(char.desc)['en'] || parseMultilangString(char.desc)['xx'] || 'No description'}</span>
                         <div class="mt-1 flex items-center text-sm text-textcolor2">
                             <span class="mr-1">{char.chats}</span>
@@ -192,7 +194,7 @@
                 <div class="m-1 flex h-[118px] p-2 border border-darkborderc rounded-md">
                     <BarIcon onClick={() => {selectAndClose(char.index)}} additionalStyle={() => getCharThumbnail(char.image, 'css')}></BarIcon>
                     <div class="flex-1 flex flex-col ml-2">
-                        <h4 class="font-bold text-lg mb-1 text-textcolor" style:color={listTitleColor(char.titleColor)}>{char.name || "Unnamed"}{#if char.missingAssetCount > 0} <span aria-label="에셋 누락" title="에셋 누락">❗</span>{/if}</h4>
+                        <h4 class="font-bold text-lg mb-1 text-textcolor" style:color={listTitleColor(char.titleColor, char.missingAssetCount > 0)}>{char.name || "Unnamed"}{#if char.missingAssetCount > 0} {#if char.realmRecoveryAvailable}<span class="font-black text-emerald-400" aria-label="Realm 에셋 복구 가능" title="Realm 에셋 복구 가능">!</span>{:else}<span aria-label="에셋 누락" title="확인된 Realm 복구 원본 없음">❗</span>{/if}{/if}</h4>
                         <span class="line-clamp-2 text-textcolor2">{parseMultilangString(char.desc)['en'] || parseMultilangString(char.desc)['xx'] || 'No description'}</span>
                         <div class="flex gap-2 justify-end">
                             <button class="hover:text-textcolor text-textcolor2" onclick={() => {

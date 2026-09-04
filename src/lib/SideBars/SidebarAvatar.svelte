@@ -16,6 +16,7 @@
     color?: string;
     titleColor?: string;
     missingAssets?: boolean;
+    realmRecoveryAvailable?: boolean;
     backgroundimg?: DeferredImage;
     children?: import('svelte').Snippet;
     oncontextmenu?: (event: MouseEvent & {
@@ -35,6 +36,7 @@
     color = '',
     titleColor,
     missingAssets = false,
+    realmRecoveryAvailable = false,
     backgroundimg = '',
     children,
     oncontextmenu,
@@ -95,7 +97,11 @@
       data-char-id={chaId}
 >
   {#if missingAssets}
-    <span class="pointer-events-none absolute -right-1 -top-1 z-10 text-sm leading-none drop-shadow" aria-label="에셋 누락" title="에셋 누락">❗</span>
+    {#if realmRecoveryAvailable}
+      <span class="pointer-events-none absolute -right-1 -top-1 z-10 rounded-full bg-darkbg px-1 text-sm font-black leading-none text-emerald-400 drop-shadow" aria-label="Realm 에셋 복구 가능" title="Realm 에셋 복구 가능">!</span>
+    {:else}
+      <span class="pointer-events-none absolute -right-1 -top-1 z-10 text-sm leading-none drop-shadow" aria-label="에셋 누락" title="확인된 Realm 복구 원본 없음">❗</span>
+    {/if}
   {/if}
   {#if src}
     {#if src === "slot"}

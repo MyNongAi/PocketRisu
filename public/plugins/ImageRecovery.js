@@ -1,6 +1,6 @@
 //@name ImageRecoveryPerChar
 //@display-name 에셋 캐시 리매핑
-//@version 5.51
+//@version 5.52
 //@api 2.1
 
 // Extra asset wrench button for per-character/all asset cache remapping.
@@ -4316,6 +4316,18 @@ async function refreshRealmIndicator(button, char) {
     button.title = '렐름 원본 확인 중';
     const result = await detectRealmAvailability(char);
     if (!button.isConnected) return;
+    const api = pocketAssetApi();
+    if (api && typeof api.updateRealmAssetRecovery === 'function' && char && char.chaId && !result.error) {
+        try {
+            api.updateRealmAssetRecovery({
+                id: char.chaId,
+                available: !!result.found,
+                realmId: result.found ? result.id : ''
+            });
+        } catch (error) {
+            log('렐름 복구 가능 표시 저장 실패: ' + (error && error.message || error));
+        }
+    }
     if (result.found) {
         button.dataset.realmState = 'found';
         button.dataset.realmId = result.id;

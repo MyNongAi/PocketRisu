@@ -5,11 +5,26 @@ export function normalizeTitleColor(value: unknown): string | undefined {
     return /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : undefined
 }
 
-export function listTitleColor(value: unknown, _missing = false): string | undefined {
-    // Missing assets are shown by a separate warning badge. Keeping that
-    // signal out of the title color means a successful repair can clear the
-    // badge without erasing the user's chosen catalog color.
-    return normalizeTitleColor(value)
+export function listTitleColor(value: unknown, missing = false): string | undefined {
+    // Missing assets remain visually urgent; the adjacent badge separately
+    // communicates whether a conclusive Realm recovery source is known.
+    return normalizeTitleColor(value) ?? (missing ? '#f87171' : undefined)
+}
+
+/** True only for an explicit Realm id or a conclusive plugin lookup. */
+export function isRealmAssetRecoveryAvailable(value: unknown): boolean {
+    if (!value || typeof value !== 'object') return false
+    const owner = value as {
+        realmId?: unknown
+        extentions?: { risuRealmImportId?: unknown }
+        extensions?: { risuRealmImportId?: unknown }
+        sourceInfo?: { realmAssetRecoveryAvailable?: unknown }
+    }
+    const directId = owner.realmId
+        ?? owner.extentions?.risuRealmImportId
+        ?? owner.extensions?.risuRealmImportId
+    return (typeof directId === 'string' && directId.trim().length > 0)
+        || owner.sourceInfo?.realmAssetRecoveryAvailable === true
 }
 
 export const TITLE_COLOR_OPTIONS = [

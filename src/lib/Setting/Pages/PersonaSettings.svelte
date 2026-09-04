@@ -197,7 +197,7 @@
             <ShButton size="sm" variant="outline" onclick={importPersona}><HardDriveUploadIcon />{language.import}</ShButton>
         </div>
 
-        <div class="rounded-md border border-darkborderc p-3">
+        <div class="persona-grid-catalog rounded-md border border-darkborderc p-3">
             {#each personaGroups as group (group.folder?.id ?? '')}
                 {#if group.indexes.length > 0}
                     <div class="mb-2 mt-1 flex items-center gap-2 text-sm text-textcolor2">
@@ -242,7 +242,7 @@
         </div>
 
         {#if DBState.db.personas[DBState.db.selectedPersona]}
-            <div class="mt-3">
+            <div class="persona-grid-detail mt-3" aria-label="선택한 페르소나 정보">
                 {@render personaEditor(DBState.db.selectedPersona)}
             </div>
         {/if}
@@ -290,3 +290,26 @@
     </FolderedList>
     {/if}
 </SettingPage>
+
+<style>
+    .persona-grid-catalog {
+        max-height: min(42vh, 32rem);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-gutter: stable;
+    }
+
+    .persona-grid-detail {
+        position: sticky;
+        z-index: 20;
+        bottom: 0;
+        height: min(36vh, 26rem);
+        min-height: 10rem;
+        max-height: 72vh;
+        resize: vertical;
+        overflow: auto;
+        border-radius: 0.375rem;
+        background: var(--risu-theme-bgcolor);
+        box-shadow: 0 -0.4rem 1.2rem color-mix(in srgb, var(--risu-theme-bgcolor) 82%, transparent);
+    }
+</style>
