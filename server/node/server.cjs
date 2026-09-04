@@ -2475,12 +2475,19 @@ async function checkDiskSpace(requiredBytes) {
 const { createSessionLock } = require('./session-lock.cjs');
 const sessionLock = createSessionLock();
 const { createChatSessionLock } = require('./chat-session-lock.cjs');
+const { evaluateChatVersion } = require('./chat-content-version.cjs');
 const chatSessionLock = createChatSessionLock({
     ttlMs: Math.max(60_000, Number(process.env.CHAT_SESSION_LEASE_TTL_MS) || 3 * 60 * 1000),
 });
 
 function chatSessionKey(chaId, chatId) {
     return JSON.stringify([String(chaId || ''), String(chatId || '')]);
+}
+
+function findCatalogChat(chaId, chatId) {
+    const database = dbCache[DB_HEX_KEY];
+    const character = database?.characters?.find(candidate => candidate?.chaId === chaId);
+    return character?.chats?.find(candidate => candidate?.id === chatId) ?? null;
 }
 
 function chatClientId(req) {
@@ -4178,6 +4185,7 @@ app.post('/api/chat-session/:chaId/:chatId/claim', rejectDuringExclusiveStorage,
                 })
             }
             const currentChat = fullChatStore.get(chaId)?.get(chatId)
+            const catalogChat = findCatalogChat(chaId, chatId)
             let currentEtag = null
             if (currentChat) {
                 if (!restoreColdStorageChat(currentChat)) {
@@ -4189,15 +4197,29 @@ app.post('/api/chat-session/:chaId/:chatId/claim', rejectDuringExclusiveStorage,
             // A heartbeat from the current owner may race its own successful
             // chat save and carry the immediately previous ETag. Ownership is
             // already exclusive, so only a NEW claimant needs the comparison.
-            if (!result.renewed && typeof expectedEtag === 'string' && expectedEtag.length > 0 && expectedEtag !== currentEtag) {
+            const version = evaluateChatVersion({
+                expectedEtag,
+                currentEtag,
+                renewed: result.renewed,
+                hasCurrentPayload: !!currentChat,
+                hasCatalogStub: catalogChat?._stub === true,
+            })
+            if (!version.ok) {
                 chatSessionLock.release(chatSessionKey(chaId, chatId), clientId)
                 return res.status(409).json({
-                    error: 'Chat changed on another device',
+                    error: version.reason === 'missing'
+                        ? 'Chat no longer exists on the server'
+                        : 'Chat changed on another device',
                     code: 'CHAT_VERSION_CONFLICT',
                     currentEtag,
                 })
             }
-            res.json({ ok: true, etag: currentEtag, expiresInMs: result.expiresInMs })
+            res.json({
+                ok: true,
+                etag: currentEtag,
+                repairMissingPayload: version.repairMissingPayload,
+                expiresInMs: result.expiresInMs,
+            })
         })
     } catch (error) { next(error) }
 })
@@ -7475,6 +7497,7 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
             await ensureChatStore();
 
             const currentChat = fullChatStore.get(chaId)?.get(expectedChatId);
+            const catalogChat = findCatalogChat(chaId, expectedChatId);
             const createOnly = req.headers['if-none-match'] === '*';
             if (createOnly && currentChat) {
                 if (!restoreColdStorageChat(currentChat)) {
@@ -7497,21 +7520,28 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
             }
             const ifMatch = req.headers['x-if-match'];
             if (typeof ifMatch === 'string' && ifMatch.length > 0) {
-                if (!currentChat) {
-                    return res.status(409).json({
-                        error: 'Chat no longer exists on the server',
-                        currentEtag: null,
-                    });
-                }
-                if (!restoreColdStorageChat(currentChat)) {
+                if (currentChat && !restoreColdStorageChat(currentChat)) {
                     return res.status(500).json({ error: 'Cold storage restore failed' });
                 }
-                const currentEtag = computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(currentChat)));
-                if (ifMatch !== currentEtag) {
+                const currentEtag = currentChat
+                    ? computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(currentChat)))
+                    : null;
+                const version = evaluateChatVersion({
+                    expectedEtag: ifMatch,
+                    currentEtag,
+                    hasCurrentPayload: !!currentChat,
+                    hasCatalogStub: catalogChat?._stub === true,
+                });
+                if (!version.ok) {
                     return res.status(409).json({
-                        error: 'Chat changed on another device',
+                        error: version.reason === 'missing'
+                            ? 'Chat no longer exists on the server'
+                            : 'Chat changed on another device',
                         currentEtag,
                     });
+                }
+                if (version.repairMissingPayload) {
+                    logger.warn(`[ChatStorage] Recovering missing payload from active client: ${chaId}/${expectedChatId}`);
                 }
             } else if (currentChat && !checkActiveSession(req, res)) {
                 // Legacy clients have no per-chat precondition, so preserve the
