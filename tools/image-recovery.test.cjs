@@ -91,6 +91,8 @@ test('V2.1 runtime makes the bridge available through Risuai without global cred
     assert.match(core, /inspectAssets: async/);
     assert.match(core, /forageStorage\.inspectAssetReferences\(paths\)/);
     assert.match(core, /updateAssetHealth: \(records: unknown\)/);
+    assert.match(core, /updateRealmAssetRecovery: \(record: unknown\)/);
+    assert.match(source, /api\.updateRealmAssetRecovery\(\{/);
     const server = fs.readFileSync(path.join(__dirname, '../server/node/server.cjs'), 'utf8');
     assert.match(server, /app\.post\('\/api\/assets\/inspect',[\s\S]*?if \(!await checkAuth\(req, res\)\) return/);
 });
@@ -106,6 +108,13 @@ test('recovery refuses to overwrite on access errors and supports external missi
     assert.equal(await sandbox.recoveryReferenceMissing(uri), false);
     status = 'missing';
     assert.equal(await sandbox.recoveryReferenceMissing(uri), true);
+});
+test('an explicit Realm id is a recoverable-source signal without a fuzzy search', async () => {
+    const { sandbox } = context();
+    const result = await sandbox.detectRealmAvailability({ chaId: 'c', realmId: 'realm-123', name: 'Card' });
+    assert.equal(result.found, true);
+    assert.equal(result.id, 'realm-123');
+    assert.equal(result.direct, true);
 });
 test('a complete post-recovery check clears stale missing metadata, but access errors preserve it', async () => {
     let status = 'exists';
