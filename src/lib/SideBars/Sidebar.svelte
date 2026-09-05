@@ -60,6 +60,7 @@
     import { alertInput, alertSelect } from "src/ts/alert";
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
     import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
+    import { promoteCharacterFolder, promoteRecentlyViewedCharacter } from "src/ts/characterRecentOrder";
     import MeasuredVirtualList from "../UI/Virtual/MeasuredVirtualList.svelte";
 
   import { sideBarSize } from "src/ts/gui/guisize";
@@ -116,8 +117,8 @@
     QuickSettings.index = 2;
   }
 
-  type sortTypeNormal = { type:'normal',img: string, index: number, name:string, folderIndex?:number }
-  type sortType = sortTypeNormal | {type:'folder',folder:sortTypeNormal[],id:string, name:string, color:string, img?:string}
+  type sortTypeNormal = { type:'normal',img: string, index: number, name:string, favorite?:boolean, folderIndex?:number }
+  type sortType = sortTypeNormal | {type:'folder',folder:sortTypeNormal[],id:string, name:string, color:string, favorite?:boolean, img?:string}
   type sidebarCatalogBlock =
     | { type: 'control', position: 'top' | 'bottom' }
     | { type: 'character', char: sortType, index: number }
@@ -177,9 +178,9 @@
   // sort is cheap; the $derived is only read while on the home screen.
   let recentChars = $derived(
     DBState.db.characters
-      .map((c, index) => ({ index, name: c.name, image: c.image, lastInteraction: c.lastInteraction ?? 0 }))
+      .map((c, index) => ({ index, name: c.name, image: c.image, favorite: !!c.favorite, lastInteraction: c.lastInteraction ?? 0 }))
       .filter((c) => c.lastInteraction > 0)
-      .sort((a, b) => b.lastInteraction - a.lastInteraction)
+      .sort((a, b) => Number(b.favorite) - Number(a.favorite) || b.lastInteraction - a.lastInteraction)
   );
   // Progressive reveal: render `recentVisible` items, "Load more" adds 10.
   // Avoids mounting hundreds of avatar components at once (no list virtualization).
@@ -220,7 +221,8 @@
             img:cha.image ?? "",
             index:index,
             type: "normal",
-            name: cha.name
+            name: cha.name,
+            favorite: !!cha.favorite,
           });
         }
       }
@@ -236,6 +238,7 @@
               index:index,
               type: "normal",
               name: cha.name,
+              favorite: !!cha.favorite,
               folderIndex,
             });
           }
@@ -246,6 +249,7 @@
           id: folder.id,
           name: folder.name,
           color: folder.color,
+          favorite: !!folder.favorite,
           // A folder without a custom cover borrows its top member's
           // thumbnail. SidebarAvatar clips it into a folder silhouette so it
           // remains visibly distinct from an ordinary character card.
@@ -358,9 +362,45 @@
     localStorage.setItem(splitCatalogStorageKey, splitCatalogMode ? 'split' : 'normal')
   }
 
+  function favoriteCharacterIds(): Set<string> {
+    return new Set(DBState.db.characters
+      .filter((character) => character.favorite && !character.trashTime)
+      .map((character) => character.chaId))
+  }
+
+  function toggleSidebarFolderFavorite(ind:number) {
+    const current = DBState.db.characterOrder[ind]
+    if(typeof current === 'string') return
+    const next = { ...current, favorite: !current.favorite }
+    const order = DBState.db.characterOrder.slice()
+    order[ind] = next
+    DBState.db.characterOrder = promoteCharacterFolder(order, next.id, favoriteCharacterIds())
+    checkCharOrder()
+  }
+
+  function toggleSidebarCharacterFavorite(characterIndex:number) {
+    const character = DBState.db.characters[characterIndex]
+    if(!character) return
+    character.favorite = !character.favorite
+    DBState.db.characters[characterIndex] = character
+    DBState.db.characterOrder = promoteRecentlyViewedCharacter(
+      DBState.db.characterOrder,
+      character.chaId,
+      favoriteCharacterIds(),
+    )
+    checkCharOrder()
+  }
+
   async function editSidebarFolder(ind:number, char: Extract<sortType, { type: 'folder' }>, e:MouseEvent){
     e.preventDefault()
-    const sel = parseInt(await alertSelect([language.renameFolder,language.changeFolderColor,language.changeFolderImage,language.cancel]))
+    e.stopPropagation()
+    const sel = parseInt(await alertSelect([
+      language.renameFolder,
+      language.changeFolderColor,
+      language.changeFolderImage,
+      char.favorite ? '즐겨찾기 해제' : '즐겨찾기 (맨위로)',
+      language.cancel,
+    ]))
     if(sel === 0){
       const value = await alertInput(language.changeFolderName, [], char.name)
       const entry = DBState.db.characterOrder[ind]
@@ -378,6 +418,10 @@
         entry.color = colors[colorIndex].toLocaleLowerCase()
         DBState.db.characterOrder[ind] = entry
       }
+      return
+    }
+    if(sel === 3){
+      toggleSidebarFolderFavorite(ind)
       return
     }
     if(sel !== 2) return
@@ -404,7 +448,13 @@
     e.stopPropagation()
     const character = DBState.db.characters[characterIndex]
     if(!character) return
-    const selected = parseInt(await alertSelect(['봇 설정 수정', '제목 색변경', language.remove, language.cancel]))
+    const selected = parseInt(await alertSelect([
+      '봇 설정 수정',
+      '제목 색변경',
+      character.favorite ? '즐겨찾기 해제' : '즐겨찾기 (맨위로)',
+      language.remove,
+      language.cancel,
+    ]))
     if(selected === 0){
       changeChar(characterIndex, { reseter })
       botMakerMode.set(true)
@@ -415,6 +465,10 @@
       return
     }
     if(selected === 2){
+      toggleSidebarCharacterFavorite(characterIndex)
+      return
+    }
+    if(selected === 3){
       await removeChar(character.chaId, character.name)
     }
   }
@@ -790,6 +844,7 @@
             folderShape
             name={item.char.name}
             color={item.char.color}
+            favorite={item.char.favorite}
             backgroundimg={item.char.img ? () => getCharThumbnail(item.char.img, "plain") : ""}
             oncontextmenu={(e) => { void editSidebarFolder(item.sourceOrder, item.char, e) }}
             onClick={() => {
@@ -859,6 +914,7 @@
                     size="56"
                     rounded={IconRounded}
                     name={folderChar.name}
+                    favorite={folderChar.favorite}
                     titleColor={listTitleColor(DBState.db.characters[folderChar.index]?.titleColor, Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) > 0)}
                     missingAssets={Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) > 0}
                     realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[folderChar.index])}
@@ -957,6 +1013,7 @@
             size="56"
             rounded={IconRounded}
             name={block.char.name}
+            favorite={block.char.favorite}
             titleColor={listTitleColor(DBState.db.characters[block.char.index]?.titleColor, Number(DBState.db.characters[block.char.index]?.sourceInfo?.missingAssetCount) > 0)}
             missingAssets={Number(DBState.db.characters[block.char.index]?.sourceInfo?.missingAssetCount) > 0}
             realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[block.char.index])}
@@ -1269,6 +1326,7 @@
               size="56" 
               rounded={IconRounded} 
               name={char.name}
+              favorite={char.favorite}
               titleColor={listTitleColor(DBState.db.characters[char.index]?.titleColor, Number(DBState.db.characters[char.index]?.sourceInfo?.missingAssetCount) > 0)}
               missingAssets={Number(DBState.db.characters[char.index]?.sourceInfo?.missingAssetCount) > 0}
               realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[char.index])}
@@ -1278,7 +1336,7 @@
           {:else if char.type === "folder"}
             {#key char.color}
             {#key char.name}
-              <SidebarAvatar src="slot" size="56" rounded={IconRounded} folderShape name={char.name} color={char.color} backgroundimg={char.img ? () => getCharThumbnail(char.img, "plain") : ""}
+              <SidebarAvatar src="slot" size="56" rounded={IconRounded} folderShape name={char.name} color={char.color} favorite={char.favorite} backgroundimg={char.img ? () => getCharThumbnail(char.img, "plain") : ""}
               oncontextmenu={(e) => { void editSidebarFolder(ind, char, e) }}
               onClick={() => {
                 if(suppressNextClick) return
@@ -1387,6 +1445,7 @@
                   size="56" 
                   rounded={IconRounded} 
                   name={char2.name}
+                  favorite={char2.favorite}
                   titleColor={listTitleColor(DBState.db.characters[char2.index]?.titleColor, Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) > 0)}
                   missingAssets={Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) > 0}
                   realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[char2.index])}
@@ -1648,6 +1707,7 @@
                   size="36"
                   rounded={IconRounded}
                   name={rc.name}
+                  favorite={rc.favorite}
                   titleColor={listTitleColor(DBState.db.characters[rc.index]?.titleColor, Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0)}
                   missingAssets={Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0}
                   realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[rc.index])}

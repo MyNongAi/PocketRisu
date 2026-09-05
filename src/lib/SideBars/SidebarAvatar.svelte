@@ -15,6 +15,7 @@
     folderShape?: boolean;
     color?: string;
     titleColor?: string;
+    favorite?: boolean;
     missingAssets?: boolean;
     realmRecoveryAvailable?: boolean;
     backgroundimg?: DeferredImage;
@@ -35,6 +36,7 @@
     folderShape = false,
     color = '',
     titleColor,
+    favorite = false,
     missingAssets = false,
     realmRecoveryAvailable = false,
     backgroundimg = '',
@@ -96,11 +98,14 @@
       tabindex="0"
       data-char-id={chaId}
 >
+  {#if favorite}
+    <span class="pointer-events-none absolute -right-1 -top-1 z-20 text-base font-black leading-none text-amber-400 drop-shadow-[0_1px_1px_rgba(0,0,0,0.85)]" aria-label="즐겨찾기" title="즐겨찾기">★</span>
+  {/if}
   {#if missingAssets}
     {#if realmRecoveryAvailable}
-      <span class="pointer-events-none absolute -right-1 -top-1 z-10 rounded-full bg-darkbg px-1 text-sm font-black leading-none text-emerald-400 drop-shadow" aria-label="Realm 에셋 복구 가능" title="Realm 에셋 복구 가능">!</span>
+      <span class="pointer-events-none absolute -bottom-1 -right-1 z-10 rounded-full bg-darkbg px-1 text-sm font-black leading-none text-emerald-400 drop-shadow" aria-label="Realm 에셋 복구 가능" title="Realm 에셋 복구 가능">!</span>
     {:else}
-      <span class="pointer-events-none absolute -right-1 -top-1 z-10 text-sm leading-none drop-shadow" aria-label="에셋 누락" title="확인된 Realm 복구 원본 없음">❗</span>
+      <span class="pointer-events-none absolute -bottom-1 -right-1 z-10 text-sm leading-none drop-shadow" aria-label="에셋 누락" title="확인된 Realm 복구 원본 없음">❗</span>
     {/if}
   {/if}
   {#if src}
