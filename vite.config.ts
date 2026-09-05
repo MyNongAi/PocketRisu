@@ -48,6 +48,9 @@ export default defineConfig(({command, mode}) => {
     // https://v2.tauri.app/reference/environment-variables/
     envPrefix: ["VITE_", "TAURI_"],
     build: {
+      // Open tabs still import their content-hashed chunks after an update.
+      // Keep previous assets; deployments can retire them once old tabs close.
+      emptyOutDir: false,
       target:'baseline-widely-available',
       // don't minify for debug builds
       minify: process.env.TAURI_ENV_DEBUG === 'true' ? false : 'oxc',
