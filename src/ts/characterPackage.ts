@@ -656,7 +656,11 @@ export async function importCharacterPackage(): Promise<void> {
             const blankChar = createBlankChar()
             blankChar.name = manifest.character.name || ''
             db.characters.push(blankChar)
-            db.characterOrder = promoteNewlyImportedCharacter(db.characterOrder ?? [], blankChar.chaId)
+            db.characterOrder = promoteNewlyImportedCharacter(
+                db.characterOrder ?? [],
+                blankChar.chaId,
+                new Set(db.characters.filter((character) => character.favorite).map((character) => character.chaId)),
+            )
             setDatabase(db)
             newCharIndex = db.characters.length - 1
         } else {
@@ -686,7 +690,11 @@ export async function importCharacterPackage(): Promise<void> {
             importChatsToCharacter(manifest, unzipped, newChar, personaIdMap, importProgress)
             await importInlays(manifest, unzipped, newChar.chaId, importCurrentStep, importTotalSteps, progressLabel)
 
-            db.characterOrder = promoteNewlyImportedCharacter(db.characterOrder ?? [], newChar.chaId)
+            db.characterOrder = promoteNewlyImportedCharacter(
+                db.characterOrder ?? [],
+                newChar.chaId,
+                new Set(db.characters.filter((character) => character.favorite).map((character) => character.chaId)),
+            )
             setDatabase(db)
             checkCharOrder()
             notifySuccess(language.characterPackageImportSuccess)

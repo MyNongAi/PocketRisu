@@ -15,6 +15,7 @@ export interface SimilarityCharacterFolder {
     name: string
     data: string[]
     color: string
+    favorite?: boolean
     duplicateCandidate?: SimilarityCandidateInfo
 }
 
