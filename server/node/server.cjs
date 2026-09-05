@@ -84,6 +84,9 @@ const { createExternalAssetMigrationJournal } = require('./external-asset-migrat
 const { verifyStagedMigration } = require('./external-asset-staged-verifier.cjs');
 const { applyPatch } = require('fast-json-patch');
 const { decodeRisuSave, encodeRisuSaveLegacy, calculateHash, normalizeJSON, normalizeForwardHeaders, hasRemoteBlocks } = require('./utils.cjs');
+const { computeChatEtag, acceptsChatEtag } = require('./chat-content-etag.cjs');
+const { createPendingChatPayloads } = require('./pending-chat-payloads.cjs');
+const pendingChatPayloads = createPendingChatPayloads({ kvGet, kvSet, kvDel, kvList });
 const { createPatchHashCache, decodePointerSegment } = require('./patch-hash-cache.cjs');
 const { clonePatchSnapshot } = require('./patch-selective-clone.cjs');
 const pluginStorage = require('./plugin-storage-store.cjs');
@@ -417,6 +420,7 @@ async function flushPendingDb({ protectedSnapshotKey = null } = {}) {
                 const dbObj = normalizeJSON(await decodeRisuSave(raw));
                 const fullDb = hydrateDatabaseForDisk(stripDatabaseForClient(dbObj, { reconcileManifests: true }));
                 kvSet('database/database.bin', Buffer.from(encodeRisuSaveLegacy(fullDb)));
+                pendingChatPayloads.retireCommitted(fullDb);
             }
         }
         createBackupAndRotate(protectedSnapshotKey);
@@ -641,8 +645,7 @@ function chatToStub(chat) {
  */
 function initChatStore(dbObj) {
     fullChatStore = new Map();
-    if (!dbObj?.characters) return;
-    for (const char of dbObj.characters) {
+    for (const char of dbObj?.characters ?? []) {
         if (!char?.chaId || !char.chats) continue;
         const charChats = new Map();
         for (const chat of char.chats) {
@@ -664,6 +667,7 @@ function initChatStore(dbObj) {
             fullChatStore.set(char.chaId, charChats);
         }
     }
+    pendingChatPayloads.restoreInto(fullChatStore);
 }
 
 /**
@@ -853,6 +857,7 @@ async function ensureChatStore() {
     const raw = kvGet('database/database.bin');
     if (!raw) {
         fullChatStore = new Map();
+        pendingChatPayloads.restoreInto(fullChatStore);
         return;
     }
     const dbObj = await decodeDatabaseWithPersistentChatIds(raw, {
@@ -1012,6 +1017,7 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
     // leave fullChatStore holding stale fullChat objects, and hydration
     // would resurrect the cleared values until the next /api/read.
     if (decodedKey === 'database/database.bin') {
+        pendingChatPayloads.retireCommitted(fullDb);
         initChatStore(fullDb);
     }
 }
@@ -4191,14 +4197,14 @@ app.post('/api/chat-session/:chaId/:chatId/claim', rejectDuringExclusiveStorage,
                 if (!restoreColdStorageChat(currentChat)) {
                     return res.status(500).json({ error: 'Cold storage restore failed' })
                 }
-                currentEtag = computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(currentChat)))
+                currentEtag = computeChatEtag(currentChat)
             }
             const expectedEtag = req.headers['x-chat-etag']
             // A heartbeat from the current owner may race its own successful
             // chat save and carry the immediately previous ETag. Ownership is
             // already exclusive, so only a NEW claimant needs the comparison.
             const version = evaluateChatVersion({
-                expectedEtag,
+                expectedEtag: acceptsChatEtag(expectedEtag, currentChat) ? currentEtag : expectedEtag,
                 currentEtag,
                 renewed: result.renewed,
                 hasCurrentPayload: !!currentChat,
@@ -5854,9 +5860,10 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
                     }
 
                     const mergedContent = Buffer.from(encodeRisuSaveLegacy(fullDb));
-                    // Re-init chat store from merged result
-                    initChatStore(fullDb);
                     kvSet(key, mergedContent);
+                    pendingChatPayloads.retireCommitted(fullDb);
+                    // Do not replace the live store until persistence succeeds.
+                    initChatStore(fullDb);
                     // ETag of what the next /api/read will serve: the
                     // PERSISTED DB, stripped. Not the request bytes — the
                     // split above may have emptied pluginCustomStorage, so
@@ -7438,6 +7445,8 @@ app.get('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, asy
                 const encoded = Buffer.from(encodeRisuSaveLegacy(chat));
                 res.setHeader('Content-Type', 'application/octet-stream');
                 res.setHeader('ETag', computeBufferEtag(encoded));
+                res.setHeader('x-chat-etag', computeChatEtag(chat));
+                res.setHeader('Cache-Control', 'private, no-store');
                 return res.send(encoded);
             }
         }
@@ -7453,7 +7462,7 @@ app.get('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, asy
         const chat = expectedChatId
             ? char?.chats?.find(candidate => candidate?.id === expectedChatId)
             : char?.chats?.[chatIndex];
-        if (!chat) {
+        if (!chat || (chat._stub && !Array.isArray(chat.message))) {
             return res.status(404).json({ error: 'Chat not found' });
         }
         if (!restoreColdStorageChat(chat)) {
@@ -7462,6 +7471,8 @@ app.get('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, asy
         const encoded = Buffer.from(encodeRisuSaveLegacy(chat));
         res.setHeader('Content-Type', 'application/octet-stream');
         res.setHeader('ETag', computeBufferEtag(encoded));
+        res.setHeader('x-chat-etag', computeChatEtag(chat));
+        res.setHeader('Cache-Control', 'private, no-store');
         res.send(encoded);
         });
     } catch (error) {
@@ -7490,8 +7501,9 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
                 chatData = req.body;
             }
 
-            if (!chatData || !expectedChatId) {
-                return res.status(400).json({ error: 'Chat data and x-chat-id required' });
+            if (!chatData || typeof expectedChatId !== 'string' || chatData.id !== expectedChatId
+                || !Array.isArray(chatData.message) || chatData._stub || chatData._placeholder) {
+                return res.status(400).json({ error: 'A full chat with matching id and message array is required' });
             }
 
             await ensureChatStore();
@@ -7499,13 +7511,21 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
             const currentChat = fullChatStore.get(chaId)?.get(expectedChatId);
             const catalogChat = findCatalogChat(chaId, expectedChatId);
             const createOnly = req.headers['if-none-match'] === '*';
+            // Retrying an acknowledged POST after a lost response is safe when
+            // the payload is identical. This never overwrites a peer's edit.
+            if (currentChat && restoreColdStorageChat(currentChat)
+                && computeChatEtag(currentChat) === computeChatEtag(chatData)) {
+                const etag = computeChatEtag(currentChat);
+                res.setHeader('ETag', etag);
+                return res.json({ success: true, etag });
+            }
             if (createOnly && currentChat) {
                 if (!restoreColdStorageChat(currentChat)) {
                     return res.status(500).json({ error: 'Cold storage restore failed' });
                 }
                 return res.status(409).json({
                     error: 'A chat with this ID already exists on the server',
-                    currentEtag: computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(currentChat))),
+                    currentEtag: computeChatEtag(currentChat),
                 });
             }
             const chatLease = chatSessionLock.checkWrite(
@@ -7524,10 +7544,10 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
                     return res.status(500).json({ error: 'Cold storage restore failed' });
                 }
                 const currentEtag = currentChat
-                    ? computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(currentChat)))
+                    ? computeChatEtag(currentChat)
                     : null;
                 const version = evaluateChatVersion({
-                    expectedEtag: ifMatch,
+                    expectedEtag: acceptsChatEtag(ifMatch, currentChat) ? currentEtag : ifMatch,
                     currentEtag,
                     hasCurrentPayload: !!currentChat,
                     hasCatalogStub: catalogChat?._stub === true,
@@ -7548,6 +7568,12 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
                 // old single-writer protection. A brand-new chat id is safe to
                 // create because there is nothing for it to overwrite.
                 return;
+            }
+
+            // Do not acknowledge a new/repaired payload that a flush or restart
+            // could discard while its catalog registration is still in flight.
+            if (!currentChat || pendingChatPayloads.has(chaId, expectedChatId)) {
+                pendingChatPayloads.stage(chaId, expectedChatId, chatData);
             }
 
             // Update fullChatStore
@@ -7579,6 +7605,7 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
                             const encoded = Buffer.from(encodeRisuSaveLegacy(fullDb));
                             try {
                                 kvSet('database/database.bin', encoded);
+                                pendingChatPayloads.retireCommitted(fullDb);
                             } catch (err) {
                                 if (err && typeof err === 'object') {
                                     try { err.attemptedSize = encoded.length; } catch {}
@@ -7608,7 +7635,7 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
             }, SAVE_INTERVAL);
             saveTimers[DB_HEX_KEY] = saveTimer;
 
-            const nextEtag = computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(chatData)));
+            const nextEtag = computeChatEtag(chatData);
             res.setHeader('ETag', nextEtag);
             res.json({ success: true, etag: nextEtag });
         });
