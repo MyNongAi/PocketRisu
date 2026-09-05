@@ -94,12 +94,14 @@
       "title": "독립 선택이 가능한 PC 분할 채팅",
       "criticality": "core-ux",
       "ownerFiles": [
+        "src/App.svelte",
         "src/ts/chatSplitPane.ts",
         "src/lib/ChatScreens/SecondaryChatPanel.svelte",
         "src/lib/ChatScreens/ChatScreen.svelte",
         "src/lib/SideBars/Sidebar.svelte"
       ],
       "requiredMarkers": [
+        { "file": "src/App.svelte", "contains": "split-workspace-sidebar" },
         { "file": "src/ts/chatSplitPane.ts", "contains": "toggleSplitChat" },
         { "file": "src/ts/chatSplitPane.ts", "contains": "getSplitWidthBounds" },
         { "file": "src/lib/ChatScreens/SecondaryChatPanel.svelte", "contains": "getSecondaryRisuPaneUrl" },
