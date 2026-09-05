@@ -70,6 +70,13 @@
   const isTouchDevice = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
   const touchDragEnabled = $derived(isTouchDevice && !DBState.db.disableMobileDragDrop);
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
+    import {
+      applySidebarItemDrop,
+      moveSidebarItem,
+      type SidebarDragItem,
+      type SidebarInsertTarget,
+      type SidebarItemTarget,
+    } from './sidebarDrag';
 
   let sideBarMode = $state(0);
   let hasEditableCharacter = $derived(
@@ -117,8 +124,14 @@
     QuickSettings.index = 2;
   }
 
-  type sortTypeNormal = { type:'normal',img: string, index: number, name:string, favorite?:boolean, folderIndex?:number }
+  type DragData = SidebarDragItem
+  type sortTypeNormal = { type:'normal',id:string,img: string, index: number, name:string, favorite?:boolean, folderIndex?:number }
   type sortType = sortTypeNormal | {type:'folder',folder:sortTypeNormal[],id:string, name:string, color:string, favorite?:boolean, img?:string}
+  function sidebarDragItem(item: sortType): SidebarDragItem {
+    return item.type === 'normal'
+      ? { kind: 'character', id: item.id }
+      : { kind: 'folder', id: item.id }
+  }
   type sidebarCatalogBlock =
     | { type: 'control', position: 'top' | 'bottom' }
     | { type: 'character', char: sortType, index: number }
@@ -164,7 +177,7 @@
       if(char.type === 'normal') blocks.push({
         type: 'character',
         char,
-        drag: { index: sourceOrder },
+        drag: { kind: 'character', id: char.id },
         sourceOrder,
       })
     })
@@ -218,6 +231,7 @@
         if(index !== -1){
           const cha = DBState.db.characters[index]
           newCharImages.push({
+            id: cha.chaId,
             img:cha.image ?? "",
             index:index,
             type: "normal",
@@ -234,6 +248,7 @@
           if(index !== -1){
             const cha = DBState.db.characters[index]
             folderCharImages.push({
+              id: cha.chaId,
               img:cha.image ?? "",
               index:index,
               type: "normal",
@@ -266,95 +281,14 @@
   })
 
 
-  const inserter = (mainIndex:DragData, targetIndex:DragData) => {
-    if(mainIndex.index === targetIndex.index && mainIndex.folder === targetIndex.folder){
-      return
-    }
-    let db = DBState.db
-    let mainFolderIndex = mainIndex.folder ? getFolderIndex(mainIndex.folder) : null
-    let targetFolderIndex = targetIndex.folder ? getFolderIndex(targetIndex.folder) : null
-    let mainFolderId = mainIndex.folder ? (db.characterOrder[mainFolderIndex] as folder).id : ''
-    let movingFolder:folder|false = false
-    let mainId = ''
-    if(mainIndex.folder){
-      mainId = (db.characterOrder[mainFolderIndex] as folder).data[mainIndex.index]
-    }
-    else{
-      const da = db.characterOrder[mainIndex.index]
-      if(typeof(da) !== 'string'){
-        mainId = da.id
-        movingFolder = $state.snapshot(da)
-        if(targetIndex.folder){
-          return
-        }
-      }
-      else{
-        mainId = da
-      }
-    }
-    if(targetIndex.folder){
-        const folder = db.characterOrder[targetFolderIndex] as folder
-        folder.data.splice(targetIndex.index,0,mainId)
-        db.characterOrder[targetFolderIndex] = folder
-    }
-    else if(movingFolder){
-        db.characterOrder.splice(targetIndex.index,0,movingFolder)
-    }
-    else{
-        db.characterOrder.splice(targetIndex.index,0,mainId)
-    }
-    if(mainIndex.folder){
-      mainFolderIndex = -1
-      for(let i=0;i<db.characterOrder.length;i++){
-        const a =db.characterOrder[i]
-        if(typeof(a) !== 'string'){
-          if(a.id === mainFolderId){
-            mainFolderIndex = i
-            break
-          }
-        }
-      }
-      if(mainFolderIndex !== -1){
-        const folder:folder = db.characterOrder[mainFolderIndex] as folder
-        const ind = mainIndex.index > targetIndex.index ? folder.data.lastIndexOf(mainId) : folder.data.indexOf(mainId) 
-        if(ind !== -1){
-          folder.data.splice(ind, 1)
-        }
-        db.characterOrder[mainFolderIndex] = folder
-      }
-      else{
-        console.log('folder not found')
-      }
-    }
-    else if(movingFolder){
-      let idList:string[] = []
-      for(const ord of db.characterOrder){
-        idList.push(typeof(ord) === 'string' ? ord : ord.id)
-      }
-      const ind = mainIndex.index > targetIndex.index ? idList.lastIndexOf(mainId) : idList.indexOf(mainId) 
-      if(ind !== -1){
-        db.characterOrder.splice(ind, 1)
-      }
-    }
-    else{
-      const ind = mainIndex.index > targetIndex.index ? db.characterOrder.lastIndexOf(mainId) : db.characterOrder.indexOf(mainId) 
-      if(ind !== -1){
-        db.characterOrder.splice(ind, 1)
-      }
-    }
-
-    DBState.db.characterOrder = db.characterOrder
+  function commitSidebarOrder(nextOrder: Array<string | folder> | null) {
+    if(!nextOrder || isEqual(nextOrder, DBState.db.characterOrder)) return
+    DBState.db.characterOrder = nextOrder
     checkCharOrder()
   }
 
-  function getFolderIndex(id:string){
-    for(let i=0;i<DBState.db.characterOrder.length;i++){
-      const data = DBState.db.characterOrder[i]
-      if(typeof(data) !== 'string' && data.id === id){
-        return i
-      }
-    }
-    return -1
+  const inserter = (source:DragData, target:SidebarInsertTarget) => {
+    commitSidebarOrder(moveSidebarItem(DBState.db.characterOrder, source, target))
   }
 
   function setSplitCatalogMode(enabled:boolean){
@@ -532,58 +466,17 @@
   })
 
 
-  const createFolder = (mainIndex:DragData, targetIndex:DragData) => {
-    if(mainIndex.index === targetIndex.index && mainIndex.folder === targetIndex.folder){
-      return
-    }
-    let db = DBState.db
-    let mainFolderIndex = mainIndex.folder ? getFolderIndex(mainIndex.folder) : null
-    let mainFolder = db.characterOrder[mainFolderIndex] as folder
-    if(targetIndex.folder){
-      return
-    }
-    const main = mainIndex.folder ? mainFolder.data[mainIndex.index] : db.characterOrder[mainIndex.index]
-    const target = db.characterOrder[targetIndex.index]
-    if(typeof(main) !== 'string'){
-      return
-    }
-    if(typeof (target) === 'string'){
-      const newFolder:folder = {
-        name: "New Folder",
-        data: [main, target],
-        color: "",
-        id: v4()
-      }
-      db.characterOrder[targetIndex.index] = newFolder
-      if(mainIndex.folder){
-        mainFolder.data.splice(mainIndex.index, 1)
-        db.characterOrder[mainFolderIndex] = mainFolder
-      }
-      else{
-        db.characterOrder.splice(mainIndex.index, 1)
-      }
-    }
-    else{
-      target.data.push(main)
-      if(mainIndex.folder){
-        mainFolder.data.splice(mainIndex.index, 1)
-        db.characterOrder[mainFolderIndex] = mainFolder
-      }
-      else{
-        db.characterOrder.splice(mainIndex.index, 1)
-      }
-    }
-
-    DBState.db.characterOrder = db.characterOrder
-    checkCharOrder()
+  const createFolder = (source:DragData, target:SidebarItemTarget) => {
+    commitSidebarOrder(applySidebarItemDrop(
+      DBState.db.characterOrder,
+      source,
+      target,
+      () => ({ name: 'New Folder', color: '', id: v4() }),
+    ))
   }
 
   type DragEv = DragEvent & {
     currentTarget: EventTarget & HTMLDivElement;
-  }
-  type DragData = {
-    index:number,
-    folder?:string
   }
   const avatarDragStart = (ind:DragData, e:DragEv) => {
     e.dataTransfer.setData('text/plain', '');
@@ -629,7 +522,7 @@
     e.dataTransfer.dropEffect = 'move'
   }
 
-  const avatarDrop = (ind:DragData, e:DragEv) => {
+  const avatarDrop = (target:SidebarItemTarget, e:DragEv) => {
     const drag = getCurrentSidebarDrag(e)
     if(!drag){
       return
@@ -637,7 +530,7 @@
     e.preventDefault()
     e.stopPropagation()
     try {
-      createFolder(drag,ind)
+      createFolder(drag,target)
     } catch (error) {
       console.error('avatarDrop error:', error)
     } finally {
@@ -652,6 +545,22 @@
     e.preventDefault()
     e.stopPropagation()
     return false
+  }
+
+  function sidebarItemTargetFromElement(element: HTMLElement): SidebarItemTarget | null {
+    const kind = element.dataset.dragKind
+    const id = element.dataset.dragId
+    if(!id || (kind !== 'character' && kind !== 'folder')) return null
+    return { kind, id }
+  }
+
+  function sidebarInsertTargetFromElement(element: HTMLElement): SidebarInsertTarget | null {
+    const index = Number.parseInt(element.dataset.spacerIndex ?? '', 10)
+    if(!Number.isInteger(index) || index < 0) return null
+    const folderId = element.dataset.spacerFolder
+    return folderId
+      ? { kind: 'folder', folderId, index }
+      : { kind: 'root', index }
   }
 
   // Touch long-press drag for mobile devices
@@ -716,7 +625,7 @@
 
     if (!el) return
     const spacer = el.closest('[data-spacer-index]') as HTMLElement | null
-    const item = el.closest('[data-drag-index]') as HTMLElement | null
+    const item = el.closest('[data-drag-id]') as HTMLElement | null
 
     if (spacer) {
       spacer.classList.add('bg-green-500')
@@ -749,16 +658,14 @@
     const el = document.elementFromPoint(touch.clientX, touch.clientY)
 
     const spacer = el?.closest('[data-spacer-index]') as HTMLElement | null
-    const item = el?.closest('[data-drag-index]') as HTMLElement | null
+    const item = el?.closest('[data-drag-id]') as HTMLElement | null
 
     if (spacer) {
-      const idx = parseInt(spacer.dataset.spacerIndex!)
-      const folder = spacer.dataset.spacerFolder || undefined
-      inserter(touchDragState.data, { index: idx, folder })
+      const target = sidebarInsertTargetFromElement(spacer)
+      if(target) inserter(touchDragState.data, target)
     } else if (item && item !== touchDragState.element) {
-      const idx = parseInt(item.dataset.dragIndex!)
-      const folder = item.dataset.dragFolder || undefined
-      createFolder(touchDragState.data, { index: idx, folder })
+      const target = sidebarItemTargetFromElement(item)
+      if(target) createFolder(touchDragState.data, target)
     }
 
     cleanupTouchDrag()
@@ -817,25 +724,26 @@
       const drag = getCurrentSidebarDrag(e)
       if(!drag) return
       e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('bg-green-500')
-      try { inserter(drag, { index: 0 }) } finally { clearCurrentDrag() }
+      try { inserter(drag, { kind: 'root', index: 0 }) } finally { clearCurrentDrag() }
     }}></div>
     {#each splitFolderItems as item (item.char.id)}
       <div class="flex w-full flex-col items-center">
         <div
           class="group relative flex items-center px-2"
           role="listitem"
-          data-drag-index={item.sourceOrder}
+          data-drag-kind="folder"
+          data-drag-id={item.char.id}
           draggable={!isTouchDevice ? "true" : undefined}
-          ondragstart={!isTouchDevice ? (e) => avatarDragStart({ index: item.sourceOrder }, e) : undefined}
+          ondragstart={!isTouchDevice ? (e) => avatarDragStart({ kind: 'folder', id: item.char.id }, e) : undefined}
           ondragend={!isTouchDevice ? clearCurrentDrag : undefined}
           ondragover={!isTouchDevice ? avatarDragOver : undefined}
           ondrop={!isTouchDevice ? (e) => {
             const drag = getCurrentSidebarDrag(e)
             if(!drag) return
             e.preventDefault(); e.stopPropagation()
-            try { inserter(drag, { index: item.char.folder.length, folder: item.char.id }) } finally { clearCurrentDrag() }
+            try { createFolder(drag, { kind: 'folder', id: item.char.id }) } finally { clearCurrentDrag() }
           } : undefined}
-          ontouchstart={touchDragEnabled ? (e) => onTouchDragStart({ index: item.sourceOrder }, e) : undefined}
+          ontouchstart={touchDragEnabled ? (e) => onTouchDragStart({ kind: 'folder', id: item.char.id }, e) : undefined}
         >
           <SidebarAvatar
             src="slot"
@@ -882,7 +790,7 @@
                 const drag = getCurrentSidebarDrag(e)
                 if(!drag) return
                 e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('bg-green-500')
-                try { inserter(drag, { index: 0, folder: item.char.id }) } finally { clearCurrentDrag() }
+                try { inserter(drag, { kind: 'folder', folderId: item.char.id, index: 0 }) } finally { clearCurrentDrag() }
               }}
             ></div>
             {#each item.char.folder as folderChar, folderIndex}
@@ -890,13 +798,13 @@
               <div
                 class="sidebar-folder-character group relative flex items-center px-2"
                 role="listitem"
-                data-drag-index={sourceFolderIndex}
-                data-drag-folder={item.char.id}
+                data-drag-kind="character"
+                data-drag-id={folderChar.id}
                 draggable={!isTouchDevice ? "true" : undefined}
-                ondragstart={!isTouchDevice ? (e) => avatarDragStart({ index: sourceFolderIndex, folder: item.char.id }, e) : undefined}
+                ondragstart={!isTouchDevice ? (e) => avatarDragStart({ kind: 'character', id: folderChar.id }, e) : undefined}
                 ondragend={!isTouchDevice ? clearCurrentDrag : undefined}
                 ondragover={!isTouchDevice ? avatarDragOver : undefined}
-                ontouchstart={touchDragEnabled ? (e) => onTouchDragStart({ index: sourceFolderIndex, folder: item.char.id }, e) : undefined}
+                ontouchstart={touchDragEnabled ? (e) => onTouchDragStart({ kind: 'character', id: folderChar.id }, e) : undefined}
               >
                 <SidebarIndicator isActive={$selectedCharID === folderChar.index && sideBarMode !== 1}/>
                 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
@@ -938,7 +846,7 @@
                   const drag = getCurrentSidebarDrag(e)
                   if(!drag) return
                   e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('bg-green-500')
-                  try { inserter(drag, { index: sourceFolderIndex + 1, folder: item.char.id }) } finally { clearCurrentDrag() }
+                  try { inserter(drag, { kind: 'folder', folderId: item.char.id, index: sourceFolderIndex + 1 }) } finally { clearCurrentDrag() }
                 }}
               ></div>
             {/each}
@@ -952,7 +860,7 @@
           const drag = getCurrentSidebarDrag(e)
           if(!drag) return
           e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('bg-green-500')
-          try { inserter(drag, { index: item.sourceOrder + 1 }) } finally { clearCurrentDrag() }
+          try { inserter(drag, { kind: 'root', index: item.sourceOrder + 1 }) } finally { clearCurrentDrag() }
         }}></div>
       </div>
     {/each}
@@ -978,7 +886,7 @@
             const drag = getCurrentSidebarDrag(e)
             if(!drag) return
             e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('bg-green-500')
-            try { inserter(drag, { index: 0 }) } finally { clearCurrentDrag() }
+            try { inserter(drag, { kind: 'root', index: 0 }) } finally { clearCurrentDrag() }
           }}
         ></div>
       {/if}
@@ -988,8 +896,8 @@
       <div
         class="group relative flex items-center px-2"
         role="listitem"
-        data-drag-index={block.drag.index}
-        data-drag-folder={block.drag.folder}
+        data-drag-kind="character"
+        data-drag-id={block.char.id}
         draggable={!isTouchDevice ? "true" : undefined}
         ondragstart={!isTouchDevice ? (e) => avatarDragStart(block.drag, e) : undefined}
         ondragend={!isTouchDevice ? clearCurrentDrag : undefined}
@@ -1025,8 +933,7 @@
       <div
         class="h-4 min-h-4 w-full"
         role="listitem"
-        data-spacer-index={block.drag.index + 1}
-        data-spacer-folder={block.drag.folder}
+        data-spacer-index={block.sourceOrder + 1}
         ondragover={(e) => {
           if(!getCurrentSidebarDrag(e)) return
           e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'
@@ -1037,7 +944,7 @@
           const drag = getCurrentSidebarDrag(e)
           if(!drag) return
           e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('bg-green-500')
-          try { inserter(drag, { index: block.drag.index + 1, folder: block.drag.folder }) } finally { clearCurrentDrag() }
+          try { inserter(drag, { kind: 'root', index: block.sourceOrder + 1 }) } finally { clearCurrentDrag() }
         }}
       ></div>
     </div>
@@ -1271,7 +1178,7 @@
       e.stopPropagation()
       e.currentTarget.classList.remove('bg-green-500')
       try {
-        inserter(drag,{index:0})
+        inserter(drag,{kind:'root',index:0})
       } finally {
         clearCurrentDrag()
       }
@@ -1286,14 +1193,15 @@
       <div class="flex w-full flex-col items-center">
       <div class="group relative flex items-center px-2"
         role="listitem"
-        data-drag-index={ind}
+        data-drag-kind={char.type === 'normal' ? 'character' : 'folder'}
+        data-drag-id={char.id}
         draggable={!isTouchDevice ? "true" : undefined}
-        ondragstart={!isTouchDevice ? (e) => {avatarDragStart({index:ind}, e)} : undefined}
+        ondragstart={!isTouchDevice ? (e) => {avatarDragStart(sidebarDragItem(char), e)} : undefined}
         ondragend={!isTouchDevice ? clearCurrentDrag : undefined}
         ondragover={!isTouchDevice ? avatarDragOver : undefined}
-        ondrop={!isTouchDevice ? (e) => {avatarDrop({index:ind}, e)} : undefined}
+        ondrop={!isTouchDevice ? (e) => {avatarDrop(sidebarDragItem(char), e)} : undefined}
         ondragenter={!isTouchDevice ? preventAll : undefined}
-        ontouchstart={touchDragEnabled ? (e) => {onTouchDragStart({index:ind}, e)} : undefined}
+        ontouchstart={touchDragEnabled ? (e) => {onTouchDragStart(sidebarDragItem(char), e)} : undefined}
       >
         <SidebarIndicator
           isActive={char.type === 'normal' && $selectedCharID === char.index && sideBarMode !== 1}
@@ -1395,7 +1303,7 @@
             e.currentTarget.classList.remove('bg-green-500')
             try {
               if(char.type === 'folder'){
-                inserter(drag,{index:0,folder:char.id})
+                inserter(drag,{kind:'folder',folderId:char.id,index:0})
               }
             } finally {
               clearCurrentDrag()
@@ -1405,15 +1313,15 @@
               {@const sourceFolderIndex = char2.folderIndex ?? ind}
               <div class="sidebar-folder-character group relative flex items-center px-2 z-10"
               role="listitem"
-              data-drag-index={sourceFolderIndex}
-              data-drag-folder={char.type === 'folder' ? char.id : undefined}
+              data-drag-kind="character"
+              data-drag-id={char2.id}
               draggable={!isTouchDevice ? "true" : undefined}
-              ondragstart={!isTouchDevice ? (e) => {if(char.type === 'folder'){avatarDragStart({index: sourceFolderIndex, folder:char.id}, e)}} : undefined}
+              ondragstart={!isTouchDevice ? (e) => {avatarDragStart({kind:'character', id:char2.id}, e)} : undefined}
               ondragend={!isTouchDevice ? clearCurrentDrag : undefined}
               ondragover={!isTouchDevice ? avatarDragOver : undefined}
-              ondrop={!isTouchDevice ? (e) => {if(char.type === 'folder'){avatarDrop({index: sourceFolderIndex, folder:char.id}, e)}} : undefined}
+              ondrop={!isTouchDevice ? (e) => {avatarDrop({kind:'character', id:char2.id}, e)} : undefined}
               ondragenter={!isTouchDevice ? preventAll : undefined}
-              ontouchstart={touchDragEnabled && char.type === 'folder' ? (e) => {onTouchDragStart({index: sourceFolderIndex, folder:char.id}, e)} : undefined}
+              ontouchstart={touchDragEnabled ? (e) => {onTouchDragStart({kind:'character', id:char2.id}, e)} : undefined}
             >
               <SidebarIndicator
                 isActive={$selectedCharID === char2.index && sideBarMode !== 1}
@@ -1470,7 +1378,7 @@
               e.currentTarget.classList.remove('bg-green-500')
               try {
                 if(char.type === 'folder'){
-                  inserter(drag,{index:sourceFolderIndex+1,folder:char.id})
+                  inserter(drag,{kind:'folder',folderId:char.id,index:sourceFolderIndex+1})
                 }
               } finally {
                 clearCurrentDrag()
@@ -1495,7 +1403,7 @@
         e.stopPropagation()
         e.currentTarget.classList.remove('bg-green-500')
         try {
-          inserter(drag,{index:ind+1})
+          inserter(drag,{kind:'root',index:ind+1})
         } finally {
           clearCurrentDrag()
         }
