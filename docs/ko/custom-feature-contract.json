@@ -144,6 +144,23 @@
       ]
     },
     {
+      "id": "SIDEBAR-DRAG",
+      "title": "안정 ID 기반 사이드바 드래그 변환",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/SideBars/sidebarDrag.ts",
+        "src/lib/SideBars/Sidebar.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/SideBars/sidebarDrag.ts", "contains": "moveSidebarItem" },
+        { "file": "src/lib/SideBars/sidebarDrag.ts", "contains": "applySidebarItemDrop" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "data-drag-id" }
+      ],
+      "regressionTests": [
+        "src/lib/SideBars/sidebarDrag.test.ts"
+      ]
+    },
+    {
       "id": "MODULE-FOLDER",
       "title": "비파괴 모듈 폴더·최근 활성화·일괄 제어",
       "criticality": "core-ux",
