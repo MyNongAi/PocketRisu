@@ -38,6 +38,7 @@
     import sendSound from './etc/send.mp3'
     import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
     import { importDroppedFiles } from './ts/dropImport';
+    import { isEmbeddedRisuPane, splitChatOpen } from './ts/chatSplitPane';
 
     let gridOpen = $state(false)
     let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
@@ -212,7 +213,16 @@
             <GridChars endGrid={() => {gridOpen = false}} />
         {:else}
             {#if (!$DynamicGUI)}
-                <Sidebar openGrid={() => {gridOpen = true}} hidden={!$sideBarStore} />
+                {#if $splitChatOpen || isEmbeddedRisuPane}
+                    <div
+                        class="split-workspace-sidebar fixed left-0 top-0 z-30 flex h-full"
+                        class:pointer-events-none={!$sideBarStore}
+                    >
+                        <Sidebar openGrid={() => {gridOpen = true}} hidden={!$sideBarStore} />
+                    </div>
+                {:else}
+                    <Sidebar openGrid={() => {gridOpen = true}} hidden={!$sideBarStore} />
+                {/if}
             {:else}
                 <div class="top-0 w-full h-full left-0 z-30 flex flex-row items-center" class:fixed={$sideBarStore} class:hidden={!$sideBarStore} >
                     <!-- svelte-ignore a11y_click_events_have_key_events -->
