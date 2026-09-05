@@ -102,6 +102,7 @@
       ],
       "requiredMarkers": [
         { "file": "src/App.svelte", "contains": "split-workspace-sidebar" },
+        { "file": "src/App.svelte", "contains": "aria-label=\"사이드바 닫기\"" },
         { "file": "src/ts/chatSplitPane.ts", "contains": "toggleSplitChat" },
         { "file": "src/ts/chatSplitPane.ts", "contains": "getSplitWidthBounds" },
         { "file": "src/lib/ChatScreens/SecondaryChatPanel.svelte", "contains": "getSecondaryRisuPaneUrl" },
