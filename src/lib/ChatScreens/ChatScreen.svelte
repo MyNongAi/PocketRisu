@@ -102,7 +102,10 @@
 <!-- `isolate` keeps bot HTML/CSS z-index inside the chat layer; the outer
      wrapper additionally owns the optional second workspace. -->
 <div class="grow h-full min-w-0 flex relative" bind:this={splitRoot}>
-<section class="grow h-full min-w-0 relative">
+<section
+    class="grow h-full min-w-0 relative"
+    class:split-chat-contained={$splitChatOpen && !$MobileGUI && !isEmbeddedRisuPane}
+>
 {#if DBState.db.theme === 'waifu'}
     <div class="isolate grow h-full flex justify-center relative" style="{bgImg.length < 4 ? wallPaper : bgImg}">
         <SideBarArrow />
@@ -153,8 +156,8 @@
 </section>
 {#if $splitChatOpen && !$MobileGUI && !isEmbeddedRisuPane}
     <div
-        class="split-chat-divider h-full w-1.5 shrink-0 cursor-col-resize bg-darkborderc transition-colors hover:bg-primary"
-        role="separator"
+        class="split-chat-divider h-full w-1.5 shrink-0 cursor-col-resize border-0 bg-darkborderc p-0 transition-colors hover:bg-primary focus-visible:bg-primary focus-visible:outline-none"
+        role="slider"
         aria-label="Resize split chat"
         aria-orientation="vertical"
         aria-valuemin={getSplitWidthBounds(splitRoot?.clientWidth ?? 0).min}
@@ -189,5 +192,14 @@
 
     .split-chat-divider {
         touch-action: none;
+    }
+
+    .split-chat-contained {
+        /* User CSS often places chat controls with position:fixed. Paint
+           containment gives the primary workspace its own fixed-position
+           viewport, matching the secondary iframe instead of the full page. */
+        contain: paint;
+        isolation: isolate;
+        overflow: clip;
     }
 </style>
