@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { DynamicGUI, settingsOpen, sideBarStore, openPresetList, openModelPresetList, openModelProfileBrowser, openPersonaList, personaSelectCallback, openMemoryPresetList, memoryPresetSelectCallback, openThemePresetList, MobileGUI, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, popUpEditorStore } from './ts/stores.svelte';
+    import { DynamicGUI, settingsOpen, sideBarClosing, sideBarStore, openPresetList, openModelPresetList, openModelProfileBrowser, openPersonaList, personaSelectCallback, openMemoryPresetList, memoryPresetSelectCallback, openThemePresetList, MobileGUI, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, popUpEditorStore } from './ts/stores.svelte';
     import Sidebar from './lib/SideBars/Sidebar.svelte';
     import { DBState } from './ts/stores.svelte';
     import ChatScreen from './lib/ChatScreens/ChatScreen.svelte';
@@ -19,7 +19,7 @@
     import MobileHeader from './lib/Mobile/MobileHeader.svelte';
     import MobileBody from './lib/Mobile/MobileBody.svelte';
     import MobileFooter from './lib/Mobile/MobileFooter.svelte';
-    import { ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte';
+    import { ArrowLeft, ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte';
     import { hypaV3ModalOpen, hypaV3ProgressStore } from "./ts/stores.svelte";
     import { assetViewerStore } from './ts/assetViewer.svelte';
     import AssetViewer from './lib/Others/AssetViewer.svelte';
@@ -219,6 +219,17 @@
                         class:pointer-events-none={!$sideBarStore}
                     >
                         <Sidebar openGrid={() => {gridOpen = true}} hidden={!$sideBarStore} />
+                        {#if $sideBarStore}
+                            <button
+                                type="button"
+                                class="mt-3 flex h-12 w-12 shrink-0 items-center justify-center rounded-r-md border border-l-0 border-transparent bg-darkbg text-textcolor transition-colors hover:border-neutral-200"
+                                aria-label="사이드바 닫기"
+                                title="사이드바 닫기"
+                                onclick={() => sideBarClosing.set(true)}
+                            >
+                                <ArrowLeft />
+                            </button>
+                        {/if}
                     </div>
                 {:else}
                     <Sidebar openGrid={() => {gridOpen = true}} hidden={!$sideBarStore} />
