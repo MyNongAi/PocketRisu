@@ -51,6 +51,7 @@ dist.zip
 !/scripts/portable/
 !/scripts/termux/
 !/scripts/check-help-keys.mjs
+!/scripts/check-custom-features.mjs
 .env
 /server/node/ssl/certificate
 /bin/
