@@ -1698,6 +1698,8 @@ export interface loreBook{
 export interface character{
     type?:"character"
     name:string
+    /** Pins the character above the recent-order section in character lists. */
+    favorite?:boolean
     /** Optional list title color; missing-asset warnings take precedence. */
     titleColor?:string
     /** PocketRisu collection provenance. Ignored by upstream clients. */
@@ -2072,6 +2074,8 @@ export interface folder{
     data:string[]
     color:string
     id:string
+    /** Pins the folder above the recent-order section in character lists. */
+    favorite?:boolean
     imgFile?:string
     img?:string
     /** PocketRisu collection provenance for a generated source folder. */

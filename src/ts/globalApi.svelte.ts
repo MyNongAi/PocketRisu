@@ -30,6 +30,7 @@ import { startObserveDom } from "./observer.svelte";
 import { updateGuisize } from "./gui/guisize";
 import { deepTouch } from "./gui/deepTouch.svelte";
 import { updateLorebooks } from "./characters";
+import { normalizeCharacterFavoriteOrder } from './characterRecentOrder'
 import { initMobileGesture } from "./hotkey";
 import { moduleUpdate, refreshModules } from "./process/modules";
 import { trackModuleTreeChanges } from "./process/moduleChangeTracker.svelte";
@@ -1930,6 +1931,11 @@ export function checkCharOrder() {
             }
         }
     }
+
+    db.characterOrder = normalizeCharacterFavoriteOrder(
+        db.characterOrder,
+        new Set(db.characters.filter((character) => character.favorite && !character.trashTime).map((character) => character.chaId)),
+    )
 
 
 }

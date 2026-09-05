@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { folder } from './storage/database.svelte'
-import { promoteDepartedCharacter, promoteNewlyImportedCharacter, promoteRecentlyViewedCharacter } from './characterRecentOrder'
+import {
+    normalizeCharacterFavoriteOrder,
+    promoteCharacterFolder,
+    promoteDepartedCharacter,
+    promoteNewlyImportedCharacter,
+    promoteRecentlyViewedCharacter,
+} from './characterRecentOrder'
 
-function makeFolder(id: string, data: string[]): folder {
-    return { id, name: id, color: '', data }
+function makeFolder(id: string, data: string[], favorite = false): folder {
+    return { id, name: id, color: '', data, favorite }
 }
 
 describe('promoteRecentlyViewedCharacter', () => {
@@ -83,5 +89,54 @@ describe('promoteNewlyImportedCharacter', () => {
         const order = ['a']
         expect(promoteNewlyImportedCharacter(order, '§temp')).toBe(order)
         expect(promoteNewlyImportedCharacter(order, '§playground')).toBe(order)
+    })
+})
+
+describe('character favorites', () => {
+    it('keeps favorite characters and their folders in a stable top section', () => {
+        const order = ['regular', makeFolder('bots', ['folder-regular', 'folder-favorite']), 'favorite']
+        const favorites = new Set(['favorite', 'folder-favorite'])
+
+        expect(normalizeCharacterFavoriteOrder(order, favorites)).toEqual([
+            makeFolder('bots', ['folder-favorite', 'folder-regular']),
+            'favorite',
+            'regular',
+        ])
+        expect(order).toEqual(['regular', makeFolder('bots', ['folder-regular', 'folder-favorite']), 'favorite'])
+    })
+
+    it('moves a regular recently viewed character below favorites', () => {
+        const favorites = new Set(['favorite'])
+        expect(promoteRecentlyViewedCharacter(['favorite', 'a', 'b'], 'b', favorites)).toEqual([
+            'favorite',
+            'b',
+            'a',
+        ])
+    })
+
+    it('moves a newly favorited character and its folder to the top', () => {
+        const favorites = new Set(['b'])
+        expect(promoteRecentlyViewedCharacter(['standalone', makeFolder('bots', ['a', 'b'])], 'b', favorites)).toEqual([
+            makeFolder('bots', ['b', 'a']),
+            'standalone',
+        ])
+    })
+
+    it('moves a favorite folder to the top without flattening it', () => {
+        const order = ['a', makeFolder('bots', ['b'], true), 'c']
+        expect(promoteCharacterFolder(order, 'bots')).toEqual([
+            makeFolder('bots', ['b'], true),
+            'a',
+            'c',
+        ])
+    })
+
+    it('places imports below the favorite section', () => {
+        const favorites = new Set(['favorite'])
+        expect(promoteNewlyImportedCharacter(['favorite', 'a'], 'new', favorites)).toEqual([
+            'favorite',
+            'new',
+            'a',
+        ])
     })
 })

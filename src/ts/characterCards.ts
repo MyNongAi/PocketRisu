@@ -27,7 +27,11 @@ export const hubURL = '/hub-proxy';
 
 function appendImportedCharacter(db: ReturnType<typeof getDatabase>, char: character) {
     db.characters.push(char)
-    db.characterOrder = promoteNewlyImportedCharacter(db.characterOrder ?? [], char.chaId)
+    db.characterOrder = promoteNewlyImportedCharacter(
+        db.characterOrder ?? [],
+        char.chaId,
+        new Set(db.characters.filter((character) => character.favorite).map((character) => character.chaId)),
+    )
     organizeImportedCharacterSimilarity(db, char.chaId, uuidv4)
 }
 

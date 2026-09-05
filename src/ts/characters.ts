@@ -796,6 +796,7 @@ function commitDepartedCharacter(nextCharacterId?: string) {
         db.characterOrder,
         departedCharacterId,
         nextCharacterId,
+        new Set(db.characters.filter((character) => character.favorite).map((character) => character.chaId)),
     )
     if (promotedOrder !== db.characterOrder) db.characterOrder = promotedOrder
 }
