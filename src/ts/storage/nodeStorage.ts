@@ -361,6 +361,18 @@ export type AssetManifestOperation =
 export class NodeStorage{
     private chatEtags = new Map<string, string>()
     private chatLeaseHeartbeats = new Map<string, ReturnType<typeof setInterval>>()
+    private chatOperations = new Map<string, Promise<unknown>>()
+
+    private async runChatOperation<T>(key: string, operation: () => Promise<T>): Promise<T> {
+        const previous = this.chatOperations.get(key) ?? Promise.resolve()
+        const current = previous.catch(() => {}).then(operation)
+        this.chatOperations.set(key, current)
+        try {
+            return await current
+        } finally {
+            if (this.chatOperations.get(key) === current) this.chatOperations.delete(key)
+        }
+    }
 
     private chatEtagKey(chaId: string, chatId: string) {
         return `${chaId}/${chatId}`
@@ -831,6 +843,10 @@ export class NodeStorage{
      * remain writable on other devices. The cached ETag makes this a preflight
      * version check as well as a short-lived lease. */
     async claimChatWriterSession(chaId: string, chatId: string): Promise<ChatWriterClaimResult> {
+        return this.runChatOperation(this.chatEtagKey(chaId, chatId), () => this.claimChatWriterSessionNow(chaId, chatId))
+    }
+
+    private async claimChatWriterSessionNow(chaId: string, chatId: string): Promise<ChatWriterClaimResult> {
         const key = this.chatEtagKey(chaId, chatId)
         const headers: Record<string, string> = {}
         const baselineEtag = this.chatEtags.get(key)
@@ -846,13 +862,14 @@ export class NodeStorage{
                     return { ok: false, reason: 'busy', retryAfterMs: data.retryAfterMs }
                 }
                 if (data.code === 'CHAT_VERSION_CONFLICT') {
-                    if (data.currentEtag) this.chatEtags.set(key, data.currentEtag)
+                    // A conflict is not a hydration. Adopting the peer's ETag
+                    // here would allow the next retry to overwrite unseen data.
                     return { ok: false, reason: 'conflict', message: data.error }
                 }
                 return { ok: false, reason: 'rejected', message: data.error }
             }
             const data = await res.json().catch(() => ({}))
-            if ('etag' in data) {
+            if ('etag' in data && !data.repairMissingPayload && this.chatEtags.get(key) === baselineEtag) {
                 if (data.etag) this.chatEtags.set(key, data.etag)
                 else this.chatEtags.delete(key)
             }
@@ -867,13 +884,17 @@ export class NodeStorage{
                     `/api/chat-session/${encodeURIComponent(chaId)}/${encodeURIComponent(chatId)}/claim`,
                     { method: 'POST', headers: heartbeatHeaders },
                 ).then(async (heartbeat) => {
+                    if (this.chatLeaseHeartbeats.get(key) !== timer) return
                     if (!heartbeat.ok) {
                         clearInterval(timer)
                         this.chatLeaseHeartbeats.delete(key)
                         return
                     }
                     const data = await heartbeat.json().catch(() => ({}))
-                    if ('etag' in data) {
+                    // A slow heartbeat can arrive after a save acknowledged a
+                    // newer version. Never rewind that save's precondition.
+                    if ('etag' in data && !data.repairMissingPayload && this.chatLeaseHeartbeats.get(key) === timer
+                        && this.chatEtags.get(key) === currentEtag) {
                         if (data.etag) this.chatEtags.set(key, data.etag)
                         else this.chatEtags.delete(key)
                     }
@@ -1549,10 +1570,11 @@ export class NodeStorage{
         })
         if (da.status === 404) return null
         if (da.status < 200 || da.status >= 300) throw new Error(`fetchChatContent error: ${da.status}`)
-        const etag = da.headers.get('etag')
-        if (etag) this.chatEtags.set(this.chatEtagKey(chaId, chatId), etag)
+        const etag = da.headers.get('x-chat-etag') || da.headers.get('etag')
         const buffer = new Uint8Array(await da.arrayBuffer())
-        return normalizeChat(await decodeRisuSave(buffer))
+        const chat = normalizeChat(await decodeRisuSave(buffer))
+        if (etag) this.chatEtags.set(this.chatEtagKey(chaId, chatId), etag)
+        return chat
     }
 
     async saveChatContent(
@@ -1562,7 +1584,20 @@ export class NodeStorage{
         chat: any,
         intent: ChatSaveIntent = 'update',
     ): Promise<void> {
+        // Capture this call's snapshot now; recovery and the background saver
+        // can both write the same chat. Serialize only that chat's requests so
+        // each uses the preceding acknowledgement, not a shared stale ETag.
         const encoded = encodeRisuSaveLegacy(chat)
+        return this.runChatOperation(this.chatEtagKey(chaId, chatId), () => this.saveEncodedChatContent(chaId, chatIndex, chatId, encoded, intent))
+    }
+
+    private async saveEncodedChatContent(
+        chaId: string,
+        chatIndex: number,
+        chatId: string,
+        encoded: ReturnType<typeof encodeRisuSaveLegacy>,
+        intent: ChatSaveIntent,
+    ): Promise<void> {
         const headers: Record<string, string> = {
             'content-type': 'application/octet-stream',
             'x-chat-id': chatId,

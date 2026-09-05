@@ -19,6 +19,7 @@ function storageReturning(status: number, body: any) {
     ;(storage as any)._lastDbEtag = null
     ;(storage as any).chatEtags = new Map()
     ;(storage as any).chatLeaseHeartbeats = new Map()
+    ;(storage as any).chatOperations = new Map()
     ;(storage as any).authFetch = vi.fn(async () => new Response(JSON.stringify(body), {
         status,
         headers: { 'content-type': 'application/json' },
@@ -27,6 +28,92 @@ function storageReturning(status: number, body: any) {
 }
 
 describe('NodeStorage per-chat optimistic concurrency', () => {
+    test('a rejected claim cannot authorize overwriting the peer on retry', async () => {
+        const storage = storageReturning(409, { code: 'CHAT_VERSION_CONFLICT', currentEtag: 'peer-v2' })
+        ;(storage as any).chatEtags.set('char-a/chat-a', 'local-v1')
+        await expect(storage.claimChatWriterSession('char-a', 'chat-a')).resolves.toMatchObject({ ok: false, reason: 'conflict' })
+        await expect(storage.saveChatContent('char-a', 0, 'chat-a', { id: 'chat-a', message: [] })).rejects.toMatchObject({ name: 'ConflictError' })
+        expect((storage as any).authFetch.mock.calls[1][1].headers['x-if-match']).toBe('local-v1')
+    })
+
+    test('a delayed heartbeat cannot rewind a newer save acknowledgement', async () => {
+        vi.useFakeTimers()
+        const storage = storageReturning(200, { ok: true, etag: 'v1' })
+        try {
+            ;(storage as any).chatEtags.set('char-a/chat-a', 'v1')
+            await storage.claimChatWriterSession('char-a', 'chat-a')
+            let finishHeartbeat!: (response: Response) => void
+            const heartbeat = new Promise<Response>(resolve => { finishHeartbeat = resolve })
+            const transport = (storage as any).authFetch
+            transport.mockImplementationOnce(() => heartbeat)
+            await vi.advanceTimersByTimeAsync(45_000)
+            transport.mockResolvedValueOnce(new Response(JSON.stringify({ etag: 'v2' })))
+            await storage.saveChatContent('char-a', 0, 'chat-a', { id: 'chat-a', message: [] })
+            finishHeartbeat(new Response(JSON.stringify({ etag: 'v1' })))
+            await vi.advanceTimersByTimeAsync(0)
+            transport.mockResolvedValueOnce(new Response(JSON.stringify({ etag: 'v3' })))
+            await storage.saveChatContent('char-a', 0, 'chat-a', { id: 'chat-a', message: [] })
+            expect(transport.mock.calls[3][1].headers['x-if-match']).toBe('v2')
+        } finally {
+            await storage.releaseChatWriterSession('char-a', 'chat-a')
+            vi.useRealTimers()
+        }
+    })
+
+    test('same-chat saves are ordered, while another chat stays independent', async () => {
+        const storage = storageReturning(200, { etag: 'saved' })
+        ;(storage as any).chatEtags.set('char-a/chat-a', 'v1')
+        ;(storage as any).chatEtags.set('char-a/chat-b', 'b1')
+        let finishSave!: (response: Response) => void
+        const pending = new Promise<Response>(resolve => { finishSave = resolve })
+        const transport = (storage as any).authFetch
+        transport.mockImplementationOnce(() => pending)
+        const first = storage.saveChatContent('char-a', 0, 'chat-a', { id: 'chat-a', message: [] })
+        const second = storage.saveChatContent('char-a', 0, 'chat-a', { id: 'chat-a', message: [] })
+        await storage.saveChatContent('char-a', 1, 'chat-b', { id: 'chat-b', message: [] })
+        expect(transport).toHaveBeenCalledTimes(2)
+        finishSave(new Response(JSON.stringify({ etag: 'v2' })))
+        await Promise.all([first, second])
+        expect(transport.mock.calls[2][1].headers['x-if-match']).toBe('v2')
+    })
+
+    test('missing-payload repair keeps the surviving baseline for its recovery save', async () => {
+        vi.useFakeTimers()
+        const storage = storageReturning(200, { ok: true, etag: null, repairMissingPayload: true })
+        try {
+            ;(storage as any).chatEtags.set('char-a/chat-a', 'surviving-baseline')
+            await storage.claimChatWriterSession('char-a', 'chat-a')
+            ;(storage as any).authFetch.mockResolvedValueOnce(new Response(JSON.stringify({ etag: 'repaired' })))
+            await storage.saveChatContent('char-a', 0, 'chat-a', { id: 'chat-a', message: [] })
+            expect((storage as any).authFetch.mock.calls[1][1].headers['x-if-match']).toBe('surviving-baseline')
+        } finally {
+            await storage.releaseChatWriterSession('char-a', 'chat-a')
+            vi.useRealTimers()
+        }
+    })
+
+    test('a claim waits for its own pending save before checking the version', async () => {
+        vi.useFakeTimers()
+        const storage = storageReturning(200, { ok: true, etag: 'v2' })
+        try {
+            ;(storage as any).chatEtags.set('char-a/chat-a', 'v1')
+            let finish!: (response: Response) => void
+            const pending = new Promise<Response>(resolve => { finish = resolve })
+            ;(storage as any).authFetch.mockImplementationOnce(() => pending)
+            const saving = storage.saveChatContent('char-a', 0, 'chat-a', { id: 'chat-a', message: [] })
+            const claiming = storage.claimChatWriterSession('char-a', 'chat-a')
+            await vi.advanceTimersByTimeAsync(0)
+            expect((storage as any).authFetch).toHaveBeenCalledTimes(1)
+            finish(new Response(JSON.stringify({ etag: 'v2' })))
+            await saving
+            await expect(claiming).resolves.toMatchObject({ ok: true })
+            expect((storage as any).authFetch.mock.calls[1][1].headers['x-chat-etag']).toBe('v2')
+        } finally {
+            await storage.releaseChatWriterSession('char-a', 'chat-a')
+            vi.useRealTimers()
+        }
+    })
+
     test('claims only the requested chat with its hydrated version', async () => {
         vi.useFakeTimers()
         const storage = storageReturning(200, { ok: true, etag: 'chat-v1' })

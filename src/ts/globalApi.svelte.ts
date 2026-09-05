@@ -999,6 +999,12 @@ export async function saveDb() {
             try {
                 const intent = classifyChatSaveIntent(knownChatIdsByCharacter, chaId, chatId)
                 await saveChatToServer(chaId, chatIndex, chatId, chat, intent)
+                // The body endpoint has now acknowledged this identity even if
+                // the following catalog PATCH needs to rebase/retry. A second
+                // body save must use its ETag, not fail if-none-match again.
+                const knownChatIds = knownChatIdsByCharacter.get(chaId) ?? new Set<string>()
+                knownChatIds.add(chatId)
+                knownChatIdsByCharacter.set(chaId, knownChatIds)
                 markHydratedChatPersisted(chaId, chatId)
             } catch (e) {
                 console.error(`[Save] Failed to save chat ${chaId}/${chatId}:`, e)
@@ -1288,6 +1294,8 @@ export async function saveDb() {
         return 'saved'
     }
 
+    let lastSaveFailureNotice = { message: '', at: 0 }
+
     async function triggerSave(options?: {
         forceFullWrite?: boolean
         skipBroadcast?: boolean
@@ -1307,6 +1315,7 @@ export async function saveDb() {
                 const result = await persistTrackedChanges(toSave, options)
                 if (result === 'saved') {
                     savetrys = 0
+                    lastSaveFailureNotice = { message: '', at: 0 }
                 } else if (result === 'noop' && hasTrackedChanges(toSave)) {
                     requeueTrackedChanges(toSave)
                     changed = true
@@ -1314,15 +1323,17 @@ export async function saveDb() {
             } catch (error) {
                 requeueTrackedChanges(toSave)
                 savetrys += 1
-                if (savetrys > 4) {
-                    alertError(error)
-                    savetrys = 0
+                const message = error instanceof Error ? error.message : String(error)
+                if (savetrys > 4 && (lastSaveFailureNotice.message !== message
+                    || Date.now() - lastSaveFailureNotice.at >= 60_000)) {
+                    // Keep retrying the retained local changes, but do not
+                    // interrupt typing with the same modal every few seconds.
+                    notifyError(error, { source: 'save', description: 'Unsaved changes are still in this tab. Do not refresh or close it before saving or copying them.' })
+                    lastSaveFailureNotice = { message, at: Date.now() }
                 }
-                else {
-                    console.error(error)
-                    await sleep(Math.min(500 * savetrys, 3000))
-                    changed = true
-                }
+                console.error(error)
+                await sleep(Math.min(500 * 2 ** Math.min(savetrys, 6), 30_000))
+                changed = true
             } finally {
                 saving.state = false
                 saveInFlight = null
