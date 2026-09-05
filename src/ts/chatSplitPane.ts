@@ -44,10 +44,24 @@ function persist(key: string, value: string) {
     }
 }
 
+export interface SplitWidthBounds {
+    min: number
+    max: number
+}
+
+export function getSplitWidthBounds(viewportWidth: number): SplitWidthBounds {
+    const safeViewportWidth = Math.max(0, viewportWidth)
+    const preferredMinimum = Math.min(280, Math.max(160, safeViewportWidth * 0.18))
+    const min = Math.min(preferredMinimum, safeViewportWidth / 2)
+    return {
+        min: Math.round(min),
+        max: Math.round(Math.max(min, safeViewportWidth - min)),
+    }
+}
+
 export function clampSplitWidth(width: number, viewportWidth: number): number {
-    const minWidth = Math.min(320, Math.max(240, viewportWidth * 0.32))
-    const maxWidth = Math.max(minWidth, viewportWidth - 360)
-    return Math.round(Math.min(maxWidth, Math.max(minWidth, width)))
+    const bounds = getSplitWidthBounds(viewportWidth)
+    return Math.round(Math.min(bounds.max, Math.max(bounds.min, width)))
 }
 
 export const splitChatOpen = writable(readBoolean(OPEN_KEY, false))

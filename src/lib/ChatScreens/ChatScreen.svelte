@@ -12,7 +12,7 @@
     import SideBarArrow from "../UI/GUI/SideBarArrow.svelte";
     import ModuleChatMenu from "../Setting/Pages/Module/ModuleChatMenu.svelte";
     import SecondaryChatPanel from './SecondaryChatPanel.svelte';
-    import { clampSplitWidth, isEmbeddedRisuPane, splitChatOpen, splitChatWidth } from 'src/ts/chatSplitPane';
+    import { clampSplitWidth, getSplitWidthBounds, isEmbeddedRisuPane, splitChatOpen, splitChatWidth } from 'src/ts/chatSplitPane';
     import { onDestroy, onMount } from 'svelte';
     let openChatList = $state(false)
     let openModuleList = $state(false)
@@ -42,6 +42,25 @@
         window.addEventListener('pointermove', move)
         window.addEventListener('pointerup', stop)
         window.addEventListener('pointercancel', stop)
+    }
+
+    function resetSplitWidth() {
+        if (!splitRoot) return
+        splitChatWidth.set(clampSplitWidth(splitRoot.clientWidth / 2, splitRoot.clientWidth))
+    }
+
+    function handleSplitDividerKeydown(event: KeyboardEvent) {
+        if (!splitRoot) return
+        const bounds = getSplitWidthBounds(splitRoot.clientWidth)
+        const step = event.shiftKey ? 80 : 24
+        let nextWidth: number | undefined
+        if (event.key === 'ArrowLeft') nextWidth = $splitChatWidth + step
+        if (event.key === 'ArrowRight') nextWidth = $splitChatWidth - step
+        if (event.key === 'Home') nextWidth = bounds.max
+        if (event.key === 'End') nextWidth = bounds.min
+        if (nextWidth === undefined) return
+        event.preventDefault()
+        splitChatWidth.set(clampSplitWidth(nextWidth, splitRoot.clientWidth))
     }
 
     onDestroy(() => stopSplitResize?.())
@@ -138,7 +157,13 @@
         role="separator"
         aria-label="Resize split chat"
         aria-orientation="vertical"
+        aria-valuemin={getSplitWidthBounds(splitRoot?.clientWidth ?? 0).min}
+        aria-valuemax={getSplitWidthBounds(splitRoot?.clientWidth ?? 0).max}
+        aria-valuenow={$splitChatWidth}
+        tabindex="0"
         onpointerdown={beginSplitResize}
+        ondblclick={resetSplitWidth}
+        onkeydown={handleSplitDividerKeydown}
     ></div>
     <div class="h-full min-w-0 shrink-0" style:width={`${$splitChatWidth}px`}>
         <SecondaryChatPanel />
