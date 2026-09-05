@@ -9,9 +9,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build --sourcemap",
+    "build": "node scripts/check-custom-features.mjs && vite build --sourcemap",
     "preview": "vite preview",
-    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "check": "node scripts/check-custom-features.mjs && svelte-check --tsconfig ./tsconfig.json",
+    "check:custom": "node scripts/check-custom-features.mjs",
     "check:help": "node scripts/check-help-keys.mjs",
     "test": "vitest run && vitest run --config vitest.config.server.ts",
     "test:compat": "vitest run --config vitest.config.compat.ts",

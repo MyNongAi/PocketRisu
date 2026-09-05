@@ -1,0 +1,279 @@
+{
+  "schemaVersion": 1,
+  "upstreamBaseline": "PocketRisu v1.11.2",
+  "branch": "feature/external-assets",
+  "updatedAt": "2026-09-06",
+  "features": [
+    {
+      "id": "ASSET-EXT",
+      "title": "외부 에셋 공급자와 안전한 이전",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "src/ts/storage/externalAssets.ts",
+        "src/lib/Setting/Pages/Advanced/ExternalAssetSettings.svelte",
+        "server/node/external-assets.cjs",
+        "server/node/external-asset-migration-journal.cjs"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/storage/externalAssets.ts", "contains": "export const EXTERNAL_ASSET_PREFIX = 'external://'" },
+        { "file": "server/node/external-assets.cjs", "contains": "createExternalAssetService" },
+        { "file": "server/node/external-asset-migration-journal.cjs", "contains": "invalidateStagedVerifications" }
+      ],
+      "regressionTests": [
+        "src/ts/storage/externalAssets.test.ts",
+        "server/node/external-assets.test.ts",
+        "server/node/external-asset-migration-journal.test.ts",
+        "test/compat/external-asset-staged-verify.test.ts"
+      ]
+    },
+    {
+      "id": "ASSET-LAZY",
+      "title": "썸네일 지연 로딩과 드래그 시 원본 전환",
+      "criticality": "performance",
+      "ownerFiles": [
+        "src/lib/Others/LazyAssetPreview.svelte",
+        "src/lib/Others/assetDragPrefetch.ts",
+        "src/ts/storage/boundedObjectUrlCache.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/Others/LazyAssetPreview.svelte", "contains": "IntersectionObserver" },
+        { "file": "src/lib/Others/assetDragPrefetch.ts", "contains": "assetDragPrefetchQueue" },
+        { "file": "src/ts/storage/boundedObjectUrlCache.ts", "contains": "createDeduplicatedImageLoader" }
+      ],
+      "regressionTests": [
+        "src/lib/Others/LazyAssetPreview.test.ts",
+        "src/lib/Others/assetDragPrefetch.test.ts",
+        "src/ts/storage/boundedObjectUrlCache.test.ts",
+        "server/node/thumbnail-cache.test.ts"
+      ]
+    },
+    {
+      "id": "CHAT-HYDRATE",
+      "title": "채팅 본문 지연 수화와 제한형 메모리",
+      "criticality": "performance",
+      "ownerFiles": [
+        "src/ts/storage/chatStorage.ts",
+        "src/ts/characters.ts",
+        "server/node/server.cjs",
+        "server/node/pending-chat-payloads.cjs"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/storage/chatStorage.ts", "contains": "ensureChatHydrated" },
+        { "file": "src/ts/storage/chatStorage.ts", "contains": "evictHydratedChatCache" },
+        { "file": "server/node/pending-chat-payloads.cjs", "contains": "createPendingChatPayloads" }
+      ],
+      "regressionTests": [
+        "src/ts/storage/chatStorage.test.ts",
+        "src/ts/storage/chatStub.test.ts",
+        "src/ts/storage/chatGuards.test.ts"
+      ]
+    },
+    {
+      "id": "CHAT-CONCURRENT",
+      "title": "채팅별 동시 생성과 다중 기기 저장 보호",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "src/ts/storage/chatSaveIntent.ts",
+        "src/ts/globalApi.svelte.ts",
+        "server/node/server.cjs"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/storage/chatSaveIntent.ts", "contains": "classifyChatSaveIntent" },
+        { "file": "server/node/server.cjs", "contains": "Per-chat generation lease" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "per-chat leases" }
+      ],
+      "regressionTests": [
+        "src/ts/storage/chatSaveIntent.test.ts",
+        "server/node/chat-session-lock.test.ts",
+        "server/node/chat-content-version.test.ts",
+        "src/ts/storage/nodeStoragePatch.test.ts"
+      ]
+    },
+    {
+      "id": "CHAT-SPLIT",
+      "title": "독립 선택이 가능한 PC 분할 채팅",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/chatSplitPane.ts",
+        "src/lib/ChatScreens/SecondaryChatPanel.svelte",
+        "src/lib/ChatScreens/ChatScreen.svelte",
+        "src/lib/SideBars/Sidebar.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/chatSplitPane.ts", "contains": "toggleSplitChat" },
+        { "file": "src/lib/ChatScreens/SecondaryChatPanel.svelte", "contains": "getSecondaryRisuPaneUrl" },
+        { "file": "src/lib/ChatScreens/ChatScreen.svelte", "contains": "SecondaryChatPanel" }
+      ],
+      "regressionTests": [
+        "src/ts/chatSplitPane.test.ts"
+      ]
+    },
+    {
+      "id": "IMPORT-BG",
+      "title": "비차단 다중 캐릭터 가져오기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/importProgress.ts",
+        "src/lib/UI/GUI/ImportProgressToaster.svelte",
+        "src/lib/UI/GUI/ImportProgressToast.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/importProgress.ts", "contains": "runImportBatch" },
+        { "file": "src/ts/importProgress.ts", "contains": "importTasks" }
+      ],
+      "regressionTests": [
+        "src/ts/importProgress.test.ts"
+      ]
+    },
+    {
+      "id": "CATALOG-ORDER",
+      "title": "캐릭터 최근순과 봇·폴더 즐겨찾기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/characterRecentOrder.ts",
+        "src/lib/SideBars/Sidebar.svelte",
+        "src/lib/SideBars/SidebarAvatar.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/characterRecentOrder.ts", "contains": "normalizeCharacterFavoriteOrder" },
+        { "file": "src/ts/characterRecentOrder.ts", "contains": "promoteDepartedCharacter" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "즐겨찾기 (맨위로)" }
+      ],
+      "regressionTests": [
+        "src/ts/characterRecentOrder.test.ts"
+      ]
+    },
+    {
+      "id": "MODULE-FOLDER",
+      "title": "비파괴 모듈 폴더·최근 활성화·일괄 제어",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/process/moduleFolders.ts",
+        "src/ts/process/moduleSort.ts",
+        "src/lib/Setting/Pages/Module/ModuleSettings.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/moduleFolders.ts", "contains": "moveModuleFolderByDrop" },
+        { "file": "src/ts/process/moduleSort.ts", "contains": "recordModuleFolderActivation" },
+        { "file": "src/ts/process/moduleSort.ts", "contains": "sortModulesByActivation" }
+      ],
+      "regressionTests": [
+        "src/ts/process/moduleFolders.test.ts",
+        "src/ts/process/moduleSort.test.ts"
+      ]
+    },
+    {
+      "id": "SOURCE-MERGE",
+      "title": "웹·로컬·모바일 출처별 추출과 무손실 병합",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "src/ts/sourceCollection.ts",
+        "src/ts/sourceCollectionImport.ts",
+        "src/ts/sourceCollectionMerge.ts",
+        "extras/risu-source-collection-exporter"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/sourceCollectionImport.ts", "contains": "importSourceCollection" },
+        { "file": "src/ts/sourceCollectionMerge.ts", "contains": "applySourceCollectionEntities" }
+      ],
+      "regressionTests": [
+        "src/ts/sourceCollectionExporter.test.ts",
+        "src/ts/sourceCollectionImport.test.ts",
+        "src/ts/sourceCollectionMerge.test.ts",
+        "src/ts/sourceCollectionDuplicates.test.ts"
+      ]
+    },
+    {
+      "id": "ASSET-RECOVERY",
+      "title": "에셋 진단·Realm 복구·누락 상태 표시",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "src/ts/realmAssetRecovery.ts",
+        "src/ts/realmAssetRecoveryMatching.ts",
+        "src/ts/characterRecoveryFolders.ts",
+        "src/ts/gui/titleColors.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/realmAssetRecovery.ts", "contains": "recoverCharacterFolderAssetsFromRealm" },
+        { "file": "src/ts/realmAssetRecoveryMatching.ts", "contains": "selectStrictRealmRecoveryCandidate" },
+        { "file": "src/ts/gui/titleColors.ts", "contains": "isRealmAssetRecoveryAvailable" }
+      ],
+      "regressionTests": [
+        "src/ts/realmAssetRecovery.test.ts",
+        "src/ts/realmAssetRecoveryMatching.test.ts",
+        "src/ts/characterRecoveryFolders.test.ts",
+        "src/ts/gui/titleColors.test.ts"
+      ]
+    },
+    {
+      "id": "DUPLICATE-SAFE",
+      "title": "완전 일치 캐릭터·모듈의 복구 가능한 격리",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "tools/quarantine-exact-character-duplicates.cjs",
+        "tools/quarantine-exact-module-duplicates.cjs"
+      ],
+      "requiredMarkers": [
+        { "file": "tools/quarantine-exact-character-duplicates.cjs", "contains": "quarantineExactDuplicates" },
+        { "file": "tools/quarantine-exact-module-duplicates.cjs", "contains": "pocketrisu-exact-module-quarantine-v1" }
+      ],
+      "regressionTests": [
+        "tools/quarantine-exact-module-duplicates.test.cjs"
+      ]
+    },
+    {
+      "id": "PERSONA-VISUAL",
+      "title": "페르소나 그리드·이미지 드롭·조절식 정보창",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/Setting/listedPersona.svelte",
+        "src/lib/Setting/Pages/PersonaSettings.svelte",
+        "src/ts/personaImage.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/personaImage.ts", "contains": "validatePersonaImage" },
+        { "file": "src/lib/Setting/listedPersona.svelte", "contains": "LazyAssetPreview" }
+      ],
+      "regressionTests": [
+        "src/lib/Setting/listedPersona.test.ts",
+        "src/ts/persona.test.ts",
+        "src/ts/personaImage.test.ts"
+      ]
+    },
+    {
+      "id": "PLUGIN-ASSET",
+      "title": "플러그인의 일반·외부 에셋 경로 호환",
+      "criticality": "compatibility",
+      "ownerFiles": [
+        "src/ts/plugins/pluginAssetPaths.ts",
+        "src/ts/plugins/apiV3/v3.svelte.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/plugins/pluginAssetPaths.ts", "contains": "normalizePluginAssetReadPath" },
+        { "file": "src/ts/plugins/pluginAssetPaths.ts", "contains": "external://provider/sha256" }
+      ],
+      "regressionTests": [
+        "src/ts/plugins/pluginAssetPaths.test.ts"
+      ]
+    },
+    {
+      "id": "HAEJEOK-BOUNDED",
+      "title": "해적리스식 패널 지연 로더와 제한형 캐시",
+      "criticality": "performance",
+      "ownerFiles": [
+        "src/lib/SideBars/sidebarPanelLoaders.ts",
+        "src/ts/storage/boundedObjectUrlCache.ts",
+        "src/ts/storage/assetNameLocalResolver.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/SideBars/sidebarPanelLoaders.ts", "contains": "createCachedLoader" },
+        { "file": "src/ts/storage/assetNameLocalResolver.ts", "contains": "resolveNamesLocally" }
+      ],
+      "regressionTests": [
+        "src/lib/SideBars/sidebarPanelLoaders.test.ts",
+        "src/ts/storage/boundedObjectUrlCache.test.ts",
+        "src/ts/storage/assetNameLocalResolver.test.ts"
+      ]
+    }
+  ]
+}
