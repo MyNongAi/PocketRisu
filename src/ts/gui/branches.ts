@@ -116,19 +116,21 @@ const LONG_CHAT_THRESHOLD = 80
 const CONTEXT_RADIUS = 2
 const MIN_COLLAPSED_RUN = 6
 
-function messagePreview(message: Message): string {
-    const plain = message.data?.replace(/\s+/g, ' ').trim() ?? ''
+function messagePreview(message: Message | null | undefined): string {
+    if (!message) return ''
+    const plain = (message.data ?? '').replace(/\s+/g, ' ').trim()
     return plain.length > 180 ? `${plain.slice(0, 177)}...` : plain
 }
 
-function messageModel(message: Message): string {
-    return message.generationInfo?.model ?? ''
+function messageModel(message: Message | null | undefined): string {
+    return message?.generationInfo?.model ?? ''
 }
 
-function fallbackSignature(message: Message): string {
+function fallbackSignature(message: Message | null | undefined): string {
+    if (!message) return '__empty__'
     return JSON.stringify([
-        message.role,
-        simpleHasher(message.data),
+        message.role ?? '',
+        simpleHasher(message.data ?? ''),
         message.saying ?? '',
         message.time ?? null,
         message.generationInfo?.model ?? '',
@@ -186,6 +188,7 @@ function buildChatMessageGraph(
         const pathIds: string[] = []
 
         for (const [messageIndex, message] of timeline.messages.entries()) {
+            if (!message) continue
             let nodeId = message.chatId ? stableIds.get(message.chatId) : undefined
             if (!nodeId) {
                 if (message.chatId) {
@@ -481,13 +484,14 @@ export function getChatBranches(options: ChatGraphBuildOptions = {}): ChatBranch
             : character.alternateGreetings?.[chat.fmIndex ?? 0] ?? character.firstMessage
         const greetingMessage: Message = {
             role: 'char',
-            data: fm,
+            data: fm ?? '',
         }
+        const chatMessages = (chat.message ?? []).filter((m): m is Message => m != null && typeof m === 'object')
         return {
             branchId: `chat:${index}`,
             reason: index === 0 ? 'root' as const : 'manual' as const,
             active: index === activeChatIndex,
-            messages: [greetingMessage, ...(chat.message ?? [])],
+            messages: [greetingMessage, ...chatMessages],
         }
     })
 
