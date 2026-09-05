@@ -101,8 +101,10 @@
       ],
       "requiredMarkers": [
         { "file": "src/ts/chatSplitPane.ts", "contains": "toggleSplitChat" },
+        { "file": "src/ts/chatSplitPane.ts", "contains": "getSplitWidthBounds" },
         { "file": "src/lib/ChatScreens/SecondaryChatPanel.svelte", "contains": "getSecondaryRisuPaneUrl" },
-        { "file": "src/lib/ChatScreens/ChatScreen.svelte", "contains": "SecondaryChatPanel" }
+        { "file": "src/lib/ChatScreens/ChatScreen.svelte", "contains": "SecondaryChatPanel" },
+        { "file": "src/lib/ChatScreens/ChatScreen.svelte", "contains": "split-chat-contained" }
       ],
       "regressionTests": [
         "src/ts/chatSplitPane.test.ts"

@@ -2,7 +2,8 @@
 
 ## 비교 기준
 
-- HaejeokRisu: `b6651`, commit `62d46ff2d83d6027713e0253385c875be4c8e5b1`
+- HaejeokRisu 초기 최적화 비교: `b6651`, commit `62d46ff2d83d6027713e0253385c875be4c8e5b1`
+- 브랜치 그래프 재검토: `b6780`, commit `7d02d4d5013f4499d6694ea61496d24fb08b8ad0` (2026-09-05)
 - PocketRisu 개조판: 공식 PocketRisu `v1.11.2` 위의 `feature/external-assets`
 - 양쪽 라이선스: GNU GPL v3
 
@@ -23,6 +24,20 @@ HaejeokRisu 전체를 병합하지 않습니다. HaejeokRisu는 캐릭터·채�
    - `getFileSrc()` 결과 캐시는 256개 LRU로 제한합니다.
    - 같은 경로의 동시 요청은 한 번으로 합칩니다.
    - 에셋 2,000개를 넘는 캐릭터는 매 매크로마다 전체 목록에 Levenshtein 비교를 하지 않고 같은 파일명 stem 후보만 비교합니다.
+
+## 다음 이식 후보: 브랜치 그래프 UI
+
+HaejeokRisu `b6780`의 `BranchGraphModal.svelte`와 `src/ts/gui/branches.ts`는 외부 그래프 라이브러리 없이 Svelte, SVG와 순수 그래프 변환 함수로 트리·타임라인·Git lane·방사형 보기를 제공합니다. 화면을 열 때만 비활성 브랜치를 읽고, 긴 직선 구간을 요약 노드로 접는 철학은 대형 채팅에 적합합니다.
+
+다만 Haejeok의 최신 그래프는 `chat_branches`, `parent_message_id`, `active_branch_id`가 있는 관계형 저장소를 기준으로 합니다. 현재 PocketRisu 개조판은 리롤을 메시지 `swipes`에, 수동 분기를 복제 채팅과 `branchedfrom` 댓글에 저장하므로 SQL 저장 계층을 통째로 이식하지 않습니다.
+
+도입 순서는 다음으로 고정합니다.
+
+1. 현재 `swipes`와 `branchedfrom` 댓글을 읽어 공통 읽기 전용 그래프로 만드는 호환 projection을 먼저 작성합니다.
+2. projection의 순수 함수 시험으로 누락·순환·깨진 부모 참조와 긴 채팅 요약을 검증합니다.
+3. Haejeok 그래프의 확대·축소·이동·현재 경로 강조 UI만 PocketRisu 테마에 맞춰 이식합니다.
+4. 그래프 노드를 누르면 기존 채팅 또는 스와이프로 이동하되, 그래프를 보는 것만으로 저장 형식을 변경하지 않습니다.
+5. 영속 SQL 브랜치 저장은 별도의 장기 실험으로 남기며 `database.bin` 백업 호환을 먼저 증명해야 합니다.
 
 ## 이미 PocketRisu 개조판에 있던 같은 철학
 
