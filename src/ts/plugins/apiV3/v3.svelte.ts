@@ -1429,8 +1429,13 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
             if (!keyUsages.includes('sign')) throw new Error('Bridged plugin keys must allow signing')
             try {
                 if (subtle) {
-                    const key = await subtle.importKey(format, keyData, algorithm, extractable, keyUsages)
-                    bridgedCryptoKeys.set(keyId, { kind: 'native', key })
+                    const nativeKeyData = Uint8Array.from(keyData)
+                    try {
+                        const key = await subtle.importKey(format, nativeKeyData.buffer, algorithm, extractable, keyUsages)
+                        bridgedCryptoKeys.set(keyId, { kind: 'native', key })
+                    } finally {
+                        nativeKeyData.fill(0)
+                    }
                 } else if (format === 'raw' && algorithm.name.toUpperCase() === 'HMAC') {
                     bridgedCryptoKeys.set(keyId, { kind: 'hmac-sha256', keyBytes: Uint8Array.from(keyData) })
                 } else if (format === 'pkcs8' && algorithm.name.toUpperCase() === 'RSASSA-PKCS1-V1_5') {
@@ -1452,7 +1457,7 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
             if (!entry) throw new Error('Plugin crypto key is unavailable')
             if (entry.kind === 'native') {
                 if (!subtle) throw new Error('Native plugin crypto key lost its SubtleCrypto host')
-                return new Uint8Array(await subtle.sign(algorithm, entry.key, data))
+                return new Uint8Array(await subtle.sign(algorithm, entry.key, Uint8Array.from(data).buffer))
             }
             const requested = String(typeof algorithm === 'string' ? algorithm : algorithm.name).toUpperCase()
             if (entry.kind === 'hmac-sha256' && requested === 'HMAC') {

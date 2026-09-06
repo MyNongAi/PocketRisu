@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "upstreamBaseline": "PocketRisu v1.11.2",
+  "upstreamBaseline": "PocketRisu v1.12.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-09-06",
+  "updatedAt": "2026-09-07",
   "features": [
     {
       "id": "ASSET-EXT",

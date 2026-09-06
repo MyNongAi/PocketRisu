@@ -1,11 +1,12 @@
 <script lang="ts">
-    import { DynamicGUI, settingsOpen, sideBarClosing, sideBarStore, openPresetList, openModelPresetList, openModelProfileBrowser, openPersonaList, personaSelectCallback, openMemoryPresetList, memoryPresetSelectCallback, openThemePresetList, MobileGUI, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, popUpEditorStore } from './ts/stores.svelte';
+    import { DynamicGUI, settingsOpen, sideBarClosing, sideBarStore, openPresetList, openCharacterManager, openModelPresetList, openModelProfileBrowser, openPersonaList, personaSelectCallback, openMemoryPresetList, memoryPresetSelectCallback, openThemePresetList, MobileGUI, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, popUpEditorStore } from './ts/stores.svelte';
     import Sidebar from './lib/SideBars/Sidebar.svelte';
     import { DBState } from './ts/stores.svelte';
     import ChatScreen from './lib/ChatScreens/ChatScreen.svelte';
     import AlertComp from './lib/Others/AlertComp.svelte';
     import RealmPopUp from './lib/UI/Realm/RealmPopUp.svelte';
-    import GridChars from './lib/Others/GridCatalog.svelte';
+    import CharacterManager from './lib/CharacterManager/CharacterManager.svelte';
+    import FolderSettingsDialog from './lib/CharacterManager/FolderSettingsDialog.svelte';
     import BookmarkList from './lib/Others/BookmarkList.svelte';
     import Settings from './lib/Setting/Settings.svelte';
     import { showRealmInfoStore } from './ts/characterCards';
@@ -40,7 +41,6 @@
     import { importDroppedFiles } from './ts/dropImport';
     import { isEmbeddedRisuPane, splitChatOpen } from './ts/chatSplitPane';
 
-    let gridOpen = $state(false)
     let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
     let aprilFoolsPage = $state(0)
     let keepingSessionAlive = $state(false)
@@ -209,47 +209,44 @@
             <MobileFooter />
         </div>
     {:else}
-        {#if gridOpen}
-            <GridChars endGrid={() => {gridOpen = false}} />
-        {:else}
-            {#if (!$DynamicGUI)}
-                {#if $splitChatOpen || isEmbeddedRisuPane}
-                    <div
-                        class="split-workspace-sidebar fixed left-0 top-0 z-30 flex h-full"
-                        class:pointer-events-none={!$sideBarStore}
-                    >
-                        <Sidebar openGrid={() => {gridOpen = true}} hidden={!$sideBarStore} />
-                        {#if $sideBarStore}
-                            <button
-                                type="button"
-                                class="mt-3 flex h-12 w-12 shrink-0 items-center justify-center rounded-r-md border border-l-0 border-transparent bg-darkbg text-textcolor transition-colors hover:border-neutral-200"
-                                aria-label="사이드바 닫기"
-                                title="사이드바 닫기"
-                                onclick={() => sideBarClosing.set(true)}
-                            >
-                                <ArrowLeft />
-                            </button>
-                        {/if}
-                    </div>
-                {:else}
-                    <Sidebar openGrid={() => {gridOpen = true}} hidden={!$sideBarStore} />
-                {/if}
-            {:else}
-                <div class="top-0 w-full h-full left-0 z-30 flex flex-row items-center" class:fixed={$sideBarStore} class:hidden={!$sideBarStore} >
-                    <!-- svelte-ignore a11y_click_events_have_key_events -->
-                    <Sidebar openGrid={() => {gridOpen = true}}  hidden={false} />
-
-
-
+        {#if (!$DynamicGUI)}
+            {#if $splitChatOpen || isEmbeddedRisuPane}
+                <div
+                    class="split-workspace-sidebar fixed left-0 top-0 z-30 flex h-full"
+                    class:pointer-events-none={!$sideBarStore}
+                >
+                    <Sidebar hidden={!$sideBarStore} />
+                    {#if $sideBarStore}
+                        <button
+                            type="button"
+                            class="mt-3 flex h-12 w-12 shrink-0 items-center justify-center rounded-r-md border border-l-0 border-transparent bg-darkbg text-textcolor transition-colors hover:border-neutral-200"
+                            aria-label="사이드바 닫기"
+                            title="사이드바 닫기"
+                            onclick={() => sideBarClosing.set(true)}
+                        >
+                            <ArrowLeft />
+                        </button>
+                    {/if}
                 </div>
+            {:else}
+                <Sidebar hidden={!$sideBarStore} />
             {/if}
-            <ChatScreen />
+        {:else}
+            <div class="top-0 w-full h-full left-0 z-30 flex flex-row items-center" class:fixed={$sideBarStore} class:hidden={!$sideBarStore} >
+                <!-- svelte-ignore a11y_click_events_have_key_events -->
+                <Sidebar hidden={false} />
+            </div>
+        {/if}
+        <ChatScreen />
+        {#if $openCharacterManager}
+            <CharacterManager />
         {/if}
     {/if}
     <AlertComp />
     {#if $showRealmInfoStore}
         <RealmPopUp bind:openedData={$showRealmInfoStore} />
     {/if}
+    <FolderSettingsDialog />
     {#if $openPresetList}
         <Botpreset close={() => {$openPresetList = false}} />
     {/if}

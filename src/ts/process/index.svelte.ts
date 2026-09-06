@@ -31,7 +31,7 @@ import { captureModuleRuntimeContext, getModuleAssets, getModuleLorebooks, getMo
 import { hydrateAssetListsForCbs, serializeForCbsScan } from "../parser/assetListHydration";
 import { forageStorage, readImage, resolvePrioritizedAssetManifestNames } from "../globalApi.svelte";
 import { pluginV2 } from "../plugins/plugins.svelte";
-import { chatGenKey, chatProcessStage, endGeneration, getGenerationAdmission, setGenerationStage, tryStartGeneration } from "./generationState";
+import { abortGeneration, chatGenKey, chatProcessStage, endGeneration, getGenerationAdmission, onDatabaseRebased, registerAbort, setGenerationStage, tryStartGeneration } from "./generationState";
 import { clearPendingSend, registerPendingSend } from "./request/pendingSends";
 import { captureGenerationTarget, resolveGenerationTarget, type GenerationTargetIdentity } from './generationTarget';
 
@@ -137,7 +137,11 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 } = {}):Promise<boolean> {
 
     chatProcessStage.set(0)
-    const abortSignal = arg.signal ?? (new AbortController()).signal
+    // Callers without a signal (multisend, commands, dev tools) get an
+    // internal controller that is registered with the generation entry below,
+    // so abortGeneration() reaches every send, not only UI-initiated ones.
+    const internalAbort = arg.signal ? null : new AbortController()
+    const abortSignal = arg.signal ?? internalAbort.signal
     const responseStartedAt = arg.responseStartedAt ?? performance.now()
     
     // NOTE: `throwError()` can be called before these are populated (e.g. HypaV3 early validation errors).
@@ -314,6 +318,12 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         generationTarget = captureGenerationTarget(currentChar, currentChat)
         return true
     }
+    if (internalAbort) registerAbort(genKey, internalAbort)
+    // Module-scoped result of the last preview: cleared up front so a failed
+    // preview cannot hand the previous prompt to the caller as if it were new.
+    if (arg.previewPrompt) {
+        previewBody = ''
+    }
 
     // Avoid mutating the active preset when admission is already impossible.
     // tryStartGeneration repeats this check during the final synchronous claim.
@@ -371,6 +381,23 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 
     DBState.db.statics.messages += 1
     nowChatroom.lastInteraction = Date.now()
+    // The indices above address DBState.db for the rest of this send. A save
+    // conflict rebase may replace the database (and reorder characters) while
+    // streaming, so re-resolve them by id when that happens; the listener is
+    // dropped with the generation entry.
+    {
+        onDatabaseRebased(genKey, () => {
+            if (!refreshGenerationTarget()) {
+                // Deactivated on another device mid-generation. The rebase
+                // aborts such generations and waits for them to end BEFORE
+                // swapping the database (globalApi), so this branch is only
+                // reached if that wait timed out; abort again as a last
+                // resort and leave the indices (the old target object is
+                // gone either way).
+                abortGeneration(genKey)
+            }
+        })
+    }
     // Block send if chat is still a placeholder (hydration not complete)
     if (nowChatroom.chats[selectedChat]?._placeholder) {
         alertError('Chat is still loading. Please wait a moment.')
@@ -1875,16 +1902,20 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                 if(streamingFlushError !== null){
                     throw streamingFlushError
                 }
-                if(deferStreamingPostProcessing && receivedStreamingResult){
+                // A user Stop still post-processes the partial reply as before;
+                // only skip when the stable target no longer exists after a rebase.
+                if(deferStreamingPostProcessing && receivedStreamingResult && refreshGenerationTarget()){
                     let result2 = await processScriptFull(nowChatroom, reformatContent(prefix + result), 'editoutput', msgIndex, {}, getRuntimeModuleContext())
                     currentChat.message[msgIndex].data = result2.data
                     emoChanged = result2.emoChanged
                 }
             }
             finally {
-                currentChat.isStreaming = false
-                currentChat.activeStreamingDisplayOptimizationMode = undefined
-                currentChar.reloadKeys += 1
+                if(refreshGenerationTarget()){
+                    currentChat.isStreaming = false
+                    currentChat.activeStreamingDisplayOptimizationMode = undefined
+                    currentChar.reloadKeys += 1
+                }
                 void reader.cancel().catch(() => {})
             }
         }
