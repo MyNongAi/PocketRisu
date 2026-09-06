@@ -18,8 +18,12 @@
 
 
   } from "../../ts/stores.svelte";
-    import { setDatabase, type folder } from "../../ts/storage/database.svelte";
-    import { DBState } from 'src/ts/stores.svelte';
+    import { setDatabase, folderDisplayMode, type folder, type ArchivedCharacterStub, type FolderDisplayMode } from "../../ts/storage/database.svelte";
+    import { promptActivateCharacter } from "../../ts/characterArchive";
+    import { ArchiveIcon } from "@lucide/svelte";
+    import { DBState, openCharacterManager } from 'src/ts/stores.svelte';
+    import { tooltipRight } from "src/ts/gui/tooltip";
+    import { folderIconComponent } from "../CharacterManager/folderIcons";
     import BarIcon from "./BarIcon.svelte";
     import SidebarIndicator from "./SidebarIndicator.svelte";
     import {
@@ -27,6 +31,7 @@
     Settings,
     ListIcon,
     LayoutGridIcon,
+    ShellIcon,
     FolderIcon,
     FolderOpenIcon,
     SearchIcon,
@@ -51,7 +56,6 @@
     import { language } from "../../lang";
     import isEqual from "lodash/isEqual";
     import SidebarAvatar from "./SidebarAvatar.svelte";
-    import ShSwitch from "../UI/GUI/ShSwitch.svelte";
     import BaseRoundedButton from "../UI/BaseRoundedButton.svelte";
     import { getCharacterIndexObject, makeAgoText, selectSingleFile } from "src/ts/util";
     import { v4 } from "uuid";
@@ -62,6 +66,7 @@
     import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
     import { promoteCharacterFolder, promoteRecentlyViewedCharacter } from "src/ts/characterRecentOrder";
     import MeasuredVirtualList from "../UI/Virtual/MeasuredVirtualList.svelte";
+    import { initSupport } from "src/ts/support";
 
   import { sideBarSize } from "src/ts/gui/guisize";
   import LazyComponent from "../Others/LazyComponent.svelte";
@@ -112,7 +117,7 @@
     QuickSettings.open = false;
     devTool = false;
     if (!hasEditableCharacter) {
-      openGrid();
+      openCharacterManager.set(true);
       return;
     }
     botMakerMode.set(true);
@@ -126,8 +131,13 @@
 
   type DragData = SidebarDragItem
   type sortTypeNormal = { type:'normal',id:string,img: string, index: number, name:string, favorite?:boolean, folderIndex?:number }
-  type sortType = sortTypeNormal | {type:'folder',folder:sortTypeNormal[],id:string, name:string, color:string, favorite?:boolean, img?:string}
-  function sidebarDragItem(item: sortType): SidebarDragItem {
+  // Deactivated characters are rendered in place but remain non-draggable
+  // because their full records no longer live in DBState.db.characters.
+  type sortTypeArchived = { type:'archived',img:string,chaId:string,name:string,folderIndex?:number }
+  type sortTypeEntry = sortTypeNormal | sortTypeArchived
+  type sortTypeFolder = {type:'folder',folder:sortTypeEntry[],id:string,name:string,color:string,favorite?:boolean,img?:string,icon?:string,display:FolderDisplayMode}
+  type sortType = sortTypeEntry | sortTypeFolder
+  function sidebarDragItem(item: sortTypeNormal | sortTypeFolder): SidebarDragItem {
     return item.type === 'normal'
       ? { kind: 'character', id: item.id }
       : { kind: 'folder', id: item.id }
@@ -144,15 +154,15 @@
   )
   type splitCatalogCharacter = {
     type: 'character'
-    char: sortTypeNormal
-    drag: DragData
+    char: sortTypeEntry
+    drag?: DragData
     sourceOrder: number
   }
   type splitCatalogBlock = { type: 'control', position: 'top' | 'bottom' } | splitCatalogCharacter
   let filteredCatalogItems = $derived.by(() => charImages
     .map((char, sourceOrder) => {
       if (!catalogQuery) return { char, sourceOrder }
-      if (char.type === 'normal') {
+      if (char.type === 'normal' || char.type === 'archived') {
         return char.name.toLocaleLowerCase().includes(catalogQuery) ? { char, sourceOrder } : null
       }
       const folderMatches = char.name.toLocaleLowerCase().includes(catalogQuery)
@@ -174,10 +184,10 @@
   let splitCharacterBlocks = $derived.by<splitCatalogBlock[]>(() => {
     const blocks: splitCatalogBlock[] = [{ type: 'control', position: 'top' }]
     filteredCatalogItems.forEach(({ char, sourceOrder }) => {
-      if(char.type === 'normal') blocks.push({
+      if(char.type === 'normal' || char.type === 'archived') blocks.push({
         type: 'character',
         char,
-        drag: { kind: 'character', id: char.id },
+        drag: char.type === 'normal' ? { kind: 'character', id: char.id } : undefined,
         sourceOrder,
       })
     })
@@ -202,13 +212,13 @@
   let openFolders:string[] = $state([])
   let currentDrag: DragData | null = $state(null)
   interface Props {
-    openGrid?: any;
     hidden?: boolean;
   }
 
-  let { openGrid = () => {}, hidden = false }: Props = $props();
+  let { hidden = false }: Props = $props();
 
   onMount(() => {
+    initSupport()
     let active = true
     const timer = setTimeout(() => {
       const recentIndices = recentChars.slice(0, recentVisible).map((recent) => recent.index)
@@ -225,8 +235,23 @@
   $effect(() => {
     let newCharImages: sortType[] = [];
     const idObject = getCharacterIndexObject()
+    // Deactivated characters keep their slot in characterOrder; resolve those
+    // ids against the stub list (unless the user chose to hide them).
+    const archivedById = new Map<string, ArchivedCharacterStub>()
+    if (!DBState.db.nodeOnlyHideArchivedCharacters) {
+      for (const stub of DBState.db.nodeOnlyArchivedCharacters ?? []) {
+        if (stub?.chaId && !stub.trashedAt) archivedById.set(stub.chaId, stub)
+      }
+    }
+    // Sidebar-hidden characters (display only; the character manager still lists them).
+    const hiddenSet = new Set(DBState.db.nodeOnlyHiddenCharacterIds ?? [])
+    const archivedEntry = (id: string): sortTypeArchived | null => {
+      const stub = archivedById.get(id)
+      return stub ? { type: 'archived', img: stub.image ?? '', chaId: stub.chaId, name: stub.name ?? '' } : null
+    }
     for (const id of DBState.db.characterOrder) {
       if(typeof(id) === 'string'){
+        if (hiddenSet.has(id)) continue
         const index = idObject[id] ?? -1
         if(index !== -1){
           const cha = DBState.db.characters[index]
@@ -238,12 +263,16 @@
             name: cha.name,
             favorite: !!cha.favorite,
           });
+        } else {
+          const archived = archivedEntry(id)
+          if (archived) newCharImages.push(archived)
         }
       }
       else{
         const folder = id
-        let folderCharImages: sortTypeNormal[] = []
+        let folderCharImages: sortTypeEntry[] = []
         for(const [folderIndex, id] of folder.data.entries()){
+          if (hiddenSet.has(id)) continue
           const index = idObject[id] ?? -1
           if(index !== -1){
             const cha = DBState.db.characters[index]
@@ -256,6 +285,9 @@
               favorite: !!cha.favorite,
               folderIndex,
             });
+          } else {
+            const archived = archivedEntry(id)
+            if (archived) folderCharImages.push({ ...archived, folderIndex })
           }
         }
         newCharImages.push({
@@ -269,6 +301,10 @@
           // thumbnail. SidebarAvatar clips it into a folder silhouette so it
           // remains visibly distinct from an ordinary character card.
           img: folder.imgFile || folderCharImages[0]?.img || '',
+          icon: folder.nodeOnlyIcon,
+          display: folder.nodeOnlyDisplay
+            ? folderDisplayMode(folder)
+            : (folder.imgFile || folderCharImages[0]?.img ? 'image' : 'icon'),
         });
       }
     }
@@ -425,7 +461,7 @@
       }
       if (item.type === 'folder') {
         const foundChar = item.folder.find(c => 
-          DBState.db.characters[c.index]?.chaId === characterId
+          c.type === 'normal' && DBState.db.characters[c.index]?.chaId === characterId
         )
         if (foundChar) {
           targetFolderId = item.id
@@ -753,7 +789,7 @@
             name={item.char.name}
             color={item.char.color}
             favorite={item.char.favorite}
-            backgroundimg={item.char.img ? () => getCharThumbnail(item.char.img, "plain") : ""}
+            backgroundimg={item.char.display === 'image' && item.char.img ? () => getCharThumbnail(item.char.img, "plain") : ""}
             oncontextmenu={(e) => { void editSidebarFolder(item.sourceOrder, item.char, e) }}
             onClick={() => {
               if(suppressNextClick) return
@@ -762,10 +798,13 @@
               openFolders = openFolders
             }}
           >
-            {#if DBState.db.showFolderName}
+            {@const CustomIcon = folderIconComponent(item.char.icon)}
+            {#if item.char.display === 'name'}
               <div class="flex h-full w-full items-center justify-center">
                 <span class="truncate font-bold">{item.char.name}</span>
               </div>
+            {:else if item.char.display === 'icon' && CustomIcon}
+              <CustomIcon />
             {:else if openFolders.includes(item.char.id)}
               <FolderOpenIcon />
             {:else}
@@ -798,37 +837,60 @@
               <div
                 class="sidebar-folder-character group relative flex items-center px-2"
                 role="listitem"
-                data-drag-kind="character"
-                data-drag-id={folderChar.id}
-                draggable={!isTouchDevice ? "true" : undefined}
-                ondragstart={!isTouchDevice ? (e) => avatarDragStart({ kind: 'character', id: folderChar.id }, e) : undefined}
-                ondragend={!isTouchDevice ? clearCurrentDrag : undefined}
-                ondragover={!isTouchDevice ? avatarDragOver : undefined}
-                ontouchstart={touchDragEnabled ? (e) => onTouchDragStart({ kind: 'character', id: folderChar.id }, e) : undefined}
+                data-drag-kind={folderChar.type === 'normal' ? 'character' : undefined}
+                data-drag-id={folderChar.type === 'normal' ? folderChar.id : undefined}
+                draggable={!isTouchDevice && folderChar.type === 'normal' ? "true" : undefined}
+                ondragstart={!isTouchDevice && folderChar.type === 'normal' ? (e) => avatarDragStart({ kind: 'character', id: folderChar.id }, e) : undefined}
+                ondragend={!isTouchDevice && folderChar.type === 'normal' ? clearCurrentDrag : undefined}
+                ondragover={!isTouchDevice && folderChar.type === 'normal' ? avatarDragOver : undefined}
+                ontouchstart={touchDragEnabled && folderChar.type === 'normal' ? (e) => onTouchDragStart({ kind: 'character', id: folderChar.id }, e) : undefined}
               >
-                <SidebarIndicator isActive={$selectedCharID === folderChar.index && sideBarMode !== 1}/>
+                <SidebarIndicator isActive={folderChar.type === 'normal' && $selectedCharID === folderChar.index && sideBarMode !== 1}/>
                 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
                 <div
                   role="button"
                   tabindex="0"
-                  onpointerenter={() => scheduleCharacterChatPrefetch(folderChar.index)}
-                  onpointerleave={() => cancelCharacterChatPrefetch(folderChar.index)}
-                  onpointerdown={() => void prefetchCharacterChat(folderChar.index)}
-                  onclick={() => { if(!suppressNextClick) changeChar(folderChar.index, { reseter }) }}
-                  onkeydown={(e) => { if(e.key === 'Enter') changeChar(folderChar.index, { reseter }) }}
+                  onpointerenter={() => folderChar.type === 'normal' && scheduleCharacterChatPrefetch(folderChar.index)}
+                  onpointerleave={() => folderChar.type === 'normal' && cancelCharacterChatPrefetch(folderChar.index)}
+                  onpointerdown={() => folderChar.type === 'normal' && void prefetchCharacterChat(folderChar.index)}
+                  onclick={() => {
+                    if(suppressNextClick) return
+                    if(folderChar.type === 'normal') changeChar(folderChar.index, { reseter })
+                    else void promptActivateCharacter(folderChar.chaId, { reseter })
+                  }}
+                  onkeydown={(e) => {
+                    if(e.key !== 'Enter') return
+                    if(folderChar.type === 'normal') changeChar(folderChar.index, { reseter })
+                    else void promptActivateCharacter(folderChar.chaId, { reseter })
+                  }}
                 >
-                  <SidebarAvatar
-                    src={folderChar.img ? () => getCharThumbnail(folderChar.img, "plain") : ""}
-                    size="56"
-                    rounded={IconRounded}
-                    name={folderChar.name}
-                    favorite={folderChar.favorite}
-                    titleColor={listTitleColor(DBState.db.characters[folderChar.index]?.titleColor, Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) > 0)}
-                    missingAssets={Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) > 0}
-                    realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[folderChar.index])}
-                    chaId={DBState.db.characters[folderChar.index]?.chaId}
-                    oncontextmenu={(e) => { void editSidebarCharacter(folderChar.index, e) }}
-                  />
+                  {#if folderChar.type === 'archived'}
+                    <div class="relative">
+                      <SidebarAvatar
+                        src={folderChar.img ? () => getCharThumbnail(folderChar.img, "plain") : ""}
+                        size="56"
+                        rounded={IconRounded}
+                        name={`${folderChar.name} (${language.deactivatedBadge})`}
+                        chaId={folderChar.chaId}
+                      />
+                      <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55" class:rounded-md={!IconRounded} class:rounded-full={IconRounded}>
+                        <ArchiveIcon size={20} class="text-white/90" />
+                      </div>
+                    </div>
+                  {:else}
+                    <SidebarAvatar
+                      src={folderChar.img ? () => getCharThumbnail(folderChar.img, "plain") : ""}
+                      size="56"
+                      rounded={IconRounded}
+                      name={folderChar.name}
+                      favorite={folderChar.favorite}
+                      titleColor={listTitleColor(DBState.db.characters[folderChar.index]?.titleColor, Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) > 0)}
+                      missingAssets={Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) > 0}
+                      realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[folderChar.index])}
+                      chaId={DBState.db.characters[folderChar.index]?.chaId}
+                      oncontextmenu={(e) => { void editSidebarCharacter(folderChar.index, e) }}
+                    />
+                  {/if}
                 </div>
               </div>
               <div
@@ -896,38 +958,62 @@
       <div
         class="group relative flex items-center px-2"
         role="listitem"
-        data-drag-kind="character"
-        data-drag-id={block.char.id}
-        draggable={!isTouchDevice ? "true" : undefined}
-        ondragstart={!isTouchDevice ? (e) => avatarDragStart(block.drag, e) : undefined}
-        ondragend={!isTouchDevice ? clearCurrentDrag : undefined}
-        ondragover={!isTouchDevice ? avatarDragOver : undefined}
-        ondrop={!isTouchDevice ? (e) => avatarDrop(block.drag, e) : undefined}
-        ontouchstart={touchDragEnabled ? (e) => onTouchDragStart(block.drag, e) : undefined}
+        data-drag-kind={block.char.type === 'normal' ? 'character' : undefined}
+        data-drag-id={block.char.type === 'normal' ? block.char.id : undefined}
+        draggable={!isTouchDevice && block.char.type === 'normal' ? "true" : undefined}
+        ondragstart={!isTouchDevice && block.drag ? (e) => avatarDragStart(block.drag!, e) : undefined}
+        ondragend={!isTouchDevice && block.char.type === 'normal' ? clearCurrentDrag : undefined}
+        ondragover={!isTouchDevice && block.char.type === 'normal' ? avatarDragOver : undefined}
+        ondrop={!isTouchDevice && block.drag ? (e) => avatarDrop(block.drag!, e) : undefined}
+        ontouchstart={touchDragEnabled && block.drag ? (e) => onTouchDragStart(block.drag!, e) : undefined}
       >
-        <SidebarIndicator isActive={$selectedCharID === block.char.index && sideBarMode !== 1}/>
+        <SidebarIndicator isActive={block.char.type === 'normal' && $selectedCharID === block.char.index && sideBarMode !== 1}/>
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div
           role="button"
           tabindex="0"
-          onpointerenter={() => scheduleCharacterChatPrefetch(block.char.index)}
-          onpointerleave={() => cancelCharacterChatPrefetch(block.char.index)}
-          onpointerdown={() => void prefetchCharacterChat(block.char.index)}
-          onclick={() => { if(!suppressNextClick) changeChar(block.char.index, { reseter }) }}
-          onkeydown={(e) => { if(e.key === 'Enter') changeChar(block.char.index, { reseter }) }}
+          onpointerenter={() => block.char.type === 'normal' && scheduleCharacterChatPrefetch(block.char.index)}
+          onpointerleave={() => block.char.type === 'normal' && cancelCharacterChatPrefetch(block.char.index)}
+          onpointerdown={() => block.char.type === 'normal' && void prefetchCharacterChat(block.char.index)}
+          onclick={() => {
+            if(suppressNextClick) return
+            if(block.char.type === 'normal') changeChar(block.char.index, { reseter })
+            else void promptActivateCharacter(block.char.chaId, { reseter })
+          }}
+          onkeydown={(e) => {
+            if(e.key !== 'Enter') return
+            if(block.char.type === 'normal') changeChar(block.char.index, { reseter })
+            else void promptActivateCharacter(block.char.chaId, { reseter })
+          }}
         >
-          <SidebarAvatar
-            src={block.char.img ? () => getCharThumbnail(block.char.img, "plain") : ""}
-            size="56"
-            rounded={IconRounded}
-            name={block.char.name}
-            favorite={block.char.favorite}
-            titleColor={listTitleColor(DBState.db.characters[block.char.index]?.titleColor, Number(DBState.db.characters[block.char.index]?.sourceInfo?.missingAssetCount) > 0)}
-            missingAssets={Number(DBState.db.characters[block.char.index]?.sourceInfo?.missingAssetCount) > 0}
-            realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[block.char.index])}
-            chaId={DBState.db.characters[block.char.index]?.chaId}
-            oncontextmenu={(e) => { void editSidebarCharacter(block.char.index, e) }}
-          />
+          {#if block.char.type === 'archived'}
+            <div class="relative">
+              <SidebarAvatar
+                src={block.char.img ? () => getCharThumbnail(block.char.img, "plain") : ""}
+                size="56"
+                rounded={IconRounded}
+                name={`${block.char.name} (${language.deactivatedBadge})`}
+                chaId={block.char.chaId}
+              />
+              <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55" class:rounded-md={!IconRounded} class:rounded-full={IconRounded}>
+                <ArchiveIcon size={20} class="text-white/90" />
+              </div>
+            </div>
+          {:else}
+            {@const normalChar = block.char as sortTypeNormal}
+            <SidebarAvatar
+              src={normalChar.img ? () => getCharThumbnail(normalChar.img, "plain") : ""}
+              size="56"
+              rounded={IconRounded}
+              name={normalChar.name}
+              favorite={normalChar.favorite}
+              titleColor={listTitleColor(DBState.db.characters[normalChar.index]?.titleColor, Number(DBState.db.characters[normalChar.index]?.sourceInfo?.missingAssetCount) > 0)}
+              missingAssets={Number(DBState.db.characters[normalChar.index]?.sourceInfo?.missingAssetCount) > 0}
+              realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[normalChar.index])}
+              chaId={DBState.db.characters[normalChar.index]?.chaId}
+              oncontextmenu={(e) => { void editSidebarCharacter(normalChar.index, e) }}
+            />
+          {/if}
         </div>
       </div>
       <div
@@ -1000,8 +1086,7 @@
   )}
   onclick={() => {
     reseter();
-    openGrid();
-
+    openCharacterManager.set(true);
   }}
 >
   <User2Icon />
@@ -1093,9 +1178,21 @@
       <BarIcon
         onClick={() => {
           reseter();
-          openGrid();
+          openCharacterManager.set(true);
         }}><LayoutGridIcon /></BarIcon
       >
+      <div class="mt-2"></div>
+      <BarIcon
+        onClick={() => {
+          reseter()
+          if($selectedCharID === -1 && $PlaygroundStore !== 0){
+            PlaygroundStore.set(0)
+            return
+          }
+          deselectCharacter()
+          PlaygroundStore.set(1)
+        }}
+      ><ShellIcon /></BarIcon>
       {#if additionalHamburgerMenu.length > 0}
         <div class="mt-2 h-px w-10 bg-selected shrink-0"></div>
         {#each additionalHamburgerMenu as menu}
@@ -1114,6 +1211,20 @@
     {/if}
   </div>
   {/if}
+  <!-- Keep the official character manager alongside the custom searchable,
+       virtualized catalog instead of replacing that catalog with an eager list. -->
+  <button
+    class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer mb-1 items-center justify-center rounded-md border border-borderc text-textcolor transition-colors hover:border-primary hover:text-primary"
+    class:max-xs:hidden={$leftBarCollapsed}
+    aria-label={language.characterManager}
+    use:tooltipRight={language.characterManager}
+    onclick={() => {
+      reseter();
+      openCharacterManager.set(true);
+    }}
+  >
+    <LayoutGridIcon size={18} />
+  </button>
   <div class="mx-1 mb-1 flex w-[calc(100%_-_0.5rem)] shrink-0 items-center gap-1 rounded-md border border-selected bg-darkbg px-1.5"
     class:max-xs:hidden={$leftBarCollapsed}>
     <SearchIcon size={13} class="shrink-0 text-textcolor2"/>
@@ -1136,7 +1247,9 @@
       ariaLabel="폴더 밖 개별 캐릭터"
       key={(block) => block.type === 'control'
         ? `split-control-${block.position}`
-        : `split-character-root-${DBState.db.characters[block.char.index]?.chaId ?? block.sourceOrder}`}
+        : block.char.type === 'normal'
+          ? `split-character-root-${DBState.db.characters[block.char.index]?.chaId ?? block.sourceOrder}`
+          : `split-archived-root-${block.char.chaId}`}
     >
       {#snippet children(block)}
         {@render splitCharacterRow(block)}
@@ -1152,11 +1265,13 @@
     ariaLabel="Characters"
     scrollToIndex={sidebarScrollIndex}
     scrollRequestKey={sidebarScrollRequest}
-    key={(block) => block.type === 'control'
-      ? `control-${block.position}`
-      : block.char.type === 'folder'
-        ? `folder-${block.char.id}`
-        : `character-${DBState.db.characters[block.char.index]?.chaId ?? block.index}`}
+      key={(block) => block.type === 'control'
+        ? `control-${block.position}`
+        : block.char.type === 'folder'
+          ? `folder-${block.char.id}`
+          : block.char.type === 'normal'
+            ? `character-${DBState.db.characters[block.char.index]?.chaId ?? block.index}`
+            : `archived-${block.char.chaId}`}
   >
     {#snippet children(block)}
     {#if block.type === 'control'}
@@ -1193,15 +1308,15 @@
       <div class="flex w-full flex-col items-center">
       <div class="group relative flex items-center px-2"
         role="listitem"
-        data-drag-kind={char.type === 'normal' ? 'character' : 'folder'}
-        data-drag-id={char.id}
-        draggable={!isTouchDevice ? "true" : undefined}
-        ondragstart={!isTouchDevice ? (e) => {avatarDragStart(sidebarDragItem(char), e)} : undefined}
-        ondragend={!isTouchDevice ? clearCurrentDrag : undefined}
-        ondragover={!isTouchDevice ? avatarDragOver : undefined}
-        ondrop={!isTouchDevice ? (e) => {avatarDrop(sidebarDragItem(char), e)} : undefined}
-        ondragenter={!isTouchDevice ? preventAll : undefined}
-        ontouchstart={touchDragEnabled ? (e) => {onTouchDragStart(sidebarDragItem(char), e)} : undefined}
+        data-drag-kind={char.type === 'normal' ? 'character' : char.type === 'folder' ? 'folder' : undefined}
+        data-drag-id={char.type === 'normal' || char.type === 'folder' ? char.id : undefined}
+        draggable={!isTouchDevice && char.type !== 'archived' ? "true" : undefined}
+        ondragstart={!isTouchDevice && char.type !== 'archived' ? (e) => {avatarDragStart(sidebarDragItem(char), e)} : undefined}
+        ondragend={!isTouchDevice && char.type !== 'archived' ? clearCurrentDrag : undefined}
+        ondragover={!isTouchDevice && char.type !== 'archived' ? avatarDragOver : undefined}
+        ondrop={!isTouchDevice && char.type !== 'archived' ? (e) => {avatarDrop(sidebarDragItem(char), e)} : undefined}
+        ondragenter={!isTouchDevice && char.type !== 'archived' ? preventAll : undefined}
+        ontouchstart={touchDragEnabled && char.type !== 'archived' ? (e) => {onTouchDragStart(sidebarDragItem(char), e)} : undefined}
       >
         <SidebarIndicator
           isActive={char.type === 'normal' && $selectedCharID === char.index && sideBarMode !== 1}
@@ -1218,12 +1333,16 @@
               if(suppressNextClick) return
               if(char.type === "normal"){
                 changeChar(char.index, {reseter});
+              } else if(char.type === "archived"){
+                void promptActivateCharacter(char.chaId, {reseter});
               }
             }}
             onkeydown={(e) => {
               if (e.key === "Enter") {
                 if(char.type === "normal"){
                   changeChar(char.index, {reseter});
+                } else if(char.type === "archived"){
+                  void promptActivateCharacter(char.chaId, {reseter});
                 }
               }
             }}
@@ -1241,10 +1360,23 @@
               chaId={DBState.db.characters[char.index]?.chaId}
               oncontextmenu={(e) => { void editSidebarCharacter(char.index, e) }}
             />
+          {:else if char.type === 'archived'}
+            <div class="relative">
+              <SidebarAvatar
+                src={char.img ? () => getCharThumbnail(char.img, "plain") : ""}
+                size="56"
+                rounded={IconRounded}
+                name={`${char.name} (${language.deactivatedBadge})`}
+                chaId={char.chaId}
+              />
+              <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55" class:rounded-md={!IconRounded} class:rounded-full={IconRounded}>
+                <ArchiveIcon size={20} class="text-white/90" />
+              </div>
+            </div>
           {:else if char.type === "folder"}
             {#key char.color}
             {#key char.name}
-              <SidebarAvatar src="slot" size="56" rounded={IconRounded} folderShape name={char.name} color={char.color} favorite={char.favorite} backgroundimg={char.img ? () => getCharThumbnail(char.img, "plain") : ""}
+              <SidebarAvatar src="slot" size="56" rounded={IconRounded} folderShape name={char.name} color={char.color} favorite={char.favorite} backgroundimg={char.display === 'image' && char.img ? () => getCharThumbnail(char.img, "plain") : ""}
               oncontextmenu={(e) => { void editSidebarFolder(ind, char, e) }}
               onClick={() => {
                 if(suppressNextClick) return
@@ -1259,10 +1391,13 @@
                 }
                 openFolders = openFolders
               }}>
-                {#if DBState.db.showFolderName}
+                {@const CustomIcon = folderIconComponent(char.icon)}
+                {#if char.display === 'name'}
                   <div class="h-full w-full flex justify-center items-center">
                     <span class="hyphens-auto truncate font-bold">{char.name}</span>
                   </div>
+                {:else if char.display === 'icon' && CustomIcon}
+                  <CustomIcon />
                 {:else if openFolders.includes(char.id)}
                   <FolderOpenIcon />
                 {:else}
@@ -1313,18 +1448,18 @@
               {@const sourceFolderIndex = char2.folderIndex ?? ind}
               <div class="sidebar-folder-character group relative flex items-center px-2 z-10"
               role="listitem"
-              data-drag-kind="character"
-              data-drag-id={char2.id}
-              draggable={!isTouchDevice ? "true" : undefined}
-              ondragstart={!isTouchDevice ? (e) => {avatarDragStart({kind:'character', id:char2.id}, e)} : undefined}
-              ondragend={!isTouchDevice ? clearCurrentDrag : undefined}
-              ondragover={!isTouchDevice ? avatarDragOver : undefined}
-              ondrop={!isTouchDevice ? (e) => {avatarDrop({kind:'character', id:char2.id}, e)} : undefined}
-              ondragenter={!isTouchDevice ? preventAll : undefined}
-              ontouchstart={touchDragEnabled ? (e) => {onTouchDragStart({kind:'character', id:char2.id}, e)} : undefined}
+              data-drag-kind={char2.type === 'normal' ? 'character' : undefined}
+              data-drag-id={char2.type === 'normal' ? char2.id : undefined}
+              draggable={!isTouchDevice && char2.type === 'normal' ? "true" : undefined}
+              ondragstart={!isTouchDevice && char2.type === 'normal' ? (e) => {avatarDragStart({kind:'character', id:char2.id}, e)} : undefined}
+              ondragend={!isTouchDevice && char2.type === 'normal' ? clearCurrentDrag : undefined}
+              ondragover={!isTouchDevice && char2.type === 'normal' ? avatarDragOver : undefined}
+              ondrop={!isTouchDevice && char2.type === 'normal' ? (e) => {avatarDrop({kind:'character', id:char2.id}, e)} : undefined}
+              ondragenter={!isTouchDevice && char2.type === 'normal' ? preventAll : undefined}
+              ontouchstart={touchDragEnabled && char2.type === 'normal' ? (e) => {onTouchDragStart({kind:'character', id:char2.id}, e)} : undefined}
             >
               <SidebarIndicator
-                isActive={$selectedCharID === char2.index && sideBarMode !== 1}
+                isActive={char2.type === 'normal' && $selectedCharID === char2.index && sideBarMode !== 1}
               />
               <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
               <div
@@ -1338,28 +1473,47 @@
                     if(suppressNextClick) return
                     if(char2.type === "normal"){
                       changeChar(char2.index, {reseter});
+                    } else if(char2.type === "archived"){
+                      void promptActivateCharacter(char2.chaId, {reseter});
                     }
                   }}
                   onkeydown={(e) => {
                     if (e.key === "Enter") {
                       if(char2.type === "normal"){
                         changeChar(char2.index, {reseter});
+                      } else if(char2.type === "archived"){
+                        void promptActivateCharacter(char2.chaId, {reseter});
                       }
                     }
                   }}
                 >
-                <SidebarAvatar 
-                  src={char2.img ? () => getCharThumbnail(char2.img, "plain") : ""}
-                  size="56" 
-                  rounded={IconRounded} 
-                  name={char2.name}
-                  favorite={char2.favorite}
-                  titleColor={listTitleColor(DBState.db.characters[char2.index]?.titleColor, Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) > 0)}
-                  missingAssets={Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) > 0}
-                  realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[char2.index])}
-                  chaId={DBState.db.characters[char2.index]?.chaId}
-                  oncontextmenu={(e) => { void editSidebarCharacter(char2.index, e) }}
-                />
+                {#if char2.type === 'archived'}
+                  <div class="relative">
+                    <SidebarAvatar
+                      src={char2.img ? () => getCharThumbnail(char2.img, "plain") : ""}
+                      size="56"
+                      rounded={IconRounded}
+                      name={`${char2.name} (${language.deactivatedBadge})`}
+                      chaId={char2.chaId}
+                    />
+                    <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55" class:rounded-md={!IconRounded} class:rounded-full={IconRounded}>
+                      <ArchiveIcon size={20} class="text-white/90" />
+                    </div>
+                  </div>
+                {:else}
+                  <SidebarAvatar
+                    src={char2.img ? () => getCharThumbnail(char2.img, "plain") : ""}
+                    size="56"
+                    rounded={IconRounded}
+                    name={char2.name}
+                    favorite={char2.favorite}
+                    titleColor={listTitleColor(DBState.db.characters[char2.index]?.titleColor, Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) > 0)}
+                    missingAssets={Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) > 0}
+                    realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[char2.index])}
+                    chaId={DBState.db.characters[char2.index]?.chaId}
+                    oncontextmenu={(e) => { void editSidebarCharacter(char2.index, e) }}
+                  />
+                {/if}
               </div>
             </div>
             <div class="h-4 min-h-4 w-14 relative z-20" role="listitem" data-spacer-index={sourceFolderIndex+1} data-spacer-folder={char.type === 'folder' ? char.id : undefined} ondragover={(e) => {
@@ -1452,9 +1606,21 @@
       <BarIcon
         onClick={() => {
           reseter();
-          openGrid();
+          openCharacterManager.set(true);
         }}><LayoutGridIcon /></BarIcon
       >
+      <div class="mt-2"></div>
+      <BarIcon
+        onClick={() => {
+          reseter()
+          if($selectedCharID === -1 && $PlaygroundStore !== 0){
+            PlaygroundStore.set(0)
+            return
+          }
+          deselectCharacter()
+          PlaygroundStore.set(1)
+        }}
+      ><ShellIcon /></BarIcon>
       {#if additionalHamburgerMenu.length > 0}
         <div class="mt-2 h-px w-10 bg-selected shrink-0"></div>
         {#each additionalHamburgerMenu as menu}
@@ -1585,13 +1751,6 @@
       <LazyComponent loader={loadQuickSettings} />
     {:else if $selectedCharID < 0 || $settingsOpen}
       <span class="block text-base font-semibold text-textcolor mt-2">{language.recentChatsTitle}</span>
-      <div class="flex items-center justify-between gap-2 mt-2">
-        <span class="text-sm text-textcolor2">{language.hideRecentChats}</span>
-        <ShSwitch
-          checked={!!DBState.db.nodeOnlyHideRecentChats}
-          onCheckedChange={(v) => (DBState.db.nodeOnlyHideRecentChats = v)}
-        />
-      </div>
       {#if DBState.db.nodeOnlyHideRecentChats}
         <!-- list hidden by user preference -->
       {:else if recentChars.length === 0}

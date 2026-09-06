@@ -8,7 +8,7 @@ PocketRisu Kei의 코드를 통째로 합치지 않고, 우리 개조판에 필�
 - 검토 태그: `kei-v2.1.1`
 - 검토 커밋: `631e71b0`
 - Kei 기반 PocketRisu: v1.8.1 계열, 기준 커밋 `63832a13`
-- 우리 기준: PocketRisu v1.11.2, `feature/external-assets`
+- 우리 기준: PocketRisu v1.12.0, `feature/external-assets`
 - 검토일: 2026-09-06
 - Pull requests 탭에는 열린 PR과 닫힌 PR이 없었으므로, 실제 구조는 태그와 커밋 이력으로 확인했습니다.
 

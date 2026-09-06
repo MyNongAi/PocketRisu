@@ -4,7 +4,7 @@
 
 - HaejeokRisu 초기 최적화 비교: `b6651`, commit `62d46ff2d83d6027713e0253385c875be4c8e5b1`
 - 브랜치 그래프 재검토: `b6780`, commit `7d02d4d5013f4499d6694ea61496d24fb08b8ad0` (2026-09-05)
-- PocketRisu 개조판: 공식 PocketRisu `v1.11.2` 위의 `feature/external-assets`
+- PocketRisu 개조판: 공식 PocketRisu `v1.12.0` 위의 `feature/external-assets`
 - 양쪽 라이선스: GNU GPL v3
 
 HaejeokRisu 전체를 병합하지 않습니다. HaejeokRisu는 캐릭터·채팅·메시지·설정을 관계형 SQL 행으로 분리한 독립 포크이고, PocketRisu는 `database.bin` 호환성과 Node 서버의 SQLite KV를 유지합니다. 전체 병합은 저장 형식, 백업, 모바일, 플러그인 API와 상류 업데이트를 동시에 갈라놓으므로 작은 성능 경계부터 이식합니다.

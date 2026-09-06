@@ -194,7 +194,7 @@ describe('NodeStorage per-chat optimistic concurrency', () => {
 })
 
 describe('NodeStorage.patchItem 409 contract', () => {
-    test('marks an ordinary hash 409 as a rebase conflict', async () => {
+    test('marks an ordinary hash 409 as a rebase conflict without adopting the remote etag', async () => {
         const storage = storageReturning(409, {
             error: 'Hash mismatch - data out of sync',
             currentEtag: 'remote-etag',
@@ -209,7 +209,10 @@ describe('NodeStorage.patchItem 409 contract', () => {
             conflict: true,
             chatGuardRejected: false,
         })
-        expect((storage as any)._lastDbEtag).toBe('remote-etag')
+        // v1.12 keeps the last locally synced ETag until the caller has fetched
+        // and rebased the server database. Adopting the 409 value here would
+        // let a fallback full write overwrite the remote change.
+        expect((storage as any)._lastDbEtag).toBeNull()
     })
 
     test('keeps chat-guard 409 distinct from a hash conflict', async () => {
