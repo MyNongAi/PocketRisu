@@ -104,6 +104,175 @@ export function sha256HexPortable(input: Uint8Array): string {
     return Array.from(sha256BytesPortable(input), (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
+/** HMAC-SHA-256 for browser contexts where SubtleCrypto is unavailable. */
+export function hmacSha256Portable(key: Uint8Array, input: Uint8Array): Uint8Array {
+    if (!(key instanceof Uint8Array) || !(input instanceof Uint8Array)) {
+        throw new TypeError('HMAC key and input must be Uint8Array values')
+    }
+    if (key.byteLength > 1024 * 1024 || input.byteLength > 64 * 1024 * 1024) {
+        throw new Error('Portable HMAC input exceeds the safety limit')
+    }
+
+    const block = new Uint8Array(64)
+    const normalizedKey = key.byteLength > block.byteLength ? sha256BytesPortable(key) : key
+    block.set(normalizedKey)
+    const inner = new Uint8Array(block.byteLength + input.byteLength)
+    const outer = new Uint8Array(block.byteLength + 32)
+    for (let index = 0; index < block.byteLength; index++) {
+        inner[index] = block[index] ^ 0x36
+        outer[index] = block[index] ^ 0x5c
+    }
+    inner.set(input, block.byteLength)
+    outer.set(sha256BytesPortable(inner), block.byteLength)
+    return sha256BytesPortable(outer)
+}
+
+type DerElement = {
+    tag: number
+    bodyStart: number
+    bodyEnd: number
+    nextOffset: number
+}
+
+function readDerElement(input: Uint8Array, offset: number, expectedTag?: number): DerElement {
+    if (!Number.isSafeInteger(offset) || offset < 0 || offset + 2 > input.byteLength) {
+        throw new Error('Invalid PKCS#8 DER offset')
+    }
+    const tag = input[offset++]
+    if (expectedTag !== undefined && tag !== expectedTag) {
+        throw new Error(`Invalid PKCS#8 DER tag: expected ${expectedTag}, received ${tag}`)
+    }
+    const firstLength = input[offset++]
+    let length = firstLength
+    if ((firstLength & 0x80) !== 0) {
+        const count = firstLength & 0x7f
+        if (count === 0 || count > 4 || offset + count > input.byteLength) {
+            throw new Error('Unsupported PKCS#8 DER length')
+        }
+        length = 0
+        for (let index = 0; index < count; index++) length = (length * 256) + input[offset++]
+    }
+    const bodyStart = offset
+    const bodyEnd = bodyStart + length
+    if (!Number.isSafeInteger(bodyEnd) || bodyEnd > input.byteLength) {
+        throw new Error('Truncated PKCS#8 DER value')
+    }
+    return { tag, bodyStart, bodyEnd, nextOffset: bodyEnd }
+}
+
+function positiveDerInteger(input: Uint8Array, element: DerElement): Uint8Array {
+    if (element.tag !== 0x02 || element.bodyStart >= element.bodyEnd) {
+        throw new Error('Invalid RSA private-key integer')
+    }
+    let start = element.bodyStart
+    if ((input[start] & 0x80) !== 0) throw new Error('Negative RSA private-key integer')
+    if (input[start] === 0 && start + 1 < element.bodyEnd) start++
+    return input.subarray(start, element.bodyEnd)
+}
+
+function bytesToBigInt(input: Uint8Array): bigint {
+    let result = 0n
+    for (const byte of input) result = (result << 8n) | BigInt(byte)
+    return result
+}
+
+function bigIntToFixedBytes(value: bigint, byteLength: number): Uint8Array {
+    if (value < 0n) throw new Error('Cannot encode a negative RSA value')
+    const output = new Uint8Array(byteLength)
+    for (let index = byteLength - 1; index >= 0; index--) {
+        output[index] = Number(value & 0xffn)
+        value >>= 8n
+    }
+    if (value !== 0n) throw new Error('RSA signature exceeds the modulus size')
+    return output
+}
+
+function modPow(base: bigint, exponent: bigint, modulus: bigint): bigint {
+    if (modulus <= 1n || exponent <= 0n) throw new Error('Invalid RSA private key')
+    let result = 1n
+    base %= modulus
+    while (exponent > 0n) {
+        if ((exponent & 1n) === 1n) result = (result * base) % modulus
+        exponent >>= 1n
+        if (exponent > 0n) base = (base * base) % modulus
+    }
+    return result
+}
+
+export type PortableRsaPrivateKey = {
+    modulus: bigint
+    privateExponent: bigint
+    byteLength: number
+}
+
+/**
+ * Parses the RSA modulus/private exponent from a PKCS#8 rsaEncryption key.
+ * The returned BigInts remain only in the calling page's memory.
+ */
+export function parseRsaPrivateKeyPkcs8Portable(input: Uint8Array): PortableRsaPrivateKey {
+    if (!(input instanceof Uint8Array) || input.byteLength < 64 || input.byteLength > 32 * 1024) {
+        throw new Error('Invalid PKCS#8 RSA private-key size')
+    }
+    const outer = readDerElement(input, 0, 0x30)
+    if (outer.nextOffset !== input.byteLength) throw new Error('Trailing PKCS#8 DER data')
+    let outerOffset = outer.bodyStart
+    outerOffset = readDerElement(input, outerOffset, 0x02).nextOffset
+    const algorithm = readDerElement(input, outerOffset, 0x30)
+    outerOffset = algorithm.nextOffset
+    const algorithmOid = readDerElement(input, algorithm.bodyStart, 0x06)
+    const rsaEncryptionOid = [0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x01, 0x01]
+    const oid = input.subarray(algorithmOid.bodyStart, algorithmOid.bodyEnd)
+    if (oid.length !== rsaEncryptionOid.length || oid.some((byte, index) => byte !== rsaEncryptionOid[index])) {
+        throw new Error('PKCS#8 key is not an rsaEncryption private key')
+    }
+    const privateKeyOctets = readDerElement(input, outerOffset, 0x04)
+    const rsaKey = readDerElement(input, privateKeyOctets.bodyStart, 0x30)
+    if (rsaKey.nextOffset !== privateKeyOctets.bodyEnd) throw new Error('Invalid embedded RSA private key')
+
+    let rsaOffset = rsaKey.bodyStart
+    rsaOffset = readDerElement(input, rsaOffset, 0x02).nextOffset
+    const modulusElement = readDerElement(input, rsaOffset, 0x02)
+    rsaOffset = modulusElement.nextOffset
+    rsaOffset = readDerElement(input, rsaOffset, 0x02).nextOffset // public exponent
+    const privateExponentElement = readDerElement(input, rsaOffset, 0x02)
+    const modulusBytes = positiveDerInteger(input, modulusElement)
+    const privateExponentBytes = positiveDerInteger(input, privateExponentElement)
+    if (modulusBytes.byteLength < 128 || modulusBytes.byteLength > 2048) {
+        throw new Error('Portable RSA supports 1024-16384 bit keys')
+    }
+    const modulus = bytesToBigInt(modulusBytes)
+    const privateExponent = bytesToBigInt(privateExponentBytes)
+    if (modulus <= 1n || privateExponent <= 1n) throw new Error('Invalid RSA private key values')
+    return { modulus, privateExponent, byteLength: modulusBytes.byteLength }
+}
+
+const SHA256_DIGEST_INFO_PREFIX = Uint8Array.from([
+    0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01,
+    0x65, 0x03, 0x04, 0x02, 0x01, 0x05, 0x00, 0x04, 0x20,
+])
+
+/** RSASSA-PKCS1-v1_5 with SHA-256 for insecure LAN browser contexts. */
+export function signRsaPkcs1Sha256Portable(key: PortableRsaPrivateKey, input: Uint8Array): Uint8Array {
+    if (!(input instanceof Uint8Array) || input.byteLength > 64 * 1024 * 1024) {
+        throw new Error('Portable RSA input exceeds the safety limit')
+    }
+    const digest = sha256BytesPortable(input)
+    const digestInfo = new Uint8Array(SHA256_DIGEST_INFO_PREFIX.byteLength + digest.byteLength)
+    digestInfo.set(SHA256_DIGEST_INFO_PREFIX)
+    digestInfo.set(digest, SHA256_DIGEST_INFO_PREFIX.byteLength)
+    const paddingLength = key.byteLength - digestInfo.byteLength - 3
+    if (paddingLength < 8) throw new Error('RSA modulus is too small for SHA-256')
+
+    const encoded = new Uint8Array(key.byteLength)
+    encoded[1] = 0x01
+    encoded.fill(0xff, 2, 2 + paddingLength)
+    encoded[2 + paddingLength] = 0
+    encoded.set(digestInfo, 3 + paddingLength)
+    const message = bytesToBigInt(encoded)
+    if (message >= key.modulus) throw new Error('RSA encoded message exceeds the modulus')
+    return bigIntToFixedBytes(modPow(message, key.privateExponent, key.modulus), key.byteLength)
+}
+
 let fallbackCounter = 0
 
 function injectedPageSeed(): string | undefined {
