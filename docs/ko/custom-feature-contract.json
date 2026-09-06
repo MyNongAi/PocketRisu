@@ -119,12 +119,14 @@
       "criticality": "core-ux",
       "ownerFiles": [
         "src/ts/importProgress.ts",
+        "src/ts/characterCards.ts",
         "src/lib/UI/GUI/ImportProgressToaster.svelte",
         "src/lib/UI/GUI/ImportProgressToast.svelte"
       ],
       "requiredMarkers": [
         { "file": "src/ts/importProgress.ts", "contains": "runImportBatch" },
-        { "file": "src/ts/importProgress.ts", "contains": "importTasks" }
+        { "file": "src/ts/importProgress.ts", "contains": "importTasks" },
+        { "file": "src/ts/characterCards.ts", "contains": "runImportTask(`Realm ${id}`" }
       ],
       "regressionTests": [
         "src/ts/importProgress.test.ts"
