@@ -113,6 +113,27 @@ export function clearImportTask(id: string): void {
 }
 
 /**
+ * Runs one import through the same non-blocking progress surface used by file
+ * batches. This is useful for imports whose source is not a local File, such
+ * as a Realm download.
+ */
+export async function runImportTask<T>(
+    fileName: string,
+    importer: (report: ImportProgressReporter) => Promise<T>,
+): Promise<T> {
+    const id = createImportTask(fileName)
+    startImportTask(id)
+    try {
+        const value = await importer((update) => reportImportTask(id, update))
+        completeImportTask(id)
+        return value
+    } catch (error) {
+        failImportTask(id, error)
+        throw error
+    }
+}
+
+/**
  * Creates every visible task up front, then imports sequentially. Users see
  * the whole queue immediately while database and asset writes remain ordered.
  */
