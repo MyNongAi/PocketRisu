@@ -1,7 +1,7 @@
 import { get, writable } from "svelte/store";
 import { saveImage, setDatabase, type character, type Chat, defaultSdDataFunc, type loreBook, getDatabase, getCharacterByIndex, setCharacterByIndex, getCurrentChat, loadTogglesFromChat, normalizeChat, newChatModelDefaults } from "./storage/database.svelte";
 import { ensureChatHydrated } from "./storage/chatStorage";
-import { alertAddCharacter, alertConfirm, alertError, alertSelect, alertStore, alertWait, notifySuccess, notifyInfo } from "./alert";
+import { alertAddCharacter, alertConfirm, alertError, alertInput, alertSelect, alertStore, alertWait, notifySuccess, notifyInfo } from "./alert";
 import { loadingOverlayStore, chatDeselected } from "./stores.svelte";
 import { language } from "../lang";
 import { checkNullish, findCharacterbyId, findCharacterIndexbyId, getUserName, selectMultipleFile, selectSingleFile } from "./util";
@@ -13,8 +13,9 @@ import { updateInlayScreen } from "./process/inlayScreen";
 import { parseMarkdownSafe } from "./parser/parser.svelte";
 import { translateHTML } from "./translator/translator";
 import { doingChat } from "./process/index.svelte";
-import { importCharacter } from "./characterCards";
+import { importCharacter, importCharacterProcess } from "./characterCards";
 import { importCharacterPackage } from "./characterPackage";
+import { forageStorage } from "./globalApi.svelte";
 import { PngChunk } from "./pngChunk";
 
 export function createNewCharacter() {
@@ -754,6 +755,9 @@ export async function addCharacter(arg:{
         case 'importPackage':
             await importCharacterPackage()
             break
+        case 'importFromProton':
+            await importFromProtonDrive()
+            break
         default:
             MobileGUIStack.set(1)
             return
@@ -763,6 +767,35 @@ export async function addCharacter(arg:{
         changeChar(db.characters.length-1)
     }
     MobileGUIStack.set(1)
+}
+
+async function importFromProtonDrive() {
+    const url = await alertInput(language.protonDriveUrlPrompt)
+    if (!url || url === 'cancel' || !url.includes('drive.proton.me/urls/')) {
+        return
+    }
+    alertStore.set({ type: 'wait', msg: language.protonImporting })
+    try {
+        const auth = await forageStorage.createAuth()
+        const resp = await fetch('/api/import/proton', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'risu-auth': auth,
+            },
+            body: JSON.stringify({ url }),
+        })
+        if (!resp.ok) {
+            const err = await resp.json().catch(() => ({ error: resp.statusText }))
+            throw new Error(err.error || language.protonImportFailed)
+        }
+        const name = decodeURIComponent(resp.headers.get('X-File-Name') || 'character.charx')
+        const data = new Uint8Array(await resp.arrayBuffer())
+        await importCharacterProcess({ name, data })
+        notifySuccess(language.protonImportSuccess)
+    } catch (e) {
+        alertError(`${language.protonImportFailed}: ${e instanceof Error ? e.message : e}`)
+    }
 }
 
 export function changeChar(index: number, arg:{
