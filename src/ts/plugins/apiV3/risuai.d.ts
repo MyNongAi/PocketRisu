@@ -1425,6 +1425,13 @@ interface RisuaiPluginAPI {
     getSecureRandomBytes(length: number): Promise<number[]>;
 
     /**
+     * Computes a SHA-256 digest through the trusted host. PocketRisu also
+     * installs this as the fallback for `crypto.subtle.digest()` inside V3
+     * plugin sandboxes when the browser hides SubtleCrypto.
+     */
+    getCryptoDigest(algorithm: 'SHA-256', data: Uint8Array): Promise<Uint8Array>;
+
+    /**
      * @deprecated Use getArgument() instead
      */
     getArg(arg: string): any;

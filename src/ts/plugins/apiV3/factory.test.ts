@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createPluginSecureRandomBytes, createSandboxNonce } from './factory'
+import { createPluginDigestBytes, createPluginSecureRandomBytes, createSandboxNonce } from './factory'
 
 describe('createSandboxNonce', () => {
     it('uses randomUUID when the browser exposes it', () => {
@@ -50,5 +50,28 @@ describe('createSandboxNonce', () => {
         expect(second).toHaveLength(16)
         expect(first).not.toEqual(second)
         expect(first.every((byte) => Number.isInteger(byte) && byte >= 0 && byte <= 255)).toBe(true)
+    })
+
+    it('bridges SHA-256 when a sandboxed iframe has no SubtleCrypto', async () => {
+        const digest = await createPluginDigestBytes(
+            'SHA-256',
+            new TextEncoder().encode('abc'),
+            {} as Crypto,
+        )
+
+        expect(Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('')).toBe(
+            'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad',
+        )
+    })
+
+    it('prefers native SubtleCrypto and rejects unsupported digest algorithms', async () => {
+        const nativeDigest = vi.fn(async () => Uint8Array.of(1, 2, 3).buffer)
+        const cryptoSource = { subtle: { digest: nativeDigest } } as unknown as Crypto
+
+        await expect(createPluginDigestBytes('SHA-256', Uint8Array.of(9), cryptoSource))
+            .resolves.toEqual(Uint8Array.of(1, 2, 3))
+        expect(nativeDigest).toHaveBeenCalledOnce()
+        await expect(createPluginDigestBytes('SHA-1', Uint8Array.of(9), cryptoSource))
+            .rejects.toThrow('Unsupported plugin digest algorithm')
     })
 })

@@ -1,5 +1,5 @@
 import { allowedDbKeys, customProviderStore, getV2PluginAPIs, handlePluginInstallViaPlugin, pluginV2, type PluginV2ProviderArgument, type PluginV2ProviderOptions, type RisuPlugin } from "../plugins.svelte";
-import { createPluginSecureRandomBytes, SandboxHost } from "./factory";
+import { createPluginDigestBytes, createPluginSecureRandomBytes, SandboxHost } from "./factory";
 import { getDatabase, normalizeChat } from "src/ts/storage/database.svelte";
 import { SafeLocalPluginStorage, tagWhitelist } from "../pluginSafeClass";
 import { recordOwner, removeOwner, clearOwners } from "../pluginStorageMeta";
@@ -773,6 +773,10 @@ const authorizationHeaders = [
 const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
 
     const oldApis = getV2PluginAPIs();
+    // CryptoKeys never cross back into the opaque iframe. A plugin receives a
+    // random handle and can only use keys that it imported in this own host
+    // closure; unloading the plugin releases the entire registry.
+    const bridgedCryptoKeys = new Map<string, CryptoKey>()
     // Same character as oldApis.getChar/setChar, but with lazy assets filled
     // on read and the manifest kept on an assets-unchanged write (#80).
     const getCharacterForPlugin = async () => {
@@ -1395,6 +1399,34 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
          */
         getSecureRandomBytes: (length: number) => {
             return createPluginSecureRandomBytes(length)
+        },
+        /**
+         * SHA-256 bridge for opaque plugin iframes and LAN HTTP clients where
+         * the browser withholds SubtleCrypto. The iframe compatibility layer
+         * calls this automatically for ordinary `crypto.subtle.digest()` use.
+         */
+        getCryptoDigest: (algorithm: string, data: Uint8Array) => {
+            return createPluginDigestBytes(algorithm, data)
+        },
+        _importCryptoKey: async (
+            format: 'raw' | 'pkcs8',
+            keyData: Uint8Array,
+            algorithm: HmacImportParams | RsaHashedImportParams,
+            extractable: boolean,
+            keyUsages: KeyUsage[],
+        ) => {
+            const subtle = globalThis.crypto?.subtle
+            if (!subtle) throw new Error('WebCrypto is unavailable in the PocketRisu host; use localhost or HTTPS')
+            const key = await subtle.importKey(format, keyData, algorithm, extractable, keyUsages)
+            const keyId = v4()
+            bridgedCryptoKeys.set(keyId, key)
+            return keyId
+        },
+        _signCrypto: async (keyId: string, algorithm: AlgorithmIdentifier, data: Uint8Array) => {
+            const subtle = globalThis.crypto?.subtle
+            const key = bridgedCryptoKeys.get(keyId)
+            if (!subtle || !key) throw new Error('Plugin crypto key is unavailable')
+            return new Uint8Array(await subtle.sign(algorithm, key, data))
         },
         getLocalPluginStorage: () => {
             return new SafeLocalPluginStorage(plugin.name)
