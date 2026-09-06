@@ -1,5 +1,6 @@
 import { allowedDbKeys, customProviderStore, getV2PluginAPIs, handlePluginInstallViaPlugin, pluginV2, type PluginV2ProviderArgument, type PluginV2ProviderOptions, type RisuPlugin } from "../plugins.svelte";
 import { createPluginDigestBytes, createPluginSecureRandomBytes, SandboxHost } from "./factory";
+import { hmacSha256Portable, parseRsaPrivateKeyPkcs8Portable, signRsaPkcs1Sha256Portable, type PortableRsaPrivateKey } from "../../cryptoFallback";
 import { getDatabase, normalizeChat } from "src/ts/storage/database.svelte";
 import { SafeLocalPluginStorage, tagWhitelist } from "../pluginSafeClass";
 import { recordOwner, removeOwner, clearOwners } from "../pluginStorageMeta";
@@ -776,7 +777,11 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
     // CryptoKeys never cross back into the opaque iframe. A plugin receives a
     // random handle and can only use keys that it imported in this own host
     // closure; unloading the plugin releases the entire registry.
-    const bridgedCryptoKeys = new Map<string, CryptoKey>()
+    type BridgedCryptoKey =
+        | { kind: 'native', key: CryptoKey }
+        | { kind: 'hmac-sha256', keyBytes: Uint8Array }
+        | { kind: 'rsa-pkcs1-sha256', key: PortableRsaPrivateKey }
+    const bridgedCryptoKeys = new Map<string, BridgedCryptoKey>()
     // Same character as oldApis.getChar/setChar, but with lazy assets filled
     // on read and the manifest kept on an assets-unchanged write (#80).
     const getCharacterForPlugin = async () => {
@@ -1416,17 +1421,47 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
             keyUsages: KeyUsage[],
         ) => {
             const subtle = globalThis.crypto?.subtle
-            if (!subtle) throw new Error('WebCrypto is unavailable in the PocketRisu host; use localhost or HTTPS')
-            const key = await subtle.importKey(format, keyData, algorithm, extractable, keyUsages)
             const keyId = v4()
-            bridgedCryptoKeys.set(keyId, key)
-            return keyId
+            const hashName = String(
+                typeof algorithm.hash === 'string' ? algorithm.hash : algorithm.hash?.name,
+            ).toUpperCase()
+            if (hashName !== 'SHA-256') throw new Error(`Unsupported portable plugin key hash: ${hashName}`)
+            if (!keyUsages.includes('sign')) throw new Error('Bridged plugin keys must allow signing')
+            try {
+                if (subtle) {
+                    const key = await subtle.importKey(format, keyData, algorithm, extractable, keyUsages)
+                    bridgedCryptoKeys.set(keyId, { kind: 'native', key })
+                } else if (format === 'raw' && algorithm.name.toUpperCase() === 'HMAC') {
+                    bridgedCryptoKeys.set(keyId, { kind: 'hmac-sha256', keyBytes: Uint8Array.from(keyData) })
+                } else if (format === 'pkcs8' && algorithm.name.toUpperCase() === 'RSASSA-PKCS1-V1_5') {
+                    bridgedCryptoKeys.set(keyId, {
+                        kind: 'rsa-pkcs1-sha256',
+                        key: parseRsaPrivateKeyPkcs8Portable(keyData),
+                    })
+                } else {
+                    throw new Error(`Unsupported portable plugin key algorithm: ${algorithm.name}`)
+                }
+                return keyId
+            } finally {
+                keyData.fill(0)
+            }
         },
         _signCrypto: async (keyId: string, algorithm: AlgorithmIdentifier, data: Uint8Array) => {
             const subtle = globalThis.crypto?.subtle
-            const key = bridgedCryptoKeys.get(keyId)
-            if (!subtle || !key) throw new Error('Plugin crypto key is unavailable')
-            return new Uint8Array(await subtle.sign(algorithm, key, data))
+            const entry = bridgedCryptoKeys.get(keyId)
+            if (!entry) throw new Error('Plugin crypto key is unavailable')
+            if (entry.kind === 'native') {
+                if (!subtle) throw new Error('Native plugin crypto key lost its SubtleCrypto host')
+                return new Uint8Array(await subtle.sign(algorithm, entry.key, data))
+            }
+            const requested = String(typeof algorithm === 'string' ? algorithm : algorithm.name).toUpperCase()
+            if (entry.kind === 'hmac-sha256' && requested === 'HMAC') {
+                return hmacSha256Portable(entry.keyBytes, data)
+            }
+            if (entry.kind === 'rsa-pkcs1-sha256' && requested === 'RSASSA-PKCS1-V1_5') {
+                return signRsaPkcs1Sha256Portable(entry.key, data)
+            }
+            throw new Error('Signing algorithm does not match the imported plugin key')
         },
         getLocalPluginStorage: () => {
             return new SafeLocalPluginStorage(plugin.name)
