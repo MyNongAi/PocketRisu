@@ -36,6 +36,7 @@ const { decodeRisuSave, encodeRisuSaveLegacy, calculateHash, normalizeJSON, norm
 const { spawn, execSync } = require('child_process');
 const os = require('os');
 const { Readable, Transform } = require('stream');
+const { downloadFromProtonDrive } = require('./protonDrive.cjs');
 
 // Install process-level error handlers before any other init so early crashes get logged.
 installProcessHandlers();
@@ -4121,6 +4122,30 @@ app.get('/api/backup/export', async (req, res, next) => {
         if (!closed) res.end();
     } catch (error) {
         next(error);
+    }
+});
+
+// ─── Proton Drive import ─────────────────────────────────────────────────────
+app.post('/api/import/proton', async (req, res, next) => {
+    if (!await checkAuth(req, res)) { return; }
+    try {
+        const url = req.body?.url;
+        if (!url || typeof url !== 'string') {
+            return res.status(400).json({ error: 'Missing Proton Drive URL' });
+        }
+        if (!url.includes('drive.proton.me/urls/')) {
+            return res.status(400).json({ error: 'Invalid Proton Drive share URL' });
+        }
+        const { name, data } = await downloadFromProtonDrive(url);
+        res.set({
+            'Content-Type': 'application/octet-stream',
+            'X-File-Name': encodeURIComponent(name),
+        });
+        res.send(Buffer.from(data));
+    } catch (error) {
+        logger.error('[ProtonImport]', error);
+        const msg = error.message || 'Proton Drive download failed';
+        res.status(502).json({ error: msg });
     }
 });
 

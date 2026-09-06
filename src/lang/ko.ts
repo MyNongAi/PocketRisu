@@ -1778,6 +1778,12 @@ export const languageKorean = {
   branchGraphChats: "채팅",
   branchGraphMessages: "메시지",
   branchGraphHighlightActive: "활성 경로 강조",
+  importFromProton: "프로톤 드라이브에서 가져오기",
+  importFromProtonDesc: "프로톤 드라이브 공유 링크를 붙여넣어 봇을 가져옵니다",
+  protonDriveUrlPrompt: "프로톤 드라이브 공유 링크 붙여넣기",
+  protonImporting: "프로톤 드라이브에서 다운로드 중...",
+  protonImportSuccess: "프로톤 드라이브에서 가져오기 성공",
+  protonImportFailed: "프로톤 드라이브 가져오기 실패",
   fetchLogConsent:
     "플러그인 {} 이(가) 로그를 가져오려고 합니다. 민감한 정보가 노출될 수 있습니다. 허용하시겠습니까?",
   getFullDatabaseConsent:
