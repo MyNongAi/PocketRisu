@@ -283,17 +283,20 @@
       "title": "격리 플러그인 WebCrypto 호환 다리",
       "criticality": "compatibility",
       "ownerFiles": [
+        "src/ts/cryptoFallback.ts",
         "src/ts/plugins/apiV3/factory.ts",
         "src/ts/plugins/apiV3/v3.svelte.ts",
         "src/ts/plugins/apiV3/risuai.d.ts"
       ],
       "requiredMarkers": [
+        { "file": "src/ts/cryptoFallback.ts", "contains": "signRsaPkcs1Sha256Portable" },
         { "file": "src/ts/plugins/apiV3/factory.ts", "contains": "createPluginDigestBytes" },
         { "file": "src/ts/plugins/apiV3/factory.ts", "contains": "window.risuai._importCryptoKey" },
-        { "file": "src/ts/plugins/apiV3/v3.svelte.ts", "contains": "const bridgedCryptoKeys = new Map<string, CryptoKey>()" },
+        { "file": "src/ts/plugins/apiV3/v3.svelte.ts", "contains": "const bridgedCryptoKeys = new Map<string, BridgedCryptoKey>()" },
         { "file": "src/ts/plugins/apiV3/v3.svelte.ts", "contains": "_signCrypto" }
       ],
       "regressionTests": [
+        "src/ts/cryptoFallback.test.ts",
         "src/ts/plugins/apiV3/factory.test.ts"
       ]
     },
