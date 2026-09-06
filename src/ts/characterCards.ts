@@ -17,7 +17,7 @@ import type { OnnxModelFiles } from "./process/transformers"
 import { CharXImporter, CharXSkippableChecker, CharXWriter } from "./process/processzip"
 import { addModuleToDatabase, exportModuleLegacy, readModule, type RisuModule } from "./process/modules"
 import { promoteNewlyImportedCharacter } from "./characterRecentOrder"
-import { runImportBatch, type ImportProgressReporter } from "./importProgress"
+import { runImportBatch, runImportTask, type ImportProgressReporter } from "./importProgress"
 import { organizeImportedCharacterSimilarity } from "./process/similarityFolders"
 
 
@@ -1874,71 +1874,70 @@ export async function downloadRisuHub(id:string, arg:{
     forceRedirect?: boolean
 } = {}) {
     try {
-        if(!arg.forceRedirect){
-            if(!(await alertTOS())){
-                return
-            }
-            alertStore.set({
-                type: "wait",
-                msg: "Downloading..."
-            })
-        }
-        const res = await fetch("https://realm.risuai.net/api/v1/download/dynamic/" + id + '?cors=true', {
-            headers: {
-                "x-risu-api-version": "4"
-            }
-        })
-        if(res.status !== 200){
-            notifyError(await res.text())
+        if(!arg.forceRedirect && !(await alertTOS())){
             return
         }
 
-        if(res.headers.get('content-type') === 'image/png' || res.headers.get('content-type') === 'application/zip' || res.headers.get('content-type') === 'application/charx'){
-            let db = getDatabase()
+        const index = await runImportTask(`Realm ${id}`, async (report) => {
+            report({ label: language.importProgress.importing, progress: null })
+            const res = await fetch(`https://realm.risuai.net/api/v1/download/dynamic/${encodeURIComponent(id)}?cors=true`, {
+                headers: {
+                    "x-risu-api-version": "4"
+                }
+            })
+            if(!res.ok){
+                throw new Error((await res.text().catch(() => '')) || `Realm download failed: ${res.status}`)
+            }
+
+            const contentType = (res.headers.get('content-type') || '').split(';', 1)[0].trim().toLowerCase()
             let importedIndex: number | null = null
-            if(res.headers.get('content-type') === 'application/zip' || res.headers.get('content-type') === 'application/charx'){
+            if(contentType === 'image/png' || contentType === 'application/zip' || contentType === 'application/charx'){
+                const isArchive = contentType === 'application/zip' || contentType === 'application/charx'
                 const result = await importCharacterProcess({
-                    name: 'realm.charx',
+                    name: isArchive ? 'realm.charx' : 'realm.png',
                     data: new Uint8Array(await res.arrayBuffer()),
-                    lightningRealmImport: db.lightningRealmImport,
+                    lightningRealmImport: getDatabase().lightningRealmImport,
+                    onProgress: report,
+                    suppressSuccess: true,
                 })
                 importedIndex = typeof result === 'number' ? result : null
             }
             else{
-                const result = await importCharacterProcess({
-                    name: 'realm.png',
-                    data: res.body,
-                    lightningRealmImport: db.lightningRealmImport,
-                })
-                importedIndex = typeof result === 'number' ? result : null
-            }
-            db = getDatabase()
-            const index = importedIndex ?? db.characters.length - 1
-            tagCharacterRealmSource(db.characters[index], id)
-            checkCharOrder()
-            if(db.characters[index] && (db.goCharacterOnImport || arg.forceRedirect)){
-                characterFormatUpdate(index);
-                selectedCharID.set(index);
-                try {
-                    const char = db.characters[index]
-                    if (char?.chaId) {
-                        localStorage.setItem('risu-last-active-character', char.chaId)
-                    }
-                } catch {}
-            }   
-            return
-        }
-    
-        const result = await res.json()
-        const data:CharacterCardV3 = result.card
-        const img:string = result.img
+                const result = await res.json()
+                const data:CharacterCardV3 = result.card
+                const img:string = result.img
+                if(!data?.data){
+                    throw new Error('Realm response did not contain a character card')
+                }
+                data.data.extensions ??= {}
+                data.data.extensions.risuRealmImportId = id
 
-        data.data.extensions.risuRealmImportId = id
-    
-        await importCharacterCardSpec(data, await getHubResources(img), 'hub')
-        let db = getDatabase()
-        const index = db.characters.length - 1
-        tagCharacterRealmSource(db.characters[index], id)
+                const imported = await importCharacterCardSpec(
+                    data,
+                    await getHubResources(img),
+                    'hub',
+                    {},
+                    null,
+                    false,
+                    report,
+                    true,
+                )
+                if(imported){
+                    importedIndex = getDatabase().characters.length - 1
+                }
+            }
+
+            const db = getDatabase()
+            const character = importedIndex === null ? undefined : db.characters[importedIndex]
+            if(!character){
+                throw new Error('Realm character import did not create a character')
+            }
+            tagCharacterRealmSource(character, id)
+            checkCharOrder()
+            return importedIndex
+        })
+
+        const db = getDatabase()
         checkCharOrder()
         if(db.characters[index] && (db.goCharacterOnImport || arg.forceRedirect)){
             characterFormatUpdate(index);
@@ -1949,15 +1948,13 @@ export async function downloadRisuHub(id:string, arg:{
                     localStorage.setItem('risu-last-active-character', char.chaId)
                 }
             } catch {}
-            alertStore.set({
-                type: 'none',
-                msg: ''
-            })
         }
+        notifySuccess(language.importedCharacter)
+        return index
     } catch (error) {
         console.error(error)
-        console.log(error.stack)
-        alertError("Error while importing")
+        notifyError(error instanceof Error ? error.message : String(error))
+        return null
     }
 }
 

@@ -1,6 +1,6 @@
 import { get } from 'svelte/store'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { importTasks, reportImportTask, runImportBatch } from './importProgress'
+import { importTasks, reportImportTask, runImportBatch, runImportTask } from './importProgress'
 
 describe('import progress queue', () => {
     beforeEach(() => {
@@ -55,5 +55,30 @@ describe('import progress queue', () => {
         expect(get(importTasks).get('task')?.progress).toBe(100)
         reportImportTask('task', { label: 'reading', progress: null })
         expect(get(importTasks).get('task')?.progress).toBeNull()
+    })
+
+    it('tracks a single remote import without blocking the caller UI', async () => {
+        const result = await runImportTask('Realm card', async (report) => {
+            report({ label: 'Downloading from Realm', progress: null })
+            await Promise.resolve()
+            report({ label: 'Saving assets', progress: 75 })
+            return 42
+        })
+
+        expect(result).toBe(42)
+        const [task] = [...get(importTasks).values()]
+        expect(task.fileName).toBe('Realm card')
+        expect(task.phase).toBe('done')
+        expect(task.progress).toBe(100)
+    })
+
+    it('keeps the remote import error on its background task and rethrows it', async () => {
+        await expect(runImportTask('Broken Realm card', async () => {
+            throw new Error('realm unavailable')
+        })).rejects.toThrow('realm unavailable')
+
+        const [task] = [...get(importTasks).values()]
+        expect(task.phase).toBe('failed')
+        expect(task.error).toBe('realm unavailable')
     })
 })
