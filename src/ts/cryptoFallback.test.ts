@@ -1,6 +1,12 @@
-import { createHash } from 'node:crypto'
+import { createHash, createHmac, generateKeyPairSync, sign, verify } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
-import { secureRandomBytes, sha256HexPortable } from './cryptoFallback'
+import {
+    hmacSha256Portable,
+    parseRsaPrivateKeyPkcs8Portable,
+    secureRandomBytes,
+    sha256HexPortable,
+    signRsaPkcs1Sha256Portable,
+} from './cryptoFallback'
 
 describe('portable browser crypto fallbacks', () => {
     it('matches standard SHA-256 vectors without allocating a padded copy', () => {
@@ -25,5 +31,25 @@ describe('portable browser crypto fallbacks', () => {
         expect(second).toHaveLength(32)
         expect(first).not.toEqual(second)
         expect(() => secureRandomBytes(16, {} as Crypto, undefined)).toThrow(/secure random source/i)
+    })
+
+    it('matches Node HMAC-SHA-256 without SubtleCrypto', () => {
+        const key = new TextEncoder().encode('portable-lan-secret')
+        const input = new TextEncoder().encode('PocketRisu provider request')
+        const expected = createHmac('sha256', key).update(input).digest('hex')
+
+        expect(Buffer.from(hmacSha256Portable(key, input)).toString('hex')).toBe(expected)
+    })
+
+    it('parses PKCS#8 and produces a valid RS256 signature without SubtleCrypto', () => {
+        const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+        const pkcs8 = privateKey.export({ type: 'pkcs8', format: 'der' })
+        const input = new TextEncoder().encode('header.claim')
+        const portableKey = parseRsaPrivateKeyPkcs8Portable(new Uint8Array(pkcs8))
+        const signature = signRsaPkcs1Sha256Portable(portableKey, input)
+
+        expect(signature).toHaveLength(256)
+        expect(verify('RSA-SHA256', input, publicKey, signature)).toBe(true)
+        expect(sign('RSA-SHA256', input, privateKey)).toHaveLength(256)
     })
 })
