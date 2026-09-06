@@ -1,4 +1,4 @@
-import { secureRandomBytes } from '../../cryptoFallback';
+import { secureRandomBytes, sha256BytesPortable } from '../../cryptoFallback';
 
 type MsgType =
     | 'CALL_ROOT'
@@ -83,6 +83,42 @@ export function createPluginSecureRandomBytes(
     pageSeed: string | undefined = injectedPageNonceSeed(),
 ): number[] {
     return Array.from(secureRandomBytes(length, cryptoSource, pageSeed));
+}
+
+/**
+ * SHA-256 bridge for sandboxed V3 plugins.
+ *
+ * Chromium can hide `crypto.subtle` from an opaque sandboxed iframe (and from
+ * any page opened over LAN HTTP).  Provider plugins commonly use SHA-256 for
+ * request fingerprints and must not become unable to send a chat merely
+ * because the browser tightened its secure-context rules.
+ */
+export async function createPluginDigestBytes(
+    algorithm: string,
+    input: Uint8Array,
+    cryptoSource: Crypto | undefined = globalThis.crypto,
+): Promise<Uint8Array> {
+    const normalized = String(algorithm).toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (normalized !== 'SHA256') {
+        throw new Error(`Unsupported plugin digest algorithm: ${algorithm}`);
+    }
+    if (!(input instanceof Uint8Array)) {
+        throw new Error('Plugin digest input must be a Uint8Array');
+    }
+    if (input.byteLength > 64 * 1024 * 1024) {
+        throw new Error('Plugin digest input exceeds the 64 MiB safety limit');
+    }
+
+    const nativeDigest = cryptoSource?.subtle?.digest;
+    if (typeof nativeDigest === 'function') {
+        try {
+            return new Uint8Array(await nativeDigest.call(cryptoSource.subtle, 'SHA-256', input));
+        } catch {
+            // An API may be present but still reject calls in an insecure
+            // context. The constant-memory implementation below is equivalent.
+        }
+    }
+    return sha256BytesPortable(input);
 }
 
 
@@ -431,6 +467,126 @@ await (async function() {
         }
     });
     window.Risuai = window.risuai;
+
+    // Sandboxed srcdoc frames have an opaque origin. Newer Chromium builds can
+    // therefore expose crypto while hiding only crypto.subtle, which makes
+    // otherwise valid provider plugins fail before their request is sent.
+    // Preserve every native Crypto/SubtleCrypto member and bridge SHA-256 only
+    // when the native digest is unavailable. The copied input avoids detaching
+    // the plugin-owned BufferSource when postMessage transfers it to the host.
+    if (typeof globalThis.crypto?.subtle?.digest !== 'function') {
+        const nativeCrypto = globalThis.crypto;
+        const nativeSubtle = nativeCrypto?.subtle;
+        const bridgedKeys = new WeakMap();
+        const copyBufferSource = (data, operation) => {
+            if (data instanceof ArrayBuffer) return new Uint8Array(data.slice(0));
+            if (ArrayBuffer.isView(data)) {
+                return new Uint8Array(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+            }
+            throw new TypeError('SubtleCrypto.' + operation + ' requires a BufferSource');
+        };
+        const algorithmName = (algorithm) =>
+            String(typeof algorithm === 'string' ? algorithm : algorithm?.name || '').toUpperCase();
+        const hashName = (algorithm) =>
+            String(typeof algorithm?.hash === 'string' ? algorithm.hash : algorithm?.hash?.name || '').toUpperCase();
+        const digest = async (algorithm, data) => {
+            const name = typeof algorithm === 'string' ? algorithm : algorithm?.name;
+            const transferableCopy = copyBufferSource(data, 'digest');
+            const result = await window.risuai.getCryptoDigest(name, transferableCopy);
+            const bytes = result instanceof Uint8Array ? result : new Uint8Array(result);
+            return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+        };
+        const importKey = async (format, keyData, algorithm, extractable, keyUsages) => {
+            const name = algorithmName(algorithm);
+            const hash = hashName(algorithm);
+            let bridgeAlgorithm;
+            if (format === 'raw' && name === 'HMAC' && hash === 'SHA-256') {
+                bridgeAlgorithm = 'HMAC-SHA-256';
+            } else if (format === 'pkcs8' && name === 'RSASSA-PKCS1-V1_5' && hash === 'SHA-256') {
+                bridgeAlgorithm = 'RSASSA-PKCS1-v1_5-SHA-256';
+            } else {
+                throw new DOMException('Unsupported bridged key algorithm', 'NotSupportedError');
+            }
+            if (!Array.isArray(keyUsages) || !keyUsages.includes('sign')) {
+                throw new DOMException('Bridged keys only support signing', 'SyntaxError');
+            }
+            const keyId = await window.risuai._importCryptoKey(
+                format,
+                copyBufferSource(keyData, 'importKey'),
+                algorithm,
+                Boolean(extractable),
+                [...keyUsages]
+            );
+            const key = {};
+            bridgedKeys.set(key, { bridgeAlgorithm, keyId });
+            Object.defineProperties(key, {
+                type: {
+                    enumerable: true,
+                    value: bridgeAlgorithm === 'HMAC-SHA-256' ? 'secret' : 'private'
+                },
+                extractable: { enumerable: true, value: Boolean(extractable) },
+                algorithm: { enumerable: true, value: algorithm },
+                usages: { enumerable: true, value: Object.freeze([...keyUsages]) }
+            });
+            return Object.freeze(key);
+        };
+        const sign = async (algorithm, key, data) => {
+            const imported = bridgedKeys.get(key);
+            if (!imported) throw new DOMException('Unknown bridged crypto key', 'InvalidAccessError');
+            const requested = algorithmName(algorithm);
+            if ((imported.bridgeAlgorithm === 'HMAC-SHA-256' && requested !== 'HMAC')
+                || (imported.bridgeAlgorithm === 'RSASSA-PKCS1-v1_5-SHA-256'
+                    && requested !== 'RSASSA-PKCS1-V1_5')) {
+                throw new DOMException('Signing algorithm does not match the imported key', 'InvalidAccessError');
+            }
+            const result = await window.risuai._signCrypto(
+                imported.keyId,
+                algorithm,
+                copyBufferSource(data, 'sign')
+            );
+            const bytes = result instanceof Uint8Array ? result : new Uint8Array(result);
+            return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+        };
+        const compatibleSubtle = new Proxy(nativeSubtle || {}, {
+            get(target, prop) {
+                if (prop === 'digest') return digest;
+                if (prop === 'importKey' && typeof target.importKey !== 'function') return importKey;
+                if (prop === 'sign' && typeof target.sign !== 'function') return sign;
+                const value = Reflect.get(target, prop, target);
+                return typeof value === 'function' ? value.bind(target) : value;
+            }
+        });
+        const compatibleCrypto = new Proxy(nativeCrypto || {}, {
+            get(target, prop) {
+                if (prop === 'subtle') return compatibleSubtle;
+                const value = Reflect.get(target, prop, target);
+                return typeof value === 'function' ? value.bind(target) : value;
+            }
+        });
+        let installed = false;
+        try {
+            globalThis.crypto = compatibleCrypto;
+            installed = globalThis.crypto === compatibleCrypto;
+        } catch (_) {}
+        if (!installed) {
+            try {
+                Object.defineProperty(globalThis, 'crypto', {
+                    configurable: true,
+                    enumerable: true,
+                    value: compatibleCrypto
+                });
+                installed = globalThis.crypto === compatibleCrypto;
+            } catch (_) {}
+        }
+        if (!installed && nativeCrypto) {
+            try {
+                Object.defineProperty(nativeCrypto, 'subtle', {
+                    configurable: true,
+                    value: compatibleSubtle
+                });
+            } catch (_) {}
+        }
+    }
 
     try {
         // Initialize cached properties
