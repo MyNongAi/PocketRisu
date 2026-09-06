@@ -279,6 +279,25 @@
       ]
     },
     {
+      "id": "PLUGIN-CRYPTO",
+      "title": "격리 플러그인 WebCrypto 호환 다리",
+      "criticality": "compatibility",
+      "ownerFiles": [
+        "src/ts/plugins/apiV3/factory.ts",
+        "src/ts/plugins/apiV3/v3.svelte.ts",
+        "src/ts/plugins/apiV3/risuai.d.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/plugins/apiV3/factory.ts", "contains": "createPluginDigestBytes" },
+        { "file": "src/ts/plugins/apiV3/factory.ts", "contains": "window.risuai._importCryptoKey" },
+        { "file": "src/ts/plugins/apiV3/v3.svelte.ts", "contains": "const bridgedCryptoKeys = new Map<string, CryptoKey>()" },
+        { "file": "src/ts/plugins/apiV3/v3.svelte.ts", "contains": "_signCrypto" }
+      ],
+      "regressionTests": [
+        "src/ts/plugins/apiV3/factory.test.ts"
+      ]
+    },
+    {
       "id": "HAEJEOK-BOUNDED",
       "title": "해적리스식 패널 지연 로더와 제한형 캐시",
       "criticality": "performance",
