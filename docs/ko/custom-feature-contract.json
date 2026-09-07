@@ -175,12 +175,14 @@
         "src/ts/process/moduleFolders.ts",
         "src/ts/process/moduleSort.ts",
         "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
+        "src/lib/Setting/Pages/Module/ModuleMenu.svelte",
         "src/lib/UI/FolderedList.svelte"
       ],
       "requiredMarkers": [
         { "file": "src/ts/process/moduleFolders.ts", "contains": "moveModuleFolderByDrop" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "recordModuleFolderActivation" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "sortModulesByActivation" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleMenu.svelte", "contains": "assetManifestPager('top')" },
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "emptyInsertThreshold: 32" }
       ],
       "regressionTests": [
