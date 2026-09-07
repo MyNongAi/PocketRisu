@@ -3,7 +3,7 @@
     // Desktop: overlay above the chat (z-40, chat stays mounted). Mobile:
     // mounted inline in the characters tab (`inline`, search from the header).
     // See .agent/notes/character-manager-plan.md.
-    import { onDestroy } from "svelte";
+    import { onDestroy, onMount } from "svelte";
     import { v4 } from "uuid";
     import {
         ArchiveIcon, ArchiveRestoreIcon, DownloadIcon, EyeIcon, EyeOffIcon, FolderIcon, FolderPlusIcon,
@@ -40,6 +40,7 @@
     } from "src/ts/characterOrder";
     import type { folder } from "src/ts/storage/database.svelte";
     import { language } from "src/lang";
+    import { buildExactCharacterDuplicateCounts } from "src/ts/gui/characterCatalogMetrics";
 
     interface Props {
         inline?: boolean;
@@ -56,6 +57,8 @@
     let selectMode = $state(false);
     let gridCompact = $state(loadGridCompact());
     let selectedIds = $state<Set<string>>(new Set());
+    let duplicateCounts = $state<Map<string, number> | null>(null);
+    let duplicateScanGeneration = 0;
 
     let search = $derived(externalSearch ?? searchLocal);
     let entries = $derived(buildManagerEntries(DBState.db));
@@ -91,6 +94,23 @@
     }
 
     const incremental = createIncrementalList({ pageSize: 60 });
+
+    function duplicateCount(chaId: string): number | null {
+        return duplicateCounts === null ? null : (duplicateCounts.get(chaId) ?? 0);
+    }
+
+    async function refreshDuplicateCounts() {
+        const generation = ++duplicateScanGeneration;
+        duplicateCounts = null;
+        const result = await buildExactCharacterDuplicateCounts(
+            DBState.db.characters,
+            DBState.db.nodeOnlyArchivedCharacters ?? [],
+            { shouldContinue: () => generation === duplicateScanGeneration },
+        );
+        if (generation === duplicateScanGeneration) duplicateCounts = result;
+    }
+
+    onMount(() => { void refreshDuplicateCounts(); });
     $effect(() => {
         // New sort/filter/search → start the flat list from the top again.
         void flatList; void gridList;
@@ -99,6 +119,7 @@
 
     onDestroy(() => {
         // Leaving the manager never keeps a stale selection around.
+        duplicateScanGeneration++;
         selectedIds = new Set();
     });
 
@@ -435,6 +456,7 @@
                             </div>
                             {#if !gridCompact}
                                 <span class="w-full text-center text-xs leading-tight line-clamp-2 break-all">{entry.name}</span>
+                                <span class="w-full truncate text-center text-[9px] leading-tight text-textcolor2">{language.characterAssetCountLabel(entry.assetCount)} · {language.characterDuplicateCountLabel(duplicateCount(entry.chaId))}</span>
                             {/if}
                         </button>
                     {/each}
@@ -457,6 +479,7 @@
                     selectable={selectMode}
                     {selectedIds}
                     {activeChaId}
+                    {duplicateCounts}
                     onOpen={open}
                     onToggleSelect={toggleSelect}
                     {onLayoutChange}
@@ -471,6 +494,7 @@
                             selectable={selectMode}
                             selected={selectedIds.has(entry.chaId)}
                             active={activeChaId === entry.chaId}
+                            duplicateCount={duplicateCount(entry.chaId)}
                             onOpen={open}
                             onToggleSelect={toggleSelect}
                             menu={rowMenu}
@@ -501,7 +525,7 @@
         <div class="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
             <div class="flex flex-col gap-1">
                 {#each trashEntries as entry (entry.chaId)}
-                    <CharacterRow {entry} onOpen={() => {}} menu={trashMenu} />
+                    <CharacterRow {entry} duplicateCount={duplicateCount(entry.chaId)} onOpen={() => {}} menu={trashMenu} />
                 {:else}
                     <div class="py-8 text-center text-sm text-textcolor2">{language.noCharactersFound}</div>
                 {/each}

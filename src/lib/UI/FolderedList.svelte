@@ -271,7 +271,7 @@
                         <ShSortableList
                             className="flex flex-col px-2 pb-2 gap-0.5 min-h-8"
                             disabled={dragDisabled}
-                            options={{ group: 'foldered-list-items' }}
+                            options={{ group: { name: 'foldered-list-items', pull: true, put: true }, emptyInsertThreshold: 32 }}
                             onReorder={onItemDrop}
                         >
                             {#each group.indexes as index (index)}
@@ -284,8 +284,6 @@
                 </div>
             {/if}
         {/each}
-    </ShSortableList>
-
     {#each displayGroups as group (group.folder?.id ?? '')}
         {#if !group.folder}
             {@const isCollapsed = !query && isFolderCollapsed('', collapsed, defaultCollapsed)}
@@ -306,7 +304,7 @@
                     <ShSortableList
                         className="flex flex-col px-2 pb-2 gap-0.5 min-h-8"
                         disabled={dragDisabled}
-                        options={{ group: 'foldered-list-items' }}
+                        options={{ group: { name: 'foldered-list-items', pull: true, put: true }, emptyInsertThreshold: 32 }}
                         onReorder={onItemDrop}
                     >
                         {#each group.indexes as index (index)}
@@ -317,6 +315,7 @@
             </div>
         {/if}
     {/each}
+    </ShSortableList>
 </div>
 
 {#snippet row(index)}

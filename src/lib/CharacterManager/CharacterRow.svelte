@@ -17,12 +17,13 @@
         selectable?: boolean;
         selected?: boolean;
         active?: boolean;
+        duplicateCount?: number | null;
         onOpen: (entry: ManagerEntry) => void;
         onToggleSelect?: (entry: ManagerEntry) => void;
         menu?: Snippet<[ManagerEntry]>;
     }
 
-    let { entry, selectable = false, selected = false, active = false, onOpen, onToggleSelect, menu }: Props = $props();
+    let { entry, selectable = false, selected = false, active = false, duplicateCount = null, onOpen, onToggleSelect, menu }: Props = $props();
 
     function activate() {
         if (selectable) onToggleSelect?.(entry);
@@ -69,13 +70,17 @@
                 </span>
             {/if}
         </div>
-        <div class="flex items-center gap-1 text-xs text-textcolor2">
+        <div class="flex flex-wrap items-center gap-1 text-xs text-textcolor2">
             <span>{entry.chatCount}</span>
             <MessageSquareIcon size={12} />
             {#if entry.lastInteraction > 0}
                 <span class="mx-1">|</span>
                 <span>{makeAgoText(entry.lastInteraction)}</span>
             {/if}
+            <span class="mx-1">|</span>
+            <span>{language.characterAssetCountLabel(entry.assetCount)}</span>
+            <span class="mx-1">|</span>
+            <span>{language.characterDuplicateCountLabel(duplicateCount)}</span>
         </div>
     </div>
     {#if menu}

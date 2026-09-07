@@ -1785,6 +1785,7 @@ export const languageEnglish = {
     dynamicModelRegistry: "Dynamic Model Registry",
     confirmInstallPluginViaPlugin: "You are trying to install a plugin via another plugin. This can be dangerous if the source plugin is not trustworthy. Do you want to continue?",
     nodeOnlyRestoreLastChat: "Reopen Last Chat on Start",
+    autoDeactivateAfterDays: "Auto-deactivate after days (0 = off)",
     nodeOnlyScrollButtonType: "Scroll Button Type",
     scrollButtonTypeFour: "4 Buttons",
     scrollButtonTypeTwo: "2 Buttons",
@@ -2389,6 +2390,8 @@ export const languageEnglish = {
     hideRecentChats: "Hide conversation list",
     hideDeactivatedCharacters: "Hide deactivated characters",
     hiddenFromSidebarHint: "Hidden from the sidebar only; no data is touched. Unlike deactivation it has no performance effect either.",
+    characterAssetCountLabel: (n: number) => `Assets ${n.toLocaleString()}`,
+    characterDuplicateCountLabel: (n: number | null) => n === null ? "Duplicates …" : `Duplicates ${n.toLocaleString()}`,
 
     characterManager: "Character Manager",
     characterManagerHint: "Deactivate or trash characters you do not use to keep loading and saving light. Their data is kept on the server and they can be activated or restored at any time.",
