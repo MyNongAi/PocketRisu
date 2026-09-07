@@ -234,6 +234,20 @@
     }
 </script>
 
+{#snippet assetManifestPager(position: 'top' | 'bottom')}
+    <div class="{position === 'top' ? 'mb-2' : 'mt-2'} flex items-center justify-between gap-2">
+        <ShButton
+            disabled={manifestOffset === 0 || manifestLoading}
+            onclick={() => loadManifestPage(Math.max(0, manifestOffset - manifestPageSize))}
+        >←</ShButton>
+        <span>{manifestOffset + 1}–{Math.min(manifestOffset + manifestItems.length, manifestTotal)} / {manifestTotal}</span>
+        <ShButton
+            disabled={manifestOffset + manifestPageSize >= manifestTotal || manifestLoading}
+            onclick={() => loadManifestPage(manifestOffset + manifestPageSize)}
+        >→</ShButton>
+    </div>
+{/snippet}
+
 <div class="flex w-full rounded-md border border-darkborderc mb-4 overflow-x-auto h-16 min-h-16 overflow-y-clip">
     <button onclick={() => {
         submenu = 0
@@ -341,6 +355,9 @@
     {/if}
     <span class="mb-2 flex items-center">{language.additionalAssets} <Help key="moduleAdditionalAssets" /></span>
     <div class="w-full max-w-full border border-selected rounded-md p-2">
+        {#if currentModule.assetManifest && manifestTotal > manifestPageSize}
+            {@render assetManifestPager('top')}
+        {/if}
         <table class="contain w-full max-w-full tabler mt-2">
             <tbody>
             <tr>
@@ -418,17 +435,7 @@
             </tbody>
         </table>
         {#if currentModule.assetManifest && manifestTotal > manifestPageSize}
-            <div class="mt-2 flex items-center justify-between gap-2">
-                <ShButton
-                    disabled={manifestOffset === 0 || manifestLoading}
-                    onclick={() => loadManifestPage(Math.max(0, manifestOffset - manifestPageSize))}
-                >←</ShButton>
-                <span>{manifestOffset + 1}–{Math.min(manifestOffset + manifestItems.length, manifestTotal)} / {manifestTotal}</span>
-                <ShButton
-                    disabled={manifestOffset + manifestPageSize >= manifestTotal || manifestLoading}
-                    onclick={() => loadManifestPage(manifestOffset + manifestPageSize)}
-                >→</ShButton>
-            </div>
+            {@render assetManifestPager('bottom')}
         {/if}
     </div>
 {/if}
