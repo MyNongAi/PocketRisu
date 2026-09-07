@@ -1637,6 +1637,11 @@ export interface Database{
     // server-side in kv archive/<chaId>/<archivedAt>; only these stubs stay in the database
     // so the lists can render them in place. Never exposed to plugins.
     nodeOnlyArchivedCharacters?:ArchivedCharacterStub[]
+    /** Automatically deactivate characters whose last explicit open is older
+     * than this many days. 0/undefined disables the sweep. */
+    nodeOnlyAutoDeactivateAfterDays?:number
+    /** Last completed automatic cold-character sweep. */
+    nodeOnlyAutoDeactivateLastRun?:number
     // Hide deactivated characters from the character lists (the storage
     // dashboard still lists them).
     nodeOnlyHideArchivedCharacters?:boolean
@@ -1734,6 +1739,11 @@ export interface ArchivedCharacterStub{
     bytes: number
     chatCount: number
     chatIds: string[]
+    /** Cheap catalog metadata retained while the full character is cold. */
+    assetCount?: number
+    exactDefinitionFingerprint?: string
+    /** Present only when the automatic inactivity policy created this stub. */
+    autoDeactivatedAt?: number
 }
 
 export interface character{

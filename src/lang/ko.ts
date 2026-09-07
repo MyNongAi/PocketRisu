@@ -2059,6 +2059,7 @@ export const languageKorean = {
   nanoGPTManualInput: "수동 입력",
   nanoGPTManualModelSelect: "수동 모델 선택",
   nodeOnlyRestoreLastChat: "시작 시 마지막 채팅 열기",
+  autoDeactivateAfterDays: "미사용 자동 비활성화 기간 (일, 0 = 끔)",
   nodeOnlyScrollButtonType: "스크롤 버튼 타입",
   scrollButtonTypeFour: "4버튼",
   scrollButtonTypeTwo: "2버튼",
@@ -2609,6 +2610,8 @@ export const languageKorean = {
   hideRecentChats: "대화 목록 숨기기",
   hideDeactivatedCharacters: "비활성화된 캐릭터 숨기기",
   hiddenFromSidebarHint: "사이드바에서만 숨겨지며 데이터에는 영향이 없습니다. 비활성화와 달리 성능에도 영향이 없습니다.",
+  characterAssetCountLabel: (n: number) => `에셋 ${n.toLocaleString()}`,
+  characterDuplicateCountLabel: (n: number | null) => n === null ? "중복 …" : `중복 ${n.toLocaleString()}`,
 
   characterManager: "캐릭터 관리",
   characterManagerHint: "사용하지 않는 캐릭터는 비활성화하거나 휴지통으로 보내 두면 로딩과 저장이 가벼워집니다. 데이터는 서버에 보관되며 언제든 다시 활성화하거나 복원할 수 있습니다.",

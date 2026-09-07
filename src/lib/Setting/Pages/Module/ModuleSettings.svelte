@@ -108,9 +108,9 @@
     async function exportModuleAt(index: number) {
         const rmodule = displayModules[index]
         if (!rmodule || rmodule.mcp) return
-        const sel = parseInt(await alertSelect([`CharX (${language.recommended})`, `RisuM (Legacy)`]))
+        const sel = parseInt(await alertSelect([`CharX (${language.recommended})`, `RisuM (Legacy)`, language.cancel]))
         if (sel === 0) exportModule(rmodule)
-        else exportModuleLegacy(rmodule)
+        else if (sel === 1) exportModuleLegacy(rmodule)
     }
 
     async function removeModule(index: number) {
@@ -206,7 +206,7 @@
         folderTitleColor={folderColor}
         onFolderColor={changeFolderColor}
         onFolderFavorite={toggleFolderFavorite}
-        showFolderDelete={false}
+        showFolderDelete
         showMenuCancel
         folderRenameLabel="폴더이름변경하기"
         onSelect={openEditor}

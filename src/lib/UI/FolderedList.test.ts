@@ -2,14 +2,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRawSnippet, mount, tick, unmount } from 'svelte'
 import FolderedList from './FolderedList.svelte'
 
-const mocks = vi.hoisted(() => ({ input: vi.fn(), select: vi.fn(), confirm: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+    input: vi.fn(),
+    select: vi.fn(),
+    confirm: vi.fn(),
+    sortableCreate: vi.fn((_element: HTMLElement, _options: unknown) => ({ destroy: vi.fn() })),
+}))
 vi.mock('src/ts/alert', () => ({ alertInput: mocks.input, alertSelect: mocks.select, alertConfirm: mocks.confirm }))
 vi.mock('src/ts/util', () => ({ sortableOptions: {} }))
 vi.mock('src/lang', () => ({ language: {
     search: 'Search', folderNew: 'New folder', folderNameInput: 'Name', folderUncategorized: 'Uncategorized',
     renameFolder: 'Rename', moveUp: 'Up', moveDown: 'Down', cancel: 'Cancel', remove: 'Delete', folderMoveTo: 'Move to',
 } }))
-vi.mock('sortablejs', () => ({ default: { create: vi.fn(() => ({ destroy: vi.fn() })) } }))
+vi.mock('sortablejs', () => ({ default: { create: mocks.sortableCreate } }))
 // Test the list's own state transitions without transforming the entire icon/menu library.
 vi.mock('@lucide/svelte', async () => {
     const { default: Icon } = await import('./test/FolderedListIcon.svelte')
@@ -96,5 +101,36 @@ describe('module folder display interactions', () => {
         expect(next.map((folder: { name: string }) => folder.name)).toEqual(['New', 'Alpha', 'Beta'])
         const reopened = await renderList({ folders: next })
         expect(reopened.target.querySelector(`[data-folder-container="${next[0].id}"]`)?.classList.contains('hidden')).toBe(true)
+    })
+
+    it('moves an item from a folder into the uncategorized drop zone', async () => {
+        const onItemsChange = vi.fn()
+        const { target } = await renderList({ onItemsChange, defaultCollapsed: false })
+        const source = target.querySelector<HTMLElement>('[data-folder-container="a"] [data-risu-sortable-list]')!
+        const destination = target.querySelector<HTMLElement>('[data-folder-container=""] [data-risu-sortable-list]')!
+        const item = source.querySelector<HTMLElement>('[data-sortable-key="0"]')!
+        const sourceCall = mocks.sortableCreate.mock.calls.find(([element]) => element === source)
+        const options = sourceCall?.[1] as {
+            onStart: (event: Record<string, unknown>) => void
+            onEnd: (event: Record<string, unknown>) => void
+        }
+
+        options.onStart({ item, from: source })
+        destination.append(item)
+        options.onEnd({
+            item,
+            from: source,
+            to: destination,
+            oldIndex: 0,
+            oldDraggableIndex: 0,
+            newIndex: 0,
+            newDraggableIndex: 0,
+        })
+
+        expect(onItemsChange).toHaveBeenCalledOnce()
+        expect(onItemsChange.mock.calls[0][0]).toEqual([
+            { index: 1, folderId: 'b' },
+            { index: 0, folderId: undefined },
+        ])
     })
 })

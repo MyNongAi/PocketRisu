@@ -4,6 +4,7 @@
  * from the DB and re-derives on change.
  */
 import type { Database } from './storage/database.svelte'
+import { getCharacterAssetCount } from './gui/characterAssetCount'
 
 export interface ManagerEntry {
     chaId: string
@@ -12,6 +13,7 @@ export interface ManagerEntry {
     name: string
     image: string
     chatCount: number
+    assetCount: number
     lastInteraction: number
     creationDate: number
     archived: boolean
@@ -34,6 +36,7 @@ export function buildManagerEntries(db: Database): Map<string, ManagerEntry> {
             name: c.name || 'Unnamed',
             image: c.image ?? '',
             chatCount: c.chats?.length ?? 0,
+            assetCount: getCharacterAssetCount(c),
             lastInteraction: c.lastInteraction ?? 0,
             creationDate: c.creation_date ?? 0,
             archived: false,
@@ -49,6 +52,7 @@ export function buildManagerEntries(db: Database): Map<string, ManagerEntry> {
             name: stub.name || 'Unnamed',
             image: stub.image ?? '',
             chatCount: stub.chatCount ?? 0,
+            assetCount: Math.max(0, Number(stub.assetCount) || 0),
             lastInteraction: stub.lastInteraction ?? 0,
             creationDate: stub.creation_date ?? 0,
             archived: true,

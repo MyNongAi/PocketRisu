@@ -5,6 +5,9 @@
  */
 
 import type { SettingItem } from './types';
+import { scheduleAutoDeactivation } from '../characterAutoArchive';
+import { normalizeAutoDeactivateDays } from '../characterAutoArchivePolicy';
+import { isNodeServer } from '../platform';
 import { getCurrentChat, getDatabase, loadTogglesFromChat } from '../storage/database.svelte';
 
 export const accessibilitySettingsItems: SettingItem[] = [
@@ -287,6 +290,21 @@ export const accessibilitySettingsItems: SettingItem[] = [
         keywords: ['deactivated', 'archived', 'hide', 'sidebar', 'character'],
     },
     {
+        id: 'acc.nodeOnlyAutoDeactivateAfterDays',
+        type: 'number',
+        labelKey: 'autoDeactivateAfterDays',
+        helpKey: 'autoDeactivateAfterDays',
+        bindKey: 'nodeOnlyAutoDeactivateAfterDays',
+        getValue: (db) => normalizeAutoDeactivateDays(db.nodeOnlyAutoDeactivateAfterDays),
+        setValue: (db, value) => {
+            db.nodeOnlyAutoDeactivateAfterDays = normalizeAutoDeactivateDays(value);
+        },
+        condition: () => isNodeServer,
+        onChange: () => scheduleAutoDeactivation({ delayMs: 1000, force: true }),
+        options: { min: 0, max: 3650 },
+        keywords: ['automatic', 'deactivate', 'archive', 'unused', 'days', 'character', 'performance'],
+    },
+    {
         id: 'acc.nodeOnlyRestoreLastChat',
         type: 'check',
         labelKey: 'nodeOnlyRestoreLastChat',
@@ -399,6 +417,7 @@ export const accessibilityCharacterItems = pick([
     'acc.roundIcons',
     'acc.nodeOnlyHideRecentChats',
     'acc.nodeOnlyHideArchivedCharacters',
+    'acc.nodeOnlyAutoDeactivateAfterDays',
 ]);
 
 export const accessibilityOtherItems = pick([

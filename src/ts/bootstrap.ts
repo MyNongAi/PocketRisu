@@ -1,4 +1,5 @@
 import { migrateLegacyTrash } from "./characterArchive";
+import { scheduleAutoDeactivation } from "./characterAutoArchive";
 import { changeFullscreen, checkNullish } from "./util"
 import { installDynamicViewportHeight } from "./viewportHeight"
 import { v4 as uuidv4 } from 'uuid';
@@ -550,6 +551,7 @@ async function checkNewFormat(): Promise<void> {
     if (db.characters.some((c) => c?.trashTime)) {
         setTimeout(() => { void migrateLegacyTrash() }, 5000);
     }
+    scheduleAutoDeactivation();
 
     // One-pass cleanup of composer drafts whose chat no longer exists (deleted
     // chats/characters, trash purge, plugin/script removals). Replaces per-delete
