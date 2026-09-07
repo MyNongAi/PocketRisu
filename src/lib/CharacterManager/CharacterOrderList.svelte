@@ -26,6 +26,7 @@
         selectable?: boolean;
         selectedIds?: ReadonlySet<string>;
         activeChaId?: string;
+        duplicateCounts?: ReadonlyMap<string, number> | null;
         onOpen: (entry: ManagerEntry) => void;
         onToggleSelect?: (entry: ManagerEntry) => void;
         onLayoutChange: (layout: OrderLayoutItem[]) => void;
@@ -35,7 +36,7 @@
 
     let {
         order, entries, visible, dragDisabled = false, selectable = false, selectedIds,
-        activeChaId, onOpen, onToggleSelect, onLayoutChange, rowMenu, folderMenu,
+        activeChaId, duplicateCounts = null, onOpen, onToggleSelect, onLayoutChange, rowMenu, folderMenu,
     }: Props = $props();
 
     const STORAGE_KEY = 'risu-character-manager-collapsed';
@@ -189,6 +190,7 @@
                 {selectable}
                 selected={selectedIds?.has(chaId) ?? false}
                 active={activeChaId === chaId}
+                duplicateCount={duplicateCounts === null ? null : (duplicateCounts.get(chaId) ?? 0)}
                 {onOpen}
                 {onToggleSelect}
                 menu={rowMenu}

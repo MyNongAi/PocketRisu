@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.12.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-09-07",
+  "updatedAt": "2026-09-08",
   "features": [
     {
       "id": "ASSET-EXT",
@@ -174,16 +174,19 @@
       "ownerFiles": [
         "src/ts/process/moduleFolders.ts",
         "src/ts/process/moduleSort.ts",
-        "src/lib/Setting/Pages/Module/ModuleSettings.svelte"
+        "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
+        "src/lib/UI/FolderedList.svelte"
       ],
       "requiredMarkers": [
         { "file": "src/ts/process/moduleFolders.ts", "contains": "moveModuleFolderByDrop" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "recordModuleFolderActivation" },
-        { "file": "src/ts/process/moduleSort.ts", "contains": "sortModulesByActivation" }
+        { "file": "src/ts/process/moduleSort.ts", "contains": "sortModulesByActivation" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "emptyInsertThreshold: 32" }
       ],
       "regressionTests": [
         "src/ts/process/moduleFolders.test.ts",
-        "src/ts/process/moduleSort.test.ts"
+        "src/ts/process/moduleSort.test.ts",
+        "src/lib/UI/FolderedList.test.ts"
       ]
     },
     {
@@ -262,6 +265,31 @@
         "src/lib/Setting/listedPersona.test.ts",
         "src/ts/persona.test.ts",
         "src/ts/personaImage.test.ts"
+      ]
+    },
+    {
+      "id": "CHARACTER-COLD",
+      "title": "미사용 캐릭터 자동 비활성화와 카탈로그 통계",
+      "criticality": "performance",
+      "ownerFiles": [
+        "src/ts/characterAutoArchive.ts",
+        "src/ts/characterAutoArchivePolicy.ts",
+        "src/ts/characterArchive.ts",
+        "src/ts/characterManager.ts",
+        "src/ts/gui/characterCatalogMetrics.ts",
+        "src/lib/CharacterManager/CharacterManager.svelte",
+        "src/lib/CharacterManager/CharacterRow.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/characterAutoArchive.ts", "contains": "scheduleAutoDeactivation" },
+        { "file": "src/ts/characterArchive.ts", "contains": "autoDeactivatedAt" },
+        { "file": "src/ts/gui/characterCatalogMetrics.ts", "contains": "buildExactCharacterDuplicateCounts" },
+        { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "characterAssetCountLabel" }
+      ],
+      "regressionTests": [
+        "src/ts/characterAutoArchivePolicy.test.ts",
+        "src/ts/gui/characterCatalogMetrics.test.ts",
+        "src/ts/gui/characterAssetCount.test.ts"
       ]
     },
     {

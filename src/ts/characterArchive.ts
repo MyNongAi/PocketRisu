@@ -22,6 +22,8 @@ import { DBState, loadingOverlayStore, selectedCharID } from "./stores.svelte"
 import { convertStubsToPlaceholders } from "./storage/chatStorage"
 import type { ArchivedCharacterStub, character } from "./storage/database.svelte"
 import { CharacterArchiveError, type NodeStorage } from "./storage/nodeStorage"
+import { getCharacterAssetCount } from "./gui/characterAssetCount"
+import { exactCharacterDefinitionFingerprint } from "./gui/characterCatalogMetrics"
 
 export { CharacterArchiveError }
 
@@ -54,7 +56,7 @@ function withOverlay<T>(fn: () => Promise<T>): Promise<T> {
  * `characters` to the stub list (one save tick) → selection is cleared.
  * Returns true when the character was deactivated.
  */
-export async function archiveCharacter(index: number, arg: { skipConfirm?: boolean; trash?: boolean; trashedAt?: number; silent?: boolean } = {}): Promise<boolean> {
+export async function archiveCharacter(index: number, arg: { skipConfirm?: boolean; trash?: boolean; trashedAt?: number; silent?: boolean; automatic?: boolean } = {}): Promise<boolean> {
     const db = DBState.db
     const char = db.characters[index]
     if (!char?.chaId) return false
@@ -63,6 +65,15 @@ export async function archiveCharacter(index: number, arg: { skipConfirm?: boole
     // trash: the trash is "deactivated + trashedAt marker" — same server row,
     // the stub just carries the marker (exported as upstream's trashTime).
     if (!arg.skipConfirm && !await alertConfirm(language.deactivateCharacterConfirm(name))) return false
+
+    const assetCount = getCharacterAssetCount(char)
+    let exactDefinitionFingerprint: string | undefined
+    try {
+        exactDefinitionFingerprint = exactCharacterDefinitionFingerprint(char as unknown as Record<string, unknown>)
+    } catch (error) {
+        // Catalog metadata must never prevent a verified archive operation.
+        console.warn('[Archive] exact duplicate fingerprint skipped:', error)
+    }
 
     const run = async () => {
         // The server builds the payload from its own view; push any edits
@@ -74,6 +85,9 @@ export async function archiveCharacter(index: number, arg: { skipConfirm?: boole
         if (idx === -1) return false
         if (!Array.isArray(db.nodeOnlyArchivedCharacters)) db.nodeOnlyArchivedCharacters = []
         if (arg.trash) stub.trashedAt = arg.trashedAt ?? Date.now()
+        stub.assetCount = assetCount
+        if (exactDefinitionFingerprint) stub.exactDefinitionFingerprint = exactDefinitionFingerprint
+        if (arg.automatic) stub.autoDeactivatedAt = Date.now()
         db.nodeOnlyArchivedCharacters.push(stub)
         const selectedIndex = get(selectedCharID)
         db.characters.splice(idx, 1)
@@ -215,7 +229,7 @@ export function removeArchivedStub(chaId: string): boolean {
 export async function promptActivateCharacter(chaId: string, arg: { reseter?: () => any } = {}): Promise<boolean> {
     const stub = findArchivedStub(chaId)
     if (!stub) return false
-    if (!await alertConfirm(language.activateCharacterConfirm(stub.name || 'Unnamed'))) return false
+    if (!stub.autoDeactivatedAt && !await alertConfirm(language.activateCharacterConfirm(stub.name || 'Unnamed'))) return false
     try {
         const index = await withOverlay(() => activateCharacter(chaId))
         if (index < 0) return false
