@@ -313,6 +313,24 @@
       ]
     },
     {
+      "id": "ERROR-UX",
+      "title": "오류 한국어 요약·원문 보존·즉시 복사",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/alert.ts",
+        "src/ts/errorPresentation.ts",
+        "src/lib/Others/AlertComp.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/alert.ts", "contains": "copyNotificationText" },
+        { "file": "src/ts/errorPresentation.ts", "contains": "localizeErrorMessage" },
+        { "file": "src/lib/Others/AlertComp.svelte", "contains": "stack-trace-copy" }
+      ],
+      "regressionTests": [
+        "src/ts/errorPresentation.test.ts"
+      ]
+    },
+    {
       "id": "PLUGIN-CRYPTO",
       "title": "격리 플러그인 WebCrypto 호환 다리",
       "criticality": "compatibility",
