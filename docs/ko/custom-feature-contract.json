@@ -279,6 +279,7 @@
         "src/ts/characterArchive.ts",
         "src/ts/characterManager.ts",
         "src/ts/gui/characterCatalogMetrics.ts",
+        "src/lib/SideBars/Sidebar.svelte",
         "src/lib/CharacterManager/CharacterManager.svelte",
         "src/lib/CharacterManager/CharacterRow.svelte"
       ],
@@ -286,6 +287,7 @@
         { "file": "src/ts/characterAutoArchive.ts", "contains": "scheduleAutoDeactivation" },
         { "file": "src/ts/characterArchive.ts", "contains": "autoDeactivatedAt" },
         { "file": "src/ts/gui/characterCatalogMetrics.ts", "contains": "buildExactCharacterDuplicateCounts" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "archived-character-muted" },
         { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "characterAssetCountLabel" }
       ],
       "regressionTests": [
