@@ -1,12 +1,13 @@
 import { get, writable } from "svelte/store"
 import { toast } from "svelte-sonner"
 import { sleep } from "./util"
-import { language } from "../lang"
+import { getCurrentLocale, language } from "../lang"
 import { getDatabase, nodeOnlyVer, type MessageGenerationInfo } from "./storage/database.svelte"
 import { alertStore as alertStoreImported, togglePresetsOpenStore } from "./stores.svelte"
 import { addLog } from "./log"
 import { nativeConsoleError } from "./log-capture"
 import type { ShButtonVariant } from "../lib/UI/GUI/ShButton.svelte"
+import { formatErrorCopyText, localizeErrorMessage } from "./errorPresentation"
 
 /**
  * Action descriptor for dialog buttons. Reusable across any alert type
@@ -84,6 +85,24 @@ function isEmptyNotification(msg: unknown, normalizedMessage?: string): boolean 
     return message === '' || message === 'null' || message === 'undefined' || message === '{}'
 }
 
+async function copyNotificationText(text: string): Promise<void> {
+    try {
+        if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+            await navigator.clipboard.writeText(text)
+            return
+        }
+    } catch {}
+    if (typeof document === 'undefined') return
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    textarea.style.position = 'fixed'
+    textarea.style.opacity = '0'
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    textarea.remove()
+}
+
 export function alertError(msg: unknown) {
     if (isEmptyNotification(msg)) return
     // Use nativeConsoleError (pre-monkey-patch) so devtools still shows the error
@@ -95,11 +114,21 @@ export function alertError(msg: unknown) {
     let { message: errorMessage, stack: stackTrace } = normalizeErrorMessage(msg)
     errorMessage = errorMessage.trim()
     if (isEmptyNotification(msg, errorMessage)) return
+    const originalMessage = errorMessage
+    const presentation = localizeErrorMessage(originalMessage, getCurrentLocale())
+
+    // The existing error-details panel already has a clipboard button. Add the
+    // raw message there even when the caller supplied only a string, so a Korean
+    // summary never hides the exact server response support needs to diagnose.
+    if (presentation.original) {
+        stackTrace = formatErrorCopyText(presentation, stackTrace)
+    }
+    errorMessage = presentation.message
 
     let submsg = ''
 
     //check if it's a known error
-    if(errorMessage.includes('Failed to fetch') || errorMessage.includes("NetworkError when attempting to fetch resource.")){
+    if(originalMessage.includes('Failed to fetch') || originalMessage.includes("NetworkError when attempting to fetch resource.")){
         submsg =    db.usePlainFetch ? language.errors.networkFetchPlain : language.errors.networkFetch
     }
 
@@ -107,7 +136,7 @@ export function alertError(msg: unknown) {
     // logging is a parallel concern.
     addLog({
         level: 'error',
-        message: errorMessage,
+        message: originalMessage,
         description: stackTrace,
         source: 'blocking-alert',
     })
@@ -227,7 +256,18 @@ export function notifyError(msg: unknown, opts?: NotifyOptions) {
     if (isEmptyNotification(msg, message)) return
     const description = opts?.description ?? stack
     addLog({ level: 'error', message, description, source: opts?.source })
-    toast.error(message, description ? { description } : undefined)
+    const presentation = localizeErrorMessage(message, getCurrentLocale())
+    const visibleDescription = presentation.original
+        ? formatErrorCopyText({ message: `[원문] ${presentation.original}` }, description)
+        : description
+    const copyText = formatErrorCopyText(presentation, description)
+    toast.error(presentation.message, {
+        ...(visibleDescription ? { description: visibleDescription } : {}),
+        action: {
+            label: language.copy,
+            onClick: () => { void copyNotificationText(copyText) },
+        },
+    })
 }
 
 export function notifyWarning(msg: unknown, opts?: NotifyOptions) {
