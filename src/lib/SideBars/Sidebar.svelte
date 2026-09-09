@@ -865,7 +865,7 @@
                   }}
                 >
                   {#if folderChar.type === 'archived'}
-                    <div class="relative">
+                    <div class="relative grayscale opacity-60 archived-character-muted">
                       <SidebarAvatar
                         src={folderChar.img ? () => getCharThumbnail(folderChar.img, "plain") : ""}
                         size="56"
@@ -987,7 +987,7 @@
           }}
         >
           {#if block.char.type === 'archived'}
-            <div class="relative">
+            <div class="relative grayscale opacity-60 archived-character-muted">
               <SidebarAvatar
                 src={block.char.img ? () => getCharThumbnail(block.char.img, "plain") : ""}
                 size="56"
@@ -1361,7 +1361,7 @@
               oncontextmenu={(e) => { void editSidebarCharacter(char.index, e) }}
             />
           {:else if char.type === 'archived'}
-            <div class="relative">
+            <div class="relative grayscale opacity-60 archived-character-muted">
               <SidebarAvatar
                 src={char.img ? () => getCharThumbnail(char.img, "plain") : ""}
                 size="56"
@@ -1488,7 +1488,7 @@
                   }}
                 >
                 {#if char2.type === 'archived'}
-                  <div class="relative">
+                  <div class="relative grayscale opacity-60 archived-character-muted">
                     <SidebarAvatar
                       src={char2.img ? () => getCharThumbnail(char2.img, "plain") : ""}
                       size="56"
