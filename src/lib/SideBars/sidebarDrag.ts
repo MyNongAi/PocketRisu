@@ -1,4 +1,5 @@
 import type { folder } from 'src/ts/storage/database.svelte'
+import { dissolveSingletonFolders } from 'src/ts/characterOrder'
 
 /**
  * Stable-ID sidebar order transforms adapted from the design in PocketRisu Kei
@@ -93,7 +94,7 @@ export function moveSidebarItem(
         if (!moving || typeof moving === 'string') return null
         const adjustedIndex = sourceIndex < target.index ? target.index - 1 : target.index
         nextOrder.splice(Math.min(adjustedIndex, nextOrder.length), 0, moving)
-        return nextOrder
+        return dissolveSingletonFolders(nextOrder)
     }
 
     const sourceLocation = uniqueCharacterLocation(currentOrder, source.id)
@@ -108,7 +109,7 @@ export function moveSidebarItem(
             ? target.index - 1
             : target.index
         nextOrder.splice(Math.min(adjustedIndex, nextOrder.length), 0, source.id)
-        return nextOrder
+        return dissolveSingletonFolders(nextOrder)
     }
 
     const destinationIndex = folderIndex(nextOrder, target.folderId)
@@ -121,7 +122,7 @@ export function moveSidebarItem(
         ? target.index - 1
         : target.index
     destination.data.splice(Math.min(adjustedIndex, destination.data.length), 0, source.id)
-    return nextOrder
+    return dissolveSingletonFolders(nextOrder)
 }
 
 /**
@@ -163,5 +164,5 @@ export function applySidebarItemDrop(
         ...created,
         data: [source.id, target.id],
     }
-    return nextOrder
+    return dissolveSingletonFolders(nextOrder)
 }

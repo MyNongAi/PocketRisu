@@ -32,7 +32,7 @@ import { updateGuisize } from "./gui/guisize";
 import { deepTouch } from "./gui/deepTouch.svelte";
 import { updateLorebooks, deselectCharacter } from "./characters";
 import { normalizeCharacterFavoriteOrder } from './characterRecentOrder'
-import { pruneHiddenCharacterIds } from "./characterOrder";
+import { dissolveSingletonFolders, pruneHiddenCharacterIds } from "./characterOrder";
 import { mergeServerDbWithTrackedLocalChanges, withTrackedCharacters, hasAmbiguousCharacterIds } from "./storage/rebaseMerge";
 import { generationStates, chatGenKey, notifyDatabaseRebased, abortGeneration } from "./process/generationState";
 
@@ -2241,7 +2241,7 @@ export function checkCharOrder() {
     }
 
     db.characterOrder = normalizeCharacterFavoriteOrder(
-        db.characterOrder,
+        dissolveSingletonFolders(db.characterOrder),
         new Set(db.characters.filter((character) => character.favorite && !character.trashTime).map((character) => character.chaId)),
     )
 
