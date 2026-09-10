@@ -5,6 +5,8 @@
  */
 import type { Database } from './storage/database.svelte'
 import { getCharacterAssetCount } from './gui/characterAssetCount'
+import { isRealmAssetRecoveryAvailable } from './gui/titleColors'
+import { resolveCharacterSourceBadge, type CharacterSourceBadge } from './gui/characterSourceBadge'
 
 export interface ManagerEntry {
     chaId: string
@@ -14,6 +16,11 @@ export interface ManagerEntry {
     image: string
     chatCount: number
     assetCount: number
+    sourceBadge: CharacterSourceBadge
+    sourceRecorded: boolean
+    missingAssetCount: number
+    realmRecoveryAvailable: boolean
+    titleColor?: string
     lastInteraction: number
     creationDate: number
     archived: boolean
@@ -30,6 +37,7 @@ export function buildManagerEntries(db: Database): Map<string, ManagerEntry> {
     for (let i = 0; i < db.characters.length; i++) {
         const c = db.characters[i]
         if (!c?.chaId || c.chaId === '§temp' || c.chaId === '§playground') continue
+        const source = resolveCharacterSourceBadge(c.sourceInfo?.label)
         out.set(c.chaId, {
             chaId: c.chaId,
             index: i,
@@ -37,6 +45,11 @@ export function buildManagerEntries(db: Database): Map<string, ManagerEntry> {
             image: c.image ?? '',
             chatCount: c.chats?.length ?? 0,
             assetCount: getCharacterAssetCount(c),
+            sourceBadge: source.label,
+            sourceRecorded: source.recorded,
+            missingAssetCount: Math.max(0, Number(c.sourceInfo?.missingAssetCount) || 0),
+            realmRecoveryAvailable: isRealmAssetRecoveryAvailable(c),
+            titleColor: c.titleColor,
             lastInteraction: c.lastInteraction ?? 0,
             creationDate: c.creation_date ?? 0,
             archived: false,
@@ -46,6 +59,7 @@ export function buildManagerEntries(db: Database): Map<string, ManagerEntry> {
     }
     for (const stub of db.nodeOnlyArchivedCharacters ?? []) {
         if (!stub?.chaId || out.has(stub.chaId)) continue
+        const source = resolveCharacterSourceBadge(stub.sourceInfo?.label)
         out.set(stub.chaId, {
             chaId: stub.chaId,
             index: -1,
@@ -53,6 +67,11 @@ export function buildManagerEntries(db: Database): Map<string, ManagerEntry> {
             image: stub.image ?? '',
             chatCount: stub.chatCount ?? 0,
             assetCount: Math.max(0, Number(stub.assetCount) || 0),
+            sourceBadge: source.label,
+            sourceRecorded: source.recorded,
+            missingAssetCount: Math.max(0, Number(stub.sourceInfo?.missingAssetCount) || 0),
+            realmRecoveryAvailable: isRealmAssetRecoveryAvailable(stub),
+            titleColor: stub.titleColor,
             lastInteraction: stub.lastInteraction ?? 0,
             creationDate: stub.creation_date ?? 0,
             archived: true,
