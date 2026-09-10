@@ -1742,6 +1742,9 @@ export interface ArchivedCharacterStub{
     /** Cheap catalog metadata retained while the full character is cold. */
     assetCount?: number
     exactDefinitionFingerprint?: string
+    /** Display metadata retained so the cold catalog keeps origin and health warnings. */
+    titleColor?: string
+    sourceInfo?: import('../sourceCollection').SourceImportInfo
     /** Present only when the automatic inactivity policy created this stub. */
     autoDeactivatedAt?: number
 }

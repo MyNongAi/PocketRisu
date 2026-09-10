@@ -199,17 +199,25 @@
         "src/ts/sourceCollection.ts",
         "src/ts/sourceCollectionImport.ts",
         "src/ts/sourceCollectionMerge.ts",
+        "src/ts/gui/characterSourceBadge.ts",
+        "src/ts/characterManager.ts",
+        "src/lib/CharacterManager/CharacterManager.svelte",
+        "src/lib/CharacterManager/CharacterRow.svelte",
         "extras/risu-source-collection-exporter"
       ],
       "requiredMarkers": [
         { "file": "src/ts/sourceCollectionImport.ts", "contains": "importSourceCollection" },
-        { "file": "src/ts/sourceCollectionMerge.ts", "contains": "applySourceCollectionEntities" }
+        { "file": "src/ts/sourceCollectionMerge.ts", "contains": "applySourceCollectionEntities" },
+        { "file": "src/ts/gui/characterSourceBadge.ts", "contains": "resolveCharacterSourceBadge" },
+        { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "sourceBadgeLabel" }
       ],
       "regressionTests": [
         "src/ts/sourceCollectionExporter.test.ts",
         "src/ts/sourceCollectionImport.test.ts",
         "src/ts/sourceCollectionMerge.test.ts",
-        "src/ts/sourceCollectionDuplicates.test.ts"
+        "src/ts/sourceCollectionDuplicates.test.ts",
+        "src/ts/gui/characterSourceBadge.test.ts",
+        "src/ts/characterManager.test.ts"
       ]
     },
     {
@@ -220,18 +228,23 @@
         "src/ts/realmAssetRecovery.ts",
         "src/ts/realmAssetRecoveryMatching.ts",
         "src/ts/characterRecoveryFolders.ts",
-        "src/ts/gui/titleColors.ts"
+        "src/ts/gui/titleColors.ts",
+        "src/ts/characterManager.ts",
+        "src/lib/CharacterManager/CharacterManager.svelte",
+        "src/lib/CharacterManager/CharacterRow.svelte"
       ],
       "requiredMarkers": [
         { "file": "src/ts/realmAssetRecovery.ts", "contains": "recoverCharacterFolderAssetsFromRealm" },
         { "file": "src/ts/realmAssetRecoveryMatching.ts", "contains": "selectStrictRealmRecoveryCandidate" },
-        { "file": "src/ts/gui/titleColors.ts", "contains": "isRealmAssetRecoveryAvailable" }
+        { "file": "src/ts/gui/titleColors.ts", "contains": "isRealmAssetRecoveryAvailable" },
+        { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "missingAssetTitle" }
       ],
       "regressionTests": [
         "src/ts/realmAssetRecovery.test.ts",
         "src/ts/realmAssetRecoveryMatching.test.ts",
         "src/ts/characterRecoveryFolders.test.ts",
-        "src/ts/gui/titleColors.test.ts"
+        "src/ts/gui/titleColors.test.ts",
+        "src/ts/characterManager.test.ts"
       ]
     },
     {
