@@ -147,6 +147,7 @@
         { "file": "src/ts/characterRecentOrder.ts", "contains": "promoteDepartedCharacter" },
         { "file": "src/ts/characterOrder.ts", "contains": "dissolveSingletonFolders" },
         { "file": "src/ts/globalApi.svelte.ts", "contains": "const ordered = new Set<string>()" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "if (!supportsPatchSync)" },
         { "file": "src/lib/CharacterManager/CharacterOrderList.svelte", "contains": "Collapsed folders must not mount rows or request thumbnails." },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "즐겨찾기 (맨위로)" }
       ],
