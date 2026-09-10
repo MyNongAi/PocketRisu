@@ -94,7 +94,7 @@ export function moveSidebarItem(
         if (!moving || typeof moving === 'string') return null
         const adjustedIndex = sourceIndex < target.index ? target.index - 1 : target.index
         nextOrder.splice(Math.min(adjustedIndex, nextOrder.length), 0, moving)
-        return dissolveSingletonFolders(nextOrder)
+        return dissolveSingletonFolders(nextOrder, [...currentOrder])
     }
 
     const sourceLocation = uniqueCharacterLocation(currentOrder, source.id)
@@ -109,7 +109,7 @@ export function moveSidebarItem(
             ? target.index - 1
             : target.index
         nextOrder.splice(Math.min(adjustedIndex, nextOrder.length), 0, source.id)
-        return dissolveSingletonFolders(nextOrder)
+        return dissolveSingletonFolders(nextOrder, [...currentOrder])
     }
 
     const destinationIndex = folderIndex(nextOrder, target.folderId)
@@ -122,7 +122,7 @@ export function moveSidebarItem(
         ? target.index - 1
         : target.index
     destination.data.splice(Math.min(adjustedIndex, destination.data.length), 0, source.id)
-    return dissolveSingletonFolders(nextOrder)
+    return dissolveSingletonFolders(nextOrder, [...currentOrder])
 }
 
 /**
@@ -164,5 +164,5 @@ export function applySidebarItemDrop(
         ...created,
         data: [source.id, target.id],
     }
-    return dissolveSingletonFolders(nextOrder)
+    return dissolveSingletonFolders(nextOrder, [...currentOrder])
 }

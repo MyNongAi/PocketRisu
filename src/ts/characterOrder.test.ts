@@ -29,7 +29,7 @@ function snapshot(order: OrderEntry[]) {
 }
 
 describe('characterOrder', () => {
-    it('rebuildOrder keeps folder fields, drops unknown folders, dedupes and re-appends missing characters', () => {
+    it('rebuildOrder keeps occupied folder fields, drops empty/unknown folders, dedupes and re-appends missing characters', () => {
         const before = sample()
         const frozen = snapshot(before)
         const next = rebuildOrder(before, [
@@ -42,7 +42,6 @@ describe('characterOrder', () => {
         expect(next).toEqual([
             { id: 'f2', name: 'Two', color: '', data: ['d', 'a'] },
             'c',
-            { id: 'f1', name: 'One', color: 'red', imgFile: 'img1', img: 'blob:1', data: [] },
             'b',
         ])
         expect(snapshot(before)).toBe(frozen)
@@ -114,6 +113,15 @@ describe('characterOrder', () => {
         expect(removeCharacter(order, 'a')).toEqual(['b'])
     })
 
+    it('removes a folder when its last character is removed', () => {
+        const order: OrderEntry[] = [
+            'a',
+            { id: 'only', name: 'Only', color: '', data: ['b'] },
+            'c',
+        ]
+        expect(removeCharacter(order, 'b')).toEqual(['a', 'c'])
+    })
+
     it('dissolves every singleton folder in place and keeps empty folders', () => {
         const order: OrderEntry[] = [
             { id: 'first', name: 'First', color: '', data: ['b'] },
@@ -125,6 +133,15 @@ describe('characterOrder', () => {
             'c',
             { id: 'empty', name: 'Empty', color: '', data: [] },
         ])
+    })
+
+    it('keeps an intentionally empty folder but removes one that just lost its members', () => {
+        const empty: OrderEntry = { id: 'empty', name: 'Empty', color: '', data: [] }
+        const formerlyOccupied: OrderEntry = { id: 'lost', name: 'Lost', color: '', data: ['a'] }
+        expect(dissolveSingletonFolders([empty], [empty])).toEqual([empty])
+        expect(dissolveSingletonFolders([
+            { ...formerlyOccupied, data: [] },
+        ], [formerlyOccupied])).toEqual([])
     })
 
     it('setHidden adds/removes without duplicates; prune keeps only known ids', () => {

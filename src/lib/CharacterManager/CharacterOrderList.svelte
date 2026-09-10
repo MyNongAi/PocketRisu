@@ -101,10 +101,17 @@
             if (folderId !== undefined) {
                 const data: string[] = [];
                 const container = child.querySelector<HTMLElement>('[data-folder-container] [data-risu-sortable-list]');
-                container?.querySelectorAll<HTMLElement>(':scope > [data-order-key], :scope > [data-sortable-key]').forEach((el) => {
-                    const id = rowId(el);
-                    if (id) data.push(id);
-                });
+                if (container) {
+                    container.querySelectorAll<HTMLElement>(':scope > [data-order-key], :scope > [data-sortable-key]').forEach((el) => {
+                        const id = rowId(el);
+                        if (id) data.push(id);
+                    });
+                } else {
+                    // A collapsed folder deliberately has no child DOM. Keep
+                    // its stored members when another top-level row is moved.
+                    const stored = order.find((entry) => isFolderEntry(entry) && entry.id === folderId);
+                    if (stored && isFolderEntry(stored)) data.push(...stored.data);
+                }
                 out.push({ type: 'folder', id: folderId, data });
             } else {
                 const id = rowId(child);
@@ -160,20 +167,23 @@
                         </ShDropdownMenu>
                     {/if}
                 </div>
-                <div data-folder-container={entry.id} class:hidden={isCollapsed}>
-                    <ShSortableList
-                        className="flex flex-col px-2 pb-2 gap-0.5 min-h-8"
-                        disabled={dragDisabled}
-                        options={{ group: 'character-manager', onMove }}
-                        onReorder={onDrop}
-                    >
-                        {#each entry.data as chaId (chaId)}
-                            {@render row(chaId, 'data-sortable-key')}
-                        {:else}
-                            <div class="no-sort text-xs text-textcolor2 text-center py-1">{language.none}</div>
-                        {/each}
-                    </ShSortableList>
-                </div>
+                <!-- Collapsed folders must not mount rows or request thumbnails. -->
+                {#if !isCollapsed}
+                    <div data-folder-container={entry.id}>
+                        <ShSortableList
+                            className="flex flex-col px-2 pb-2 gap-0.5 min-h-8"
+                            disabled={dragDisabled}
+                            options={{ group: 'character-manager', onMove }}
+                            onReorder={onDrop}
+                        >
+                            {#each entry.data as chaId (chaId)}
+                                {@render row(chaId, 'data-sortable-key')}
+                            {:else}
+                                <div class="no-sort text-xs text-textcolor2 text-center py-1">{language.none}</div>
+                            {/each}
+                        </ShSortableList>
+                    </div>
+                {/if}
             </div>
         {:else}
             {@render row(entry, 'data-order-key')}
