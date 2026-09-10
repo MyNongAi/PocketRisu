@@ -41,7 +41,7 @@ describe('moveSidebarItem', () => {
             { kind: 'root', index: 1 },
         )
 
-        expect(moved).toEqual(['new-import', 'beta', makeFolder('old-folder', ['alpha']), 'omega'])
+        expect(moved).toEqual(['new-import', 'beta', 'alpha', 'omega'])
     })
 
     it('reorders inside one folder and corrects the removal offset', () => {
@@ -55,7 +55,7 @@ describe('moveSidebarItem', () => {
     })
 
     it('moves a whole folder only at root and preserves its custom fields', () => {
-        const folder = makeFolder('folder', ['alpha'], { favorite: true, imgFile: 'external://disk/hash' })
+        const folder = makeFolder('folder', ['alpha', 'delta'], { favorite: true, imgFile: 'external://disk/hash' })
         expect(moveSidebarItem(
             [folder, 'beta', 'gamma'],
             { kind: 'folder', id: 'folder' },
@@ -90,7 +90,7 @@ describe('applySidebarItemDrop', () => {
 
         expect(moved).toEqual([
             { id: 'created', name: 'New Folder', color: '', data: ['alpha', 'beta'] },
-            makeFolder('existing', ['gamma']),
+            'gamma',
         ])
         expect(source).toEqual(['alpha', 'beta', makeFolder('existing', ['gamma'])])
     })
@@ -104,7 +104,7 @@ describe('applySidebarItemDrop', () => {
         )
 
         expect(moved).toEqual([
-            makeFolder('source-folder', ['sibling']),
+            'sibling',
             makeFolder('target-folder', ['beta', 'alpha']),
         ])
     })

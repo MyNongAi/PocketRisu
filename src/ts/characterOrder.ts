@@ -52,11 +52,32 @@ function cloneOrder(order: OrderEntry[]): OrderEntry[] {
     return order.map((entry) => (isFolderEntry(entry) ? cloneFolder(entry) : entry))
 }
 
-/** Remove every occurrence of `chaId` (top level and inside folders). */
-export function removeCharacter(order: OrderEntry[], chaId: string): OrderEntry[] {
+/**
+ * Dissolve folders containing exactly one character. Empty folders remain as
+ * intentional drop targets; a folder with one member has no grouping value,
+ * so that member takes the folder's exact top-level position.
+ */
+export function dissolveSingletonFolders(order: OrderEntry[]): OrderEntry[] {
+    const out: OrderEntry[] = []
+    for (const entry of order) {
+        if (isFolderEntry(entry) && entry.data.length === 1) {
+            out.push(entry.data[0])
+        } else {
+            out.push(isFolderEntry(entry) ? cloneFolder(entry) : entry)
+        }
+    }
+    return out
+}
+
+function removeCharacterRaw(order: OrderEntry[], chaId: string): OrderEntry[] {
     return order
         .filter((entry) => isFolderEntry(entry) || entry !== chaId)
         .map((entry) => (isFolderEntry(entry) ? cloneFolder(entry, entry.data.filter((id) => id !== chaId)) : entry))
+}
+
+/** Remove every occurrence of `chaId` (top level and inside folders). */
+export function removeCharacter(order: OrderEntry[], chaId: string): OrderEntry[] {
+    return dissolveSingletonFolders(removeCharacterRaw(order, chaId))
 }
 
 /**
@@ -104,7 +125,7 @@ export function rebuildOrder(previous: OrderEntry[], layout: OrderLayoutItem[]):
             next.push(id)
         }
     }
-    return next
+    return dissolveSingletonFolders(next)
 }
 
 /**
@@ -113,12 +134,13 @@ export function rebuildOrder(previous: OrderEntry[], layout: OrderLayoutItem[]):
  */
 export function moveCharacterToFolder(order: OrderEntry[], chaId: string, folderId: string | undefined): OrderEntry[] {
     if (folderId !== undefined && !findFolder(order, folderId)) return cloneOrder(order)
-    const next = removeCharacter(order, chaId)
+    const next = removeCharacterRaw(order, chaId)
     if (folderId === undefined) {
         next.push(chaId)
-        return next
+        return dissolveSingletonFolders(next)
     }
-    return next.map((entry) => (isFolderEntry(entry) && entry.id === folderId ? cloneFolder(entry, [...entry.data, chaId]) : entry))
+    const moved = next.map((entry) => (isFolderEntry(entry) && entry.id === folderId ? cloneFolder(entry, [...entry.data, chaId]) : entry))
+    return dissolveSingletonFolders(moved)
 }
 
 /** Move a top-level entry (character id or folder id) by `delta` within the top level. */

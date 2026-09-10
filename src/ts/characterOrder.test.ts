@@ -11,6 +11,7 @@ import {
     findPlacement,
     setHidden,
     pruneHiddenCharacterIds,
+    dissolveSingletonFolders,
     type OrderEntry,
 } from './characterOrder'
 
@@ -74,7 +75,7 @@ describe('characterOrder', () => {
         const out = moveCharacterToFolder(sample(), 'b', undefined)
         expect(out).toEqual([
             'a',
-            { id: 'f1', name: 'One', color: 'red', imgFile: 'img1', img: 'blob:1', data: ['c'] },
+            'c',
             'd',
             { id: 'f2', name: 'Two', color: '', data: [] },
             'b',
@@ -110,7 +111,20 @@ describe('characterOrder', () => {
 
     it('removeCharacter strips every occurrence', () => {
         const order: OrderEntry[] = ['a', { id: 'f', name: 'F', color: '', data: ['a', 'b'] }, 'a']
-        expect(removeCharacter(order, 'a')).toEqual([{ id: 'f', name: 'F', color: '', data: ['b'] }])
+        expect(removeCharacter(order, 'a')).toEqual(['b'])
+    })
+
+    it('dissolves every singleton folder in place and keeps empty folders', () => {
+        const order: OrderEntry[] = [
+            { id: 'first', name: 'First', color: '', data: ['b'] },
+            { id: 'second', name: 'Second', color: '', data: ['c'] },
+            { id: 'empty', name: 'Empty', color: '', data: [] },
+        ]
+        expect(dissolveSingletonFolders(order)).toEqual([
+            'b',
+            'c',
+            { id: 'empty', name: 'Empty', color: '', data: [] },
+        ])
     })
 
     it('setHidden adds/removes without duplicates; prune keeps only known ids', () => {

@@ -68,11 +68,16 @@ export async function archiveCharacter(index: number, arg: { skipConfirm?: boole
 
     const assetCount = getCharacterAssetCount(char)
     let exactDefinitionFingerprint: string | undefined
-    try {
-        exactDefinitionFingerprint = exactCharacterDefinitionFingerprint(char as unknown as Record<string, unknown>)
-    } catch (error) {
-        // Catalog metadata must never prevent a verified archive operation.
-        console.warn('[Archive] exact duplicate fingerprint skipped:', error)
+    // Trashed stubs are excluded from duplicate counts, so serializing a large
+    // card merely to compute a never-read fingerprint wastes several temporary
+    // copies at the most memory-sensitive point of the operation.
+    if (!arg.trash) {
+        try {
+            exactDefinitionFingerprint = exactCharacterDefinitionFingerprint(char as unknown as Record<string, unknown>)
+        } catch (error) {
+            // Catalog metadata must never prevent a verified archive operation.
+            console.warn('[Archive] exact duplicate fingerprint skipped:', error)
+        }
     }
 
     const run = async () => {
