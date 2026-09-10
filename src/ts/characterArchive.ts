@@ -86,6 +86,8 @@ export async function archiveCharacter(index: number, arg: { skipConfirm?: boole
         if (!Array.isArray(db.nodeOnlyArchivedCharacters)) db.nodeOnlyArchivedCharacters = []
         if (arg.trash) stub.trashedAt = arg.trashedAt ?? Date.now()
         stub.assetCount = assetCount
+        stub.titleColor = char.titleColor
+        stub.sourceInfo = char.sourceInfo ? { ...char.sourceInfo } : undefined
         if (exactDefinitionFingerprint) stub.exactDefinitionFingerprint = exactDefinitionFingerprint
         if (arg.automatic) stub.autoDeactivatedAt = Date.now()
         db.nodeOnlyArchivedCharacters.push(stub)
