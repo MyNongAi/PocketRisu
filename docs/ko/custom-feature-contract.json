@@ -138,16 +138,19 @@
       "criticality": "core-ux",
       "ownerFiles": [
         "src/ts/characterRecentOrder.ts",
+        "src/ts/characterOrder.ts",
         "src/lib/SideBars/Sidebar.svelte",
         "src/lib/SideBars/SidebarAvatar.svelte"
       ],
       "requiredMarkers": [
         { "file": "src/ts/characterRecentOrder.ts", "contains": "normalizeCharacterFavoriteOrder" },
         { "file": "src/ts/characterRecentOrder.ts", "contains": "promoteDepartedCharacter" },
+        { "file": "src/ts/characterOrder.ts", "contains": "dissolveSingletonFolders" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "즐겨찾기 (맨위로)" }
       ],
       "regressionTests": [
-        "src/ts/characterRecentOrder.test.ts"
+        "src/ts/characterRecentOrder.test.ts",
+        "src/ts/characterOrder.test.ts"
       ]
     },
     {
@@ -306,6 +309,7 @@
       "requiredMarkers": [
         { "file": "src/ts/characterAutoArchive.ts", "contains": "scheduleAutoDeactivation" },
         { "file": "src/ts/characterArchive.ts", "contains": "autoDeactivatedAt" },
+        { "file": "src/ts/characterArchive.ts", "contains": "Trashed stubs are excluded from duplicate counts" },
         { "file": "src/ts/gui/characterCatalogMetrics.ts", "contains": "buildExactCharacterDuplicateCounts" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "archived-character-muted" },
         { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "characterAssetCountLabel" },
