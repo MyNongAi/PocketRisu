@@ -12,6 +12,7 @@
     import { tokenizeAccurate } from "src/ts/tokenizer";
     import { DBState } from "src/ts/stores.svelte";
     import LoreBookList from "./LoreBookList.svelte";
+    import type { LoreComparisonStatus } from "src/ts/gui/loreBookComparison";
 
     interface Props {
         value: loreBook;
@@ -24,6 +25,8 @@
         isOpen?: boolean;
         openFolders?: number;
         isLastInContainer?: boolean;
+        comparisonStatus?: LoreComparisonStatus;
+        comparisonStatuses?: ReadonlyMap<loreBook, LoreComparisonStatus>;
     }
 
     let {
@@ -36,10 +39,18 @@
         idgroup,
         isOpen = false,
         openFolders = 0,
-        isLastInContainer = false
+        isLastInContainer = false,
+        comparisonStatus,
+        comparisonStatuses,
     }: Props = $props();
     
     let open = $derived(isOpen)
+    let loreComparisonClass = $derived(comparisonStatus === 'match'
+        ? 'lore-compare-match'
+        : comparisonStatus === 'different' ? 'lore-compare-different' : '')
+    let loreComparisonTitle = $derived(comparisonStatus === 'match'
+        ? '유사 후보의 다른 봇/모듈과 로어북 제목·내용이 일치'
+        : comparisonStatus === 'different' ? '유사 후보에서 일치하는 로어북 제목·내용 없음' : undefined)
 
     let tokens = $state(0)
     let tokenTimer: ReturnType<typeof setTimeout> | null = null
@@ -139,9 +150,9 @@
                 {/if}
             {/if}
             {#if value.mode === 'folder'}
-                <span>{value.comment.length === 0 ? "Unnamed Folder" : value.comment}</span>
+                <span class={loreComparisonClass} title={loreComparisonTitle}>{value.comment.length === 0 ? "Unnamed Folder" : value.comment}</span>
             {:else}
-                <span>{value.comment.length === 0 ? value.key.length === 0 ? "Unnamed Lore" : value.key : value.comment}</span>
+                <span class={loreComparisonClass} title={loreComparisonTitle}>{value.comment.length === 0 ? value.key.length === 0 ? "Unnamed Lore" : value.key : value.comment}</span>
             {/if}
         </button>
         <button
@@ -206,10 +217,10 @@
         {#if value.mode === 'folder'}
         <div class="border-0 outline-hidden w-full mt-2 flex flex-col mb-2">
             <span class="text-textcolor mt-6 mb-2">{language.folderName}</span>
-            <TextInput bind:value={value.comment}/>
+            <TextInput bind:value={value.comment} className={loreComparisonClass}/>
 
             <div class="mt-4">
-                <LoreBookList externalLoreBooks={externalLoreBooks} showFolder={value.key} />
+                <LoreBookList externalLoreBooks={externalLoreBooks} showFolder={value.key} {comparisonStatuses} />
             </div>
             
             <div class="mt-2 flex gap-1">
@@ -233,7 +244,7 @@
         {:else}
         <div class="border-0 outline-hidden w-full mt-2 flex flex-col mb-2">
             <span class="text-textcolor mt-6">{language.name} <Help key="loreName"/></span>
-            <TextInput bind:value={value.comment}/>
+            <TextInput bind:value={value.comment} className={loreComparisonClass}/>
             {#if !value.alwaysActive}
                 <span class="text-textcolor mt-6">{language.activationKeys} <Help key="loreActivationKey"/></span>
                 <span class="text-xs text-textcolor2">{language.activationKeysInfo}</span>
@@ -259,7 +270,7 @@
             <span class="text-textcolor mt-4">{language.insertOrder} <Help key="loreorder"/></span>
             <NumberInput bind:value={value.insertorder} min={0} max={1000}/>
             <span class="text-textcolor mt-4 mb-2">{language.prompt}</span>
-            <TextAreaInput highlight autocomplete="off" bind:value={value.content} />
+            <TextAreaInput highlight autocomplete="off" bind:value={value.content} className={loreComparisonClass} />
             <span class="text-textcolor2 mt-2 mb-2 text-sm">{tokens} {language.tokens}</span>
             <div class="flex items-center mt-4">
                 <Check bind:check={value.alwaysActive} name={language.alwaysActive}/>
@@ -314,5 +325,19 @@
         /* The placeholder for the drop location */
         background-color: rgba(var(--risu-theme-selected-rgb), 0.2);
 
+    }
+
+    :global(.lore-compare-match),
+    :global(.lore-compare-match textarea),
+    :global(.lore-compare-match [contenteditable]),
+    :global(.lore-compare-match [contenteditable] *) {
+        color: #4ade80 !important;
+    }
+
+    :global(.lore-compare-different),
+    :global(.lore-compare-different textarea),
+    :global(.lore-compare-different [contenteditable]),
+    :global(.lore-compare-different [contenteditable] *) {
+        color: #facc15 !important;
     }
 </style>

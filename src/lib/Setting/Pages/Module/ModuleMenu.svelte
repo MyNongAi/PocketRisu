@@ -17,6 +17,7 @@
     import { selectMultipleFile } from "src/ts/util";
     import { openAssetViewer, hasImageAssets } from "src/ts/assetViewer.svelte";
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
+    import { buildModuleLoreComparisonStatuses } from "src/ts/gui/loreBookComparison";
     
     import { DBState } from 'src/ts/stores.svelte';
   import { v4 } from "uuid";
@@ -27,6 +28,7 @@
     }
 
     let { currentModule = $bindable() }: Props = $props();
+    let loreComparisonStatuses = $derived(buildModuleLoreComparisonStatuses(DBState.db, currentModule.id))
     let assetFileExtensions:string[] = $state([])
     let assetFilePath:string[] = $state([])
     let manifestItems:[string, string, string][] = $state([])
@@ -306,7 +308,7 @@
     <TextAreaInput className="mt-2 mb-4" bind:value={currentModule.customModuleToggle}/>
 {/if}
 {#if submenu === 1 && (Array.isArray(currentModule.lorebook))}
-    <LoreBookList externalLoreBooks={currentModule.lorebook} />
+    <LoreBookList externalLoreBooks={currentModule.lorebook} comparisonStatuses={loreComparisonStatuses} />
     <div class="text-textcolor2 mt-2 flex">
         <button onclick={() => {addLorebook()}} class="hover:text-textcolor cursor-pointer ml-1">
             <PlusIcon />

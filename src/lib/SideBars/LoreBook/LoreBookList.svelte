@@ -8,6 +8,7 @@
     import { sleep, sortableOptions } from "src/ts/util";
     import { v4 } from "uuid";
     import { notifyError } from "src/ts/alert";
+    import { buildCharacterLoreComparisonStatuses, type LoreComparisonStatus } from "src/ts/gui/loreBookComparison";
 
     let reinitializeSortable = false;
 
@@ -16,9 +17,15 @@
         submenu?: number;
         externalLoreBooks?: loreBook[];
         showFolder?: string
+        comparisonStatuses?: ReadonlyMap<loreBook, LoreComparisonStatus>;
     }
 
-    let { globalMode = false, submenu = 0, externalLoreBooks = null, showFolder = '' }: Props = $props();
+    let { globalMode = false, submenu = 0, externalLoreBooks = null, showFolder = '', comparisonStatuses }: Props = $props();
+    let resolvedComparisonStatuses = $derived.by(() => {
+        if (comparisonStatuses) return comparisonStatuses
+        if (globalMode || submenu !== 0 || externalLoreBooks) return new Map<loreBook, LoreComparisonStatus>()
+        return buildCharacterLoreComparisonStatuses(DBState.db, DBState.db.characters[$selectedCharID]?.chaId)
+    })
     let stb: Sortable = null
     let ele: HTMLDivElement = $state()
     let sorted = $state(0)
@@ -370,6 +377,8 @@
                         isOpen={openedRefs.has(book)}
                         openFolders={openFolders()}
                         isLastInContainer={book === lastVisibleItem}
+                        comparisonStatus={resolvedComparisonStatuses.get(book)}
+                        comparisonStatuses={resolvedComparisonStatuses}
                         onRemove={() => {
                             if (openedRefs.has(book)) {
                                 onClose(book.mode !== 'folder', book)
@@ -414,6 +423,8 @@
                         isOpen={openedRefs.has(book)}
                         openFolders={openFolders()}
                         isLastInContainer={book === lastVisibleItem}
+                        comparisonStatus={resolvedComparisonStatuses.get(book)}
+                        comparisonStatuses={resolvedComparisonStatuses}
                         onRemove={() => {
                             // isDetail must use the same basis as the open side
                             // (LoreBookData passes value.mode !== 'folder'). Keying it
@@ -468,6 +479,8 @@
                         isOpen={openedRefs.has(book)}
                         openFolders={openFolders()}
                         isLastInContainer={book === lastVisibleItem}
+                        comparisonStatus={resolvedComparisonStatuses.get(book)}
+                        comparisonStatuses={resolvedComparisonStatuses}
                         onRemove={() => {
                             // isDetail must use the same basis as the open side
                             // (LoreBookData passes value.mode !== 'folder'). Keying it
@@ -521,6 +534,8 @@
                         isOpen={openedRefs.has(book)}
                         openFolders={openFolders()}
                         isLastInContainer={book === lastVisibleItem}
+                        comparisonStatus={resolvedComparisonStatuses.get(book)}
+                        comparisonStatuses={resolvedComparisonStatuses}
                         onRemove={() => {
                             // isDetail must use the same basis as the open side
                             // (LoreBookData passes value.mode !== 'folder'). Keying it
