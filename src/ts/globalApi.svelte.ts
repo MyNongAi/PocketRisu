@@ -32,7 +32,7 @@ import { updateGuisize } from "./gui/guisize";
 import { deepTouch } from "./gui/deepTouch.svelte";
 import { updateLorebooks, deselectCharacter } from "./characters";
 import { normalizeCharacterFavoriteOrder } from './characterRecentOrder'
-import { dissolveSingletonFolders, pruneHiddenCharacterIds } from "./characterOrder";
+import { dissolveSingletonFolders, pruneHiddenCharacterIds, type OrderEntry } from "./characterOrder";
 import { mergeServerDbWithTrackedLocalChanges, withTrackedCharacters, hasAmbiguousCharacterIds } from "./storage/rebaseMerge";
 import { generationStates, chatGenKey, notifyDatabaseRebased, abortGeneration } from "./process/generationState";
 
@@ -2173,30 +2173,35 @@ export function replaceDbResources(db: Database, replacer: { [key: string]: stri
 export function checkCharOrder() {
     let db = getDatabase()
     db.characterOrder = db.characterOrder ?? []
-    let ordered = []
-    for (let i = 0; i < db.characterOrder.length; i++) {
-        const folder = db.characterOrder[i]
+    const previousOrder: OrderEntry[] = db.characterOrder.flatMap((entry): OrderEntry[] => {
+        if (typeof entry === 'string') return [entry]
+        if (!entry) return []
+        return [{ ...entry, data: [...entry.data] }]
+    })
+    const ordered = new Set<string>()
+    for (const folder of db.characterOrder) {
         if (typeof (folder) !== 'string' && folder) {
             for (const f of folder.data) {
-                ordered.push(f)
+                ordered.add(f)
             }
         }
         if (typeof (folder) === 'string') {
-            ordered.push(folder)
+            ordered.add(folder)
         }
     }
 
-    let charIdList: string[] = []
+    const charIdSet = new Set<string>()
 
     for (let i = 0; i < db.characters.length; i++) {
         const char = db.characters[i]
         const charId = char.chaId
         if (!char.trashTime) {
-            charIdList.push(charId)
+            charIdSet.add(charId)
         }
-        if (!ordered.includes(charId)) {
+        if (!ordered.has(charId)) {
             if (charId !== '§temp' && charId !== '§playground' && !char.trashTime) {
                 db.characterOrder.push(charId)
+                ordered.add(charId)
             }
         }
     }
@@ -2206,9 +2211,10 @@ export function checkCharOrder() {
         if (!stub?.chaId) continue
         // Trashed stubs (deactivated + trashedAt) leave the order like trashed characters.
         if (stub.trashedAt) continue
-        charIdList.push(stub.chaId)
-        if (!ordered.includes(stub.chaId)) {
+        charIdSet.add(stub.chaId)
+        if (!ordered.has(stub.chaId)) {
             db.characterOrder.push(stub.chaId)
+            ordered.add(stub.chaId)
         }
     }
 
@@ -2225,7 +2231,7 @@ export function checkCharOrder() {
             // first and fills it afterwards.
             for (let i2 = 0; i2 < data.data.length; i2++) {
                 const data2 = data.data[i2]
-                if (!charIdList.includes(data2)) {
+                if (!charIdSet.has(data2)) {
                     data.data.splice(i2, 1)
                     i2--;
                 }
@@ -2233,7 +2239,7 @@ export function checkCharOrder() {
             db.characterOrder[i] = data
         }
         else {
-            if (!charIdList.includes(data)) {
+            if (!charIdSet.has(data)) {
                 db.characterOrder.splice(i, 1)
                 i--;
             }
@@ -2241,14 +2247,14 @@ export function checkCharOrder() {
     }
 
     db.characterOrder = normalizeCharacterFavoriteOrder(
-        dissolveSingletonFolders(db.characterOrder),
+        dissolveSingletonFolders(db.characterOrder, previousOrder),
         new Set(db.characters.filter((character) => character.favorite && !character.trashTime).map((character) => character.chaId)),
     )
 
     // Sidebar-hidden ids: drop only ids that exist nowhere any more (trashed
     // characters keep their flag so restoring them restores the hidden state).
     if (Array.isArray(db.nodeOnlyHiddenCharacterIds) && db.nodeOnlyHiddenCharacterIds.length > 0) {
-        const known = new Set<string>(charIdList)
+        const known = new Set<string>(charIdSet)
         for (const char of db.characters) {
             if (char?.chaId) known.add(char.chaId)
         }
