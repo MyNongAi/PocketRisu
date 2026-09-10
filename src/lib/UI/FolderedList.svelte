@@ -65,6 +65,8 @@
         itemMenu?: Snippet<[number]>;
         /** Toolbar content shown top-left, opposite the "new folder" button. */
         actions?: Snippet;
+        /** Show filtered and total item counts under the search field. */
+        showItemCount?: boolean;
         /** Optional controls rendered in a folder header before its count/menu. */
         folderActions?: Snippet<[PromptPresetFolder, number[]]>;
     }
@@ -95,6 +97,7 @@
         isExpanded = () => false,
         itemMenu,
         actions,
+        showItemCount = false,
         folderActions,
     }: Props = $props();
 
@@ -121,6 +124,7 @@
             indexes: query ? group.indexes.filter(matches) : group.indexes,
         }))
         .filter((group) => !query || group.indexes.length > 0));
+    const displayItemCount = $derived(displayGroups.reduce((count, group) => count + group.indexes.length, 0));
 
     function loadCollapsed(): Set<string> {
         if (!storageKey) return new Set();
@@ -241,6 +245,11 @@
         <input bind:value={searchQuery} placeholder={searchPlaceholder}
             class="w-full py-2 bg-transparent text-textcolor outline-none"/>
     </div>
+    {#if showItemCount}
+        <div class="text-right text-xs text-textcolor2">
+            {language.storageShowingOf(displayItemCount, itemSearchTexts.length)}
+        </div>
+    {/if}
 
     <ShSortableList
         className="flex flex-col gap-2"

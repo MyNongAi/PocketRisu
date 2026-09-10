@@ -200,6 +200,7 @@
         folders={displayFolders}
         itemFolderIds={displayModules.map(m => m.folderId)}
         itemSearchTexts={displayModules.map(m => `${m.name}\n${m.description ?? ''}`)}
+        showItemCount
         storageKey="risu-module-folders-expanded-v2"
         defaultCollapsed
         newFoldersFirst

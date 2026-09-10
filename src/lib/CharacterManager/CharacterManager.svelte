@@ -64,8 +64,10 @@
     let search = $derived(externalSearch ?? searchLocal);
     let entries = $derived(buildManagerEntries(DBState.db));
     let liveEntries = $derived([...entries.values()].filter((e) => !e.trashed));
-    let trashEntries = $derived([...entries.values()].filter((e) => e.trashed).filter((e) => matchesSearch(e.name, search)));
+    let allTrashEntries = $derived([...entries.values()].filter((e) => e.trashed));
+    let trashEntries = $derived(allTrashEntries.filter((e) => matchesSearch(e.name, search)));
     let visible = $derived((e: ManagerEntry) => matchesSearch(e.name, search) && matchesFilter(e, filter));
+    let visibleLiveCount = $derived(liveEntries.filter(visible).length);
     let flatList = $derived(sortEntries(liveEntries.filter(visible), sort));
     // Grid tab: 'order' follows the rail sequence flattened (folders inlined); other sorts reuse flatList.
     let gridList = $derived.by(() => {
@@ -401,7 +403,7 @@
     {#if tab === 0 || tab === 2}
         <div class="mx-4 mb-3 rounded-md border border-darkborderc bg-bgcolor px-3 py-2 text-xs text-textcolor2">{language.characterManagerHint}</div>
         <div class="flex flex-col gap-2 px-4 pb-3">
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2">
                 {#if externalSearch === undefined}
                     <div class="risu-field-border flex h-8 items-center gap-2 rounded-md px-2.5 grow min-w-0">
                         <SearchIcon size={14} class="text-textcolor2 shrink-0"/>
@@ -426,6 +428,7 @@
                     <OptionInput value="hidden">{language.filterHiddenOnly}</OptionInput>
                     <OptionInput value="archived">{language.filterArchivedOnly}</OptionInput>
                 </ShSelect>
+                <span class="shrink-0 text-xs text-textcolor2">{language.storageShowingOf(visibleLiveCount, liveEntries.length)}</span>
                 <div class="grow max-sm:hidden"></div>
                 {#if tab === 0}
                     <ShToggle bind:pressed={selectMode} size="sm" onPressedChange={(v) => { if (!v) clearSelection() }}>{language.select}</ShToggle>
@@ -558,7 +561,7 @@
         {/if}
     {:else}
         <div class="mx-4 mb-3 rounded-md border border-darkborderc bg-bgcolor px-3 py-2 text-xs text-textcolor2">{language.trashDesc}</div>
-        <div class="flex items-center gap-2 px-4 pb-3">
+        <div class="flex flex-wrap items-center gap-2 px-4 pb-3">
             {#if externalSearch === undefined}
                 <div class="risu-field-border flex h-8 items-center gap-2 rounded-md px-2.5 grow min-w-0">
                     <SearchIcon size={14} class="text-textcolor2 shrink-0"/>
@@ -567,6 +570,7 @@
             {:else}
                 <div class="grow"></div>
             {/if}
+            <span class="shrink-0 text-xs text-textcolor2">{language.storageShowingOf(trashEntries.length, allTrashEntries.length)}</span>
             <ShButton size="sm" variant="destructive" disabled={trashEntries.length === 0} onclick={emptyTrash}><TrashIcon />{language.emptyTrash}</ShButton>
         </div>
         <div class="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
