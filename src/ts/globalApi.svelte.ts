@@ -1660,11 +1660,18 @@ export async function saveDb() {
         }
         changed = false
         if (requiresFullEncoderReload.state) {
-            encoder = new RisuSaveEncoder()
-            await encoder.init(getDatabase(), {
-                compression: false,
-                skipRemoteSavingOnCharacters: false
-            })
+            // Node/PocketRisu normally saves through RisuSavePatcher. Rebuilding
+            // the monolithic legacy encoder here after removing one character
+            // duplicates the entire active catalog in browser memory and can
+            // crash a 1,000+ character tab. The patch path creates an encoder
+            // itself only if it genuinely falls back to a full write.
+            if (!supportsPatchSync) {
+                encoder = new RisuSaveEncoder()
+                await encoder.init(getDatabase(), {
+                    compression: false,
+                    skipRemoteSavingOnCharacters: false
+                })
+            }
             requiresFullEncoderReload.state = false
         }
         await triggerSave()

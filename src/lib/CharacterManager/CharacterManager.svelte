@@ -115,8 +115,11 @@
 
     onMount(() => { void refreshDuplicateCounts(); });
     $effect(() => {
-        // New sort/filter/search → start the flat list from the top again.
-        void flatList; void gridList;
+        // Only a view/query change starts incremental rendering from the top.
+        // Tracking flatList/gridList here also reset the rendered page after a
+        // delete. The scroll container then retained its old scrollTop against
+        // just 60 rows and appeared to jump to the very bottom.
+        void tab; void sort; void filter; void search;
         incremental.reset();
     });
 
