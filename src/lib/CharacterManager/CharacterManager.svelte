@@ -312,6 +312,36 @@
         }
         clearSelection();
     }
+
+    async function openGridContextMenu(entry: ManagerEntry, event: MouseEvent) {
+        event.preventDefault();
+        event.stopPropagation();
+        const labels: string[] = [];
+        const actions: Array<() => void | Promise<void>> = [];
+        const add = (label: string, action: () => void | Promise<void>) => {
+            labels.push(label);
+            actions.push(action);
+        };
+
+        add(language.openCharacter, () => open(entry));
+        add(entry.hidden ? language.showInSidebar : language.hideFromSidebar,
+            () => setHiddenFor([entry.chaId], !entry.hidden));
+        add(language.folderMoveTo, () => moveToFolderPrompt([entry.chaId]));
+        if (sort === 'order') {
+            add(language.moveUp, () => moveEntry(entry, -1));
+            add(language.moveDown, () => moveEntry(entry, 1));
+        }
+        if (entry.archived) {
+            add(language.activateCharacter, () => activate(entry));
+        } else {
+            add(language.deactivateCharacter, () => deactivate(entry));
+            add(language.exportCharacter, () => exportEntry(entry));
+        }
+        add(language.moveToTrash, () => trash(entry));
+        const selected = Number.parseInt(await alertSelect([...labels, language.cancel]));
+        if (!Number.isInteger(selected) || selected < 0 || selected >= actions.length) return;
+        await actions[selected]();
+    }
 </script>
 
 {#snippet rowMenu(entry: ManagerEntry)}
@@ -438,6 +468,7 @@
                             class:opacity-60={entry.archived}
                             title={`${entry.name} · 출처 ${entry.sourceBadge}${entry.missingAssetCount > 0 ? ` · 에셋 ${entry.missingAssetCount}개 누락` : ''}`}
                             onclick={() => open(entry)}
+                            oncontextmenu={(event) => { void openGridContextMenu(entry, event) }}
                         >
                             <div class="relative" class:grayscale={entry.archived}>
                                 {#await getCharImage(entry.image, 'plain')}

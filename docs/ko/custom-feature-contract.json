@@ -253,14 +253,21 @@
       "criticality": "data-safety",
       "ownerFiles": [
         "tools/quarantine-exact-character-duplicates.cjs",
-        "tools/quarantine-exact-module-duplicates.cjs"
+        "tools/quarantine-exact-module-duplicates.cjs",
+        "src/ts/gui/loreBookComparison.ts",
+        "src/lib/SideBars/LoreBook/LoreBookList.svelte",
+        "src/lib/SideBars/LoreBook/LoreBookData.svelte",
+        "src/lib/Setting/Pages/Module/ModuleMenu.svelte"
       ],
       "requiredMarkers": [
         { "file": "tools/quarantine-exact-character-duplicates.cjs", "contains": "quarantineExactDuplicates" },
-        { "file": "tools/quarantine-exact-module-duplicates.cjs", "contains": "pocketrisu-exact-module-quarantine-v1" }
+        { "file": "tools/quarantine-exact-module-duplicates.cjs", "contains": "pocketrisu-exact-module-quarantine-v1" },
+        { "file": "src/ts/gui/loreBookComparison.ts", "contains": "buildCharacterLoreComparisonStatuses" },
+        { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "lore-compare-match" }
       ],
       "regressionTests": [
-        "tools/quarantine-exact-module-duplicates.test.cjs"
+        "tools/quarantine-exact-module-duplicates.test.cjs",
+        "src/ts/gui/loreBookComparison.test.ts"
       ]
     },
     {
@@ -301,7 +308,8 @@
         { "file": "src/ts/characterArchive.ts", "contains": "autoDeactivatedAt" },
         { "file": "src/ts/gui/characterCatalogMetrics.ts", "contains": "buildExactCharacterDuplicateCounts" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "archived-character-muted" },
-        { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "characterAssetCountLabel" }
+        { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "characterAssetCountLabel" },
+        { "file": "src/lib/CharacterManager/CharacterManager.svelte", "contains": "openGridContextMenu" }
       ],
       "regressionTests": [
         "src/ts/characterAutoArchivePolicy.test.ts",
