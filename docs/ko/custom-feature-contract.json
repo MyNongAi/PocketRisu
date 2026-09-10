@@ -186,7 +186,8 @@
         { "file": "src/ts/process/moduleSort.ts", "contains": "recordModuleFolderActivation" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "sortModulesByActivation" },
         { "file": "src/lib/Setting/Pages/Module/ModuleMenu.svelte", "contains": "assetManifestPager('top')" },
-        { "file": "src/lib/UI/FolderedList.svelte", "contains": "emptyInsertThreshold: 32" }
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "emptyInsertThreshold: 32" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "showItemCount" }
       ],
       "regressionTests": [
         "src/ts/process/moduleFolders.test.ts",
@@ -313,7 +314,8 @@
         { "file": "src/ts/gui/characterCatalogMetrics.ts", "contains": "buildExactCharacterDuplicateCounts" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "archived-character-muted" },
         { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "characterAssetCountLabel" },
-        { "file": "src/lib/CharacterManager/CharacterManager.svelte", "contains": "openGridContextMenu" }
+        { "file": "src/lib/CharacterManager/CharacterManager.svelte", "contains": "openGridContextMenu" },
+        { "file": "src/lib/CharacterManager/CharacterManager.svelte", "contains": "visibleLiveCount" }
       ],
       "regressionTests": [
         "src/ts/characterAutoArchivePolicy.test.ts",
