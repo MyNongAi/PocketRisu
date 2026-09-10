@@ -31,7 +31,6 @@
     Settings,
     ListIcon,
     LayoutGridIcon,
-    ShellIcon,
     FolderIcon,
     FolderOpenIcon,
     SearchIcon,
@@ -1181,18 +1180,6 @@
           openCharacterManager.set(true);
         }}><LayoutGridIcon /></BarIcon
       >
-      <div class="mt-2"></div>
-      <BarIcon
-        onClick={() => {
-          reseter()
-          if($selectedCharID === -1 && $PlaygroundStore !== 0){
-            PlaygroundStore.set(0)
-            return
-          }
-          deselectCharacter()
-          PlaygroundStore.set(1)
-        }}
-      ><ShellIcon /></BarIcon>
       {#if additionalHamburgerMenu.length > 0}
         <div class="mt-2 h-px w-10 bg-selected shrink-0"></div>
         {#each additionalHamburgerMenu as menu}
@@ -1211,20 +1198,6 @@
     {/if}
   </div>
   {/if}
-  <!-- Keep the official character manager alongside the custom searchable,
-       virtualized catalog instead of replacing that catalog with an eager list. -->
-  <button
-    class="flex h-8 min-h-8 w-14 min-w-14 cursor-pointer mb-1 items-center justify-center rounded-md border border-borderc text-textcolor transition-colors hover:border-primary hover:text-primary"
-    class:max-xs:hidden={$leftBarCollapsed}
-    aria-label={language.characterManager}
-    use:tooltipRight={language.characterManager}
-    onclick={() => {
-      reseter();
-      openCharacterManager.set(true);
-    }}
-  >
-    <LayoutGridIcon size={18} />
-  </button>
   <div class="mx-1 mb-1 flex w-[calc(100%_-_0.5rem)] shrink-0 items-center gap-1 rounded-md border border-selected bg-darkbg px-1.5"
     class:max-xs:hidden={$leftBarCollapsed}>
     <SearchIcon size={13} class="shrink-0 text-textcolor2"/>
@@ -1609,18 +1582,6 @@
           openCharacterManager.set(true);
         }}><LayoutGridIcon /></BarIcon
       >
-      <div class="mt-2"></div>
-      <BarIcon
-        onClick={() => {
-          reseter()
-          if($selectedCharID === -1 && $PlaygroundStore !== 0){
-            PlaygroundStore.set(0)
-            return
-          }
-          deselectCharacter()
-          PlaygroundStore.set(1)
-        }}
-      ><ShellIcon /></BarIcon>
       {#if additionalHamburgerMenu.length > 0}
         <div class="mt-2 h-px w-10 bg-selected shrink-0"></div>
         {#each additionalHamburgerMenu as menu}
