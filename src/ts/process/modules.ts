@@ -1,8 +1,9 @@
 import { language } from "src/lang"
-import { alertClear, alertConfirm, alertError, alertModuleSelect, alertNormal, alertStore, alertWait, notifySuccess } from "../alert"
+import { alertClear, alertConfirm, alertError, alertInput, alertModuleSelect, alertNormal, alertStore, alertWait, notifySuccess } from "../alert"
 import { getCurrentCharacter, getCurrentChat, getDatabase, setCurrentCharacter, setDatabase, type Chat, type character, type customscript, type loreBook, type RisuPersona, type triggerscript } from "../storage/database.svelte"
 import { AppendableBuffer, downloadFile, forageStorage, loadAssetManifestItems, LocalWriter, readImage, saveAsset, VirtualWriter } from "../globalApi.svelte"
 import { checkPersonaBinded, selectMultipleFile, sleep } from "../util"
+import { isNodeServer } from "../platform"
 import { v4 } from "uuid"
 import { convertExternalLorebook } from "./lorebook.svelte"
 import { compressImage } from '../media'
@@ -442,6 +443,33 @@ export async function importModule(){
         notifySuccess(`${result.completed}/${result.total} ${language.successImport}`)
     }
     return result
+}
+
+export async function importModuleFromProtonDrive() {
+    const url = await alertInput(language.protonDriveUrlPrompt)
+
+    if (url && url.includes('drive.proton.me/urls/')) {
+        window.open(url, '_blank')
+    }
+
+    if (isNodeServer) {
+        const { watchDownloadsAndImport } = await import('../characters')
+        await watchDownloadsAndImport('module')
+        return
+    }
+
+    const files = await selectMultipleFile(['json', 'lorebook', 'risum', 'charx'])
+    if (!files || files.length === 0) return
+
+    const result = await runImportBatch(files, async (file, report) => {
+        await importModuleFile(file, {
+            suppressSuccess: true,
+            onProgress: report,
+        })
+    })
+    if (result.completed > 0) {
+        notifySuccess(`${result.completed}/${result.total} ${language.successImport}`)
+    }
 }
 
 function getModuleById(id:string){

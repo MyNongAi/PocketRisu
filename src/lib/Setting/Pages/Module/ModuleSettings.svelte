@@ -8,8 +8,8 @@
     import ShDropdownMenuItem from "src/lib/UI/GUI/ShDropdownMenuItem.svelte";
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
     import ModuleMenu from "src/lib/Setting/Pages/Module/ModuleMenu.svelte";
-    import { addModuleToDatabase, exportModule, exportModuleLegacy, hydrateModuleAssets, importModule, refreshModules, type RisuModule } from "src/ts/process/modules";
-    import { Clock3Icon, SquarePen, Globe, Share2Icon, PlusIcon, HardDriveUpload, ListOrderedIcon, PaletteIcon, StarIcon, Waypoints } from "@lucide/svelte";
+    import { addModuleToDatabase, exportModule, exportModuleLegacy, hydrateModuleAssets, importModule, importModuleFromProtonDrive, refreshModules, type RisuModule } from "src/ts/process/modules";
+    import { Clock3Icon, SquarePen, Globe, Share2Icon, PlusIcon, HardDriveUpload, ListOrderedIcon, PaletteIcon, StarIcon, Waypoints, CloudDownloadIcon } from "@lucide/svelte";
     import { v4 } from "uuid";
     import { tooltip } from "src/ts/gui/tooltip";
     import { alertConfirm, alertError, alertSelect, notifySuccess } from "src/ts/alert";
@@ -246,6 +246,7 @@
                 mode = 1
             }}><PlusIcon />{language.createModule}</ShButton>
             <ShButton size="sm" variant="outline" onclick={() => importModule()}><HardDriveUpload />{language.importModule}</ShButton>
+            <ShButton size="sm" variant="outline" onclick={() => importModuleFromProtonDrive()}><CloudDownloadIcon />{language.importFromProton}</ShButton>
             <ShButton size="sm" variant="outline" onclick={() => importMCPModule()} title="MCP"><Waypoints /></ShButton>
             <ShButton size="sm" variant={moduleCatalogSort === 'registered' ? 'default' : 'outline'} onclick={() => setModuleCatalogSort('registered')} title="등록순">
                 <ListOrderedIcon />등록순

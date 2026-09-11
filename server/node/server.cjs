@@ -3695,12 +3695,11 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
     return { assetsRestored, bytesReceived, coldStorageFailed, externalAssets };
 }
 
-app.get('/', async (req, res, next) => {
-
+async function serveIndex(req, res, next) {
     const clientIP = req.ip || 'Unknown IP';
     const timestamp = new Date().toISOString();
     console.log(`[Server] ${timestamp} | Connection from: ${clientIP}`);
-    
+
     try {
         const mainIndex = await fs.readFile(path.join(process.cwd(), 'dist', 'index.html'))
         const root = htmlparser.parse(mainIndex)
@@ -3710,13 +3709,16 @@ app.get('/', async (req, res, next) => {
         // 256-bit seed so CSP nonces remain unpredictable even there.
         const pluginNonceSeed = nodeCrypto.randomBytes(32).toString('hex')
         head.innerHTML = `<script>globalThis.__NODE__ = true; globalThis.__PATCH_SYNC__ = ${enablePatchSync}; globalThis.__POCKETRISU_PLUGIN_NONCE_SEED__ = "${pluginNonceSeed}"</script>` + head.innerHTML
-        
+
         res.send(root.toString())
     } catch (error) {
         console.log(error)
         next(error)
     }
-})
+}
+
+app.get('/', serveIndex)
+app.get('/share', serveIndex)
 
 async function checkAuth(req, res, returnOnlyStatus = false, {allowExpired = false} = {}){
     try {
@@ -7108,6 +7110,89 @@ app.get('/api/backup/export', async (req, res, next) => {
     } finally {
         endExclusiveStorage(storageReason);
     }
+});
+
+// ─── Download folder watch (auto-import) ────────────────────────────────────
+app.get('/api/import/watch-downloads', async (req, res) => {
+    if (!await checkAuth(req, res)) { return; }
+
+    const extList = (req.query.extensions || 'charx,png,json,risum,risup,lorebook').split(',');
+    const extSet = new Set(extList.map(e => e.toLowerCase()));
+    const downloadsDir = path.join(os.homedir(), 'Downloads');
+
+    if (!existsSync(downloadsDir)) {
+        return res.status(404).json({ error: 'Downloads folder not found' });
+    }
+
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+    });
+    res.write('data: {"status":"watching"}\n\n');
+
+    const existing = new Set();
+    try {
+        for (const f of readdirSync(downloadsDir)) existing.add(f);
+    } catch {}
+
+    const pending = new Map();
+    let closed = false;
+
+    const poll = setInterval(() => {
+        if (closed) return;
+        let entries;
+        try { entries = readdirSync(downloadsDir); } catch { return; }
+
+        for (const filename of entries) {
+            if (existing.has(filename)) continue;
+            if (filename.endsWith('.crdownload') || filename.endsWith('.tmp') || filename.endsWith('.part')) continue;
+
+            const dot = filename.lastIndexOf('.');
+            if (dot < 0) continue;
+            const ext = filename.slice(dot + 1).toLowerCase();
+            if (!extSet.has(ext)) continue;
+
+            const filePath = path.join(downloadsDir, filename);
+            let size;
+            try { size = statSync(filePath).size; } catch { continue; }
+            if (size === 0) continue;
+
+            const prev = pending.get(filename);
+            if (!prev) {
+                pending.set(filename, { size, stable: 0 });
+            } else if (size === prev.size) {
+                prev.stable++;
+                if (prev.stable >= 2) {
+                    try {
+                        const buf = readFileSync(filePath);
+                        const b64 = buf.toString('base64');
+                        res.write(`data: ${JSON.stringify({ filename, data: b64 })}\n\n`);
+                    } catch (e) {
+                        logger.error('[WatchDownloads] read failed:', e.message);
+                    }
+                    existing.add(filename);
+                    pending.delete(filename);
+                }
+            } else {
+                prev.size = size;
+                prev.stable = 0;
+            }
+        }
+    }, 1000);
+
+    const timeout = setTimeout(() => {
+        cleanup();
+        try { res.write('data: {"done":true}\n\n'); res.end(); } catch {}
+    }, 300000);
+
+    function cleanup() {
+        closed = true;
+        clearInterval(poll);
+        clearTimeout(timeout);
+    }
+
+    req.on('close', cleanup);
 });
 
 // Pre-flight check: auth + size + disk space before client starts uploading
