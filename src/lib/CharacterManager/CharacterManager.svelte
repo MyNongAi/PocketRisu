@@ -7,7 +7,7 @@
     import { v4 } from "uuid";
     import {
         ArchiveIcon, ArchiveRestoreIcon, DownloadIcon, EyeIcon, EyeOffIcon, FolderIcon, FolderPlusIcon,
-        PlusIcon, SearchIcon, SettingsIcon, SquareArrowOutUpRightIcon, TrashIcon, Undo2Icon, XIcon,
+        ArrowUpDownIcon, PlusIcon, SearchIcon, SettingsIcon, SquareArrowOutUpRightIcon, TrashIcon, Undo2Icon, XIcon,
     } from "@lucide/svelte";
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
     import ShToggle from "src/lib/UI/GUI/ShToggle.svelte";
@@ -54,6 +54,7 @@
     let tab = $state(0); // 0 list, 1 trash, 2 grid
     let searchLocal = $state('');
     let sort = $state<ManagerSort>('order');
+    let sortReversed = $state(loadSortReversed());
     let filter = $state<ManagerFilter>('all');
     let selectMode = $state(false);
     let gridCompact = $state(loadGridCompact());
@@ -68,7 +69,8 @@
     let trashEntries = $derived(allTrashEntries.filter((e) => matchesSearch(e.name, search)));
     let visible = $derived((e: ManagerEntry) => matchesSearch(e.name, search) && matchesFilter(e, filter));
     let visibleLiveCount = $derived(liveEntries.filter(visible).length);
-    let flatList = $derived(sortEntries(liveEntries.filter(visible), sort));
+    let baseFlatList = $derived(sortEntries(liveEntries.filter(visible), sort));
+    let flatList = $derived(sortReversed ? [...baseFlatList].reverse() : baseFlatList);
     // Grid tab: 'order' follows the rail sequence flattened (folders inlined); other sorts reuse flatList.
     let gridList = $derived.by(() => {
         if (sort !== 'order') return flatList;
@@ -82,9 +84,9 @@
             if (isFolderEntry(entry)) entry.data.forEach(push);
             else push(entry);
         }
-        return out;
+        return sortReversed ? out.reverse() : out;
     });
-    let dragDisabled = $derived(search.length > 0 || filter !== 'all' || selectMode);
+    let dragDisabled = $derived(search.length > 0 || filter !== 'all' || selectMode || sortReversed);
     let activeChaId = $derived(DBState.db.characters[$selectedCharID]?.chaId);
     let folders = $derived(DBState.db.characterOrder.filter(isFolderEntry));
 
@@ -94,6 +96,13 @@
     function setGridCompact(v: boolean) {
         gridCompact = v;
         try { localStorage.setItem('risu-character-manager-grid-compact', v ? '1' : '0'); } catch {}
+    }
+    function loadSortReversed(): boolean {
+        try { return localStorage.getItem('risu-character-manager-sort-reversed') === '1'; } catch { return false; }
+    }
+    function toggleSortDirection() {
+        sortReversed = !sortReversed;
+        try { localStorage.setItem('risu-character-manager-sort-reversed', sortReversed ? '1' : '0'); } catch {}
     }
 
     const incremental = createIncrementalList({ pageSize: 60 });
@@ -119,7 +128,7 @@
         // Tracking flatList/gridList here also reset the rendered page after a
         // delete. The scroll container then retained its old scrollTop against
         // just 60 rows and appeared to jump to the very bottom.
-        void tab; void sort; void filter; void search;
+        void tab; void sort; void sortReversed; void filter; void search;
         incremental.reset();
     });
 
@@ -332,7 +341,7 @@
         add(entry.hidden ? language.showInSidebar : language.hideFromSidebar,
             () => setHiddenFor([entry.chaId], !entry.hidden));
         add(language.folderMoveTo, () => moveToFolderPrompt([entry.chaId]));
-        if (sort === 'order') {
+        if (sort === 'order' && !sortReversed) {
             add(language.moveUp, () => moveEntry(entry, -1));
             add(language.moveDown, () => moveEntry(entry, 1));
         }
@@ -357,7 +366,7 @@
         <ShDropdownMenuItem onSelect={() => setHiddenFor([entry.chaId], true)}><EyeOffIcon /><span>{language.hideFromSidebar}</span></ShDropdownMenuItem>
     {/if}
     <ShDropdownMenuItem onSelect={() => moveToFolderPrompt([entry.chaId])}><FolderIcon /><span>{language.folderMoveTo}</span></ShDropdownMenuItem>
-    {#if sort === 'order'}
+    {#if sort === 'order' && !sortReversed}
         <ShDropdownMenuItem onSelect={() => moveEntry(entry, -1)}><span>{language.moveUp}</span></ShDropdownMenuItem>
         <ShDropdownMenuItem onSelect={() => moveEntry(entry, 1)}><span>{language.moveDown}</span></ShDropdownMenuItem>
     {/if}
@@ -426,6 +435,13 @@
                     <OptionInput value="created">{language.sortByCreated}</OptionInput>
                     <OptionInput value="chats">{language.sortByChatCount}</OptionInput>
                 </ShSelect>
+                <ShButton
+                    size="sm"
+                    variant={sortReversed ? 'default' : 'outline'}
+                    title={sortReversed ? '역순으로 표시 중' : '정방향으로 표시 중'}
+                    aria-label={sortReversed ? '정방향으로 전환' : '역순으로 전환'}
+                    onclick={toggleSortDirection}
+                ><ArrowUpDownIcon /></ShButton>
                 <ShSelect bind:value={filter} size="sm" className="w-36 max-sm:grow">
                     <OptionInput value="all">{language.filterAll}</OptionInput>
                     <OptionInput value="hidden">{language.filterHiddenOnly}</OptionInput>
@@ -529,6 +545,7 @@
                     {entries}
                     {visible}
                     {dragDisabled}
+                    reversed={sortReversed}
                     selectable={selectMode}
                     {selectedIds}
                     {activeChaId}

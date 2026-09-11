@@ -56,7 +56,7 @@ function withOverlay<T>(fn: () => Promise<T>): Promise<T> {
  * `characters` to the stub list (one save tick) → selection is cleared.
  * Returns true when the character was deactivated.
  */
-export async function archiveCharacter(index: number, arg: { skipConfirm?: boolean; trash?: boolean; trashedAt?: number; silent?: boolean; automatic?: boolean } = {}): Promise<boolean> {
+export async function archiveCharacter(index: number, arg: { skipConfirm?: boolean; trash?: boolean; trashedAt?: number; silent?: boolean; automatic?: boolean; nonBlocking?: boolean } = {}): Promise<boolean> {
     const db = DBState.db
     const char = db.characters[index]
     if (!char?.chaId) return false
@@ -111,7 +111,9 @@ export async function archiveCharacter(index: number, arg: { skipConfirm?: boole
     }
     try {
         // silent: no overlay, no dialogs — the caller reports (migration logs).
-        return arg.silent ? await run() : await withOverlay(run)
+        // nonBlocking: keep success/error feedback, but never cover and lock
+        // the whole chat while a reversible trash move is written.
+        return arg.silent || arg.nonBlocking ? await run() : await withOverlay(run)
     } catch (error) {
         if (arg.silent) throw error
         if (error instanceof CharacterArchiveError && error.code === 'ARCHIVE_CHATS_UNAVAILABLE') {

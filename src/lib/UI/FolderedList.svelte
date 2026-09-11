@@ -67,6 +67,8 @@
         itemMenu?: Snippet<[number]>;
         /** Toolbar content shown top-left, opposite the "new folder" button. */
         actions?: Snippet;
+        /** Optional secondary toolbar row, kept separate from create/import actions. */
+        subActions?: Snippet;
         /** Show filtered and total item counts under the search field. */
         showItemCount?: boolean;
         /** Optional controls rendered in a folder header before its count/menu. */
@@ -100,6 +102,7 @@
         isExpanded = () => false,
         itemMenu,
         actions,
+        subActions,
         showItemCount = false,
         folderActions,
     }: Props = $props();
@@ -243,6 +246,11 @@
         <div class="grow"></div>
         <ShButton size="sm" variant="outline" onclick={createFolder}><FolderPlusIcon />{language.folderNew}</ShButton>
     </div>
+    {#if subActions}
+        <div class="flex flex-wrap items-center gap-2">
+            {@render subActions()}
+        </div>
+    {/if}
     <div class="risu-field-border flex items-center gap-2 rounded-md px-3">
         <SearchIcon size={18} class="text-textcolor2 shrink-0"/>
         <input bind:value={searchQuery} placeholder={searchPlaceholder}
