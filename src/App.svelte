@@ -6,6 +6,7 @@
     import AlertComp from './lib/Others/AlertComp.svelte';
     import RealmPopUp from './lib/UI/Realm/RealmPopUp.svelte';
     import CharacterManager from './lib/CharacterManager/CharacterManager.svelte';
+    import GridChars from './lib/Others/GridCatalog.svelte';
     import FolderSettingsDialog from './lib/CharacterManager/FolderSettingsDialog.svelte';
     import BookmarkList from './lib/Others/BookmarkList.svelte';
     import Settings from './lib/Setting/Settings.svelte';
@@ -44,6 +45,12 @@
     let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
     let aprilFoolsPage = $state(0)
     let keepingSessionAlive = $state(false)
+    let legacyGridOpen = $state(false)
+
+    function openLegacyGrid() {
+        openCharacterManager.set(false)
+        legacyGridOpen = true
+    }
 
     const getMainDropEffect = (e:DragEvent): DataTransfer['dropEffect'] => {
         const types = Array.from(e.dataTransfer?.types ?? [])
@@ -209,13 +216,16 @@
             <MobileFooter />
         </div>
     {:else}
+        {#if legacyGridOpen}
+            <GridChars endGrid={() => { legacyGridOpen = false }} />
+        {:else}
         {#if (!$DynamicGUI)}
             {#if $splitChatOpen || isEmbeddedRisuPane}
                 <div
                     class="split-workspace-sidebar fixed left-0 top-0 z-30 flex h-full"
                     class:pointer-events-none={!$sideBarStore}
                 >
-                    <Sidebar hidden={!$sideBarStore} />
+                    <Sidebar hidden={!$sideBarStore} {openLegacyGrid} />
                     {#if $sideBarStore}
                         <button
                             type="button"
@@ -229,17 +239,18 @@
                     {/if}
                 </div>
             {:else}
-                <Sidebar hidden={!$sideBarStore} />
+                <Sidebar hidden={!$sideBarStore} {openLegacyGrid} />
             {/if}
         {:else}
             <div class="top-0 w-full h-full left-0 z-30 flex flex-row items-center" class:fixed={$sideBarStore} class:hidden={!$sideBarStore} >
                 <!-- svelte-ignore a11y_click_events_have_key_events -->
-                <Sidebar hidden={false} />
+                <Sidebar hidden={false} {openLegacyGrid} />
             </div>
         {/if}
         <ChatScreen />
         {#if $openCharacterManager}
             <CharacterManager />
+        {/if}
         {/if}
     {/if}
     <AlertComp />

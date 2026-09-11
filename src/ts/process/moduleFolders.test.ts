@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
     assignModuleToFolder,
     buildModuleFolderCatalog,
+    dissolveShrunkenModuleFolders,
     findModuleFolderId,
     moveModuleByDrop,
     moveModuleFolderByDrop,
@@ -337,5 +338,40 @@ describe('synchronizeModuleFolderMembership', () => {
 
         expect(items[0].folderId).toBeUndefined()
         expect(folders[0].moduleIds).toEqual([])
+    })
+})
+
+describe('dissolveShrunkenModuleFolders', () => {
+    it('dissolves a two-member folder after it shrinks to one', () => {
+        const previous = [{ id: 'f', name: 'Folder', moduleIds: ['a', 'b'] }]
+        const result = dissolveShrunkenModuleFolders(
+            [{ id: 'a', name: 'A', folderId: 'f' }, { id: 'b', name: 'B' }],
+            [{ id: 'f', name: 'Folder', moduleIds: ['a'] }],
+            previous,
+        )
+
+        expect(result.folders).toEqual([])
+        expect(result.modules.map((module) => module.folderId)).toEqual([undefined, undefined])
+    })
+
+    it('keeps a first module dropped into a newly created empty folder', () => {
+        const result = dissolveShrunkenModuleFolders(
+            [{ id: 'a', name: 'A', folderId: 'f' }],
+            [{ id: 'f', name: 'Folder', moduleIds: ['a'] }],
+            [{ id: 'f', name: 'Folder', moduleIds: [] }],
+        )
+
+        expect(result.folders[0].moduleIds).toEqual(['a'])
+        expect(result.modules[0].folderId).toBe('f')
+    })
+
+    it('removes an emptied one-member folder', () => {
+        const result = dissolveShrunkenModuleFolders(
+            [{ id: 'a', name: 'A' }],
+            [{ id: 'f', name: 'Folder', moduleIds: [] }],
+            [{ id: 'f', name: 'Folder', moduleIds: ['a'] }],
+        )
+
+        expect(result.folders).toEqual([])
     })
 })

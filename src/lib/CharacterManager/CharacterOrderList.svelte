@@ -23,6 +23,7 @@
         entries: Map<string, ManagerEntry>;
         visible: (entry: ManagerEntry) => boolean;
         dragDisabled?: boolean;
+        reversed?: boolean;
         selectable?: boolean;
         selectedIds?: ReadonlySet<string>;
         activeChaId?: string;
@@ -35,13 +36,16 @@
     }
 
     let {
-        order, entries, visible, dragDisabled = false, selectable = false, selectedIds,
+        order, entries, visible, dragDisabled = false, reversed = false, selectable = false, selectedIds,
         activeChaId, duplicateCounts = null, onOpen, onToggleSelect, onLayoutChange, rowMenu, folderMenu,
     }: Props = $props();
 
     const STORAGE_KEY = 'risu-character-manager-collapsed';
     let rootEl: HTMLDivElement = $state();
     let collapsed = $state<Set<string>>(loadCollapsed());
+    let displayOrder = $derived(reversed
+        ? [...order].reverse().map((entry) => isFolderEntry(entry) ? { ...entry, data: [...entry.data].reverse() } : entry)
+        : order);
 
     function loadCollapsed(): Set<string> {
         try {
@@ -129,13 +133,13 @@
 <ShSortableList
     bind:element={rootEl}
     className="flex flex-col gap-1"
-    disabled={dragDisabled}
+    disabled={dragDisabled || reversed}
     draggable="[data-order-key]"
     dataAttribute="data-order-key"
     options={{ group: 'character-manager', onMove }}
     onReorder={onDrop}
 >
-    {#each order as entry (entryKey(entry))}
+    {#each displayOrder as entry (entryKey(entry))}
         {#if isFolderEntry(entry)}
             {@const isCollapsed = collapsed.has(entry.id)}
             {@const count = folderVisibleCount(entry)}
@@ -172,7 +176,7 @@
                     <div data-folder-container={entry.id}>
                         <ShSortableList
                             className="flex flex-col px-2 pb-2 gap-0.5 min-h-8"
-                            disabled={dragDisabled}
+                            disabled={dragDisabled || reversed}
                             options={{ group: 'character-manager', onMove }}
                             onReorder={onDrop}
                         >

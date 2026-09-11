@@ -1094,7 +1094,7 @@ export const languageEnglish = {
     addCharacter: "Add Character",
     importFromRealm: "Choose from RisuRealm",
     importFromRealmDesc: "Choose over 1000 characters in RisuRealm",
-    importFromProton: "Import from Proton Drive",
+    importFromProton: "Proton",
     importFromProtonDesc: "Open a Proton Drive link and auto-import downloaded files",
     protonDriveUrlPrompt: "Paste Proton Drive share link (leave empty to pick files)",
     protonImporting: "Importing...",
