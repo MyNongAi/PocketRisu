@@ -218,9 +218,10 @@
   let currentDrag: DragData | null = $state(null)
   interface Props {
     hidden?: boolean;
+    openLegacyGrid?: () => void;
   }
 
-  let { hidden = false }: Props = $props();
+  let { hidden = false, openLegacyGrid = () => {} }: Props = $props();
 
   onMount(() => {
     initSupport()
@@ -1183,7 +1184,7 @@
       <BarIcon
         onClick={() => {
           reseter();
-          openCharacterManager.set(true);
+          openLegacyGrid();
         }}><LayoutGridIcon /></BarIcon
       >
       {#if additionalHamburgerMenu.length > 0}
@@ -1213,6 +1214,16 @@
       placeholder={splitCatalogMode ? language.search : ''}
       class="min-w-0 grow bg-transparent py-1 text-xs text-textcolor outline-none"
     />
+    <button
+      type="button"
+      class="shrink-0 rounded p-0.5 text-textcolor2 risu-interactive-accent"
+      aria-label={language.characterManager}
+      title={language.characterManager}
+      onclick={() => {
+        reseter()
+        openCharacterManager.set(true)
+      }}
+    ><LayoutGridIcon size={14}/></button>
   </div>
   <div class="flex grow min-h-0 w-full" class:max-xs:hidden={$leftBarCollapsed} use:touchDragContainer>
   {#if splitCatalogMode}
@@ -1585,7 +1596,7 @@
       <BarIcon
         onClick={() => {
           reseter();
-          openCharacterManager.set(true);
+          openLegacyGrid();
         }}><LayoutGridIcon /></BarIcon
       >
       {#if additionalHamburgerMenu.length > 0}

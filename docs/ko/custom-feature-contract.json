@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.12.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-09-08",
+  "updatedAt": "2026-09-11",
   "features": [
     {
       "id": "ASSET-EXT",
@@ -192,6 +192,9 @@
         { "file": "src/ts/process/moduleSort.ts", "contains": "recordModuleFolderActivation" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "sortModulesByActivation" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "risu-module-catalog-sort" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "moduleAssetCount" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "returnToModuleList" },
+        { "file": "src/ts/process/moduleFolders.ts", "contains": "dissolveShrunkenModuleFolders" },
         { "file": "src/lib/Setting/Pages/Module/ModuleMenu.svelte", "contains": "assetManifestPager('top')" },
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "emptyInsertThreshold: 32" },
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "showItemCount" }
@@ -333,6 +336,39 @@
         "src/ts/gui/characterCatalogMetrics.test.ts",
         "src/ts/gui/characterAssetCount.test.ts"
       ]
+    },
+    {
+      "id": "CATALOG-DUAL",
+      "title": "신형·구형 캐릭터 관리자 공존과 역순 보기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/App.svelte",
+        "src/lib/Others/GridCatalog.svelte",
+        "src/lib/Mobile/MobileCharacters.svelte",
+        "src/lib/CharacterManager/CharacterManager.svelte",
+        "src/lib/CharacterManager/CharacterOrderList.svelte",
+        "src/ts/characterArchive.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/App.svelte", "contains": "legacyGridOpen" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "openLegacyGrid" },
+        { "file": "src/lib/CharacterManager/CharacterManager.svelte", "contains": "sortReversed" },
+        { "file": "src/ts/characterArchive.ts", "contains": "nonBlocking" }
+      ],
+      "regressionTests": []
+    },
+    {
+      "id": "CHAR-CONFIG-TOGGLES",
+      "title": "캐릭터 작가의 노트 아래 프롬 토글",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/SideBars/CharConfig.svelte",
+        "src/lib/SideBars/Toggles.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/SideBars/CharConfig.svelte", "contains": "<Toggles bind:chara=" }
+      ],
+      "regressionTests": []
     },
     {
       "id": "PLUGIN-ASSET",

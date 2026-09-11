@@ -843,7 +843,12 @@ export async function removeChar(identifier:string|number,name:string, type:'nor
         // Trash = deactivate + marker: the character leaves memory and the
         // database blob like any deactivation (src/ts/characterArchive.ts).
         // Bulk callers confirmed once already; they also get one summary instead of a toast per character.
-        await archiveCharacter(index, { skipConfirm: true, trash: true, silent: arg.skipConfirm })
+        await archiveCharacter(index, {
+            skipConfirm: true,
+            trash: true,
+            silent: arg.skipConfirm,
+            nonBlocking: !arg.skipConfirm,
+        })
         return
     }
     chars.splice(index, 1)

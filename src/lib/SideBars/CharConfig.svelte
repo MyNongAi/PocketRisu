@@ -38,6 +38,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
     import { exportRegex, importRegex } from "src/ts/process/scripts";
     import SliderInput from "../UI/GUI/SliderInput.svelte";
     import VirtualList from "../UI/Virtual/VirtualList.svelte";
+    import Toggles from "./Toggles.svelte";
 
     let iconRemoveMode = $state(false)
     let pkgIncludeCharacter = $state(true)
@@ -419,6 +420,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
         placeholder={getAuthorNoteDefaultText()}
     />
     <span class="text-textcolor2 mb-6 text-sm">{tokens.localNote} {language.tokens}</span>
+    <Toggles bind:chara={DBState.db.characters[$selectedCharID]} noContainer />
 
 {:else if licensed === 'private'}
     <span>You are not allowed</span>

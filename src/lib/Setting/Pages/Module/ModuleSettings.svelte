@@ -13,11 +13,11 @@
     import { v4 } from "uuid";
     import { tooltip } from "src/ts/gui/tooltip";
     import { alertConfirm, alertError, alertSelect, notifySuccess } from "src/ts/alert";
-    import { onDestroy } from "svelte";
+    import { onDestroy, tick } from "svelte";
     import { importMCPModule } from "src/ts/process/mcp/mcp";
     import { convertModuleToCharacter } from "src/ts/interchangeability";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
-    import { synchronizeModuleFolderMembership } from "src/ts/process/moduleFolders";
+    import { dissolveShrunkenModuleFolders, synchronizeModuleFolderMembership } from "src/ts/process/moduleFolders";
     import { recordModuleActivation, recordModuleFolderActivation, recordModuleFolderOrder, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
     import { chooseTitleColor, listTitleColor } from "src/ts/gui/titleColors";
     import type { PromptPresetFolder } from "src/ts/storage/database.svelte";
@@ -29,6 +29,7 @@
     let mode = $state(0)
     let editModuleIndex = $state(-1)
     let converting = $state(false)
+    let moduleListScrollTop = 0
     type ModuleCatalogSort = 'recent' | 'registered'
     let moduleCatalogSort = $state<ModuleCatalogSort>(
         typeof localStorage !== 'undefined' && localStorage.getItem('risu-module-catalog-sort') === 'registered'
@@ -68,6 +69,33 @@
 
     function hasMissingAssets(rmodule: RisuModule) {
         return Number(rmodule.sourceInfo?.missingAssetCount) > 0
+    }
+
+    function moduleAssetCount(rmodule: RisuModule) {
+        const recorded = Number(rmodule.sourceInfo?.assetReferenceCount)
+        if (Number.isFinite(recorded) && recorded >= 0) return Math.floor(recorded)
+        const manifest = Number(rmodule.assetManifest?.count)
+        if (Number.isFinite(manifest) && manifest >= 0) return Math.floor(manifest)
+        return rmodule.assets?.length ?? 0
+    }
+
+    function listScrollElement() {
+        return typeof document === 'undefined'
+            ? null
+            : document.querySelector<HTMLElement>('.rs-setting-cont-4')
+    }
+
+    function rememberListScroll() {
+        moduleListScrollTop = listScrollElement()?.scrollTop ?? moduleListScrollTop
+    }
+
+    async function returnToModuleList() {
+        mode = 0
+        await tick()
+        requestAnimationFrame(() => {
+            const element = listScrollElement()
+            if (element) element.scrollTop = moduleListScrollTop
+        })
     }
 
     function rememberActivation(moduleId: string) {
@@ -115,6 +143,7 @@
         const originalIndex = originalModuleIndex(index)
         const rmodule = DBState.db.modules[originalIndex]
         if (!rmodule || rmodule.mcp) return
+        rememberListScroll()
         tempModule = rmodule
         editModuleIndex = originalIndex
         mode = 2
@@ -131,6 +160,11 @@
     async function removeModule(index: number) {
         const rmodule = displayModules[index]
         if (!rmodule) return
+        const previousFolders = synchronizeModuleFolderMembership(
+            DBState.db.modules,
+            DBState.db.moduleFolders,
+            { importLegacyWhenFolderIdsEmpty: false },
+        )
         const d = await alertConfirm(`${language.removeConfirm}` + rmodule.name)
         if (!d) return
         if (isGlobal(rmodule)) {
@@ -139,11 +173,14 @@
         }
         DBState.db.modules = DBState.db.modules.filter((module) => module.id !== rmodule.id)
         DBState.db.moduleActivationHistory = DBState.db.moduleActivationHistory?.filter((id) => id !== rmodule.id) ?? []
-        DBState.db.moduleFolders = synchronizeModuleFolderMembership(
+        const synchronized = synchronizeModuleFolderMembership(
             DBState.db.modules,
             DBState.db.moduleFolders,
             { importLegacyWhenFolderIdsEmpty: false },
         )
+        const dissolved = dissolveShrunkenModuleFolders(DBState.db.modules, synchronized, previousFolders)
+        DBState.db.modules = dissolved.modules
+        DBState.db.moduleFolders = dissolved.folders
         notifySuccess(language.moduleDeleted)
     }
 
@@ -159,23 +196,22 @@
             ...module,
             folderId: folderById.get(module.id),
         }))
+        const synchronized = synchronizeModuleFolderMembership(
+            DBState.db.modules,
+            currentFolders,
+            { importLegacyWhenFolderIdsEmpty: false },
+        )
+        const dissolved = dissolveShrunkenModuleFolders(DBState.db.modules, synchronized, currentFolders)
+        DBState.db.modules = dissolved.modules
+        DBState.db.moduleFolders = dissolved.folders
         if (moduleCatalogSort === 'registered') {
-            DBState.db.moduleFolders = synchronizeModuleFolderMembership(
-                DBState.db.modules,
-                currentFolders,
-                { importLegacyWhenFolderIdsEmpty: false },
-            )
             return
         }
         DBState.db.moduleActivationHistory = placements
             .map(({ index }) => displayModules[index]?.id)
             .filter((id): id is string => !!id)
             .reverse()
-        DBState.db.moduleFolders = recordModuleFolderOrder(synchronizeModuleFolderMembership(
-            DBState.db.modules,
-            currentFolders,
-            { importLegacyWhenFolderIdsEmpty: false },
-        ))
+        DBState.db.moduleFolders = recordModuleFolderOrder(DBState.db.moduleFolders)
     }
 
     function applyFolders(next: typeof DBState.db.moduleFolders) {
@@ -218,6 +254,10 @@
 </script>
 {#if mode === 0}
     <SettingPage title={language.modules}>
+        {#snippet titleActions()}
+            <ShButton size="sm" variant="outline" onclick={() => importMCPModule()} title="MCP"><Waypoints />MCP</ShButton>
+            <ShButton size="sm" variant="outline" onclick={() => importModuleFromProtonDrive()}><CloudDownloadIcon />{language.importFromProton}</ShButton>
+        {/snippet}
 
     <FolderedList
         folders={displayFolders}
@@ -242,12 +282,15 @@
         {#snippet actions()}
             <div class="flex flex-wrap items-center gap-2">
             <ShButton size="sm" onclick={() => {
+                rememberListScroll()
                 tempModule = { name: '', description: '', id: v4() }
                 mode = 1
             }}><PlusIcon />{language.createModule}</ShButton>
             <ShButton size="sm" variant="outline" onclick={() => importModule()}><HardDriveUpload />{language.importModule}</ShButton>
-            <ShButton size="sm" variant="outline" onclick={() => importModuleFromProtonDrive()}><CloudDownloadIcon />{language.importFromProton}</ShButton>
-            <ShButton size="sm" variant="outline" onclick={() => importMCPModule()} title="MCP"><Waypoints /></ShButton>
+            </div>
+        {/snippet}
+        {#snippet subActions()}
+            <div class="flex flex-wrap items-center gap-2">
             <ShButton size="sm" variant={moduleCatalogSort === 'registered' ? 'default' : 'outline'} onclick={() => setModuleCatalogSort('registered')} title="등록순">
                 <ListOrderedIcon />등록순
             </ShButton>
@@ -275,7 +318,7 @@
             {/if}
             <div class="flex flex-col min-w-0 grow">
                 <span class="truncate text-textcolor" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(rmodule))}>{rmodule.favorite ? '★ ' : ''}{rmodule.name}{#if hasMissingAssets(rmodule)} <span aria-label="에셋 누락" title="에셋 누락">❗</span>{/if}</span>
-                <span class="text-xs text-textcolor2 truncate">{rmodule.description || 'No description provided'}</span>
+                <span class="text-xs text-textcolor2 truncate">에셋 {moduleAssetCount(rmodule)}개 · {rmodule.description || 'No description provided'}</span>
             </div>
             <button class="no-sort shrink-0 p-1 cursor-pointer {isGlobal(rmodule) ? 'text-blue-500' : isIntegrated(rmodule) ? 'text-amber-500 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
                 use:tooltip={language.enableGlobal}
@@ -304,17 +347,16 @@
     <Button className="mt-6" onclick={() => {
         addModuleToDatabase(tempModule)
         notifySuccess(language.moduleCreated)
-        mode = 0
+        void returnToModuleList()
     }}>{language.createModule}</Button>
     </SettingPage>
 {:else if mode === 2}
     <SettingPage title={language.editModule}>
     <ModuleMenu bind:currentModule={tempModule}/>
-    {#if tempModule.name !== ''}
-        <Button className="mt-6" onclick={() => {
+        <Button className="mt-6" onclick={async () => {
             DBState.db.modules[editModuleIndex] = tempModule
             notifySuccess(language.moduleUpdated)
-            mode = 0
+            await returnToModuleList()
         }}>{language.editModule}</Button>
         <Button className="mt-2" disabled={converting} onclick={async () => {
             if(converting){
@@ -335,6 +377,5 @@
                 converting = false
             }
         }}>{language.convertToCharacter}</Button>
-    {/if}
     </SettingPage>
 {/if}

@@ -140,6 +140,42 @@ export function synchronizeModuleFolderMembership<T extends FolderableModule>(
 }
 
 /**
+ * Remove a folder only when an edit shrank it from a useful group to zero or
+ * one member. A newly created empty folder may receive its first module and
+ * remain available for the second drop; existing groups that lose members do
+ * not leave redundant one-item shells behind.
+ */
+export function dissolveShrunkenModuleFolders<T extends FolderableModule>(
+    modules: ReadonlyArray<T>,
+    folders: unknown,
+    previousFolders: unknown,
+): { modules: T[]; folders: ModuleFolder[] } {
+    const current = normalizeModuleFolders(folders)
+    const previousCounts = new Map(normalizeModuleFolders(previousFolders).map((folder) => [folder.id, folder.moduleIds.length]))
+    const dissolveIds = new Set(current
+        .filter((folder) => {
+            const before = previousCounts.get(folder.id) ?? 0
+            return before > folder.moduleIds.length && folder.moduleIds.length <= 1
+        })
+        .map((folder) => folder.id))
+
+    if(dissolveIds.size === 0){
+        return { modules: [...modules], folders: current }
+    }
+
+    const nextModules = modules.map((module) => dissolveIds.has(module.folderId ?? '')
+        ? { ...module, folderId: undefined }
+        : module)
+    const nextFolders = current.filter((folder) => !dissolveIds.has(folder.id))
+    return {
+        modules: nextModules,
+        folders: synchronizeModuleFolderMembership(nextModules, nextFolders, {
+            importLegacyWhenFolderIdsEmpty: false,
+        }),
+    }
+}
+
+/**
  * Add folder sections on top of an already-sorted module list.
  *
  * Important ordering contract:
