@@ -1,5 +1,6 @@
 {
     "name": "PocketRisu",
+    "short_name": "PocketRisu",
     "icons": [
         {
             "src": "logo_512.png",
@@ -30,6 +31,7 @@
     "start_url": "/",
     "display": "standalone",
     "theme_color": "#4682B4",
+    "background_color": "#111827",
     "file_handlers": [
         {
             "action": "/",
@@ -37,6 +39,14 @@
                 "application/octet-stream": [".charx", ".risup", ".risum"]
             }
         }
-    ]
-      
+    ],
+    "share_target": {
+        "action": "/share",
+        "method": "GET",
+        "params": {
+            "url": "url",
+            "text": "text",
+            "title": "title"
+        }
+    }
 }

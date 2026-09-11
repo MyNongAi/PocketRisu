@@ -21,6 +21,7 @@ import { applyEarlyLanguage, changeLanguage, language } from "src/lang";
 import { startObserveDom } from "./observer.svelte";
 import { updateGuisize } from "./gui/guisize";
 import { changeChar, updateLorebooks } from "./characters";
+import { handleShareTarget } from "./shareTarget";
 import { initMobileGesture } from "./hotkey";
 import { moduleUpdate } from "./process/modules";
 import {
@@ -212,6 +213,10 @@ export async function loadData() {
                 }
             } catch { /* best effort only */ }
 
+            handleShareTarget()
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('/sw.js').catch(() => {})
+            }
             startObserveDom()
             assignIds()
             registerModelDynamic()
