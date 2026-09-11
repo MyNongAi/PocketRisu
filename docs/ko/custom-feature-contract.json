@@ -54,12 +54,14 @@
       "ownerFiles": [
         "src/ts/storage/chatStorage.ts",
         "src/ts/characters.ts",
+        "src/lib/ChatScreens/Chats.svelte",
         "server/node/server.cjs",
         "server/node/pending-chat-payloads.cjs"
       ],
       "requiredMarkers": [
         { "file": "src/ts/storage/chatStorage.ts", "contains": "ensureChatHydrated" },
         { "file": "src/ts/storage/chatStorage.ts", "contains": "evictHydratedChatCache" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "captureViewportAnchor" },
         { "file": "server/node/pending-chat-payloads.cjs", "contains": "createPendingChatPayloads" }
       ],
       "regressionTests": [
@@ -145,6 +147,7 @@
       "requiredMarkers": [
         { "file": "src/ts/characterRecentOrder.ts", "contains": "normalizeCharacterFavoriteOrder" },
         { "file": "src/ts/characterRecentOrder.ts", "contains": "promoteDepartedCharacter" },
+        { "file": "src/ts/characters.ts", "contains": "recordCurrentCharacterDeparture" },
         { "file": "src/ts/characterOrder.ts", "contains": "dissolveSingletonFolders" },
         { "file": "src/ts/globalApi.svelte.ts", "contains": "const ordered = new Set<string>()" },
         { "file": "src/ts/globalApi.svelte.ts", "contains": "if (!supportsPatchSync)" },
@@ -188,6 +191,7 @@
         { "file": "src/ts/process/moduleFolders.ts", "contains": "moveModuleFolderByDrop" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "recordModuleFolderActivation" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "sortModulesByActivation" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "risu-module-catalog-sort" },
         { "file": "src/lib/Setting/Pages/Module/ModuleMenu.svelte", "contains": "assetManifestPager('top')" },
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "emptyInsertThreshold: 32" },
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "showItemCount" }
@@ -288,6 +292,10 @@
       ],
       "requiredMarkers": [
         { "file": "src/ts/personaImage.ts", "contains": "validatePersonaImage" },
+        { "file": "src/ts/persona.ts", "contains": "importUserPersonaImage" },
+        { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "risu-persona-detail-height" },
+        { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "최근 적용순" },
+        { "file": "src/lib/Setting/Settings.svelte", "contains": "startSettingsPaneResize" },
         { "file": "src/lib/Setting/listedPersona.svelte", "contains": "LazyAssetPreview" }
       ],
       "regressionTests": [
@@ -353,6 +361,7 @@
       ],
       "requiredMarkers": [
         { "file": "src/ts/alert.ts", "contains": "copyNotificationText" },
+        { "file": "src/ts/alert.ts", "contains": "duration: 15_000" },
         { "file": "src/ts/errorPresentation.ts", "contains": "localizeErrorMessage" },
         { "file": "src/lib/Others/AlertComp.svelte", "contains": "stack-trace-copy" }
       ],

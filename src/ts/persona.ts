@@ -62,14 +62,14 @@ export async function setUserPersonaImage(img: Uint8Array, personaIndex?: number
     return imgp
 }
 
-export async function selectUserImg() {
+export async function selectUserImg(personaIndex?: number) {
     const selected = await selectSingleFile([...PERSONA_IMAGE_EXTENSIONS])
     if (!selected) {
         return
     }
 
     try {
-        await setUserPersonaImage(selected.data)
+        await setUserPersonaImage(selected.data, personaIndex)
     } catch (error) {
         alertError(error)
     }
@@ -83,7 +83,17 @@ export function saveUserPersona() {
     db.personas[db.selectedPersona].note = db.userNote
 }
 
-export function changeUserPersona(id: number, save: 'save' | 'noSave' = 'save') {
+export function markPersonaApplied(id: number, at = Date.now()) {
+    const persona = getDatabase().personas[id]
+    if (!persona) return
+    persona.lastAppliedAt = at
+}
+
+export function changeUserPersona(
+    id: number,
+    save: 'save' | 'noSave' = 'save',
+    markApplied = true,
+) {
     if (save === 'save') {
         saveUserPersona()
     }
@@ -94,12 +104,47 @@ export function changeUserPersona(id: number, save: 'save' | 'noSave' = 'save') 
     db.userIcon = pr.icon
     db.userNote = pr.note
     db.selectedPersona = id
+    if (markApplied) markPersonaApplied(id)
 }
 
-interface PersonaCard {
+export interface PersonaCard {
     name: string
     personaPrompt: string
     note?: string
+}
+
+/** Read the optional persona payload without treating an ordinary PNG as an error. */
+export async function readEmbeddedPersonaCard(img: Uint8Array): Promise<PersonaCard | null> {
+    const readGenerator = PngChunk.readGenerator(img)
+    let decoded: string | undefined
+    for await (const chunk of readGenerator) {
+        if (chunk && !(chunk instanceof AppendableBuffer) && chunk.key === 'persona') {
+            decoded = chunk.value
+            break
+        }
+    }
+    if (!decoded) return null
+    const data: PersonaCard = JSON.parse(Buffer.from(decoded, 'base64').toString('utf-8'))
+    return data?.name && data?.personaPrompt ? data : null
+}
+
+/** Import a persona-bearing PNG. Returns null for a normal image. */
+export async function importUserPersonaImage(img: Uint8Array): Promise<number | null> {
+    const data = await readEmbeddedPersonaCard(img)
+    if (!data) return null
+    const db = getDatabase()
+    const index = db.personas.length
+    const now = Date.now()
+    db.personas.push({
+        name: data.name,
+        icon: await saveImage(await reencodeImage(img)),
+        personaPrompt: data.personaPrompt,
+        note: data.note,
+        id: v4(),
+        createdAt: now,
+        lastAppliedAt: now,
+    })
+    return index
 }
 
 export async function exportUserPersona(personaIndex?: number) {
@@ -166,34 +211,12 @@ export async function importUserPersona() {
         if (!v) {
             return
         }
-        const readGenerator = PngChunk.readGenerator(v.data)
-        let decoded: string | undefined;
-
-        for await (const chunk of readGenerator) {
-            if (chunk && !(chunk instanceof AppendableBuffer) && chunk.key === 'persona') {
-                decoded = chunk.value
-                break
-            }
-        }
-
-        if (!decoded) {
+        const index = await importUserPersonaImage(v.data)
+        if (index === null) {
             alertError(language.errors.noData)
             return
         }
-        const data: PersonaCard = JSON.parse(Buffer.from(decoded, 'base64').toString('utf-8'))
-        if (data.name && data.personaPrompt) {
-            let db = getDatabase()
-            db.personas.push({
-                name: data.name,
-                icon: await saveImage(await reencodeImage(v.data)),
-                personaPrompt: data.personaPrompt,
-                note: data.note,
-                id: v4()
-            })
-            notifySuccess(language.successImport)
-        } else {
-            alertError(language.errors.noData)
-        }
+        notifySuccess(language.successImport)
     } catch (error) {
         alertError(error)
         return

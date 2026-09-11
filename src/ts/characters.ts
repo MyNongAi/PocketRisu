@@ -789,7 +789,7 @@ export function createBlankChar():character{
 }
 
 
-function commitDepartedCharacter(nextCharacterId?: string) {
+export function recordCurrentCharacterDeparture(nextCharacterId?: string) {
     const db = getDatabase()
     const currentIndex = get(selectedCharID)
     const departedCharacterId = db.characters[currentIndex]?.chaId
@@ -803,7 +803,7 @@ function commitDepartedCharacter(nextCharacterId?: string) {
 }
 
 export function deselectCharacter() {
-    commitDepartedCharacter()
+    recordCurrentCharacterDeparture()
     try {
         localStorage.removeItem('risu-last-active-character')
     } catch {
@@ -900,7 +900,7 @@ export function changeChar(index: number, arg:{
     const hydrationRequestId = `character:${hydrationSerial}`
     hideChatHydrationIndicator()
     const nextCharacterId = getDatabase().characters[index]?.chaId
-    commitDepartedCharacter(nextCharacterId)
+    recordCurrentCharacterDeparture(nextCharacterId)
     reseter();
     chatDeselected.set(false)
     characterFormatUpdate(index, {

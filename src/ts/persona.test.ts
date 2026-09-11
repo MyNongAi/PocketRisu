@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
     saveImage: vi.fn(),
     validatePersonaImage: vi.fn(),
     requestImmediateSave: vi.fn(async () => undefined),
+    readGenerator: vi.fn(),
 }))
 
 vi.mock(import('./storage/database.svelte'), () => ({
@@ -52,14 +53,14 @@ vi.mock(import('./process/files/inlays'), () => ({
 
 vi.mock(import('./pngChunk'), () => ({
     PngChunk: {
-        readGenerator: vi.fn(),
+        readGenerator: mocks.readGenerator,
         write: vi.fn(),
     },
 } as any))
 
 vi.mock('uuid', () => ({ v4: vi.fn(() => 'generated-persona-id') } as any))
 
-import { setUserPersonaImage } from './persona'
+import { importUserPersonaImage, markPersonaApplied, setUserPersonaImage } from './persona'
 
 type Deferred<T> = {
     promise: Promise<T>
@@ -103,12 +104,50 @@ function setupDatabase() {
 
 beforeEach(() => {
     vi.clearAllMocks()
+    mocks.readGenerator.mockImplementation(async function* () {})
     mocks.validatePersonaImage.mockResolvedValue({
         type: 'WEBP',
         extension: 'webp',
         mime: 'image/webp',
         width: 1,
         height: 1,
+    })
+})
+
+describe('persona import and recency metadata', () => {
+    it('imports a persona-bearing PNG and keeps a normal PNG available for thumbnail replacement', async () => {
+        setupDatabase()
+        const image = new Uint8Array([9, 8, 7])
+        const card = Buffer.from(JSON.stringify({
+            name: 'Dropped Persona',
+            personaPrompt: 'Dropped prompt',
+            note: 'Dropped note',
+        })).toString('base64')
+        mocks.readGenerator.mockImplementationOnce(async function* () {
+            yield { key: 'persona', value: card }
+        })
+        mocks.saveImage.mockResolvedValueOnce('assets/dropped-persona.png')
+
+        await expect(importUserPersonaImage(image)).resolves.toBe(2)
+        expect(mocks.dbRef.db.personas[2]).toMatchObject({
+            id: 'generated-persona-id',
+            name: 'Dropped Persona',
+            personaPrompt: 'Dropped prompt',
+            note: 'Dropped note',
+            icon: 'assets/dropped-persona.png',
+        })
+        expect(mocks.dbRef.db.personas[2].createdAt).toEqual(expect.any(Number))
+
+        mocks.readGenerator.mockImplementationOnce(async function* () {})
+        await expect(importUserPersonaImage(image)).resolves.toBeNull()
+        expect(mocks.saveImage).toHaveBeenCalledTimes(1)
+    })
+
+    it('records the last applied persona without changing the selected index', () => {
+        setupDatabase()
+        markPersonaApplied(1, 1234)
+        expect(mocks.dbRef.db.personas[1].lastAppliedAt).toBe(1234)
+        expect(mocks.dbRef.db.selectedPersona).toBe(0)
     })
 })
 

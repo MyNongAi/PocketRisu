@@ -9,7 +9,7 @@
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
     import ModuleMenu from "src/lib/Setting/Pages/Module/ModuleMenu.svelte";
     import { addModuleToDatabase, exportModule, exportModuleLegacy, hydrateModuleAssets, importModule, refreshModules, type RisuModule } from "src/ts/process/modules";
-    import { SquarePen, Globe, Share2Icon, PlusIcon, HardDriveUpload, PaletteIcon, StarIcon, Waypoints } from "@lucide/svelte";
+    import { Clock3Icon, SquarePen, Globe, Share2Icon, PlusIcon, HardDriveUpload, ListOrderedIcon, PaletteIcon, StarIcon, Waypoints } from "@lucide/svelte";
     import { v4 } from "uuid";
     import { tooltip } from "src/ts/gui/tooltip";
     import { alertConfirm, alertError, alertSelect, notifySuccess } from "src/ts/alert";
@@ -29,18 +29,33 @@
     let mode = $state(0)
     let editModuleIndex = $state(-1)
     let converting = $state(false)
-    let displayModules = $derived(sortModulesByActivation(DBState.db.modules, '', {
-        fallbackOrders: [DBState.db.enabledModules],
-        activationHistory: DBState.db.moduleActivationHistory,
-    }))
-    let displayFolders = $derived(sortModuleFoldersByActivation(
-        DBState.db.moduleFolders ?? [],
-        DBState.db.modules,
-        {
+    type ModuleCatalogSort = 'recent' | 'registered'
+    let moduleCatalogSort = $state<ModuleCatalogSort>(
+        typeof localStorage !== 'undefined' && localStorage.getItem('risu-module-catalog-sort') === 'registered'
+            ? 'registered'
+            : 'recent',
+    )
+    let displayModules = $derived(moduleCatalogSort === 'registered'
+        ? [...DBState.db.modules]
+        : sortModulesByActivation(DBState.db.modules, '', {
             fallbackOrders: [DBState.db.enabledModules],
             activationHistory: DBState.db.moduleActivationHistory,
-        },
-    ))
+        }))
+    let displayFolders = $derived(moduleCatalogSort === 'registered'
+        ? [...(DBState.db.moduleFolders ?? [])]
+        : sortModuleFoldersByActivation(
+            DBState.db.moduleFolders ?? [],
+            DBState.db.modules,
+            {
+                fallbackOrders: [DBState.db.enabledModules],
+                activationHistory: DBState.db.moduleActivationHistory,
+            },
+        ))
+
+    function setModuleCatalogSort(next: ModuleCatalogSort) {
+        moduleCatalogSort = next
+        try { localStorage.setItem('risu-module-catalog-sort', next) } catch {}
+    }
 
     function isGlobal(rmodule: RisuModule) {
         return DBState.db.enabledModules.includes(rmodule.id)
@@ -144,6 +159,14 @@
             ...module,
             folderId: folderById.get(module.id),
         }))
+        if (moduleCatalogSort === 'registered') {
+            DBState.db.moduleFolders = synchronizeModuleFolderMembership(
+                DBState.db.modules,
+                currentFolders,
+                { importLegacyWhenFolderIdsEmpty: false },
+            )
+            return
+        }
         DBState.db.moduleActivationHistory = placements
             .map(({ index }) => displayModules[index]?.id)
             .filter((id): id is string => !!id)
@@ -204,6 +227,7 @@
         storageKey="risu-module-folders-expanded-v2"
         defaultCollapsed
         newFoldersFirst
+        reorderDisabled={moduleCatalogSort !== 'recent'}
         folderTitleColor={folderColor}
         onFolderColor={changeFolderColor}
         onFolderFavorite={toggleFolderFavorite}
@@ -216,12 +240,20 @@
         onDelete={removeModule}
     >
         {#snippet actions()}
+            <div class="flex flex-wrap items-center gap-2">
             <ShButton size="sm" onclick={() => {
                 tempModule = { name: '', description: '', id: v4() }
                 mode = 1
             }}><PlusIcon />{language.createModule}</ShButton>
             <ShButton size="sm" variant="outline" onclick={() => importModule()}><HardDriveUpload />{language.importModule}</ShButton>
             <ShButton size="sm" variant="outline" onclick={() => importMCPModule()} title="MCP"><Waypoints /></ShButton>
+            <ShButton size="sm" variant={moduleCatalogSort === 'registered' ? 'default' : 'outline'} onclick={() => setModuleCatalogSort('registered')} title="등록순">
+                <ListOrderedIcon />등록순
+            </ShButton>
+            <ShButton size="sm" variant={moduleCatalogSort === 'recent' ? 'default' : 'outline'} onclick={() => setModuleCatalogSort('recent')} title="최근 활성화순">
+                <Clock3Icon />최근순
+            </ShButton>
+            </div>
         {/snippet}
         {#snippet folderActions(_folder, indexes)}
             {@const activeCount = indexes.filter((index) => DBState.db.enabledModules.includes(displayModules[index]?.id)).length}

@@ -48,6 +48,7 @@
     deselectCharacter,
     getCharThumbnail,
     prefetchCharacterChat,
+    recordCurrentCharacterDeparture,
     removeChar,
     scheduleCharacterChatPrefetch,
     warmRecentCharacterChats,
@@ -96,6 +97,11 @@
   let devTool = $state(false)
 
   function reseter() {
+    // Opening Settings/Character Manager/sidebar tools is also leaving the
+    // active card. Previously only character-to-character and Home routes
+    // committed recency, so those navigation paths appeared not to move a
+    // recently opened card to the top.
+    recordCurrentCharacterDeparture()
     menuMode = 0;
     sideBarMode = 0;
     editMode = false;

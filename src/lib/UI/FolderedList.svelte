@@ -43,6 +43,8 @@
         /** Opt-in: saved IDs are expanded exceptions instead of collapsed ones. */
         defaultCollapsed?: boolean;
         newFoldersFirst?: boolean;
+        /** Disable drag reordering while the parent is showing a derived sort. */
+        reorderDisabled?: boolean;
         folderTitleColor?: (folder: PromptPresetFolder, indexes: number[]) => string | undefined;
         onFolderColor?: (folder: PromptPresetFolder) => void;
         onFolderFavorite?: (folder: PromptPresetFolder) => void;
@@ -80,6 +82,7 @@
         storageKey,
         defaultCollapsed = false,
         newFoldersFirst = false,
+        reorderDisabled = false,
         folderTitleColor = () => undefined,
         onFolderColor,
         onFolderFavorite,
@@ -109,7 +112,7 @@
     const query = $derived(searchQuery.trim().toLocaleLowerCase());
     // Dragging while a search filter hides rows would reorder against an
     // incomplete DOM, so drag is disabled during search (menus still work).
-    const dragDisabled = $derived(query.length > 0);
+    const dragDisabled = $derived(query.length > 0 || reorderDisabled);
 
     function matches(index: number) {
         return !query || (itemSearchTexts[index] ?? '').toLocaleLowerCase().includes(query);
