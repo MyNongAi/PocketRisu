@@ -1052,6 +1052,9 @@ export interface RisuPersona {
     /** Optional folder membership (see `personaFolders`). Missing means uncategorized. */
     folderId?:string
     embeddedModule?:RisuModule
+    /** PocketRisu-only catalog timestamps. Older/upstream saves safely omit them. */
+    createdAt?:number
+    lastAppliedAt?:number
     /** PocketRisu collection provenance. Ignored by upstream clients. */
     sourceInfo?: import('../sourceCollection').SourceImportInfo
 }

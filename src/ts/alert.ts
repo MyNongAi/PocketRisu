@@ -263,9 +263,17 @@ export function notifyError(msg: unknown, opts?: NotifyOptions) {
     const copyText = formatErrorCopyText(presentation, description)
     toast.error(presentation.message, {
         ...(visibleDescription ? { description: visibleDescription } : {}),
+        // Errors need enough dwell time to be read/copied. The cancel action
+        // renders beside Copy and is the explicit X requested by the desktop
+        // and touch layouts; Sonner dismisses cancel actions automatically.
+        duration: 15_000,
         action: {
             label: language.copy,
             onClick: () => { void copyNotificationText(copyText) },
+        },
+        cancel: {
+            label: '×',
+            onClick: () => {},
         },
     })
 }
