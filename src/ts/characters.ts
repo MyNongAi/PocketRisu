@@ -1,7 +1,7 @@
 import { get, writable } from "svelte/store";
 import { saveImage, setDatabase, type character, type Chat, defaultSdDataFunc, type loreBook, getDatabase, getCharacterByIndex, setCharacterByIndex, getCurrentChat, loadTogglesFromChat, normalizeChat, newChatModelDefaults } from "./storage/database.svelte";
 import { ensureChatHydrated } from "./storage/chatStorage";
-import { alertAddCharacter, alertConfirm, alertError, alertSelect, alertStore, alertWait, notifySuccess, notifyInfo } from "./alert";
+import { alertAddCharacter, alertConfirm, alertError, alertInput, alertSelect, alertStore, alertWait, notifySuccess, notifyInfo } from "./alert";
 import { archiveCharacter } from "./characterArchive";
 import { chatHydrationOverlayStore, chatDeselected } from "./stores.svelte";
 import { language } from "../lang";
@@ -13,8 +13,10 @@ import { AppendableBuffer, changeChatTo, checkCharOrder, downloadFile, getFileSr
 import { updateInlayScreen } from "./process/inlayScreen";
 import { parseMarkdownSafe } from "./parser/parser.svelte";
 import { translateHTML } from "./translator/translator";
-import { importCharacter } from "./characterCards";
+import { importCharacter, importCharacterProcess } from "./characterCards";
 import { importCharacterPackage } from "./characterPackage";
+import { forageStorage } from "./globalApi.svelte";
+import { isNodeServer } from "./platform";
 import { PngChunk } from "./pngChunk";
 import { promoteDepartedCharacter } from "./characterRecentOrder";
 import { BoundedObjectUrlCache, createDeduplicatedImageLoader } from "./storage/boundedObjectUrlCache";
@@ -880,6 +882,9 @@ export async function addCharacter(arg:{
         case 'importPackage':
             await importCharacterPackage()
             break
+        case 'importFromProton':
+            await importFromProtonDrive()
+            break
         default:
             MobileGUIStack.set(1)
             return
@@ -890,6 +895,115 @@ export async function addCharacter(arg:{
     }
     MobileGUIStack.set(1)
 }
+
+async function importFromProtonDrive() {
+    const url = await alertInput(language.protonDriveUrlPrompt)
+
+    if (url && url.includes('drive.proton.me/urls/')) {
+        window.open(url, '_blank')
+    }
+
+    if (isNodeServer) {
+        await watchDownloadsAndImport('character')
+        return
+    }
+
+    const files = await selectMultipleFile(['charx', 'png', 'json', 'risum', 'risup'])
+    if (!files || files.length === 0) return
+    for (const file of files) {
+        await importCharacterProcess(file)
+    }
+    notifySuccess(language.protonImportSuccess)
+}
+
+async function watchDownloadsAndImport(mode: 'character' | 'module') {
+    const extensions = mode === 'module'
+        ? 'json,lorebook,risum,charx'
+        : 'charx,png,json,risum,risup'
+
+    alertWait(language.protonWatchingDownloads)
+
+    const auth = await forageStorage.createAuth()
+    let aborted = false
+
+    try {
+        const resp = await fetch(`/api/import/watch-downloads?extensions=${extensions}`, {
+            headers: { 'risu-auth': auth || '' },
+        })
+        if (!resp.ok || !resp.body) {
+            alertError('Failed to start download watcher')
+            return
+        }
+
+        const reader = resp.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+        let importedCount = 0
+
+        while (!aborted) {
+            const { done, value } = await reader.read()
+            if (done) break
+
+            buffer += decoder.decode(value, { stream: true })
+            const lines = buffer.split('\n')
+            buffer = lines.pop() || ''
+
+            for (const line of lines) {
+                if (!line.startsWith('data: ')) continue
+                const json = line.slice(6)
+                let msg: any
+                try { msg = JSON.parse(json) } catch { continue }
+
+                if (msg.done) { aborted = true; break }
+                if (msg.status === 'watching') continue
+
+                if (msg.filename && msg.data) {
+                    let bytes = Uint8Array.from(atob(msg.data), c => c.charCodeAt(0))
+                    if (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+                        bytes = bytes.slice(3)
+                    }
+                    const imported = { name: msg.filename, data: bytes }
+
+                    alertWait(`${language.protonImporting} ${msg.filename}`)
+
+                    if (mode === 'module') {
+                        const { importModuleFile } = await import('./process/modules')
+                        await importModuleFile(imported)
+                    } else {
+                        await importCharacterProcess(imported)
+                    }
+                    importedCount++
+                    notifySuccess(`${msg.filename} ${language.successImport}`)
+                }
+            }
+        }
+
+        reader.cancel().catch(() => {})
+
+        if (importedCount === 0) {
+            const files = await selectMultipleFile(
+                mode === 'module'
+                    ? ['json', 'lorebook', 'risum', 'charx']
+                    : ['charx', 'png', 'json', 'risum', 'risup']
+            )
+            if (files && files.length > 0) {
+                for (const file of files) {
+                    if (mode === 'module') {
+                        const { importModuleFile } = await import('./process/modules')
+                        await importModuleFile(file)
+                    } else {
+                        await importCharacterProcess(file)
+                    }
+                }
+                notifySuccess(language.protonImportSuccess)
+            }
+        }
+    } catch (e) {
+        alertError(e?.message || 'Watch failed')
+    }
+}
+
+export { watchDownloadsAndImport }
 
 export function changeChar(index: number, arg:{
     reseter?:()=>any,

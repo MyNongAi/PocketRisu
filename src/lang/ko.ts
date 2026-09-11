@@ -1196,6 +1196,13 @@ export const languageKorean = {
   importFromRealm: "RisuRealm에서 고르기",
   importFromRealmDesc:
     "여러 캐릭터들이 공유된 RisuRealm에서 캐릭터를 고르세요.",
+  importFromProton: "프로톤 드라이브에서 가져오기",
+  importFromProtonDesc: "프로톤 드라이브 링크를 열고, 다운받은 파일을 자동으로 임포트",
+  protonDriveUrlPrompt: "프로톤 드라이브 공유 링크 붙여넣기 (빈칸이면 바로 파일 선택)",
+  protonImporting: "임포트 중...",
+  protonWatchingDownloads: "다운로드 폴더 감시 중... 프로톤에서 파일을 다운로드하면 자동 임포트됩니다",
+  protonImportSuccess: "프로톤 드라이브에서 가져오기 성공",
+  protonImportFailed: "프로톤 드라이브 가져오기 실패",
   random: "랜덤",
   metaData: "메타데이터",
   autoContinueMinTokens: "타겟 토큰 (자동 컨티뉴)",
