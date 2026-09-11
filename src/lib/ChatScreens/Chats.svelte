@@ -1,6 +1,6 @@
 <script lang="ts">
     import type { character, Message, StreamingDisplayOptimizationMode } from 'src/ts/storage/database.svelte';
-    import { mount, onDestroy, unmount } from 'svelte';
+    import { mount, onDestroy, tick, unmount } from 'svelte';
     import Chat from './Chat.svelte';
     import { getCharImage } from 'src/ts/characters';
     import { createSimpleCharacter, DBState, selectedCharID, ReloadChatPointer } from 'src/ts/stores.svelte';
@@ -229,6 +229,47 @@
         return rect.top <= scRect.bottom + 100;
     }
 
+    type ViewportAnchor = {
+        element: HTMLElement
+        offsetTop: number
+        roomId: string | null
+    }
+    let viewportRestoreRevision = 0
+
+    /** Keep the first visible message fixed while streamed text grows below it. */
+    function captureViewportAnchor(): ViewportAnchor | null {
+        const sc = chatBody?.parentElement
+        if (!sc) return null
+        const scRect = sc.getBoundingClientRect()
+        const candidates = Array.from(chatBody.querySelectorAll<HTMLElement>('[data-chat-index]'))
+        const element = candidates
+            .filter((candidate) => {
+                const rect = candidate.getBoundingClientRect()
+                return rect.bottom > scRect.top && rect.top < scRect.bottom
+            })
+            .sort((left, right) => left.getBoundingClientRect().top - right.getBoundingClientRect().top)[0]
+        if (!element) return null
+        return {
+            element,
+            offsetTop: element.getBoundingClientRect().top - scRect.top,
+            roomId: getCurrentChatRoomId(),
+        }
+    }
+
+    async function restoreViewportAnchor(anchor: ViewportAnchor, revision: number) {
+        await tick()
+        requestAnimationFrame(() => {
+            if (revision !== viewportRestoreRevision || !anchor.element.isConnected) return
+            if (anchor.roomId !== getCurrentChatRoomId()) return
+            const sc = chatBody?.parentElement
+            if (!sc || checkIfAtBottom()) return
+            const delta = anchor.element.getBoundingClientRect().top
+                - sc.getBoundingClientRect().top
+                - anchor.offsetTop
+            if (Math.abs(delta) > 0.5) sc.scrollTop += delta
+        })
+    }
+
     function scrollLatestIntoChatScreen() {
         if(!chatBody) return;
         const element = chatBody.firstElementChild as HTMLElement | null;
@@ -249,7 +290,10 @@
     $effect(() => {
         void $ReloadChatPointer; // Make $effect track ReloadChatPointer changes
         const wasAtBottom = checkIfAtBottom();
+        const anchor = wasAtBottom ? null : captureViewportAnchor()
+        const restoreRevision = ++viewportRestoreRevision
         updateChatBody()
+        if (anchor) void restoreViewportAnchor(anchor, restoreRevision)
 
         const currentChatRoomId = getCurrentChatRoomId();
         const isSameChat = currentChatRoomId === previousChatRoomId;
@@ -273,4 +317,4 @@
 
 </script>
 
-<div class="flex flex-col-reverse" bind:this={chatBody}></div>
+<div class="flex flex-col-reverse" style="overflow-anchor: none" bind:this={chatBody}></div>

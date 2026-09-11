@@ -7,6 +7,8 @@
     import { openPersonaList, personaSelectCallback } from "src/ts/stores.svelte";
     import { v4 } from "uuid";
     import ShButton from "../UI/GUI/ShButton.svelte";
+    import { markPersonaApplied } from "src/ts/persona";
+    import { requestImmediateSave } from "src/ts/globalApi.svelte";
 
     let currentChat = $derived(DBState.db.characters[$selectedCharID]?.chats?.[DBState.db.characters[$selectedCharID]?.chatPage])
 
@@ -24,6 +26,8 @@
         const persona = DBState.db.personas[personaIndex]
         if (!persona.id) persona.id = v4()
         chat.bindedPersona = persona.id
+        markPersonaApplied(personaIndex)
+        void requestImmediateSave()
         notifySuccess(language.personaBindedSuccess)
     }
 

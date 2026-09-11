@@ -33,12 +33,19 @@
     import SettingsSearch from "./SettingsSearch.svelte";
     import { MediaQuery } from "svelte/reactivity";
     import Sortable from 'sortablejs/modular/sortable.core.esm.js';
+    import { onDestroy } from 'svelte';
     import {
         mergeVisibleSettingsMenuOrder,
         moveVisibleSettingsMenuItem,
         readSettingsMenuOrder,
         writeSettingsMenuOrder,
     } from "src/ts/setting/menuOrder";
+    import {
+        DEFAULT_SETTINGS_SIDEBAR_WIDTH,
+        clampSettingsSidebarWidth,
+        readSettingsSidebarWidth,
+        writeSettingsSidebarWidth,
+    } from 'src/ts/setting/paneSize';
 
     // Dev panel is opt-in via localStorage['risu-dev-panel']='1' in devtools.
     // Read once on mount — flag changes require reload. Gates both the menu
@@ -92,6 +99,10 @@
     let settingsMenuOrder = $state(readSettingsMenuOrder(settingsMenuItems.map((item) => item.id), settingsMenuStorage))
     let settingsMenuDragging = $state(false)
     let settingsMenuAnnouncement = $state('')
+    let settingsLayout: HTMLDivElement | null = $state(null)
+    let settingsSidebarWidth = $state(readSettingsSidebarWidth(settingsMenuStorage))
+    let settingsPaneResizing = $state(false)
+    let stopSettingsPaneResize: () => void = () => {}
     const visibleSettingsMenuItems = $derived.by(() => {
         const result: SettingsMenuItem[] = []
         for (const id of settingsMenuOrder) {
@@ -145,6 +156,58 @@
         settingsMenuAnnouncement = `${item.label()}: ${targetIndex + 1} / ${visibleOrder.length}`
     }
 
+    function saveSettingsSidebarWidth() {
+        if (!settingsLayout) return
+        settingsSidebarWidth = clampSettingsSidebarWidth(
+            settingsSidebarWidth,
+            settingsLayout.getBoundingClientRect().width,
+        )
+        writeSettingsSidebarWidth(settingsSidebarWidth, settingsMenuStorage)
+    }
+
+    function startSettingsPaneResize(event: PointerEvent) {
+        if (!wide700.current || $MobileGUI || !settingsLayout || event.button !== 0) return
+        event.preventDefault()
+        stopSettingsPaneResize()
+        const handle = event.currentTarget as HTMLElement
+        const pointerId = event.pointerId
+        const layoutLeft = settingsLayout.getBoundingClientRect().left
+        settingsPaneResizing = true
+        handle.setPointerCapture?.(pointerId)
+
+        const move = (moveEvent: PointerEvent) => {
+            if (!settingsLayout) return
+            settingsSidebarWidth = clampSettingsSidebarWidth(
+                moveEvent.clientX - layoutLeft,
+                settingsLayout.getBoundingClientRect().width,
+            )
+        }
+        const stop = () => {
+            window.removeEventListener('pointermove', move)
+            window.removeEventListener('pointerup', stop)
+            window.removeEventListener('pointercancel', stop)
+            if (handle.hasPointerCapture?.(pointerId)) handle.releasePointerCapture(pointerId)
+            settingsPaneResizing = false
+            saveSettingsSidebarWidth()
+            stopSettingsPaneResize = () => {}
+        }
+        stopSettingsPaneResize = stop
+        window.addEventListener('pointermove', move)
+        window.addEventListener('pointerup', stop)
+        window.addEventListener('pointercancel', stop)
+    }
+
+    function resizeSettingsPaneWithKeyboard(event: KeyboardEvent) {
+        if (!settingsLayout || !['ArrowLeft', 'ArrowRight', 'Home'].includes(event.key)) return
+        event.preventDefault()
+        settingsSidebarWidth = event.key === 'Home'
+            ? DEFAULT_SETTINGS_SIDEBAR_WIDTH
+            : settingsSidebarWidth + (event.key === 'ArrowLeft' ? -16 : 16)
+        saveSettingsSidebarWidth()
+    }
+
+    onDestroy(() => stopSettingsPaneResize())
+
     $effect(() => {
         if(wide900.current && $SettingsMenuIndex === -1 && !$MobileGUI){
             $SettingsMenuIndex = 1
@@ -160,12 +223,13 @@
 
 </script>
 <div class="h-full w-full flex justify-center rs-setting-cont" class:bg-bgcolor={$MobileGUI} class:setting-bg={!$MobileGUI}>
-    <div class="h-full max-w-4xl w-full flex relative rs-setting-cont-2">
+    <div class="h-full w-full flex relative rs-setting-cont-2" bind:this={settingsLayout} class:select-none={settingsPaneResizing}>
         {#if (wide700.current && !$MobileGUI) || $SettingsMenuIndex === -1}
             <div class="flex h-full flex-col p-4 pt-8 gap-2 overflow-y-auto relative rs-setting-cont-3 shrink-0"
                 class:w-full={!wide700.current || $MobileGUI}
                 class:w-60={wide700.current && !$MobileGUI}
                 class:bg-darkbg={!$MobileGUI} class:bg-bgcolor={$MobileGUI}
+                style:width={wide700.current && !$MobileGUI ? `${settingsSidebarWidth}px` : undefined}
             >
                 <!-- Fake-input trigger: the actual search lives in a dialog
                      (SettingsSearch) so the result list never reflows the
@@ -229,10 +293,25 @@
                 {/if}
             </div>
         {/if}
+        {#if wide700.current && !$MobileGUI}
+            <button
+                type="button"
+                class="settings-pane-divider relative z-20 h-full w-1.5 shrink-0 cursor-col-resize bg-darkborderc/60 transition-colors hover:bg-primary focus-visible:bg-primary focus-visible:outline-none"
+                class:bg-primary={settingsPaneResizing}
+                aria-label={`설정 목록 폭 조절 (${settingsSidebarWidth}px)`}
+                title="좌우로 끌어 설정 목록 폭 조절 · 두 번 누르면 초기화"
+                onpointerdown={startSettingsPaneResize}
+                onkeydown={resizeSettingsPaneWithKeyboard}
+                ondblclick={() => {
+                    settingsSidebarWidth = DEFAULT_SETTINGS_SIDEBAR_WIDTH
+                    saveSettingsSidebarWidth()
+                }}
+            ></button>
+        {/if}
         {#if (wide700.current && !$MobileGUI) || $SettingsMenuIndex !== -1}
             {#key $SettingsMenuIndex}
                 <div class="grow py-6 px-4 bg-bgcolor flex flex-col text-textcolor overflow-y-auto relative rs-setting-cont-4 min-w-0 [scrollbar-gutter:stable]">
-                    <div class="w-full max-w-2xl mx-auto flex flex-col">
+                    <div class="flex min-h-full w-full grow flex-col">
                         {#if $SettingsMenuIndex === 0}
                             <MigrationSettings />
                         {:else if $SettingsMenuIndex === 1}
