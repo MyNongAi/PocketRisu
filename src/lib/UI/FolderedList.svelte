@@ -38,6 +38,9 @@
         itemSearchTexts: string[];
         selectedIndex?: number;
         searchPlaceholder?: string;
+        /** Optional bindable search state. Parents that temporarily unmount the
+         *  list (for example while an editor is open) can keep the query alive. */
+        searchQuery?: string;
         /** localStorage key for remembering collapsed folders on this device. */
         storageKey?: string;
         /** Opt-in: saved IDs are expanded exceptions instead of collapsed ones. */
@@ -85,6 +88,7 @@
         itemSearchTexts,
         selectedIndex = -1,
         searchPlaceholder = language.search,
+        searchQuery = $bindable(''),
         storageKey,
         defaultCollapsed = false,
         newFoldersFirst = false,
@@ -113,7 +117,6 @@
     }: Props = $props();
 
     let rootEl: HTMLDivElement = $state();
-    let searchQuery = $state('');
     let collapsed = $state<Set<string>>(loadCollapsed());
 
     const groups = $derived(groupByFolder(itemFolderIds, folders));

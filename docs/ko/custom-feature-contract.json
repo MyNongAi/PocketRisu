@@ -194,6 +194,8 @@
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "risu-module-catalog-sort" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "moduleAssetCount" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "returnToModuleList" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "bind:searchQuery={moduleSearchQuery}" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "searchQuery = $bindable('')" },
         { "file": "src/ts/process/moduleFolders.ts", "contains": "dissolveShrunkenModuleFolders" },
         { "file": "src/lib/Setting/Pages/Module/ModuleMenu.svelte", "contains": "assetManifestPager('top')" },
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "emptyInsertThreshold: 32" },
@@ -354,11 +356,18 @@
         { "file": "src/App.svelte", "contains": "import('./lib/Others/GridCatalog.svelte')" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "openLegacyGrid" },
         { "file": "src/lib/Mobile/MobileCharacters.svelte", "contains": "SquareMousePointer" },
+        { "file": "src/lib/Mobile/MobileCharacters.svelte", "contains": "getCharThumbnail" },
+        { "file": "src/lib/Mobile/MobileCharacters.svelte", "contains": "VirtualList" },
         { "file": "src/lib/Others/GridCatalog.svelte", "contains": "makeAgoText" },
+        { "file": "src/lib/Others/GridCatalog.svelte", "contains": "VirtualGrid" },
+        { "file": "src/lib/Others/GridCatalog.svelte", "contains": "isRealmAssetRecoveryAvailable" },
         { "file": "src/lib/CharacterManager/CharacterManager.svelte", "contains": "sortReversed" },
-        { "file": "src/ts/characterArchive.ts", "contains": "nonBlocking" }
+        { "file": "src/ts/characterArchive.ts", "contains": "nonBlocking" },
+        { "file": "src/ts/characterArchive.ts", "contains": "promoteRecentlyViewedCharacter" }
       ],
-      "regressionTests": []
+      "regressionTests": [
+        "src/ts/characterRecentOrder.test.ts"
+      ]
     },
     {
       "id": "CHAR-CONFIG-TOGGLES",
