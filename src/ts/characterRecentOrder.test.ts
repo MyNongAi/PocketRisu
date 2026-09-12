@@ -35,6 +35,16 @@ describe('promoteRecentlyViewedCharacter', () => {
         expect(promoted[0]).not.toBe(bots)
     })
 
+    it('can surface a reactivated character by promoting its containing folder', () => {
+        const order = ['visible', makeFolder('archive-return', ['older', 'reactivated']), 'tail']
+
+        expect(promoteRecentlyViewedCharacter(order, 'reactivated')).toEqual([
+            makeFolder('archive-return', ['reactivated', 'older']),
+            'visible',
+            'tail',
+        ])
+    })
+
     it('keeps the existing reference when the character is already first', () => {
         const standalone = ['a', 'b']
         const folderFirst = [makeFolder('bots', ['a', 'b']), 'tail']

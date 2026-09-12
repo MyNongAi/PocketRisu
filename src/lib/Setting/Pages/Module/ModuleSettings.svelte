@@ -29,6 +29,9 @@
     let mode = $state(0)
     let editModuleIndex = $state(-1)
     let converting = $state(false)
+    // FolderedList is unmounted while the module editor is open. Keep the
+    // query here so returning to the catalog restores the same filtered view.
+    let moduleSearchQuery = $state('')
     let moduleListScrollTop = 0
     type ModuleCatalogSort = 'recent' | 'registered'
     let moduleCatalogSort = $state<ModuleCatalogSort>(
@@ -260,6 +263,7 @@
         {/snippet}
 
     <FolderedList
+        bind:searchQuery={moduleSearchQuery}
         folders={displayFolders}
         itemFolderIds={displayModules.map(m => m.folderId)}
         itemSearchTexts={displayModules.map(m => `${m.name}\n${m.description ?? ''}`)}

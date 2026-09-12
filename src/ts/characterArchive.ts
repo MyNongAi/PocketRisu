@@ -24,6 +24,7 @@ import type { ArchivedCharacterStub, character } from "./storage/database.svelte
 import { CharacterArchiveError, type NodeStorage } from "./storage/nodeStorage"
 import { getCharacterAssetCount } from "./gui/characterAssetCount"
 import { exactCharacterDefinitionFingerprint } from "./gui/characterCatalogMetrics"
+import { promoteRecentlyViewedCharacter } from "./characterRecentOrder"
 
 export { CharacterArchiveError }
 
@@ -162,6 +163,19 @@ export async function activateCharacter(chaId: string): Promise<number> {
     // by the legacy-trash migration may still carry the old flag).
     delete restored.trashTime
     db.characters.push(restored)
+    // Opening a normal character records recency when it is left. Reactivation
+    // is the one exception: its restored card (or containing folder) must be
+    // visible immediately instead of remaining buried in the archived slot.
+    const favoriteIds = new Set(
+        db.characters
+            .filter((candidate) => candidate?.favorite && !candidate.trashTime)
+            .map((candidate) => candidate.chaId),
+    )
+    db.characterOrder = promoteRecentlyViewedCharacter(
+        db.characterOrder,
+        restored.chaId,
+        favoriteIds,
+    )
     const stubIdxNow = (db.nodeOnlyArchivedCharacters ?? []).findIndex((s) => s?.chaId === chaId)
     if (stubIdxNow !== -1) db.nodeOnlyArchivedCharacters!.splice(stubIdxNow, 1)
     checkCharOrder()
