@@ -5,12 +5,12 @@
     import { DBState } from 'src/ts/stores.svelte';
     import { findCharacterIndexbyId } from "../../ts/util";
     import BarIcon from "../SideBars/BarIcon.svelte";
-    import { ArrowLeft, User, SquareMousePointer, TrashIcon, Undo2Icon } from "@lucide/svelte";
+    import { ArrowLeft, MessageSquareIcon, User, SquareMousePointer, TrashIcon, Undo2Icon } from "@lucide/svelte";
     import { selectedCharID } from "../../ts/stores.svelte";
     import TextInput from "../UI/GUI/TextInput.svelte";
     import Button from "../UI/GUI/Button.svelte";
     import { language } from "src/lang";
-    import { parseMultilangString } from "src/ts/util";
+    import { makeAgoText, parseMultilangString } from "src/ts/util";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
     import MobileCharacters from "../Mobile/MobileCharacters.svelte";
     import { getCharacterAssetCount } from "src/ts/gui/characterAssetCount";
@@ -26,6 +26,7 @@
     type CatalogEntry = {
         image:string; index:number; name:string; desc:string; chaId:string; archived:boolean;
         assetCount:number; sourceBadge:string; sourceRecorded:boolean;
+        chats:number; interaction:number; agoText:string;
     }
 
     async function openChar(char: CatalogEntry){
@@ -51,6 +52,8 @@
                 image: c.image, index: i, name: c.name, desc: c.creatorNotes ?? 'No description',
                 chaId: c.chaId, archived: false, assetCount: getCharacterAssetCount(c),
                 sourceBadge: source.label, sourceRecorded: source.recorded,
+                chats: c.chats.length, interaction: c.lastInteraction ?? 0,
+                agoText: makeAgoText(c.lastInteraction ?? 0),
             })
         }
         if(!trash && !db.nodeOnlyHideArchivedCharacters){
@@ -61,6 +64,8 @@
                     image: stub.image, index: -1, name: stub.name, desc: language.deactivatedBadge,
                     chaId: stub.chaId, archived: true, assetCount: stub.assetCount ?? 0,
                     sourceBadge: source.label, sourceRecorded: source.recorded,
+                    chats: stub.chatCount ?? 0, interaction: stub.lastInteraction ?? 0,
+                    agoText: makeAgoText(stub.lastInteraction ?? 0),
                 })
             }
         }
@@ -99,6 +104,7 @@
                     <div class="ml-2 flex flex-1 flex-col"><h4 class="mb-1 text-lg font-bold text-textcolor">{char.name || 'Unnamed'}</h4>
                         <span class="text-xs text-textcolor2">[{char.sourceBadge}] · 에셋 {char.assetCount}개</span>
                         <span class="text-textcolor2">{parseMultilangString(char.desc)['en'] || parseMultilangString(char.desc)['xx'] || 'No description'}</span>
+                        <div class="mt-1 flex items-center text-sm text-textcolor2"><span class="mr-1">{char.chats}</span><MessageSquareIcon size={14}/><span class="mx-1">|</span><span>{char.agoText}</span></div>
                         <div class="flex justify-end gap-2"><button class="text-textcolor2 hover:text-textcolor" onclick={() => openChar(char)}><SquareMousePointer/></button>{#if !char.archived}<button class="text-textcolor2 hover:text-textcolor" onclick={() => removeChar(char.chaId, char.name)}><TrashIcon/></button>{/if}</div>
                     </div>
                 </div>

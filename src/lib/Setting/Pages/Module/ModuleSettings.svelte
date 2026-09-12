@@ -267,6 +267,7 @@
         storageKey="risu-module-folders-expanded-v2"
         defaultCollapsed
         newFoldersFirst
+        rootItemsStandalone
         reorderDisabled={moduleCatalogSort !== 'recent'}
         folderTitleColor={folderColor}
         onFolderColor={changeFolderColor}
