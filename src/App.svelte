@@ -6,7 +6,6 @@
     import AlertComp from './lib/Others/AlertComp.svelte';
     import RealmPopUp from './lib/UI/Realm/RealmPopUp.svelte';
     import CharacterManager from './lib/CharacterManager/CharacterManager.svelte';
-    import GridChars from './lib/Others/GridCatalog.svelte';
     import FolderSettingsDialog from './lib/CharacterManager/FolderSettingsDialog.svelte';
     import BookmarkList from './lib/Others/BookmarkList.svelte';
     import Settings from './lib/Setting/Settings.svelte';
@@ -46,10 +45,14 @@
     let aprilFoolsPage = $state(0)
     let keepingSessionAlive = $state(false)
     let legacyGridOpen = $state(false)
+    let LegacyGridComponent = $state<any>(null)
 
     function openLegacyGrid() {
         openCharacterManager.set(false)
-        legacyGridOpen = true
+        void (async () => {
+            LegacyGridComponent ??= (await import('./lib/Others/GridCatalog.svelte')).default
+            legacyGridOpen = true
+        })()
     }
 
     const getMainDropEffect = (e:DragEvent): DataTransfer['dropEffect'] => {
@@ -216,8 +219,8 @@
             <MobileFooter />
         </div>
     {:else}
-        {#if legacyGridOpen}
-            <GridChars endGrid={() => { legacyGridOpen = false }} />
+        {#if legacyGridOpen && LegacyGridComponent}
+            <LegacyGridComponent endGrid={() => { legacyGridOpen = false }} />
         {:else}
         {#if (!$DynamicGUI)}
             {#if $splitChatOpen || isEmbeddedRisuPane}

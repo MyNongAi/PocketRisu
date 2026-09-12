@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.12.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-09-11",
+  "updatedAt": "2026-09-12",
   "features": [
     {
       "id": "ASSET-EXT",
@@ -351,7 +351,10 @@
       ],
       "requiredMarkers": [
         { "file": "src/App.svelte", "contains": "legacyGridOpen" },
+        { "file": "src/App.svelte", "contains": "import('./lib/Others/GridCatalog.svelte')" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "openLegacyGrid" },
+        { "file": "src/lib/Mobile/MobileCharacters.svelte", "contains": "SquareMousePointer" },
+        { "file": "src/lib/Others/GridCatalog.svelte", "contains": "makeAgoText" },
         { "file": "src/lib/CharacterManager/CharacterManager.svelte", "contains": "sortReversed" },
         { "file": "src/ts/characterArchive.ts", "contains": "nonBlocking" }
       ],
