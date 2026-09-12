@@ -213,7 +213,7 @@ export async function loadData() {
                 }
             } catch { /* best effort only */ }
 
-            handleShareTarget()
+            void handleShareTarget()
             if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.register('/sw.js').catch(() => {})
             }

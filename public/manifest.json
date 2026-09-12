@@ -1,6 +1,8 @@
 {
     "name": "PocketRisu",
     "short_name": "PocketRisu",
+    "id": "/",
+    "scope": "/",
     "icons": [
         {
             "src": "logo_512.png",
@@ -41,12 +43,33 @@
         }
     ],
     "share_target": {
-        "action": "/share",
-        "method": "GET",
+        "action": "/sw/share",
+        "method": "POST",
+        "enctype": "multipart/form-data",
         "params": {
             "url": "url",
             "text": "text",
-            "title": "title"
+            "title": "title",
+            "files": {
+                "name": "files",
+                "accept": [
+                    "application/octet-stream",
+                    "application/json",
+                    "application/zip",
+                    "application/x-zip-compressed",
+                    "image/png",
+                    "image/jpeg",
+                    ".charx",
+                    ".risum",
+                    ".risup",
+                    ".risupreset",
+                    ".lorebook",
+                    ".json",
+                    ".png",
+                    ".jpg",
+                    ".jpeg"
+                ]
+            }
         }
     }
 }
