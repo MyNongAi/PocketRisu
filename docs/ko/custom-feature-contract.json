@@ -431,6 +431,28 @@
       ]
     },
     {
+      "id": "PWA-SHARE",
+      "title": "설치형 PWA 파일 공유 수신과 임포트",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "public/manifest.json",
+        "public/sw.js",
+        "src/ts/shareTarget.ts",
+        "src/ts/shareTargetRouting.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "public/manifest.json", "contains": "\"action\": \"/sw/share\"" },
+        { "file": "public/manifest.json", "contains": "\"enctype\": \"multipart/form-data\"" },
+        { "file": "public/sw.js", "contains": "receiveSharedPayload" },
+        { "file": "public/sw.js", "contains": "risuShareTarget" },
+        { "file": "src/ts/shareTarget.ts", "contains": "consumePostedShare" },
+        { "file": "src/ts/shareTargetRouting.ts", "contains": "classifySharedImport" }
+      ],
+      "regressionTests": [
+        "src/ts/shareTarget.test.ts"
+      ]
+    },
+    {
       "id": "HAEJEOK-BOUNDED",
       "title": "해적리스식 패널 지연 로더와 제한형 캐시",
       "criticality": "performance",
