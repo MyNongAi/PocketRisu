@@ -6,7 +6,7 @@
 
 - 상류 기준: 공식 PocketRisu v1.12.0
 - 개조 브랜치: `feature/external-assets`
-- 최신 검증 배포 커밋: `82ef8ed1`
+- 최신 검증 배포 커밋: `cc510ce3`
 - 외부 프로젝트 전체 병합: 없음
 - HaejeokRisu `b6651`의 GPL v3 코드·구조 중 사이드바 지연 로더와 제한형 이미지 캐시 원칙을 PocketRisu API에 맞춰 이식했습니다. 상세 내용은 `docs/ko/haejeok-adoption.md`에 기록합니다.
 - PocketRisu Kei `kei-v2.1.1`에서 검토한 안정 ID 기반 사이드바 드래그 원칙을 현재 UI 구조에 맞춰 이식했습니다. 후속 후보와 제외 범위는 `docs/ko/kei-adoption.md`에 기록합니다.
