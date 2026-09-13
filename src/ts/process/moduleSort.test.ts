@@ -140,7 +140,7 @@ describe('sortModulesByActivation', () => {
         expect(second).toEqual(first)
     })
 
-    it('promotes only the activated folder after a manual move while favorites remain first', () => {
+    it('promotes the activated folder to the absolute top after a manual move', () => {
         const folders = recordModuleFolderOrder([
             { id: 'pinned', moduleIds: ['bravo'], favorite: true },
             { id: 'alpha-folder', moduleIds: ['alpha'] },
@@ -148,7 +148,7 @@ describe('sortModulesByActivation', () => {
         ])
         const promoted = recordModuleFolderActivation(folders, modules, 'charlie', { activationHistory: ['charlie'] })
         const sorted = sortModuleFoldersByActivation(promoted, modules)
-        expect(sorted.map((folder) => folder.id)).toEqual(['pinned', 'charlie-folder', 'alpha-folder'])
+        expect(sorted.map((folder) => folder.id)).toEqual(['charlie-folder', 'pinned', 'alpha-folder'])
         expect(folders.map((folder) => folder.id)).toEqual(['pinned', 'alpha-folder', 'charlie-folder'])
         expect(sortModuleFoldersByActivation(sorted, modules)).toEqual(sorted)
     })

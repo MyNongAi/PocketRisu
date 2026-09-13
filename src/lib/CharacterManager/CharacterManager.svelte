@@ -484,6 +484,7 @@
             {:else}
                 <div class="grid {gridCompact ? 'gap-1.5 grid-cols-[repeat(auto-fill,minmax(3.5rem,1fr))]' : 'gap-3 grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))]'}">
                     {#each incremental.slice(gridList) as entry (entry.chaId)}
+                        {@const entryDuplicateCount = duplicateCount(entry.chaId)}
                         <button
                             type="button"
                             class="flex flex-col items-center gap-1 rounded-md text-textcolor transition-colors {gridCompact ? 'p-0.5' : 'p-1.5'} {activeChaId === entry.chaId ? 'bg-selected' : 'risu-interactive-surface'}"
@@ -517,15 +518,19 @@
                                 >[{entry.sourceBadge}]</span>
                                 {#if entry.missingAssetCount > 0}
                                     {#if entry.realmRecoveryAvailable}
-                                        <span class="pointer-events-none absolute -bottom-1 -right-1 z-10 rounded-full bg-darkbg px-1 text-sm font-black leading-none text-emerald-400 drop-shadow" title={`에셋 ${entry.missingAssetCount}개 누락 · Realm 복구 가능`}>!</span>
+                                        <span class="pointer-events-none absolute -right-1 -top-1 z-10 rounded-full bg-darkbg px-1 text-sm font-black leading-none text-emerald-400 drop-shadow" title={`에셋 ${entry.missingAssetCount}개 누락 · Realm 복구 가능`}>!</span>
                                     {:else}
-                                        <span class="pointer-events-none absolute -bottom-1 -right-1 z-10 text-sm leading-none drop-shadow" title={`에셋 ${entry.missingAssetCount}개 누락 · 확인된 Realm 복구 원본 없음`}>❗</span>
+                                        <span class="pointer-events-none absolute -right-1 -top-1 z-10 text-sm leading-none drop-shadow" title={`에셋 ${entry.missingAssetCount}개 누락 · 확인된 Realm 복구 원본 없음`}>❗</span>
                                     {/if}
                                 {/if}
                             </div>
                             {#if !gridCompact}
                                 <span class="w-full text-center text-xs leading-tight line-clamp-2 break-all" style:color={listTitleColor(entry.titleColor, entry.missingAssetCount > 0)}>{entry.name}</span>
-                                <span class="w-full truncate text-center text-[9px] leading-tight text-textcolor2">{language.characterAssetCountLabel(entry.assetCount)} · {language.characterDuplicateCountLabel(duplicateCount(entry.chaId))}</span>
+                                <span class="w-full truncate text-center text-[9px] leading-tight text-textcolor2">
+                                    {language.characterAssetCountLabel(entry.assetCount)}
+                                    {#if entry.missingAssetCount > 0}<span class="text-red-400"> · 누락 {entry.missingAssetCount.toLocaleString()}개</span>{/if}
+                                    {#if entryDuplicateCount !== null && entryDuplicateCount > 0} · {language.characterDuplicateCountLabel(entryDuplicateCount)}{/if}
+                                </span>
                             {/if}
                         </button>
                     {/each}

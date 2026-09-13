@@ -185,6 +185,7 @@
         "src/ts/process/moduleSort.ts",
         "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
         "src/lib/Setting/Pages/Module/ModuleMenu.svelte",
+        "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte",
         "src/lib/UI/FolderedList.svelte"
       ],
       "requiredMarkers": [
@@ -195,6 +196,7 @@
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "moduleAssetCount" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "returnToModuleList" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "bind:searchQuery={moduleSearchQuery}" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "rememberedModuleMenuScrollTop" },
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "searchQuery = $bindable('')" },
         { "file": "src/ts/process/moduleFolders.ts", "contains": "dissolveShrunkenModuleFolders" },
         { "file": "src/lib/Setting/Pages/Module/ModuleMenu.svelte", "contains": "assetManifestPager('top')" },
@@ -219,13 +221,18 @@
         "src/ts/characterManager.ts",
         "src/lib/CharacterManager/CharacterManager.svelte",
         "src/lib/CharacterManager/CharacterRow.svelte",
+        "src/lib/Others/GridCatalog.svelte",
+        "src/lib/Mobile/MobileCharacters.svelte",
+        "src/lib/SideBars/SidebarAvatar.svelte",
         "extras/risu-source-collection-exporter"
       ],
       "requiredMarkers": [
         { "file": "src/ts/sourceCollectionImport.ts", "contains": "importSourceCollection" },
         { "file": "src/ts/sourceCollectionMerge.ts", "contains": "applySourceCollectionEntities" },
         { "file": "src/ts/gui/characterSourceBadge.ts", "contains": "resolveCharacterSourceBadge" },
-        { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "sourceBadgeLabel" }
+        { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "sourceBadgeLabel" },
+        { "file": "src/lib/SideBars/SidebarAvatar.svelte", "contains": "sourceBadge" },
+        { "file": "src/lib/Others/GridCatalog.svelte", "contains": "duplicateCounts" }
       ],
       "regressionTests": [
         "src/ts/sourceCollectionExporter.test.ts",

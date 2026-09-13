@@ -66,23 +66,23 @@
         {/if}
         {#if entry.missingAssetCount > 0}
             {#if entry.realmRecoveryAvailable}
-                <span class="pointer-events-none absolute -bottom-1 -right-1 z-10 rounded-full bg-darkbg px-1 text-sm font-black leading-none text-emerald-400 drop-shadow" aria-label={missingAssetTitle} title={missingAssetTitle}>!</span>
+                <span class="pointer-events-none absolute -right-1 -top-1 z-10 rounded-full bg-darkbg px-1 text-sm font-black leading-none text-emerald-400 drop-shadow" aria-label={missingAssetTitle} title={missingAssetTitle}>!</span>
             {:else}
-                <span class="pointer-events-none absolute -bottom-1 -right-1 z-10 text-sm leading-none drop-shadow" aria-label={missingAssetTitle} title={missingAssetTitle}>❗</span>
+                <span class="pointer-events-none absolute -right-1 -top-1 z-10 text-sm leading-none drop-shadow" aria-label={missingAssetTitle} title={missingAssetTitle}>❗</span>
             {/if}
         {/if}
+        <span
+            class="pointer-events-none absolute -bottom-1 -left-1 z-10 rounded border border-darkborderc bg-darkbg/95 px-0.5 text-[8px] font-semibold leading-tight"
+            class:text-sky-300={entry.sourceBadge === '로컬'}
+            class:text-violet-300={entry.sourceBadge === '웹'}
+            class:text-emerald-300={entry.sourceBadge === '모바일'}
+            class:border-dashed={!entry.sourceRecorded}
+            title={sourceBadgeTitle}
+        >{sourceBadgeLabel}</span>
     </div>
     <div class="flex-1 min-w-0 flex flex-col">
         <div class="flex items-center gap-1.5 min-w-0">
             <span class="truncate text-sm font-medium" style:color={listTitleColor(entry.titleColor, entry.missingAssetCount > 0)}>{entry.name}</span>
-            <span
-                class="shrink-0 rounded border border-darkborderc px-1 py-0.5 text-[10px] font-medium leading-none"
-                class:text-sky-300={entry.sourceBadge === '로컬'}
-                class:text-violet-300={entry.sourceBadge === '웹'}
-                class:text-emerald-300={entry.sourceBadge === '모바일'}
-                class:border-dashed={!entry.sourceRecorded}
-                title={sourceBadgeTitle}
-            >{sourceBadgeLabel}</span>
             {#if entry.hidden}
                 <span class="shrink-0 inline-flex items-center gap-0.5 rounded border border-darkborderc px-1 py-0.5 text-[10px] leading-none text-textcolor2" title={language.hiddenFromSidebarHint}>
                     <EyeOffIcon size={10} />{language.hiddenBadge}
@@ -103,8 +103,14 @@
             {/if}
             <span class="mx-1">|</span>
             <span>{language.characterAssetCountLabel(entry.assetCount)}</span>
-            <span class="mx-1">|</span>
-            <span>{language.characterDuplicateCountLabel(duplicateCount)}</span>
+            {#if entry.missingAssetCount > 0}
+                <span class="mx-1">|</span>
+                <span class="text-red-400">누락 {entry.missingAssetCount.toLocaleString()}개</span>
+            {/if}
+            {#if duplicateCount !== null && duplicateCount > 0}
+                <span class="mx-1">|</span>
+                <span>{language.characterDuplicateCountLabel(duplicateCount)}</span>
+            {/if}
         </div>
     </div>
     {#if menu}
