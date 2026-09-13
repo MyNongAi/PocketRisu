@@ -2,6 +2,7 @@
     import { cancelCharacterChatPrefetch, changeChar, getCharThumbnail, prefetchCharacterChat, removeChar, scheduleCharacterChatPrefetch } from "../../ts/characters";
     import { promptActivateCharacter } from "../../ts/characterArchive";
     import { type Database } from "../../ts/storage/database.svelte";
+    import { onDestroy, onMount } from "svelte";
     import { DBState } from 'src/ts/stores.svelte';
     import { findCharacterIndexbyId } from "../../ts/util";
     import BarIcon from "../SideBars/BarIcon.svelte";
@@ -19,11 +20,14 @@
     import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
     import VirtualGrid from "../UI/Virtual/VirtualGrid.svelte";
     import VirtualList from "../UI/Virtual/VirtualList.svelte";
+    import { buildExactCharacterDuplicateCounts } from "src/ts/gui/characterCatalogMetrics";
 
     interface Props { endGrid?: () => void }
     let { endGrid = () => {} }: Props = $props();
     let search = $state('')
     let selected = $state(3)
+    let duplicateCounts = $state<Map<string, number> | null>(null)
+    let duplicateScanGeneration = 0
 
     function selectAndClose(index = -1){ changeChar(index); endGrid() }
 
@@ -89,6 +93,18 @@
 
     const characters = $derived(formatChars(search, DBState.db))
     const trashedCharacters = $derived(formatChars(search, DBState.db, true))
+
+    onMount(() => {
+        const generation = ++duplicateScanGeneration
+        void buildExactCharacterDuplicateCounts(
+            DBState.db.characters,
+            DBState.db.nodeOnlyArchivedCharacters ?? [],
+            { shouldContinue: () => generation === duplicateScanGeneration },
+        ).then((result) => {
+            if(generation === duplicateScanGeneration) duplicateCounts = result
+        })
+    })
+    onDestroy(() => { duplicateScanGeneration += 1 })
 </script>
 
 <div class="flex h-full w-full justify-center">
@@ -138,7 +154,7 @@
             <VirtualList items={characters} itemHeight={142} className="min-h-0 flex-1" key={(char) => char.chaId}>
                 {#snippet children(char)}
                     <div class="m-1 flex h-[134px] rounded-md border border-darkborderc p-2" class:opacity-60={char.archived}>
-                        <div class:grayscale={char.archived}>
+                        <div class="relative shrink-0" class:grayscale={char.archived}>
                             <BarIcon
                                 onPrefetch={() => schedulePrefetch(char.index)}
                                 onPrefetchCancel={() => cancelPrefetch(char.index)}
@@ -146,20 +162,28 @@
                                 onClick={() => void openChar(char)}
                                 additionalStyle={() => getCharThumbnail(char.image, 'css')}
                             />
+                            <span
+                                class="pointer-events-none absolute -bottom-1 left-0 z-10 rounded border border-darkborderc bg-darkbg/95 px-0.5 text-[8px] font-semibold leading-tight"
+                                class:text-sky-300={char.sourceBadge === '로컬'}
+                                class:text-violet-300={char.sourceBadge === '웹'}
+                                class:text-emerald-300={char.sourceBadge === '모바일'}
+                                class:border-dashed={!char.sourceRecorded}
+                                title={char.sourceRecorded ? `기록된 출처: ${char.sourceBadge}` : '출처 기록 없음 · 기존 웹리스 기준'}
+                            >[{char.sourceBadge}]</span>
+                            {#if char.missingAssetCount > 0}
+                                {#if char.realmRecoveryAvailable}<span class="pointer-events-none absolute right-0 top-0 z-10 rounded-full bg-darkbg px-1 text-sm font-black leading-none text-emerald-400 drop-shadow" aria-label="Realm 에셋 복구 가능">!</span>{:else}<span class="pointer-events-none absolute right-0 top-0 z-10 text-sm leading-none drop-shadow" aria-label="에셋 누락">❗</span>{/if}
+                            {/if}
                         </div>
                         <div class="ml-2 flex min-w-0 flex-1 flex-col">
                             <h4 class="mb-1 flex min-w-0 items-center gap-1 text-lg font-bold text-textcolor" style:color={listTitleColor(char.titleColor, char.missingAssetCount > 0)}>
                                 <span class="truncate">{char.name || 'Unnamed'}</span>
-                                {#if char.missingAssetCount > 0}
-                                    {#if char.realmRecoveryAvailable}<span class="shrink-0 font-black text-emerald-400" aria-label="Realm 에셋 복구 가능">!</span>{:else}<span class="shrink-0" aria-label="에셋 누락">❗</span>{/if}
-                                {/if}
                                 {#if char.archived}<span class="shrink-0 rounded border border-darkborderc px-1 text-xs font-normal text-textcolor2">{language.deactivatedBadge}</span>{/if}
-                                <span class="shrink-0 text-xs font-normal text-textcolor2">[{char.sourceBadge}]</span>
                             </h4>
                             <span class="line-clamp-2 text-textcolor2">{parseMultilangString(char.desc)['en'] || parseMultilangString(char.desc)['xx'] || 'No description'}</span>
                             <div class="mt-1 flex items-center text-sm text-textcolor2">
                                 <span class="mr-1">{char.chats}</span><MessageSquareIcon size={14}/><span class="mx-1">|</span><span>{char.agoText}</span><span class="mx-1">|</span><span>에셋 {char.assetCount.toLocaleString()}개</span>
                                 {#if char.missingAssetCount > 0}<span class="ml-1 text-red-400">· 누락 {char.missingAssetCount.toLocaleString()}개</span>{/if}
+                                {#if (duplicateCounts?.get(char.chaId) ?? 0) > 0}<span class="ml-1">· {language.characterDuplicateCountLabel(duplicateCounts?.get(char.chaId) ?? 0)}</span>{/if}
                             </div>
                             <div class="flex justify-end gap-2">
                                 {#if !char.archived}<button class="text-textcolor2 hover:text-textcolor" title="제목 색변경" aria-label="제목 색변경" onclick={() => editCharacterTitleColor(char.chaId)}><PaletteIcon/></button>{/if}
@@ -187,7 +211,7 @@
                 {/snippet}
             </VirtualList>
         {:else}
-            <MobileCharacters {search} gridMode endGrid={endGrid}/>
+            <MobileCharacters {search} gridMode endGrid={endGrid} {duplicateCounts}/>
         {/if}
     </div>
 </div>

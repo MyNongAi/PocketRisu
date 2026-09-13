@@ -141,11 +141,11 @@ export function sortModuleFoldersByActivation<T extends SortableModuleFolder>(
             return { folder, index, rank }
         })
         .sort((a, b) => {
-            const favoriteOrder = Number(!!b.folder.favorite) - Number(!!a.folder.favorite)
-            if (favoriteOrder) return favoriteOrder
             const aOrder = Number.isFinite(a.folder.sortOrder) ? a.folder.sortOrder! : undefined
             const bOrder = Number.isFinite(b.folder.sortOrder) ? b.folder.sortOrder! : undefined
             if (hasExplicitOrder) return (aOrder ?? Infinity) - (bOrder ?? Infinity) || a.index - b.index
+            const favoriteOrder = Number(!!b.folder.favorite) - Number(!!a.folder.favorite)
+            if (favoriteOrder) return favoriteOrder
             return b.rank - a.rank || a.index - b.index
         })
         .map(({ folder }) => folder)

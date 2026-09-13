@@ -1,3 +1,12 @@
+<script module lang="ts">
+    // Ctrl+Q closes this component while Settings is open. Keep its lightweight
+    // view state at module scope so returning from a module edit resumes the
+    // same catalog position instead of rebuilding it from the top.
+    let rememberedModuleMenuSearch = ''
+    let rememberedModuleMenuScrollTop = 0
+    let rememberedModuleMenuExpanded = new Set<string>()
+</script>
+
 <script lang="ts">
     // Chat module picker. Grouped by folder; folder management lives in
     // Settings → Modules. Each row has two scope buttons: chat scope and
@@ -9,7 +18,7 @@
     import { DBState, ReloadGUIPointer } from 'src/ts/stores.svelte';
     import { selectedCharID } from "src/ts/stores.svelte";
     import { openSettings, SettingsRoute } from "src/ts/routing";
-    import { onMount } from "svelte";
+    import { onDestroy, onMount, untrack } from "svelte";
     import { recordModuleActivation, recordModuleFolderActivation, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
     import { listTitleColor } from "src/ts/gui/titleColors";
     interface Props {
@@ -18,13 +27,13 @@
     }
 
     let { close = (i:string) => {}, alertMode = false }: Props = $props();
-    let moduleSearch = $state('')
+    let moduleSearch = $state(untrack(() => alertMode ? '' : rememberedModuleMenuSearch))
     let listEl: HTMLDivElement = $state()
     // Folders start collapsed; searching shows everything that matches.
     // Folders start collapsed; the uncategorized group (key '') starts open,
     // so for that key the set records "collapsed" instead. Always shown as a
     // header so the list reads the same with or without folders.
-    let expanded = $state<Set<string>>(new Set());
+    let expanded = $state<Set<string>>(untrack(() => alertMode ? new Set() : new Set(rememberedModuleMenuExpanded)));
 
     const query = $derived(moduleSearch.trim().toLocaleLowerCase())
     let sortedModules = $derived(sortModulesByActivation(DBState.db.modules, '', {
@@ -126,9 +135,27 @@
         $ReloadGUIPointer += 1
     }
 
+    function rememberViewState() {
+        if (alertMode) return
+        rememberedModuleMenuSearch = moduleSearch
+        rememberedModuleMenuExpanded = new Set(expanded)
+        rememberedModuleMenuScrollTop = listEl?.scrollTop ?? rememberedModuleMenuScrollTop
+    }
+
+    function closePanel(value = '') {
+        rememberViewState()
+        close(value)
+    }
+
     onMount(() => {
-        listEl?.focus()
+        const frame = requestAnimationFrame(() => {
+            if (!alertMode && listEl) listEl.scrollTop = rememberedModuleMenuScrollTop
+            listEl?.focus({ preventScroll: true })
+        })
+        return () => cancelAnimationFrame(frame)
     })
+
+    onDestroy(rememberViewState)
 </script>
 
 
@@ -138,7 +165,7 @@
             <h2 class="mt-0 mb-0 text-lg">{language.modules}</h2>
             <div class="grow flex justify-end">
                 <button class="text-textcolor2 hover:text-primary mr-2 cursor-pointer items-center" onclick={() => {
-                    close('')
+                    closePanel()
                 }}>
                     <XIcon size={24}/>
                 </button>
@@ -229,7 +256,7 @@
         {/each}
         </div>
         <button class="mt-3 pt-2 w-full border-t border-darkborderc flex items-center gap-2 text-sm text-textcolor2 hover:text-primary cursor-pointer"
-            onclick={() => { openSettings(SettingsRoute.Module); close('') }}>
+            onclick={() => { rememberViewState(); openSettings(SettingsRoute.Module); close('') }}>
             <SettingsIcon size={16}/><span>{language.moduleManage}</span>
         </button>
     </div>

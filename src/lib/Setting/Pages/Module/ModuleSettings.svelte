@@ -20,6 +20,7 @@
     import { dissolveShrunkenModuleFolders, synchronizeModuleFolderMembership } from "src/ts/process/moduleFolders";
     import { recordModuleActivation, recordModuleFolderActivation, recordModuleFolderOrder, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
     import { chooseTitleColor, listTitleColor } from "src/ts/gui/titleColors";
+    import { resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
     import type { PromptPresetFolder } from "src/ts/storage/database.svelte";
     let tempModule:RisuModule = $state({
         name: '',
@@ -80,6 +81,10 @@
         const manifest = Number(rmodule.assetManifest?.count)
         if (Number.isFinite(manifest) && manifest >= 0) return Math.floor(manifest)
         return rmodule.assets?.length ?? 0
+    }
+
+    function moduleSource(rmodule: RisuModule) {
+        return resolveCharacterSourceBadge(rmodule.sourceInfo?.label)
     }
 
     function listScrollElement() {
@@ -318,12 +323,22 @@
         {/snippet}
         {#snippet itemContent(index)}
             {@const rmodule = displayModules[index]}
+            {@const source = moduleSource(rmodule)}
             {#if rmodule.mcp}
                 <Waypoints size={18} class="shrink-0 text-textcolor2" />
             {/if}
             <div class="flex flex-col min-w-0 grow">
                 <span class="truncate text-textcolor" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(rmodule))}>{rmodule.favorite ? '★ ' : ''}{rmodule.name}{#if hasMissingAssets(rmodule)} <span aria-label="에셋 누락" title="에셋 누락">❗</span>{/if}</span>
-                <span class="text-xs text-textcolor2 truncate">에셋 {moduleAssetCount(rmodule)}개 · {rmodule.description || 'No description provided'}</span>
+                <span class="text-xs text-textcolor2 truncate">
+                    <span
+                        class:text-sky-300={source.label === '로컬'}
+                        class:text-violet-300={source.label === '웹'}
+                        class:text-emerald-300={source.label === '모바일'}
+                        class:border-dashed={!source.recorded}
+                        title={source.recorded ? `기록된 출처: ${source.label}` : '출처 기록 없음 · 기존 웹리스 기준'}
+                    >[{source.label}]</span>
+                    · 에셋 {moduleAssetCount(rmodule)}개 · {rmodule.description || 'No description provided'}
+                </span>
             </div>
             <button class="no-sort shrink-0 p-1 cursor-pointer {isGlobal(rmodule) ? 'text-blue-500' : isIntegrated(rmodule) ? 'text-amber-500 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
                 use:tooltip={language.enableGlobal}

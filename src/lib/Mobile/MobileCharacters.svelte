@@ -17,9 +17,10 @@
         search: string;
         gridMode?: boolean;
         endGrid?: () => void;
+        duplicateCounts?: ReadonlyMap<string, number> | null;
     }
 
-    let {search, gridMode = false, endGrid = () => {}}: Props = $props();
+    let {search, gridMode = false, endGrid = () => {}, duplicateCounts = null}: Props = $props();
 
     function sortChar(db: Database) {
         const list = db.characters.map((c, i) => {
@@ -35,6 +36,7 @@
                 chaId: c.chaId,
                 assetCount: getCharacterAssetCount(c),
                 sourceBadge: source.label,
+                sourceRecorded: source.recorded,
                 missingAssetCount: c.sourceInfo?.missingAssetCount ?? 0,
                 realmRecoveryAvailable: isRealmAssetRecoveryAvailable(c),
                 titleColor: c.titleColor,
@@ -54,6 +56,7 @@
                     chaId: stub.chaId,
                     assetCount: stub.assetCount ?? 0,
                     sourceBadge: resolveCharacterSourceBadge(stub.sourceInfo?.label).label,
+                    sourceRecorded: resolveCharacterSourceBadge(stub.sourceInfo?.label).recorded,
                     missingAssetCount: stub.sourceInfo?.missingAssetCount ?? 0,
                     realmRecoveryAvailable: isRealmAssetRecoveryAvailable(stub),
                     titleColor: stub.titleColor,
@@ -94,7 +97,7 @@
 <VirtualList items={sortedCharacters} itemHeight={76} className="h-full w-full" key={(char) => char.chaId}>
     {#snippet children(char, i)}
         <div class="flex h-full w-full items-center border-t-darkborderc" class:border-t={i !== 0} class:opacity-60={char.archived}>
-            <div class="shrink-0 p-2 pr-0" class:grayscale={char.archived}>
+            <div class="relative shrink-0 p-2 pr-0" class:grayscale={char.archived}>
                 <BarIcon
                     onPrefetch={() => schedulePrefetch(char.i)}
                     onPrefetchCancel={() => cancelPrefetch(char.i)}
@@ -102,6 +105,17 @@
                     onClick={() => void open(char)}
                     additionalStyle={() => getCharThumbnail(char.image, 'css')}
                 />
+                <span
+                    class="pointer-events-none absolute bottom-1 left-1 z-10 rounded border border-darkborderc bg-darkbg/95 px-0.5 text-[8px] font-semibold leading-tight"
+                    class:text-sky-300={char.sourceBadge === '로컬'}
+                    class:text-violet-300={char.sourceBadge === '웹'}
+                    class:text-emerald-300={char.sourceBadge === '모바일'}
+                    class:border-dashed={!char.sourceRecorded}
+                    title={char.sourceRecorded ? `기록된 출처: ${char.sourceBadge}` : '출처 기록 없음 · 기존 웹리스 기준'}
+                >[{char.sourceBadge}]</span>
+                {#if char.missingAssetCount > 0}
+                    {#if char.realmRecoveryAvailable}<span class="pointer-events-none absolute right-1 top-1 z-10 rounded-full bg-darkbg px-1 text-sm font-black leading-none text-emerald-400 drop-shadow" aria-label="Realm 에셋 복구 가능" title="Realm 에셋 복구 가능">!</span>{:else}<span class="pointer-events-none absolute right-1 top-1 z-10 text-sm leading-none drop-shadow" aria-label="에셋 누락" title="확인된 Realm 복구 원본 없음">❗</span>{/if}
+                {/if}
             </div>
             <button
                 class="flex min-w-0 flex-1 p-2 text-left"
@@ -115,17 +129,14 @@
                 <div class="flex w-full min-w-0 flex-1 flex-col items-start justify-start text-start">
                     <div class="flex max-w-full min-w-0 items-center gap-1">
                         <span class="truncate" style:color={listTitleColor(char.titleColor, char.missingAssetCount > 0)}>{char.name}</span>
-                        {#if char.missingAssetCount > 0}
-                            {#if char.realmRecoveryAvailable}<span class="shrink-0 font-black text-emerald-400" aria-label="Realm 에셋 복구 가능" title="Realm 에셋 복구 가능">!</span>{:else}<span class="shrink-0" aria-label="에셋 누락" title="확인된 Realm 복구 원본 없음">❗</span>{/if}
-                        {/if}
                         {#if char.archived}<span class="shrink-0 rounded border border-darkborderc px-1 py-0.5 text-xs text-textcolor2">{language.deactivatedBadge}</span>{/if}
-                        <span class="shrink-0 text-[10px] text-textcolor2">[{char.sourceBadge}]</span>
                     </div>
                     <div class="flex w-full items-center overflow-hidden whitespace-nowrap text-sm text-textcolor2">
                         <span class="mr-1">{char.chats}</span><MessageSquareIcon size={14}/><span class="mx-1">|</span>
                         <span>{char.agoText}</span><span class="mx-1">|</span>
                         <span>에셋 {char.assetCount.toLocaleString()}개</span>
                         {#if char.missingAssetCount > 0}<span class="ml-1 text-red-400">· 누락 {char.missingAssetCount.toLocaleString()}개</span>{/if}
+                        {#if (duplicateCounts?.get(char.chaId) ?? 0) > 0}<span class="ml-1">· {language.characterDuplicateCountLabel(duplicateCounts?.get(char.chaId) ?? 0)}</span>{/if}
                     </div>
                 </div>
             </button>
