@@ -116,6 +116,13 @@ test('an explicit Realm id is a recoverable-source signal without a fuzzy search
     assert.equal(result.id, 'realm-123');
     assert.equal(result.direct, true);
 });
+test('Realm page and dynamic download URLs normalize to the embedded character id', () => {
+    const { sandbox } = context();
+    assert.equal(sandbox.normalizeRealmSourceInput('https://realm.risuai.net/character/neli-id'), 'neli-id');
+    assert.equal(sandbox.normalizeRealmSourceInput('https://realm.risuai.net/api/v1/download/dynamic/neli%2Disland?cors=true'), 'neli-island');
+    assert.equal(sandbox.normalizeRealmSourceInput('https://realm.risuai.net/?code=realm-123'), 'realm-123');
+    assert.equal(sandbox.normalizeRealmSourceInput('https://realm.risuai.net/unknown'), '');
+});
 test('a complete post-recovery check clears stale missing metadata, but access errors preserve it', async () => {
     let status = 'exists';
     const { sandbox, run } = context({ Risuai: {

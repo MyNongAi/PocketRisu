@@ -133,4 +133,21 @@ describe('module folder display interactions', () => {
             { index: 0, folderId: undefined },
         ])
     })
+
+    it('can render standalone root items before real folders for recent ordering', async () => {
+        const { target } = await renderList({
+            itemFolderIds: [undefined, 'a'],
+            itemSearchTexts: ['root', 'foldered'],
+            rootItemsStandalone: true,
+            rootItemsFirst: true,
+            defaultCollapsed: false,
+        })
+        const list = target.querySelector('[data-risu-sortable-list]')!
+        const root = list.querySelector<HTMLElement>(':scope > [data-folder-container=""]')!
+        const folder = list.querySelector<HTMLElement>(':scope > [data-folder-key="a"]')!
+        expect(root).not.toBeNull()
+        expect(folder).not.toBeNull()
+        expect(root.compareDocumentPosition(folder) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+        expect(root.textContent).toContain('Module 0')
+    })
 })

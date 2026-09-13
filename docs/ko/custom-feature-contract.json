@@ -98,8 +98,10 @@
       "ownerFiles": [
         "src/App.svelte",
         "src/ts/chatSplitPane.ts",
+        "src/ts/dragTypes.ts",
         "src/lib/ChatScreens/SecondaryChatPanel.svelte",
         "src/lib/ChatScreens/ChatScreen.svelte",
+        "src/lib/SideBars/SideChatList.svelte",
         "src/lib/SideBars/Sidebar.svelte"
       ],
       "requiredMarkers": [
@@ -107,7 +109,10 @@
         { "file": "src/App.svelte", "contains": "aria-label=\"사이드바 닫기\"" },
         { "file": "src/ts/chatSplitPane.ts", "contains": "toggleSplitChat" },
         { "file": "src/ts/chatSplitPane.ts", "contains": "getSplitWidthBounds" },
+        { "file": "src/ts/dragTypes.ts", "contains": "RISU_CHAT_ROOM_DRAG_TYPE" },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "serializeChatRoomDragPayload" },
         { "file": "src/lib/ChatScreens/SecondaryChatPanel.svelte", "contains": "getSecondaryRisuPaneUrl" },
+        { "file": "src/lib/ChatScreens/SecondaryChatPanel.svelte", "contains": "우측 채팅 닫기" },
         { "file": "src/lib/ChatScreens/ChatScreen.svelte", "contains": "SecondaryChatPanel" },
         { "file": "src/lib/ChatScreens/ChatScreen.svelte", "contains": "split-chat-contained" }
       ],
@@ -254,20 +259,23 @@
         "src/ts/gui/titleColors.ts",
         "src/ts/characterManager.ts",
         "src/lib/CharacterManager/CharacterManager.svelte",
-        "src/lib/CharacterManager/CharacterRow.svelte"
+        "src/lib/CharacterManager/CharacterRow.svelte",
+        "public/plugins/ImageRecovery.js"
       ],
       "requiredMarkers": [
         { "file": "src/ts/realmAssetRecovery.ts", "contains": "recoverCharacterFolderAssetsFromRealm" },
         { "file": "src/ts/realmAssetRecoveryMatching.ts", "contains": "selectStrictRealmRecoveryCandidate" },
         { "file": "src/ts/gui/titleColors.ts", "contains": "isRealmAssetRecoveryAvailable" },
-        { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "missingAssetTitle" }
+        { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "missingAssetTitle" },
+        { "file": "public/plugins/ImageRecovery.js", "contains": "normalizeRealmSourceInput" }
       ],
       "regressionTests": [
         "src/ts/realmAssetRecovery.test.ts",
         "src/ts/realmAssetRecoveryMatching.test.ts",
         "src/ts/characterRecoveryFolders.test.ts",
         "src/ts/gui/titleColors.test.ts",
-        "src/ts/characterManager.test.ts"
+        "src/ts/characterManager.test.ts",
+        "tools/image-recovery.test.cjs"
       ]
     },
     {
