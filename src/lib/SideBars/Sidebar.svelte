@@ -64,6 +64,7 @@
     import { alertInput, alertSelect } from "src/ts/alert";
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
     import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
+    import { resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
     import { promoteCharacterFolder, promoteRecentlyViewedCharacter } from "src/ts/characterRecentOrder";
     import MeasuredVirtualList from "../UI/Virtual/MeasuredVirtualList.svelte";
     import { initSupport } from "src/ts/support";
@@ -135,10 +136,10 @@
   }
 
   type DragData = SidebarDragItem
-  type sortTypeNormal = { type:'normal',id:string,img: string, index: number, name:string, favorite?:boolean, folderIndex?:number }
+  type sortTypeNormal = { type:'normal',id:string,img: string, index: number, name:string, favorite?:boolean, folderIndex?:number, sourceBadge:string, sourceRecorded:boolean }
   // Deactivated characters are rendered in place but remain non-draggable
   // because their full records no longer live in DBState.db.characters.
-  type sortTypeArchived = { type:'archived',img:string,chaId:string,name:string,folderIndex?:number }
+  type sortTypeArchived = { type:'archived',img:string,chaId:string,name:string,folderIndex?:number,sourceBadge:string,sourceRecorded:boolean }
   type sortTypeEntry = sortTypeNormal | sortTypeArchived
   type sortTypeFolder = {type:'folder',folder:sortTypeEntry[],id:string,name:string,color:string,favorite?:boolean,img?:string,icon?:string,display:FolderDisplayMode}
   type sortType = sortTypeEntry | sortTypeFolder
@@ -206,7 +207,10 @@
   // sort is cheap; the $derived is only read while on the home screen.
   let recentChars = $derived(
     DBState.db.characters
-      .map((c, index) => ({ index, name: c.name, image: c.image, favorite: !!c.favorite, lastInteraction: c.lastInteraction ?? 0 }))
+      .map((c, index) => {
+        const source = resolveCharacterSourceBadge(c.sourceInfo?.label)
+        return { index, name: c.name, image: c.image, favorite: !!c.favorite, lastInteraction: c.lastInteraction ?? 0, sourceBadge: source.label, sourceRecorded: source.recorded }
+      })
       .filter((c) => c.lastInteraction > 0)
       .sort((a, b) => Number(b.favorite) - Number(a.favorite) || b.lastInteraction - a.lastInteraction)
   );
@@ -253,7 +257,9 @@
     const hiddenSet = new Set(DBState.db.nodeOnlyHiddenCharacterIds ?? [])
     const archivedEntry = (id: string): sortTypeArchived | null => {
       const stub = archivedById.get(id)
-      return stub ? { type: 'archived', img: stub.image ?? '', chaId: stub.chaId, name: stub.name ?? '' } : null
+      if(!stub) return null
+      const source = resolveCharacterSourceBadge(stub.sourceInfo?.label)
+      return { type: 'archived', img: stub.image ?? '', chaId: stub.chaId, name: stub.name ?? '', sourceBadge: source.label, sourceRecorded: source.recorded }
     }
     for (const id of DBState.db.characterOrder) {
       if(typeof(id) === 'string'){
@@ -261,6 +267,7 @@
         const index = idObject[id] ?? -1
         if(index !== -1){
           const cha = DBState.db.characters[index]
+          const source = resolveCharacterSourceBadge(cha.sourceInfo?.label)
           newCharImages.push({
             id: cha.chaId,
             img:cha.image ?? "",
@@ -268,6 +275,8 @@
             type: "normal",
             name: cha.name,
             favorite: !!cha.favorite,
+            sourceBadge: source.label,
+            sourceRecorded: source.recorded,
           });
         } else {
           const archived = archivedEntry(id)
@@ -282,6 +291,7 @@
           const index = idObject[id] ?? -1
           if(index !== -1){
             const cha = DBState.db.characters[index]
+            const source = resolveCharacterSourceBadge(cha.sourceInfo?.label)
             folderCharImages.push({
               id: cha.chaId,
               img:cha.image ?? "",
@@ -290,6 +300,8 @@
               name: cha.name,
               favorite: !!cha.favorite,
               folderIndex,
+              sourceBadge: source.label,
+              sourceRecorded: source.recorded,
             });
           } else {
             const archived = archivedEntry(id)
@@ -878,6 +890,8 @@
                         rounded={IconRounded}
                         name={`${folderChar.name} (${language.deactivatedBadge})`}
                         chaId={folderChar.chaId}
+                        sourceBadge={folderChar.sourceBadge}
+                        sourceRecorded={folderChar.sourceRecorded}
                       />
                       <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55" class:rounded-md={!IconRounded} class:rounded-full={IconRounded}>
                         <ArchiveIcon size={20} class="text-white/90" />
@@ -894,6 +908,8 @@
                       missingAssets={Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) > 0}
                       realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[folderChar.index])}
                       chaId={DBState.db.characters[folderChar.index]?.chaId}
+                      sourceBadge={folderChar.sourceBadge}
+                      sourceRecorded={folderChar.sourceRecorded}
                       oncontextmenu={(e) => { void editSidebarCharacter(folderChar.index, e) }}
                     />
                   {/if}
@@ -1000,6 +1016,8 @@
                 rounded={IconRounded}
                 name={`${block.char.name} (${language.deactivatedBadge})`}
                 chaId={block.char.chaId}
+                sourceBadge={block.char.sourceBadge}
+                sourceRecorded={block.char.sourceRecorded}
               />
               <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55" class:rounded-md={!IconRounded} class:rounded-full={IconRounded}>
                 <ArchiveIcon size={20} class="text-white/90" />
@@ -1017,6 +1035,8 @@
               missingAssets={Number(DBState.db.characters[normalChar.index]?.sourceInfo?.missingAssetCount) > 0}
               realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[normalChar.index])}
               chaId={DBState.db.characters[normalChar.index]?.chaId}
+              sourceBadge={normalChar.sourceBadge}
+              sourceRecorded={normalChar.sourceRecorded}
               oncontextmenu={(e) => { void editSidebarCharacter(normalChar.index, e) }}
             />
           {/if}
@@ -1348,6 +1368,8 @@
               missingAssets={Number(DBState.db.characters[char.index]?.sourceInfo?.missingAssetCount) > 0}
               realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[char.index])}
               chaId={DBState.db.characters[char.index]?.chaId}
+              sourceBadge={char.sourceBadge}
+              sourceRecorded={char.sourceRecorded}
               oncontextmenu={(e) => { void editSidebarCharacter(char.index, e) }}
             />
           {:else if char.type === 'archived'}
@@ -1358,6 +1380,8 @@
                 rounded={IconRounded}
                 name={`${char.name} (${language.deactivatedBadge})`}
                 chaId={char.chaId}
+                sourceBadge={char.sourceBadge}
+                sourceRecorded={char.sourceRecorded}
               />
               <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55" class:rounded-md={!IconRounded} class:rounded-full={IconRounded}>
                 <ArchiveIcon size={20} class="text-white/90" />
@@ -1485,6 +1509,8 @@
                       rounded={IconRounded}
                       name={`${char2.name} (${language.deactivatedBadge})`}
                       chaId={char2.chaId}
+                      sourceBadge={char2.sourceBadge}
+                      sourceRecorded={char2.sourceRecorded}
                     />
                     <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55" class:rounded-md={!IconRounded} class:rounded-full={IconRounded}>
                       <ArchiveIcon size={20} class="text-white/90" />
@@ -1501,6 +1527,8 @@
                     missingAssets={Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) > 0}
                     realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[char2.index])}
                     chaId={DBState.db.characters[char2.index]?.chaId}
+                    sourceBadge={char2.sourceBadge}
+                    sourceRecorded={char2.sourceRecorded}
                     oncontextmenu={(e) => { void editSidebarCharacter(char2.index, e) }}
                   />
                 {/if}
@@ -1757,6 +1785,8 @@
                   missingAssets={Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0}
                   realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[rc.index])}
                   chaId={DBState.db.characters[rc.index]?.chaId}
+                  sourceBadge={rc.sourceBadge}
+                  sourceRecorded={rc.sourceRecorded}
                 />
               </div>
               <div class="flex-1 min-w-0">
