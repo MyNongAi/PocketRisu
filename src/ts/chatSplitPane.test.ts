@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { clampSplitWidth, getSecondaryRisuPaneUrl, getSplitWidthBounds } from './chatSplitPane'
+import { clampSplitWidth, getSecondaryRisuPaneUrl, getSplitWidthBounds, parseChatRoomDragPayload, serializeChatRoomDragPayload } from './chatSplitPane'
 
 describe('clampSplitWidth', () => {
     test('allows either desktop pane to become narrow without collapsing it', () => {
@@ -26,5 +26,14 @@ describe('getSecondaryRisuPaneUrl', () => {
         expect(url.pathname).toBe(window.location.pathname)
         expect(url.searchParams.get('pocketrisuPane')).toBe('secondary')
         expect(url.hash).toBe('')
+    })
+})
+
+describe('chat room split-pane drag payload', () => {
+    test('round-trips a character and chat id without accepting partial data', () => {
+        const payload = { characterId: 'character-a', chatId: 'chat-b' }
+        expect(parseChatRoomDragPayload(serializeChatRoomDragPayload(payload))).toEqual(payload)
+        expect(parseChatRoomDragPayload('{"characterId":"character-a"}')).toBeNull()
+        expect(parseChatRoomDragPayload('not-json')).toBeNull()
     })
 })

@@ -1,7 +1,7 @@
 <script lang="ts">
     import { DynamicGUI, settingsOpen, sideBarClosing, sideBarStore, openPresetList, openCharacterManager, openModelPresetList, openModelProfileBrowser, openPersonaList, personaSelectCallback, openMemoryPresetList, memoryPresetSelectCallback, openThemePresetList, MobileGUI, loadedStore, alertStore, LoadingStatusState, bookmarkListOpen, popupStore, popUpEditorStore } from './ts/stores.svelte';
     import Sidebar from './lib/SideBars/Sidebar.svelte';
-    import { DBState } from './ts/stores.svelte';
+    import { DBState, selectedCharID } from './ts/stores.svelte';
     import ChatScreen from './lib/ChatScreens/ChatScreen.svelte';
     import AlertComp from './lib/Others/AlertComp.svelte';
     import RealmPopUp from './lib/UI/Realm/RealmPopUp.svelte';
@@ -37,9 +37,10 @@
     import RequestStatusToaster from './lib/UI/GUI/RequestStatusToaster.svelte';
     import ImportProgressToaster from './lib/UI/GUI/ImportProgressToaster.svelte';
     import sendSound from './etc/send.mp3'
-    import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
+    import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_CHAT_ROOM_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
     import { importDroppedFiles } from './ts/dropImport';
-    import { isEmbeddedRisuPane, splitChatOpen } from './ts/chatSplitPane';
+    import { isEmbeddedRisuPane, parseChatRoomDragPayload, splitChatOpen } from './ts/chatSplitPane';
+    import { changeChatTo } from './ts/globalApi.svelte';
 
     let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
     let aprilFoolsPage = $state(0)
@@ -57,6 +58,9 @@
 
     const getMainDropEffect = (e:DragEvent): DataTransfer['dropEffect'] => {
         const types = Array.from(e.dataTransfer?.types ?? [])
+        if(types.includes(RISU_CHAT_ROOM_DRAG_TYPE)){
+            return isEmbeddedRisuPane ? 'copy' : 'none'
+        }
         if(types.includes(RISU_SIDEBAR_DRAG_TYPE)){
             return 'none'
         }
@@ -68,6 +72,19 @@
 
     const markAppInternalDrag = (e:DragEvent) => {
         e.dataTransfer?.setData(RISU_APP_INTERNAL_DRAG_TYPE, 'true')
+    }
+
+    const openDroppedChatRoom = (e: DragEvent): boolean => {
+        if (!isEmbeddedRisuPane || !e.dataTransfer?.types.includes(RISU_CHAT_ROOM_DRAG_TYPE)) return false
+        const payload = parseChatRoomDragPayload(e.dataTransfer.getData(RISU_CHAT_ROOM_DRAG_TYPE))
+        if (!payload) return true
+        const characterIndex = DBState.db.characters.findIndex((character) => character.chaId === payload.characterId)
+        if (characterIndex < 0) return true
+        const character = DBState.db.characters[characterIndex]
+        if (!character.chats.some((chat) => chat.id === payload.chatId)) return true
+        selectedCharID.set(characterIndex)
+        changeChatTo(payload.chatId)
+        return true
     }
 
     const captureLegacyModuleDrop = async (e: DragEvent) => {
@@ -98,6 +115,7 @@
     e.dataTransfer.dropEffect = dropEffect
 }} ondragstart={markAppInternalDrag} ondrop={async (e) => {
     e.preventDefault()
+    if (openDroppedChatRoom(e)) return
     const types = Array.from(e.dataTransfer.types ?? [])
     if (types.includes(RISU_APP_INTERNAL_DRAG_TYPE) || types.includes(RISU_SIDEBAR_DRAG_TYPE)) {
         return

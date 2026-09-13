@@ -1,6 +1,6 @@
 //@name ImageRecoveryPerChar
 //@display-name 에셋 캐시 리매핑
-//@version 5.52
+//@version 5.53
 //@api 2.1
 
 // Extra asset wrench button for per-character/all asset cache remapping.
@@ -400,13 +400,24 @@ function recoveryTokenScore(left, right) {
     return (2 * same) / Math.max(1, a.size + b.size);
 }
 
+function normalizeRealmSourceInput(value) {
+    const raw = String(value == null ? '' : value).trim();
+    if (!raw) return '';
+    let match = raw.match(/\/(?:character|api\/v1\/download\/dynamic)\/([^/?#]+)/i);
+    if (!match) match = raw.match(/[?&](?:code|id|character)=([^&#]+)/i);
+    if (/^https?:\/\//i.test(raw) && !match) return '';
+    const candidate = match ? match[1] : raw;
+    try { return decodeURIComponent(candidate).trim(); }
+    catch (_) { return candidate.trim(); }
+}
+
 function recoveryRealmId(char) {
     const value = char && (
         char.realmId ||
         (char.extentions && char.extentions.risuRealmImportId) ||
         (char.extensions && char.extensions.risuRealmImportId)
     );
-    return typeof value === 'string' && value.trim() ? value.trim() : '';
+    return typeof value === 'string' && value.trim() ? normalizeRealmSourceInput(value) : '';
 }
 
 function characterRepairSlots(char) {
@@ -801,6 +812,8 @@ async function realmSourcesFromJson(bytes) {
 }
 
 async function downloadRealmRecoverySources(id) {
+    id = normalizeRealmSourceInput(id);
+    if (!id) throw new Error('올바른 Realm ID 또는 캐릭터 링크가 아닙니다.');
     const url = REALM_DOWNLOAD_URL + encodeURIComponent(id) + '?cors=true';
     const result = await recoveryHttpBytes(url, { 'x-risu-api-version': '4' });
     const bytes = result.bytes;
@@ -899,12 +912,14 @@ async function findRealmRecoveryCandidates(char) {
 async function runRealmAssetRecovery() {
     if (isRunning || !currentChar) return;
     const idInput = $id(PANEL_ID + '-realm-id');
-    const id = String(idInput && idInput.value || '').trim();
+    const rawId = String(idInput && idInput.value || '').trim();
+    const id = normalizeRealmSourceInput(rawId);
     if (!id) {
-        log('Realm ID가 없습니다. 먼저 후보 찾기를 실행하시기 바랍니다.');
+        log(rawId ? 'Realm 캐릭터 링크 또는 ID 형식을 확인하시기 바랍니다.' : 'Realm ID가 없습니다. 먼저 후보 찾기를 실행하시기 바랍니다.');
         setStatus('Realm ID 필요');
         return;
     }
+    if (idInput) idInput.value = id;
     setRunning(true);
     clearLog();
     setProgress(0);
@@ -1225,7 +1240,7 @@ function makePanel() {
         '<div class="irp-page" id="' + PANEL_ID + '-page-realm">' +
         '<div class="irp-page-note">현재 봇의 정상 에셋과 채팅·프롬프트는 건드리지 않고, 실제 바이트가 사라진 프로필·감정·추가 에셋 참조만 복구합니다. 렐름 카드 또는 이미 임포트된 새 버전 봇을 원본으로 쓸 수 있습니다.</div>' +
         '<div class="irp-realm-grid">' +
-        '<div class="irp-realm-row"><span class="irp-realm-label">Realm ID</span><input class="irp-realm-input" id="' + PANEL_ID + '-realm-id" placeholder="자동 감지 또는 후보 검색"></div>' +
+        '<div class="irp-realm-row"><span class="irp-realm-label">Realm ID/링크</span><input class="irp-realm-input" id="' + PANEL_ID + '-realm-id" placeholder="캐릭터 페이지 링크도 붙여넣기 가능"></div>' +
         '<div class="irp-realm-row"><span class="irp-realm-label">렐름 후보</span><select class="irp-realm-select" id="' + PANEL_ID + '-realm-candidates"><option value="">후보 검색 전</option></select></div>' +
         '<div class="irp-realm-row"><span class="irp-realm-label">임포트 원본</span><select class="irp-realm-select" id="' + PANEL_ID + '-local-source"><option value="">새 버전 봇 선택</option></select></div>' +
         '</div>' +
