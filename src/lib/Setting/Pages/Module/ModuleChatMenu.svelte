@@ -56,7 +56,10 @@
             activationHistory: DBState.db.moduleActivationHistory,
         },
     ))
-    const groups = $derived(groupByFolder(sortedModules.map(m => m.folderId), sortedFolders))
+    const groups = $derived.by(() => {
+        const grouped = groupByFolder(sortedModules.map(m => m.folderId), sortedFolders)
+        return [...grouped.filter(group => !group.folder), ...grouped.filter(group => !!group.folder)]
+    })
 
     function matches(index: number) {
         const rmodule = sortedModules[index]

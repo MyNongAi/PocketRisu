@@ -49,6 +49,28 @@ export interface SplitWidthBounds {
     max: number
 }
 
+export interface ChatRoomDragPayload {
+    characterId: string
+    chatId: string
+}
+
+export function serializeChatRoomDragPayload(payload: ChatRoomDragPayload): string {
+    return JSON.stringify(payload)
+}
+
+export function parseChatRoomDragPayload(value: string): ChatRoomDragPayload | null {
+    try {
+        const parsed: unknown = JSON.parse(value)
+        if (!parsed || typeof parsed !== 'object') return null
+        const candidate = parsed as Partial<ChatRoomDragPayload>
+        if (typeof candidate.characterId !== 'string' || !candidate.characterId.trim()) return null
+        if (typeof candidate.chatId !== 'string' || !candidate.chatId.trim()) return null
+        return { characterId: candidate.characterId, chatId: candidate.chatId }
+    } catch {
+        return null
+    }
+}
+
 export function getSplitWidthBounds(viewportWidth: number): SplitWidthBounds {
     const safeViewportWidth = Math.max(0, viewportWidth)
     const preferredMinimum = Math.min(280, Math.max(160, safeViewportWidth * 0.18))

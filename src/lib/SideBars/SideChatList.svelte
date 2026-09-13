@@ -27,6 +27,8 @@
     import { changeChatTo, createChatCopyName, requestImmediateSave } from "src/ts/globalApi.svelte";
     import { reissueMessageIds } from "src/ts/chatClone";
     import MemoryBind from "./MemoryBind.svelte";
+    import { RISU_CHAT_ROOM_DRAG_TYPE } from "src/ts/dragTypes";
+    import { serializeChatRoomDragPayload } from "src/ts/chatSplitPane";
 
     interface Props {
         chara: character;
@@ -53,6 +55,19 @@
     let listEle: HTMLDivElement = $state()
     let sorted = $state(0)
     let opened = 0
+
+    function beginChatRoomDrag(event: DragEvent, chat: Chat) {
+        if (editMode || !event.dataTransfer || !chara.chaId || !chat.id) {
+            event.preventDefault()
+            return
+        }
+        event.dataTransfer.effectAllowed = 'copy'
+        event.dataTransfer.setData(RISU_CHAT_ROOM_DRAG_TYPE, serializeChatRoomDragPayload({
+            characterId: chara.chaId,
+            chatId: chat.id,
+        }))
+        event.dataTransfer.setData('text/plain', `${chara.name ?? ''} / ${chat.name ?? ''}`)
+    }
 
     const createStb = () => {
         for (let chat of listEle.querySelectorAll('.risu-chat')) {
@@ -256,7 +271,7 @@
                     {:else}
                     {#each chara.chats.filter(chat => chat.folderId == chara.chatFolders[i].id) as chat}
                     {@const chatIdx = chara.chats.indexOf(chat)}
-                    <button data-risu-chat-idx={chatIdx} onclick={() => {
+                    <button data-risu-chat-idx={chatIdx} draggable={!editMode} ondragstart={(event) => beginChatRoomDrag(event, chat)} onclick={() => {
                         if(!editMode){
                             changeChatTo(chatIdx)
                         }
@@ -347,7 +362,7 @@
         <div class="risu-chat flex flex-col">
             {#each chara.chats as chat, i}
             {#if chat.folderId == null || isOrphanFolder(chat.folderId)}
-            <button data-risu-chat-idx={i} onclick={() => {
+            <button data-risu-chat-idx={i} draggable={!editMode} ondragstart={(event) => beginChatRoomDrag(event, chat)} onclick={() => {
                 if(!editMode){
                     changeChatTo(i)
                 }

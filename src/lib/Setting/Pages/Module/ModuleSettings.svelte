@@ -277,6 +277,7 @@
         defaultCollapsed
         newFoldersFirst
         rootItemsStandalone
+        rootItemsFirst={moduleCatalogSort === 'recent'}
         reorderDisabled={moduleCatalogSort !== 'recent'}
         folderTitleColor={folderColor}
         onFolderColor={changeFolderColor}

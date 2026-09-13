@@ -34,5 +34,8 @@ export const RISU_PROMPT_DRAG_TYPE = 'application/x-risu-prompt-drag'
 /** Sidebar character/folder reorder — also checked in App.svelte, hotkey.ts */
 export const RISU_SIDEBAR_DRAG_TYPE = 'application/x-risu-sidebar-drag'
 
+/** A chat-room row dragged into the secondary split workspace. */
+export const RISU_CHAT_ROOM_DRAG_TYPE = 'application/x-risu-chat-room-drag'
+
 /** TriggerV2 trigger reorder */
 export const RISU_TRIGGER_DRAG_TYPE = 'application/x-risu-trigger-drag'

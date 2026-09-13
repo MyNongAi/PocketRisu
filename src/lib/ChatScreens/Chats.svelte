@@ -262,7 +262,11 @@
             if (revision !== viewportRestoreRevision || !anchor.element.isConnected) return
             if (anchor.roomId !== getCurrentChatRoomId()) return
             const sc = chatBody?.parentElement
-            if (!sc || checkIfAtBottom()) return
+            // The anchor was captured before the DOM changed. Rechecking
+            // "at bottom" after streamed/input content was mounted can flip
+            // to true because the layout itself moved, which used to skip the
+            // restore and launch the reader toward the top of the transcript.
+            if (!sc) return
             const delta = anchor.element.getBoundingClientRect().top
                 - sc.getBoundingClientRect().top
                 - anchor.offsetTop
