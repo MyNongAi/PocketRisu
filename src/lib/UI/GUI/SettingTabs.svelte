@@ -7,13 +7,19 @@
     let {
         tabs,
         selected = $bindable(0),
+        sticky = false,
+        onSelect = () => {},
     }: {
         tabs: Tab[];
         selected?: number;
+        sticky?: boolean;
+        onSelect?: (value: number) => void;
     } = $props();
 </script>
 
-<div class="setting-tabs flex w-full border-b border-darkborderc mb-4 overflow-x-auto" role="tablist">
+<div class="setting-tabs flex w-full border-b border-darkborderc mb-4 overflow-x-auto"
+    class:sticky={sticky} class:top-0={sticky} class:z-20={sticky} class:bg-bgcolor={sticky}
+    role="tablist">
     {#each tabs as tab}
         <button
             role="tab"
@@ -22,7 +28,10 @@
                 {selected === tab.value
                     ? 'text-textcolor'
                     : 'text-textcolor2 hover:text-textcolor'}"
-            onclick={() => selected = tab.value}
+            onclick={() => {
+                selected = tab.value
+                onSelect(tab.value)
+            }}
         >
             {tab.label}
             {#if selected === tab.value}

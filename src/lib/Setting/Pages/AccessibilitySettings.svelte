@@ -11,10 +11,18 @@
     import SettingTabs from "src/lib/UI/GUI/SettingTabs.svelte";
     import { language } from "src/lang";
     import { AccessibilitySubmenuIndex } from "src/ts/stores.svelte";
+
+    function resetAccessibilityScroll() {
+        requestAnimationFrame(() => {
+            const scroller = document.querySelector<HTMLElement>('.rs-setting-cont-4')
+            if (scroller) scroller.scrollTop = 0
+        })
+    }
 </script>
 
 <SettingPage title={language.accessibility}>
 <SettingTabs
+    sticky
     tabs={[
         { label: language.accTabEditing, value: 0 },
         { label: language.accTabScroll, value: 1 },
@@ -23,6 +31,7 @@
         { label: language.others, value: 3 },
     ]}
     bind:selected={$AccessibilitySubmenuIndex}
+    onSelect={resetAccessibilityScroll}
 />
 
 {#if $AccessibilitySubmenuIndex === 0}

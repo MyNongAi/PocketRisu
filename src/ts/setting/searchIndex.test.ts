@@ -1,6 +1,7 @@
-import { describe, expect, test } from 'vitest'
+import { afterAll, beforeAll, describe, expect, test } from 'vitest'
 import { searchSettings } from './searchIndex'
 import { SettingsRoute } from '../routing'
+import { changeLanguage } from 'src/lang'
 
 // A settings entry is reachable two ways and they cover different text: the
 // declarative items index each SETTING's label/keywords/help, while the manifest
@@ -42,5 +43,20 @@ describe('searchSettings — module binding tab', () => {
 
     test('an unrelated query does not hit the tab', () => {
         expect(moduleTabHits('persona')).toEqual([])
+    })
+})
+
+describe('searchSettings — accessibility navigation', () => {
+    beforeAll(() => changeLanguage('ko'))
+    afterAll(() => changeLanguage('en'))
+
+    test('finds the new-message auto-scroll toggle in the scroll tab', () => {
+        const result = searchSettings('새 메시지로 자동 스크롤', ctx)
+            .find((item) => item.key.endsWith(':acc.autoScrollToNewMessage'))
+        expect(result).toMatchObject({
+            route: SettingsRoute.Accessibility,
+            subTab: 1,
+            itemId: 'acc.autoScrollToNewMessage',
+        })
     })
 })
