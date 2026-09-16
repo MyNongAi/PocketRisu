@@ -343,6 +343,7 @@
         { "file": "src/ts/characterArchive.ts", "contains": "autoDeactivatedAt" },
         { "file": "src/ts/characterArchive.ts", "contains": "Trashed stubs are excluded from duplicate counts" },
         { "file": "src/ts/gui/characterCatalogMetrics.ts", "contains": "buildExactCharacterDuplicateCounts" },
+        { "file": "src/ts/gui/characterCatalogMetrics.ts", "contains": "buildCharacterSimilarityCounts" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "archived-character-muted" },
         { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "characterAssetCountLabel" },
         { "file": "src/lib/CharacterManager/CharacterManager.svelte", "contains": "openGridContextMenu" },
@@ -376,6 +377,7 @@
         { "file": "src/lib/Others/GridCatalog.svelte", "contains": "makeAgoText" },
         { "file": "src/lib/Others/GridCatalog.svelte", "contains": "VirtualGrid" },
         { "file": "src/lib/Others/GridCatalog.svelte", "contains": "isRealmAssetRecoveryAvailable" },
+        { "file": "src/lib/Others/GridCatalog.svelte", "contains": "openGridContextMenu" },
         { "file": "src/lib/CharacterManager/CharacterManager.svelte", "contains": "sortReversed" },
         { "file": "src/ts/characterArchive.ts", "contains": "nonBlocking" },
         { "file": "src/ts/characterArchive.ts", "contains": "promoteRecentlyViewedCharacter" }

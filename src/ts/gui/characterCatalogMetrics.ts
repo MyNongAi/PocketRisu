@@ -11,6 +11,13 @@ type ArchivedMetricStub = {
     exactDefinitionFingerprint?: string
 }
 
+type SimilarityOrderEntry = string | {
+    data?: unknown
+    duplicateCandidate?: {
+        kind?: unknown
+    }
+}
+
 // Keep this in lockstep with tools/quarantine-exact-character-duplicates.cjs.
 // These values describe a local copy or its play state rather than the card
 // definition. Every other field, including ordered lore and asset references,
@@ -104,6 +111,30 @@ export async function buildExactCharacterDuplicateCounts(
     for (const ids of groups.values()) {
         const otherCopies = Math.max(0, ids.length - 1)
         for (const id of ids) counts.set(id, otherCopies)
+    }
+    return counts
+}
+
+/**
+ * Returns the number of *other* visible candidates grouped with each character
+ * by the existing [유사 후보] folder migration. This deliberately consumes the
+ * stored grouping instead of re-running the O(n²) name comparison whenever a
+ * catalog renders.
+ */
+export function buildCharacterSimilarityCounts(
+    order: readonly SimilarityOrderEntry[],
+    eligibleIds?: ReadonlySet<string>,
+): Map<string, number> {
+    const counts = new Map<string, number>()
+    for (const entry of order) {
+        if (typeof entry === 'string' || entry?.duplicateCandidate?.kind !== 'character') continue
+        if (!Array.isArray(entry.data)) continue
+        const ids = [...new Set(entry.data.filter((id): id is string => (
+            typeof id === 'string' && !!id && (!eligibleIds || eligibleIds.has(id))
+        )))]
+        if (ids.length < 2) continue
+        const otherCandidates = ids.length - 1
+        for (const id of ids) counts.set(id, Math.max(counts.get(id) ?? 0, otherCandidates))
     }
     return counts
 }

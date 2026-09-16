@@ -40,7 +40,7 @@
     } from "src/ts/characterOrder";
     import type { folder } from "src/ts/storage/database.svelte";
     import { language } from "src/lang";
-    import { buildExactCharacterDuplicateCounts } from "src/ts/gui/characterCatalogMetrics";
+    import { buildCharacterSimilarityCounts, buildExactCharacterDuplicateCounts } from "src/ts/gui/characterCatalogMetrics";
     import { listTitleColor } from "src/ts/gui/titleColors";
 
     interface Props {
@@ -65,6 +65,10 @@
     let search = $derived(externalSearch ?? searchLocal);
     let entries = $derived(buildManagerEntries(DBState.db));
     let liveEntries = $derived([...entries.values()].filter((e) => !e.trashed));
+    let similarityCounts = $derived(buildCharacterSimilarityCounts(
+        DBState.db.characterOrder,
+        new Set(liveEntries.map((entry) => entry.chaId)),
+    ));
     let allTrashEntries = $derived([...entries.values()].filter((e) => e.trashed));
     let trashEntries = $derived(allTrashEntries.filter((e) => matchesSearch(e.name, search)));
     let visible = $derived((e: ManagerEntry) => matchesSearch(e.name, search) && matchesFilter(e, filter));
@@ -485,6 +489,7 @@
                 <div class="grid {gridCompact ? 'gap-1.5 grid-cols-[repeat(auto-fill,minmax(3.5rem,1fr))]' : 'gap-3 grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))]'}">
                     {#each incremental.slice(gridList) as entry (entry.chaId)}
                         {@const entryDuplicateCount = duplicateCount(entry.chaId)}
+                        {@const entrySimilarityCount = similarityCounts.get(entry.chaId) ?? 0}
                         <button
                             type="button"
                             class="flex flex-col items-center gap-1 rounded-md text-textcolor transition-colors {gridCompact ? 'p-0.5' : 'p-1.5'} {activeChaId === entry.chaId ? 'bg-selected' : 'risu-interactive-surface'}"
@@ -529,6 +534,7 @@
                                 <span class="w-full truncate text-center text-[9px] leading-tight text-textcolor2">
                                     {language.characterAssetCountLabel(entry.assetCount)}
                                     {#if entry.missingAssetCount > 0}<span class="text-red-400"> · 누락 {entry.missingAssetCount.toLocaleString()}개</span>{/if}
+                                    {#if entrySimilarityCount > 0}<span title="이름 유사도 90% 이상 후보"> · {language.characterSimilarityCountLabel(entrySimilarityCount)}</span>{/if}
                                     {#if entryDuplicateCount !== null && entryDuplicateCount > 0} · {language.characterDuplicateCountLabel(entryDuplicateCount)}{/if}
                                 </span>
                             {/if}
@@ -554,6 +560,7 @@
                     selectable={selectMode}
                     {selectedIds}
                     {activeChaId}
+                    {similarityCounts}
                     {duplicateCounts}
                     onOpen={open}
                     onToggleSelect={toggleSelect}
@@ -569,6 +576,7 @@
                             selectable={selectMode}
                             selected={selectedIds.has(entry.chaId)}
                             active={activeChaId === entry.chaId}
+                            similarityCount={similarityCounts.get(entry.chaId) ?? 0}
                             duplicateCount={duplicateCount(entry.chaId)}
                             onOpen={open}
                             onToggleSelect={toggleSelect}

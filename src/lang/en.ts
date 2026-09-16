@@ -2398,6 +2398,7 @@ export const languageEnglish = {
     hideDeactivatedCharacters: "Hide deactivated characters",
     hiddenFromSidebarHint: "Hidden from the sidebar only; no data is touched. Unlike deactivation it has no performance effect either.",
     characterAssetCountLabel: (n: number) => `Assets ${n.toLocaleString()}`,
+    characterSimilarityCountLabel: (n: number) => `Similar ${n.toLocaleString()}`,
     characterDuplicateCountLabel: (n: number | null) => n === null ? "Duplicates …" : `Duplicates ${n.toLocaleString()}`,
 
     characterManager: "Character Manager",
