@@ -17,10 +17,11 @@
         search: string;
         gridMode?: boolean;
         endGrid?: () => void;
+        similarityCounts?: ReadonlyMap<string, number>;
         duplicateCounts?: ReadonlyMap<string, number> | null;
     }
 
-    let {search, gridMode = false, endGrid = () => {}, duplicateCounts = null}: Props = $props();
+    let {search, gridMode = false, endGrid = () => {}, similarityCounts = new Map(), duplicateCounts = null}: Props = $props();
 
     function sortChar(db: Database) {
         const list = db.characters.map((c, i) => {
@@ -136,6 +137,7 @@
                         <span>{char.agoText}</span><span class="mx-1">|</span>
                         <span>에셋 {char.assetCount.toLocaleString()}개</span>
                         {#if char.missingAssetCount > 0}<span class="ml-1 text-red-400">· 누락 {char.missingAssetCount.toLocaleString()}개</span>{/if}
+                        {#if (similarityCounts.get(char.chaId) ?? 0) > 0}<span class="ml-1" title="이름 유사도 90% 이상 후보">· {language.characterSimilarityCountLabel(similarityCounts.get(char.chaId) ?? 0)}</span>{/if}
                         {#if (duplicateCounts?.get(char.chaId) ?? 0) > 0}<span class="ml-1">· {language.characterDuplicateCountLabel(duplicateCounts?.get(char.chaId) ?? 0)}</span>{/if}
                     </div>
                 </div>

@@ -2618,6 +2618,7 @@ export const languageKorean = {
   hideDeactivatedCharacters: "비활성화된 캐릭터 숨기기",
   hiddenFromSidebarHint: "사이드바에서만 숨겨지며 데이터에는 영향이 없습니다. 비활성화와 달리 성능에도 영향이 없습니다.",
   characterAssetCountLabel: (n: number) => `에셋 ${n.toLocaleString()}`,
+  characterSimilarityCountLabel: (n: number) => `유사 ${n.toLocaleString()}`,
   characterDuplicateCountLabel: (n: number | null) => n === null ? "중복 …" : `중복 ${n.toLocaleString()}`,
 
   characterManager: "캐릭터 관리",

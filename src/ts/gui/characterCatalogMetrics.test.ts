@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+    buildCharacterSimilarityCounts,
     buildExactCharacterDuplicateCounts,
     exactCharacterDefinitionFingerprint,
 } from './characterCatalogMetrics'
@@ -52,5 +53,21 @@ describe('character catalog exact duplicate metrics', () => {
 
         expect(counts.get('active')).toBe(1)
         expect(counts.get('cold')).toBe(1)
+    })
+})
+
+describe('character catalog similarity metrics', () => {
+    it('counts other eligible members of generated similarity folders', () => {
+        const counts = buildCharacterSimilarityCounts([{
+            data: ['a', 'b', 'trash', 'b'],
+            duplicateCandidate: { kind: 'character' },
+        }, {
+            data: ['ordinary-a', 'ordinary-b'],
+        }], new Set(['a', 'b']))
+
+        expect(counts.get('a')).toBe(1)
+        expect(counts.get('b')).toBe(1)
+        expect(counts.has('trash')).toBe(false)
+        expect(counts.has('ordinary-a')).toBe(false)
     })
 })

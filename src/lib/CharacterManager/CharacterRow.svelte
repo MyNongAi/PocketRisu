@@ -18,13 +18,14 @@
         selectable?: boolean;
         selected?: boolean;
         active?: boolean;
+        similarityCount?: number;
         duplicateCount?: number | null;
         onOpen: (entry: ManagerEntry) => void;
         onToggleSelect?: (entry: ManagerEntry) => void;
         menu?: Snippet<[ManagerEntry]>;
     }
 
-    let { entry, selectable = false, selected = false, active = false, duplicateCount = null, onOpen, onToggleSelect, menu }: Props = $props();
+    let { entry, selectable = false, selected = false, active = false, similarityCount = 0, duplicateCount = null, onOpen, onToggleSelect, menu }: Props = $props();
 
     function activate() {
         if (selectable) onToggleSelect?.(entry);
@@ -106,6 +107,10 @@
             {#if entry.missingAssetCount > 0}
                 <span class="mx-1">|</span>
                 <span class="text-red-400">누락 {entry.missingAssetCount.toLocaleString()}개</span>
+            {/if}
+            {#if similarityCount > 0}
+                <span class="mx-1">|</span>
+                <span title="이름 유사도 90% 이상 후보">{language.characterSimilarityCountLabel(similarityCount)}</span>
             {/if}
             {#if duplicateCount !== null && duplicateCount > 0}
                 <span class="mx-1">|</span>

@@ -1,6 +1,6 @@
 <script lang="ts">
     import { cancelCharacterChatPrefetch, changeChar, getCharThumbnail, prefetchCharacterChat, removeChar, scheduleCharacterChatPrefetch } from "../../ts/characters";
-    import { promptActivateCharacter } from "../../ts/characterArchive";
+    import { archiveCharacter, promptActivateCharacter, trashDeactivatedCharacter } from "../../ts/characterArchive";
     import { type Database } from "../../ts/storage/database.svelte";
     import { onDestroy, onMount } from "svelte";
     import { DBState } from 'src/ts/stores.svelte';
@@ -13,6 +13,9 @@
     import { language } from "src/lang";
     import { makeAgoText, parseMultilangString } from "src/ts/util";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
+    import { exportChar } from "src/ts/characterCards";
+    import { alertConfirm, alertSelect } from "src/ts/alert";
+    import { isFolderEntry, moveCharacterToFolder, setHidden } from "src/ts/characterOrder";
     import MobileCharacters from "../Mobile/MobileCharacters.svelte";
     import { getCharacterAssetCount } from "src/ts/gui/characterAssetCount";
     import { resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
@@ -20,7 +23,7 @@
     import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
     import VirtualGrid from "../UI/Virtual/VirtualGrid.svelte";
     import VirtualList from "../UI/Virtual/VirtualList.svelte";
-    import { buildExactCharacterDuplicateCounts } from "src/ts/gui/characterCatalogMetrics";
+    import { buildCharacterSimilarityCounts, buildExactCharacterDuplicateCounts } from "src/ts/gui/characterCatalogMetrics";
 
     interface Props { endGrid?: () => void }
     let { endGrid = () => {} }: Props = $props();
@@ -36,6 +39,7 @@
         assetCount:number; sourceBadge:string; sourceRecorded:boolean;
         chats:number; interaction:number; agoText:string;
         missingAssetCount:number; realmRecoveryAvailable:boolean; titleColor?:string;
+        hidden:boolean;
     }
 
     async function openChar(char: CatalogEntry){
@@ -45,6 +49,52 @@
             return
         }
         selectAndClose(char.index)
+    }
+
+    async function moveToFolderPrompt(chaId:string){
+        const folders = DBState.db.characterOrder.filter(isFolderEntry)
+        const options = [...folders.map((folder) => folder.name), language.noFolder, language.cancel]
+        const selected = Number.parseInt(await alertSelect(options))
+        if(!Number.isInteger(selected) || selected >= options.length - 1) return
+        const folderId = selected < folders.length ? folders[selected].id : undefined
+        DBState.db.characterOrder = moveCharacterToFolder(DBState.db.characterOrder, chaId, folderId)
+        checkCharOrder()
+    }
+
+    async function openGridContextMenu(char:CatalogEntry, event:MouseEvent | KeyboardEvent){
+        event.preventDefault()
+        event.stopPropagation()
+        const labels:string[] = []
+        const actions:Array<() => void | Promise<void>> = []
+        const add = (label:string, action:() => void | Promise<void>) => {
+            labels.push(label)
+            actions.push(action)
+        }
+
+        add(language.openCharacter, () => openChar(char))
+        add(char.hidden ? language.showInSidebar : language.hideFromSidebar, () => {
+            DBState.db.nodeOnlyHiddenCharacterIds = setHidden(
+                DBState.db.nodeOnlyHiddenCharacterIds ?? [],
+                [char.chaId],
+                !char.hidden,
+            )
+        })
+        add(language.folderMoveTo, () => moveToFolderPrompt(char.chaId))
+        if(char.archived){
+            add(language.activateCharacter, () => openChar(char))
+            add(language.moveToTrash, async () => {
+                if(await alertConfirm(language.moveToTrashConfirm + char.name)) trashDeactivatedCharacter(char.chaId)
+            })
+        }
+        else{
+            add('제목 색변경', () => editCharacterTitleColor(char.chaId))
+            add(language.deactivateCharacter, async () => { await archiveCharacter(char.index) })
+            add(language.exportCharacter, async () => { await exportChar(char.index) })
+            add(language.moveToTrash, () => removeChar(char.chaId, char.name))
+        }
+        const selected = Number.parseInt(await alertSelect([...labels, language.cancel]))
+        if(!Number.isInteger(selected) || selected < 0 || selected >= actions.length) return
+        await actions[selected]()
     }
 
     function matchesSearch(name:string, value:string){
@@ -66,6 +116,7 @@
                 missingAssetCount: c.sourceInfo?.missingAssetCount ?? 0,
                 realmRecoveryAvailable: isRealmAssetRecoveryAvailable(c),
                 titleColor: c.titleColor,
+                hidden: (db.nodeOnlyHiddenCharacterIds ?? []).includes(c.chaId),
             })
         }
         if(!trash && !db.nodeOnlyHideArchivedCharacters){
@@ -81,6 +132,7 @@
                     missingAssetCount: stub.sourceInfo?.missingAssetCount ?? 0,
                     realmRecoveryAvailable: isRealmAssetRecoveryAvailable(stub),
                     titleColor: stub.titleColor,
+                    hidden: (db.nodeOnlyHiddenCharacterIds ?? []).includes(stub.chaId),
                 })
             }
         }
@@ -93,6 +145,13 @@
 
     const characters = $derived(formatChars(search, DBState.db))
     const trashedCharacters = $derived(formatChars(search, DBState.db, true))
+    const similarityCounts = $derived(buildCharacterSimilarityCounts(
+        DBState.db.characterOrder,
+        new Set([
+            ...DBState.db.characters.filter((character) => !character.trashTime).map((character) => character.chaId),
+            ...(DBState.db.nodeOnlyArchivedCharacters ?? []).filter((stub) => !stub.trashedAt).map((stub) => stub.chaId),
+        ].filter((id): id is string => typeof id === 'string' && !!id)),
+    ))
 
     onMount(() => {
         const generation = ++duplicateScanGeneration
@@ -125,7 +184,18 @@
         {#if selected === 0}
             <VirtualGrid items={characters} minItemWidth={64} gap={8} className="min-h-0 flex-1" key={(char) => char.chaId}>
                 {#snippet children(char)}
-                    <div class="relative flex h-full w-full items-center justify-center text-textcolor" class:opacity-40={char.archived} class:grayscale={char.archived} title={`${char.name} · ${char.sourceBadge} · 에셋 ${char.assetCount}개`}>
+                    <div
+                        class="relative flex h-full w-full items-center justify-center text-textcolor"
+                        class:opacity-40={char.archived}
+                        class:grayscale={char.archived}
+                        title={`${char.name} · ${char.sourceBadge} · 에셋 ${char.assetCount}개`}
+                        role="button"
+                        tabindex="0"
+                        oncontextmenu={(event) => { void openGridContextMenu(char, event) }}
+                        onkeydown={(event) => {
+                            if(event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) void openGridContextMenu(char, event)
+                        }}
+                    >
                         {#if char.image}
                             <BarIcon
                                 onPrefetch={() => schedulePrefetch(char.index)}
@@ -183,6 +253,7 @@
                             <div class="mt-1 flex items-center text-sm text-textcolor2">
                                 <span class="mr-1">{char.chats}</span><MessageSquareIcon size={14}/><span class="mx-1">|</span><span>{char.agoText}</span><span class="mx-1">|</span><span>에셋 {char.assetCount.toLocaleString()}개</span>
                                 {#if char.missingAssetCount > 0}<span class="ml-1 text-red-400">· 누락 {char.missingAssetCount.toLocaleString()}개</span>{/if}
+                                {#if (similarityCounts.get(char.chaId) ?? 0) > 0}<span class="ml-1" title="이름 유사도 90% 이상 후보">· {language.characterSimilarityCountLabel(similarityCounts.get(char.chaId) ?? 0)}</span>{/if}
                                 {#if (duplicateCounts?.get(char.chaId) ?? 0) > 0}<span class="ml-1">· {language.characterDuplicateCountLabel(duplicateCounts?.get(char.chaId) ?? 0)}</span>{/if}
                             </div>
                             <div class="flex justify-end gap-2">
@@ -211,7 +282,7 @@
                 {/snippet}
             </VirtualList>
         {:else}
-            <MobileCharacters {search} gridMode endGrid={endGrid} {duplicateCounts}/>
+            <MobileCharacters {search} gridMode endGrid={endGrid} {similarityCounts} {duplicateCounts}/>
         {/if}
     </div>
 </div>
