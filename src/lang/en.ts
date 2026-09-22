@@ -1116,7 +1116,6 @@ export const languageEnglish = {
     protonImportFailed: "Could not import from that Proton link.",
     protonWatchingDownloads: "Watching downloads folder... Files downloaded from Proton will be auto-imported",
     protonImportSuccess: "Successfully imported from Proton Drive",
-    protonImportFailed: "Proton Drive import failed",
     random: "Random",
     metaData: "Meta Data",
     autoContinueMinTokens: "Target Tokens (Auto Continue)",
