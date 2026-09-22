@@ -3,6 +3,9 @@ import { language } from 'src/lang'
 
 export type ImportTaskPhase = 'queued' | 'running' | 'done' | 'failed'
 
+/** Imports and exports share one progress surface; the kind only picks the labels. */
+export type ImportTaskKind = 'import' | 'export'
+
 export interface ImportProgressUpdate {
     label: string
     progress?: number | null
@@ -13,6 +16,7 @@ export type ImportProgressReporter = (update: ImportProgressUpdate) => void
 export interface ImportTaskEntry {
     id: string
     fileName: string
+    kind: ImportTaskKind
     label: string
     progress: number | null
     phase: ImportTaskPhase
@@ -46,13 +50,14 @@ function clampProgress(progress: number | null | undefined): number | null {
     return Math.min(100, Math.max(0, progress))
 }
 
-export function createImportTask(fileName: string): string {
+export function createImportTask(fileName: string, kind: ImportTaskKind = 'import'): string {
     const id = `import-${Date.now()}-${++taskSerial}`
     importTasks.update((current) => {
         const next = new Map(current)
         next.set(id, {
             id,
             fileName,
+            kind,
             label: language.importProgress.queued,
             progress: 0,
             phase: 'queued',
@@ -65,7 +70,7 @@ export function createImportTask(fileName: string): string {
 export function startImportTask(id: string): void {
     updateTask(id, (entry) => ({
         ...entry,
-        label: language.importProgress.importing,
+        label: entry.kind === 'export' ? language.exportProgress.exporting : language.importProgress.importing,
         phase: 'running',
         startedAt: Date.now(),
     }))
@@ -125,6 +130,34 @@ export async function runImportTask<T>(
     startImportTask(id)
     try {
         const value = await importer((update) => reportImportTask(id, update))
+        completeImportTask(id)
+        return value
+    } catch (error) {
+        failImportTask(id, error)
+        throw error
+    }
+}
+
+/**
+ * Adapts the `(message, percent)` callbacks that the card and module exporters
+ * accept to a task reporter, so an export shows up in the same toast as imports.
+ */
+export function adaptLegacyProgress(report: ImportProgressReporter): (msg: string, pct: number) => void {
+    return (msg, pct) => report({ label: msg, progress: pct })
+}
+
+/**
+ * Runs one export without a blocking modal. Exporters that swallow their own
+ * errors still resolve, so the task completes; a thrown error marks it failed.
+ */
+export async function runExportTask<T>(
+    fileName: string,
+    exporter: (report: ImportProgressReporter) => Promise<T>,
+): Promise<T> {
+    const id = createImportTask(fileName, 'export')
+    startImportTask(id)
+    try {
+        const value = await exporter((update) => reportImportTask(id, update))
         completeImportTask(id)
         return value
     } catch (error) {

@@ -17,7 +17,7 @@ import type { OnnxModelFiles } from "./process/transformers"
 import { CharXImporter, CharXSkippableChecker, CharXWriter } from "./process/processzip"
 import { addModuleToDatabase, exportModuleLegacy, readModule, type RisuModule } from "./process/modules"
 import { promoteNewlyImportedCharacter } from "./characterRecentOrder"
-import { runImportBatch, runImportTask, type ImportProgressReporter } from "./importProgress"
+import { adaptLegacyProgress, runExportTask, runImportBatch, runImportTask, type ImportProgressReporter } from "./importProgress"
 import { organizeImportedCharacterSimilarity } from "./process/similarityFolders"
 
 
@@ -707,11 +707,14 @@ export async function exportChar(charaID:number):Promise<string> {
     }
 
     const option = await alertCardExport()
+    // Without an onProgress the exporter drives a blocking modal; reporting into
+    // the background task toast keeps the app usable while assets are written.
     if(option.type === ''){
-        exportCharacterCard(char, option.type2 === 'json' ? 'json' : (option.type2 === 'charx' ? 'charx' : option.type2 === 'charxJpeg' ? 'charxJpeg' : 'png'), {spec: 'v3'})
+        const type = option.type2 === 'json' ? 'json' : (option.type2 === 'charx' ? 'charx' : option.type2 === 'charxJpeg' ? 'charxJpeg' : 'png')
+        void runExportTask(char.name, (report) => exportCharacterCard(char, type, {spec: 'v3', onProgress: adaptLegacyProgress(report)}))
     }
     else if(option.type === 'ccv2'){
-        exportCharacterCard(char,'png', {spec: 'v2'})
+        void runExportTask(char.name, (report) => exportCharacterCard(char, 'png', {spec: 'v2', onProgress: adaptLegacyProgress(report)}))
     }
     else if(option.type !== ''){
         return option.type

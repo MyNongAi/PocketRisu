@@ -669,6 +669,9 @@ export const languageKorean = {
   moduleUpdated: "모듈이 수정되었습니다.",
   moduleDeleted: "모듈이 삭제되었습니다.",
   importedCharacter: "성공적으로 임포트 됨.",
+  exportProgress: {
+    exporting: "내보내는 중",
+  },
   importProgress: {
     queued: "대기 중",
     importing: "가져오는 중",

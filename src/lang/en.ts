@@ -595,6 +595,9 @@ export const languageEnglish = {
     moduleUpdated: "Module updated.",
     moduleDeleted: "Module deleted.",
     importedCharacter: "Imported Character",
+    exportProgress: {
+        exporting: "Exporting",
+    },
     importProgress: {
         queued: "Queued",
         importing: "Importing",
