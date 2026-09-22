@@ -26,6 +26,9 @@ const NIGHTLY_HUB_URL = 'https://nightly.sv.risuai.xyz'
 export const hubURL = '/hub-proxy';
 
 function appendImportedCharacter(db: ReturnType<typeof getDatabase>, char: character) {
+    // When this install first saw the card. Distinct from creation_date, which
+    // the card carries from its author and can predate the download by years.
+    char.importedAt ??= Date.now()
     db.characters.push(char)
     db.characterOrder = promoteNewlyImportedCharacter(
         db.characterOrder ?? [],

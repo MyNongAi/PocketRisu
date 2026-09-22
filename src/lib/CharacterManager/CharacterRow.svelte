@@ -39,6 +39,16 @@
     let missingAssetTitle = $derived(entry.realmRecoveryAvailable
         ? `에셋 ${entry.missingAssetCount}개 누락 · Realm 복구 가능`
         : `에셋 ${entry.missingAssetCount}개 누락 · 확인된 Realm 복구 원본 없음`);
+
+    // yy.mm.dd — compact enough to sit at the end of the metrics line.
+    // Cards imported before the field existed have no date to show.
+    let importedLabel = $derived.by(() => {
+        if (!entry.importedAt) return '';
+        const d = new Date(entry.importedAt);
+        if (Number.isNaN(d.getTime())) return '';
+        const pad = (n: number) => String(n).padStart(2, '0');
+        return `${pad(d.getFullYear() % 100)}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}`;
+    });
 </script>
 
 <div
@@ -115,6 +125,10 @@
             {#if duplicateCount !== null && duplicateCount > 0}
                 <span class="mx-1">|</span>
                 <span>{language.characterDuplicateCountLabel(duplicateCount)}</span>
+            {/if}
+            {#if importedLabel}
+                <span class="mx-1">|</span>
+                <span title={language.characterImportedAtHint}>{importedLabel}</span>
             {/if}
         </div>
     </div>

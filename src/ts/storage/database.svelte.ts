@@ -1895,6 +1895,12 @@ export interface character{
     group_only_greetings?:string[]
     creation_date?:number
     modification_date?:number
+    /**
+     * When this install imported the card. PocketRisu-only; upstream saves
+     * omit it. Unlike creation_date, which the card's author sets and which a
+     * freshly downloaded card can carry from years ago, this is local truth.
+     */
+    importedAt?:number
     ccAssets?: Array<{
         type: string
         uri: string
