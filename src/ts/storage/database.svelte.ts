@@ -1268,6 +1268,8 @@ export interface Database{
     botSettingAtStart:false
     NAIsettings:NAISettings
     hideRealm:boolean
+    /** Set when the user closes the legacy-notice banners on the chat bot settings page. */
+    hideBotSettingsLegacyNotice?:boolean
     colorScheme:ColorScheme
     colorSchemeName:string
     promptTemplate?:PromptItem[]
