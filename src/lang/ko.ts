@@ -1202,6 +1202,7 @@ export const languageKorean = {
   protonDriveUrlPrompt: "프로톤 드라이브 공유 링크 붙여넣기 (빈칸이면 바로 파일 선택)",
   protonImporting: "임포트 중...",
   protonInspecting: "프로톤 링크 확인 중...",
+  protonDownloading: "받는 중",
   protonImportAll: "전부 임포트",
   protonNoImportableFiles: "이 링크에 임포트할 수 있는 파일이 없습니다.",
   protonUnsupportedFile: "지원하지 않는 형식이라 건너뛴 파일:",

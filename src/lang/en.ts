@@ -1100,6 +1100,7 @@ export const languageEnglish = {
     protonDriveUrlPrompt: "Paste Proton Drive share link (leave empty to pick files)",
     protonImporting: "Importing...",
     protonInspecting: "Reading the Proton link...",
+    protonDownloading: "Downloading",
     protonImportAll: "Import all",
     protonNoImportableFiles: "This link has no files that can be imported.",
     protonUnsupportedFile: "Skipped — unsupported format:",
