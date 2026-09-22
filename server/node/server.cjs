@@ -1143,6 +1143,11 @@ function shouldCompress(req, res) {
     if (url.startsWith('/proxy') || url.startsWith('/hub-proxy') || url.startsWith('/api/backup/export') || url.startsWith('/api/backup/server/download/')) {
         return false;
     }
+    // A Proton share is already a compressed archive, so gzip buys nothing and
+    // costs the content-length the client's progress bar reads.
+    if (url.startsWith('/api/import/proton/download')) {
+        return false;
+    }
 
     const contentType = String(res.getHeader('Content-Type') || '').toLowerCase();
     if (contentType.includes('text/event-stream')) {
@@ -7161,9 +7166,15 @@ app.post('/api/import/proton/download', async (req, res, next) => {
         // The name comes from the share, so never let it steer a path or a
         // header; strip separators and send it percent-encoded.
         const safeName = path.basename(String(file.name)).replace(/[\r\n"\\]/g, '_');
+        const body = Buffer.from(file.bytes);
         res.setHeader('content-type', 'application/octet-stream');
         res.setHeader('x-proton-filename', encodeURIComponent(safeName));
-        res.end(Buffer.from(file.bytes));
+        // Bot archives are already compressed, so re-compressing only costs CPU
+        // and drops content-length — which the client needs for its progress
+        // bar on a transfer that runs to tens of megabytes.
+        res.setHeader('content-encoding', 'identity');
+        res.setHeader('content-length', String(body.length));
+        res.end(body);
     } catch (error) {
         if (error?.name === 'ProtonShareError') {
             logger.warn('[Proton] download failed:', error.message);
