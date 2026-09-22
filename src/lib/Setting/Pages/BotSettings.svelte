@@ -10,7 +10,7 @@
     import { customProviderStore } from "src/ts/plugins/plugins.svelte";
     import { tokenizerList } from "src/ts/tokenizer";
     import ModelList from "src/lib/UI/ModelList.svelte";
-    import { PlusIcon, TrashIcon, TriangleAlertIcon, InfoIcon, ArrowRightIcon, DownloadIcon, HardDriveUploadIcon } from "@lucide/svelte";
+    import { PlusIcon, TrashIcon, TriangleAlertIcon, InfoIcon, ArrowRightIcon, DownloadIcon, HardDriveUploadIcon, XIcon } from "@lucide/svelte";
     import ShAlert from "src/lib/UI/GUI/ShAlert.svelte";
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
     import { openSettings, SettingsRoute } from "src/ts/routing";
@@ -107,16 +107,22 @@
     });
 </script>
 <SettingPage title={language.chatBot}>
+{#if !DBState.db.hideBotSettingsLegacyNotice}
 <ShAlert variant="info" className="mb-4">
     {#snippet icon()}<InfoIcon />{/snippet}
     {language.botSettingsPresetMovedDesc}
     {#snippet action()}
-        <ShButton variant="outline" size="sm" onclick={() => openSettings(SettingsRoute.PromptPreset)}>
-            {language.promptPresetMenu}
-            <ArrowRightIcon size={14} />
-        </ShButton>
+        <div class="flex items-center gap-1">
+            <ShButton variant="outline" size="sm" onclick={() => openSettings(SettingsRoute.PromptPreset)}>
+                {language.promptPresetMenu}
+                <ArrowRightIcon size={14} />
+            </ShButton>
+            <button class="rounded p-1 text-textcolor2 hover:text-textcolor" aria-label={language.close}
+                onclick={() => { DBState.db.hideBotSettingsLegacyNotice = true }}><XIcon size={14} /></button>
+        </div>
     {/snippet}
 </ShAlert>
+{/if}
 <SettingTabs tabs={[
     { label: language.model, value: 0 },
     { label: language.parameters, value: 1 },
@@ -125,17 +131,23 @@
 ]} bind:selected={$BotSubmenuIndex} />
 
 {#if $BotSubmenuIndex === 0}
+    {#if !DBState.db.hideBotSettingsLegacyNotice}
     <ShAlert variant="warning" className="mt-4">
         {#snippet icon()}<TriangleAlertIcon />{/snippet}
         {#snippet title()}{language.botSettingsLegacyTitle}{/snippet}
         {language.botSettingsLegacyDesc}
         {#snippet action()}
-            <ShButton variant="outline" size="sm" onclick={() => openSettings(SettingsRoute.ModelPreset)}>
-                {language.modelPresetMenu}
-                <ArrowRightIcon size={14} />
-            </ShButton>
+            <div class="flex items-center gap-1">
+                <ShButton variant="outline" size="sm" onclick={() => openSettings(SettingsRoute.ModelPreset)}>
+                    {language.modelPresetMenu}
+                    <ArrowRightIcon size={14} />
+                </ShButton>
+                <button class="rounded p-1 text-textcolor2 hover:text-textcolor" aria-label={language.close}
+                    onclick={() => { DBState.db.hideBotSettingsLegacyNotice = true }}><XIcon size={14} /></button>
+            </div>
         {/snippet}
     </ShAlert>
+    {/if}
     <span class="text-textcolor mt-4">{language.model} <Help key="model"/></span>
     <ModelList bind:value={DBState.db.aiModel}/>
 
