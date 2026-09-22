@@ -1218,7 +1218,6 @@ export const languageKorean = {
   protonImportFailed: "프로톤 링크에서 가져오지 못했습니다.",
   protonWatchingDownloads: "다운로드 폴더 감시 중... 프로톤에서 파일을 다운로드하면 자동 임포트됩니다",
   protonImportSuccess: "프로톤 드라이브에서 가져오기 성공",
-  protonImportFailed: "프로톤 드라이브 가져오기 실패",
   random: "랜덤",
   metaData: "메타데이터",
   autoContinueMinTokens: "타겟 토큰 (자동 컨티뉴)",
