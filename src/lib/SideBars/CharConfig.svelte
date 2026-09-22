@@ -17,6 +17,7 @@
     import { exportChar, hydrateCharacterAssets } from "src/ts/characterCards";
     import { getElevenTTSVoices, getWebSpeechTTSVoices, getVOICEVOXVoices, oaiVoices, getNovelAIVoices } from "src/ts/process/tts";
     import { appendAssetManifestItems, editAssetManifest, forageStorage, loadAssetManifestItems, recoverAssetManifestConflict } from "src/ts/globalApi.svelte";
+    import { getStealthStatus, requestStealthStatus } from "src/ts/media/stealthStatusStore.svelte";
 import { openAssetViewer, hasImageAssets } from "src/ts/assetViewer.svelte";
     import LazyAssetPreview from "src/lib/Others/LazyAssetPreview.svelte";
     import TextInput from "../UI/GUI/TextInput.svelte";
@@ -711,7 +712,18 @@ import ShButton from "../UI/GUI/ShButton.svelte";
                                         <TrashIcon />
                                     </button>
                                     {#if DBState.db.useAdditionalAssetsPreview}
-                                        <button class="hover:text-primary" class:text-textcolor2={DBState.db.characters[$selectedCharID].prebuiltAssetExclude?.includes?.(assets[1])} onclick={() => {
+                                        {@const stealth = (requestStealthStatus(assets[1], extension), getStealthStatus(assets[1]))}
+                                        <button
+                                            class="hover:text-primary"
+                                            class:text-textcolor2={DBState.db.characters[$selectedCharID].prebuiltAssetExclude?.includes?.(assets[1])}
+                                            class:text-green-500={stealth === 'present'}
+                                            class:text-red-500={stealth === 'absent'}
+                                            title={stealth === 'present' ? language.stealthPresent
+                                                : stealth === 'absent' ? language.stealthAbsent
+                                                : stealth === 'unsupported' ? language.stealthUnsupported
+                                                : stealth === 'error' ? language.stealthUnknown
+                                                : language.stealthChecking}
+                                            onclick={() => {
                                             DBState.db.characters[$selectedCharID].prebuiltAssetExclude ??= []
                                             if(DBState.db.characters[$selectedCharID].prebuiltAssetExclude.includes(assets[1])){
                                                 DBState.db.characters[$selectedCharID].prebuiltAssetExclude = DBState.db.characters[$selectedCharID].prebuiltAssetExclude.filter((e) => e !== assets[1])
