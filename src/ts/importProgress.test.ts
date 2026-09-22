@@ -1,6 +1,6 @@
 import { get } from 'svelte/store'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { importTasks, reportImportTask, runImportBatch, runImportTask } from './importProgress'
+import { adaptLegacyProgress, importTasks, reportImportTask, runExportTask, runImportBatch, runImportTask } from './importProgress'
 
 describe('import progress queue', () => {
     beforeEach(() => {
@@ -48,7 +48,7 @@ describe('import progress queue', () => {
 
     it('clamps determinate progress and allows indeterminate progress', () => {
         importTasks.set(new Map([['task', {
-            id: 'task', fileName: 'a.png', label: 'running', progress: 0, phase: 'running',
+            id: 'task', fileName: 'a.png', kind: 'import', label: 'running', progress: 0, phase: 'running',
         }]]))
 
         reportImportTask('task', { label: 'too much', progress: 140 })
@@ -70,6 +70,23 @@ describe('import progress queue', () => {
         expect(task.fileName).toBe('Realm card')
         expect(task.phase).toBe('done')
         expect(task.progress).toBe(100)
+    })
+
+    it('runs an export on the same toast with export labels', async () => {
+        let labelWhileRunning = ''
+        const result = await runExportTask('card.charx', async (report) => {
+            labelWhileRunning = [...get(importTasks).values()][0].label
+            adaptLegacyProgress(report)('Loading... (Adding Assets)', 40)
+            expect(get(importTasks).get([...get(importTasks).keys()][0])?.progress).toBe(40)
+            return 'written'
+        })
+
+        expect(result).toBe('written')
+        expect(labelWhileRunning).toBe('Exporting')
+        const [task] = [...get(importTasks).values()]
+        expect(task.kind).toBe('export')
+        expect(task.fileName).toBe('card.charx')
+        expect(task.phase).toBe('done')
     })
 
     it('keeps the remote import error on its background task and rethrows it', async () => {

@@ -1,4 +1,5 @@
 import * as fflate from 'fflate'
+import { completeImportTask, createImportTask, failImportTask, reportImportTask, startImportTask } from './importProgress'
 import { v4 } from 'uuid'
 import { alertConfirm, alertError, alertStore, alertWait, notifySuccess } from './alert'
 import { exportCharacterCard, importCharacterProcess } from './characterCards'
@@ -399,6 +400,7 @@ export async function exportCharacterPackage(
         includeInlays: boolean
     }
 ): Promise<void> {
+    let packageTaskId: string | null = null
     try {
         const db = getDatabase({ snapshot: true })
         const char = safeStructuredClone(db.characters[charIndex]) as character
@@ -453,13 +455,16 @@ export async function exportCharacterPackage(
             + (options.includeInlays && inlayIds.size > 0 ? 1 : 0)
             + 1 /* finalize */
         let currentStep = 0
+        // Progress goes to the background task toast rather than a blocking modal.
+        packageTaskId = createImportTask(`${charName}_package.zip`, 'export')
+        startImportTask(packageTaskId)
+        const report = (label: string, step: number, fraction: number) => {
+            if (!packageTaskId) return
+            reportImportTask(packageTaskId, { label: `${label} (${step}/${totalSteps})`, progress: fraction * 100 })
+        }
         const progress = (msg: string) => {
             currentStep++
-            alertStore.set({
-                type: 'progress',
-                msg: `${language.characterPackageExport} (${currentStep}/${totalSteps})\n${msg}`,
-                submsg: String(((currentStep - 1) / totalSteps * 100).toFixed(0))
-            })
+            report(msg, currentStep, (currentStep - 1) / totalSteps)
         }
 
         // 2. Open outer package ZIP via streaming
@@ -490,11 +495,7 @@ export async function exportCharacterPackage(
                 writer: virtualWriter,
                 spec: 'v3',
                 onProgress: (msg, pct) => {
-                    alertStore.set({
-                        type: 'progress',
-                        msg: `${language.characterPackageExport} (${currentStep}/${totalSteps})\n${msg}`,
-                        submsg: String(((currentStep - 1 + pct / 100) / totalSteps * 100).toFixed(0))
-                    })
+                    report(msg, currentStep, (currentStep - 1 + pct / 100) / totalSteps)
                 }
             })
             const charxPath = `character/${charName}.charx`
@@ -560,11 +561,7 @@ export async function exportCharacterPackage(
 
             for (const id of ids) {
                 processed++
-                alertStore.set({
-                    type: 'progress',
-                    msg: `${language.characterPackageExport} (${currentStep + 1}/${totalSteps})\n${language.characterPackageProgressInlays} (${processed}/${ids.length})`,
-                    submsg: String(((currentStep + processed / ids.length) / totalSteps * 100).toFixed(0))
-                })
+                report(`${language.characterPackageProgressInlays} (${processed}/${ids.length})`, currentStep + 1, (currentStep + processed / ids.length) / totalSteps)
 
                 const asset = await getInlayAsset(id)
                 if (!asset) {
@@ -606,8 +603,10 @@ export async function exportCharacterPackage(
         await zipWriter.write('manifest.json', JSON.stringify(manifest, null, 2), 6)
         await zipWriter.end()
 
+        completeImportTask(packageTaskId)
         notifySuccess(language.characterPackageExportSuccess)
     } catch (error) {
+        if (packageTaskId) failImportTask(packageTaskId, error)
         alertError(error)
     }
 }

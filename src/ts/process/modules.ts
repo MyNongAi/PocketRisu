@@ -16,7 +16,7 @@ import { exportCharacterCard, importCharacterProcess } from "../characterCards"
 import { collectModuleRuntimeIds, collectModuleRuntimeUi } from "./moduleRuntime"
 import { recordModuleFolderActivation, recordNewModules } from "./moduleSort"
 import { organizeImportedModuleSimilarity } from "./similarityFolders"
-import { runImportBatch, type ImportProgressReporter } from "../importProgress"
+import { adaptLegacyProgress, runExportTask, runImportBatch, type ImportProgressReporter } from "../importProgress"
 
 export interface MCPModule{
     url: string
@@ -106,22 +106,36 @@ export async function exportModule(module:RisuModule, arg:{
     }
     const writer = new LocalWriter()
     await writer.init(module.name + '.module', ['charx'])
-    await exportCharacterCard(char, 'charx', {
+    // The exporter's default progress callback drives a blocking modal; route
+    // it into the background task toast instead so the app stays usable.
+    await runExportTask(module.name, (report) => exportCharacterCard(char, 'charx', {
         spec: 'v3',
-        writer
-    })
+        writer,
+        onProgress: adaptLegacyProgress(report),
+    }))
     if(alertEnd){
-        alertNormal(language.successExport)
+        notifySuccess(language.successExport)
     }
 }
 
 export async function exportModuleLegacy(module:RisuModule, arg:{
     alertEnd?:boolean
     saveData?:boolean
+    onProgress?:(msg:string, pct:number) => void
 } = {}){
-    module = await hydrateModuleAssets(module)
     const alertEnd = arg.alertEnd ?? true
     const saveData = arg.saveData ?? true
+    if(saveData && !arg.onProgress){
+        // Top-level export from the module list: run as a background task so the
+        // asset loop below reports to the toast instead of locking the screen.
+        return runExportTask(module.name, (report) => exportModuleLegacy(module, {
+            ...arg,
+            onProgress: adaptLegacyProgress(report),
+        }))
+    }
+    // Nested calls (a card export embedding its module) have nothing to show.
+    const onProgress = arg.onProgress ?? (() => {})
+    module = await hydrateModuleAssets(module)
     const apb = new AppendableBuffer()
     const writeLength = (len:number) => {
         const lenbuf = Buffer.alloc(4)
@@ -155,10 +169,7 @@ export async function exportModuleLegacy(module:RisuModule, arg:{
     for(let i=0;i<assets.length;i++){
         const asset = assets[i]
         writeByte(1) //mark as asset
-        alertStore.set({
-            type: 'wait',
-            msg: `Loading... (Adding Assets ${i} / ${assets.length})`
-        })
+        onProgress(`Loading... (Adding Assets ${i} / ${assets.length})`, i / assets.length * 100)
         let rData = await readImage(asset[1])
         if(!rData){
             rData = new Uint8Array(0) //blank buffer
