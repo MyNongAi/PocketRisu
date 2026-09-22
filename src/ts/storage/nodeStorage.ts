@@ -1705,17 +1705,27 @@ export class NodeStorage{
         }
         const etagKey = this.chatEtagKey(chaId, chatId)
         let baselineEtag = this.chatEtags.get(etagKey)
+        // May be downgraded to 'create' below when the server turns out to
+        // hold no body for this chat.
+        let effectiveIntent = intent
         if (intent === 'update' && !baselineEtag) {
             const current = await this.fetchChatContent(chaId, chatIndex, chatId)
             if (!current) {
-                throw new ConflictError('Chat was removed on another page or device', '')
-            }
-            baselineEtag = this.chatEtags.get(etagKey)
-            if (!baselineEtag) {
-                throw new ConflictError('Could not establish a safe chat save baseline', '')
+                // Defensive: an 'update' whose body is missing server-side used
+                // to be refused outright, which stranded the edits in the tab
+                // and lost them on close. There is nothing to overwrite, so
+                // write the chat back instead. 'if-none-match' keeps that safe
+                // — a peer that creates this chat first still wins with a 409.
+                console.warn(`[Save] chat ${chaId}/${chatId} has no body on the server; saving it as a new chat`)
+                effectiveIntent = 'create'
+            } else {
+                baselineEtag = this.chatEtags.get(etagKey)
+                if (!baselineEtag) {
+                    throw new ConflictError('Could not establish a safe chat save baseline', '')
+                }
             }
         }
-        if (intent === 'create') headers['if-none-match'] = '*'
+        if (effectiveIntent === 'create') headers['if-none-match'] = '*'
         else if (baselineEtag) headers['x-if-match'] = baselineEtag
         const da = await this.authFetch(`/api/chat-content/${encodeURIComponent(chaId)}/${chatIndex}`, {
             method: 'POST',

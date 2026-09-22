@@ -49,7 +49,7 @@ export class SaveRejectedError extends Error {
 import { initMobileGesture } from "./hotkey";
 import { moduleUpdate, refreshModules } from "./process/modules";
 import { trackModuleTreeChanges } from "./process/moduleChangeTracker.svelte";
-import { classifyChatSaveIntent } from './storage/chatSaveIntent'
+import { classifyChatSaveIntent, retainConfirmedChats } from './storage/chatSaveIntent'
 import { isLocalNetworkUrl } from "./network/localNetwork";
 import { decodeProxyJobWsChunk, formatProxyStreamErrorMessage, parseProxyJobWsEvent } from "./network/proxyJobWs";
 import { getInlineImageMimeType } from "./media/imageMime";
@@ -958,9 +958,15 @@ export async function saveDb() {
                 knownChatIdsByCharacter.delete(chaId)
                 continue
             }
+            // Only drops chats that disappeared locally — a chat is confirmed
+            // where its body write is acknowledged, not here. See
+            // retainConfirmedChats for why a catalog save cannot confirm one.
             knownChatIdsByCharacter.set(
                 chaId,
-                new Set((char.chats ?? []).map(chat => chat?.id).filter(Boolean))
+                retainConfirmedChats(
+                    knownChatIdsByCharacter.get(chaId),
+                    (char.chats ?? []).map(chat => chat?.id).filter(Boolean),
+                )
             )
         }
 
