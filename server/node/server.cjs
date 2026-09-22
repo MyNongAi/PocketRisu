@@ -7112,6 +7112,67 @@ app.get('/api/backup/export', async (req, res, next) => {
     }
 });
 
+// ─── Proton Drive share links ───────────────────────────────────────────────
+// Fetches and decrypts a public share server side so a pasted link imports
+// without the user downloading anything. The module is a prebuilt ESM bundle
+// (server/node/vendor/protonShare.mjs) because @protontech/crypto ships TS
+// source only; see server/node/proton/build.md. Loaded lazily so its polyfill,
+// which patches global prototypes, only lands if the feature is used.
+let protonShareModule = null;
+async function loadProtonShare() {
+    if (!protonShareModule) {
+        protonShareModule = await import('./vendor/protonShare.mjs');
+    }
+    return protonShareModule;
+}
+
+function protonErrorStatus(error) {
+    // -1 = the link never looked like a share link, 2501 = Proton has no such
+    // link, 2026 = the owner put a password on it. Anything else is upstream.
+    if (error?.code === -1) return 400;
+    if (error?.code === 2501) return 404;
+    if (error?.code === 2026) return 401;
+    return 502;
+}
+
+app.post('/api/import/proton/inspect', async (req, res, next) => {
+    if (!await checkAuth(req, res)) { return; }
+    try {
+        const { inspectProtonShare } = await loadProtonShare();
+        const info = await inspectProtonShare(String(req.body?.url ?? ''), String(req.body?.password ?? ''));
+        res.json(info);
+    } catch (error) {
+        if (error?.name === 'ProtonShareError') {
+            logger.warn('[Proton] inspect failed:', error.message);
+            return res.status(protonErrorStatus(error)).json({ error: error.message });
+        }
+        next(error);
+    }
+});
+
+app.post('/api/import/proton/download', async (req, res, next) => {
+    if (!await checkAuth(req, res)) { return; }
+    try {
+        const { downloadProtonShare } = await loadProtonShare();
+        const file = await downloadProtonShare(String(req.body?.url ?? ''), {
+            linkId: req.body?.linkId ? String(req.body.linkId) : undefined,
+            customPassword: String(req.body?.password ?? ''),
+        });
+        // The name comes from the share, so never let it steer a path or a
+        // header; strip separators and send it percent-encoded.
+        const safeName = path.basename(String(file.name)).replace(/[\r\n"\\]/g, '_');
+        res.setHeader('content-type', 'application/octet-stream');
+        res.setHeader('x-proton-filename', encodeURIComponent(safeName));
+        res.end(Buffer.from(file.bytes));
+    } catch (error) {
+        if (error?.name === 'ProtonShareError') {
+            logger.warn('[Proton] download failed:', error.message);
+            return res.status(protonErrorStatus(error)).json({ error: error.message });
+        }
+        next(error);
+    }
+});
+
 // ─── Download folder watch (auto-import) ────────────────────────────────────
 app.get('/api/import/watch-downloads', async (req, res) => {
     if (!await checkAuth(req, res)) { return; }
