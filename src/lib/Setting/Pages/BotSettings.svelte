@@ -10,7 +10,7 @@
     import { customProviderStore } from "src/ts/plugins/plugins.svelte";
     import { tokenizerList } from "src/ts/tokenizer";
     import ModelList from "src/lib/UI/ModelList.svelte";
-    import { PlusIcon, TrashIcon, TriangleAlertIcon, InfoIcon, ArrowRightIcon } from "@lucide/svelte";
+    import { PlusIcon, TrashIcon, TriangleAlertIcon, InfoIcon, ArrowRightIcon, DownloadIcon, HardDriveUploadIcon } from "@lucide/svelte";
     import ShAlert from "src/lib/UI/GUI/ShAlert.svelte";
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
     import { openSettings, SettingsRoute } from "src/ts/routing";
@@ -38,6 +38,9 @@
     import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
     import CustomModelsSettings from './Model/CustomModelsSettings.svelte'
     import Accordion from "src/lib/UI/Accordion.svelte";
+    import { downloadFile } from "src/ts/globalApi.svelte";
+    import { selectSingleFile } from "src/ts/util";
+    import { alertError } from "src/ts/alert";
     import Button from "src/lib/UI/GUI/Button.svelte";
     
     const openrouterPinnedItems: ModelGridPinnedItem[] = [
@@ -118,6 +121,7 @@
     { label: language.model, value: 0 },
     { label: language.parameters, value: 1 },
     { label: language.customModels, value: 2 },
+    { label: language.others, value: 3 },
 ]} bind:selected={$BotSubmenuIndex} />
 
 {#if $BotSubmenuIndex === 0}
@@ -591,6 +595,70 @@
 
 {#if $BotSubmenuIndex === 2}
     <CustomModelsSettings noAccordion />
+{/if}
+
+{#if $BotSubmenuIndex === 3}
+    <!--
+        Global bias never stopped being applied — process/index.svelte.ts
+        concatenates db.bias onto every request, and prompt presets save and
+        restore it. Only its editor was missing, which left the value live but
+        unreachable.
+    -->
+    <Accordion styled name="Bias" help="bias">
+        <table class="contain w-full max-w-full tabler">
+            <tbody>
+                <tr>
+                    <th class="font-medium">Bias</th>
+                    <th class="font-medium">{language.value}</th>
+                    <th>
+                        <button class="font-medium cursor-pointer hover:text-green-500 w-full flex justify-center items-center" onclick={() => {
+                            DBState.db.bias = [...DBState.db.bias, ['', 0]]
+                        }} aria-label={language.value}><PlusIcon /></button>
+                    </th>
+                </tr>
+                {#if DBState.db.bias.length === 0}
+                    <tr>
+                        <td colspan="3" class="text-textcolor2">{language.noBias}</td>
+                    </tr>
+                {/if}
+                {#each DBState.db.bias as bias, i}
+                    <tr>
+                        <td class="font-medium truncate">
+                            <TextInput bind:value={DBState.db.bias[i][0]} size="lg" fullwidth />
+                        </td>
+                        <td class="font-medium truncate">
+                            <NumberInput bind:value={DBState.db.bias[i][1]} max={100} min={-101} size="lg" fullwidth />
+                        </td>
+                        <td>
+                            <button class="font-medium flex justify-center items-center h-full cursor-pointer hover:text-draculared w-full" onclick={() => {
+                                DBState.db.bias = DBState.db.bias.filter((_, index) => index !== i)
+                            }} aria-label={language.remove}><TrashIcon /></button>
+                        </td>
+                    </tr>
+                {/each}
+            </tbody>
+        </table>
+        <div class="text-textcolor2 mt-2 flex items-center gap-2">
+            <button class="font-medium cursor-pointer hover:text-textcolor" onclick={() => {
+                downloadFile('bias.json', JSON.stringify(DBState.db.bias, null, 2))
+            }} aria-label={language.export}><DownloadIcon /></button>
+            <button class="font-medium cursor-pointer hover:text-textcolor" onclick={async () => {
+                const selected = await selectSingleFile(['json'])
+                if (!selected) return
+                try {
+                    const parsed = JSON.parse(new TextDecoder().decode(selected.data))
+                    // Only replace on a shape the generation path can consume.
+                    if (Array.isArray(parsed) && parsed.every((entry) => Array.isArray(entry) && entry.length === 2)) {
+                        DBState.db.bias = parsed
+                    } else {
+                        alertError(language.errors.noData)
+                    }
+                } catch {
+                    alertError(language.errors.noData)
+                }
+            }} aria-label={language.import}><HardDriveUploadIcon /></button>
+        </div>
+    </Accordion>
 {/if}
 
 

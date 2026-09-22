@@ -17,7 +17,7 @@
     } = $props();
 </script>
 
-<div class="setting-tabs flex w-full border-b border-darkborderc mb-4 overflow-x-auto"
+<div class="setting-tabs flex w-full shrink-0 border-b border-darkborderc mb-4 overflow-x-auto"
     class:sticky={sticky} class:top-0={sticky} class:z-20={sticky} class:bg-bgcolor={sticky}
     role="tablist">
     {#each tabs as tab}
