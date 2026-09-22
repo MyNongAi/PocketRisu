@@ -119,12 +119,22 @@ async function downloadEntry(
     return { name, data }
 }
 
-/** Route one decrypted file to whichever importer matches its extension. */
-async function importByKind(name: string, data: Uint8Array): Promise<SharedImportKind | null> {
+/**
+ * Route one decrypted file to whichever importer matches its extension.
+ *
+ * `report` is passed through, not just for the progress numbers: the character
+ * and module importers fall back to their own blocking alerts when no reporter
+ * is supplied, which would put a modal back over a background task.
+ */
+async function importByKind(
+    name: string,
+    data: Uint8Array,
+    report: ImportProgressReporter,
+): Promise<SharedImportKind | null> {
     const kind = classifySharedImport(name)
     switch (kind) {
         case 'module':
-            await importModuleFile({ name, data }, { suppressSuccess: true })
+            await importModuleFile({ name, data }, { suppressSuccess: true, onProgress: report })
             return kind
         case 'preset':
             await importPreset({ name, data })
@@ -138,7 +148,7 @@ async function importByKind(name: string, data: Uint8Array): Promise<SharedImpor
             return kind
         }
         case 'character':
-            await importCharacterProcess({ name, data, suppressSuccess: true })
+            await importCharacterProcess({ name, data, suppressSuccess: true, onProgress: report })
             return kind
         default:
             return null
@@ -198,7 +208,7 @@ export async function importFromProtonLink(url: string, password = ''): Promise<
                 item.entry.size,
             )
             report({ label: `${language.protonImporting} ${file.name}`, progress: 85 })
-            const kind = await importByKind(file.name, file.data)
+            const kind = await importByKind(file.name, file.data, report)
             if (!kind) {
                 skipped.push(file.name)
                 throw new Error(language.protonUnsupportedFile)
