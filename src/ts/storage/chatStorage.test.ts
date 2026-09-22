@@ -31,6 +31,7 @@ const {
     markHydratedChatPersisted,
     evictHydratedChatCache,
     resetHydratedChatCache,
+    setChatSaveRequester,
 } = await import('./chatStorage')
 type Chat = any
 type ChatStub = any
@@ -311,5 +312,29 @@ describe('hydrating a chat whose body is missing on the server', () => {
         await expect(ensureChatHydrated(chats, 0, 'char-a')).rejects.toThrow('503')
         expect(chats[0]._placeholder).toBe(true)
         expect(chats[0].message).toEqual([])
+    })
+})
+
+describe('recovered chat persistence', () => {
+    // Regression: recovery left the chat clean, so the LRU evicted it straight
+    // back to a placeholder and the next open hydrated, 404'd and recovered
+    // again. One chat looped 25 times in a real session instead of healing.
+    test('pins the recovered chat and asks the save loop to write it', async () => {
+        const requested: [string, string][] = []
+        setChatSaveRequester((chaId, chatId) => { requested.push([chaId, chatId]) })
+        try {
+            mocks.fetchChatContent.mockResolvedValueOnce(null)
+            const chats = [stubToPlaceholder({ id: 'orphan', name: 'orphan', _stub: true } as ChatStub)]
+
+            await ensureChatHydrated(chats, 0, 'char-a')
+
+            expect(requested).toEqual([['char-a', 'orphan']])
+
+            // Dirty entries survive eviction, so the placeholder cannot come back.
+            await evictHydratedChatCache(undefined, 0)
+            expect(chats[0]._placeholder).toBeUndefined()
+        } finally {
+            setChatSaveRequester(null)
+        }
     })
 })
