@@ -34,14 +34,19 @@ function remember(path: string, status: StealthStatus): void {
 export function requestStealthStatus(path: string, extension: string): void {
     if (!path || statuses.has(path) || inFlight.has(path)) return
 
-    if (!canCarryStealth(extension)) {
-        remember(path, 'unsupported')
-        return
-    }
-
+    // Callers reach this from render, so every write to `statuses` has to land
+    // after the current render pass — including the cheap early answers, which
+    // would otherwise mutate reactive state mid-render.
     inFlight.add(path)
     void (async () => {
         try {
+            // An async function body runs synchronously up to its first await,
+            // so yield before touching the store at all.
+            await Promise.resolve()
+            if (!canCarryStealth(extension)) {
+                remember(path, 'unsupported')
+                return
+            }
             const src = await getFileSrc(path)
             if (!src) {
                 remember(path, 'error')
