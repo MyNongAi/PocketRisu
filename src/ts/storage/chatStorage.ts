@@ -216,6 +216,18 @@ export function isHydrating(chaId: string, chatId: string): boolean {
 }
 
 /**
+ * Ask the save loop to persist one chat. Registered by saveDb(); chatStorage
+ * cannot reach its change tracker directly, and importing it would close a
+ * cycle.
+ */
+type ChatSaveRequester = (chaId: string, chatId: string) => void
+let requestChatSave: ChatSaveRequester | null = null
+
+export function setChatSaveRequester(requester: ChatSaveRequester | null): void {
+    requestChatSave = requester
+}
+
+/**
  * Turn a placeholder whose body the server does not have into an empty but
  * usable chat, preserving the metadata the stub carried.
  *
@@ -240,6 +252,11 @@ function recoverMissingChatBody(
 
     chats[index] = recovered
     recordHydratedChat(chaId, chatId, chats)
+    // Pin it and queue the write. Without both, the cache evicts this clean
+    // entry straight back to a placeholder and the next open hydrates, 404s
+    // and recovers again — the same chat looping instead of healing.
+    markHydratedChatDirty(chaId, chatId)
+    requestChatSave?.(chaId, chatId)
     console.warn(`[chatStorage] recovered ${key} as an empty chat; its body was missing on the server`)
 
     // Dynamic import: chatStorage sits under globalApi, which the alert module

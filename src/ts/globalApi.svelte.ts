@@ -13,7 +13,7 @@ import { hasher } from "./parser/parser.svelte";
 import { characterURLImport, hubURL } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
 import { decodeRisuSave, encodeRisuSaveLegacy, findDangerousChatOps, normalizeJSON, RisuSaveEncoder, RisuSavePatcher, type toSaveType } from "./storage/risuSave";
-import { isHydrating, saveChatToServer, ensureChatHydrated, chatToStub, classifyChat, convertStubsToPlaceholders, evictHydratedChatCache, markHydratedChatDirty, markHydratedChatPersisted } from "./storage/chatStorage";
+import { isHydrating, saveChatToServer, ensureChatHydrated, chatToStub, classifyChat, convertStubsToPlaceholders, evictHydratedChatCache, markHydratedChatDirty, markHydratedChatPersisted, setChatSaveRequester } from "./storage/chatStorage";
 import { AutoStorage } from "./storage/autoStorage";
 import {
     ConflictError,
@@ -894,6 +894,16 @@ export async function saveDb() {
             markHydratedChatDirty(activeChaId, activeChatId)
             saveTimeoutExecute()
         })
+    })
+
+    // Hydration recovers a chat whose body the server lost, but it runs while
+    // the tracker above is deliberately ignoring the active chat, so it has no
+    // way to ask for a write. This is that way.
+    setChatSaveRequester((chaId, chatId) => {
+        if (!chaId || !chatId) return
+        const queued = changeTracker.chat.some(pair => pair?.[0] === chaId && pair?.[1] === chatId)
+        if (!queued) changeTracker.chat.unshift([chaId, chatId])
+        saveTimeoutExecute()
     })
 
     function requeueTrackedChanges(toSave: toSaveType) {
