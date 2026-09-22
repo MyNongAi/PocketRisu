@@ -894,16 +894,17 @@ export async function saveDb() {
             markHydratedChatDirty(activeChaId, activeChatId)
             saveTimeoutExecute()
         })
-    })
 
-    // Hydration recovers a chat whose body the server lost, but it runs while
-    // the tracker above is deliberately ignoring the active chat, so it has no
-    // way to ask for a write. This is that way.
-    setChatSaveRequester((chaId, chatId) => {
-        if (!chaId || !chatId) return
-        const queued = changeTracker.chat.some(pair => pair?.[0] === chaId && pair?.[1] === chatId)
-        if (!queued) changeTracker.chat.unshift([chaId, chatId])
-        saveTimeoutExecute()
+        // Hydration recovers a chat whose body the server lost, but it runs while
+        // the tracker above is deliberately ignoring the active chat, so it has no
+        // way to ask for a write. This is that way. It lives inside the root so
+        // it can reach the debounced saveTimeoutExecute above.
+        setChatSaveRequester((chaId, chatId) => {
+            if (!chaId || !chatId) return
+            const queued = changeTracker.chat.some(pair => pair?.[0] === chaId && pair?.[1] === chatId)
+            if (!queued) changeTracker.chat.unshift([chaId, chatId])
+            saveTimeoutExecute()
+        })
     })
 
     function requeueTrackedChanges(toSave: toSaveType) {
