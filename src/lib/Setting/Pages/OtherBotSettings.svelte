@@ -2,6 +2,7 @@
     import Check from "src/lib/UI/GUI/CheckInput.svelte";
     import SettingPage from "src/lib/UI/GUI/SettingPage.svelte";
     import SettingTabs from "src/lib/UI/GUI/SettingTabs.svelte";
+    import { openSettings, SettingsRoute } from "src/ts/routing";
     import { language } from "src/lang";
     import Help from "src/lib/Others/Help.svelte";
     import { selectSingleFile } from "src/ts/util";
@@ -164,11 +165,29 @@
     // End wavespeed
 </script>
 <SettingPage title={language.otherBots}>
-<SettingTabs tabs={[
-    { label: 'TTS', value: 1 },
-    { label: language.emotionImage, value: 2 },
-    { label: language.imageGeneration, value: 3 },
-]} bind:selected={$OtherBotsSubmenuIndex} />
+<!--
+    Long-term memory lives on its own page here rather than inline as upstream
+    has it: that page carries its own tab row (presets / embedding / …), and
+    nesting one tab row inside another reads as two competing navigations. The
+    tab opens it instead, so the four buttons stay where muscle memory expects
+    them and the settings themselves have a single home.
+-->
+<SettingTabs
+    tabs={[
+        { label: language.longTermMemory, value: 0 },
+        { label: 'TTS', value: 1 },
+        { label: language.emotionImage, value: 2 },
+        { label: language.imageGeneration, value: 3 },
+    ]}
+    selected={$OtherBotsSubmenuIndex}
+    onSelect={(value) => {
+        if (value === 0) {
+            openSettings(SettingsRoute.LongTermMemory)
+            return
+        }
+        $OtherBotsSubmenuIndex = value
+    }}
+/>
 
 {#if $OtherBotsSubmenuIndex === 3}
     <Accordion name={language.imageGeneration} styled disabled>
