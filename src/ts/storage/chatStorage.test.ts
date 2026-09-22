@@ -277,3 +277,39 @@ describe('bounded hydrated-chat LRU', () => {
         expect(dirtyChats[0]._placeholder).toBe(true)
     })
 })
+
+describe('hydrating a chat whose body is missing on the server', () => {
+    // Regression: a chat listed in the catalog but with no body on the server
+    // left its placeholder in place, and the chat screen — which waits on
+    // `!slot._placeholder` — sat on "loading chat data" forever. This showed up
+    // most on a freshly imported bot's first chat, whose body never reached the
+    // server. Only a 404 reaches this path; every other failure throws.
+    test('opens it as an empty usable chat instead of spinning forever', async () => {
+        mocks.fetchChatContent.mockResolvedValueOnce(null)
+        const chats = [stubToPlaceholder({
+            id: 'orphan-chat', name: 'orphan', _stub: true, folderId: 'f1',
+        } as ChatStub)]
+
+        const result = await ensureChatHydrated(chats, 0, 'char-a')
+
+        expect(result).not.toBeNull()
+        expect(chats[0]._placeholder).toBeUndefined()
+        expect(chats[0].message).toEqual([])
+        // Stub metadata has to survive so the chat keeps its identity.
+        expect(chats[0].id).toBe('orphan-chat')
+        expect(chats[0].name).toBe('orphan')
+        expect(chats[0].folderId).toBe('f1')
+    })
+
+    // The recovery must never fire for a transient failure: materializing an
+    // empty chat there would overwrite a perfectly good server copy on the next
+    // save. fetchChatContent throws for anything that is not a 404.
+    test('propagates a transient failure rather than emptying the chat', async () => {
+        mocks.fetchChatContent.mockRejectedValueOnce(new Error('fetchChatContent error: 503'))
+        const chats = [stubToPlaceholder({ id: 'live-chat', name: 'live', _stub: true } as ChatStub)]
+
+        await expect(ensureChatHydrated(chats, 0, 'char-a')).rejects.toThrow('503')
+        expect(chats[0]._placeholder).toBe(true)
+        expect(chats[0].message).toEqual([])
+    })
+})

@@ -20,6 +20,7 @@ export const languageEnglish = {
         unknownModel: "Error: Unknown model selected",
         httpError: "Error: error in request:",
         noData: "The file is invalid, or its data is corrupted.",
+        chatBodyMissing: "This chat's contents were not on the server, so it opened empty. It was listed, but its contents had never been saved.",
         onlyOneChat: "There must be least one chat",
         onlyOnePreset: "There must be at least one preset",
         noUserIcon: "You must set your icon first.",
