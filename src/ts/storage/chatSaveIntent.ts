@@ -17,3 +17,24 @@ export function classifyChatSaveIntent(
     if (!knownChatIds) return 'create'
     return knownChatIds.has(chatId) ? 'update' : 'create'
 }
+
+/**
+ * Narrow a character's confirmed-chat set to the chats that still exist
+ * locally, after a catalog save.
+ *
+ * Deliberately only removes. A catalog save writes metadata, so it proves
+ * nothing about chat bodies; adding the local ids here would mark a chat whose
+ * body never reached the server as confirmed, and its next save would be an
+ * 'update' whose baseline probe 404s. Confirmation belongs to the body write.
+ */
+export function retainConfirmedChats(
+    confirmedChatIds: ReadonlySet<string> | undefined,
+    localChatIds: Iterable<string>,
+): Set<string> {
+    const local = localChatIds instanceof Set ? localChatIds : new Set(localChatIds)
+    const retained = new Set<string>()
+    for (const chatId of confirmedChatIds ?? []) {
+        if (local.has(chatId)) retained.add(chatId)
+    }
+    return retained
+}
