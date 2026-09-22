@@ -448,14 +448,15 @@ export async function importModule(){
 export async function importModuleFromProtonDrive() {
     const url = await alertInput(language.protonDriveUrlPrompt)
 
-    if (url && url.includes('drive.proton.me/urls/')) {
-        window.open(url, '_blank')
+    // Same server-side path as the character import — it routes each file by
+    // extension, so a module link lands in the module importer either way.
+    if (isNodeServer && url) {
+        const { importFromProtonLink } = await import('../protonImport')
+        if (await importFromProtonLink(url)) return
     }
 
-    if (isNodeServer) {
-        const { watchDownloadsAndImport } = await import('../characters')
-        await watchDownloadsAndImport('module')
-        return
+    if (url && url.includes('drive.proton.me/urls/')) {
+        window.open(url, '_blank')
     }
 
     const files = await selectMultipleFile(['json', 'lorebook', 'risum', 'charx'])

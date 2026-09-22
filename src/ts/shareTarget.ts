@@ -29,6 +29,17 @@ async function importSharedFile(file: SharedPayloadFile, data: Uint8Array): Prom
         await importModuleFile({ name: file.name, data }, { suppressSuccess: true })
         return true
     }
+    if (kind === 'plugin') {
+        // importPlugin reads the //@name header out of the source itself, so it
+        // only needs the text. Dynamic import keeps the plugin runtime off the
+        // startup path for shares that never contain one.
+        const { importPlugin } = await import('./plugins/plugins.svelte')
+        await importPlugin(
+            Buffer.from(data).toString('utf-8').replace(/^﻿/, ''),
+            { isTypescript: file.name.toLowerCase().endsWith('.ts') },
+        )
+        return true
+    }
     if (kind === 'preset') {
         await importPreset({ name: file.name, data })
         openSettings(SettingsRoute.ChatBot)

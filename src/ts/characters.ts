@@ -904,13 +904,16 @@ export async function addCharacter(arg:{
 async function importFromProtonDrive() {
     const url = await alertInput(language.protonDriveUrlPrompt)
 
-    if (url && url.includes('drive.proton.me/urls/')) {
-        window.open(url, '_blank')
+    // The server decrypts the share, so a valid link needs no download at all.
+    // Only the node build has that endpoint; everywhere else, and whenever the
+    // link is not a share link, fall through to picking files by hand.
+    if (isNodeServer && url) {
+        const { importFromProtonLink } = await import('./protonImport')
+        if (await importFromProtonLink(url)) return
     }
 
-    if (isNodeServer) {
-        await watchDownloadsAndImport('character')
-        return
+    if (url && url.includes('drive.proton.me/urls/')) {
+        window.open(url, '_blank')
     }
 
     const files = await selectMultipleFile(['charx', 'png', 'json', 'risum', 'risup'])
