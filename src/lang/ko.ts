@@ -1201,6 +1201,7 @@ export const languageKorean = {
   importFromProtonDesc: "프로톤 드라이브 링크를 열고, 다운받은 파일을 자동으로 임포트",
   protonDriveUrlPrompt: "프로톤 드라이브 공유 링크 붙여넣기 (빈칸이면 바로 파일 선택)",
   protonImporting: "임포트 중...",
+  characterImportedAtHint: "이 기기에 임포트한 날짜",
   stealthPresent: "NAI 스텔스 메타데이터 있음 — 공홈에 임포트 가능",
   stealthAbsent: "NAI 스텔스 메타데이터 없음 — 공홈 임포트 불가",
   stealthUnsupported: "이미지가 아니라 검사 대상이 아닙니다",

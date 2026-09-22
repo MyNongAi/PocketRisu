@@ -54,3 +54,53 @@ describe('character manager metadata', () => {
         })
     })
 })
+
+describe('import date on manager rows', () => {
+    // creation_date belongs to the card's author and a freshly downloaded card
+    // can carry one from years back, so the row has to read the local field.
+    it('prefers the local import date over the card-authored creation date', () => {
+        const db = {
+            characters: [{
+                chaId: 'local',
+                name: 'Imported today',
+                chats: [],
+                creation_date: 1_000_000,
+                importedAt: 1_790_000_000_000,
+            }],
+            nodeOnlyHiddenCharacterIds: [],
+            nodeOnlyArchivedCharacters: [],
+        } as unknown as Database
+
+        expect(buildManagerEntries(db).get('local')).toMatchObject({
+            importedAt: 1_790_000_000_000,
+            creationDate: 1_000_000,
+        })
+    })
+
+    it('falls back to a collection import stamp, then to zero', () => {
+        const db = {
+            characters: [
+                { chaId: 'collection', name: 'From bundle', chats: [], sourceInfo: { label: 'x', importedAt: 42 } },
+                { chaId: 'legacy', name: 'Predates the field', chats: [] },
+            ],
+            nodeOnlyHiddenCharacterIds: [],
+            nodeOnlyArchivedCharacters: [],
+        } as unknown as Database
+
+        const entries = buildManagerEntries(db)
+        expect(entries.get('collection')?.importedAt).toBe(42)
+        expect(entries.get('legacy')?.importedAt).toBe(0)
+    })
+
+    it('carries the import date onto archived stubs too', () => {
+        const db = {
+            characters: [],
+            nodeOnlyHiddenCharacterIds: [],
+            nodeOnlyArchivedCharacters: [
+                { chaId: 'archived', name: 'Deactivated', importedAt: 777 },
+            ],
+        } as unknown as Database
+
+        expect(buildManagerEntries(db).get('archived')?.importedAt).toBe(777)
+    })
+})

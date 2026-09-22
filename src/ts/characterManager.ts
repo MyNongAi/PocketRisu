@@ -23,6 +23,8 @@ export interface ManagerEntry {
     titleColor?: string
     lastInteraction: number
     creationDate: number
+    /** When this install imported the card; 0 for cards that predate the field. */
+    importedAt: number
     archived: boolean
     hidden: boolean
     trashed: boolean
@@ -52,6 +54,7 @@ export function buildManagerEntries(db: Database): Map<string, ManagerEntry> {
             titleColor: c.titleColor,
             lastInteraction: c.lastInteraction ?? 0,
             creationDate: c.creation_date ?? 0,
+            importedAt: c.importedAt ?? c.sourceInfo?.importedAt ?? 0,
             archived: false,
             hidden: hidden.has(c.chaId),
             trashed: !!c.trashTime,
@@ -74,6 +77,7 @@ export function buildManagerEntries(db: Database): Map<string, ManagerEntry> {
             titleColor: stub.titleColor,
             lastInteraction: stub.lastInteraction ?? 0,
             creationDate: stub.creation_date ?? 0,
+            importedAt: (stub as { importedAt?: number }).importedAt ?? stub.sourceInfo?.importedAt ?? 0,
             archived: true,
             hidden: hidden.has(stub.chaId),
             trashed: !!stub.trashedAt,
