@@ -20,6 +20,7 @@ export const languageKorean = {
     unknownModel: "에러: 알수없는 모델 선택됨",
     httpError: "요청 에러:",
     noData: "올바른 파일이 아니거나 데이터가 손상됐습니다.",
+    chatBodyMissing: "이 채팅의 내용이 서버에 없어 빈 채팅으로 열었습니다. 목록에는 있었지만 내용이 저장되지 않은 상태였습니다.",
     onlyOneChat: "채팅이 하나 이상 필요합니다",
     onlyOnePreset: "프리셋이 하나 이상 필요합니다",
     noUserIcon: "유저 아이콘이 없습니다.",
