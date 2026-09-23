@@ -123,3 +123,47 @@ describe('planning the import', () => {
         expect(again.mainPresetId).toBe(first.presets[0].id)
     })
 })
+
+describe('generation settings the plugin read from PocketRisu', () => {
+    // temperature 200 / top_p 0.9 / maxResponse 50000 in the parameter tab.
+    const generation = { sampling: { temperature: 2, top_p: 0.9, topP: 0.9 }, maxOutputTokens: 50000 }
+
+    function planWith(existing: any[] = []) {
+        return planYumiImport({
+            store,
+            registries: [loadBundledRegistry()],
+            registryId: getBundledRegistryId(),
+            resolveSnapshot,
+            existing,
+            classicMain: CLASSIC,
+            generation,
+            now: 1,
+        })
+    }
+
+    it('writes temperature, top-p, response length and the safety filters into new presets', () => {
+        const [m37] = planWith().presets
+        const body = buildPreparedRequest({ preset: m37, credential: { apiKey: 'ya29.fake-token' } }).body as any
+        expect(body.generationConfig).toMatchObject({ temperature: 2, topP: 0.9, maxOutputTokens: 50000 })
+        expect(body.safetySettings).toHaveLength(5)
+        expect(body.safetySettings.every((setting: any) => setting.threshold === 'OFF')).toBe(true)
+    })
+
+    it('fills what an earlier import left out, without touching values set by hand', () => {
+        // An import from before this change: no sampling, default length, no safety.
+        const earlier = plan().presets
+        for (const preset of earlier) delete preset.userValues.safetySettings
+        earlier[1].userValues.temperature = 1.2
+        const again = planWith(earlier)
+
+        expect(again.presets).toEqual([])
+        const byId = Object.fromEntries(again.updates.map((update) => [update.id, update.values]))
+        expect(byId[earlier[0].id]).toMatchObject({ temperature: 2, topP: 0.9, maxOutputTokens: 50000, safetySettings: expect.any(Array) })
+        expect(byId[earlier[1].id].temperature).toBeUndefined()
+        expect(byId[earlier[1].id]).toMatchObject({ topP: 0.9, maxOutputTokens: 50000 })
+
+        // Once filled, running it again changes nothing.
+        for (const preset of earlier) Object.assign(preset.userValues, byId[preset.id] ?? {})
+        expect(planWith(earlier).updates).toEqual([])
+    })
+})

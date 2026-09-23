@@ -1608,11 +1608,13 @@ export const languageEnglish = {
     modelModePreset: "Model preset",
     modelModeSettingsTitle: "Open model mode settings",
     yumiImportButton: "Import from Yumi",
-    yumiImportConfirm: "Import the Vertex models from Yumi Provider Manager as model presets.\n\n• Model, region, thinking level, Flex/Priority and streaming are carried over, and the service account credentials are copied too.\n• The model in use becomes the default and every chat switches to model presets, so replies keep generating on the server after the phone locks or the browser closes.\n• To go back, set 'Model mode' on this page to the legacy lock.\n\nContinue?",
+    yumiImportConfirm: "Import the Vertex models from Yumi Provider Manager as model presets.\n\n• Model, region, thinking level, Flex/Priority and streaming are carried over, and the service account credentials are copied too.\n• The current temperature, top-p and max response length, and the safety filters switched off as Yumi sent them, go into each preset. Presets imported earlier only get the values they lack.\n• The model in use becomes the default and every chat switches to model presets, so replies keep generating on the server after the phone locks or the browser closes.\n• To go back, set 'Model mode' on this page to the legacy lock.\n\nContinue?",
     yumiImportNothing: "No Vertex models were found to import.",
-    yumiImportDone: (created: number, main: string) => main
-        ? `Created ${created} model presets and switched every chat to '${main}'.`
-        : `Created ${created} model presets.`,
+    yumiImportDone: (created: number, main: string, updated = 0) => [
+        created > 0 ? `Created ${created} model presets.` : '',
+        updated > 0 ? `Filled in missing generation settings (temperature, top-p, max response, safety filters) on ${updated} previously imported presets.` : '',
+        main ? `Every chat now uses '${main}'.` : '',
+    ].filter(Boolean).join(' '),
     modelModeLockLabel: "Model mode setting",
     modelModeLockLegacy: "Lock to legacy model mode",
     modelModeLockLegacyDesc: "Use the original RisuAI model system",

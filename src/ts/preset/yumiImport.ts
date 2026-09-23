@@ -11,6 +11,12 @@
 // The plugin keeps everything in one plugin-storage item, `pm_store`. Only its
 // Vertex models are imported; the private key is copied into the preset's
 // secret field and never logged.
+//
+// The plugin did not keep sampling settings of its own: every request took
+// temperature, top-p/top-k and the response length from PocketRisu's parameter
+// settings, and sent Gemini's safety filters switched off. A model preset
+// ignores those settings unless a chat opts in, so the current values are
+// written into each preset, and the safety filters with them.
 
 import { v4 as uuidv4 } from 'uuid'
 import { emptyModelBinding, type ModelBindingSet, type ModelPreset, type RegistryCache, type ResolvedModelProfileSnapshot } from './types'
@@ -135,8 +141,60 @@ function tuneSnapshot(snapshot: ResolvedModelProfileSnapshot, modelIds: readonly
     return tuned
 }
 
+/** What the plugin sent as safetySettings on every Vertex request. */
+export const YUMI_SAFETY_OFF = [
+    'HARM_CATEGORY_HATE_SPEECH',
+    'HARM_CATEGORY_DANGEROUS_CONTENT',
+    'HARM_CATEGORY_HARASSMENT',
+    'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+    'HARM_CATEGORY_CIVIC_INTEGRITY',
+].map((category) => ({ category, threshold: 'OFF' }))
+
+/** Generation settings the plugin read from PocketRisu at request time. */
+export interface YumiGenerationSettings {
+    /** Values keyed by preset field (temperature, topP, topK, ...), already on the wire scale. */
+    sampling: Record<string, number>
+    maxOutputTokens?: number
+}
+
+/** The generation values a preset built on `snapshot` should carry. */
+function generationValues(snapshot: ResolvedModelProfileSnapshot, generation?: YumiGenerationSettings): Record<string, unknown> {
+    const values: Record<string, unknown> = {}
+    for (const field of snapshot.schema) {
+        if (field.mapsTo?.target !== 'body') continue
+        const sampled = generation?.sampling[field.key]
+        if (typeof sampled === 'number' && Number.isFinite(sampled)) values[field.key] = sampled
+    }
+    const has = (key: string) => snapshot.schema.some((field) => field.key === key)
+    if (generation?.maxOutputTokens && generation.maxOutputTokens > 0 && has('maxOutputTokens')) {
+        values.maxOutputTokens = generation.maxOutputTokens
+    }
+    if (has('safetySettings')) values.safetySettings = YUMI_SAFETY_OFF
+    return values
+}
+
+/**
+ * For a preset imported before generation settings were carried over: fill
+ * what it lacks, and replace a response length still at the profile default.
+ * Anything the user set by hand is left alone.
+ */
+function missingGenerationValues(preset: ModelPreset, generation?: YumiGenerationSettings): Record<string, unknown> {
+    const wanted = generationValues(preset.profileSnapshot, generation)
+    const current = preset.userValues ?? {}
+    const patch: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(wanted)) {
+        const field = preset.profileSnapshot.schema.find((candidate) => candidate.key === key)
+        const unset = current[key] === undefined
+        const atDefault = key === 'maxOutputTokens' && field?.default !== undefined && current[key] === field.default
+        if (unset || atDefault) patch[key] = value
+    }
+    return patch
+}
+
 export interface YumiImportPlan {
     presets: ModelPreset[]
+    /** Already imported presets that get the generation values they lack. */
+    updates: { id: string, values: Record<string, unknown> }[]
     /** Preset matching the model the classic settings use now, if any. */
     mainPresetId?: string
     subPresetId?: string
@@ -155,12 +213,13 @@ export function planYumiImport(args: {
     existing: readonly ModelPreset[]
     classicMain?: string
     classicSub?: string
+    generation?: YumiGenerationSettings
     now?: number
 }): YumiImportPlan {
     const now = args.now ?? Date.now()
     const models = readYumiVertexModels(args.store)
     const modelIds = models.map((model) => model.modelId)
-    const plan: YumiImportPlan = { presets: [], skipped: [] }
+    const plan: YumiImportPlan = { presets: [], updates: [], skipped: [] }
 
     const alreadyImported = (model: YumiVertexModel) => args.existing.find((preset) =>
         preset.migrationSource?.sourceKind === 'yumi-provider-manager' && preset.migrationSource.sourcePath === `models/${model.id}`)
@@ -169,6 +228,8 @@ export function planYumiImport(args: {
         const previous = alreadyImported(model)
         if (previous) {
             plan.skipped.push(model.name)
+            const values = missingGenerationValues(previous, args.generation)
+            if (Object.keys(values).length > 0) plan.updates.push({ id: previous.id, values })
             if (matchesClassicModel(model, args.classicMain)) plan.mainPresetId ??= previous.id
             if (matchesClassicModel(model, args.classicSub)) plan.subPresetId ??= previous.id
             continue
@@ -196,6 +257,7 @@ export function planYumiImport(args: {
         for (const field of snapshot.schema) {
             if (field.default !== undefined) userValues[field.key] = field.default
         }
+        Object.assign(userValues, generationValues(snapshot, args.generation))
         userValues.location = model.region
         userValues.modelId = model.modelId
         if (model.thinkingLevel) userValues.thinkingLevel = model.thinkingLevel
