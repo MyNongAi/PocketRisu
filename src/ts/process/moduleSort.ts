@@ -88,17 +88,17 @@ export function recordModuleActivation(
     ]
 }
 
-/**
- * FolderedList renders loose modules and folders as two top-level blocks. Pick
- * which block leads from the newest known activation so activating a module in
- * a folder can promote that folder above loose modules (and vice versa).
- */
-export function shouldRootModulesLeadByActivation(
+export interface ModuleCatalogPromotion {
+    moduleId: string
+    folderId?: string
+}
+
+/** Resolve the one concrete top-level catalog entry for the newest activation. */
+export function getLatestModuleCatalogPromotion(
     modules: ReadonlyArray<SortableModule>,
     folders: ReadonlyArray<SortableModuleFolder>,
     options: ModuleSortOptions = {},
-    fallback = true,
-): boolean {
+): ModuleCatalogPromotion | undefined {
     const recencyOrder = mergeActivationOrders([
         ...options.fallbackOrders ?? [],
         options.activationHistory,
@@ -110,10 +110,21 @@ export function shouldRootModulesLeadByActivation(
         if(!module) continue
         const folderId = module.folderId
             || folders.find((folder) => folder.moduleIds?.includes(module.id))?.id
-        return !folderId
+        return { moduleId: module.id, folderId: folderId || undefined }
     }
 
-    return fallback
+    return undefined
+}
+
+/** @deprecated Prefer the concrete promoted entry over moving an entire block. */
+export function shouldRootModulesLeadByActivation(
+    modules: ReadonlyArray<SortableModule>,
+    folders: ReadonlyArray<SortableModuleFolder>,
+    options: ModuleSortOptions = {},
+    fallback = true,
+): boolean {
+    const promoted = getLatestModuleCatalogPromotion(modules, folders, options)
+    return promoted ? !promoted.folderId : fallback
 }
 
 /**

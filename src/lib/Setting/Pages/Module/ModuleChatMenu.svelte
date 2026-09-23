@@ -13,17 +13,21 @@
     // character scope. Globally enabled modules show a globe instead.
     import { ChevronDownIcon, ChevronRightIcon, CircleCheckIcon, FolderIcon, GlobeIcon, MessageSquareIcon, SearchIcon, SettingsIcon, UserRoundIcon, Waypoints, XIcon } from "@lucide/svelte";
     import { language } from "src/lang";
-    import { groupByFolder } from "src/ts/folders";
+    import { groupByFolder, type FolderGroup } from "src/ts/folders";
 
     import { DBState, ReloadGUIPointer } from 'src/ts/stores.svelte';
     import { selectedCharID } from "src/ts/stores.svelte";
     import { openSettings, SettingsRoute } from "src/ts/routing";
     import { onDestroy, onMount, untrack } from "svelte";
-    import { recordModuleActivation, recordModuleFolderActivation, seedModuleActivationHistory, shouldRootModulesLeadByActivation, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
+    import { getLatestModuleCatalogPromotion, recordModuleActivation, recordModuleFolderActivation, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
     import { listTitleColor } from "src/ts/gui/titleColors";
     interface Props {
         close?: any;
         alertMode?: boolean;
+    }
+    interface ModuleMenuGroup extends FolderGroup {
+        key: string
+        promotedRoot?: boolean
     }
 
     let { close = (i:string) => {}, alertMode = false }: Props = $props();
@@ -56,7 +60,7 @@
             activationHistory: DBState.db.moduleActivationHistory,
         },
     ))
-    const rootModulesFirst = $derived(shouldRootModulesLeadByActivation(
+    const catalogPromotion = $derived(getLatestModuleCatalogPromotion(
         DBState.db.modules,
         DBState.db.moduleFolders ?? [],
         {
@@ -70,9 +74,36 @@
     ))
     const groups = $derived.by(() => {
         const grouped = groupByFolder(sortedModules.map(m => m.folderId), sortedFolders)
-        const root = grouped.filter(group => !group.folder)
-        const folders = grouped.filter(group => !!group.folder)
-        return rootModulesFirst ? [...root, ...folders] : [...folders, ...root]
+        const root = grouped.find((group) => !group.folder) ?? { folder: null, indexes: [] }
+        const folders = grouped.filter((group) => !!group.folder)
+        const promotedFolderId = catalogPromotion?.folderId
+        if (promotedFolderId) {
+            const promoted = folders.find((group) => group.folder?.id === promotedFolderId)
+            if (promoted) return [
+                { ...promoted, key: `folder:${promotedFolderId}`, promotedRoot: false },
+                { ...root, key: 'root', promotedRoot: false },
+                ...folders
+                    .filter((group) => group !== promoted)
+                    .map((group) => ({ ...group, key: `folder:${group.folder?.id ?? ''}`, promotedRoot: false })),
+            ] satisfies ModuleMenuGroup[]
+        }
+
+        const promotedIndex = catalogPromotion
+            ? sortedModules.findIndex((module) => module.id === catalogPromotion.moduleId)
+            : -1
+        if (promotedIndex !== -1 && root.indexes.includes(promotedIndex)) {
+            const remaining = root.indexes.filter((index) => index !== promotedIndex)
+            return [
+                { folder: null, indexes: [promotedIndex], key: `promoted:${catalogPromotion?.moduleId ?? ''}`, promotedRoot: true },
+                ...folders.map((group) => ({ ...group, key: `folder:${group.folder?.id ?? ''}`, promotedRoot: false })),
+                ...(remaining.length > 0 ? [{ ...root, indexes: remaining, key: 'root', promotedRoot: false }] : []),
+            ] satisfies ModuleMenuGroup[]
+        }
+
+        return [
+            { ...root, key: 'root', promotedRoot: false },
+            ...folders.map((group) => ({ ...group, key: `folder:${group.folder?.id ?? ''}`, promotedRoot: false })),
+        ] satisfies ModuleMenuGroup[]
     })
 
     function matches(index: number) {
@@ -204,11 +235,11 @@
         {#if DBState.db.modules.length === 0}
             <div class="text-textcolor2 p-3">{language.noModules}</div>
         {/if}
-        {#each groups as group (group.folder?.id ?? '')}
+        {#each groups as group (group.key)}
             {@const visible = group.indexes.filter(matches)}
-            {@const key = group.folder?.id ?? ''}
-            {@const hasHeader = true}
-            {@const open = !!query || (key === '' ? !expanded.has(key) : expanded.has(key))}
+            {@const key = group.promotedRoot ? '__promoted-root__' : group.folder?.id ?? ''}
+            {@const hasHeader = !group.promotedRoot}
+            {@const open = group.promotedRoot || !!query || (key === '' ? !expanded.has(key) : expanded.has(key))}
             {#if visible.length > 0}
                 {#if hasHeader}
                     {@const activeCount = visible.filter((index) => DBState.db.enabledModules.includes(sortedModules[index]?.id)).length}
@@ -237,7 +268,7 @@
                     <!-- Chat and character scope are separate buttons: the old
                          right-click / long-press toggle is not reachable on iOS
                          (Safari fires no contextmenu on long press). -->
-                    <div class="flex items-center gap-2 text-textcolor border-t border-darkborderc p-2 pl-7">
+                    <div class="flex items-center gap-2 text-textcolor border-t border-darkborderc p-2 {group.promotedRoot ? 'pl-2' : 'pl-7'}">
                         {#if rmodule.mcp}
                             <Waypoints size={18} class="shrink-0 text-textcolor2" />
                         {/if}

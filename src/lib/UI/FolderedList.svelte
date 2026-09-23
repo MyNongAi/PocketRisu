@@ -53,6 +53,10 @@
         /** Render the root drop zone before real folders. Useful for a recent
          *  sort where the newest standalone item must be the absolute first row. */
         rootItemsFirst?: boolean;
+        /** Promote one concrete top-level entry without moving every item of
+         *  the same kind as a block. These are display-only indexes/IDs. */
+        promotedItemIndex?: number;
+        promotedFolderId?: string;
         /** Disable drag reordering while the parent is showing a derived sort. */
         reorderDisabled?: boolean;
         folderTitleColor?: (folder: PromptPresetFolder, indexes: number[]) => string | undefined;
@@ -97,6 +101,8 @@
         newFoldersFirst = false,
         rootItemsStandalone = false,
         rootItemsFirst = false,
+        promotedItemIndex = -1,
+        promotedFolderId = '',
         reorderDisabled = false,
         folderTitleColor = () => undefined,
         onFolderColor,
@@ -142,6 +148,11 @@
             indexes: query ? group.indexes.filter(matches) : group.indexes,
         }))
         .filter((group) => !query || group.indexes.length > 0));
+    const rootIndexes = $derived(displayGroups.find((group) => !group.folder)?.indexes ?? []);
+    const promotedRootIndex = $derived(rootIndexes.includes(promotedItemIndex) ? promotedItemIndex : -1);
+    const promotedFolderGroup = $derived(displayGroups.find((group) => group.folder?.id === promotedFolderId));
+    const remainingRootIndexes = $derived(rootIndexes.filter((index) => index !== promotedRootIndex));
+    const remainingFolderGroups = $derived(displayGroups.filter((group) => group.folder?.id !== promotedFolderGroup?.folder?.id && !!group.folder));
     const displayItemCount = $derived(displayGroups.reduce((count, group) => count + group.indexes.length, 0));
 
     function loadCollapsed(): Set<string> {
@@ -282,56 +293,68 @@
         options={{ group: 'foldered-list-folders' }}
         onReorder={onFolderDrop}
     >
-        {#if rootItemsFirst}
-            {#each displayGroups as group (group.folder?.id ?? '')}
-                {#if !group.folder}
-                    {@render rootGroup(group.indexes)}
-                {/if}
+        {#if promotedRootIndex !== -1}
+            {@render rootGroup([promotedRootIndex])}
+            {#each remainingFolderGroups as group (group.folder?.id)}
+                {@render folderGroup(group)}
             {/each}
-        {/if}
-        {#each displayGroups as group (group.folder?.id ?? '')}
-            {#if group.folder}
-                {@const folder = group.folder}
-                {@const isCollapsed = !query && isFolderCollapsed(folder.id, collapsed, defaultCollapsed)}
-                <div data-folder-key={folder.id} class="rounded-md border border-darkborderc bg-darkbg">
-                    <div class="flex items-center gap-2 px-2 py-2 text-textcolor cursor-pointer select-none"
-                        role="button" tabindex="0"
-                        onclick={() => toggleCollapsed(folder.id)}
-                        onkeydown={(e) => { if (e.key === 'Enter') toggleCollapsed(folder.id) }}>
-                        {#if isCollapsed}<ChevronRightIcon size={16} class="shrink-0 text-textcolor2"/>{:else}<ChevronDownIcon size={16} class="shrink-0 text-textcolor2"/>{/if}
-                        <FolderIcon size={16} class="shrink-0 text-textcolor2"/>
-                        {#if folder.favorite}<StarIcon size={14} class="shrink-0 text-amber-400"/>{/if}
-                        <span class="truncate grow" style:color={folderTitleColor(folder, group.indexes)}>{folder.name}</span>
-                        {@render folderActions?.(folder, group.indexes)}
-                        <span class="text-xs text-textcolor2">{group.indexes.length}</span>
-                        {@render folderMenu(folder)}
-                    </div>
-                    <div data-folder-container={folder.id} class:hidden={isCollapsed}>
-                        <ShSortableList
-                            className="flex flex-col px-2 pb-2 gap-0.5 min-h-8"
-                            disabled={dragDisabled}
-                            options={{ group: { name: 'foldered-list-items', pull: true, put: true }, emptyInsertThreshold: 32 }}
-                            onReorder={onItemDrop}
-                        >
-                            {#each group.indexes as index (index)}
-                                {@render row(index)}
-                            {:else}
-                                <div class="no-sort text-xs text-textcolor2 text-center py-1">{language.none}</div>
-                            {/each}
-                        </ShSortableList>
-                    </div>
-                </div>
+            {#if remainingRootIndexes.length > 0}
+                {@render rootGroup(remainingRootIndexes)}
             {/if}
-        {/each}
-        {#if !rootItemsFirst}
-            {#each displayGroups as group (group.folder?.id ?? '')}
-                {#if !group.folder}
-                    {@render rootGroup(group.indexes)}
-                {/if}
+        {:else if promotedFolderGroup?.folder}
+            {@render folderGroup(promotedFolderGroup)}
+            {@render rootGroup(rootIndexes)}
+            {#each remainingFolderGroups as group (group.folder?.id)}
+                {@render folderGroup(group)}
             {/each}
+        {:else}
+            {#if rootItemsFirst}
+                {@render rootGroup(rootIndexes)}
+            {/if}
+            {#each remainingFolderGroups as group (group.folder?.id)}
+                {@render folderGroup(group)}
+            {/each}
+            {#if !rootItemsFirst}
+                {@render rootGroup(rootIndexes)}
+            {/if}
         {/if}
     </ShSortableList>
 </div>
+
+{#snippet folderGroup(group)}
+    {@const folder = group.folder}
+    {#if folder}
+        {@const isCollapsed = !query && isFolderCollapsed(folder.id, collapsed, defaultCollapsed)}
+        <div data-folder-key={folder.id} class="rounded-md border border-darkborderc bg-darkbg">
+            <div class="flex items-center gap-2 px-2 py-2 text-textcolor cursor-pointer select-none"
+                role="button" tabindex="0"
+                onclick={() => toggleCollapsed(folder.id)}
+                onkeydown={(e) => { if (e.key === 'Enter') toggleCollapsed(folder.id) }}>
+                {#if isCollapsed}<ChevronRightIcon size={16} class="shrink-0 text-textcolor2"/>{:else}<ChevronDownIcon size={16} class="shrink-0 text-textcolor2"/>{/if}
+                <FolderIcon size={16} class="shrink-0 text-textcolor2"/>
+                {#if folder.favorite}<StarIcon size={14} class="shrink-0 text-amber-400"/>{/if}
+                <span class="truncate grow" style:color={folderTitleColor(folder, group.indexes)}>{folder.name}</span>
+                {@render folderActions?.(folder, group.indexes)}
+                <span class="text-xs text-textcolor2">{group.indexes.length}</span>
+                {@render folderMenu(folder)}
+            </div>
+            <div data-folder-container={folder.id} class:hidden={isCollapsed}>
+                <ShSortableList
+                    className="flex flex-col px-2 pb-2 gap-0.5 min-h-8"
+                    disabled={dragDisabled}
+                    options={{ group: { name: 'foldered-list-items', pull: true, put: true }, emptyInsertThreshold: 32 }}
+                    onReorder={onItemDrop}
+                >
+                    {#each group.indexes as index (index)}
+                        {@render row(index)}
+                    {:else}
+                        <div class="no-sort text-xs text-textcolor2 text-center py-1">{language.none}</div>
+                    {/each}
+                </ShSortableList>
+            </div>
+        </div>
+    {/if}
+{/snippet}
 
 {#snippet rootGroup(indexes: number[])}
     {#if rootItemsStandalone}
