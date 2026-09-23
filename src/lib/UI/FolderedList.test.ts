@@ -150,4 +150,39 @@ describe('module folder display interactions', () => {
         expect(root.compareDocumentPosition(folder) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
         expect(root.textContent).toContain('Module 0')
     })
+
+    it('promotes only the selected loose item, not every loose item', async () => {
+        const { target } = await renderList({
+            itemFolderIds: [undefined, 'a', undefined, 'b'],
+            itemSearchTexts: ['root-a', 'folder-a', 'root-b', 'folder-b'],
+            rootItemsStandalone: true,
+            promotedItemIndex: 2,
+            defaultCollapsed: false,
+        })
+        const list = target.querySelector('[data-risu-sortable-list]')!
+        const children = Array.from(list.children) as HTMLElement[]
+        expect(children[0].dataset.folderContainer).toBe('')
+        expect(children[0].textContent).toContain('Module 2')
+        expect(children[0].textContent).not.toContain('Module 0')
+        expect(children[1].dataset.folderKey).toBe('a')
+        expect(children[2].dataset.folderKey).toBe('b')
+        expect(children[3].textContent).toContain('Module 0')
+    })
+
+    it('promotes only the selected member folder, not every folder', async () => {
+        const { target } = await renderList({
+            itemFolderIds: [undefined, 'a', undefined, 'b'],
+            itemSearchTexts: ['root-a', 'folder-a', 'root-b', 'folder-b'],
+            rootItemsStandalone: true,
+            promotedFolderId: 'b',
+            defaultCollapsed: false,
+        })
+        const list = target.querySelector('[data-risu-sortable-list]')!
+        const children = Array.from(list.children) as HTMLElement[]
+        expect(children[0].dataset.folderKey).toBe('b')
+        expect(children[1].dataset.folderContainer).toBe('')
+        expect(children[1].textContent).toContain('Module 0')
+        expect(children[1].textContent).toContain('Module 2')
+        expect(children[2].dataset.folderKey).toBe('a')
+    })
 })

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+    getLatestModuleCatalogPromotion,
     recordModuleActivation,
     recordModuleFolderActivation,
     recordModuleFolderOrder,
@@ -172,6 +173,22 @@ describe('sortModulesByActivation', () => {
         expect(shouldRootModulesLeadByActivation(source, folders, {
             activationHistory: ['foldered', 'loose'],
         })).toBe(true)
+    })
+
+    it('identifies one concrete top-level entry instead of promoting its whole block', () => {
+        const source = [
+            { id: 'loose-a', name: 'Loose A' },
+            { id: 'foldered', name: 'Foldered', folderId: 'folder' },
+            { id: 'loose-b', name: 'Loose B' },
+        ]
+        const folders = [{ id: 'folder', moduleIds: ['foldered'] }]
+
+        expect(getLatestModuleCatalogPromotion(source, folders, {
+            activationHistory: ['loose-a', 'loose-b', 'foldered'],
+        })).toEqual({ moduleId: 'foldered', folderId: 'folder' })
+        expect(getLatestModuleCatalogPromotion(source, folders, {
+            activationHistory: ['foldered', 'loose-a'],
+        })).toEqual({ moduleId: 'loose-a', folderId: undefined })
     })
 
     it('also detects legacy folder membership when choosing the leading block', () => {

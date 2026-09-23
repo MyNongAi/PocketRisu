@@ -203,7 +203,7 @@
         { "file": "src/ts/process/moduleFolders.ts", "contains": "moveModuleFolderByDrop" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "recordModuleFolderActivation" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "sortModulesByActivation" },
-        { "file": "src/ts/process/moduleSort.ts", "contains": "shouldRootModulesLeadByActivation" },
+        { "file": "src/ts/process/moduleSort.ts", "contains": "getLatestModuleCatalogPromotion" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "risu-module-catalog-sort" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "moduleAssetCount" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "returnToModuleList" },
