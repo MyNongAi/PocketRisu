@@ -80,6 +80,55 @@ describe('resolveChatModelBinding — regime gate', () => {
     })
 })
 
+describe('resolveChatModelBinding — a model preset picked in the model picker', () => {
+    // The picker stores presets next to built-in and plugin models as
+    // "modelpreset:::<id>" in aiModel / subModel / seperateModels.
+    test.each(['legacy', 'none'])("lock '%s': a picked preset routes to that preset", (lock) => {
+        mockDb.nodeOnlyModelModeLock = lock
+        mockDb.aiModel = 'modelpreset:::p-main'
+        const chat = { useModelPreset: undefined, modelBinding: undefined } as any
+        expect(resolveChatModelBinding(chat, 'model')).toEqual({ kind: 'modelPreset', preset: PRESET })
+    })
+
+    test('an ordinary model id in the picker stays classic', () => {
+        mockDb.nodeOnlyModelModeLock = 'legacy'
+        mockDb.aiModel = 'pluginmodel:::[PM] gemini-3.7-flash (Vertex AI 5)'
+        expect(resolveChatModelBinding({} as any, 'model')).toEqual({ kind: 'classic' })
+    })
+
+    test('a picked preset that was deleted blocks instead of falling back to another model', () => {
+        mockDb.nodeOnlyModelModeLock = 'legacy'
+        mockDb.aiModel = 'modelpreset:::gone'
+        mockDb.subModel = 'modelpreset:::gone'
+        expect(resolveChatModelBinding({} as any, 'model')).toEqual({ kind: 'block', reason: 'main-unset' })
+        expect(resolveChatModelBinding({} as any, 'submodel')).toEqual({ kind: 'block', reason: 'sub-unset' })
+    })
+
+    test('sub model and per-task aux models can be presets too', () => {
+        const AUX = { id: 'p-aux', name: 'Aux' } as any
+        mockDb.modelPresets = [PRESET, AUX]
+        mockDb.nodeOnlyModelModeLock = 'legacy'
+        mockDb.aiModel = 'gemini-2.5-pro'
+        mockDb.subModel = 'modelpreset:::p-main'
+        mockDb.seperateModelsForAxModels = true
+        mockDb.seperateModels = { memory: 'modelpreset:::p-aux', translate: '', emotion: '', otherAx: '' }
+        expect(resolveChatModelBinding({} as any, 'model')).toEqual({ kind: 'classic' })
+        expect(resolveChatModelBinding({} as any, 'submodel')).toEqual({ kind: 'modelPreset', preset: PRESET })
+        expect(resolveChatModelBinding({} as any, 'memory')).toEqual({ kind: 'modelPreset', preset: AUX })
+        expect(resolveChatModelBinding({} as any, 'translate')).toEqual({ kind: 'modelPreset', preset: PRESET })
+    })
+
+    test('a picked preset is snapshotted for the request like a bound one', () => {
+        mockDb.nodeOnlyModelModeLock = 'legacy'
+        const SNAP = { id: 'p-snap', name: 'Snap', userValues: {}, profileSnapshot: { providerBaseId: 'vertex-gemini-native', modelId: 'gemini-3.7-flash', schema: [] } } as any
+        mockDb.modelPresets = [PRESET, SNAP]
+        mockDb.aiModel = 'modelpreset:::p-snap'
+        mockDb.fallbackModels = {}
+        const route = captureChatModelRoute({} as any, 'model')
+        expect(route).toMatchObject({ kind: 'modelPreset', presetId: 'p-snap', modelId: 'gemini-3.7-flash' })
+    })
+})
+
 describe('captureChatModelRoute — in-flight routing snapshot', () => {
     test('deep-snapshots a model preset so later edits cannot redirect the request', () => {
         const preset = {

@@ -4,6 +4,7 @@
     import { getHordeModels } from "src/ts/horde/getModels";
     import { language } from "src/lang";
     import { getModelInfo, getModelList } from 'src/ts/model/modellist';
+    import { modelPresetIdOf, modelPresetPickerId } from 'src/ts/preset/pickerId';
     import { ArrowLeft, ChevronRight, TriangleAlert } from "@lucide/svelte";
     import ShButton from "./GUI/ShButton.svelte";
     import ShSwitch from "./GUI/ShSwitch.svelte";
@@ -25,7 +26,9 @@
     let { value = $bindable(""), onChange = (v) => {}, onclick, blankable, excludesPrefix, compact, label, disabled = false, blankLabel }: Props = $props();
     let openOptions = $state(false)
     let showUnrec = $state(false)
-    let activeTab = $state<'base' | 'plugin'>('base')
+    // Model presets sit next to built-in and plugin models: picking one here
+    // is all it takes to use it (see src/ts/preset/pickerId.ts).
+    let activeTab = $state<'base' | 'plugin' | 'preset'>(modelPresetIdOf(value) !== null ? 'preset' : 'base')
     let expandedGroups = $state<Set<string>>(new Set())
 
     function changeModel(name:string){
@@ -47,6 +50,9 @@
     let providers = $derived(getModelList({ recommendedOnly: !showUnrec, groupedByProvider: true }))
     let pluginModels = $derived(providers.find(g => g.providerName === 'Plugins')?.models ?? [])
     let hasPlugins = $derived(pluginModels.length > 0)
+    let presets = $derived(DBState?.db?.modelPresets ?? [])
+    let hasPresets = $derived(presets.length > 0)
+    let showTabs = $derived(hasPlugins || hasPresets)
 </script>
 
 {#snippet modelRow(id:string, name:string, unrec:boolean)}
@@ -115,10 +121,15 @@
                 <h1 class="font-bold text-xl flex-1">{language.model}</h1>
             </div>
 
-            {#if hasPlugins}
+            {#if showTabs}
                 <div class="shrink-0 flex w-full rounded-md border border-selected mb-2">
                     <button class="p-1.5 flex-1 text-sm" class:bg-selected={activeTab === 'base'} onclick={() => { activeTab = 'base' }}>{language.modelTabBuiltin}</button>
-                    <button class="p-1.5 flex-1 text-sm" class:bg-selected={activeTab === 'plugin'} onclick={() => { activeTab = 'plugin' }}>{language.modelTabPlugin}</button>
+                    {#if hasPlugins}
+                        <button class="p-1.5 flex-1 text-sm" class:bg-selected={activeTab === 'plugin'} onclick={() => { activeTab = 'plugin' }}>{language.modelTabPlugin}</button>
+                    {/if}
+                    {#if hasPresets}
+                        <button class="p-1.5 flex-1 text-sm" class:bg-selected={activeTab === 'preset'} onclick={() => { activeTab = 'preset' }}>{language.modelTabPreset}</button>
+                    {/if}
                 </div>
             {:else}
                 <div class="shrink-0 border-t-1 border-y-selected mb-2"></div>
@@ -129,6 +140,13 @@
                     {#each pluginModels as model}
                         {@render modelRow(model.id, model.name, false)}
                     {/each}
+                {:else if hasPresets && activeTab === 'preset'}
+                    {#each presets as preset (preset.id)}
+                        {@render modelRow(modelPresetPickerId(preset.id), preset.name, false)}
+                    {/each}
+                    {#if blankable}
+                        {@render modelRow('', blankLabel ?? language.none, false)}
+                    {/if}
                 {:else}
                     {@render providerList(providers)}
 
@@ -165,7 +183,7 @@
                 {/if}
             </div>
 
-            {#if !(hasPlugins && activeTab === 'plugin')}
+            {#if activeTab === 'base' || !showTabs}
                 <div class="shrink-0 border-t border-selected mt-2 pt-2 flex items-center justify-between gap-2 px-1">
                     <span class="text-sm text-textcolor2">{language.showUnrecommended}</span>
                     <ShSwitch className="shrink-0" bind:checked={showUnrec} />

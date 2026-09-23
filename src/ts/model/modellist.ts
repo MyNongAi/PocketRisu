@@ -17,6 +17,21 @@ import { DBState } from "../stores.svelte"
 import { customProviderStore, pluginV2 } from "../plugins/plugins.svelte"
 import { get } from "svelte/store"
 import { customV3ProviderMetaStore } from "../plugins/apiV3/v3.svelte"
+import { modelPresetIdOf, presetTakesImages, presetTokenizerName } from "../preset/pickerId"
+import type { RegistryTokenizer } from "../preset/types"
+
+const REGISTRY_TOKENIZERS: Record<RegistryTokenizer, LLMTokenizer> = {
+    tik: LLMTokenizer.tiktokenO200Base,
+    mistral: LLMTokenizer.Mistral,
+    novelai: LLMTokenizer.NovelAI,
+    claude: LLMTokenizer.Claude,
+    llama: LLMTokenizer.Llama,
+    llama3: LLMTokenizer.Llama3,
+    novellist: LLMTokenizer.NovelList,
+    gemma: LLMTokenizer.Gemma,
+    cohere: LLMTokenizer.Cohere,
+    deepseek: LLMTokenizer.DeepSeek,
+}
 
 // Re-export types for backwards compatibility
 export { LLMFlags, LLMProvider, LLMFormat, LLMTokenizer, ProviderNames, OpenAIParameters, ClaudeParameters }
@@ -750,6 +765,28 @@ export function getModelInfo(id?: string | null): LLMModel{
                 parameters: ['temperature', 'top_p', 'frequency_penalty', 'presence_penalty', 'repetition_penalty', 'min_p', 'top_a', 'top_k', 'thinking_tokens'],
                 tokenizer: found.tokenizer
             }
+        }
+    }
+
+    const presetId = modelPresetIdOf(id)
+    if(presetId !== null){
+        // A model preset picked in the model picker. Its request goes through
+        // the preset adapter; this only supplies the name shown in pickers and
+        // the tokenizer and image flag the prompt pipeline reads.
+        const preset = (db?.modelPresets ?? []).find(candidate => candidate.id === presetId)
+        const name = preset?.name ?? 'Missing model preset'
+        const tokenizerName = presetTokenizerName(preset)
+        return {
+            id,
+            name,
+            shortName: name,
+            fullName: name,
+            internalID: preset?.profileSnapshot?.modelId ?? id,
+            provider: LLMProvider.AsIs,
+            format: LLMFormat.OpenAICompatible,
+            flags: preset && presetTakesImages(preset) ? [LLMFlags.hasImageInput] : [],
+            parameters: OpenAIParameters,
+            tokenizer: tokenizerName ? REGISTRY_TOKENIZERS[tokenizerName] ?? LLMTokenizer.Unknown : LLMTokenizer.Unknown,
         }
     }
 

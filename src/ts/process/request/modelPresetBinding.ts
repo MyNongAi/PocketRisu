@@ -1,6 +1,7 @@
 import { getDatabase, type Chat, type Database } from 'src/ts/storage/database.svelte'
 import type { AdapterCredential } from 'src/ts/preset/adapter'
 import { VISION_CAPABLE_ADAPTER_KINDS, type ModelPreset } from 'src/ts/preset/types'
+import { modelPresetIdOf } from 'src/ts/preset/pickerId'
 import type { ModelModeExtended } from './shared'
 
 /**
@@ -99,6 +100,17 @@ export function resolveChatModelBinding(
         (chat?.useModelPreset ?? false)
 
     if (!usePreset) {
+        // The ordinary model picker can hold a model preset too
+        // ("modelpreset:::<id>", see preset/pickerId.ts). Route it like a
+        // bound preset; a picked preset that was deleted blocks rather than
+        // silently falling back to some other model.
+        const pickedId = modelPresetIdOf(resolveClassicModelId(db, mode))
+        if (pickedId !== null) {
+            const picked = findPreset(pickedId, db.modelPresets ?? [])
+            return picked
+                ? { kind: 'modelPreset', preset: picked }
+                : { kind: 'block', reason: mode === 'model' ? 'main-unset' : 'sub-unset' }
+        }
         return { kind: 'classic' }
     }
 
