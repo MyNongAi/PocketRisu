@@ -6,6 +6,7 @@
     import { type CCLorebook, convertExternalLorebook } from "src/ts/process/lorebook.svelte";
     import type { RisuModule } from "src/ts/process/modules";
     import { DownloadIcon, FolderPlusIcon, HardDriveUploadIcon, ImageIcon, PlusIcon, TrashIcon } from "@lucide/svelte";
+    import StealthStatusIcon from "src/lib/UI/StealthStatusIcon.svelte";
     import RegexList from "src/lib/SideBars/Scripts/RegexList.svelte";
     import TriggerList from "src/lib/SideBars/Scripts/TriggerList.svelte";
     import Check from "src/lib/UI/GUI/CheckInput.svelte";
@@ -427,9 +428,16 @@
                         </td>
                         
                         <th class="font-medium cursor-pointer w-10">
-                            <button class="hover:text-red-400" onclick={() => removeManifestAsset(i)}>
-                                <TrashIcon />
-                            </button>
+                            <div class="flex flex-col items-center gap-2">
+                                <button class="hover:text-red-400" onclick={() => removeManifestAsset(i)}>
+                                    <TrashIcon />
+                                </button>
+                                <!-- Same NAI stealth-metadata colour as character assets. -->
+                                <StealthStatusIcon
+                                    path={assets[1]}
+                                    extension={(assets[2] || assets[1].split('.').pop() || '').toLowerCase()}
+                                />
+                            </div>
                         </th>
                     </tr>
                 {/each}
