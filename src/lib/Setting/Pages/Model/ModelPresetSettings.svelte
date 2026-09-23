@@ -162,11 +162,11 @@
         importingYumi = true;
         try {
             const result = await importFromYumi();
-            if (result.created === 0 && !result.mainName) {
+            if (result.created === 0 && result.updated === 0 && !result.mainName) {
                 alertError(language.yumiImportNothing);
                 return;
             }
-            notifySuccess(language.yumiImportDone(result.created, result.mainName ?? ''));
+            notifySuccess(language.yumiImportDone(result.created, result.mainName ?? '', result.updated));
         } catch (error) {
             alertError(error);
         } finally {

@@ -316,7 +316,7 @@ export function resolveChatMaxResponseTokens(chat: Chat | null | undefined): num
  *    resolvePresetMaxOutputTokens.
  *  - -1000 is the classic "slider disabled" sentinel; treated as unset.
  */
-const PROMPT_PARAM_READERS: Record<string, (db: Database) => number | undefined> = {
+export const PROMPT_PARAM_READERS: Record<string, (db: Database) => number | undefined> = {
     temperature: (db) => hundredScale(db.temperature),
     top_p: (db) => db.top_p,
     topP: (db) => db.top_p,
