@@ -87,6 +87,8 @@
         showItemCount?: boolean;
         /** Optional controls rendered in a folder header before its count/menu. */
         folderActions?: Snippet<[PromptPresetFolder, number[]]>;
+        /** Optional status rendered before the folder title. */
+        folderLeadingActions?: Snippet<[PromptPresetFolder, number[]]>;
     }
 
     let {
@@ -124,6 +126,7 @@
         subActions,
         showItemCount = false,
         folderActions,
+        folderLeadingActions,
     }: Props = $props();
 
     let rootEl: HTMLDivElement = $state();
@@ -333,6 +336,7 @@
                 {#if isCollapsed}<ChevronRightIcon size={16} class="shrink-0 text-textcolor2"/>{:else}<ChevronDownIcon size={16} class="shrink-0 text-textcolor2"/>{/if}
                 <FolderIcon size={16} class="shrink-0 text-textcolor2"/>
                 {#if folder.favorite}<StarIcon size={14} class="shrink-0 text-amber-400"/>{/if}
+                {@render folderLeadingActions?.(folder, group.indexes)}
                 <span class="truncate grow" style:color={folderTitleColor(folder, group.indexes)}>{folder.name}</span>
                 {@render folderActions?.(folder, group.indexes)}
                 <span class="text-xs text-textcolor2">{group.indexes.length}</span>

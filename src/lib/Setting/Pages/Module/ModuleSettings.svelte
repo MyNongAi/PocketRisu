@@ -34,6 +34,7 @@
     // query here so returning to the catalog restores the same filtered view.
     let moduleSearchQuery = $state('')
     let moduleListScrollTop = 0
+    let modulePageRoot: HTMLDivElement
     type ModuleCatalogSort = 'recent' | 'registered'
     let moduleCatalogSort = $state<ModuleCatalogSort>(
         typeof localStorage !== 'undefined' && localStorage.getItem('risu-module-catalog-sort') === 'registered'
@@ -102,9 +103,7 @@
     }
 
     function listScrollElement() {
-        return typeof document === 'undefined'
-            ? null
-            : document.querySelector<HTMLElement>('.rs-setting-cont-4')
+        return modulePageRoot?.closest<HTMLElement>('.rs-setting-cont-4') ?? null
     }
 
     function rememberListScroll() {
@@ -117,6 +116,10 @@
         requestAnimationFrame(() => {
             const element = listScrollElement()
             if (element) element.scrollTop = moduleListScrollTop
+            requestAnimationFrame(() => {
+                const settledElement = listScrollElement()
+                if (settledElement) settledElement.scrollTop = moduleListScrollTop
+            })
         })
     }
 
@@ -274,6 +277,7 @@
         refreshModules()
     })
 </script>
+<div bind:this={modulePageRoot} class="contents">
 {#if mode === 0}
     <SettingPage title={language.modules}>
         {#snippet titleActions()}
@@ -325,11 +329,13 @@
             </ShButton>
             </div>
         {/snippet}
-        {#snippet folderActions(_folder, indexes)}
-            {@const activeCount = indexes.filter((index) => DBState.db.enabledModules.includes(displayModules[index]?.id)).length}
+        {#snippet folderLeadingActions(_folder, indexes)}
             {#if indexes.some((index) => hasMissingAssets(displayModules[index]))}
                 <span class="no-sort shrink-0" aria-label="에셋 누락" title="에셋 누락">❗</span>
             {/if}
+        {/snippet}
+        {#snippet folderActions(_folder, indexes)}
+            {@const activeCount = indexes.filter((index) => DBState.db.enabledModules.includes(displayModules[index]?.id)).length}
             <button
                 class="no-sort shrink-0 rounded-sm p-1 cursor-pointer {activeCount > 0 ? 'text-emerald-500 bg-emerald-500/15' : 'text-textcolor2 hover:text-primary'}"
                 title={`폴더 모듈 전체 활성화 (${activeCount}/${indexes.length})`}
@@ -344,7 +350,7 @@
                 <Waypoints size={18} class="shrink-0 text-textcolor2" />
             {/if}
             <div class="flex flex-col min-w-0 grow">
-                <span class="truncate text-textcolor" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(rmodule))}>{rmodule.favorite ? '★ ' : ''}{rmodule.name}{#if hasMissingAssets(rmodule)} <span aria-label="에셋 누락" title="에셋 누락">❗</span>{/if}</span>
+                <span class="truncate text-textcolor" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(rmodule))}>{#if hasMissingAssets(rmodule)}<span aria-label="에셋 누락" title="에셋 누락">❗</span> {/if}{rmodule.favorite ? '★ ' : ''}{rmodule.name}</span>
                 <span class="text-xs text-textcolor2 truncate">
                     <span
                         class:text-sky-300={source.label === '로컬'}
@@ -415,3 +421,4 @@
         }}>{language.convertToCharacter}</Button>
     </SettingPage>
 {/if}
+</div>
