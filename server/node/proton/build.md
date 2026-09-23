@@ -44,6 +44,14 @@ Two things are load-bearing and must not be dropped:
 
 Output is roughly 1.6 MB and the build takes a couple of minutes on Windows.
 
+The build dependencies are **not** in this repo's `node_modules`. Install them in
+a scratch folder (`npm i @protontech/crypto esbuild`), copy `protonShare.ts` into
+it, and run the command there with `--outfile` pointing back at
+`server/node/vendor/protonShare.mjs`. Running esbuild on the file where it sits
+fails to resolve `@protontech/crypto`.
+
+After rebuilding, restart the server: `server.cjs` caches the imported bundle.
+
 ## Keep the manual path
 
 Proton has announced a new cryptographic model for **late 2026 / early 2027**,

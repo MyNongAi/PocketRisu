@@ -7140,11 +7140,26 @@ function protonErrorStatus(error) {
     return 502;
 }
 
+// A folder path is the chain of folder link ids from the shared folder down.
+// Proton ids are base64url-ish; anything else never came from a listing.
+function readProtonPath(value) {
+    if (value === undefined || value === null) return [];
+    if (!Array.isArray(value) || value.length > 32) return null;
+    const out = [];
+    for (const id of value) {
+        if (typeof id !== 'string' || !/^[A-Za-z0-9_=-]{1,200}$/.test(id)) return null;
+        out.push(id);
+    }
+    return out;
+}
+
 app.post('/api/import/proton/inspect', async (req, res, next) => {
     if (!await checkAuth(req, res)) { return; }
+    const folderPath = readProtonPath(req.body?.path);
+    if (!folderPath) return res.status(400).json({ error: 'Invalid folder path' });
     try {
         const { inspectProtonShare } = await loadProtonShare();
-        const info = await inspectProtonShare(String(req.body?.url ?? ''), String(req.body?.password ?? ''));
+        const info = await inspectProtonShare(String(req.body?.url ?? ''), String(req.body?.password ?? ''), folderPath);
         res.json(info);
     } catch (error) {
         if (error?.name === 'ProtonShareError') {
@@ -7159,8 +7174,11 @@ app.post('/api/import/proton/download', async (req, res, next) => {
     if (!await checkAuth(req, res)) { return; }
     try {
         const { downloadProtonShare } = await loadProtonShare();
+        const folderPath = readProtonPath(req.body?.path);
+        if (!folderPath) return res.status(400).json({ error: 'Invalid folder path' });
         const file = await downloadProtonShare(String(req.body?.url ?? ''), {
             linkId: req.body?.linkId ? String(req.body.linkId) : undefined,
+            path: folderPath,
             customPassword: String(req.body?.password ?? ''),
         });
         // The name comes from the share, so never let it steer a path or a
@@ -7181,6 +7199,36 @@ app.post('/api/import/proton/download', async (req, res, next) => {
             return res.status(protonErrorStatus(error)).json({ error: error.message });
         }
         next(error);
+    }
+});
+
+// Previews for the folder browser. Best effort by design: a thumbnail that
+// fails is left out, and a failed request answers with an empty list so the
+// browser falls back to file-type icons instead of showing an error.
+app.post('/api/import/proton/thumbnails', async (req, res) => {
+    if (!await checkAuth(req, res)) { return; }
+    const folderPath = readProtonPath(req.body?.path);
+    const linkIds = readProtonPath(req.body?.linkIds);
+    if (!folderPath || !linkIds || linkIds.length === 0) {
+        return res.status(400).json({ error: 'Invalid thumbnail request' });
+    }
+    try {
+        const { fetchProtonThumbnails } = await loadProtonShare();
+        const thumbnails = await fetchProtonThumbnails(String(req.body?.url ?? ''), {
+            linkIds,
+            path: folderPath,
+            customPassword: String(req.body?.password ?? ''),
+        });
+        res.set('Cache-Control', 'no-store').json({
+            thumbnails: thumbnails.map((thumbnail) => ({
+                linkId: thumbnail.linkId,
+                mediaType: thumbnail.mediaType,
+                data: Buffer.from(thumbnail.bytes).toString('base64'),
+            })),
+        });
+    } catch (error) {
+        logger.warn('[Proton] thumbnails failed:', error?.message ?? error);
+        res.set('Cache-Control', 'no-store').json({ thumbnails: [] });
     }
 });
 
