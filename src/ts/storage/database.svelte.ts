@@ -2374,6 +2374,8 @@ export interface MessageGenerationInfo{
     model?: string
     modelId?: string
     generationId?: string
+    /** A reply recovered from a background job already ran the output pipeline. */
+    postProcessed?: boolean
     inputTokens?: number
     outputTokens?: number
     maxContext?: number

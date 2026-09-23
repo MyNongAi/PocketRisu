@@ -316,7 +316,7 @@ function mergeRecoveredGenerationInfo(message: Message, job: ModelJobRecord, usa
     return changed
 }
 
-function insertRecoveredMessage(loc: LocatedChat, job: ModelJobRecord, text: string, usage?: AdapterUsage): void {
+function insertRecoveredMessage(loc: LocatedChat, job: ModelJobRecord, text: string, usage?: AdapterUsage): string {
     const message: Message = {
         role: 'char',
         data: text,
@@ -327,6 +327,33 @@ function insertRecoveredMessage(loc: LocatedChat, job: ModelJobRecord, text: str
     if (loc.char.chaId) message.saying = loc.char.chaId
     loc.chat.message.push(message)
     bumpReload(loc)
+    return message.chatId
+}
+
+// The live output pipeline (regex, Lua output trigger, image generation) for a
+// message recovery just wrote. Registered by initModelJobRecovery rather than
+// imported, so this module does not pull the whole script engine in.
+type RecoveredOutputPipeline = (target: LocatedChat, messageId: string) => Promise<Chat>
+let recoveredOutputPipeline: RecoveredOutputPipeline | null = null
+
+export function setRecoveredOutputPipeline(pipeline: RecoveredOutputPipeline | null): void {
+    recoveredOutputPipeline = pipeline
+}
+
+function isPostProcessed(message: Message | undefined): boolean {
+    return message?.generationInfo?.postProcessed === true
+}
+
+// A failure keeps the raw text: the reply itself must still be saved.
+async function runRecoveredPipeline(loc: LocatedChat, job: ModelJobRecord, messageId: string | undefined): Promise<void> {
+    if (!messageId || !recoveredOutputPipeline) return
+    try {
+        loc.chat = await recoveredOutputPipeline(loc, messageId)
+        diag(`recover ${job.id.slice(0, 8)}: output pipeline applied`)
+    } catch (err) {
+        console.warn('[ModelJobRecovery] output pipeline failed; keeping the raw reply', job.id, err)
+        diag(`recover ${job.id.slice(0, 8)}: output pipeline failed`, String(err))
+    }
 }
 
 // Failed job → the existing ```risuerror``` inline pattern (mirrors the push
@@ -447,7 +474,7 @@ async function readJobResult(job: ModelJobRecord): Promise<{ ok: true, text: str
 // path, which needs no save).
 function fillPartialMessage(loc: LocatedChat, index: number, text: string): boolean {
     const message = loc.chat.message[index]
-    if (!message || (message.data?.length ?? 0) >= text.length) return false
+    if (!message || isPostProcessed(message) || (message.data?.length ?? 0) >= text.length) return false
     message.data = text
     bumpReload(loc)
     return true
@@ -504,9 +531,10 @@ export async function recoverTerminalJob(job: ModelJobRecord): Promise<void> {
     let mutated = false
     if (result.ok === true) {
         if (existingIdx === -1) {
-            insertRecoveredMessage(loc, job, result.text, result.usage)
+            const messageId = insertRecoveredMessage(loc, job, result.text, result.usage)
             mutated = true
             diag(`recover ${job.id.slice(0, 8)}: inserted len=${result.text.length}`)
+            await runRecoveredPipeline(loc, job, messageId)
         } else {
             const before = loc.chat.message[existingIdx]?.data?.length ?? 0
             const metadataChanged = mergeRecoveredGenerationInfo(loc.chat.message[existingIdx], job, result.usage)
@@ -524,6 +552,9 @@ export async function recoverTerminalJob(job: ModelJobRecord): Promise<void> {
                 }
             } catch { /* diagnostics only */ }
             diag(`recover ${job.id.slice(0, 8)}: fill idx=${existingIdx} before=${before} decoded=${result.text.length} after=${after} fresh=${fresh}`)
+            // A live page that died mid-reply never reached its own
+            // post-processing; the filled text gets it here.
+            if (textChanged) await runRecoveredPipeline(loc, job, loc.chat.message[existingIdx]?.chatId)
         }
     } else {
         diag(`recover ${job.id.slice(0, 8)}: journal decode failed, existingIdx=${existingIdx}`, result.error)
@@ -897,5 +928,10 @@ export function initModelJobRecovery(): void {
         discoveryRetries = 0
         void recoverModelJobs()
     })
-    void recoverModelJobs()
+    // Register the output pipeline before the first pass so replies that
+    // finished while the app was closed get regex, triggers and images too.
+    void import('./recoveryPostProcess')
+        .then((module) => setRecoveredOutputPipeline(module.postProcessRecoveredMessage as RecoveredOutputPipeline))
+        .catch((err) => console.warn('[ModelJobRecovery] output pipeline unavailable; recovered replies stay raw', err))
+        .finally(() => { void recoverModelJobs() })
 }

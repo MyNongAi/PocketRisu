@@ -549,6 +549,86 @@ describe('recovered chat is persisted', () => {
     })
 })
 
+// --- output pipeline on recovered replies ------------------------------------
+
+describe('recovered replies run the output pipeline', () => {
+    function processingPipeline() {
+        return vi.fn(async (target: any, messageId: string) => {
+            const message = target.chat.message.find((m: any) => m.chatId === messageId)
+            message.data = `[processed] ${message.data.length}`
+            message.generationInfo = { ...message.generationInfo, postProcessed: true }
+            return target.chat
+        })
+    }
+
+    test('an inserted reply goes through the pipeline once before it is saved', async () => {
+        const { recovery } = await loadModules()
+        const pipeline = processingPipeline()
+        recovery.setRecoveredOutputPipeline(pipeline)
+        const chat = makeChat()
+        mocks.db.characters = [makeChar(chat)]
+        mocks.saveChatToServer.mockImplementation((async (_cha: string, _idx: number, _id: string, saved: any) => {
+            expect(saved.message[0].data).toBe('[processed] 5')
+        }) as any)
+        setupServer({ journals: { 'job-1': OPENAI_SSE } })
+
+        await recovery.recoverTerminalJob(makeJob() as any)
+
+        expect(pipeline).toHaveBeenCalledTimes(1)
+        expect(pipeline.mock.calls[0][1]).toBe('gen-1')
+        expect(chat.message[0].data).toBe('[processed] 5')
+        expect(mocks.saveChatToServer).toHaveBeenCalledTimes(1)
+    })
+
+    test('a retry never overwrites a processed reply with the raw journal text', async () => {
+        const { recovery } = await loadModules()
+        const pipeline = processingPipeline()
+        recovery.setRecoveredOutputPipeline(pipeline)
+        const chat = makeChat()
+        mocks.db.characters = [makeChar(chat)]
+        mocks.saveChatToServer.mockRejectedValueOnce(new Error('saveChatContent error: 507'))
+        const { claims } = setupServer({ journals: { 'job-1': OPENAI_SSE } })
+
+        await recovery.recoverTerminalJob(makeJob() as any)
+        await recovery.recoverTerminalJob(makeJob() as any)
+
+        // Output triggers must not fire twice for one reply.
+        expect(pipeline).toHaveBeenCalledTimes(1)
+        expect(chat.message).toHaveLength(1)
+        expect(chat.message[0].data).toBe('[processed] 5')
+        expect(claims()).toEqual(['/api/model-jobs/job-1/claim'])
+    })
+
+    test('a partial reply filled from the journal is processed too', async () => {
+        const { recovery } = await loadModules()
+        const pipeline = processingPipeline()
+        recovery.setRecoveredOutputPipeline(pipeline)
+        const chat = makeChat({ message: [{ role: 'char', data: 'Hel', chatId: 'gen-1', generationInfo: { generationId: 'gen-1' } }] })
+        mocks.db.characters = [makeChar(chat)]
+        setupServer({ journals: { 'job-1': OPENAI_SSE } })
+
+        await recovery.recoverTerminalJob(makeJob() as any)
+
+        expect(pipeline).toHaveBeenCalledTimes(1)
+        expect(chat.message[0].data).toBe('[processed] 5')
+    })
+
+    test('a failing pipeline keeps the raw reply, which is still saved and claimed', async () => {
+        const { recovery } = await loadModules()
+        recovery.setRecoveredOutputPipeline(vi.fn(async () => { throw new Error('lua exploded') }))
+        const chat = makeChat()
+        mocks.db.characters = [makeChar(chat)]
+        const { claims } = setupServer({ journals: { 'job-1': OPENAI_SSE } })
+
+        await recovery.recoverTerminalJob(makeJob() as any)
+
+        expect(chat.message[0].data).toBe('Hello')
+        expect(mocks.saveChatToServer).toHaveBeenCalledTimes(1)
+        expect(claims()).toEqual(['/api/model-jobs/job-1/claim'])
+    })
+})
+
+
 // --- discovery --------------------------------------------------------------
 
 describe('recoverModelJobs', () => {
