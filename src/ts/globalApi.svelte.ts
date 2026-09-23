@@ -467,6 +467,7 @@ export let requiresFullEncoderReload = $state({
 let requestImmediateSaveImpl: ((options?: {
     forceFullWrite?: boolean
 }) => Promise<void> | void) = () => {}
+let unsavedWorkImpl: () => boolean = () => false
 let patchSyncBaseline: Database | null = null
 let activeSavePatcher: RisuSavePatcher | null = null
 
@@ -575,6 +576,14 @@ export function requestImmediateSave(options?: {
     forceFullWrite?: boolean
 }) {
     return requestImmediateSaveImpl(options)
+}
+
+/**
+ * Whether edits are still waiting on the server: the last save attempt failed
+ * and is being retried, or a loaded chat has changes no save has acknowledged.
+ */
+export function hasUnsavedWork(): boolean {
+    return unsavedWorkImpl()
 }
 
 export function setPatchSyncBaseline(data: Database | null) {
@@ -1869,6 +1878,7 @@ export async function saveDb() {
     }
 
     let savetrys = 0
+    unsavedWorkImpl = () => savetrys > 0 || hasDirtyHydratedChats()
 
     let consecutiveRetries = 0
 
