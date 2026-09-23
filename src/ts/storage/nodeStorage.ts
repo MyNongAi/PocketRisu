@@ -466,6 +466,59 @@ export class NodeStorage{
         return token
     }
 
+    // ── Live change feed (see src/ts/sync/realtimeSync.ts) ──────────────────
+
+    /** Feed position of the last database copy read, for a gap-free first connect. */
+    syncCursor: { instanceId: string, seq: number } | null = null
+
+    /** Open the server-sent event stream of other devices' writes. */
+    openSyncStream(query: string, signal: AbortSignal): Promise<Response> {
+        return this.authFetch(`/api/sync/events${query ? `?${query}` : ''}`, {
+            signal,
+            cache: 'no-store',
+            headers: { accept: 'text/event-stream' },
+        })
+    }
+
+    /** This page's identity on writes; events it caused carry it as `origin`. */
+    getChatClientId(): string {
+        return NodeStorage.chatClientId
+    }
+
+    /** The ETag this page last synced a chat body at, if any. */
+    getChatEtag(chaId: string, chatId: string): string | undefined {
+        return this.chatEtags.get(this.chatEtagKey(chaId, chatId))
+    }
+
+    /**
+     * Fetch a chat body another device changed and hand it to `apply`, queued
+     * behind any save of the same chat. The new ETag is adopted only when
+     * `apply` reports it replaced the local copy: a refresh skipped because
+     * the chat was edited meanwhile must leave the old ETag, so that edit's
+     * save hits a visible conflict instead of silently overwriting the newer
+     * body.
+     */
+    async refreshChatFromServer(
+        chaId: string,
+        chatIndex: number,
+        chatId: string,
+        apply: (chat: any) => boolean | Promise<boolean>,
+    ): Promise<'applied' | 'skipped' | 'missing'> {
+        const key = this.chatEtagKey(chaId, chatId)
+        return this.runChatOperation(key, async () => {
+            const da = await this.authFetchGetWithFirstByteTimeout(`/api/chat-content/${encodeURIComponent(chaId)}/${chatIndex}`, {
+                headers: { 'x-chat-id': chatId },
+            })
+            if (da.status === 404) return 'missing'
+            if (da.status < 200 || da.status >= 300) throw new Error(`refreshChatFromServer error: ${da.status}`)
+            const etag = da.headers.get('x-chat-etag') || da.headers.get('etag')
+            const chat = normalizeChat(await decodeRisuSave(new Uint8Array(await da.arrayBuffer())))
+            if (!await apply(chat)) return 'skipped'
+            if (etag) this.chatEtags.set(key, etag)
+            return 'applied'
+        })
+    }
+
     getSessionId(): string {
         return NodeStorage.sessionId
     }
@@ -804,6 +857,11 @@ export class NodeStorage{
         const etag = da.headers.get('x-db-etag')
         if (etag) {
             this._lastDbEtag = etag
+        }
+        const syncInstance = da.headers.get('x-sync-instance')
+        const syncSeq = Number(da.headers.get('x-sync-seq'))
+        if (syncInstance && Number.isInteger(syncSeq) && syncSeq >= 0) {
+            this.syncCursor = { instanceId: syncInstance, seq: syncSeq }
         }
 
         const data = Buffer.from(await da.arrayBuffer())

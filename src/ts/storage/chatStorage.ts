@@ -178,6 +178,93 @@ export async function evictHydratedChatCache(
     return evicted
 }
 
+/** A hydrated chat with edits this page has not saved yet. */
+export function isHydratedChatDirty(chaId: string, chatId: string): boolean {
+    return hydratedChatCache.get(chatKey(chaId, chatId))?.dirty === true
+}
+
+export function hasDirtyHydratedChats(): boolean {
+    for (const entry of hydratedChatCache.values()) {
+        if (entry.dirty) return true
+    }
+    return false
+}
+
+// Catalog fields live in database.bin and change through database patches;
+// the body carries copies of them that must not overrule the catalog.
+const CATALOG_FIELDS = ['name', 'lastDate', 'folderId', 'modules'] as const
+
+/**
+ * Swap in a newer body another device saved, without it reading as a local
+ * edit. The catalog fields stay as they are: they follow the database, and a
+ * body that disagreed with the catalog would make the next save send a patch
+ * that fights the other device's.
+ */
+export async function replaceChatBody(chats: Chat[], chaId: string, chatId: string, full: Chat): Promise<boolean> {
+    const index = chats.findIndex((chat) => chat?.id === chatId)
+    const current = index >= 0 ? chats[index] : null
+    if (!current || current._placeholder) return false
+    for (const field of CATALOG_FIELDS) {
+        if (field in current) (full as any)[field] = (current as any)[field]
+        else delete (full as any)[field]
+    }
+    full.isStreaming = false
+    full.activeStreamingDisplayOptimizationMode = undefined
+
+    const key = chatKey(chaId, chatId)
+    hydrationJustApplied.add(key)
+    chats[index] = full
+    const entry = hydratedChatCache.get(key)
+    if (entry) {
+        entry.chats = chats
+        entry.access = ++hydrationAccessSerial
+    } else {
+        recordHydratedChat(chaId, chatId, chats)
+    }
+    await tick()
+    hydrationJustApplied.delete(key)
+    return true
+}
+
+/**
+ * After a database patch replaced characters or chat arrays, point each
+ * cached body at the array that now holds it (and forget the ones that are
+ * gone), so eviction keeps working on what the UI actually shows.
+ */
+export function rehomeHydratedChats(characters: readonly { chaId?: string, chats?: Chat[] }[]): void {
+    const byId = new Map<string, Chat[]>()
+    for (const character of characters) {
+        if (character?.chaId && Array.isArray(character.chats)) byId.set(character.chaId, character.chats)
+    }
+    for (const [key, entry] of [...hydratedChatCache.entries()]) {
+        const chats = byId.get(entry.chaId)
+        const chat = chats?.find((candidate) => candidate?.id === entry.chatId)
+        if (!chats || !chat || chat._placeholder) {
+            hydratedChatCache.delete(key)
+            continue
+        }
+        entry.chats = chats
+    }
+}
+
+/**
+ * Suppress dirty tracking for these chats until the next tick — the window in
+ * which a remote database patch lands in the live state.
+ */
+export function suppressChatTracking(keys: Iterable<{ chaId: string, chatId: string }>): () => void {
+    const added: string[] = []
+    for (const { chaId, chatId } of keys) {
+        const key = chatKey(chaId, chatId)
+        if (!hydrationJustApplied.has(key)) {
+            hydrationJustApplied.add(key)
+            added.push(key)
+        }
+    }
+    return () => {
+        for (const key of added) hydrationJustApplied.delete(key)
+    }
+}
+
 export function hydratedChatCacheSize(): number {
     return hydratedChatCache.size
 }
