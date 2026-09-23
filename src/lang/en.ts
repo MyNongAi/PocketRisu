@@ -1607,6 +1607,12 @@ export const languageEnglish = {
     modelModeLegacy: "Legacy model",
     modelModePreset: "Model preset",
     modelModeSettingsTitle: "Open model mode settings",
+    yumiImportButton: "Import from Yumi",
+    yumiImportConfirm: "Import the Vertex models from Yumi Provider Manager as model presets.\n\n• Model, region, thinking level, Flex/Priority and streaming are carried over, and the service account credentials are copied too.\n• The model in use becomes the default and every chat switches to model presets, so replies keep generating on the server after the phone locks or the browser closes.\n• To go back, set 'Model mode' on this page to the legacy lock.\n\nContinue?",
+    yumiImportNothing: "No Vertex models were found to import.",
+    yumiImportDone: (created: number, main: string) => main
+        ? `Created ${created} model presets and switched every chat to '${main}'.`
+        : `Created ${created} model presets.`,
     modelModeLockLabel: "Model mode setting",
     modelModeLockLegacy: "Lock to legacy model mode",
     modelModeLockLegacyDesc: "Use the original RisuAI model system",

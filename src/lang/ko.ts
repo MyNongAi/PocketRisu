@@ -1737,6 +1737,12 @@ export const languageKorean = {
   modelModePreset: "모델 프리셋",
   modelModeSettingsTitle: "모델 모드 설정으로 이동",
   modelModeLockLabel: "모델 모드 설정",
+  yumiImportButton: "Yumi에서 가져오기",
+  yumiImportConfirm: "Yumi Provider Manager의 Vertex 모델을 모델 프리셋으로 가져옵니다.\n\n• 모델, 리전, 추론 강도, Flex/Priority, 스트리밍 방식을 그대로 옮기고 서비스 계정 인증 정보도 함께 복사합니다.\n• 지금 쓰는 모델을 기본으로 정하고, 모든 채팅이 모델 프리셋을 쓰도록 전환합니다. 이러면 폰을 잠그거나 브라우저를 닫아도 응답이 서버에서 끝까지 생성됩니다.\n• 되돌리려면 이 페이지의 '모델 모드 설정'을 '레거시 모델 모드 고정'으로 바꾸면 됩니다.\n\n계속할까요?",
+  yumiImportNothing: "가져올 Vertex 모델을 찾지 못했습니다.",
+  yumiImportDone: (created: number, main: string) => main
+    ? `모델 프리셋 ${created}개를 만들었고, 모든 채팅이 '${main}'을(를) 쓰도록 전환했습니다.`
+    : `모델 프리셋 ${created}개를 만들었습니다.`,
   modelModeLockLegacy: "레거시 모델 모드 고정",
   modelModeLockLegacyDesc: "기존 RisuAI의 모델 시스템을 사용합니다",
   modelModeLockPreset: "모델 프리셋 모드 고정",

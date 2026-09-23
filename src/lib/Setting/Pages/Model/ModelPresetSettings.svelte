@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { ArrowLeftIcon, BellIcon, PlusIcon, TriangleAlertIcon } from "@lucide/svelte";
+    import { ArrowLeftIcon, BellIcon, DownloadIcon, PlusIcon, TriangleAlertIcon } from "@lucide/svelte";
     import SettingPage from "src/lib/UI/GUI/SettingPage.svelte";
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
     import ShAccordion from "src/lib/UI/GUI/ShAccordion.svelte";
@@ -21,7 +21,8 @@
     import RegistryNoticeModal from "./RegistryNoticeModal.svelte";
     import { language } from "src/lang";
     import { DBState, openModelProfileBrowser, modelProfileReplaceTarget, openModelPresetEditId, ModelPresetListTabIndex } from "src/ts/stores.svelte";
-    import { alertConfirm, notifySuccess } from "src/ts/alert";
+    import { alertConfirm, alertError, notifySuccess } from "src/ts/alert";
+    import { hasYumiPlugin, importFromYumi } from "src/ts/preset/yumiImportApply";
     import { testModelPreset, type ModelPresetTestResult } from "src/ts/process/request/request";
     import { getOfficialRegistry, getPresetUpdateStatus, syncRemoteRegistry } from "src/ts/preset/registry";
     import { buildSeenMap, computeRegistryNotice, noticeCount } from "src/ts/preset/registry/notice";
@@ -150,6 +151,27 @@
     function createNew() {
         modelProfileReplaceTarget.set(null);
         openModelProfileBrowser.set(true);
+    }
+
+    // Carry a Yumi Provider Manager setup over, credentials included, and
+    // switch every chat to it. Confirmed first: it changes how chats generate.
+    let importingYumi = $state(false);
+    async function importYumi() {
+        if (importingYumi) return;
+        if (!(await alertConfirm(language.yumiImportConfirm))) return;
+        importingYumi = true;
+        try {
+            const result = await importFromYumi();
+            if (result.created === 0 && !result.mainName) {
+                alertError(language.yumiImportNothing);
+                return;
+            }
+            notifySuccess(language.yumiImportDone(result.created, result.mainName ?? ''));
+        } catch (error) {
+            alertError(error);
+        } finally {
+            importingYumi = false;
+        }
     }
 
     // Clear any prior test result when the edited preset changes.
@@ -479,6 +501,9 @@
                 onDelete={remove}
             >
                 {#snippet actions()}
+                    {#if hasYumiPlugin()}
+                        <ShButton size="sm" variant="outline" disabled={importingYumi} onclick={importYumi}><DownloadIcon />{language.yumiImportButton}</ShButton>
+                    {/if}
                     <ShButton size="sm" onclick={createNew}><PlusIcon />{language.modelPresetCreate}</ShButton>
                 {/snippet}
                 {#snippet itemContent(index)}
