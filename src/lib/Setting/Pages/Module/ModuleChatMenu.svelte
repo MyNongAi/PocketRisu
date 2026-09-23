@@ -19,7 +19,7 @@
     import { selectedCharID } from "src/ts/stores.svelte";
     import { openSettings, SettingsRoute } from "src/ts/routing";
     import { onDestroy, onMount, untrack } from "svelte";
-    import { recordModuleActivation, recordModuleFolderActivation, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
+    import { recordModuleActivation, recordModuleFolderActivation, seedModuleActivationHistory, shouldRootModulesLeadByActivation, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
     import { listTitleColor } from "src/ts/gui/titleColors";
     interface Props {
         close?: any;
@@ -56,9 +56,23 @@
             activationHistory: DBState.db.moduleActivationHistory,
         },
     ))
+    const rootModulesFirst = $derived(shouldRootModulesLeadByActivation(
+        DBState.db.modules,
+        DBState.db.moduleFolders ?? [],
+        {
+            fallbackOrders: [
+                DBState.db.enabledModules,
+                DBState.db.characters[$selectedCharID]?.modules,
+                currentChat()?.modules,
+            ],
+            activationHistory: DBState.db.moduleActivationHistory,
+        },
+    ))
     const groups = $derived.by(() => {
         const grouped = groupByFolder(sortedModules.map(m => m.folderId), sortedFolders)
-        return [...grouped.filter(group => !group.folder), ...grouped.filter(group => !!group.folder)]
+        const root = grouped.filter(group => !group.folder)
+        const folders = grouped.filter(group => !!group.folder)
+        return rootModulesFirst ? [...root, ...folders] : [...folders, ...root]
     })
 
     function matches(index: number) {

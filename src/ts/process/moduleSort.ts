@@ -89,6 +89,34 @@ export function recordModuleActivation(
 }
 
 /**
+ * FolderedList renders loose modules and folders as two top-level blocks. Pick
+ * which block leads from the newest known activation so activating a module in
+ * a folder can promote that folder above loose modules (and vice versa).
+ */
+export function shouldRootModulesLeadByActivation(
+    modules: ReadonlyArray<SortableModule>,
+    folders: ReadonlyArray<SortableModuleFolder>,
+    options: ModuleSortOptions = {},
+    fallback = true,
+): boolean {
+    const recencyOrder = mergeActivationOrders([
+        ...options.fallbackOrders ?? [],
+        options.activationHistory,
+    ])
+    const moduleById = new Map(modules.map((module) => [module.id, module]))
+
+    for(let index = recencyOrder.length - 1; index >= 0; index--){
+        const module = moduleById.get(recencyOrder[index])
+        if(!module) continue
+        const folderId = module.folderId
+            || folders.find((folder) => folder.moduleIds?.includes(module.id))?.id
+        return !folderId
+    }
+
+    return fallback
+}
+
+/**
  * Adds newly created/imported modules to the same newest-first catalog used by
  * module activation. The stored history remains oldest -> newest.
  */
