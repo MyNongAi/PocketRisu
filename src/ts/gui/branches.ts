@@ -1,4 +1,5 @@
 import { getCurrentCharacter } from "../storage/database.svelte";
+import { getFirstMessageAtIndex } from "../firstMessage";
 
 type ChatBranch = {
     children: Map<string, ChatBranch>,
@@ -77,7 +78,7 @@ export function getChatBranches(){
 
     let i = 0;
     for(const chat of character.chats){
-        const fm = chat.fmIndex === -1 ? character.firstMessage : character.alternateGreetings?.[chat.fmIndex ?? 0]
+        const fm = getFirstMessageAtIndex(character, chat.fmIndex)
         // const chatList = [fm].concat(chat.message.map((v) => v.data))
         const chatList:string[] = [simpleHasher(fm)]
         for(const message of chat.message){

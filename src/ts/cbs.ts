@@ -5,6 +5,7 @@ import type { LLMModel } from './model/modellist';
 import { get } from 'svelte/store';
 import { CurrentTriggerIdStore } from './stores.svelte';
 import { getCachedFullAssetManifest } from './storage/assetManifestCache';
+import { getFirstMessageAtIndex } from './firstMessage';
 
 export const defaultCBSRegisterArg: CBSRegisterArg = {
     registerFunction: () => { throw new Error('registerFunction not implemented') },
@@ -216,7 +217,7 @@ export function registerCBS(arg:CBSRegisterArg) {
                 }
                 pointer--
             }
-            return chat.fmIndex === -1 ? selchar.firstMessage : selchar.alternateGreetings[chat.fmIndex]
+            return getFirstMessageAtIndex(selchar, chat.fmIndex)
         },
         alias: ['previouscharchat', 'lastcharmessage'],
         description: 'Returns the last message sent by the character in the current chat. Searches backwards from the current message position to find the most recent character message. If no character messages exist, returns the first message or selected alternate greeting.\n\nUsage:: {{previouscharchat}}',
@@ -237,7 +238,7 @@ export function registerCBS(arg:CBSRegisterArg) {
                     }
                     pointer--
                 }
-                return chat.fmIndex === -1 ? selchar.firstMessage : selchar.alternateGreetings[chat.fmIndex]
+                return getFirstMessageAtIndex(selchar, chat.fmIndex)
             }
             return ''
         },
@@ -415,7 +416,7 @@ export function registerCBS(arg:CBSRegisterArg) {
             return (chat?.fmIndex ?? -1).toString()
         },
         alias: ['firstmessageindex', 'first_msg_index'],
-        description: 'Returns the index of the selected first message/alternate greeting as a string. -1 indicates the default first message is used.\n\nUsage:: {{firstmsgindex}}',
+        description: 'Returns the index of the selected first message/alternate greeting as a string. -2 indicates PocketRisu\'s synthetic blank page 0, while -1 indicates the card\'s default first message.\n\nUsage:: {{firstmsgindex}}',
     });
 
     registerFunction({
@@ -1485,7 +1486,7 @@ export function registerCBS(arg:CBSRegisterArg) {
                 if(!selchar || !chat) return makeArray([])
                 return makeArray([{
                     role: 'char',
-                    data: chat.fmIndex === -1 ? selchar.firstMessage : selchar.alternateGreetings[chat.fmIndex]
+                    data: getFirstMessageAtIndex(selchar, chat.fmIndex)
                 }].concat(chat.message).map((v) => {
                     v = safeStructuredClone(v)
                     v.data = risuChatParser(v.data, matcherArg)

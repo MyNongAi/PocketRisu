@@ -20,6 +20,8 @@ import { isNodeServer } from "./platform";
 import { PngChunk } from "./pngChunk";
 import { promoteDepartedCharacter } from "./characterRecentOrder";
 import { BoundedObjectUrlCache, createDeduplicatedImageLoader } from "./storage/boundedObjectUrlCache";
+import { getFirstMessageAtIndex } from "./firstMessage";
+import { needsCharacterRuntimeNormalization } from "./characterRuntime";
 
 const CHAT_HYDRATION_INDICATOR_DELAY_MS = 180
 const CHAT_PREFETCH_DELAY_MS = 110
@@ -362,7 +364,7 @@ export async function exportChat(page:number){
                             <div class="chat">
                                 <h2>${char.name}</h2>
                                 <div>${await htmlChatParse(
-                                    chat.fmIndex === -1 ? char.firstMessage : char.alternateGreetings?.[chat.fmIndex ?? 0]
+                                    getFirstMessageAtIndex(char, chat.fmIndex)
                                 )}</div>
                             </div>
                             ${chatContentHTML}
@@ -1025,9 +1027,16 @@ export function changeChar(index: number, arg:{
     recordCurrentCharacterDeparture(nextCharacterId)
     reseter();
     chatDeselected.set(false)
-    characterFormatUpdate(index, {
-      updateInteraction: true,
-    });
+    const selectedCharacter = getDatabase().characters[index]
+    if(needsCharacterRuntimeNormalization(selectedCharacter)){
+        characterFormatUpdate(index, {
+            updateInteraction: true,
+        })
+    } else {
+        // Keep the recent-order timestamp without repeatedly walking every
+        // lorebook and chat on an already-normalized card.
+        selectedCharacter.lastInteraction = Date.now()
+    }
     const db = getDatabase()
     selectedCharID.set(index);
 

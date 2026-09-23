@@ -12,6 +12,7 @@ import { HypaProcesser } from "./memory/hypamemory";
 import { runLuaEditTrigger } from "./scriptings";
 import { pluginV2 } from "../plugins/plugins.svelte";
 import { runTrigger } from "./triggers";
+import { getFirstMessageAtIndex } from "../firstMessage";
 
 const dreg = /{{data}}/g
 const randomness = /\|\|\|/g
@@ -305,7 +306,7 @@ export async function processScriptFull(
                         const v = outScript.split(' ', 2)[1]
                         const selchar = targetCharacter
                         const chat = targetChat
-                        let lastChat = chat.fmIndex === -1 ? selchar.firstMessage : selchar.alternateGreetings[chat.fmIndex]
+                        let lastChat = getFirstMessageAtIndex(selchar, chat.fmIndex)
                         let pointer = chatID - 1
                         while(pointer >= 0){
                             if(chat.message[pointer].role === chat.message[chatID].role){

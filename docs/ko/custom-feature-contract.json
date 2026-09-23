@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.12.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-09-23",
+  "updatedAt": "2026-09-24",
   "features": [
     {
       "id": "ASSET-EXT",
@@ -34,6 +34,8 @@
         "src/lib/Others/LazyAssetPreview.svelte",
         "src/lib/Others/assetDragPrefetch.ts",
         "src/ts/storage/boundedObjectUrlCache.ts",
+        "src/ts/chatAssetWindow.ts",
+        "src/lib/ChatScreens/Chat.svelte",
         "src/lib/UI/TwoClickDeleteButton.svelte",
         "src/lib/SideBars/CharConfig.svelte",
         "src/lib/Setting/Pages/Module/ModuleMenu.svelte"
@@ -42,6 +44,8 @@
         { "file": "src/lib/Others/LazyAssetPreview.svelte", "contains": "IntersectionObserver" },
         { "file": "src/lib/Others/assetDragPrefetch.ts", "contains": "assetDragPrefetchQueue" },
         { "file": "src/ts/storage/boundedObjectUrlCache.ts", "contains": "createDeduplicatedImageLoader" },
+        { "file": "src/ts/chatAssetWindow.ts", "contains": "shouldResolveChatAssets" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "viewportAssetVisible" },
         { "file": "src/lib/UI/TwoClickDeleteButton.svelte", "contains": "aria-pressed={armed}" },
         { "file": "src/lib/SideBars/CharConfig.svelte", "contains": "<TwoClickDeleteButton" },
         { "file": "src/lib/Setting/Pages/Module/ModuleMenu.svelte", "contains": "<TwoClickDeleteButton" }
@@ -194,6 +198,7 @@
       "ownerFiles": [
         "src/ts/process/moduleFolders.ts",
         "src/ts/process/moduleSort.ts",
+        "src/ts/process/moduleDraft.ts",
         "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
         "src/lib/Setting/Pages/Module/ModuleMenu.svelte",
         "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte",
@@ -204,6 +209,7 @@
         { "file": "src/ts/process/moduleSort.ts", "contains": "recordModuleFolderActivation" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "sortModulesByActivation" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "getLatestModuleCatalogPromotion" },
+        { "file": "src/ts/process/moduleDraft.ts", "contains": "cloneModuleDraft" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "risu-module-catalog-sort" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "moduleAssetCount" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "returnToModuleList" },
@@ -219,6 +225,7 @@
       "regressionTests": [
         "src/ts/process/moduleFolders.test.ts",
         "src/ts/process/moduleSort.test.ts",
+        "src/ts/process/moduleDraft.test.ts",
         "src/lib/UI/FolderedList.test.ts"
       ]
     },
@@ -488,21 +495,49 @@
     },
     {
       "id": "HAEJEOK-BOUNDED",
-      "title": "해적리스식 패널 지연 로더와 제한형 캐시",
+      "title": "해적·바드식 화면 지연 로더와 제한형 작업 집합",
       "criticality": "performance",
       "ownerFiles": [
+        "src/App.svelte",
+        "src/lib/Others/LazyComponent.svelte",
         "src/lib/SideBars/sidebarPanelLoaders.ts",
+        "src/ts/characterRuntime.ts",
         "src/ts/storage/boundedObjectUrlCache.ts",
-        "src/ts/storage/assetNameLocalResolver.ts"
+        "src/ts/storage/assetNameLocalResolver.ts",
+        "src/ts/bootstrap.ts"
       ],
       "requiredMarkers": [
+        { "file": "src/App.svelte", "contains": "const settingsLoader = () => import('./lib/Setting/Settings.svelte')" },
+        { "file": "src/lib/Others/LazyComponent.svelte", "contains": "const moduleCache" },
         { "file": "src/lib/SideBars/sidebarPanelLoaders.ts", "contains": "createCachedLoader" },
+        { "file": "src/ts/characterRuntime.ts", "contains": "needsCharacterRuntimeNormalization" },
         { "file": "src/ts/storage/assetNameLocalResolver.ts", "contains": "resolveNamesLocally" }
       ],
       "regressionTests": [
+        "src/App.performance.test.ts",
         "src/lib/SideBars/sidebarPanelLoaders.test.ts",
+        "src/ts/characterRuntime.test.ts",
         "src/ts/storage/boundedObjectUrlCache.test.ts",
+        "src/ts/chatAssetWindow.test.ts",
         "src/ts/storage/assetNameLocalResolver.test.ts"
+      ]
+    },
+    {
+      "id": "FIRST-MESSAGE-ZERO",
+      "title": "모든 채팅의 가상 빈 퍼메 0번",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/firstMessage.ts",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/ts/process/index.svelte.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/firstMessage.ts", "contains": "BLANK_FIRST_MESSAGE_INDEX = -2" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "firstMessagePageNumber" },
+        { "file": "src/ts/process/index.svelte.ts", "contains": "if(firstMsg !== '')" }
+      ],
+      "regressionTests": [
+        "src/ts/firstMessage.test.ts"
       ]
     }
   ]

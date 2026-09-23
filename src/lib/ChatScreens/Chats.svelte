@@ -149,6 +149,7 @@
                         idx: i,
                         totalLength: messages.length,
                         img: resolveChatAssets ? getSenderImage(message.role) : '',
+                        loadSenderImage: () => getSenderImage(message.role),
                         onReroll: onReroll,
                         onNextSwipe: i === lastRealCharIdx ? onNextSwipe : () => {},
                         unReroll: unReroll,

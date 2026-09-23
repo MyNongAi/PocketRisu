@@ -26,7 +26,7 @@
     import ChatBody from './ChatBody.svelte'
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
-    import { getChatAssetRenderWindow } from '../../ts/chatAssetWindow';
+    import { getChatAssetRenderWindow, normalizeExternalAssetRecentOutputs, shouldResolveChatAssets } from '../../ts/chatAssetWindow';
 
     // Reactive breakpoint: a raw window.innerWidth read here is evaluated once
     // at mount and never follows a resize (#79).
@@ -44,6 +44,7 @@
         largePortrait?: boolean;
         isLastMemory: boolean;
         img?: string|Promise<string>;
+        loadSenderImage?: () => string|Promise<string>;
         idx?: number;
         messageGenerationInfo?: MessageGenerationInfo|null;
         rerollIcon?: boolean|'dynamic'|'force';
@@ -65,6 +66,7 @@
         rawStreamingText?: string;
         resolveChatAssets?: boolean;
         resolveSenderIcon?: boolean;
+        allowViewportAssetActivation?: boolean;
     }
 
     let {
@@ -73,6 +75,7 @@
         largePortrait = false,
         isLastMemory,
         img = '',
+        loadSenderImage,
         idx = -1,
         rerollIcon = false,
         messageGenerationInfo = null,
@@ -94,9 +97,13 @@
         rawStreamingText = message,
         resolveChatAssets,
         resolveSenderIcon,
+        allowViewportAssetActivation = true,
     }: Props = $props();
 
-    let effectiveResolveChatAssets = $derived.by(() => {
+    let chatRoot:HTMLElement|null = $state(null)
+    let viewportAssetVisible = $state(false)
+    let deferredSenderImage:string|Promise<string> = $state('')
+    let recentWindowResolvesAssets = $derived.by(() => {
         if(resolveChatAssets !== undefined) return resolveChatAssets
         if(!firstMessage) return true
 
@@ -107,7 +114,37 @@
             chat?.firstMessageDisabled !== true,
         ).firstMessage
     })
-    let effectiveResolveSenderIcon = $derived(resolveSenderIcon ?? effectiveResolveChatAssets)
+    let effectiveResolveChatAssets = $derived(shouldResolveChatAssets(
+        recentWindowResolvesAssets,
+        allowViewportAssetActivation && viewportAssetVisible,
+        DBState.db.externalAssetRecentOutputs,
+    ))
+    let effectiveResolveSenderIcon = $derived((resolveSenderIcon ?? false) || effectiveResolveChatAssets)
+    let effectiveSenderImage = $derived(img || deferredSenderImage)
+
+    $effect(() => {
+        const root = chatRoot
+        const limit = normalizeExternalAssetRecentOutputs(DBState.db.externalAssetRecentOutputs)
+        if(!root || !allowViewportAssetActivation || limit === 0 || typeof IntersectionObserver === 'undefined') {
+            viewportAssetVisible = false
+            return
+        }
+
+        const observer = new IntersectionObserver((entries) => {
+            viewportAssetVisible = entries.some((entry) => entry.isIntersecting)
+        }, { rootMargin: '320px 0px' })
+        observer.observe(root)
+        return () => observer.disconnect()
+    })
+
+    $effect(() => {
+        if(effectiveResolveSenderIcon && !img && !deferredSenderImage && loadSenderImage) {
+            deferredSenderImage = loadSenderImage()
+        }
+        else if(!effectiveResolveSenderIcon) {
+            deferredSenderImage = ''
+        }
+    })
 
     let msgDisplay = $state('')
     let translated = $state(false)
@@ -1003,7 +1040,7 @@
                 {/if}
             </div>
         {:else if effectiveResolveSenderIcon}
-            {#await img}
+            {#await effectiveSenderImage}
                 <div class="shadow-lg bg-textcolor2" style={options?.styleFix ??`height:${DBState.db.iconsize * 3.5 / 100}rem;width:${DBState.db.iconsize * 3.5 / 100}rem;min-width:${DBState.db.iconsize * 3.5 / 100}rem`}
                 class:rounded-md={!options?.rounded} class:rounded-full={options?.rounded}></div>
             {:then m}
@@ -1169,6 +1206,7 @@
 {#if DBState.db.theme === ''}
 <!-- NodeOnly Standard: 전용 외부 구조 -->
 <div class="flex max-w-full justify-center risu-chat"
+     bind:this={chatRoot}
      data-chat-index={idx}
      data-chat-id={DBState.db.characters?.[selIdState.selId]?.chats?.[DBState.db.characters?.[selIdState.selId]?.chatPage]?.message?.[idx]?.chatId ?? ''}
      style={isLastMemory ? `border-top:${DBState.db.memoryLimitThickness}px solid rgba(98, 114, 164, 0.7);` : ''}
@@ -1232,6 +1270,7 @@
 {:else}
 <!-- 기존 테마: 공유 외부 구조 -->
 <div class="flex max-w-full justify-center risu-chat"
+     bind:this={chatRoot}
      data-chat-index={idx}
      data-chat-id={DBState.db.characters?.[selIdState.selId]?.chats?.[DBState.db.characters?.[selIdState.selId]?.chatPage]?.message?.[idx]?.chatId ?? ''}
      style={isLastMemory ? `border-top:${DBState.db.memoryLimitThickness}px solid rgba(98, 114, 164, 0.7);` : ''}
