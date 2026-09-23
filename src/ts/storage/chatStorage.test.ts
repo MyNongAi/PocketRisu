@@ -32,6 +32,11 @@ const {
     evictHydratedChatCache,
     resetHydratedChatCache,
     setChatSaveRequester,
+    replaceChatBody,
+    rehomeHydratedChats,
+    suppressChatTracking,
+    isHydrating,
+    isHydratedChatDirty,
 } = await import('./chatStorage')
 type Chat = any
 type ChatStub = any
@@ -336,5 +341,53 @@ describe('recovered chat persistence', () => {
         } finally {
             setChatSaveRequester(null)
         }
+    })
+})
+
+describe('bodies another device saved', () => {
+    test('replaceChatBody swaps the body in but keeps the catalog fields and reads as clean', async () => {
+        const chats: Chat[] = [{ ...blankChat({ id: 'x', name: 'Catalog name', lastDate: 5, folderId: 'f' }), message: [{ role: 'user', data: 'old' }] }]
+        const newer: Chat = { ...blankChat({ id: 'x', name: 'Body name', lastDate: 9 }), message: [{ role: 'user', data: 'old' }, { role: 'char', data: 'new' }], isStreaming: true }
+
+        const pending = replaceChatBody(chats, 'c', 'x', newer)
+        // The write lands while tracking is paused, so it is not a local edit.
+        expect(isHydrating('c', 'x')).toBe(true)
+        expect(await pending).toBe(true)
+        expect(isHydrating('c', 'x')).toBe(false)
+
+        expect(chats[0]).toBe(newer)
+        expect(chats[0].message).toHaveLength(2)
+        expect(chats[0]).toMatchObject({ name: 'Catalog name', lastDate: 5, folderId: 'f', isStreaming: false })
+        expect(isHydratedChatDirty('c', 'x')).toBe(false)
+        expect(hydratedChatCacheSize()).toBe(1)
+    })
+
+    test('replaceChatBody leaves placeholders alone; they load the newest body when opened', async () => {
+        const chats: Chat[] = [stubToPlaceholder({ id: 'x', name: 'n', _stub: true } as ChatStub)]
+        expect(await replaceChatBody(chats, 'c', 'x', blankChat({ id: 'x' }))).toBe(false)
+        expect(chats[0]._placeholder).toBe(true)
+    })
+
+    test('rehomeHydratedChats follows a body into its new array and forgets removed chats', async () => {
+        const oldChats: Chat[] = [blankChat({ id: 'keep' }), blankChat({ id: 'gone' })]
+        await replaceChatBody(oldChats, 'c', 'keep', blankChat({ id: 'keep' }))
+        await replaceChatBody(oldChats, 'c', 'gone', blankChat({ id: 'gone' }))
+        expect(hydratedChatCacheSize()).toBe(2)
+
+        const newChats: Chat[] = [oldChats[0]]
+        rehomeHydratedChats([{ chaId: 'c', chats: newChats }])
+        expect(hydratedChatCacheSize()).toBe(1)
+
+        // Eviction now edits the array the UI shows, not the discarded one.
+        await evictHydratedChatCache(undefined, 0)
+        expect(newChats[0]._placeholder).toBe(true)
+    })
+
+    test('suppressChatTracking pauses only the given chats and releases them', () => {
+        const release = suppressChatTracking([{ chaId: 'c', chatId: 'a' }])
+        expect(isHydrating('c', 'a')).toBe(true)
+        expect(isHydrating('c', 'b')).toBe(false)
+        release()
+        expect(isHydrating('c', 'a')).toBe(false)
     })
 })
