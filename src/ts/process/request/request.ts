@@ -39,6 +39,7 @@ import { pumpPresetStream } from "./presetStreamPump";
 import { makeJobFetch, ModelJobBusyError, ModelJobConnectionLostError } from "./jobFetch";
 import { toLogSource, toRequestKind } from "./logSource";
 import { resolveChatModelBinding, buildModelPresetCredential, applyPromptPresetParams, presetSupportsVision, type RequestModelRouteSnapshot } from "./modelPresetBinding";
+import { modelPresetIdOf } from "src/ts/preset/pickerId";
 import { expandAdapterMessages, toAdapterMessage, toolResponseText } from "./modelPresetMessages";
 import { isLocalNetworkUrl } from "src/ts/network/localNetwork";
 import { createRequestLogScope, recordRequestLog, stripInlineMedia, type RequestLogRoute, type RequestLogSource, type RequestLogUsage } from "src/ts/requestLog";
@@ -444,6 +445,22 @@ export async function requestChatDataMain(arg:requestDataArgument, model:ModelMo
             targ.aiModel = db.seperateModels[model]
             targ.modelInfo = getModelInfo(targ.aiModel)
         }
+    }
+
+    // A model preset picked in the ordinary model picker, reached here as a
+    // fallback or a forced model: send it through the preset path.
+    const pickedPresetId = modelPresetIdOf(targ.aiModel)
+    if(pickedPresetId !== null){
+        const picked = (db.modelPresets ?? []).find((preset) => preset.id === pickedPresetId)
+        if(!picked){
+            return {
+                type: 'fail',
+                noRetry: true,
+                result: model === 'model' ? language.modelPresetBindingMainUnset : language.modelPresetBindingSubUnset,
+            }
+        }
+        const currentChat = arg.currentChat ?? getCurrentChat()
+        return requestModelPreset(targ, applyPromptPresetParams(picked, currentChat, model), abortSignal, model)
     }
 
     if(arg.blockPlugins && targ.modelInfo.id.startsWith('pluginmodel:::')){
