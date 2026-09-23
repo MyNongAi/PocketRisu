@@ -24,6 +24,8 @@
     import { hypaV3ModalOpen, hypaV3ProgressStore } from "./ts/stores.svelte";
     import { assetViewerStore } from './ts/assetViewer.svelte';
     import AssetViewer from './lib/Others/AssetViewer.svelte';
+    import { protonBrowserState } from './ts/protonBrowser.svelte';
+    import ProtonFolderBrowser from './lib/Others/ProtonFolderBrowser.svelte';
     import HypaV3Modal from './lib/Others/HypaV3Modal.svelte';
     import HypaV3Progress from './lib/Others/HypaV3Progress.svelte';
     import PluginAlertModal from './lib/Others/PluginAlertModal.svelte';
@@ -320,6 +322,9 @@
     {/if}
     {#if assetViewerStore.open}
         <AssetViewer />
+    {/if}
+    {#if protonBrowserState.open}
+        <ProtonFolderBrowser />
     {/if}
     <Toaster />
     <RequestStatusToaster />
