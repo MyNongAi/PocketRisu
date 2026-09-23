@@ -131,6 +131,9 @@ let saveTimers = {};
 const SAVE_INTERVAL = 5000;
 let fullChatStore = null; // Map<chaId, Map<chatId, chatObject>> — lazy-initialized
 const databasePatchHashCache = createPatchHashCache(calculateHash);
+// Live change feed for other devices; see sync-hub.cjs and /api/sync/events.
+const { createSyncHub } = require('./sync-hub.cjs');
+const syncHub = createSyncHub();
 
 // ETag for database.bin
 let dbEtag = null;
@@ -5687,6 +5690,11 @@ app.get('/api/read', async (req, res, next) => {
                     return res.status(304).end();
                 }
                 res.setHeader('x-db-etag', dbEtag);
+                // Where the change feed stood when this copy was encoded, so
+                // the reader's first stream connection replays whatever lands
+                // while it is still decoding a large database.
+                res.setHeader('x-sync-instance', syncHub.instanceId);
+                res.setHeader('x-sync-seq', String(syncHub.seq));
             }
             res.setHeader('Content-Type', 'application/octet-stream');
             res.send(value);
@@ -6096,6 +6104,9 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
                 etag: key === 'database/database.bin' ? dbEtag : undefined,
                 ...(key === 'database/database.bin' && persistedHashes ? persistedHashes : {}),
             });
+            if (key === 'database/database.bin') {
+                syncHub.publish({ type: 'db-stale', origin: chatClientId(req), reason: 'full-write' });
+            }
         });
     } catch (error) {
         next(error);
@@ -6450,6 +6461,23 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
                 responsePayload.persistWarning = persistWarning;
             }
             res.send(responsePayload);
+
+            // Other devices apply the same ops when their baseline sits at
+            // expectedHash, which is exactly what the check above verified.
+            if (decodedKey === 'database/database.bin' && Array.isArray(patch) && patch.length > 0) {
+                try {
+                    syncHub.publish({
+                        type: 'db-patch',
+                        origin: chatClientId(req),
+                        prevHash: expectedHash,
+                        nextHash: databasePatchHashCache.hash(dbCache[filePath]).toString(16),
+                        etag: dbEtag,
+                        ops: patch,
+                    });
+                } catch (publishError) {
+                    logger.warn('[Sync] Failed to publish db-patch:', publishError?.message ?? publishError);
+                }
+            }
         });
     } catch (error) {
         if (error?.code === 'STORAGE_LOCKED') {
@@ -7942,6 +7970,18 @@ app.get('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, asy
 });
 
 // POST /api/chat-content/:chaId/:chatIndex — save chat content to server
+// ─── Live change feed ───────────────────────────────────────────────────────
+// Server-sent events of every accepted write, so a device showing a chat sees
+// what another device just added without saving or reloading first. Clients
+// pass the instance id and sequence from their last hello to resume; see
+// sync-hub.cjs for replay and resync rules.
+app.get('/api/sync/events', async (req, res) => {
+    if (!await checkAuth(req, res)) { return; }
+    const since = Number.parseInt(String(req.query.since ?? ''), 10);
+    const instance = typeof req.query.instance === 'string' ? req.query.instance : undefined;
+    syncHub.subscribe(res, { since: Number.isInteger(since) && since >= 0 ? since : undefined, instance });
+});
+
 app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, async (req, res, next) => {
     if (!await checkAuth(req, res)) { return; }
     try {
@@ -8099,6 +8139,7 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
             const nextEtag = computeChatEtag(chatData);
             res.setHeader('ETag', nextEtag);
             res.json({ success: true, etag: nextEtag });
+            syncHub.publish({ type: 'chat', origin: chatClientId(req), chaId, chatId: expectedChatId, etag: nextEtag });
         });
     } catch (error) {
         next(error);
@@ -8867,6 +8908,7 @@ app.post('/api/characters/:chaId/archive', async (req, res, next) => {
             kvSet(archiveMetaKey(chaId, archivedAt), Buffer.from(JSON.stringify(meta), 'utf-8'));
             logger.info(`[Archive] deactivated ${chaId}@${archivedAt} (${encoded.length} bytes, ${meta.chatCount} chats, ${meta.assetRefs.length} asset refs)`);
             res.json({ ok: true, stub: buildArchivedCharacterStub(full, { archivedAt, bytes: encoded.length }) });
+            syncHub.publish({ type: 'db-stale', origin: chatClientId(req), reason: 'archive' });
         });
     } catch (err) { next(err); }
 });
@@ -8920,6 +8962,7 @@ app.post('/api/characters/:chaId/activate', async (req, res, next) => {
             const clientView = stripDatabaseForClient({ characters: [full] }, { reconcileManifests: true }).characters[0];
             logger.info(`[Archive] activated ${chaId}@${archivedAt} (${charChats.size} chats registered); row retained`);
             res.json({ ok: true, character: normalizeJSON(clientView) });
+            syncHub.publish({ type: 'db-stale', origin: chatClientId(req), reason: 'activate' });
         });
     } catch (err) { next(err); }
 });
