@@ -5,7 +5,7 @@
     import LoreBookList from "src/lib/SideBars/LoreBook/LoreBookList.svelte";
     import { type CCLorebook, convertExternalLorebook } from "src/ts/process/lorebook.svelte";
     import type { RisuModule } from "src/ts/process/modules";
-    import { DownloadIcon, FolderPlusIcon, HardDriveUploadIcon, ImageIcon, PlusIcon, TrashIcon } from "@lucide/svelte";
+    import { DownloadIcon, FolderPlusIcon, HardDriveUploadIcon, ImageIcon, PlusIcon } from "@lucide/svelte";
     import StealthStatusIcon from "src/lib/UI/StealthStatusIcon.svelte";
     import RegexList from "src/lib/SideBars/Scripts/RegexList.svelte";
     import TriggerList from "src/lib/SideBars/Scripts/TriggerList.svelte";
@@ -18,6 +18,7 @@
     import { selectMultipleFile } from "src/ts/util";
     import { openAssetViewer, hasImageAssets } from "src/ts/assetViewer.svelte";
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
+    import TwoClickDeleteButton from "src/lib/UI/TwoClickDeleteButton.svelte";
     import { buildModuleLoreComparisonStatuses } from "src/ts/gui/loreBookComparison";
     
     import { DBState } from 'src/ts/stores.svelte';
@@ -429,9 +430,11 @@
                         
                         <th class="font-medium cursor-pointer w-10">
                             <div class="flex flex-col items-center gap-2">
-                                <button class="hover:text-red-400" onclick={() => removeManifestAsset(i)}>
-                                    <TrashIcon />
-                                </button>
+                                <TwoClickDeleteButton
+                                    className="hover:text-red-400"
+                                    label={language.remove}
+                                    onConfirm={() => removeManifestAsset(i)}
+                                />
                                 <!-- Same NAI stealth-metadata colour as character assets. -->
                                 <StealthStatusIcon
                                     path={assets[1]}

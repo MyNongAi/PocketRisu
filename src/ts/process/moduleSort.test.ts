@@ -5,6 +5,7 @@ import {
     recordModuleFolderOrder,
     recordNewModules,
     seedModuleActivationHistory,
+    shouldRootModulesLeadByActivation,
     sortModuleFoldersByActivation,
     sortModulesByActivation,
 } from './moduleSort'
@@ -156,6 +157,29 @@ describe('sortModulesByActivation', () => {
     it('leaves folders unchanged for uncategorized activation', () => {
         const folders = [{ id: 'folder', moduleIds: ['alpha'] }]
         expect(recordModuleFolderActivation(folders, modules, 'bravo')).toEqual(folders)
+    })
+
+    it('puts a newly activated member folder above loose modules', () => {
+        const source = [
+            { id: 'loose', name: 'Loose' },
+            { id: 'foldered', name: 'Foldered', folderId: 'folder' },
+        ]
+        const folders = [{ id: 'folder', moduleIds: ['foldered'] }]
+
+        expect(shouldRootModulesLeadByActivation(source, folders, {
+            activationHistory: ['loose', 'foldered'],
+        })).toBe(false)
+        expect(shouldRootModulesLeadByActivation(source, folders, {
+            activationHistory: ['foldered', 'loose'],
+        })).toBe(true)
+    })
+
+    it('also detects legacy folder membership when choosing the leading block', () => {
+        expect(shouldRootModulesLeadByActivation(
+            [{ id: 'legacy', name: 'Legacy' }],
+            [{ id: 'folder', moduleIds: ['legacy'] }],
+            { activationHistory: ['legacy'] },
+        )).toBe(false)
     })
 
     it('uses a deterministic order when older backups mix ranked and unranked folders', () => {

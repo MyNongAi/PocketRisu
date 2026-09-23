@@ -40,6 +40,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
     import SliderInput from "../UI/GUI/SliderInput.svelte";
     import VirtualList from "../UI/Virtual/VirtualList.svelte";
     import Toggles from "./Toggles.svelte";
+    import TwoClickDeleteButton from "../UI/TwoClickDeleteButton.svelte";
 
     let iconRemoveMode = $state(false)
     let pkgIncludeCharacter = $state(true)
@@ -708,9 +709,11 @@ import ShButton from "../UI/GUI/ShButton.svelte";
                                 </div>
                                 
                                 <div class="flex w-10 shrink-0 flex-col items-center gap-2 font-medium">
-                                    <button class="hover:text-draculared" onclick={() => removeCharacterManifestAsset(i)}>
-                                        <TrashIcon />
-                                    </button>
+                                    <TwoClickDeleteButton
+                                        className="hover:text-draculared"
+                                        label={language.remove}
+                                        onConfirm={() => removeCharacterManifestAsset(i)}
+                                    />
                                     {#if DBState.db.useAdditionalAssetsPreview}
                                         {@const stealth = (requestStealthStatus(assets[1], extension), getStealthStatus(assets[1]))}
                                         <button

@@ -18,7 +18,7 @@
     import { convertModuleToCharacter } from "src/ts/interchangeability";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
     import { dissolveShrunkenModuleFolders, synchronizeModuleFolderMembership } from "src/ts/process/moduleFolders";
-    import { recordModuleActivation, recordModuleFolderActivation, recordModuleFolderOrder, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
+    import { recordModuleActivation, recordModuleFolderActivation, recordModuleFolderOrder, seedModuleActivationHistory, shouldRootModulesLeadByActivation, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
     import { chooseTitleColor, listTitleColor } from "src/ts/gui/titleColors";
     import { resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
     import type { PromptPresetFolder } from "src/ts/storage/database.svelte";
@@ -56,6 +56,14 @@
                 activationHistory: DBState.db.moduleActivationHistory,
             },
         ))
+    let rootModulesFirst = $derived(moduleCatalogSort === 'recent' && shouldRootModulesLeadByActivation(
+        DBState.db.modules,
+        DBState.db.moduleFolders ?? [],
+        {
+            fallbackOrders: [DBState.db.enabledModules],
+            activationHistory: DBState.db.moduleActivationHistory,
+        },
+    ))
 
     function setModuleCatalogSort(next: ModuleCatalogSort) {
         moduleCatalogSort = next
@@ -277,7 +285,7 @@
         defaultCollapsed
         newFoldersFirst
         rootItemsStandalone
-        rootItemsFirst={moduleCatalogSort === 'recent'}
+        rootItemsFirst={rootModulesFirst}
         reorderDisabled={moduleCatalogSort !== 'recent'}
         folderTitleColor={folderColor}
         onFolderColor={changeFolderColor}
