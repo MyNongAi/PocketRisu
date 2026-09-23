@@ -3,6 +3,7 @@ import {
     DEFAULT_EXTERNAL_ASSET_RECENT_OUTPUTS,
     getChatAssetRenderWindow,
     normalizeExternalAssetRecentOutputs,
+    shouldResolveChatAssets,
 } from './chatAssetWindow'
 
 describe('normalizeExternalAssetRecentOutputs', () => {
@@ -15,6 +16,17 @@ describe('normalizeExternalAssetRecentOutputs', () => {
         expect(normalizeExternalAssetRecentOutputs(undefined)).toBe(DEFAULT_EXTERNAL_ASSET_RECENT_OUTPUTS)
         expect(normalizeExternalAssetRecentOutputs(-1)).toBe(DEFAULT_EXTERNAL_ASSET_RECENT_OUTPUTS)
         expect(normalizeExternalAssetRecentOutputs(Number.NaN)).toBe(DEFAULT_EXTERNAL_ASSET_RECENT_OUTPUTS)
+    })
+})
+describe('shouldResolveChatAssets', () => {
+    it('warms either the recent window or the visible viewport', () => {
+        expect(shouldResolveChatAssets(true, false, 5)).toBe(true)
+        expect(shouldResolveChatAssets(false, true, 5)).toBe(true)
+        expect(shouldResolveChatAssets(false, false, 5)).toBe(false)
+    })
+
+    it('preserves legacy all-message rendering when the limit is zero', () => {
+        expect(shouldResolveChatAssets(false, false, 0)).toBe(true)
     })
 })
 describe('getChatAssetRenderWindow', () => {

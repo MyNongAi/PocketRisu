@@ -4,6 +4,7 @@ import { type Message } from "src/ts/storage/database.svelte";
 import { alertConfirm } from "src/ts/alert";
 import { DBState, selectedCharID } from "src/ts/stores.svelte";
 import { language } from "src/lang";
+import { getFirstMessageAtIndex } from "src/ts/firstMessage";
 
 export async function alertConfirmTwice(
   firstMessage: string,
@@ -88,11 +89,7 @@ export function getFirstMessage(): string | null {
   const char = DBState.db.characters[get(selectedCharID)];
   const chat = char.chats[DBState.db.characters[get(selectedCharID)].chatPage];
 
-  return chat.fmIndex === -1
-    ? char.firstMessage
-    : char.alternateGreetings?.[chat.fmIndex]
-    ? char.alternateGreetings[chat.fmIndex]
-    : null;
+  return getFirstMessageAtIndex(char, chat.fmIndex) || null;
 }
 
 // CBS macros are always evaluated. Gating them on the preset toggle made the modal

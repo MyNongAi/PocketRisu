@@ -18,6 +18,7 @@
     import SelectInput from "../UI/GUI/SelectInput.svelte";
     import OptionInput from "../UI/GUI/OptionInput.svelte";
     import { language } from 'src/lang';
+    import { getFirstMessageAtIndex } from 'src/ts/firstMessage';
 
     import { fetchRequestLogs, type RequestLogEntry } from 'src/ts/requestLog';
     import { alertStore, selectedCharID, togglePresetsOpenStore } from "src/ts/stores.svelte";
@@ -87,7 +88,7 @@
         const char = getCurrentCharacter()
         const chat = char.chats[obj.chatId]
         if(obj.y === 0){
-            return (chat.fmIndex === -1 ? char.firstMessage : char.alternateGreetings?.[chat.fmIndex ?? 0]) ?? ''
+            return getFirstMessageAtIndex(char, chat.fmIndex)
         }
         return chat.message[obj.y - 1]?.data ?? ''
     }

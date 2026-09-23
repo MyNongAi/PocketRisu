@@ -43,6 +43,7 @@ import { isMobile } from 'src/ts/platform'
     import { loadChatDraft, scheduleSaveChatDraft, flushChatDraft, removeChatDraft } from 'src/ts/storage/chatDraft';
     import { getChatAssetRenderWindow } from 'src/ts/chatAssetWindow';
     import { chatWriterClaimMessage } from 'src/ts/storage/nodeStorage';
+    import { BLANK_FIRST_MESSAGE_INDEX, firstMessagePageNumber, getFirstMessageAtIndex, lastFirstMessagePageNumber, nextFirstMessageIndex, previousFirstMessageIndex } from 'src/ts/firstMessage';
 
     import Chats from './Chats.svelte';
     import Button from '../UI/GUI/Button.svelte';
@@ -90,7 +91,7 @@ import { isMobile } from 'src/ts/platform'
     let currentChatReady = $derived(!!currentChatSlot && !currentChatSlot._placeholder)
     let currentChat = $derived(currentChatReady ? currentChatSlot.message : [])
     let currentChatFmIndex = $derived(currentChatReady ? (currentChatSlot.fmIndex ?? -1) : -1)
-    let resolveFirstMessageAssets = $derived.by(() => getChatAssetRenderWindow(
+    let resolveFirstMessageAssets = $derived.by(() => currentChatFmIndex !== BLANK_FIRST_MESSAGE_INDEX && getChatAssetRenderWindow(
         currentChat,
         DBState.db.externalAssetRecentOutputs,
         currentChatSlot?.firstMessageDisabled !== true,
@@ -1559,14 +1560,15 @@ import { isMobile } from 'src/ts/platform'
                 <Chat
                     character={createSimpleCharacter(DBState.db.characters[$selectedCharID])}
                     name={DBState.db.characters[$selectedCharID].name}
-                    message={currentChatFmIndex === -1 ? DBState.db.characters[$selectedCharID].firstMessage :
-                        DBState.db.characters[$selectedCharID].alternateGreetings[currentChatFmIndex]}
+                    message={getFirstMessageAtIndex(DBState.db.characters[$selectedCharID], currentChatFmIndex)}
                     role='char'
                     img={resolveFirstMessageAssets ? getCharImage(DBState.db.characters[$selectedCharID].image, 'css') : ''}
+                    loadSenderImage={() => getCharImage(DBState.db.characters[$selectedCharID].image, 'css')}
                     resolveChatAssets={resolveFirstMessageAssets}
                     resolveSenderIcon={resolveFirstMessageAssets}
+                    allowViewportAssetActivation={currentChatSlot?.firstMessageDisabled !== true && currentChatFmIndex !== BLANK_FIRST_MESSAGE_INDEX}
                     idx={-1}
-                    altGreeting={DBState.db.characters[$selectedCharID].alternateGreetings.length > 0}
+                    altGreeting={true}
                     disabled={DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].firstMessageDisabled === true}
                     largePortrait={DBState.db.characters[$selectedCharID].largePortrait}
                     firstMessage={true}
@@ -1574,21 +1576,19 @@ import { isMobile } from 'src/ts/platform'
                         const cha = DBState.db.characters[$selectedCharID]
                         const chat = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
                         if (chat._placeholder) return
-                        const cur = Number.isFinite(chat.fmIndex as number) ? (chat.fmIndex as number) : -1
-                        chat.fmIndex = (cur >= cha.alternateGreetings.length - 1) ? -1 : cur + 1
+                        chat.fmIndex = nextFirstMessageIndex(chat.fmIndex, cha.alternateGreetings.length)
                         DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage] = chat
                     }}
                     unReroll={() => {
                         const cha = DBState.db.characters[$selectedCharID]
                         const chat = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
                         if (chat._placeholder) return
-                        const cur = Number.isFinite(chat.fmIndex as number) ? (chat.fmIndex as number) : -1
-                        chat.fmIndex = (cur === -1) ? cha.alternateGreetings.length - 1 : cur - 1
+                        chat.fmIndex = previousFirstMessageIndex(chat.fmIndex, cha.alternateGreetings.length)
                         DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage] = chat
                     }}
                     isLastMemory={false}
-                    currentPage={(Number.isFinite(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].fmIndex as number) ? (DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].fmIndex as number) : -1) + 2}
-                    totalPages={DBState.db.characters[$selectedCharID].alternateGreetings.length + 1}
+                    currentPage={firstMessagePageNumber(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].fmIndex)}
+                    totalPages={lastFirstMessagePageNumber(DBState.db.characters[$selectedCharID].alternateGreetings.length)}
 
                 />
                 {#if (aiLawApplies() && DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length === 0)}

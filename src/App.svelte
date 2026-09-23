@@ -5,31 +5,15 @@
     import ChatScreen from './lib/ChatScreens/ChatScreen.svelte';
     import AlertComp from './lib/Others/AlertComp.svelte';
     import RealmPopUp from './lib/UI/Realm/RealmPopUp.svelte';
-    import CharacterManager from './lib/CharacterManager/CharacterManager.svelte';
     import FolderSettingsDialog from './lib/CharacterManager/FolderSettingsDialog.svelte';
-    import BookmarkList from './lib/Others/BookmarkList.svelte';
-    import Settings from './lib/Setting/Settings.svelte';
     import { showRealmInfoStore } from './ts/characterCards';
     import SavePopupIconComp from './lib/Others/SavePopupIcon.svelte';
-    import Botpreset from './lib/Setting/botpreset.svelte';
-    import Modelpreset from './lib/Setting/modelpreset.svelte';
-    import ModelProfileBrowser from './lib/Setting/modelProfileBrowser.svelte';
-    import Themepreset from './lib/Setting/themepreset.svelte';
-    import ListedPersona from './lib/Setting/listedPersona.svelte';
-    import ListedMemoryPreset from './lib/Setting/listedMemoryPreset.svelte';
-    import MobileHeader from './lib/Mobile/MobileHeader.svelte';
-    import MobileBody from './lib/Mobile/MobileBody.svelte';
-    import MobileFooter from './lib/Mobile/MobileFooter.svelte';
     import { ArrowLeft, ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte';
     import { hypaV3ModalOpen, hypaV3ProgressStore } from "./ts/stores.svelte";
     import { assetViewerStore } from './ts/assetViewer.svelte';
-    import AssetViewer from './lib/Others/AssetViewer.svelte';
     import { protonBrowserState } from './ts/protonBrowser.svelte';
-    import ProtonFolderBrowser from './lib/Others/ProtonFolderBrowser.svelte';
-    import HypaV3Modal from './lib/Others/HypaV3Modal.svelte';
-    import HypaV3Progress from './lib/Others/HypaV3Progress.svelte';
     import PluginAlertModal from './lib/Others/PluginAlertModal.svelte';
-    import PopupEditor from './lib/Others/PopupEditor.svelte';
+    import LazyComponent from './lib/Others/LazyComponent.svelte';
     import UpdatePopup from './lib/Others/UpdatePopup.svelte';
     import SupportDialog from './lib/Others/SupportDialog.svelte';
     import BootBackupPrompt from './lib/Others/BootBackupPrompt.svelte';
@@ -49,6 +33,24 @@
     let keepingSessionAlive = $state(false)
     let legacyGridOpen = $state(false)
     let LegacyGridComponent = $state<any>(null)
+
+    const settingsLoader = () => import('./lib/Setting/Settings.svelte')
+    const characterManagerLoader = () => import('./lib/CharacterManager/CharacterManager.svelte')
+    const botPresetLoader = () => import('./lib/Setting/botpreset.svelte')
+    const modelPresetLoader = () => import('./lib/Setting/modelpreset.svelte')
+    const modelProfileBrowserLoader = () => import('./lib/Setting/modelProfileBrowser.svelte')
+    const themePresetLoader = () => import('./lib/Setting/themepreset.svelte')
+    const personaLoader = () => import('./lib/Setting/listedPersona.svelte')
+    const memoryPresetLoader = () => import('./lib/Setting/listedMemoryPreset.svelte')
+    const mobileHeaderLoader = () => import('./lib/Mobile/MobileHeader.svelte')
+    const mobileBodyLoader = () => import('./lib/Mobile/MobileBody.svelte')
+    const mobileFooterLoader = () => import('./lib/Mobile/MobileFooter.svelte')
+    const bookmarkLoader = () => import('./lib/Others/BookmarkList.svelte')
+    const hypaModalLoader = () => import('./lib/Others/HypaV3Modal.svelte')
+    const hypaProgressLoader = () => import('./lib/Others/HypaV3Progress.svelte')
+    const popupEditorLoader = () => import('./lib/Others/PopupEditor.svelte')
+    const assetViewerLoader = () => import('./lib/Others/AssetViewer.svelte')
+    const protonBrowserLoader = () => import('./lib/Others/ProtonFolderBrowser.svelte')
 
     function openLegacyGrid() {
         openCharacterManager.set(false)
@@ -231,12 +233,12 @@
             <span class="text-sm mt-2 text-textcolor2">{LoadingStatusState.text}</span>
         </div>
     {:else if $settingsOpen}
-        <Settings />
+        <LazyComponent loader={settingsLoader} />
     {:else if $MobileGUI}
         <div class="w-full h-full flex flex-col">
-            <MobileHeader />
-            <MobileBody />
-            <MobileFooter />
+            <LazyComponent loader={mobileHeaderLoader} />
+            <LazyComponent loader={mobileBodyLoader} />
+            <LazyComponent loader={mobileFooterLoader} />
         </div>
     {:else}
         {#if legacyGridOpen && LegacyGridComponent}
@@ -272,7 +274,7 @@
         {/if}
         <ChatScreen />
         {#if $openCharacterManager}
-            <CharacterManager />
+            <LazyComponent loader={characterManagerLoader} />
         {/if}
         {/if}
     {/if}
@@ -282,32 +284,32 @@
     {/if}
     <FolderSettingsDialog />
     {#if $openPresetList}
-        <Botpreset close={() => {$openPresetList = false}} />
+        <LazyComponent loader={botPresetLoader} props={{ close: () => {$openPresetList = false} }} />
     {/if}
     {#if $openModelPresetList}
-        <Modelpreset close={() => {$openModelPresetList = false}} />
+        <LazyComponent loader={modelPresetLoader} props={{ close: () => {$openModelPresetList = false} }} />
     {/if}
     {#if $openModelProfileBrowser}
-        <ModelProfileBrowser close={() => {$openModelProfileBrowser = false}} />
+        <LazyComponent loader={modelProfileBrowserLoader} props={{ close: () => {$openModelProfileBrowser = false} }} />
     {/if}
     {#if $openThemePresetList}
-        <Themepreset close={() => {$openThemePresetList = false}} />
+        <LazyComponent loader={themePresetLoader} props={{ close: () => {$openThemePresetList = false} }} />
     {/if}
     {#if $openPersonaList}
-        <ListedPersona close={() => {$openPersonaList = false; $personaSelectCallback = null}} onSelect={$personaSelectCallback} />
+        <LazyComponent loader={personaLoader} props={{ close: () => {$openPersonaList = false; $personaSelectCallback = null}, onSelect: $personaSelectCallback }} />
     {/if}
     {#if $openMemoryPresetList}
-        <ListedMemoryPreset close={() => {$openMemoryPresetList = false; $memoryPresetSelectCallback = null}} onSelect={$memoryPresetSelectCallback} />
+        <LazyComponent loader={memoryPresetLoader} props={{ close: () => {$openMemoryPresetList = false; $memoryPresetSelectCallback = null}, onSelect: $memoryPresetSelectCallback }} />
     {/if}
     {#if $bookmarkListOpen}
-        <BookmarkList />
+        <LazyComponent loader={bookmarkLoader} />
     {/if}
     {#if $hypaV3ModalOpen}
-        <HypaV3Modal />
+        <LazyComponent loader={hypaModalLoader} />
     {/if}
     <SavePopupIconComp />
     {#if $hypaV3ProgressStore.open}
-        <HypaV3Progress />
+        <LazyComponent loader={hypaProgressLoader} />
     {/if}
     <PluginAlertModal />
     <LoadingOverlay />
@@ -318,13 +320,13 @@
         <PopupList />
     {/if}
     {#if popUpEditorStore.open}
-        <PopupEditor />
+        <LazyComponent loader={popupEditorLoader} />
     {/if}
     {#if assetViewerStore.open}
-        <AssetViewer />
+        <LazyComponent loader={assetViewerLoader} />
     {/if}
     {#if protonBrowserState.open}
-        <ProtonFolderBrowser />
+        <LazyComponent loader={protonBrowserLoader} />
     {/if}
     <Toaster />
     <RequestStatusToaster />

@@ -21,6 +21,7 @@
     import { getLatestModuleCatalogPromotion, recordModuleActivation, recordModuleFolderActivation, recordModuleFolderOrder, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
     import { chooseTitleColor, listTitleColor } from "src/ts/gui/titleColors";
     import { resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
+    import { cloneModuleDraft } from "src/ts/process/moduleDraft";
     import type { PromptPresetFolder } from "src/ts/storage/database.svelte";
     let tempModule:RisuModule = $state({
         name: '',
@@ -169,7 +170,7 @@
         const rmodule = DBState.db.modules[originalIndex]
         if (!rmodule || rmodule.mcp) return
         rememberListScroll()
-        tempModule = rmodule
+        tempModule = cloneModuleDraft($state.snapshot(rmodule))
         editModuleIndex = originalIndex
         mode = 2
     }
@@ -396,7 +397,7 @@
     <SettingPage title={language.editModule}>
     <ModuleMenu bind:currentModule={tempModule}/>
         <Button className="mt-6" onclick={async () => {
-            DBState.db.modules[editModuleIndex] = tempModule
+            DBState.db.modules[editModuleIndex] = cloneModuleDraft($state.snapshot(tempModule))
             notifySuccess(language.moduleUpdated)
             await returnToModuleList()
         }}>{language.editModule}</Button>

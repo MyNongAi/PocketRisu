@@ -22,6 +22,20 @@ export function normalizeExternalAssetRecentOutputs(value: unknown): number {
     return Math.floor(value)
 }
 
+/**
+ * Old messages stay cold until they are actually close to the viewport. The
+ * newest-N window remains warm so returning to the composer does not flash.
+ */
+export function shouldResolveChatAssets(
+    inRecentWindow: boolean,
+    viewportVisible: boolean,
+    configuredLimit: unknown,
+): boolean {
+    return normalizeExternalAssetRecentOutputs(configuredLimit) === 0
+        || inRecentWindow
+        || viewportVisible
+}
+
 function isActualCharacterOutput(message: ChatAssetWindowMessage | undefined): boolean {
     return message?.role === 'char' && !message.isComment && !message.disabled
 }

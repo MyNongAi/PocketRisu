@@ -22,6 +22,7 @@ import { getGenerationModelString } from "./models/modelString";
 import { runInlayScreen } from "./inlayScreen";
 import { runImageEmbedding } from "./transformers";
 import { runLuaEditTrigger } from "./scriptings";
+import { getFirstMessageAtIndex } from "../firstMessage";
 import { getModelInfo, LLMFlags } from "../model/modellist";
 import { captureChatModelRoute, resolvePresetMaxOutputTokens, presetSupportsVision, type RequestModelRouteSnapshot } from "./request/modelPresetBinding";
 import { hypaMemoryV3 } from "./memory/hypav3";
@@ -1009,21 +1010,25 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     let ms:Message[] = makeMs(currentChat)
 
     if(!msReseted && !currentChat.firstMessageDisabled){
-        const firstMsg = currentChat.fmIndex === -1 ? nowChatroom.firstMessage : nowChatroom.alternateGreetings[currentChat.fmIndex]
+        const firstMsg = getFirstMessageAtIndex(nowChatroom, currentChat.fmIndex)
 
-        const chat:OpenAIChat = {
-            role: 'assistant',
-            content: await (processScript(nowChatroom,
-                risuChatParser(firstMsg, {chara: currentChar}),
-            'editprocess', {}, getRuntimeModuleContext()))
-        }
+        // The synthetic page 0 is genuinely absent from the prompt. Sending an
+        // empty assistant turn (or only the character name) changes model input.
+        if(firstMsg !== ''){
+            const chat:OpenAIChat = {
+                role: 'assistant',
+                content: await (processScript(nowChatroom,
+                    risuChatParser(firstMsg, {chara: currentChar}),
+                'editprocess', {}, getRuntimeModuleContext()))
+            }
 
-        if(usingPromptTemplate && DBState.db.promptSettings.sendName){
-            chat.content = `${currentChar.name}: ${chat.content}`
-            chat.attr = ['nameAdded']
+            if(usingPromptTemplate && DBState.db.promptSettings.sendName){
+                chat.content = `${currentChar.name}: ${chat.content}`
+                chat.attr = ['nameAdded']
+            }
+            chats.push(chat)
+            currentTokens += await tokenizer.tokenizeChat(chat)
         }
-        chats.push(chat)
-        currentTokens += await tokenizer.tokenizeChat(chat)
     }
     
     console.log('Prepared messages for token calculation:', ms)
