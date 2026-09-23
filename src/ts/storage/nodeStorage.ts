@@ -451,6 +451,7 @@ export class NodeStorage{
     private static sessionInitialized = false
     private static sessionPending: Promise<void> | null = null
     private refreshPending: Promise<string> | null = null
+    private authPending: Promise<void> | null = null
 
     constructor(
         private readonly fetchFn: StorageFetch = defaultStorageFetch,
@@ -907,6 +908,20 @@ export class NodeStorage{
     }
 
     private async checkAuth(){
+        if (this.authChecked) {
+            await this.initSession()
+            return
+        }
+        if (this.authPending) return this.authPending
+        this.authPending = this.performAuthCheck()
+        try {
+            await this.authPending
+        } finally {
+            this.authPending = null
+        }
+    }
+
+    private async performAuthCheck(){
 
         if(!this.authChecked){
             const data = await (await fetch('/api/test_auth',{

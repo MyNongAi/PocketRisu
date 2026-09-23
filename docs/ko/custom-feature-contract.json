@@ -504,6 +504,7 @@
         "src/ts/characterRuntime.ts",
         "src/ts/storage/boundedObjectUrlCache.ts",
         "src/ts/storage/assetNameLocalResolver.ts",
+        "src/ts/storage/nodeStorage.ts",
         "src/ts/bootstrap.ts"
       ],
       "requiredMarkers": [
@@ -511,7 +512,8 @@
         { "file": "src/lib/Others/LazyComponent.svelte", "contains": "const moduleCache" },
         { "file": "src/lib/SideBars/sidebarPanelLoaders.ts", "contains": "createCachedLoader" },
         { "file": "src/ts/characterRuntime.ts", "contains": "needsCharacterRuntimeNormalization" },
-        { "file": "src/ts/storage/assetNameLocalResolver.ts", "contains": "resolveNamesLocally" }
+        { "file": "src/ts/storage/assetNameLocalResolver.ts", "contains": "resolveNamesLocally" },
+        { "file": "src/ts/storage/nodeStorage.ts", "contains": "authPending" }
       ],
       "regressionTests": [
         "src/App.performance.test.ts",
@@ -519,7 +521,8 @@
         "src/ts/characterRuntime.test.ts",
         "src/ts/storage/boundedObjectUrlCache.test.ts",
         "src/ts/chatAssetWindow.test.ts",
-        "src/ts/storage/assetNameLocalResolver.test.ts"
+        "src/ts/storage/assetNameLocalResolver.test.ts",
+        "src/ts/storage/nodeStorage.authConcurrency.test.ts"
       ]
     },
     {
