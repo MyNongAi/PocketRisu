@@ -1506,9 +1506,7 @@ import { isMobile } from 'src/ts/platform'
                 loadPages += getAdditionalChatLoadPages(DBState.db)
             }
             const chatTarget = e.target as HTMLElement;
-            const chatsContainer = (DBState.db.fixedChatTextarea && chatTarget.children[1]) ? chatTarget.children[1] : chatTarget.children[0];
-            const lastEl = chatsContainer?.firstElementChild;
-            const isAtBottom = lastEl ? lastEl.getBoundingClientRect().top <= chatTarget.getBoundingClientRect().bottom + 100 : true;
+            const isAtBottom = Math.abs(chatTarget.scrollTop) <= 100;
             if(isAtBottom){
                 showNewMessageButton = false;
             }
