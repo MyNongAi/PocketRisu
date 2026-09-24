@@ -843,7 +843,7 @@ describe('fast-path — no-op detection after each transition', () => {
 
         const changed = clone(db); changed.characters.splice(1, 1) // remove b
         const r1 = await p.set(clone(changed), emptyToSave())
-        expect(r1.patch.some((o: any) => o.path === '/characters')).toBe(true)
+        expect(r1.patch).toEqual([{ op: 'remove', path: '/characters/1' }])
 
         const r2 = await p.set(clone(changed), emptyToSave())
         expect(r2.patch).toEqual([])
@@ -860,6 +860,65 @@ describe('fast-path — no-op detection after each transition', () => {
 
         const r2 = await p.set(clone(changed), emptyToSave())
         expect(r2.patch).toEqual([])
+    })
+
+    test('trash from a large catalog sends only removed indices and retains hash parity', async () => {
+        const { applyPatch } = await import('fast-json-patch')
+        const db = dbWith(Array.from({ length: 1000 }, (_, i) => chr(`card-${i}`, { desc: 'lore'.repeat(2048) })))
+        const p = new RisuSavePatcher()
+        await p.init(db)
+        const draft = p.fork()
+        const changed = { ...db, characters: db.characters.filter((_, i) => i !== 0 && i !== 501) }
+        const result = await draft.set(changed, emptyToSave())
+        expect(result.patch).toEqual([
+            { op: 'remove', path: '/characters/501' },
+            { op: 'remove', path: '/characters/0' },
+        ])
+        expect(JSON.stringify(result.patch).length).toBeLessThan(150)
+        expect(applyPatch(clone(db), result.patch).newDocument).toEqual(changed)
+        const fresh = new RisuSavePatcher()
+        await fresh.init(changed)
+        expect(draft.hash()).toBe(fresh.hash())
+        // A failed upload discards the draft; its removals must not mutate the
+        // confirmed patcher's shared character baseline or retry caches.
+        expect((await p.fork().set(changed, emptyToSave())).patch).toEqual(result.patch)
+        expect((await draft.set(changed, emptyToSave())).patch).toEqual([])
+    })
+
+    test('deletion preserves simultaneous edits at the survivor\'s new index', async () => {
+        const { applyPatch } = await import('fast-json-patch')
+        const db = dbWith([chr('a'), chr('b'), chr('c')])
+        const changed = dbWith([chr('b'), chr('c', { desc: 'unsaved edit' })])
+        const p = new RisuSavePatcher()
+        await p.init(db)
+        const result = await p.set(changed, emptyToSave())
+        expect(result.patch[0]).toEqual({ op: 'remove', path: '/characters/0' })
+        expect(result.patch).toContainEqual({ op: 'replace', path: '/characters/1/desc', value: 'unsaved edit' })
+        expect(applyPatch(clone(db), result.patch).newDocument).toEqual(changed)
+        const fresh = new RisuSavePatcher()
+        await fresh.init(changed)
+        expect(p.hash()).toBe(fresh.hash())
+    })
+
+    test('ten sequential trash saves stay small and keep the confirmed hash on every turn', async () => {
+        const { applyPatch } = await import('fast-json-patch')
+        let server = dbWith(Array.from({ length: 10 }, (_, i) => chr(`sequential-${i}`)))
+        let confirmed = new RisuSavePatcher()
+        await confirmed.init(server)
+        for (let round = 0; round < 10; round++) {
+            const next = { ...server, characters: server.characters.slice(1) }
+            const draft = confirmed.fork()
+            const result = await draft.set(next, emptyToSave())
+            expect(result.expectedHash).toBe(confirmed.hash())
+            expect(result.patch).toEqual([{ op: 'remove', path: '/characters/0' }])
+            server = applyPatch(clone(server), result.patch).newDocument
+            const independentlyLoaded = new RisuSavePatcher()
+            await independentlyLoaded.init(server)
+            expect(draft.hash()).toBe(independentlyLoaded.hash())
+            confirmed = draft
+            expect((await confirmed.fork().set(clone(server), emptyToSave())).patch).toEqual([])
+        }
+        expect(server.characters).toHaveLength(0)
     })
 })
 

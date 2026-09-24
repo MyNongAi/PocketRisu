@@ -57,7 +57,20 @@ function withOverlay<T>(fn: () => Promise<T>): Promise<T> {
  * `characters` to the stub list (one save tick) → selection is cleared.
  * Returns true when the character was deactivated.
  */
-export async function archiveCharacter(index: number, arg: { skipConfirm?: boolean; trash?: boolean; trashedAt?: number; silent?: boolean; automatic?: boolean; nonBlocking?: boolean } = {}): Promise<boolean> {
+type ArchiveOptions = { skipConfirm?: boolean; trash?: boolean; trashedAt?: number; silent?: boolean; automatic?: boolean; nonBlocking?: boolean }
+const pendingArchives = new Map<string, Promise<boolean>>()
+
+export function archiveCharacter(index: number, arg: ArchiveOptions = {}): Promise<boolean> {
+    const id = DBState.db.characters[index]?.chaId
+    if (!id) return Promise.resolve(false)
+    const pending = pendingArchives.get(id)
+    if (pending) return pending
+    const operation = archiveCharacterOnce(index, arg).finally(() => pendingArchives.delete(id))
+    pendingArchives.set(id, operation)
+    return operation
+}
+
+async function archiveCharacterOnce(index: number, arg: ArchiveOptions): Promise<boolean> {
     const db = DBState.db
     const char = db.characters[index]
     if (!char?.chaId) return false
