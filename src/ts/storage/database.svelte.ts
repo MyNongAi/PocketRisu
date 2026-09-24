@@ -416,6 +416,7 @@ export function setDatabase(data:Database){
     data.sendKeyPC ??= 'enter'
     data.sendKeyMobile ??= 'ctrl-enter'
     data.autoSuggestPrompt ??= defaultAutoSuggestPrompt
+    data.auxiliaryMinVisibleChars ??= 20
     data.autoSuggestPrefix ??= ""
     data.OAIPrediction ??= ''
     data.autoSuggestClean ??= true
@@ -1218,6 +1219,7 @@ export interface Database{
     koboldURL:string
     useAutoSuggestions:boolean
     autoSuggestPrompt:string
+    auxiliaryMinVisibleChars:number
     autoSuggestPrefix:string
     autoSuggestClean:boolean
     claudeAPIKey:string,
