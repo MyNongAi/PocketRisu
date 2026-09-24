@@ -292,10 +292,11 @@
         itemFolderIds={displayModules.map(m => m.folderId)}
         itemSearchTexts={displayModules.map(m => `${m.name}\n${m.description ?? ''}`)}
         showItemCount
-        storageKey="risu-module-folders-expanded-v2"
+        storageKey="risu-module-folders-expanded-v3"
         defaultCollapsed
         newFoldersFirst
         rootItemsStandalone
+        interleaveItems
         promotedItemIndex={promotedModuleIndex}
         promotedFolderId={promotedFolderId}
         reorderDisabled={moduleCatalogSort !== 'recent'}

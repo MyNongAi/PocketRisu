@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
     getLatestModuleCatalogPromotion,
+    interleaveModuleCatalogGroups,
     recordModuleActivation,
     recordModuleFolderActivation,
     recordModuleFolderOrder,
@@ -10,6 +11,32 @@ import {
     sortModuleFoldersByActivation,
     sortModulesByActivation,
 } from './moduleSort'
+
+describe('interleaved module catalog', () => {
+    const groups = [
+        { folder: { id: 'first' }, indexes: [1] },
+        { folder: { id: 'second' }, indexes: [3] },
+        { folder: null, indexes: [0, 2, 4] },
+    ]
+
+    it('keeps unrelated folders between standalone modules instead of grouping all folders second', () => {
+        expect(interleaveModuleCatalogGroups(groups, 2)).toEqual([
+            { kind: 'root', indexes: [2, 0] },
+            { kind: 'folder', folderId: 'first' },
+            { kind: 'folder', folderId: 'second' },
+            { kind: 'root', indexes: [4] },
+        ])
+    })
+
+    it('promotes only the active folder and leaves the remaining entries interleaved', () => {
+        expect(interleaveModuleCatalogGroups(groups, -1, 'second')).toEqual([
+            { kind: 'folder', folderId: 'second' },
+            { kind: 'root', indexes: [0] },
+            { kind: 'folder', folderId: 'first' },
+            { kind: 'root', indexes: [2, 4] },
+        ])
+    })
+})
 
 const modules = [
     { id: 'bravo', name: 'Bravo' },

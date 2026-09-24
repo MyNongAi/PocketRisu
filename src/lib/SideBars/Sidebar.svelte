@@ -35,6 +35,7 @@
     FolderIcon,
     FolderOpenIcon,
     SearchIcon,
+    XIcon,
     HomeIcon,
     WrenchIcon,
     User2Icon,
@@ -1235,6 +1236,14 @@
       placeholder={splitCatalogMode ? language.search : ''}
       class="min-w-0 grow bg-transparent py-1 text-xs text-textcolor outline-none"
     />
+    <button
+      type="button"
+      class="shrink-0 rounded p-0.5 text-textcolor2 risu-interactive-accent disabled:opacity-35"
+      aria-label="검색어 지우기"
+      title="검색어 지우기"
+      disabled={!catalogSearch}
+      onclick={() => { catalogSearch = '' }}
+    ><XIcon size={14}/></button>
     <button
       type="button"
       class="shrink-0 rounded p-0.5 text-textcolor2 risu-interactive-accent"
