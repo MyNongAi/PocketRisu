@@ -281,7 +281,9 @@
         const element = chatBody.firstElementChild as HTMLElement | null;
         const chatScreen = chatBody.parentElement;
         if(!element || !chatScreen) return;
-        scrollWithinContainer(element, chatScreen, { block: 'start', behavior: 'instant' });
+        // The newest reply can be taller than the viewport. Aligning its start
+        // made each output jump upward instead of staying near the live tail.
+        scrollWithinContainer(element, chatScreen, { block: 'end', behavior: 'instant' });
     }
 
     export const scrollToLatestMessage = () => {
