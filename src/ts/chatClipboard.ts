@@ -1,14 +1,14 @@
 const PORTABLE_STYLE_PROPERTIES = [
     'display', 'visibility', 'box-sizing',
     'position', 'top', 'right', 'bottom', 'left', 'z-index',
-    'width', 'min-width', 'max-width', 'height', 'min-height', 'max-height',
+    'width', 'min-width', 'max-width', 'height', 'min-height', 'max-height', 'aspect-ratio',
     'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
     'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
     'overflow', 'overflow-x', 'overflow-y',
     'color', 'background-color', 'background-image', 'background-size',
     'background-position', 'background-repeat', 'background-clip',
     'border-top', 'border-right', 'border-bottom', 'border-left',
-    'border-radius', 'box-shadow', 'outline',
+    'border-radius', 'border-collapse', 'border-spacing', 'table-layout', 'box-shadow', 'outline',
     'font-family', 'font-size', 'font-style', 'font-weight', 'line-height',
     'letter-spacing', 'text-align', 'text-decoration', 'text-shadow',
     'white-space', 'word-break', 'overflow-wrap',
@@ -17,10 +17,44 @@ const PORTABLE_STYLE_PROPERTIES = [
     'flex-wrap', 'align-content', 'align-items', 'align-self',
     'justify-content', 'justify-items', 'justify-self', 'gap',
     'grid-template-columns', 'grid-template-rows', 'grid-column', 'grid-row',
-    'transform', 'transform-origin', 'vertical-align',
+    'transform', 'transform-origin', 'transform-style', 'perspective', 'perspective-origin', 'backface-visibility', 'vertical-align',
+    'fill', 'fill-rule', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
 ] as const
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+
+/** Call directly in the click handler, before awaiting downloads. ClipboardItem
+ * accepts a promised Blob, so the browser can authorize the write while the
+ * click still has focus/user activation. Never silently downgrade image logs
+ * to text or retry writeText after a focus failure. */
+export function writeChatClipboard(text: string, html: Promise<string>): Promise<void> {
+    const content = html.then(value => new Blob([value], { type: 'text/html' }))
+    // The browser may reject before it ever consumes the promised HTML.
+    void content.catch(() => {})
+    if (!document.hasFocus()) {
+        return Promise.reject(new Error('리스 창으로 돌아온 뒤 복사 버튼을 다시 눌러 주세요. 클립보드에는 아직 복사되지 않았습니다.'))
+    }
+    if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
+        return Promise.reject(new Error('이 브라우저에서는 이미지가 포함된 HTML 복사를 사용할 수 없습니다. localhost 또는 HTTPS에서 열어 주세요.'))
+    }
+    try {
+        return navigator.clipboard.write([new ClipboardItem({
+            'text/plain': new Blob([text], { type: 'text/plain' }),
+            'text/html': content,
+        })])
+    } catch (error) {
+        return Promise.reject(error)
+    }
+}
+
+export function chatClipboardErrorMessage(error: unknown): string {
+    const message = error instanceof Error ? error.message : String(error)
+    if (/not focused|notallowed|denied|not allowed/i.test(message)
+        || (error instanceof DOMException && error.name === 'NotAllowedError')) {
+        return '복사 권한 또는 창 포커스가 없어 복사하지 못했습니다. 리스 창으로 돌아와 복사 버튼을 다시 눌러 주세요.'
+    }
+    return `채팅을 복사하지 못했습니다: ${message}`
+}
 
 export function extractCssUrls(value: string): string[] {
     const urls: string[] = []
@@ -78,6 +112,92 @@ function portableStyle(style: CSSStyleDeclaration): string {
     return result.join(';')
 }
 
+function preservePortableLayout(source: HTMLElement, clone: HTMLElement, computed: CSSStyleDeclaration, hasText: boolean, hasPseudo: boolean): void {
+    const isMedia = /^(IMG|VIDEO|CANVAS|SVG)$/.test(source.tagName)
+    const isOutOfFlow = computed.position === 'absolute' || computed.position === 'fixed'
+    const mediaFrame = !hasText && (hasPseudo || !!source.querySelector('img,video,canvas,svg') || !!computed.backgroundImage && computed.backgroundImage !== 'none')
+    const childStyles = Array.from(source.children).filter(child => !/^(STYLE|SCRIPT|LINK)$/.test(child.tagName))
+        .map(child => getComputedStyle(child)).filter(style => style.display !== 'none')
+    const positionedChildren = childStyles.filter(style => style.position === 'absolute' || style.position === 'fixed')
+    const directText = Array.from(source.childNodes).some(child => child.nodeType === Node.TEXT_NODE && !!child.textContent?.trim())
+    // A notebook cover/canvas may consist entirely of absolutely positioned
+    // panels. Its measured height is the ONLY thing keeping it in the flow.
+    const positionedCanvas = !directText && positionedChildren.length > 0 && positionedChildren.length === childStyles.length
+    // getComputedStyle resolves auto heights/widths to the CURRENT pixel box.
+    // Freezing those pixels makes details opening overlap following paragraphs,
+    // and forces short labels to wrap letter-by-letter in a narrower editor.
+    if (!isMedia && !isOutOfFlow && !mediaFrame && !positionedCanvas) {
+        clone.style.height = 'auto'
+        if (hasText || source instanceof HTMLDetailsElement) {
+            clone.style.width = 'auto'
+            clone.style.minWidth = '0'
+            clone.style.minHeight = '0'
+            clone.style.maxHeight = 'none'
+            clone.style.wordBreak = 'normal'
+            clone.style.overflowWrap = 'break-word'
+        }
+    }
+    if (computed.display === 'flex' || computed.display === 'inline-flex') {
+        clone.style.flexWrap = 'wrap'
+    }
+    if (computed.display === 'grid') {
+        // Resolved pixel tracks describe the old chat width, not the narrower
+        // article width. Preserve their proportions without freezing pixels.
+        const tracks = computed.gridTemplateColumns.trim().split(/\s+/)
+        if (tracks.length > 1 && tracks.every(track => /^\d+(?:\.\d+)?px$/.test(track))) {
+            clone.style.gridTemplateColumns = tracks.map(track => `minmax(0, ${parseFloat(track)}fr)`).join(' ')
+        }
+        clone.style.gridTemplateRows = 'auto'
+    }
+    if (source instanceof HTMLDetailsElement || !positionedCanvas && source.querySelector('details')) {
+        clone.style.height = 'auto'
+        clone.style.maxHeight = 'none'
+        clone.style.overflow = 'visible'
+    }
+    if (isMedia || mediaFrame) {
+        clone.style.maxWidth = '100%'
+    }
+    // Inline dimensions and aspect-ratio retain the collapsed image even if a
+    // paste target overrides a plain height declaration with its own img rule.
+    if (source instanceof HTMLImageElement && computed.aspectRatio && computed.aspectRatio !== 'auto') {
+        clone.style.setProperty('aspect-ratio', computed.aspectRatio, 'important')
+        clone.style.setProperty('height', 'auto', 'important')
+        clone.style.setProperty('object-fit', computed.objectFit, 'important')
+        clone.style.setProperty('object-position', computed.objectPosition, 'important')
+    }
+}
+
+/** Decode resolved quoted CSS content only; never interpret it as HTML. */
+export function decodeClipboardCssContent(content: string): string | null {
+    const tokens = content.match(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g)
+    if (!tokens?.length) return null
+    // Counters, attr(), URLs and alternative text need their own semantics.
+    // Do not accidentally copy their arguments as visible strings.
+    if (content.replace(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g, '').trim()) return null
+    return tokens.map(token => token.slice(1, -1).replace(/\\([0-9a-f]{1,6})(?:\r\n|\s)?|\\(?:\r\n|\n|\r)|\\(.)/gi,
+        (_match, hex: string | undefined, escaped: string | undefined) => {
+            if (!hex) return escaped ?? ''
+            const code = parseInt(hex, 16)
+            return code === 0 || code > 0x10ffff || code >= 0xd800 && code <= 0xdfff ? '\uFFFD' : String.fromCodePoint(code)
+        })).join('')
+}
+
+function snapshotPseudoElement(style: CSSStyleDeclaration): HTMLElement | null {
+    if (!style.content || style.content === 'none' || style.content === 'normal' || style.display === 'none') return null
+    const text = decodeClipboardCssContent(style.content)
+    const contentUrls = extractCssUrls(style.content)
+    if (text === null && contentUrls.length !== 1) return null
+    const element = document.createElement(contentUrls.length ? 'img' : 'span')
+    element.setAttribute('style', portableStyle(style))
+    if (element instanceof HTMLImageElement) {
+        element.src = contentUrls[0]
+        element.alt = ''
+    } else {
+        element.textContent = text
+    }
+    return element
+}
+
 async function embedElementAssets(
     source: Element,
     clone: Element,
@@ -119,7 +239,7 @@ async function embedElementAssets(
  */
 export async function buildPortableChatFragment(
     sourceRoot: HTMLElement,
-    options: { fetchFn?: FetchLike } = {},
+    options: { fetchFn?: FetchLike; getPseudoStyle?: (element: Element, pseudo: '::before' | '::after') => CSSStyleDeclaration } = {},
 ): Promise<string> {
     const cloneRoot = sourceRoot.cloneNode(true) as HTMLElement
     const sources = [sourceRoot, ...Array.from(sourceRoot.querySelectorAll('*'))]
@@ -135,10 +255,23 @@ export async function buildPortableChatFragment(
         return pending
     }
 
+    const assetTasks: Array<() => Promise<void>> = []
+    const readPseudo = options.getPseudoStyle ?? ((element: Element, pseudo: string) => getComputedStyle(element, pseudo))
+    const textContentFlags = new Map<Node, boolean>()
+    // Bottom-up flags avoid cloning/scanning every descendant subtree. Style
+    // rules are not visible text and must not turn an image frame into a label.
+    for (let index = sources.length - 1; index >= 0; index--) {
+        const element = sources[index]
+        textContentFlags.set(element, !/^(STYLE|SCRIPT)$/.test(element.tagName) && Array.from(element.childNodes).some(
+            child => child.nodeType === Node.TEXT_NODE ? !!child.textContent?.trim() : !!textContentFlags.get(child),
+        ))
+    }
+    // Snapshot all styles in one synchronous pass. Awaiting an image midway
+    // used to capture different hover/layout states within the same message.
     for (let index = 0; index < Math.min(sources.length, clones.length); index++) {
         const source = sources[index]
         const clone = clones[index]
-        if (!(source instanceof HTMLElement) || !(clone instanceof HTMLElement)) continue
+        if (!(source instanceof HTMLElement || source instanceof SVGElement) || !(clone instanceof HTMLElement || clone instanceof SVGElement)) continue
 
         const computed = getComputedStyle(source)
         const flattened = portableStyle(computed)
@@ -146,17 +279,63 @@ export async function buildPortableChatFragment(
 
         const background = computed.backgroundImage
         if (background && background !== 'none') {
-            clone.style.backgroundImage = await inlineCssUrls(background, toDataUrl)
+            assetTasks.push(async () => { clone.style.backgroundImage = await inlineCssUrls(background, toDataUrl) })
+        }
+
+        let hasPseudo = false
+        if (source instanceof HTMLElement && !/^(IMG|INPUT|BR|HR|META|LINK|SCRIPT|STYLE|VIDEO|CANVAS)$/.test(source.tagName)) {
+            for (const pseudo of ['::before', '::after'] as const) {
+                try {
+                    const style = readPseudo(source, pseudo)
+                    const decoration = snapshotPseudoElement(style)
+                    if (!decoration) continue
+                    hasPseudo = true
+                    if (pseudo === '::before') clone.prepend(decoration)
+                    else clone.append(decoration)
+                    const pseudoBackground = style.backgroundImage
+                    const pseudoSource = decoration.getAttribute('src')
+                    assetTasks.push(async () => {
+                        if (pseudoBackground && pseudoBackground !== 'none') decoration.style.backgroundImage = await inlineCssUrls(pseudoBackground, toDataUrl)
+                        if (pseudoSource && decoration instanceof HTMLImageElement) {
+                            try { decoration.src = await toDataUrl(pseudoSource) } catch { /* keep link */ }
+                        }
+                    })
+                } catch { /* DOM adapters or older engines may not expose pseudo styles. */ }
+            }
+        }
+        if (source instanceof HTMLElement && clone instanceof HTMLElement) {
+            preservePortableLayout(source, clone, computed, !!textContentFlags.get(source), hasPseudo)
         }
 
         if (source instanceof HTMLDetailsElement && clone instanceof HTMLDetailsElement) {
             clone.open = source.open
         }
 
-        await embedElementAssets(source, clone, toDataUrl)
+        // Capture the URL before a concurrent viewport update can release it.
+        const imageUrl = source instanceof HTMLImageElement ? source.currentSrc || source.getAttribute('src') : null
+        assetTasks.push(async () => {
+            if (imageUrl && clone instanceof HTMLImageElement) {
+                try { clone.src = await toDataUrl(imageUrl) } catch { clone.src = imageUrl }
+                clone.removeAttribute('srcset')
+                clone.removeAttribute('loading')
+            } else {
+                await embedElementAssets(source, clone, toDataUrl)
+            }
+        })
     }
 
-    cloneRoot.querySelectorAll('script, [data-risu-copy-ignore]').forEach((node) => node.remove())
+    for (const task of assetTasks) await task()
+    cloneRoot.querySelectorAll('script, style, link, [data-risu-copy-ignore]').forEach((node) => node.remove())
+    for (const element of [cloneRoot, ...cloneRoot.querySelectorAll('*')]) {
+        // Retained class rules on the destination must not re-enable hover or
+        // override the snapshot. The portable copy needs no executable hooks.
+        element.removeAttribute('class')
+        // SVG clip-path/use references may depend on IDs inside the fragment.
+        if (!(element instanceof SVGElement)) element.removeAttribute('id')
+        for (const attr of Array.from(element.attributes)) {
+            if (/^on/i.test(attr.name)) element.removeAttribute(attr.name)
+        }
+    }
     // Keep the chat body's own box as well. Many character cards attach the
     // visible frame/background to this top-level element rather than one of
     // its children, so returning only innerHTML silently dropped the frame.

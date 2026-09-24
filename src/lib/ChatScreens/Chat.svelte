@@ -16,7 +16,7 @@
     import { type Unsubscriber } from "svelte/store"
     import { v4 as uuidv4, v4 } from 'uuid'
     import { language } from "../../lang"
-    import { alertClear, alertConfirm, alertConfirmMulti, alertInput, alertRequestData, alertWait, notifyInfo, notifySuccess, type AlertAction } from "../../ts/alert"
+    import { alertConfirm, alertConfirmMulti, alertInput, alertRequestData, notifyError, notifyInfo, notifySuccess, type AlertAction } from "../../ts/alert"
     import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from "../../ts/parser/parser.svelte"
     import { getLLMCache, setLLMCache } from "../../ts/translator/translator"
     import { getCurrentCharacter, getCurrentChat, setCurrentChat, type MessageGenerationInfo, type StreamingDisplayOptimizationMode } from "../../ts/storage/database.svelte"
@@ -27,7 +27,7 @@
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
     import { getChatAssetRenderWindow, normalizeExternalAssetRecentOutputs, shouldResolveChatAssets } from '../../ts/chatAssetWindow';
-    import { buildPortableChatFragment, embedParsedChatAssets, fetchClipboardDataUrl } from '../../ts/chatClipboard';
+    import { buildPortableChatFragment, chatClipboardErrorMessage, embedParsedChatAssets, fetchClipboardDataUrl, writeChatClipboard } from '../../ts/chatClipboard';
 
     // Reactive breakpoint: a raw window.innerWidth read here is evaluated once
     // at mount and never follows a resize (#79).
@@ -39,6 +39,7 @@
     let editTranslationMode = $state(false)
     let editTranslationText = $state('')
     let bodyRoot:HTMLElement|null = $state(null)
+    let copyingChat = $state(false)
     interface Props {
         message?: string;
         name?: string;
@@ -594,150 +595,116 @@
 
 {#snippet majorIconButtonsBody(showNames:boolean)}
     {#if !blankMessage}
-    <button class="flex items-center hover:text-primary transition-colors button-icon-copy" onclick={async ()=>{
-        await sleep(1)
-        const copyText = renderRawStreaming
-            ? risuChatParser(rawStreamingText, {chara: name, chatID: idx, rmVar: true, visualize: true, cbsConditions: getCbsCondition()})
-            : msgDisplay
-        if(window.navigator.clipboard.write){
-            try {
-                alertWait(language.loading)
-                const root = document.querySelector(':root') as HTMLElement;
+    <button class="flex items-center hover:text-primary transition-colors button-icon-copy disabled:opacity-50" disabled={copyingChat} onclick={async ()=>{
+        if (copyingChat) return
+        copyingChat = true
+        try {
+            setStatusMessage('이미지와 액자를 복사하는 중…')
+            const copyText = renderRawStreaming
+                ? risuChatParser(rawStreamingText, {chara: name, chatID: idx, rmVar: true, visualize: true, cbsConditions: getCbsCondition()})
+                : msgDisplay
+            // Register the promised HTML with the clipboard in this click turn;
+            // downloading images or opening a modal first can lose activation.
+            const htmlPromise = (async () => {
+                const root = getComputedStyle(document.documentElement);
+                const currentCharacter = getCurrentCharacter()
+                const isUserMessage = role === 'user'
+                const displayName = isUserMessage ? getUserName() : name
+                const modelInfo = messageGenerationInfo ? capitalize(getModelInfo(messageGenerationInfo.model).shortName) : (isUserMessage ? 'User' : 'AI')
+                const iconPath = isUserMessage ? getUserIcon() : currentCharacter?.image
+                const escapeHtml = (text: string) => {
+                    const span = document.createElement('span')
+                    span.textContent = text
+                    return span.innerHTML
+                }
 
                 const parser = new DOMParser()
+                const hasLiveBody = !!bodyRoot?.isConnected && effectiveResolveChatAssets && !renderRawStreaming
                 const doc = parser.parseFromString(
-                    await ParseMarkdown(copyText, getCurrentCharacter(), 'normal', idx, getCbsCondition(), { resolveAssets: true })
+                    hasLiveBody
+                        ? await buildPortableChatFragment(bodyRoot!)
+                        : await ParseMarkdown(copyText, currentCharacter, 'normal', idx, getCbsCondition(), { resolveAssets: true })
                 , 'text/html')
 
-                if(bodyRoot?.isConnected){
-                    doc.body.innerHTML = await buildPortableChatFragment(bodyRoot)
-                }
-                else{
+                if(!hasLiveBody){
                     await embedParsedChatAssets(doc.body)
-                }
                 
                 doc.querySelectorAll('mark').forEach((el) => {
                     const d = el.getAttribute('risu-mark')
                     if(d === 'quote1' || d === 'quote2'){
                         const newEle = document.createElement('div')
-                        newEle.textContent = el.textContent
+                        newEle.innerHTML = el.innerHTML
                         newEle.style.background = 'transparent'
-                        newEle.style.color = root.style.getPropertyValue('--FontColorQuote' + d.slice(-1))
+                        newEle.style.color = root.getPropertyValue('--FontColorQuote' + d.slice(-1))
                         el.replaceWith(newEle)
                         return
                     }
                 })
                 doc.querySelectorAll('p').forEach((el) => {
-                    el.style.color = root.style.getPropertyValue('--FontColorStandard')
+                    el.style.color = root.getPropertyValue('--FontColorStandard')
                 })
                 doc.querySelectorAll('em').forEach((el) => {
                     el.style.fontStyle = 'italic'
-                    el.style.color = root.style.getPropertyValue('--FontColorItalic')
+                    el.style.color = root.getPropertyValue('--FontColorItalic')
                 })
                 doc.querySelectorAll('strong').forEach((el) => {
                     el.style.fontWeight = 'bold'
-                    el.style.color = root.style.getPropertyValue('--FontColorBold')
+                    el.style.color = root.getPropertyValue('--FontColorBold')
                 })
                 doc.querySelectorAll<HTMLElement>('em strong').forEach((el) => {
                     el.style.fontWeight = 'bold'
                     el.style.fontStyle = 'italic'
-                    el.style.color = root.style.getPropertyValue('--FontColorItalicBold')
+                    el.style.color = root.getPropertyValue('--FontColorItalicBold')
                 })
                 doc.querySelectorAll<HTMLElement>('strong em').forEach((el) => {
                     el.style.fontWeight = 'bold'
                     el.style.fontStyle = 'italic'
-                    el.style.color = root.style.getPropertyValue('--FontColorItalicBold')
+                    el.style.color = root.getPropertyValue('--FontColorItalicBold')
                 })
+                }
                 
                 doc.querySelectorAll('img').forEach((img) => {
                     img.setAttribute('alt', img.getAttribute('alt') || 'from PocketRisu')
                 })
 
-                let iconDataUrl = ''
-                let hasValidImage = false
+                let finalIconDataUrl = ''
                 
                 try {
-                    const iconImage = (await getFileSrc(DBState.db.characters[selIdState.selId].image ?? '')) ?? ''
-                    
-                    if(iconImage && (iconImage.startsWith('http://asset.localhost') || iconImage.startsWith('https://asset.localhost') || iconImage.startsWith('https://sv.risuai') || iconImage.startsWith('data:') || iconImage.startsWith('http') || iconImage.startsWith('/'))){
-                        if(iconImage.startsWith('data:')){
-                            iconDataUrl = iconImage
-                            hasValidImage = true
-                        } else {
-                            iconDataUrl = await fetchClipboardDataUrl(iconImage)
-                            hasValidImage = !!iconDataUrl
-                        }
+                    if (iconPath) {
+                        const iconImage = await getFileSrc(iconPath)
+                        if (iconImage) finalIconDataUrl = await fetchClipboardDataUrl(iconImage)
                     }
                 } catch (error) {
                     console.error('Icon error:', error)
-                    hasValidImage = false
                 }
 
-                const isUserMessage = role === 'user'
-                const displayName = isUserMessage ? getUserName() : name
-                const modelInfo = messageGenerationInfo ? capitalize(getModelInfo(messageGenerationInfo.model).shortName) : (isUserMessage ? 'User' : 'AI')
-                
-                let finalIconDataUrl = iconDataUrl
-                let finalHasValidImage = hasValidImage
-                
-                if (isUserMessage) {
-                    finalHasValidImage = false
-                    const userIcon = getUserIcon()
-                    if (userIcon) {
-                        try {
-                            const userIconSrc = await getFileSrc(userIcon)
-                            if (userIconSrc && (userIconSrc.startsWith('http://asset.localhost') || userIconSrc.startsWith('https://asset.localhost') || userIconSrc.startsWith('https://sv.risuai') || userIconSrc.startsWith('data:') || userIconSrc.startsWith('http') || userIconSrc.startsWith('/'))) {
-                                if (userIconSrc.startsWith('data:')) {
-                                    finalIconDataUrl = userIconSrc
-                                    finalHasValidImage = true
-                                } else {
-                                    finalIconDataUrl = await fetchClipboardDataUrl(userIconSrc)
-                                    finalHasValidImage = !!finalIconDataUrl
-                                }
-                            }
-                        } catch (error) {
-                            console.error('User icon error:', error)
-                            finalHasValidImage = false
-                        }
-                    }
-                }
-                
-                const html = `<div style="font-family: 'Segoe UI', Roboto, Arial, sans-serif; color: ${root.style.getPropertyValue('--risu-theme-textcolor')}; line-height: 1.6; max-width: 600px; margin: 1rem auto; background: ${root.style.getPropertyValue('--risu-theme-bgcolor')}; border-radius: 12px; box-shadow: 0px 4px 12px rgba(0,0,0,0.15); overflow: hidden;">
+                const html = `<div style="font-family: 'Segoe UI', Roboto, Arial, sans-serif; color: ${root.getPropertyValue('--risu-theme-textcolor')}; line-height: 1.6; max-width: 600px; margin: 1rem auto; background: ${root.getPropertyValue('--risu-theme-bgcolor')}; border-radius: 12px; box-shadow: 0px 4px 12px rgba(0,0,0,0.15); overflow: hidden;">
 <div style="padding: 20px;">
 <div style="display: flex; flex-direction: column; align-items: center; margin-bottom: 1rem; text-align: center;">
-    ${finalHasValidImage ? `<img style="width: 80px; height: 80px; border-radius: 50%; border: 3px solid ${root.style.getPropertyValue('--risu-theme-darkborderc')}; margin-bottom: 0.75rem; object-fit: cover;" src="${finalIconDataUrl}" alt="profile">` : ''}
-    <h3 style="color: ${root.style.getPropertyValue('--risu-theme-textcolor')}; font-weight: 600; font-size: 1.5rem; margin: 0 0 0.5rem 0;">${displayName}</h3>
-    ${!isUserMessage ? `<span style="display: inline-block; border-radius: 16px; font-size: 0.8rem; padding: 0.25rem 0.75rem; background: ${root.style.getPropertyValue('--risu-theme-darkbg')}; color: ${root.style.getPropertyValue('--risu-theme-textcolor')}; border: 1px solid ${root.style.getPropertyValue('--risu-theme-darkborderc')};">${modelInfo}</span>` : ''}
+    ${finalIconDataUrl ? `<img style="width: 80px; height: 80px; border-radius: 50%; border: 3px solid ${root.getPropertyValue('--risu-theme-darkborderc')}; margin-bottom: 0.75rem; object-fit: cover;" src="${finalIconDataUrl}" alt="profile">` : ''}
+    <h3 style="color: ${root.getPropertyValue('--risu-theme-textcolor')}; font-weight: 600; font-size: 1.5rem; margin: 0 0 0.5rem 0;">${escapeHtml(displayName)}</h3>
+    ${!isUserMessage ? `<span style="display: inline-block; border-radius: 16px; font-size: 0.8rem; padding: 0.25rem 0.75rem; background: ${root.getPropertyValue('--risu-theme-darkbg')}; color: ${root.getPropertyValue('--risu-theme-textcolor')}; border: 1px solid ${root.getPropertyValue('--risu-theme-darkborderc')};">${escapeHtml(modelInfo)}</span>` : ''}
 </div>
-<div style="border-top: 1px solid ${root.style.getPropertyValue('--risu-theme-darkborderc')}; padding-top: 1rem;">
+<div style="border-top: 1px solid ${root.getPropertyValue('--risu-theme-darkborderc')}; padding-top: 1rem;">
     ${doc.body.innerHTML}
 </div>
-<div style="text-align: center; margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid ${root.style.getPropertyValue('--risu-theme-darkborderc')};">
-    <span style="font-size: 0.75rem; color: ${root.style.getPropertyValue('--risu-theme-textcolor2')}; opacity: 0.7;">From PocketRisu</span>
+<div style="text-align: center; margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid ${root.getPropertyValue('--risu-theme-darkborderc')};">
+    <span style="font-size: 0.75rem; color: ${root.getPropertyValue('--risu-theme-textcolor2')}; opacity: 0.7;">From PocketRisu</span>
 </div>
 </div>
 </div>`
 
-                await window.navigator.clipboard.write([
-                    new ClipboardItem({
-                        'text/plain': new Blob([copyText], {type: 'text/plain'}),
-                        'text/html': new Blob([html], {type: 'text/html'})
-                    })
-                ])
-                alertClear()
-                notifyInfo(language.copied)
-                return
-            }
-            catch (e) {
-                alertClear()
-                window.navigator.clipboard.writeText(copyText).then(() => {
-                    setStatusMessage(language.copied)
-                })
-            }
+                return html
+            })()
+            await writeChatClipboard(copyText, htmlPromise)
+            notifyInfo(language.copied)
+            setStatusMessage(language.copied, 3000)
+        } catch (error) {
+            setStatusMessage('')
+            notifyError(chatClipboardErrorMessage(error))
+        } finally {
+            copyingChat = false
         }
-        window.navigator.clipboard.writeText(copyText).then(() => {
-            setStatusMessage(language.copied)
-        })
     }}>
         <CopyIcon size={20}/>
         {#if showNames}
