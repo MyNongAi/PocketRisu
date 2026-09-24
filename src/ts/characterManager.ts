@@ -4,6 +4,7 @@
  * from the DB and re-derives on change.
  */
 import type { Database } from './storage/database.svelte'
+import { matchesCatalogText } from './gui/catalogSearch'
 import { getCharacterAssetCount } from './gui/characterAssetCount'
 import { isRealmAssetRecoveryAvailable } from './gui/titleColors'
 import { resolveCharacterSourceBadge, type CharacterSourceBadge } from './gui/characterSourceBadge'
@@ -87,9 +88,7 @@ export function buildManagerEntries(db: Database): Map<string, ManagerEntry> {
 }
 
 export function matchesSearch(name: string, search: string): boolean {
-    const q = search.replace(/ /g, '').toLocaleLowerCase()
-    if (!q) return true
-    return (name ?? '').replace(/ /g, '').toLocaleLowerCase().includes(q)
+    return matchesCatalogText(name, search)
 }
 
 export function matchesFilter(entry: ManagerEntry, filter: ManagerFilter): boolean {

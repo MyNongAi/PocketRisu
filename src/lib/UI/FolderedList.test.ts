@@ -54,6 +54,21 @@ afterEach(async () => {
 })
 
 describe('module folder display interactions', () => {
+    it('filters Korean initials without exposing unrelated folders or rewriting membership', async () => {
+        const onItemsChange = vi.fn()
+        const { target, onFoldersChange } = await renderList({ itemSearchTexts: ['넬리 섬', '다른 모듈'], onItemsChange })
+        const input = target.querySelector<HTMLInputElement>('input')!
+        input.value = 'ㄴㄹㅅ'
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        await tick()
+        expect(target.textContent).toContain('Alpha')
+        expect(target.textContent).not.toContain('Beta')
+        expect(target.textContent).toContain('Module 0')
+        expect(target.textContent).not.toContain('Module 1')
+        expect(onItemsChange).not.toHaveBeenCalled()
+        expect(onFoldersChange).not.toHaveBeenCalled()
+    })
+
     it('starts collapsed and remembers an explicit expansion on the next mount', async () => {
         const first = await renderList()
         expect(first.target.querySelector('[data-folder-container="a"]')?.classList.contains('hidden')).toBe(true)

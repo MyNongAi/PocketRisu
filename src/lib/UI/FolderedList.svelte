@@ -13,6 +13,7 @@
     import type { SortableEvent } from "sortablejs";
     import { v4 as uuidv4 } from "uuid";
     import { language } from "src/lang";
+    import { matchesCatalogText } from "src/ts/gui/catalogSearch";
     import { alertConfirm, alertInput, alertSelect } from "src/ts/alert";
     import { groupByFolder, isFolderCollapsed } from "src/ts/folders";
     import type { PromptPresetFolder } from "src/ts/storage/database.svelte";
@@ -139,7 +140,7 @@
     const dragDisabled = $derived(query.length > 0 || reorderDisabled);
 
     function matches(index: number) {
-        return !query || (itemSearchTexts[index] ?? '').toLocaleLowerCase().includes(query);
+        return matchesCatalogText(itemSearchTexts[index], query);
     }
 
     // Filtering only the item rows left unrelated folder headers on screen and
