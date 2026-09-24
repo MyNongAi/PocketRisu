@@ -155,6 +155,9 @@ export function makeJobFetch(opts: JobFetchOptions): typeof fetch {
             })().catch(() => {})
         }
         signal?.addEventListener('abort', abortJob, { once: true })
+        // The user can press Stop while job creation is returning its id.
+        // An already-aborted signal will not dispatch another abort event.
+        if (signal?.aborted) abortJob()
         const detach = () => signal?.removeEventListener('abort', abortJob)
 
         // 2. Attach to the journal stream (replay from byte 0 + live tail).

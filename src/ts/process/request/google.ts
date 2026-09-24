@@ -705,7 +705,10 @@ async function requestGoogle(url:string, body:any, headers:{[key:string]:string}
             saveSignature: arg.saveSignatures ?? false
         }) 
 
-        f.body.pipeTo(transtream.writable)
+        void f.body.pipeTo(transtream.writable, { signal: arg.abortSignal ?? undefined })
+            .catch((error) => {
+                if (!arg.abortSignal?.aborted) console.error('[Google] stream transform failed', error)
+            })
 
         return {
             type: 'streaming',
@@ -1295,7 +1298,10 @@ function wrapToolStream(
                             modelInfo: arg.modelInfo,
                             saveSignature: arg.saveSignatures ?? false
                         })
-                        resRec.body.pipeTo(transtream.writable)
+                        void resRec.body.pipeTo(transtream.writable, { signal: arg.abortSignal ?? undefined })
+                            .catch((error) => {
+                                if (!arg.abortSignal?.aborted) console.error('[Google] tool stream transform failed', error)
+                            })
 
                         reader = transtream.readable.getReader()
 

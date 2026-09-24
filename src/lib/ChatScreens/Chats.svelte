@@ -236,6 +236,7 @@
         roomId: string | null
     }
     let viewportRestoreRevision = 0
+    let newMessageScrollTimer: ReturnType<typeof setTimeout> | null = null
 
     /** Keep the first visible message fixed while streamed text grows below it. */
     function captureViewportAnchor(): ViewportAnchor | null {
@@ -294,6 +295,10 @@
 
     $effect(() => {
         void $ReloadChatPointer; // Make $effect track ReloadChatPointer changes
+        if (newMessageScrollTimer !== null) {
+            clearTimeout(newMessageScrollTimer)
+            newMessageScrollTimer = null
+        }
         const wasAtBottom = checkIfAtBottom();
         const anchor = wasAtBottom ? null : captureViewportAnchor()
         const restoreRevision = ++viewportRestoreRevision
@@ -308,8 +313,14 @@
             const lastMsg = messages[messages.length - 1];
             if(lastMsg && lastMsg.role === 'char' && DBState.db.autoScrollToNewMessage){
                 if(wasAtBottom || DBState.db.alwaysScrollToNewMessage){
-                    setTimeout(() => {
-                        scrollLatestIntoChatScreen();
+                    const scheduledRoomId = currentChatRoomId
+                    newMessageScrollTimer = setTimeout(() => {
+                        newMessageScrollTimer = null
+                        // A delayed scroll must not drag the reader away after
+                        // switching chats or manually scrolling into history.
+                        if (getCurrentChatRoomId() !== scheduledRoomId) return
+                        if (!DBState.db.alwaysScrollToNewMessage && !checkIfAtBottom()) return
+                        scrollLatestIntoChatScreen()
                     }, 700);
                 } else {
                     hasNewUnreadMessage = true;
@@ -318,6 +329,10 @@
         }
         previousLength = messages.length;
         previousChatRoomId = currentChatRoomId;
+    })
+
+    onDestroy(() => {
+        if (newMessageScrollTimer !== null) clearTimeout(newMessageScrollTimer)
     })
 
 </script>

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { requestChatData } from "src/ts/process/request/request";
     import { doingChat, type OpenAIChat } from "../../ts/process/index.svelte";
-    import { syncDoingChat } from "../../ts/process/generationState";
+    import { chatGenKey, clearGenerationAborted, finishAuxiliaryAbort, registerAuxiliaryAbort, syncDoingChat, wasGenerationAborted } from "../../ts/process/generationState";
     import { setDatabase, type character, type Message, type Database } from "../../ts/storage/database.svelte";
 	import { DBState } from 'src/ts/stores.svelte';
     import { selectedCharID } from "../../ts/stores.svelte";
@@ -13,6 +13,7 @@
     import { onDestroy } from 'svelte';
     import { ParseMarkdown } from "src/ts/parser/parser.svelte";
     import {defaultAutoSuggestPrompt} from "../../ts/storage/defaultPrompts.js";
+    import { hasRenderableMainOutput } from '../../ts/process/auxiliaryOutput';
 
     interface Props {
         send: () => any;
@@ -30,7 +31,7 @@
 
     const updateSuggestions = () => {
         if($selectedCharID > -1 && !$doingChat) {
-            if(progressChatPage > 0 && progressChatPage != chatPage){
+            if(progressChatPage >= 0 && progressChatPage != chatPage){
                 progress=false
                 abortController?.abort()
             }
@@ -48,11 +49,17 @@
         }
         if(!v && $selectedCharID > -1 && (!suggestMessages || suggestMessages.length === 0) && !progress){
             let currentChar:character = DBState.db.characters[$selectedCharID];
+            const suggestionChatKey = chatGenKey(currentChar?.chats?.[currentChar.chatPage]?.id)
+            if (wasGenerationAborted(suggestionChatKey)) return
             let messages:Message[] = []
             
             messages = [...messages, ...currentChar.chats[currentChar.chatPage].message];
             let lastMessages:Message[] = messages.slice(Math.max(messages.length - 10, 0));
-            if(lastMessages.length === 0)
+            // No useful main reply means there is nothing for the auxiliary
+            // model to suggest from. This also avoids paying for a request
+            // immediately after the user stopped an empty generation.
+            const lastMessage = lastMessages.at(-1)
+            if(!lastMessage || lastMessage.role !== 'char' || !hasRenderableMainOutput(lastMessage.data))
                 return
             const prompt = DBState.db.autoSuggestPrompt && DBState.db.autoSuggestPrompt.length > 0 ? DBState.db.autoSuggestPrompt : defaultAutoSuggestPrompt
             let promptbody:OpenAIChat[] = [
@@ -80,20 +87,26 @@
             }
 
             progress = true
-            progressChatPage = chatPage
-            abortController = new AbortController()
+            progressChatPage = currentChar.chatPage
+            const requestController = new AbortController()
+            abortController = requestController
+            registerAuxiliaryAbort(suggestionChatKey, requestController)
             requestChatData({
                 formated: promptbody,
                 bias: {},
                 currentChar : currentChar as character
-            }, 'submodel', abortController.signal).then(rq2=>{
-                if(rq2.type !== 'fail' && rq2.type !== 'streaming' && rq2.type !== 'multiline' && progress){
+            }, 'submodel', requestController.signal).then(rq2=>{
+                if(rq2.type !== 'fail' && rq2.type !== 'streaming' && rq2.type !== 'multiline' && progress && !requestController.signal.aborted){
                     var suggestMessagesNew = rq2.result.split('\n').filter(msg => msg.startsWith('-')).map(msg => msg.replace('-','').trim())
                     const db:Database = DBState.db;
                     db.characters[$selectedCharID].chats[currentChar.chatPage].suggestMessages = suggestMessagesNew
                     suggestMessages = suggestMessagesNew
                 }
-                progress = false
+            }).catch((error) => {
+                if (!requestController.signal.aborted) console.error('[Suggestion] request failed', error)
+            }).finally(() => {
+                finishAuxiliaryAbort(suggestionChatKey, requestController)
+                if (abortController === requestController) progress = false
             })
             }
     })
@@ -109,7 +122,10 @@
         }
     }
 
-    onDestroy(unsub)
+    onDestroy(() => {
+        unsub()
+        abortController?.abort()
+    })
 
     $effect.pre(() => {
         $selectedCharID
@@ -145,6 +161,8 @@
                 onclick={() => {
                     alertConfirm(language.askReRollAutoSuggestions).then((result) => {
                         if(result) {
+                            const currentChar = DBState.db.characters[$selectedCharID]
+                            clearGenerationAborted(chatGenKey(currentChar?.chats?.[currentChar.chatPage]?.id))
                             suggestMessages = []
                             // pulse the compat store to retrigger the subscriber
                             // above, then re-converge it with generationStates

@@ -2668,6 +2668,7 @@ function createIdleWatchdog(idleMs, totalSignal) {
     arm();
     return {
         signal: controller.signal,
+        abort: () => controller.abort(),
         idle: () => firedIdle,
         touch: arm,
         // Resets the idle timer on every chunk that flows through the relay.
@@ -3832,6 +3833,10 @@ const reverseProxyFunc = async (req, res, next) => {
     // (localNetworkTimeoutSec up to 3600s) must not be undercut by it.
     const idleMs = Math.max(PROXY_IDLE_TIMEOUT_MS, timeoutMs || 0);
     const idle = createIdleWatchdog(idleMs, timeout.signal);
+    const onClientClose = () => {
+        if (!res.writableEnded) idle.abort();
+    };
+    res.on('close', onClientClose);
     let originalResponse;
     try {
     const header = req.headers['risu-header'] ? JSON.parse(decodeURIComponent(req.headers['risu-header'])) : req.headers;
@@ -3899,6 +3904,7 @@ const reverseProxyFunc = async (req, res, next) => {
 
     }
     catch (err) {
+        if (res.destroyed) return;
         if (err?.name === 'AbortError') {
             if (!res.headersSent) {
                 res.status(504).send({
@@ -3920,6 +3926,7 @@ const reverseProxyFunc = async (req, res, next) => {
         next(err);
         return;
     } finally {
+        res.off('close', onClientClose);
         idle.cleanup();
         timeout.cleanup();
     }
@@ -3944,6 +3951,10 @@ const reverseProxyFunc_get = async (req, res, next) => {
     // (localNetworkTimeoutSec up to 3600s) must not be undercut by it.
     const idleMs = Math.max(PROXY_IDLE_TIMEOUT_MS, timeoutMs || 0);
     const idle = createIdleWatchdog(idleMs, timeout.signal);
+    const onClientClose = () => {
+        if (!res.writableEnded) idle.abort();
+    };
+    res.on('close', onClientClose);
     let originalResponse;
     try {
     const header = req.headers['risu-header'] ? JSON.parse(decodeURIComponent(req.headers['risu-header'])) : req.headers;
@@ -3987,6 +3998,7 @@ const reverseProxyFunc_get = async (req, res, next) => {
         await pipeline(originalResponse.body, idle.transform(), res);
     }
     catch (err) {
+        if (res.destroyed) return;
         if (err?.name === 'AbortError') {
             if (!res.headersSent) {
                 res.status(504).send({
@@ -4004,6 +4016,7 @@ const reverseProxyFunc_get = async (req, res, next) => {
         next(err);
         return;
     } finally {
+        res.off('close', onClientClose);
         idle.cleanup();
         timeout.cleanup();
     }

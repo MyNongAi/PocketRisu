@@ -15,7 +15,7 @@
     import { DBState } from 'src/ts/stores.svelte';
     import { getCharImage } from "../../ts/characters";
     import { sendChat } from "../../ts/process/index.svelte";
-    import { abortGeneration, chatGenKey, endGeneration, generationStates, getGenerationAdmission, registerAbort } from "../../ts/process/generationState";
+    import { abortGeneration, auxiliaryGenerating, chatGenKey, endGeneration, generationStates, getGenerationAdmission, registerAbort } from "../../ts/process/generationState";
     import { captureGenerationTarget, resolveGenerationTarget, type GenerationTargetIdentity } from '../../ts/process/generationTarget';
     import { captureChatModelRoute, type RequestModelRouteSnapshot } from '../../ts/process/request/modelPresetBinding';
     import { claimPendingSend, clearPendingSend, markResumable, resumableSends, takeResumable } from "../../ts/process/request/pendingSends";
@@ -726,6 +726,7 @@ import { isMobile } from 'src/ts/platform'
     // Send while A (revisited) still shows a working Stop. Recomputes on chat
     // switch because currentChatGenKey reads the selected char/chatPage.
     let currentChatGenerating = $derived($generationStates.has(currentChatGenKey()))
+    let currentChatAuxGenerating = $derived($auxiliaryGenerating.has(currentChatGenKey()))
     let currentChatProcessStage = $derived($generationStates.get(currentChatGenKey())?.stage ?? 0)
 
     async function sendChatMain(
@@ -1377,7 +1378,7 @@ import { isMobile } from 'src/ts/platform'
                     <Maximize2 size={18} />
                 </button>
 
-                {#if currentChatGenerating || doingChatInputTranslate}
+                {#if currentChatGenerating || currentChatAuxGenerating || doingChatInputTranslate}
                     <button
                             aria-labelledby="cancel"
                             class="order-2 shrink-0 flex justify-center items-center w-9 h-9 rounded-full text-textcolor hover:bg-primary/20 transition-colors" onclick={abortChat}

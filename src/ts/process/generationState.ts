@@ -62,6 +62,35 @@ export const isAnyGenerating: Readable<boolean> = derived(generationStates, (m) 
 // generation cannot adopt a stale controller. Overwritten by the next
 // registerAbort for the chat.
 const pendingAborts = new Map<string, AbortController>()
+const auxiliaryAborts = new Map<string, AbortController>()
+const userAbortedChatKeys = new Set<string>()
+export function wasGenerationAborted(chatKey: string): boolean {
+    return userAbortedChatKeys.has(chatKey)
+}
+
+export function clearGenerationAborted(chatKey: string): void {
+    userAbortedChatKeys.delete(chatKey)
+}
+// Auxiliary requests (for example auto-suggestions) may outlive the main
+// generation. Expose their per-chat activity so the same Stop button remains
+// available and never silently starts an uninterruptible second request.
+export const auxiliaryGenerating = writable<Set<string>>(new Set())
+
+export function registerAuxiliaryAbort(chatKey: string, controller: AbortController): void {
+    auxiliaryAborts.get(chatKey)?.abort()
+    auxiliaryAborts.set(chatKey, controller)
+    auxiliaryGenerating.update((keys) => new Set(keys).add(chatKey))
+}
+
+export function finishAuxiliaryAbort(chatKey: string, controller: AbortController): void {
+    if (auxiliaryAborts.get(chatKey) !== controller) return
+    auxiliaryAborts.delete(chatKey)
+    auxiliaryGenerating.update((keys) => {
+        const next = new Set(keys)
+        next.delete(chatKey)
+        return next
+    })
+}
 
 // Legacy chats can lack chat.id; those share one fallback key so the guard and
 // cleanup still pair up (same single-generation behavior as before).
@@ -144,7 +173,10 @@ export function tryStartGeneration(
         })
         return next
     })
-    if (decision.allowed) syncDoingChat()
+    if (decision.allowed) {
+        clearGenerationAborted(chatKey)
+        syncDoingChat()
+    }
     return decision
 }
 
@@ -253,12 +285,14 @@ export function registerAbort(chatKey: string, controller: AbortController): voi
 export function abortGeneration(chatKey: string): boolean {
     const entry = get(generationStates).get(chatKey)
     const pending = pendingAborts.get(chatKey)
+    const auxiliary = auxiliaryAborts.get(chatKey)
     let aborted = false
-    for (const controller of new Set([entry?.abortController, pending])) {
+    for (const controller of new Set([entry?.abortController, pending, auxiliary])) {
         if (controller && !controller.signal.aborted) {
             controller.abort()
             aborted = true
         }
     }
+    if (aborted) userAbortedChatKeys.add(chatKey)
     return aborted
 }
