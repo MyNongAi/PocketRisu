@@ -35,7 +35,8 @@
     const thumbnails = new SvelteMap<string, string>()
     const thumbnailsRequested = new Set<string>()
 
-    const rows = $derived(buildProtonRows(listing?.entries ?? []))
+    const origin = protonBrowserState.origin
+    const rows = $derived(buildProtonRows(listing?.entries ?? [], origin))
     const pickableHere = $derived(rows.filter((row) => row.importable))
     const allHerePicked = $derived(pickableHere.length > 0 && pickableHere.every((row) => picks.has(row.entry.linkId)))
     const pathIds = $derived(trail.map((step) => step.linkId))

@@ -37,6 +37,7 @@
     SearchIcon,
     XIcon,
     HomeIcon,
+    RotateCwIcon,
     WrenchIcon,
     User2Icon,
     ChevronsLeft,
@@ -75,6 +76,7 @@
   import LazyComponent from "../Others/LazyComponent.svelte";
     import { loadCharConfig, loadDevTool, loadQuickSettings, loadSideChatList, preloadCharacterSidebarPanel, preloadChatSidebarPanel } from "./sidebarPanelLoaders";
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
+    import { reloadApp } from "src/ts/reloadApp";
   const isTouchDevice = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
   const touchDragEnabled = $derived(isTouchDevice && !DBState.db.disableMobileDragDrop);
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
@@ -745,7 +747,29 @@
       }
     }
   }
+
+  // The installed phone app has no browser reload button, and reloading is
+  // also how the page picks up a new build. reloadApp saves first.
+  let reloading = $state(false)
+  async function reloadFromMenu() {
+    if (reloading) return
+    reloading = true
+    try {
+      if (!(await reloadApp())) reloading = false
+    } catch {
+      reloading = false
+    }
+  }
 </script>
+
+{#snippet reloadMenuButton()}
+  <div class="mt-2"></div>
+  <BarIcon
+    ariaLabel={language.reloadApp}
+    title={language.reloadApp}
+    onClick={reloadFromMenu}
+  ><RotateCwIcon class={reloading ? 'animate-spin' : ''} /></BarIcon>
+{/snippet}
 
 {#snippet addCharacterButton(position: 'top' | 'bottom')}
   <div class="flex flex-col items-center gap-2 px-2" data-add-character-button={position}>
@@ -1183,6 +1207,7 @@
           }
         }}><Settings /></BarIcon
       >
+      {@render reloadMenuButton()}
       <div class="mt-2"></div>
       <BarIcon
         onClick={() => {
@@ -1611,6 +1636,7 @@
           }
         }}><Settings /></BarIcon
       >
+      {@render reloadMenuButton()}
       <div class="mt-2"></div>
       <BarIcon
         onClick={() => {

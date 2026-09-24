@@ -4,7 +4,7 @@
 // The importer opens the browser with the first listing and awaits the user's
 // picks; the component mounted in App.svelte does the rest.
 
-import { classifySharedImport, type SharedImportKind } from './shareTargetRouting'
+import { classifySharedImport, type ImportOrigin, type SharedImportKind } from './shareTargetRouting'
 import type { ProtonEntry, ProtonInspectResult } from './protonShareClient'
 
 /** One file the user chose, with the folders it sits in (outermost first). */
@@ -25,10 +25,10 @@ export interface ProtonRow {
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
 /** Folders first, then files, each in natural order ("2" before "10"). */
-export function buildProtonRows(entries: readonly ProtonEntry[]): ProtonRow[] {
+export function buildProtonRows(entries: readonly ProtonEntry[], origin: ImportOrigin = 'character'): ProtonRow[] {
     const rows = entries.map((entry): ProtonRow => {
         if (entry.type === 1) return { entry, kind: 'folder', importable: false }
-        const kind = classifySharedImport(entry.name, entry.mediaType ?? '')
+        const kind = classifySharedImport(entry.name, entry.mediaType ?? '', origin)
         return kind ? { entry, kind, importable: true } : { entry, kind: 'unsupported', importable: false }
     })
     return rows.sort((a, b) => {
@@ -49,22 +49,30 @@ export const protonBrowserState = $state<{
     url: string
     password: string
     initial: ProtonInspectResult | null
+    origin: ImportOrigin
 }>({
     open: false,
     url: '',
     password: '',
     initial: null,
+    origin: 'character',
 })
 
 let resolvePicks: ((picks: ProtonPick[] | null) => void) | null = null
 
 /** Show the browser on `initial` and resolve with the chosen files, or null on cancel. */
-export function openProtonBrowser(url: string, password: string, initial: ProtonInspectResult): Promise<ProtonPick[] | null> {
+export function openProtonBrowser(
+    url: string,
+    password: string,
+    initial: ProtonInspectResult,
+    origin: ImportOrigin = 'character',
+): Promise<ProtonPick[] | null> {
     // A browser that is already open gets cancelled rather than orphaned.
     resolvePicks?.(null)
     protonBrowserState.url = url
     protonBrowserState.password = password
     protonBrowserState.initial = initial
+    protonBrowserState.origin = origin
     protonBrowserState.open = true
     return new Promise((resolve) => {
         resolvePicks = resolve
