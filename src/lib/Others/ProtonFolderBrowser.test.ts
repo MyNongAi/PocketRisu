@@ -67,6 +67,12 @@ describe('buildProtonRows', () => {
         expect(rows.map((row) => row.importable)).toEqual([false, true, true, false])
     })
 
+    it('labels a .charx as a module when the module page opened the link', () => {
+        const rows = buildProtonRows(ROOT.entries, 'module')
+        expect(rows.find((row) => row.entry.name === 'card 10.charx')?.kind).toBe('module')
+        expect(rows.find((row) => row.entry.name === 'card 2.png')?.kind).toBe('character')
+    })
+
     it('formats sizes compactly', () => {
         expect(formatProtonSize(null)).toBe('')
         expect(formatProtonSize(900)).toBe('900 B')

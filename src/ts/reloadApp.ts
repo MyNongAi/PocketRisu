@@ -1,4 +1,5 @@
-// Reload for the installed phone app, which has no browser reload button.
+// Reload from inside the app (sidebar menu, mobile header): the installed
+// phone app has no browser reload button.
 //
 // Reloading is also how the app picks up a new build: the server sends
 // index.html uncached and every bundle under a new hashed name, and the

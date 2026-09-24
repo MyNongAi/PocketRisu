@@ -9,7 +9,7 @@ import { language } from 'src/lang'
 import { runImportBatch, type ImportProgressReporter } from './importProgress'
 import { downloadProtonEntry, inspectProtonShare, isProtonShareUrl, type ProtonInspectResult } from './protonShareClient'
 import { openProtonBrowser, type ProtonPick } from './protonBrowser.svelte'
-import { classifySharedImport, type SharedImportKind } from './shareTargetRouting'
+import { classifySharedImport, type ImportOrigin, type SharedImportKind } from './shareTargetRouting'
 import { importCharacterProcess } from './characterCards'
 import { importModuleFile } from './process/modules'
 import { importPreset } from './storage/database.svelte'
@@ -25,8 +25,9 @@ async function importByKind(
     name: string,
     data: Uint8Array,
     report: ImportProgressReporter,
+    origin: ImportOrigin,
 ): Promise<SharedImportKind | null> {
-    const kind = classifySharedImport(name)
+    const kind = classifySharedImport(name, '', origin)
     switch (kind) {
         case 'module':
             await importModuleFile({ name, data }, { suppressSuccess: true, onProgress: report })
@@ -56,8 +57,11 @@ async function importByKind(
  * Returns false when the link was not a Proton share, so the caller can fall
  * back to its manual path — Proton has announced a breaking crypto change, and
  * this must degrade to "download it yourself" rather than a dead end.
+ *
+ * `origin` is the page the link was opened from; a module exported as a
+ * .charx is only a module to the module page (see classifySharedImport).
  */
-export async function importFromProtonLink(url: string, password = ''): Promise<boolean> {
+export async function importFromProtonLink(url: string, password = '', origin: ImportOrigin = 'character'): Promise<boolean> {
     if (!isProtonShareUrl(url)) return false
 
     let info: ProtonInspectResult
@@ -77,7 +81,7 @@ export async function importFromProtonLink(url: string, password = ''): Promise<
     // user sees what is inside (subfolders included) before anything imports.
     let chosen: ProtonPick[]
     if (info.kind === 'folder') {
-        const picks = await openProtonBrowser(url, password, info)
+        const picks = await openProtonBrowser(url, password, info, origin)
         if (!picks || picks.length === 0) return true
         chosen = picks
     } else {
@@ -100,7 +104,7 @@ export async function importFromProtonLink(url: string, password = ''): Promise<
                 expectedSize: item.pick.entry.size,
             }, report)
             report({ label: `${language.protonImporting} ${file.name}`, progress: 85 })
-            const kind = await importByKind(file.name, file.data, report)
+            const kind = await importByKind(file.name, file.data, report, origin)
             if (!kind) {
                 skipped.push(file.name)
                 throw new Error(language.protonUnsupportedFile)

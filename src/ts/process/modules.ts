@@ -459,11 +459,12 @@ export async function importModule(){
 export async function importModuleFromProtonDrive() {
     const url = await alertInput(language.protonDriveUrlPrompt)
 
-    // Same server-side path as the character import — it routes each file by
-    // extension, so a module link lands in the module importer either way.
+    // Same server-side path as the character import. It routes each file by
+    // extension, and from this page a .charx or .json is a module, as it is
+    // for this page's own file picker below.
     if (isNodeServer && url) {
         const { importFromProtonLink } = await import('../protonImport')
-        if (await importFromProtonLink(url)) return
+        if (await importFromProtonLink(url, '', 'module')) return
     }
 
     if (url && url.includes('drive.proton.me/urls/')) {
