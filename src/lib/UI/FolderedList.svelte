@@ -16,6 +16,7 @@
     import { matchesCatalogText } from "src/ts/gui/catalogSearch";
     import { alertConfirm, alertInput, alertSelect } from "src/ts/alert";
     import { groupByFolder, isFolderCollapsed } from "src/ts/folders";
+    import { interleaveModuleCatalogGroups } from "src/ts/process/moduleSort";
     import type { PromptPresetFolder } from "src/ts/storage/database.svelte";
     import ShSortableList from "./GUI/ShSortableList.svelte";
     import ShButton from "./GUI/ShButton.svelte";
@@ -54,6 +55,8 @@
         /** Render the root drop zone before real folders. Useful for a recent
          *  sort where the newest standalone item must be the absolute first row. */
         rootItemsFirst?: boolean;
+        /** Keep standalone rows and folders in their item-recency order. */
+        interleaveItems?: boolean;
         /** Promote one concrete top-level entry without moving every item of
          *  the same kind as a block. These are display-only indexes/IDs. */
         promotedItemIndex?: number;
@@ -104,6 +107,7 @@
         newFoldersFirst = false,
         rootItemsStandalone = false,
         rootItemsFirst = false,
+        interleaveItems = false,
         promotedItemIndex = -1,
         promotedFolderId = '',
         reorderDisabled = false,
@@ -157,6 +161,9 @@
     const promotedFolderGroup = $derived(displayGroups.find((group) => group.folder?.id === promotedFolderId));
     const remainingRootIndexes = $derived(rootIndexes.filter((index) => index !== promotedRootIndex));
     const remainingFolderGroups = $derived(displayGroups.filter((group) => group.folder?.id !== promotedFolderGroup?.folder?.id && !!group.folder));
+    const interleavedBlocks = $derived(interleaveItems
+        ? interleaveModuleCatalogGroups(displayGroups, promotedRootIndex, promotedFolderId)
+        : []);
     const displayItemCount = $derived(displayGroups.reduce((count, group) => count + group.indexes.length, 0));
 
     function loadCollapsed(): Set<string> {
@@ -297,7 +304,17 @@
         options={{ group: 'foldered-list-folders' }}
         onReorder={onFolderDrop}
     >
-        {#if promotedRootIndex !== -1}
+        {#if interleaveItems}
+            {#each interleavedBlocks as block (block.kind === 'folder' ? `folder:${block.folderId}` : `root:${block.indexes[0]}`)}
+                {#if block.kind === 'folder'}
+                    {@const group = displayGroups.find((entry) => entry.folder?.id === block.folderId)}
+                    {#if group}{@render folderGroup(group)}{/if}
+                {:else}
+                    {@render rootGroup(block.indexes)}
+                {/if}
+            {/each}
+            {#if rootIndexes.length === 0}{@render rootGroup([])}{/if}
+        {:else if promotedRootIndex !== -1}
             {@render rootGroup([promotedRootIndex])}
             {#each remainingFolderGroups as group (group.folder?.id)}
                 {@render folderGroup(group)}

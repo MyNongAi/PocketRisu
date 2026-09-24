@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { buildPortableChatFragment, chatClipboardErrorMessage, decodeClipboardCssContent, extractCssUrls, fetchClipboardDataUrl, inlineCssUrls, writeChatClipboard } from './chatClipboard'
+import { buildPortableChatFragment, chatClipboardErrorMessage, coverImagePlacement, decodeClipboardCssContent, extractCssUrls, fetchClipboardDataUrl, inlineCssUrls, writeChatClipboard } from './chatClipboard'
 
 afterEach(() => {
     vi.restoreAllMocks()
@@ -98,6 +98,44 @@ describe('clipboard layout snapshot', () => {
         expect(copy.querySelector('table')!.style.borderCollapse).toBe('separate')
         expect(image.hasAttribute('class')).toBe(false)
         expect(root.querySelector('img')!.className).toBe('hover-frame')
+    })
+
+    it('pre-crops cover images and lets the table frame shrink with the pasted image', async () => {
+        const root = document.createElement('section')
+        root.innerHTML = '<table style="height:435px"><tbody><tr><td style="height:435px"><img style="display:block;width:100%;height:435px;aspect-ratio:1/1.45;object-fit:cover;object-position:top" src="data:image/png;base64,AA=="></td></tr></tbody></table>'
+        document.body.append(root)
+        vi.spyOn(root.querySelector('img')!, 'getBoundingClientRect').mockReturnValue({ width: 300, height: 435 } as DOMRect)
+        const rasterizeCover = vi.fn(async () => 'data:image/png;base64,CROPPED')
+        const copy = new DOMParser().parseFromString(await buildPortableChatFragment(root, { rasterizeCover }), 'text/html')
+        expect(rasterizeCover).toHaveBeenCalledWith('data:image/png;base64,AA==', 300, 435, 'top')
+        expect(copy.querySelector('table')!.style.height).toBe('auto')
+        expect(copy.querySelector('td')!.style.height).toBe('auto')
+        const image = copy.querySelector('img')!
+        expect(image.getAttribute('src')).toBe('data:image/png;base64,CROPPED')
+        expect(image.style.aspectRatio).toBe('auto')
+        expect(image.style.width).toBe('100%')
+    })
+
+    it('retains the top crop instead of centering the full source portrait', () => {
+        expect(coverImagePlacement(100, 200, 100, 100, 'center top'))
+            .toEqual({ x: 0, y: 0, width: 100, height: 200 })
+        expect(coverImagePlacement(100, 200, 100, 100, 'center center').y).toBe(-50)
+        expect(coverImagePlacement(200, 100, 100, 100, 'right center').x).toBe(-100)
+    })
+
+    it('replaces status-widget SVG icons with embedded bitmaps for editors that strip SVG', async () => {
+        const root = document.createElement('section')
+        root.innerHTML = '<div><svg viewBox="0 0 20 20" style="width:20px;height:20px"><defs><linearGradient id="heart"><stop style="stop-color:#ff85a8"/></linearGradient></defs><path fill="url(#heart)" d="M0 0h20v20H0z"/></svg></div>'
+        document.body.append(root)
+        const svg = root.querySelector('svg')!
+        vi.spyOn(svg, 'getBoundingClientRect').mockReturnValue({ width: 20, height: 20 } as DOMRect)
+        const rasterizeSvg = vi.fn(async () => 'data:image/png;base64,HEART')
+        const copy = new DOMParser().parseFromString(await buildPortableChatFragment(root, { rasterizeSvg }), 'text/html')
+        expect(rasterizeSvg).toHaveBeenCalledTimes(1)
+        expect(copy.querySelector('svg')).toBeNull()
+        expect(copy.querySelector('img')!.getAttribute('src')).toBe('data:image/png;base64,HEART')
+        expect(copy.querySelector('img')!.style.width).toBe('20px')
+        expect(root.querySelector('svg')).toBe(svg)
     })
 
     it('lets details and text containers reflow instead of fixing the old measured height', async () => {

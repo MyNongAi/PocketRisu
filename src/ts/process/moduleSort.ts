@@ -93,6 +93,61 @@ export interface ModuleCatalogPromotion {
     folderId?: string
 }
 
+export interface ModuleCatalogDisplayGroup {
+    folder: { id: string; favorite?: boolean } | null
+    indexes: ReadonlyArray<number>
+}
+
+export type ModuleCatalogDisplayBlock =
+    | { kind: 'folder'; folderId: string }
+    | { kind: 'root'; indexes: number[] }
+
+/** Keep standalone modules and folders interleaved at the first visible member.
+ * Promoting one entry must never hoist every other folder as a block. */
+export function interleaveModuleCatalogGroups(
+    groups: ReadonlyArray<ModuleCatalogDisplayGroup>,
+    promotedRootIndex = -1,
+    promotedFolderId = '',
+): ModuleCatalogDisplayBlock[] {
+    const folders = groups.filter((group) => !!group.folder)
+    const root = groups.find((group) => !group.folder)
+    const rootIndexes = new Set(root?.indexes ?? [])
+    const folderByIndex = new Map<number, string>()
+    for (const group of folders) {
+        for (const index of group.indexes) folderByIndex.set(index, group.folder!.id)
+    }
+    const emittedFolders = new Set<string>()
+    const emittedRoot = new Set<number>()
+    const result: ModuleCatalogDisplayBlock[] = []
+    const emitFolder = (id: string) => {
+        if (emittedFolders.has(id)) return
+        emittedFolders.add(id)
+        result.push({ kind: 'folder', folderId: id })
+    }
+    const emitRoot = (index: number) => {
+        if (emittedRoot.has(index)) return
+        emittedRoot.add(index)
+        const previous = result.at(-1)
+        if (previous?.kind === 'root') previous.indexes.push(index)
+        else result.push({ kind: 'root', indexes: [index] })
+    }
+
+    if (rootIndexes.has(promotedRootIndex)) emitRoot(promotedRootIndex)
+    else if (promotedFolderId && folders.some((group) => group.folder?.id === promotedFolderId)) emitFolder(promotedFolderId)
+
+    // Explicit favorites and newly made empty folders keep their special rank.
+    for (const group of folders) if (group.folder?.favorite) emitFolder(group.folder.id)
+    for (const group of folders) if (group.indexes.length === 0) emitFolder(group.folder!.id)
+
+    const orderedIndexes = [...rootIndexes, ...folderByIndex.keys()].sort((a, b) => a - b)
+    for (const index of orderedIndexes) {
+        if (rootIndexes.has(index)) emitRoot(index)
+        else emitFolder(folderByIndex.get(index)!)
+    }
+    for (const group of folders) emitFolder(group.folder!.id)
+    return result
+}
+
 /** Resolve the one concrete top-level catalog entry for the newest activation. */
 export function getLatestModuleCatalogPromotion(
     modules: ReadonlyArray<SortableModule>,

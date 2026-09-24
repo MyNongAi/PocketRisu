@@ -19,6 +19,7 @@ const PORTABLE_STYLE_PROPERTIES = [
     'grid-template-columns', 'grid-template-rows', 'grid-column', 'grid-row',
     'transform', 'transform-origin', 'transform-style', 'perspective', 'perspective-origin', 'backface-visibility', 'vertical-align',
     'fill', 'fill-rule', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
+    'stop-color', 'stop-opacity', 'flood-color', 'flood-opacity',
 ] as const
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
@@ -123,6 +124,13 @@ function preservePortableLayout(source: HTMLElement, clone: HTMLElement, compute
     // A notebook cover/canvas may consist entirely of absolutely positioned
     // panels. Its measured height is the ONLY thing keeping it in the flow.
     const positionedCanvas = !directText && positionedChildren.length > 0 && positionedChildren.length === childStyles.length
+    // A table cell's computed height includes its image. Keeping that old
+    // pixel height while the destination narrows the image creates an empty
+    // strip inside the author's frame.
+    if (/^(TABLE|THEAD|TBODY|TFOOT|TR|TD|TH)$/.test(source.tagName) && !positionedCanvas) {
+        clone.style.height = 'auto'
+        clone.style.minHeight = '0'
+    }
     // getComputedStyle resolves auto heights/widths to the CURRENT pixel box.
     // Freezing those pixels makes details opening overlap following paragraphs,
     // and forces short labels to wrap letter-by-letter in a narrower editor.
@@ -165,6 +173,73 @@ function preservePortableLayout(source: HTMLElement, clone: HTMLElement, compute
         clone.style.setProperty('object-fit', computed.objectFit, 'important')
         clone.style.setProperty('object-position', computed.objectPosition, 'important')
     }
+}
+
+function objectPositionFraction(token: string, axis: 'x' | 'y'): number {
+    if (token === 'center') return 0.5
+    if (token === 'left' || token === 'top') return 0
+    if (token === 'right' || token === 'bottom') return 1
+    if (token.endsWith('%')) {
+        const value = Number.parseFloat(token)
+        if (Number.isFinite(value)) return value / 100
+    }
+    return axis === 'x' ? 0.5 : 0.5
+}
+
+export function coverImagePlacement(sourceWidth: number, sourceHeight: number, boxWidth: number, boxHeight: number, objectPosition: string): { x: number; y: number; width: number; height: number } {
+    const scale = Math.max(boxWidth / sourceWidth, boxHeight / sourceHeight)
+    const width = sourceWidth * scale
+    const height = sourceHeight * scale
+    const tokens = objectPosition.trim().toLowerCase().split(/\s+/)
+    const verticalFirst = tokens[0] === 'top' || tokens[0] === 'bottom'
+    const horizontal = verticalFirst ? tokens[1] || 'center' : tokens[0] || 'center'
+    const vertical = verticalFirst ? tokens[0] : tokens[1] || (horizontal === 'top' || horizontal === 'bottom' ? horizontal : 'center')
+    return {
+        x: (boxWidth - width) * objectPositionFraction(horizontal, 'x') || 0,
+        y: (boxHeight - height) * objectPositionFraction(vertical, 'y') || 0,
+        width,
+        height,
+    }
+}
+
+function loadClipboardImage(url: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+        const image = new Image()
+        image.onload = () => resolve(image)
+        image.onerror = () => reject(new Error('Clipboard image could not be decoded'))
+        image.src = url
+    })
+}
+
+function clipboardCanvas(width: number, height: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
+    const canvas = document.createElement('canvas')
+    const scale = Math.min(2, 2048 / Math.max(width, height))
+    canvas.width = Math.max(1, Math.round(width * scale))
+    canvas.height = Math.max(1, Math.round(height * scale))
+    const context = canvas.getContext('2d')
+    if (!context) throw new Error('Clipboard canvas is unavailable')
+    context.scale(canvas.width / width, canvas.height / height)
+    return [canvas, context]
+}
+
+async function rasterizeCoverImage(url: string, width: number, height: number, position: string): Promise<string> {
+    const image = await loadClipboardImage(url)
+    const [canvas, context] = clipboardCanvas(width, height)
+    const placement = coverImagePlacement(image.naturalWidth, image.naturalHeight, width, height, position)
+    context.drawImage(image, placement.x, placement.y, placement.width, placement.height)
+    return canvas.toDataURL('image/png')
+}
+
+async function rasterizeSvg(svg: SVGSVGElement, width: number, height: number): Promise<string> {
+    const snapshot = svg.cloneNode(true) as SVGSVGElement
+    snapshot.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
+    snapshot.setAttribute('width', String(width))
+    snapshot.setAttribute('height', String(height))
+    const source = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(snapshot))}`
+    const image = await loadClipboardImage(source)
+    const [canvas, context] = clipboardCanvas(width, height)
+    context.drawImage(image, 0, 0, width, height)
+    return canvas.toDataURL('image/png')
 }
 
 /** Decode resolved quoted CSS content only; never interpret it as HTML. */
@@ -239,7 +314,12 @@ async function embedElementAssets(
  */
 export async function buildPortableChatFragment(
     sourceRoot: HTMLElement,
-    options: { fetchFn?: FetchLike; getPseudoStyle?: (element: Element, pseudo: '::before' | '::after') => CSSStyleDeclaration } = {},
+    options: {
+        fetchFn?: FetchLike
+        getPseudoStyle?: (element: Element, pseudo: '::before' | '::after') => CSSStyleDeclaration
+        rasterizeSvg?: (svg: SVGSVGElement, width: number, height: number) => Promise<string>
+        rasterizeCover?: (url: string, width: number, height: number, position: string) => Promise<string>
+    } = {},
 ): Promise<string> {
     const cloneRoot = sourceRoot.cloneNode(true) as HTMLElement
     const sources = [sourceRoot, ...Array.from(sourceRoot.querySelectorAll('*'))]
@@ -313,9 +393,22 @@ export async function buildPortableChatFragment(
 
         // Capture the URL before a concurrent viewport update can release it.
         const imageUrl = source instanceof HTMLImageElement ? source.currentSrc || source.getAttribute('src') : null
+        const imageBox = source instanceof HTMLImageElement ? source.getBoundingClientRect() : null
         assetTasks.push(async () => {
             if (imageUrl && clone instanceof HTMLImageElement) {
-                try { clone.src = await toDataUrl(imageUrl) } catch { clone.src = imageUrl }
+                try {
+                    const embedded = await toDataUrl(imageUrl)
+                    clone.src = embedded
+                    if (computed.objectFit === 'cover' && imageBox && imageBox.width > 0 && imageBox.height > 0 && !/^data:image\/(?:gif|svg\+xml)/i.test(embedded)) {
+                        try {
+                            clone.src = await (options.rasterizeCover ?? rasterizeCoverImage)(embedded, imageBox.width, imageBox.height, computed.objectPosition)
+                            clone.style.setProperty('aspect-ratio', 'auto', 'important')
+                            clone.style.setProperty('height', 'auto', 'important')
+                            clone.style.setProperty('width', '100%', 'important')
+                            clone.style.setProperty('object-fit', 'fill', 'important')
+                        } catch { /* keep the original embedded image */ }
+                    }
+                } catch { clone.src = imageUrl }
                 clone.removeAttribute('srcset')
                 clone.removeAttribute('loading')
             } else {
@@ -325,6 +418,26 @@ export async function buildPortableChatFragment(
     }
 
     for (const task of assetTasks) await task()
+    // Rich status widgets often draw their icons as inline SVG. Third-party
+    // editors sanitize SVG markup, so paste a bitmap of each visible icon.
+    for (let index = 0; index < sources.length; index++) {
+        const source = sources[index]
+        const clone = clones[index]
+        if (!(source instanceof SVGSVGElement) || !(clone instanceof SVGSVGElement) || !cloneRoot.contains(clone)) continue
+        const box = source.getBoundingClientRect()
+        if (box.width <= 0 || box.height <= 0) continue
+        try {
+            const url = await (options.rasterizeSvg ?? rasterizeSvg)(clone, box.width, box.height)
+            const image = document.createElement('img')
+            image.src = url
+            image.alt = source.getAttribute('aria-label') || ''
+            image.style.cssText = clone.getAttribute('style') ?? ''
+            image.style.width = `${box.width}px`
+            image.style.height = `${box.height}px`
+            image.style.maxWidth = '100%'
+            clone.replaceWith(image)
+        } catch { /* preserve SVG markup if the browser cannot rasterize it */ }
+    }
     cloneRoot.querySelectorAll('script, style, link, [data-risu-copy-ignore]').forEach((node) => node.remove())
     for (const element of [cloneRoot, ...cloneRoot.querySelectorAll('*')]) {
         // Retained class rules on the destination must not re-enable hover or

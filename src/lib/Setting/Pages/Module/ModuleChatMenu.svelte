@@ -19,7 +19,7 @@
     import { selectedCharID } from "src/ts/stores.svelte";
     import { openSettings, SettingsRoute } from "src/ts/routing";
     import { onDestroy, onMount, untrack } from "svelte";
-    import { getLatestModuleCatalogPromotion, recordModuleActivation, recordModuleFolderActivation, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
+    import { getLatestModuleCatalogPromotion, interleaveModuleCatalogGroups, recordModuleActivation, recordModuleFolderActivation, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
     import { listTitleColor } from "src/ts/gui/titleColors";
     interface Props {
         close?: any;
@@ -33,10 +33,8 @@
     let { close = (i:string) => {}, alertMode = false }: Props = $props();
     let moduleSearch = $state(untrack(() => alertMode ? '' : rememberedModuleMenuSearch))
     let listEl: HTMLDivElement = $state()
-    // Folders start collapsed; searching shows everything that matches.
-    // Folders start collapsed; the uncategorized group (key '') starts open,
-    // so for that key the set records "collapsed" instead. Always shown as a
-    // header so the list reads the same with or without folders.
+    // Folders start collapsed; searching shows matching contents. Root modules
+    // are standalone rows, not a synthetic uncategorized folder.
     let expanded = $state<Set<string>>(untrack(() => alertMode ? new Set() : new Set(rememberedModuleMenuExpanded)));
 
     const query = $derived(moduleSearch.trim().toLocaleLowerCase())
@@ -74,36 +72,20 @@
     ))
     const groups = $derived.by(() => {
         const grouped = groupByFolder(sortedModules.map(m => m.folderId), sortedFolders)
-        const root = grouped.find((group) => !group.folder) ?? { folder: null, indexes: [] }
-        const folders = grouped.filter((group) => !!group.folder)
-        const promotedFolderId = catalogPromotion?.folderId
-        if (promotedFolderId) {
-            const promoted = folders.find((group) => group.folder?.id === promotedFolderId)
-            if (promoted) return [
-                { ...promoted, key: `folder:${promotedFolderId}`, promotedRoot: false },
-                { ...root, key: 'root', promotedRoot: false },
-                ...folders
-                    .filter((group) => group !== promoted)
-                    .map((group) => ({ ...group, key: `folder:${group.folder?.id ?? ''}`, promotedRoot: false })),
-            ] satisfies ModuleMenuGroup[]
-        }
-
-        const promotedIndex = catalogPromotion
+        const promotedIndex = catalogPromotion && !catalogPromotion.folderId
             ? sortedModules.findIndex((module) => module.id === catalogPromotion.moduleId)
             : -1
-        if (promotedIndex !== -1 && root.indexes.includes(promotedIndex)) {
-            const remaining = root.indexes.filter((index) => index !== promotedIndex)
-            return [
-                { folder: null, indexes: [promotedIndex], key: `promoted:${catalogPromotion?.moduleId ?? ''}`, promotedRoot: true },
-                ...folders.map((group) => ({ ...group, key: `folder:${group.folder?.id ?? ''}`, promotedRoot: false })),
-                ...(remaining.length > 0 ? [{ ...root, indexes: remaining, key: 'root', promotedRoot: false }] : []),
-            ] satisfies ModuleMenuGroup[]
+        const order = interleaveModuleCatalogGroups(grouped, promotedIndex, catalogPromotion?.folderId)
+        const result: ModuleMenuGroup[] = []
+        for (const block of order) {
+            if (block.kind === 'root') {
+                result.push({ folder: null, indexes: block.indexes, key: `root:${block.indexes[0]}`, promotedRoot: true })
+            } else {
+                const group = grouped.find((item) => item.folder?.id === block.folderId)
+                if (group) result.push({ ...group, key: `folder:${block.folderId}` })
+            }
         }
-
-        return [
-            { ...root, key: 'root', promotedRoot: false },
-            ...folders.map((group) => ({ ...group, key: `folder:${group.folder?.id ?? ''}`, promotedRoot: false })),
-        ] satisfies ModuleMenuGroup[]
+        return result
     })
 
     function matches(index: number) {
@@ -237,9 +219,9 @@
         {/if}
         {#each groups as group (group.key)}
             {@const visible = group.indexes.filter(matches)}
-            {@const key = group.promotedRoot ? '__promoted-root__' : group.folder?.id ?? ''}
-            {@const hasHeader = !group.promotedRoot}
-            {@const open = group.promotedRoot || !!query || (key === '' ? !expanded.has(key) : expanded.has(key))}
+            {@const key = group.folder?.id ?? ''}
+            {@const hasHeader = !!group.folder}
+            {@const open = !hasHeader || !!query || expanded.has(key)}
             {#if visible.length > 0}
                 {#if hasHeader}
                     {@const activeCount = visible.filter((index) => DBState.db.enabledModules.includes(sortedModules[index]?.id)).length}
