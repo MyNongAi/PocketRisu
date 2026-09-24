@@ -763,7 +763,9 @@ export function setDatabase(data:Database){
         reference_image: '',
         reference_base64image: ''
     }
-    data.autoScrollToNewMessage ??= true
+    // Respect a stationary reading position unless the user explicitly opts
+    // into following new replies. Existing saved preferences remain intact.
+    data.autoScrollToNewMessage ??= false
     data.alwaysScrollToNewMessage ??= false
     data.newMessageButtonStyle ??= 'bottom-center'
     data.echoMessage ??= "Echo Message"

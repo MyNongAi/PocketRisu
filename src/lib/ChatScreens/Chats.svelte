@@ -223,11 +223,10 @@
     function checkIfAtBottom() {
         if (!chatBody || !chatBody.parentElement) return true;
         const sc = chatBody.parentElement;
-        const lastEl = chatBody.firstElementChild;
-        if (!lastEl) return true;
-        const rect = lastEl.getBoundingClientRect();
-        const scRect = sc.getBoundingClientRect();
-        return rect.top <= scRect.bottom + 100;
+        // The outer scroller is flex-col-reverse: 0 is the live tail and
+        // scrolling into history makes scrollTop negative. Testing the newest
+        // message's TOP falsely treats the beginning of a long reply as bottom.
+        return Math.abs(sc.scrollTop) <= 100;
     }
 
     type ViewportAnchor = {
@@ -302,7 +301,11 @@
             newMessageScrollTimer = null
         }
         const wasAtBottom = checkIfAtBottom();
-        const anchor = wasAtBottom ? null : captureViewportAnchor()
+        // With auto-scroll disabled, even a reader currently at the tail has
+        // asked for a stationary viewport while input/output grows.
+        const anchor = wasAtBottom && DBState.db.autoScrollToNewMessage
+            ? null
+            : captureViewportAnchor()
         const restoreRevision = ++viewportRestoreRevision
         updateChatBody()
         if (anchor) void restoreViewportAnchor(anchor, restoreRevision)
