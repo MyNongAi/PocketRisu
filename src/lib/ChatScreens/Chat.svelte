@@ -750,8 +750,7 @@
         </button>
     {/if}
     {#if idx > -1 && !isOptimizedStreamingMessage}
-        <button class={"flex items-center hover:text-primary transition-colors button-icon-edit "+(editMode?'text-blue-400':'')} onclick={async () => {
-            await sleep(1)
+        <button class={"flex items-center hover:text-primary transition-colors button-icon-edit "+(editMode?'text-blue-400':'')} onclick={() => {
             if(!editMode){
                 editMode = true
             }

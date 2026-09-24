@@ -9,6 +9,7 @@ import { parseChatML } from "../parser/chatML";
 import { loadLoreBookV3Prompt } from "./lorebook.svelte";
 import { findCharacterbyId, getPersonaPrompt, isLastCharPunctuation, trimUntilPunctuation, parseToggleSyntax, prebuiltAssetCommand } from "../util";
 import { requestChatData } from "./request/request";
+import { hasRenderableMainOutput } from './auxiliaryOutput';
 import { stableDiff } from "./stableDiff";
 import { processScript, processScriptFull, risuChatParser as risuChatParserOrg } from "./scripts";
 import { exampleMessage } from "./exampleMessages";
@@ -1896,7 +1897,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         finally {
             abortSignal.removeEventListener('abort', abortReader)
             try {
-                if(coalesceStreamingDisplay){
+                if(coalesceStreamingDisplay && !streamAborted && !abortSignal.aborted){
                     try {
                         await flushStreamingDisplay()
                     }
@@ -1907,9 +1908,9 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                 if(streamingFlushError !== null){
                     throw streamingFlushError
                 }
-                // A user Stop still post-processes the partial reply as before;
-                // only skip when the stable target no longer exists after a rebase.
-                if(deferStreamingPostProcessing && receivedStreamingResult && refreshGenerationTarget()){
+                // A user Stop keeps the text already rendered but must not
+                // spend more time in output scripts before releasing the UI.
+                if(deferStreamingPostProcessing && receivedStreamingResult && !streamAborted && !abortSignal.aborted && refreshGenerationTarget()){
                     let result2 = await processScriptFull(nowChatroom, reformatContent(prefix + result), 'editoutput', msgIndex, {}, getRuntimeModuleContext())
                     currentChat.message[msgIndex].data = result2.data
                     emoChanged = result2.emoChanged
@@ -2061,11 +2062,12 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 
     let needsAutoContinue = false
     const resultTokens = await tokenize(result) + (arg.usedContinueTokens || 0)
-    if(DBState.db.autoContinueMinTokens > 0 && resultTokens < DBState.db.autoContinueMinTokens){
+    const hasMainResponseText = hasRenderableMainOutput(result)
+    if(hasMainResponseText && DBState.db.autoContinueMinTokens > 0 && resultTokens < DBState.db.autoContinueMinTokens){
         needsAutoContinue = true
     }
 
-    if(DBState.db.autoContinueChat && (!isLastCharPunctuation(result))){
+    if(hasMainResponseText && DBState.db.autoContinueChat && (!isLastCharPunctuation(result))){
         //if result doesn't end with punctuation or special characters, auto continue
         needsAutoContinue = true
     }
@@ -2088,7 +2090,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 
     const igp = risuChatParser(DBState.db.igpPrompt ?? "")
 
-    if(igp){
+    if(igp && hasMainResponseText && !abortSignal.aborted){
         if (!refreshGenerationTarget()) return false
         const igpFormated = parseChatML(igp)
         const rq = await requestChatData({
@@ -2212,7 +2214,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     }
 
     if(!currentChar.inlayViewScreen){
-        if(currentChar.viewScreen === 'emotion' && (!emoChanged) && (abortSignal.aborted === false)){
+        if(currentChar.viewScreen === 'emotion' && hasMainResponseText && (!emoChanged) && (abortSignal.aborted === false)){
 
             let currentEmotion = currentChar.emotionImages
             let emotionList = currentEmotion.map((a) => {

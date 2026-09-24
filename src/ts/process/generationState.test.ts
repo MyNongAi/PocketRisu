@@ -2,20 +2,24 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { get } from 'svelte/store'
 import {
     abortGeneration,
+    auxiliaryGenerating,
     chatGenKey,
     chatProcessStage,
     doingChat,
     endAllGenerations,
     endGeneration,
+    finishAuxiliaryAbort,
     generationStates,
     getGenerationAdmission,
     isAnyGenerating,
     isChatGenerating,
     registerAbort,
+    registerAuxiliaryAbort,
     setGenerationStage,
     startGeneration,
     syncDoingChat,
     tryStartGeneration,
+    wasGenerationAborted,
 } from './generationState'
 
 beforeEach(() => {
@@ -253,6 +257,31 @@ describe('abort registry', () => {
         registerAbort('c1', new AbortController())
         endAllGenerations()
         expect(abortGeneration('c1')).toBe(false)
+    })
+
+    it('Stop aborts only the current chat auxiliary request', () => {
+        const current = new AbortController()
+        const other = new AbortController()
+        registerAuxiliaryAbort('c1', current)
+        registerAuxiliaryAbort('c2', other)
+        expect(get(auxiliaryGenerating).has('c1')).toBe(true)
+        expect(abortGeneration('c1')).toBe(true)
+        expect(current.signal.aborted).toBe(true)
+        expect(other.signal.aborted).toBe(false)
+        expect(wasGenerationAborted('c1')).toBe(true)
+        finishAuxiliaryAbort('c1', current)
+        finishAuxiliaryAbort('c2', other)
+        expect(get(auxiliaryGenerating).size).toBe(0)
+    })
+
+    it('a new accepted send clears the stopped-chat suggestion guard', () => {
+        const controller = new AbortController()
+        registerAbort('new-chat', controller)
+        expect(abortGeneration('new-chat')).toBe(true)
+        expect(wasGenerationAborted('new-chat')).toBe(true)
+        expect(tryStartGeneration('new-chat', 'next').allowed).toBe(true)
+        expect(wasGenerationAborted('new-chat')).toBe(false)
+        endGeneration('new-chat')
     })
 })
 
