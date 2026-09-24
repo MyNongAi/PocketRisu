@@ -27,6 +27,8 @@ HaejeokRisu 전체를 병합하지 않습니다. HaejeokRisu는 캐릭터·채�
 
 ## 다음 이식 후보: 브랜치 그래프 UI
 
+2026-09-24 추가 이식: `6c52c34b`의 `src/ts/util/koreanSearch.ts`에서 검토한 초성·혼합 한글·공백 정규화 원칙을 `src/ts/gui/catalogSearch.ts`로 제한적으로 구현했습니다. 검색어 64개 캐시와 길이 한도를 두고, 화면별 검색기를 통일했습니다. `es-hangul` 기반 로마자 발음 추정·영문 키보드 변환이나 점수 정렬 전체를 이식한 것은 아닙니다.
+
 HaejeokRisu `b6780`의 `BranchGraphModal.svelte`와 `src/ts/gui/branches.ts`는 외부 그래프 라이브러리 없이 Svelte, SVG와 순수 그래프 변환 함수로 트리·타임라인·Git lane·방사형 보기를 제공합니다. 화면을 열 때만 비활성 브랜치를 읽고, 긴 직선 구간을 요약 노드로 접는 철학은 대형 채팅에 적합합니다.
 
 다만 Haejeok의 최신 그래프는 `chat_branches`, `parent_message_id`, `active_branch_id`가 있는 관계형 저장소를 기준으로 합니다. 현재 PocketRisu 개조판은 리롤을 메시지 `swipes`에, 수동 분기를 복제 채팅과 `branchedfrom` 댓글에 저장하므로 SQL 저장 계층을 통째로 이식하지 않습니다.

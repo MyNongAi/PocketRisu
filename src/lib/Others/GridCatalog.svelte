@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { matchesCatalogText } from "src/ts/gui/catalogSearch";
     import { cancelCharacterChatPrefetch, changeChar, getCharThumbnail, prefetchCharacterChat, removeChar, scheduleCharacterChatPrefetch } from "../../ts/characters";
     import { archiveCharacter, promptActivateCharacter, trashDeactivatedCharacter } from "../../ts/characterArchive";
     import { type Database } from "../../ts/storage/database.svelte";
@@ -98,7 +99,7 @@
     }
 
     function matchesSearch(name:string, value:string){
-        return (name ?? '').replace(/ /g,"").toLocaleLowerCase().includes(value.toLocaleLowerCase().replace(/ /g,""))
+        return matchesCatalogText(name, value)
     }
 
     function formatChars(value:string, db:Database, trash = false){

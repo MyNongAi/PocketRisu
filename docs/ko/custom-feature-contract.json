@@ -5,6 +5,26 @@
   "updatedAt": "2026-09-24",
   "features": [
     {
+      "id": "CATALOG-KOREAN-SEARCH",
+      "title": "일관된 초성·한글 카탈로그 검색",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/catalogSearch.ts",
+        "src/ts/characterManager.ts",
+        "src/lib/SideBars/Sidebar.svelte",
+        "src/lib/Others/GridCatalog.svelte",
+        "src/lib/Mobile/MobileCharacters.svelte",
+        "src/lib/UI/FolderedList.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/gui/catalogSearch.ts", "contains": "matchesCatalogText" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "matchesCatalogText" },
+        { "file": "src/lib/Others/GridCatalog.svelte", "contains": "matchesCatalogText" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "matchesCatalogText" }
+      ],
+      "regressionTests": ["src/ts/gui/catalogSearch.test.ts", "src/ts/characterManager.test.ts"]
+    },
+    {
       "id": "ASSET-EXT",
       "title": "외부 에셋 공급자와 안전한 이전",
       "criticality": "data-safety",
@@ -47,6 +67,7 @@
         { "file": "src/ts/storage/boundedObjectUrlCache.ts", "contains": "createDeduplicatedImageLoader" },
         { "file": "src/ts/chatAssetWindow.ts", "contains": "shouldResolveChatAssets" },
         { "file": "src/ts/chatClipboard.ts", "contains": "buildPortableChatFragment" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "writeChatClipboard" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "viewportAssetVisible" },
         { "file": "src/lib/UI/TwoClickDeleteButton.svelte", "contains": "aria-pressed={armed}" },
         { "file": "src/lib/SideBars/CharConfig.svelte", "contains": "<TwoClickDeleteButton" },

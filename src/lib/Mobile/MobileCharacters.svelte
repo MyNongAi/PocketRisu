@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { matchesCatalogText } from "src/ts/gui/catalogSearch";
     import { type Database } from "src/ts/storage/database.svelte";
     import { DBState } from 'src/ts/stores.svelte';
     import BarIcon from "../SideBars/BarIcon.svelte";
@@ -64,9 +65,8 @@
                 })
             }
         }
-        const normalizedSearch = search.replace(/ /g, "").toLocaleLowerCase()
         return list
-            .filter((char) => char.name.replace(/ /g, "").toLocaleLowerCase().includes(normalizedSearch))
+            .filter((char) => matchesCatalogText(char.name, search))
             .sort((a, b) => b.interaction - a.interaction || a.name.localeCompare(b.name));
     }
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { matchesCatalogText } from "src/ts/gui/catalogSearch";
     import {
     CharEmotion,
     DynamicGUI,
@@ -169,12 +170,12 @@
     .map((char, sourceOrder) => {
       if (!catalogQuery) return { char, sourceOrder }
       if (char.type === 'normal' || char.type === 'archived') {
-        return char.name.toLocaleLowerCase().includes(catalogQuery) ? { char, sourceOrder } : null
+        return matchesCatalogText(char.name, catalogQuery) ? { char, sourceOrder } : null
       }
-      const folderMatches = char.name.toLocaleLowerCase().includes(catalogQuery)
+      const folderMatches = matchesCatalogText(char.name, catalogQuery)
       const matchingMembers = folderMatches
         ? char.folder
-        : char.folder.filter((member) => member.name.toLocaleLowerCase().includes(catalogQuery))
+        : char.folder.filter((member) => matchesCatalogText(member.name, catalogQuery))
       return folderMatches || matchingMembers.length > 0
         ? { char: { ...char, folder: matchingMembers }, sourceOrder }
         : null
