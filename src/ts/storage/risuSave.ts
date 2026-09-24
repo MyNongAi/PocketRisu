@@ -1312,8 +1312,32 @@ export class RisuSavePatcher {
         // Detect structural changes (additions, deletions, reordering)
         const lastIds = lastCharacters.map((c: any) => c?.chaId)
         const curIds = curCharacters.map((c: any) => c?.chaId)
-        const structuralChange = lastIds.length !== curIds.length ||
+        let structuralChange = lastIds.length !== curIds.length ||
             lastIds.some((id: string, i: number) => id !== curIds[i])
+
+        // Trash/deactivation removes cards without reordering the survivors.
+        // Sending the entire surviving catalog for this one operation can be
+        // hundreds of MB, exceed /api/patch's body limit and trigger an even
+        // larger full-write fallback. Reuse retained baselines and remove only
+        // the vanished indices, descending so subsequent indices stay valid.
+        let alignedLastCharacters = lastCharacters
+        const curIdSet = new Set(curIds)
+        const validIds = (ids: unknown[]) => ids.every(id => typeof id === 'string' && !!id)
+            && new Set(ids).size === ids.length
+        if (structuralChange && curIds.length < lastIds.length && validIds(lastIds) && validIds(curIds)) {
+            const retained = lastCharacters.filter((c: any) => curIdSet.has(c.chaId))
+            if (retained.length === curIds.length && retained.every((c: any, i: number) => c.chaId === curIds[i])) {
+                for (let i = lastIds.length - 1; i >= 0; i--) {
+                    if (curIdSet.has(lastIds[i])) continue
+                    patch.push({ op: 'remove', path: `/characters/${i}` })
+                    delete this.hashBlocks[lastIds[i]]
+                    this.lastCharJsons.delete(lastIds[i])
+                }
+                alignedLastCharacters = retained
+                this.lastSyncedDb.characters = retained.slice()
+                structuralChange = false
+            }
+        }
 
         // Replace chats with stubs for patch diff — full chat data lives server-side
         function withStubs(char: any) {
@@ -1350,7 +1374,7 @@ export class RisuSavePatcher {
         } else {
             // Same structure → per-character field-level diff (efficient)
             for (let i = 0; i < curCharacters.length; i++) {
-                const lastChar = lastCharacters[i]
+                const lastChar = alignedLastCharacters[i]
                 const curChar = curCharacters[i]
                 const curCharId = curChar?.chaId
                 const trackedBySave = toSave.character.includes(curCharId ?? '')
