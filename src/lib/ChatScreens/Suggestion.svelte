@@ -27,6 +27,7 @@
     let progress:boolean = $state();
     let progressChatPage=-1;
     let abortController:AbortController;
+    let activeSuggestionChatKey: string | null = null
     let chatPage:number = $state()
 
     const updateSuggestions = () => {
@@ -49,6 +50,7 @@
         }
         if(!v && $selectedCharID > -1 && (!suggestMessages || suggestMessages.length === 0) && !progress){
             let currentChar:character = DBState.db.characters[$selectedCharID];
+            if (!currentChar?.chats?.[currentChar.chatPage]) return
             const suggestionChatKey = chatGenKey(currentChar?.chats?.[currentChar.chatPage]?.id)
             if (wasGenerationAborted(suggestionChatKey)) return
             let messages:Message[] = []
@@ -91,6 +93,7 @@
             const requestController = new AbortController()
             abortController = requestController
             registerAuxiliaryAbort(suggestionChatKey, requestController)
+            activeSuggestionChatKey = suggestionChatKey
             requestChatData({
                 formated: promptbody,
                 bias: {},
@@ -106,7 +109,10 @@
                 if (!requestController.signal.aborted) console.error('[Suggestion] request failed', error)
             }).finally(() => {
                 finishAuxiliaryAbort(suggestionChatKey, requestController)
-                if (abortController === requestController) progress = false
+                if (abortController === requestController) {
+                    activeSuggestionChatKey = null
+                    progress = false
+                }
             })
             }
     })
@@ -125,6 +131,9 @@
     onDestroy(() => {
         unsub()
         abortController?.abort()
+        if (activeSuggestionChatKey && abortController) {
+            finishAuxiliaryAbort(activeSuggestionChatKey, abortController)
+        }
     })
 
     $effect.pre(() => {
