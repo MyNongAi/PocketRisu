@@ -9,7 +9,7 @@ import { parseChatML } from "../parser/chatML";
 import { loadLoreBookV3Prompt } from "./lorebook.svelte";
 import { findCharacterbyId, getPersonaPrompt, isLastCharPunctuation, trimUntilPunctuation, parseToggleSyntax, prebuiltAssetCommand } from "../util";
 import { requestChatData } from "./request/request";
-import { hasRenderableMainOutput } from './auxiliaryOutput';
+import { hasRenderableMainOutput, shouldRunAuxiliaryModel } from './auxiliaryOutput';
 import { stableDiff } from "./stableDiff";
 import { processScript, processScriptFull, risuChatParser as risuChatParserOrg } from "./scripts";
 import { exampleMessage } from "./exampleMessages";
@@ -2063,6 +2063,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     let needsAutoContinue = false
     const resultTokens = await tokenize(result) + (arg.usedContinueTokens || 0)
     const hasMainResponseText = hasRenderableMainOutput(result)
+    const runAuxiliaryModel = shouldRunAuxiliaryModel(result, DBState.db.auxiliaryMinVisibleChars)
     if(hasMainResponseText && DBState.db.autoContinueMinTokens > 0 && resultTokens < DBState.db.autoContinueMinTokens){
         needsAutoContinue = true
     }
@@ -2090,7 +2091,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 
     const igp = risuChatParser(DBState.db.igpPrompt ?? "")
 
-    if(igp && hasMainResponseText && !abortSignal.aborted){
+    if(igp && runAuxiliaryModel && !abortSignal.aborted){
         if (!refreshGenerationTarget()) return false
         const igpFormated = parseChatML(igp)
         const rq = await requestChatData({
@@ -2214,7 +2215,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     }
 
     if(!currentChar.inlayViewScreen){
-        if(currentChar.viewScreen === 'emotion' && hasMainResponseText && (!emoChanged) && (abortSignal.aborted === false)){
+        if(currentChar.viewScreen === 'emotion' && runAuxiliaryModel && (!emoChanged) && (abortSignal.aborted === false)){
 
             let currentEmotion = currentChar.emotionImages
             let emotionList = currentEmotion.map((a) => {

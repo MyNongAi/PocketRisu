@@ -278,6 +278,8 @@
     <TextAreaInput className="mt-2 mb-4" bind:value={DBState.db.OAIPrediction}/>
     <span class="text-textcolor mt-4">{language.autoSuggest} <Help key='autoSuggest' /></span>
     <TextAreaInput className="mt-2 mb-4" bind:value={DBState.db.autoSuggestPrompt} placeholder={defaultAutoSuggestPrompt}/>
+    <span class="text-textcolor mt-4">보조 모델 호출 최소 본문 글자 수 (0: 빈 응답만 차단)</span>
+    <NumberInput className="mt-2 mb-4" min={0} max={500} bind:value={DBState.db.auxiliaryMinVisibleChars}/>
     <span class="text-textcolor mt-4">{language.groupInnerFormat} <Help key='groupInnerFormat' /></span>
     <TextAreaInput className="mt-2 mb-4" placeholder={`<{{char}}\'s Message>\n{{slot}}\n</{{char}}\'s Message>`} bind:value={DBState.db.groupTemplate}/>
     <span class="text-textcolor mt-4">{language.systemContentReplacement} <Help key="systemContentReplacement"/></span>

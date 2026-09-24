@@ -13,7 +13,7 @@
     import { onDestroy } from 'svelte';
     import { ParseMarkdown } from "src/ts/parser/parser.svelte";
     import {defaultAutoSuggestPrompt} from "../../ts/storage/defaultPrompts.js";
-    import { hasRenderableMainOutput } from '../../ts/process/auxiliaryOutput';
+    import { shouldRunAuxiliaryModel } from '../../ts/process/auxiliaryOutput';
 
     interface Props {
         send: () => any;
@@ -61,7 +61,7 @@
             // model to suggest from. This also avoids paying for a request
             // immediately after the user stopped an empty generation.
             const lastMessage = lastMessages.at(-1)
-            if(!lastMessage || lastMessage.role !== 'char' || !hasRenderableMainOutput(lastMessage.data))
+            if(!lastMessage || lastMessage.role !== 'char' || !shouldRunAuxiliaryModel(lastMessage.data, DBState.db.auxiliaryMinVisibleChars))
                 return
             const prompt = DBState.db.autoSuggestPrompt && DBState.db.autoSuggestPrompt.length > 0 ? DBState.db.autoSuggestPrompt : defaultAutoSuggestPrompt
             let promptbody:OpenAIChat[] = [
