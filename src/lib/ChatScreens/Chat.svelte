@@ -27,6 +27,7 @@
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
     import { getChatAssetRenderWindow, normalizeExternalAssetRecentOutputs, shouldResolveChatAssets } from '../../ts/chatAssetWindow';
+    import { buildPortableChatFragment, embedParsedChatAssets, fetchClipboardDataUrl } from '../../ts/chatClipboard';
 
     // Reactive breakpoint: a raw window.innerWidth read here is evaluated once
     // at mount and never follows a resize (#79).
@@ -605,85 +606,52 @@
 
                 const parser = new DOMParser()
                 const doc = parser.parseFromString(
-                    await ParseMarkdown(copyText, getCurrentCharacter(), 'normal', idx, getCbsCondition(), { resolveAssets: effectiveResolveChatAssets })
+                    await ParseMarkdown(copyText, getCurrentCharacter(), 'normal', idx, getCbsCondition(), { resolveAssets: true })
                 , 'text/html')
+
+                if(bodyRoot?.isConnected){
+                    doc.body.innerHTML = await buildPortableChatFragment(bodyRoot)
+                }
+                else{
+                    await embedParsedChatAssets(doc.body)
+                }
                 
                 doc.querySelectorAll('mark').forEach((el) => {
                     const d = el.getAttribute('risu-mark')
                     if(d === 'quote1' || d === 'quote2'){
                         const newEle = document.createElement('div')
                         newEle.textContent = el.textContent
-                        newEle.setAttribute('style', `background: transparent; color: ${
-                            root.style.getPropertyValue('--FontColorQuote' + d.slice(-1))
-                        };`)
+                        newEle.style.background = 'transparent'
+                        newEle.style.color = root.style.getPropertyValue('--FontColorQuote' + d.slice(-1))
                         el.replaceWith(newEle)
                         return
                     }
                 })
                 doc.querySelectorAll('p').forEach((el) => {
-                    el.setAttribute('style', `color: ${root.style.getPropertyValue('--FontColorStandard')};`)
+                    el.style.color = root.style.getPropertyValue('--FontColorStandard')
                 })
                 doc.querySelectorAll('em').forEach((el) => {
-                    el.setAttribute('style', `font-style: italic; color: ${root.style.getPropertyValue('--FontColorItalic')};`)
+                    el.style.fontStyle = 'italic'
+                    el.style.color = root.style.getPropertyValue('--FontColorItalic')
                 })
                 doc.querySelectorAll('strong').forEach((el) => {
-                    el.setAttribute('style', `font-weight: bold; color: ${root.style.getPropertyValue('--FontColorBold')};`)
+                    el.style.fontWeight = 'bold'
+                    el.style.color = root.style.getPropertyValue('--FontColorBold')
                 })
-                doc.querySelectorAll('em strong').forEach((el) => {
-                    el.setAttribute('style', `font-weight: bold; font-style: italic; color: ${root.style.getPropertyValue('--FontColorItalicBold')};`)
+                doc.querySelectorAll<HTMLElement>('em strong').forEach((el) => {
+                    el.style.fontWeight = 'bold'
+                    el.style.fontStyle = 'italic'
+                    el.style.color = root.style.getPropertyValue('--FontColorItalicBold')
                 })
-                doc.querySelectorAll('strong em').forEach((el) => {
-                    el.setAttribute('style', `font-weight: bold; font-style: italic; color: ${root.style.getPropertyValue('--FontColorItalicBold')};`)
+                doc.querySelectorAll<HTMLElement>('strong em').forEach((el) => {
+                    el.style.fontWeight = 'bold'
+                    el.style.fontStyle = 'italic'
+                    el.style.color = root.style.getPropertyValue('--FontColorItalicBold')
                 })
                 
-                const imgs = doc.querySelectorAll('img')
-                for(const img of imgs){
-                    img.setAttribute('alt', 'from PocketRisu')
-                    const url = img.getAttribute('src')
-                    
-                    img.setAttribute('style', `
-                        max-width: 100%;
-                        margin: 10px 0;
-                        border-radius: 8px;
-                        box-shadow: rgba(0,0,0,0.1) 0px 2px 8px;
-                        display: block;
-                        margin-left: auto;
-                        margin-right: auto;
-                    `)
-                    
-                    if(url && (url.startsWith('http://asset.localhost') || url.startsWith('https://asset.localhost') || url.startsWith('https://sv.risuai') || url.startsWith('data:') || url.startsWith('http') || url.startsWith('/'))){
-                        try {
-                            let fetchUrl = url
-                            if(url.startsWith('/')) {
-                                fetchUrl = window.location.origin + url
-                            }
-                            
-                            const data = await fetch(fetchUrl)
-                            if (data.ok) {
-                                const canvas = document.createElement('canvas')
-                                const ctx = canvas.getContext('2d')
-                                const imgElement = new Image()
-                                imgElement.crossOrigin = 'anonymous'
-                                imgElement.src = await data.blob().then((b) => new Promise((resolve, reject) => {
-                                    const reader = new FileReader()
-                                    reader.onload = () => resolve(reader.result as string)
-                                    reader.onerror = reject
-                                    reader.readAsDataURL(b)
-                                }))
-                                await new Promise((resolve) => {
-                                    imgElement.onload = resolve
-                                })
-                                canvas.width = imgElement.width
-                                canvas.height = imgElement.height
-                                ctx.drawImage(imgElement, 0, 0)
-                                const dataURL = canvas.toDataURL('image/jpeg', 0.6)
-                                img.setAttribute('src', dataURL)
-                            }
-                        } catch (error) {
-                            console.error('Image error:', error)
-                        }
-                    }
-                }
+                doc.querySelectorAll('img').forEach((img) => {
+                    img.setAttribute('alt', img.getAttribute('alt') || 'from PocketRisu')
+                })
 
                 let iconDataUrl = ''
                 let hasValidImage = false
@@ -696,33 +664,8 @@
                             iconDataUrl = iconImage
                             hasValidImage = true
                         } else {
-                            const data = await fetch(iconImage)
-                            if (data.ok) {
-                                const canvas = document.createElement('canvas')
-                                const ctx = canvas.getContext('2d')
-                                const img = new Image()
-                                img.crossOrigin = 'anonymous'
-                                img.src = await data.blob().then((b) => new Promise((resolve, reject) => {
-                                    const reader = new FileReader()
-                                    reader.onload = () => resolve(reader.result as string)
-                                    reader.onerror = reject
-                                    reader.readAsDataURL(b)
-                                }))
-                                await new Promise((resolve, reject) => {
-                                    img.onload = () => {
-                                        canvas.width = img.width
-                                        canvas.height = img.height
-                                        ctx.drawImage(img, 0, 0)
-                                        iconDataUrl = canvas.toDataURL('image/jpeg', 0.9)
-                                        hasValidImage = true
-                                        resolve(true)
-                                    }
-                                    img.onerror = () => {
-                                        hasValidImage = false
-                                        resolve(false)
-                                    }
-                                })
-                            }
+                            iconDataUrl = await fetchClipboardDataUrl(iconImage)
+                            hasValidImage = !!iconDataUrl
                         }
                     }
                 } catch (error) {
@@ -748,33 +691,8 @@
                                     finalIconDataUrl = userIconSrc
                                     finalHasValidImage = true
                                 } else {
-                                    const data = await fetch(userIconSrc)
-                                    if (data.ok) {
-                                        const canvas = document.createElement('canvas')
-                                        const ctx = canvas.getContext('2d')
-                                        const img = new Image()
-                                        img.crossOrigin = 'anonymous'
-                                        img.src = await data.blob().then((b) => new Promise((resolve, reject) => {
-                                            const reader = new FileReader()
-                                            reader.onload = () => resolve(reader.result as string)
-                                            reader.onerror = reject
-                                            reader.readAsDataURL(b)
-                                        }))
-                                        await new Promise((resolve, reject) => {
-                                            img.onload = () => {
-                                                canvas.width = img.width
-                                                canvas.height = img.height
-                                                ctx.drawImage(img, 0, 0)
-                                                finalIconDataUrl = canvas.toDataURL('image/jpeg', 0.9)
-                                                finalHasValidImage = true
-                                                resolve(true)
-                                            }
-                                            img.onerror = () => {
-                                                finalHasValidImage = false
-                                                resolve(false)
-                                            }
-                                        })
-                                    }
+                                    finalIconDataUrl = await fetchClipboardDataUrl(userIconSrc)
+                                    finalHasValidImage = !!finalIconDataUrl
                                 }
                             }
                         } catch (error) {
@@ -806,6 +724,7 @@
                         'text/html': new Blob([html], {type: 'text/html'})
                     })
                 ])
+                alertClear()
                 notifyInfo(language.copied)
                 return
             }

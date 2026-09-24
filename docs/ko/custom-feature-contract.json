@@ -35,6 +35,7 @@
         "src/lib/Others/assetDragPrefetch.ts",
         "src/ts/storage/boundedObjectUrlCache.ts",
         "src/ts/chatAssetWindow.ts",
+        "src/ts/chatClipboard.ts",
         "src/lib/ChatScreens/Chat.svelte",
         "src/lib/UI/TwoClickDeleteButton.svelte",
         "src/lib/SideBars/CharConfig.svelte",
@@ -45,6 +46,7 @@
         { "file": "src/lib/Others/assetDragPrefetch.ts", "contains": "assetDragPrefetchQueue" },
         { "file": "src/ts/storage/boundedObjectUrlCache.ts", "contains": "createDeduplicatedImageLoader" },
         { "file": "src/ts/chatAssetWindow.ts", "contains": "shouldResolveChatAssets" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "buildPortableChatFragment" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "viewportAssetVisible" },
         { "file": "src/lib/UI/TwoClickDeleteButton.svelte", "contains": "aria-pressed={armed}" },
         { "file": "src/lib/SideBars/CharConfig.svelte", "contains": "<TwoClickDeleteButton" },
@@ -54,6 +56,7 @@
         "src/lib/Others/LazyAssetPreview.test.ts",
         "src/lib/Others/assetDragPrefetch.test.ts",
         "src/ts/storage/boundedObjectUrlCache.test.ts",
+        "src/ts/chatClipboard.test.ts",
         "server/node/thumbnail-cache.test.ts"
       ]
     },
