@@ -28,13 +28,21 @@
 //    fresh, so applying it cannot clobber; rejecting it instead would set off
 //    reload loops on boot-time auto-saves). lastWriteAt is not bumped — the
 //    lock holder did not write.
-//    Stale → rejected (423 → the client reloads; after the reload its boot is
-//    recent, so its next user action takes over cleanly).
+//    Stale → still saved. Every database and chat write now carries a version
+//    precondition (ETag / patch hash) that catches a stale copy on its own, so
+//    refusing a stale session protects nothing and only loses data: on
+//    2026-09-24 a phone resuming took the lock, the PC tab in use got a 423 on
+//    a draft write, froze its save loop waiting for a reload, and 40 minutes
+//    of chat were never saved. A stale session with a user gesture takes the
+//    lock back (the device being typed on is the one in use); without a
+//    gesture it passes without moving the lock.
+//    Strict writes (allowStale: false) keep the old rule — stale → rejected.
+//    Only a whole-database or whole-chat overwrite WITHOUT a version check
+//    uses it, since that could wipe what another device saved; current
+//    clients never send one.
 //
-// Serial device switching (the single-user pattern) therefore never shows a
-// block: you stop writing on A, open B (booted after A's last write), and B's
-// first action takes the lock. A only ever sees a 423 if it writes again
-// afterwards — the one genuinely necessary kick.
+// Serial device switching (the single-user pattern) never shows a block, and
+// neither does going back to a device left open.
 //
 // State is in-memory: a server restart clears it and the first write adopts.
 function createSessionLock(opts = {}) {
@@ -60,7 +68,7 @@ function createSessionLock(opts = {}) {
         // restore, with the client persisting its id) keeps the lock as-is.
     }
 
-    function checkWrite(id, userActive = false) {
+    function checkWrite(id, userActive = false, { allowStale = true } = {}) {
         if (typeof id !== 'string' || id === '') {
             return { ok: true }; // client without session support
         }
@@ -74,16 +82,16 @@ function createSessionLock(opts = {}) {
         }
         const boot = boots.get(id);
         const fresh = boot !== undefined && boot > active.lastWriteAt;
-        if (fresh && userActive) {
+        if (!fresh && !allowStale) {
+            return { ok: false };
+        }
+        if (userActive) {
             active = { id, lastWriteAt: now() };
-            return { ok: true, tookOver: true };
+            return fresh ? { ok: true, tookOver: true } : { ok: true, tookOver: true, reclaimed: true };
         }
-        if (fresh) {
-            // Automatic write from a freshly-booted session: apply it, but the
-            // lock stays where the user actually is.
-            return { ok: true, passive: true };
-        }
-        return { ok: false };
+        // Automatic write: apply it, but the lock stays where the user
+        // actually is.
+        return { ok: true, passive: true };
     }
 
     function activeId() {
@@ -98,8 +106,8 @@ function createSessionLock(opts = {}) {
     // An id with no recorded boot is 'unknown', NOT 'stale': the boot
     // registration is a separate request that can fail alone on a flaky link
     // (mobile + VPN), and judging such a session stale turns every focus into
-    // an automatic reload — a reload loop the client cannot break. The write
-    // path still 423s a genuinely stale session, so no data is at risk.
+    // an automatic reload — a reload loop the client cannot break. Writes are
+    // version-checked, so no data is at risk either way.
     function peek(id) {
         if (typeof id !== 'string' || id === '') return 'active';
         if (!active) return 'free';

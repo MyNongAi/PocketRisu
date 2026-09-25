@@ -646,18 +646,24 @@ export async function saveDb() {
             requestQuietSessionRefresh()
         }
     }
-    // Cross-device single-writer lock: a rejected stale writer (HTTP 423)
-    // follows the same quiet handoff path as a same-browser peer tab.
+    // Cross-device single-writer lock. With patch sync every database and chat
+    // write is version-checked, and the server saves a stale session's writes
+    // instead of refusing them (session-lock.cjs), so a 423 here is a single
+    // refused request whose own error path reports it. It must not freeze this
+    // page: the refresh below stops the save loop until the reload happens, and
+    // the leave-site guard can hold that reload off indefinitely — on
+    // 2026-09-24 that silently dropped 40 minutes of chat. Legacy stores keep
+    // the handoff.
     window.addEventListener('risu-session-deactivated', () => {
+        if (supportsPatchSync) return
         requestQuietSessionRefresh()
     })
 
     // Do not reload merely because the window regained focus. Database and
-    // chat writes now carry optimistic-concurrency preconditions, so an
-    // unrelated device can safely update another chat without invalidating
-    // this page. Truly unsafe legacy writes still receive 423 and follow the
-    // quiet refresh path above; version conflicts return 409 instead of
-    // discarding an in-memory reroll/input during a surprise reload.
+    // chat writes carry optimistic-concurrency preconditions, so an unrelated
+    // device can safely update another chat without invalidating this page;
+    // version conflicts return 409 instead of discarding an in-memory
+    // reroll/input during a surprise reload.
 
     // Post-handoff notice from a real 423/same-tab handoff in the previous page life.
     // Delayed so the toast container is mounted before it fires.
