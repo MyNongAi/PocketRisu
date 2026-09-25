@@ -104,7 +104,11 @@
     }
 
     function listScrollElement() {
-        return modulePageRoot?.closest<HTMLElement>('.rs-setting-cont-4') ?? null
+        // Settings and the Ctrl+Q sidebar mount the same module catalogue in
+        // different scroll containers.
+        return modulePageRoot?.closest<HTMLElement>('.rs-setting-cont-4')
+            ?? modulePageRoot?.closest<HTMLElement>('.rs-setting-cont-5')
+            ?? null
     }
 
     function rememberListScroll() {
