@@ -30,7 +30,7 @@
     }
 
     let { currentModule = $bindable() }: Props = $props();
-    let loreComparisonStatuses = $derived(buildModuleLoreComparisonStatuses(DBState.db, currentModule.id))
+    let loreComparisonStatuses = $derived(buildModuleLoreComparisonStatuses(DBState.db, currentModule.id, currentModule.lorebook))
     let assetFileExtensions:string[] = $state([])
     let assetFilePath:string[] = $state([])
     let manifestItems:[string, string, string][] = $state([])

@@ -87,6 +87,7 @@ export function buildCharacterLoreComparisonStatuses(
 export function buildModuleLoreComparisonStatuses(
     db: LoreComparisonDatabase,
     moduleId: string | undefined,
+    currentLorebook?: readonly loreBook[],
 ): Map<loreBook, LoreComparisonStatus> {
     if (!moduleId) return new Map()
     const modules = db.modules ?? []
@@ -110,5 +111,7 @@ export function buildModuleLoreComparisonStatuses(
     const peers = modules
         .filter((module) => !!module.id && peerIds.has(module.id))
         .map((module) => module.lorebook)
-    return compareLorebooks(current.lorebook, peers)
+    // The module editor uses a detached draft, so its lorebook entries are
+    // different objects from the stored entries used to find peer modules.
+    return compareLorebooks(currentLorebook ?? current.lorebook, peers)
 }

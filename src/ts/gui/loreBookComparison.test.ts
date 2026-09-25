@@ -39,4 +39,19 @@ describe('candidate lorebook comparison', () => {
         }, 'a')
         expect(result.get(same)).toBe('match')
     })
+
+    it('colors detached module editor entries instead of the stored objects', () => {
+        const stored = lore('World', 'shared')
+        const draft = lore('World', 'shared')
+        const result = buildModuleLoreComparisonStatuses({
+            characters: [],
+            modules: [
+                { id: 'a', name: 'Similar A', folderId: 'candidate', lorebook: [stored] },
+                { id: 'b', name: 'Similar B', folderId: 'candidate', lorebook: [lore('World', 'shared')] },
+            ],
+            moduleFolders: [{ id: 'candidate', duplicateCandidate: { kind: 'module' } }],
+        }, 'a', [draft])
+        expect(result.get(draft)).toBe('match')
+        expect(result.has(stored)).toBe(false)
+    })
 })
