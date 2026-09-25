@@ -3,6 +3,7 @@ import { type Chat, type ChatStub, type ChatOrStub, isChatStub } from "./databas
 import { tick } from "svelte"
 import { language } from "src/lang"
 import type { ChatSaveIntent } from './chatSaveIntent'
+import type { ChatSaveOptions } from './nodeStorage'
 
 // ── Stub ↔ Placeholder conversion ───────────────────────────────────────────
 
@@ -287,9 +288,10 @@ export async function saveChatToServer(
     chatId: string,
     chat: Chat,
     intent: ChatSaveIntent = 'update',
+    options: ChatSaveOptions = {},
 ): Promise<void> {
     const storage = forageStorage.realStorage
-    await storage.saveChatContent(chaId, chatIndex, chatId, chat, intent)
+    await storage.saveChatContent(chaId, chatIndex, chatId, chat, intent, options)
 }
 
 // ── Hydration ───────────────────────────────────────────────────────────────

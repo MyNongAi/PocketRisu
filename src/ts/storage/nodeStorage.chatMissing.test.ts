@@ -91,15 +91,23 @@ describe('saveChatContent when the server has no body for the chat', () => {
         expect(headers.ifMatch).toBeUndefined()
     })
 
-    test('surfaces a conflict when the chat reappears before the write lands', async () => {
+    // A peer created the chat between the probe and the write. The save is not
+    // refused: this copy holds everything the peer's does (nothing), so it is
+    // written over it, still conditionally on the peer's ETag.
+    test('saves over a chat that reappears before the write lands', async () => {
         const fetchMock = vi.fn()
             .mockResolvedValueOnce(jsonResponse(404, { error: 'Chat not found' }))
-            .mockResolvedValueOnce(jsonResponse(409, { error: 'Chat already exists' }))
+            .mockResolvedValueOnce(jsonResponse(409, { error: 'Chat already exists', currentEtag: 'etag-peer' }))
+            .mockResolvedValueOnce(chatBody('etag-peer'))
+            .mockResolvedValueOnce(jsonResponse(200, { etag: 'etag-next' }))
         const storage = setUpStorage(fetchMock)
 
         await expect(
             storage.saveChatContent(CHA, 0, CHAT, { message: [] }, 'update'),
-        ).rejects.toThrow('Chat already exists')
+        ).resolves.toBeUndefined()
+
+        const posts = fetchMock.mock.calls.filter(([url, init]) => String(url).includes(SAVE_URL) && init?.method === 'POST')
+        expect(posts.at(-1)?.[1]?.headers?.get?.('x-if-match')).toBe('etag-peer')
     })
 
     // The downgrade must not weaken the normal path: a chat the server still

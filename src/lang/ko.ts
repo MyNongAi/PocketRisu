@@ -1196,6 +1196,9 @@ export const languageKorean = {
     "현재 탭이 비활성화되었습니다. OK를 누르면 탭이 다시 활성화됩니다.",
   sessionHandoffReload:
     "다른 기기에서 사용되어 최신 상태로 새로고침했어요.",
+  chatConflictCopyName: (name: string) => `${name} (다른 기기 사본)`,
+  chatConflictCopySaved: (name: string) =>
+    `다른 기기에서 바뀐 채팅이라, 서버에 있던 내용은 '${name}'으로 따로 보관하고 이 기기 내용으로 저장했어요.`,
   addCharacter: "캐릭터 추가",
   importFromRealm: "RisuRealm에서 고르기",
   importFromRealmDesc:

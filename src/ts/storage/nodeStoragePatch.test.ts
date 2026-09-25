@@ -181,7 +181,10 @@ describe('NodeStorage per-chat optimistic concurrency', () => {
         expect(init.headers).not.toHaveProperty('x-if-match')
     })
 
-    test('surfaces a same-chat conflict instead of overwriting it', async () => {
+    // A conflicting save overwrites only after reading the server copy and
+    // finding nothing there that would be lost (nodeStorage.chatConflict
+    // tests). When that copy cannot be read, the conflict is reported.
+    test('surfaces a same-chat conflict when the server copy cannot be read', async () => {
         const storage = storageReturning(409, {
             error: 'Chat changed on another device',
             currentEtag: 'remote-chat-v2',

@@ -10,6 +10,16 @@ import { alertInput, waitAlert, notifyError } from "../alert"
 import { decodeRisuSave, encodeRisuSaveLegacy } from "./risuSave"
 import { normalizeChat } from "./database.svelte"
 import type { ChatSaveIntent } from './chatSaveIntent'
+import { chatHoldsAllMessages } from './chatConflict'
+
+export interface ChatSaveOptions {
+    /**
+     * Keep the server's copy of a chat as a chat of its own. Called before a
+     * conflicting save overwrites a server copy holding messages this device
+     * lacks; without it such a save is refused as before.
+     */
+    preserveServerCopy?: (serverChat: any) => Promise<void>
+}
 
 const AUTH_FETCH_TRANSIENT_MAX_RETRIES = 3
 const AUTH_FETCH_TRANSIENT_BASE_DELAY_MS = 500
@@ -1757,12 +1767,62 @@ export class NodeStorage{
         chatId: string,
         chat: any,
         intent: ChatSaveIntent = 'update',
+        options: ChatSaveOptions = {},
     ): Promise<void> {
         // Capture this call's snapshot now; recovery and the background saver
         // can both write the same chat. Serialize only that chat's requests so
         // each uses the preceding acknowledgement, not a shared stale ETag.
         const encoded = encodeRisuSaveLegacy(chat)
-        return this.runChatOperation(this.chatEtagKey(chaId, chatId), () => this.saveEncodedChatContent(chaId, chatIndex, chatId, encoded, intent))
+        const snapshot = { message: [...(chat?.message ?? [])] }
+        return this.runChatOperation(this.chatEtagKey(chaId, chatId), async () => {
+            try {
+                await this.saveEncodedChatContent(chaId, chatIndex, chatId, encoded, intent)
+            } catch (error) {
+                // A chat generating elsewhere frees up shortly; retry later.
+                if (!(error instanceof ConflictError) || error.code === 'CHAT_BUSY') throw error
+                await this.saveOverConflict(chaId, chatIndex, chatId, encoded, snapshot, error, options)
+            }
+        })
+    }
+
+    /**
+     * The server copy changed or vanished since this device loaded it. Save
+     * anyway (see chatConflict.ts): a vanished chat is written back, and a
+     * changed one is overwritten once nothing only the server has would be
+     * lost — directly when this copy holds every server message, otherwise
+     * after the server copy is kept as its own chat.
+     */
+    private async saveOverConflict(
+        chaId: string,
+        chatIndex: number,
+        chatId: string,
+        encoded: ReturnType<typeof encodeRisuSaveLegacy>,
+        local: { message: any[] },
+        conflict: ConflictError,
+        options: ChatSaveOptions,
+    ): Promise<void> {
+        let current: any
+        try {
+            current = await this.fetchChatContent(chaId, chatIndex, chatId)
+        } catch {
+            // Without the server copy nothing can be judged safe to overwrite;
+            // report the conflict and let the next save try again.
+            throw conflict
+        }
+        if (!current) {
+            console.warn(`[Save] chat ${chaId}/${chatId} is gone from the server; saving it back`)
+            this.chatEtags.delete(this.chatEtagKey(chaId, chatId))
+            await this.saveEncodedChatContent(chaId, chatIndex, chatId, encoded, 'create')
+            return
+        }
+        if (!chatHoldsAllMessages(local, current)) {
+            if (!options.preserveServerCopy) throw conflict
+            await options.preserveServerCopy(current)
+        }
+        console.warn(`[Save] chat ${chaId}/${chatId} changed on another device; saving this device's copy over it`)
+        // fetchChatContent cached the server's ETag, so this is still a
+        // conditional write: a third write in between conflicts again.
+        await this.saveEncodedChatContent(chaId, chatIndex, chatId, encoded, 'update')
     }
 
     private async saveEncodedChatContent(
@@ -1807,7 +1867,7 @@ export class NodeStorage{
         })
         if (da.status === 409) {
             const data = await da.json().catch(() => ({}))
-            throw new ConflictError(data.error || 'Chat changed on another device', data.currentEtag || '')
+            throw new ConflictError(data.error || 'Chat changed on another device', data.currentEtag || '', data.code)
         }
         if (da.status < 200 || da.status >= 300) throw new Error(`saveChatContent error: ${da.status}`)
         const data = await da.json().catch(() => ({}))
