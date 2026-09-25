@@ -1095,6 +1095,9 @@ export const languageEnglish = {
     antiClaudeOverload: "Anti-Claude Overload",
     activeTabChange: "Current tab is inactivated since other tab is active. to activate this tab, click OK",
     sessionHandoffReload: "Refreshed to the latest state because another device was in use.",
+    chatConflictCopyName: (name: string) => `${name} (other device's copy)`,
+    chatConflictCopySaved: (name: string) =>
+        `This chat changed on another device. Its server version was kept as '${name}', and this device's version was saved.`,
     addCharacter: "Add Character",
     importFromRealm: "Choose from RisuRealm",
     importFromRealmDesc: "Choose over 1000 characters in RisuRealm",

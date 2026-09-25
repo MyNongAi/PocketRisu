@@ -3,7 +3,7 @@ import { v4 as uuidv4, v4 } from 'uuid';
 import { tick } from "svelte";
 import { get } from "svelte/store";
 import streamSaver from 'streamsaver';
-import { setDatabase, type Database, defaultSdDataFunc, getDatabase, appVer, nodeOnlyVer, getCurrentCharacter, loadTogglesFromChat } from "./storage/database.svelte";
+import { setDatabase, type Database, type Chat, defaultSdDataFunc, getDatabase, appVer, nodeOnlyVer, getCurrentCharacter, loadTogglesFromChat } from "./storage/database.svelte";
 import { checkRisuUpdate } from "./update";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore, loadingOverlayStore, chatHydrationOverlayStore, chatDeselected, moduleTreeRevision } from "./stores.svelte";
 import { recordDbTransferSize } from "./transferSize";
@@ -1227,7 +1227,9 @@ export async function saveDb() {
             if (!chat || chat._placeholder) continue
             try {
                 const intent = classifyChatSaveIntent(knownChatIdsByCharacter, chaId, chatId)
-                await saveChatToServer(chaId, chatIndex, chatId, chat, intent)
+                await saveChatToServer(chaId, chatIndex, chatId, chat, intent, {
+                    preserveServerCopy: (serverChat) => keepServerChatCopy(char, serverChat),
+                })
                 // The body endpoint has now acknowledged this identity even if
                 // the following catalog PATCH needs to rebase/retry. A second
                 // body save must use its ETag, not fail if-none-match again.
@@ -1604,6 +1606,20 @@ export async function saveDb() {
 
 
         return 'saved'
+    }
+
+    // A chat that changed on another device is saved over the server copy
+    // anyway (NodeStorage.saveOverConflict). When that copy holds messages
+    // this page lacks, it is kept first as a chat of its own — appended, so
+    // no existing chat index shifts — and saved before the overwrite.
+    async function keepServerChatCopy(char: { chaId: string, chats: Chat[] }, serverChat: Chat) {
+        const copy: Chat = { ...serverChat, id: v4(), name: language.chatConflictCopyName(serverChat.name ?? '') }
+        char.chats.push(copy)
+        await saveChatToServer(char.chaId, char.chats.length - 1, copy.id, copy, 'create')
+        const knownChatIds = knownChatIdsByCharacter.get(char.chaId) ?? new Set<string>()
+        knownChatIds.add(copy.id)
+        knownChatIdsByCharacter.set(char.chaId, knownChatIds)
+        notifyInfo(language.chatConflictCopySaved(copy.name))
     }
 
     let lastSaveFailureNotice = { message: '', at: 0 }
