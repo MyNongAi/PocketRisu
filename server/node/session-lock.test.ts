@@ -4,7 +4,7 @@ import pkg from './session-lock.cjs'
 const { createSessionLock } = pkg as {
     createSessionLock: (opts?: { now?: () => number }) => {
         register: (id: string) => void
-        checkWrite: (id: string, userActive?: boolean) => { ok: boolean, tookOver?: boolean, passive?: boolean }
+        checkWrite: (id: string, userActive?: boolean, opts?: { allowStale?: boolean }) => { ok: boolean, tookOver?: boolean, passive?: boolean, reclaimed?: boolean }
         activeId: () => string | null
     }
 }
@@ -39,7 +39,7 @@ describe('session-lock', () => {
         expect(lock.activeId()).toBe('pc')
     })
 
-    it('a freshly-booted session takes over on its first WRITE, then the old one is rejected', () => {
+    it('a freshly-booted session takes over on its first WRITE, and the old one still saves', () => {
         const { lock } = makeLock()
         lock.register('pc')
         expect(lock.checkWrite('pc').ok).toBe(true)   // pc writes
@@ -47,26 +47,50 @@ describe('session-lock', () => {
         const takeover = lock.checkWrite('phone', true) // phone's first USER action
         expect(takeover).toEqual({ ok: true, tookOver: true })
         expect(lock.activeId()).toBe('phone')
-        expect(lock.checkWrite('pc').ok).toBe(false)  // pc is now the stale one → 423
+        // pc is now stale; its automatic write is saved without moving the lock
+        expect(lock.checkWrite('pc')).toEqual({ ok: true, passive: true })
+        expect(lock.activeId()).toBe('phone')
     })
 
-    it('a stale session (booted before the last write) is rejected, not taken over', () => {
+    // 2026-09-24: a phone resuming took the lock, the PC tab in use was
+    // refused, froze its saves and lost 40 minutes of chat. Writes are version-
+    // checked, so refusing a stale session only ever loses data.
+    it('a stale session in use takes the lock back when the user acts', () => {
+        const { lock } = makeLock()
+        lock.register('pc')
+        expect(lock.checkWrite('pc', true).ok).toBe(true)
+        lock.register('phone')
+        expect(lock.checkWrite('phone', true).tookOver).toBe(true) // phone resumed and tapped
+        expect(lock.checkWrite('pc', true)).toEqual({ ok: true, tookOver: true, reclaimed: true })
+        expect(lock.activeId()).toBe('pc')
+    })
+
+    it('a strict write from a stale session is still rejected', () => {
         const { lock } = makeLock()
         lock.register('phone')                        // phone opened first…
         lock.register('pc')                           // …then pc opened
         expect(lock.checkWrite('phone').ok).toBe(true) // phone became active at its boot
         expect(lock.checkWrite('phone').ok).toBe(true) // and wrote AFTER pc booted
-        expect(lock.checkWrite('pc').ok).toBe(false)   // pc's copy predates that write → stale
+        expect(lock.checkWrite('pc', false, { allowStale: false }).ok).toBe(false) // pc's copy predates that write
+        expect(lock.checkWrite('pc', true, { allowStale: false }).ok).toBe(false)  // a gesture cannot force it
         expect(lock.activeId()).toBe('phone')
     })
 
-    it('a rejected session recovers by re-booting (reload) and writing again', () => {
+    it('a strict write passes for the active or a fresh session', () => {
+        const { lock } = makeLock()
+        lock.register('pc')
+        expect(lock.checkWrite('pc', false, { allowStale: false }).ok).toBe(true)
+        lock.register('phone')
+        expect(lock.checkWrite('phone', true, { allowStale: false })).toEqual({ ok: true, tookOver: true })
+    })
+
+    it('a session refused a strict write recovers by re-booting (reload) and writing again', () => {
         const { lock } = makeLock()
         lock.register('pc')
         expect(lock.checkWrite('pc').ok).toBe(true)
         lock.register('phone')
         expect(lock.checkWrite('phone', true).ok).toBe(true) // phone took over (user action)
-        expect(lock.checkWrite('pc').ok).toBe(false)    // pc kicked → client reloads
+        expect(lock.checkWrite('pc', false, { allowStale: false }).ok).toBe(false)
         lock.register('pc')                             // reload = fresh boot
         expect(lock.checkWrite('pc', true)).toEqual({ ok: true, tookOver: true })
         expect(lock.activeId()).toBe('pc')
@@ -124,14 +148,6 @@ describe('session-lock', () => {
         expect(lock.activeId()).toBe('phone')
     })
 
-    it('a stale session is rejected even with a user gesture', () => {
-        const { lock } = makeLock()
-        lock.register('phone')
-        lock.register('pc')
-        expect(lock.checkWrite('phone', true).ok).toBe(true) // phone wrote after pc booted
-        expect(lock.checkWrite('pc', true).ok).toBe(false)   // pc stale — gesture cannot force it
-    })
-
     // peek() drives the client's reload-on-return: reload ONLY when stale.
     it('peek reports free/active/fresh/stale without side effects', () => {
         const { lock } = makeLock()
@@ -156,7 +172,7 @@ describe('session-lock', () => {
         const { lock } = makeLock()
         lock.register('pc')
         expect(lock.checkWrite('pc').ok).toBe(true)     // pc holds the lock
-        expect(lock.checkWrite('phone', true).ok).toBe(false) // writes still 423 — data stays safe
+        expect(lock.checkWrite('phone', false, { allowStale: false }).ok).toBe(false) // strict writes still 423
         expect(lock.peek('phone')).toBe('unknown')      // phone's register never arrived
         lock.register('phone')                          // registration finally lands
         expect(lock.peek('phone')).toBe('fresh')        // normal judgment resumes

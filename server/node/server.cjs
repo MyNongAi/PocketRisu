@@ -2548,14 +2548,23 @@ function chatClientId(req) {
     return typeof id === 'string' ? id : '';
 }
 
-function checkActiveSession(req, res) {
+// `strict` is for a whole-database or whole-chat overwrite that carries no
+// version check: only there does a stale session still get 423. Everything
+// else from a stale session is saved (session-lock.cjs rules).
+function checkActiveSession(req, res, { strict = false } = {}) {
     const clientSessionId = req.headers['x-session-id']
     // The client attaches x-user-active only when a real user gesture happened
     // recently — automatic writes (boot housekeeping, flush-on-hide) carry no
     // gesture and must never move the lock (session-lock.cjs rules).
     const userActive = req.headers['x-user-active'] === '1'
-    const result = sessionLock.checkWrite(typeof clientSessionId === 'string' ? clientSessionId : '', userActive)
-    if (result.tookOver) {
+    const result = sessionLock.checkWrite(
+        typeof clientSessionId === 'string' ? clientSessionId : '',
+        userActive,
+        { allowStale: !strict },
+    )
+    if (result.reclaimed) {
+        console.log('[Session] Write lock taken back by a session in use')
+    } else if (result.tookOver) {
         console.log('[Session] Write lock taken over by a freshly-booted session')
     }
     if (result.ok) return true
@@ -4333,8 +4342,8 @@ app.get('/api/session/lock-status', async (req, res) => {
 // client mutates a chat or starts a potentially long model request. Previously
 // a stale tab was discovered only when the generated reply was finally saved;
 // that produced "Failed to save 1 chat" after the user had already waited for
-// the model. A stale client still receives 423 and reloads, while an active or
-// freshly-booted client claims the lock without writing any data.
+// the model. The claim carries a user gesture, so any session — fresh or one
+// left open while another device wrote — takes the lock without writing data.
 app.post('/api/session/claim', async (req, res) => {
     if (!await checkAuth(req, res)) return
     if (!checkActiveSession(req, res)) return
@@ -5920,11 +5929,15 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
     // database.bin carries an ETag precondition. Let stale browser sessions
     // reach that optimistic-concurrency check instead of rejecting them with
     // 423 first; a mismatched copy receives 409 and the client rebases its
-    // tracked edits. Unversioned writes retain the conservative session lock.
+    // tracked edits. An unversioned database.bin would overwrite the whole
+    // database, so it keeps the strict lock; other keys are saved from any
+    // session (session-lock.cjs).
     const conditionalDatabaseWrite = decodedWriteKey === 'database/database.bin'
         && typeof req.headers['x-if-match'] === 'string'
         && req.headers['x-if-match'].length > 0;
-    if (!conditionalDatabaseWrite && !checkActiveSession(req, res)) return;
+    if (!conditionalDatabaseWrite && !checkActiveSession(req, res, {
+        strict: decodedWriteKey === 'database/database.bin',
+    })) return;
     try {
         await queueMutableStorageOperation(async () => {
             const key = decodedWriteKey;
@@ -8077,7 +8090,7 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
                 if (version.repairMissingPayload) {
                     logger.warn(`[ChatStorage] Recovering missing payload from active client: ${chaId}/${expectedChatId}`);
                 }
-            } else if (currentChat && !checkActiveSession(req, res)) {
+            } else if (currentChat && !checkActiveSession(req, res, { strict: true })) {
                 // Legacy clients have no per-chat precondition, so preserve the
                 // old single-writer protection. A brand-new chat id is safe to
                 // create because there is nothing for it to overwrite.
