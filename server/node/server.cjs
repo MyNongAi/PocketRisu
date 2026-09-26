@@ -8097,11 +8097,10 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
                 return;
             }
 
-            // Do not acknowledge a new/repaired payload that a flush or restart
-            // could discard while its catalog registration is still in flight.
-            if (!currentChat || pendingChatPayloads.has(chaId, expectedChatId)) {
-                pendingChatPayloads.stage(chaId, expectedChatId, chatData);
-            }
+            // Durably journal every accepted body before acknowledging it.
+            // The 5-second database.bin debounce is then only compaction, not
+            // the first durable write of an existing chat's new messages.
+            pendingChatPayloads.stage(chaId, expectedChatId, chatData);
 
             // Update fullChatStore
             if (!fullChatStore.has(chaId)) {
