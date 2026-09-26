@@ -12,6 +12,8 @@ node_modules
 dist/
 save/
 backups/
+# chat text rebuilt by tools/recover-chat-from-request-logs.cjs
+recovered-chats/
 .installed-version
 dist-web/
 dist-ssr
