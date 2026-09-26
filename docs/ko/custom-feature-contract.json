@@ -92,19 +92,21 @@
         "src/ts/storage/chatStorage.ts",
         "src/ts/characters.ts",
         "src/lib/ChatScreens/Chats.svelte",
+        "src/lib/ChatScreens/chatViewportAnchor.ts",
         "server/node/server.cjs",
         "server/node/pending-chat-payloads.cjs"
       ],
       "requiredMarkers": [
         { "file": "src/ts/storage/chatStorage.ts", "contains": "ensureChatHydrated" },
         { "file": "src/ts/storage/chatStorage.ts", "contains": "evictHydratedChatCache" },
-        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "captureViewportAnchor" },
+        { "file": "src/lib/ChatScreens/chatViewportAnchor.ts", "contains": "captureChatViewportAnchor" },
         { "file": "server/node/pending-chat-payloads.cjs", "contains": "createPendingChatPayloads" }
       ],
       "regressionTests": [
         "src/ts/storage/chatStorage.test.ts",
         "src/ts/storage/chatStub.test.ts",
-        "src/ts/storage/chatGuards.test.ts"
+        "src/ts/storage/chatGuards.test.ts",
+        "src/lib/ChatScreens/chatViewportAnchor.test.ts"
       ]
     },
     {
