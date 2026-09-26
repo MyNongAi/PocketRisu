@@ -13,7 +13,7 @@ import { hasher } from "./parser/parser.svelte";
 import { characterURLImport, hubURL } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
 import { decodeRisuSave, encodeRisuSaveLegacy, findDangerousChatOps, normalizeJSON, RisuSaveEncoder, RisuSavePatcher, type toSaveType } from "./storage/risuSave";
-import { isHydrating, saveChatToServer, ensureChatHydrated, chatToStub, classifyChat, convertStubsToPlaceholders, evictHydratedChatCache, markHydratedChatDirty, markHydratedChatPersisted, setChatSaveRequester, hasDirtyHydratedChats, isHydratedChatDirty, rehomeHydratedChats, replaceChatBody, suppressChatTracking } from "./storage/chatStorage";
+import { isHydrating, saveChatToServer, ensureChatHydrated, chatToStub, classifyChat, convertStubsToPlaceholders, evictHydratedChatCache, markHydratedChatDirty, markHydratedChatPersisted, hasDirtyHydratedChats, isHydratedChatDirty, rehomeHydratedChats, replaceChatBody, suppressChatTracking } from "./storage/chatStorage";
 import { startRealtimeSync, type ChatEvent, type DbPatchEvent } from "./sync/realtimeSync";
 import { landRemoteDbPatch } from "./sync/remoteDbPatch";
 import { AutoStorage } from "./storage/autoStorage";
@@ -912,16 +912,6 @@ export async function saveDb() {
             saveTimeoutExecute()
         })
 
-        // Hydration recovers a chat whose body the server lost, but it runs while
-        // the tracker above is deliberately ignoring the active chat, so it has no
-        // way to ask for a write. This is that way. It lives inside the root so
-        // it can reach the debounced saveTimeoutExecute above.
-        setChatSaveRequester((chaId, chatId) => {
-            if (!chaId || !chatId) return
-            const queued = changeTracker.chat.some(pair => pair?.[0] === chaId && pair?.[1] === chatId)
-            if (!queued) changeTracker.chat.unshift([chaId, chatId])
-            saveTimeoutExecute()
-        })
     })
 
     function requeueTrackedChanges(toSave: toSaveType) {
