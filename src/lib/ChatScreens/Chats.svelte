@@ -3,19 +3,14 @@
     import { mount, onDestroy, tick, unmount } from 'svelte';
     import Chat from './Chat.svelte';
     import { getCharImage } from 'src/ts/characters';
-    import { createSimpleCharacter, DBState, selectedCharID, ReloadChatPointer } from 'src/ts/stores.svelte';
+    import { createSimpleCharacter, DBState, ReloadChatPointer } from 'src/ts/stores.svelte';
     import { chatFoldedStateMessageIndex } from 'src/ts/globalApi.svelte';
     import { get } from 'svelte/store';
     import { scrollWithinContainer } from './scrollWithin';
     import { getChatAssetRenderWindow } from '../../ts/chatAssetWindow';
+    import { captureChatViewportAnchor, getChatRoomIdentity, restoreChatViewportAnchor, type ChatViewportAnchor } from './chatViewportAnchor';
     
-    const getCurrentChatRoomId = () => {
-        const charId = get(selectedCharID);
-        if (charId < 0) return null;
-        const char = DBState.db.characters[charId];
-        if (!char) return null;
-        return char.chats?.[char.chatPage]?.id ?? null;
-    };
+    const getCurrentChatRoomId = () => getChatRoomIdentity(currentCharacter);
 
     let {
         messages,
@@ -229,50 +224,30 @@
         return Math.abs(sc.scrollTop) <= 100;
     }
 
-    type ViewportAnchor = {
-        element: HTMLElement
-        offsetTop: number
-        roomId: string | null
-    }
-    let viewportRestoreRevision = 0
+    let pendingViewportAnchor: ChatViewportAnchor | null = null
+    let viewportRestoreQueued = false
+    let viewportRestoreEpoch = 0
     let newMessageScrollTimer: ReturnType<typeof setTimeout> | null = null
 
-    /** Keep the first visible message fixed while streamed text grows below it. */
-    function captureViewportAnchor(): ViewportAnchor | null {
+    /** Coalesce fast streaming updates around the first pre-update anchor. */
+    function queueViewportRestore(anchor: ChatViewportAnchor) {
         const sc = chatBody?.parentElement
-        if (!sc) return null
-        const scRect = sc.getBoundingClientRect()
-        const candidates = Array.from(chatBody.querySelectorAll<HTMLElement>('[data-chat-index]'))
-        const element = candidates
-            .filter((candidate) => {
-                const rect = candidate.getBoundingClientRect()
-                return rect.bottom > scRect.top && rect.top < scRect.bottom
-            })
-            .sort((left, right) => left.getBoundingClientRect().top - right.getBoundingClientRect().top)[0]
-        if (!element) return null
-        return {
-            element,
-            offsetTop: element.getBoundingClientRect().top - scRect.top,
-            roomId: getCurrentChatRoomId(),
+        if (!sc) return
+        if (!pendingViewportAnchor || pendingViewportAnchor.roomId !== anchor.roomId) {
+            pendingViewportAnchor = anchor
         }
-    }
-
-    async function restoreViewportAnchor(anchor: ViewportAnchor, revision: number) {
-        await tick()
-        requestAnimationFrame(() => {
-            if (revision !== viewportRestoreRevision || !anchor.element.isConnected) return
-            if (anchor.roomId !== getCurrentChatRoomId()) return
-            const sc = chatBody?.parentElement
-            // The anchor was captured before the DOM changed. Rechecking
-            // "at bottom" after streamed/input content was mounted can flip
-            // to true because the layout itself moved, which used to skip the
-            // restore and launch the reader toward the top of the transcript.
-            if (!sc) return
-            const delta = anchor.element.getBoundingClientRect().top
-                - sc.getBoundingClientRect().top
-                - anchor.offsetTop
-            if (Math.abs(delta) > 0.5) sc.scrollTop += delta
-        })
+        if (viewportRestoreQueued) return
+        viewportRestoreQueued = true
+        const epoch = ++viewportRestoreEpoch
+        void tick().then(() => requestAnimationFrame(() => {
+            viewportRestoreQueued = false
+            const saved = pendingViewportAnchor
+            pendingViewportAnchor = null
+            if (!saved || epoch !== viewportRestoreEpoch) return
+            if (saved.roomId !== getCurrentChatRoomId()) return
+            const currentScroller = chatBody?.parentElement
+            if (currentScroller) restoreChatViewportAnchor(chatBody, currentScroller, saved)
+        }))
     }
 
     function scrollLatestIntoChatScreen() {
@@ -301,17 +276,17 @@
             newMessageScrollTimer = null
         }
         const wasAtBottom = checkIfAtBottom();
-        // With auto-scroll disabled, even a reader currently at the tail has
-        // asked for a stationary viewport while input/output grows.
-        const anchor = wasAtBottom && DBState.db.autoScrollToNewMessage
-            ? null
-            : captureViewportAnchor()
-        const restoreRevision = ++viewportRestoreRevision
-        updateChatBody()
-        if (anchor) void restoreViewportAnchor(anchor, restoreRevision)
-
         const currentChatRoomId = getCurrentChatRoomId();
         const isSameChat = currentChatRoomId === previousChatRoomId;
+        // With auto-scroll disabled, even a reader currently at the tail has
+        // asked for a stationary viewport while input/output grows.
+        const sc = chatBody?.parentElement
+        const anchor = sc && isSameChat && !(wasAtBottom && DBState.db.autoScrollToNewMessage)
+            ? captureChatViewportAnchor(chatBody, sc, currentChatRoomId)
+            : null
+        updateChatBody()
+        if (anchor) queueViewportRestore(anchor)
+        else pendingViewportAnchor = null
 
         // Only auto-scroll if it's the same chat and new messages were added
         if(isSameChat && messages.length > previousLength){
@@ -338,6 +313,8 @@
 
     onDestroy(() => {
         if (newMessageScrollTimer !== null) clearTimeout(newMessageScrollTimer)
+        viewportRestoreEpoch++
+        pendingViewportAnchor = null
     })
 
 </script>
