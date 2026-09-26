@@ -19,7 +19,7 @@
     import { captureGenerationTarget, resolveGenerationTarget, type GenerationTargetIdentity } from '../../ts/process/generationTarget';
     import { captureChatModelRoute, type RequestModelRouteSnapshot } from '../../ts/process/request/modelPresetBinding';
     import { claimPendingSend, clearPendingSend, markResumable, resumableSends, takeResumable } from "../../ts/process/request/pendingSends";
-    import { ensureCurrentChatReady } from "../../ts/storage/chatStorage";
+    import { ensureCurrentChatReady, missingChatBodies } from "../../ts/storage/chatStorage";
     import { sleep } from "../../ts/util";
     import { language } from "../../lang";
     import { isExpTranslator, translate } from "../../ts/translator/translator";
@@ -1524,9 +1524,18 @@ import { isMobile } from 'src/ts/platform'
             {/if}
 
             {#if !currentChatReady}
-                <div class="w-full flex justify-center text-textcolor2 italic mb-12">
-                    {language.loadingChatData}
-                </div>
+                {#if $missingChatBodies.has(`${currentCharacter?.chaId}/${currentChatSlot?.id}`)}
+                    <div role="alert" class="w-full flex flex-col items-center gap-2 text-textcolor2 mb-12">
+                        <span>{language.errors.chatBodyMissing}</span>
+                        <button onclick={() => void ensureCurrentChatReady(currentCharacter.chats, currentCharacter.chatPage, currentCharacter.chaId)}>
+                            {language.errors.chatBodyRetry}
+                        </button>
+                    </div>
+                {:else}
+                    <div class="w-full flex justify-center text-textcolor2 italic mb-12">
+                        {language.loadingChatData}
+                    </div>
+                {/if}
             {:else}
 
             {#if chatFoldedStateMessageIndex.index !== -1}

@@ -1,6 +1,7 @@
 import { forageStorage } from "../globalApi.svelte"
 import { type Chat, type ChatStub, type ChatOrStub, isChatStub } from "./database.svelte"
 import { tick } from "svelte"
+import { writable } from "svelte/store"
 import { language } from "src/lang"
 import type { ChatSaveIntent } from './chatSaveIntent'
 import type { ChatSaveOptions } from './nodeStorage'
@@ -96,6 +97,9 @@ export function classifyChat(c: any): ChatShape {
 function chatKey(chaId: string, chatId: string): string {
     return `${chaId}/${chatId}`
 }
+
+/** Missing server bodies stay visible as errors; they are never saved empty. */
+export const missingChatBodies = writable<Set<string>>(new Set())
 
 /** Hydration in progress — suppress dirty tracking */
 export const hydrationInFlight = new Set<string>()
@@ -305,48 +309,13 @@ export function isHydrating(chaId: string, chatId: string): boolean {
 }
 
 /**
- * Ask the save loop to persist one chat. Registered by saveDb(); chatStorage
- * cannot reach its change tracker directly, and importing it would close a
- * cycle.
+ * A missing body is not evidence that the user intended to delete its messages.
+ * Keep the catalog placeholder intact instead of replacing it with an empty
+ * chat and saving that empty body over a copy that may still be recoverable.
  */
-type ChatSaveRequester = (chaId: string, chatId: string) => void
-let requestChatSave: ChatSaveRequester | null = null
-
-export function setChatSaveRequester(requester: ChatSaveRequester | null): void {
-    requestChatSave = requester
-}
-
-/**
- * Turn a placeholder whose body the server does not have into an empty but
- * usable chat, preserving the metadata the stub carried.
- *
- * Only called for a definitive 404. The messages are already unrecoverable at
- * this point — they never reached the server — so the choice is between an
- * empty chat the user can use and a placeholder that spins forever.
- */
-function recoverMissingChatBody(
-    chats: Chat[],
-    chatId: string,
-    chaId: string,
-    key: string,
-): Chat | null {
-    const index = chats.findIndex(chat => chat?.id === chatId)
-    if (index === -1) return null
-
-    const slot = chats[index]
-    if (!slot?._placeholder) return slot ?? null
-
-    const recovered: Chat = { ...slot, message: [], fmIndex: -1 }
-    delete recovered._placeholder
-
-    chats[index] = recovered
-    recordHydratedChat(chaId, chatId, chats)
-    // Pin it and queue the write. Without both, the cache evicts this clean
-    // entry straight back to a placeholder and the next open hydrates, 404s
-    // and recovers again — the same chat looping instead of healing.
-    markHydratedChatDirty(chaId, chatId)
-    requestChatSave?.(chaId, chatId)
-    console.warn(`[chatStorage] recovered ${key} as an empty chat; its body was missing on the server`)
+function reportMissingChatBody(key: string): null {
+    missingChatBodies.update(keys => new Set(keys).add(key))
+    console.error(`[chatStorage] kept ${key} read-only because its body is missing on the server`)
 
     // Dynamic import: chatStorage sits under globalApi, which the alert module
     // pulls in — a static import would close that cycle.
@@ -354,7 +323,7 @@ function recoverMissingChatBody(
         .then(({ notifyError }) => notifyError(language.errors.chatBodyMissing))
         .catch(() => {})
 
-    return recovered
+    return null
 }
 
 /**
@@ -387,15 +356,11 @@ export async function ensureChatHydrated(
         try {
             const full = await fetchChatFromServer(chaId, index, chatId)
             if (!full) {
-                // Only a 404 lands here — fetchChatContent throws on every other
-                // failure — so the server definitively holds no body for this
-                // chat. Leaving the placeholder in place stranded the screen on
-                // "loading chat data" forever with no way out. Materialize an
-                // empty but usable chat instead: there is nothing left to
-                // recover, and dropping _placeholder re-enables dirty tracking
-                // so the next save writes it back and heals the desync.
+                // Only a 404 lands here; every other failure throws. Do not
+                // turn a missing server body into an empty write. Another
+                // device, client draft or backup may still hold the messages.
                 console.error(`[chatStorage] hydrate failed: chat not found on server (${key})`)
-                return recoverMissingChatBody(chats, chatId, chaId, key)
+                return reportMissingChatBody(key)
             }
 
             // Clear stale streaming flags: if the app died mid-stream after a
@@ -403,6 +368,12 @@ export async function ensureChatHydrated(
             // (setDatabase does the same for chats present at boot.)
             full.isStreaming = false
             full.activeStreamingDisplayOptimizationMode = undefined
+            missingChatBodies.update(keys => {
+                if (!keys.has(key)) return keys
+                const next = new Set(keys)
+                next.delete(key)
+                return next
+            })
 
             const currentIndex = chats.findIndex(chat => chat?.id === chatId)
             if (currentIndex === -1) {
