@@ -117,11 +117,13 @@ describe('landing a remote database patch', () => {
         expect(db.characters[0].chats[0].message).toHaveLength(1)
     })
 
-    it('keeps loaded bodies when the whole character list is replaced', async () => {
+    // An import now arrives as a single 'add' op that shifts every later
+    // index; loaded bodies are matched by id, so they stay with their owners.
+    it('keeps loaded bodies when a character is inserted before them', async () => {
         const event = await phoneEdit((db) => {
             db.characters.unshift({ chaId: 'c0', name: 'Newcomer', chatPage: 0, chats: [] })
         })
-        expect(event.ops).toEqual([expect.objectContaining({ op: 'replace', path: '/characters' })])
+        expect(event.ops).toEqual([expect.objectContaining({ op: 'add', path: '/characters/0' })])
 
         const db = livePage()
         const result = await land(await pagePatcher(), db, event)
@@ -131,6 +133,20 @@ describe('landing a remote database patch', () => {
         expect(db.characters.map((character: any) => character.chaId)).toEqual(['c0', 'c1', 'c2'])
         expect(db.characters[1].chats[0].message).toEqual([{ role: 'user', data: 'hello from a1' }])
         expect(db.characters[2].chats[0]._placeholder).toBe(true)
+    })
+
+    it('keeps loaded bodies when the whole character list is replaced', async () => {
+        const event = await phoneEdit((db) => { db.characters.reverse() })
+        expect(event.ops).toEqual([expect.objectContaining({ op: 'replace', path: '/characters' })])
+
+        const db = livePage()
+        const result = await land(await pagePatcher(), db, event)
+
+        expect(result.status).toBe('applied')
+        expect((result as any).patcher.hash()).toBe(event.nextHash)
+        expect(db.characters.map((character: any) => character.chaId)).toEqual(['c2', 'c1'])
+        expect(db.characters[1].chats[0].message).toEqual([{ role: 'user', data: 'hello from a1' }])
+        expect(db.characters[0].chats[0]._placeholder).toBe(true)
     })
 
     it('touches nothing while this page has unsaved database edits', async () => {
