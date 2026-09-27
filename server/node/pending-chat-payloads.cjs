@@ -33,12 +33,6 @@ function createPendingChatPayloads({ kvGet, kvSet, kvDel, kvList, kvExists = (ke
         stage,
         entries,
         has: (chaId, chatId) => kvExists(keyFor(chaId, chatId)),
-        restoreInto(store) {
-            for (const { chaId, chatId, chat } of entries()) {
-                if (!store.has(chaId)) store.set(chaId, new Map());
-                if (!store.get(chaId).has(chatId)) store.get(chaId).set(chatId, chat);
-            }
-        },
         // [chaId, chatId] of every journaled chat, from the keys alone (no
         // record is read or decoded). A key that does not parse is skipped:
         // it names no chat, and entries() still reports it.

@@ -85,9 +85,22 @@ const { createExternalAssetMigrationJournal } = require('./external-asset-migrat
 const { verifyStagedMigration } = require('./external-asset-staged-verifier.cjs');
 const { applyPatch } = require('fast-json-patch');
 const { decodeRisuSave, encodeRisuSaveLegacyBuffer, calculateHash, normalizeJSON, normalizeForwardHeaders, hasRemoteBlocks } = require('./utils.cjs');
-const { computeChatEtag, acceptsChatEtag } = require('./chat-content-etag.cjs');
+const { computeChatEtag } = require('./chat-content-etag.cjs');
 const { createPendingChatPayloads } = require('./pending-chat-payloads.cjs');
 const pendingChatPayloads = createPendingChatPayloads({ kvGet, kvSet, kvDel, kvList: kvListExactPrefix, kvExists });
+const { createChatBodyStore, chatToStub, mergeChatStubWithFullChat, deepFreeze, StoredChatBytes } = require('./chat-body-store.cjs');
+// Test hardening only: every root installed in dbCache is deep-frozen, chat
+// objects the store hands to a persist are frozen, and stored body bytes are
+// checked on every read, so an in-place mutation of cached state fails a test.
+const TEST_FREEZE_CACHE = process.env.POCKETRISU_TEST_FREEZE_CACHE === '1';
+// Chat bodies, held as msgpack bytes (chat-body-store.cjs). Replaces the
+// fullChatStore Map of chat objects.
+const chatBodyStore = createChatBodyStore({
+    pendingChatPayloads,
+    logger,
+    isColdStorageChat: (chat) => isColdStorageChat(chat),
+    testHardening: TEST_FREEZE_CACHE,
+});
 const { createPatchHashCache, decodePointerSegment } = require('./patch-hash-cache.cjs');
 const { clonePatchSnapshot } = require('./patch-selective-clone.cjs');
 const pluginStorage = require('./plugin-storage-store.cjs');
@@ -121,17 +134,24 @@ const enablePatchSync = true;
 
 // In-memory database cache for patch-based sync
 // dbCache stores the STRIPPED (stubs-only) version matching what the client sees.
-// fullChatStore keeps the actual chat data keyed by chaId→chatId.
+// chatBodyStore keeps the actual chat data keyed by chaId→chatId.
 // Invariant: server code never mutates a cached database's nested branches
 // in place. /api/patch derives the next root via clonePatchSnapshot (untouched
 // top-level branches are shared with the previous root) and keeps per-branch
 // hashes in databasePatchHashCache keyed on the root object — an in-place edit
 // would silently alias into the previous snapshot and leave a stale hash.
-// Replace the branch (or the whole root) instead.
-let dbCache = {};
+// Replace the branch (or the whole root) instead. This includes the chats a
+// persist hydrates: inline and hybrid chats are the root's own objects there.
+let dbCache = TEST_FREEZE_CACHE
+    ? new Proxy({}, {
+        set(target, key, value) {
+            target[key] = deepFreeze(value);
+            return true;
+        },
+    })
+    : {};
 let saveTimers = {};
 const SAVE_INTERVAL = 5000;
-let fullChatStore = null; // Map<chaId, Map<chatId, chatObject>> — lazy-initialized
 const databasePatchHashCache = createPatchHashCache(calculateHash);
 // Live change feed for other devices; see sync-hub.cjs and /api/sync/events.
 const { createSyncHub } = require('./sync-hub.cjs');
@@ -462,14 +482,18 @@ async function flushPendingDb() {
         try {
             if (dbCache[DB_HEX_KEY]) {
                 await persistDbCacheWithChats(DB_HEX_KEY, 'database/database.bin');
-            } else if (fullChatStore && fullChatStore.size > 0) {
+            } else if (chatBodyStore.loaded && chatBodyStore.characterCount > 0) {
                 // No stripped cache but chat store has data — merge and persist directly
                 const raw = kvGet('database/database.bin');
                 if (raw) {
                     const dbObj = normalizeJSON(await decodeRisuSave(raw));
+                    // No await from the token to acceptPersistedDatabase.
+                    const token = chatBodyStore.snapshotToken();
                     const fullDb = hydrateDatabaseForDisk(stripDatabaseForClient(dbObj, { reconcileManifests: true }));
                     kvSet('database/database.bin', encodeRisuSaveLegacyBuffer(fullDb));
-                    pendingChatPayloads.retireCommitted(fullDb);
+                    // fullDb is a fresh decode; its catalog is the disk one,
+                    // not a live root, so nothing is pruned from the store.
+                    chatBodyStore.acceptPersistedDatabase(fullDb, token, { fixInPlace: true, prune: false });
                 }
             }
         } catch (error) {
@@ -536,7 +560,7 @@ function partitionPluginStorageOps(patch) {
     return { kvOps, rejected, rest };
 }
 
-// Cold-load database.bin into dbCache (stripped) + fullChatStore. Every
+// Cold-load database.bin into dbCache (stripped) + chatBodyStore. Every
 // caller must run this inside queueStorageOperation: /api/read used to decode
 // outside the queue, so a concurrent /api/patch could cold-load, apply and
 // cache first, then be overwritten by the read's older snapshot — losing an
@@ -544,13 +568,15 @@ function partitionPluginStorageOps(patch) {
 // queue so a load that already happened while waiting is not repeated.
 // Returns false when there is no blob on disk.
 //
-// The load rebuilds fullChatStore from disk. A cold root does not mean the
+// The load reloads chatBodyStore from disk. A cold root does not mean the
 // store is cold: a chat save only loads the store, and a persist guard drops
 // the root but keeps the store. A pending save timer is the record that the
 // store holds acknowledged bodies disk does not have yet, so write them first
 // (flushPendingDb's no-root branch hydrates the disk root with the live
-// store). If that write fails, nothing is loaded and the error propagates:
-// replacing the store then would drop those bodies for good.
+// store). If that write fails, nothing is loaded and the error propagates.
+// The reload itself also keeps every body the store holds that is not on
+// disk (chat-body-store.cjs), so a caller that reaches it without that flush
+// cannot drop them either.
 async function loadDbCacheIfMissing({ createBackup = false } = {}) {
     if (dbCache[DB_HEX_KEY]) return true;
     if (saveTimers[DB_HEX_KEY]) await flushPendingDb();
@@ -563,7 +589,7 @@ async function loadDbCacheIfMissing({ createBackup = false } = {}) {
 
 function invalidateDbCache() {
     delete dbCache[DB_HEX_KEY];
-    fullChatStore = null;
+    chatBodyStore.reset();
     if (saveTimers[DB_HEX_KEY]) {
         clearTimeout(saveTimers[DB_HEX_KEY]);
         delete saveTimers[DB_HEX_KEY];
@@ -746,75 +772,20 @@ async function decodeDatabaseWithPersistentChatIds(raw, options = {}) {
     return dbObj;
 }
 
-/**
- * Convert a full chat to a stub (metadata only).
- *
- * Hybrid corruption guard: a chat carrying `_stub: true` AND a real `message`
- * array is the v1.4.x legacy hybrid pattern. The fast-path "if _stub return"
- * would propagate the corruption (server reassemble skips merge for _stub
- * chats with no fullChat lookup match). Treat hybrids as real chats and
- * collapse them to a real stub here.
- */
-function chatToStub(chat) {
-    if (!chat) return chat;
-    if (chat._stub && !Array.isArray(chat.message)) return chat;
-    const stub = {
-        id: chat.id || '',
-        name: chat.name ?? '',
-        _stub: true,
-    };
-    // Preserve key presence even when the value is null/undefined so the
-    // round-trip distinguishes "user cleared" from "field absent". See
-    // mergeChatStubWithFullChat — it relies on `in` semantics.
-    if ('lastDate' in chat) stub.lastDate = chat.lastDate;
-    if ('folderId' in chat) stub.folderId = chat.folderId;
-    if ('modules' in chat) stub.modules = chat.modules;
-    return stub;
-}
+// chatToStub and mergeChatStubWithFullChat live in chat-body-store.cjs: the
+// store's merge fast path must match the merge used here byte for byte.
 
 /**
- * Initialize fullChatStore from a decoded full database object.
- * Extracts all chat payloads into the store keyed by chaId → chatId.
- *
- * Hybrid corruption recovery: a chat with both `_stub: true` and a real
- * message array is treated as a real chat (its fullChat data is intact).
- * Strip the `_stub` flag in place so subsequent reassemble passes don't
- * reproduce the hybrid on disk.
- */
-function initChatStore(dbObj) {
-    fullChatStore = new Map();
-    for (const char of dbObj?.characters ?? []) {
-        if (!char?.chaId || !char.chats) continue;
-        const charChats = new Map();
-        for (const chat of char.chats) {
-            if (!chat) continue;
-            const isStub = chat._stub === true;
-            const hasMessage = Array.isArray(chat.message);
-            // Real stub (no payload) — fullChatStore tracks payloads only.
-            if (isStub && !hasMessage) continue;
-            // Hybrid: strip the corrupt _stub flag, keep the real chat.
-            if (isStub && hasMessage) {
-                delete chat._stub;
-            }
-            if (!chat.id) {
-                chat.id = nodeCrypto.randomUUID();
-            }
-            charChats.set(chat.id, chat);
-        }
-        if (charChats.size > 0) {
-            fullChatStore.set(char.chaId, charChats);
-        }
-    }
-    pendingChatPayloads.restoreInto(fullChatStore);
-}
-
-/**
- * initChatStore for a database just decoded from disk. A reactivated
+ * Load the chat store from a database just decoded from disk. A reactivated
  * character can sit on disk with bodiless `_stub` chats whose bodies only its
  * archive rows hold; restore them before anything reads the store, or a chat
  * opened before the next save loads empty and the edit that follows replaces
  * the history for good. A failure here only logs: the app must still load,
  * and the persist path refuses on its own when a row is unreadable.
+ * A chat body journaled by an accepted save (pendingChatPayloads) is newer
+ * than any archive row: it replaces a row body for a chat that is a bodiless
+ * stub on disk. The load fixes hybrids and missing ids in `db` in place, as
+ * before (it is a fresh decode the caller strips next).
  * Returns the database the store was built from.
  */
 async function initChatStoreFromDisk(dbObj) {
@@ -826,29 +797,11 @@ async function initChatStoreFromDisk(dbObj) {
             logger.warn(`[Archive] load: could not restore chats from archive rows: ${error?.message || error}`);
         }
     }
-    initChatStore(db);
-    if (db !== dbObj) preferPendingPayloadsOverArchiveRows(dbObj);
+    chatBodyStore.loadFromDatabase(db, {
+        fixInPlace: true,
+        pendingOverridesBodilessStubsOf: db !== dbObj ? dbObj : null,
+    });
     return db;
-}
-
-// A chat body journaled by an accepted save (pendingChatPayloads) is newer
-// than any archive row, but initChatStore never replaces what the store
-// already holds. Put the journaled body back over one this load filled from a
-// row, i.e. over a chat that is a bodiless stub on disk.
-function preferPendingPayloadsOverArchiveRows(diskDb) {
-    const pending = new Map();
-    pendingChatPayloads.restoreInto(pending);
-    for (const [chaId, chats] of pending) {
-        const diskChats = (Array.isArray(diskDb?.characters) ? diskDb.characters : [])
-            .find((c) => c?.chaId === chaId)?.chats;
-        if (!Array.isArray(diskChats)) continue;
-        for (const [chatId, chat] of chats) {
-            const onDisk = diskChats.find((c) => c?.id === chatId);
-            if (!onDisk || onDisk._stub !== true || Array.isArray(onDisk.message)) continue;
-            if (!fullChatStore.has(chaId)) fullChatStore.set(chaId, new Map());
-            fullChatStore.get(chaId).set(chatId, chat);
-        }
-    }
 }
 
 /**
@@ -883,55 +836,56 @@ function stripDatabaseForClient(dbObj, { reconcileManifests = false } = {}) {
     }).db;
 }
 
-/** Rebuild the exact legacy shape before any database.bin disk write. */
-function hydrateDatabaseForDisk(clientDb) {
-    const chatsHydrated = reassembleFullDb(clientDb);
+/**
+ * Rebuild the exact legacy shape before any database.bin disk write.
+ * `storedBytes`: the result is only guarded (findStubFlagLossChats, archive
+ * rows), encoded and handed to acceptPersistedDatabase, so a chat whose
+ * merge changes nothing may stand in it as its stored bytes
+ * (StoredChatBytes) instead of a decoded object.
+ */
+function hydrateDatabaseForDisk(clientDb, { storedBytes = false } = {}) {
+    const chatsHydrated = reassembleFullDb(clientDb, { storedBytes });
     return hydrateAssetManifests(chatsHydrated, assetManifestStore);
 }
 
 /**
- * Reassemble a full database from a stripped DB + fullChatStore.
- * Replaces stubs with full chats from the store. Returns a new object.
+ * Reassemble a full database from a stripped DB + chatBodyStore.
+ * Replaces stubs with full chats from the store (each a fresh decode merged
+ * with its stub, or with `storedBytes` a StoredChatBytes when that merge
+ * changes nothing). Returns a new object; chats without a stored body, inline
+ * chats and hybrids are the stripped DB's own objects. Fails closed when the
+ * store is not loaded (it used to return the stubs, which a writer would have
+ * put on disk without their bodies).
  */
-function mergeChatStubWithFullChat(stub, fullChat) {
-    if (!fullChat) {
-        return stub;
-    }
-    if (!stub || !stub._stub) {
-        return fullChat;
-    }
-    const merged = {
-        ...fullChat,
-        id: stub.id || fullChat.id || '',
-        name: stub.name,
-    };
-    // Defensive: never let `_stub: true` ride along on a merged chat. If
-    // fullChat carries a stale flag (legacy disk corruption), the spread
-    // would propagate the hybrid pattern back to disk and re-trigger the
-    // chat-data loss path on next round-trip.
-    if ('_stub' in merged) delete merged._stub;
-    // Use key presence (`in`) so an explicit null/undefined from the client —
-    // meaning "user cleared this field" — overwrites fullChat. The previous
-    // `!= null` check conflated "cleared" with "absent" and silently kept
-    // stale folderId / modules on disk, producing orphan-folder chats.
-    if ('lastDate' in stub) merged.lastDate = stub.lastDate;
-    if ('folderId' in stub) merged.folderId = stub.folderId;
-    if ('modules' in stub) merged.modules = stub.modules;
-    return merged;
+function reassembleFullDb(strippedDb, { storedBytes = false } = {}) {
+    if (!strippedDb?.characters) return strippedDb;
+    return mapStoredChats(strippedDb, storedBytes
+        ? (chaId, chat) => chatBodyStore.getMergedChatForDisk(chaId, chat)
+        : (chaId, chat) => chatBodyStore.getMergedChat(chaId, chat));
 }
 
-function reassembleFullDb(strippedDb) {
-    if (!strippedDb?.characters || !fullChatStore) return strippedDb;
+// reassembleFullDb's shape without decoding any body: a stub the store holds
+// a body for becomes `{ id }` (like a merged chat, it is no longer a
+// `_stub`). Enough for findUnmergedArchivedChats and loadArchivedChatBodies,
+// which only look for the stubs that stay bodiless.
+function reassembleChatShapes(strippedDb) {
+    if (!strippedDb?.characters) return strippedDb;
+    return mapStoredChats(strippedDb, (chaId, chat) => (chatBodyStore.has(chaId, chat.id) ? { id: chat.id } : undefined));
+}
+
+function mapStoredChats(strippedDb, mapStub) {
+    if (!chatBodyStore.loaded) {
+        throw Object.assign(new Error('chat body store is not loaded'), { code: 'CHAT_STORE_NOT_LOADED' });
+    }
     const full = { ...strippedDb };
     full.characters = strippedDb.characters.map(char => {
         if (!char?.chaId || !char.chats) return char;
-        const charChats = fullChatStore.get(char.chaId);
-        if (!charChats) return char;
+        if (!chatBodyStore.hasCharacter(char.chaId)) return char;
         return {
             ...char,
             chats: char.chats.map(chat => {
                 if (chat && chat._stub && chat.id) {
-                    return mergeChatStubWithFullChat(chat, charChats.get(chat.id));
+                    return mapStub(char.chaId, chat) ?? chat;
                 }
                 return chat;
             }),
@@ -1034,17 +988,17 @@ async function migrateRemoteBlocksIfNeeded() {
 }
 
 /**
- * Ensure fullChatStore is initialized. Loads from disk if needed.
+ * Ensure chatBodyStore is loaded. Loads from disk if needed.
  */
 async function ensureChatStore() {
-    if (fullChatStore) return;
+    if (chatBodyStore.loaded) return;
     // Run remote-block migration first so the decode below sees an inline DB.
     // Idempotent — skipped on every subsequent call.
     await migrateRemoteBlocksIfNeeded();
     const raw = kvGet('database/database.bin');
     if (!raw) {
-        fullChatStore = new Map();
-        pendingChatPayloads.restoreInto(fullChatStore);
+        // Nothing on disk: only the journaled bodies.
+        chatBodyStore.loadFromDatabase(null);
         return;
     }
     const dbObj = await decodeDatabaseWithPersistentChatIds(raw, {
@@ -1054,7 +1008,7 @@ async function ensureChatStore() {
 }
 
 // Stub metadata fields a JSON Patch may legitimately touch on a `chats[i]`
-// entry. Anything else is a chat-internal field — those live in fullChatStore,
+// entry. Anything else is a chat-internal field — those live in chatBodyStore,
 // not in dbCache, and should never appear in a /api/patch payload. Keep in
 // sync with chatToStub on both server and client.
 const STUB_METADATA_FIELDS = new Set(['id', 'name', '_stub', 'lastDate', 'folderId', 'modules']);
@@ -1145,7 +1099,7 @@ function findStubFlagLossChats(fullDb) {
             const chat = char.chats[chi];
             if (!chat || typeof chat !== 'object') continue;
             const isStub = chat._stub === true;
-            const hasMessage = Array.isArray(chat.message);
+            const hasMessage = chat instanceof StoredChatBytes ? chat.hasMessageArray : Array.isArray(chat.message);
             if (!isStub && !hasMessage) {
                 losses.push({
                     chaId: char.chaId,
@@ -1221,7 +1175,7 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
         if (!strippedDb) return;
         archived = null;
         if (decodedKey === 'database/database.bin') {
-            const chatsView = reassembleFullDb(strippedDb);
+            const chatsView = reassembleChatShapes(strippedDb);
             if (findUnmergedArchivedChats(chatsView).length > 0) {
                 archived = await loadArchivedChatBodies(chatsView).then((bodies) => ({ bodies }), (error) => ({ error }));
             }
@@ -1235,12 +1189,16 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
         }
     }
     timings.waitMs = lap();
-    let fullDb = hydrateDatabaseForDisk(strippedDb);
+    // No await from the token to acceptPersistedDatabase below. fullDb is
+    // only guarded, encoded and accepted here, so unchanged chats stay
+    // their stored bytes (no decode, no re-encode).
+    const chatStoreToken = chatBodyStore.snapshotToken();
+    let fullDb = hydrateDatabaseForDisk(strippedDb, { storedBytes: decodedKey === 'database/database.bin' });
     timings.hydrateMs = lap();
 
     // Disk protection guard: abort persist when reassemble produced metadata-only
     // chats. Writing them would lock the loss in (next /api/read returns the
-    // stripped chat with no `_stub`, so hydration never re-merges fullChatStore).
+    // stripped chat with no `_stub`, so hydration never re-merges chatBodyStore).
     // Invalidate dbCache so the next request re-reads from disk and rebuilds a
     // consistent stub view; client receives 409 on next /api/patch via hash mismatch.
     if (decodedKey === 'database/database.bin') {
@@ -1286,14 +1244,16 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
         throw err;
     }
     timings.kvSetMs = lap();
-    // Refresh fullChatStore from the persisted snapshot so subsequent
+    // Refresh chatBodyStore from the persisted snapshot so subsequent
     // /api/chat-content GETs return the same metadata (folderId, modules)
     // that just hit disk. Without this, PATCH-only clears of stub fields
-    // leave fullChatStore holding stale fullChat objects, and hydration
-    // would resurrect the cleared values until the next /api/read.
+    // leave the store holding stale bodies, and hydration would resurrect
+    // the cleared values until the next /api/read. Also retires the
+    // journal of new chats that reached disk. fullDb shares its inline and
+    // hybrid chats with the cached root, so their fixes go to the store's
+    // copy only (fixInPlace false).
     if (decodedKey === 'database/database.bin') {
-        pendingChatPayloads.retireCommitted(fullDb);
-        initChatStore(fullDb);
+        chatBodyStore.acceptPersistedDatabase(fullDb, chatStoreToken);
         timings.storeMs = lap();
         lastDbPersistMs = Math.round(performance.now() - persistStartedAt);
     }
@@ -4666,24 +4626,24 @@ app.post('/api/chat-session/:chaId/:chatId/claim', rejectDuringExclusiveStorage,
                     retryAfterMs: result.retryAfterMs,
                 })
             }
-            const currentChat = fullChatStore.get(chaId)?.get(chatId)
+            const hasCurrent = chatBodyStore.has(chaId, chatId)
             const catalogChat = findCatalogChat(chaId, chatId)
             let currentEtag = null
-            if (currentChat) {
-                if (!restoreColdStorageChat(currentChat)) {
+            if (hasCurrent) {
+                if (!restoreColdStorageBody(chaId, chatId)) {
                     return res.status(500).json({ error: 'Cold storage restore failed' })
                 }
-                currentEtag = computeChatEtag(currentChat)
+                currentEtag = chatBodyStore.etag(chaId, chatId)
             }
             const expectedEtag = req.headers['x-chat-etag']
             // A heartbeat from the current owner may race its own successful
             // chat save and carry the immediately previous ETag. Ownership is
             // already exclusive, so only a NEW claimant needs the comparison.
             const version = evaluateChatVersion({
-                expectedEtag: acceptsChatEtag(expectedEtag, currentChat) ? currentEtag : expectedEtag,
+                expectedEtag: chatBodyStore.acceptsEtag(chaId, chatId, expectedEtag) ? currentEtag : expectedEtag,
                 currentEtag,
                 renewed: result.renewed,
-                hasCurrentPayload: !!currentChat,
+                hasCurrentPayload: hasCurrent,
                 hasCatalogStub: catalogChat?._stub === true,
             })
             if (!version.ok) {
@@ -6369,7 +6329,7 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
                     // The rows are decoded (async) here; they are filled in
                     // after hydrate.
                     let archivedBodies = null;
-                    const chatsView = reassembleFullDb(incomingDb);
+                    const chatsView = reassembleChatShapes(incomingDb);
                     if (findUnmergedArchivedChats(chatsView).length > 0) {
                         try {
                             archivedBodies = await loadArchivedChatBodies(chatsView);
@@ -6383,6 +6343,7 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
                     }
 
                     // ── No await from here to kvSet. ──
+                    const chatStoreToken = chatBodyStore.snapshotToken();
                     let fullDb = hydrateDatabaseForDisk(incomingDb);
                     if (archivedBodies) fullDb = applyArchivedChatsForDisk(fullDb, archivedBodies, '/api/write');
 
@@ -6448,9 +6409,11 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
                     const mergedContent = encodeRisuSaveLegacyBuffer(fullDb);
                     kvSet(key, mergedContent);
                     committed = true;
-                    pendingChatPayloads.retireCommitted(fullDb);
-                    // Do not replace the live store until persistence succeeds.
-                    initChatStore(fullDb);
+                    // Do not update the live store until persistence succeeds.
+                    // fullDb is this request's own decode (merged chats are
+                    // fresh objects too), so the hybrid and missing-id fixes
+                    // are made on it and reach persistedView below.
+                    chatBodyStore.acceptPersistedDatabase(fullDb, chatStoreToken, { fixInPlace: true });
                     // ETag of what the next /api/read will serve: the
                     // PERSISTED DB, stripped. Not the request bytes — the
                     // split above may have emptied pluginCustomStorage, so
@@ -8363,6 +8326,18 @@ function isColdStorageChat(chat) {
     return chat?.message?.[0]?.data?.startsWith(COLD_STORAGE_HEADER);
 }
 
+// restoreColdStorageChat mutates its argument. The store hands out private
+// copies, so a successful restore is written back: the same in-memory effect
+// as the old in-place restore of the stored object (no journal row, no
+// persist scheduled; the restored body is simply not on disk yet).
+function restoreColdStorageBody(chaId, chatId) {
+    if (!chatBodyStore.isColdStorage(chaId, chatId)) return true;
+    const chat = chatBodyStore.getChat(chaId, chatId);
+    if (!restoreColdStorageChat(chat)) return false;
+    chatBodyStore.setChat(chaId, chatId, chat);
+    return true;
+}
+
 function restoreColdStorageChat(chat) {
     if (!isColdStorageChat(chat)) return true;
     const key = chat.message[0].data.slice(COLD_STORAGE_HEADER.length);
@@ -8438,6 +8413,28 @@ function sendChatContent(req, res, chat) {
     return res.send(encoded);
 }
 
+// sendChatContent for a body the store holds. Same headers and bytes; a
+// full response is the stored bytes behind the legacy header (no encode),
+// with both ETags cached per body. Only a delta response decodes.
+function sendStoredChatContent(req, res, chaId, chatId) {
+    res.setHeader('Vary', 'x-chat-base-count, x-chat-base-fp');
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('x-chat-etag', chatBodyStore.etag(chaId, chatId));
+    res.setHeader('Cache-Control', 'private, no-store');
+    const base = readChatDeltaBase(req);
+    if (base) {
+        const chat = chatBodyStore.getChat(chaId, chatId);
+        if (chatPrefixMatches(chat, base)) {
+            res.setHeader('x-chat-delta-base', String(base.count));
+            const encoded = encodeRisuSaveLegacyBuffer({ ...chat, message: chat.message.slice(base.count) });
+            res.setHeader('ETag', computeBufferEtag(encoded));
+            return res.send(encoded);
+        }
+    }
+    res.setHeader('ETag', chatBodyStore.bufferEtag(chaId, chatId));
+    return res.send(chatBodyStore.legacyEncoded(chaId, chatId));
+}
+
 app.get('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, async (req, res, next) => {
     if (!await checkAuth(req, res)) { return; }
     try {
@@ -8447,16 +8444,12 @@ app.get('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, asy
         const expectedChatId = req.headers['x-chat-id'];
 
         await ensureChatStore();
-        // First try fullChatStore (fast path)
-        const charChats = fullChatStore.get(chaId);
-        if (charChats && expectedChatId) {
-            const chat = charChats.get(expectedChatId);
-            if (chat) {
-                if (!restoreColdStorageChat(chat)) {
-                    return res.status(500).json({ error: 'Cold storage restore failed' });
-                }
-                return sendChatContent(req, res, chat);
+        // First try the chat store (fast path)
+        if (expectedChatId && chatBodyStore.has(chaId, expectedChatId)) {
+            if (!restoreColdStorageBody(chaId, expectedChatId)) {
+                return res.status(500).json({ error: 'Cold storage restore failed' });
             }
+            return sendStoredChatContent(req, res, chaId, expectedChatId);
         }
 
         // Fallback: load from disk. Stable chat identity is authoritative when
@@ -8531,31 +8524,34 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
             // below so they all see the whole chat the client means to save.
             const deltaBase = readChatDeltaBase(req);
             if (deltaBase) {
-                const stored = fullChatStore.get(chaId)?.get(expectedChatId);
-                if (!stored || !restoreColdStorageChat(stored) || !Array.isArray(chatData.message) || !chatPrefixMatches(stored, deltaBase)) {
+                const stored = chatBodyStore.has(chaId, expectedChatId) && restoreColdStorageBody(chaId, expectedChatId)
+                    ? chatBodyStore.getChat(chaId, expectedChatId)
+                    : null;
+                if (!stored || !Array.isArray(chatData.message) || !chatPrefixMatches(stored, deltaBase)) {
                     return res.status(409).json({ error: 'Chat delta base does not match', code: 'CHAT_DELTA_BASE_MISMATCH' });
                 }
                 chatData.message = stored.message.slice(0, deltaBase.count).concat(chatData.message);
             }
 
-            const currentChat = fullChatStore.get(chaId)?.get(expectedChatId);
+            const hasCurrent = chatBodyStore.has(chaId, expectedChatId);
             const catalogChat = findCatalogChat(chaId, expectedChatId);
             const createOnly = req.headers['if-none-match'] === '*';
+            // chatData is not changed below: its ETag is computed once.
+            const nextEtag = computeChatEtag(chatData);
             // Retrying an acknowledged POST after a lost response is safe when
             // the payload is identical. This never overwrites a peer's edit.
-            if (currentChat && restoreColdStorageChat(currentChat)
-                && computeChatEtag(currentChat) === computeChatEtag(chatData)) {
-                const etag = computeChatEtag(currentChat);
-                res.setHeader('ETag', etag);
-                return res.json({ success: true, etag });
+            if (hasCurrent && restoreColdStorageBody(chaId, expectedChatId)
+                && chatBodyStore.etag(chaId, expectedChatId) === nextEtag) {
+                res.setHeader('ETag', nextEtag);
+                return res.json({ success: true, etag: nextEtag });
             }
-            if (createOnly && currentChat) {
-                if (!restoreColdStorageChat(currentChat)) {
+            if (createOnly && hasCurrent) {
+                if (!restoreColdStorageBody(chaId, expectedChatId)) {
                     return res.status(500).json({ error: 'Cold storage restore failed' });
                 }
                 return res.status(409).json({
                     error: 'A chat with this ID already exists on the server',
-                    currentEtag: computeChatEtag(currentChat),
+                    currentEtag: chatBodyStore.etag(chaId, expectedChatId),
                 });
             }
             const chatLease = chatSessionLock.checkWrite(
@@ -8570,16 +8566,16 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
             }
             const ifMatch = req.headers['x-if-match'];
             if (typeof ifMatch === 'string' && ifMatch.length > 0) {
-                if (currentChat && !restoreColdStorageChat(currentChat)) {
+                if (hasCurrent && !restoreColdStorageBody(chaId, expectedChatId)) {
                     return res.status(500).json({ error: 'Cold storage restore failed' });
                 }
-                const currentEtag = currentChat
-                    ? computeChatEtag(currentChat)
+                const currentEtag = hasCurrent
+                    ? chatBodyStore.etag(chaId, expectedChatId)
                     : null;
                 const version = evaluateChatVersion({
-                    expectedEtag: acceptsChatEtag(ifMatch, currentChat) ? currentEtag : ifMatch,
+                    expectedEtag: chatBodyStore.acceptsEtag(chaId, expectedChatId, ifMatch) ? currentEtag : ifMatch,
                     currentEtag,
-                    hasCurrentPayload: !!currentChat,
+                    hasCurrentPayload: hasCurrent,
                     hasCatalogStub: catalogChat?._stub === true,
                 });
                 if (!version.ok) {
@@ -8593,24 +8589,25 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
                 if (version.repairMissingPayload) {
                     logger.warn(`[ChatStorage] Recovering missing payload from active client: ${chaId}/${expectedChatId}`);
                 }
-            } else if (currentChat && !checkActiveSession(req, res, { strict: true })) {
+            } else if (hasCurrent && !checkActiveSession(req, res, { strict: true })) {
                 // Legacy clients have no per-chat precondition, so preserve the
                 // old single-writer protection. A brand-new chat id is safe to
                 // create because there is nothing for it to overwrite.
                 return;
             }
 
+            // Encode before anything is staged or acknowledged: a body that
+            // cannot be stored fails here (500) with nothing changed.
+            const prepared = chatBodyStore.prepare(chatData, { etag: nextEtag });
+
             // Do not acknowledge a new/repaired payload that a flush or restart
             // could discard while its catalog registration is still in flight.
-            if (!currentChat || pendingChatPayloads.has(chaId, expectedChatId)) {
+            if (!hasCurrent || pendingChatPayloads.has(chaId, expectedChatId)) {
                 pendingChatPayloads.stage(chaId, expectedChatId, chatData);
             }
 
-            // Update fullChatStore
-            if (!fullChatStore.has(chaId)) {
-                fullChatStore.set(chaId, new Map());
-            }
-            fullChatStore.get(chaId).set(expectedChatId, chatData);
+            // Update the chat store (cannot fail).
+            chatBodyStore.commit(chaId, expectedChatId, prepared);
 
             // Schedule debounced persist (reuses existing timer mechanism)
             if (saveTimers[DB_HEX_KEY]) {
@@ -8632,11 +8629,15 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
                         const raw = kvGet('database/database.bin');
                         if (raw) {
                             const dbObj = normalizeJSON(await decodeRisuSave(raw));
+                            // No await from the token to acceptPersistedDatabase.
+                            const token = chatBodyStore.snapshotToken();
                             const fullDb = hydrateDatabaseForDisk(stripDatabaseForClient(dbObj, { reconcileManifests: true }));
                             const encoded = encodeRisuSaveLegacyBuffer(fullDb);
                             try {
                                 kvSet('database/database.bin', encoded);
-                                pendingChatPayloads.retireCommitted(fullDb);
+                                // Fresh decode of the disk catalog: fix in
+                                // place, prune nothing (see flushPendingDb).
+                                chatBodyStore.acceptPersistedDatabase(fullDb, token, { fixInPlace: true, prune: false });
                             } catch (err) {
                                 if (err && typeof err === 'object') {
                                     try { err.attemptedSize = encoded.length; } catch {}
@@ -8668,7 +8669,6 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
             }, SAVE_INTERVAL);
             saveTimers[DB_HEX_KEY] = saveTimer;
 
-            const nextEtag = computeChatEtag(chatData);
             res.setHeader('ETag', nextEtag);
             res.json({ success: true, etag: nextEtag });
             syncHub.publish({ type: 'chat', origin: chatClientId(req), chaId, chatId: expectedChatId, etag: nextEtag });
@@ -9218,7 +9218,7 @@ function purgeOrphanArchiveRows(dbObj) {
     return { deleted: orphan.payloads.length, metas: orphan.metas.length, bytes: orphan.bytes };
 }
 
-// A chat the server holds no body for: a `_stub` with nothing in fullChatStore.
+// A chat the server holds no body for: a `_stub` with nothing in chatBodyStore.
 // Bodies are never re-hydrated once lost, so this state is permanent.
 function isBodilessChat(chat) {
     return !!chat && (chat._stub === true || !Array.isArray(chat.message));
@@ -9231,7 +9231,7 @@ function emptyChatFrom(chat) {
 }
 
 // Full legacy-shaped character for one dbCache entry: chats merged from
-// fullChatStore, asset arrays hydrated from the manifest store. A bodiless chat
+// chatBodyStore, asset arrays hydrated from the manifest store. A bodiless chat
 // has nothing to archive; it is refused (its name reported) unless the caller
 // accepts storing it as the empty chat it already is.
 async function hydrateCharacterForArchive(character, { acceptLostChats = false } = {}) {
@@ -9312,7 +9312,7 @@ function findArchiveConflicts(prev, next, patch) {
         if (!c?.chaId || prevIds.has(c.chaId)) continue;
         if (!hasAnyArchivePayload(c.chaId)) continue;
         const hasStubChat = Array.isArray(c.chats) && c.chats.some((ch) => ch && ch._stub === true);
-        if (hasStubChat && !(fullChatStore && fullChatStore.has(c.chaId))) {
+        if (hasStubChat && !(chatBodyStore.loaded && chatBodyStore.hasCharacter(c.chaId))) {
             return `character ${c.chaId} returned from the archive without activation`;
         }
     }
@@ -9346,7 +9346,7 @@ async function restoreUnmergedArchivedChats(fullDb) {
 
 // Only a stub with no message array lacks its body. A legacy hybrid
 // (`_stub: true` and a real message array) carries the body itself and
-// may be newer than any row; initChatStore just drops its flag.
+// may be newer than any row; the chat store just drops its flag.
 function lacksArchivedBody(ch) {
     return !!ch && ch._stub === true && !Array.isArray(ch.message);
 }
@@ -9480,13 +9480,8 @@ app.get('/api/inlays/references', async (req, res, next) => {
             await ensureChatStore();
             // Null-prototype map: an id such as "constructor" must still count.
             const refCounts = Object.create(null);
-            let totalMessages = 0;
-            let chats = 0;
-            for (const charChats of fullChatStore.values()) {
-                const list = Array.from(charChats.values());
-                chats += list.length;
-                totalMessages += addInlayRefCounts(refCounts, list);
-            }
+            // Decodes only the bodies whose bytes contain "{{inlay".
+            const { chats, totalMessages } = chatBodyStore.scanInlayRefs(refCounts, addInlayRefCounts);
             let archived = 0;
             for (const meta of listArchiveMetas()) {
                 archived++;
@@ -9707,16 +9702,14 @@ app.post('/api/characters/:chaId/activate', async (req, res, next) => {
                 ownIds.add(chat.id);
             }
             await ensureChatStore();
-            const charChats = new Map();
-            for (const chat of full.chats) {
-                if (!chat || chat._stub === true || !Array.isArray(chat.message)) continue;
-                charChats.set(chat.id, chat);
-            }
-            fullChatStore.set(chaId, charChats);
+            // Registers the character (even with no bodies) and holds its
+            // bodies as not on disk until a persist writes them.
+            chatBodyStore.replaceCharacter(chaId, full.chats);
+            const registeredChats = chatBodyStore.chatIds(chaId).length;
             // Client view: chats as stubs, asset array as a manifest descriptor.
             // `reconcile` reuses the live manifest when the content is unchanged.
             const clientView = stripDatabaseForClient({ characters: [full] }, { reconcileManifests: true }).characters[0];
-            logger.info(`[Archive] activated ${chaId}@${archivedAt} (${charChats.size} chats registered); row retained`);
+            logger.info(`[Archive] activated ${chaId}@${archivedAt} (${registeredChats} chats registered); row retained`);
             res.json({ ok: true, character: normalizeJSON(clientView) });
             syncHub.publish({ type: 'db-stale', origin: chatClientId(req), reason: 'activate' });
         });
@@ -10194,8 +10187,7 @@ app.get('/api/debug/memory', async (req, res, next) => {
         const characters = Array.isArray(database?.characters) ? database.characters : [];
         let chatStubs = 0;
         for (const character of characters) if (Array.isArray(character?.chats)) chatStubs += character.chats.length;
-        let chatBodies = 0;
-        if (fullChatStore) for (const chats of fullChatStore.values()) chatBodies += chats.size;
+        const chatStore = chatBodyStore.stats();
         res.set('Cache-Control', 'no-store');
         res.json({
             pid: process.pid,
@@ -10212,7 +10204,10 @@ app.get('/api/debug/memory', async (req, res, next) => {
                     modules: Array.isArray(database.modules) ? database.modules.length : 0,
                 } : null,
             },
-            fullChatStore: fullChatStore ? { characters: fullChatStore.size, chats: chatBodies } : null,
+            // Kept under its old name for existing readers.
+            fullChatStore: chatStore ? { characters: chatStore.characters, chats: chatStore.chats } : null,
+            // bytes: stored body bytes (off the V8 heap); dirty: bodies not on disk yet.
+            chatBodyStore: chatStore,
             pendingSaves: Object.keys(saveTimers).length,
         });
     } catch (error) {
@@ -10470,13 +10465,10 @@ app.get('/api/db/stats/characters', rejectDuringExclusiveStorage, async (req, re
             }
             const remoteBytes = remoteSize.get(cha.chaId) || 0;
 
+            // JSON length of each stored body, cached per body (0 when it
+            // cannot be serialized).
             let chatBytes = 0;
-            const charChats = fullChatStore?.get(cha.chaId);
-            if (charChats) {
-                for (const chat of charChats.values()) {
-                    try { chatBytes += JSON.stringify(chat).length; } catch { /* skip un-serializable */ }
-                }
-            }
+            for (const chatId of chatBodyStore.chatIds(cha.chaId)) chatBytes += chatBodyStore.jsonLength(cha.chaId, chatId);
 
             // Card body = the character row minus chats (which we count separately).
             // Asset URIs themselves are tiny strings — leaving them in card body is fine.
