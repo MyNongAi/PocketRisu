@@ -782,8 +782,22 @@ export async function saveDb() {
         await patcher.init(patchSyncBaseline ?? getDatabase())
         activeSavePatcher = patcher
         patchSyncBaseline = null
+        countPayloadSizesWhenIdle()
     } else {
         activeSavePatcher = null
+    }
+
+    // patcher.init leaves the payload estimate's per-entry UTF-8 sizes
+    // uncounted (about 0.5s over a large catalog's JSON on a desktop). Count
+    // them in short slices once boot has settled, so neither boot nor the
+    // first save's estimate pays for them in one block. `patcher` is read on
+    // every slice: a save publishes a fork of it, which carries the counts
+    // made so far.
+    function countPayloadSizesWhenIdle() {
+        const slice = () => {
+            if (!patcher.countPayloadSizes(performance.now() + 8)) setTimeout(slice, 50)
+        }
+        setTimeout(slice, 3000)
     }
 
     function hasTrackedChanges(toSave: toSaveType) {

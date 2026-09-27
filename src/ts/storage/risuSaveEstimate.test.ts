@@ -88,6 +88,49 @@ describe('RisuSavePatcher.estimatePayloadBytes', () => {
         expectClose(patcher.estimatePayloadBytes(), await encodedBytes(db))
     })
 
+    // init() leaves the sizes uncounted; they are counted when the estimate
+    // is read or in countPayloadSizes slices. Either way the total must be
+    // exactly the per-entry UTF-8 sum, through replacements, removals and forks.
+    test('counts lazily and in slices to the exact per-entry total', async () => {
+        const exact = (p: any) => {
+            const { characters, botPresets, modules, ...root } = p.baselineDb()
+            let bytes = utf8ByteLength(JSON.stringify(botPresets ?? []))
+            for (const key of Object.keys(root)) bytes += utf8ByteLength(JSON.stringify(root[key]))
+            for (const c of characters) bytes += utf8ByteLength(JSON.stringify(c))
+            for (const m of modules ?? []) bytes += utf8ByteLength(JSON.stringify(m))
+            return bytes
+        }
+        const db = sampleDb()
+        const patcher = new RisuSavePatcher()
+        await patcher.init(structuredClone(db))
+
+        // A deadline already passed still counts one entry per call.
+        let slices = 0
+        while (!patcher.countPayloadSizes(0)) {
+            slices++
+            if (slices === 10) {
+                // Replace counted and pending entries, drop some, mid-way.
+                db.characters[0].desc = '처음 캐릭터 수정'
+                db.characters[39].desc = '마지막 캐릭터 수정 '.repeat(100)
+                db.personaPrompt = '바뀜'
+                db.characters.splice(20, 2)
+                await patcher.set(structuredClone(db), { ...emptyToSave(), character: ['c0', 'c39'], root: true })
+            }
+            if (slices === 20) {
+                const draft = patcher.fork()
+                expect(draft.estimatePayloadBytes()).toBe(exact(patcher))
+            }
+        }
+        expect(slices).toBeGreaterThan(20)
+        expect(patcher.countPayloadSizes(Infinity)).toBe(true)
+        expect(patcher.estimatePayloadBytes()).toBe(exact(patcher))
+
+        const fresh = new RisuSavePatcher()
+        await fresh.init(structuredClone(db))
+        expect(fresh.estimatePayloadBytes()).toBe(exact(fresh))
+        expect(fresh.estimatePayloadBytes()).toBe(patcher.estimatePayloadBytes())
+    })
+
     // The save loop computes each patch on a fork() draft and publishes the
     // draft only after the server accepts it, so the draft must carry the
     // size bookkeeping too (a plain Map copy made the estimate NaN).

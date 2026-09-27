@@ -1062,28 +1062,57 @@ export function utf8ByteLength(str: string): number {
  * String map that keeps the UTF-8 byte total of its values. Sizes are counted
  * once per stored string, so the patcher's running payload estimate costs
  * only as much as the entries that changed.
+ *
+ * Counting waits until the total is read (or countPending runs): init()
+ * stores the JSON of every character, module and root key, about 290MB on a
+ * large install and 0.5s of counting on a desktop, and nothing reads the
+ * total before the first save has landed.
  */
 class JsonSizeMap extends Map<string, string> {
     private sizes = new Map<string, number>()
-    totalBytes = 0
+    // Keys whose current value is not in `counted` yet.
+    private pending = new Set<string>()
+    private counted = 0
+
+    get totalBytes(): number {
+        this.countPending(Infinity)
+        return this.counted
+    }
+
+    /**
+     * Count pending values until performance.now() reaches `deadline`.
+     * Returns true once nothing is left to count.
+     */
+    countPending(deadline: number): boolean {
+        for (const key of this.pending) {
+            const bytes = utf8ByteLength(this.get(key))
+            this.sizes.set(key, bytes)
+            this.counted += bytes
+            this.pending.delete(key)
+            if (deadline !== Infinity && performance.now() >= deadline) break
+        }
+        return this.pending.size === 0
+    }
 
     override set(key: string, value: string): this {
-        this.totalBytes -= this.sizes.get(key) ?? 0
-        const bytes = utf8ByteLength(value)
-        this.sizes.set(key, bytes)
-        this.totalBytes += bytes
+        if (!this.pending.has(key)) {
+            this.counted -= this.sizes.get(key) ?? 0
+            this.sizes.delete(key)
+            this.pending.add(key)
+        }
         return super.set(key, value)
     }
 
     override delete(key: string): boolean {
-        this.totalBytes -= this.sizes.get(key) ?? 0
+        if (!this.pending.delete(key)) this.counted -= this.sizes.get(key) ?? 0
         this.sizes.delete(key)
         return super.delete(key)
     }
 
     override clear(): void {
         this.sizes.clear()
-        this.totalBytes = 0
+        this.pending.clear()
+        this.counted = 0
         super.clear()
     }
 
@@ -1092,7 +1121,8 @@ class JsonSizeMap extends Map<string, string> {
         const copy = new JsonSizeMap()
         for (const [key, value] of this) Map.prototype.set.call(copy, key, value)
         copy.sizes = new Map(this.sizes)
-        copy.totalBytes = this.totalBytes
+        copy.pending = new Set(this.pending)
+        copy.counted = this.counted
         return copy
     }
 }
@@ -1232,6 +1262,17 @@ export class RisuSavePatcher {
             + this.lastCharJsons.totalBytes
             + this.lastModuleJsons.totalBytes
             + this.presetBytes
+    }
+
+    /**
+     * Count what estimatePayloadBytes() would otherwise count on its next
+     * call, until performance.now() reaches `deadline`. Returns true once
+     * nothing is left. Only moves work to idle time; the estimate is the same.
+     */
+    countPayloadSizes(deadline: number): boolean {
+        return this.lastRootKeyJsons.countPending(deadline)
+            && this.lastCharJsons.countPending(deadline)
+            && this.lastModuleJsons.countPending(deadline)
     }
 
     /**
