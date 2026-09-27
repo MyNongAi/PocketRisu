@@ -462,14 +462,14 @@ function createAssetManifestStore(db, options = {}) {
         return putManifest(kind, ownerId, next, { activate: true });
     }
 
-    function verifyManifest(manifestId) {
+    // Verification deliberately bypasses the LRU so it checks the bytes
+    // currently persisted in SQLite, not an earlier cached decode.
+    function decodePersisted(manifestId, withItems) {
         const row = stmtManifestGet.get(manifestId);
         if (!row) return { ok: false, error: 'not-found' };
         try {
-            // Verification deliberately bypasses the LRU so it checks the bytes
-            // currently persisted in SQLite, not an earlier cached decode.
             const decoded = decodeAndValidateRow(row);
-            return {
+            const verified = {
                 ok: true,
                 manifestId,
                 version: row.format_version,
@@ -479,9 +479,25 @@ function createAssetManifestStore(db, options = {}) {
                 sha256: row.content_hash,
                 rawBytes: row.raw_bytes,
             };
+            if (withItems) verified.items = decoded.items;
+            return verified;
         } catch (error) {
             return { ok: false, manifestId, error: String(error?.message || error) };
         }
+    }
+
+    function verifyManifest(manifestId) {
+        return decodePersisted(manifestId, false);
+    }
+
+    // verifyManifest plus the items from that same decode, for callers that
+    // need both (hydrating a database for disk used to decode every manifest
+    // twice: once here, once more through loadItems). The items come straight
+    // from JSON.parse, so the caller owns them and they never enter the LRU:
+    // a full hydrate is a sequential scan larger than the cache, which only
+    // evicted what interactive lookups had cached and never hit.
+    function loadVerifiedItems(manifestId) {
+        return decodePersisted(manifestId, true);
     }
 
     function recordMigrationFailure(kind, ownerId, error) {
@@ -537,6 +553,7 @@ function createAssetManifestStore(db, options = {}) {
         resolveNames,
         applyOperations,
         verifyManifest,
+        loadVerifiedItems,
         recordMigrationFailure,
         listMigrationState,
         listLiveDescriptors,

@@ -113,6 +113,46 @@ describe('asset manifest store', () => {
         expect(() => store.loadItems(descriptor.id)).toThrow()
     })
 
+    it('loadVerifiedItems returns what verifyManifest and loadItems return, from one decode', () => {
+        const { store } = freshStore()
+        const items = [
+            ['표정 01.png', 'assets/ABC.png', 'png'],
+            ['legacy-no-ext', 'assets/legacy.webp'],
+            ['null-ext', 'assets/n', null],
+        ]
+        const descriptor = store.putManifest('module', 'module-a', items)
+
+        const { items: loaded, ...verified } = store.loadVerifiedItems(descriptor.id)
+        expect(verified).toEqual(store.verifyManifest(descriptor.id))
+        expect(verified).toMatchObject({ ok: true, manifestId: descriptor.id, count: 3, sha256: descriptor.sha256 })
+        expect(loaded).toEqual(store.loadItems(descriptor.id))
+        expect(loaded).toEqual(items)
+        expect(store.verifyManifest(descriptor.id)).not.toHaveProperty('items')
+        expect(store.loadVerifiedItems('missing')).toEqual(store.verifyManifest('missing'))
+    })
+
+    it('loadVerifiedItems neither reads nor fills the LRU and hands out arrays the caller owns', () => {
+        const { db, store: writer } = freshStore()
+        const descriptor = writer.putManifest('module', 'module-a', [['a', 'assets/a.png', 'png']])
+        const store = createAssetManifestStore(db)
+
+        const first = store.loadVerifiedItems(descriptor.id).items
+        expect(store.stats().cacheEntries).toBe(0)
+        first.push(['injected', 'assets/evil', 'png'])
+        first[0][0] = 'mutated'
+        expect(store.loadVerifiedItems(descriptor.id).items).toEqual([['a', 'assets/a.png', 'png']])
+        expect(store.loadItems(descriptor.id)).toEqual([['a', 'assets/a.png', 'png']])
+        expect(store.stats().cacheEntries).toBe(1)
+
+        // A warm cache does not hide a damaged row.
+        db.prepare('UPDATE asset_manifests SET payload = ? WHERE manifest_id = ?')
+            .run(Buffer.from('not-deflate'), descriptor.id)
+        const damaged = store.loadVerifiedItems(descriptor.id)
+        expect(damaged).toMatchObject({ ok: false, manifestId: descriptor.id })
+        expect(damaged).not.toHaveProperty('items')
+        expect(damaged).toEqual(store.verifyManifest(descriptor.id))
+    })
+
     it('bypasses a warm cache when verifying persisted bytes', () => {
         const { db, store } = freshStore()
         const descriptor = store.putManifest('module', 'module-a', [['a', 'assets/a.png', 'png']])

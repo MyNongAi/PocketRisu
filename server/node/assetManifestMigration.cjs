@@ -123,7 +123,9 @@ function stripAssetManifests(dbObj, store, { activate = true } = {}) {
 
 function loadDescriptorItems(store, descriptor) {
     if (!descriptor?.id) throw new Error('Asset manifest descriptor is missing an id');
-    const verified = store.verifyManifest(descriptor.id);
+    // One decode per manifest: the persisted row is verified and its items
+    // are returned from that same decode, without going through the LRU.
+    const verified = store.loadVerifiedItems(descriptor.id);
     if (!verified.ok) throw new Error(`Asset manifest is unavailable or corrupt: ${descriptor.id}`);
     if (descriptor.version !== undefined && verified.version !== descriptor.version) {
         throw new Error(`Asset manifest version mismatch: ${descriptor.id}`);
@@ -140,10 +142,13 @@ function loadDescriptorItems(store, descriptor) {
     if (descriptor.ownerId && verified.ownerId !== descriptor.ownerId) {
         throw new Error(`Asset manifest owner id mismatch: ${descriptor.id}`);
     }
-    return store.loadItems(descriptor.id);
+    return verified.items;
 }
 
-/** Rebuild legacy tuple arrays for disk persistence and RisuAI-compatible export. */
+/**
+ * Rebuild legacy tuple arrays for disk persistence and RisuAI-compatible export.
+ * Decodes each manifest once and never touches the store's LRU.
+ */
 function hydrateAssetManifests(dbObj, store) {
     if (!dbObj || typeof dbObj !== 'object') return dbObj;
     const out = { ...dbObj };
