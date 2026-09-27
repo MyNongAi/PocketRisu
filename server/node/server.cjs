@@ -527,8 +527,17 @@ function partitionPluginStorageOps(patch) {
 // acknowledged patch on the next persist. Re-checks the cache inside the
 // queue so a load that already happened while waiting is not repeated.
 // Returns false when there is no blob on disk.
+//
+// The load rebuilds fullChatStore from disk. A cold root does not mean the
+// store is cold: a chat save only loads the store, and a persist guard drops
+// the root but keeps the store. A pending save timer is the record that the
+// store holds acknowledged bodies disk does not have yet, so write them first
+// (flushPendingDb's no-root branch hydrates the disk root with the live
+// store). If that write fails, nothing is loaded and the error propagates:
+// replacing the store then would drop those bodies for good.
 async function loadDbCacheIfMissing({ createBackup = false } = {}) {
     if (dbCache[DB_HEX_KEY]) return true;
+    if (saveTimers[DB_HEX_KEY]) await flushPendingDb();
     const raw = kvGet('database/database.bin');
     if (!raw) return false;
     const dbObj = await initChatStoreFromDisk(await decodeDatabaseWithPersistentChatIds(raw, { createBackup }));
@@ -1264,9 +1273,15 @@ function scheduleDatabasePersist(source = 'database', delay = SAVE_INTERVAL) {
                 recordPersistFailure(error, source);
                 failed = true;
             } finally {
-                if (saveTimers[DB_HEX_KEY] === timer) delete saveTimers[DB_HEX_KEY];
+                // A failed persist keeps its spent handle, as the patch and
+                // chat-content timers do: it is the record that memory is
+                // ahead of disk. A guard that dropped the root leaves nothing
+                // to retry, and without the handle the next cold load
+                // (loadDbCacheIfMissing) rebuilt the chat store over the
+                // bodies acknowledged since the last persist.
+                if (!failed && saveTimers[DB_HEX_KEY] === timer) delete saveTimers[DB_HEX_KEY];
             }
-            if (failed) retryDatabasePersistLater(source);
+            if (failed) retryDatabasePersistLater(source, timer);
         }).catch((error) => logger.error(`[${source}] Storage queue failed:`, error));
     }, delay);
     saveTimers[DB_HEX_KEY] = timer;

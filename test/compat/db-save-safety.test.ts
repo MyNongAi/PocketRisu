@@ -34,6 +34,10 @@ async function boot(preloads: string[]) {
   return { srv, client }
 }
 
+async function decodeDb(res: Response) {
+  return utils.normalizeJSON(await utils.decodeRisuSave(Buffer.from(await res.arrayBuffer()))) as any
+}
+
 async function readDb(client: RisuClient) {
   const res = await client.fetch('/api/read', { headers: { 'file-path': DB_KEY_HEX } })
   expect(res.status).toBe(200)
@@ -49,9 +53,52 @@ function sendPatch(client: RisuClient, patch: unknown[], expectedHash: string) {
   })
 }
 
+function sendWrite(client: RisuClient, db: unknown, headers: Record<string, string>) {
+  return client.fetch('/api/write', {
+    method: 'POST',
+    headers: { 'content-type': 'application/octet-stream', 'file-path': DB_KEY_HEX, ...headers },
+    body: Buffer.from(utils.encodeRisuSaveLegacy(db)),
+  })
+}
+
 async function flush(client: RisuClient) {
   const res = await client.fetch('/api/db/flush', { method: 'POST', headers: { cookie: await sessionCookie(client) } })
   expect(res.status).toBe(200)
+}
+
+// Appends a message to test-char-0's first chat through /api/chat-content.
+// That save only updates the server's chat store and arms the save timer.
+async function saveChat(client: RisuClient, text: string) {
+  const read = await client.fetch('/api/chat-content/test-char-0/0', { headers: { 'x-chat-id': 'chat-0-0' } })
+  expect(read.status).toBe(200)
+  const chat = await decodeDb(read)
+  const saved = await client.fetch('/api/chat-content/test-char-0/0', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/octet-stream',
+      'x-chat-id': 'chat-0-0',
+      'x-if-match': read.headers.get('x-chat-etag')!,
+      ...sessionHeaders,
+    },
+    body: Buffer.from(utils.encodeRisuSaveLegacy({ ...chat, message: [...chat.message, { role: 'user', data: text }] })),
+  })
+  expect(saved.status).toBe(200)
+}
+
+// What /api/read would serve for a database read from disk: chats as stubs.
+function clientView(db: any, rename?: { index: number; name: string }) {
+  return {
+    ...db,
+    characters: db.characters.map((c: any, i: number) => ({
+      ...c,
+      ...(rename && rename.index === i ? { name: rename.name } : {}),
+      chats: c.chats.map((ch: any) => ({ id: ch.id, name: ch.name, _stub: true, lastDate: ch.lastDate })),
+    })),
+  }
+}
+
+async function lastDiskMessage(cwd: string) {
+  return (await readDiskDb(cwd)).characters[0].chats[0].message.at(-1).data
 }
 
 describe('a full database write', () => {
@@ -84,6 +131,50 @@ describe('a full database write', () => {
     expect(disk.characters[0].chats[0].message.length).toBeGreaterThan(0)
     // The server re-reads what is on disk instead of the dropped view.
     expect((await readDb(client)).db.characters[0].name).toBe('written')
+  })
+})
+
+describe('a cold root while an acknowledged chat save is pending', () => {
+  // After an import (or a restart) the root is cold while the chat store is
+  // live, and a chat save loads only the store. Whatever loaded the root next
+  // rebuilt the store from disk over the acknowledged body, and the pending
+  // timer (or the write itself) then persisted the store without it.
+  test('keeps the body through an unconditional full write', async () => {
+    const { srv, client } = await boot([])
+    const disk = await readDiskDb(srv.cwd)
+    await saveChat(client, 'acknowledged')
+    const write = await sendWrite(client, clientView(disk, { index: 1, name: 'renamed' }), sessionHeaders)
+    expect(write.status).toBe(200)
+
+    await flush(client)
+    const after = await readDiskDb(srv.cwd)
+    expect(after.characters[1].name).toBe('renamed')
+    expect(after.characters[0].chats[0].message.at(-1).data).toBe('acknowledged')
+  })
+
+  test('keeps the body through a cold /api/patch, even one answered 409', async () => {
+    const { srv, client } = await boot([])
+    await saveChat(client, 'acknowledged')
+    const patched = await sendPatch(client, [{ op: 'replace', path: '/characters/1/name', value: 'p' }], 'not-the-hash')
+    expect(patched.status).toBe(409)
+
+    await flush(client)
+    expect(await lastDiskMessage(srv.cwd)).toBe('acknowledged')
+  })
+
+  test('keeps the body through a conditional full write while the etag is unknown', async () => {
+    const { srv, client } = await boot([])
+    const disk = await readDiskDb(srv.cwd)
+    await saveChat(client, 'acknowledged')
+    // dbEtag is null after the import, so the write loads the root to
+    // derive it; the stale precondition is then answered 409.
+    const write = await sendWrite(client, clientView(disk), { 'x-if-match': 'stale' })
+    expect(write.status).toBe(409)
+
+    await flush(client)
+    expect(await lastDiskMessage(srv.cwd)).toBe('acknowledged')
+    const chat = await client.fetch('/api/chat-content/test-char-0/0', { headers: { 'x-chat-id': 'chat-0-0' } })
+    expect((await decodeDb(chat)).message.at(-1).data).toBe('acknowledged')
   })
 })
 
