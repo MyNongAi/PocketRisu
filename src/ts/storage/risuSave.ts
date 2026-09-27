@@ -647,6 +647,25 @@ export async function decodeRisuSave(data:Uint8Array){
     }
 }
 
+// msgpack nil: the smallest input a decode accepts.
+const releaseSource = new Uint8Array([0xc0])
+
+/**
+ * Let go of the last buffer decodeRisuSave read. msgpackr keeps a DataView
+ * over its input in module state until the next decode, so after the boot
+ * decode the whole database payload (267MB on a large install) would stay
+ * reachable until some later decode, if one comes at all. Decoding a
+ * one-byte buffer replaces that view.
+ * Call it once the caller has dropped its own reference to the bytes.
+ */
+export function releaseDecodeSource() {
+    try {
+        unpackr.decode(releaseSource)
+    } catch {
+        // Nothing to release; decoding nil does not throw in practice.
+    }
+}
+
 function checkHeader(data: Uint8Array) {
 
     let header:'none'|'compressed'|'raw'|'stream'|'risusave' = 'raw'

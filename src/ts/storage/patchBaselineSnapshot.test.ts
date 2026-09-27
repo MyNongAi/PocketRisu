@@ -9,7 +9,7 @@ vi.mock('./database.svelte', async () => {
 
 const {
     RisuSavePatcher, PatchBaselineSnapshot, calculateHash, decodeRisuSave, encodeRisuSaveLegacy,
-    findDangerousChatOps, normalizeJSON,
+    findDangerousChatOps, normalizeJSON, releaseDecodeSource,
 } = await import('./risuSave')
 const { convertStubsToPlaceholders } = await import('./chatStorage')
 
@@ -120,8 +120,12 @@ async function boot(bytes: Uint8Array, seed: (decoded: any) => any) {
 
 // Before: setPatchSyncBaseline kept safeStructuredClone(decoded).
 const bootWithClone = (bytes: Uint8Array) => boot(bytes, (decoded) => structuredClone(decoded))
-// Now: a normalizeJSON snapshot that patcher.init adopts.
-const bootWithSnapshot = (bytes: Uint8Array) => boot(bytes, (decoded) => new PatchBaselineSnapshot(decoded))
+// Now: a normalizeJSON snapshot that patcher.init adopts, bytes released.
+const bootWithSnapshot = (bytes: Uint8Array) => boot(bytes, (decoded) => {
+    const snapshot = new PatchBaselineSnapshot(decoded)
+    releaseDecodeSource()
+    return snapshot
+})
 
 // The first patch after boot must be accepted by the server: its expectedHash
 // is the hash of the server's view. Pinned so a change to how the baseline is
@@ -213,5 +217,13 @@ describe('PatchBaselineSnapshot ownership', () => {
         const snapshot = new PatchBaselineSnapshot(serverView())
         await new RisuSavePatcher().init(snapshot)
         await expect(new RisuSavePatcher().init(snapshot)).rejects.toThrow('already used')
+    })
+
+    test('releaseDecodeSource leaves later decodes intact', async () => {
+        const bytes = encodeRisuSaveLegacy(serverView())
+        const first = await decodeRisuSave(bytes)
+        releaseDecodeSource()
+        releaseDecodeSource()
+        expect(await decodeRisuSave(bytes)).toStrictEqual(first)
     })
 })

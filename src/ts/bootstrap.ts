@@ -15,7 +15,7 @@ import { loadPlugins } from "./plugins/plugins.svelte";
 import { alertError, alertMd, alertTOS, waitAlert, alertConfirm, alertInput } from "./alert";
 import { characterURLImport } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
-import { decodeRisuSave, encodeRisuSaveLegacy } from "./storage/risuSave";
+import { decodeRisuSave, encodeRisuSaveLegacy, releaseDecodeSource } from "./storage/risuSave";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
 import { applyEarlyLanguage, changeLanguage, language } from "src/lang";
@@ -95,6 +95,13 @@ export async function loadData() {
                         throw "Forage: Your save file is corrupted"
                     }
                 }
+                // Nothing reads the payload bytes after the decode (the patch
+                // baseline is a copy of the decoded object), yet this frame
+                // (through saveDb's patcher.init below) and msgpackr (until its
+                // next decode, often the first chat opened) would keep them, or
+                // the backup that loaded instead, reachable.
+                gotStorage = null
+                releaseDecodeSource()
 
                 if (getDatabase().didFirstSetup) {
                     characterURLImport()
