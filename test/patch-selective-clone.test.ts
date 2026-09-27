@@ -90,6 +90,33 @@ describe('selective patch snapshot', () => {
         expect(db).toEqual(before)
     })
 
+    // /api/patch keeps its cached root when applyPatch throws; that is only
+    // safe while no failing patch can reach the live branches.
+    it('preserves the live database when a failing op follows ops on other branches or the root', () => {
+        const db = { characters: [{ name: 'a', chats: [{ id: 'c' }] }], modules: [{ id: 'm' }], other: { n: 1 } }
+        const before = structuredClone(db)
+        const patches = [
+            [
+                { op: 'replace', path: '/characters/0/name', value: 'changed' },
+                { op: 'add', path: '/characters/0/chats/-', value: { id: 'new' } },
+                { op: 'remove', path: '/modules/0' },
+                { op: 'replace', path: '/other/missing/deep', value: 1 },
+            ],
+            [
+                { op: 'replace', path: '', value: { replaced: true } },
+                { op: 'remove', path: '/characters' },
+            ],
+            [
+                { op: 'move', from: '/characters/0', path: '/modules/0' },
+                { op: 'test', path: '/other/n', value: 2 },
+            ],
+        ]
+        for (const patch of patches) {
+            expect(() => applyPatch(clonePatchSnapshot(db, patch), patch, true)).toThrow()
+            expect(db).toEqual(before)
+        }
+    })
+
     it('falls back to a full clone for a document-root operation', () => {
         const db = { a: { n: 1 }, b: { n: 2 } }
         const snapshot = clonePatchSnapshot(db, [{ op: 'replace', path: '', value: { c: 3 } }])

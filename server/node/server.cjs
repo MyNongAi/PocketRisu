@@ -6588,14 +6588,13 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
                 ? clonePatchSnapshot(dbCache[filePath], patch)
                 : structuredClone(dbCache[filePath]);
             patchStage = 'apply';
-            let result;
-            try {
-                result = applyPatch(snapshot, patch, true);
-            } catch (patchErr) {
-                // Invalidate corrupted cache entry to force reload on next request
-                delete dbCache[filePath];
-                throw patchErr;
-            }
+            // A failing op (even the 2nd of several) leaves dbCache[filePath]
+            // untouched: the snapshot has its own root and its own copy of
+            // every top-level branch the patch names (the whole database for
+            // a root op), so there is nothing to invalidate. Dropping the
+            // cache here made the armed save timer persist nothing and lost
+            // every patch acknowledged since the last persist.
+            const result = applyPatch(snapshot, patch, true);
             // Root-level ops (path "") replace the document instead of mutating
             // the snapshot, so the applied result must be taken from newDocument.
             const next = result.newDocument;

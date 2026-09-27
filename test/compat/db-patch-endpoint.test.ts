@@ -9,6 +9,7 @@ import { describe, test, expect, beforeAll, afterAll } from 'vitest'
 import { spawnServer, type ServerHandle } from './helpers/spawnServer.js'
 import { createClient, type RisuClient } from './helpers/client.js'
 import { createSeedBackup } from './helpers/seed.js'
+import { readDiskDb, sessionCookie } from './helpers/disk.js'
 
 const utils = require('../../server/node/utils.cjs') as typeof import('../../server/node/utils.cjs')
 
@@ -208,5 +209,32 @@ describe('/api/patch endpoint', () => {
     expect(after.db.characters[0].name).toBe(before.db.characters[0].name)
     const recovered = await sendPatch([{ op: 'replace', path: '/characters/0/name', value: 'recovered' }], after.hash)
     expect(recovered.status).toBe(200)
+  })
+
+  // A failing patch used to drop the cached root. The save timer armed by the
+  // patch acknowledged just before then found no root and wrote nothing, so
+  // that patch never reached disk.
+  test('a failing patch does not lose the acknowledged patch before it', async () => {
+    const before = await readDb()
+    const acked = await sendPatch([{ op: 'replace', path: '/characters/0/name', value: 'acknowledged' }], before.hash)
+    expect(acked.status).toBe(200)
+    before.db.characters[0].name = 'acknowledged'
+
+    // Within the debounce window; the 2nd op fails after the 1st applied.
+    const failing = await sendPatch([
+      { op: 'replace', path: '/characters/1/name', value: 'partial' },
+      { op: 'replace', path: '/characters/99/name', value: 'missing' },
+    ], utils.calculateHash(before.db).toString(16))
+    expect(failing.status).toBe(500)
+
+    const flush = await client.fetch('/api/db/flush', {
+      method: 'POST',
+      headers: { cookie: await sessionCookie(client) },
+    })
+    expect(flush.status).toBe(200)
+    const disk = await readDiskDb(srv.cwd)
+    expect(disk.characters[0].name).toBe('acknowledged')
+    expect(disk.characters[1].name).toBe(before.db.characters[1].name)
+    expect((await readDb()).db.characters[0].name).toBe('acknowledged')
   })
 })
