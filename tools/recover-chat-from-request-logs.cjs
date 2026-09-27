@@ -100,20 +100,30 @@ function textOf(content) {
     return '';
 }
 
-/** Prompt turns as [{ role: 'user' | 'model' | 'system', text }]. */
+/**
+ * A prompt's chat turns as [{ role: 'user' | 'model', text }]. Reads Gemini
+ * `contents`, OpenAI-style `messages`, and a plugin provider's `prompt_chat`
+ * (RisuAI's own chat format, logged for plugin models). System turns (lore,
+ * notes) can sit anywhere, even inside the history, and are never chat
+ * messages, so they are dropped; every prompt is read the same way, so
+ * distances from the prompt end stay comparable.
+ */
 function promptTurns(requestBody) {
     let body;
     try { body = JSON.parse(requestBody); } catch { return null; }
+    let turns = null;
     if (Array.isArray(body?.contents)) {
-        return body.contents.map((c) => ({ role: c.role === 'model' ? 'model' : 'user', text: (c.parts ?? []).map((p) => p?.text ?? '').join('') }));
+        turns = body.contents.map((c) => ({ role: c.role === 'model' ? 'model' : 'user', text: (c.parts ?? []).map((p) => p?.text ?? '').join('') }));
+    } else {
+        const list = Array.isArray(body?.messages) ? body.messages : Array.isArray(body?.prompt_chat) ? body.prompt_chat : null;
+        if (list) {
+            turns = list.map((m) => ({
+                role: m.role === 'assistant' || m.role === 'model' ? 'model' : m.role === 'user' ? 'user' : 'system',
+                text: textOf(m.content),
+            }));
+        }
     }
-    if (Array.isArray(body?.messages)) {
-        return body.messages.map((m) => ({
-            role: m.role === 'assistant' ? 'model' : m.role === 'user' ? 'user' : 'system',
-            text: textOf(m.content),
-        }));
-    }
-    return null;
+    return turns ? turns.filter((t) => t.role !== 'system') : null;
 }
 
 /** A logged response as { thoughts, text } or, for plugin text, { formatted }. */
@@ -246,11 +256,17 @@ function matchGeneration(turns, index) {
 
 // ── Rebuilding one chat ─────────────────────────────────────────────────────
 
-function rebuild({ character, chat, start, last, generations, logs }) {
-    const saved = chat.message;
+function rebuild({ character, chat, start, aligned, last, generations, logs }) {
+    // The saved chat is kept as far as it lines up with the newest prompt.
+    // Messages after that were edited or reverted before the loss; the
+    // prompt holds their newer version.
+    const saved = chat.message.slice(0, aligned);
     const turns = promptTurns(last.request_body);
     const wrap = thoughtWrapper(chat);
     const notes = [];
+    if (aligned < chat.message.length) {
+        notes.push(`${chat.message.length - aligned} saved message(s) at the end differ from the newest prompt (edited or reverted before the loss); the prompt's version is used`);
+    }
 
     // Replies that later prompts show: alternating user/model turns after
     // the saved part. The prompt tail (instructions + the newest input) ends it.
@@ -274,10 +290,34 @@ function rebuild({ character, chat, start, last, generations, logs }) {
     }
 
     // Match each history reply to the generation that produced it: the best
-    // prefix match among later generations, kept in order.
+    // prefix match among later generations in the window, kept in order. A
+    // reply reverted to an older answer is looked up in the whole log; one no
+    // generation matches (e.g. edited by hand) keeps the prompt copy.
     const lastSavedGen = logs.prepare('SELECT max(id) AS id FROM requests WHERE chat_id = ?')
         .get(saved.findLast((m) => m.role !== 'user')?.chatId ?? '')?.id ?? 0;
     let floor = lastSavedGen;
+    let olderReplies = null;
+    const olderGenerations = () => {
+        if (olderReplies) return olderReplies;
+        olderReplies = [];
+        const rows = logs.prepare(`
+            SELECT * FROM requests
+            WHERE category = 'llm' AND success = 1 AND id < ?
+              AND chat_id IS NOT NULL AND chat_id != '' AND chat_id NOT LIKE 'aux-%'
+              AND response_body IS NOT NULL
+            ORDER BY id`).iterate(last.id);
+        for (const row of rows) olderReplies.push({ id: row.id, visible: withoutThoughts(savedForm(row, wrap)).trim() });
+        return olderReplies;
+    };
+    const bestMatch = (candidates, text) => {
+        let best = null;
+        for (const { id, visible } of candidates) {
+            const score = commonPrefix(visible, text);
+            if (!best || score > best.score || (score === best.score && id > best.id)) best = { id, score };
+        }
+        return best;
+    };
+    const windowReplies = generations.map((gen) => ({ id: gen.id, visible: withoutThoughts(savedForm(gen, wrap)).trim() }));
     const messages = [];
     const mapped = [];
     for (const turn of history) {
@@ -285,18 +325,19 @@ function rebuild({ character, chat, start, last, generations, logs }) {
             messages.push({ role: 'user', data: turn.text, time: 0, name: null, chatId: randomUUID() });
             continue;
         }
-        let best = null;
-        for (const gen of generations) {
-            if (gen.id <= floor || gen.id >= last.id) continue;
-            const visible = withoutThoughts(savedForm(gen, wrap)).trim();
-            const score = commonPrefix(visible, turn.text.trim());
-            if (!best || score > best.score || (score === best.score && gen.id > best.gen.id)) best = { gen, score };
+        const text = turn.text.trim();
+        const needed = Math.min(120, Math.floor(text.length * 0.3));
+        let best = bestMatch(windowReplies.filter((r) => r.id > floor && r.id < last.id), text);
+        if (!best || best.score < needed) best = bestMatch(olderGenerations(), text);
+        if (!best || best.score < needed) {
+            notes.push(`reply ${saved.length + messages.length} matched no generation; kept the prompt copy (no <Thoughts>, no generation info)`);
+            messages.push({ role: 'char', data: turn.text, saying: character.chaId, time: 0, chatId: randomUUID() });
+            continue;
         }
-        const needed = Math.min(120, Math.floor(turn.text.trim().length * 0.3));
-        if (!best || best.score < needed) throw new Error(`no generation matches reply ${messages.length + saved.length}`);
-        floor = best.gen.id;
-        mapped.push(best.gen.id);
-        messages.push(replyMessage(character, best.gen, thoughtsPrefix(savedForm(best.gen, wrap)) + turn.text));
+        const gen = generations.find((g) => g.id === best.id) ?? logs.prepare('SELECT * FROM requests WHERE id = ?').get(best.id);
+        if (gen.id > floor) floor = gen.id;
+        mapped.push(gen.id);
+        messages.push(replyMessage(character, gen, thoughtsPrefix(savedForm(gen, wrap)) + turn.text));
     }
 
     // The newest input: same distance from the prompt end as the previous
@@ -315,8 +356,10 @@ function rebuild({ character, chat, start, last, generations, logs }) {
     }
     if (input === null) {
         const userTail = tail.filter((t) => t.role === 'user');
-        notes.push(`newest input not located; tail user turns: ${userTail.map((t) => preview(t.text)).join(', ')}`);
-        if (userTail.length !== 1) throw new Error('cannot tell the newest input apart from the bot\'s instructions (see note)');
+        if (userTail.length !== 1) {
+            notes.push(`tail user turns: ${userTail.map((t) => preview(t.text)).join(', ')}`);
+            throw new Error('cannot tell the newest input apart from the bot\'s instructions (see note)');
+        }
         input = userTail[0].text;
     }
     messages.push({ role: 'user', data: input, time: 0, name: null, chatId: randomUUID() });
@@ -338,9 +381,13 @@ function rebuild({ character, chat, start, last, generations, logs }) {
             notes.push(`moved ${extra.trim().split('\n').length} trailing line(s) the bot keeps on the newest reply`);
         }
     }
-    // User messages get a time just before the reply that answered them.
+    // Messages without a known time: an input sits just before the reply
+    // that answered it; anything still unset follows the message before it.
+    for (let k = all.length - 1; k >= 0; k--) {
+        if (all[k].role === 'user' && !all[k].time && all[k + 1]?.time) all[k].time = all[k + 1].time - 30_000;
+    }
     for (let k = 0; k < all.length; k++) {
-        if (all[k].role === 'user' && !all[k].time) all[k].time = (all[k + 1]?.time ?? Date.now()) - 30_000;
+        if (!all[k].time) all[k].time = (all[k - 1]?.time || Date.now()) + 30_000;
     }
     notes.push('the newest reply is the raw model output; a bot script that rewrites it after arrival (status lines, images) runs again on the next turn or a reroll');
     return { messages: all, recovered: messages.length, mapped, notes };
@@ -383,7 +430,9 @@ async function main() {
         const turns = promptTurns(gen.request_body);
         if (!turns) continue;
         const match = matchGeneration(turns, index);
-        if (!match || match.aligned < match.chat.message.length) continue; // older than the saved state, or not a chat
+        // Enough of the saved chat must line up to be sure it is this chat;
+        // the saved end may differ when it was edited or reverted.
+        if (!match || match.aligned < Math.min(match.chat.message.length, 4)) continue;
         if (args.chat && match.chat.id !== args.chat) continue;
         newest.set(match.chat.id, { ...match, last: gen });
     }
@@ -393,10 +442,18 @@ async function main() {
     for (const entry of newest.values()) {
         const { character, chat, last } = entry;
         if (chat.message.some((m) => m.chatId === last.chat_id)) continue; // newest reply is saved
+        // A saved reply from a later generation means the chat moved on past
+        // this prompt: nothing was lost.
+        const savedGenIds = chat.message.filter((m) => m.role !== 'user' && m.chatId).map((m) => m.chatId);
+        const newestSaved = savedGenIds.length === 0 ? 0 : logs.prepare(
+            `SELECT max(id) AS id FROM requests WHERE chat_id IN (${savedGenIds.map(() => '?').join(',')})`,
+        ).get(...savedGenIds)?.id ?? 0;
+        if (newestSaved > last.id) continue;
         const label = `${character.name} / ${chat.name} (${chat.id})${character.archived ? ' [deactivated: activate it before importing]' : ''}`;
         try {
             const result = rebuild({ ...entry, generations, logs });
-            console.log(`\n${label}\n  saved ${chat.message.length} + recovered ${result.recovered} = ${result.messages.length} messages, newest generation ${last.id} at ${kst(last.timestamp)}`);
+            const kept = entry.aligned < chat.message.length ? ` (kept ${entry.aligned})` : '';
+            console.log(`\n${label}\n  saved ${chat.message.length}${kept} + recovered ${result.recovered} = ${result.messages.length} messages, newest generation ${last.id} at ${kst(last.timestamp)}`);
             console.log(`  replies from generations: ${[...result.mapped, last.id].join(', ')}`);
             for (const note of result.notes) console.log(`  note: ${note}`);
             if (args['dry-run']) continue;
