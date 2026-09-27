@@ -106,6 +106,17 @@ function expectSameEncoding(actual: unknown, expected: unknown) {
     expect(Buffer.compare(Buffer.from(packr.encode(actual)), Buffer.from(packr.encode(expected)))).toBe(0)
 }
 
+// Every persisted column except the timestamps.
+function manifestTables(db: any) {
+    return {
+        manifests: db.prepare(`SELECT manifest_id, owner_kind, owner_id, format_version, item_count, content_hash,
+            raw_bytes, payload FROM asset_manifests ORDER BY manifest_id`).all(),
+        live: db.prepare('SELECT owner_kind, owner_id, manifest_id FROM asset_manifest_live ORDER BY owner_kind, owner_id').all(),
+        migration: db.prepare(`SELECT owner_kind, owner_id, manifest_id, source_hash, item_count, status, error
+            FROM asset_manifest_migration ORDER BY owner_kind, owner_id`).all(),
+    }
+}
+
 function errorMessage(run: () => unknown) {
     try {
         run()
@@ -283,5 +294,57 @@ describe('hydrateAssetManifests: one decode per manifest', () => {
         const expected = errorMessage(() => hydrateAssetManifestsOracle(stripped, createAssetManifestStore(db)))
         expect(expected).toMatch(/unavailable or corrupt/)
         expect(errorMessage(() => hydrateAssetManifests(stripped, createAssetManifestStore(db)))).toBe(expected)
+    })
+})
+
+// server.cjs strips with { activate: 'reconcile', cache: false } whenever it
+// loads database.bin: the same writes as before, none of them cached.
+describe('stripAssetManifests with cache: false', () => {
+    it('returns the same view and writes the same rows as a cached strip', () => {
+        for (const activate of ['reconcile', true, false] as const) {
+            const cachedDb = new Database(':memory:')
+            const cached = createAssetManifestStore(cachedDb)
+            const uncachedDb = new Database(':memory:')
+            const uncached = createAssetManifestStore(uncachedDb)
+
+            const expected = stripAssetManifests(mixedSource(), cached, { activate })
+            const actual = stripAssetManifests(mixedSource(), uncached, { activate, cache: false })
+            expect(actual).toEqual(expected)
+            expectSameEncoding(actual.db, expected.db)
+            expect(manifestTables(uncachedDb)).toEqual(manifestTables(cachedDb))
+            expect(cached.stats().cacheEntries).toBe(5)
+            expect(uncached.stats()).toMatchObject({ cacheEntries: 0, cacheRawBytes: 0 })
+            expect(hydrateAssetManifests(actual.db, uncached)).toEqual(mixedSource())
+        }
+    })
+
+    it('reloading unchanged content leaves what reads cached in place', () => {
+        const db = new Database(':memory:')
+        const first = stripAssetManifests(mixedSource(), createAssetManifestStore(db), { activate: 'reconcile' }).db
+        const store = createAssetManifestStore(db)
+        expect(store.getPage(first.characters[0].additionalAssetManifest.id, { limit: 1 }).total).toBe(25)
+        const before = store.stats()
+
+        const again = stripAssetManifests(mixedSource(), store, { activate: 'reconcile', cache: false }).db
+        expect(again).toEqual(first)
+        expect(store.stats()).toMatchObject({ cacheEntries: 1, cacheRawBytes: before.cacheRawBytes })
+    })
+
+    it('reloading changed content still moves the live pointer and evicts the superseded revision', () => {
+        const db = new Database(':memory:')
+        const store = createAssetManifestStore(db)
+        const first = stripAssetManifests(mixedSource(), store, { activate: 'reconcile' }).db
+        const oldId = first.modules[0].assetManifest.id
+        expect(store.stats().cacheEntries).toBe(5)
+
+        const changed = mixedSource()
+        changed.modules[0]!.assets!.push(['added', 'assets/added.png', 'png'])
+        const next = stripAssetManifests(changed, store, { activate: 'reconcile', cache: false }).db
+        const newId = next.modules[0].assetManifest.id
+        expect(newId).not.toBe(oldId)
+        expect(store.getLiveDescriptor('module', 'm1')).toMatchObject({ id: newId, count: 41 })
+        expect(store.stats().cacheEntries).toBe(4)
+        expect(store.loadItems(oldId)).toBeNull()
+        expect(hydrateAssetManifests(next, store)).toEqual(changed)
     })
 })

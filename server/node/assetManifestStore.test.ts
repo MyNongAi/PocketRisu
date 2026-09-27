@@ -12,6 +12,17 @@ function freshStore(options?: { maxCacheBytes?: number }) {
     return { db, store: createAssetManifestStore(db, options) }
 }
 
+// Every persisted column except the timestamps.
+function manifestTables(db: any) {
+    return {
+        manifests: db.prepare(`SELECT manifest_id, owner_kind, owner_id, format_version, item_count, content_hash,
+            raw_bytes, payload FROM asset_manifests ORDER BY manifest_id`).all(),
+        live: db.prepare('SELECT owner_kind, owner_id, manifest_id FROM asset_manifest_live ORDER BY owner_kind, owner_id').all(),
+        migration: db.prepare(`SELECT owner_kind, owner_id, manifest_id, source_hash, item_count, status, error
+            FROM asset_manifest_migration ORDER BY owner_kind, owner_id`).all(),
+    }
+}
+
 describe('asset manifest store', () => {
     it('preserves tuple order, tuple length, unicode and exact strings', () => {
         const { store } = freshStore()
@@ -151,6 +162,57 @@ describe('asset manifest store', () => {
         expect(damaged).toMatchObject({ ok: false, manifestId: descriptor.id })
         expect(damaged).not.toHaveProperty('items')
         expect(damaged).toEqual(store.verifyManifest(descriptor.id))
+    })
+
+    it('putManifest with cache: false writes and activates like a cached write, outside the LRU', () => {
+        const items = [
+            ['표정 01.png', 'assets/ABC.png', 'png'],
+            ['legacy-no-ext', 'assets/legacy.webp'],
+        ]
+        const cached = freshStore()
+        const uncached = freshStore()
+        const expected = cached.store.putManifest('module', 'module-a', items)
+        const descriptor = uncached.store.putManifest('module', 'module-a', items, { cache: false })
+
+        expect(descriptor).toEqual(expected)
+        expect(manifestTables(uncached.db)).toEqual(manifestTables(cached.db))
+        expect(uncached.store.getLiveDescriptor('module', 'module-a')).toEqual(expected)
+        expect(cached.store.stats().cacheEntries).toBe(1)
+        expect(uncached.store.stats()).toMatchObject({ cacheEntries: 0, cacheRawBytes: 0 })
+
+        // Reads still fill the cache.
+        expect(uncached.store.getPage(descriptor.id).items).toEqual(items)
+        expect(uncached.store.stats()).toMatchObject({ cacheEntries: 1, cacheRawBytes: cached.store.stats().cacheRawBytes })
+    })
+
+    it('cache: false still evicts the superseded revision and leaves other entries cached', () => {
+        const { store } = freshStore()
+        const other = store.putManifest('character', 'char-a', [['c', 'assets/c.png', 'png']])
+        const v1 = store.putManifest('module', 'module-a', [['a', 'assets/a.png', 'png']])
+        expect(store.stats().cacheEntries).toBe(2)
+
+        const pending = store.putManifest('module', 'module-a', [['b', 'assets/b.png', 'png']], { activate: false, cache: false })
+        expect(store.getLiveDescriptor('module', 'module-a')).toEqual(v1)
+        expect(store.stats().cacheEntries).toBe(2)
+
+        const v2 = store.putManifest('module', 'module-a', [['b', 'assets/b.png', 'png']], { cache: false })
+        expect(v2).toEqual(pending)
+        expect(store.getLiveDescriptor('module', 'module-a')).toEqual(v2)
+        expect(store.stats().cacheEntries).toBe(1)
+        // A stale cache entry would still answer here.
+        expect(store.loadItems(v1.id)).toBeNull()
+        expect(store.loadItems(other.id)).toEqual([['c', 'assets/c.png', 'png']])
+    })
+
+    it('cache: false refuses a damaged row that a warm cache hides', () => {
+        const { db, store } = freshStore()
+        const items = [['a', 'assets/a.png', 'png']]
+        const current = store.putManifest('module', 'module-a', items)
+        db.prepare('UPDATE asset_manifests SET payload = ? WHERE manifest_id = ?')
+            .run(Buffer.from('not-deflate'), current.id)
+
+        expect(() => store.putManifest('module', 'module-a', items, { cache: false })).toThrow()
+        expect(() => store.putManifest('module', 'module-a', items, { activate: false, cache: false })).toThrow()
     })
 
     it('bypasses a warm cache when verifying persisted bytes', () => {

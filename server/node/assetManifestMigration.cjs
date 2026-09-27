@@ -33,9 +33,10 @@ function enrichDescriptor(descriptor, kind, ownerId) {
  * Move large tuple arrays out of a decoded DB object and into immutable
  * manifests. Returns a shallow structural copy; the source object and its
  * arrays are never mutated. Empty arrays stay inline because they cost nothing
- * and preserve old UI initialization semantics.
+ * and preserve old UI initialization semantics. `cache` is passed to
+ * store.putManifest: false keeps the written manifests out of the read LRU.
  */
-function stripAssetManifests(dbObj, store, { activate = true } = {}) {
+function stripAssetManifests(dbObj, store, { activate = true, cache = true } = {}) {
     if (!dbObj || typeof dbObj !== 'object') return { db: dbObj, migrated: [] };
     const migrated = [];
     const out = { ...dbObj };
@@ -47,12 +48,12 @@ function stripAssetManifests(dbObj, store, { activate = true } = {}) {
     // revisions behind an accepted manifest edit.
     function putCanonical(kind, ownerId, items) {
         if (activate !== 'reconcile') {
-            return store.putManifest(kind, ownerId, items, { activate });
+            return store.putManifest(kind, ownerId, items, { activate, cache });
         }
-        const candidate = store.putManifest(kind, ownerId, items, { activate: false });
+        const candidate = store.putManifest(kind, ownerId, items, { activate: false, cache });
         const live = store.getLiveDescriptor(kind, ownerId);
         if (live?.id === candidate.id) return live;
-        return store.putManifest(kind, ownerId, items, { activate: true });
+        return store.putManifest(kind, ownerId, items, { activate: true, cache });
     }
 
     if (Array.isArray(dbObj.modules)) {

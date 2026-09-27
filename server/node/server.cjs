@@ -874,6 +874,12 @@ function stripDatabaseForClient(dbObj, { reconcileManifests = false } = {}) {
     const chatStripped = stripChatsFromDb(dbObj);
     return stripAssetManifests(chatStripped, assetManifestStore, {
         activate: reconcileManifests ? 'reconcile' : true,
+        // A reconcile strip rebuilds manifests from arrays read back from
+        // disk or just written (cold load, the cache-less persist fallbacks,
+        // a full write, a character leaving the archive). Those writes are
+        // not reads, so they stay out of the LRU; getPage, resolveNames and
+        // loadItems still cache what requests ask for.
+        cache: !reconcileManifests,
     }).db;
 }
 
@@ -9889,11 +9895,15 @@ function addLiveManifestRefs(uncleanable, dbObj) {
             embedded.assetManifest, embedded.assets);
     });
     for (const id of manifestIds) {
-        const verified = assetManifestStore.verifyManifest(id);
+        // One decode per manifest, outside the LRU. verifyManifest followed by
+        // loadItems decoded each one twice and cached the second copy; this
+        // scan walks every owner's manifest like a hydrate does, so caching
+        // them only evicted what interactive lookups had cached.
+        const verified = assetManifestStore.loadVerifiedItems(id);
         if (!verified.ok) {
             throw new Error(`Asset manifest verification failed: ${id} (${verified.error})`);
         }
-        for (const item of assetManifestStore.loadItems(id) || []) {
+        for (const item of verified.items) {
             const basename = statsBasename(item?.[1]);
             if (basename) uncleanable.add(basename);
         }

@@ -275,7 +275,7 @@ function createAssetManifestStore(db, options = {}) {
         };
     }
 
-    const putTx = db.transaction((kind, ownerId, items, activate) => {
+    const putTx = db.transaction((kind, ownerId, items, activate, cache) => {
         assertOwner(kind, ownerId);
         const encoded = encodeItems(items);
         const manifestId = manifestIdFor(kind, ownerId, encoded.hash);
@@ -310,7 +310,7 @@ function createAssetManifestStore(db, options = {}) {
             stmtOwnerStaleDelete.run(kind, ownerId, manifestId);
         }
         stmtMigrationSet.run(kind, ownerId, manifestId, encoded.hash, items.length, 'verified', null, now);
-        cachePut(manifestId, decoded.items, decoded.rawBytes);
+        if (cache) cachePut(manifestId, decoded.items, decoded.rawBytes);
         return {
             id: manifestId,
             version: MANIFEST_FORMAT_VERSION,
@@ -319,8 +319,15 @@ function createAssetManifestStore(db, options = {}) {
         };
     });
 
-    function putManifest(kind, ownerId, items, { activate = true } = {}) {
-        return putTx(kind, ownerId, items, activate);
+    // `cache: false` is for bulk writers such as the reconcile strip that runs
+    // whenever database.bin is loaded: it writes every owner's manifest, and
+    // caching them filled the LRU with whatever came last (961 manifests,
+    // about 117MB of heap after boot on a real database) before any request
+    // had read one. The row is still verified from a fresh decode and
+    // superseded revisions are still evicted; only the new items stay out of
+    // the cache, which is left to what reads actually ask for.
+    function putManifest(kind, ownerId, items, { activate = true, cache = true } = {}) {
+        return putTx(kind, ownerId, items, activate, cache);
     }
 
     function getLiveDescriptor(kind, ownerId) {
