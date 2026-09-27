@@ -325,6 +325,56 @@ describe('/api/db/assets/auto-sweep', () => {
         expect(hasKey('assets/would-be-orphan.png')).toBe(true)
     })
 
+    // Every boot asks for this sweep with assets off. It must not run the asset
+    // reference scan (whole-blob decode + every manifest): on a 1,300-card
+    // install that held the server for ~6 s per boot. A corrupt manifest, which
+    // fails that scan, shows it is skipped.
+    it('with assets off, skips the asset reference scan and still sweeps remotes', async () => {
+        await seedDb({
+            characters: [{ chaId: 'keep', image: 'assets/avatar.png', chats: [] }],
+            modules: [{ id: 'module-a', name: 'pack', assets: [['live', 'assets/live.png', 'png']] }],
+        })
+        await readKey('database/database.bin')
+        withDb((db) => {
+            db.prepare(`
+                UPDATE asset_manifests SET payload = ?
+                WHERE manifest_id = (
+                    SELECT manifest_id FROM asset_manifest_live
+                    WHERE owner_kind = 'module' AND owner_id = 'module-a'
+                )
+            `).run(Buffer.from('corrupt'))
+        })
+        await writeKey('assets/orphan.png', 'orphan')
+        setUpdatedAt('assets/orphan.png', Date.now() - 8 * DAY)
+        await writeKey('remotes/gone.local.bin', 'remote')
+        await writeKey('remotes/gone.local.bin.meta', JSON.stringify({ lastUsed: Date.now() - 8 * DAY }))
+        setUpdatedAt('remotes/gone.local.bin', Date.now() - 8 * DAY)
+
+        const res = await autoSweep(false)
+        expect(res.status).toBe(200)
+        expect(await res.json()).toMatchObject({ ok: true, assetsDeleted: 0, remotesDeleted: 2 })
+        expect(hasKey('assets/orphan.png')).toBe(true)
+        expect(hasKey('remotes/gone.local.bin')).toBe(false)
+    })
+
+    it('with assets off, keeps the remote cache of a deactivated character', async () => {
+        await seedDb({
+            characters: [{ chaId: 'keep', chats: [] }],
+            nodeOnlyArchivedCharacters: [{ chaId: 'resting', name: 'Resting', archivedAt: 1_790_000_000_000 }],
+        })
+        for (const id of ['keep', 'resting', 'gone']) {
+            await writeKey(`remotes/${id}.local.bin`, 'remote')
+            await writeKey(`remotes/${id}.local.bin.meta`, JSON.stringify({ lastUsed: Date.now() - 8 * DAY }))
+            setUpdatedAt(`remotes/${id}.local.bin`, Date.now() - 8 * DAY)
+        }
+
+        const res = await autoSweep(false)
+        expect(res.status).toBe(200)
+        expect(hasKey('remotes/keep.local.bin')).toBe(true)
+        expect(hasKey('remotes/resting.local.bin')).toBe(true)
+        expect(hasKey('remotes/gone.local.bin')).toBe(false)
+    })
+
     it('sweeps stale remote caches, preserves recent ones, creates missing meta, and removes orphan meta', async () => {
         await seedReferencedDb()
         await writeKey('remotes/keep.local.bin', 'remote-live')

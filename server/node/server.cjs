@@ -9238,7 +9238,91 @@ function decodeRemoteMetaLastUsed(raw) {
     }
 }
 
+// Remote caches (remotes/<chaId>.local.bin) of characters that no longer
+// exist and were not used within the grace period, plus meta rows whose cache
+// is gone. A cache without meta gets one, starting its grace period now.
+function collectRemoteSweep(characterIds, now) {
+    const remoteVictims = [];
+    const remoteMetaCreates = [];
+    let remotesScanned = 0;
+    const remoteRows = kvListWithSizesAndUpdatedAt('remotes/');
+    const remoteByKey = new Map(remoteRows.map((it) => [it.key, it]));
+    for (const it of remoteRows) {
+        if (it.key.endsWith('.meta')) continue;
+        remotesScanned++;
+        const base = statsBasename(it.key);
+        if (!base.endsWith('.local.bin')) continue;
+        const chaId = base.slice(0, -'.local.bin'.length);
+        if (characterIds.has(chaId)) continue;
+
+        const metaKey = `${it.key}.meta`;
+        const meta = remoteByKey.get(metaKey);
+        if (!meta) {
+            remoteMetaCreates.push(metaKey);
+            continue;
+        }
+        const lastUsed = decodeRemoteMetaLastUsed(kvGet(metaKey));
+        const newestUse = Math.max(Number(it.updated_at || 0), lastUsed ?? 0);
+        if (now - newestUse > AUTO_SWEEP_GRACE_MS) {
+            remoteVictims.push(it);
+            remoteVictims.push(meta);
+        }
+    }
+
+    for (const it of remoteRows) {
+        if (!it.key.endsWith('.meta')) continue;
+        const remoteKey = it.key.slice(0, -'.meta'.length);
+        if (!remoteByKey.has(remoteKey)) {
+            remoteVictims.push(it);
+        }
+    }
+    return { remoteVictims, remoteMetaCreates, remotesScanned };
+}
+
+function applySweep(victims, remoteMetaCreates, now, checkpointLabel) {
+    sqliteDb.transaction(() => {
+        for (const key of remoteMetaCreates) {
+            kvSet(key, Buffer.from(JSON.stringify({ lastUsed: now })));
+        }
+        for (const it of victims) kvDel(it.key);
+    })();
+    if (victims.length > 0) {
+        try { checkpointWal('TRUNCATE'); } catch (e) { logger.warn(`[${checkpointLabel}] checkpoint failed:`, e?.message || e); }
+    }
+    return victims.reduce((sum, it) => sum + it.size, 0);
+}
+
+// Every client boot asks for an auto sweep, and asset cleanup is off by
+// default, so most sweeps only need character ids for the remote caches. The
+// asset reference scan below (flushing, reading and decoding the whole
+// persisted blob, walking every asset manifest) held the event loop and the
+// storage queue for about 6 s per boot on a 1,300-card install (2026-09-27
+// profile), stalling that same boot's requests. The in-memory database
+// already holds every active and deactivated character id.
+async function sweepRemoteCachesOnly({ includeRemotes, checkpointLabel }) {
+    const now = Date.now();
+    let remote = { remoteVictims: [], remoteMetaCreates: [], remotesScanned: 0 };
+    if (includeRemotes) {
+        if (!await loadDbCacheIfMissing()) return { error: 'No database blob' };
+        const db = dbCache[DB_HEX_KEY];
+        if (!db || !Array.isArray(db.characters)) return { error: 'Database decode failed' };
+        const characterIds = new Set(db.characters.map((v) => v?.chaId).filter(Boolean));
+        for (const stub of archivedStubsOf(db)) characterIds.add(stub.chaId);
+        remote = collectRemoteSweep(characterIds, now);
+    }
+    const bytes = applySweep(remote.remoteVictims, remote.remoteMetaCreates, now, checkpointLabel);
+    return {
+        ok: true,
+        deleted: 0,
+        assetsDeleted: 0,
+        remotesDeleted: remote.remoteVictims.length,
+        bytes,
+        scanned: remote.remotesScanned,
+    };
+}
+
 async function computeAssetSweep({ includeAssets, assetGraceMs = 0, includeRemotes = false, checkpointLabel = 'AssetSweep' } = {}) {
+    if (!includeAssets) return sweepRemoteCachesOnly({ includeRemotes, checkpointLabel });
     await flushPendingDb();
     const raw = kvGet(DB_BLOB_KEY);
     if (!raw) return { error: 'No database blob' };
@@ -9277,59 +9361,16 @@ async function computeAssetSweep({ includeAssets, assetGraceMs = 0, includeRemot
         })
         : [];
 
-    const remoteVictims = [];
-    const remoteMetaCreates = [];
-    let remotesScanned = 0;
+    let remote = { remoteVictims: [], remoteMetaCreates: [], remotesScanned: 0 };
     if (includeRemotes) {
         const characterIds = new Set(dbObj.characters.map((v) => v?.chaId).filter(Boolean));
         // A deactivated character still owns its remote cache.
         for (const stub of archivedStubsOf(dbObj)) characterIds.add(stub.chaId);
-        const remoteRows = kvListWithSizesAndUpdatedAt('remotes/');
-        const remoteByKey = new Map(remoteRows.map((it) => [it.key, it]));
-        for (const it of remoteRows) {
-            if (it.key.endsWith('.meta')) continue;
-            remotesScanned++;
-            const base = statsBasename(it.key);
-            if (!base.endsWith('.local.bin')) continue;
-            const chaId = base.slice(0, -'.local.bin'.length);
-            if (characterIds.has(chaId)) continue;
-
-            const metaKey = `${it.key}.meta`;
-            const meta = remoteByKey.get(metaKey);
-            if (!meta) {
-                remoteMetaCreates.push(metaKey);
-                continue;
-            }
-            const lastUsed = decodeRemoteMetaLastUsed(kvGet(metaKey));
-            const newestUse = Math.max(Number(it.updated_at || 0), lastUsed ?? 0);
-            if (now - newestUse > AUTO_SWEEP_GRACE_MS) {
-                remoteVictims.push(it);
-                remoteVictims.push(meta);
-            }
-        }
-
-        for (const it of remoteRows) {
-            if (!it.key.endsWith('.meta')) continue;
-            const remoteKey = it.key.slice(0, -'.meta'.length);
-            if (!remoteByKey.has(remoteKey)) {
-                remoteVictims.push(it);
-            }
-        }
+        remote = collectRemoteSweep(characterIds, now);
     }
+    const { remoteVictims, remotesScanned } = remote;
 
-    const victims = [...assetVictims, ...remoteVictims];
-    sqliteDb.transaction(() => {
-        for (const key of remoteMetaCreates) {
-            kvSet(key, Buffer.from(JSON.stringify({ lastUsed: now })));
-        }
-        for (const it of victims) kvDel(it.key);
-    })();
-
-    const deleted = victims.length;
-    const bytes = victims.reduce((sum, it) => sum + it.size, 0);
-    if (deleted > 0) {
-        try { checkpointWal('TRUNCATE'); } catch (e) { logger.warn(`[${checkpointLabel}] checkpoint failed:`, e?.message || e); }
-    }
+    const bytes = applySweep([...assetVictims, ...remoteVictims], remote.remoteMetaCreates, now, checkpointLabel);
 
     return {
         ok: true,
