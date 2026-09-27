@@ -2866,6 +2866,9 @@ export interface FetchNativeArgs {
     logSource?: RequestLogSource
     logModel?: string
     logPlugin?: string
+    /** Logged in place of the sent body (GEMINI-PDF-INPUT logs the text form
+     *  of a request sent as a PDF, so request-log chat recovery keeps working). */
+    logBody?: string
     /** Reports which transport was actually used. Fires regardless of
      *  logCategory, so a caller that logs at a higher level (the model-preset
      *  path) can record the true route instead of guessing. */
@@ -2897,16 +2900,19 @@ export async function fetchNative(url: string, arg: FetchNativeArgs): Promise<Re
     })
     const logged = scope.wrap(((_input: RequestInfo | URL, _init?: RequestInit) =>
         fetchNativeRaw(url, arg, {
-            onRealBody: (body) => scope.setRequestBody(body),
+            onRealBody: (body) => { if (arg.logBody === undefined) scope.setRequestBody(body) },
             onRoute: (route) => { scope.setRoute(route); arg.onLogRoute?.(route) },
         })
     ) as typeof fetch)
     try {
-        return await logged(url, {
+        const pending = logged(url, {
             method: arg.method ?? 'POST',
             headers: arg.headers,
             body: arg.body as BodyInit | undefined,
         })
+        // The scope pushed this request's entry synchronously above.
+        if (arg.logBody !== undefined) scope.setRequestBody(arg.logBody)
+        return await pending
     } finally {
         // Fire-and-forget: close() waits for the tee'd body to finish
         // assembling, which outlives this return for a streamed response.

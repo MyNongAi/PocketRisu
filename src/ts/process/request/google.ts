@@ -11,7 +11,7 @@ import type { RequestDataArgumentExtended, requestDataResponse, StreamResponseCh
 import { toLogSource } from './logSource'
 import { applyAdditionalParameters, applyParameters, getAdditionalParameters, type LLMParameter } from './shared'
 import { bodyIntercepterStore } from "src/ts/stores.svelte"
-import { applyGeminiPdfInput } from './geminiPdfInput'
+import { applyGeminiPdfInput, geminiPdfLogBody } from './geminiPdfInput'
 
 type GeminiFunctionCall = {
     id?: string;
@@ -611,14 +611,20 @@ export async function requestGoogleCloudVertex(arg:RequestDataArgumentExtended):
 
     // GEMINI-PDF-INPUT: send the context before the last user turn as one PDF
     // (geminiPdfInput.ts); the body stays as-is whenever that cannot apply.
+    // The request log keeps the text form (geminiPdfLogBody) for chat recovery.
+    let logBody: string | undefined
     if(db.nodeOnlyGeminiPdfInput === true){
-        body = (await applyGeminiPdfInput(body, { signal: arg.abortSignal })).body
+        const pdf = await applyGeminiPdfInput(body, { signal: arg.abortSignal })
+        if(pdf.applied){
+            logBody = geminiPdfLogBody(body, pdf.pages)
+            body = pdf.body
+        }
     }
 
-    return requestGoogle(url, body, headers, arg)
+    return requestGoogle(url, body, headers, arg, logBody)
 }
 
-async function requestGoogle(url:string, body:any, headers:{[key:string]:string}, arg:RequestDataArgumentExtended):Promise<requestDataResponse> {
+async function requestGoogle(url:string, body:any, headers:{[key:string]:string}, arg:RequestDataArgumentExtended, logBody?:string):Promise<requestDataResponse> {
     
     const db = getDatabase()
 
@@ -646,7 +652,7 @@ async function requestGoogle(url:string, body:any, headers:{[key:string]:string}
             }
         }
 
-        return requestGoogle(url, body, headers, arg)
+        return requestGoogle(url, body, headers, arg, logBody)
     }
 
     // process the text parts into a single text response
@@ -694,6 +700,7 @@ async function requestGoogle(url:string, body:any, headers:{[key:string]:string}
             logCategory: 'llm',
             logSource: arg.logSource ?? toLogSource(arg.mode),
             logModel: arg.modelInfo?.id,
+            logBody,
         })
 
         if(f.status !== 200){
@@ -735,6 +742,7 @@ async function requestGoogle(url:string, body:any, headers:{[key:string]:string}
         logCategory: 'llm',
         logSource: arg.logSource ?? toLogSource(arg.mode),
         logModel: arg.modelInfo?.id,
+        logBody,
     })
     
 

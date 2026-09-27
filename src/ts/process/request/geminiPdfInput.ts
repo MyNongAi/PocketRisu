@@ -292,10 +292,26 @@ export async function applyGeminiPdfInput<T>(
 // countTokens — pass through untouched.
 const NATIVE_GEMINI_CHAT_URL = /:(?:stream)?generateContent(?:[?#]|$)/i
 
+// The request log keeps the TEXT form of a request sent as a PDF: the chat
+// recovery tool (tools/recover-chat-from-request-logs.cjs) rebuilds lost
+// turns from the logged prompts, and a PDF would leave only the last message.
+// `_sentAsPdf` marks the row so the log still shows what went over the wire.
+export function geminiPdfLogBody(textBody: unknown, pages: number | undefined): string {
+    const marked = textBody && typeof textBody === 'object' && !Array.isArray(textBody)
+        ? { _sentAsPdf: { pages: pages ?? null }, ...(textBody as JsonObject) }
+        : textBody
+    return JSON.stringify(marked)
+}
+
 // fetch wrapper for the model-preset path, where the adapter serializes the
 // body itself: parses a native Gemini JSON body, applies the transform, and
-// forwards the (possibly rewritten) request to the inner transport.
-export function withGeminiPdfInput(fetchImpl: typeof fetch, opts: { render?: GeminiPdfRenderer } = {}): typeof fetch {
+// forwards the (possibly rewritten) request to the inner transport. Wrap it
+// INSIDE the request-log scope and pass onApplied, so the log records the
+// text form (see geminiPdfLogBody).
+export function withGeminiPdfInput(
+    fetchImpl: typeof fetch,
+    opts: { render?: GeminiPdfRenderer, onApplied?: (logBody: string) => void } = {},
+): typeof fetch {
     return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
         const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
         if (!NATIVE_GEMINI_CHAT_URL.test(url) || typeof init?.body !== 'string') return fetchImpl(input, init)
@@ -307,6 +323,7 @@ export function withGeminiPdfInput(fetchImpl: typeof fetch, opts: { render?: Gem
         }
         const result = await applyGeminiPdfInput(parsed, { render: opts.render, signal: init.signal ?? undefined })
         if (!result.applied) return fetchImpl(input, init)
+        opts.onApplied?.(geminiPdfLogBody(parsed, result.pages))
         return fetchImpl(input, { ...init, body: JSON.stringify(result.body) })
     }) as typeof fetch
 }

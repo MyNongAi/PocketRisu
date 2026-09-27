@@ -253,6 +253,24 @@ describe('withGeminiPdfInput (model-preset transport)', () => {
         expect(inner.mock.calls[2][1]!.body).toBe('not json')
         expect(render).not.toHaveBeenCalled()
     })
+
+    // Request-log chat recovery rebuilds turns from logged prompts, so the log
+    // must see the text form, marked, while the wire gets the PDF.
+    it('reports the marked text form for the request log only when applied', async () => {
+        const inner = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => okResponse())
+        const onApplied = vi.fn()
+        const wrapped = withGeminiPdfInput(inner as unknown as typeof fetch, { render: okRenderer('UERG'), onApplied })
+        const body = classicBody()
+        await wrapped('https://x.test/models/m:generateContent', { method: 'POST', body: JSON.stringify(body) })
+        expect(onApplied).toHaveBeenCalledTimes(1)
+        const logged = JSON.parse(onApplied.mock.calls[0][0])
+        expect(logged._sentAsPdf).toBeDefined()
+        const { _sentAsPdf, ...rest } = logged
+        expect(rest).toEqual(JSON.parse(JSON.stringify(body)))
+
+        await wrapped('https://x.test/cachedContents', { method: 'POST', body: JSON.stringify(body) })
+        expect(onApplied).toHaveBeenCalledTimes(1)
+    })
 })
 
 describe('renderGeminiPdfOnServer', () => {

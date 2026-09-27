@@ -968,14 +968,17 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
         const useStreaming = resolvePresetStreaming(preset, arg)
         // GEMINI-PDF-INPUT: google-gemini chat requests may carry their context
         // as one PDF (geminiPdfInput.ts), applied on the serialized body just
-        // before the transport so the request log records what was sent.
-        // Explicit context caching keeps the text shape: its cachedContent is
-        // built from the text turns.
+        // before the transport. It sits INSIDE the log scope: the log keeps the
+        // text form (marked _sentAsPdf) so request-log chat recovery still
+        // works. Explicit context caching keeps the text shape: its
+        // cachedContent is built from the text turns.
         const usePdfInput = kind === 'google-gemini' && getDatabase().nodeOnlyGeminiPdfInput === true
         if (usePdfInput && cache) console.debug('[GeminiPdfInput] left as plain text: explicit context caching is on for this preset')
         const options: AdapterChatOptions = {
             messages, abortSignal: abortSignal ?? undefined, generationId: genId, cache,
-            fetchImpl: usePdfInput && !cache ? withGeminiPdfInput(fetchImpl) : fetchImpl,
+            fetchImpl: usePdfInput && !cache
+                ? logScope.wrap(withGeminiPdfInput(transportFetch, { onApplied: (logBody) => logScope.setRequestBody(logBody) }))
+                : fetchImpl,
             // Opt-in (System > Request Logs): without it a streamed response
             // reports no tokens at all, so chat usage statistics stay empty.
             collectStreamUsage: getDatabase().requestLogStreamUsage === true,

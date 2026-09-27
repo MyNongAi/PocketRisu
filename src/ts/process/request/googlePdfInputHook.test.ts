@@ -101,6 +101,12 @@ describe('google.ts Gemini PDF input hook', () => {
         expect(body.contents[0].parts[0]).toEqual({ inlineData: { mimeType: 'application/pdf', data: 'UERGREFUQQ==' } })
         expect(body.contents[0].parts[2]).toEqual({ text: '마지막 질문' })
         expect(body.generation_config.maxOutputTokens).toBe(256)
+
+        // The request log keeps the text form, marked, for request-log chat recovery.
+        const logged = JSON.parse(mocks.fetchNative.mock.calls[0][1].logBody)
+        expect(logged._sentAsPdf).toEqual({ pages: 1 })
+        expect(logged.systemInstruction.parts[0].text).toBe(SYSTEM)
+        expect(logged.contents.map((c: any) => c.role)).toEqual(['user', 'model', 'user'])
     })
 
     it('leaves the request as plain text when the toggle is off or unset', async () => {
@@ -111,6 +117,7 @@ describe('google.ts Gemini PDF input hook', () => {
             const body = sentBody()
             expect(body.systemInstruction.parts[0].text).toBe(SYSTEM)
             expect(body.contents.map((c: any) => c.role)).toEqual(['user', 'model', 'user'])
+            expect(mocks.fetchNative.mock.calls[0][1].logBody).toBeUndefined()
         }
         expect(renderFetch).not.toHaveBeenCalled()
     })
