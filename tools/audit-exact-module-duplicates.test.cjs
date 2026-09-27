@@ -125,6 +125,21 @@ test('chunk reader copies rows in sequence and leaves SQLite untouched', () => {
     sqlite.close();
 });
 
+test('chunk reader follows gapped seq values (in-place manifest edits) in order', () => {
+    const sqlite = new Database(':memory:');
+    sqlite.exec('CREATE TABLE kv (key TEXT, value BLOB); CREATE TABLE chunks (hash TEXT, data BLOB); CREATE TABLE manifest_chunks (manifest_key TEXT, seq INTEGER, hash TEXT)');
+    for (const part of ['a', 'b', 'c']) sqlite.prepare('INSERT INTO chunks VALUES (?, ?)').run(sha(part), Buffer.from(part));
+    sqlite.prepare('INSERT INTO manifest_chunks VALUES (?, ?, ?)').run('db', 4096, sha('c'));
+    sqlite.prepare('INSERT INTO manifest_chunks VALUES (?, ?, ?)').run('db', 1024, sha('a'));
+    sqlite.prepare('INSERT INTO manifest_chunks VALUES (?, ?, ?)').run('db', 1536, sha('b'));
+    sqlite.prepare('INSERT INTO kv VALUES (?, ?)').run('db', Buffer.from('\0RISUCHUNKED\0', 'binary'));
+    assert.equal(readChunkedValue(sqlite, 'db').toString(), 'abc');
+    // Two rows on one seq (no primary key here) is not an ordering: fail closed.
+    sqlite.prepare('INSERT INTO manifest_chunks VALUES (?, ?, ?)').run('db', 1536, sha('b'));
+    assert.throws(() => readChunkedValue(sqlite, 'db'), /sequence or integrity/);
+    sqlite.close();
+});
+
 test('raw overwrite takes precedence over stale chunk rows and broken marker fails closed', () => {
     const sqlite = new Database(':memory:');
     sqlite.exec('CREATE TABLE kv (key TEXT, value BLOB); CREATE TABLE chunks (hash TEXT, data BLOB); CREATE TABLE manifest_chunks (manifest_key TEXT, seq INTEGER, hash TEXT)');

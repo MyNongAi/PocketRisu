@@ -105,6 +105,23 @@ const chunkThreshold = process.env.POCKETRISU_CHUNK_THRESHOLD
     : undefined;
 const chunkStore = createChunkStore(db, { threshold: chunkThreshold });
 
+// The live database blob as a chunk list, for the incremental persister
+// (db-persister.cjs): it plans a new blob against the manifest it wrote last
+// and commits only the chunks and manifest rows that changed. Every other
+// writer of the key still goes through kvSet/kvCopyValue/kvDel, which move
+// the generation the persister checks.
+const dbBlob = {
+    key: DB_BLOB_KEY,
+    threshold: chunkStore.threshold,
+    generation: () => chunkStore.generation(DB_BLOB_KEY),
+    isChunked: () => chunkStore.isChunkedKey(DB_BLOB_KEY),
+    readManifestWithLengths: () => chunkStore.readManifestWithLengths(DB_BLOB_KEY),
+    createReader: (chunks, options) => chunkStore.createReader(chunks, options),
+    commitChunks: (next, expectedHashes, options) => chunkStore.commitChunks(DB_BLOB_KEY, next, expectedHashes, options),
+    // A blob at or under the threshold is stored raw, as kvSet stores it.
+    putValue: (value) => chunkStore.putValue(DB_BLOB_KEY, value),
+};
+
 migrateFromSaveDir();
 
 // ─── KV operations ────────────────────────────────────────────────────────────
@@ -246,4 +263,5 @@ module.exports = {
     reclaimableChunkBytes,
     isDbBlobChunked,
     snapshotFootprint,
+    dbBlob,
 };

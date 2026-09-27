@@ -223,12 +223,16 @@ function readChunkedValue(sqlite, key) {
     if (!total) throw new Error('Chunk marker has no complete payload');
     const buffer = Buffer.allocUnsafe(total);
     let offset = 0;
-    let expectedSequence = 0;
+    // seq is an ordering key: the server edits manifests in place and
+    // leaves gaps (chunkStore.commitChunks), so rows are strictly increasing,
+    // not 0..n-1.
+    let lastSequence = -Infinity;
     for (const row of sqlite.prepare(`SELECT m.seq,m.hash,c.data FROM manifest_chunks m LEFT JOIN chunks c ON c.hash=m.hash
         WHERE m.manifest_key=? ORDER BY m.seq`).iterate(key)) {
-        if (row.seq !== expectedSequence++ || !Buffer.isBuffer(row.data) || digest(row.data) !== row.hash) {
+        if (!Number.isInteger(row.seq) || row.seq <= lastSequence || !Buffer.isBuffer(row.data) || digest(row.data) !== row.hash) {
             throw new Error('Chunk sequence or integrity check failed');
         }
+        lastSequence = row.seq;
         row.data.copy(buffer, offset); offset += row.data.length;
     }
     if (offset !== total) throw new Error('Chunk length changed during read snapshot');
