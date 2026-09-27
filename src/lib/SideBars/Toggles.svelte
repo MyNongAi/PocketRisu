@@ -137,14 +137,21 @@
     let groupedToggles = $derived.by(() => {
         // Track chat/module changes so the toggle list re-derives on chat switch
         const _char = DBState.db.characters[$selectedCharID]
-        void _char?.chats?.[_char?.chatPage]?.modules
+        const _chat = _char?.chats?.[_char?.chatPage]
+        void _chat?.modules
         void _char?.modules
         void DBState.db.enabledModules
         void DBState.db.moduleIntergration
 
         const ungrouped = parseToggleSyntax(
             DBState.db.customPromptTemplateToggle + '\n' +
-            getModuleToggles() + '\n' +
+            // Pass the chat explicitly so getModules() skips its module-level
+            // cache. That cache is keyed by module ids (+ persona id), and on a
+            // hit this derived never reads db.modules or the bound persona's
+            // embedded module. Replacing either object (module editor save,
+            // re-foldering, a synced patch) then left an open list stale, and
+            // a replaced persona module stayed stale even after reopening.
+            getModuleToggles(_char && _chat ? { character: _char, chat: _chat } : undefined) + '\n' +
             ((DBState.db?.characters?.[$selectedCharID] as character)?.customModuleToggle ?? '')
         )
 
