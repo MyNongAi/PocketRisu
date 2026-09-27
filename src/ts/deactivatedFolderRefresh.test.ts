@@ -36,6 +36,16 @@ describe('hourly re-bucketing', () => {
         expect(warn).toHaveBeenCalledTimes(1)
         vi.advanceTimersByTime(HOUR)
         expect(checkCharOrder).toHaveBeenCalledTimes(3)
+
+        // A hidden tab skips the run (the module keeps one interval for the
+        // page's lifetime, so this continues on the same timer).
+        checkCharOrder.mockClear()
+        const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
+        vi.advanceTimersByTime(HOUR)
+        expect(checkCharOrder).not.toHaveBeenCalled()
+        visibility.mockReturnValue('visible')
+        vi.advanceTimersByTime(HOUR)
+        expect(checkCharOrder).toHaveBeenCalledTimes(1)
     })
 })
 
