@@ -2,17 +2,21 @@ import { describe, expect, it } from 'vitest'
 import patchHashPkg from '../server/node/patch-hash-cache.cjs'
 import utilsPkg from '../server/node/utils.cjs'
 import jsonPatchPkg from 'fast-json-patch'
+import selectiveClonePkg from '../server/node/patch-selective-clone.cjs'
 
 const { createPatchHashCache, collectTouchedTopLevelKeys } = patchHashPkg as {
     createPatchHashCache: (calculateHash: (value: any) => number) => {
         hash: (database: any) => number
         update: (previousDatabase: any, nextDatabase: any, patch: any[]) => number
         keyHashes: (database: any) => Record<string, number>
+        elementHash: (value: any) => number
+        reset: () => void
     }
     collectTouchedTopLevelKeys: (patch: any[]) => { keys: Set<string>, touchesRoot: boolean }
 }
 const { calculateHash } = utilsPkg as { calculateHash: (value: any) => number }
 const { applyPatch } = jsonPatchPkg
+const { clonePatchSnapshot } = selectiveClonePkg as { clonePatchSnapshot: (database: any, patch: any[]) => any }
 
 function apply(base: any, patch: any[]) {
     const next = structuredClone(base)
@@ -140,5 +144,69 @@ describe('patch hash cache — keyHashes', () => {
         db.b = 'late'
         expect(cache.keyHashes(db)).toEqual({ a: calculateHash(1), b: calculateHash('late') })
         expect(cache.keyHashes([1, 2])).toEqual({})
+    })
+})
+
+// B2: arrays at the root are hashed as calculateHash's own fold over per-
+// element hashes memoized on the element objects, so a root that shares its
+// untouched characters/modules with the previous one rehashes only the rest.
+describe('patch hash cache — element hash memo', () => {
+    it('hashes root arrays of any shape exactly like calculateHash', () => {
+        const cache = createPatchHashCache(calculateHash)
+        const shared = { same: 'object twice' }
+        const db = {
+            objects: [{ a: 1 }, { b: [1, 2, { c: null }] }, shared, shared],
+            primitives: ['x', 1, 2.5, -3, true, false, null, '가나다'],
+            nested: [[1, [2]], [], [{}], [[]]],
+            empty: [],
+            mixed: [{ a: 1 }, 'str', 7, null, [3]],
+            scalar: 'root string',
+        }
+        expect(cache.hash(db)).toBe(calculateHash(db))
+        const keyHashes = cache.keyHashes(db)
+        for (const [key, value] of Object.entries(db)) expect(keyHashes[key]).toBe(calculateHash(value))
+        for (const element of db.objects) expect(cache.elementHash(element)).toBe(calculateHash(element))
+        expect(cache.elementHash('primitive')).toBe(calculateHash('primitive'))
+    })
+
+    it('rehashes only the cloned element after an element-level patch', () => {
+        const characters = Array.from({ length: 50 }, (_, i) => ({ chaId: `c${i}`, chats: [{ id: `chat${i}`, lastDate: i }] }))
+        const elements = new Set<unknown>(characters)
+        let elementCalls = 0
+        const counting = (value: any) => {
+            if (elements.has(value)) elementCalls++
+            return calculateHash(value)
+        }
+        const cache = createPatchHashCache(counting)
+        const db = { characters, username: 'u' }
+        expect(cache.hash(db)).toBe(calculateHash(db))
+        expect(elementCalls).toBe(50)
+
+        const patch = [{ op: 'replace', path: '/characters/7/chats/0/lastDate', value: 99 }]
+        const next = clonePatchSnapshot(db, patch)
+        applyPatch(next, patch, true)
+        expect(next.characters[6]).toBe(characters[6])
+        elements.add(next.characters[7])
+        elementCalls = 0
+        expect(cache.update(db, next, patch)).toBe(calculateHash(next))
+        expect(elementCalls).toBe(1)
+        expect(cache.hash(next)).toBe(calculateHash(next))
+        expect(elementCalls).toBe(1)
+    })
+
+    it('reset forgets every root and element hash', () => {
+        const characters = [{ chaId: 'a' }, { chaId: 'b' }]
+        let calls = 0
+        const cache = createPatchHashCache((value: any) => {
+            if (characters.includes(value)) calls++
+            return calculateHash(value)
+        })
+        const db = { characters }
+        cache.hash(db)
+        cache.hash(db)
+        expect(calls).toBe(2)
+        cache.reset()
+        expect(cache.hash(db)).toBe(calculateHash(db))
+        expect(calls).toBe(4)
     })
 })

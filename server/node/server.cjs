@@ -139,10 +139,11 @@ const enablePatchSync = true;
 // in place. /api/patch derives the next root via clonePatchSnapshot (untouched
 // top-level branches are shared with the previous root, and so is every
 // characters[i] / modules[i] the patch does not change) and keeps per-branch
-// hashes in databasePatchHashCache keyed on the root object — an in-place edit
-// would silently alias into the previous snapshots and leave a stale hash.
-// Replace the branch (or the whole root) instead. This includes the chats a
-// persist hydrates: inline and hybrid chats are the root's own objects there.
+// and per-element hashes in databasePatchHashCache keyed on those objects —
+// an in-place edit would silently alias into the previous snapshots and
+// leave stale hashes. Replace the branch (or the whole root) instead. This
+// includes the chats a persist hydrates: inline and hybrid chats are the
+// root's own objects there.
 let dbCache = TEST_FREEZE_CACHE
     ? new Proxy({}, {
         set(target, key, value) {
@@ -195,7 +196,7 @@ function databaseHashDiagnostics(databaseObject) {
             duplicateCharIds.push(id);
             return;
         }
-        characterHashes[id] = calculateHash(character).toString(16);
+        characterHashes[id] = databasePatchHashCache.elementHash(character).toString(16);
     });
     return { keyHashes, characterHashes, duplicateCharIds };
 }
@@ -6981,6 +6982,8 @@ app.patch('/api/asset-manifests/owner/:kind/:ownerId', async (req, res, next) =>
                 req.params.ownerId,
                 enriched,
             );
+            // The new collection shares every other owner object with the
+            // previous one, so only the replaced owner is hashed again.
             databasePatchHashCache.update(currentDb, nextDatabase, [{
                 op: 'replace',
                 path: `/${collectionKey}`,

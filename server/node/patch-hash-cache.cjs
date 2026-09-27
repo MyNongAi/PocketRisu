@@ -1,7 +1,10 @@
 'use strict';
 
+// calculateHash's constants (utils.cjs). compose() and valueHash() rebuild
+// its object and array branches from cached parts and must stay equal to it.
 const PRIME_MULTIPLIER = 31;
 const SEED_OBJECT = 17;
+const SEED_ARRAY = 19;
 
 function decodePointerSegment(segment) {
     return segment.replace(/~1/g, '/').replace(/~0/g, '~');
@@ -39,10 +42,39 @@ function createPatchHashCache(calculateHash) {
         throw new TypeError('calculateHash must be a function');
     }
 
-    const states = new WeakMap();
+    // Per-root state, keyed on the root object.
+    let states = new WeakMap();
+    // calculateHash of each object that is an element of a root-level array,
+    // keyed on the element itself. Installed roots are never changed in
+    // place, and /api/patch hands every characters[i] / modules[i] it does
+    // not touch to the next root as the same object (patch-selective-
+    // clone.cjs), so hashing a new root costs only its new elements.
+    let elementHashes = new WeakMap();
 
     function isObjectRoot(database) {
         return database !== null && typeof database === 'object' && !Array.isArray(database);
+    }
+
+    function elementHash(value) {
+        if (value === null || typeof value !== 'object') return calculateHash(value);
+        let result = elementHashes.get(value);
+        if (result === undefined) {
+            result = calculateHash(value);
+            elementHashes.set(value, result);
+        }
+        return result;
+    }
+
+    // calculateHash(value) for a root-level value. For an array it is the
+    // same fold calculateHash's array branch runs, over memoized element
+    // hashes, so the result is identical.
+    function valueHash(value) {
+        if (!Array.isArray(value)) return calculateHash(value);
+        let result = SEED_ARRAY;
+        for (const item of value) {
+            result = (Math.imul(result, PRIME_MULTIPLIER) + elementHash(item)) >>> 0;
+        }
+        return result;
     }
 
     function buildState(database) {
@@ -52,7 +84,7 @@ function createPatchHashCache(calculateHash) {
 
         const valueHashes = new Map();
         for (const key in database) {
-            valueHashes.set(key, calculateHash(database[key]));
+            valueHashes.set(key, valueHash(database[key]));
         }
         return { valueHashes, fullHash: null };
     }
@@ -74,12 +106,12 @@ function createPatchHashCache(calculateHash) {
 
         let rootHash = SEED_OBJECT;
         for (const key in database) {
-            let valueHash = state.valueHashes.get(key);
-            if (valueHash === undefined && !state.valueHashes.has(key)) {
-                valueHash = calculateHash(database[key]);
-                state.valueHashes.set(key, valueHash);
+            let keyValueHash = state.valueHashes.get(key);
+            if (keyValueHash === undefined && !state.valueHashes.has(key)) {
+                keyValueHash = valueHash(database[key]);
+                state.valueHashes.set(key, keyValueHash);
             }
-            rootHash += Math.imul(calculateHash(key), PRIME_MULTIPLIER) + valueHash;
+            rootHash += Math.imul(calculateHash(key), PRIME_MULTIPLIER) + keyValueHash;
         }
         return rootHash >>> 0;
     }
@@ -96,12 +128,12 @@ function createPatchHashCache(calculateHash) {
         if (!isObjectRoot(database)) return out;
         const state = getState(database);
         for (const key in database) {
-            let valueHash = state.valueHashes.get(key);
-            if (valueHash === undefined && !state.valueHashes.has(key)) {
-                valueHash = calculateHash(database[key]);
-                state.valueHashes.set(key, valueHash);
+            let keyValueHash = state.valueHashes.get(key);
+            if (keyValueHash === undefined && !state.valueHashes.has(key)) {
+                keyValueHash = valueHash(database[key]);
+                state.valueHashes.set(key, keyValueHash);
             }
-            out[key] = valueHash;
+            out[key] = keyValueHash;
         }
         return out;
     }
@@ -123,7 +155,7 @@ function createPatchHashCache(calculateHash) {
             const valueHashes = new Map(previousState.valueHashes);
             for (const key of keys) {
                 if (Object.prototype.hasOwnProperty.call(nextDatabase, key)) {
-                    valueHashes.set(key, calculateHash(nextDatabase[key]));
+                    valueHashes.set(key, valueHash(nextDatabase[key]));
                 } else {
                     valueHashes.delete(key);
                 }
@@ -135,7 +167,15 @@ function createPatchHashCache(calculateHash) {
         return compose(nextDatabase, nextState);
     }
 
-    return { hash, update, keyHashes };
+    // Forget every cached hash. For reportCachedRootMutation in server.cjs:
+    // once something changed an installed root in place, no hash keyed on
+    // an object's identity can be trusted.
+    function reset() {
+        states = new WeakMap();
+        elementHashes = new WeakMap();
+    }
+
+    return { hash, update, keyHashes, elementHash, reset };
 }
 
 module.exports = {
