@@ -137,9 +137,10 @@ const enablePatchSync = true;
 // chatBodyStore keeps the actual chat data keyed by chaId→chatId.
 // Invariant: server code never mutates a cached database's nested branches
 // in place. /api/patch derives the next root via clonePatchSnapshot (untouched
-// top-level branches are shared with the previous root) and keeps per-branch
+// top-level branches are shared with the previous root, and so is every
+// characters[i] / modules[i] the patch does not change) and keeps per-branch
 // hashes in databasePatchHashCache keyed on the root object — an in-place edit
-// would silently alias into the previous snapshot and leave a stale hash.
+// would silently alias into the previous snapshots and leave a stale hash.
 // Replace the branch (or the whole root) instead. This includes the chats a
 // persist hydrates: inline and hybrid chats are the root's own objects there.
 let dbCache = TEST_FREEZE_CACHE
@@ -6707,11 +6708,12 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
                 : structuredClone(dbCache[filePath]);
             patchStage = 'apply';
             // A failing op (even the 2nd of several) leaves dbCache[filePath]
-            // untouched: the snapshot has its own root and its own copy of
-            // every top-level branch the patch names (the whole database for
-            // a root op), so there is nothing to invalidate. Dropping the
-            // cache here made the armed save timer persist nothing and lost
-            // every patch acknowledged since the last persist.
+            // untouched: the snapshot has its own root, its own copy of every
+            // top-level branch the patch names (the whole database for a root
+            // op), and for characters/modules its own copy of every element
+            // an op can change, so there is nothing to invalidate. Dropping
+            // the cache here made the armed save timer persist nothing and
+            // lost every patch acknowledged since the last persist.
             const result = applyPatch(snapshot, patch, true);
             // Root-level ops (path "") replace the document instead of mutating
             // the snapshot, so the applied result must be taken from newDocument.
