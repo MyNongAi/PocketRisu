@@ -19,6 +19,7 @@ const DB_KEY_HEX = Buffer.from('database/database.bin').toString('hex')
 // server child fails to load the preload.
 const FAIL_AFTER_DB_WRITE = fileURLToPath(new URL('./helpers/fail-after-db-write-preload.cjs', import.meta.url))
 const SLOW_ARCHIVE_DECODE = fileURLToPath(new URL('./helpers/slow-archive-decode-preload.cjs', import.meta.url))
+const SLOW_DB_DECODE = fileURLToPath(new URL('./helpers/slow-db-decode-preload.cjs', import.meta.url))
 const sessionHeaders = { 'x-session-id': 'db-save-safety', 'x-user-active': '1' }
 
 const servers: ServerHandle[] = []
@@ -33,6 +34,8 @@ async function boot(preloads: string[]) {
   expect((await client.importBackup(createSeedBackup({ characterCount: 2 }))).ok).toBe(true)
   return { srv, client }
 }
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 async function decodeDb(res: Response) {
   return utils.normalizeJSON(await utils.decodeRisuSave(Buffer.from(await res.arrayBuffer()))) as any
@@ -99,6 +102,21 @@ function clientView(db: any, rename?: { index: number; name: string }) {
 
 async function lastDiskMessage(cwd: string) {
   return (await readDiskDb(cwd)).characters[0].chats[0].message.at(-1).data
+}
+
+// test-char-1 is deactivated with a bodiless stub chat (`gone`) that no
+// archive row can fill, so every database persist from now on decodes the
+// archive rows (and waits there while `slow-archive-decode` exists).
+async function makeEveryPersistDecodeArchiveRows(client: RisuClient) {
+  const seeded = await readDb(client)
+  seeded.db.characters[1].chats.push({ id: 'gone', name: 'Gone', _stub: true })
+  expect((await sendWrite(client, seeded.db, { 'x-if-match': seeded.etag! })).status).toBe(200)
+  const archived = await client.fetch('/api/characters/archive-batch', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', ...sessionHeaders },
+    body: JSON.stringify({ chaIds: ['test-char-1'], acceptLostChats: true }),
+  })
+  expect((await archived.json() as any).results[0].ok).toBe(true)
 }
 
 describe('a full database write', () => {
@@ -178,30 +196,76 @@ describe('a cold root while an acknowledged chat save is pending', () => {
   })
 })
 
-describe('a database persist that waits on archive rows', () => {
-  // /api/read flushes outside the storage queue, so a patch and a chat save
-  // can land while its persist waits on an archive row. The persist used to
-  // hydrate the root and chat store before that wait, write that older state
-  // after it, and then rebuild the chat store from it: the acknowledged chat
-  // body was reverted in memory and the next persist wrote the old one.
-  test('writes the root and chat bodies current when it resumes', async () => {
+describe('an /api/read flush', () => {
+  // The flush ran outside the storage queue. With the root cold and a chat
+  // save pending, its no-root branch decoded the blob, and after that await
+  // wrote the root it had decoded: a full write that the queue ran meanwhile
+  // was overwritten on disk (and the chat store it rebuilt was written too).
+  test('does not write an older root over a full write that lands during its decode', async () => {
+    const { srv, client } = await boot([SLOW_DB_DECODE])
+    const disk = await readDiskDb(srv.cwd)
+    await saveChat(client, 'acknowledged')
+
+    await writeFile(path.join(srv.cwd, 'slow-db-decode'), '1500')
+    const reading = client.fetch('/api/read', { headers: { 'file-path': DB_KEY_HEX } })
+    await sleep(300)
+    const write = await sendWrite(client, clientView(disk, { index: 1, name: 'renamed' }), sessionHeaders)
+    expect(write.status).toBe(200)
+    expect((await reading).status).toBe(200)
+
+    await flush(client)
+    const after = await readDiskDb(srv.cwd)
+    expect(after.characters[1].name).toBe('renamed')
+    expect(after.characters[0].chats[0].message.at(-1).data).toBe('acknowledged')
+    expect((await readDb(client)).db.characters[1].name).toBe('renamed')
+  }, 20_000)
+
+  // Outside the queue, every patch that landed while the flush's persist
+  // decoded archive rows replaced the root, so the persist decoded again:
+  // the read took as long as the patches kept coming. It now holds the
+  // queue once; the patches wait for it and are applied after it.
+  test('is not held up by a stream of patches', async () => {
     const { srv, client } = await boot([SLOW_ARCHIVE_DECODE])
-    // Every persist now restores test-char-1 from its archive row: its `gone`
-    // chat is a bodiless stub that no row can fill.
-    const seeded = await readDb(client)
-    seeded.db.characters[1].chats.push({ id: 'gone', name: 'Gone', _stub: true })
-    const seedWrite = await client.fetch('/api/write', {
-      method: 'POST',
-      headers: { 'content-type': 'application/octet-stream', 'file-path': DB_KEY_HEX, 'x-if-match': seeded.etag! },
-      body: Buffer.from(utils.encodeRisuSaveLegacy(seeded.db)),
-    })
-    expect(seedWrite.status).toBe(200)
-    const archived = await client.fetch('/api/characters/archive-batch', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...sessionHeaders },
-      body: JSON.stringify({ chaIds: ['test-char-1'], acceptLostChats: true }),
-    })
-    expect((await archived.json() as any).results[0].ok).toBe(true)
+    await makeEveryPersistDecodeArchiveRows(client)
+    const { db } = await readDb(client)
+    const rename = async (name: string) => {
+      const res = await sendPatch(client, [{ op: 'replace', path: '/characters/0/name', value: name }], utils.calculateHash(db).toString(16))
+      expect(res.status).toBe(200)
+      db.characters[0].name = name
+    }
+    await rename('p0') // arms the timer the read flushes
+
+    await writeFile(path.join(srv.cwd, 'slow-archive-decode'), '600')
+    let readAnswered = false
+    const reading = client.fetch('/api/read', { headers: { 'file-path': DB_KEY_HEX } }).then((res) => { readAnswered = true; return res })
+    let n = 1
+    const stopAt = Date.now() + 4000
+    while (Date.now() < stopAt) {
+      await sleep(250)
+      await rename(`p${n++}`)
+    }
+    const readDuringStream = readAnswered
+    const served = await decodeDb(await reading)
+    await rm(path.join(srv.cwd, 'slow-archive-decode'))
+
+    // Answered while the patches were still coming, with the root its flush
+    // wrote: no patch was applied before it.
+    expect(readDuringStream).toBe(true)
+    expect(served.characters[0].name).toBe('p0')
+    await flush(client)
+    expect((await readDiskDb(srv.cwd)).characters[0].name).toBe(db.characters[0].name)
+  }, 30_000)
+})
+
+describe('a database persist that waits on archive rows', () => {
+  // A patch and a chat save that arrive while an /api/read flush waits on
+  // an archive row. The flush used to run outside the storage queue, so they
+  // landed during the wait: the persist then wrote the older root and
+  // rebuilt the chat store from it, reverting the acknowledged body. The
+  // flush now holds the queue, so both wait for it, and neither is lost.
+  test('lets what arrives meanwhile wait, and loses none of it', async () => {
+    const { srv, client } = await boot([SLOW_ARCHIVE_DECODE])
+    await makeEveryPersistDecodeArchiveRows(client)
 
     const before = await readDb(client)
     const first = await sendPatch(client, [{ op: 'replace', path: '/characters/0/name', value: 'first' }], before.hash)
@@ -209,11 +273,11 @@ describe('a database persist that waits on archive rows', () => {
     before.db.characters[0].name = 'first'
     const chatRead = await client.fetch('/api/chat-content/test-char-0/0', { headers: { 'x-chat-id': 'chat-0-0' } })
     expect(chatRead.status).toBe(200)
-    const chat = utils.normalizeJSON(await utils.decodeRisuSave(Buffer.from(await chatRead.arrayBuffer()))) as any
+    const chat = await decodeDb(chatRead)
 
     await writeFile(path.join(srv.cwd, 'slow-archive-decode'), '2000')
     const reading = readDb(client) // flushes the first patch; its persist now waits
-    await new Promise((resolve) => setTimeout(resolve, 400))
+    await sleep(400)
     const second = await sendPatch(client, [{ op: 'replace', path: '/characters/0/name', value: 'second' }], utils.calculateHash(before.db).toString(16))
     expect(second.status).toBe(200)
     const saved = await client.fetch('/api/chat-content/test-char-0/0', {
@@ -227,20 +291,19 @@ describe('a database persist that waits on archive rows', () => {
       body: Buffer.from(utils.encodeRisuSaveLegacy({ ...chat, message: [...chat.message, { role: 'user', data: 'acknowledged while waiting' }] })),
     })
     expect(saved.status).toBe(200)
-    expect((await reading).db.characters[0].name).toBe('second')
+    // The read served what its flush wrote; the patch was applied after it.
+    expect((await reading).db.characters[0].name).toBe('first')
     await rm(path.join(srv.cwd, 'slow-archive-decode'))
-
-    // The persist that waited wrote what was current when it resumed.
     let disk = await readDiskDb(srv.cwd)
-    expect(disk.characters[0].name).toBe('second')
-    expect(disk.characters[0].chats[0].message.at(-1).data).toBe('acknowledged while waiting')
+    expect(disk.characters[0].name).toBe('first')
 
-    // And it did not revert the chat store: the next persist keeps the body.
+    // The next persist writes both, and the chat store still holds the body.
     await flush(client)
     disk = await readDiskDb(srv.cwd)
+    expect(disk.characters[0].name).toBe('second')
     expect(disk.characters[0].chats[0].message.at(-1).data).toBe('acknowledged while waiting')
     const reread = await client.fetch('/api/chat-content/test-char-0/0', { headers: { 'x-chat-id': 'chat-0-0' } })
-    const body = utils.normalizeJSON(await utils.decodeRisuSave(Buffer.from(await reread.arrayBuffer()))) as any
+    const body = await decodeDb(reread)
     expect(body.message.at(-1).data).toBe('acknowledged while waiting')
   }, 20_000)
 })

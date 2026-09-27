@@ -439,6 +439,10 @@ function createBackupAndRotate({ force = false } = {}) {
     return { created: true, key: backupKey, removed: trim.removed };
 }
 
+// Callers hold the storage queue (queueStorageOperation(flushPendingDb) when
+// they are not inside an operation already). Outside it, the no-root branch
+// below wrote the root it decoded over any write that landed during the
+// decode, and a persist kept re-reading a root that patches kept replacing.
 async function flushPendingDb() {
     const pendingTimer = saveTimers[DB_HEX_KEY];
     if (pendingTimer) {
@@ -1143,6 +1147,8 @@ function findStubFlagLossChats(fullDb) {
 // Duration of the last successful debounced database write, reported with
 // /api/patch responses for the client's save dashboard.
 let lastDbPersistMs = null;
+// See the root re-read loop in persistDbCacheWithChats.
+const PERSIST_ROOT_PASSES = 3;
 
 // Stage timer: each call returns the whole milliseconds since the previous
 // call (or since startAt). /api/patch reports its stages to the client's save
@@ -1172,16 +1178,27 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
     const timings = {};
     await ensureChatStore();
     // Read the root only after every await, and hydrate, write and rebuild
-    // the chat store below without awaiting in between. A persist can run
-    // outside the storage queue (the /api/read flush), so patches and chat
-    // saves land while it waits: a root read before the wait wrote an older
-    // state, and the store rebuilt from it reverted an acknowledged chat
-    // body that the next persist then wrote. The archive rows (see below)
-    // are therefore decoded before hydrating, again if the root was replaced
-    // meanwhile.
+    // the chat store below without awaiting in between. A persist that ran
+    // outside the storage queue (the old /api/read flush) let patches and
+    // chat saves land while it waited: a root read before the wait wrote an
+    // older state, and the store rebuilt from it reverted an acknowledged
+    // chat body that the next persist then wrote. The archive rows (see
+    // below) are therefore decoded before hydrating, again if the root was
+    // replaced meanwhile.
+    //
+    // Every persist runs inside the storage queue now, so the root cannot
+    // be replaced during these awaits; the re-read is defense in depth and
+    // is capped at PERSIST_ROOT_PASSES, so a stream of replacements cannot
+    // hold a persist indefinitely. After the last pass the latest root is
+    // hydrated, still with no await before kvSet, with the rows decoded for
+    // the root before it. That stays correct: those bodies only fill chats
+    // the server holds no body for (applyArchivedChatBodies), and a chat
+    // they miss stays a bodiless stub, which drops nothing from disk (every
+    // body in the blob is in the chat store) and is filled from its row by
+    // the next persist or cold load.
     let strippedDb;
     let archived = null;
-    do {
+    for (let pass = 1; ; pass++) {
         strippedDb = dbCache[filePath];
         if (!strippedDb) return;
         archived = null;
@@ -1191,7 +1208,14 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
                 archived = await loadArchivedChatBodies(chatsView).then((bodies) => ({ bodies }), (error) => ({ error }));
             }
         }
-    } while (dbCache[filePath] !== strippedDb);
+        if (dbCache[filePath] === strippedDb) break;
+        if (pass >= PERSIST_ROOT_PASSES) {
+            strippedDb = dbCache[filePath];
+            if (!strippedDb) return;
+            logger.warn(`[Persist] ${decodedKey}: root replaced during ${pass} archive-row decodes; writing the latest root`);
+            break;
+        }
+    }
     timings.waitMs = lap();
     let fullDb = hydrateDatabaseForDisk(strippedDb);
     timings.hydrateMs = lap();
@@ -3649,7 +3673,7 @@ async function importBackupFromSource(dataSource, { maxBytes = 0, totalBytes = 0
         writeFileSync(stagingSidecarPath(id), JSON.stringify(sidecar));
     }
 
-    await flushPendingDb();
+    await queueStorageOperation(flushPendingDb);
     // Always snapshot the live database right before it is replaced. The
     // default cooldown could skip this when an autosave snapshot landed
     // within the last few minutes, leaving no pre-import copy to restore.
@@ -5953,10 +5977,31 @@ app.get('/api/read', async (req, res, next) => {
         const readStartedAt = performance.now();
         const lap = createStageLap(readStartedAt);
         const readTimings = {};
-        // Flush pending patches before reading database.bin
+        // database.bin: the flush of pending saves, the "no database yet"
+        // answer and the cold load are ONE storage-queue operation. The flush
+        // used to run outside the queue: a queued /api/write that landed
+        // while its no-root branch awaited the decode was then overwritten
+        // by the older root it wrote, and a stream of patches kept its
+        // persist re-reading the root. While an exclusive operation (import,
+        // backup) holds storage, its barrier has already flushed every
+        // accepted write and it may be replacing the blob, so the read
+        // neither flushes, cold-loads nor answers "no database": it serves
+        // the warm root or reports the lock.
+        let databaseReady = false;
         if (key === 'database/database.bin') {
-            await flushPendingDb();
-            readTimings.flushMs = lap();
+            databaseReady = await queueStorageOperation(async () => {
+                readTimings.queueMs = lap();
+                if (exclusiveStorageReason) {
+                    if (dbCache[filePath]) return true;
+                    throw storageLockedError();
+                }
+                await flushPendingDb();
+                readTimings.flushMs = lap();
+                if (!kvExists('database/database.bin')) return false;
+                await loadDbCacheIfMissing({ createBackup: true });
+                readTimings.loadMs = lap();
+                return true;
+            });
         }
         let value = null;
         if (key.startsWith('inlay/')) {
@@ -5964,25 +6009,18 @@ app.get('/api/read', async (req, res, next) => {
         } else if (key.startsWith('inlay_info/')) {
             value = await readInlayInfoPayload(key.slice('inlay_info/'.length));
         }
-        if (value === null) {
+        if (value === null && key !== 'database/database.bin') {
             value = kvGet(key);
         }
-        if (value === null) {
+        if (value === null && !databaseReady) {
             res.send();
         } else {
             // Strip chat payloads and asset manifests from database.bin — the
             // client gets stubs and descriptors only.
             if (key === 'database/database.bin') {
-                readTimings.blobMs = lap(); // the kvGet above: only null-checked
                 try {
-                    // Cold load runs under the storage queue so it cannot
-                    // race a cold /api/patch (see loadDbCacheIfMissing). A
-                    // warm cache is served directly without queueing, so a
-                    // read can never re-activate a superseded manifest.
-                    if (!dbCache[filePath]) {
-                        await queueStorageOperation(() => loadDbCacheIfMissing({ createBackup: true }));
-                    }
-                    readTimings.loadMs = lap();
+                    // Encodes the root the queue operation above left: this
+                    // continuation runs before the next queued operation.
                     value = Buffer.from(encodeRisuSaveLegacy(dbCache[filePath]));
                     readTimings.encodeMs = lap();
                 } catch (e) {
@@ -6008,6 +6046,9 @@ app.get('/api/read', async (req, res, next) => {
             res.send(value);
         }
     } catch (error) {
+        if (error?.code === 'STORAGE_LOCKED') {
+            return res.status(409).json({ error: error.message, code: error.code });
+        }
         logger.error('[Read] Failed to read stored data', error);
         next(error);
     }
@@ -7308,7 +7349,7 @@ app.get('/api/backup/export', async (req, res, next) => {
         const settingsOnly = req.query.mode === 'settings';
         const includeModuleAssets = req.query.moduleAssets !== '0';
         // Flush any pending patches to ensure export includes latest data
-        await flushPendingDb();
+        await queueStorageOperation(flushPendingDb);
 
         // Settings-only re-encodes a trimmed DB up front: its byte length is
         // needed for content-length, and the trimmed object drives the asset
@@ -7861,7 +7902,7 @@ app.post('/api/backup/server/save', async (req, res, next) => {
     let closed = req.destroyed || res.destroyed || res.writableEnded;
     res.once('close', () => { closed = true; });
     try {
-        await flushPendingDb();
+        await queueStorageOperation(flushPendingDb);
 
         // Pre-flight disk check — bail before streaming if the target dir
         // can't fit the backup. Avoids wasted minutes + half-written tmp files.
@@ -8693,7 +8734,7 @@ async function importHexFilesFromDir(dirPath) {
         throw new Error('Save folder database.bin did not decode to a database object');
     }
 
-    await flushPendingDb();
+    await queueStorageOperation(flushPendingDb);
     createBackupAndRotate();
     invalidateDbCache();
 
@@ -8747,7 +8788,7 @@ async function importHexEntries(entries) {
         throw new Error('Uploaded database.bin did not decode to a database object');
     }
 
-    await flushPendingDb();
+    await queueStorageOperation(flushPendingDb);
     createBackupAndRotate();
     invalidateDbCache();
 
@@ -11376,7 +11417,7 @@ app.post('/api/self-update', async (req, res) => {
         setTimeout(async () => {
             try {
             console.log(`[Update] Self-update to v${targetVersion} complete. Restarting...`);
-            try { await flushPendingDb(); } catch {}
+            try { await queueStorageOperation(flushPendingDb); } catch {}
             try { checkpointWal('TRUNCATE'); } catch {}
 
             const port = process.env.PORT || 6001;
@@ -11688,7 +11729,7 @@ for (const sig of ['SIGTERM', 'SIGINT']) {
     process.on(sig, async () => {
         console.log(`[Server] Received ${sig}, flushing pending data...`);
         stopTunnel();
-        try { await flushPendingDb(); } catch (e) { logger.error('[Server] Flush error:', e); }
+        try { await queueStorageOperation(flushPendingDb); } catch (e) { logger.error('[Server] Flush error:', e); }
         try { checkpointWal('TRUNCATE'); } catch { /* non-fatal */ }
         process.exit(0);
     });

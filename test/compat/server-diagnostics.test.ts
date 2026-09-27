@@ -44,7 +44,7 @@ describe('save diagnostics', () => {
     const db = await readDb()
     const reads = await outputLines(/\[Read\]/, 1)
     expect(reads).toHaveLength(1)
-    expect(reads[0]).toMatch(/\[Read\] database\/database\.bin [\d.]+MB: flush \d+ blob \d+ load \d+ encode \d+ etag \d+ total \d+ ms/)
+    expect(reads[0]).toMatch(/\[Read\] database\/database\.bin [\d.]+MB: queue \d+ flush \d+ load \d+ encode \d+ etag \d+ total \d+ ms/)
 
     const patched = await client.fetch('/api/patch', {
       method: 'POST',
