@@ -1562,6 +1562,10 @@ export async function saveDb() {
                 saved = patchResult.success
                 if (saved) {
                     patcher = patchDraft
+                    // Asset-manifest edits update the baseline through
+                    // activeSavePatcher; left on the replaced patcher they
+                    // would edit a stale baseline and cost a 409 rebase.
+                    activeSavePatcher = patcher
                     if (patchResult.etag) {
                         newEtag = patchResult.etag
                         forageStorage.setDbEtag(patchResult.etag)
