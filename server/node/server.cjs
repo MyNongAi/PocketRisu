@@ -422,7 +422,12 @@ function createBackupAndRotate({ force = false } = {}) {
         return { created: false, reason: 'missing-source' };
     }
 
-    const backupKey = `${DB_BACKUP_PREFIX}${(now / 100).toFixed()}.bin`;
+    // Keys are named in 100 ms ticks. A second snapshot in the same tick (a
+    // forced pre-import snapshot right after another one) took the same key
+    // and overwrote the first recovery point; it takes the next free tick.
+    let tick = Math.round(now / 100);
+    while (kvExists(`${DB_BACKUP_PREFIX}${tick}.bin`)) tick++;
+    const backupKey = `${DB_BACKUP_PREFIX}${tick}.bin`;
     // Blob and server-separated plugin rows are one recovery point.
     sqliteDb.transaction(() => {
         kvCopyValue('database/database.bin', backupKey);

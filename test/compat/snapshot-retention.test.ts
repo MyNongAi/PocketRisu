@@ -1,10 +1,15 @@
 import { afterAll, describe, expect, test } from 'vitest'
-import { writeFile } from 'node:fs/promises'
+import { rm, writeFile } from 'node:fs/promises'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { Packr } from 'msgpackr'
 import { zipSync } from 'fflate'
 import { spawnServer, type ServerHandle } from './helpers/spawnServer.js'
 import { createClient, type RisuClient } from './helpers/client.js'
 import { createSeedBackup } from './helpers/seed.js'
+import { readDiskValue } from './helpers/disk.js'
+
+const utils = require('../../server/node/utils.cjs') as typeof import('../../server/node/utils.cjs')
 
 const HOUR_MS = 60 * 60 * 1000
 const DB_KEY = 'database/database.bin'
@@ -12,6 +17,7 @@ const DB_KEY_HEX = Buffer.from(DB_KEY, 'utf-8').toString('hex')
 const MAGIC_RAW = Buffer.from([0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 7])
 const packr = new Packr({ useRecords: false })
 const sessionHeaders = { 'x-session-id': 'snapshot-retention-test', 'x-user-active': '1' }
+const FREEZE_CLOCK = fileURLToPath(new URL('./helpers/freeze-clock-preload.cjs', import.meta.url))
 
 const servers: ServerHandle[] = []
 afterAll(async () => { await Promise.allSettled(servers.map(server => server.cleanup())) })
@@ -87,6 +93,7 @@ describe('automatic snapshot retention schedule', () => {
         expect((await client.importBackup(createSeedBackup({ characterCount: 2 }))).ok).toBe(true)
         let snapshots = (await (await client.fetch('/api/db/snapshots')).json()).snapshots
         expect(snapshots).toHaveLength(1)
+        const existingKey = snapshots[0].key
 
         const disable = await client.fetch('/api/db/snapshots/limits', {
             method: 'PUT',
@@ -95,9 +102,33 @@ describe('automatic snapshot retention schedule', () => {
         })
         expect(disable.status).toBe(200)
 
+        // Off stops automatic snapshots only: an import still snapshots the
+        // database it replaces, and the existing snapshot is kept. (This
+        // used to expect one snapshot, which held only when the import's
+        // snapshot landed in the same 100 ms tick and overwrote the first.)
         expect((await client.importBackup(createSeedBackup({ characterCount: 3 }))).ok).toBe(true)
         snapshots = (await (await client.fetch('/api/db/snapshots')).json()).snapshots
-        expect(snapshots).toHaveLength(1)
+        expect(snapshots).toHaveLength(2)
+        expect(snapshots.map((s: { key: string }) => s.key)).toContain(existingKey)
+    })
+
+    test('two snapshots in the same 100 ms tick are both kept', async () => {
+        const { client, server } = await boot({ env: { NODE_OPTIONS: `--require ${FREEZE_CLOCK}` } })
+        expect((await client.importBackup(createSeedBackup({ characterCount: 1 }))).ok).toBe(true)
+
+        // Each import snapshots the database it replaces (forced, no cooldown).
+        await writeFile(path.join(server.cwd, 'freeze-clock'), String(Date.now()))
+        expect((await client.importBackup(createSeedBackup({ characterCount: 2 }))).ok).toBe(true)
+        expect((await client.importBackup(createSeedBackup({ characterCount: 3 }))).ok).toBe(true)
+        await rm(path.join(server.cwd, 'freeze-clock'))
+
+        const snapshots = (await (await client.fetch('/api/db/snapshots')).json()).snapshots
+        expect(snapshots).toHaveLength(2)
+        const characterCounts = await Promise.all(snapshots.map(async (s: { key: string }) => {
+            const db = await utils.decodeRisuSave(readDiskValue(server.cwd, s.key)!) as { characters: unknown[] }
+            return db.characters.length
+        }))
+        expect(characterCounts.sort()).toEqual([1, 2])
     })
 
     test('uses the newest persisted snapshot as cooldown anchor after server boot', async () => {
