@@ -1,4 +1,5 @@
 import type { folder } from './storage/database.svelte'
+import { isDeactivatedSystemFolder } from './deactivatedCharacterFolders'
 
 export type CharacterOrderEntry = string | folder
 export type CharacterFavoriteIds = ReadonlySet<string>
@@ -8,6 +9,8 @@ function folderHasFavoriteCharacter(entry: folder, favoriteIds: CharacterFavorit
 }
 
 function entryIsFavorite(entry: CharacterOrderEntry, favoriteIds: CharacterFavoriteIds): boolean {
+    // The idle-age folders stay at the bottom: never favorites.
+    if (isDeactivatedSystemFolder(entry)) return false
     return typeof entry === 'string'
         ? favoriteIds.has(entry)
         : !!entry.favorite || folderHasFavoriteCharacter(entry, favoriteIds)
@@ -51,7 +54,7 @@ export function normalizeCharacterFavoriteOrder(
 ): CharacterOrderEntry[] {
     let childOrderChanged = false
     const withPinnedChildren = order.map((entry) => {
-        if (typeof entry === 'string') return entry
+        if (typeof entry === 'string' || isDeactivatedSystemFolder(entry)) return entry
         const data = stableFavoritePartition(entry.data, (id) => favoriteIds.has(id))
         if (sameEntries(data, entry.data)) return entry
         childOrderChanged = true
@@ -107,6 +110,9 @@ export function promoteRecentlyViewedCharacter(
 
         const characterIndex = entry.data.indexOf(characterId)
         if (characterIndex === -1) continue
+        // Recency never lifts an idle-age folder; reactivation takes the card
+        // out first (placeReactivatedCharacter) and checkCharOrder the rest.
+        if (isDeactivatedSystemFolder(entry)) return normalized
 
         const nextData = moveToPartitionStart(
             entry.data,
@@ -143,6 +149,7 @@ export function promoteCharacterFolder(
     const folderIndex = normalized.findIndex((entry) => typeof entry !== 'string' && entry.id === folderId)
     if (folderIndex === -1) return normalized
     const entry = normalized[folderIndex]
+    if (isDeactivatedSystemFolder(entry)) return normalized
     const next = moveToPartitionStart(
         normalized,
         folderIndex,

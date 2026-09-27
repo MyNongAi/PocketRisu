@@ -326,6 +326,7 @@ export const helpEn = {
         hideLeftBarCollapseButton: "Hide the toggle button that collapses the left character grid bar on narrow screens (under 400px).",
         hideRecentChats: "Hide the recent-chats list shown in the sidebar while no character is selected.",
         hideDeactivatedCharacters: "Remove deactivated characters from the sidebar rail instead of showing them dimmed. They stay listed in the character manager and the storage dashboard.",
+        groupDeactivatedCharacters: "Gather deactivated characters that are not in one of your folders into folders at the very bottom of the character list, by how long each has gone unused: **Inactive 7d** (less than 15 days, including characters you deactivate yourself right after using them), **15d** (15-29 days), **30d** (30-59 days) and **60d+** (60 days or more, or never used). Characters move on to older folders as time passes, never back. A deactivated character inside one of your folders stays there. A folder whose characters are all deactivated moves down as a whole, just above these folders, and comes back to the top with the character you open from it. The age folders start closed and cannot be renamed, deleted or dragged into. Turn this off to release their characters at the end of the list; your folders then stay where they are.",
         loreBookDepth:
             "Number of previous messages to scan for lorebook activation keywords. `0` disables scanning; higher values can find older keywords but may activate unnecessary lore. (0-20)",
         loreBookToken:

@@ -1654,6 +1654,10 @@ export interface Database{
     // Hide deactivated characters from the character lists (the storage
     // dashboard still lists them).
     nodeOnlyHideArchivedCharacters?:boolean
+    // Gather loose deactivated characters into the idle-age system folders at
+    // the bottom of characterOrder, and move fully deactivated folders just
+    // above them (src/ts/deactivatedCharacterFolders.ts). undefined = on.
+    nodeOnlyGroupDeactivatedCharacters?:boolean
     // Characters hidden from the sidebar rail (display only, no data impact;
     // the character manager still lists them). chaIds, kept at DB level so
     // the flag survives deactivation and never rides along in .charx exports.
@@ -2160,6 +2164,9 @@ export interface folder{
     // 'name'. Missing → 'image' when imgFile is set, else 'icon'.
     nodeOnlyDisplay?:FolderDisplayMode
     nodeOnlyIcon?:string
+    /** System folder maintained by checkCharOrder ('deactivated': the idle-age
+     * buckets at the bottom of the list). Never edited, dragged into or favorited. */
+    nodeOnlySystem?:'deactivated'
 }
 
 export type FolderDisplayMode = 'icon' | 'image' | 'name'

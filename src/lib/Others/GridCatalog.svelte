@@ -17,6 +17,7 @@
     import { exportChar } from "src/ts/characterCards";
     import { alertConfirm, alertSelect } from "src/ts/alert";
     import { isFolderEntry, moveCharacterToFolder, setHidden } from "src/ts/characterOrder";
+    import { isDeactivatedSystemFolder } from "src/ts/deactivatedCharacterFolders";
     import MobileCharacters from "../Mobile/MobileCharacters.svelte";
     import { getCharacterAssetCount } from "src/ts/gui/characterAssetCount";
     import { resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
@@ -53,7 +54,8 @@
     }
 
     async function moveToFolderPrompt(chaId:string){
-        const folders = DBState.db.characterOrder.filter(isFolderEntry)
+        // The idle-age folders of deactivated characters are filled automatically, never by hand.
+        const folders = DBState.db.characterOrder.filter(isFolderEntry).filter((entry) => !isDeactivatedSystemFolder(entry))
         const options = [...folders.map((folder) => folder.name), language.noFolder, language.cancel]
         const selected = Number.parseInt(await alertSelect(options))
         if(!Number.isInteger(selected) || selected >= options.length - 1) return

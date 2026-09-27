@@ -191,7 +191,7 @@
         { "file": "src/ts/characterRecentOrder.ts", "contains": "promoteDepartedCharacter" },
         { "file": "src/ts/characters.ts", "contains": "recordCurrentCharacterDeparture" },
         { "file": "src/ts/characterOrder.ts", "contains": "dissolveSingletonFolders" },
-        { "file": "src/ts/globalApi.svelte.ts", "contains": "const ordered = new Set<string>()" },
+        { "file": "src/ts/characterOrderCheck.ts", "contains": "const ordered = new Set<string>()" },
         { "file": "src/ts/globalApi.svelte.ts", "contains": "if (!supportsPatchSync)" },
         { "file": "src/lib/CharacterManager/CharacterOrderList.svelte", "contains": "Collapsed folders must not mount rows or request thumbnails." },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "즐겨찾기 (맨위로)" }
@@ -399,6 +399,53 @@
         "src/ts/characterAutoArchivePolicy.test.ts",
         "src/ts/gui/characterCatalogMetrics.test.ts",
         "src/ts/gui/characterAssetCount.test.ts"
+      ]
+    },
+    {
+      "id": "CATALOG-DEACTIVATED-FOLDERS",
+      "title": "비활성 캐릭터 기간별 폴더와 비활성 폴더 구역",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/deactivatedCharacterFolders.ts",
+        "src/ts/characterOrderCheck.ts",
+        "src/ts/deactivatedFolderRefresh.ts",
+        "src/ts/characterArchive.ts",
+        "src/ts/storage/risuSave.ts",
+        "src/lib/SideBars/Sidebar.svelte",
+        "src/lib/SideBars/sidebarDrag.ts",
+        "src/lib/CharacterManager/CharacterOrderList.svelte",
+        "src/lib/CharacterManager/CharacterManager.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/deactivatedCharacterFolders.ts", "contains": "nodeonly-deactivated-60d" },
+        { "file": "src/ts/deactivatedCharacterFolders.ts", "contains": "const floor = floors.get(id) ?? computed" },
+        { "file": "src/ts/deactivatedCharacterFolders.ts", "contains": "if (isFullyDeactivatedFolder(entry, isDeactivated)) zone.push(entry)" },
+        { "file": "src/ts/characterOrderCheck.ts", "contains": "arrangeDeactivatedFolders" },
+        { "file": "src/ts/characterOrderCheck.ts", "contains": "if (!isEqual(next, currentOrder))" },
+        { "file": "src/ts/characterOrder.ts", "contains": "isDeactivatedSystemFolder" },
+        { "file": "src/ts/characterRecentOrder.ts", "contains": "isDeactivatedSystemFolder" },
+        { "file": "src/ts/characterArchive.ts", "contains": "placeReactivatedCharacter" },
+        { "file": "src/ts/characterArchive.ts", "contains": "if (selectedIndex === idx) selectedCharID.set(-1)" },
+        { "file": "src/ts/bootstrap.ts", "contains": "scheduleDeactivatedFolderRefresh" },
+        { "file": "src/ts/storage/risuSave.ts", "contains": "diffCompactRootArray" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "deactivatedFolderGlyph" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "railFolderView(" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "railFolderMembers(" },
+        { "file": "src/lib/SideBars/sidebarDrag.ts", "contains": "isSystemFolderId" },
+        { "file": "src/lib/CharacterManager/CharacterOrderList.svelte", "contains": "isManagerFolderOpen" },
+        { "file": "src/lib/CharacterManager/CharacterOrderList.svelte", "contains": "systemFolderRows" },
+        { "file": "src/lib/CharacterManager/CharacterManager.svelte", "contains": "canMoveOrderEntry" },
+        { "file": "src/ts/setting/accessibilitySettingsData.ts", "contains": "acc.nodeOnlyGroupDeactivatedCharacters" }
+      ],
+      "regressionTests": [
+        "src/ts/deactivatedCharacterFolders.test.ts",
+        "src/ts/characterOrderCheck.test.ts",
+        "src/ts/storage/risuSaveCompactOrder.test.ts",
+        "src/ts/characterArchive.test.ts",
+        "src/ts/deactivatedFolderRefresh.test.ts",
+        "src/ts/characterOrder.test.ts",
+        "src/ts/characterRecentOrder.test.ts",
+        "src/lib/SideBars/sidebarDrag.test.ts"
       ]
     },
     {

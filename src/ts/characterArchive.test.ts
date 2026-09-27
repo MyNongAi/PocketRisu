@@ -1,4 +1,4 @@
-import { describe, test, expect, vi, beforeEach } from 'vitest'
+import { describe, test, expect, vi, beforeEach, afterEach } from 'vitest'
 import { get } from 'svelte/store'
 
 // Deactivate → activate before the deactivation's save reached the server:
@@ -31,10 +31,11 @@ const changeChar = vi.fn()
 const alertConfirm = vi.fn(async (..._args: unknown[]) => true)
 const alertError = vi.fn()
 const promoteRecentlyViewedCharacter = vi.fn((order: unknown, _chaId?: string, _favoriteIds?: Set<string>) => order)
+const checkCharOrder = vi.fn()
 const state: { db: any } = { db: null }
 
 vi.mock('./globalApi.svelte', () => ({
-    checkCharOrder: () => {},
+    checkCharOrder: () => checkCharOrder(),
     flushSaves: () => flushSaves(),
     forageStorage: { get realStorage() { return storage } },
     requestImmediateSave: () => requestImmediateSave(),
@@ -61,7 +62,8 @@ vi.mock('./storage/chatStorage', () => ({ convertStubsToPlaceholders: (chats: an
 vi.mock('./storage/nodeStorage', () => ({ CharacterArchiveError }))
 vi.mock('./gui/characterAssetCount', () => ({ getCharacterAssetCount: () => 1 }))
 vi.mock('./gui/characterCatalogMetrics', () => ({ exactCharacterDefinitionFingerprint: () => 'fp' }))
-vi.mock('./characterRecentOrder', () => ({
+vi.mock('./characterRecentOrder', async (importOriginal) => ({
+    ...await importOriginal<typeof import('./characterRecentOrder')>(),
     promoteRecentlyViewedCharacter: (...args: Parameters<typeof promoteRecentlyViewedCharacter>) => promoteRecentlyViewedCharacter(...args),
 }))
 vi.mock('src/lang', () => ({
@@ -393,5 +395,97 @@ describe('trash keeps the folder', () => {
         const byId = Object.fromEntries(state.db.nodeOnlyArchivedCharacters.map((s: any) => [s.chaId, s]))
         expect(byId.a.trashedFromFolder).toBeUndefined()
         expect(byId.b.trashedFromFolder).toBe('F')
+    })
+})
+
+const { applyCharacterOrderCheck } = await import('./characterOrderCheck')
+const { DEACTIVATED_FOLDER_IDS } = await import('./deactivatedCharacterFolders')
+const actual = await vi.importActual<typeof import('./characterRecentOrder')>('./characterRecentOrder')
+
+describe('idle-age folders on the real deactivation and reactivation paths', () => {
+    const DAY = 24 * 60 * 60 * 1000
+    const card = (chaId: string, extra: Record<string, unknown> = {}) => ({ chaId, name: chaId, chats: [], ...extra })
+    const archivedStub = (chaId: string, idleDays: number) => ({ chaId, name: chaId, archivedAt: 1, lastInteraction: Date.now() - idleDays * DAY })
+    const age = (days: 7 | 15 | 30 | 60, data: string[]) => expect.objectContaining({ id: DEACTIVATED_FOLDER_IDS[days], data })
+    // Departures the real deselectCharacter would record (it promotes that card).
+    let departures: (string | undefined)[] = []
+
+    beforeEach(() => {
+        departures = []
+        checkCharOrder.mockImplementation(() => applyCharacterOrderCheck(state.db))
+        promoteRecentlyViewedCharacter.mockImplementation(actual.promoteRecentlyViewedCharacter as any)
+        deselectCharacter.mockImplementation(() => {
+            const departed = state.db.characters[get(selectedCharID)]?.chaId
+            departures.push(departed)
+            if (departed) state.db.characterOrder = actual.promoteRecentlyViewedCharacter(state.db.characterOrder, departed)
+            selectedCharID.set(-1)
+        })
+    })
+    afterEach(() => {
+        checkCharOrder.mockImplementation(() => {})
+        promoteRecentlyViewedCharacter.mockImplementation((order) => order)
+        deselectCharacter.mockImplementation(() => {})
+        selectedCharID.set(-1)
+    })
+
+    test('deactivating the open character promotes no other card (the next one used to rise)', async () => {
+        state.db = { characters: [card('a'), card('b'), card('c')], characterOrder: ['c', 'a', 'b'], nodeOnlyArchivedCharacters: [] }
+        selectedCharID.set(0)
+        storage.archiveCharacter.mockResolvedValueOnce(archivedStub('a', 1))
+        expect(await archiveCharacter(0, { skipConfirm: true })).toBe(true)
+        expect(departures).toEqual([undefined])
+        expect(get(selectedCharID)).toBe(-1)
+        expect(state.db.characterOrder).toEqual(['c', 'b', age(7, ['a'])])
+    })
+
+    test('bulk deactivation of the open character promotes no other card either', async () => {
+        state.db = { characters: [card('a'), card('b'), card('c')], characterOrder: ['c', 'a', 'b'], nodeOnlyArchivedCharacters: [] }
+        selectedCharID.set(0)
+        storage.archiveCharacters.mockResolvedValueOnce([{ chaId: 'a', ok: true, stub: archivedStub('a', 1) }])
+        expect(await archiveCharacters(['a'])).toMatchObject({ done: 1 })
+        expect(departures).toEqual([undefined])
+        expect(state.db.characterOrder).toEqual(['c', 'b', age(7, ['a'])])
+    })
+
+    test('bulk deactivation ends in the right place: loose cards by age, a folder that became fully deactivated in the zone', async () => {
+        state.db = {
+            characters: [card('a'), card('b'), card('c'), card('d')],
+            characterOrder: ['a', { id: 'F', name: 'F', color: 'red', data: ['b', 'c'] }, 'd'],
+            nodeOnlyArchivedCharacters: [],
+        }
+        storage.archiveCharacters.mockResolvedValueOnce([
+            { chaId: 'a', ok: true, stub: archivedStub('a', 20) },
+            { chaId: 'b', ok: true, stub: archivedStub('b', 1) },
+            { chaId: 'c', ok: true, stub: archivedStub('c', 70) },
+        ])
+        expect(await archiveCharacters(['a', 'b', 'c'])).toMatchObject({ done: 3 })
+        expect(checkCharOrder).toHaveBeenCalledTimes(1)
+        expect(state.db.characterOrder).toEqual(['d', { id: 'F', name: 'F', color: 'red', data: ['b', 'c'] }, age(15, ['a'])])
+    })
+
+    test('reactivating a card from a fully deactivated folder lifts the whole folder to the top', async () => {
+        const box = { id: 'box', name: 'Box', color: 'blue', data: ['s1', 's2'] }
+        state.db = {
+            characters: [card('fav', { favorite: true }), card('a')],
+            characterOrder: ['fav', 'a', box, 'x'],
+            nodeOnlyArchivedCharacters: [archivedStub('s1', 20), archivedStub('s2', 3), archivedStub('x', 40)],
+        }
+        applyCharacterOrderCheck(state.db)
+        expect(state.db.characterOrder).toEqual(['fav', 'a', box, age(30, ['x'])])
+        storage.activateCharacter.mockResolvedValueOnce(card('s1'))
+        expect(await activateCharacter('s1')).toBe(2)
+        expect(state.db.characterOrder).toEqual(['fav', box, 'a', age(30, ['x'])])
+    })
+
+    test('reactivating a loose card takes it out of its age folder to the top', async () => {
+        state.db = {
+            characters: [card('fav', { favorite: true }), card('a')],
+            characterOrder: ['fav', 'a', 's', 't'],
+            nodeOnlyArchivedCharacters: [archivedStub('s', 20), archivedStub('t', 21)],
+        }
+        applyCharacterOrderCheck(state.db)
+        storage.activateCharacter.mockResolvedValueOnce(card('s'))
+        await activateCharacter('s')
+        expect(state.db.characterOrder).toEqual(['fav', 's', 'a', age(15, ['t'])])
     })
 })

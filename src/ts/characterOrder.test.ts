@@ -150,3 +150,19 @@ describe('characterOrder', () => {
         expect(pruneHiddenCharacterIds(['a', 'a', 'zz', 3 as unknown as string], new Set(['a']))).toEqual(['a'])
     })
 })
+
+describe('deactivated-character system folders', () => {
+    const system = (data: string[]) => ({ id: 'nodeonly-deactivated-7d', name: 'Inactive 7d', color: '', data, nodeOnlySystem: 'deactivated' as const })
+
+    it('survive at one member and are dropped only when empty', () => {
+        expect(dissolveSingletonFolders(['a', system(['s'])])).toEqual(['a', system(['s'])])
+        expect(dissolveSingletonFolders(['a', system([])])).toEqual(['a'])
+    })
+
+    it('are not dissolved by the helpers that call dissolveSingletonFolders', () => {
+        const order: OrderEntry[] = ['a', 'b', system(['s'])]
+        expect(moveTopLevelEntry(order, 'a', 1)).toEqual(['b', 'a', system(['s'])])
+        expect(removeCharacter(order, 'a')).toEqual(['b', system(['s'])])
+        expect(moveCharacterToFolder(order, 'a', undefined)).toEqual(['b', system(['s']), 'a'])
+    })
+})

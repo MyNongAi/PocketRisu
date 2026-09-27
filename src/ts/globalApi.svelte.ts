@@ -34,8 +34,7 @@ import { startObserveDom } from "./observer.svelte";
 import { updateGuisize } from "./gui/guisize";
 import { deepTouch } from "./gui/deepTouch.svelte";
 import { updateLorebooks, deselectCharacter } from "./characters";
-import { normalizeCharacterFavoriteOrder } from './characterRecentOrder'
-import { dissolveSingletonFolders, pruneHiddenCharacterIds, type OrderEntry } from "./characterOrder";
+import { applyCharacterOrderCheck, type CharacterOrderCheckOptions } from "./characterOrderCheck";
 import { mergeServerDbWithTrackedLocalChanges, withTrackedCharacters, hasAmbiguousCharacterIds } from "./storage/rebaseMerge";
 import { generationStates, chatGenKey, notifyDatabaseRebased, abortGeneration } from "./process/generationState";
 
@@ -2556,104 +2555,13 @@ export function replaceDbResources(db: Database, replacer: { [key: string]: stri
 
 /**
  * Checks and updates the character order in the database.
- * Ensures that all characters are properly ordered and removes any invalid entries.
+ * Ensures that all characters are properly ordered and removes any invalid entries,
+ * and keeps loose deactivated characters in the idle-age folders at the bottom
+ * (src/ts/characterOrderCheck.ts). Writes to the database only when something
+ * changed, so an idle run never schedules a save. `now` is for tests.
  */
-export function checkCharOrder() {
-    let db = getDatabase()
-    db.characterOrder = db.characterOrder ?? []
-    const previousOrder: OrderEntry[] = db.characterOrder.flatMap((entry): OrderEntry[] => {
-        if (typeof entry === 'string') return [entry]
-        if (!entry) return []
-        return [{ ...entry, data: [...entry.data] }]
-    })
-    const ordered = new Set<string>()
-    for (const folder of db.characterOrder) {
-        if (typeof (folder) !== 'string' && folder) {
-            for (const f of folder.data) {
-                ordered.add(f)
-            }
-        }
-        if (typeof (folder) === 'string') {
-            ordered.add(folder)
-        }
-    }
-
-    const charIdSet = new Set<string>()
-
-    for (let i = 0; i < db.characters.length; i++) {
-        const char = db.characters[i]
-        const charId = char.chaId
-        if (!char.trashTime) {
-            charIdSet.add(charId)
-        }
-        if (!ordered.has(charId)) {
-            if (charId !== '§temp' && charId !== '§playground' && !char.trashTime) {
-                db.characterOrder.push(charId)
-                ordered.add(charId)
-            }
-        }
-    }
-    // Deactivated characters are not in db.characters but keep their place
-    // (and folder) in the order list so the sidebar can render them dimmed.
-    for (const stub of db.nodeOnlyArchivedCharacters ?? []) {
-        if (!stub?.chaId) continue
-        // Trashed stubs (deactivated + trashedAt) leave the order like trashed characters.
-        if (stub.trashedAt) continue
-        charIdSet.add(stub.chaId)
-        if (!ordered.has(stub.chaId)) {
-            db.characterOrder.push(stub.chaId)
-            ordered.add(stub.chaId)
-        }
-    }
-
-
-    for (let i = 0; i < db.characterOrder.length; i++) {
-        const data = db.characterOrder[i]
-        if (typeof (data) !== 'string') {
-            if (!data) {
-                db.characterOrder.splice(i, 1)
-                i--;
-                continue
-            }
-            // Empty folders are kept: the character manager creates a folder
-            // first and fills it afterwards.
-            for (let i2 = 0; i2 < data.data.length; i2++) {
-                const data2 = data.data[i2]
-                if (!charIdSet.has(data2)) {
-                    data.data.splice(i2, 1)
-                    i2--;
-                }
-            }
-            db.characterOrder[i] = data
-        }
-        else {
-            if (!charIdSet.has(data)) {
-                db.characterOrder.splice(i, 1)
-                i--;
-            }
-        }
-    }
-
-    db.characterOrder = normalizeCharacterFavoriteOrder(
-        dissolveSingletonFolders(db.characterOrder, previousOrder),
-        new Set(db.characters.filter((character) => character.favorite && !character.trashTime).map((character) => character.chaId)),
-    )
-
-    // Sidebar-hidden ids: drop only ids that exist nowhere any more (trashed
-    // characters keep their flag so restoring them restores the hidden state).
-    if (Array.isArray(db.nodeOnlyHiddenCharacterIds) && db.nodeOnlyHiddenCharacterIds.length > 0) {
-        const known = new Set<string>(charIdSet)
-        for (const char of db.characters) {
-            if (char?.chaId) known.add(char.chaId)
-        }
-        for (const stub of db.nodeOnlyArchivedCharacters ?? []) {
-            if (stub?.chaId) known.add(stub.chaId)
-        }
-        const pruned = pruneHiddenCharacterIds(db.nodeOnlyHiddenCharacterIds, known)
-        if (pruned.length !== db.nodeOnlyHiddenCharacterIds.length) {
-            db.nodeOnlyHiddenCharacterIds = pruned
-        }
-    }
+export function checkCharOrder(options: CharacterOrderCheckOptions = {}) {
+    applyCharacterOrderCheck(getDatabase(), options)
 }
 
 /**

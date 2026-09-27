@@ -124,3 +124,28 @@ describe('applySidebarItemDrop', () => {
         )).toBeNull()
     })
 })
+
+describe('deactivated-character system folders', () => {
+    const system = (data: string[]) => makeFolder('nodeonly-deactivated-7d', data, { nodeOnlySystem: 'deactivated' })
+    const order: SidebarOrder = ['alpha', makeFolder('box', ['beta', 'gamma']), system(['stub'])]
+
+    it('refuse characters dragged into them', () => {
+        expect(moveSidebarItem(order, { kind: 'character', id: 'alpha' }, {
+            kind: 'folder', folderId: 'nodeonly-deactivated-7d', index: 0,
+        })).toBeNull()
+        expect(applySidebarItemDrop(order, { kind: 'character', id: 'alpha' }, {
+            kind: 'folder', id: 'nodeonly-deactivated-7d',
+        }, createFolder)).toBeNull()
+    })
+
+    it('cannot be dragged themselves, nor can their members', () => {
+        expect(moveSidebarItem(order, { kind: 'folder', id: 'nodeonly-deactivated-7d' }, { kind: 'root', index: 0 })).toBeNull()
+        expect(moveSidebarItem(order, { kind: 'character', id: 'stub' }, { kind: 'root', index: 0 })).toBeNull()
+        expect(applySidebarItemDrop(order, { kind: 'character', id: 'stub' }, { kind: 'character', id: 'alpha' }, createFolder)).toBeNull()
+    })
+
+    it('keep ordinary drags working next to them', () => {
+        expect(moveSidebarItem(order, { kind: 'character', id: 'alpha' }, { kind: 'folder', folderId: 'box', index: 2 }))
+            .toEqual([makeFolder('box', ['beta', 'gamma', 'alpha']), system(['stub'])])
+    })
+})

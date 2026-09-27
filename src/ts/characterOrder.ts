@@ -8,6 +8,7 @@
  * and run `checkCharOrder()` afterwards.
  */
 import type { folder } from './storage/database.svelte'
+import { isDeactivatedSystemFolder } from './deactivatedCharacterFolders'
 
 export type OrderEntry = string | folder
 
@@ -56,7 +57,9 @@ function cloneOrder(order: OrderEntry[]): OrderEntry[] {
  * Dissolve folders containing exactly one character. A newly-created empty
  * folder remains as an intentional drop target, while a folder that lost its
  * last member is removed. The optional previous order distinguishes those two
- * cases without storing another flag in the database.
+ * cases without storing another flag in the database. The idle-age folders
+ * (deactivatedCharacterFolders.ts) are kept at any size above zero and dropped
+ * when empty.
  */
 export function dissolveSingletonFolders(order: OrderEntry[], previous: OrderEntry[] = order): OrderEntry[] {
     const previousFolderSizes = new Map<string, number>()
@@ -65,7 +68,9 @@ export function dissolveSingletonFolders(order: OrderEntry[], previous: OrderEnt
     }
     const out: OrderEntry[] = []
     for (const entry of order) {
-        if (isFolderEntry(entry) && entry.data.length === 1) {
+        if (isFolderEntry(entry) && isDeactivatedSystemFolder(entry)) {
+            if (entry.data.length > 0) out.push(cloneFolder(entry))
+        } else if (isFolderEntry(entry) && entry.data.length === 1) {
             out.push(entry.data[0])
         } else if (isFolderEntry(entry) && entry.data.length === 0 && (previousFolderSizes.get(entry.id) ?? 0) > 0) {
             continue

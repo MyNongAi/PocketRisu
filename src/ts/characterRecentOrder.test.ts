@@ -150,3 +150,23 @@ describe('character favorites', () => {
         ])
     })
 })
+
+describe('deactivated-character system folders', () => {
+    const system = (data: string[]): folder => ({ id: 'nodeonly-deactivated-60d', name: 'x', color: '', data, nodeOnlySystem: 'deactivated' })
+
+    it('are never promoted by recency or imports', () => {
+        const order = ['a', 'b', system(['s', 'late'])]
+        expect(promoteRecentlyViewedCharacter(order, 'late')).toBe(order)
+        expect(promoteDepartedCharacter(order, 'late', 'a')).toBe(order)
+        expect(promoteNewlyImportedCharacter(order, 's')).toBe(order)
+        expect(promoteCharacterFolder(order, 'nodeonly-deactivated-60d')).toBe(order)
+    })
+
+    it('are never treated as favorites, even when flagged or holding a favorite id', () => {
+        const flagged = { ...system(['s']), favorite: true }
+        const order = ['a', flagged]
+        expect(normalizeCharacterFavoriteOrder(order, new Set(['s']))).toBe(order)
+        expect(normalizeCharacterFavoriteOrder(['a', 'fav', system(['s'])], new Set(['fav', 's'])))
+            .toEqual(['fav', 'a', system(['s'])])
+    })
+})

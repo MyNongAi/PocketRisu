@@ -26,6 +26,7 @@ import { v4 } from "uuid"
 import { getCharacterAssetCount } from "./gui/characterAssetCount"
 import { exactCharacterDefinitionFingerprint } from "./gui/characterCatalogMetrics"
 import { promoteRecentlyViewedCharacter } from "./characterRecentOrder"
+import { placeReactivatedCharacter } from "./deactivatedCharacterFolders"
 
 export { CharacterArchiveError }
 
@@ -155,6 +156,10 @@ async function archiveCharacterOnce(index: number, arg: ArchiveOptions): Promise
         if (arg.automatic) stub.autoDeactivatedAt = Date.now()
         db.nodeOnlyArchivedCharacters.push(stub)
         const selectedIndex = get(selectedCharID)
+        // Let go of the open character before the splice: deselecting records
+        // the departure of whatever sits at the selected index, which after
+        // the splice is the next card, and would promote that card instead.
+        if (selectedIndex === idx) selectedCharID.set(-1)
         db.characters.splice(idx, 1)
         checkCharOrder()
         requiresFullEncoderReload.state = true
@@ -228,6 +233,8 @@ function applyArchived(successes: { chaId: string; stub: any }[], trash: boolean
         moved.add(chaId)
     }
     if (moved.size === 0) return 0
+    // As in a single deactivation: never let deselecting read a shifted index.
+    if (selectedChaId && moved.has(selectedChaId)) selectedCharID.set(-1)
     for (let i = db.characters.length - 1; i >= 0; i--) {
         if (moved.has(db.characters[i]?.chaId)) db.characters.splice(i, 1)
     }
@@ -366,13 +373,15 @@ export async function activateCharacter(chaId: string): Promise<number> {
     // Opening a normal character records recency when it is left. Reactivation
     // is the one exception: its restored card (or containing folder) must be
     // visible immediately instead of remaining buried in the archived slot.
+    // A card in an idle-age folder first moves to the top level; one inside a
+    // regular folder stays there and the whole folder rises with it.
     const favoriteIds = new Set(
         db.characters
             .filter((candidate) => candidate?.favorite && !candidate.trashTime)
             .map((candidate) => candidate.chaId),
     )
     db.characterOrder = promoteRecentlyViewedCharacter(
-        db.characterOrder,
+        placeReactivatedCharacter(db.characterOrder ?? [], restored.chaId),
         restored.chaId,
         favoriteIds,
     )

@@ -6,7 +6,7 @@
     // layout is read back from the DOM and the whole order array is rebuilt
     // (src/ts/characterOrder.ts), mirroring FolderedList's approach.
     import type { Snippet } from "svelte";
-    import { ChevronDownIcon, ChevronRightIcon, EllipsisVerticalIcon, FolderIcon } from "@lucide/svelte";
+    import { ArchiveIcon, ChevronDownIcon, ChevronRightIcon, EllipsisVerticalIcon, FolderIcon } from "@lucide/svelte";
     import ShSortableList from "src/lib/UI/GUI/ShSortableList.svelte";
     import ShDropdownMenu from "src/lib/UI/GUI/ShDropdownMenu.svelte";
     import ShDropdownMenuTrigger from "src/lib/UI/GUI/ShDropdownMenuTrigger.svelte";
@@ -17,11 +17,16 @@
     import { folderDisplayMode, type folder } from "src/ts/storage/database.svelte";
     import { language } from "src/lang";
     import { folderIconComponent } from "./folderIcons";
+    import {
+        DEACTIVATED_FOLDER_PAGE_SIZE, deactivatedFolderDisplayDays, isDeactivatedSystemFolder, isManagerFolderOpen,
+    } from "src/ts/deactivatedCharacterFolders";
 
     interface Props {
         order: OrderEntry[];
         entries: Map<string, ManagerEntry>;
         visible: (entry: ManagerEntry) => boolean;
+        /** A search or filter narrows the list: folders holding a match show open. */
+        narrowing?: boolean;
         dragDisabled?: boolean;
         reversed?: boolean;
         selectable?: boolean;
@@ -37,7 +42,7 @@
     }
 
     let {
-        order, entries, visible, dragDisabled = false, reversed = false, selectable = false, selectedIds,
+        order, entries, visible, narrowing = false, dragDisabled = false, reversed = false, selectable = false, selectedIds,
         activeChaId, similarityCounts = new Map(), duplicateCounts = null, onOpen, onToggleSelect, onLayoutChange, rowMenu, folderMenu,
     }: Props = $props();
 
@@ -55,6 +60,29 @@
         } catch {
             return new Set();
         }
+    }
+
+    // Regular folders start open and remember being collapsed; the idle-age
+    // folders (up to ~1,000 rows) start collapsed and remember being opened.
+    // The same stored set holds both, read inverted. A search or filter opens
+    // the idle-age and fully deactivated folders with matches, storing nothing.
+    function isFolderCollapsed(entry: folder, visibleCount: number): boolean {
+        return !isManagerFolderOpen(entry, collapsed.has(entry.id), narrowing, visibleCount, (id) => !!entries.get(id)?.archived);
+    }
+
+    function systemFolderLabel(entry: folder): string {
+        return language.deactivatedFolderName(deactivatedFolderDisplayDays(entry));
+    }
+
+    // An open idle-age folder mounts only its visible rows, a page at a time.
+    let systemFolderShown = $state<Record<string, number>>({});
+    function systemFolderRows(entry: folder): string[] {
+        return entry.data
+            .filter((id) => { const e = entries.get(id); return !!e && visible(e); })
+            .slice(0, systemFolderShown[entry.id] ?? DEACTIVATED_FOLDER_PAGE_SIZE);
+    }
+    function showMoreSystemFolderRows(entry: folder) {
+        systemFolderShown[entry.id] = (systemFolderShown[entry.id] ?? DEACTIVATED_FOLDER_PAGE_SIZE) + DEACTIVATED_FOLDER_PAGE_SIZE;
     }
 
     function toggleCollapsed(id: string) {
@@ -90,6 +118,9 @@
     function onMove(evt: { dragged: HTMLElement; to: HTMLElement; related: HTMLElement }) {
         if (evt.related?.className?.indexOf?.('no-sort') !== -1) return false;
         if (evt.dragged.dataset.folderId !== undefined && evt.to.closest('[data-folder-container]')) return false;
+        // Nothing is dragged into or out of the idle-age folders;
+        // checkCharOrder files those characters itself.
+        if (evt.to.closest('[data-system-folder]') || evt.dragged.closest('[data-system-folder]')) return false;
         return true;
     }
 
@@ -105,7 +136,10 @@
             const folderId = child.dataset.folderId;
             if (folderId !== undefined) {
                 const data: string[] = [];
-                const container = child.querySelector<HTMLElement>('[data-folder-container] [data-risu-sortable-list]');
+                // An idle-age folder renders a page of its rows at most; it never takes drops.
+                const container = child.dataset.systemFolder === undefined
+                    ? child.querySelector<HTMLElement>('[data-folder-container] [data-risu-sortable-list]')
+                    : null;
                 if (container) {
                     container.querySelectorAll<HTMLElement>(':scope > [data-order-key], :scope > [data-sortable-key]').forEach((el) => {
                         const id = rowId(el);
@@ -142,10 +176,11 @@
 >
     {#each displayOrder as entry (entryKey(entry))}
         {#if isFolderEntry(entry)}
-            {@const isCollapsed = collapsed.has(entry.id)}
+            {@const isSystem = isDeactivatedSystemFolder(entry)}
             {@const count = folderVisibleCount(entry)}
-            {@const FolderGlyph = (folderDisplayMode(entry) === 'icon' ? folderIconComponent(entry.nodeOnlyIcon) : undefined) ?? FolderIcon}
-            <div data-order-key={`folder:${entry.id}`} data-folder-id={entry.id} data-sortable-no-scale
+            {@const isCollapsed = isFolderCollapsed(entry, count)}
+            {@const FolderGlyph = isSystem ? ArchiveIcon : ((folderDisplayMode(entry) === 'icon' ? folderIconComponent(entry.nodeOnlyIcon) : undefined) ?? FolderIcon)}
+            <div data-order-key={isSystem ? undefined : `folder:${entry.id}`} data-folder-id={entry.id} data-system-folder={isSystem ? entry.id : undefined} data-sortable-no-scale
                 class="rounded-md border border-darkborderc bg-darkbg">
                 <div class="flex items-center gap-2 px-2 py-2 text-textcolor cursor-pointer select-none"
                     role="button" tabindex="0"
@@ -154,9 +189,9 @@
                     {#if isCollapsed}<ChevronRightIcon size={16} class="shrink-0 text-textcolor2"/>{:else}<ChevronDownIcon size={16} class="shrink-0 text-textcolor2"/>{/if}
                     <span class="shrink-0 h-4 w-4 rounded-sm border border-darkborderc {folderColorClass[entry.color] ?? 'bg-bgcolor'}" title={entry.color || language.defaultLabel}></span>
                     <FolderGlyph size={16} class="shrink-0 text-textcolor2"/>
-                    <span class="truncate grow font-medium">{entry.name}</span>
+                    <span class="truncate grow font-medium">{isSystem ? systemFolderLabel(entry) : entry.name}</span>
                     <span class="text-xs text-textcolor2">{count}{count !== entry.data.length ? ` / ${entry.data.length}` : ''}</span>
-                    {#if folderMenu}
+                    {#if folderMenu && !isSystem}
                         <ShDropdownMenu>
                             <ShDropdownMenuTrigger>
                                 {#snippet child({ props })}
@@ -177,16 +212,22 @@
                     <div data-folder-container={entry.id}>
                         <ShSortableList
                             className="flex flex-col px-2 pb-2 gap-0.5 min-h-8"
-                            disabled={dragDisabled || reversed}
+                            disabled={dragDisabled || reversed || isSystem}
                             options={{ group: 'character-manager', onMove }}
                             onReorder={onDrop}
                         >
-                            {#each entry.data as chaId (chaId)}
+                            {#each isSystem ? systemFolderRows(entry) : entry.data as chaId (chaId)}
                                 {@render row(chaId, 'data-sortable-key')}
                             {:else}
                                 <div class="no-sort text-xs text-textcolor2 text-center py-1">{language.none}</div>
                             {/each}
                         </ShSortableList>
+                        {#if isSystem && systemFolderRows(entry).length < count}
+                            <button type="button" class="mx-2 mb-2 w-[calc(100%-1rem)] rounded-md border border-darkborderc py-1 text-xs text-textcolor2 risu-interactive-accent"
+                                onclick={() => showMoreSystemFolderRows(entry)}>
+                                {language.loadMore} (+{count - systemFolderRows(entry).length})
+                            </button>
+                        {/if}
                     </div>
                 {/if}
             </div>

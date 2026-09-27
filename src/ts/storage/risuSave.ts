@@ -843,6 +843,152 @@ export function diffArrayWithIdGuard(
     return ops
 }
 
+// Indexes (into `values`) of one longest strictly increasing subsequence.
+// O(n log n) patience sorting with predecessor links.
+function longestIncreasingSubsequence(values: readonly number[]): Set<number> {
+    const tails: number[] = []
+    const previous = new Array<number>(values.length).fill(-1)
+    for (let i = 0; i < values.length; i++) {
+        let low = 0
+        let high = tails.length
+        while (low < high) {
+            const mid = (low + high) >> 1
+            if (values[tails[mid]] < values[i]) low = mid + 1
+            else high = mid
+        }
+        if (low > 0) previous[i] = tails[low - 1]
+        tails[low] = i
+    }
+    const out = new Set<number>()
+    for (let i = tails.length > 0 ? tails[tails.length - 1] : -1; i !== -1; i = previous[i]) out.add(i)
+    return out
+}
+
+/**
+ * Keyed list diff: ops that turn `last` into `cur` at `path` when every item
+ * has a unique key. Items keep their place along a longest common run; the
+ * rest are removed (descending) and added at their final index (ascending),
+ * then each kept item that changed gets `diffItem`'s ops at its final index.
+ * Deleting or moving one entry therefore costs one or two ops instead of
+ * fast-json-patch's per-index cascade. Returns null when a key is missing or
+ * repeated (the caller falls back to a plain diff).
+ */
+export function diffKeyedArray(
+    path: string,
+    last: readonly any[],
+    cur: readonly any[],
+    keyOf: (item: any) => string | null,
+    diffItem: (before: any, after: any, itemPath: string) => any[],
+): any[] | null {
+    const lastKeys = last.map(keyOf)
+    const curKeys = cur.map(keyOf)
+    if (lastKeys.some((key) => key === null) || curKeys.some((key) => key === null)) return null
+    const lastIndex = new Map<string, number>()
+    for (let i = 0; i < lastKeys.length; i++) lastIndex.set(lastKeys[i]!, i)
+    if (lastIndex.size !== lastKeys.length || new Set(curKeys).size !== curKeys.length) return null
+
+    const sharedCur: number[] = []
+    const sharedLast: number[] = []
+    for (let j = 0; j < curKeys.length; j++) {
+        const i = lastIndex.get(curKeys[j]!)
+        if (i === undefined) continue
+        sharedCur.push(j)
+        sharedLast.push(i)
+    }
+    const stays = new Set<string>()
+    for (const s of longestIncreasingSubsequence(sharedLast)) stays.add(curKeys[sharedCur[s]]!)
+
+    const ops: any[] = []
+    for (let i = lastKeys.length - 1; i >= 0; i--) {
+        if (!stays.has(lastKeys[i]!)) ops.push({ op: 'remove', path: `${path}/${i}` })
+    }
+    for (let j = 0; j < curKeys.length; j++) {
+        if (!stays.has(curKeys[j]!)) ops.push({ op: 'add', path: `${path}/${j}`, value: cur[j] })
+    }
+    for (let j = 0; j < curKeys.length; j++) {
+        if (!stays.has(curKeys[j]!)) continue
+        for (const op of diffItem(last[lastIndex.get(curKeys[j]!)!], cur[j], `${path}/${j}`)) ops.push(op)
+    }
+    return ops
+}
+
+function prefixedCompare(compare: (a: any, b: any) => any[], before: any, after: any, path: string): any[] {
+    const out: any[] = []
+    for (const op of compare(before, after)) out.push({ ...op, path: `${path}${op.path}` })
+    return out
+}
+
+function jsonEqual(left: any, right: any): boolean {
+    try {
+        return JSON.stringify(left) === JSON.stringify(right)
+    } catch {
+        return false
+    }
+}
+
+// characterOrder: a mixed list of chaIds and folders. With 1,300 entries,
+// moving one id (deactivation gathers it into a folder at the bottom) made
+// fast-json-patch rewrite every later index — tens of KB per deactivation,
+// and the automatic sweep deactivates hundreds in a row.
+function characterOrderKey(entry: any): string | null {
+    if (typeof entry === 'string') return `c:${entry}`
+    if (entry && typeof entry === 'object' && typeof entry.id === 'string' && entry.id && Array.isArray(entry.data)) {
+        return `f:${entry.id}`
+    }
+    return null
+}
+
+function diffCharacterOrderEntry(compare: (a: any, b: any) => any[], before: any, after: any, itemPath: string): any[] {
+    if (typeof before === 'string' || jsonEqual(before, after)) return []
+    const { data: beforeData, ...beforeRest } = before
+    const { data: afterData, ...afterRest } = after
+    const ops = prefixedCompare(compare, beforeRest, afterRest, itemPath)
+    const dataOps = diffKeyedArray(`${itemPath}/data`, beforeData, afterData,
+        (id) => (typeof id === 'string' ? id : null), () => [])
+    if (dataOps) for (const op of dataOps) ops.push(op)
+    else ops.push({ op: 'replace', path: `${itemPath}/data`, value: afterData })
+    return ops
+}
+
+// Deactivated-character stubs, keyed by chaId: reactivating one from the
+// middle of ~1,200 stubs otherwise re-diffs every later stub (about 1 MB).
+function archivedStubKey(stub: any): string | null {
+    return stub && typeof stub === 'object' && typeof stub.chaId === 'string' && stub.chaId ? stub.chaId : null
+}
+
+const COMPACT_ROOT_ARRAYS: Record<string, {
+    keyOf: (item: any) => string | null
+    diffItem: (compare: (a: any, b: any) => any[], before: any, after: any, itemPath: string) => any[]
+}> = {
+    characterOrder: { keyOf: characterOrderKey, diffItem: diffCharacterOrderEntry },
+    nodeOnlyArchivedCharacters: {
+        keyOf: archivedStubKey,
+        diffItem: (compare, before, after, itemPath) => prefixedCompare(compare, before, after, itemPath),
+    },
+}
+
+/**
+ * Ops for a root key whose value is a large keyed list (see
+ * COMPACT_ROOT_ARRAYS), or null to use the generic diff. The result is never
+ * larger than replacing the whole value in one op.
+ */
+export function diffCompactRootArray(
+    compare: (a: any, b: any) => any[],
+    key: string,
+    before: any,
+    after: any,
+): any[] | null {
+    const spec = Object.hasOwn(COMPACT_ROOT_ARRAYS, key) ? COMPACT_ROOT_ARRAYS[key] : undefined
+    if (!spec || !Array.isArray(before) || !Array.isArray(after)) return null
+    const path = `/${key}`
+    const replace = [{ op: 'replace', path, value: after }]
+    const keyed = diffKeyedArray(path, before, after, spec.keyOf,
+        (itemBefore, itemAfter, itemPath) => spec.diffItem(compare, itemBefore, itemAfter, itemPath))
+    const candidate = keyed ?? prefixedCompare(compare, before, after, path)
+    if (candidate.length === 0) return candidate
+    return JSON.stringify(candidate).length <= JSON.stringify(replace).length ? candidate : replace
+}
+
 export type HashMismatchRemote = {
     serverHash?: string
     keyHashes?: Record<string, string>
@@ -1291,8 +1437,13 @@ export class RisuSavePatcher {
                 continue
             }
             removedRootKeys.delete(key)
-            const before = hadKey ? { [key]: lastRoot[key] } : {}
-            for (const p of compare(before, { [key]: normVal })) patch.push(p)
+            const compactOps = hadKey ? diffCompactRootArray(compare, key, lastRoot[key], normVal) : null
+            if (compactOps) {
+                for (const p of compactOps) patch.push(p)
+            } else {
+                const before = hadKey ? { [key]: lastRoot[key] } : {}
+                for (const p of compare(before, { [key]: normVal })) patch.push(p)
+            }
             this.hashBlocks[key] = calculateHash(normVal)
             this.lastRootKeyJsons.set(key, JSON.stringify(normVal))
             nextRoot[key] = normVal

@@ -7,6 +7,8 @@
 import type { SettingItem } from './types';
 import { scheduleAutoDeactivation } from '../characterAutoArchive';
 import { normalizeAutoDeactivateDays } from '../characterAutoArchivePolicy';
+import { isDeactivatedGroupingEnabled } from '../deactivatedCharacterFolders';
+import { checkCharOrder } from '../globalApi.svelte';
 import { isNodeServer } from '../platform';
 import { getCurrentChat, getDatabase, loadTogglesFromChat } from '../storage/database.svelte';
 
@@ -290,6 +292,20 @@ export const accessibilitySettingsItems: SettingItem[] = [
         keywords: ['deactivated', 'archived', 'hide', 'sidebar', 'character'],
     },
     {
+        id: 'acc.nodeOnlyGroupDeactivatedCharacters',
+        type: 'check',
+        labelKey: 'groupDeactivatedCharacters',
+        helpKey: 'groupDeactivatedCharacters',
+        // Undefined means on: existing databases get the folders without a stored flag.
+        getValue: (db) => isDeactivatedGroupingEnabled(db),
+        setValue: (db, value) => {
+            db.nodeOnlyGroupDeactivatedCharacters = !!value;
+        },
+        // Gather or release the folders right away instead of on the next list change.
+        onChange: () => checkCharOrder(),
+        keywords: ['deactivated', 'archived', 'folder', 'group', 'inactive', 'days', 'sidebar', 'character'],
+    },
+    {
         id: 'acc.nodeOnlyAutoDeactivateAfterDays',
         type: 'number',
         labelKey: 'autoDeactivateAfterDays',
@@ -422,6 +438,7 @@ export const accessibilityCharacterItems = pick([
     'acc.roundIcons',
     'acc.nodeOnlyHideRecentChats',
     'acc.nodeOnlyHideArchivedCharacters',
+    'acc.nodeOnlyGroupDeactivatedCharacters',
     'acc.nodeOnlyAutoDeactivateAfterDays',
 ]);
 

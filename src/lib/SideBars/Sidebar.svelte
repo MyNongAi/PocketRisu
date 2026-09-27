@@ -21,6 +21,7 @@
   } from "../../ts/stores.svelte";
     import { setDatabase, folderDisplayMode, type folder, type ArchivedCharacterStub, type FolderDisplayMode } from "../../ts/storage/database.svelte";
     import { promptActivateCharacter } from "../../ts/characterArchive";
+    import { DEACTIVATED_FOLDER_PAGE_SIZE, deactivatedCharacterIds, railFolderView, type DeactivatedFolderDays } from "../../ts/deactivatedCharacterFolders";
     import { ArchiveIcon } from "@lucide/svelte";
     import { DBState, openCharacterManager } from 'src/ts/stores.svelte';
     import { tooltipRight } from "src/ts/gui/tooltip";
@@ -146,8 +147,27 @@
   // because their full records no longer live in DBState.db.characters.
   type sortTypeArchived = { type:'archived',img:string,chaId:string,name:string,folderIndex?:number,sourceBadge:string,sourceRecorded:boolean }
   type sortTypeEntry = sortTypeNormal | sortTypeArchived
-  type sortTypeFolder = {type:'folder',folder:sortTypeEntry[],id:string,name:string,color:string,favorite?:boolean,img?:string,icon?:string,display:FolderDisplayMode}
+  // `system`: one of the idle-age folders of deactivated characters (days).
+  // checkCharOrder maintains them, so the rail offers no drag, drop or menu.
+  type sortTypeFolder = {type:'folder',folder:sortTypeEntry[],id:string,name:string,color:string,favorite?:boolean,img?:string,icon?:string,display:FolderDisplayMode,system?:DeactivatedFolderDays}
   type sortType = sortTypeEntry | sortTypeFolder
+  // Deactivated characters and the idle-age folders never move by drag;
+  // checkCharOrder places them.
+  function railDraggable(item: sortType): item is sortTypeNormal | sortTypeFolder {
+    return item.type === 'normal' || (item.type === 'folder' && item.system === undefined)
+  }
+  // An idle-age folder opens by itself while a search shows its matching
+  // members, and mounts its (up to ~1,000) members a page at a time.
+  let systemFolderShown = $state<Record<string, number>>({})
+  function railFolderOpen(item: sortTypeFolder): boolean {
+    return openFolders.includes(item.id) || (!!catalogQuery && item.system !== undefined && item.folder.length > 0)
+  }
+  function railFolderMembers(item: sortTypeFolder): sortTypeEntry[] {
+    return item.system === undefined ? item.folder : item.folder.slice(0, systemFolderShown[item.id] ?? DEACTIVATED_FOLDER_PAGE_SIZE)
+  }
+  function showMoreRailFolderMembers(item: sortTypeFolder) {
+    systemFolderShown[item.id] = (systemFolderShown[item.id] ?? DEACTIVATED_FOLDER_PAGE_SIZE) + DEACTIVATED_FOLDER_PAGE_SIZE
+  }
   function sidebarDragItem(item: sortTypeNormal | sortTypeFolder): SidebarDragItem {
     return item.type === 'normal'
       ? { kind: 'character', id: item.id }
@@ -176,7 +196,9 @@
       if (char.type === 'normal' || char.type === 'archived') {
         return matchesCatalogText(char.name, catalogQuery) ? { char, sourceOrder } : null
       }
-      const folderMatches = matchesCatalogText(char.name, catalogQuery)
+      // An idle-age folder never matches by its name (short, common keystrokes
+      // like "비", "일" or digits); only its members do.
+      const folderMatches = char.system === undefined && matchesCatalogText(char.name, catalogQuery)
       const matchingMembers = folderMatches
         ? char.folder
         : char.folder.filter((member) => matchesCatalogText(member.name, catalogQuery))
@@ -264,6 +286,7 @@
         if (stub?.chaId && !stub.trashedAt) archivedById.set(stub.chaId, stub)
       }
     }
+    const deactivatedIds = deactivatedCharacterIds(DBState.db.nodeOnlyArchivedCharacters)
     // Sidebar-hidden characters (display only; the character manager still lists them).
     const hiddenSet = new Set(DBState.db.nodeOnlyHiddenCharacterIds ?? [])
     const archivedEntry = (id: string): sortTypeArchived | null => {
@@ -300,6 +323,10 @@
       }
       else{
         const folder = id
+        // Hiding deactivated characters also hides the idle-age folders and
+        // folders holding only deactivated characters; the data keeps them.
+        const railFolder = railFolderView(folder, !!DBState.db.nodeOnlyHideArchivedCharacters, (chaId) => deactivatedIds.has(chaId))
+        if (!railFolder) continue
         let folderCharImages: sortTypeEntry[] = []
         for(const [folderIndex, id] of folder.data.entries()){
           if (hiddenSet.has(id)) continue
@@ -324,6 +351,20 @@
           }
         }
         newRenderedOrder.push(orderIndex)
+        if (railFolder.days !== undefined) {
+          newCharImages.push({
+            folder: folderCharImages,
+            type: "folder",
+            id: folder.id,
+            name: language.deactivatedFolderName(railFolder.days),
+            color: folder.color,
+            favorite: false,
+            img: '',
+            display: 'icon',
+            system: railFolder.days,
+          });
+          continue
+        }
         newCharImages.push({
           folder: folderCharImages,
           type: "folder",
@@ -801,6 +842,22 @@
   ><RotateCwIcon class={reloading ? 'animate-spin' : ''} /></BarIcon>
 {/snippet}
 
+{#snippet deactivatedFolderGlyph(days: DeactivatedFolderDays)}
+  <div class="flex h-full w-full flex-col items-center justify-center leading-none text-textcolor2" data-deactivated-folder={days}>
+    <ArchiveIcon size={18} />
+    <span class="mt-1 text-[10px] font-bold">{language.deactivatedFolderShort(days)}</span>
+  </div>
+{/snippet}
+
+{#snippet railFolderMoreButton(item: sortTypeFolder)}
+  <button
+    type="button"
+    class="relative z-10 my-1 w-14 rounded-md border border-selected bg-darkbg px-1 py-1 text-[10px] leading-tight text-textcolor2 hover:text-textcolor"
+    data-deactivated-folder-more={item.id}
+    onclick={() => showMoreRailFolderMembers(item)}
+  >{language.loadMore}<br/>+{item.folder.length - railFolderMembers(item).length}</button>
+{/snippet}
+
 {#snippet addCharacterButton(position: 'top' | 'bottom')}
   <div class="flex flex-col items-center gap-2 px-2" data-add-character-button={position}>
     <BaseRoundedButton
@@ -841,19 +898,19 @@
         <div
           class="group relative flex items-center px-2"
           role="listitem"
-          data-drag-kind="folder"
-          data-drag-id={item.char.id}
-          draggable={!isTouchDevice ? "true" : undefined}
-          ondragstart={!isTouchDevice ? (e) => avatarDragStart({ kind: 'folder', id: item.char.id }, e) : undefined}
-          ondragend={!isTouchDevice ? clearCurrentDrag : undefined}
-          ondragover={!isTouchDevice ? avatarDragOver : undefined}
-          ondrop={!isTouchDevice ? (e) => {
+          data-drag-kind={item.char.system === undefined ? "folder" : undefined}
+          data-drag-id={item.char.system === undefined ? item.char.id : undefined}
+          draggable={!isTouchDevice && item.char.system === undefined ? "true" : undefined}
+          ondragstart={!isTouchDevice && item.char.system === undefined ? (e) => avatarDragStart({ kind: 'folder', id: item.char.id }, e) : undefined}
+          ondragend={!isTouchDevice && item.char.system === undefined ? clearCurrentDrag : undefined}
+          ondragover={!isTouchDevice && item.char.system === undefined ? avatarDragOver : undefined}
+          ondrop={!isTouchDevice && item.char.system === undefined ? (e) => {
             const drag = getCurrentSidebarDrag(e)
             if(!drag) return
             e.preventDefault(); e.stopPropagation()
             try { createFolder(drag, { kind: 'folder', id: item.char.id }) } finally { clearCurrentDrag() }
           } : undefined}
-          ontouchstart={touchDragEnabled ? (e) => onTouchDragStart({ kind: 'folder', id: item.char.id }, e) : undefined}
+          ontouchstart={touchDragEnabled && item.char.system === undefined ? (e) => onTouchDragStart({ kind: 'folder', id: item.char.id }, e) : undefined}
         >
           <SidebarAvatar
             src="slot"
@@ -864,7 +921,7 @@
             color={item.char.color}
             favorite={item.char.favorite}
             backgroundimg={item.char.display === 'image' && item.char.img ? () => getCharThumbnail(item.char.img, "plain") : ""}
-            oncontextmenu={(e) => { void editSidebarFolder(item.sourceOrder, item.char, e) }}
+            oncontextmenu={item.char.system !== undefined ? undefined : (e) => { void editSidebarFolder(item.sourceOrder, item.char, e) }}
             onClick={() => {
               if(suppressNextClick) return
               if(openFolders.includes(item.char.id)) openFolders.splice(openFolders.indexOf(item.char.id), 1)
@@ -873,7 +930,9 @@
             }}
           >
             {@const CustomIcon = folderIconComponent(item.char.icon)}
-            {#if item.char.display === 'name'}
+            {#if item.char.system !== undefined}
+              {@render deactivatedFolderGlyph(item.char.system)}
+            {:else if item.char.display === 'name'}
               <div class="flex h-full w-full items-center justify-center">
                 <span class="truncate font-bold">{item.char.name}</span>
               </div>
@@ -886,15 +945,15 @@
             {/if}
           </SidebarAvatar>
         </div>
-        {#if openFolders.includes(item.char.id)}
+        {#if railFolderOpen(item.char)}
           <div class="relative mt-1 flex w-full flex-col items-center rounded-lg border border-selected py-1">
             <div
               class="h-4 min-h-4 w-full"
               role="listitem"
-              data-spacer-index="0"
-              data-spacer-folder={item.char.id}
+              data-spacer-index={item.char.system === undefined ? "0" : undefined}
+              data-spacer-folder={item.char.system === undefined ? item.char.id : undefined}
               ondragover={(e) => {
-                if(!getCurrentSidebarDrag(e)) return
+                if(item.char.system !== undefined || !getCurrentSidebarDrag(e)) return
                 e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'
                 e.currentTarget.classList.add('bg-green-500')
               }}
@@ -906,7 +965,7 @@
                 try { inserter(drag, { kind: 'folder', folderId: item.char.id, index: 0 }) } finally { clearCurrentDrag() }
               }}
             ></div>
-            {#each item.char.folder as folderChar, folderIndex}
+            {#each railFolderMembers(item.char) as folderChar, folderIndex}
               {@const sourceFolderIndex = folderChar.folderIndex ?? folderIndex}
               <div
                 class="sidebar-folder-character group relative flex items-center px-2"
@@ -974,10 +1033,10 @@
               <div
                 class="h-4 min-h-4 w-full"
                 role="listitem"
-                data-spacer-index={sourceFolderIndex + 1}
-                data-spacer-folder={item.char.id}
+                data-spacer-index={item.char.system === undefined ? sourceFolderIndex + 1 : undefined}
+                data-spacer-folder={item.char.system === undefined ? item.char.id : undefined}
                 ondragover={(e) => {
-                  if(!getCurrentSidebarDrag(e)) return
+                  if(item.char.system !== undefined || !getCurrentSidebarDrag(e)) return
                   e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'
                   e.currentTarget.classList.add('bg-green-500')
                 }}
@@ -990,6 +1049,9 @@
                 }}
               ></div>
             {/each}
+            {#if railFolderMembers(item.char).length < item.char.folder.length}
+              {@render railFolderMoreButton(item.char)}
+            {/if}
           </div>
         {/if}
         <div class="h-4 min-h-4 w-full" role="listitem" data-spacer-index={item.sourceOrder + 1} ondragover={(e) => {
@@ -1383,15 +1445,15 @@
       <div class="flex w-full flex-col items-center">
       <div class="group relative flex items-center px-2"
         role="listitem"
-        data-drag-kind={char.type === 'normal' ? 'character' : char.type === 'folder' ? 'folder' : undefined}
-        data-drag-id={char.type === 'normal' || char.type === 'folder' ? char.id : undefined}
-        draggable={!isTouchDevice && char.type !== 'archived' ? "true" : undefined}
-        ondragstart={!isTouchDevice && char.type !== 'archived' ? (e) => {avatarDragStart(sidebarDragItem(char), e)} : undefined}
-        ondragend={!isTouchDevice && char.type !== 'archived' ? clearCurrentDrag : undefined}
-        ondragover={!isTouchDevice && char.type !== 'archived' ? avatarDragOver : undefined}
-        ondrop={!isTouchDevice && char.type !== 'archived' ? (e) => {avatarDrop(sidebarDragItem(char), e)} : undefined}
-        ondragenter={!isTouchDevice && char.type !== 'archived' ? preventAll : undefined}
-        ontouchstart={touchDragEnabled && char.type !== 'archived' ? (e) => {onTouchDragStart(sidebarDragItem(char), e)} : undefined}
+        data-drag-kind={char.type === 'normal' ? 'character' : char.type === 'folder' && !char.system ? 'folder' : undefined}
+        data-drag-id={char.type === 'normal' || (char.type === 'folder' && !char.system) ? char.id : undefined}
+        draggable={!isTouchDevice && railDraggable(char) ? "true" : undefined}
+        ondragstart={!isTouchDevice && railDraggable(char) ? (e) => {avatarDragStart(sidebarDragItem(char), e)} : undefined}
+        ondragend={!isTouchDevice && railDraggable(char) ? clearCurrentDrag : undefined}
+        ondragover={!isTouchDevice && railDraggable(char) ? avatarDragOver : undefined}
+        ondrop={!isTouchDevice && railDraggable(char) ? (e) => {avatarDrop(sidebarDragItem(char), e)} : undefined}
+        ondragenter={!isTouchDevice && railDraggable(char) ? preventAll : undefined}
+        ontouchstart={touchDragEnabled && railDraggable(char) ? (e) => {onTouchDragStart(sidebarDragItem(char), e)} : undefined}
       >
         <SidebarIndicator
           isActive={char.type === 'normal' && $selectedCharID === char.index && sideBarMode !== 1}
@@ -1456,7 +1518,7 @@
             {#key char.color}
             {#key char.name}
               <SidebarAvatar src="slot" size="56" rounded={IconRounded} folderShape name={char.name} color={char.color} favorite={char.favorite} backgroundimg={char.display === 'image' && char.img ? () => getCharThumbnail(char.img, "plain") : ""}
-              oncontextmenu={(e) => { void editSidebarFolder(ind, char, e) }}
+              oncontextmenu={char.system ? undefined : (e) => { void editSidebarFolder(ind, char, e) }}
               onClick={() => {
                 if(suppressNextClick) return
                 if(char.type !== 'folder'){
@@ -1471,7 +1533,9 @@
                 openFolders = openFolders
               }}>
                 {@const CustomIcon = folderIconComponent(char.icon)}
-                {#if char.display === 'name'}
+                {#if char.system !== undefined}
+                  {@render deactivatedFolderGlyph(char.system)}
+                {:else if char.display === 'name'}
                   <div class="h-full w-full flex justify-center items-center">
                     <span class="hyphens-auto truncate font-bold">{char.name}</span>
                   </div>
@@ -1488,7 +1552,7 @@
           {/if}
         </div>
       </div>
-      {#if char.type === 'folder' && openFolders.includes(char.id)}
+      {#if char.type === 'folder' && railFolderOpen(char)}
         {#key char.color}
         <div class="p-1 flex flex-col items-center py-1 mt-1 rounded-lg relative">
           <div class="absolute top-0 left-1 border border-selected w-full h-full rounded-lg z-0 {
@@ -1501,7 +1565,8 @@
             char.color === 'pink' ? 'bg-pink-700/20' :
             'bg-darkbg/20'
           }"></div>
-          <div class="h-4 min-h-4 w-14 relative z-10" role="listitem" data-spacer-index="0" data-spacer-folder={char.type === 'folder' ? char.id : undefined} ondragover={(e) => {
+          <div class="h-4 min-h-4 w-14 relative z-10" role="listitem" data-spacer-index={char.system === undefined ? "0" : undefined} data-spacer-folder={char.system === undefined ? char.id : undefined} ondragover={(e) => {
+            if(char.type === 'folder' && char.system !== undefined){ return }
             if(!getCurrentSidebarDrag(e)){ return }
             e.preventDefault()
             e.stopPropagation()
@@ -1523,7 +1588,7 @@
               clearCurrentDrag()
             }
           }} ondragenter={preventAll}></div>
-          {#each char.folder as char2, ind}
+          {#each railFolderMembers(char) as char2, ind}
               {@const sourceFolderIndex = char2.folderIndex ?? ind}
               <div class="sidebar-folder-character group relative flex items-center px-2 z-10"
               role="listitem"
@@ -1599,7 +1664,8 @@
                 {/if}
               </div>
             </div>
-            <div class="h-4 min-h-4 w-14 relative z-20" role="listitem" data-spacer-index={sourceFolderIndex+1} data-spacer-folder={char.type === 'folder' ? char.id : undefined} ondragover={(e) => {
+            <div class="h-4 min-h-4 w-14 relative z-20" role="listitem" data-spacer-index={char.system === undefined ? sourceFolderIndex+1 : undefined} data-spacer-folder={char.system === undefined ? char.id : undefined} ondragover={(e) => {
+              if(char.type === 'folder' && char.system !== undefined){ return }
               if(!getCurrentSidebarDrag(e)){ return }
               e.preventDefault()
               e.stopPropagation()
@@ -1622,6 +1688,9 @@
               }
             }} ondragenter={preventAll}></div>
           {/each}
+          {#if railFolderMembers(char).length < char.folder.length}
+            {@render railFolderMoreButton(char)}
+          {/if}
         </div>
         {/key}
       {/if}

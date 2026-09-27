@@ -1,5 +1,6 @@
 import type { folder } from 'src/ts/storage/database.svelte'
 import { dissolveSingletonFolders } from 'src/ts/characterOrder'
+import { isDeactivatedSystemFolder } from 'src/ts/deactivatedCharacterFolders'
 
 /**
  * Stable-ID sidebar order transforms adapted from the design in PocketRisu Kei
@@ -63,6 +64,17 @@ function folderIndex(order: SidebarOrder, id: string): number {
     return order.findIndex((item) => typeof item !== 'string' && item.id === id)
 }
 
+/** The idle-age folders of deactivated characters are placed by checkCharOrder, never by drag. */
+function isSystemFolderId(order: SidebarOrder, id: string): boolean {
+    const index = folderIndex(order, id)
+    return index >= 0 && isDeactivatedSystemFolder(order[index])
+}
+
+/** Their members (deactivated characters, sorted by idle time) do not move by drag either. */
+function inSystemFolder(order: SidebarOrder, location: CharacterLocation): boolean {
+    return location.kind === 'folder' && isSystemFolderId(order, location.folderId)
+}
+
 function removeCharacterAt(order: Array<string | folder>, location: CharacterLocation): boolean {
     if (location.kind === 'root') {
         if (order[location.index] === undefined || typeof order[location.index] !== 'string') return false
@@ -87,7 +99,7 @@ export function moveSidebarItem(
     if (source.kind === 'folder') {
         if (target.kind !== 'root') return null
         const sourceIndex = folderIndex(currentOrder, source.id)
-        if (sourceIndex < 0) return null
+        if (sourceIndex < 0 || isSystemFolderId(currentOrder, source.id)) return null
 
         const nextOrder = cloneSidebarOrder(currentOrder)
         const [moving] = nextOrder.splice(sourceIndex, 1)
@@ -98,8 +110,9 @@ export function moveSidebarItem(
     }
 
     const sourceLocation = uniqueCharacterLocation(currentOrder, source.id)
-    if (!sourceLocation) return null
+    if (!sourceLocation || inSystemFolder(currentOrder, sourceLocation)) return null
     if (target.kind === 'folder' && folderIndex(currentOrder, target.folderId) < 0) return null
+    if (target.kind === 'folder' && isSystemFolderId(currentOrder, target.folderId)) return null
 
     const nextOrder = cloneSidebarOrder(currentOrder)
     if (!removeCharacterAt(nextOrder, sourceLocation)) return null
@@ -136,7 +149,9 @@ export function applySidebarItemDrop(
     createFolder: () => Omit<folder, 'data'>,
 ): Array<string | folder> | null {
     if (source.kind !== 'character' || !source.id || source.id === target.id) return null
-    if (!uniqueCharacterLocation(currentOrder, source.id)) return null
+    const sourceLocation = uniqueCharacterLocation(currentOrder, source.id)
+    if (!sourceLocation || inSystemFolder(currentOrder, sourceLocation)) return null
+    if (target.kind === 'folder' && isSystemFolderId(currentOrder, target.id)) return null
 
     if (target.kind === 'folder') {
         const targetIndex = folderIndex(currentOrder, target.id)
@@ -153,8 +168,7 @@ export function applySidebarItemDrop(
     const targetLocation = uniqueCharacterLocation(currentOrder, target.id)
     if (!targetLocation || targetLocation.kind !== 'root') return null
     const nextOrder = cloneSidebarOrder(currentOrder)
-    const sourceLocation = uniqueCharacterLocation(nextOrder, source.id)
-    if (!sourceLocation || !removeCharacterAt(nextOrder, sourceLocation)) return null
+    if (!removeCharacterAt(nextOrder, sourceLocation)) return null
     const targetIndex = nextOrder.findIndex((item) => item === target.id)
     if (targetIndex < 0) return null
 

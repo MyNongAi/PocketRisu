@@ -39,6 +39,9 @@
         moveTopLevelEntry, rebuildOrder, removeFolderKeepItems, setHidden, type OrderLayoutItem,
     } from "src/ts/characterOrder";
     import type { folder } from "src/ts/storage/database.svelte";
+    import {
+        canMoveOrderEntry, deactivatedCharacterIds, isDeactivatedGroupingEnabled, isDeactivatedSystemFolder,
+    } from "src/ts/deactivatedCharacterFolders";
     import { language } from "src/lang";
     import { buildCharacterSimilarityCounts, buildExactCharacterDuplicateCounts } from "src/ts/gui/characterCatalogMetrics";
     import { listTitleColor } from "src/ts/gui/titleColors";
@@ -94,7 +97,15 @@
     });
     let dragDisabled = $derived(search.length > 0 || filter !== 'all' || selectMode || sortReversed);
     let activeChaId = $derived(DBState.db.characters[$selectedCharID]?.chaId);
-    let folders = $derived(DBState.db.characterOrder.filter(isFolderEntry));
+    // Move targets: the idle-age folders are filled automatically. (A
+    // deactivated character may still move into a regular folder; it stays.)
+    let folders = $derived(DBState.db.characterOrder.filter(isFolderEntry).filter((entry) => !isDeactivatedSystemFolder(entry)));
+    let deactivatedIds = $derived(deactivatedCharacterIds(DBState.db.nodeOnlyArchivedCharacters));
+    // Up/down stops where checkCharOrder would undo it: inside an idle-age
+    // folder, and into or within the fully deactivated tail of the list.
+    function canMove(key: string, delta: -1 | 1): boolean {
+        return canMoveOrderEntry(DBState.db.characterOrder, key, delta, (id) => deactivatedIds.has(id), isDeactivatedGroupingEnabled(DBState.db));
+    }
 
     function loadGridCompact(): boolean {
         try { return localStorage.getItem('risu-character-manager-grid-compact') === '1'; } catch { return false; }
@@ -389,8 +400,8 @@
             () => setHiddenFor([entry.chaId], !entry.hidden));
         add(language.folderMoveTo, () => moveToFolderPrompt([entry.chaId]));
         if (sort === 'order' && !sortReversed) {
-            add(language.moveUp, () => moveEntry(entry, -1));
-            add(language.moveDown, () => moveEntry(entry, 1));
+            if (canMove(entry.chaId, -1)) add(language.moveUp, () => moveEntry(entry, -1));
+            if (canMove(entry.chaId, 1)) add(language.moveDown, () => moveEntry(entry, 1));
         }
         if (entry.archived) {
             add(language.activateCharacter, () => activate(entry));
@@ -414,8 +425,8 @@
     {/if}
     <ShDropdownMenuItem onSelect={() => moveToFolderPrompt([entry.chaId])}><FolderIcon /><span>{language.folderMoveTo}</span></ShDropdownMenuItem>
     {#if sort === 'order' && !sortReversed}
-        <ShDropdownMenuItem onSelect={() => moveEntry(entry, -1)}><span>{language.moveUp}</span></ShDropdownMenuItem>
-        <ShDropdownMenuItem onSelect={() => moveEntry(entry, 1)}><span>{language.moveDown}</span></ShDropdownMenuItem>
+        {#if canMove(entry.chaId, -1)}<ShDropdownMenuItem onSelect={() => moveEntry(entry, -1)}><span>{language.moveUp}</span></ShDropdownMenuItem>{/if}
+        {#if canMove(entry.chaId, 1)}<ShDropdownMenuItem onSelect={() => moveEntry(entry, 1)}><span>{language.moveDown}</span></ShDropdownMenuItem>{/if}
     {/if}
     <ShDropdownMenuSeparator />
     {#if entry.archived}
@@ -436,8 +447,8 @@
 
 {#snippet folderMenu(f: folder)}
     <ShDropdownMenuItem onSelect={() => folderSettingsTarget.set(f.id)}><SettingsIcon /><span>{language.folderSettings}</span></ShDropdownMenuItem>
-    <ShDropdownMenuItem onSelect={() => commitOrder(moveTopLevelEntry(DBState.db.characterOrder, f.id, -1))}><span>{language.moveUp}</span></ShDropdownMenuItem>
-    <ShDropdownMenuItem onSelect={() => commitOrder(moveTopLevelEntry(DBState.db.characterOrder, f.id, 1))}><span>{language.moveDown}</span></ShDropdownMenuItem>
+    {#if canMove(f.id, -1)}<ShDropdownMenuItem onSelect={() => commitOrder(moveTopLevelEntry(DBState.db.characterOrder, f.id, -1))}><span>{language.moveUp}</span></ShDropdownMenuItem>{/if}
+    {#if canMove(f.id, 1)}<ShDropdownMenuItem onSelect={() => commitOrder(moveTopLevelEntry(DBState.db.characterOrder, f.id, 1))}><span>{language.moveDown}</span></ShDropdownMenuItem>{/if}
     <ShDropdownMenuSeparator />
     <ShDropdownMenuItem variant="destructive" onSelect={() => deleteFolder(f)}><TrashIcon /><span>{language.remove}</span></ShDropdownMenuItem>
 {/snippet}
@@ -598,6 +609,7 @@
                     order={DBState.db.characterOrder}
                     {entries}
                     {visible}
+                    narrowing={search.length > 0 || filter !== 'all'}
                     {dragDisabled}
                     reversed={sortReversed}
                     selectable={selectMode}
