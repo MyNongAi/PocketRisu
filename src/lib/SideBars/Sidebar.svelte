@@ -87,6 +87,7 @@
       type SidebarInsertTarget,
       type SidebarItemTarget,
     } from './sidebarDrag';
+    import { scrollWithinContainer } from "../ChatScreens/scrollWithin";
 
   let sideBarMode = $state(0);
   let hasEditableCharacter = $derived(
@@ -224,6 +225,11 @@
   let IconRounded = $state(false)
   let openFolders:string[] = $state([])
   let currentDrag: DragData | null = $state(null)
+  // characterOrder index of each rendered top-level entry. The sidebar skips
+  // hidden, trashed and (optionally) deactivated entries, so a rendered
+  // position is not a characterOrder index; root drops translate through it.
+  // (Folder members carry their own folderIndex; drag sources are ids.)
+  let renderedOrder: number[] = []
   interface Props {
     hidden?: boolean;
     openLegacyGrid?: () => void;
@@ -248,6 +254,7 @@
 
   $effect(() => {
     let newCharImages: sortType[] = [];
+    const newRenderedOrder: number[] = []
     const idObject = getCharacterIndexObject()
     // Deactivated characters keep their slot in characterOrder; resolve those
     // ids against the stub list (unless the user chose to hide them).
@@ -265,7 +272,7 @@
       const source = resolveCharacterSourceBadge(stub.sourceInfo?.label)
       return { type: 'archived', img: stub.image ?? '', chaId: stub.chaId, name: stub.name ?? '', sourceBadge: source.label, sourceRecorded: source.recorded }
     }
-    for (const id of DBState.db.characterOrder) {
+    for (const [orderIndex, id] of DBState.db.characterOrder.entries()) {
       if(typeof(id) === 'string'){
         if (hiddenSet.has(id)) continue
         const index = idObject[id] ?? -1
@@ -282,9 +289,13 @@
             sourceBadge: source.label,
             sourceRecorded: source.recorded,
           });
+          newRenderedOrder.push(orderIndex)
         } else {
           const archived = archivedEntry(id)
-          if (archived) newCharImages.push(archived)
+          if (archived) {
+            newCharImages.push(archived)
+            newRenderedOrder.push(orderIndex)
+          }
         }
       }
       else{
@@ -312,6 +323,7 @@
             if (archived) folderCharImages.push({ ...archived, folderIndex })
           }
         }
+        newRenderedOrder.push(orderIndex)
         newCharImages.push({
           folder: folderCharImages,
           type: "folder",
@@ -330,6 +342,7 @@
         });
       }
     }
+    renderedOrder = newRenderedOrder
     if (!isEqual(charImages, newCharImages)) {
       charImages = newCharImages;
     }
@@ -345,8 +358,17 @@
     checkCharOrder()
   }
 
+  // A root drop slot: before the rendered entry at `index`, or after the last one.
+  const rootSlotOrderIndex = (index:number) => {
+    if (index < renderedOrder.length) return renderedOrder[index]
+    return renderedOrder.length ? renderedOrder[renderedOrder.length - 1] + 1 : 0
+  }
+
   const inserter = (source:DragData, target:SidebarInsertTarget) => {
-    commitSidebarOrder(moveSidebarItem(DBState.db.characterOrder, source, target))
+    const orderTarget: SidebarInsertTarget = target.kind === 'root'
+      ? { kind: 'root', index: rootSlotOrderIndex(target.index) }
+      : target
+    commitSidebarOrder(moveSidebarItem(DBState.db.characterOrder, source, orderTarget))
   }
 
   function setSplitCatalogMode(enabled:boolean){
@@ -504,8 +526,16 @@
       sidebarScrollRequest += 1
     }
     setTimeout(() => {
-      const activeElement = document.querySelector(`[data-char-id="${characterId}"]`)
-      activeElement?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      const activeElement = document.querySelector(`[data-char-id="${characterId}"]`) as HTMLElement | null
+      const list = activeElement?.closest('.character-list') as HTMLElement | null
+      // Scroll the list only — scrollIntoView also scrolls an inflated root.
+      // Like block 'nearest': move only when the card is outside the list.
+      if (activeElement && list) {
+        const cardRect = activeElement.getBoundingClientRect()
+        const listRect = list.getBoundingClientRect()
+        if (cardRect.top < listRect.top) scrollWithinContainer(activeElement, list, { block: 'start', behavior: 'smooth' })
+        else if (cardRect.bottom > listRect.bottom) scrollWithinContainer(activeElement, list, { block: 'end', behavior: 'smooth' })
+      }
     }, 160)
   }
 

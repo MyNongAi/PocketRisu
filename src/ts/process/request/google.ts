@@ -439,9 +439,9 @@ export async function requestGoogleCloudVertex(arg:RequestDataArgumentExtended):
     console.log(arg.modelInfo);
 
     const isVertexGlobalOnlyModel = (modelId: string) => {
-        // Gemini 3 preview models and the 3.5/3.6/3.7 Flash family are not served from the regions
+        // Gemini 3 preview models and the 3.5/3.6/3.7/3.8 Flash family are not served from the regions
         // selectable in settings (us-central1, us-west1); route them through the global endpoint.
-        return /^gemini-3-.*-preview$/.test(modelId) || /^gemini-3\.[567]-flash/.test(modelId)
+        return /^gemini-3-.*-preview$/.test(modelId) || /^gemini-3\.[5678]-flash/.test(modelId)
     }
 
     async function generateToken(email:string,key:string){
@@ -705,6 +705,8 @@ async function requestGoogle(url:string, body:any, headers:{[key:string]:string}
             saveSignature: arg.saveSignatures ?? false
         }) 
 
+        // An abort errors the body mid-pipe; the readable side already
+        // carries that error to the consumer, so only the pipe promise is caught.
         void f.body.pipeTo(transtream.writable, { signal: arg.abortSignal ?? undefined })
             .catch((error) => {
                 if (!arg.abortSignal?.aborted) console.error('[Google] stream transform failed', error)
@@ -772,7 +774,7 @@ async function requestGoogle(url:string, body:any, headers:{[key:string]:string}
 
                 if(part.inlineData){
                     const imgHTML = new Image()
-                    const id = crypto.randomUUID()
+                    const id = v4()
 
                     if(part.inlineData.mimeType.startsWith('image/')){
 
@@ -1298,6 +1300,8 @@ function wrapToolStream(
                             modelInfo: arg.modelInfo,
                             saveSignature: arg.saveSignatures ?? false
                         })
+                        // The pipe follows the request's abort signal; an abort
+                        // then rejects only the pipe promise, which is expected.
                         void resRec.body.pipeTo(transtream.writable, { signal: arg.abortSignal ?? undefined })
                             .catch((error) => {
                                 if (!arg.abortSignal?.aborted) console.error('[Google] tool stream transform failed', error)

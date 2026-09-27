@@ -641,6 +641,9 @@ await (async function() {
 export class SandboxHost {
     private iframe: HTMLIFrameElement;
     private apiFactory: any;
+    // crypto.randomUUID is secure-context only and threw on plain-HTTP
+    // origins; createSandboxNonce falls back to getRandomValues and then to
+    // the server-injected page seed (insecure mobile origins).
     private nonce = createSandboxNonce();
     private csp = `connect-src 'none'; script-src 'nonce-${this.nonce}' 'wasm-unsafe-eval'; frame-src 'none'; object-src 'none'; style-src * 'unsafe-inline'; default-src 'none'; img-src * data: blob:; font-src * data: blob:; media-src * data: blob:; base-uri 'none';`;
 

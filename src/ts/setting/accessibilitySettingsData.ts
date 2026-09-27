@@ -372,7 +372,10 @@ export const accessibilitySettingsItems: SettingItem[] = [
                 if (chat) loadTogglesFromChat(chat);
             }
         }
-    }
+    },
+    // moved from Advanced
+    { id: 'adv.bookmark', type: 'check', labelKey: 'bookmark', bindKey: 'enableBookmark', helpKey: 'bookmark', classes: 'mt-4' },
+    { id: 'adv.scrollToActive', type: 'check', labelKey: 'enableScrollToActiveChar', bindKey: 'enableScrollToActiveChar', helpKey: 'enableScrollToActiveChar', classes: 'mt-4' },
 ];
 
 // Tab groupings (the flat array above stays the source of truth + search index).
@@ -391,6 +394,7 @@ export const accessibilityEditingItems = pick([
     'acc.enableDragPartialEdit',
     'acc.longPressToPopupEditor',
     'acc.showInputActionBar',
+    'adv.bookmark',
 ]);
 
 export const accessibilityScrollItems = pick([
@@ -411,6 +415,7 @@ export const accessibilitySidebarItems = pick([
     'acc.showModelInSidebar',
     'acc.showPresetInSidebar',
     'acc.showPersonaInSidebar',
+    'adv.scrollToActive',
 ]);
 
 export const accessibilityCharacterItems = pick([

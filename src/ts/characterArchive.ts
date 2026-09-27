@@ -15,13 +15,14 @@
  */
 import { get } from "svelte/store"
 import { language } from "src/lang"
-import { alertConfirm, alertError, notifySuccess } from "./alert"
+import { alertConfirm, alertError, notifyError, notifySuccess } from "./alert"
 import { changeChar, deselectCharacter } from "./characters"
-import { checkCharOrder, forageStorage, requestImmediateSave, requiresFullEncoderReload } from "./globalApi.svelte"
+import { checkCharOrder, flushSaves, forageStorage, requestImmediateSave, requiresFullEncoderReload, trackCharacterForSave } from "./globalApi.svelte"
 import { DBState, loadingOverlayStore, selectedCharID } from "./stores.svelte"
 import { convertStubsToPlaceholders } from "./storage/chatStorage"
 import type { ArchivedCharacterStub, character } from "./storage/database.svelte"
-import { CharacterArchiveError, type NodeStorage } from "./storage/nodeStorage"
+import { CharacterArchiveError, type ArchiveBatchResult, type NodeStorage } from "./storage/nodeStorage"
+import { v4 } from "uuid"
 import { getCharacterAssetCount } from "./gui/characterAssetCount"
 import { exactCharacterDefinitionFingerprint } from "./gui/characterCatalogMetrics"
 import { promoteRecentlyViewedCharacter } from "./characterRecentOrder"
@@ -40,6 +41,15 @@ export function findArchivedStub(chaId: string): ArchivedCharacterStub | undefin
     return getArchivedStubs().find((s) => s?.chaId === chaId)
 }
 
+// The trash takes a character out of characterOrder (checkCharOrder), folder
+// included. Remember the folder so restoring can put it back.
+function markTrashed(stub: ArchivedCharacterStub, trashedAt: number) {
+    stub.trashedAt = trashedAt
+    const folder = DBState.db.characterOrder?.find((e) => typeof e !== 'string' && e?.data?.includes(stub.chaId))
+    if (folder && typeof folder !== 'string') stub.trashedFromFolder = folder.id
+    else delete stub.trashedFromFolder
+}
+
 export function isArchivedCharacter(chaId: string): boolean {
     return !!findArchivedStub(chaId)
 }
@@ -49,6 +59,40 @@ function withOverlay<T>(fn: () => Promise<T>): Promise<T> {
     return fn().finally(() => {
         loadingOverlayStore.set({ active: false, text: '', onCancel: null })
     })
+}
+
+function bulletList(names: string[], max = 5): string {
+    const lines = names.slice(0, max).map((n) => `• ${n || '—'}`)
+    if (names.length > max) lines.push(`• … +${names.length - max}`)
+    return lines.join('\n')
+}
+
+type ArchivedStubCatalogMeta = Pick<ArchivedCharacterStub, 'assetCount' | 'titleColor' | 'sourceInfo' | 'exactDefinitionFingerprint'>
+
+/**
+ * Catalog metadata a stub keeps while the full character is cold (asset
+ * count, title color, source badge, exact-duplicate fingerprint). Read from
+ * the live character before it leaves `characters`.
+ */
+function archivedStubCatalogMeta(char: character, trash: boolean): ArchivedStubCatalogMeta {
+    const meta: ArchivedStubCatalogMeta = {
+        assetCount: getCharacterAssetCount(char),
+        titleColor: char.titleColor,
+        sourceInfo: char.sourceInfo ? { ...char.sourceInfo } : undefined,
+    }
+    // Trashed stubs are excluded from duplicate counts, so serializing a large
+    // card merely to compute a never-read fingerprint wastes several temporary
+    // copies at the most memory-sensitive point of the operation.
+    if (!trash) {
+        try {
+            const fingerprint = exactCharacterDefinitionFingerprint(char as unknown as Record<string, unknown>)
+            if (fingerprint) meta.exactDefinitionFingerprint = fingerprint
+        } catch (error) {
+            // Catalog metadata must never prevent a verified archive operation.
+            console.warn('[Archive] exact duplicate fingerprint skipped:', error)
+        }
+    }
+    return meta
 }
 
 /**
@@ -71,8 +115,7 @@ export function archiveCharacter(index: number, arg: ArchiveOptions = {}): Promi
 }
 
 async function archiveCharacterOnce(index: number, arg: ArchiveOptions): Promise<boolean> {
-    const db = DBState.db
-    const char = db.characters[index]
+    const char = DBState.db.characters[index]
     if (!char?.chaId) return false
     const name = char.name || 'Unnamed'
     // skipConfirm: bulk callers (character manager) confirm once for the whole set.
@@ -80,34 +123,35 @@ async function archiveCharacterOnce(index: number, arg: ArchiveOptions): Promise
     // the stub just carries the marker (exported as upstream's trashTime).
     if (!arg.skipConfirm && !await alertConfirm(language.deactivateCharacterConfirm(name))) return false
 
-    const assetCount = getCharacterAssetCount(char)
-    let exactDefinitionFingerprint: string | undefined
-    // Trashed stubs are excluded from duplicate counts, so serializing a large
-    // card merely to compute a never-read fingerprint wastes several temporary
-    // copies at the most memory-sensitive point of the operation.
-    if (!arg.trash) {
-        try {
-            exactDefinitionFingerprint = exactCharacterDefinitionFingerprint(char as unknown as Record<string, unknown>)
-        } catch (error) {
-            // Catalog metadata must never prevent a verified archive operation.
-            console.warn('[Archive] exact duplicate fingerprint skipped:', error)
-        }
-    }
+    const catalogMeta = archivedStubCatalogMeta(char, !!arg.trash)
 
-    const run = async () => {
-        // The server builds the payload from its own view; push any edits
-        // still sitting in the client's debounce first so nothing is lost.
-        await requestImmediateSave()
-        const stub = await storage().archiveCharacter(char.chaId)
-        // Re-resolve: the array may have shifted while the server worked.
+    // acceptLostChats: chats whose body the server no longer has (lost before
+    // this build) are stored as the empty chats they already show as. The
+    // trash accepts that outright; a deactivation asks first.
+    const run = async (acceptLostChats: boolean) => {
+        // A chat without an id is never uploaded by the save path; give it
+        // one so its body reaches the server with the save below.
+        let assignedIds = false
+        for (const chat of char.chats ?? []) {
+            if (chat && !chat._placeholder && !chat.id) {
+                chat.id = v4()
+                assignedIds = true
+            }
+        }
+        if (assignedIds) trackCharacterForSave(char.chaId)
+        // The server builds the payload from its own view: every edit (and
+        // every chat body this browser holds) must have reached it first,
+        // or the archived copy would silently miss them.
+        if (!await flushSaves()) throw new Error(language.archiveSaveFailed)
+        const stub = await storage().archiveCharacter(char.chaId, { acceptLostChats })
+        // Re-resolve both: a save above may have rebased the database object,
+        // and the array may have shifted while the server worked.
+        const db = DBState.db
         const idx = db.characters.findIndex((c) => c?.chaId === char.chaId)
         if (idx === -1) return false
         if (!Array.isArray(db.nodeOnlyArchivedCharacters)) db.nodeOnlyArchivedCharacters = []
-        if (arg.trash) stub.trashedAt = arg.trashedAt ?? Date.now()
-        stub.assetCount = assetCount
-        stub.titleColor = char.titleColor
-        stub.sourceInfo = char.sourceInfo ? { ...char.sourceInfo } : undefined
-        if (exactDefinitionFingerprint) stub.exactDefinitionFingerprint = exactDefinitionFingerprint
+        if (arg.trash) markTrashed(stub, arg.trashedAt ?? Date.now())
+        Object.assign(stub, catalogMeta)
         if (arg.automatic) stub.autoDeactivatedAt = Date.now()
         db.nodeOnlyArchivedCharacters.push(stub)
         const selectedIndex = get(selectedCharID)
@@ -119,23 +163,151 @@ async function archiveCharacterOnce(index: number, arg: ArchiveOptions): Promise
         // character itself loses the selection. Indices after `idx` shift by one.
         if (selectedIndex === idx || selectedIndex < 0) deselectCharacter()
         else if (selectedIndex > idx) selectedCharID.set(selectedIndex - 1)
-        void requestImmediateSave()
-        if (!arg.silent) notifySuccess(arg.trash ? language.trashCharacterDone : language.deactivateCharacterDone)
+        // Until this save lands the server still sees the character active.
+        // The overlay stays up meanwhile; activation also waits for it.
+        if (arg.silent) {
+            void requestImmediateSave()
+        } else if (await flushSaves()) {
+            notifySuccess(arg.trash ? language.trashCharacterDone : language.deactivateCharacterDone)
+        } else {
+            // Done here, not yet on the server; the save queue keeps retrying.
+            notifyError(language.archiveSavePending)
+        }
         return true
     }
+    // silent: no overlay, no dialogs — the caller reports (migration logs).
+    // nonBlocking: keep success/error feedback, but never cover and lock
+    // the whole chat while a reversible trash move is written.
+    const attempt = (acceptLostChats: boolean) => arg.silent || arg.nonBlocking ? run(acceptLostChats) : withOverlay(() => run(acceptLostChats))
+    const fail = (error: unknown) => {
+        alertError(language.deactivateCharacterFailed + (error instanceof Error ? error.message : String(error)))
+        return false
+    }
     try {
-        // silent: no overlay, no dialogs — the caller reports (migration logs).
-        // nonBlocking: keep success/error feedback, but never cover and lock
-        // the whole chat while a reversible trash move is written.
-        return arg.silent || arg.nonBlocking ? await run() : await withOverlay(run)
+        return await attempt(!!arg.trash)
     } catch (error) {
         if (arg.silent) throw error
-        if (error instanceof CharacterArchiveError && error.code === 'ARCHIVE_CHATS_UNAVAILABLE') {
-            alertError(language.deactivateCharacterUnsaved)
-        } else {
-            alertError(language.deactivateCharacterFailed + (error instanceof Error ? error.message : String(error)))
+        if (!(error instanceof CharacterArchiveError && error.code === 'ARCHIVE_CHATS_UNAVAILABLE')) return fail(error)
+        if (!await alertConfirm(language.deactivateCharacterLostChats(name, error.chats.length, bulletList(error.chats)))) return false
+        return await attempt(true).catch(fail)
+    }
+}
+
+const BULK_ARCHIVE_CHUNK = 20
+let bulkArchiveRunning = false
+
+export interface BulkArchiveOutcome {
+    /** Characters moved to the stub list. */
+    done: number
+    /** Characters left active, with the reason. */
+    failed: { chaId: string; name: string; reason: string }[]
+    /** Refused because some chats have no content anywhere (only without acceptLostChats). */
+    lost: { chaId: string; name: string; chats: string[] }[]
+    /** A save did not land; later chunks were not attempted. */
+    stopped: boolean
+}
+
+export function isBulkArchiveRunning(): boolean {
+    return bulkArchiveRunning
+}
+
+// The chunk's successes, applied in one synchronous step to the database
+// current after the request: the characters leave `characters`, their stubs
+// join the stub list, the order is normalised once and the selection follows
+// its character by id.
+function applyArchived(successes: { chaId: string; stub: any }[], trash: boolean): number {
+    const db = DBState.db
+    const selectedChaId = db.characters[get(selectedCharID)]?.chaId
+    if (!Array.isArray(db.nodeOnlyArchivedCharacters)) db.nodeOnlyArchivedCharacters = []
+    const moved = new Set<string>()
+    const now = Date.now()
+    for (const { chaId, stub } of successes) {
+        if (!db.characters.some((c) => c?.chaId === chaId)) continue
+        if (trash) markTrashed(stub, now)
+        if (!db.nodeOnlyArchivedCharacters.some((s) => s?.chaId === chaId)) db.nodeOnlyArchivedCharacters.push(stub)
+        moved.add(chaId)
+    }
+    if (moved.size === 0) return 0
+    for (let i = db.characters.length - 1; i >= 0; i--) {
+        if (moved.has(db.characters[i]?.chaId)) db.characters.splice(i, 1)
+    }
+    checkCharOrder()
+    requiresFullEncoderReload.state = true
+    if (selectedChaId && moved.has(selectedChaId)) {
+        deselectCharacter()
+    } else if (selectedChaId) {
+        const idx = db.characters.findIndex((c) => c?.chaId === selectedChaId)
+        if (idx !== get(selectedCharID)) selectedCharID.set(idx)
+    }
+    return moved.size
+}
+
+/**
+ * Deactivate (or trash) many characters. Rows are written in chunks by
+ * /api/characters/archive-batch, which rewrites database.bin once per chunk
+ * instead of once per character; after each chunk its successes are applied
+ * and saved before the next one starts, so every character that leaves the
+ * list is on the server first. A progress overlay stays up for the whole run.
+ */
+export async function archiveCharacters(chaIds: string[], arg: { trash?: boolean; acceptLostChats?: boolean } = {}): Promise<BulkArchiveOutcome> {
+    if (bulkArchiveRunning) throw new Error(language.bulkArchiveBusy)
+    bulkArchiveRunning = true
+    const outcome: BulkArchiveOutcome = { done: 0, failed: [], lost: [], stopped: false }
+    const trash = !!arg.trash
+    const progress = (done: number, total: number) =>
+        loadingOverlayStore.set({ active: true, text: language.bulkArchiveProgress(done, total, trash), onCancel: null })
+    try {
+        const names = new Map<string, string>()
+        const catalogMeta = new Map<string, ArchivedStubCatalogMeta>()
+        const targets: string[] = []
+        for (const chaId of new Set(chaIds)) {
+            const char = DBState.db.characters.find((c) => c?.chaId === chaId)
+            if (!char) continue
+            names.set(chaId, char.name || 'Unnamed')
+            // Same catalog metadata a single deactivation keeps on its stub.
+            catalogMeta.set(chaId, archivedStubCatalogMeta(char, trash))
+            targets.push(chaId)
+            // Same as a single deactivation: a chat without an id is never
+            // uploaded, so it gets one before the first save below.
+            let assigned = false
+            for (const chat of char.chats ?? []) {
+                if (chat && !chat._placeholder && !chat.id) {
+                    chat.id = v4()
+                    assigned = true
+                }
+            }
+            if (assigned) trackCharacterForSave(chaId)
         }
-        return false
+        if (targets.length === 0) return outcome
+        progress(0, targets.length)
+        if (!await flushSaves()) throw new Error(language.archiveSaveFailed)
+        for (let i = 0; i < targets.length; i += BULK_ARCHIVE_CHUNK) {
+            const chunk = targets.slice(i, i + BULK_ARCHIVE_CHUNK)
+            const results: ArchiveBatchResult[] = await storage().archiveCharacters(chunk, { acceptLostChats: arg.acceptLostChats ?? trash })
+            const successes: { chaId: string; stub: any }[] = []
+            for (const r of results) {
+                const name = names.get(r.chaId) ?? r.chaId
+                if (r.ok) {
+                    const stub = (r as Extract<ArchiveBatchResult, { ok: true }>).stub
+                    Object.assign(stub, catalogMeta.get(r.chaId))
+                    successes.push({ chaId: r.chaId, stub })
+                    continue
+                }
+                const f = r as Extract<ArchiveBatchResult, { ok: false }>
+                if (f.code === 'ARCHIVE_CHATS_UNAVAILABLE') outcome.lost.push({ chaId: f.chaId, name, chats: f.chats ?? [] })
+                else outcome.failed.push({ chaId: f.chaId, name, reason: f.error })
+            }
+            outcome.done += applyArchived(successes, trash)
+            if (!await flushSaves()) {
+                outcome.stopped = true
+                break
+            }
+            progress(Math.min(i + chunk.length, targets.length), targets.length)
+        }
+        return outcome
+    } finally {
+        loadingOverlayStore.set({ active: false, text: '', onCancel: null })
+        bulkArchiveRunning = false
     }
 }
 
@@ -146,10 +318,9 @@ async function archiveCharacterOnce(index: number, arg: ArchiveOptions): Promise
  * nothing to activate. Throws CharacterArchiveError on server failure.
  */
 export async function activateCharacter(chaId: string): Promise<number> {
-    const db = DBState.db
-    const list = db.nodeOnlyArchivedCharacters ?? []
+    const list = DBState.db.nodeOnlyArchivedCharacters ?? []
     const stubIndex = list.findIndex((s) => s?.chaId === chaId)
-    const existing = db.characters.findIndex((c) => c?.chaId === chaId)
+    const existing = DBState.db.characters.findIndex((c) => c?.chaId === chaId)
     if (existing !== -1) {
         // Already active (e.g. another device activated it): just drop the stub.
         if (stubIndex !== -1) list.splice(stubIndex, 1)
@@ -157,17 +328,33 @@ export async function activateCharacter(chaId: string): Promise<number> {
     }
     if (stubIndex === -1) return -1
 
+    // Name the exact row this stub was made with (rows are versioned).
+    const archivedAt = list[stubIndex]?.archivedAt
     let restored: character
     try {
-        // Name the exact row this stub was made with (rows are versioned).
-        restored = await storage().activateCharacter(chaId, list[stubIndex]?.archivedAt)
+        restored = await storage().activateCharacter(chaId, archivedAt)
     } catch (error) {
-        if (error instanceof CharacterArchiveError && error.code === 'ARCHIVE_ALREADY_ACTIVE') {
-            // Server has it active but our view does not — rebase will bring it; drop the stub.
-            list.splice(stubIndex, 1)
-            return -1
+        if (!(error instanceof CharacterArchiveError && error.code === 'ARCHIVE_ALREADY_ACTIVE')) throw error
+        // Usually our own deactivation has not reached the server yet: it
+        // still lists the character as active. Dropping the stub here used to
+        // make the save that followed delete the character outright. Finish
+        // saving, then ask again; the stub stays whatever happens.
+        if (!await flushSaves()) throw new CharacterArchiveError(error.code, language.archiveSaveFailed)
+        try {
+            restored = await storage().activateCharacter(chaId, archivedAt)
+        } catch (retryError) {
+            if (retryError instanceof CharacterArchiveError && retryError.code === 'ARCHIVE_ALREADY_ACTIVE') {
+                throw new CharacterArchiveError(retryError.code, language.activateCharacterAlreadyActive)
+            }
+            throw retryError
         }
-        throw error
+    }
+    // Re-read: a save while we waited may have rebased the database object.
+    const db = DBState.db
+    if (db.characters.some((c) => c?.chaId === chaId)) {
+        const stubIdx = (db.nodeOnlyArchivedCharacters ?? []).findIndex((s) => s?.chaId === chaId)
+        if (stubIdx !== -1) db.nodeOnlyArchivedCharacters!.splice(stubIdx, 1)
+        return db.characters.findIndex((c) => c?.chaId === chaId)
     }
     // The server sends chats as stubs; the client works with placeholders
     // (same conversion bootstrap applies to the whole database).
@@ -201,7 +388,7 @@ export async function activateCharacter(chaId: string): Promise<number> {
 export function trashDeactivatedCharacter(chaId: string): boolean {
     const stub = findArchivedStub(chaId)
     if (!stub || stub.trashedAt) return false
-    stub.trashedAt = Date.now()
+    markTrashed(stub, Date.now())
     checkCharOrder()
     void requestImmediateSave()
     return true
@@ -212,6 +399,10 @@ export function restoreTrashedCharacter(chaId: string): boolean {
     const stub = findArchivedStub(chaId)
     if (!stub || !stub.trashedAt) return false
     delete stub.trashedAt
+    const folderId = stub.trashedFromFolder
+    delete stub.trashedFromFolder
+    const folder = folderId && DBState.db.characterOrder?.find((e) => typeof e !== 'string' && e?.id === folderId)
+    if (folder && typeof folder !== 'string' && !folder.data.includes(chaId)) folder.data.push(chaId)
     checkCharOrder()
     void requestImmediateSave()
     return true
@@ -228,8 +419,8 @@ export async function deleteTrashedCharacter(chaId: string): Promise<boolean> {
 /**
  * Legacy trash (a live character carrying `trashTime`, written by older
  * builds, upstream imports or .bin restores) → deactivated + trashedAt.
- * Best effort at boot: a character whose chats are not on the server yet
- * stays legacy and is retried next boot. The lists render both shapes.
+ * Best effort at boot: a character that fails to archive stays legacy and is
+ * retried next boot. The lists render both shapes.
  */
 export async function migrateLegacyTrash(): Promise<void> {
     const db = DBState.db

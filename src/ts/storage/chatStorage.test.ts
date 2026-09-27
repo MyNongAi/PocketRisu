@@ -1,4 +1,5 @@
 import { beforeEach, describe, test, expect, vi } from 'vitest'
+import { get } from 'svelte/store'
 
 // Stub out the heavy reactive modules so loading chatStorage.ts doesn't trigger
 // unrelated $effect chains that fail in a stripped-down test environment.
@@ -11,6 +12,12 @@ vi.mock('../globalApi.svelte', () => ({
     forageStorage: {
         realStorage: {
             fetchChatContent: (...args: any[]) => mocks.fetchChatContent(...args),
+            // Hydration goes through chat delta sync; without a stored copy
+            // it asks for the whole chat, which is what fetchChatContent returns.
+            fetchChatContentDelta: async (chaId: string, chatIndex: number, chatId: string) => {
+                const chat = await mocks.fetchChatContent(chaId, chatIndex, chatId)
+                return chat ? { chat, deltaBase: null } : null
+            },
         },
     },
 }))
@@ -31,12 +38,12 @@ const {
     markHydratedChatPersisted,
     evictHydratedChatCache,
     resetHydratedChatCache,
-    setChatSaveRequester,
     replaceChatBody,
     rehomeHydratedChats,
     suppressChatTracking,
     isHydrating,
     isHydratedChatDirty,
+    chatLoadFailures,
 } = await import('./chatStorage')
 type Chat = any
 type ChatStub = any
@@ -285,12 +292,11 @@ describe('bounded hydrated-chat LRU', () => {
 })
 
 describe('hydrating a chat whose body is missing on the server', () => {
-    // Regression: a chat listed in the catalog but with no body on the server
-    // left its placeholder in place, and the chat screen — which waits on
-    // `!slot._placeholder` — sat on "loading chat data" forever. This showed up
-    // most on a freshly imported bot's first chat, whose body never reached the
-    // server. Only a 404 reaches this path; every other failure throws.
-    test('opens it as an empty usable chat instead of spinning forever', async () => {
+    // A chat listed in the catalog but with no body on the server (404) stays a
+    // placeholder: an empty chat in its place could later be saved over
+    // messages another device or a backup still holds. The chat screen shows
+    // the recorded failure with a retry instead of "loading" forever.
+    test('keeps the placeholder and records the chat as missing', async () => {
         mocks.fetchChatContent.mockResolvedValueOnce(null)
         const chats = [stubToPlaceholder({
             id: 'orphan-chat', name: 'orphan', _stub: true, folderId: 'f1',
@@ -298,18 +304,13 @@ describe('hydrating a chat whose body is missing on the server', () => {
 
         const result = await ensureChatHydrated(chats, 0, 'char-a')
 
-        expect(result).not.toBeNull()
-        expect(chats[0]._placeholder).toBeUndefined()
-        expect(chats[0].message).toEqual([])
-        // Stub metadata has to survive so the chat keeps its identity.
-        expect(chats[0].id).toBe('orphan-chat')
-        expect(chats[0].name).toBe('orphan')
-        expect(chats[0].folderId).toBe('f1')
+        expect(result).toBeNull()
+        expect(chats[0]._placeholder).toBe(true)
+        expect(get(chatLoadFailures).get('char-a/orphan-chat')).toBe('missing')
     })
 
-    // The recovery must never fire for a transient failure: materializing an
-    // empty chat there would overwrite a perfectly good server copy on the next
-    // save. fetchChatContent throws for anything that is not a 404.
+    // A transient failure must never empty the chat either; it is recorded as
+    // an error the screen can retry.
     test('propagates a transient failure rather than emptying the chat', async () => {
         mocks.fetchChatContent.mockRejectedValueOnce(new Error('fetchChatContent error: 503'))
         const chats = [stubToPlaceholder({ id: 'live-chat', name: 'live', _stub: true } as ChatStub)]
@@ -317,30 +318,19 @@ describe('hydrating a chat whose body is missing on the server', () => {
         await expect(ensureChatHydrated(chats, 0, 'char-a')).rejects.toThrow('503')
         expect(chats[0]._placeholder).toBe(true)
         expect(chats[0].message).toEqual([])
+        expect(get(chatLoadFailures).get('char-a/live-chat')).toBe('error')
     })
-})
 
-describe('recovered chat persistence', () => {
-    // Regression: recovery left the chat clean, so the LRU evicted it straight
-    // back to a placeholder and the next open hydrated, 404'd and recovered
-    // again. One chat looped 25 times in a real session instead of healing.
-    test('pins the recovered chat and asks the save loop to write it', async () => {
-        const requested: [string, string][] = []
-        setChatSaveRequester((chaId, chatId) => { requested.push([chaId, chatId]) })
-        try {
-            mocks.fetchChatContent.mockResolvedValueOnce(null)
-            const chats = [stubToPlaceholder({ id: 'orphan', name: 'orphan', _stub: true } as ChatStub)]
+    test('a successful retry clears the recorded failure', async () => {
+        mocks.fetchChatContent.mockRejectedValueOnce(new Error('fetchChatContent error: 503'))
+        const chats = [stubToPlaceholder({ id: 'retry-chat', name: 'retry', _stub: true } as ChatStub)]
+        await expect(ensureChatHydrated(chats, 0, 'char-a')).rejects.toThrow('503')
 
-            await ensureChatHydrated(chats, 0, 'char-a')
+        const result = await ensureChatHydrated(chats, 0, 'char-a')
 
-            expect(requested).toEqual([['char-a', 'orphan']])
-
-            // Dirty entries survive eviction, so the placeholder cannot come back.
-            await evictHydratedChatCache(undefined, 0)
-            expect(chats[0]._placeholder).toBeUndefined()
-        } finally {
-            setChatSaveRequester(null)
-        }
+        expect(result).not.toBeNull()
+        expect(chats[0]._placeholder).toBeUndefined()
+        expect(get(chatLoadFailures).has('char-a/retry-chat')).toBe(false)
     })
 })
 

@@ -13,28 +13,27 @@
     let manifestItems:[string, string, string][] = $state([])
     let manifestOffset = $state(0)
     let manifestTotal = $state(0)
-    let manifestCharacterId: string | null = $state(null)
-    let manifestLoadSequence = 0
     const manifestPageSize = 100
 
+    // A slower page from the previous character must not land on this one.
+    let manifestRequestSeq = 0
+    // Manifest revision the latest page request was made for (ids change on every edit).
+    let requestedManifestId: string | undefined
+
     async function loadManifestPage(offset = 0) {
-        const characterId = currentCharacter.chaId
         const manifest = currentCharacter.additionalAssetManifest
-        if (!manifest) {
-            manifestItems = []
-            manifestOffset = 0
-            manifestTotal = 0
-            return
-        }
+        if (!manifest) return
+        const seq = ++manifestRequestSeq
+        const chaId = currentCharacter.chaId
         const manifestId = manifest.id
-        const sequence = ++manifestLoadSequence
+        requestedManifestId = manifestId
         const page = await forageStorage.getAssetManifestPage(manifest, {
             offset,
             limit: manifestPageSize,
         })
         if (
-            sequence !== manifestLoadSequence
-            || currentCharacter.chaId !== characterId
+            seq !== manifestRequestSeq
+            || currentCharacter.chaId !== chaId
             || currentCharacter.additionalAssetManifest?.id !== manifestId
         ) return
         manifestItems = page.items as [string, string, string][]
@@ -42,15 +41,28 @@
         manifestTotal = page.total
     }
 
+    let shownChaId: string | undefined
     $effect(() => {
-        const characterId = currentCharacter.chaId
-        if (manifestCharacterId === characterId) return
-        manifestCharacterId = characterId
-        manifestLoadSequence++
-        manifestItems = []
-        manifestOffset = 0
-        manifestTotal = 0
-        if (currentCharacter.additionalAssetManifest) void loadManifestPage(0)
+        const manifestId = currentCharacter.additionalAssetManifest?.id
+        // Drop the previous character's page at once, not when the new one lands.
+        if (shownChaId !== currentCharacter.chaId) {
+            shownChaId = currentCharacter.chaId
+            requestedManifestId = undefined
+            manifestItems = []
+            manifestOffset = 0
+            manifestTotal = 0
+        }
+        if (manifestId) {
+            // Our own edits already requested the page they want (e.g. the last
+            // page after an append); only a revision we did not ask for reloads.
+            if (manifestId !== requestedManifestId) void loadManifestPage(0)
+        } else {
+            manifestRequestSeq++
+            requestedManifestId = undefined
+            manifestItems = []
+            manifestOffset = 0
+            manifestTotal = 0
+        }
     })
 </script>
 {#if currentCharacter.type ==='character'}

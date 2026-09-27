@@ -22,7 +22,7 @@ import katex from 'katex'
 import { getModelInfo } from '../model/modellist';
 import { registerCBS, type matcherArg, type RegisterCallback } from '../cbs';
 import cssSelectorParser from 'postcss-selector-parser'
-import { sha256HexPortable } from '../cryptoFallback';
+import { Sha256 } from '@aws-crypto/sha256-js'
 
 const markdownItOptions = {
     html: true,
@@ -1199,6 +1199,9 @@ const trimCache = new Map<string, string>()
 const TRIM_CACHE_MAX = 200
 
 export function trimMarkdown(data:string){
+    if(!data){
+        return ''
+    }
     // Include hideAllImages in cache key — DOMPurify hook rewrites <img> based on this flag
     const cacheKey = (DBState.db?.hideAllImages ? '1|' : '0|') + data
     let cached = trimCache.get(cacheKey)
@@ -1431,17 +1434,22 @@ function decodeStyleContent(hexText:string):{css?:string, fallback?:string}{
 }
 
 export async function hasher(data:Uint8Array){
+    // crypto.subtle exists only in a secure context. Over plain-HTTP remote
+    // access it is undefined, which broke every caller (plugin permission
+    // checks among them); the JS implementation gives the same digest.
     const subtle = globalThis.crypto?.subtle
     if (typeof subtle?.digest === 'function') {
         try {
-            return Buffer.from(await subtle.digest("SHA-256", data as BufferSource)).toString('hex')
+            return Buffer.from(await subtle.digest("SHA-256", data as BufferSource)).toString('hex');
         } catch {
             // Samsung Internet and several Android WebViews expose a partial
-            // Crypto object on LAN HTTP origins. Fall through to the portable
+            // Crypto object on LAN HTTP origins. Fall through to the JS
             // implementation so V2.1 safety checks cannot abort all plugins.
         }
     }
-    return sha256HexPortable(data)
+    const hash = new Sha256()
+    hash.update(data)
+    return Buffer.from(await hash.digest()).toString('hex');
 }
 
 export type CbsConditions = {

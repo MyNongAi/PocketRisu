@@ -7,6 +7,7 @@
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
     import { alertConfirm, alertMd, alertSelect, notifySuccess } from "src/ts/alert";
     import { TriangleAlert } from '@lucide/svelte';
+    import ShAlert from "src/lib/UI/GUI/ShAlert.svelte";
 
     import { DBState, hotReloading } from "src/ts/stores.svelte";
     import { checkPluginUpdate, importPlugin, loadPlugins, updatePlugin } from "src/ts/plugins/plugins.svelte";
@@ -122,7 +123,10 @@
         </ShButton>
     </div>
 {/if}
-<span class="text-draculared text-xs mb-4">{language.pluginWarn}</span>
+<ShAlert variant="warning" className="mb-4">
+    {#snippet icon()}<TriangleAlert />{/snippet}
+    {language.pluginWarn}
+</ShAlert>
 
 <FolderedList
     folders={DBState.db.pluginFolders ?? []}

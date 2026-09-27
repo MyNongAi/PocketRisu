@@ -3,7 +3,6 @@
     import SettingPage from "src/lib/UI/GUI/SettingPage.svelte";
 
     import { DBState } from 'src/ts/stores.svelte';
-    import Button from "src/lib/UI/GUI/Button.svelte";
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
     import ShDropdownMenuItem from "src/lib/UI/GUI/ShDropdownMenuItem.svelte";
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
@@ -392,21 +391,21 @@
 {:else if mode === 1}
     <SettingPage title={language.createModule}>
     <ModuleMenu bind:currentModule={tempModule}/>
-    <Button className="mt-6" onclick={() => {
+    <ShButton variant="primary" className="mt-6 w-full" onclick={() => {
         addModuleToDatabase(tempModule)
         notifySuccess(language.moduleCreated)
         void returnToModuleList()
-    }}>{language.createModule}</Button>
+    }}>{language.createModule}</ShButton>
     </SettingPage>
 {:else if mode === 2}
     <SettingPage title={language.editModule}>
     <ModuleMenu bind:currentModule={tempModule}/>
-        <Button className="mt-6" onclick={async () => {
+        <ShButton variant="primary" className="mt-6 w-full" onclick={async () => {
             DBState.db.modules[editModuleIndex] = cloneModuleDraft($state.snapshot(tempModule))
             notifySuccess(language.moduleUpdated)
             await returnToModuleList()
-        }}>{language.editModule}</Button>
-        <Button className="mt-2" disabled={converting} onclick={async () => {
+        }}>{language.editModule}</ShButton>
+        <ShButton variant="outline" className="mt-2 w-full" disabled={converting} onclick={async () => {
             if(converting){
                 return
             }
@@ -424,7 +423,7 @@
             } finally {
                 converting = false
             }
-        }}>{language.convertToCharacter}</Button>
+        }}>{language.convertToCharacter}</ShButton>
     </SettingPage>
 {/if}
 </div>

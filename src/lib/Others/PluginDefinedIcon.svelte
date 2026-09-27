@@ -32,9 +32,9 @@
             }
         }
         try {
-            // Relative same-origin icons are valid too; URL() without a base
-            // incorrectly rejected them in the old renderer.
-            const parsedUrl = new URL(url, globalThis.location?.href ?? 'http://localhost/');
+            // Resolve against the page so a relative icon path is allowed;
+            // the protocol check below still applies to the resolved URL.
+            const parsedUrl = new URL(url, location.href);
             const allowedProtocols = ['http:', 'https:', 'data:', 'blob:'];
             if (allowedProtocols.includes(parsedUrl.protocol)) {
                 return parsedUrl.href;

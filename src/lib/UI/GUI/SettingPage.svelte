@@ -22,6 +22,8 @@
         </div>
     {/if}
 </div>
-<div class={`flex min-h-0 flex-col ${contentClassName}`}>
+<!-- A row-layout field right under a notice banner (ShAlert, role=alert)
+     skips its top divider — otherwise the line hugs the banner's edge. -->
+<div class={`flex min-h-0 flex-col [&>[role=alert]+*]:border-t-0 ${contentClassName}`}>
     {@render children?.()}
 </div>

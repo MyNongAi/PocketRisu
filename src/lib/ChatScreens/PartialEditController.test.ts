@@ -68,6 +68,15 @@ function dragDeleteButton() {
   )
 }
 
+/**
+ * Matching awaits the optional translation-edit context before it opens a
+ * modal, so a click needs that microtask and the resulting render to settle.
+ */
+async function afterClick() {
+  await vi.advanceTimersByTimeAsync(0)
+  await tick()
+}
+
 /** Lets the 150ms selection debounce elapse and the resulting render settle. */
 async function settle() {
   await vi.advanceTimersByTimeAsync(200)
@@ -113,7 +122,7 @@ describe('PartialEditController delete confirmation', () => {
     await settle()
 
     dragDeleteButton()!.click()
-    await tick()
+    await afterClick()
 
     expect(document.querySelector('.partial-delete-modal')).toBeTruthy()
   })
@@ -123,10 +132,10 @@ describe('PartialEditController delete confirmation', () => {
     selectText(UNIQUE)
     await settle()
     dragDeleteButton()!.click()
-    await tick()
+    await afterClick()
 
     document.querySelector<HTMLButtonElement>('.partial-delete-modal .partial-edit-cancel-btn')!.click()
-    await tick()
+    await afterClick()
 
     expect(document.querySelector('.partial-delete-modal')).toBeNull()
   })
@@ -152,7 +161,7 @@ describe('PartialEditController delete confirmation', () => {
     selectText(REPEATED)
 
     dragDeleteButton()!.click()
-    await tick()
+    await afterClick()
     expect(document.querySelector('.partial-delete-modal')).toBeTruthy()
 
     // The stale debounce fires and puts the drag button back over the modal.
@@ -162,7 +171,7 @@ describe('PartialEditController delete confirmation', () => {
     // REPEATED matches twice, so this stops at the picker rather than
     // replacing the selected range.
     dragDeleteButton()!.click()
-    await tick()
+    await afterClick()
     const picker = document.querySelector('.partial-match-selection-modal')
     expect(picker, 'an ambiguous selection should open the match picker').toBeTruthy()
     expect(document.querySelector('.partial-delete-modal')).toBeTruthy()
@@ -170,7 +179,7 @@ describe('PartialEditController delete confirmation', () => {
     // Cancelling the picker nulls selectedRange but leaves the confirmation
     // modal mounted — this is what used to throw.
     picker!.querySelector<HTMLButtonElement>('.partial-edit-cancel-btn')!.click()
-    await tick()
+    await afterClick()
 
     expect(document.querySelector('.partial-match-selection-modal')).toBeNull()
   })

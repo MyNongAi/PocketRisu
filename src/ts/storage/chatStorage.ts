@@ -1,7 +1,8 @@
 import { forageStorage } from "../globalApi.svelte"
 import { type Chat, type ChatStub, type ChatOrStub, isChatStub } from "./database.svelte"
 import { tick } from "svelte"
-import { language } from "src/lang"
+import { writable } from "svelte/store"
+import { createChatDeltaSync, indexedDbChatCopies } from "./chatDeltaSync"
 import type { ChatSaveIntent } from './chatSaveIntent'
 import type { ChatSaveOptions } from './nodeStorage'
 
@@ -282,6 +283,21 @@ export async function fetchChatFromServer(chaId: string, chatIndex: number, chat
     return storage.fetchChatContent(chaId, chatIndex, chatId)
 }
 
+// Opening and saving go through delta sync (chatDeltaSync.ts): only what
+// changed crosses the wire for long chats. Exports and backups keep using
+// fetchChatFromServer above, which always transfers the whole chat.
+//
+// A save's options travel keyed by the chat object: chatDeltaSync hands that
+// same object back for the full save it falls back to, and only a full save
+// acts on a conflict (NodeStorage.saveChatContentDelta turns a conflicting
+// delta into 'base-mismatch', which makes chatDeltaSync send the whole chat).
+const chatSaveOptions = new WeakMap<Chat, ChatSaveOptions>()
+
+const chatDeltaSync = createChatDeltaSync({
+    fetchChatContentDelta: (chaId, chatIndex, chatId, base) => forageStorage.realStorage.fetchChatContentDelta(chaId, chatIndex, chatId, base),
+    saveChatContentDelta: (chaId, chatIndex, chatId, chat, base) => forageStorage.realStorage.saveChatContentDelta(chaId, chatIndex, chatId, chat, base, 'update', chatSaveOptions.get(chat) ?? {}),
+}, indexedDbChatCopies)
+
 export async function saveChatToServer(
     chaId: string,
     chatIndex: number,
@@ -290,8 +306,17 @@ export async function saveChatToServer(
     intent: ChatSaveIntent = 'update',
     options: ChatSaveOptions = {},
 ): Promise<void> {
-    const storage = forageStorage.realStorage
-    await storage.saveChatContent(chaId, chatIndex, chatId, chat, intent, options)
+    // A create has no server copy a delta could build on.
+    if (intent === 'create') {
+        await forageStorage.realStorage.saveChatContent(chaId, chatIndex, chatId, chat, intent, options)
+        return
+    }
+    chatSaveOptions.set(chat, options)
+    try {
+        await chatDeltaSync.saveChat(chaId, chatIndex, chatId, chat)
+    } finally {
+        if (chatSaveOptions.get(chat) === options) chatSaveOptions.delete(chat)
+    }
 }
 
 // ── Hydration ───────────────────────────────────────────────────────────────
@@ -305,56 +330,23 @@ export function isHydrating(chaId: string, chatId: string): boolean {
 }
 
 /**
- * Ask the save loop to persist one chat. Registered by saveDb(); chatStorage
- * cannot reach its change tracker directly, and importing it would close a
- * cycle.
+ * Chats whose last hydration failed, keyed `chaId/chatId`: 'missing' when the
+ * server holds no body (404), 'error' for any other failure. The chat screen
+ * shows this instead of "loading" forever. A missing body is left as a
+ * placeholder, never replaced by an empty chat: an empty save could overwrite
+ * messages another device or a backup still holds.
  */
-type ChatSaveRequester = (chaId: string, chatId: string) => void
-let requestChatSave: ChatSaveRequester | null = null
+export type ChatLoadFailure = 'missing' | 'error'
+export const chatLoadFailures = writable<ReadonlyMap<string, ChatLoadFailure>>(new Map())
 
-export function setChatSaveRequester(requester: ChatSaveRequester | null): void {
-    requestChatSave = requester
-}
-
-/**
- * Turn a placeholder whose body the server does not have into an empty but
- * usable chat, preserving the metadata the stub carried.
- *
- * Only called for a definitive 404. The messages are already unrecoverable at
- * this point — they never reached the server — so the choice is between an
- * empty chat the user can use and a placeholder that spins forever.
- */
-function recoverMissingChatBody(
-    chats: Chat[],
-    chatId: string,
-    chaId: string,
-    key: string,
-): Chat | null {
-    const index = chats.findIndex(chat => chat?.id === chatId)
-    if (index === -1) return null
-
-    const slot = chats[index]
-    if (!slot?._placeholder) return slot ?? null
-
-    const recovered: Chat = { ...slot, message: [], fmIndex: -1 }
-    delete recovered._placeholder
-
-    chats[index] = recovered
-    recordHydratedChat(chaId, chatId, chats)
-    // Pin it and queue the write. Without both, the cache evicts this clean
-    // entry straight back to a placeholder and the next open hydrates, 404s
-    // and recovers again — the same chat looping instead of healing.
-    markHydratedChatDirty(chaId, chatId)
-    requestChatSave?.(chaId, chatId)
-    console.warn(`[chatStorage] recovered ${key} as an empty chat; its body was missing on the server`)
-
-    // Dynamic import: chatStorage sits under globalApi, which the alert module
-    // pulls in — a static import would close that cycle.
-    void import('../alert')
-        .then(({ notifyError }) => notifyError(language.errors.chatBodyMissing))
-        .catch(() => {})
-
-    return recovered
+function setChatLoadFailure(key: string, failure: ChatLoadFailure | null): void {
+    chatLoadFailures.update(failures => {
+        if ((failures.get(key) ?? null) === failure) return failures
+        const next = new Map(failures)
+        if (failure) next.set(key, failure)
+        else next.delete(key)
+        return next
+    })
 }
 
 /**
@@ -384,18 +376,19 @@ export async function ensureChatHydrated(
 
     const promise = (async () => {
         hydrationInFlight.add(key)
+        setChatLoadFailure(key, null)
         try {
-            const full = await fetchChatFromServer(chaId, index, chatId)
+            let full: Chat | null
+            try {
+                full = await chatDeltaSync.fetchChat(chaId, index, chatId)
+            } catch (error) {
+                setChatLoadFailure(key, 'error')
+                throw error
+            }
             if (!full) {
-                // Only a 404 lands here — fetchChatContent throws on every other
-                // failure — so the server definitively holds no body for this
-                // chat. Leaving the placeholder in place stranded the screen on
-                // "loading chat data" forever with no way out. Materialize an
-                // empty but usable chat instead: there is nothing left to
-                // recover, and dropping _placeholder re-enables dirty tracking
-                // so the next save writes it back and heals the desync.
                 console.error(`[chatStorage] hydrate failed: chat not found on server (${key})`)
-                return recoverMissingChatBody(chats, chatId, chaId, key)
+                setChatLoadFailure(key, 'missing')
+                return null
             }
 
             // Clear stale streaming flags: if the app died mid-stream after a

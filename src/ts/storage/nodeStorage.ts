@@ -9,6 +9,7 @@ import { language } from "src/lang"
 import { alertInput, waitAlert, notifyError } from "../alert"
 import { decodeRisuSave, encodeRisuSaveLegacy } from "./risuSave"
 import { normalizeChat } from "./database.svelte"
+import type { PatchServerTimings } from "./saveMetrics"
 import type { ChatSaveIntent } from './chatSaveIntent'
 import { chatHoldsAllMessages } from './chatConflict'
 
@@ -150,6 +151,8 @@ export interface PatchItemResult {
     /** `code` / `error` of a 409 body, for logging which guard rejected the patch. */
     conflictCode?: string
     conflictError?: string
+    /** Server stage timings on success (older servers omit them). */
+    serverTimings?: PatchServerTimings
 }
 
 /** Hash fields a 409 or a full-write response may carry; null when absent. */
@@ -461,7 +464,6 @@ export class NodeStorage{
     private static sessionInitialized = false
     private static sessionPending: Promise<void> | null = null
     private refreshPending: Promise<string> | null = null
-    private authPending: Promise<void> | null = null
 
     constructor(
         private readonly fetchFn: StorageFetch = defaultStorageFetch,
@@ -917,21 +919,23 @@ export class NodeStorage{
         }
     }
 
+    // Boot fires several storage calls at once. Without sharing one check,
+    // each sent its own test_auth and, on an unset or wrong password, each
+    // opened its own password prompt.
+    private authPending: Promise<void> | null = null
+
     private async checkAuth(){
-        if (this.authChecked) {
-            await this.initSession()
+        if(!this.authChecked){
+            this.authPending ??= this.runAuthCheck().finally(() => {
+                this.authPending = null
+            })
+            await this.authPending
             return
         }
-        if (this.authPending) return this.authPending
-        this.authPending = this.performAuthCheck()
-        try {
-            await this.authPending
-        } finally {
-            this.authPending = null
-        }
+        await this.initSession()
     }
 
-    private async performAuthCheck(){
+    private async runAuthCheck(){
 
         if(!this.authChecked){
             const data = await (await fetch('/api/test_auth',{
@@ -1146,7 +1150,10 @@ export class NodeStorage{
             this._lastDbEtag = nextEtag
         }
         const persistWarning = data.persistWarning as PersistWarning | undefined
-        return { success: true, etag: nextEtag, persistWarning }
+        const serverTimings = data.timings && typeof data.timings === 'object'
+            ? data.timings as PatchServerTimings
+            : undefined
+        return { success: true, etag: nextEtag, persistWarning, serverTimings }
     }
 
     // ── Bulk asset operations (3-2-B) ──────────────────────────────────────────
@@ -1489,16 +1496,35 @@ export class NodeStorage{
         return await da.json()
     }
 
-    async exportBackup(opts?: ExportBackupOptions): Promise<Response> {
+    /** Hands the backup export to the browser's own download manager. */
+    async downloadBackupExport(opts?: ExportBackupOptions): Promise<void> {
         const params = new URLSearchParams()
         if (opts?.target === 'upstream') params.set('target', 'upstream')
         if (opts?.mode === 'settings') params.set('mode', 'settings')
         if (opts?.moduleAssets === false) params.set('moduleAssets', '0')
         const query = params.toString()
-        const url = query ? `/api/backup/export?${query}` : '/api/backup/export'
-        const da = await this.authFetch(url)
-        if (da.status < 200 || da.status >= 300) throw `backup export error: ${da.status}`
-        return da
+        await this.startCookieDownload(query ? `/api/backup/export?${query}` : '/api/backup/export')
+    }
+
+    // A backup is streamed by the browser's download manager straight to disk
+    // instead of relayed through this tab (whose memory Safari fills with the
+    // whole file, and which non-secure origins route through a third-party
+    // page). The GET authenticates with the session cookie, so refresh it
+    // first. No x-session-id: registering a boot here would disturb the
+    // writer lock.
+    private async startCookieDownload(url: string): Promise<void> {
+        const res = await fetch('/api/session', {
+            method: 'POST',
+            headers: { 'risu-auth': await this.createAuth() },
+        })
+        if (!res.ok) throw new Error(`session refresh failed: ${res.status}`)
+        const anchor = document.createElement('a')
+        anchor.href = url
+        anchor.download = ''
+        anchor.style.display = 'none'
+        document.body.appendChild(anchor)
+        anchor.click()
+        anchor.remove()
     }
 
     // Key names + sizes only; values stay on the server until read per key.
@@ -1739,11 +1765,8 @@ export class NodeStorage{
         if (da.status < 200 || da.status >= 300) throw new Error(`server backup delete error: ${da.status}`)
     }
 
-    async downloadServerBackup(filename: string): Promise<Response> {
-        const da = await this.authFetch(`/api/backup/server/download/${encodeURIComponent(filename)}`)
-        if (da.status === 404) throw new Error('Backup file not found')
-        if (da.status < 200 || da.status >= 300) throw new Error(`server backup download error: ${da.status}`)
-        return da
+    async downloadServerBackup(filename: string): Promise<void> {
+        await this.startCookieDownload(`/api/backup/server/download/${encodeURIComponent(filename)}`)
     }
 
     // ── Chat content (runtime lazy load) ────────────────────────────────────
@@ -1759,6 +1782,74 @@ export class NodeStorage{
         const chat = normalizeChat(await decodeRisuSave(buffer))
         if (etag) this.chatEtags.set(this.chatEtagKey(chaId, chatId), etag)
         return chat
+    }
+
+    /**
+     * Chat delta sync (see server `sendChatContent`): with a base, the server
+     * answers with only the messages after it when the prefix verifies —
+     * `deltaBase` is then set and `chat.message` holds just the rest.
+     */
+    async fetchChatContentDelta(chaId: string, chatIndex: number, chatId: string, base: { count: number, fp: string } | null): Promise<{ chat: any, deltaBase: number | null } | null> {
+        const headers: Record<string, string> = { 'x-chat-id': chatId }
+        if (base) {
+            headers['x-chat-base-count'] = String(base.count)
+            headers['x-chat-base-fp'] = base.fp
+        }
+        const da = await this.authFetchGetWithFirstByteTimeout(`/api/chat-content/${encodeURIComponent(chaId)}/${chatIndex}`, { headers })
+        if (da.status === 404) return null
+        if (da.status < 200 || da.status >= 300) throw new Error(`fetchChatContent error: ${da.status}`)
+        const deltaHeader = da.headers.get('x-chat-delta-base')
+        const deltaBase = deltaHeader !== null && base && Number(deltaHeader) === base.count ? base.count : null
+        // x-chat-etag versions the whole chat even when the body is a delta;
+        // the plain ETag hashes the bytes sent, so it only stands in for a
+        // whole body. Later saves send this as their precondition.
+        const etag = da.headers.get('x-chat-etag') || (deltaHeader === null ? da.headers.get('etag') : null)
+        const buffer = new Uint8Array(await da.arrayBuffer())
+        const chat = normalizeChat(await decodeRisuSave(buffer))
+        if (etag) this.chatEtags.set(this.chatEtagKey(chaId, chatId), etag)
+        return { chat, deltaBase }
+    }
+
+    /**
+     * Save a chat, optionally as a delta: `base` names the prefix the server
+     * already holds and `chat.message` carries only the messages after it.
+     * The body is gzipped when the browser can. Returns 'base-mismatch' when
+     * the server could not verify the prefix (the caller then saves in full).
+     *
+     * A delta is only a smaller way to send an ordinary update, so it carries
+     * the same chat ETag precondition. Any conflict on it is answered with
+     * 'base-mismatch' too: the full save that follows goes through
+     * saveChatContent, which alone decides whether a changed or missing
+     * server copy may be overwritten (saveOverConflict).
+     */
+    async saveChatContentDelta(
+        chaId: string,
+        chatIndex: number,
+        chatId: string,
+        chat: any,
+        base: { count: number, fp: string } | null,
+        intent: ChatSaveIntent = 'update',
+        options: ChatSaveOptions = {},
+    ): Promise<'ok' | 'base-mismatch'> {
+        if (!base) {
+            await this.saveChatContent(chaId, chatIndex, chatId, chat, intent, options)
+            return 'ok'
+        }
+        const encoded = encodeRisuSaveLegacy(chat)
+        const key = this.chatEtagKey(chaId, chatId)
+        return this.runChatOperation(key, async () => {
+            // Without a version to check against there is nothing a delta
+            // can safely build on; the full save establishes one.
+            if (intent !== 'update' || !this.chatEtags.has(key)) return 'base-mismatch'
+            try {
+                await this.saveEncodedChatContent(chaId, chatIndex, chatId, encoded, 'update', base)
+                return 'ok'
+            } catch (error) {
+                // A chat generating elsewhere frees up shortly; retry later.
+                if (!(error instanceof ConflictError) || error.code === 'CHAT_BUSY') throw error
+                return 'base-mismatch'
+            }
+        })
     }
 
     async saveChatContent(
@@ -1831,10 +1922,15 @@ export class NodeStorage{
         chatId: string,
         encoded: ReturnType<typeof encodeRisuSaveLegacy>,
         intent: ChatSaveIntent,
+        deltaBase: { count: number, fp: string } | null = null,
     ): Promise<void> {
         const headers: Record<string, string> = {
             'content-type': 'application/octet-stream',
             'x-chat-id': chatId,
+        }
+        if (deltaBase) {
+            headers['x-chat-base-count'] = String(deltaBase.count)
+            headers['x-chat-base-fp'] = deltaBase.fp
         }
         const etagKey = this.chatEtagKey(chaId, chatId)
         let baselineEtag = this.chatEtags.get(etagKey)
@@ -1860,10 +1956,12 @@ export class NodeStorage{
         }
         if (effectiveIntent === 'create') headers['if-none-match'] = '*'
         else if (baselineEtag) headers['x-if-match'] = baselineEtag
+        const gzipped = await gzipForUpload(encoded)
+        if (gzipped) headers['content-encoding'] = 'gzip'
         const da = await this.authFetch(`/api/chat-content/${encodeURIComponent(chaId)}/${chatIndex}`, {
             method: 'POST',
             headers,
-            body: encoded,
+            body: (gzipped ?? encoded) as BodyInit,
         })
         if (da.status === 409) {
             const data = await da.json().catch(() => ({}))
@@ -1878,13 +1976,34 @@ export class NodeStorage{
     // ── Character archive (deactivate / activate) — see src/ts/characterArchive.ts ──
 
     /** Server writes + verifies the payload; returns the stub to keep in the database. */
-    async archiveCharacter(chaId: string): Promise<any> {
-        const da = await this.authFetch(`/api/characters/${encodeURIComponent(chaId)}/archive`, { method: 'POST' })
-        const body = await da.json().catch(() => ({})) as { ok?: boolean; stub?: any; error?: string; code?: string }
+    async archiveCharacter(chaId: string, arg: { acceptLostChats?: boolean } = {}): Promise<any> {
+        const da = await this.authFetch(`/api/characters/${encodeURIComponent(chaId)}/archive`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ acceptLostChats: arg.acceptLostChats === true }),
+        })
+        const body = await da.json().catch(() => ({})) as { ok?: boolean; stub?: any; error?: string; code?: string; chats?: string[] }
         if (da.status < 200 || da.status >= 300 || !body?.stub) {
-            throw new CharacterArchiveError(body?.code ?? `HTTP_${da.status}`, body?.error ?? `archive error: ${da.status}`)
+            throw new CharacterArchiveError(body?.code ?? `HTTP_${da.status}`, body?.error ?? `archive error: ${da.status}`, body?.chats)
         }
         return body.stub
+    }
+
+    /**
+     * Archive rows for many characters in one request. Throws only when the
+     * request as a whole fails; each character's outcome is in its result.
+     */
+    async archiveCharacters(chaIds: string[], arg: { acceptLostChats?: boolean } = {}): Promise<ArchiveBatchResult[]> {
+        const da = await this.authFetch('/api/characters/archive-batch', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ chaIds, acceptLostChats: arg.acceptLostChats === true }),
+        })
+        const body = await da.json().catch(() => ({})) as { ok?: boolean; results?: ArchiveBatchResult[]; error?: string; code?: string }
+        if (da.status < 200 || da.status >= 300 || !Array.isArray(body?.results)) {
+            throw new CharacterArchiveError(body?.code ?? `HTTP_${da.status}`, body?.error ?? `archive error: ${da.status}`)
+        }
+        return body.results
     }
 
     /** Server registers the chats and returns the client-view character (stub chats, manifest descriptor). */
@@ -2040,11 +2159,35 @@ async function digestPassword(message:string) {
 }
 
 /** Failure reported by the character archive endpoints; `code` is the server's error code. */
+/** One character's outcome in /api/characters/archive-batch. */
+export type ArchiveBatchResult =
+    | { chaId: string; ok: true; stub: any }
+    | { chaId: string; ok: false; code: string; error: string; chats?: string[] }
+
 export class CharacterArchiveError extends Error {
     code: string
-    constructor(code: string, message: string) {
+    /** Names of the chats the failure is about (ARCHIVE_CHATS_UNAVAILABLE). */
+    chats: string[]
+    constructor(code: string, message: string, chats: string[] = []) {
         super(message)
         this.name = 'CharacterArchiveError'
         this.code = code
+        this.chats = Array.isArray(chats) ? chats : []
+    }
+}
+
+// Chat bodies are text-heavy (Korean prose is ~3 bytes a character), so the
+// upload shrinks several-fold; small bodies are not worth the round trip
+// through the stream. The server's express.raw() inflates Content-Encoding
+// gzip transparently, and old servers never see this header from old code.
+const GZIP_MIN_BYTES = 8 * 1024
+
+async function gzipForUpload(bytes: Uint8Array): Promise<Uint8Array | null> {
+    if (!bytes || bytes.byteLength < GZIP_MIN_BYTES || typeof CompressionStream === 'undefined') return null
+    try {
+        const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new CompressionStream('gzip'))
+        return new Uint8Array(await new Response(stream).arrayBuffer())
+    } catch {
+        return null
     }
 }

@@ -1,5 +1,6 @@
 <script lang="ts">
     import { getActiveHypaV3Preset } from "src/ts/process/memory/memoryPresets";
+    import { untrack } from "svelte";
     import { language } from "../../lang";
     import { tokenizeAccurate } from "../../ts/tokenizer";
     import { saveImage as saveAsset, type character, getCurrentCharacter } from "../../ts/storage/database.svelte";
@@ -104,8 +105,6 @@ import ShButton from "../UI/GUI/ShButton.svelte";
     let manifestOffset = $state(0)
     let manifestTotal = $state(0)
     let manifestLoading = $state(false)
-    let manifestCharacterId: string | null = $state(null)
-    let manifestLoadSequence = 0
     let converting = $state(false)
     const manifestPageSize = 100
 
@@ -113,37 +112,71 @@ import ShButton from "../UI/GUI/ShButton.svelte";
         return DBState.db.characters[$selectedCharID] as character
     }
 
+    // This panel stays mounted across character switches, so the loaded page
+    // is tagged with the character it belongs to. Row actions index into the
+    // current character's manifest; running them against another character's
+    // page would rename or delete the wrong asset.
+    let manifestOwner: string | null = $state(null)
+    let manifestRequestSeq = 0
+
+    function clearManifestPage() {
+        manifestRequestSeq++
+        manifestItems = []
+        manifestOffset = 0
+        manifestTotal = 0
+        manifestOwner = null
+        manifestLoading = false
+    }
+
+    function manifestPageIsCurrent(char: character) {
+        return !!char?.additionalAssetManifest && manifestOwner === char.chaId
+    }
+
     async function loadCharacterManifestPage(offset = 0) {
-        const character = currentCharacter as character | undefined
-        const manifest = character?.additionalAssetManifest
-        if (!character || !manifest) {
-            manifestItems = []
-            manifestOffset = 0
-            manifestTotal = 0
-            manifestLoading = false
+        const char = currentChar()
+        const manifest = char?.additionalAssetManifest
+        if (!char || !manifest) {
+            // Nothing to page through: drop a page left from before and
+            // invalidate a load still in flight.
+            clearManifestPage()
             return
         }
-        const characterId = character.chaId
         const manifestId = manifest.id
-        const sequence = ++manifestLoadSequence
+        const seq = ++manifestRequestSeq
         manifestLoading = true
         try {
             const page = await forageStorage.getAssetManifestPage(manifest, {
                 offset,
                 limit: manifestPageSize,
             })
+            // A newer load, a character switch or a replaced manifest
+            // superseded this one.
             if (
-                sequence !== manifestLoadSequence
-                || currentCharacter?.chaId !== characterId
-                || (currentCharacter as character).additionalAssetManifest?.id !== manifestId
+                seq !== manifestRequestSeq
+                || currentChar()?.chaId !== char.chaId
+                || currentChar()?.additionalAssetManifest?.id !== manifestId
             ) return
             manifestItems = page.items as [string, string, string][]
             manifestOffset = page.offset
             manifestTotal = page.total
+            manifestOwner = char.chaId
         } finally {
-            if (sequence === manifestLoadSequence) manifestLoading = false
+            if (seq === manifestRequestSeq) manifestLoading = false
         }
     }
+
+    // Runs before paint so the previous character's previews leave the DOM
+    // at once; a legacy (manifest-less) asset list gets its array here too.
+    $effect.pre(() => {
+        const chaId = currentCharacter?.chaId
+        untrack(() => {
+            if (manifestOwner === chaId) return
+            if (manifestOwner !== null) clearManifestPage()
+            if (viewSubMenu !== 2 || !currentChar()) return
+            if (currentChar().additionalAssetManifest) void loadCharacterManifestPage(0)
+            else currentChar().additionalAssets ??= []
+        })
+    })
 
     async function openCharacterAssetsTab() {
         viewSubMenu = 2
@@ -173,6 +206,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
     async function renameCharacterManifestAsset(index: number, name: string) {
         const char = currentChar()
         if (!char.additionalAssetManifest) return
+        if (!manifestPageIsCurrent(char)) return
         try {
             char.additionalAssetManifest = await editAssetManifest(char.additionalAssetManifest, [
                 { type: 'rename', index: manifestOffset + index, name },
@@ -185,6 +219,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
 
     async function removeCharacterManifestAsset(index: number) {
         const char = currentChar()
+        if (char.additionalAssetManifest && !manifestPageIsCurrent(char)) return
         char.chats[char.chatPage].fmIndex = -1
         if (!char.additionalAssetManifest) {
             char.additionalAssets?.splice(index, 1)
@@ -213,25 +248,6 @@ import ShButton from "../UI/GUI/ShButton.svelte";
     $effect.pre(() => {
         if (!currentCharacter) return
         emos = DBState.db.characters[$selectedCharID].emotionImages
-    });
-
-    // CharConfig stays mounted while the selected bot changes. Invalidate the
-    // old manifest request immediately, remove its previews from the DOM, and
-    // load page zero for the newly selected bot when the asset tab is open.
-    // The sequence check above also prevents a slow response for bot A from
-    // repainting the tab after the user has already switched to bot B.
-    $effect.pre(() => {
-        const characterId = currentCharacter?.chaId ?? null
-        if (manifestCharacterId === characterId) return
-        manifestCharacterId = characterId
-        manifestLoadSequence++
-        manifestItems = []
-        manifestOffset = 0
-        manifestTotal = 0
-        manifestLoading = false
-        if (!currentCharacter || viewSubMenu !== 2) return
-        if ((currentCharacter as character).additionalAssetManifest) void loadCharacterManifestPage(0)
-        else (currentCharacter as character).additionalAssets ??= []
     });
 
     $effect.pre(() => {
@@ -629,14 +645,11 @@ import ShButton from "../UI/GUI/ShButton.svelte";
             {#if DBState.db.newImageHandlingBeta}
             <CheckInput bind:check={DBState.db.characters[$selectedCharID].prebuiltAssetCommand} name={language.insertAssetPrompt}/>
 
-            {#if DBState.db.characters[$selectedCharID].prebuiltAssetCommand}
-
             <span class="text-textcolor mt-2">{language.assetStyle}</span>
             <SelectInput className="mb-2" bind:value={DBState.db.characters[$selectedCharID].prebuiltAssetStyle}>
                 <OptionInput value="">{language.static}</OptionInput>
                 <OptionInput value="dynamic">{language.dynamic}</OptionInput>
             </SelectInput>
-            {/if}
             {/if}
             <div class="w-full max-w-full border border-selected rounded-md p-2 mt-2">
                     <div class="flex items-center justify-between font-medium" data-risu-asset-actions data-risu-asset-scope="character">

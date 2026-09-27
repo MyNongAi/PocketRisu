@@ -51,6 +51,13 @@
             streamingOptimizationMode: StreamingDisplayOptimizationMode
             rawStreamingText: string
         }) => void
+        updateRerollTarget?: (state: {
+            rerollIcon: boolean|'dynamic'|'force'
+            onNextSwipe: () => void
+            onDeleteSwipe: () => void
+            currentPage: number
+            totalPages: number
+        }) => void
     }
     let mountInstances: Map<number, ChatInstance> = new Map();
 
@@ -67,6 +74,20 @@
         }
         return hash;
     }
+
+    const rerollTargetState = (message: Message, isRerollTarget: boolean) => isRerollTarget ? {
+        rerollIcon: 'force' as const,
+        onNextSwipe,
+        onDeleteSwipe,
+        currentPage: (message.swipeId ?? 0) + 1,
+        totalPages: message.swipes?.length ?? 1,
+    } : {
+        rerollIcon: false as const,
+        onNextSwipe: () => {},
+        onDeleteSwipe: () => {},
+        currentPage: 1,
+        totalPages: 1,
+    };
 
     const updateChatBody = () => {
         if(!chatBody){
@@ -132,15 +153,13 @@
             const activeStreamingMessage = i === activeStreamingIndex && message.role === 'char';
             const resolveChatAssets = assetRenderWindow.messageIndices.has(i)
             const hashMessageData = activeStreamingMessage ? '' : message.data;
-            let hashd = hashMessageData + (message.chatId ?? '') + i.toString() + messageLargePortrait.toString() + message.disabled?.toString() + reloadPointer.toString() + (message.swipeId ?? 0).toString() + (message.swipes?.length ?? 0).toString() + isRerollTarget.toString() + resolveChatAssets.toString();
+            let hashd = hashMessageData + (message.chatId ?? '') + i.toString() + messageLargePortrait.toString() + message.disabled?.toString() + reloadPointer.toString() + (message.swipeId ?? 0).toString() + (message.swipes?.length ?? 0).toString() + resolveChatAssets.toString();
             const currentHash = hashCode(hashd);
             currentHashes.add(currentHash);
             if(!hashes.has(currentHash)){
                 const b = document.createElement('div');
                 b.setAttribute('x-hashed', currentHash.toString());
                 b.classList.add('chat-message-container');
-                const swipes = message.swipes;
-                const swipeId = message.swipeId ?? 0;
                 const inst = mount(Chat, {
                     target: b,
                     props: {
@@ -151,12 +170,10 @@
                         img: resolveChatAssets ? getSenderImage(message.role) : '',
                         loadSenderImage: () => getSenderImage(message.role),
                         onReroll: onReroll,
-                        onNextSwipe: i === lastRealCharIdx ? onNextSwipe : () => {},
                         unReroll: unReroll,
-                        onDeleteSwipe: i === lastRealCharIdx ? onDeleteSwipe : () => {},
-                        rerollIcon: i === lastRealCharIdx ? 'force' : false,
+                        ...rerollTargetState(message, isRerollTarget),
                         character: simpleChar,
-                        largePortrait: message.role === 'user' ? (userIconPortrait ?? false) : ((currentCharacter as character).largePortrait ?? false),
+                        largePortrait: messageLargePortrait,
                         messageGenerationInfo: message.generationInfo,
                         role: message.role,
                         name: message.role === 'user' ? currentUsername : currentCharacter.name,
@@ -167,10 +184,6 @@
                         rawStreamingText: message.data,
                         resolveChatAssets,
                         resolveSenderIcon: resolveChatAssets,
-                        ...(i === lastRealCharIdx ? {
-                            currentPage: (swipeId ?? 0) + 1,
-                            totalPages: swipes?.length ?? 1,
-                        } : {}),
                     },
 
                 })
@@ -184,11 +197,15 @@
                 }
             }
             else{
-                mountInstances.get(currentHash)?.updateStreamingDisplay?.({
+                const inst = mountInstances.get(currentHash)
+                inst?.updateStreamingDisplay?.({
                     isOptimizedStreamingMessage: activeStreamingMessage,
                     streamingOptimizationMode: performanceMode,
                     rawStreamingText: message.data,
                 })
+                // A message that stopped being the reroll target must also drop its
+                // swipe-delete control: onDeleteSwipe acts on the current last message.
+                inst?.updateRerollTarget?.(rerollTargetState(message, isRerollTarget))
             }
             nextHash = currentHash;
 

@@ -22,6 +22,7 @@
         translated: boolean
         translating: boolean
         retranslate: boolean
+        renderRevision?: number
         bodyRoot?: HTMLElement|null
         modelShortName: string
         renderRawStreaming?: boolean
@@ -38,6 +39,7 @@
         translated = $bindable(false),
         translating = $bindable(false),
         retranslate = $bindable(false),
+        renderRevision = 0,
         bodyRoot,
         modelShortName = '',
         renderRawStreaming = false,
@@ -56,6 +58,9 @@
         charArg: string | simpleCharacterArgument
         chatID: number
         retranslate: boolean
+        // A re-render caused by an edited translation cache keeps the current
+        // content instead of flashing the loading spinner.
+        preserveContent?: boolean
     }
 
     let translationFlight: Promise<string> | null = null
@@ -160,7 +165,7 @@
             // rendered text for the spinner each time is the flicker of #21,
             // so the spinner then only fills an empty slot. A translation the
             // user asked for, or one outside streaming, shows it as upstream.
-            if (DBState.db.showTranslationLoading && (!hasRenderableResult(lastParsed) || request.retranslate || !get(doingChat))) {
+            if (DBState.db.showTranslationLoading && !request.preserveContent && (!hasRenderableResult(lastParsed) || request.retranslate || !get(doingChat))) {
                 lastParsed = translationLoadingHTML
             }
             // Leave the $derived sync section before writing bound state (state_unsafe_mutation)
@@ -203,6 +208,7 @@
 
         return translationFlight
     }
+    let lastRenderedRevision: number | null = null
 
     function getCbsCondition(){
         try{
@@ -222,10 +228,11 @@
 
     let shouldRenderRawStreaming = $derived(renderRawStreaming && !translated && !retranslate)
 
-    const markParsing = async (data: string, charArg: string | simpleCharacterArgument, chatID: number, tries?:number) => {
+    const markParsing = async (data: string, charArg: string | simpleCharacterArgument, chatID: number, requestedRevision: number, tries?:number) => {
         // track 'translated' and 'retranslate' state
         translated;
         retranslate;
+        const preservePendingContent = lastRenderedRevision !== null && requestedRevision !== lastRenderedRevision
         let lastParsedQueue = ''
         let mode = 'notrim' as const
         try {
@@ -272,6 +279,7 @@
                     charArg,
                     chatID,
                     retranslate,
+                    preserveContent: preservePendingContent,
                 }
                 
                 if(translationFlight){
@@ -304,7 +312,7 @@
                 lastParsedQueue = hasRenderableResult(data) ? data : lastParsed
                 return lastParsedQueue
             }
-            const retryResult = await markParsing(data, charArg, chatID, (tries ?? 0) + 1)
+            const retryResult = await markParsing(data, charArg, chatID, requestedRevision, (tries ?? 0) + 1)
             if(hasRenderableResult(retryResult)){
                 lastParsedQueue = retryResult
             }
@@ -315,6 +323,7 @@
             if(hasRenderableResult(lastParsedQueue)){
                 lastParsed = lastParsedQueue
             }
+            lastRenderedRevision = requestedRevision
         }
     }
 
@@ -484,7 +493,7 @@
         releaseRenderedAssets()
     })
 
-    let markParsingResult = $derived.by(() => markParsing(msgDisplay, character, idx))
+    let markParsingResult = $derived.by(() => markParsing(msgDisplay, character, idx, renderRevision))
 
     $effect(() => {
         if(!resolveAssets){

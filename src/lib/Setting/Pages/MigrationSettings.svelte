@@ -4,7 +4,6 @@
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
     import ShAlert from "src/lib/UI/GUI/ShAlert.svelte";
     import ShAccordion from "src/lib/UI/GUI/ShAccordion.svelte";
-    import Button from "src/lib/UI/GUI/Button.svelte";
     import { alertConfirm } from "src/ts/alert";
     import {
         LoadLocalBackup,
@@ -23,6 +22,18 @@
     }
 </script>
 
+<!-- Action rows (label + description left, button right) — same grammar
+     as the row-layout settings pages. -->
+{#snippet actionRow(label: string, desc: string | undefined, buttonText: string, onclick: () => unknown)}
+    <div class="flex items-center justify-between gap-3 py-3 border-t border-darkborderc first:border-t-0">
+        <div class="flex flex-col min-w-0">
+            <span class="text-sm text-textcolor">{label}</span>
+            {#if desc}<p class="text-xs text-textcolor2 mt-0.5">{desc}</p>{/if}
+        </div>
+        <ShButton variant="outline" size="sm" className="shrink-0" {onclick}>{buttonText}</ShButton>
+    </div>
+{/snippet}
+
 <SettingPage title={language.migration}>
     <p class="text-textcolor2 text-sm leading-relaxed mb-4">{language.migrationDesc}</p>
 
@@ -36,24 +47,20 @@
         {/snippet}
     </ShAlert>
 
+
     <!-- Migration: upstream RisuAI ↔ NodeOnly ─────────────────────────── -->
-    <Button
-        onclick={async () => {
+    <div class="flex flex-col">
+        {@render actionRow(language.saveBackupForUpstream, undefined, language.settingActionExport, async () => {
             if (await alertConfirm(language.saveBackupForUpstreamConfirm)) {
                 SaveLocalBackupForUpstream();
             }
-        }} className="mt-2">
-        {language.saveBackupForUpstream}
-    </Button>
-
-    <Button
-        onclick={async () => {
+        })}
+        {@render actionRow(language.migrationLoadUpstreamBackup, undefined, language.settingActionImport, async () => {
             if ((await alertConfirm(language.backupLoadConfirm)) && (await alertConfirm(language.backupLoadConfirm2))) {
                 LoadLocalBackup();
             }
-        }} className="mt-2">
-        {language.migrationLoadUpstreamBackup}
-    </Button>
+        })}
+    </div>
 
     <div class="mt-6 rounded-md border border-darkborderc p-4">
         <h3 class="font-semibold text-textcolor">출처별 컬렉션 병합</h3>
@@ -66,9 +73,9 @@
             32MB를 넘는 part는 거부되며, 16MB를 넘거나 원본에서 읽을 수 없는 단일 에셋은 나머지 항목을 살리기 위해
             누락 목록에 기록하고 해당 참조만 비운 채 병합합니다. 모듈보다 봇을 먼저 가져와도 같은 출처 관계 ID로 나중에 자동 연결됩니다.
         </p>
-        <Button onclick={selectAndImportSourceCollections} className="mt-3 w-full">
+        <ShButton onclick={selectAndImportSourceCollections} className="mt-3 w-full">
             컬렉션 part 파일 선택·병합
-        </Button>
+        </ShButton>
         <a
             href="/plugins/pocketrisu-source-collection-exporter.js"
             download="pocketrisu-source-collection-exporter.js"
@@ -81,20 +88,10 @@
     <!-- Save folder import (collapsed by default) ────────────────────── -->
     <div class="mt-6">
         <ShAccordion name={language.migrationSaveFolderAccordion} variant="card">
-            <p class="text-textcolor2 text-sm leading-relaxed mb-3">{language.migrationSaveFolderDesc}</p>
-
-            <p class="text-textcolor2 text-sm leading-relaxed mb-2">{language.importSaveZipDesc}</p>
-            <div class="flex flex-col gap-2">
-                <Button onclick={ImportFromSaveZip} className="w-full">
-                    {language.importSaveZip}
-                </Button>
-            </div>
-
-            <p class="text-textcolor2 text-sm leading-relaxed mt-4 mb-2">{language.cleanupMigratedDesc}</p>
-            <div class="flex flex-col gap-2">
-                <Button onclick={CleanupMigratedFiles} className="w-full">
-                    {language.cleanupMigratedFiles}
-                </Button>
+            <p class="text-textcolor2 text-sm leading-relaxed mb-1">{language.migrationSaveFolderDesc}</p>
+            <div class="flex flex-col">
+                {@render actionRow(language.importSaveZip, language.importSaveZipDesc, language.settingActionImport, ImportFromSaveZip)}
+                {@render actionRow(language.cleanupMigratedFiles, language.cleanupMigratedDesc, language.run, CleanupMigratedFiles)}
             </div>
         </ShAccordion>
     </div>
@@ -102,20 +99,14 @@
     <!-- Legacy backup options (collapsed by default) ──────────────────── -->
     <div class="mt-3">
         <ShAccordion name={language.migrationLegacyAccordion} variant="card">
-            <p class="text-textcolor2 text-sm leading-relaxed mb-3">{language.migrationLegacyDesc}</p>
-            <div class="flex flex-col gap-2">
-                <Button
-                    onclick={async () => {
-                        if (await alertConfirm(language.backupConfirm)) {
-                            SavePartialLocalBackup();
-                        }
-                    }} className="w-full">
-                    {language.savePartialLocalBackup}
-                </Button>
-
-                <Button onclick={exportAsDataset} className="w-full">
-                    {language.exportAsDataset}
-                </Button>
+            <p class="text-textcolor2 text-sm leading-relaxed mb-1">{language.migrationLegacyDesc}</p>
+            <div class="flex flex-col">
+                {@render actionRow(language.savePartialLocalBackup, undefined, language.settingActionExport, async () => {
+                    if (await alertConfirm(language.backupConfirm)) {
+                        SavePartialLocalBackup();
+                    }
+                })}
+                {@render actionRow(language.exportAsDataset, undefined, language.settingActionExport, exportAsDataset)}
             </div>
         </ShAccordion>
     </div>
