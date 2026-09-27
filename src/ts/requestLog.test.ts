@@ -156,6 +156,25 @@ describe('createRequestLogScope', () => {
         expect(entry.requestBody).toContain('omitted')
     })
 
+    it('strips a Gemini PDF-input inlineData payload from the request body', async () => {
+        const scope = createRequestLogScope({ category: 'llm', source: 'main' })
+        const wrapped = scope.wrap(async () => jsonResponse('{}'))
+        const body = JSON.stringify({
+            contents: [{ role: 'user', parts: [
+                { inlineData: { mimeType: 'application/pdf', data: 'JVBERi0x'.repeat(1000) } },
+                { text: 'continue' },
+            ] }],
+        })
+        await (await wrapped('https://x.test/v1', { method: 'POST', body })).text()
+        await scope.close()
+
+        const [entry] = posted[0]
+        expect(entry.requestBody).not.toContain('JVBERi0xJVBERi0x')
+        expect(entry.requestBody).toContain('"mimeType":"application/pdf","data":"[application/pdf:')
+        expect(entry.requestBody).toContain('continue')
+        expect(() => JSON.parse(entry.requestBody)).not.toThrow()
+    })
+
     it('lets a later real body override what the caller handed in', async () => {
         const scope = createRequestLogScope({ category: 'llm', source: 'main' })
         const wrapped = scope.wrap(async () => jsonResponse('{}'))

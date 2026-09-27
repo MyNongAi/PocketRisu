@@ -98,6 +98,13 @@ export const advancedRequestItems: SettingItem[] = [
     { id: 'adv.disableSeperateParameterChangeOnPresetChange', type: 'check', labelKey: 'disableSeperateParameterChangeOnPresetChange', bindKey: 'disableSeperateParameterChangeOnPresetChange', helpKey: 'disableSeperateParameterChangeOnPresetChange', classes: 'mt-4' },
     { id: 'adv.antiOverload', type: 'check', labelKey: 'antiServerOverload', bindKey: 'antiServerOverloads', helpKey: 'antiServerOverload', classes: 'mt-4' },
     { id: 'adv.claudeCache', type: 'check', labelKey: 'claude1HourCaching', bindKey: 'claude1HourCaching', helpKey: 'claude1HourCaching', classes: 'mt-4' },
+    {
+        // GEMINI-PDF-INPUT: one global switch for every native-Gemini request
+        // (classic Google/Vertex models and google-gemini model presets).
+        id: 'adv.geminiPdfInput', type: 'check', labelKey: 'nodeOnlyGeminiPdfInput', bindKey: 'nodeOnlyGeminiPdfInput',
+        helpKey: 'nodeOnlyGeminiPdfInput', showExperimental: true, classes: 'mt-4',
+        keywords: ['gemini', 'vertex', 'pdf', 'token', 'cost', '제미나이', '토큰', '비용'],
+    },
     { id: 'adv.tokCache', type: 'check', labelKey: 'useTokenizerCaching', bindKey: 'useTokenizerCaching', helpKey: 'useTokenizerCaching', classes: 'mt-4' },
     {
         id: 'adv.reqLoc', type: 'segmented', labelKey: 'requestLocation', bindKey: 'requestLocation',

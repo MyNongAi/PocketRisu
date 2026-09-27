@@ -11,6 +11,7 @@ import type { RequestDataArgumentExtended, requestDataResponse, StreamResponseCh
 import { toLogSource } from './logSource'
 import { applyAdditionalParameters, applyParameters, getAdditionalParameters, type LLMParameter } from './shared'
 import { bodyIntercepterStore } from "src/ts/stores.svelte"
+import { applyGeminiPdfInput } from './geminiPdfInput'
 
 type GeminiFunctionCall = {
     id?: string;
@@ -606,6 +607,12 @@ export async function requestGoogleCloudVertex(arg:RequestDataArgumentExtended):
                 headers: headers
             })
         }
+    }
+
+    // GEMINI-PDF-INPUT: send the context before the last user turn as one PDF
+    // (geminiPdfInput.ts); the body stays as-is whenever that cannot apply.
+    if(db.nodeOnlyGeminiPdfInput === true){
+        body = (await applyGeminiPdfInput(body, { signal: arg.abortSignal })).body
     }
 
     return requestGoogle(url, body, headers, arg)

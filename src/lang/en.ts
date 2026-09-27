@@ -1865,6 +1865,7 @@ export const languageEnglish = {
     scrollButtonTypeTwo: "2 Buttons",
     scrollButtonTypeOff: "Off",
     nodeOnlyServerSideRequests: "Server-Side Requests",
+    nodeOnlyGeminiPdfInput: "Send Gemini Context as PDF",
     pendingSendNotice: "Unfinished send: {chars} — opening the chat will resume it.",
     seperateParametersByModel: "Separate Parameters by Model",
     disableSeperateParameterChangeOnPresetChange: "Disable Separate Parameter Change on Preset Change",

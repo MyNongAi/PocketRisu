@@ -4455,6 +4455,13 @@ const { createModelJobs } = require('./model-jobs.cjs');
 const modelJobs = createModelJobs({ saveDir: savePath, logger });
 modelJobs.registerRoutes(app, { auth: checkProxyAuth });
 
+// --- Gemini PDF input (GEMINI-PDF-INPUT) ---
+// POST /api/gemini/pdf-input renders the context of a native-Gemini request
+// into one text-layer PDF (the client splices it into the request). Fonts and
+// pdfkit load on first use; see gemini-pdf-input.cjs.
+const { createGeminiPdfInput } = require('./gemini-pdf-input.cjs');
+createGeminiPdfInput({ logger }).registerRoutes(app, { auth: checkProxyAuth });
+
 // app.get('/api/password', async(req, res)=> {
 //     if(password === ''){
 //         res.send({status: 'unset'})

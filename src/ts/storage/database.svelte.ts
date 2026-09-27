@@ -442,6 +442,8 @@ export function setDatabase(data:Database){
     // from recovery (kind='aux', pinned cache fetch), degraded recovery falls
     // back to pre-feature behavior, and the toggle remains the kill switch.
     data.nodeOnlyServerSideRequests ??= true
+    // GEMINI-PDF-INPUT: experimental, opt-in (default OFF).
+    data.nodeOnlyGeminiPdfInput ??= false
     if(!data.formatingOrder.includes('personaPrompt')){
         data.formatingOrder.splice(data.formatingOrder.indexOf('main'),0,'personaPrompt')
     }
@@ -1676,6 +1678,10 @@ export interface Database{
     // Default OFF (undefined is falsy) — no migration needed. Toggled in
     // advanced settings (advancedSettingsData.ts).
     nodeOnlyServerSideRequests?:boolean
+    // Send the context before the last user turn of every native-Gemini
+    // request as one server-rendered PDF (GEMINI-PDF-INPUT,
+    // process/request/geminiPdfInput.ts). Default OFF.
+    nodeOnlyGeminiPdfInput?:boolean
     seperateParametersByModel?:boolean
     disableSeperateParameterChangeOnPresetChange?:boolean
     saveSignatures?:boolean

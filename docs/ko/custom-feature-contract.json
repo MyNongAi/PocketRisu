@@ -620,6 +620,36 @@
       "regressionTests": [
         "src/ts/firstMessage.test.ts"
       ]
+    },
+    {
+      "id": "GEMINI-PDF-INPUT",
+      "title": "Gemini 긴 컨텍스트 PDF 입력",
+      "criticality": "cost",
+      "ownerFiles": [
+        "src/ts/process/request/geminiPdfInput.ts",
+        "server/node/gemini-pdf-input.cjs",
+        "src/ts/process/request/google.ts",
+        "src/ts/process/request/request.ts",
+        "src/ts/setting/advancedSettingsData.ts",
+        "src/ts/requestLog.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/request/geminiPdfInput.ts", "contains": "export function planGeminiPdfInput" },
+        { "file": "src/ts/process/request/google.ts", "contains": "applyGeminiPdfInput(body, { signal: arg.abortSignal })" },
+        { "file": "src/ts/process/request/request.ts", "contains": "withGeminiPdfInput(fetchImpl)" },
+        { "file": "server/node/gemini-pdf-input.cjs", "contains": "app.post('/api/gemini/pdf-input'" },
+        { "file": "server/node/server.cjs", "contains": "createGeminiPdfInput({ logger }).registerRoutes(app, { auth: checkProxyAuth })" },
+        { "file": "src/ts/setting/advancedSettingsData.ts", "contains": "bindKey: 'nodeOnlyGeminiPdfInput'" },
+        { "file": "src/ts/storage/database.svelte.ts", "contains": "data.nodeOnlyGeminiPdfInput ??= false" },
+        { "file": "src/ts/requestLog.ts", "contains": "[application/pdf: " }
+      ],
+      "regressionTests": [
+        "src/ts/process/request/geminiPdfInput.test.ts",
+        "src/ts/process/request/googlePdfInputHook.test.ts",
+        "src/ts/setting/geminiPdfInputSetting.test.ts",
+        "src/ts/requestLog.test.ts",
+        "server/node/gemini-pdf-input.test.ts"
+      ]
     }
   ]
 }

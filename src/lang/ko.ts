@@ -2142,6 +2142,7 @@ export const languageKorean = {
   scrollButtonTypeTwo: "2버튼",
   scrollButtonTypeOff: "사용 안 함",
   nodeOnlyServerSideRequests: "서버 사이드 요청",
+  nodeOnlyGeminiPdfInput: "Gemini 컨텍스트를 PDF로 보내기",
   pendingSendNotice: "완료되지 못한 전송: {chars} — 해당 채팅을 열면 이어서 보냅니다.",
   searchSettingsPlaceholder: "설정 검색...",
   searchSettingsNoResults: "일치하는 설정이 없습니다",

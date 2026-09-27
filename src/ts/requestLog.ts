@@ -104,10 +104,17 @@ export function requestLogEnabled(): boolean {
 // Inlined media turns a 300KB prompt into a multi-MB one and is worthless to
 // read back, so it is replaced before the body ever leaves the browser.
 export function stripInlineMedia(body: string): string {
-    return body.replace(
+    const withoutDataUrls = body.replace(
         /"data:([a-z]+)\/([a-z0-9.+-]+);base64,[A-Za-z0-9+/=]+"/gi,
         (match, type: string, subtype: string) =>
             `"[${type}/${subtype}: ${Math.round(match.length * 0.75 / 1024)} KB omitted]"`,
+    )
+    // Gemini PDF input (GEMINI-PDF-INPUT) sends the context as a raw-base64
+    // inlineData PDF, not a data URL; keep the log readable the same way.
+    return withoutDataUrls.replace(
+        /("mime_?type"\s*:\s*"application\/pdf"\s*,\s*"data"\s*:\s*)"([A-Za-z0-9+/=]{256,})"/gi,
+        (_match, prefix: string, data: string) =>
+            `${prefix}"[application/pdf: ${Math.round(data.length * 0.75 / 1024)} KB omitted]"`,
     )
 }
 
