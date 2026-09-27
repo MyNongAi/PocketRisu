@@ -1315,26 +1315,48 @@ export class RisuSavePatcher {
         let structuralChange = lastIds.length !== curIds.length ||
             lastIds.some((id: string, i: number) => id !== curIds[i])
 
-        // Trash/deactivation removes cards without reordering the survivors.
-        // Sending the entire surviving catalog for this one operation can be
-        // hundreds of MB, exceed /api/patch's body limit and trigger an even
-        // larger full-write fallback. Reuse retained baselines and remove only
-        // the vanished indices, descending so subsequent indices stay valid.
+        // Trash/deactivation removes cards and import/activation adds them,
+        // without reordering the others. Sending the entire catalog for one
+        // such operation is hundreds of MB on a large install (1,300 cards are
+        // about 295 MB even with chats stubbed): it exceeds /api/patch's body
+        // limit, the full-write fallback is larger still, and every save then
+        // fails until a reload (2026-09-26, lost chat). While the cards present
+        // on both sides keep their order, remove only the vanished indices
+        // (descending, so later indices stay valid) and add only the new cards
+        // (ascending, each at its final index). A reorder still replaces the
+        // whole array.
         let alignedLastCharacters = lastCharacters
         const curIdSet = new Set(curIds)
+        const lastIdSet = new Set(lastIds)
         const validIds = (ids: unknown[]) => ids.every(id => typeof id === 'string' && !!id)
             && new Set(ids).size === ids.length
-        if (structuralChange && curIds.length < lastIds.length && validIds(lastIds) && validIds(curIds)) {
+        if (structuralChange && validIds(lastIds) && validIds(curIds)) {
             const retained = lastCharacters.filter((c: any) => curIdSet.has(c.chaId))
-            if (retained.length === curIds.length && retained.every((c: any, i: number) => c.chaId === curIds[i])) {
+            const retainedCurIds = curIds.filter((id: string) => lastIdSet.has(id))
+            if (retained.length === retainedCurIds.length && retained.every((c: any, i: number) => c.chaId === retainedCurIds[i])) {
                 for (let i = lastIds.length - 1; i >= 0; i--) {
                     if (curIdSet.has(lastIds[i])) continue
                     patch.push({ op: 'remove', path: `/characters/${i}` })
                     delete this.hashBlocks[lastIds[i]]
                     this.lastCharJsons.delete(lastIds[i])
                 }
-                alignedLastCharacters = retained
-                this.lastSyncedDb.characters = retained.slice()
+                const aligned: any[] = []
+                let nextRetained = 0
+                for (let i = 0; i < curCharacters.length; i++) {
+                    const id = curIds[i]
+                    if (lastIdSet.has(id)) {
+                        aligned.push(retained[nextRetained++])
+                        continue
+                    }
+                    const normChar = normalizeJSON(withStubs(curCharacters[i]))
+                    patch.push({ op: 'add', path: `/characters/${i}`, value: normChar })
+                    this.hashBlocks[id] = calculateHash(normChar)
+                    this.lastCharJsons.set(id, JSON.stringify(normChar))
+                    this.lastChangedCharacterIds.push(id)
+                    aligned.push(normChar)
+                }
+                alignedLastCharacters = aligned
+                this.lastSyncedDb.characters = aligned.slice()
                 structuralChange = false
             }
         }

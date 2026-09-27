@@ -830,7 +830,7 @@ describe('fast-path — no-op detection after each transition', () => {
 
         const changed = clone(db); changed.characters.push(chr('b'))
         const r1 = await p.set(clone(changed), emptyToSave())
-        expect(r1.patch.some((o: any) => o.path === '/characters')).toBe(true)
+        expect(r1.patch).toEqual([{ op: 'add', path: '/characters/1', value: expect.objectContaining({ chaId: 'b' }) }])
 
         const r2 = await p.set(clone(changed), emptyToSave())
         expect(r2.patch).toEqual([])
@@ -883,6 +883,54 @@ describe('fast-path — no-op detection after each transition', () => {
         // confirmed patcher's shared character baseline or retry caches.
         expect((await p.fork().set(changed, emptyToSave())).patch).toEqual(result.patch)
         expect((await draft.set(changed, emptyToSave())).patch).toEqual([])
+    })
+
+    // 2026-09-26: importing a bot into a 1,300-card catalog sent the whole
+    // array (~295 MB), /api/patch refused it (413), the full-write fallback
+    // aborted, and nothing saved until a reload.
+    test('import into a large catalog sends only the added cards and retains hash parity', async () => {
+        const { applyPatch } = await import('fast-json-patch')
+        const db = dbWith(Array.from({ length: 1000 }, (_, i) => chr(`card-${i}`, { desc: 'lore'.repeat(2048) })))
+        const p = new RisuSavePatcher()
+        await p.init(db)
+        const draft = p.fork()
+        const characters = db.characters.slice()
+        characters.splice(500, 0, chr('imported-mid'))
+        characters.unshift(chr('imported-top'))
+        const changed = { ...db, characters }
+        const result = await draft.set(changed, emptyToSave())
+        expect(result.patch.map((o: any) => [o.op, o.path])).toEqual([
+            ['add', '/characters/0'],
+            ['add', '/characters/501'],
+        ])
+        expect(JSON.stringify(result.patch).length).toBeLessThan(2000)
+        expect(applyPatch(clone(db), result.patch).newDocument).toEqual(changed)
+        const fresh = new RisuSavePatcher()
+        await fresh.init(changed)
+        expect(draft.hash()).toBe(fresh.hash())
+        // A failed upload discards the draft; the confirmed patcher still
+        // computes the same small patch, and the draft sees nothing left.
+        expect((await p.fork().set(changed, emptyToSave())).patch).toEqual(result.patch)
+        expect((await draft.set(changed, emptyToSave())).patch).toEqual([])
+    })
+
+    test('a save that removes one card and adds another stays small', async () => {
+        const { applyPatch } = await import('fast-json-patch')
+        const db = dbWith([chr('a'), chr('b'), chr('c')])
+        const changed = dbWith([chr('new'), chr('a'), chr('c', { desc: 'edited' })])
+        const p = new RisuSavePatcher()
+        await p.init(db)
+        const result = await p.set(changed, emptyToSave())
+        expect(result.patch.map((o: any) => [o.op, o.path])).toEqual([
+            ['remove', '/characters/1'],
+            ['add', '/characters/0'],
+            ['replace', '/characters/2/desc'],
+        ])
+        expect(applyPatch(clone(db), result.patch).newDocument).toEqual(changed)
+        const fresh = new RisuSavePatcher()
+        await fresh.init(changed)
+        expect(p.hash()).toBe(fresh.hash())
+        expect((await p.set(clone(changed), emptyToSave())).patch).toEqual([])
     })
 
     test('deletion preserves simultaneous edits at the survivor\'s new index', async () => {
