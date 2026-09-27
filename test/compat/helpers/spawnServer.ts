@@ -19,6 +19,8 @@ export interface ServerHandle {
   port: number
   password: string
   cwd: string
+  /** Everything the server has printed to stdout so far. */
+  stdout: () => string
   /** Kill the server and clean up the temp directory. */
   cleanup: () => Promise<void>
 }
@@ -71,9 +73,11 @@ export async function spawnServer(opts: SpawnServerOptions = {}): Promise<Server
     },
   )
 
-  // Collect stderr for diagnostics on failure
+  // Collect stderr for diagnostics on failure, stdout for tests that read logs
   let stderrBuf = ''
   child.stderr?.on('data', (chunk: Buffer) => { stderrBuf += chunk.toString() })
+  let stdoutBuf = ''
+  child.stdout?.on('data', (chunk: Buffer) => { stdoutBuf += chunk.toString() })
 
   // Wait for the server to print its "running" message
   await new Promise<void>((resolve, reject) => {
@@ -113,5 +117,5 @@ export async function spawnServer(opts: SpawnServerOptions = {}): Promise<Server
     await rm(tempDir, { recursive: true, force: true })
   }
 
-  return { port, password: TEST_PASSWORD, cwd: tempDir, cleanup }
+  return { port, password: TEST_PASSWORD, cwd: tempDir, stdout: () => stdoutBuf, cleanup }
 }

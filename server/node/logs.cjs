@@ -259,6 +259,9 @@ function makeServerLogger() {
         warning: (...args) => { log('warning', args); markLogged(args); console.warn(...args); },
         warn: (...args) => { log('warning', args); markLogged(args); console.warn(...args); },
         info: (...args) => { log('info', args); },
+        // Frequent diagnostics (per-save timings): stdout only, never stored,
+        // so they cannot crowd real entries out of the log viewer.
+        debug: (...args) => { console.debug(...args); },
     };
 }
 

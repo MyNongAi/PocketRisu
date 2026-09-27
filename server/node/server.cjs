@@ -103,6 +103,7 @@ const {
 } = require('./assetManifestMigration.cjs');
 const { spawn, execSync } = require('child_process');
 const os = require('os');
+const v8 = require('v8');
 const { Readable, Transform } = require('stream');
 const { Worker } = require('worker_threads');
 
@@ -1134,9 +1135,32 @@ function findStubFlagLossChats(fullDb) {
 // /api/patch responses for the client's save dashboard.
 let lastDbPersistMs = null;
 
+// Stage timer: each call returns the whole milliseconds since the previous
+// call (or since startAt). /api/patch reports its stages to the client's save
+// dashboard (saveMetrics.ts); the persist and database read log theirs.
+function createStageLap(startAt = performance.now()) {
+    let stageAt = startAt;
+    return () => {
+        const now = performance.now();
+        const ms = Math.round(now - stageAt);
+        stageAt = now;
+        return ms;
+    };
+}
+
+function formatStageTimings(timings) {
+    return Object.entries(timings).map(([stage, ms]) => `${stage.replace(/Ms$/, '')} ${ms}`).join(' ');
+}
+
+function formatMegabytes(bytes) {
+    return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
+}
+
 async function persistDbCacheWithChats(filePath, decodedKey) {
     if (!dbCache[filePath]) return;
     const persistStartedAt = performance.now();
+    const lap = createStageLap(persistStartedAt);
+    const timings = {};
     await ensureChatStore();
     // Read the root only after every await, and hydrate, write and rebuild
     // the chat store below without awaiting in between. A persist can run
@@ -1159,7 +1183,9 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
             }
         }
     } while (dbCache[filePath] !== strippedDb);
+    timings.waitMs = lap();
     let fullDb = hydrateDatabaseForDisk(strippedDb);
+    timings.hydrateMs = lap();
 
     // Disk protection guard: abort persist when reassemble produced metadata-only
     // chats. Writing them would lock the loss in (next /api/read returns the
@@ -1193,8 +1219,10 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
         }
         if (archived) fullDb = applyArchivedChatsForDisk(fullDb, archived.bodies, 'persist');
     }
+    timings.guardsMs = lap();
 
     const data = Buffer.from(encodeRisuSaveLegacy(fullDb));
+    timings.encodeMs = lap();
     try {
         kvSet(decodedKey, data);
     } catch (err) {
@@ -1205,6 +1233,7 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
         }
         throw err;
     }
+    timings.kvSetMs = lap();
     // Refresh fullChatStore from the persisted snapshot so subsequent
     // /api/chat-content GETs return the same metadata (folderId, modules)
     // that just hit disk. Without this, PATCH-only clears of stub fields
@@ -1213,8 +1242,10 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
     if (decodedKey === 'database/database.bin') {
         pendingChatPayloads.retireCommitted(fullDb);
         initChatStore(fullDb);
+        timings.storeMs = lap();
         lastDbPersistMs = Math.round(performance.now() - persistStartedAt);
     }
+    logger.debug(`[Persist] ${decodedKey} ${formatMegabytes(data.length)}: ${formatStageTimings(timings)} total ${Math.round(performance.now() - persistStartedAt)} ms`);
 }
 
 function scheduleDatabasePersist(source = 'database', delay = SAVE_INTERVAL) {
@@ -5903,9 +5934,14 @@ app.get('/api/read', async (req, res, next) => {
     }
     try {
         const key = Buffer.from(filePath, 'hex').toString('utf-8');
+        // Stage timings of a database.bin read, for the debug line below.
+        const readStartedAt = performance.now();
+        const lap = createStageLap(readStartedAt);
+        const readTimings = {};
         // Flush pending patches before reading database.bin
         if (key === 'database/database.bin') {
             await flushPendingDb();
+            readTimings.flushMs = lap();
         }
         let value = null;
         if (key.startsWith('inlay/')) {
@@ -5922,6 +5958,7 @@ app.get('/api/read', async (req, res, next) => {
             // Strip chat payloads and asset manifests from database.bin — the
             // client gets stubs and descriptors only.
             if (key === 'database/database.bin') {
+                readTimings.blobMs = lap(); // the kvGet above: only null-checked
                 try {
                     // Cold load runs under the storage queue so it cannot
                     // race a cold /api/patch (see loadDbCacheIfMissing). A
@@ -5930,7 +5967,9 @@ app.get('/api/read', async (req, res, next) => {
                     if (!dbCache[filePath]) {
                         await queueStorageOperation(() => loadDbCacheIfMissing({ createBackup: true }));
                     }
+                    readTimings.loadMs = lap();
                     value = Buffer.from(encodeRisuSaveLegacy(dbCache[filePath]));
+                    readTimings.encodeMs = lap();
                 } catch (e) {
                     // Log the Error itself (not just e.message) so logger.*
                     // tags it and the Express middleware won't re-log after next().
@@ -5938,6 +5977,8 @@ app.get('/api/read', async (req, res, next) => {
                     return next(e);
                 }
                 dbEtag = computeBufferEtag(value);
+                readTimings.etagMs = lap();
+                logger.debug(`[Read] ${key} ${formatMegabytes(value.length)}: ${formatStageTimings(readTimings)} total ${Math.round(performance.now() - readStartedAt)} ms`);
                 if (req.headers['if-none-match'] === dbEtag) {
                     return res.status(304).end();
                 }
@@ -6452,13 +6493,7 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
     try {
         await queueMutableStorageOperation(async () => {
             const timings = { queueMs: Math.round(performance.now() - patchStartedAt) };
-            let stageAt = performance.now();
-            const lap = () => {
-                const now = performance.now();
-                const ms = Math.round(now - stageAt);
-                stageAt = now;
-                return ms;
-            };
+            const lap = createStageLap();
             const decodedKey = Buffer.from(filePath, 'hex').toString('utf-8');
 
             // Load database into memory if not already cached
@@ -10056,6 +10091,42 @@ async function estimateServerBackupSize({ inlayFsBytes = null, assetBytes = null
     total += inlayFsBytes ?? await sumInlayFsBytes();
     return total;
 }
+
+// Process memory and what the in-memory caches hold, for measuring the server
+// on a small machine. Counts only: nothing here encodes, clones or walks a
+// chat body, so asking does not move the numbers it reports.
+app.get('/api/debug/memory', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    try {
+        const database = dbCache[DB_HEX_KEY];
+        const characters = Array.isArray(database?.characters) ? database.characters : [];
+        let chatStubs = 0;
+        for (const character of characters) if (Array.isArray(character?.chats)) chatStubs += character.chats.length;
+        let chatBodies = 0;
+        if (fullChatStore) for (const chats of fullChatStore.values()) chatBodies += chats.size;
+        res.set('Cache-Control', 'no-store');
+        res.json({
+            pid: process.pid,
+            uptimeSec: Math.round(process.uptime()),
+            memoryUsage: process.memoryUsage(), // rss, heapTotal, heapUsed, external, arrayBuffers
+            heap: v8.getHeapStatistics(),
+            heapSpaces: v8.getHeapSpaceStatistics(),
+            dbCache: {
+                entries: Object.keys(dbCache).length,
+                database: database ? {
+                    rootKeys: Object.keys(database).length,
+                    characters: characters.length,
+                    chatStubs,
+                    modules: Array.isArray(database.modules) ? database.modules.length : 0,
+                } : null,
+            },
+            fullChatStore: fullChatStore ? { characters: fullChatStore.size, chats: chatBodies } : null,
+            pendingSaves: Object.keys(saveTimers).length,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
 
 app.get('/api/db/stats', async (req, res, next) => {
     if (!await checkAuth(req, res)) return;
