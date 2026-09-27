@@ -28,6 +28,9 @@ function createKvPrefixQueries(db) {
         'SELECT key, LENGTH(value) AS size FROM kv WHERE key >= ? AND key < ? ORDER BY key',
     );
     const stmtStoredSize = db.prepare('SELECT LENGTH(value) AS size FROM kv WHERE key = ?');
+    const stmtKeysFrom = db.prepare('SELECT key FROM kv WHERE key >= ? ORDER BY key');
+    const stmtKeysRange = db.prepare('SELECT key FROM kv WHERE key >= ? AND key < ? ORDER BY key');
+    const stmtExists = db.prepare('SELECT 1 FROM kv WHERE key = ?');
 
     function bounds(prefix) {
         const lower = String(prefix ?? '');
@@ -55,6 +58,23 @@ function createKvPrefixQueries(db) {
     function storedSize(key) {
         const row = stmtStoredSize.get(String(key));
         return row ? Number(row.size) : null;
+    }
+
+    // Keys starting with exactly `prefix` (case-sensitive, no wildcards), by a
+    // range scan of the primary-key index. A LIKE prefix cannot use the index
+    // (LIKE is case-insensitive), so it reads every kv row (~86k on a large
+    // library), which the save path paid several times per persist.
+    function listKeys(prefix) {
+        const { lower, upper } = bounds(prefix);
+        const rows = upper == null ? stmtKeysFrom.all(lower) : stmtKeysRange.all(lower, upper);
+        const keys = [];
+        for (const row of rows) if (row.key.startsWith(lower)) keys.push(row.key);
+        return keys;
+    }
+
+    // Whether a kv row exists, without reading (or reassembling) its value.
+    function exists(key) {
+        return stmtExists.get(String(key)) !== undefined;
     }
 
     // One full-table pass for the dashboard's global KV total and all of its
@@ -95,7 +115,7 @@ function createKvPrefixQueries(db) {
         };
     }
 
-    return { prefixStats, iterateWithSizes, storedSize, summarizePrefixes };
+    return { prefixStats, iterateWithSizes, storedSize, summarizePrefixes, listKeys, exists };
 }
 
 module.exports = { createKvPrefixQueries, nextPrefix };

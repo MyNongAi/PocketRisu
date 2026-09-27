@@ -123,6 +123,9 @@ const {
     iterateWithSizes: kvIterateWithSizes,
     storedSize: kvStoredSize,
     summarizePrefixes: kvSummarizePrefixes,
+    // Index-backed exact-prefix key list and row existence (save path).
+    listKeys: kvListExactPrefix,
+    exists: kvExists,
 } = createKvPrefixQueries(db);
 
 function kvGet(key) {
@@ -234,7 +237,7 @@ function clearEntities() {
 module.exports = {
     db,
     // KV
-    kvGet, kvSet, kvDel, kvList, kvDelPrefix, kvListWithSizes, kvPrefixStats, kvIterateWithSizes,
+    kvGet, kvSet, kvDel, kvList, kvListExactPrefix, kvExists, kvDelPrefix, kvListWithSizes, kvPrefixStats, kvIterateWithSizes,
     kvStoredSize, kvSummarizePrefixes,
     kvListWithSizesAndUpdatedAt, kvSize, kvGetUpdatedAt, kvCopyValue,
     clearEntities,

@@ -47,7 +47,7 @@ if (existsSync(offlineImportLockPath)) {
     try { unlinkSync(offlineImportLockPath); } catch { /* another process cleared it */ }
 }
 
-const { kvGet, kvSet, kvDel, kvList,
+const { kvGet, kvSet, kvDel, kvList, kvListExactPrefix, kvExists,
         kvDelPrefix, kvListWithSizes, kvListWithSizesAndUpdatedAt, kvPrefixStats, kvIterateWithSizes, kvStoredSize, kvSummarizePrefixes,
         kvSize, kvGetUpdatedAt, kvCopyValue, clearEntities, checkpointWal,
         gcChunks, reclaimableChunkBytes, isDbBlobChunked, snapshotFootprint, db: sqliteDb } = require('./db.cjs');
@@ -87,7 +87,7 @@ const { applyPatch } = require('fast-json-patch');
 const { decodeRisuSave, encodeRisuSaveLegacy, calculateHash, normalizeJSON, normalizeForwardHeaders, hasRemoteBlocks } = require('./utils.cjs');
 const { computeChatEtag, acceptsChatEtag } = require('./chat-content-etag.cjs');
 const { createPendingChatPayloads } = require('./pending-chat-payloads.cjs');
-const pendingChatPayloads = createPendingChatPayloads({ kvGet, kvSet, kvDel, kvList });
+const pendingChatPayloads = createPendingChatPayloads({ kvGet, kvSet, kvDel, kvList: kvListExactPrefix, kvExists });
 const { createPatchHashCache, decodePointerSegment } = require('./patch-hash-cache.cjs');
 const { clonePatchSnapshot } = require('./patch-selective-clone.cjs');
 const pluginStorage = require('./plugin-storage-store.cjs');
@@ -409,14 +409,14 @@ function createBackupAndRotate({ force = false } = {}) {
     // memory. A server restart therefore cannot manufacture an extra snapshot
     // on its first save and prematurely rotate the oldest recovery point.
     const previousSnapshotTime = latestSnapshotTimestamp(
-        kvList(DB_BACKUP_PREFIX),
+        kvListExactPrefix(DB_BACKUP_PREFIX),
         DB_BACKUP_PREFIX,
     );
     if (!force && previousSnapshotTime !== null && now - previousSnapshotTime < schedule.intervalMs) {
         return { created: false, reason: 'cooldown' };
     }
 
-    if (kvSize('database/database.bin') === null) {
+    if (!kvExists('database/database.bin')) {
         logger.warn('[Snapshots] Skipped snapshot because database/database.bin is missing.');
         return { created: false, reason: 'missing-source' };
     }
@@ -430,7 +430,7 @@ function createBackupAndRotate({ force = false } = {}) {
     // kvCopyValue intentionally no-ops for a missing source. Treat that as a
     // failed attempt: without a persisted key there is no timestamp to advance,
     // so the next successful DB persist can retry immediately.
-    if (kvSize(backupKey) === null) {
+    if (!kvExists(backupKey)) {
         logger.warn('[Snapshots] Skipped snapshot because database/database.bin is missing.');
         return { created: false, reason: 'missing-source' };
     }
@@ -8967,8 +8967,10 @@ function hasArchivePayload(chaId, archivedAt) {
 function listArchivePayloadKeysFor(chaId) {
     return kvList(ARCHIVE_PREFIX + chaId + '/');
 }
+// Runs per character with bodiless stubs on every persist: exact-prefix
+// range scan, not listArchivePayloadKeysFor's LIKE scan of every kv row.
 function hasAnyArchivePayload(chaId) {
-    return listArchivePayloadKeysFor(chaId).length > 0;
+    return kvListExactPrefix(ARCHIVE_PREFIX + chaId + '/').length > 0;
 }
 
 // Parsed archive-meta row, or null when absent. Throws on a malformed row.

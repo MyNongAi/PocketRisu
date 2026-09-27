@@ -8,7 +8,10 @@ const unpackr = new Unpackr({ useRecords: false, int64AsType: 'number' });
 // Chat creation is a two-request protocol: body first, catalog entry second.
 // Journal the body until the catalog and body have reached database.bin together.
 // This is deliberately NOT a second copy of every chat or an asset cache.
-function createPendingChatPayloads({ kvGet, kvSet, kvDel, kvList }) {
+// entries() runs twice per database persist (retireCommitted, and restoreInto
+// from the chat store rebuild), so kvList should be an index-backed exact
+// prefix scan (db.cjs kvListExactPrefix), not a LIKE scan of every kv row.
+function createPendingChatPayloads({ kvGet, kvSet, kvDel, kvList, kvExists = (key) => kvGet(key) !== null }) {
     const keyFor = (chaId, chatId) => PREFIX + Buffer.from(JSON.stringify([chaId, chatId])).toString('hex');
     function stage(chaId, chatId, chat) {
         kvSet(keyFor(chaId, chatId), Buffer.from(packr.pack({ chaId, chatId, chat })));
@@ -25,7 +28,7 @@ function createPendingChatPayloads({ kvGet, kvSet, kvDel, kvList }) {
     }
     return {
         stage,
-        has: (chaId, chatId) => kvGet(keyFor(chaId, chatId)) !== null,
+        has: (chaId, chatId) => kvExists(keyFor(chaId, chatId)),
         restoreInto(store) {
             for (const { chaId, chatId, chat } of entries()) {
                 if (!store.has(chaId)) store.set(chaId, new Map());
