@@ -638,7 +638,7 @@
       "requiredMarkers": [
         { "file": "src/ts/process/request/geminiPdfInput.ts", "contains": "export function planGeminiPdfInput" },
         { "file": "src/ts/process/request/google.ts", "contains": "applyGeminiPdfInput(body, { signal: arg.abortSignal })" },
-        { "file": "src/ts/process/request/request.ts", "contains": "withGeminiPdfInput(fetchImpl)" },
+        { "file": "src/ts/process/request/request.ts", "contains": "withGeminiPdfInput(transportFetch" },
         { "file": "server/node/gemini-pdf-input.cjs", "contains": "app.post('/api/gemini/pdf-input'" },
         { "file": "server/node/server.cjs", "contains": "createGeminiPdfInput({ logger }).registerRoutes(app, { auth: checkProxyAuth })" },
         { "file": "src/ts/setting/advancedSettingsData.ts", "contains": "bindKey: 'nodeOnlyGeminiPdfInput'" },
