@@ -1135,10 +1135,30 @@ function findStubFlagLossChats(fullDb) {
 let lastDbPersistMs = null;
 
 async function persistDbCacheWithChats(filePath, decodedKey) {
-    const strippedDb = dbCache[filePath];
-    if (!strippedDb) return;
+    if (!dbCache[filePath]) return;
     const persistStartedAt = performance.now();
     await ensureChatStore();
+    // Read the root only after every await, and hydrate, write and rebuild
+    // the chat store below without awaiting in between. A persist can run
+    // outside the storage queue (the /api/read flush), so patches and chat
+    // saves land while it waits: a root read before the wait wrote an older
+    // state, and the store rebuilt from it reverted an acknowledged chat
+    // body that the next persist then wrote. The archive rows (see below)
+    // are therefore decoded before hydrating, again if the root was replaced
+    // meanwhile.
+    let strippedDb;
+    let archived = null;
+    do {
+        strippedDb = dbCache[filePath];
+        if (!strippedDb) return;
+        archived = null;
+        if (decodedKey === 'database/database.bin') {
+            const chatsView = reassembleFullDb(strippedDb);
+            if (findUnmergedArchivedChats(chatsView).length > 0) {
+                archived = await loadArchivedChatBodies(chatsView).then((bodies) => ({ bodies }), (error) => ({ error }));
+            }
+        }
+    } while (dbCache[filePath] !== strippedDb);
     let fullDb = hydrateDatabaseForDisk(strippedDb);
 
     // Disk protection guard: abort persist when reassemble produced metadata-only
@@ -1164,16 +1184,14 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
         // in kv: fill them from there instead of writing stubs over them.
         // Refusing the whole persist instead left every save failing with no
         // way out for the user. Only an unreadable row still aborts.
-        if (findUnmergedArchivedChats(fullDb).length > 0) {
-            try {
-                fullDb = await restoreArchivedChatsForDisk(fullDb, 'persist');
-            } catch (error) {
-                const err = new Error(`persist aborted: a deactivated character's archive row is unreadable — ${error?.message || error}`);
-                recordPersistFailure(err, 'persistDbCacheWithChats:archive-unreadable');
-                delete dbCache[filePath];
-                throw err;
-            }
+        if (archived?.error) {
+            const error = archived.error;
+            const err = new Error(`persist aborted: a deactivated character's archive row is unreadable — ${error?.message || error}`);
+            recordPersistFailure(err, 'persistDbCacheWithChats:archive-unreadable');
+            delete dbCache[filePath];
+            throw err;
         }
+        if (archived) fullDb = applyArchivedChatsForDisk(fullDb, archived.bodies, 'persist');
     }
 
     const data = Buffer.from(encodeRisuSaveLegacy(fullDb));
