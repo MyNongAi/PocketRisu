@@ -28,13 +28,13 @@ Run from the repository containing these tools. Stop the PocketRisu server and c
 1. Fresh read-only plan:
 
    ```powershell
-   node tools/quarantine-exact-module-duplicates.cjs 'C:\Users\<user>\PocketRisu\save\risuai.db'
+   node tools/quarantine-exact-module-duplicates.cjs 'C:\PocketRisu\save\risuai.db'
    ```
 
 2. Apply using that run's `sourceSha256`:
 
    ```powershell
-   node tools/quarantine-exact-module-duplicates.cjs 'C:\Users\<user>\PocketRisu\save\risuai.db' --apply --offline-confirmed --expected-sha '<fresh-sourceSha256>'
+   node tools/quarantine-exact-module-duplicates.cjs 'C:\PocketRisu\save\risuai.db' --apply --offline-confirmed --expected-sha '<fresh-sourceSha256>'
    ```
 
    `BEGIN IMMEDIATE`, source-hash recheck, full exact comparison, snapshot, archive, write and read-back verification form one transaction. A failure rolls it all back. Record the returned `archiveKey` and `backupKey`.
@@ -42,8 +42,8 @@ Run from the repository containing these tools. Stop the PocketRisu server and c
 3. Module-only recovery, first dry run, then apply with the new source hash:
 
    ```powershell
-   node tools/quarantine-exact-module-duplicates.cjs 'C:\Users\<user>\PocketRisu\save\risuai.db' --restore '<archiveKey>'
-   node tools/quarantine-exact-module-duplicates.cjs 'C:\Users\<user>\PocketRisu\save\risuai.db' --restore '<archiveKey>' --apply --offline-confirmed --expected-sha '<fresh-sourceSha256>'
+   node tools/quarantine-exact-module-duplicates.cjs 'C:\PocketRisu\save\risuai.db' --restore '<archiveKey>'
+   node tools/quarantine-exact-module-duplicates.cjs 'C:\PocketRisu\save\risuai.db' --restore '<archiveKey>' --apply --offline-confirmed --expected-sha '<fresh-sourceSha256>'
    ```
 
 Recovery inserts only missing archived module IDs, rebuilds their folder membership, and preserves later unrelated imports, chats, settings and folder renames. A reused ID with different content stops recovery rather than overwriting it. Repeated recovery is idempotent. The original full snapshot is a last-resort safety copy, not the normal recovery route.

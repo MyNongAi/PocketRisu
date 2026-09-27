@@ -54,6 +54,7 @@ dist.zip
 !/scripts/termux/
 !/scripts/check-help-keys.mjs
 !/scripts/check-custom-features.mjs
+!/scripts/check-public-tree-privacy.mjs
 .env
 /server/node/ssl/certificate
 /bin/
