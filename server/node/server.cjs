@@ -143,7 +143,8 @@ const enablePatchSync = true;
 // an in-place edit would silently alias into the previous snapshots and
 // leave stale hashes. Replace the branch (or the whole root) instead. This
 // includes the chats a persist hydrates: inline and hybrid chats are the
-// root's own objects there.
+// root's own objects there. A check that finds the invariant broken calls
+// reportCachedRootMutation.
 let dbCache = TEST_FREEZE_CACHE
     ? new Proxy({}, {
         set(target, key, value) {
@@ -161,6 +162,66 @@ const syncHub = createSyncHub();
 
 // ETag for database.bin
 let dbEtag = null;
+
+// The single place a check reports that an installed dbCache root, or
+// something reachable from it, was changed in place (see the invariant
+// above). Today the caller is the test-mode patch audit in /api/patch and
+// the asset-manifest PATCH; the boot planner's segment digest re-check and
+// the incremental persister's canary are meant to report here too. Such a
+// change breaks every cache keyed on object identity, so those are dropped
+// and the next request recomputes them from the current content: today the
+// per-root and per-element hashes and the etag; a later identity-keyed cache
+// (the planner's plans, the persister's layout) must be dropped here too.
+// dbCache itself is kept, as it still holds every acknowledged write.
+let cachedRootMutationReports = 0;
+function reportCachedRootMutation(source, detail) {
+    cachedRootMutationReports++;
+    logger.error(`[Cache] In-place change of an installed database root reported by ${source}`
+        + `${detail ? `: ${detail}` : ''}. Dropping the identity-keyed hash caches and the etag.`);
+    databasePatchHashCache.reset();
+    dbEtag = null;
+}
+
+// Test hardening (POCKETRISU_TEST_FREEZE_CACHE): the installed roots are
+// frozen, but fast-json-patch is sloppy-mode code, so an op that reached a
+// shared frozen object would be dropped silently instead of throwing. Every
+// patch is therefore also applied the pre-B2 way, cloning each touched
+// top-level branch whole, and the two results must encode to the same bytes;
+// the hash the cache produced must equal a full calculateHash. A mismatch is
+// reported and fails the request before the new root is installed.
+function auditPatchedRootForTests(source, previous, referencePatch, next) {
+    let reference;
+    try {
+        reference = applyPatch(clonePatchSnapshot(previous, referencePatch, { shareElements: false }), referencePatch, true).newDocument;
+    } catch (error) {
+        return failPatchAudit(source, `the whole-branch reference failed where the patch succeeded: ${error?.message}`);
+    }
+    if (!encodeRisuSaveLegacyBuffer(reference).equals(encodeRisuSaveLegacyBuffer(next))) {
+        return failPatchAudit(source, 'the result differs from the whole-branch reference');
+    }
+}
+
+// The same audit for a patch that failed: the reference must fail too.
+function auditFailedPatchForTests(source, previous, referencePatch) {
+    try {
+        applyPatch(clonePatchSnapshot(previous, referencePatch, { shareElements: false }), referencePatch, true);
+    } catch {
+        return;
+    }
+    failPatchAudit(source, 'the patch failed where the whole-branch reference succeeded');
+}
+
+function auditPatchedHashForTests(source, root, cachedHash) {
+    const fullHash = calculateHash(root);
+    if (cachedHash !== fullHash) {
+        failPatchAudit(source, `cached hash ${cachedHash.toString(16)} != calculateHash ${fullHash.toString(16)}`);
+    }
+}
+
+function failPatchAudit(source, detail) {
+    reportCachedRootMutation(source, detail);
+    throw Object.assign(new Error(`Test-mode patch audit failed (${source}): ${detail}`), { code: 'PATCH_AUDIT_FAILED' });
+}
 
 function computeBufferEtag(buffer) {
     return nodeCrypto.createHash('md5').update(buffer).digest('hex');
@@ -6704,6 +6765,12 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
             // length), which rejected every patch. The cache is normalized to
             // plain JSON values at load, so the clone semantics are identical.
             patchStage = 'clone';
+            // Test hardening only: the audit applies its own copy of the ops.
+            // applyPatch links op values into the document and a later op may
+            // change them, so two applies must not share them.
+            const auditPatch = TEST_FREEZE_CACHE && decodedKey === 'database/database.bin'
+                ? structuredClone(patch)
+                : null;
             const snapshot = decodedKey === 'database/database.bin'
                 ? clonePatchSnapshot(dbCache[filePath], patch)
                 : structuredClone(dbCache[filePath]);
@@ -6715,7 +6782,17 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
             // an op can change, so there is nothing to invalidate. Dropping
             // the cache here made the armed save timer persist nothing and
             // lost every patch acknowledged since the last persist.
-            const result = applyPatch(snapshot, patch, true);
+            let result;
+            try {
+                result = applyPatch(snapshot, patch, true);
+            } catch (applyError) {
+                if (auditPatch) {
+                    patchStage = 'audit';
+                    auditFailedPatchForTests('patch', dbCache[filePath], auditPatch);
+                    patchStage = 'apply';
+                }
+                throw applyError;
+            }
             // Root-level ops (path "") replace the document instead of mutating
             // the snapshot, so the applied result must be taken from newDocument.
             const next = result.newDocument;
@@ -6726,6 +6803,10 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
             if (!validRoot) {
                 res.status(400).send({ error: 'Patch must leave the document as an object' });
                 return;
+            }
+            if (auditPatch) {
+                patchStage = 'audit';
+                auditPatchedRootForTests('patch', dbCache[filePath], auditPatch, next);
             }
             // Lazy asset manifest guard (partner of the chat guard above): an
             // owner that had a descriptor must still have it or an inline
@@ -6774,7 +6855,8 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
                 }
             }
             if (decodedKey === 'database/database.bin') {
-                databasePatchHashCache.update(dbCache[filePath], next, patch);
+                const nextHash = databasePatchHashCache.update(dbCache[filePath], next, patch);
+                if (auditPatch) auditPatchedHashForTests('patch', next, nextHash);
             }
             dbCache[filePath] = next;
             // DB patch is in; now the kv half (see ordering note above).
@@ -6984,11 +7066,12 @@ app.patch('/api/asset-manifests/owner/:kind/:ownerId', async (req, res, next) =>
             );
             // The new collection shares every other owner object with the
             // previous one, so only the replaced owner is hashed again.
-            databasePatchHashCache.update(currentDb, nextDatabase, [{
+            const nextHash = databasePatchHashCache.update(currentDb, nextDatabase, [{
                 op: 'replace',
                 path: `/${collectionKey}`,
                 value: nextDatabase[collectionKey],
             }]);
+            if (TEST_FREEZE_CACHE) auditPatchedHashForTests('asset-manifest', nextDatabase, nextHash);
             dbCache[DB_HEX_KEY] = nextDatabase;
             // The client view changed, so a full write carrying the
             // pre-edit etag must conflict instead of reconciling its stale
@@ -10208,6 +10291,8 @@ app.get('/api/debug/memory', async (req, res, next) => {
                     chatStubs,
                     modules: Array.isArray(database.modules) ? database.modules.length : 0,
                 } : null,
+                testHardening: TEST_FREEZE_CACHE,
+                cachedRootMutationReports,
             },
             // Kept under its old name for existing readers.
             fullChatStore: chatStore ? { characters: chatStore.characters, chats: chatStore.chats } : null,
