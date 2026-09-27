@@ -68,8 +68,8 @@ export async function loadData() {
                 }
                 try {
                     const decoded = await decodeRisuSave(gotStorage)
-                    // setPatchSyncBaseline owns its defensive clone. Cloning at
-                    // both call sites briefly held two full DB copies at boot.
+                    // setPatchSyncBaseline takes its own copy before setDatabase
+                    // and the migrations below mutate `decoded`.
                     setPatchSyncBaseline(decoded)
                     setDatabase(decoded)
                     // /api/read serves the chat-stripped blob — the same shape a

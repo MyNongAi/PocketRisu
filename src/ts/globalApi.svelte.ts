@@ -13,7 +13,7 @@ import { alertConfirm, alertConfirmMulti, alertError, alertMd, alertSelect, aler
 import { hasher } from "./parser/parser.svelte";
 import { characterURLImport, hubURL } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
-import { decodeRisuSave, encodeRisuSaveLegacy, findDangerousChatOps, normalizeJSON, RisuSaveEncoder, RisuSavePatcher, type toSaveType } from "./storage/risuSave";
+import { decodeRisuSave, encodeRisuSaveLegacy, findDangerousChatOps, normalizeJSON, PatchBaselineSnapshot, RisuSaveEncoder, RisuSavePatcher, type toSaveType } from "./storage/risuSave";
 import { isHydrating, saveChatToServer, ensureChatHydrated, chatToStub, classifyChat, convertStubsToPlaceholders, evictHydratedChatCache, markHydratedChatDirty, markHydratedChatPersisted, hasDirtyHydratedChats, isHydratedChatDirty, rehomeHydratedChats, replaceChatBody, suppressChatTracking } from "./storage/chatStorage";
 import { startRealtimeSync, type ChatEvent, type DbPatchEvent } from "./sync/realtimeSync";
 import { landRemoteDbPatch } from "./sync/remoteDbPatch";
@@ -469,7 +469,7 @@ let requestImmediateSaveImpl: ((options?: {
 let unsavedWorkImpl: () => boolean = () => false
 let flushSavesImpl: () => Promise<boolean> = async () => false
 let trackCharacterForSaveImpl: (chaId: string) => void = () => {}
-let patchSyncBaseline: Database | null = null
+let patchSyncBaseline: PatchBaselineSnapshot | null = null
 let activeSavePatcher: RisuSavePatcher | null = null
 
 // Surfaces server-side persist failures (Stage 1 visibility — see issues.md).
@@ -600,8 +600,15 @@ export function trackCharacterForSave(chaId: string) {
     trackCharacterForSaveImpl(chaId)
 }
 
+/**
+ * Keep the database as the server sent it for saveDb's patcher. Called at
+ * boot right after the decode, before setDatabase and the migrations mutate
+ * that object. The snapshot is a normalizeJSON copy that saveDb's
+ * patcher.init adopts as its baseline (see PatchBaselineSnapshot), so the
+ * first patch after boot is diffed against, and hashed like, the server view.
+ */
 export function setPatchSyncBaseline(data: Database | null) {
-    patchSyncBaseline = data ? safeStructuredClone(data) as Database : null
+    patchSyncBaseline = data ? new PatchBaselineSnapshot(data) : null
 }
 
 export async function saveDb() {

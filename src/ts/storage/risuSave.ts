@@ -1078,6 +1078,34 @@ class JsonSizeMap extends Map<string, string> {
     }
 }
 
+/**
+ * A private copy of the database as the server sent it, taken at boot before
+ * the live object is mutated, to seed RisuSavePatcher.init later.
+ *
+ * normalizeJSON is the copy: it builds new objects and arrays throughout and
+ * shares only immutable primitives (strings) with the source, so later edits
+ * to the live database never reach it. That is also exactly the object init()
+ * would build from a structuredClone of the same data, so init() adopts it
+ * instead of normalizing again. On a 267MB payload this replaces a 0.8s,
+ * ~450MB structuredClone plus a second normalize with one 0.1s pass whose
+ * strings stay shared with the live database for the session.
+ */
+export class PatchBaselineSnapshot {
+    private normalized: any
+
+    constructor(data: any) {
+        this.normalized = normalizeJSON(data)
+    }
+
+    /** Hands the copy over once: init() mutates what it adopts. */
+    take(): any {
+        const normalized = this.normalized
+        if (normalized === undefined) throw new Error('PatchBaselineSnapshot was already used')
+        this.normalized = undefined
+        return normalized
+    }
+}
+
 export class RisuSavePatcher {
     private lastSyncedDb: any;
     private hashBlocks: { [key: string]: number } = {};
@@ -1244,7 +1272,7 @@ export class RisuSavePatcher {
     }
 
     async init(data: any) {
-        this.lastSyncedDb = normalizeJSON(data);
+        this.lastSyncedDb = data instanceof PatchBaselineSnapshot ? data.take() : normalizeJSON(data);
         if (!Array.isArray(this.lastSyncedDb.characters)) {
             this.lastSyncedDb.characters = [];
         }
