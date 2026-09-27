@@ -19,8 +19,8 @@ PocketRisu 저장소에서 다음처럼 실행합니다.
 
 ```powershell
 node --max-old-space-size=4096 tools/risu-backup-extractor/extract-risu-backup.mjs `
-  --input "H:\Download\새 폴더 (8)\Binary.bin" `
-  --output "H:\Risuai-Pork\backups\risu-partial-extract\pc-web-20260813" `
+  --input "$env:USERPROFILE\Downloads\RisuBackup\Binary.bin" `
+  --output "$env:USERPROFILE\Downloads\RisuExtract\pc-web" `
   --source-label "PC웹리스"
 ```
 
