@@ -6475,6 +6475,10 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
                         invalidateDbCache();
                         logger.error('[Write] database.bin was written, but updating the server state after it failed:', e);
                         res.status(500).json({ error: 'Database written, but the server state could not be updated' });
+                        // Other devices must still learn that the database
+                        // changed, or they keep editing the view from before
+                        // this write until they happen to reload.
+                        syncHub.publish({ type: 'db-stale', origin: chatClientId(req), reason: 'full-write' });
                         return;
                     }
                     logger.error('[Write] Failed to merge chats into database.bin:', e.message);

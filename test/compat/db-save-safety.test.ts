@@ -104,6 +104,27 @@ async function lastDiskMessage(cwd: string) {
   return (await readDiskDb(cwd)).characters[0].chats[0].message.at(-1).data
 }
 
+// Reads the change feed from `since` until `marker` shows up (or timeoutMs).
+async function readEventsUntil(client: RisuClient, since: { instance: string; seq: string }, marker: RegExp, timeoutMs = 3000) {
+  const res = await client.fetch(`/api/sync/events?since=${since.seq}&instance=${since.instance}`)
+  expect(res.status).toBe(200)
+  const reader = res.body!.getReader()
+  const decoder = new TextDecoder()
+  let text = ''
+  const timer = setTimeout(() => { reader.cancel().catch(() => {}) }, timeoutMs)
+  try {
+    while (!marker.test(text)) {
+      const { done, value } = await reader.read()
+      if (done) break
+      text += decoder.decode(value, { stream: true })
+    }
+  } finally {
+    clearTimeout(timer)
+    await reader.cancel().catch(() => {})
+  }
+  return text
+}
+
 // test-char-1 is deactivated with a bodiless stub chat (`gone`) that no
 // archive row can fill, so every database persist from now on decodes the
 // archive rows (and waits there while `slow-archive-decode` exists).
@@ -149,6 +170,26 @@ describe('a full database write', () => {
     expect(disk.characters[0].chats[0].message.length).toBeGreaterThan(0)
     // The server re-reads what is on disk instead of the dropped view.
     expect((await readDb(client)).db.characters[0].name).toBe('written')
+  })
+
+  // That failure path answered 500 without publishing db-stale, so other
+  // devices kept editing the view from before the write until they reloaded.
+  test('that fails after kvSet still tells other devices to resync', async () => {
+    const { srv, client } = await boot([FAIL_AFTER_DB_WRITE])
+    const res = await client.fetch('/api/read', { headers: { 'file-path': DB_KEY_HEX } })
+    expect(res.status).toBe(200)
+    const since = { instance: res.headers.get('x-sync-instance')!, seq: res.headers.get('x-sync-seq')! }
+    const etag = res.headers.get('x-db-etag')!
+    const db = await decodeDb(res)
+    db.characters[0].name = 'written'
+
+    await writeFile(path.join(srv.cwd, 'fail-after-db-write'), '')
+    const write = await sendWrite(client, db, { 'x-if-match': etag })
+    await rm(path.join(srv.cwd, 'fail-after-db-write'))
+    expect(write.status).toBe(500)
+
+    const events = await readEventsUntil(client, since, /event: db-stale\n/)
+    expect(events).toMatch(/event: db-stale\ndata: \{[^\n]*"reason":"full-write"/)
   })
 })
 
