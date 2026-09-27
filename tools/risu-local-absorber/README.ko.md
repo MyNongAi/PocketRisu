@@ -18,8 +18,8 @@ PocketRisu 서버와 로컬 Risu를 닫은 뒤 먼저 dry-run을 실행합니다
 
 ```powershell
 node --max-old-space-size=4096 tools/risu-local-absorber/absorb-local-risu.mjs `
-  --source-root "C:\Users\<user>\AppData\Roaming\co.aiclient.risu" `
-  --target-root "C:\Users\<user>\PocketRisu" `
+  --source-root "$env:APPDATA\co.aiclient.risu" `
+  --target-root "C:\PocketRisu" `
   --source-label "로컬리스"
 ```
 
@@ -33,7 +33,7 @@ PocketRisu 내부 저장소와 외부 저장소에 같은 해시의 파일이 �
 
 ```powershell
 node --max-old-space-size=4096 tools/risu-local-absorber/absorb-local-risu.mjs `
-  --source-backup "H:\Download\웹리스백업\Binary (2).bin" `
-  --target-root "C:\Users\<user>\PocketRisu" `
+  --source-backup "$env:USERPROFILE\Downloads\RisuBackup\Binary.bin" `
+  --target-root "C:\PocketRisu" `
   --source-label "모바일웹리스"
 ```
