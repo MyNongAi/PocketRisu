@@ -9,9 +9,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-custom-features.mjs && vite build --sourcemap",
+    "build": "node scripts/check-public-tree-privacy.mjs && node scripts/check-custom-features.mjs && vite build --sourcemap",
     "preview": "vite preview",
-    "check": "node scripts/check-custom-features.mjs && svelte-check --tsconfig ./tsconfig.json",
+    "check": "node scripts/check-public-tree-privacy.mjs && node scripts/check-custom-features.mjs && svelte-check --tsconfig ./tsconfig.json",
+    "check:privacy": "node scripts/check-public-tree-privacy.mjs",
     "check:custom": "node scripts/check-custom-features.mjs",
     "check:help": "node scripts/check-help-keys.mjs",
     "test": "vitest run && vitest run --config vitest.config.server.ts",
