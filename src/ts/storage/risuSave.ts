@@ -707,6 +707,15 @@ const SEED_NUMBER = 29;
 const SEED_BOOLEAN = 31;
 const SEED_NULL = 37;
 
+// Called as stringCharCodeAt.call(s, i) below, not s.charCodeAt(i). The
+// method load keeps feedback per string representation (sequential one- and
+// two-byte, sliced, thin, internalized...), and the hashed values are
+// normalizeJSON copies whose strings are the live database's, which holds all
+// of them. Past four the load goes megamorphic and every character pays a
+// generic lookup: a boot baseline's characters (267MB payload) then hashed in
+// 2.6s instead of 0.4s on a desktop, depending on GC timing.
+const stringCharCodeAt = String.prototype.charCodeAt;
+
 export function calculateHash(node: any): number {
     if (node === null || node === undefined) return SEED_NULL;
     switch (typeof node) {
@@ -725,8 +734,8 @@ export function calculateHash(node: any): number {
             }
         case 'string':
             let strHash = 2166136261;
-            for (let i = 0; i < node.length; i++)
-                strHash = Math.imul(strHash ^ node.charCodeAt(i), 16777619);
+            for (let i = 0, length = node.length; i < length; i++)
+                strHash = Math.imul(strHash ^ stringCharCodeAt.call(node, i), 16777619);
             return Math.imul(SEED_STRING, PRIME_MULTIPLIER) + (strHash >>> 0);
         case 'number':
             let numHash;
