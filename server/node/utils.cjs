@@ -1,3 +1,11 @@
+// msgpackr is pinned to an exact version in package.json (1.10.1 -> 1.11.9
+// was the Node 24 buffer-bounds fix). The release helpers below are a second
+// reason to keep it exact: they rely on msgpackr internals that are not
+// public API. pack.js keeps the encode scratch in module-level
+// `target`/`position`, unpack.js keeps a module-level `dataView` over the
+// last decoded source, and `Packr#useBuffer` swaps the scratch. Before
+// changing the version, re-check those internals and run
+// utils-msgpackr.test.ts, which also fails if the pin is loosened.
 const { Packr, Unpackr, decode } = require('msgpackr');
 const fflate = require('fflate');
 const { randomUUID } = require('crypto');
@@ -34,6 +42,50 @@ const unpackr = new Unpackr({
     int64AsType: 'number',
     useRecords: false
 });
+
+// msgpackr keeps two pieces of state at MODULE level, shared by every Packr
+// and Unpackr in the process (this file, pending-chat-payloads.cjs, any other
+// `new Packr()`), so a dedicated instance does not isolate either of them:
+// - the encode scratch. packr.encode() returns a view into it, and msgpackr
+//   drops it only above 1GB, so one database-sized encode left about 500MB
+//   allocated for the life of the process;
+// - a DataView over the last decoded source, which keeps that whole source
+//   (the ~490MB database blob after boot) alive until the next decode.
+// Both are handed back after calls of at least RELEASE_AFTER_BYTES. Output
+// bytes do not change: msgpackr never writes into a region it has returned,
+// and a fresh scratch only changes where the next encode starts writing.
+const RELEASE_AFTER_BYTES = 16 * 1024 * 1024;
+const ENCODE_SCRATCH_BYTES = 8192;
+// A msgpack nil in its own 1-byte ArrayBuffer. Buffer.from([0xc0]) would sit
+// in the shared 8KB Buffer pool, and the decoder's DataView would pin it.
+const DECODE_RELEASE_SOURCE = new Uint8Array([0xc0]);
+
+/**
+ * Point msgpackr's shared encode scratch at a fresh, unpooled 8KB buffer so
+ * the previous one can be collected once no returned view refers to it.
+ * This is the only place that calls packr.useBuffer: useBuffer lets msgpackr
+ * write over the buffer it is given, so it must never be a buffer anybody
+ * else holds. Call it after a large encode on any Packr instance, once the
+ * returned view has been copied or dropped.
+ */
+function releaseEncodeScratch() {
+    packr.useBuffer(Buffer.allocUnsafeSlow(ENCODE_SCRATCH_BYTES));
+}
+
+// Decoding a 1-byte nil replaces the decoder's module-level DataView.
+function releaseDecodeSource() {
+    unpackr.decode(DECODE_RELEASE_SOURCE);
+}
+
+// Run one synchronous msgpackr decode and, when the source is large, drop
+// msgpackr's reference to it before returning or throwing.
+function decodeMsgpackAndRelease(source, decodeFn = (bytes) => unpackr.decode(bytes)) {
+    try {
+        return decodeFn(source);
+    } finally {
+        if (source && source.length >= RELEASE_AFTER_BYTES) releaseDecodeSource();
+    }
+}
 
 /**
  * Ensure every bot preset in a decoded database has a stable string id.
@@ -380,10 +432,10 @@ async function _decodeRisuSaveInternal(data, options = {}) {
         switch (header) {
             case "compressed":
                 data = data.slice(magicCompressedHeader.length);
-                return decode(fflate.decompressSync(data));
+                return decodeMsgpackAndRelease(fflate.decompressSync(data), decode);
             case "raw":
                 data = data.slice(magicHeader.length);
-                return unpackr.decode(data);
+                return decodeMsgpackAndRelease(data);
             case "stream": {
                 await checkCompressionStreams();
                 data = data.slice(magicStreamCompressedHeader.length);
@@ -392,27 +444,27 @@ async function _decodeRisuSaveInternal(data, options = {}) {
                 writer.write(data);
                 writer.close();
                 const buf = await new Response(cs.readable).arrayBuffer();
-                return unpackr.decode(new Uint8Array(buf));
+                return decodeMsgpackAndRelease(new Uint8Array(buf));
             }
             case "risusave": {
                 const decoder = new RisuSaveDecoder();
                 return await decoder.decode(data, options);
             }
         }
-        return unpackr.decode(data);
+        return decodeMsgpackAndRelease(data);
     } catch (error) {
         logger.error('Error decoding RisuSave data:', error);
         try {
             const risuSaveHeader = new Uint8Array(Buffer.from("\u0000\u0000RISU", 'utf-8'));
             const realData = data.subarray(risuSaveHeader.length);
-            const dec = unpackr.decode(realData);
+            const dec = decodeMsgpackAndRelease(realData);
             return dec;
         } catch (error) {
             const buf = Buffer.from(fflate.decompressSync(Buffer.from(data)));
             try {
                 return JSON.parse(buf.toString('utf-8'));
             } catch (error) {
-                return unpackr.decode(buf);
+                return decodeMsgpackAndRelease(buf);
             }
         }
     }
@@ -454,18 +506,60 @@ function hasRemoteBlocks(data) {
  * @returns {Uint8Array} - The encoded data
  */
 function encodeRisuSaveLegacy(data, compression = 'noCompression') {
-    let encoded = packr.encode(data);
-    if (compression === 'compression') {
-        encoded = fflate.compressSync(encoded);
-        const result = new Uint8Array(encoded.length + magicCompressedHeader.length);
-        result.set(magicCompressedHeader, 0);
-        result.set(encoded, magicCompressedHeader.length);
-        return result;
-    } else {
-        const result = new Uint8Array(encoded.length + magicHeader.length);
-        result.set(magicHeader, 0);
-        result.set(encoded, magicHeader.length);
-        return result;
+    let encoded = null;
+    try {
+        encoded = packr.encode(data);
+        if (compression === 'compression') {
+            const compressed = fflate.compressSync(encoded);
+            const result = new Uint8Array(compressed.length + magicCompressedHeader.length);
+            result.set(magicCompressedHeader, 0);
+            result.set(compressed, magicCompressedHeader.length);
+            return result;
+        } else {
+            const result = new Uint8Array(encoded.length + magicHeader.length);
+            result.set(magicHeader, 0);
+            result.set(encoded, magicHeader.length);
+            return result;
+        }
+    } finally {
+        // `result` owns a copy, so nothing refers to the scratch any more. An
+        // encode that threw may have grown the scratch as well.
+        if (encoded === null || encoded.length >= RELEASE_AFTER_BYTES) releaseEncodeScratch();
+    }
+}
+
+/**
+ * encodeRisuSaveLegacy's bytes as a Buffer over the same memory, for callers
+ * that would otherwise write Buffer.from(encodeRisuSaveLegacy(x)) and copy a
+ * database-sized output once more. The Buffer owns an exact-size ArrayBuffer:
+ * not the Buffer pool and not msgpackr's scratch.
+ * @param {Object} data - The data to encode
+ * @param {string} compression - Compression type ('noCompression' or 'compression')
+ * @returns {Buffer} - The encoded data
+ */
+function encodeRisuSaveLegacyBuffer(data, compression = 'noCompression') {
+    const bytes = encodeRisuSaveLegacy(data, compression);
+    return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+}
+
+/**
+ * packr.encode(value) copied into a Buffer that owns exactly its bytes, i.e.
+ * encodeRisuSaveLegacy(value) without the 11-byte header. Use it for bytes
+ * that are kept: the view packr.encode returns pins msgpackr's whole shared
+ * scratch, and Buffer.from(view) of a small value lands in the shared 8KB
+ * Buffer pool, where it keeps that slab alive. allocUnsafeSlow does neither.
+ * @param {*} value - The value to encode
+ * @returns {Buffer} - The msgpack bytes
+ */
+function encodeMsgpackOwned(value) {
+    let view = null;
+    try {
+        view = packr.encode(value);
+        const owned = Buffer.allocUnsafeSlow(view.length);
+        owned.set(view);
+        return owned;
+    } finally {
+        if (view === null || view.length >= RELEASE_AFTER_BYTES) releaseEncodeScratch();
     }
 }
 
@@ -597,6 +691,9 @@ module.exports = {
     // Functions
     decodeRisuSave,
     encodeRisuSaveLegacy,
+    encodeRisuSaveLegacyBuffer,
+    encodeMsgpackOwned,
+    releaseEncodeScratch,
     calculateHash,
     normalizeJSON,
     normalizeForwardHeaders,
