@@ -84,7 +84,7 @@ const { diagnoseAssetReferences } = require('./asset-doctor.cjs');
 const { createExternalAssetMigrationJournal } = require('./external-asset-migration-journal.cjs');
 const { verifyStagedMigration } = require('./external-asset-staged-verifier.cjs');
 const { applyPatch } = require('fast-json-patch');
-const { decodeRisuSave, encodeRisuSaveLegacy, calculateHash, normalizeJSON, normalizeForwardHeaders, hasRemoteBlocks } = require('./utils.cjs');
+const { decodeRisuSave, encodeRisuSaveLegacyBuffer, calculateHash, normalizeJSON, normalizeForwardHeaders, hasRemoteBlocks } = require('./utils.cjs');
 const { computeChatEtag, acceptsChatEtag } = require('./chat-content-etag.cjs');
 const { createPendingChatPayloads } = require('./pending-chat-payloads.cjs');
 const pendingChatPayloads = createPendingChatPayloads({ kvGet, kvSet, kvDel, kvList: kvListExactPrefix, kvExists });
@@ -144,8 +144,15 @@ function computeBufferEtag(buffer) {
     return nodeCrypto.createHash('md5').update(buffer).digest('hex');
 }
 
+// Every encode in this file goes through encodeRisuSaveLegacyBuffer. It
+// returns the same bytes as encodeRisuSaveLegacy in a Buffer that owns an
+// exact-size ArrayBuffer: not msgpackr's shared encode scratch and not the
+// Buffer pool (see utils.cjs). A later encode never writes into it, so a
+// caller may keep it (kvSet, an export value, an asynchronous res.send)
+// without copying. Buffer.from(encodeRisuSaveLegacy(x)), used before, copied
+// the whole output once more: a second ~500MB block per database encode.
 function computeDatabaseEtagFromObject(databaseObject) {
-    return computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(databaseObject)));
+    return computeBufferEtag(encodeRisuSaveLegacyBuffer(databaseObject));
 }
 
 // Per-root-key and per-character hashes of a client-view database, in the
@@ -461,7 +468,7 @@ async function flushPendingDb() {
                 if (raw) {
                     const dbObj = normalizeJSON(await decodeRisuSave(raw));
                     const fullDb = hydrateDatabaseForDisk(stripDatabaseForClient(dbObj, { reconcileManifests: true }));
-                    kvSet('database/database.bin', Buffer.from(encodeRisuSaveLegacy(fullDb)));
+                    kvSet('database/database.bin', encodeRisuSaveLegacyBuffer(fullDb));
                     pendingChatPayloads.retireCommitted(fullDb);
                 }
             }
@@ -718,7 +725,7 @@ async function decodeDatabaseWithPersistentChatIds(raw, options = {}) {
 
     if (needsPersist) {
         try {
-            kvSet('database/database.bin', Buffer.from(encodeRisuSaveLegacy(dbObj)));
+            kvSet('database/database.bin', encodeRisuSaveLegacyBuffer(dbObj));
         } catch (e) {
             // The split already committed to kv, so the decoded (emptied) DB is
             // the correct live state even if the blob could not be rewritten
@@ -993,7 +1000,7 @@ async function migrateRemoteBlocksIfNeeded() {
         },
     });
 
-    const reEncoded = encodeRisuSaveLegacy(dbObj, 'compression');
+    const reEncoded = encodeRisuSaveLegacyBuffer(dbObj, 'compression');
 
     // Single transaction so swap + marker move together.
     // remotes/ files are intentionally NOT deleted here: pre-migration
@@ -1006,7 +1013,7 @@ async function migrateRemoteBlocksIfNeeded() {
     // (NodeOnly's disableRemoteSaving = true on writes), so leaving them
     // costs a few MB of disk for full backup recoverability.
     sqliteDb.transaction(() => {
-        kvSet('database/database.bin', Buffer.from(reEncoded));
+        kvSet('database/database.bin', reEncoded);
         markRemoteMigrationDone();
     })();
 
@@ -1259,7 +1266,8 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
     }
     timings.guardsMs = lap();
 
-    const data = Buffer.from(encodeRisuSaveLegacy(fullDb));
+    // No copy: kvSet binds the owned Buffer synchronously and keeps nothing.
+    const data = encodeRisuSaveLegacyBuffer(fullDb);
     timings.encodeMs = lap();
     try {
         kvSet(decodedKey, data);
@@ -1534,7 +1542,7 @@ async function flushPendingStorageOperations() {
         clearTimeout(pendingTimer);
         if (!Object.prototype.hasOwnProperty.call(dbCache, filePath)) continue;
         const decodedKey = Buffer.from(filePath, 'hex').toString('utf-8');
-        const data = Buffer.from(encodeRisuSaveLegacy(dbCache[filePath]));
+        const data = encodeRisuSaveLegacyBuffer(dbCache[filePath]);
         try {
             kvSet(decodedKey, data);
         } catch (error) {
@@ -6026,7 +6034,9 @@ app.get('/api/read', async (req, res, next) => {
                 try {
                     // Encodes the root the queue operation above left: this
                     // continuation runs before the next queued operation.
-                    value = Buffer.from(encodeRisuSaveLegacy(dbCache[filePath]));
+                    // Owned bytes: res.send below may still be writing them
+                    // when the next request encodes, which cannot touch them.
+                    value = encodeRisuSaveLegacyBuffer(dbCache[filePath]);
                     readTimings.encodeMs = lap();
                 } catch (e) {
                     // Log the Error itself (not just e.message) so logger.*
@@ -6282,7 +6292,7 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
                 // not slip through that window, so derive it from the current
                 // client view when the writer sent a precondition.
                 if (ifMatch && !dbEtag && (await loadDbCacheIfMissing())) {
-                    dbEtag = computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(dbCache[DB_HEX_KEY])));
+                    dbEtag = computeDatabaseEtagFromObject(dbCache[DB_HEX_KEY]);
                 }
                 if (ifMatch && dbEtag && ifMatch !== dbEtag) {
                     res.status(409).send({
@@ -6429,7 +6439,7 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
                         logger.info(`[PluginStorage] Split ${pluginMigration.keys} key(s) from a full database.bin write into kv`);
                     }
 
-                    const mergedContent = Buffer.from(encodeRisuSaveLegacy(fullDb));
+                    const mergedContent = encodeRisuSaveLegacyBuffer(fullDb);
                     kvSet(key, mergedContent);
                     committed = true;
                     pendingChatPayloads.retireCommitted(fullDb);
@@ -6595,7 +6605,7 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
                 );
                 let currentEtag;
                 try {
-                    currentEtag = computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(dbCache[filePath])));
+                    currentEtag = computeDatabaseEtagFromObject(dbCache[filePath]);
                     dbEtag = currentEtag;
                 } catch {}
                 res.status(409).send({
@@ -6616,7 +6626,7 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
                     logger.warn(`[Patch] Rejected ${partition.rejected.length} plugin-storage op(s) (client must full-write): ${sample}`);
                     let currentEtag;
                     try {
-                        currentEtag = computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(dbCache[filePath])));
+                        currentEtag = computeDatabaseEtagFromObject(dbCache[filePath]);
                         dbEtag = currentEtag;
                     } catch {}
                     res.status(409).send({
@@ -6650,7 +6660,7 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
                 if (decodedKey === 'database/database.bin') {
                     // Encode failure must not upgrade this 409 into a 500.
                     try {
-                        currentEtag = computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(dbCache[filePath])));
+                        currentEtag = computeDatabaseEtagFromObject(dbCache[filePath]);
                         dbEtag = currentEtag;
                     } catch {}
                     try {
@@ -6703,7 +6713,7 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
             if (Array.isArray(patch) && patch.length === 0) {
                 applyPluginKvOps();
                 if (pluginKvOps.length > 0 && decodedKey === 'database/database.bin') {
-                    dbEtag = computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(dbCache[filePath])));
+                    dbEtag = computeDatabaseEtagFromObject(dbCache[filePath]);
                 }
                 const emptyPayload = {
                     success: true,
@@ -6757,7 +6767,7 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
                     logger.warn(`[Patch] Rejected: ${manifestLosses.length} owner(s) would lose their asset manifest: ${sample}`);
                     let currentEtag;
                     try {
-                        currentEtag = computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(dbCache[filePath])));
+                        currentEtag = computeDatabaseEtagFromObject(dbCache[filePath]);
                         dbEtag = currentEtag;
                     } catch {}
                     res.status(409).send({
@@ -6780,7 +6790,7 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
                     logger.warn(`[Patch] Rejected: ${archiveConflict}`);
                     let currentEtag;
                     try {
-                        currentEtag = computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(dbCache[filePath])));
+                        currentEtag = computeDatabaseEtagFromObject(dbCache[filePath]);
                         dbEtag = currentEtag;
                     } catch {}
                     res.status(409).send({
@@ -6813,7 +6823,7 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
                     if (decodedKey === 'database/database.bin') {
                         await persistDbCacheWithChats(filePath, decodedKey);
                     } else {
-                        const data = Buffer.from(encodeRisuSaveLegacy(dbCache[filePath]));
+                        const data = encodeRisuSaveLegacyBuffer(dbCache[filePath]);
                         try {
                             kvSet(decodedKey, data);
                         } catch (err) {
@@ -6855,7 +6865,7 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
             // Update ETag after successful patch (based on stripped version)
             patchStage = 'etag';
             if (decodedKey === 'database/database.bin') {
-                dbEtag = computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(dbCache[filePath])));
+                dbEtag = computeDatabaseEtagFromObject(dbCache[filePath]);
             }
             timings.etagMs = lap();
             timings.totalMs = Math.round(performance.now() - patchStartedAt);
@@ -7009,7 +7019,7 @@ app.patch('/api/asset-manifests/owner/:kind/:ownerId', async (req, res, next) =>
             // The client view changed, so a full write carrying the
             // pre-edit etag must conflict instead of reconciling its stale
             // inline asset list over this manifest revision.
-            dbEtag = computeBufferEtag(Buffer.from(encodeRisuSaveLegacy(nextDatabase)));
+            dbEtag = computeDatabaseEtagFromObject(nextDatabase);
             scheduleDatabasePersist('asset-manifest');
             return enriched;
         });
@@ -7197,7 +7207,9 @@ async function buildSettingsOnlyPlan({ includeModuleAssets = true } = {}) {
     // `moduleAssets=0` omits only the heavy byte payload. Keep the logical
     // references and external:// mappings so a later module import or asset
     // recovery can backfill the files without losing names and ownership.
-    const dbValue = Buffer.from(encodeRisuSaveLegacy(trimmed, 'compression'));
+    // The export keeps dbValue until the archive is written; the bytes are
+    // owned (see computeDatabaseEtagFromObject), so later encodes leave them.
+    const dbValue = encodeRisuSaveLegacyBuffer(trimmed, 'compression');
 
     return {
         trimmed,
@@ -7232,7 +7244,8 @@ function externalBackupExtension(entry) {
 // temporary exported DB. The live PocketRisu DB/manifest are untouched.
 async function materializeExternalAssetsForUpstream(dbObj, occupiedBackupNames) {
     const references = collectExternalAssetReferences(dbObj);
-    if (references.length === 0) return { dbValue: Buffer.from(encodeRisuSaveLegacy(dbObj, 'compression')), entries: [] };
+    // Kept until the export is written: owned bytes, no copy needed.
+    if (references.length === 0) return { dbValue: encodeRisuSaveLegacyBuffer(dbObj, 'compression'), entries: [] };
 
     const runtime = await getExternalAssetRuntime();
     const mapping = new Map();
@@ -7264,7 +7277,7 @@ async function materializeExternalAssetsForUpstream(dbObj, occupiedBackupNames) 
 
     const rewritten = rewriteExternalAssetReferences(dbObj, mapping);
     return {
-        dbValue: Buffer.from(encodeRisuSaveLegacy(rewritten, 'compression')),
+        dbValue: encodeRisuSaveLegacyBuffer(rewritten, 'compression'),
         entries,
     };
 }
@@ -7311,7 +7324,9 @@ async function buildFullExportDbValue() {
     // nothing about the archive. Throws when a payload is missing rather than
     // shipping a backup that would import as a lost character.
     await inlineArchivedCharacters(dbObj);
-    return Buffer.from(encodeRisuSaveLegacy(dbObj));
+    // The caller streams this into the export after further awaits; the
+    // bytes are owned, so encodes in between cannot overwrite them.
+    return encodeRisuSaveLegacyBuffer(dbObj);
 }
 
 // Size breakdown for the settings-only confirm dialog. Kept separate from
@@ -8405,12 +8420,13 @@ function sendChatContent(req, res, chat) {
     res.setHeader('x-chat-etag', computeChatEtag(chat));
     res.setHeader('Cache-Control', 'private, no-store');
     const base = readChatDeltaBase(req);
+    // res.send may finish after other requests have encoded: owned bytes.
     let encoded;
     if (base && chatPrefixMatches(chat, base)) {
         res.setHeader('x-chat-delta-base', String(base.count));
-        encoded = Buffer.from(encodeRisuSaveLegacy({ ...chat, message: chat.message.slice(base.count) }));
+        encoded = encodeRisuSaveLegacyBuffer({ ...chat, message: chat.message.slice(base.count) });
     } else {
-        encoded = Buffer.from(encodeRisuSaveLegacy(chat));
+        encoded = encodeRisuSaveLegacyBuffer(chat);
     }
     res.setHeader('ETag', computeBufferEtag(encoded));
     return res.send(encoded);
@@ -8611,7 +8627,7 @@ app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, as
                         if (raw) {
                             const dbObj = normalizeJSON(await decodeRisuSave(raw));
                             const fullDb = hydrateDatabaseForDisk(stripDatabaseForClient(dbObj, { reconcileManifests: true }));
-                            const encoded = Buffer.from(encodeRisuSaveLegacy(fullDb));
+                            const encoded = encodeRisuSaveLegacyBuffer(fullDb);
                             try {
                                 kvSet('database/database.bin', encoded);
                                 pendingChatPayloads.retireCommitted(fullDb);
@@ -9517,7 +9533,7 @@ async function writeArchiveRow(db, chaId, { acceptLostChats = false } = {}) {
     let archivedAt = Date.now();
     while (kvSize(archiveKey(chaId, archivedAt)) || kvGet(archiveMetaKey(chaId, archivedAt))) archivedAt++;
     const payload = { v: ARCHIVE_FORMAT_VERSION, chaId, archivedAt, character: full };
-    const encoded = Buffer.from(encodeRisuSaveLegacy(payload));
+    const encoded = encodeRisuSaveLegacyBuffer(payload);
     kvSet(archiveKey(chaId, archivedAt), encoded);
     // Read back before anything depends on it: the next step (the client
     // dropping the character from `characters`) is only safe if this
@@ -9715,7 +9731,8 @@ app.get('/api/characters/archived/inline', async (req, res, next) => {
             return { characters: shell.characters };
         });
         res.setHeader('Content-Type', 'application/octet-stream');
-        res.send(Buffer.from(encodeRisuSaveLegacy(result)));
+        // Owned bytes, safe to send asynchronously (no copy needed).
+        res.send(encodeRisuSaveLegacyBuffer(result));
     } catch (err) {
         if (err?.code === 'ARCHIVE_PAYLOAD_MISSING') {
             return res.status(409).json({ error: err.message, code: err.code });
