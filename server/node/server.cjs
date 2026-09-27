@@ -6197,7 +6197,12 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
                 await writeInlaySidecar(id, parsed);
                 kvDel(key);
             } else if (key === 'database/database.bin') {
-                // Client sends stubs-only DB — merge full chats from server before persisting
+                // Client sends stubs-only DB — merge full chats from server before persisting.
+                // Order: every await happens before hydrate. From hydrate to
+                // kvSet nothing awaits, so the chat store and cached root the
+                // blob is built from cannot change underneath it. After kvSet
+                // the blob is committed; see the catch below.
+                let committed = false;
                 try {
                     // eslint-disable-next-line no-var
                     var persistedEtag;
@@ -6206,6 +6211,11 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
                     // eslint-disable-next-line no-var
                     var persistedView;
                     const incomingDb = await decodeRisuSave(fileContent);
+                    // The guards below compare against the current client view;
+                    // load it when the cache is cold (restart, or a writer that
+                    // never called /api/read) so only a first-ever write is
+                    // unguarded.
+                    await loadDbCacheIfMissing({ createBackup: true });
                     const archiveConflict = findArchiveConflicts(dbCache[DB_HEX_KEY], incomingDb, null);
                     if (archiveConflict) {
                         logger.warn(`[Write] Rejected: ${archiveConflict}`);
@@ -6217,13 +6227,16 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
                         return;
                     }
                     await ensureChatStore();
-                    let fullDb = hydrateDatabaseForDisk(incomingDb);
                     // Same archive-row restore as persistDbCacheWithChats: a
                     // full write must not land a reactivated character's
                     // bodiless stubs on disk while its rows hold the bodies.
-                    if (findUnmergedArchivedChats(fullDb).length > 0) {
+                    // The rows are decoded (async) here; they are filled in
+                    // after hydrate.
+                    let archivedBodies = null;
+                    const chatsView = reassembleFullDb(incomingDb);
+                    if (findUnmergedArchivedChats(chatsView).length > 0) {
                         try {
-                            fullDb = await restoreArchivedChatsForDisk(fullDb, '/api/write');
+                            archivedBodies = await loadArchivedChatBodies(chatsView);
                         } catch (error) {
                             const err = new Error(`write aborted: a deactivated character's archive row is unreadable — ${error?.message || error}`);
                             recordPersistFailure(err, '/api/write:archive-unreadable');
@@ -6232,6 +6245,10 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
                             return;
                         }
                     }
+
+                    // ── No await from here to kvSet. ──
+                    let fullDb = hydrateDatabaseForDisk(incomingDb);
+                    if (archivedBodies) fullDb = applyArchivedChatsForDisk(fullDb, archivedBodies, '/api/write');
 
                     // Mirror the patch-persist guard (persistDbCacheWithChats):
                     // a malformed full-write payload could carry chats with
@@ -6258,10 +6275,8 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
 
                     // Same boundary for lazy asset manifests (see
                     // findAssetManifestLossOwners). Compared against the
-                    // stripped client view; load it from disk when the cache
-                    // is cold (restart, or a writer that never called
-                    // /api/read) so only a first-ever write is unguarded.
-                    const manifestLosses = (await loadDbCacheIfMissing())
+                    // stripped client view, loaded above when it was cold.
+                    const manifestLosses = dbCache[DB_HEX_KEY]
                         ? findAssetManifestLossOwners(dbCache[DB_HEX_KEY], incomingDb)
                         : [];
                     if (manifestLosses.length > 0) {
@@ -6296,6 +6311,7 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
 
                     const mergedContent = Buffer.from(encodeRisuSaveLegacy(fullDb));
                     kvSet(key, mergedContent);
+                    committed = true;
                     pendingChatPayloads.retireCommitted(fullDb);
                     // Do not replace the live store until persistence succeeds.
                     initChatStore(fullDb);
@@ -6320,7 +6336,32 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
                     } catch {
                         persistedHashes = undefined;
                     }
+
+                    // Update ETag and backup after the write. Keep the cache
+                    // warm with the view just persisted: it is the exact
+                    // object the next /api/read or /api/patch would rebuild
+                    // by cold-decoding the blob (stripped + normalized, and
+                    // the patch hash cache is already keyed on it above).
+                    // Dropping it cost one full decode after every full write.
+                    dbCache[DB_HEX_KEY] = persistedView;
+                    if (saveTimers[DB_HEX_KEY]) {
+                        clearTimeout(saveTimers[DB_HEX_KEY]);
+                        delete saveTimers[DB_HEX_KEY];
+                    }
+                    dbEtag = persistedEtag;
+                    createBackupAndRotate();
                 } catch (e) {
+                    if (committed) {
+                        // The blob is on disk, but the cached root (and any
+                        // armed save timer) still hold the view from before
+                        // this write; that timer would write the older view
+                        // over it. Drop root, timer and chat store: the next
+                        // request cold-loads exactly what was written.
+                        invalidateDbCache();
+                        logger.error('[Write] database.bin was written, but updating the server state after it failed:', e);
+                        res.status(500).json({ error: 'Database written, but the server state could not be updated' });
+                        return;
+                    }
                     logger.error('[Write] Failed to merge chats into database.bin:', e.message);
                     // Do NOT write stubs-only to disk — that would permanently
                     // destroy existing full chat data. Preserve disk as-is.
@@ -6329,26 +6370,6 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
                 }
             } else {
                 kvSet(key, fileContent);
-            }
-
-            // Update ETag, backup, and invalidate cache after database.bin write
-            if (key === 'database/database.bin') {
-                // Keep the cache warm with the view just persisted: it is the
-                // exact object the next /api/read or /api/patch would rebuild
-                // by cold-decoding the blob (stripped + normalized, and the
-                // patch hash cache is already keyed on it above). Dropping it
-                // cost one full decode after every full write.
-                if (persistedView) {
-                    dbCache[DB_HEX_KEY] = persistedView;
-                } else {
-                    delete dbCache[DB_HEX_KEY];
-                }
-                if (saveTimers[DB_HEX_KEY]) {
-                    clearTimeout(saveTimers[DB_HEX_KEY]);
-                    delete saveTimers[DB_HEX_KEY];
-                }
-                dbEtag = persistedEtag;
-                createBackupAndRotate();
             }
 
             res.send({
@@ -9178,44 +9199,75 @@ function findUnmergedArchivedChats(fullDb) {
 // and recover nothing. Throws when a row cannot be read (fail closed).
 // Returns a new database object; `fullDb`'s branches are never mutated.
 async function restoreUnmergedArchivedChats(fullDb) {
-    // Only a stub with no message array lacks its body. A legacy hybrid
-    // (`_stub: true` and a real message array) carries the body itself and
-    // may be newer than any row; initChatStore just drops its flag.
-    const lacksBody = (ch) => !!ch && ch._stub === true && !Array.isArray(ch.message);
-    const result = { db: fullDb, restored: [], unresolved: [] };
-    const characters = Array.isArray(fullDb?.characters) ? fullDb.characters : null;
-    if (!characters) return result;
-    let nextCharacters = null;
-    for (let i = 0; i < characters.length; i++) {
-        const c = characters[i];
-        if (!c?.chaId || !Array.isArray(c.chats) || !c.chats.some(lacksBody)) continue;
-        const rows = listArchivePayloadKeysFor(c.chaId)
+    return applyArchivedChatBodies(fullDb, await loadArchivedChatBodies(fullDb));
+}
+
+// Only a stub with no message array lacks its body. A legacy hybrid
+// (`_stub: true` and a real message array) carries the body itself and
+// may be newer than any row; initChatStore just drops its flag.
+function lacksArchivedBody(ch) {
+    return !!ch && ch._stub === true && !Array.isArray(ch.message);
+}
+
+// The async half of restoreUnmergedArchivedChats: decode the rows of every
+// character with bodiless stubs, newest first, keeping the bodies those stubs
+// want. Map<chaId, Map<chatId, chat>>; characters without rows get no entry.
+// Writers that must not await between hydrate and kvSet call this first and
+// applyArchivedChatBodies after hydrating.
+async function loadArchivedChatBodies(fullDb) {
+    const wantedByChaId = new Map();
+    for (const c of Array.isArray(fullDb?.characters) ? fullDb.characters : []) {
+        if (!c?.chaId || !Array.isArray(c.chats) || !c.chats.some(lacksArchivedBody)) continue;
+        const wanted = wantedByChaId.get(c.chaId) ?? new Set();
+        for (const ch of c.chats) if (lacksArchivedBody(ch) && ch.id) wanted.add(ch.id);
+        wantedByChaId.set(c.chaId, wanted);
+    }
+    const bodies = new Map();
+    for (const [chaId, wanted] of wantedByChaId) {
+        const rows = listArchivePayloadKeysFor(chaId)
             .map((key) => parseArchiveRowKey(key, ARCHIVE_PREFIX))
-            .filter((row) => row && row.chaId === c.chaId)
+            .filter((row) => row && row.chaId === chaId)
             .sort((a, b) => b.archivedAt - a.archivedAt);
         if (rows.length === 0) continue;
-        const wanted = new Set(c.chats.filter((ch) => lacksBody(ch) && ch.id).map((ch) => ch.id));
         const found = new Map();
         for (const row of rows) {
             if (found.size === wanted.size) break;
-            const decoded = await decodeArchivePayload(c.chaId, row.archivedAt);
+            const decoded = await decodeArchivePayload(chaId, row.archivedAt);
             for (const chat of decoded?.payload.character.chats || []) {
                 if (chat?.id && wanted.has(chat.id) && !found.has(chat.id) && Array.isArray(chat.message)) {
                     found.set(chat.id, chat);
                 }
             }
         }
+        bodies.set(chaId, found);
+    }
+    return bodies;
+}
+
+// The synchronous half: fill `fullDb`'s bodiless stubs from `bodies`.
+function applyArchivedChatBodies(fullDb, bodies) {
+    const result = { db: fullDb, restored: [], unresolved: [] };
+    const characters = Array.isArray(fullDb?.characters) ? fullDb.characters : null;
+    if (!characters) return result;
+    let nextCharacters = null;
+    for (let i = 0; i < characters.length; i++) {
+        const c = characters[i];
+        if (!c?.chaId || !Array.isArray(c.chats) || !c.chats.some(lacksArchivedBody)) continue;
+        const found = bodies.get(c.chaId);
+        if (!found) continue;
+        let restoredHere = 0;
         const chats = c.chats.map((ch) => {
-            if (!lacksBody(ch)) return ch;
+            if (!lacksArchivedBody(ch)) return ch;
             const body = ch.id ? found.get(ch.id) : undefined;
             if (!body) {
                 result.unresolved.push(`${c.chaId}/${ch.id || '?'}`);
                 return ch;
             }
             result.restored.push(`${c.chaId}/${ch.id}`);
+            restoredHere++;
             return mergeChatStubWithFullChat(ch, body);
         });
-        if (found.size > 0) {
+        if (restoredHere > 0) {
             nextCharacters ??= characters.slice();
             nextCharacters[i] = { ...c, chats };
         }
@@ -9231,7 +9283,12 @@ const reportedUnresolvedArchiveChats = new Set();
 // persistDbCacheWithChats / /api/write: restore what the archive rows hold
 // and log what they do not. Throws only when a row is unreadable.
 async function restoreArchivedChatsForDisk(fullDb, source) {
-    const r = await restoreUnmergedArchivedChats(fullDb);
+    return applyArchivedChatsForDisk(fullDb, await loadArchivedChatBodies(fullDb), source);
+}
+
+// Same, with the rows already loaded (loadArchivedChatBodies). Synchronous.
+function applyArchivedChatsForDisk(fullDb, bodies, source) {
+    const r = applyArchivedChatBodies(fullDb, bodies);
     if (r.restored.length > 0) {
         logger.info(`[Archive] ${source}: restored ${r.restored.length} chat body(s) from archive rows. sample=[${r.restored.slice(0, 3).join(', ')}]`);
     }
