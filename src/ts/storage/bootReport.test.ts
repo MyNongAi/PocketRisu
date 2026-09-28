@@ -4,6 +4,7 @@ const addLog = vi.fn()
 vi.mock('../log', () => ({ addLog }))
 
 const { expectBaselineHash, finishBootReport, formatBootReport, markBootPhase, resetBootReportForTests } = await import('./bootReport')
+const { resetBootSettledForTests, whenBootSettled } = await import('./bootSettled')
 
 describe('boot report', () => {
     afterEach(() => {
@@ -60,5 +61,15 @@ describe('boot report', () => {
         expect(() => finishBootReport({ baselineHash: () => { throw new Error('boom') }, load: null, onHashMismatch })).not.toThrow()
         finishBootReport({ baselineHash: () => '0', load: null, onHashMismatch })
         expect(onHashMismatch).not.toHaveBeenCalled()
+    })
+
+    test('the saver-ready mark settles boot, so a waiting cache commit can start', async () => {
+        let settled = false
+        void whenBootSettled(60_000).then(() => { settled = true })
+        markBootPhase('loaded')
+        await Promise.resolve()
+        expect(settled).toBe(false)
+        finishBootReport({ baselineHash: null, load: null, onHashMismatch: vi.fn() })
+        await vi.waitFor(() => expect(settled).toBe(true))
     })
 })

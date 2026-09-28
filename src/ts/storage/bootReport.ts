@@ -10,6 +10,7 @@
 // mismatch points at a bug; it is logged and the boot cache is suspended.
 
 import { addLog } from '../log'
+import { markBootSettled } from './bootSettled'
 import type { DbLoadInfo } from './nodeStorage'
 
 export type BootPhase = 'start' | 'fetched' | 'decoded' | 'loaded' | 'saverReady'
@@ -30,6 +31,7 @@ let reported = false
 export function markBootPhase(phase: BootPhase): void {
     if (marks.has(phase)) return
     marks.set(phase, performance.now())
+    if (phase === 'saverReady') markBootSettled()
     try {
         performance.mark(`pocketrisu-boot:${phase}`)
     } catch { /* User Timing unavailable */ }

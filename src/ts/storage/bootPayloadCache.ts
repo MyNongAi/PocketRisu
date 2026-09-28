@@ -22,6 +22,8 @@
 // or quota error mid-way leaves the previous state valid; orphans are collected
 // by the next commit.
 
+import { whenBootSettled } from './bootSettled'
+
 export const BOOT_CACHE_DB_NAME = 'pocketrisu-boot-cache'
 export const BOOT_CACHE_LOCK_NAME = 'pocketrisu-boot-cache'
 /** localStorage kill switch: 'off' disables the delta boot on this device. */
@@ -37,6 +39,8 @@ const KEY_BYTES = 32
 const DEFAULT_MAX_TRANSACTION_BYTES = 16 * 1024 * 1024
 /** A commit starts this long after the boot that produced it, off the boot path. */
 export const BOOT_COMMIT_DELAY_MS = 4_000
+/** ...and after saveDb's patcher is ready, or this long if it never gets ready. */
+const BOOT_SETTLE_TIMEOUT_MS = 60_000
 const FALLBACKS_BEFORE_SUSPEND = 2
 
 export interface BootCacheState {
@@ -549,6 +553,8 @@ export interface BootCacheEnv {
     createCache(): BootSegmentCache
     /** Run `fn` after `ms`; returns a cancel function. */
     schedule(fn: () => void, ms: number): () => void
+    /** A commit also waits for this (saveDb's patcher ready); absent = no wait. */
+    whenSettled?(): Promise<void>
     log(level: 'info' | 'warning' | 'error', message: string): void
 }
 
@@ -651,23 +657,20 @@ export class BootCacheController {
         })
     }
 
-    /** Run `commit` in the background once boot has settled. */
+    /**
+     * Run `commit` in the background `delayMs` after boot, and not before
+     * env.whenSettled: a first fill holds the whole payload while it encrypts
+     * and should not overlap patcher.init.
+     */
     scheduleCommit(commit: () => Promise<BootCacheCommitResult>, delayMs = BOOT_COMMIT_DELAY_MS): void {
         this.cancelPendingCommit?.()
         let cancelled = false
         const cancelTimer = this.env.schedule(() => {
-            this.cancelPendingCommit = null
             if (cancelled || !this.usable()) return
-            void commit().then((result) => {
-                if (result.ok) {
-                    this.env.log('info', `[BootCache] Stored ${result.written} new segments (${result.writtenBytes} bytes), removed ${result.deleted}, ${result.ms}ms`)
-                } else {
-                    this.env.log('info', `[BootCache] Commit skipped: ${result.reason}`)
-                }
-            }, (error) => {
-                // Quota or IndexedDB failure: stop writing for this session
-                // rather than repeating a large background write.
-                this.suspend(`commit failed: ${error instanceof Error ? error.name : String(error)}`)
+            void (this.env.whenSettled?.() ?? Promise.resolve()).then(() => {
+                if (cancelled || !this.usable()) return
+                this.cancelPendingCommit = null
+                return this.runCommit(commit)
             })
         }, delayMs)
         this.cancelPendingCommit = () => {
@@ -675,6 +678,20 @@ export class BootCacheController {
             cancelTimer()
             this.cancelPendingCommit = null
         }
+    }
+
+    private runCommit(commit: () => Promise<BootCacheCommitResult>): Promise<void> {
+        return commit().then((result) => {
+            if (result.ok) {
+                this.env.log('info', `[BootCache] Stored ${result.written} new segments (${result.writtenBytes} bytes), removed ${result.deleted}, ${result.ms}ms`)
+            } else {
+                this.env.log('info', `[BootCache] Commit skipped: ${result.reason}`)
+            }
+        }, (error) => {
+            // Quota or IndexedDB failure: stop writing for this session
+            // rather than repeating a large background write.
+            this.suspend(`commit failed: ${error instanceof Error ? error.name : String(error)}`)
+        })
     }
 
     async clear(): Promise<void> {
@@ -730,6 +747,7 @@ export function browserBootCacheEnv(): BootCacheEnv {
             const timer = setTimeout(fn, ms)
             return () => clearTimeout(timer)
         },
+        whenSettled: () => whenBootSettled(BOOT_SETTLE_TIMEOUT_MS),
         log: (level, message) => {
             if (level === 'info') console.info(message)
             else console.warn(message)

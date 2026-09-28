@@ -355,6 +355,31 @@ describe('BootCacheController', () => {
         expect(logs.some((line) => line.includes('Stored 2 new segments'))).toBe(true)
     })
 
+    test('a commit also waits until boot has settled, and a clear while waiting cancels it', async () => {
+        let settle: () => void = () => {}
+        const settled = new Promise<void>((resolve) => { settle = resolve })
+        const { env, runTimers } = testEnv({ whenSettled: () => settled })
+        const controller = new BootCacheController(env)
+        const commit = vi.fn(async () => ({ ok: true, written: 0, writtenBytes: 0, deleted: 0, ms: 0 }))
+        controller.scheduleCommit(commit)
+        await runTimers()
+        expect(commit).not.toHaveBeenCalled()
+        settle()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(commit).toHaveBeenCalledTimes(1)
+
+        let settleSecond: () => void = () => {}
+        const second = testEnv({ whenSettled: () => new Promise<void>((resolve) => { settleSecond = resolve }) })
+        const cleared = new BootCacheController(second.env)
+        const secondCommit = vi.fn(async () => ({ ok: true, written: 0, writtenBytes: 0, deleted: 0, ms: 0 }))
+        cleared.scheduleCommit(secondCommit)
+        await second.runTimers()
+        await cleared.clear()
+        settleSecond()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+        expect(secondCommit).not.toHaveBeenCalled()
+    })
+
     test('suspension cancels a pending commit; a failed commit suspends', async () => {
         const first = testEnv()
         const controller = new BootCacheController(first.env)
