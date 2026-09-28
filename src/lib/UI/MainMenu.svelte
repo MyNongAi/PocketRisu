@@ -140,7 +140,7 @@
         </button>
         <button
           type="button"
-          class="text-base font-medium p-1 bg-darkbg rounded-md hover:ring-3"
+          class="whitespace-nowrap text-base font-medium p-1 bg-darkbg rounded-md hover:ring-3"
           onclick={importRealmByAddress}
         >{language.realmImportByAddress}</button>
         <button
