@@ -6302,42 +6302,48 @@ app.get('/api/read', async (req, res, next) => {
 // has already flushed every accepted write and it may be replacing the
 // blob, so the read neither flushes, cold-loads nor answers "no database":
 // it serves the warm root or reports the lock.
-// Returns false for "no database yet" (an empty /api/read answer).
+// Returns the root to serve together with the change-feed cursor, taken in
+// the same tick (patches install a root and publish it in one tick, so the
+// feed from that cursor holds exactly what the root lacks), or null for "no
+// database yet" (an empty /api/read answer).
 async function ensureDatabaseForRead(timings, lap) {
-    if (dbCache[DB_HEX_KEY] && (saveTimers[DB_HEX_KEY] || kvExists('database/database.bin'))) return true;
+    const current = () => ({ root: dbCache[DB_HEX_KEY], syncInstance: syncHub.instanceId, syncSeq: syncHub.seq });
+    if (dbCache[DB_HEX_KEY] && (saveTimers[DB_HEX_KEY] || kvExists('database/database.bin'))) return current();
     return queueStorageOperation(async () => {
         timings.queueMs = lap();
         if (exclusiveStorageReason) {
-            if (dbCache[DB_HEX_KEY]) return true;
+            if (dbCache[DB_HEX_KEY]) return current();
             throw storageLockedError();
         }
         await flushPendingDb();
         timings.flushMs = lap();
-        if (!kvExists('database/database.bin')) return false;
+        if (!kvExists('database/database.bin')) return null;
         await loadDbCacheIfMissing({ createBackup: true });
         timings.loadMs = lap();
-        return !!dbCache[DB_HEX_KEY];
+        return dbCache[DB_HEX_KEY] ? current() : null;
     });
 }
 
-// The root to serve and everything a response states about it, taken in
-// one synchronous step (no other root can be installed in between): its
-// plan (or, while the planner is disabled, its whole encode), its etag, its
-// patch hash and the change-feed cursor.
-function captureDatabasePayload() {
-    const root = dbCache[DB_HEX_KEY];
+// Everything a response states about the root ensureDatabaseForRead took:
+// its plan (or, while the planner is disabled and `wholeEncode` allows it,
+// its whole encode), its etag and its patch hash. Null when there is no
+// plan and no whole encode was asked for.
+function captureDatabasePayload({ root, syncInstance, syncSeq }, { wholeEncode = true } = {}) {
     const plan = bootPayload.tryPlan(root);
+    if (!plan && !wholeEncode) return null;
     const bytes = plan ? null : encodeRisuSaveLegacyBuffer(root);
     const etag = plan ? plan.etag : computeBufferEtag(bytes);
-    dbEtag = etag;
+    // A full write's precondition is checked against the current root's
+    // etag only (a newer root may have been installed since it was taken).
+    if (dbCache[DB_HEX_KEY] === root) dbEtag = etag;
     return {
         plan,
         bytes,
         etag,
         total: plan ? plan.total : bytes.length,
         dbHash: databasePatchHashCache.hash(root).toString(16),
-        syncInstance: syncHub.instanceId,
-        syncSeq: syncHub.seq,
+        syncInstance,
+        syncSeq,
     };
 }
 
@@ -6362,11 +6368,12 @@ async function sendDatabaseRead(req, res) {
     const startedAt = performance.now();
     const lap = createStageLap(startedAt);
     const timings = {};
-    if (!(await ensureDatabaseForRead(timings, lap))) {
+    const taken = await ensureDatabaseForRead(timings, lap);
+    if (!taken) {
         res.send();
         return;
     }
-    const payload = captureDatabasePayload();
+    const payload = captureDatabasePayload(taken);
     timings[payload.plan ? 'planMs' : 'encodeMs'] = lap();
     const logRead = (outcome = '') => logger.debug(`[Read] database/database.bin ${formatMegabytes(payload.total)}: `
         + `${formatStageTimings(timings)} total ${Math.round(performance.now() - startedAt)} ms${outcome} ${formatProcessMemory()}`);
@@ -6424,13 +6431,14 @@ app.post('/api/db/boot', async (req, res, next) => {
     const lap = createStageLap(startedAt);
     const timings = {};
     try {
-        if (!(await ensureDatabaseForRead(timings, lap))) {
+        const taken = await ensureDatabaseForRead(timings, lap);
+        if (!taken) {
             res.set('Cache-Control', 'no-store').status(204).end();
             return;
         }
-        const payload = captureDatabasePayload();
+        const payload = captureDatabasePayload(taken, { wholeEncode: false });
         timings.planMs = lap();
-        if (!payload.plan) return answerDisabled();
+        if (!payload) return answerDisabled();
         const cacheKey = deriveBootCacheKey(jwtSecret);
         const reuse = req.headers['x-boot-cache-key-id'] === cacheKey.keyId ? held : null;
         const framed = encodeBootHeader(payload.plan, {
