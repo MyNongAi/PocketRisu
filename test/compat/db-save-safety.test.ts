@@ -263,8 +263,10 @@ describe('an /api/read flush', () => {
 
   // Outside the queue, every patch that landed while the flush's persist
   // decoded archive rows replaced the root, so the persist decoded again:
-  // the read took as long as the patches kept coming. It now holds the
-  // queue once; the patches wait for it and are applied after it.
+  // the read took as long as the patches kept coming. A warm read no longer
+  // flushes at all (the root it serves holds every accepted write, and the
+  // armed timer persists it): it answers at once, with the root of the
+  // moment, and the timer's persist writes the patches later.
   test('is not held up by a stream of patches', async () => {
     const { srv, client } = await boot([SLOW_ARCHIVE_DECODE])
     await makeEveryPersistDecodeArchiveRows(client)
@@ -274,7 +276,7 @@ describe('an /api/read flush', () => {
       expect(res.status).toBe(200)
       db.characters[0].name = name
     }
-    await rename('p0') // arms the timer the read flushes
+    await rename('p0') // arms the save timer
 
     await writeFile(path.join(srv.cwd, 'slow-archive-decode'), '600')
     let readAnswered = false
@@ -289,8 +291,8 @@ describe('an /api/read flush', () => {
     const served = await decodeDb(await reading)
     await rm(path.join(srv.cwd, 'slow-archive-decode'))
 
-    // Answered while the patches were still coming, with the root its flush
-    // wrote: no patch was applied before it.
+    // Answered while the patches were still coming, with the root of the
+    // moment it was sent: no patch was applied before it.
     expect(readDuringStream).toBe(true)
     expect(served.characters[0].name).toBe('p0')
     await flush(client)
@@ -299,11 +301,12 @@ describe('an /api/read flush', () => {
 })
 
 describe('a database persist that waits on archive rows', () => {
-  // A patch and a chat save that arrive while an /api/read flush waits on
-  // an archive row. The flush used to run outside the storage queue, so they
+  // A patch and a chat save that arrive while a flush waits on an archive
+  // row. The /api/read flush used to run outside the storage queue, so they
   // landed during the wait: the persist then wrote the older root and
-  // rebuilt the chat store from it, reverting the acknowledged body. The
-  // flush now holds the queue, so both wait for it, and neither is lost.
+  // rebuilt the chat store from it, reverting the acknowledged body. Every
+  // flush now holds the queue (here /api/db/flush; a warm /api/read no
+  // longer flushes), so both wait for it, and neither is lost.
   test('lets what arrives meanwhile wait, and loses none of it', async () => {
     const { srv, client } = await boot([SLOW_ARCHIVE_DECODE])
     await makeEveryPersistDecodeArchiveRows(client)
@@ -317,7 +320,9 @@ describe('a database persist that waits on archive rows', () => {
     const chat = await decodeDb(chatRead)
 
     await writeFile(path.join(srv.cwd, 'slow-archive-decode'), '2000')
-    const reading = readDb(client) // flushes the first patch; its persist now waits
+    // A warm read serves the patched root without flushing it.
+    expect((await readDb(client)).db.characters[0].name).toBe('first')
+    const flushing = flush(client) // persists the first patch; the persist now waits
     await sleep(400)
     const second = await sendPatch(client, [{ op: 'replace', path: '/characters/0/name', value: 'second' }], utils.calculateHash(before.db).toString(16))
     expect(second.status).toBe(200)
@@ -332,8 +337,8 @@ describe('a database persist that waits on archive rows', () => {
       body: Buffer.from(utils.encodeRisuSaveLegacy({ ...chat, message: [...chat.message, { role: 'user', data: 'acknowledged while waiting' }] })),
     })
     expect(saved.status).toBe(200)
-    // The read served what its flush wrote; the patch was applied after it.
-    expect((await reading).db.characters[0].name).toBe('first')
+    // The flush wrote the first patch; the second was applied after it.
+    await flushing
     await rm(path.join(srv.cwd, 'slow-archive-decode'))
     let disk = await readDiskDb(srv.cwd)
     expect(disk.characters[0].name).toBe('first')

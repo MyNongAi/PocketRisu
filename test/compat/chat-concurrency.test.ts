@@ -1,9 +1,10 @@
 import { afterAll, describe, expect, test } from 'vitest'
 import { Packr } from 'msgpackr'
 import path from 'node:path'
-import { createClient } from './helpers/client.js'
+import { createClient, type RisuClient } from './helpers/client.js'
 import { createSeedBackup } from './helpers/seed.js'
 import { spawnServer, type ServerHandle } from './helpers/spawnServer.js'
+import { sessionCookie } from './helpers/disk.js'
 
 const MAGIC_RAW = Buffer.from([0, 82, 73, 83, 85, 83, 65, 86, 69, 0, 7])
 const packr = new Packr({ useRecords: false })
@@ -44,6 +45,12 @@ async function boot() {
 
 function session(id: string) {
   return { 'x-session-id': id, 'x-user-active': '1' }
+}
+
+// Persists what the database save timer holds now. (A warm /api/read no
+// longer flushes: the root it serves already holds every accepted write.)
+async function flushDb(client: RisuClient) {
+  return client.fetch('/api/db/flush', { method: 'POST', headers: { cookie: await sessionCookie(client) } })
 }
 
 describe('per-chat optimistic concurrency', () => {
@@ -97,9 +104,7 @@ describe('per-chat optimistic concurrency', () => {
     })
     expect(first.status).toBe(200)
     const acknowledgedEtag = (await first.json()).etag
-    const flushed = await client.fetch('/api/read', {
-      headers: { 'file-path': Buffer.from('database/database.bin').toString('hex') },
-    })
+    const flushed = await flushDb(client)
     expect(flushed.status, flushed.ok ? '' : await flushed.text()).toBe(200)
     const second = await client.fetch('/api/chat-content/test-char-0/0', {
       method: 'POST',
@@ -133,9 +138,7 @@ describe('per-chat optimistic concurrency', () => {
       body: encodeChat('chat-new', 'must survive a background flush'),
     })
     expect(created.status).toBe(200)
-    const flushed = await client.fetch('/api/read', {
-      headers: { 'file-path': Buffer.from('database/database.bin').toString('hex') },
-    })
+    const flushed = await flushDb(client)
     expect(flushed.status, flushed.ok ? '' : await flushed.text()).toBe(200)
     const fetched = await client.fetch('/api/chat-content/test-char-0/2', {
       headers: { 'x-chat-id': 'chat-new', ...session('pc') },
@@ -170,7 +173,7 @@ describe('per-chat optimistic concurrency', () => {
       }),
     })
     expect(attached.status).toBe(200)
-    expect((await reconnected.fetch('/api/read', { headers: { 'file-path': DB_KEY } })).status).toBe(200)
+    expect((await flushDb(reconnected)).status).toBe(200)
     const stored = new Sqlite(path.join(restarted.cwd, 'save/risuai.db'), { readonly: true })
     try {
       expect(stored.prepare("SELECT count(*) AS n FROM kv WHERE key LIKE 'chat-payload-pending/%'").get().n).toBe(0)
@@ -194,7 +197,7 @@ describe('per-chat optimistic concurrency', () => {
       ] }),
     })
     expect(patched.status).toBe(200)
-    await client.fetch('/api/read', { headers: { 'file-path': DB_KEY } })
+    expect((await flushDb(client)).status).toBe(200)
     const hydrated = await client.fetch('/api/chat-content/test-char-0/0', { headers: { 'x-chat-id': 'chat-0-0' } })
     expect(hydrated.headers.get('x-chat-etag')).toBe(etag)
     expect(hydrated.headers.get('etag')).not.toBe(initial.headers.get('etag'))

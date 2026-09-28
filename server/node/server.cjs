@@ -90,7 +90,9 @@ const { createPendingChatPayloads } = require('./pending-chat-payloads.cjs');
 const pendingChatPayloads = createPendingChatPayloads({ kvGet, kvSet, kvDel, kvList: kvListExactPrefix, kvExists });
 const { createChatBodyStore, chatToStub, mergeChatStubWithFullChat, deepFreeze, StoredChatBytes } = require('./chat-body-store.cjs');
 const { createDbPersister, isPersistMode } = require('./db-persister.cjs');
-const { createBootPayloadPlanner } = require('./boot-payload.cjs');
+const {
+    createBootPayloadPlanner, ifNoneMatchIncludes, isLoopbackAddress, isTrueLoopbackRequest,
+} = require('./boot-payload.cjs');
 const { createRuntimeFlags } = require('./runtime-flags.cjs');
 const { cdcSplit } = require('./chunkStore.cjs');
 // Test hardening only: every root installed in dbCache is deep-frozen, chat
@@ -1629,6 +1631,10 @@ function replaceCachedAssetManifestDescriptor(database, kind, ownerId, descripto
 }
 
 function shouldCompress(req, res) {
+    // A database payload for a browser on this machine (isTrueLoopbackRequest).
+    if (res.locals && res.locals.skipCompression) {
+        return false;
+    }
     // Proxy/hub-proxy: pass through external responses without compression.
     // Original upstream server has no compression middleware at all,
     // so proxy responses were never compressed in the first place.
@@ -1690,13 +1696,9 @@ app.post('/api/termux-notify', async (req, res) => {
     // A request relayed through a local reverse proxy arrives with a loopback
     // remoteAddress even when the browser is remote, so any forwarded request
     // counts as non-local.
-    const addr = String(req.socket.remoteAddress || '');
     const isLoopback =
-        !req.headers['x-forwarded-for'] && (
-            addr === '127.0.0.1' ||
-            addr === '::1' ||
-            addr === '::ffff:127.0.0.1'
-        );
+        !req.headers['x-forwarded-for'] &&
+        isLoopbackAddress(String(req.socket.remoteAddress || ''));
 
     if (!isLoopback) {
         return res.status(403).json({ error: 'localhost only' });
@@ -6242,35 +6244,11 @@ app.get('/api/read', async (req, res, next) => {
     }
     try {
         const key = Buffer.from(filePath, 'hex').toString('utf-8');
-        // Stage timings of a database.bin read, for the debug line below.
-        const readStartedAt = performance.now();
-        const lap = createStageLap(readStartedAt);
-        const readTimings = {};
-        // database.bin: the flush of pending saves, the "no database yet"
-        // answer and the cold load are ONE storage-queue operation. The flush
-        // used to run outside the queue: a queued /api/write that landed
-        // while its no-root branch awaited the decode was then overwritten
-        // by the older root it wrote, and a stream of patches kept its
-        // persist re-reading the root. While an exclusive operation (import,
-        // backup) holds storage, its barrier has already flushed every
-        // accepted write and it may be replacing the blob, so the read
-        // neither flushes, cold-loads nor answers "no database": it serves
-        // the warm root or reports the lock.
-        let databaseReady = false;
+        // The client view (chat stubs, asset manifest descriptors), streamed
+        // from the boot planner; see sendDatabaseRead.
         if (key === 'database/database.bin') {
-            databaseReady = await queueStorageOperation(async () => {
-                readTimings.queueMs = lap();
-                if (exclusiveStorageReason) {
-                    if (dbCache[filePath]) return true;
-                    throw storageLockedError();
-                }
-                await flushPendingDb();
-                readTimings.flushMs = lap();
-                if (!kvExists('database/database.bin')) return false;
-                await loadDbCacheIfMissing({ createBackup: true });
-                readTimings.loadMs = lap();
-                return true;
-            });
+            await sendDatabaseRead(req, res);
+            return;
         }
         let value = null;
         if (key.startsWith('inlay/')) {
@@ -6278,41 +6256,12 @@ app.get('/api/read', async (req, res, next) => {
         } else if (key.startsWith('inlay_info/')) {
             value = await readInlayInfoPayload(key.slice('inlay_info/'.length));
         }
-        if (value === null && key !== 'database/database.bin') {
+        if (value === null) {
             value = kvGet(key);
         }
-        if (value === null && !databaseReady) {
+        if (value === null) {
             res.send();
         } else {
-            // Strip chat payloads and asset manifests from database.bin — the
-            // client gets stubs and descriptors only.
-            if (key === 'database/database.bin') {
-                try {
-                    // Encodes the root the queue operation above left: this
-                    // continuation runs before the next queued operation.
-                    // Owned bytes: res.send below may still be writing them
-                    // when the next request encodes, which cannot touch them.
-                    value = encodeRisuSaveLegacyBuffer(dbCache[filePath]);
-                    readTimings.encodeMs = lap();
-                } catch (e) {
-                    // Log the Error itself (not just e.message) so logger.*
-                    // tags it and the Express middleware won't re-log after next().
-                    logger.error('[Read] Failed to strip chats from database.bin', e);
-                    return next(e);
-                }
-                dbEtag = dbEtagFor(dbCache[filePath]);
-                readTimings.etagMs = lap();
-                logger.debug(`[Read] ${key} ${formatMegabytes(value.length)}: ${formatStageTimings(readTimings)} total ${Math.round(performance.now() - readStartedAt)} ms`);
-                if (req.headers['if-none-match'] === dbEtag) {
-                    return res.status(304).end();
-                }
-                res.setHeader('x-db-etag', dbEtag);
-                // Where the change feed stood when this copy was encoded, so
-                // the reader's first stream connection replays whatever lands
-                // while it is still decoding a large database.
-                res.setHeader('x-sync-instance', syncHub.instanceId);
-                res.setHeader('x-sync-seq', String(syncHub.seq));
-            }
             res.setHeader('Content-Type', 'application/octet-stream');
             res.send(value);
         }
@@ -6321,9 +6270,123 @@ app.get('/api/read', async (req, res, next) => {
             return res.status(409).json({ error: error.message, code: error.code });
         }
         logger.error('[Read] Failed to read stored data', error);
+        // A database stream that fails half-way: the client sees a cut
+        // response and retries.
+        if (res.headersSent) return res.destroy(error);
         next(error);
     }
 });
+
+// ── database.bin reads (/api/read) ──────────────────────────────────────────
+// Whether there is a database to serve; loads the root when it is cold.
+// A warm root is served as it is, without the storage queue: it holds every
+// accepted write, persisted or not, and an armed save timer still persists
+// it, so the read has nothing to flush (the flush it used to run cost a
+// whole persist whenever a save was pending, 5-8 s on the real data). The
+// blob check keeps the "no database yet" answer where it was: a root with
+// neither a blob nor a pending save goes the cold way.
+// The cold path is one storage-queue operation: the flush of pending saves,
+// the "no database yet" answer and the cold load. The flush used to run
+// outside the queue: a queued /api/write that landed while its no-root
+// branch awaited the decode was then overwritten by the older root it
+// wrote, and a stream of patches kept its persist re-reading the root.
+// While an exclusive operation (import, backup) holds storage, its barrier
+// has already flushed every accepted write and it may be replacing the
+// blob, so the read neither flushes, cold-loads nor answers "no database":
+// it serves the warm root or reports the lock.
+// Returns false for "no database yet" (an empty /api/read answer).
+async function ensureDatabaseForRead(timings, lap) {
+    if (dbCache[DB_HEX_KEY] && (saveTimers[DB_HEX_KEY] || kvExists('database/database.bin'))) return true;
+    return queueStorageOperation(async () => {
+        timings.queueMs = lap();
+        if (exclusiveStorageReason) {
+            if (dbCache[DB_HEX_KEY]) return true;
+            throw storageLockedError();
+        }
+        await flushPendingDb();
+        timings.flushMs = lap();
+        if (!kvExists('database/database.bin')) return false;
+        await loadDbCacheIfMissing({ createBackup: true });
+        timings.loadMs = lap();
+        return !!dbCache[DB_HEX_KEY];
+    });
+}
+
+// The root to serve and everything a response states about it, taken in
+// one synchronous step (no other root can be installed in between): its
+// plan (or, while the planner is disabled, its whole encode), its etag, its
+// patch hash and the change-feed cursor.
+function captureDatabasePayload() {
+    const root = dbCache[DB_HEX_KEY];
+    const plan = bootPayload.tryPlan(root);
+    const bytes = plan ? null : encodeRisuSaveLegacyBuffer(root);
+    const etag = plan ? plan.etag : computeBufferEtag(bytes);
+    dbEtag = etag;
+    return {
+        plan,
+        bytes,
+        etag,
+        total: plan ? plan.total : bytes.length,
+        dbHash: databasePatchHashCache.hash(root).toString(16),
+        syncInstance: syncHub.instanceId,
+        syncSeq: syncHub.seq,
+    };
+}
+
+function setDatabasePayloadHeaders(res, payload) {
+    res.setHeader('x-db-etag', payload.etag);
+    // calculateHash of the view, the value patches are checked against, so a
+    // client can compare the baseline it decodes with the server's.
+    res.setHeader('x-db-hash', payload.dbHash);
+    // Where the change feed stood when this copy was taken, so the reader's
+    // first stream connection replays whatever lands while it is still
+    // decoding a large database.
+    res.setHeader('x-sync-instance', payload.syncInstance);
+    res.setHeader('x-sync-seq', String(payload.syncSeq));
+}
+
+// GET /api/read of database.bin: exactly the bytes a whole encode of the
+// view gives, streamed segment by segment from the plan (no view-sized
+// buffer, no read of the blob). A browser on this machine gets them without
+// compression, which took longer than sending them; every other request,
+// Tailscale Serve included, is compressed as before.
+async function sendDatabaseRead(req, res) {
+    const startedAt = performance.now();
+    const lap = createStageLap(startedAt);
+    const timings = {};
+    if (!(await ensureDatabaseForRead(timings, lap))) {
+        res.send();
+        return;
+    }
+    const payload = captureDatabasePayload();
+    timings[payload.plan ? 'planMs' : 'encodeMs'] = lap();
+    const logRead = (outcome = '') => logger.debug(`[Read] database/database.bin ${formatMegabytes(payload.total)}: `
+        + `${formatStageTimings(timings)} total ${Math.round(performance.now() - startedAt)} ms${outcome}`);
+    setDatabasePayloadHeaders(res, payload);
+    // A strong validator: express then leaves the body alone (it would hash
+    // it for a weak one), and a browser revalidating its cached copy gets a
+    // 304 that still carries the headers above.
+    res.setHeader('ETag', `"${payload.etag}"`);
+    if (ifNoneMatchIncludes(req.headers['if-none-match'], payload.etag)) {
+        res.status(304).end();
+        logRead(' (304)');
+        return;
+    }
+    res.setHeader('Content-Type', 'application/octet-stream');
+    if (isTrueLoopbackRequest(req)) {
+        res.locals.skipCompression = true;
+        res.setHeader('Content-Length', String(payload.total));
+    }
+    if (payload.bytes) {
+        res.end(payload.bytes);
+        logRead();
+        return;
+    }
+    const streamed = await bootPayload.streamSegments(res, payload.plan, { head: payload.plan.prefix });
+    timings.encodeMs = streamed.encodeMs;
+    timings.streamMs = lap();
+    logRead(streamed.completed ? '' : ' (closed early)');
+}
 
 // Names + sizes of every plugin-storage key, no values. Backs the client's
 // synchronous keys()/length and the storage viewer. `migrated` is whether the
