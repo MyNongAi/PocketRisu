@@ -164,6 +164,10 @@ function createChunkStore(db, opts = {}) {
         `SELECT m.seq, m.hash, LENGTH(c.data) FROM manifest_chunks m LEFT JOIN chunks c ON c.hash = m.hash
          WHERE m.manifest_key = ? ORDER BY m.seq`,
     ).raw(true);
+    const selManifestLengthsPage = db.prepare(
+        `SELECT m.seq, m.hash, LENGTH(c.data) FROM manifest_chunks m LEFT JOIN chunks c ON c.hash = m.hash
+         WHERE m.manifest_key = ? AND m.seq > ? ORDER BY m.seq LIMIT ?`,
+    ).raw(true);
     const selChunk = db.prepare('SELECT data FROM chunks WHERE hash = ?');
     const selSize = db.prepare(
         'SELECT SUM(LENGTH(c.data)) AS n FROM manifest_chunks m JOIN chunks c ON c.hash = m.hash WHERE m.manifest_key = ?',
@@ -338,6 +342,26 @@ function createChunkStore(db, opts = {}) {
         for (let i = 0; i < rows.length; i++) {
             const [seq, hash, len] = rows[i];
             if (typeof len !== 'number') throw chunkStoreError('MISSING_CHUNK', `chunk ${i} of ${key} is missing`);
+            seqs[i] = seq;
+            hashes[i] = hash;
+            lens[i] = len;
+        }
+        return { seqs, hashes, lens };
+    }
+
+    // readManifestWithLengths in pages: at most `limit` rows with seq greater
+    // than `afterSeq`. A caller that reads a manifest across event-loop turns
+    // (layout discovery) holds no iterator in between; it checks the key's
+    // generation between pages, and a list that ends up torn by a writer
+    // that bypassed the store fails commitChunks' precondition anyway.
+    function readManifestPage(key, afterSeq, limit) {
+        const rows = selManifestLengthsPage.all(key, afterSeq, limit);
+        const seqs = new Array(rows.length);
+        const hashes = new Array(rows.length);
+        const lens = new Array(rows.length);
+        for (let i = 0; i < rows.length; i++) {
+            const [seq, hash, len] = rows[i];
+            if (typeof len !== 'number') throw chunkStoreError('MISSING_CHUNK', `a chunk of ${key} after seq ${afterSeq} is missing`);
             seqs[i] = seq;
             hashes[i] = hash;
             lens[i] = len;
@@ -524,7 +548,7 @@ function createChunkStore(db, opts = {}) {
 
     return {
         putValue, getValue, sizeValue, snapshotCost, snapshotValue, dropValue, gc, reclaimableBytes, isChunkedKey,
-        generation, readManifestWithLengths, createReader, commitChunks, threshold,
+        generation, readManifestWithLengths, readManifestPage, createReader, commitChunks, threshold,
     };
 }
 

@@ -348,3 +348,32 @@ describe('chunkStarts', () => {
         expect(Array.from(chunkStarts([3, 4, 5]))).toEqual([0, 3, 7])
     })
 })
+
+describe('readManifestPage', () => {
+    it('reads a gapped manifest in pages, exactly as readManifestWithLengths', () => {
+        const db = freshDb()
+        const store = createChunkStore(db, { threshold: 1024 })
+        const a = seededBytes(600_000, 81)
+        const listA = listOf(a)
+        store.commitChunks(KEY, listA, null, { firstSeq: SEQ_GAP, seqStride: SEQ_GAP })
+        const b = Buffer.concat([a.subarray(0, 200_000), seededBytes(5000, 82), a.subarray(210_000)])
+        store.commitChunks(KEY, editedList(listA, b), listA.hashes)
+        const whole = store.readManifestWithLengths(KEY)
+        for (const limit of [1, 2, 7, 1000]) {
+            const got = { seqs: [] as number[], hashes: [] as string[], lens: [] as number[] }
+            let after = Number.MIN_SAFE_INTEGER
+            for (;;) {
+                const page = store.readManifestPage(KEY, after, limit)
+                got.seqs.push(...page.seqs)
+                got.hashes.push(...page.hashes)
+                got.lens.push(...page.lens)
+                if (page.hashes.length < limit) break
+                after = page.seqs[page.seqs.length - 1]
+            }
+            expect(got).toEqual(whole)
+        }
+        db.prepare('DELETE FROM chunks WHERE hash = ?').run(whole.hashes[3])
+        expect(() => store.readManifestPage(KEY, whole.seqs[1], 5)).toThrow(expect.objectContaining({ code: 'MISSING_CHUNK' }))
+        expect(store.readManifestPage(KEY, whole.seqs[3], 2).hashes).toEqual(whole.hashes.slice(4, 6))
+    })
+})

@@ -11,6 +11,8 @@
  * write chunk lists, and every planned persist is also compared by the server
  * itself with the reference encoder (POCKETRISU_PERSIST_VERIFY); its
  * verifyFailures must stay 0, as must the incremental audit's mismatches.
+ * Layout discovery starts right after a cold load, so the incremental
+ * servers also persist from discovered (and partly discovered) layouts.
  */
 import { afterAll, describe, expect, test } from 'vitest'
 import fs from 'node:fs'
@@ -40,6 +42,7 @@ const ENV = {
   POCKETRISU_PERSIST_RETRY_MS: '300',
   POCKETRISU_PERSIST_AUDIT_INTERVAL_MS: '0',
   POCKETRISU_PERSIST_AUDIT_IDLE_MS: '150',
+  POCKETRISU_PERSIST_DISCOVERY_DELAY_MS: '0',
   NODE_OPTIONS: `--require ${FAIL_DB} --require ${FAIL_AFTER}`,
 }
 const sessionHeaders = { 'x-session-id': 'db-persist-modes', 'x-user-active': '1' }
@@ -56,9 +59,9 @@ function writeFlags(saveDir: string, mode: Mode) {
   fs.writeFileSync(path.join(saveDir, 'pocketrisu-flags.json'), JSON.stringify({ persistMode: mode }))
 }
 
-async function start(mode: Mode, from?: Node): Promise<Node> {
+async function start(mode: Mode, from?: Node, env: Record<string, string> = {}): Promise<Node> {
   const srv = await spawnServer({
-    env: ENV,
+    env: { ...ENV, ...env },
     seedSave: async (saveDir) => {
       writeFlags(saveDir, mode)
       if (!from) return
@@ -197,12 +200,14 @@ async function runPair(mode: Mode, seed: number, steps: number) {
   const seen = { steps: 0, restarts: 0, dbFaults: 0, afterFaults: 0, flips: 0, chatSaves: 0, newChats: 0, patches: 0 }
   // Planned persists of the server under test, over all its restarts.
   // copied: commits that copied bytes from the old blob (edited the manifest in place).
-  const planned = { 'full-plan': 0, incremental: 0, copied: 0 }
+  // discovered: layout discoveries that ran to the end (after cold loads).
+  const planned = { 'full-plan': 0, incremental: 0, copied: 0, discovered: 0 }
   const countPlanned = async () => {
     const stats = await persistStats(sut)
     planned['full-plan'] += stats.persister.persists['full-plan']
     planned.incremental += stats.persister.persists.incremental
     planned.copied += stats.persister.commits.gapped + stats.persister.commits.renumber
+    planned.discovered += stats.persister.discovery.completed
     expect(stats.verifyFailures).toBe(0)
     expect(stats.persister.audit.mismatches).toBe(0)
     expect(stats.persister.walkFailures).toBe(0)
@@ -325,18 +330,21 @@ describe('persist modes against the reference, request by request', () => {
     expect(seen.restarts + seen.dbFaults + seen.afterFaults + seen.flips).toBeGreaterThan(4)
     expect(planned.incremental).toBeGreaterThan(5)
     expect(planned.copied).toBeGreaterThan(3)
+    expect(planned.discovered).toBeGreaterThan(0)
   }, 300_000)
 
   test('incremental, another seed', async () => {
     const { planned } = await runPair('incremental', 47, 45)
     expect(planned.incremental).toBeGreaterThan(5)
     expect(planned.copied).toBeGreaterThan(3)
+    expect(planned.discovered).toBeGreaterThan(0)
   }, 300_000)
 })
 
 describe('incremental persists', () => {
   test('copy unchanged owners, pass the audit, and take a snapshot before the first copy', async () => {
-    const node = await start('incremental')
+    // No layout discovery here: the first write encodes everything.
+    const node = await start('incremental', undefined, { POCKETRISU_PERSIST_DISCOVERY_DELAY_MS: '600000' })
     expect((await node.client.importBackup(createSeedBackup({ characterCount: 6, chatsPerCharacter: 3, messagesPerChat: 3 }))).ok).toBe(true)
     const snapshotsBefore = (await (await node.client.fetch('/api/db/snapshots')).json() as any).snapshots?.length ?? null
     let local = utils.normalizeJSON(await utils.decodeRisuSave(await readBytes(node))) as any

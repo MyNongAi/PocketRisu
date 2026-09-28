@@ -50,7 +50,7 @@ function mulberry32(seed: number) {
     }
 }
 
-function harness({ threshold = 1024, audit = {} as Record<string, unknown> } = {}) {
+function harness({ threshold = 1024, audit = {} as Record<string, unknown>, discovery = {} as Record<string, unknown> } = {}) {
     const db = new Database(':memory:')
     db.exec('CREATE TABLE kv (key TEXT PRIMARY KEY, value BLOB NOT NULL, updated_at INTEGER NOT NULL DEFAULT 0)')
     const chunkStore = createChunkStore(db, { threshold })
@@ -63,6 +63,7 @@ function harness({ threshold = 1024, audit = {} as Record<string, unknown> } = {
         generation: () => chunkStore.generation(KEY),
         isChunked: () => chunkStore.isChunkedKey(KEY),
         readManifestWithLengths: () => chunkStore.readManifestWithLengths(KEY),
+        readManifestPage: (afterSeq: number, limit: number) => chunkStore.readManifestPage(KEY, afterSeq, limit),
         createReader: (chunks: any, options?: any) => chunkStore.createReader(chunks, options),
         commitChunks: (next: any, expected: any, options: any) => chunkStore.commitChunks(KEY, next, expected, options),
         putValue: (value: Buffer) => chunkStore.putValue(KEY, value),
@@ -156,6 +157,7 @@ function harness({ threshold = 1024, audit = {} as Record<string, unknown> } = {
         applyArchivedChatBodies,
         logger: quiet,
         audit: { enabled: false, getRoot: () => currentRoot, onMismatch: (m: any) => mismatches.push(m), ...audit },
+        discovery: { startDelayMs: 0, ...discovery },
     })
 
     function referenceFull(root: any, archivedBodies: any) {
@@ -210,8 +212,29 @@ function harness({ threshold = 1024, audit = {} as Record<string, unknown> } = {
         return { prepared, committed, expected }
     }
 
-    return { db, chunkStore, assetStore, store, pending, blob, persister, load, persist, referenceFull, hydrateDatabaseForDisk, mismatches }
+    const setRoot = (root: any) => { currentRoot = root }
+    return { db, chunkStore, assetStore, store, pending, blob, persister, load, persist, referenceFull, hydrateDatabaseForDisk, mismatches, setRoot }
 }
+
+// The state a cold boot builds from the blob on disk: the store and the
+// client view decoded from it (the server's loadDbCacheIfMissing).
+async function coldBoot(h: any) {
+    const disk = await utils.decodeRisuSave(h.chunkStore.getValue(KEY))
+    const root = h.load(disk)
+    h.setRoot(root)
+    return root
+}
+// Discovery slices that run only when the test steps them.
+function manualSlices() {
+    const queue: (() => void)[] = []
+    const defer = (fn: () => void) => {
+        queue.push(fn)
+        return () => { const i = queue.indexOf(fn); if (i >= 0) queue.splice(i, 1) }
+    }
+    const step = (n = 1) => { for (let i = 0; i < n && queue.length; i++) queue.shift()!() }
+    return { defer, step, get pending() { return queue.length } }
+}
+const settle = () => new Promise((resolve) => setTimeout(resolve, 5))
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 let serial = 0
@@ -482,6 +505,53 @@ describe('random edit sequences', () => {
             }
         })
     }
+    // The same edits with cold boots in between: the store and the client
+    // view rebuilt from the blob, then a discovery that runs for a random
+    // number of slices (or to its end) before the next persist. Every
+    // persist is still checked against the reference.
+    const totals = { seeds: 0, copiedFromDiscovery: 0 }
+    for (let seed = 1; seed <= 25; seed++) {
+        it(`with cold boots and discovery, seed ${seed}`, async () => {
+            const rand = mulberry32(seed * 104729)
+            const slices = manualSlices()
+            const h = harness({ discovery: { sliceMs: 0, manifestPageRows: 1 + Math.floor(rand() * 8), defer: slices.defer } })
+            let root = h.load(fixtureDisk())
+            h.persist(root, 'incremental')
+            let discovered = 0
+            let copiedFromDiscovery = 0
+            for (let n = 0; n < 25; n++) {
+                const x = rand()
+                if (x < 0.2) {
+                    h.persister.reset('boot')
+                    root = await coldBoot(h)
+                    h.persister.scheduleDiscovery('boot')
+                    await settle()
+                    slices.step(rand() < 0.3 ? 10_000 : Math.floor(rand() * 30))
+                    if (h.persister.stats().layout?.discovered) discovered++
+                } else if (x < 0.25) {
+                    // Another writer (the reference path, an import), then a discovery.
+                    h.chunkStore.putValue(KEY, utils.encodeRisuSaveLegacyBuffer(h.referenceFull(root, null)))
+                    h.setRoot(root)
+                    h.persister.discoverNow()
+                    discovered++
+                }
+                root = step(h, rand, root)
+                h.setRoot(root)
+                const onDiscovered = !!h.persister._layout()?.discovered
+                const r = h.persist(root, rand() < 0.1 ? 'full-plan' : 'incremental', { accept: rand() > 0.05 })
+                if (onDiscovered && r.committed?.stats.spanOwners > 0) copiedFromDiscovery++
+                slices.step(Math.floor(rand() * 5))
+            }
+            expect(h.persister.stats().walkFailures).toBe(0)
+            expect(discovered).toBeGreaterThan(0)
+            totals.seeds++
+            totals.copiedFromDiscovery += copiedFromDiscovery
+        })
+    }
+    it('with cold boots and discovery: many of those persists copied from a discovered layout', () => {
+        if (totals.seeds < 25) return // the seeds were filtered out
+        expect(totals.copiedFromDiscovery).toBeGreaterThan(50)
+    })
 })
 
 describe('odd shapes', () => {
@@ -683,6 +753,163 @@ describe('the idle audit', () => {
         expect(h.persister.stats().audit.passes).toBe(1)
         expect(h.persister.stats().audit.mismatches).toBe(0)
         h.persister.stop()
+    })
+})
+
+describe('layout discovery', () => {
+    // A blob written by the reference path (or another build), then a boot.
+    // (A preset without an id is not canonical: decodeRisuSave gives it one.)
+    async function bootedOnCanonicalBlob(options: any = {}) {
+        const h = harness(options)
+        const disk: any = fixtureDisk()
+        disk.botPresets[0].id = 'preset-1'
+        h.persist(h.load(disk), 'full-plan')
+        const root = await coldBoot(h)
+        return { h, root }
+    }
+    function tableCounts(h: any) {
+        return ['kv', 'chunks', 'manifest_chunks'].map((t) => h.db.prepare(`SELECT COUNT(*) FROM ${t}`).pluck().get())
+    }
+    // Starts a scheduled run and steps it until `done` (or it ends).
+    async function startAndStep(h: any, slices: ReturnType<typeof manualSlices>, done: () => boolean) {
+        h.persister.scheduleDiscovery('test')
+        await settle() // the start timer
+        for (let i = 0; i < 1000 && slices.pending && !done(); i++) slices.step()
+    }
+    const current = (h: any) => h.persister.stats().discovery.current
+
+    it('verifies a canonical blob into a complete layout; the next unchanged persist writes no manifest row', async () => {
+        const { h, root } = await bootedOnCanonicalBlob()
+        expect(h.persister.hasLayout()).toBe(false)
+        const d = h.persister.discoverNow()
+        expect(d).toMatchObject({ stopped: 'complete', mismatchedOwners: 0, failedOwners: 0 })
+        expect(d.verifiedOwners).toBe(d.owners)
+        expect(d.chats).toBeGreaterThan(15)
+        expect(h.persister.stats().layout).toMatchObject({ discovered: true, partial: false })
+        const r = h.persist(root, 'incremental')
+        expect(r.committed.stats).toMatchObject({
+            spans: true, freshOwners: 0, freshChats: 0, insertedRows: 0, deletedRows: 0, commit: 'gapped',
+        })
+        // Only the chunks around the root's scalar values are hashed again.
+        expect(r.committed.stats.newChunks).toBeLessThanOrEqual(2)
+        // A chat turn after it: one character re-encoded, one chat merged.
+        h.store.setChat('c2', 'c2-3', { ...h.store.getChat('c2', 'c2-3'), note: 'turn' })
+        const turn = h.persist(withCharacter(root, 1, (c) => { c.chats[3].lastDate = 3 }), 'incremental')
+        expect(turn.committed.stats).toMatchObject({ freshOwners: 1, freshChats: 1, spanChats: 16 })
+    })
+
+    it('re-encodes the owners the blob holds differently and copies everything else', async () => {
+        const { h, root } = await bootedOnCanonicalBlob()
+        const allOwners = h.persister.prepare(root, { mode: 'full-plan' }).plan.stats.freshOwners
+        // The blob as another build could have written it: one character's
+        // keys in another order, one module with other content.
+        const disk = h.referenceFull(root, null)
+        const reordered = Object.fromEntries(Object.entries(disk.characters[1]).reverse())
+        const altered = { ...disk.modules[0], name: 'written by another build' }
+        h.chunkStore.putValue(KEY, utils.encodeRisuSaveLegacyBuffer({
+            ...disk,
+            characters: disk.characters.map((c: any, i: number) => (i === 1 ? reordered : c)),
+            modules: [altered, ...disk.modules.slice(1)],
+        }))
+        const d = h.persister.discoverNow()
+        expect(d).toMatchObject({ stopped: 'complete', mismatchedOwners: 2, failedOwners: 0 })
+        const r = h.persist(root, 'incremental') // byte identity with the reference is checked inside
+        expect(r.committed.stats).toMatchObject({ spans: true, freshOwners: 2, spanOwners: allOwners - 2 })
+        // The re-encoded character's chats are merged again (no-op merges:
+        // the store's own bytes); nothing else is.
+        expect(r.committed.stats.freshChats).toBe(root.characters[1].chats.length)
+        // From the next persist on, the two are copied as well.
+        expect(h.persist(root, 'incremental').committed.stats).toMatchObject({ freshOwners: 0, insertedRows: 0 })
+    })
+
+    it('stops at a root key the blob does not have, keeping what it verified before it', async () => {
+        const { h, root } = await bootedOnCanonicalBlob()
+        const renamed = Object.fromEntries(Object.entries(root).map(([k, v]) => [k === 'botPresets' ? 'botPresetz' : k, v]))
+        h.setRoot(renamed)
+        const d = h.persister.discoverNow()
+        expect(d.stopped).toBe('structure')
+        expect(d.verifiedOwners).toBe(d.owners)
+        expect(d.verifiedOwners).toBeGreaterThan(10)
+        expect(h.persister.stats().layout).toMatchObject({ discovered: true, partial: true })
+        // botPresets and emptyList come after the key: encoded; the rest copied.
+        const r = h.persist(renamed, 'incremental')
+        expect(r.committed.stats).toMatchObject({ spans: true, freshOwners: 2 })
+    })
+
+    it('never writes: rows, changes, manifests and the generation stay as they were', async () => {
+        const slices = manualSlices()
+        const { h } = await bootedOnCanonicalBlob({ discovery: { sliceMs: 0, manifestPageRows: 3, defer: slices.defer } })
+        const generation = h.chunkStore.generation(KEY)
+        const counts = tableCounts(h)
+        const changes = h.db.prepare('SELECT total_changes()').pluck().get()
+        const manifests = h.db.prepare('SELECT manifest_key, seq, hash FROM manifest_chunks ORDER BY manifest_key, seq').all()
+        expect(h.persister.discoverNow().stopped).toBe('complete')
+        h.persister.reset('test')
+        await startAndStep(h, slices, () => false)
+        expect(h.persister.stats().discovery).toMatchObject({ completed: 2, running: false })
+        expect(h.persister.stats().discovery.last.slices).toBeGreaterThan(20)
+        expect(h.chunkStore.generation(KEY)).toBe(generation)
+        expect(tableCounts(h)).toEqual(counts)
+        expect(h.db.prepare('SELECT total_changes()').pluck().get()).toBe(changes)
+        expect(h.db.prepare('SELECT manifest_key, seq, hash FROM manifest_chunks ORDER BY manifest_key, seq').all()).toEqual(manifests)
+    })
+
+    it('ends when the blob is written by someone else, and drops its partial layout', async () => {
+        const slices = manualSlices()
+        const { h } = await bootedOnCanonicalBlob({ discovery: { sliceMs: 0, manifestPageRows: 3, defer: slices.defer } })
+        await startAndStep(h, slices, () => (current(h)?.verifiedOwners ?? 0) >= 3)
+        expect(current(h).verifiedOwners).toBe(3)
+        expect(h.persister.stats().layout).toMatchObject({ discovered: true, partial: true })
+        h.chunkStore.putValue(KEY, h.chunkStore.getValue(KEY)) // the same bytes, another generation
+        slices.step()
+        expect(h.persister.stats().discovery).toMatchObject({ running: false, ended: { generation: 1 } })
+        expect(h.persister.stats().discovery.last.verifiedOwners).toBe(3)
+        expect(h.persister.hasLayout()).toBe(false)
+        expect(slices.pending).toBe(0)
+    })
+
+    it('a persist during discovery copies what was verified, encodes the rest, and ends the run', async () => {
+        const slices = manualSlices()
+        const { h, root } = await bootedOnCanonicalBlob({ discovery: { sliceMs: 0, manifestPageRows: 3, defer: slices.defer } })
+        // Up to the second character (index 1) verified; index 0 changes below.
+        await startAndStep(h, slices, () => (current(h)?.verifiedOwners ?? 0) >= 6)
+        h.store.setChat('c1', 'a', { ...h.store.getChat('c1', 'a'), note: 'during discovery' })
+        const next = withCharacter(root, 0, (c) => { c.chats[0].lastDate = 11 })
+        const r = h.persist(next, 'incremental') // byte identity with the reference is checked inside
+        expect(r.committed.stats.spans).toBe(true)
+        expect(r.committed.stats.spanOwners).toBeGreaterThan(0)
+        expect(r.committed.stats.freshOwners).toBeGreaterThan(1)
+        slices.step()
+        expect(h.persister.stats().discovery).toMatchObject({ running: false, ended: { superseded: 1 } })
+        // The layout the persist installed is complete.
+        expect(h.persister.stats().layout).toMatchObject({ discovered: false, partial: false })
+        // (The character with the merged chat is recorded once the store
+        // holds the merged body, as after any persist.)
+        expect(h.persist(next, 'incremental').committed.stats.freshOwners).toBe(1)
+        expect(h.persist(next, 'incremental').committed.stats).toMatchObject({ freshOwners: 0, insertedRows: 0 })
+    })
+
+    it('does nothing when switched off, without a chunked blob, or with a layout of this blob and root', async () => {
+        let enabled = false
+        const { h, root } = await bootedOnCanonicalBlob({ discovery: { isEnabled: () => enabled } })
+        expect(h.persister.discoverNow()).toBeNull()
+        enabled = true
+        h.persist(root, 'incremental')
+        expect(h.persister.discoverNow()).toBeNull()
+        expect(h.persister.stats().discovery.skipped).toEqual({ disabled: 1, 'has-layout': 1 })
+        // Switched off while running: the run ends and its layout goes.
+        h.persister.reset('test')
+        const slices = manualSlices()
+        const s = await bootedOnCanonicalBlob({ discovery: { isEnabled: () => enabled, sliceMs: 0, defer: slices.defer } })
+        await startAndStep(s.h, slices, () => (current(s.h)?.verifiedOwners ?? 0) >= 2)
+        enabled = false
+        slices.step()
+        expect(s.h.persister.stats().discovery.ended).toEqual({ disabled: 1 })
+        expect(s.h.persister.hasLayout()).toBe(false)
+        const small = harness({ threshold: 64 * 1024 * 1024 })
+        small.persist(small.load(fixtureDisk()), 'incremental')
+        expect(small.persister.discoverNow()).toBeNull()
+        expect(small.persister.stats().discovery.skipped).toEqual({ 'not-chunked': 1 })
     })
 })
 

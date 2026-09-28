@@ -401,7 +401,26 @@ const dbPersister = createDbPersister({
             ? { intervalMs: Number(process.env.POCKETRISU_PERSIST_AUDIT_INTERVAL_MS), startDelayMs: 200, retryMs: 200 }
             : {}),
     },
+    // Layout discovery (see scheduleLayoutDiscovery) walks the root the
+    // audit reads, and only while persistMode is 'incremental'.
+    discovery: {
+        isEnabled: () => currentPersistMode() === 'incremental',
+        ...(process.env.POCKETRISU_PERSIST_DISCOVERY_DELAY_MS
+            ? { startDelayMs: Number(process.env.POCKETRISU_PERSIST_DISCOVERY_DELAY_MS) }
+            : {}),
+    },
 });
+
+// The layout of database.bin is unknown after a cold load, a full write
+// (/api/write) and a persist that left none (the reference path): the
+// persister learns it from the blob on disk in the background (read-only,
+// sliced; db-persister.cjs), so the next incremental persist copies the
+// owners that did not change instead of encoding the whole database. Other
+// modes never read it, so nothing runs there.
+function scheduleLayoutDiscovery(reason) {
+    if (currentPersistMode() !== 'incremental') return;
+    dbPersister.scheduleDiscovery(reason);
+}
 
 // ─── Persist failure tracking (Stage 1 visibility) ───────────────────────────
 // Debounced persist runs in setTimeout, so failures cannot be returned in the
@@ -755,6 +774,7 @@ async function loadDbCacheIfMissing({ createBackup = false } = {}) {
     if (!raw) return false;
     const dbObj = await initChatStoreFromDisk(await decodeDatabaseWithPersistentChatIds(raw, { createBackup }));
     dbCache[DB_HEX_KEY] = normalizeJSON(stripDatabaseForClient(dbObj, { reconcileManifests: true }));
+    scheduleLayoutDiscovery('cold-load');
     return true;
 }
 
@@ -1371,6 +1391,8 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
     if (decodedKey === 'database/database.bin') {
         const planned = persistDatabaseWithPlan(filePath, strippedDb, archived);
         if (planned) {
+            // A full-plan persist (or a blob stored raw) leaves no layout.
+            if (!dbPersister.hasLayout()) scheduleLayoutDiscovery('persist');
             Object.assign(timings, planned.timings);
             lastDbPersistMs = Math.round(performance.now() - persistStartedAt);
             logger.debug(`[Persist] ${decodedKey} ${formatMegabytes(planned.bytes)} (${planned.mode}): ${formatStageTimings(timings)} total ${lastDbPersistMs} ms ${formatProcessMemory()}`);
@@ -1416,6 +1438,7 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
         chatBodyStore.acceptPersistedDatabase(fullDb, chatStoreToken);
         timings.storeMs = lap();
         lastDbPersistMs = Math.round(performance.now() - persistStartedAt);
+        scheduleLayoutDiscovery('reference-persist');
     }
     logger.debug(`[Persist] ${decodedKey} ${formatMegabytes(data.length)}: ${formatStageTimings(timings)} total ${Math.round(performance.now() - persistStartedAt)} ms ${formatProcessMemory()}`);
 }
@@ -6917,6 +6940,7 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
                         clearTimeout(saveTimers[DB_HEX_KEY]);
                         delete saveTimers[DB_HEX_KEY];
                     }
+                    scheduleLayoutDiscovery('write');
                     dbEtag = persistedEtag;
                     createBackupAndRotate();
                 } catch (e) {

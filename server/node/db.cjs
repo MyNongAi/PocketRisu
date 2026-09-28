@@ -116,6 +116,7 @@ const dbBlob = {
     generation: () => chunkStore.generation(DB_BLOB_KEY),
     isChunked: () => chunkStore.isChunkedKey(DB_BLOB_KEY),
     readManifestWithLengths: () => chunkStore.readManifestWithLengths(DB_BLOB_KEY),
+    readManifestPage: (afterSeq, limit) => chunkStore.readManifestPage(DB_BLOB_KEY, afterSeq, limit),
     createReader: (chunks, options) => chunkStore.createReader(chunks, options),
     commitChunks: (next, expectedHashes, options) => chunkStore.commitChunks(DB_BLOB_KEY, next, expectedHashes, options),
     // A blob at or under the threshold is stored raw, as kvSet stores it.

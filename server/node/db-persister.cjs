@@ -20,9 +20,19 @@
 //    last write of this process is a SPAN, copied from the blob on disk at
 //    the offset recorded when it was written, and every old chunk that lies
 //    inside a span is reused without being read or hashed. The commit edits
-//    only the manifest rows that changed.
+//    only the manifest rows that changed. After a cold load, a full write or
+//    a persist that left no layout, a background discovery learns the layout
+//    of the blob on disk (see "layout discovery" below), so the first
+//    persist of a process copies as well.
 //
 // What makes a span safe (and what is checked):
+//  - a layout entry says that an owner's encoding, under the validity tokens
+//    below, is the bytes at [off, off + len) of one blob generation. It is
+//    recorded when this process writes those bytes, or by discovery, which
+//    is read-only and records an owner only where the persist's own encoder,
+//    run on the owner under the tokens it then records, produced exactly the
+//    bytes the blob holds at that offset (an owner that differs stays out of
+//    the layout and is encoded by the next persist);
 //  - the layout is valid only for the blob generation it recorded; any other
 //    write of the key moves the generation, and commitChunks checks inside
 //    its transaction that the live manifest is exactly the one the spans
@@ -96,13 +106,15 @@ function isStubFlagLoss(chat, hasMessageArray) {
 // ── pieces ──────────────────────────────────────────────────────────────────
 // The new blob as a list of pieces: fresh bytes (copied into arena blocks,
 // so consecutive fresh bytes are one contiguous piece) and spans (a range of
-// the blob on disk).
-function createPieceWriter() {
+// the blob on disk). `origin`: the offset of the first byte written (0 for a
+// whole blob; discovery encodes one owner at the offset where the blob must
+// hold it, so every offset the encoder records is already absolute).
+function createPieceWriter({ origin = 0, firstBlockBytes = FIRST_BLOCK_BYTES } = {}) {
     const pieces = [];
     let block = null;
     let blockUsed = 0;
-    let nextBlockBytes = FIRST_BLOCK_BYTES;
-    let total = 0;
+    let nextBlockBytes = firstBlockBytes;
+    let total = origin;
     let freshBytes = 0;
     let spanBytes = 0;
     // The last TAIL_BYTES bytes written, fresh or copied (a span passes the
@@ -469,6 +481,48 @@ function walkPlan(plan, readCommitted) {
     return { rootKeys, counts, headChecks, tailChecks };
 }
 
+// ── the root in msgpackr's order ────────────────────────────────────────────
+// The blob as a list of parts: ['bytes', buf] (the magic header, the root map
+// header, each root key, the characters/modules/personas array headers),
+// ['character', c, index] and ['owner', value, hydration]. The encoder writes
+// the parts in order; discovery compares them with the blob in the same
+// order. The caller checked the root's shape (rootShapeProblem).
+function rootParts(root) {
+    const parts = [['bytes', MAGIC]];
+    const counts = { rootKeys: 0, characters: -1, modules: -1, personas: -1 };
+    const pairs = [];
+    forEachOwnKey(root, (key, value) => pairs.push([key, value]));
+    counts.rootKeys = pairs.length;
+    parts.push(['bytes', mapHeader(pairs.length)]);
+    for (const [key, value] of pairs) {
+        // packr.encode returns a view of msgpackr's scratch: copied.
+        parts.push(['bytes', Buffer.from(packr.encode(key))]);
+        if (key === 'characters' && value) {
+            // reassembleFullDb maps a truthy characters (prepare checked it
+            // is an array), hydrateAssetManifests an array.
+            counts.characters = value.length;
+            parts.push(['bytes', arrayHeader(value.length)]);
+            for (let ci = 0; ci < value.length; ci++) parts.push(['character', value[ci], ci]);
+        } else if ((key === 'modules' || key === 'personas') && Array.isArray(value)) {
+            counts[key] = value.length;
+            parts.push(['bytes', arrayHeader(value.length)]);
+            for (let i = 0; i < value.length; i++) parts.push(['owner', value[i], key]);
+        } else {
+            parts.push(['owner', value, null]);
+        }
+    }
+    return { parts, counts };
+}
+
+function rootShapeProblem(root) {
+    if (!isComposableObject(root)) return 'root-shape';
+    if (root.characters && !isComposableArray(root.characters)) return 'characters-shape';
+    for (const key of ['modules', 'personas']) {
+        if (Array.isArray(root[key]) && !isComposableArray(root[key])) return `${key}-shape`;
+    }
+    return null;
+}
+
 // ── the persister ───────────────────────────────────────────────────────────
 
 /**
@@ -482,6 +536,7 @@ function walkPlan(plan, readCommitted) {
  * @param {Function} deps.hydrateDatabaseForDisk - server.cjs (reference hydration)
  * @param {Function} deps.applyArchivedChatBodies - server.cjs
  * @param {object} [deps.audit] - { getRoot, isIdle, onMismatch, intervalMs, startDelayMs, retryMs, sliceMs, enabled }
+ * @param {object} [deps.discovery] - { getRoot (default: audit.getRoot), isEnabled, startDelayMs, sliceMs, manifestPageRows, enabled, defer }
  */
 function createDbPersister({
     blob,
@@ -495,6 +550,7 @@ function createDbPersister({
     logger = console,
     now = () => performance.now(),
     audit: auditOptions = {},
+    discovery: discoveryOptions = {},
 }) {
     const canary = checkCanary();
     if (!canary.ok) logger.error(`[Persist] byte composition disabled, every persist uses the reference encoder: ${canary.reason}`);
@@ -796,28 +852,11 @@ function createDbPersister({
     function encodePlan(root, { base, record, archivedBodies }) {
         const w = createPieceWriter();
         const enc = createEncoder(w, { base, record, archivedBodies });
-        const counts = { rootKeys: 0, characters: -1, modules: -1, personas: -1 };
-        w.bytes(MAGIC);
-        const pairs = [];
-        forEachOwnKey(root, (key, value) => pairs.push([key, value]));
-        counts.rootKeys = pairs.length;
-        w.bytes(mapHeader(pairs.length));
-        for (const [key, value] of pairs) {
-            const keyView = packr.encode(key);
-            w.bytes(keyView);
-            if (key === 'characters' && value) {
-                // reassembleFullDb maps a truthy characters (prepare checked it
-                // is an array), hydrateAssetManifests an array.
-                counts.characters = value.length;
-                w.bytes(arrayHeader(value.length));
-                for (let ci = 0; ci < value.length; ci++) enc.encodeCharacter(value[ci], ci);
-            } else if ((key === 'modules' || key === 'personas') && Array.isArray(value)) {
-                counts[key] = value.length;
-                w.bytes(arrayHeader(value.length));
-                for (let i = 0; i < value.length; i++) enc.encodeOwner(value[i], key);
-            } else {
-                enc.encodeOwner(value, null);
-            }
+        const { parts, counts } = rootParts(root);
+        for (const [kind, value, extra] of parts) {
+            if (kind === 'bytes') w.bytes(value);
+            else if (kind === 'character') enc.encodeCharacter(value, extra);
+            else enc.encodeOwner(value, extra);
         }
         return {
             w,
@@ -829,15 +868,6 @@ function createDbPersister({
             counts,
             stats: { ...enc.stats, freshBytes: w.freshBytes, spanBytes: w.spanBytes, total: w.total },
         };
-    }
-
-    function rootShapeProblem(root) {
-        if (!isComposableObject(root)) return 'root-shape';
-        if (root.characters && !isComposableArray(root.characters)) return 'characters-shape';
-        for (const key of ['modules', 'personas']) {
-            if (Array.isArray(root[key]) && !isComposableArray(root[key])) return `${key}-shape`;
-        }
-        return null;
     }
 
     /**
@@ -876,6 +906,8 @@ function createDbPersister({
             base,
             token,
             plan,
+            // Held for the layout's rootRef only.
+            rootRef: new WeakRef(root),
             written: plan.written,
             losses: plan.losses,
             startedAt,
@@ -956,6 +988,7 @@ function createDbPersister({
                 entries: plan.entries,
                 chats: plan.chats,
                 total: w.total,
+                rootRef: prepared.rootRef,
             }
             : null;
         if (base) incrementalCommitsThisBoot++;
@@ -992,6 +1025,7 @@ function createDbPersister({
         if (layout) note(counters.resets, reason);
         layout = null;
         auditState.position = null;
+        cancelDiscovery(reason);
     }
 
     // ── the idle audit (incremental mode) ───────────────────────────────────
@@ -1154,11 +1188,362 @@ function createDbPersister({
         return { owner: 'chat', index: null, off: ce.off, len: ce.len };
     }
 
+    // ── layout discovery (incremental mode) ─────────────────────────────────
+    // A layout only knows what this process wrote, so after a cold load, a
+    // full write (/api/write) or a persist that left none, the first
+    // incremental persist would encode everything (~4 s on the real data).
+    // Discovery learns the layout of the blob on disk instead, READ-ONLY:
+    // it encodes the root's parts in order with the persist's own encoder
+    // (rootParts, createEncoder with record) and compares each with the
+    // blob at the offset where the part must start, through a chunk reader.
+    //  - An owner whose bytes are equal becomes a layout entry, with the chat
+    //    entries of its no-op merges, exactly as a persist that wrote those
+    //    bytes would have recorded them (same validity tokens, taken in the
+    //    same synchronous step as the comparison).
+    //  - An owner that differs (the blob is not canonical for it) is skipped
+    //    over in the blob (msgpack skip) and stays unverified: a persist
+    //    encodes it.
+    //  - A header or root key that differs ends the walk; what was verified
+    //    before it stays.
+    // It pins the root it started from and the blob generation, reads the
+    // manifest in pages and walks in slices of sliceMs (one owner can take
+    // longer) with setImmediate between them, holding no SQLite iterator
+    // across. The partial layout is installed once the manifest is read, so
+    // a persist during discovery copies the owners verified so far and
+    // encodes the rest; its commit installs a complete layout, which ends
+    // the run. So does another generation (any write of the blob), a reset,
+    // or isEnabled() turning false (the server: persistMode is no longer
+    // 'incremental'). The server schedules it only in incremental mode.
+    const discoveryConfig = {
+        getRoot: discoveryOptions.getRoot ?? auditConfig.getRoot,
+        isEnabled: discoveryOptions.isEnabled ?? (() => true),
+        startDelayMs: discoveryOptions.startDelayMs ?? 2000,
+        sliceMs: discoveryOptions.sliceMs ?? 8,
+        manifestPageRows: discoveryOptions.manifestPageRows ?? 2048,
+        enabled: discoveryOptions.enabled ?? true,
+        // Runs fn on a later turn of the event loop; returns a cancel function.
+        defer: discoveryOptions.defer ?? ((fn) => {
+            const handle = setImmediate(fn);
+            handle.unref?.();
+            return () => clearImmediate(handle);
+        }),
+    };
+    const DISCOVERY_FIRST_BLOCK_BYTES = 16 * 1024;
+    // skipValues' context for a walk over the blob alone (no copied owners).
+    const NOTHING_TRUSTED = { trusted: new Map(), skipTrusted() {} };
+    const discoveryState = {
+        timer: null,
+        cancelNext: null,
+        run: null,
+        runs: 0,
+        completed: 0,
+        skipped: {},
+        ended: {},
+        last: null,
+    };
+
+    // (Re)starts discovery startDelayMs from now. Returns false when it is
+    // off (disabled, or the canary failed: every persist is a reference one).
+    function scheduleDiscovery(reason = 'schedule') {
+        cancelDiscovery('rescheduled');
+        if (!discoveryConfig.enabled || !canary.ok) return false;
+        discoveryState.timer = setTimeout(() => {
+            discoveryState.timer = null;
+            if (beginDiscovery(reason)) armDiscovery();
+        }, Math.max(0, discoveryConfig.startDelayMs));
+        discoveryState.timer.unref?.();
+        return true;
+    }
+
+    function armDiscovery() {
+        discoveryState.cancelNext = discoveryConfig.defer(() => {
+            discoveryState.cancelNext = null;
+            const run = discoveryState.run;
+            if (run && !runDiscoverySlice(run, discoveryConfig.sliceMs)) armDiscovery();
+        });
+    }
+
+    function cancelDiscovery(reason) {
+        if (discoveryState.timer) clearTimeout(discoveryState.timer);
+        if (discoveryState.cancelNext) discoveryState.cancelNext();
+        discoveryState.timer = null;
+        discoveryState.cancelNext = null;
+        if (discoveryState.run) endDiscovery(discoveryState.run, reason);
+    }
+
+    // A new run over the current root and blob, or null when there is
+    // nothing to discover.
+    function beginDiscovery(reason) {
+        const skip = (why) => {
+            note(discoveryState.skipped, why);
+            return null;
+        };
+        if (!discoveryConfig.isEnabled()) return skip('disabled');
+        const root = discoveryConfig.getRoot();
+        if (!root) return skip('no-root');
+        if (rootShapeProblem(root)) return skip('root-shape');
+        if (!chatBodyStore.loaded) return skip('store-not-loaded');
+        if (!blob.isChunked()) return skip('not-chunked');
+        const generation = blob.generation();
+        // A layout of this blob built from this root: nothing to learn. One
+        // built from another root (a cold load after a guard dropped the
+        // root, same blob) knows none of this root's objects.
+        if (layout && layout.generation === generation && layout.rootRef?.deref() === root) return skip('has-layout');
+        discoveryState.runs++;
+        discoveryState.run = {
+            reason,
+            root,
+            generation,
+            parts: rootParts(root).parts,
+            index: 0,
+            off: 0,
+            manifest: { afterSeq: Number.MIN_SAFE_INTEGER, hashes: [], lens: [] },
+            layout: null,
+            reader: null,
+            startedAt: now(),
+            stats: {
+                owners: 0,
+                verifiedOwners: 0,
+                mismatchedOwners: 0,
+                failedOwners: 0,
+                entries: 0,
+                chats: 0,
+                verifiedBytes: 0,
+                slices: 0,
+                cpuMs: 0,
+                maxSliceMs: 0,
+                maxOwnerMs: 0,
+                manifestMs: 0,
+            },
+        };
+        return discoveryState.run;
+    }
+
+    // Why `run` cannot go on, or null.
+    function discoveryStop(run) {
+        if (discoveryState.run !== run) return 'superseded';
+        if (!discoveryConfig.isEnabled()) return 'disabled';
+        if (run.layout && layout !== run.layout) return 'superseded';
+        if (blob.generation() !== run.generation) return 'generation';
+        return null;
+    }
+
+    // One slice; true when the run ended.
+    function runDiscoverySlice(run, budgetMs) {
+        const started = now();
+        let ended;
+        try {
+            ended = discoverySteps(run, started, budgetMs);
+        } catch (error) {
+            logger.warn(`[Persist] layout discovery stopped: ${error?.message || error}`);
+            ended = endDiscovery(run, 'error');
+        }
+        const ms = now() - started;
+        run.stats.slices++;
+        run.stats.cpuMs += ms;
+        if (ms > run.stats.maxSliceMs) run.stats.maxSliceMs = ms;
+        // endDiscovery ran in this slice: count the slice in.
+        if (ended) discoveryState.last = publicDiscoveryStats(run);
+        return ended;
+    }
+
+    function discoverySteps(run, started, budgetMs) {
+        const stop = discoveryStop(run);
+        if (stop) return endDiscovery(run, stop);
+        if (!run.layout) {
+            const t0 = now();
+            const done = readManifestPages(run, started, budgetMs);
+            run.stats.manifestMs += now() - t0;
+            if (!done) return false;
+            installDiscoveredLayout(run);
+            if (now() - started >= budgetMs) return false;
+        }
+        const parts = run.parts;
+        while (run.index < parts.length) {
+            const [kind, value, extra] = parts[run.index];
+            if (kind === 'bytes') {
+                if (!blobMatches(run, run.off, value, 0, value.length)) return endDiscovery(run, 'structure');
+                run.off += value.length;
+                run.index++;
+                continue;
+            }
+            discoverOwner(run, kind, value, extra);
+            run.index++;
+            if (now() - started >= budgetMs) return false;
+        }
+        return endDiscovery(run, run.off === run.layout.total ? 'complete' : 'length');
+    }
+
+    // Reads manifest pages until the manifest is complete (true) or the
+    // budget is spent (false).
+    function readManifestPages(run, started, budgetMs) {
+        const m = run.manifest;
+        for (;;) {
+            const page = blob.readManifestPage(m.afterSeq, discoveryConfig.manifestPageRows);
+            for (let i = 0; i < page.hashes.length; i++) {
+                m.hashes.push(page.hashes[i]);
+                m.lens.push(page.lens[i]);
+            }
+            if (page.hashes.length < discoveryConfig.manifestPageRows) return true;
+            m.afterSeq = page.seqs[page.seqs.length - 1];
+            if (now() - started >= budgetMs) return false;
+        }
+    }
+
+    function installDiscoveredLayout(run) {
+        const { hashes, lens } = run.manifest;
+        const starts = chunkStarts(lens);
+        const total = lens.length > 0 ? starts[lens.length - 1] + lens[lens.length - 1] : 0;
+        run.layout = {
+            generation: run.generation,
+            chunks: { hashes, lens, starts },
+            entries: new WeakMap(),
+            chats: new Map(),
+            total,
+            rootRef: new WeakRef(run.root),
+            discovered: true,
+            partial: true,
+        };
+        run.manifest = null;
+        run.reader = blob.createReader(run.layout.chunks, { cacheChunks: 8 });
+        layout = run.layout;
+        auditState.position = null;
+    }
+
+    // Encodes one owner at the offset where the blob must hold it and
+    // compares; records it when equal, skips the blob's value otherwise.
+    function discoverOwner(run, kind, value, extra) {
+        const t0 = now();
+        const at = run.off;
+        const stats = run.stats;
+        const w = createPieceWriter({ origin: at, firstBlockBytes: DISCOVERY_FIRST_BLOCK_BYTES });
+        const enc = createEncoder(w, { record: true });
+        stats.owners++;
+        let equal = true;
+        try {
+            if (kind === 'character') enc.encodeCharacter(value, extra);
+            else enc.encodeOwner(value, extra);
+        } catch {
+            // What the reference functions throw for this owner; a persist
+            // throws there too. Unverified.
+            equal = false;
+            stats.failedOwners++;
+        }
+        equal = equal && w.total <= run.layout.total;
+        for (let i = 0; equal && i < w.pieces.length; i++) {
+            const p = w.pieces[i];
+            equal = blobMatches(run, p.at, p.buf, p.start, p.len);
+        }
+        if (equal) {
+            const entry = value !== null && typeof value === 'object' ? enc.entries.get(value) : undefined;
+            if (entry) {
+                run.layout.entries.set(value, entry);
+                stats.entries++;
+            }
+            for (const [key, ce] of enc.chats) run.layout.chats.set(key, ce);
+            stats.chats += enc.chats.size;
+            stats.verifiedOwners++;
+            stats.verifiedBytes += w.total - at;
+            run.off = w.total;
+        } else {
+            stats.mismatchedOwners++;
+            run.off = skipBlobValue(run, at);
+        }
+        const ms = now() - t0;
+        if (ms > stats.maxOwnerMs) stats.maxOwnerMs = ms;
+    }
+
+    // Whether the blob holds buf[start, start + len) at offset `at`, compared
+    // chunk by chunk (views of the reader's cached chunks, no copies).
+    function blobMatches(run, at, buf, start, len) {
+        const { starts, lens } = run.layout.chunks;
+        if (at + len > run.layout.total) return false;
+        let pos = at;
+        let from = start;
+        const end = at + len;
+        let j = lowerBound(starts, at + 1) - 1;
+        while (pos < end) {
+            const n = Math.min(end, starts[j] + lens[j]) - pos;
+            const data = run.reader.read(pos, n);
+            if (buf.compare(data, 0, n, from, from + n) !== 0) return false;
+            pos += n;
+            from += n;
+            j++;
+        }
+        return true;
+    }
+
+    // The end of the msgpack value that starts at `at` in the blob.
+    function skipBlobValue(run, at) {
+        const total = run.layout.total;
+        const cur = createCursor([{ fresh: false, off: 0, len: total, at: 0 }], total, (pos, n) => run.reader.read(pos, n));
+        cur.skip(at);
+        skipValues(cur, 1, NOTHING_TRUSTED);
+        return cur.pos;
+    }
+
+    function endDiscovery(run, stopped) {
+        if (discoveryState.run === run) discoveryState.run = null;
+        note(discoveryState.ended, stopped);
+        // A walk that reached its end, or stopped at a header or a length
+        // that differs, leaves its layout (every entry in it was verified).
+        // A run cut short (another generation, a reset, a new run, an error,
+        // the mode switched) drops its partial layout if it is still the
+        // installed one.
+        if (stopped === 'complete') run.layout.partial = false;
+        else if (stopped !== 'structure' && stopped !== 'length' && run.layout && layout === run.layout) layout = null;
+        if (stopped === 'complete') discoveryState.completed++;
+        run.stopped = stopped;
+        run.reader = null;
+        run.parts = null;
+        run.root = null;
+        discoveryState.last = publicDiscoveryStats(run);
+        return true;
+    }
+
+    function publicDiscoveryStats(run) {
+        const s = run.stats;
+        return {
+            reason: run.reason,
+            stopped: run.stopped ?? null,
+            owners: s.owners,
+            verifiedOwners: s.verifiedOwners,
+            mismatchedOwners: s.mismatchedOwners,
+            failedOwners: s.failedOwners,
+            entries: s.entries,
+            chats: s.chats,
+            verifiedBytes: s.verifiedBytes,
+            slices: s.slices,
+            cpuMs: round(s.cpuMs),
+            maxSliceMs: round(s.maxSliceMs),
+            maxOwnerMs: round(s.maxOwnerMs),
+            manifestMs: round(s.manifestMs),
+            wallMs: round(now() - run.startedAt),
+        };
+    }
+
+    // Runs a whole discovery now, in one call (tests, diagnostics). Returns
+    // its stats, or null when there was nothing to discover.
+    function discoverNow(reason = 'now') {
+        cancelDiscovery('rescheduled');
+        const run = beginDiscovery(reason);
+        if (!run) return null;
+        runDiscoverySlice(run, Infinity);
+        return { ...discoveryState.last };
+    }
+
     function stats() {
         return {
             canary: canary.ok ? 'ok' : canary.reason,
             layout: layout
-                ? { generation: layout.generation, chunks: layout.chunks.hashes.length, bytes: layout.total, chats: layout.chats.size }
+                ? {
+                    generation: layout.generation,
+                    chunks: layout.chunks.hashes.length,
+                    bytes: layout.total,
+                    chats: layout.chats.size,
+                    discovered: !!layout.discovered,
+                    partial: !!layout.partial,
+                }
                 : null,
             incrementalCommitsThisBoot,
             ...counters,
@@ -1171,6 +1556,16 @@ function createDbPersister({
                 checkedChats: auditState.checkedChats,
                 mismatches: auditState.mismatches,
                 lastMismatch: auditState.lastMismatch,
+            },
+            discovery: {
+                runs: discoveryState.runs,
+                completed: discoveryState.completed,
+                running: !!discoveryState.run,
+                scheduled: !!discoveryState.timer,
+                current: discoveryState.run ? publicDiscoveryStats(discoveryState.run) : null,
+                skipped: { ...discoveryState.skipped },
+                ended: { ...discoveryState.ended },
+                last: discoveryState.last,
             },
         };
     }
@@ -1188,6 +1583,7 @@ function createDbPersister({
     function stop() {
         if (auditState.timer) clearTimeout(auditState.timer);
         auditState.timer = null;
+        cancelDiscovery('stop');
     }
 
     return {
@@ -1196,6 +1592,8 @@ function createDbPersister({
         reset,
         stats,
         auditNow,
+        scheduleDiscovery,
+        discoverNow,
         stop,
         hasLayout: () => !!layout,
         _layout: () => layout,
