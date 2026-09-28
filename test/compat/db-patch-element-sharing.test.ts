@@ -1,11 +1,13 @@
 /**
  * B2 through the real /api/patch: a seeded run of the patch shapes a client
  * produces (chat stub metadata, card and module edits, nested edits, slot
- * replaces, characters and modules added and removed at depth 2) plus
- * failing ones, mirrored on a local copy. Each accepted patch must leave the
- * server's hash equal to the client's calculateHash (the next patch's
- * expectedHash proves it), a failing one must leave the database as it was,
- * and after a persist the disk holds exactly the mirrored view.
+ * replaces, characters and modules added and removed at depth 2, a create or
+ * delete followed by edits at the shifted indexes, moves and copies inside
+ * the arrays) plus failing ones, mirrored on a local copy. Each accepted
+ * patch must leave the server's hash equal to the client's calculateHash (the
+ * next patch's expectedHash proves it), a failing one must leave the
+ * database as it was, and after a persist the disk holds exactly the
+ * mirrored view.
  *
  * With POCKETRISU_TEST_FREEZE_CACHE=1 every installed root is deep-frozen and
  * the server audits each patch against the whole-branch clone and a full
@@ -61,7 +63,7 @@ function mulberry32(seed: number) {
   }
 }
 
-type Op = { op: string, path: string, value?: unknown }
+type Op = { op: string, path: string, from?: string, value?: unknown }
 
 // Characters the run itself adds have no chats, so removing them again is a
 // plain client delete with no bodies involved.
@@ -76,23 +78,63 @@ function newModule() {
 }
 
 function generate(rand: () => number, db: any): { ops: Op[], fails: boolean } {
-  const i = Math.floor(rand() * db.characters.length)
+  const n = db.characters.length
+  const i = Math.floor(rand() * n)
   const m = Math.floor(rand() * db.modules.length)
   const chats = db.characters[i].chats
   const j = Math.floor(rand() * Math.max(1, chats.length))
   const addedIndex = db.characters.findIndex((c: any) => typeof c.chaId === 'string' && c.chaId.startsWith('added-'))
   const r = rand()
-  if (r < 0.25 && chats.length > 0) return { ops: [{ op: 'replace', path: `/characters/${i}/chats/${j}/lastDate`, value: 1727500000000 + serial++ }], fails: false }
-  if (r < 0.32 && chats.length > 0) return { ops: [{ op: 'replace', path: `/characters/${i}/chats/${j}/name`, value: `Chat ${serial++}` }], fails: false }
-  if (r < 0.42) return { ops: [{ op: 'replace', path: `/characters/${i}/name`, value: `Name ${serial++}` }], fails: false }
-  if (r < 0.48) return { ops: [{ op: 'add', path: `/characters/${i}/tags`, value: ['a', `t${serial++}`] }, { op: 'add', path: `/characters/${i}/extraField`, value: { nested: [serial++] } }], fails: false }
-  if (r < 0.56) return { ops: [{ op: 'replace', path: `/modules/${m}/lorebook/0/content`, value: `edited ${serial++}` }], fails: false }
-  if (r < 0.60) return { ops: [{ op: 'replace', path: `/modules/${m}`, value: newModule() }], fails: false }
-  if (r < 0.65) return { ops: [{ op: 'add', path: `/modules/${m}`, value: newModule() }], fails: false }
-  if (r < 0.69 && db.modules.length > 2) return { ops: [{ op: 'remove', path: `/modules/${m}` }], fails: false }
-  if (r < 0.74) return { ops: [{ op: 'add', path: '/characters/-', value: newCharacter() }], fails: false }
-  if (r < 0.78 && addedIndex >= 0) return { ops: [{ op: 'remove', path: `/characters/${addedIndex}` }, { op: 'replace', path: `/characters/0/desc`, value: `after remove ${serial++}` }], fails: false }
-  if (r < 0.84) {
+  if (r < 0.20 && chats.length > 0) return { ops: [{ op: 'replace', path: `/characters/${i}/chats/${j}/lastDate`, value: 1727500000000 + serial++ }], fails: false }
+  if (r < 0.26 && chats.length > 0) return { ops: [{ op: 'replace', path: `/characters/${i}/chats/${j}/name`, value: `Chat ${serial++}` }], fails: false }
+  if (r < 0.33) return { ops: [{ op: 'replace', path: `/characters/${i}/name`, value: `Name ${serial++}` }], fails: false }
+  if (r < 0.37) return { ops: [{ op: 'add', path: `/characters/${i}/tags`, value: ['a', `t${serial++}`] }, { op: 'add', path: `/characters/${i}/extraField`, value: { nested: [serial++] } }], fails: false }
+  if (r < 0.43) return { ops: [{ op: 'replace', path: `/modules/${m}/lorebook/0/content`, value: `edited ${serial++}` }], fails: false }
+  if (r < 0.46) return { ops: [{ op: 'replace', path: `/modules/${m}`, value: newModule() }], fails: false }
+  if (r < 0.49) return { ops: [{ op: 'add', path: `/modules/${m}`, value: newModule() }], fails: false }
+  if (r < 0.52 && db.modules.length > 2) return { ops: [{ op: 'remove', path: `/modules/${m}` }], fails: false }
+  if (r < 0.55) return { ops: [{ op: 'add', path: '/characters/-', value: newCharacter() }], fails: false }
+  // A create at any index, as the client sends it (the final index), then an
+  // edit of a character the insert shifted.
+  if (r < 0.59) {
+    const at = Math.floor(rand() * (n + 1))
+    return { ops: [{ op: 'add', path: `/characters/${at}`, value: newCharacter() }, { op: 'replace', path: `/characters/${Math.min(at + 1, n)}/desc`, value: `after insert ${serial++}` }], fails: false }
+  }
+  if (r < 0.62 && addedIndex >= 0) return { ops: [{ op: 'remove', path: `/characters/${addedIndex}` }, { op: 'replace', path: `/characters/0/desc`, value: `after remove ${serial++}` }], fails: false }
+  // The client's create-and-delete shape: the remove, the add at its final
+  // index, then edits at final indexes.
+  if (r < 0.66 && addedIndex >= 0) {
+    const at = Math.floor(rand() * n)
+    const k = Math.floor(rand() * n)
+    return {
+      ops: [
+        { op: 'remove', path: `/characters/${addedIndex}` },
+        { op: 'add', path: `/characters/${at}`, value: newCharacter() },
+        { op: 'replace', path: `/characters/${k}/name`, value: `shifted ${serial++}` },
+        { op: 'add', path: `/characters/${at}/tags`, value: ['new'] },
+      ],
+      fails: false,
+    }
+  }
+  // Moves inside the array (a reorder op the server accepts), then an edit
+  // of the moved character.
+  if (r < 0.69 && n > 1) {
+    const from = Math.floor(rand() * n)
+    const to = Math.floor(rand() * n)
+    return { ops: [{ op: 'move', from: `/characters/${from}`, path: `/characters/${to}` }, { op: 'replace', path: `/characters/${to}/name`, value: `moved ${serial++}` }], fails: false }
+  }
+  if (r < 0.71) {
+    const count = db.modules.length
+    return {
+      ops: [
+        { op: 'copy', from: `/modules/${m}`, path: '/modules/-' },
+        { op: 'replace', path: `/modules/${count}/id`, value: `module-copy-${serial++}` },
+        { op: 'replace', path: `/modules/${count}/lorebook/0/content`, value: `copied ${serial++}` },
+      ],
+      fails: false,
+    }
+  }
+  if (r < 0.78) {
     // A client save touching several places at once.
     const k = Math.floor(rand() * db.characters.length)
     return {
@@ -104,8 +146,12 @@ function generate(rand: () => number, db: any): { ops: Op[], fails: boolean } {
       fails: false,
     }
   }
-  if (r < 0.90) return { ops: [{ op: 'replace', path: `/characters/${i}/name`, value: 'never applied' }, { op: 'remove', path: `/characters/${i}/missingField` }], fails: true }
-  if (r < 0.94) return { ops: [{ op: 'replace', path: `/characters/${i}/desc`, value: 'never applied' }, { op: 'replace', path: `/modules/${db.modules.length + 4}/name`, value: 'x' }], fails: true }
+  if (r < 0.83) return { ops: [{ op: 'replace', path: `/characters/${i}/name`, value: 'never applied' }, { op: 'remove', path: `/characters/${i}/missingField` }], fails: true }
+  if (r < 0.87) return { ops: [{ op: 'replace', path: `/characters/${i}/desc`, value: 'never applied' }, { op: 'replace', path: `/modules/${db.modules.length + 4}/name`, value: 'x' }], fails: true }
+  if (r < 0.90) return { ops: [{ op: 'add', path: `/characters/${n + 1}`, value: newCharacter() }], fails: true }
+  // Structural ops that ran, then one that fails: nothing may stay behind.
+  if (r < 0.94) return { ops: [{ op: 'add', path: '/characters/0', value: newCharacter() }, { op: 'replace', path: `/characters/${i + 1}/name`, value: 'never applied' }, { op: 'remove', path: `/characters/${n + 1}` }], fails: true }
+  if (r < 0.97) return { ops: [{ op: 'move', from: `/characters/${i}`, path: '/characters/0' }, { op: 'replace', path: '/characters/0/desc', value: 'never applied' }, { op: 'test', path: '/characters/0/name', value: 'certainly not' }], fails: true }
   return { ops: [{ op: 'replace', path: '/characters/01/name', value: 'non-canonical index' }], fails: true }
 }
 
@@ -170,5 +216,64 @@ describe('element-level patch sharing through /api/patch', () => {
 
   test('the same run without test hardening', async () => {
     await runSequence({}, 0xb2c0)
+  }, 90_000)
+
+  // A create or delete keeps every other character's identity through the
+  // patch, so the incremental persister (db-persister.cjs) copies each of
+  // them from the blob wherever it now sits and encodes only the new one.
+  // POCKETRISU_PERSIST_VERIFY: the server compares every planned write with
+  // the reference encoder.
+  test('character create and delete in incremental mode copy every other character', async () => {
+    const { srv, client } = await boot({
+      POCKETRISU_FLAG_PERSIST_MODE: 'incremental',
+      POCKETRISU_PERSIST_VERIFY: '1',
+      POCKETRISU_CHUNK_THRESHOLD: '4096',
+    })
+    serial = 1000
+    const cookie = await sessionCookie(client)
+    let local = await readDb(client)
+    const send = async (ops: Op[]) => {
+      const res = await sendPatch(client, ops, utils.calculateHash(local).toString(16))
+      expect(res.status, `${JSON.stringify(ops)}: ${await res.clone().text()}`).toBe(200)
+      local = applyPatch(structuredClone(local), structuredClone(ops), true).newDocument
+      expect((await client.fetch('/api/db/flush', { method: 'POST', headers: { cookie } })).status).toBe(200)
+      const memory = await (await client.fetch('/api/debug/memory')).json() as any
+      expect(memory.persist.verifyFailures).toBe(0)
+      expect(memory.dbCache.cachedRootMutationReports).toBe(0)
+      return memory.persist.persister.last
+    }
+    const order = () => local.characters.map((c: any) => c.chaId)
+    const seeded = order()
+
+    // The first write encodes everything; the second copies everything.
+    expect(await send([{ op: 'replace', path: '/temperature', value: 41 }])).toMatchObject({ persistMode: 'incremental', spans: false })
+    const baseline = await send([{ op: 'replace', path: '/temperature', value: 42 }])
+    expect(baseline).toMatchObject({ persistMode: 'incremental', spans: true, freshOwners: 0, freshChats: 0 })
+    expect(baseline.spanOwners).toBeGreaterThanOrEqual(seeded.length)
+
+    expect(await send([{ op: 'add', path: `/characters/${local.characters.length}`, value: newCharacter() }]))
+      .toMatchObject({ spans: true, freshOwners: 1, spanOwners: baseline.spanOwners, freshChats: 0 })
+    expect(await send([{ op: 'add', path: '/characters/0', value: newCharacter() }]))
+      .toMatchObject({ spans: true, freshOwners: 1, spanOwners: baseline.spanOwners + 1, freshChats: 0 })
+    expect(await send([{ op: 'remove', path: '/characters/0' }]))
+      .toMatchObject({ spans: true, freshOwners: 0, spanOwners: baseline.spanOwners + 1, freshChats: 0 })
+    // The client's shape: delete, create at the final index, edit a shifted character.
+    const shifted = local.characters[3].chaId
+    expect(await send([
+      { op: 'remove', path: `/characters/${local.characters.length - 1}` },
+      { op: 'add', path: '/characters/2', value: newCharacter() },
+      { op: 'replace', path: '/characters/4/name', value: 'shifted, then edited' },
+    ])).toMatchObject({ spans: true, freshOwners: 2, spanOwners: baseline.spanOwners - 1, freshChats: 0 })
+    expect(local.characters[4].chaId).toBe(shifted)
+
+    const disk = await readDiskDb(srv.cwd)
+    expect(disk.characters.map((c: any) => c.chaId)).toEqual(order())
+    for (const [index, character] of local.characters.entries()) {
+      const { chats: viewChats, ...card } = character
+      const { chats: diskChats, ...diskCard } = disk.characters[index]
+      expect(diskCard).toEqual(card)
+      expect(diskChats.map((ch: any) => ch.id)).toEqual(viewChats.map((ch: any) => ch.id))
+      for (const chat of diskChats) expect(Array.isArray(chat.message)).toBe(true)
+    }
   }, 90_000)
 })

@@ -1,15 +1,20 @@
 // B2 fuzz: element-level patch snapshots (patch-selective-clone.cjs) and the
 // element hash memo (patch-hash-cache.cjs) against the pre-B2 clone path.
 //
-// Every patch is applied twice to the same previous root: once the way
-// /api/patch does now, once through a verbatim copy of the old
-// clonePatchSnapshot (every touched top-level branch cloned whole). Checked
-// after each patch:
-//  - both paths fail, or both succeed with byte-identical roots;
-//  - the cached hash equals calculateHash (the protocol hash) of the result;
+// Every patch is applied three times to the same previous root: the way
+// /api/patch does now (applyPatchCopyOnWrite), through clonePatchSnapshot
+// plus applyPatch, and through a verbatim copy of the old clonePatchSnapshot
+// (every touched top-level branch cloned whole). Checked after each patch:
+//  - all paths fail with the same error, or all succeed with byte-identical
+//    roots;
+//  - the cached hash equals calculateHash (the protocol hash) of the result,
+//    and the memo hashed exactly the objects that are new in it;
 //  - the previous root encodes to the same bytes as before;
+//  - copy-on-write: every characters[i] / modules[i] no op wrote into is the
+//    previous root's own object, wherever add, remove, move and copy put it,
+//    and nothing else is;
 //  - in a non-structural patch, every characters[i] / modules[i] no op
-//    changes is the previous root's own object.
+//    changes is also shared by clonePatchSnapshot.
 // It runs once with roots deep-frozen as the server installs them under
 // POCKETRISU_TEST_FREEZE_CACHE, and once unfrozen, where a missed clone would
 // really write into the previous root and fail the bytes check.
@@ -17,7 +22,7 @@ import { describe, expect, it } from 'vitest'
 import { createRequire } from 'node:module'
 
 const requireCjs = createRequire(import.meta.url)
-const { clonePatchSnapshot } = requireCjs('./patch-selective-clone.cjs')
+const { clonePatchSnapshot, applyPatchCopyOnWrite } = requireCjs('./patch-selective-clone.cjs')
 const { createPatchHashCache } = requireCjs('./patch-hash-cache.cjs')
 const { calculateHash, encodeRisuSaveLegacyBuffer } = requireCjs('./utils.cjs')
 const { deepFreeze } = requireCjs('./chat-body-store.cjs')
@@ -275,25 +280,114 @@ const rootOp: Gen = (rand, root) => {
     return [{ op: 'replace', path: '', value: replacement }]
 }
 
-const SINGLE: Array<[number, Gen]> = [
+// ---- structural patches (copy-on-write) ----
+const arrayKey = (rand: () => number) => (rand() < 0.7 ? 'characters' : 'modules')
+const makeFor = (key: string) => (key === 'characters' ? makeCharacter : makeModule)
+// A character or module create/delete as the client sends it: removes
+// (descending), adds at their final indexes (ascending), then edits at final
+// indexes, which may land on an added value, a shifted element or neither.
+const clientStructural: Gen = (rand, root) => {
+    const key = arrayKey(rand)
+    const make = makeFor(key)
+    const ops: Op[] = []
+    const removes = [...new Set(Array.from({ length: Math.floor(rand() * 3) }, () => idx(rand, root[key])))].sort((a, b) => b - a)
+    for (const i of removes) ops.push({ op: 'remove', path: `/${key}/${i}` })
+    let size = root[key].length - removes.length
+    const adds = Math.floor(rand() * 3) + (removes.length === 0 ? 1 : 0)
+    const positions = Array.from({ length: adds }, () => Math.floor(rand() * (size + adds))).sort((a, b) => a - b)
+    for (const at of positions) {
+        const index = Math.min(at, size)
+        ops.push({ op: 'add', path: index === size && rand() < 0.3 ? `/${key}/-` : `/${key}/${index}`, value: make(rand) })
+        size++
+    }
+    const edits = Math.floor(rand() * 4)
+    for (let k = 0; k < edits; k++) {
+        const i = Math.floor(rand() * Math.max(1, size))
+        ops.push(pick(rand, key === 'characters' ? [
+            { op: 'replace', path: `/characters/${i}/name`, value: `edited ${serial++}` },
+            { op: 'add', path: `/characters/${i}/chats/-`, value: makeStub(rand) },
+            { op: 'replace', path: `/characters/${i}/chats/0/lastDate`, value: 1727600000000 + serial++ },
+            { op: 'remove', path: `/characters/${i}/desc` },
+            { op: 'test', path: `/characters/${i}/chatFolders/0/id`, value: 'folder-1' },
+            { op: 'replace', path: `/characters/${i}`, value: makeCharacter(rand) },
+        ] : [
+            { op: 'replace', path: `/modules/${i}/name`, value: `edited ${serial++}` },
+            { op: 'add', path: `/modules/${i}/lorebook/-`, value: { key: 'k', content: 'c', insertorder: 1 } },
+            { op: 'remove', path: `/modules/${i}/regex` },
+        ]))
+    }
+    return ops
+}
+// Moves and copies inside the array, mixed with reads and writes of the
+// elements they shift.
+const inArrayMoves: Gen = (rand, root) => {
+    const key = arrayKey(rand)
+    const ops: Op[] = []
+    let size = root[key].length
+    const steps = 1 + Math.floor(rand() * 4)
+    for (let k = 0; k < steps; k++) {
+        const i = Math.floor(rand() * size)
+        const r = rand()
+        if (r < 0.35) {
+            ops.push({ op: 'move', from: `/${key}/${i}`, path: rand() < 0.2 ? `/${key}/-` : `/${key}/${Math.floor(rand() * size)}` })
+        } else if (r < 0.55) {
+            ops.push({ op: 'copy', from: `/${key}/${i}`, path: rand() < 0.2 ? `/${key}/-` : `/${key}/${Math.floor(rand() * (size + 1))}` })
+            size++
+        } else if (r < 0.7) {
+            ops.push({ op: 'test', path: `/${key}/${i}/name`, value: root[key][i]?.name ?? 'none' })
+        } else {
+            ops.push({ op: 'replace', path: `/${key}/${i}/name`, value: `after move ${serial++}` })
+        }
+    }
+    return ops
+}
+// Structural ops that fail, alone or after ops that already ran.
+const structuralFailing: Gen = (rand, root) => {
+    const key = arrayKey(rand)
+    const make = makeFor(key)
+    const n = root[key].length
+    const i = idx(rand, root[key])
+    return pick(rand, [
+        [{ op: 'add', path: `/${key}/${n + 1}`, value: make(rand) }],
+        [{ op: 'remove', path: `/${key}/${n}` }],
+        [{ op: 'remove', path: `/${key}/${i}` }, { op: 'replace', path: `/${key}/${n - 1}/name`, value: 'shifted out' }],
+        [{ op: 'add', path: `/${key}/0`, value: make(rand) }, { op: 'replace', path: `/${key}/${i}/name`, value: 'x' }, { op: 'remove', path: `/${key}/${n + 1}` }],
+        [{ op: 'move', from: `/${key}/${n}`, path: `/${key}/0` }],
+        [{ op: 'remove', path: `/${key}/${i}` }, { op: 'test', path: `/${key}/${i}`, value: structuredClone(root[key][i]) }],
+        [{ op: 'copy', from: `/${key}/${i}`, path: `/${key}/0` }, { op: 'replace', path: `/${key}/0/name`, value: 'copy' }, { op: 'remove', path: `/${key}/0/missing` }],
+        [{ op: 'add', path: `/${key}/-`, value: make(rand) }, { op: 'add', path: `/${key}/${n}/x/y`, value: 1 }],
+        // Structural, then an op that takes the whole branch, then a failure.
+        [{ op: 'remove', path: `/${key}/${i}` }, { op: 'move', from: `/${key}/0/name`, path: `/${key}/1/name` }, { op: 'test', path: '/username', value: 'nope' }],
+    ] as Op[][])
+}
+
+type Mix = Array<[number, Gen]>
+const SINGLE: Mix = [
     [18, fieldEdit], [14, nestedEdit], [20, chatStub], [6, elementReplace], [3, branchReplace],
     [8, depthTwo], [4, moveCopy], [6, rootEdit], [5, testOps], [8, failing], [4, oddIndex], [1, rootOp],
+    [10, clientStructural], [6, inArrayMoves], [5, structuralFailing],
+]
+const STRUCTURAL: Mix = [
+    [12, clientStructural], [8, inArrayMoves], [5, structuralFailing], [6, chatStub], [4, fieldEdit],
+    [3, depthTwo], [2, moveCopy], [1, branchReplace],
 ]
 const SAFE: Gen[] = [fieldEdit, nestedEdit, chatStub, rootEdit]
-function generatePatch(rand: () => number, root: Root): Op[] {
-    if (rand() < 0.12) {
-        // A client save: several independent edits in one patch.
-        const ops: Op[] = []
-        const count = 2 + Math.floor(rand() * 3)
-        for (let k = 0; k < count; k++) ops.push(...pick(rand, SAFE)(rand, root))
-        return ops
+function patchGenerator(mix: Mix) {
+    const total = mix.reduce((sum, [w]) => sum + w, 0)
+    return (rand: () => number, root: Root): Op[] => {
+        if (rand() < 0.12) {
+            // A client save: several independent edits in one patch.
+            const ops: Op[] = []
+            const count = 2 + Math.floor(rand() * 3)
+            for (let k = 0; k < count; k++) ops.push(...pick(rand, SAFE)(rand, root))
+            return ops
+        }
+        let r = rand() * total
+        for (const [weight, gen] of mix) {
+            if ((r -= weight) < 0) return gen(rand, root)
+        }
+        return fieldEdit(rand, root)
     }
-    const total = SINGLE.reduce((sum, [w]) => sum + w, 0)
-    let r = rand() * total
-    for (const [weight, gen] of SINGLE) {
-        if ((r -= weight) < 0) return gen(rand, root)
-    }
-    return fieldEdit(rand, root)
 }
 
 // ---- the spec of "non-structural", written independently of the module ----
@@ -323,23 +417,110 @@ function touchesKey(key: string, patch: Op[]) {
         && (p === '' || !p.startsWith('/') || legacyDecodePointerSegment(p.split('/')[1]) === key)))
 }
 
-function runFuzz(seed: number, iterations: number, frozen: boolean) {
+// ---- the spec of copy-on-write, written independently of the module ----
+// For root array `key`: null when the patch gets a whole-branch copy of it.
+// Otherwise the ops that name it are replayed on the previous indexes:
+// `slots` says where each element of the result comes from (an index of the
+// previous array, or null for a value the patch brought in: an add or
+// replace value, a copy), `written` which previous elements an op wrote into
+// (add, replace or remove below /key/N), each of which must be a copy.
+// fast-json-patch reads an index as ~~segment, '-' as the length, and
+// splices, so a move or copy past the end appends.
+function expectedCopyOnWrite(key: string, prevLength: number, patch: Op[]) {
+    const under = (pointer: unknown) => (typeof pointer === 'string' && pointer.startsWith('/')
+        && legacyDecodePointerSegment(pointer.split('/')[1]) === key ? pointer.split('/') : null)
+    const slot = (parts: string[] | null, end: boolean) => !!parts && parts.length === 3 && (CANONICAL.test(parts[2]) || (end && parts[2] === '-'))
+    for (const op of patch) {
+        if ([op.path, op.from].some((p) => typeof p === 'string' && (p === '' || !p.startsWith('/')))) return null
+        const path = under(op.path)
+        const from = under(op.from)
+        if (!path && !from) continue
+        if (op.op === 'move' || op.op === 'copy') {
+            if (!slot(from, false) || !slot(path, true)) return null
+            continue
+        }
+        if (from) return null
+        if (op.op === 'test') continue
+        if (!['add', 'replace', 'remove'].includes(op.op) || !path || path.length < 3) return null
+        if (!CANONICAL.test(path[2]) && !(op.op === 'add' && slot(path, true))) return null
+    }
+    const slots: Array<number | null> = Array.from({ length: prevLength }, (_, i) => i)
+    const written = new Set<number>()
+    let structural = false
+    const at = (segment: string) => (segment === '-' ? slots.length : ~~segment)
+    for (const op of patch) {
+        const path = under(op.path)
+        if (!path || op.op === 'test') continue
+        if (path.length > 3) {
+            const source = slots[~~path[2]]
+            if (typeof source === 'number') written.add(source)
+            continue
+        }
+        if (op.op === 'replace') {
+            slots[~~path[2]] = null
+            continue
+        }
+        structural = true
+        if (op.op === 'add' || op.op === 'copy') slots.splice(at(path[2]), 0, null)
+        else if (op.op === 'remove') slots.splice(~~path[2], 1)
+        else if (op.op === 'move') {
+            const [moved] = slots.splice(~~under(op.from)![2], 1)
+            slots.splice(at(path[2]), 0, moved)
+        }
+    }
+    return { slots, written, structural }
+}
+
+function runFuzz(seed: number, iterations: number, frozen: boolean, generate = patchGenerator(SINGLE)) {
     serial = 0
     const rand = mulberry32(seed)
-    const cache = createPatchHashCache(calculateHash)
-    let prev: Root = makeRoot(rand)
-    if (frozen) deepFreeze(prev)
+    // Every object the hash cache hands to calculateHash.
+    const hashedObjects: object[] = []
+    const cache = createPatchHashCache((value: unknown) => {
+        if (value !== null && typeof value === 'object') hashedObjects.push(value)
+        return calculateHash(value)
+    })
+    // The elements of root arrays the cache's memo holds.
+    const memoized = new WeakSet<object>()
+    const noteMemoized = (root: Root) => {
+        for (const value of Object.values(root)) {
+            if (Array.isArray(value)) for (const e of value) if (e !== null && typeof e === 'object') memoized.add(e)
+        }
+    }
+    const install = (root: Root) => (frozen ? deepFreeze(root) : root)
+    let prev: Root = install(makeRoot(rand))
     expect(cache.hash(prev)).toBe(calculateHash(prev))
-    const stats = { applied: 0, failed: 0, nonStructural: 0, sharedChecked: 0, clonedChecked: 0 }
+    noteMemoized(prev)
+    const stats = {
+        applied: 0, failed: 0, nonStructural: 0, sharedChecked: 0, clonedChecked: 0,
+        cowStructural: 0, cowShared: 0, cowCopied: 0, cowNew: 0, cowWhole: 0, hashedNew: 0,
+    }
 
     for (let n = 0; n < iterations; n++) {
-        if (prev.characters.length < 4) prev = frozen ? deepFreeze({ ...prev, characters: [...prev.characters, makeCharacter(rand), makeCharacter(rand)] }) : { ...prev, characters: [...prev.characters, makeCharacter(rand), makeCharacter(rand)] }
-        const patch = generatePatch(rand, prev)
+        if (prev.characters.length < 4 || prev.modules.length < 2) {
+            prev = install({
+                ...prev,
+                characters: [...prev.characters, makeCharacter(rand), makeCharacter(rand)],
+                modules: [...prev.modules, makeModule(rand), makeModule(rand)],
+            })
+            cache.hash(prev)
+            noteMemoized(prev)
+        }
+        const patch = generate(rand, prev)
         const where = `seed ${seed} #${n} ${JSON.stringify(patch).slice(0, 300)}`
         const prevBytes = encodeRisuSaveLegacyBuffer(prev)
+        // Each apply gets its own ops: applyPatch links op values into its result.
+        const cowPatch = structuredClone(patch)
         const newPatch = structuredClone(patch)
         const oldPatch = structuredClone(patch)
 
+        let cowNext: Root | undefined
+        let cowError: any
+        try {
+            cowNext = applyPatchCopyOnWrite(prev, cowPatch).newDocument
+        } catch (error) {
+            cowError = error
+        }
         let next: Root | undefined
         let newError: any
         try {
@@ -357,36 +538,99 @@ function runFuzz(seed: number, iterations: number, frozen: boolean) {
 
         // The previous root is untouched whatever happened.
         expect(encodeRisuSaveLegacyBuffer(prev).equals(prevBytes), `previous root changed: ${where}`).toBe(true)
+        expect(!!cowError, `failure differs: ${where} copy-on-write=${cowError?.message?.split('\n')[0]} old=${oldError?.message?.split('\n')[0]}`).toBe(!!oldError)
         expect(!!newError, `failure differs: ${where} new=${newError?.message} old=${oldError?.message}`).toBe(!!oldError)
-        if (newError) {
-            expect(newError.name).toBe(oldError.name)
-            expect(newError.message).toBe(oldError.message)
+        if (oldError) {
+            for (const error of [cowError, newError]) {
+                expect(error.name).toBe(oldError.name)
+                expect(error.message).toBe(oldError.message)
+                expect(error.index).toBe(oldError.index)
+            }
             stats.failed++
             continue
         }
-        if (next === null || typeof next !== 'object' || Array.isArray(next)) {
+        if (reference === null || typeof reference !== 'object' || Array.isArray(reference)) {
             // A root op may leave a non-object; the server refuses it (400).
-            expect(reference).toStrictEqual(next)
+            expect(next).toStrictEqual(reference)
+            expect(cowNext).toStrictEqual(reference)
             continue
         }
         stats.applied++
 
         // Same root, byte for byte (so also the same key order).
-        expect(encodeRisuSaveLegacyBuffer(next).equals(encodeRisuSaveLegacyBuffer(reference)), `result differs: ${where}`).toBe(true)
+        const referenceBytes = encodeRisuSaveLegacyBuffer(reference)
+        expect(encodeRisuSaveLegacyBuffer(cowNext).equals(referenceBytes), `result differs: ${where}`).toBe(true)
+        expect(encodeRisuSaveLegacyBuffer(next).equals(referenceBytes), `result differs: ${where}`).toBe(true)
+        expect(cowNext).toStrictEqual(reference)
         expect(next).toStrictEqual(reference)
+        cowNext = cowNext!
+        next = next!
 
-        // The protocol hash.
-        const fullHash = calculateHash(next)
+        // The protocol hash, and what it cost: the memo hashes exactly the
+        // array elements it has not seen (the new ones) of the branches the
+        // patch names (all of them for a root op), plus those branches that
+        // are not arrays.
+        const fullHash = calculateHash(cowNext)
         expect(calculateHash(reference)).toBe(fullHash)
-        expect(cache.update(prev, next, newPatch), `hash: ${where}`).toBe(fullHash)
-        expect(cache.hash(next)).toBe(fullHash)
+        hashedObjects.length = 0
+        expect(cache.update(prev, cowNext, cowPatch), `hash: ${where}`).toBe(fullHash)
+        const { keys: namedKeys, touchesRoot } = legacyCollectPatchTopLevelKeys(cowPatch)
+        const expectedHashed = new Set<object>()
+        for (const key of touchesRoot ? Object.keys(cowNext) : namedKeys) {
+            if (!Object.prototype.hasOwnProperty.call(cowNext, key)) continue
+            const value = cowNext[key]
+            if (Array.isArray(value)) {
+                for (const e of value) if (e !== null && typeof e === 'object' && !memoized.has(e)) expectedHashed.add(e)
+            } else if (value !== null && typeof value === 'object') {
+                expectedHashed.add(value)
+            }
+        }
+        expect(hashedObjects.length, `objects hashed: ${where}`).toBe(expectedHashed.size)
+        for (const value of hashedObjects) expect(expectedHashed.has(value), `hashed an object that is not new: ${where}`).toBe(true)
+        stats.hashedNew += hashedObjects.length
+        noteMemoized(cowNext)
+        expect(cache.hash(cowNext)).toBe(fullHash)
         if (n % 25 === 0) {
-            const keyHashes = cache.keyHashes(next)
-            for (const key of Object.keys(next)) expect(keyHashes[key]).toBe(calculateHash(next[key]))
-            for (const character of next.characters ?? []) expect(cache.elementHash(character)).toBe(calculateHash(character))
+            const keyHashes = cache.keyHashes(cowNext)
+            for (const key of Object.keys(cowNext)) expect(keyHashes[key]).toBe(calculateHash(cowNext[key]))
+            for (const character of cowNext.characters ?? []) expect(cache.elementHash(character)).toBe(calculateHash(character))
         }
 
-        // Identity of untouched elements.
+        // Copy-on-write identity.
+        for (const key of ['characters', 'modules']) {
+            if (!Array.isArray(prev[key])) continue
+            if (!touchesKey(key, patch)) {
+                expect(cowNext[key], `untouched branch not shared: ${where}`).toBe(prev[key])
+                continue
+            }
+            const previousElements = new Set<unknown>(prev[key])
+            const isPrevious = (element: unknown) => element !== null && typeof element === 'object' && previousElements.has(element)
+            const spec = expectedCopyOnWrite(key, prev[key].length, patch)
+            if (!spec) {
+                // The whole branch: no previous element survives as itself.
+                for (const element of Array.isArray(cowNext[key]) ? cowNext[key] : []) {
+                    expect(isPrevious(element), `whole-branch copy shares ${key}: ${where}`).toBe(false)
+                }
+                stats.cowWhole++
+                continue
+            }
+            if (spec.structural) stats.cowStructural++
+            expect(cowNext[key]).not.toBe(prev[key])
+            expect(cowNext[key].length, `${key} length: ${where}`).toBe(spec.slots.length)
+            spec.slots.forEach((source, j) => {
+                const element = cowNext![key][j]
+                if (source === null || spec.written.has(source)) {
+                    expect(isPrevious(element), `${key}[${j}] is a previous element: ${where}`).toBe(false)
+                    if (source === null) stats.cowNew++
+                    else stats.cowCopied++
+                } else {
+                    expect(element, `${key}[${j}] (was [${source}]) lost its identity: ${where}`).toBe(prev[key][source])
+                    stats.cowShared++
+                }
+            })
+        }
+
+        // clonePatchSnapshot: identity of untouched elements.
         for (const key of ['characters', 'modules']) {
             if (!Array.isArray(prev[key])) continue
             if (!touchesKey(key, patch)) {
@@ -409,7 +653,7 @@ function runFuzz(seed: number, iterations: number, frozen: boolean) {
             })
         }
 
-        prev = frozen ? deepFreeze(next) : next
+        prev = install(cowNext)
     }
     return stats
 }
@@ -418,14 +662,81 @@ describe('B2 element-level patch sharing (fuzz against the whole-branch clone)',
     for (const frozen of [true, false]) {
         it(`1,000 random patches, ${frozen ? 'frozen' : 'unfrozen'} roots`, () => {
             const stats = runFuzz(frozen ? 0xb2f0 : 0xb2f1, 1000, frozen)
-            // The mix really exercises each side (a run gives about 780
-            // applied, 215 failed, 610 non-structural, 5,000 shared and 690
-            // cloned elements checked).
+            // The mix really exercises each side (a run gives about 760
+            // applied, 235 failed, 510 non-structural with 5,700 shared and
+            // 580 cloned elements checked; copy-on-write: 180 structural
+            // patches, 7,600 shared, 670 copied and 230 new elements, 55
+            // whole branches).
             expect(stats.applied).toBeGreaterThan(600)
             expect(stats.failed).toBeGreaterThan(100)
-            expect(stats.nonStructural).toBeGreaterThan(400)
+            expect(stats.nonStructural).toBeGreaterThan(350)
             expect(stats.sharedChecked).toBeGreaterThan(3000)
             expect(stats.clonedChecked).toBeGreaterThan(300)
+            expect(stats.cowStructural).toBeGreaterThan(120)
+            expect(stats.cowShared).toBeGreaterThan(5000)
+            expect(stats.cowCopied).toBeGreaterThan(400)
+            expect(stats.cowNew).toBeGreaterThan(150)
+            expect(stats.cowWhole).toBeGreaterThan(30)
+        }, 120_000)
+        it(`800 structural patches, ${frozen ? 'frozen' : 'unfrozen'} roots`, () => {
+            const stats = runFuzz(frozen ? 0xc0f0 : 0xc0f1, 800, frozen, patchGenerator(STRUCTURAL))
+            // About 660 applied, 140 failed; 350 structural patches, 8,700
+            // shared, 630 copied and 370 new elements, 40 whole branches.
+            expect(stats.applied).toBeGreaterThan(500)
+            expect(stats.failed).toBeGreaterThan(80)
+            expect(stats.cowStructural).toBeGreaterThan(250)
+            expect(stats.cowShared).toBeGreaterThan(5000)
+            expect(stats.cowCopied).toBeGreaterThan(400)
+            expect(stats.cowNew).toBeGreaterThan(250)
+            expect(stats.cowWhole).toBeGreaterThan(20)
         }, 120_000)
     }
+})
+
+describe('copy-on-write patches and the hash memo', () => {
+    it('a character create or delete hashes only the new character', () => {
+        serial = 0
+        const rand = mulberry32(0xadd)
+        const hashed: object[] = []
+        const cache = createPatchHashCache((value: unknown) => {
+            if (value !== null && typeof value === 'object') hashed.push(value)
+            return calculateHash(value)
+        })
+        let root: Root = deepFreeze(makeRoot(rand))
+        cache.hash(root)
+        // The objects the memo hashed for one patch; all of them characters.
+        const step = (patch: Op[]) => {
+            const next = deepFreeze(applyPatchCopyOnWrite(root, patch).newDocument)
+            hashed.length = 0
+            expect(cache.update(root, next, patch)).toBe(calculateHash(next))
+            for (const value of hashed) expect(next.characters).toContain(value)
+            root = next
+            return hashed.slice()
+        }
+
+        const created = makeCharacter(rand)
+        const onCreate = step([{ op: 'add', path: `/characters/${root.characters.length}`, value: created }])
+        expect(onCreate).toHaveLength(1)
+        expect(onCreate[0]).toBe(created)
+        const atFront = makeCharacter(rand)
+        const onFront = step([{ op: 'add', path: '/characters/0', value: atFront }])
+        expect(onFront).toHaveLength(1)
+        expect(onFront[0]).toBe(atFront)
+        const before = root.characters
+        expect(step([{ op: 'remove', path: `/characters/${root.characters.length - 1}` }])).toEqual([])
+        expect(step([{ op: 'remove', path: '/characters/0' }, { op: 'remove', path: '/characters/3' }])).toEqual([])
+        expect(root.characters).toEqual(before.filter((_: unknown, i: number) => i !== 0 && i !== 4 && i !== before.length - 1))
+        // The client's shape: removes, an add, an edit of a shifted character.
+        const edited = root.characters[5]
+        const hashedNow = step([
+            { op: 'remove', path: '/characters/2' },
+            { op: 'add', path: '/characters/1', value: makeCharacter(rand) },
+            { op: 'replace', path: '/characters/5/name', value: 'edited' },
+        ])
+        expect(hashedNow).toHaveLength(2)
+        expect(root.characters[5]).not.toBe(edited)
+        expect(root.characters[5].name).toBe('edited')
+        expect(hashedNow).toContain(root.characters[5])
+        expect(hashedNow).toContain(root.characters[1])
+    })
 })

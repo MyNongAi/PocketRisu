@@ -22,6 +22,7 @@ const { stripAssetManifests, hydrateAssetManifests } = requireCjs('./assetManife
 const { createPendingChatPayloads } = requireCjs('./pending-chat-payloads.cjs')
 const { createChatBodyStore, chatToStub, mergeChatStubWithFullChat, StoredChatBytes, deepFreeze } = requireCjs('./chat-body-store.cjs')
 const { createDbPersister, createPieceWriter, planChunks, walkPlan } = requireCjs('./db-persister.cjs')
+const { applyPatchCopyOnWrite } = requireCjs('./patch-selective-clone.cjs')
 const { Packr } = requireCjs('msgpackr')
 
 const KEY = 'database/database.bin'
@@ -341,6 +342,39 @@ describe('byte identity with the reference encoder', () => {
         const r = h.persist(root, 'incremental')
         expect(r.committed.stats.commit).toBe('gapped')
         expect(r.committed.stats.insertedRows).toBeLessThanOrEqual(6)
+    })
+
+    // Roots as /api/patch builds them (applyPatchCopyOnWrite): a character
+    // create, delete or move keeps every other character's identity, so only
+    // a new or written character is encoded and every other one is copied
+    // from the blob, at whatever index it now sits.
+    it('incremental after character creates, deletes and moves applied copy-on-write', () => {
+        const h = harness()
+        let root = deepFreeze(h.load(fixtureDisk()))
+        h.persist(root, 'incremental')
+        const baseline = h.persist(root, 'incremental').committed.stats
+        expect(baseline.freshOwners).toBe(0)
+        const persistPatch = (patch: any[]) => {
+            root = deepFreeze(applyPatchCopyOnWrite(root, patch).newDocument)
+            return h.persist(root, 'incremental').committed.stats
+        }
+        const order = () => root.characters.map((c: any) => c?.chaId ?? null)
+        const original = order()
+
+        let stats = persistPatch([{ op: 'add', path: `/characters/${root.characters.length}`, value: character('created', [], { desc: 'created' }) }])
+        expect(stats).toMatchObject({ freshOwners: 1, spanOwners: baseline.spanOwners, freshChats: 0 })
+        stats = persistPatch([{ op: 'add', path: '/characters/0', value: character('front', []) }])
+        expect(stats).toMatchObject({ freshOwners: 1, spanOwners: baseline.spanOwners + 1, freshChats: 0 })
+        stats = persistPatch([{ op: 'remove', path: '/characters/0' }, { op: 'remove', path: `/characters/${root.characters.length - 2}` }])
+        expect(order()).toEqual(original)
+        expect(stats).toMatchObject({ freshOwners: 0, spanOwners: baseline.spanOwners, freshChats: 0 })
+        // A move, then an edit of the character it moved: that one is encoded.
+        stats = persistPatch([{ op: 'move', from: '/characters/1', path: '/characters/5' }, { op: 'replace', path: '/characters/5/desc', value: 'moved' }])
+        expect(order()[5]).toBe('c2')
+        expect(stats).toMatchObject({ freshOwners: 1, spanOwners: baseline.spanOwners - 1 })
+        // A delete in the middle.
+        stats = persistPatch([{ op: 'remove', path: '/characters/3' }])
+        expect(stats).toMatchObject({ freshOwners: 0, freshChats: 0 })
     })
 })
 
