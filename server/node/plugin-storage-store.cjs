@@ -446,8 +446,11 @@ function getDefaultStore() {
         defaultStore = createPluginStorageStore({
             ...dbMod,
             // Snapshot ids are the digits of `database/dbbackup-<id>.bin`
-            // (server.cjs createBackupAndRotate). Existence only — no reassembly.
-            hasSnapshotBlob: (id) => dbMod.kvListWithSizes(`database/dbbackup-${id}.bin`).length > 0,
+            // (server.cjs createBackupAndRotate). Existence only — no reassembly,
+            // and a primary-key lookup: a LIKE listing read every kv row, once
+            // per map row on every snapshot delete (about 2 s of each trim on a
+            // large library).
+            hasSnapshotBlob: (id) => dbMod.kvExists(`database/dbbackup-${id}.bin`),
         });
     }
     return defaultStore;

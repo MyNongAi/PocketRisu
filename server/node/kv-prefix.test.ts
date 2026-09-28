@@ -13,6 +13,8 @@ const { createKvPrefixQueries, nextPrefix } = pkg as {
         }
         listKeys: (prefix: string) => string[]
         exists: (key: string) => boolean
+        listLikeWithSizes: (prefix: string) => { key: string; size: number }[]
+        deleteLike: (prefix: string) => number
     }
     nextPrefix: (prefix: string) => string | null
 }
@@ -122,5 +124,61 @@ describe('bounded KV prefix queries', () => {
         expect(exists('assets/A.png')).toBe(false)
         expect(exists('assets/')).toBe(false)
         expect(exists('missing')).toBe(false)
+    })
+})
+
+describe('LIKE prefix listing and delete through the key index', () => {
+    // What db.cjs ran before: LIKE over a scan of the table.
+    const escapeLike = (prefix: string) => `${prefix.replace(/[\\%_]/g, '\\$&')}%`
+    const scanList = (db: any, prefix: string) => db.prepare("SELECT key, LENGTH(value) as size FROM kv WHERE key LIKE ? ESCAPE '\\'")
+        .all(escapeLike(prefix)).map((r: any) => ({ key: r.key, size: r.size }))
+    const scanDelete = (db: any, prefix: string) => db.prepare("DELETE FROM kv WHERE key LIKE ? ESCAPE '\\'").run(escapeLike(prefix))
+    const rows = (db: any) => db.prepare('SELECT rowid, key, LENGTH(value) AS size FROM kv ORDER BY rowid').all()
+    const heads = ['plugin-storage/', 'PLUGIN-STORAGE/', 'Plugin-Storage-Snapshot/', 'plugin-storage-snapshot/', 'plugin-storage-blob/',
+        'database/dbbackup-1', 'DATABASE/DBBACKUP-2', 'a_b/', 'aXb/', 'a%b/', 'a\\b/', 'a\\\\b/', 'assets/', 'Assets/', 'é/', 'É/', 'z']
+
+    for (let seed = 1; seed <= 8; seed++) {
+        it(`returns the rows, sizes and order of the table scan, and deletes the same rows, seed ${seed}`, () => {
+            let s = seed
+            const rand = () => ((s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296)
+            const make = () => {
+                const db = new Database(':memory:')
+                db.exec('CREATE TABLE kv (key TEXT PRIMARY KEY, value BLOB NOT NULL)')
+                return db
+            }
+            const a = make()
+            const b = make()
+            // Keys in random order, some deleted and inserted again, so the
+            // rowid order is not the key order.
+            const ops: [string, string, number][] = []
+            for (let i = 0; i < 300; i++) {
+                const key = `${heads[Math.floor(rand() * heads.length)]}${Math.floor(rand() * 60)}`
+                ops.push([rand() < 0.2 ? 'del' : 'put', key, Math.floor(rand() * 5000)])
+            }
+            for (const db of [a, b]) {
+                const put = db.prepare('INSERT OR REPLACE INTO kv (key, value) VALUES (?, ?)')
+                const del = db.prepare('DELETE FROM kv WHERE key = ?')
+                for (const [op, key, size] of ops) {
+                    if (op === 'put') put.run(key, Buffer.alloc(size, 1))
+                    else del.run(key)
+                }
+            }
+            const { listLikeWithSizes, deleteLike } = createKvPrefixQueries(a)
+            for (const prefix of [...heads, 'plugin-storage', 'a_', 'a%', 'a\\', 'database/', '', 'missing/']) {
+                expect(listLikeWithSizes(prefix), prefix).toEqual(scanList(a, prefix))
+            }
+            for (const prefix of ['plugin-storage-snapshot/', 'a_b/', 'database/dbbackup-1', 'a\\b/', 'Assets/']) {
+                expect(deleteLike(prefix)).toBe(scanDelete(b, prefix).changes)
+                expect(rows(a)).toEqual(rows(b))
+            }
+        })
+    }
+
+    it('reads only the matching rows', () => {
+        const db = fixture()
+        const plan = db.prepare("EXPLAIN QUERY PLAN SELECT key, LENGTH(value) AS size FROM kv WHERE rowid IN (SELECT rowid FROM kv WHERE key LIKE ? ESCAPE '\\') ORDER BY rowid")
+            .all('a%').map((r: any) => r.detail).join(' | ')
+        expect(plan).toMatch(/SCAN kv USING COVERING INDEX sqlite_autoindex_kv_1/)
+        expect(plan).toMatch(/SEARCH kv USING INTEGER PRIMARY KEY/)
     })
 })

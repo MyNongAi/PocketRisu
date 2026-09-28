@@ -31,6 +31,18 @@ function createKvPrefixQueries(db) {
     const stmtKeysFrom = db.prepare('SELECT key FROM kv WHERE key >= ? ORDER BY key');
     const stmtKeysRange = db.prepare('SELECT key FROM kv WHERE key >= ? AND key < ? ORDER BY key');
     const stmtExists = db.prepare('SELECT 1 FROM kv WHERE key = ?');
+    // key LIKE 'prefix%' through the key index: the subquery evaluates the
+    // LIKE over the index (keys only), and only the rows it matches are read,
+    // in rowid order: the rows, sizes and order a scan of the table returns.
+    // A scan of the table read a page of every kv row (about 100 ms on a
+    // large library) even when a handful of keys matched.
+    const stmtLikeSizes = db.prepare(
+        `SELECT key, LENGTH(value) AS size FROM kv
+         WHERE rowid IN (SELECT rowid FROM kv WHERE key LIKE ? ESCAPE '\\') ORDER BY rowid`,
+    );
+    const stmtDeleteLike = db.prepare(
+        `DELETE FROM kv WHERE rowid IN (SELECT rowid FROM kv WHERE key LIKE ? ESCAPE '\\')`,
+    );
 
     function bounds(prefix) {
         const lower = String(prefix ?? '');
@@ -77,6 +89,21 @@ function createKvPrefixQueries(db) {
         return stmtExists.get(String(key)) !== undefined;
     }
 
+    // LIKE prefix matching as db.cjs has always done it (case-insensitive
+    // for ASCII, the prefix's LIKE wildcards taken literally), through the
+    // key index: the same rows in the same (rowid) order as a table scan.
+    function likePattern(prefix) {
+        return `${prefix.replace(/[\\%_]/g, '\\$&')}%`;
+    }
+
+    function listLikeWithSizes(prefix) {
+        return stmtLikeSizes.all(likePattern(prefix)).map((r) => ({ key: r.key, size: r.size }));
+    }
+
+    function deleteLike(prefix) {
+        return stmtDeleteLike.run(likePattern(prefix)).changes;
+    }
+
     // One full-table pass for the dashboard's global KV total and all of its
     // fixed namespace slices.  Running prefixStats() for each slice and then a
     // separate all-row total revisits a 500k-row asset table several times.
@@ -115,7 +142,7 @@ function createKvPrefixQueries(db) {
         };
     }
 
-    return { prefixStats, iterateWithSizes, storedSize, summarizePrefixes, listKeys, exists };
+    return { prefixStats, iterateWithSizes, storedSize, summarizePrefixes, listKeys, exists, listLikeWithSizes, deleteLike };
 }
 
 module.exports = { createKvPrefixQueries, nextPrefix };

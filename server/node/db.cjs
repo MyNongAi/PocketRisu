@@ -131,9 +131,7 @@ const stmtKvSet    = db.prepare(`INSERT OR REPLACE INTO kv (key, value, updated_
 const stmtKvDel    = db.prepare(`DELETE FROM kv WHERE key = ?`);
 const stmtKvList   = db.prepare(`SELECT key FROM kv`);
 const stmtKvPrefix = db.prepare(`SELECT key FROM kv WHERE key LIKE ? ESCAPE '\\'`);
-const stmtKvPrefixSizes = db.prepare(`SELECT key, LENGTH(value) as size FROM kv WHERE key LIKE ? ESCAPE '\\'`);
 const stmtKvPrefixSizesUpdatedAt = db.prepare(`SELECT key, LENGTH(value) as size, updated_at FROM kv WHERE key LIKE ? ESCAPE '\\'`);
-const stmtKvDelPrefix = db.prepare(`DELETE FROM kv WHERE key LIKE ? ESCAPE '\\'`);
 const stmtKvUpdatedAt = db.prepare(`SELECT updated_at FROM kv WHERE key = ?`);
 const {
     prefixStats: kvPrefixStats,
@@ -143,6 +141,10 @@ const {
     // Index-backed exact-prefix key list and row existence (save path).
     listKeys: kvListExactPrefix,
     exists: kvExists,
+    // LIKE prefix listing and delete through the key index (plugin storage
+    // and the plugin half of every snapshot use them).
+    listLikeWithSizes,
+    deleteLike,
 } = createKvPrefixQueries(db);
 
 function kvGet(key) {
@@ -190,8 +192,7 @@ function kvCopyValue(srcKey, dstKey) {
 }
 
 function kvDelPrefix(prefix) {
-    const escaped = prefix.replace(/[\\%_]/g, '\\$&');
-    stmtKvDelPrefix.run(`${escaped}%`);
+    deleteLike(prefix);
 }
 
 function kvList(prefix) {
@@ -203,8 +204,7 @@ function kvList(prefix) {
 }
 
 function kvListWithSizes(prefix) {
-    const escaped = prefix.replace(/[\\%_]/g, '\\$&');
-    return stmtKvPrefixSizes.all(`${escaped}%`).map(r => ({ key: r.key, size: r.size }));
+    return listLikeWithSizes(prefix);
 }
 
 function kvListWithSizesAndUpdatedAt(prefix) {
