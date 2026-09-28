@@ -187,7 +187,11 @@
             {@render sep()}
         {/if}
         {#if toggle.type === 'group' && toggle.children.length > 0}
-            <ShAccordion class="w-full mt-1" name={toggle.value}>
+            <!-- shrink-0: CharConfig renders these rows straight into the mobile
+                 panel's fixed-height flex column, where the accordion (overflow
+                 hidden, so no content-based minimum height) was squeezed down to
+                 its border. -->
+            <ShAccordion class="w-full mt-1 shrink-0" name={toggle.value}>
                 {@render toggles((toggle as sidebarToggleGroup).children, reverse)}
             </ShAccordion>
         {:else if toggle.type === 'select'}
