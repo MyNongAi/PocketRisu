@@ -6,8 +6,8 @@
     import { createSimpleCharacter, DBState, selectedCharID, ReloadChatPointer } from 'src/ts/stores.svelte';
     import { chatFoldedStateMessageIndex } from 'src/ts/globalApi.svelte';
     import { get } from 'svelte/store';
-    import { scrollWithinContainer } from './scrollWithin';
     import { getChatAssetRenderWindow } from '../../ts/chatAssetWindow';
+    import { isAtTail, revealScrollTop, shouldFollowTail, shouldRevealAddedMessage } from './chatViewport';
     
     const getCurrentChatRoomId = () => {
         const charId = get(selectedCharID);
@@ -157,8 +157,15 @@
             const currentHash = hashCode(hashd);
             currentHashes.add(currentHash);
             if(!hashes.has(currentHash)){
+                // Streamed text changes the hash every chunk, so the streaming
+                // message is remounted each time. Its replacement renders its
+                // body asynchronously; hold the old height meanwhile so the
+                // transcript never collapses under the reader for a frame.
+                const previous = chatBody.querySelector<HTMLElement>(`:scope > [data-chat-slot="${i}"]`);
+                const previousHeight = previous?.offsetHeight ?? 0;
                 const b = document.createElement('div');
                 b.setAttribute('x-hashed', currentHash.toString());
+                b.dataset.chatSlot = i.toString();
                 b.classList.add('chat-message-container');
                 const inst = mount(Chat, {
                     target: b,
@@ -195,6 +202,7 @@
                 else{
                     chatBody.prepend(b);
                 }
+                holdHeight(b, previousHeight);
             }
             else{
                 const inst = mountInstances.get(currentHash)
@@ -237,13 +245,94 @@
         mountInstances.clear();
     })
 
+    // ── Viewport ─────────────────────────────────────────────────────────────
+    // The scroller (DefaultChatScreen's .default-chat-screen) is top-origin:
+    // scrollTop 0 is the oldest loaded message and the live tail is at the far
+    // end. Text streaming into the newest reply therefore grows BELOW what the
+    // reader is looking at and cannot move it, so nothing here has to put the
+    // view back afterwards. (The upstream flex-col-reverse scroller measured
+    // from the bottom: every streamed chunk, and every remount of the
+    // streaming message, shifted the whole transcript under the reader.)
+    //
+    // The view scrolls by itself only when:
+    // - a chat is opened: it starts at its tail, which stays pinned while
+    //   bodies and images finish rendering, until the reader scrolls, taps or
+    //   types;
+    // - a message is added: if the reader was at the tail (or sent it), the
+    //   view moves once to show where it starts, never past its first line;
+    // - the reader is at the tail and the viewport or composer resizes (the
+    //   mobile keyboard opening, a growing input), so the tail stays in view;
+    // - "auto-scroll to new message" is on and the reader is at the tail.
+    const getScroller = () => chatBody?.parentElement ?? null
+
     function checkIfAtBottom() {
-        if (!chatBody || !chatBody.parentElement) return true;
-        const sc = chatBody.parentElement;
-        // The outer scroller is flex-col-reverse: 0 is the live tail and
-        // scrolling into history makes scrollTop negative. Testing the newest
-        // message's TOP falsely treats the beginning of a long reply as bottom.
-        return Math.abs(sc.scrollTop) <= 100;
+        const sc = getScroller()
+        return !sc || isAtTail(sc)
+    }
+
+    function scrollToTail() {
+        const sc = getScroller()
+        if (sc) sc.scrollTop = sc.scrollHeight
+    }
+
+    /** Toward the tail, but never past the newest message's first line. */
+    function revealNewestMessage() {
+        const sc = getScroller()
+        if (!sc) return
+        const newest = chatBody.firstElementChild as HTMLElement | null
+        const newestTop = newest
+            ? sc.scrollTop + newest.getBoundingClientRect().top - sc.getBoundingClientRect().top
+            : sc.scrollHeight
+        sc.scrollTop = revealScrollTop(sc, newestTop)
+    }
+
+    /** Keep a remounted message at its previous height until its body has
+     *  rendered at least that tall (or briefly, if it really got shorter). */
+    function holdHeight(el: HTMLElement, height: number) {
+        if (height <= 0) return
+        el.style.minHeight = `${height}px`
+        let released = false
+        const contentHeight = () => {
+            let total = 0
+            for (const child of Array.from(el.children)) total += (child as HTMLElement).offsetHeight
+            return total
+        }
+        const release = () => {
+            if (released) return
+            released = true
+            observer.disconnect()
+            clearTimeout(timer)
+            el.style.minHeight = ''
+        }
+        const observer = new ResizeObserver(() => {
+            if (contentHeight() >= height - 1) release()
+        })
+        for (const child of Array.from(el.children)) observer.observe(child)
+        const timer = setTimeout(release, 1500)
+    }
+
+    let pinnedToTail = false
+    // Where the reader was at their last scroll. Growth does not scroll, so
+    // until they scroll again this still says whether they were at the tail.
+    let readerAtTail = true
+    // Bumped by anything that takes the viewport over (the reader's own
+    // input, a programmatic jump); scheduled tail moves from before it lapse.
+    let viewportIntent = 0
+    let pendingTailMove: 'tail' | 'reveal' | null = null
+
+    function scheduleTailMove(kind: 'tail' | 'reveal') {
+        if (pendingTailMove === 'tail') return
+        const scheduled = pendingTailMove !== null
+        pendingTailMove = kind
+        if (scheduled) return
+        const intent = viewportIntent
+        void tick().then(() => requestAnimationFrame(() => {
+            const move = pendingTailMove
+            pendingTailMove = null
+            if (intent !== viewportIntent) return
+            if (move === 'tail') scrollToTail()
+            else if (move === 'reveal') revealNewestMessage()
+        }))
     }
 
     type ViewportAnchor = {
@@ -252,11 +341,10 @@
         roomId: string | null
     }
     let viewportRestoreRevision = 0
-    let newMessageScrollTimer: ReturnType<typeof setTimeout> | null = null
 
-    /** Keep the first visible message fixed while streamed text grows below it. */
+    /** First visible message, to keep in place while older pages mount above. */
     function captureViewportAnchor(): ViewportAnchor | null {
-        const sc = chatBody?.parentElement
+        const sc = getScroller()
         if (!sc) return null
         const scRect = sc.getBoundingClientRect()
         const candidates = Array.from(chatBody.querySelectorAll<HTMLElement>('[data-chat-index]'))
@@ -274,16 +362,14 @@
         }
     }
 
+    // Browsers with CSS scroll anchoring already keep it in place; then the
+    // measured delta is 0. Without it (Safari), older pages pushed it down.
     async function restoreViewportAnchor(anchor: ViewportAnchor, revision: number) {
         await tick()
         requestAnimationFrame(() => {
             if (revision !== viewportRestoreRevision || !anchor.element.isConnected) return
             if (anchor.roomId !== getCurrentChatRoomId()) return
-            const sc = chatBody?.parentElement
-            // The anchor was captured before the DOM changed. Rechecking
-            // "at bottom" after streamed/input content was mounted can flip
-            // to true because the layout itself moved, which used to skip the
-            // restore and launch the reader toward the top of the transcript.
+            const sc = getScroller()
             if (!sc) return
             const delta = anchor.element.getBoundingClientRect().top
                 - sc.getBoundingClientRect().top
@@ -292,71 +378,111 @@
         })
     }
 
-    function scrollLatestIntoChatScreen() {
-        if(!chatBody) return;
-        const element = chatBody.firstElementChild as HTMLElement | null;
-        const chatScreen = chatBody.parentElement;
-        if(!element || !chatScreen) return;
-        // The newest reply can be taller than the viewport. Aligning its start
-        // made each output jump upward instead of staying near the live tail.
-        scrollWithinContainer(element, chatScreen, { block: 'end', behavior: 'instant' });
-    }
-
     export const scrollToLatestMessage = () => {
         if(!chatBody) return;
         hasNewUnreadMessage = false;
-        scrollLatestIntoChatScreen();
+        viewportIntent++;
+        scrollToTail();
     }
 
+    /** Hand the viewport to a programmatic scroll (message jump, nav buttons). */
+    export const releaseViewport = () => {
+        pinnedToTail = false;
+        viewportIntent++;
+        viewportRestoreRevision++;
+    }
+
+    $effect(() => {
+        const sc = getScroller()
+        if (!sc) return
+        const onReaderInput = () => {
+            pinnedToTail = false
+            viewportIntent++
+        }
+        const onScroll = () => {
+            readerAtTail = isAtTail(sc)
+        }
+        let viewportHeight = sc.clientHeight
+        const observer = new ResizeObserver((entries) => {
+            const viewportResized = sc.clientHeight !== viewportHeight
+            viewportHeight = sc.clientHeight
+            // The transcript itself (streamed text, a remount settling) only
+            // drags the view along when the reader asked for that.
+            const follow = shouldFollowTail({
+                pinnedToTail,
+                readerAtTail,
+                onlyTranscriptResized: !viewportResized && entries.every((entry) => entry.target === chatBody),
+                autoScroll: DBState.db.autoScrollToNewMessage,
+            })
+            if (follow) {
+                scrollToTail()
+            } else {
+                readerAtTail = isAtTail(sc)
+            }
+        })
+        const observeChildren = () => {
+            observer.disconnect()
+            observer.observe(sc)
+            for (const child of Array.from(sc.children)) observer.observe(child)
+        }
+        observeChildren()
+        const children = new MutationObserver(observeChildren)
+        children.observe(sc, { childList: true })
+        const inputEvents = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const
+        sc.addEventListener('scroll', onScroll, { passive: true })
+        for (const type of inputEvents) sc.addEventListener(type, onReaderInput, { passive: true })
+        return () => {
+            observer.disconnect()
+            children.disconnect()
+            sc.removeEventListener('scroll', onScroll)
+            for (const type of inputEvents) sc.removeEventListener(type, onReaderInput)
+        }
+    })
+
     let previousLength = 0;
+    let previousLoadPages = 0;
     let previousChatRoomId: string | null = null;
 
     $effect(() => {
         void $ReloadChatPointer; // Make $effect track ReloadChatPointer changes
-        if (newMessageScrollTimer !== null) {
-            clearTimeout(newMessageScrollTimer)
-            newMessageScrollTimer = null
-        }
-        const wasAtBottom = checkIfAtBottom();
-        // With auto-scroll disabled, even a reader currently at the tail has
-        // asked for a stationary viewport while input/output grows.
-        const anchor = wasAtBottom && DBState.db.autoScrollToNewMessage
-            ? null
-            : captureViewportAnchor()
+        const currentChatRoomId = getCurrentChatRoomId();
+        const isSameChat = currentChatRoomId === previousChatRoomId;
+        const added = isSameChat && messages.length > previousLength;
+        const olderPagesMounted = isSameChat && loadPages > previousLoadPages;
+        const wasAtTail = checkIfAtBottom();
+        const anchor = olderPagesMounted && !pinnedToTail && pendingTailMove === null
+            ? captureViewportAnchor()
+            : null
         const restoreRevision = ++viewportRestoreRevision
         updateChatBody()
         if (anchor) void restoreViewportAnchor(anchor, restoreRevision)
 
-        const currentChatRoomId = getCurrentChatRoomId();
-        const isSameChat = currentChatRoomId === previousChatRoomId;
-
-        // Only auto-scroll if it's the same chat and new messages were added
-        if(isSameChat && messages.length > previousLength){
+        if (!isSameChat) {
+            pinnedToTail = true
+            scheduleTailMove('tail')
+        } else if (added) {
+            // The first new message ends the "just opened" pin however it
+            // was sent (tap, Enter, a plugin or another device); from here the
+            // reply streams in below without dragging the view.
+            pinnedToTail = false
             const lastMsg = messages[messages.length - 1];
-            if(lastMsg && lastMsg.role === 'char' && DBState.db.autoScrollToNewMessage){
-                if(wasAtBottom || DBState.db.alwaysScrollToNewMessage){
-                    const scheduledRoomId = currentChatRoomId
-                    newMessageScrollTimer = setTimeout(() => {
-                        newMessageScrollTimer = null
-                        // A delayed scroll must not drag the reader away after
-                        // switching chats or manually scrolling into history.
-                        if (getCurrentChatRoomId() !== scheduledRoomId) return
-                        if (!DBState.db.alwaysScrollToNewMessage && !checkIfAtBottom()) return
-                        scrollLatestIntoChatScreen()
-                    }, 700);
-                } else {
-                    hasNewUnreadMessage = true;
-                }
+            const reveal = shouldRevealAddedMessage({
+                wasAtTail,
+                role: lastMsg?.role,
+                autoScroll: DBState.db.autoScrollToNewMessage,
+                alwaysScroll: DBState.db.alwaysScrollToNewMessage,
+            })
+            if (reveal) {
+                scheduleTailMove('reveal')
+            } else if (lastMsg?.role === 'char' && DBState.db.autoScrollToNewMessage) {
+                hasNewUnreadMessage = true;
             }
         }
         previousLength = messages.length;
+        previousLoadPages = loadPages;
         previousChatRoomId = currentChatRoomId;
-    })
-
-    onDestroy(() => {
-        if (newMessageScrollTimer !== null) clearTimeout(newMessageScrollTimer)
     })
 
 </script>
 
-<div class="flex flex-col-reverse" style="overflow-anchor: none" bind:this={chatBody}></div>
+<div class="flex flex-col-reverse" bind:this={chatBody}></div>

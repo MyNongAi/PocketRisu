@@ -33,6 +33,7 @@ import { isMobile } from 'src/ts/platform'
     import MainMenu from '../UI/MainMenu.svelte';
     import AssetInput from './AssetInput.svelte';
     import { scrollWithinContainer } from './scrollWithin';
+    import { isAtTail, shouldLoadOlderPages } from './chatViewport';
     import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile, forageStorage, requestImmediateSave } from 'src/ts/globalApi.svelte';
     import { runTrigger } from 'src/ts/process/triggers';
     import { v4 } from 'uuid';
@@ -261,6 +262,7 @@ import { isMobile } from 'src/ts/platform'
     // Top of currently loaded messages (no force-load of older pages).
     function scrollToLoadedTop() {
         const container = document.querySelector('.default-chat-screen') as HTMLElement | null
+        chatsInstance?.releaseViewport?.()
         if (!container) return
         const messages = getLoadedMessages(container)
         if (messages.length === 0) return
@@ -270,6 +272,7 @@ import { isMobile } from 'src/ts/platform'
     // Literal bottom of the scroll (end of the latest message).
     function scrollToLoadedBottom() {
         const container = document.querySelector('.default-chat-screen') as HTMLElement | null
+        chatsInstance?.releaseViewport?.()
         if (!container) return
         const messages = getLoadedMessages(container)
         if (messages.length === 0) return
@@ -278,6 +281,7 @@ import { isMobile } from 'src/ts/platform'
 
     function navigateMessage(direction: 'prev' | 'next') {
         const container = document.querySelector('.default-chat-screen') as HTMLElement | null
+        chatsInstance?.releaseViewport?.()
         if (!container) return
         const messages = Array.from(container.querySelectorAll('[data-chat-index]'))
             .map(el => ({ el: el as HTMLElement, idx: parseInt(el.getAttribute('data-chat-index')!) }))
@@ -336,6 +340,7 @@ import { isMobile } from 'src/ts/platform'
     async function scrollToMessage(index: number){
         // Forces the loading of past messages not rendered on the screen
         isScrollingToMessage = true
+        chatsInstance?.releaseViewport?.()
         try {
             const totalMessages = currentChat.length
             const neededLoadPages = totalMessages - index + 5
@@ -1540,11 +1545,16 @@ import { isMobile } from 'src/ts/platform'
             {/if}
         {/snippet}
 
-        <!-- overscroll-y-contain: without it, repeated overscroll at the chat's end chains the
+        <!-- Top-origin scroller: scrollTop 0 is the oldest loaded message and the live tail
+             (newest message, then the composer) is at the far end, so a reply streaming in
+             grows below what the reader is looking at and never moves it (see "Viewport" in
+             Chats.svelte). Children are in reading order; the first one's margin-top:auto keeps
+             a short chat at the bottom, next to the composer.
+             overscroll-y-contain: without it, repeated overscroll at the chat's end chains the
              gesture to the viewport; mobile Chrome then collapses its URL bar, the visual viewport
-             resizes, and the sticky composer inside this col-reverse scroller gets misanchored
-             (bar floats up with a gap below). PWA/standalone has no URL bar, hence unaffected. -->
-        <div class="h-full w-full flex flex-col-reverse overflow-y-auto overscroll-y-contain relative default-chat-screen"
+             resizes, and the sticky composer gets misanchored (bar floats up with a gap below).
+             PWA/standalone has no URL bar, hence unaffected. -->
+        <div class="h-full w-full flex flex-col overflow-y-auto overscroll-y-contain relative default-chat-screen"
             class:nodeonly-standard={DBState.db.theme === ''}
             class:no-chat-width-wide={DBState.db.theme === '' && DBState.db.nodeOnlyStandardChatWidth === 'wide'}
             class:no-chat-width-full={DBState.db.theme === '' && DBState.db.nodeOnlyStandardChatWidth === 'full'}
@@ -1552,28 +1562,15 @@ import { isMobile } from 'src/ts/platform'
             if (DBState.db.nodeOnlyScrollButtonType !== 'off') {
                 bumpScrollNav()
             }
-            //@ts-expect-error scrollHeight/clientHeight/scrollTop don't exist on EventTarget, but target is HTMLElement here
-            const scrolled = (e.target.scrollHeight - e.target.clientHeight + e.target.scrollTop)
-            if(scrolled < 100 && currentChat.length > loadPages){
+            const chatTarget = e.currentTarget
+            if(shouldLoadOlderPages(chatTarget, loadPages, currentChat.length)){
                 loadPages += getAdditionalChatLoadPages(DBState.db)
             }
-            const chatTarget = e.target as HTMLElement;
-            const isAtBottom = Math.abs(chatTarget.scrollTop) <= 100;
-            if(isAtBottom){
+            if(isAtTail(chatTarget)){
                 showNewMessageButton = false;
             }
         }}>
-            {@render composerCluster()}
-
-            {#if chatPanelStore.length > 0}
-                <div class="mx-4 my-2 flex flex-col gap-2">
-                    {#each chatPanelStore as panel (panel.id)}
-                        <section class={`rounded-md border border-darkborderc bg-darkbg/80 p-3 text-textcolor ${panel.className ?? ''}`} data-plugin-chat-panel={panel.id}>
-                            {@html panel.html}
-                        </section>
-                    {/each}
-                </div>
-            {/if}
+            <div class="mt-auto" aria-hidden="true"></div>
 
             {#if !currentChatReady}
                 {@const loadFailure = $chatLoadFailures.get(`${currentCharacter?.chaId}/${currentChatSlot?.id}`)}
@@ -1591,33 +1588,19 @@ import { isMobile } from 'src/ts/platform'
                 {/if}
             {:else}
 
-            {#if chatFoldedStateMessageIndex.index !== -1}
-                <button class="w-full flex justify-center max-w-full p-4">
-                    <Button className="max-w-xl w-full" onclick={() => {
-                        loadPages += chatFoldedStateMessageIndex.index + 1
-                        chatFoldedState.data = null
-                    }}>
-                        {language.loadMore}
-                    </Button>
-                </button>
-            {/if}
-            
-            <Chats
-                bind:this={chatsInstance}
-                messages={currentChat}
-                loadPages={loadPages}
-                onReroll={reroll}
-                onNextSwipe={nextSwipe}
-                onDeleteSwipe={deleteSwipe}
-                unReroll={unReroll}
-                currentCharacter={currentCharacter}
-                currentUsername={currentUsername}
-                userIcon={userIcon}
-                userIconPortrait={userIconPortrait}
-                bind:hasNewUnreadMessage={showNewMessageButton}
-            />
-
             {#if currentChat.length <= loadPages}
+                {#if !DBState.db.characters[$selectedCharID].removedQuotes && DBState.db.characters[$selectedCharID].creatorNotes.length >= 2}
+                    <CreatorQuote quote={DBState.db.characters[$selectedCharID].creatorNotes} onRemove={() => {
+                        const cha = DBState.db.characters[$selectedCharID]
+                        cha.removedQuotes = true
+                        DBState.db.characters[$selectedCharID] = cha
+                    }} />
+                {/if}
+                {#if (aiLawApplies() && DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length === 0)}
+                    <div class="ml-auto mr-auto mt-4 text-textcolor2 italic max-w-2/3 wrap-break-word text-center">
+                        {language.aiGenerationWarning}
+                    </div>
+                {/if}
                 <Chat
                     character={createSimpleCharacter(DBState.db.characters[$selectedCharID])}
                     name={DBState.db.characters[$selectedCharID].name}
@@ -1652,22 +1635,47 @@ import { isMobile } from 'src/ts/platform'
                     totalPages={lastFirstMessagePageNumber(DBState.db.characters[$selectedCharID].alternateGreetings.length)}
 
                 />
-                {#if (aiLawApplies() && DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length === 0)}
-                    <div class="ml-auto mr-auto mt-4 text-textcolor2 italic max-w-2/3 wrap-break-word text-center">
-                        {language.aiGenerationWarning}
-                    </div>
-                {/if}
-                {#if !DBState.db.characters[$selectedCharID].removedQuotes && DBState.db.characters[$selectedCharID].creatorNotes.length >= 2}
-                    <CreatorQuote quote={DBState.db.characters[$selectedCharID].creatorNotes} onRemove={() => {
-                        const cha = DBState.db.characters[$selectedCharID]
-                        cha.removedQuotes = true
-                        DBState.db.characters[$selectedCharID] = cha
-                    }} />
-                {/if}
+            {/if}
+
+            <Chats
+                bind:this={chatsInstance}
+                messages={currentChat}
+                loadPages={loadPages}
+                onReroll={reroll}
+                onNextSwipe={nextSwipe}
+                onDeleteSwipe={deleteSwipe}
+                unReroll={unReroll}
+                currentCharacter={currentCharacter}
+                currentUsername={currentUsername}
+                userIcon={userIcon}
+                userIconPortrait={userIconPortrait}
+                bind:hasNewUnreadMessage={showNewMessageButton}
+            />
+
+            {#if chatFoldedStateMessageIndex.index !== -1}
+                <button class="w-full flex justify-center max-w-full p-4">
+                    <Button className="max-w-xl w-full" onclick={() => {
+                        loadPages += chatFoldedStateMessageIndex.index + 1
+                        chatFoldedState.data = null
+                    }}>
+                        {language.loadMore}
+                    </Button>
+                </button>
             {/if}
 
             {/if}
 
+            {#if chatPanelStore.length > 0}
+                <div class="mx-4 my-2 flex flex-col gap-2">
+                    {#each chatPanelStore as panel (panel.id)}
+                        <section class={`rounded-md border border-darkborderc bg-darkbg/80 p-3 text-textcolor ${panel.className ?? ''}`} data-plugin-chat-panel={panel.id}>
+                            {@html panel.html}
+                        </section>
+                    {/each}
+                </div>
+            {/if}
+
+            {@render composerCluster()}
         </div>
 
     {/if}

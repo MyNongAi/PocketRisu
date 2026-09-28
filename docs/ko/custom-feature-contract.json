@@ -112,6 +112,23 @@
       ]
     },
     {
+      "id": "CHAT-VIEWPORT-STILL",
+      "title": "출력 중에도 보던 화면 고정(위 기준 채팅 스크롤)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/ChatScreens/chatViewport.ts",
+        "src/lib/ChatScreens/Chats.svelte",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/chatViewport.ts", "contains": "shouldFollowTail" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "holdHeight" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "revealNewestMessage" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "flex flex-col overflow-y-auto overscroll-y-contain relative default-chat-screen" }
+      ],
+      "regressionTests": ["src/lib/ChatScreens/chatViewport.test.ts"]
+    },
+    {
       "id": "CHAT-CONCURRENT",
       "title": "채팅별 동시 생성과 다중 기기 저장 보호",
       "criticality": "data-safety",
