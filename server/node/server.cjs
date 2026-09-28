@@ -105,7 +105,7 @@ const chatBodyStore = createChatBodyStore({
     testHardening: TEST_FREEZE_CACHE,
 });
 const { createPatchHashCache, decodePointerSegment } = require('./patch-hash-cache.cjs');
-const { clonePatchSnapshot } = require('./patch-selective-clone.cjs');
+const { clonePatchSnapshot, applyPatchCopyOnWrite } = require('./patch-selective-clone.cjs');
 const pluginStorage = require('./plugin-storage-store.cjs');
 const { createAssetManifestStore } = require('./assetManifestStore.cjs');
 const {
@@ -139,10 +139,11 @@ const enablePatchSync = true;
 // dbCache stores the STRIPPED (stubs-only) version matching what the client sees.
 // chatBodyStore keeps the actual chat data keyed by chaId→chatId.
 // Invariant: server code never mutates a cached database's nested branches
-// in place. /api/patch derives the next root via clonePatchSnapshot (untouched
-// top-level branches are shared with the previous root, and so is every
-// characters[i] / modules[i] the patch does not change) and keeps per-branch
-// and per-element hashes in databasePatchHashCache keyed on those objects —
+// in place. /api/patch derives the next root via applyPatchCopyOnWrite
+// (untouched top-level branches are shared with the previous root, and so is
+// every characters[i] / modules[i] no op writes into, wherever the patch
+// moves it) and keeps per-branch and per-element hashes in
+// databasePatchHashCache keyed on those objects —
 // an in-place edit would silently alias into the previous snapshots and
 // leave stale hashes. Replace the branch (or the whole root) instead. This
 // includes the chats a persist hydrates: inline and hybrid chats are the
@@ -6979,20 +6980,23 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
             const auditPatch = TEST_FREEZE_CACHE && decodedKey === 'database/database.bin'
                 ? structuredClone(patch)
                 : null;
+            // database.bin: applyPatchCopyOnWrite copies as the ops run.
             const snapshot = decodedKey === 'database/database.bin'
-                ? clonePatchSnapshot(dbCache[filePath], patch)
+                ? null
                 : structuredClone(dbCache[filePath]);
             patchStage = 'apply';
             // A failing op (even the 2nd of several) leaves dbCache[filePath]
-            // untouched: the snapshot has its own root, its own copy of every
-            // top-level branch the patch names (the whole database for a root
-            // op), and for characters/modules its own copy of every element
-            // an op can change, so there is nothing to invalidate. Dropping
-            // the cache here made the armed save timer persist nothing and
-            // lost every patch acknowledged since the last persist.
+            // untouched: the ops run on their own root, their own copy of
+            // every top-level branch the patch names (the whole database for
+            // a root op), and for characters/modules their own copy of every
+            // element an op writes into, so there is nothing to invalidate.
+            // Dropping the cache here made the armed save timer persist
+            // nothing and lost every patch acknowledged since the last persist.
             let result;
             try {
-                result = applyPatch(snapshot, patch, true);
+                result = snapshot === null
+                    ? applyPatchCopyOnWrite(dbCache[filePath], patch)
+                    : applyPatch(snapshot, patch, true);
             } catch (applyError) {
                 if (auditPatch) {
                     patchStage = 'audit';
