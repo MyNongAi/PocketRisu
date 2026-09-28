@@ -31,6 +31,9 @@ const DB_KEY_HEX = Buffer.from(DB_KEY).toString('hex')
 const FAIL_DB = fileURLToPath(new URL('./helpers/fail-db-persist-preload.cjs', import.meta.url))
 const FAIL_AFTER = fileURLToPath(new URL('./helpers/fail-after-db-write-preload.cjs', import.meta.url))
 const ENV = {
+  // Each server's mode comes from its flags file; a mode set for the whole
+  // suite (POCKETRISU_FLAG_PERSIST_MODE) would override it.
+  POCKETRISU_FLAG_PERSIST_MODE: '',
   POCKETRISU_CHUNK_THRESHOLD: '4096',
   POCKETRISU_PERSIST_VERIFY: '1',
   POCKETRISU_FLAGS_STAT_INTERVAL_MS: '0',
@@ -193,11 +196,13 @@ async function runPair(mode: Mode, seed: number, steps: number) {
 
   const seen = { steps: 0, restarts: 0, dbFaults: 0, afterFaults: 0, flips: 0, chatSaves: 0, newChats: 0, patches: 0 }
   // Planned persists of the server under test, over all its restarts.
-  const planned = { 'full-plan': 0, incremental: 0 }
+  // copied: commits that copied bytes from the old blob (edited the manifest in place).
+  const planned = { 'full-plan': 0, incremental: 0, copied: 0 }
   const countPlanned = async () => {
     const stats = await persistStats(sut)
     planned['full-plan'] += stats.persister.persists['full-plan']
     planned.incremental += stats.persister.persists.incremental
+    planned.copied += stats.persister.commits.gapped + stats.persister.commits.renumber
     expect(stats.verifyFailures).toBe(0)
     expect(stats.persister.audit.mismatches).toBe(0)
     expect(stats.persister.walkFailures).toBe(0)
@@ -319,11 +324,13 @@ describe('persist modes against the reference, request by request', () => {
     const { seen, planned } = await runPair('incremental', 29, 45)
     expect(seen.restarts + seen.dbFaults + seen.afterFaults + seen.flips).toBeGreaterThan(4)
     expect(planned.incremental).toBeGreaterThan(5)
+    expect(planned.copied).toBeGreaterThan(3)
   }, 300_000)
 
   test('incremental, another seed', async () => {
     const { planned } = await runPair('incremental', 47, 45)
     expect(planned.incremental).toBeGreaterThan(5)
+    expect(planned.copied).toBeGreaterThan(3)
   }, 300_000)
 })
 
