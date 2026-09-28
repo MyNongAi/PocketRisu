@@ -683,13 +683,19 @@ describe('what a commit refuses', () => {
         expect(() => h.persister.commit(prepared)).toThrow(expect.objectContaining({ code: 'PERSIST_WALK' }))
     })
 
-    it('the forced snapshot runs once, before the first commit that copies', () => {
+    it('the forced snapshot runs once, before the first commit that copies, given the chunk list of that blob', () => {
         const h = harness()
         let root = h.load(fixtureDisk())
         let snapshots = 0
         const commit = (mode: any) => {
             const prepared = h.persister.prepare(root, { mode })
-            h.persister.commit(prepared, { beforeFirstIncremental: () => { snapshots++ } })
+            const live = h.chunkStore.isChunkedKey(KEY) ? h.chunkStore.readManifestWithLengths(KEY).hashes : null
+            h.persister.commit(prepared, {
+                beforeFirstIncremental: ({ hashes }: { hashes: string[] }) => {
+                    snapshots++
+                    expect(hashes).toEqual(live)
+                },
+            })
             h.store.acceptPersisted({ token: prepared.token, root, written: prepared.written })
         }
         commit('incremental')

@@ -180,6 +180,24 @@ function createChunkStore(db, opts = {}) {
          WHERE c.hash IN (SELECT hash FROM manifest_chunks WHERE manifest_key = ?)
            AND c.hash NOT IN (SELECT hash FROM manifest_chunks WHERE manifest_key = ?)`,
     );
+    // selMarginal for many manifests at once, from the other side: the
+    // chunks the base does not reference (a covering-index scan), then the
+    // manifests in [lo, hi] that name each of them (idx_manifest_hash), then
+    // the length of each chunk. One row per distinct (manifest, chunk). Per
+    // key this is exactly the set selMarginal sums, but it touches only the
+    // chunks outside the base, where selMarginal walks every chunk of the
+    // key's manifest. The joins are forced into that order (CROSS JOIN,
+    // INDEXED BY).
+    const selMarginalRows = db.prepare(
+        `SELECT d.key, LENGTH(c.data) FROM (
+             SELECT DISTINCT m.manifest_key AS key, x.hash AS hash
+             FROM (SELECT hash FROM chunks WHERE hash NOT IN (SELECT hash FROM manifest_chunks WHERE manifest_key = ?)) x
+             CROSS JOIN manifest_chunks m INDEXED BY idx_manifest_hash ON m.hash = x.hash
+             WHERE m.manifest_key BETWEEN ? AND ?) d
+         CROSS JOIN chunks c ON c.hash = d.hash`,
+    ).raw(true);
+    // The first and last of a list of keys in SQLite's own (BINARY) order.
+    const selKeyRange = db.prepare('SELECT MIN(value), MAX(value) FROM json_each(?)').raw(true);
     const copyManifest = db.prepare(
         'INSERT INTO manifest_chunks (manifest_key, seq, hash) SELECT ?, seq, hash FROM manifest_chunks WHERE manifest_key = ?',
     );
@@ -274,6 +292,45 @@ function createChunkStore(db, opts = {}) {
         if (!row) return 0;
         if (!isChunked(row.value)) return row.value.length;
         return selMarginal.get(key, baseKey).n;
+    }
+
+    // snapshotCost of each of `keys` (a Map key -> cost), the same numbers,
+    // with one pass over the chunks outside the base instead of one query
+    // per key (each walking that key's whole manifest: ~45 ms per snapshot
+    // of a ~21k-chunk database).
+    function snapshotCosts(keys, baseKey) {
+        const out = new Map();
+        const chunked = new Set();
+        for (const key of keys) {
+            if (out.has(key)) continue;
+            const row = kvGet.get(key);
+            if (!row) out.set(key, 0);
+            else if (!isChunked(row.value)) out.set(key, row.value.length);
+            else {
+                out.set(key, 0);
+                chunked.add(key);
+            }
+        }
+        if (chunked.size > 0) {
+            const [lo, hi] = selKeyRange.get(JSON.stringify(Array.from(chunked)));
+            for (const [key, len] of selMarginalRows.all(baseKey, lo, hi)) {
+                if (chunked.has(key)) out.set(key, out.get(key) + (len ?? 0));
+            }
+        }
+        return out;
+    }
+
+    // Whether `key` is stored chunked as exactly the chunk list `hashes`
+    // (its manifest, in order): the same bytes, without reading them.
+    function matchesChunkList(key, hashes) {
+        const row = kvGet.get(key);
+        if (!row || !isChunked(row.value)) return false;
+        const stored = selManifestHashes.all(key);
+        if (stored.length === 0 || stored.length !== hashes.length) return false;
+        for (let i = 0; i < stored.length; i++) {
+            if (stored[i] !== hashes[i]) return false;
+        }
+        return true;
     }
 
     // Copy src's value to dst. For a chunked src, only the manifest (list of
@@ -547,8 +604,9 @@ function createChunkStore(db, opts = {}) {
     }
 
     return {
-        putValue, getValue, sizeValue, snapshotCost, snapshotValue, dropValue, gc, reclaimableBytes, isChunkedKey,
-        generation, readManifestWithLengths, readManifestPage, createReader, commitChunks, threshold,
+        putValue, getValue, sizeValue, snapshotCost, snapshotCosts, matchesChunkList, snapshotValue, dropValue, gc,
+        reclaimableBytes, isChunkedKey, generation, readManifestWithLengths, readManifestPage, createReader, commitChunks,
+        threshold,
     };
 }
 

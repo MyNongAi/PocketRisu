@@ -916,9 +916,11 @@ function createDbPersister({
     }
 
     /**
-     * Writes a prepared plan. `beforeFirstIncremental` runs once per process,
-     * before the first commit that copies from the old blob (the server takes
-     * a forced snapshot there). On any throw nothing was committed
+     * Writes a prepared plan. `beforeFirstIncremental({ hashes })` runs
+     * before the first commit of this process that copies from the old blob
+     * (again after a commit that failed); `hashes` is that blob's chunk list
+     * (the server makes sure a snapshot of exactly that blob exists: the
+     * newest one, or a forced one). On any throw nothing was committed
      * (STALE_LAYOUT, MANIFEST_READBACK, PERSIST_WALK, BAD_CHUNK_LIST, SQLite
      * errors, a failed snapshot) and the layout is dropped; the caller then
      * writes with the reference path.
@@ -959,7 +961,9 @@ function createDbPersister({
         }
         const chunks = planChunks(w, base ? base.chunks : null, oldReader);
         const t1 = now();
-        if (base && incrementalCommitsThisBoot === 0 && beforeFirstIncremental) beforeFirstIncremental();
+        // hashes: the chunk list of the blob this commit edits (commitChunks
+        // checks the live manifest is exactly that list before it writes).
+        if (base && incrementalCommitsThisBoot === 0 && beforeFirstIncremental) beforeFirstIncremental({ hashes: base.chunks.hashes });
         const t2 = now();
         let walkMs = 0;
         const result = blob.commitChunks(

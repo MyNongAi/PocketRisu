@@ -50,7 +50,7 @@ if (existsSync(offlineImportLockPath)) {
 const { kvGet, kvSet, kvDel, kvList, kvListExactPrefix, kvExists,
         kvDelPrefix, kvListWithSizes, kvListWithSizesAndUpdatedAt, kvPrefixStats, kvIterateWithSizes, kvStoredSize, kvSummarizePrefixes,
         kvSize, kvGetUpdatedAt, kvCopyValue, clearEntities, checkpointWal,
-        gcChunks, reclaimableChunkBytes, isDbBlobChunked, snapshotFootprint, dbBlob, db: sqliteDb } = require('./db.cjs');
+        gcChunks, reclaimableChunkBytes, isDbBlobChunked, snapshotFootprints, isChunkedAs, dbBlob, db: sqliteDb } = require('./db.cjs');
 const {
     addLogBatch, queryLogs, clearLogs, countLogs,
     logger, installProcessHandlers, expressErrorMiddleware,
@@ -65,6 +65,7 @@ const {
     latestSnapshotTimestamp,
     parseConfiguredSnapshotInterval,
     parseSnapshotIntervalOverride,
+    selectSnapshotsToTrim,
 } = require('./snapshot-policy.cjs');
 const {
     createAndroidSafProvider,
@@ -516,43 +517,28 @@ function getEffectiveSnapshotSchedule() {
     return { enabled: intervalMs !== 0, intervalMs };
 }
 
-// Walk newest → oldest; keep within both limits, delete the rest. The most
-// recent snapshot is always kept (even if it alone exceeds the byte limit) so
-// we never end up with zero backups after a config change.
+// Walk newest → oldest; keep within both limits, delete the rest
+// (selectSnapshotsToTrim in snapshot-policy.cjs).
 // Snapshot a restore is reading from. The restore flushes a pending save
 // first, and that flush can take a new snapshot and trim the oldest one —
 // which may be the very snapshot being restored.
 let restoringSnapshotKey = null;
 
 function trimSnapshotsToLimits() {
-    const { maxCount, maxBytes } = getSnapshotLimits();
     const pluginSize = snapshotPluginSizer();
+    const keys = listSnapshotKeys();
     // Size each snapshot by its marginal disk cost (chunks not shared with the
     // live blob), not its logical size — chunked snapshots share chunks, so a
     // logical measure would over-trim ones that cost almost nothing on disk.
-    const entries = listSnapshotKeys()
-        .map((key) => {
-            const tsRaw = parseInt(key.slice(DB_BACKUP_PREFIX.length, -4), 10);
-            // Plugin bytes are marginal too: blobs only this snapshot references
-            // (see plugin-storage-store.cjs snapshotBytes).
-            return { key, size: snapshotFootprint(key) + pluginSize(key).bytes, ts: Number.isFinite(tsRaw) ? tsRaw : 0 };
-        })
-        .sort((a, b) => b.ts - a.ts);
-
-    let runningBytes = 0;
-    const toDelete = [];
-    for (let i = 0; i < entries.length; i++) {
-        const e = entries[i];
-        const isFirst = i === 0;
-        const fitsByCount = i < maxCount;
-        const fitsByBytes = runningBytes + e.size <= maxBytes;
-        if (e.key === restoringSnapshotKey) continue;
-        if (isFirst || (fitsByCount && fitsByBytes)) {
-            runningBytes += e.size;
-        } else {
-            toDelete.push(e.key);
-        }
-    }
+    // All snapshots in one pass (snapshotFootprints: the per-key numbers).
+    const footprints = snapshotFootprints(keys);
+    const entries = keys.map((key) => {
+        const tsRaw = parseInt(key.slice(DB_BACKUP_PREFIX.length, -4), 10);
+        // Plugin bytes are marginal too: blobs only this snapshot references
+        // (see plugin-storage-store.cjs snapshotBytes).
+        return { key, size: footprints.get(key) + pluginSize(key).bytes, ts: Number.isFinite(tsRaw) ? tsRaw : 0 };
+    });
+    const toDelete = selectSnapshotsToTrim(entries, getSnapshotLimits(), restoringSnapshotKey);
     for (const key of toDelete) deleteSnapshot(key);
     return { kept: entries.length - toDelete.length, removed: toDelete.length };
 }
@@ -592,23 +578,26 @@ function deleteSnapshot(key) {
 }
 
 // Current snapshot count + two totals:
-//   bytes        — marginal disk cost (snapshotFootprint), the SAME measure the
+//   bytes        — marginal disk cost (snapshotFootprints), the SAME measure the
 //                  byte limit/trim uses, so the limit gauge matches what trimming
 //                  sees. kvListWithSizes would report a chunked snapshot's marker.
 //   logicalBytes — sum of each snapshot's full logical size (kvSize), i.e. what
 //                  the snapshots would cost WITHOUT dedup. Drives the "saved by
 //                  deduplication" figure; never used for trimming.
 function listSnapshotKeys() {
-    return kvList(DB_BACKUP_PREFIX).filter(isSnapshotKey);
+    // isSnapshotKey keeps only the exact (lowercase) shape, so the index-backed
+    // exact-prefix listing yields the keys a LIKE scan of every kv row did.
+    return kvListExactPrefix(DB_BACKUP_PREFIX).filter(isSnapshotKey);
 }
 
 function snapshotUsage() {
     const keys = listSnapshotKeys();
     const pluginSize = snapshotPluginSizer();
+    const footprints = snapshotFootprints(keys);
     let bytes = 0, logicalBytes = 0;
     for (const k of keys) {
         const plugin = pluginSize(k);
-        bytes += snapshotFootprint(k) + plugin.bytes;
+        bytes += footprints.get(k) + plugin.bytes;
         logicalBytes += (kvSize(k) || 0) + plugin.logicalBytes;
     }
     return { count: keys.length, bytes, logicalBytes };
@@ -1522,7 +1511,7 @@ function persistDatabaseWithPlan(filePath, strippedDb, archived) {
         committed = dbPersister.commit(prepared, {
             // A recovery point from before the first write in this process
             // that copies bytes from the old blob.
-            beforeFirstIncremental: () => createBackupAndRotate({ force: true }),
+            beforeFirstIncremental: ({ hashes }) => ensureRecoveryPointBeforeIncremental(hashes),
         });
     } catch (error) {
         return fallBack('commit', error);
@@ -1557,6 +1546,36 @@ function persistDatabaseWithPlan(filePath, strippedDb, archived) {
             storeMs: Math.round(performance.now() - storeStartedAt),
         },
     };
+}
+
+// The recovery point the persister needs before the first commit of this
+// process that copies bytes from the old blob: a snapshot of exactly that
+// blob. `hashes` is its chunk list, which commitChunks then requires the
+// live manifest to be. When the newest snapshot is stored as exactly that
+// chunk list it already is that recovery point (the same bytes, and the
+// newest snapshot is the one a trim always keeps), so no snapshot is taken:
+// a forced snapshot costs seconds on a large database (the manifest copy,
+// the trim, the plugin-storage half) and would also rotate out the oldest
+// recovery point once per boot. Otherwise a forced snapshot, as before.
+// The skip looks at the database blob only; the snapshot's plugin-storage
+// half is from its own time, as for any snapshot.
+let recoveryPointSkips = 0;
+function ensureRecoveryPointBeforeIncremental(hashes) {
+    let newest = null;
+    let newestTs = -Infinity;
+    for (const key of listSnapshotKeys()) {
+        const tsRaw = parseInt(key.slice(DB_BACKUP_PREFIX.length, -4), 10);
+        const ts = Number.isFinite(tsRaw) ? tsRaw : 0;
+        if (ts > newestTs) {
+            newest = key;
+            newestTs = ts;
+        }
+    }
+    if (newest && Array.isArray(hashes) && isChunkedAs(newest, hashes)) {
+        recoveryPointSkips++;
+        return { created: false, reason: 'newest-snapshot-matches', key: newest };
+    }
+    return createBackupAndRotate({ force: true });
 }
 
 // PERSIST_VERIFY: database.bin as committed against the bytes the reference
@@ -10738,6 +10757,7 @@ app.get('/api/debug/memory', async (req, res, next) => {
                 mode: currentPersistMode(),
                 verify: PERSIST_VERIFY,
                 verifyFailures: persistVerifyFailures,
+                recoveryPointSkips,
                 lastPersistMs: lastDbPersistMs,
                 persister: dbPersister.stats(),
             },
@@ -11345,7 +11365,7 @@ app.get('/api/db/snapshots', async (req, res, next) => {
             // DB"; the dedup win is shown once, as the section's savings figure.
             // (kvSize reassembles via the manifest; the marker's 13 bytes are not
             // what a user wants to see for a full backup.) Trimming still sizes by
-            // snapshotFootprint in db.cjs, so this display change can't over-trim.
+            // snapshotFootprints in db.cjs, so this display change can't over-trim.
             return { key, size: (kvSize(key) || 0) + pluginSize(key).bytes, timestamp: ts };
         }).sort((a, b) => (b.timestamp ?? 0) - (a.timestamp ?? 0));
         res.json({ snapshots: out });

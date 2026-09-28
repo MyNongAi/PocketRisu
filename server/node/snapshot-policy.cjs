@@ -50,6 +50,31 @@ function latestSnapshotTimestamp(keys, prefix = 'database/dbbackup-') {
     return latest;
 }
 
+// The snapshots a trim deletes, from entries { key, size, ts } (size: the
+// marginal disk cost the byte limit counts). Walk newest -> oldest; keep
+// within both limits, delete the rest. The most recent snapshot is always
+// kept (even if it alone exceeds the byte limit) so a config change never
+// leaves zero backups. `protectedKey` (a snapshot being restored) is never
+// deleted and not counted.
+function selectSnapshotsToTrim(entries, { maxCount, maxBytes }, protectedKey = null) {
+    const sorted = entries.slice().sort((a, b) => b.ts - a.ts);
+    let runningBytes = 0;
+    const toDelete = [];
+    for (let i = 0; i < sorted.length; i++) {
+        const e = sorted[i];
+        const isFirst = i === 0;
+        const fitsByCount = i < maxCount;
+        const fitsByBytes = runningBytes + e.size <= maxBytes;
+        if (e.key === protectedKey) continue;
+        if (isFirst || (fitsByCount && fitsByBytes)) {
+            runningBytes += e.size;
+        } else {
+            toDelete.push(e.key);
+        }
+    }
+    return toDelete;
+}
+
 module.exports = {
     SNAPSHOT_HOUR_MS,
     SNAPSHOT_INTERVAL_DEFAULT_MS,
@@ -59,4 +84,5 @@ module.exports = {
     parseConfiguredSnapshotInterval,
     parseSnapshotIntervalOverride,
     parseSnapshotTimestamp,
+    selectSnapshotsToTrim,
 };

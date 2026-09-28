@@ -243,6 +243,19 @@ function snapshotFootprint(key) {
     return chunkStore.snapshotCost(key, DB_BLOB_KEY);
 }
 
+// snapshotFootprint of several keys (Map key -> bytes): the same numbers
+// from one pass over the chunks the live blob does not hold, instead of one
+// query per snapshot.
+function snapshotFootprints(keys) {
+    return chunkStore.snapshotCosts(keys, DB_BLOB_KEY);
+}
+
+// Whether a (snapshot) key is stored chunked as exactly the chunk list
+// `hashes`, i.e. holds the same bytes as a blob with that manifest.
+function isChunkedAs(key, hashes) {
+    return chunkStore.matchesChunkList(key, hashes);
+}
+
 function clearEntities() {
     // Entity tables may still exist from previous versions — clear them during backup import
     try {
@@ -264,5 +277,7 @@ module.exports = {
     reclaimableChunkBytes,
     isDbBlobChunked,
     snapshotFootprint,
+    snapshotFootprints,
+    isChunkedAs,
     dbBlob,
 };

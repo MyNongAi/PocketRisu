@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url'
 import { spawnServer, type ServerHandle } from './helpers/spawnServer.js'
 import { createClient, type RisuClient } from './helpers/client.js'
 import { createSeedBackup } from './helpers/seed.js'
-import { readDiskValue, sessionCookie } from './helpers/disk.js'
+import { readDiskDb, readDiskValue, sessionCookie } from './helpers/disk.js'
 
 const Sqlite = require('better-sqlite3')
 const utils = require('../../server/node/utils.cjs') as typeof import('../../server/node/utils.cjs')
@@ -378,5 +378,78 @@ describe('incremental persists', () => {
     expect(stats.persister.audit.passes).toBeGreaterThan(0)
     expect(stats.persister.audit.mismatches).toBe(0)
     expect(stats.verifyFailures).toBe(0)
+  }, 120_000)
+})
+
+describe('layout discovery', () => {
+  // A server that wrote the blob, then a cold boot of a copy of its database
+  // in incremental mode: discovery learns the layout of the blob on disk, and
+  // the first persist of the new process copies every owner it did not touch.
+  async function bootAfterWrites(writes: number, firstEnv: Record<string, string>) {
+    const first = await start('incremental', undefined, firstEnv)
+    expect((await first.client.importBackup(createSeedBackup({ characterCount: 6, chatsPerCharacter: 3, messagesPerChat: 3 }))).ok).toBe(true)
+    let local = utils.normalizeJSON(await utils.decodeRisuSave(await readBytes(first))) as any
+    // Written by this build, so the blob holds what a boot decodes.
+    for (let n = 0; n < writes; n++) {
+      // Snapshot keys are 100 ms ticks, rounded: one taken right after
+      // another can fall in its cooldown even with an interval of 0.
+      if (n > 0) await new Promise((resolve) => setTimeout(resolve, 250))
+      const patch = [{ op: 'replace', path: '/temperature', value: 41 + n }]
+      expect((await sendPatch(first, patch, utils.calculateHash(local).toString(16))).status).toBe(200)
+      local = applyPatch(structuredClone(local), structuredClone(patch), true).newDocument
+      expect((await flush(first)).status).toBe(200)
+    }
+    const booted = await start('incremental', first)
+    await first.srv.cleanup()
+    const blobBefore = readDiskValue(booted.srv.cwd, DB_KEY)!
+    const snapshotsBefore = await snapshotKeys(booted)
+    local = utils.normalizeJSON(await utils.decodeRisuSave(await readBytes(booted))) as any // the cold load
+    let stats: any
+    for (let i = 0; i < 100; i++) {
+      stats = await persistStats(booted)
+      if (stats.persister.discovery.last) break
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    expect(stats.persister.discovery.last).toMatchObject({ reason: 'cold-load', stopped: 'complete', mismatchedOwners: 0 })
+    expect(stats.persister.layout).toMatchObject({ discovered: true, partial: false })
+    const edit = [{ op: 'replace', path: '/characters/2/chats/1/lastDate', value: 5 }]
+    expect((await sendPatch(booted, edit, utils.calculateHash(local).toString(16))).status).toBe(200)
+    expect((await flush(booted)).status).toBe(200)
+    stats = await persistStats(booted)
+    expect(stats.persister.last).toMatchObject({ persistMode: 'incremental', spans: true, commit: 'gapped', freshOwners: 1, freshChats: 1 })
+    expect(stats.persister.last.spanOwners).toBeGreaterThan(5)
+    expect(stats.persister.incrementalCommitsThisBoot).toBe(1)
+    expect(stats.verifyFailures).toBe(0)
+    // The blob decodes, with the edit, and its manifest is cdcSplit of it.
+    expect((await readDiskDb(booted.srv.cwd)).characters[2].chats[1].lastDate).toBe(5)
+    const blobAfter = readDiskValue(booted.srv.cwd, DB_KEY)!
+    expect(manifestHashes(booted.srv.cwd)).toEqual(cdcSplit(blobAfter).map((c: any) => c.hash))
+    // A recovery point of the blob as it was before that first copy exists.
+    const snapshotsAfter = await snapshotKeys(booted)
+    const newest = snapshotsAfter[0]
+    expect(newest).toBeTruthy()
+    expect(readDiskValue(booted.srv.cwd, newest)!.equals(blobBefore)).toBe(true)
+    return { stats, snapshotsBefore, snapshotsAfter }
+  }
+
+  async function snapshotKeys(node: Node): Promise<string[]> {
+    const res = await node.client.fetch('/api/db/snapshots')
+    expect(res.status).toBe(200)
+    return ((await res.json() as any).snapshots ?? []).map((s: any) => s.key)
+  }
+
+  test('the first persist after a cold boot copies; a forced snapshot keeps the blob it edits', async () => {
+    // The first write is snapshotted (no snapshot yet), the second is not
+    // (cooldown): the blob on disk is in no snapshot.
+    const { stats, snapshotsBefore, snapshotsAfter } = await bootAfterWrites(2, {})
+    expect(stats.recoveryPointSkips).toBe(0)
+    expect(snapshotsAfter.length).toBe(snapshotsBefore.length + 1)
+  }, 120_000)
+
+  test('no new snapshot when the newest one already holds that blob', async () => {
+    // Every persist of the first server is followed by a snapshot of it.
+    const { stats, snapshotsBefore, snapshotsAfter } = await bootAfterWrites(2, { POCKETRISU_BACKUP_INTERVAL_MS: '0' })
+    expect(stats.recoveryPointSkips).toBe(1)
+    expect(snapshotsAfter).toEqual(snapshotsBefore)
   }, 120_000)
 })

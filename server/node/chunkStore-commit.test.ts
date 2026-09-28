@@ -4,17 +4,20 @@
  * per-key write generations, manifests with lengths, the chunk reader, and
  * commitChunks (full replace, gapped in-place edits, the stale-layout
  * precondition, read-back and rollback), plus every reader on a gapped
- * manifest.
+ * manifest; and the snapshot sizing the trim uses (snapshotCosts, the same
+ * numbers and decisions as one snapshotCost query per snapshot).
  */
 import { describe, expect, it } from 'vitest'
 import { createHash } from 'node:crypto'
 import Database from 'better-sqlite3'
 import pkg from './chunkStore.cjs'
+import policy from './snapshot-policy.cjs'
 
 type ChunkList = { hashes: string[], lens: number[], data: (Buffer | null)[], reused?: number[] }
 const {
     cdcSplit, chunkLength, chunkStarts, createChunkStore, planManifestEdit, CHUNK_MARKER, MAX_SIZE, SEQ_GAP,
 } = pkg as any
+const { selectSnapshotsToTrim } = policy as any
 
 const KEY = 'database/database.bin'
 
@@ -376,4 +379,150 @@ describe('readManifestPage', () => {
         expect(() => store.readManifestPage(KEY, whole.seqs[1], 5)).toThrow(expect.objectContaining({ code: 'MISSING_CHUNK' }))
         expect(store.readManifestPage(KEY, whole.seqs[3], 2).hashes).toEqual(whole.hashes.slice(4, 6))
     })
+})
+
+describe('matchesChunkList', () => {
+    it('is true only for a key stored chunked as exactly that list', () => {
+        const db = freshDb()
+        const store = createChunkStore(db, { threshold: 1024 })
+        const a = seededBytes(300_000, 91)
+        store.putValue(KEY, a)
+        store.snapshotValue(KEY, 'snap')
+        const hashes = store.readManifestWithLengths(KEY).hashes
+        expect(store.matchesChunkList('snap', hashes)).toBe(true)
+        expect(store.matchesChunkList('snap', hashes.slice(1))).toBe(false)
+        expect(store.matchesChunkList('snap', [...hashes.slice(0, -1), hashes[0]])).toBe(false)
+        expect(store.matchesChunkList('missing', hashes)).toBe(false)
+        store.putValue(KEY, Buffer.concat([a, seededBytes(10, 92)]))
+        expect(store.matchesChunkList('snap', store.readManifestWithLengths(KEY).hashes)).toBe(false)
+        // A raw value written over a manifest that was not swept yet.
+        db.prepare('INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES (?, ?, 0)').run('snap', Buffer.from('raw'))
+        expect(store.matchesChunkList('snap', hashes)).toBe(false)
+    })
+})
+
+describe('snapshotCosts and the snapshot trim', () => {
+    const PREFIX = 'database/dbbackup-'
+    function mulberry32(seed: number) {
+        return () => {
+            seed |= 0
+            seed = (seed + 0x6d2b79f5) | 0
+            let t = Math.imul(seed ^ (seed >>> 15), 1 | seed)
+            t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+        }
+    }
+    // trimSnapshotsToLimits before snapshotCosts (server.cjs), verbatim but
+    // for its inputs: a snapshotCost query per key, then the walk.
+    function oldTrim(store: any, keys: string[], pluginBytes: (key: string) => number,
+        { maxCount, maxBytes }: { maxCount: number, maxBytes: number }, restoringSnapshotKey: string | null) {
+        const entries = keys
+            .map((key) => {
+                const tsRaw = parseInt(key.slice(PREFIX.length, -4), 10)
+                return { key, size: store.snapshotCost(key, KEY) + pluginBytes(key), ts: Number.isFinite(tsRaw) ? tsRaw : 0 }
+            })
+            .sort((a, b) => b.ts - a.ts)
+        let runningBytes = 0
+        const toDelete: string[] = []
+        for (let i = 0; i < entries.length; i++) {
+            const e = entries[i]
+            const isFirst = i === 0
+            const fitsByCount = i < maxCount
+            const fitsByBytes = runningBytes + e.size <= maxBytes
+            if (e.key === restoringSnapshotKey) continue
+            if (isFirst || (fitsByCount && fitsByBytes)) {
+                runningBytes += e.size
+            } else {
+                toDelete.push(e.key)
+            }
+        }
+        return toDelete
+    }
+    // What server.cjs does now.
+    function newTrim(store: any, keys: string[], pluginBytes: (key: string) => number, limits: any, protectedKey: string | null) {
+        const footprints = store.snapshotCosts(keys, KEY)
+        const entries = keys.map((key) => {
+            const tsRaw = parseInt(key.slice(PREFIX.length, -4), 10)
+            return { key, size: footprints.get(key) + pluginBytes(key), ts: Number.isFinite(tsRaw) ? tsRaw : 0 }
+        })
+        return selectSnapshotsToTrim(entries, limits, protectedKey)
+    }
+    function edit(buf: Buffer, rand: () => number, seed: number) {
+        const at = Math.floor(rand() * buf.length)
+        const r = rand()
+        const fresh = seededBytes(1 + Math.floor(rand() * 40_000), seed)
+        if (r < 0.4) return Buffer.concat([buf.subarray(0, at), fresh, buf.subarray(at)])
+        if (r < 0.7) return Buffer.concat([buf.subarray(0, at), fresh, buf.subarray(Math.min(buf.length, at + fresh.length))])
+        return Buffer.concat([buf.subarray(0, at), buf.subarray(Math.min(buf.length, at + Math.floor(rand() * 60_000)))])
+    }
+
+    for (let seed = 1; seed <= 30; seed++) {
+        it(`sizes every snapshot like snapshotCost and trims the same ones, seed ${seed}`, () => {
+            const rand = mulberry32(seed * 7717)
+            const db = freshDb()
+            const store = createChunkStore(db, { threshold: 2048 })
+            // A live blob that keeps changing; snapshots of it along the way
+            // share most of their chunks with it and with each other.
+            let live = Buffer.concat([seededBytes(100_000 + Math.floor(rand() * 200_000), seed), Buffer.alloc(200_000, 0x41)])
+            store.putValue(KEY, live)
+            const keys: string[] = []
+            let tick = 17_000_000_000 + seed
+            const count = 3 + Math.floor(rand() * 18)
+            for (let i = 0; i < count; i++) {
+                live = edit(live, rand, seed * 100 + i)
+                if (rand() < 0.3) {
+                    const prev = store.readManifestWithLengths(KEY)
+                    store.commitChunks(KEY, editedList({ hashes: prev.hashes, lens: prev.lens, data: [] }, live), prev.hashes)
+                } else {
+                    store.putValue(KEY, live)
+                }
+                tick += 1 + Math.floor(rand() * 5000)
+                const key = `${PREFIX}${tick}.bin`
+                keys.push(key)
+                const kind = rand()
+                if (kind < 0.7) store.snapshotValue(KEY, key)
+                else if (kind < 0.8) store.putValue(key, seededBytes(1 + Math.floor(rand() * 2000), tick)) // stored raw
+                else if (kind < 0.85) {
+                    // Chunked, then a raw value over it (its manifest not swept).
+                    store.putValue(key, edit(live, rand, tick))
+                    db.prepare('INSERT OR REPLACE INTO kv (key, value, updated_at) VALUES (?, ?, 0)').run(key, seededBytes(700, tick))
+                } else if (kind < 0.9) {
+                    // Listed, but its row is gone.
+                } else {
+                    // Repeated chunks inside one manifest, some shared with nothing.
+                    store.putValue(key, Buffer.concat([Buffer.alloc(300_000, 0x42), seededBytes(90_000, tick), Buffer.alloc(140_000, 0x41)]))
+                }
+                if (rand() < 0.2) keys.push(key) // a key listed twice
+            }
+            // Manifests that are not snapshots share chunks too (one of them
+            // sorts between the snapshot keys), a chunk may be missing, and
+            // the live blob may itself be stored raw.
+            store.putValue('archive/abc', edit(live, rand, seed + 5))
+            store.putValue(`${PREFIX}${17_000_000_000 + seed + 2}.tmp`, edit(live, rand, seed + 6))
+            if (rand() < 0.4) {
+                const orphan = store.readManifestWithLengths(keys.find((k) => store.isChunkedKey(k)) ?? KEY).hashes
+                db.prepare('DELETE FROM chunks WHERE hash = ?').run(orphan[Math.floor(rand() * orphan.length)])
+            }
+            if (rand() < 0.15) store.putValue(KEY, seededBytes(1000, seed))
+
+            const costs = store.snapshotCosts(keys, KEY)
+            let total = 0
+            for (const key of keys) {
+                expect(costs.get(key), key).toBe(store.snapshotCost(key, KEY))
+                total += costs.get(key)
+            }
+            expect(total).toBeGreaterThan(0)
+            const plugin = new Map(keys.map((k) => [k, rand() < 0.5 ? 0 : Math.floor(rand() * 50_000)]))
+            const pluginBytes = (key: string) => plugin.get(key)!
+            let deletions = 0
+            for (let t = 0; t < 25; t++) {
+                const limits = { maxCount: 1 + Math.floor(rand() * (count + 2)), maxBytes: Math.floor(rand() * total * 1.3) }
+                const protectedKey = rand() < 0.3 ? keys[Math.floor(rand() * keys.length)] : null
+                const expected = oldTrim(store, keys, pluginBytes, limits, protectedKey)
+                expect(newTrim(store, keys, pluginBytes, limits, protectedKey)).toEqual(expected)
+                deletions += expected.length
+            }
+            expect(deletions).toBeGreaterThan(0)
+        })
+    }
 })
