@@ -18,6 +18,8 @@
     import { groupByFolder } from "src/ts/folders";
     import LazyAssetPreview from "src/lib/Others/LazyAssetPreview.svelte";
     import { resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
+    import { FileDropSurface, draggedItemsAreImages } from "src/ts/gui/fileDropSurface.svelte";
+    import FileDropIndicator from "src/lib/UI/GUI/FileDropIndicator.svelte";
 
     // selectedPersona can point past the array (persona removed by a plugin or
     // stale index in an imported DB) — clamp before the template dereferences it.
@@ -146,6 +148,59 @@
         } catch (error) {
             notifyError(error)
         }
+    }
+
+    // Pictures dragged in from outside onto the page (not onto a persona,
+    // which takes the picture itself) import as personas: a persona card PNG
+    // as that persona, any other picture as a new persona wearing it.
+    const personaFileDrop = new FileDropSurface({
+        accepts: draggedItemsAreImages,
+        onDrop: importPersonaFiles,
+    })
+    $effect(() => personaFileDrop.attachWindowReset())
+
+    async function importPersonaFiles(files: File[]) {
+        saveUserPersona()
+        let lastIndex = -1
+        for (const file of files) {
+            if (!/\.(png|webp|gif|jpe?g)$/i.test(file.name)) continue
+            try {
+                const data = new Uint8Array(await file.arrayBuffer())
+                let index = file.name.toLocaleLowerCase().endsWith('.png')
+                    ? await importUserPersonaImage(data)
+                    : null
+                if (index === null) index = await createPersonaFromPicture(data, file.name)
+                lastIndex = index
+            } catch (error) {
+                notifyError(error)
+            }
+        }
+        if (lastIndex < 0) return
+        changeUserPersona(lastIndex, 'noSave')
+        expanded = true
+        notifySuccess(language.successImport)
+        void requestImmediateSave()
+    }
+
+    async function createPersonaFromPicture(data: Uint8Array, fileName: string) {
+        const id = v4()
+        const now = Date.now()
+        DBState.db.personas = [...DBState.db.personas, {
+            id,
+            name: fileName.replace(/\.[^.]+$/, '') || 'New Persona',
+            icon: '',
+            personaPrompt: '',
+            note: '',
+            createdAt: now,
+            lastAppliedAt: now,
+        }]
+        try {
+            await setUserPersonaImage(data, DBState.db.personas.length - 1)
+        } catch (error) {
+            DBState.db.personas = DBState.db.personas.filter((persona) => persona.id !== id)
+            throw error
+        }
+        return DBState.db.personas.findIndex((persona) => persona.id === id)
     }
 
     async function createPersonaFolder() {
@@ -290,6 +345,18 @@
     })
 </script>
 
+<!-- Source badge on the thumbnail's bottom-left corner, as in the character lists. -->
+{#snippet sourceBadge(source: ReturnType<typeof personaSource>)}
+    <span
+        class="pointer-events-none absolute -bottom-1 -left-1 z-10 rounded border border-darkborderc bg-darkbg/95 px-0.5 text-[8px] font-semibold leading-tight"
+        class:text-sky-300={source.label === '로컬'}
+        class:text-violet-300={source.label === '웹'}
+        class:text-emerald-300={source.label === '모바일'}
+        class:border-dashed={!source.recorded}
+        title={source.recorded ? `기록된 출처: ${source.label}` : '출처 기록 없음 · 기존 웹리스 기준'}
+    >[{source.label}]</span>
+{/snippet}
+
 {#snippet personaEditor(index: number)}
     {@const persona = DBState.db.personas[index]}
     <div class="flex flex-wrap gap-4 bg-dark-900/50 p-3 rounded-md">
@@ -346,7 +413,17 @@
     </div>
 {/snippet}
 
+<div
+    class="contents"
+    role="region"
+    aria-label={language.persona}
+    ondragenter={personaFileDrop.over}
+    ondragover={personaFileDrop.over}
+    ondragleave={personaFileDrop.leave}
+    ondrop={personaFileDrop.drop}
+>
 <SettingPage title={language.persona} contentClassName="min-h-0 grow">
+    <FileDropIndicator active={personaFileDrop.active} icon={HardDriveUploadIcon} label={`${language.persona} ${language.import} · PNG / 이미지`} />
     <div class="mb-2 flex flex-wrap items-center justify-end gap-1" aria-label={language.persona}>
         <ShButton size="sm" variant={personaSort === 'registered' ? 'default' : 'outline'} onclick={() => setPersonaSort('registered')}>
             <ListOrderedIcon />등록순
@@ -382,7 +459,7 @@
                 class="w-full bg-transparent py-2 text-textcolor outline-none" />
         </div>
 
-        <div class="persona-grid-shell flex min-h-0 grow flex-col" role="region" aria-label="페르소나 그리드" ondragover={allowPersonaDrop} ondrop={(event) => { void handlePersonaDrop(event) }}>
+        <div class="persona-grid-shell flex min-h-0 grow flex-col" role="region" aria-label="페르소나 그리드">
         <div class="persona-grid-catalog min-h-0 grow rounded-md border border-darkborderc p-3">
             {#each personaGroups as group (group.folder?.id ?? '')}
                 {#if group.indexes.length > 0}
@@ -403,6 +480,7 @@
                                 ondrop={(event) => { void handlePersonaDrop(event, index) }}
                                 class="group flex w-24 shrink-0 cursor-pointer flex-col items-center gap-1 rounded-md p-1 text-textcolor hover:bg-selected/30"
                             >
+                                <div class="relative shrink-0">
                                 <div class={`relative h-20 w-20 overflow-hidden rounded-md border bg-selected/45 shadow-lg transition-colors group-hover:border-primary ${index === DBState.db.selectedPersona ? 'border-primary ring-2 ring-primary/40' : 'border-darkborderc'}`}>
                                     {#if persona.icon}
                                         <LazyAssetPreview
@@ -422,14 +500,9 @@
                                         <StarIcon size={14} class="absolute right-1 top-1 text-primary" />
                                     {/if}
                                 </div>
+                                {@render sourceBadge(source)}
+                                </div>
                                 <span class="w-full truncate text-center text-xs">{persona.name || 'User'}</span>
-                                <span
-                                    class="w-full truncate text-center text-[10px]"
-                                    class:text-sky-300={source.label === '로컬'}
-                                    class:text-violet-300={source.label === '웹'}
-                                    class:text-emerald-300={source.label === '모바일'}
-                                    title={source.recorded ? `기록된 출처: ${source.label}` : '출처 기록 없음 · 기존 웹리스 기준'}
-                                >[{source.label}]</span>
                             </button>
                         {/each}
                     </div>
@@ -478,23 +551,19 @@
             {@const index = personaListIndexes[displayIndex]}
             {@const persona = DBState.db.personas[index]}
             {@const source = personaSource(index)}
-            <div class="h-8 w-8 shrink-0 overflow-hidden rounded-md bg-textcolor2">
-                {#if persona.icon}
-                    {#await getCharImage(persona.icon, 'css') then im}
-                        <div class="h-full w-full bg-cover bg-center" style={im}></div>
-                    {/await}
-                {/if}
+            <div class="relative shrink-0">
+                <div class="h-8 w-8 overflow-hidden rounded-md bg-textcolor2">
+                    {#if persona.icon}
+                        {#await getCharImage(persona.icon, 'css') then im}
+                            <div class="h-full w-full bg-cover bg-center" style={im}></div>
+                        {/await}
+                    {/if}
+                </div>
+                {@render sourceBadge(source)}
             </div>
             <div class="min-w-0 grow truncate">
                 <span>{persona.name}</span>
                 {#if persona.note}<span class="text-textcolor2"> / {persona.note}</span>{/if}
-                <span
-                    class="ml-1 text-xs"
-                    class:text-sky-300={source.label === '로컬'}
-                    class:text-violet-300={source.label === '웹'}
-                    class:text-emerald-300={source.label === '모바일'}
-                    title={source.recorded ? `기록된 출처: ${source.label}` : '출처 기록 없음 · 기존 웹리스 기준'}
-                >[{source.label}]</span>
             </div>
             <!-- Active persona marker (same convention as the memory preset default star). -->
             {#if index === DBState.db.selectedPersona}
@@ -508,6 +577,7 @@
     </FolderedList>
     {/if}
 </SettingPage>
+</div>
 
 <style>
     .persona-grid-catalog {
