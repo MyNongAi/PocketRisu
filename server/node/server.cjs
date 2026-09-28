@@ -50,7 +50,7 @@ if (existsSync(offlineImportLockPath)) {
 const { kvGet, kvSet, kvDel, kvList, kvListExactPrefix, kvExists,
         kvDelPrefix, kvListWithSizes, kvListWithSizesAndUpdatedAt, kvPrefixStats, kvIterateWithSizes, kvStoredSize, kvSummarizePrefixes,
         kvSize, kvGetUpdatedAt, kvCopyValue, clearEntities, checkpointWal,
-        gcChunks, reclaimableChunkBytes, isDbBlobChunked, snapshotFootprint, db: sqliteDb } = require('./db.cjs');
+        gcChunks, reclaimableChunkBytes, isDbBlobChunked, snapshotFootprint, dbBlob, db: sqliteDb } = require('./db.cjs');
 const {
     addLogBatch, queryLogs, clearLogs, countLogs,
     logger, installProcessHandlers, expressErrorMiddleware,
@@ -89,6 +89,9 @@ const { computeChatEtag } = require('./chat-content-etag.cjs');
 const { createPendingChatPayloads } = require('./pending-chat-payloads.cjs');
 const pendingChatPayloads = createPendingChatPayloads({ kvGet, kvSet, kvDel, kvList: kvListExactPrefix, kvExists });
 const { createChatBodyStore, chatToStub, mergeChatStubWithFullChat, deepFreeze, StoredChatBytes } = require('./chat-body-store.cjs');
+const { createDbPersister, isPersistMode } = require('./db-persister.cjs');
+const { createRuntimeFlags } = require('./runtime-flags.cjs');
+const { cdcSplit } = require('./chunkStore.cjs');
 // Test hardening only: every root installed in dbCache is deep-frozen, chat
 // objects the store hands to a persist are frozen, and stored body bytes are
 // checked on every read, so an in-place mutation of cached state fails a test.
@@ -165,21 +168,25 @@ let dbEtag = null;
 
 // The single place a check reports that an installed dbCache root, or
 // something reachable from it, was changed in place (see the invariant
-// above). Today the caller is the test-mode patch audit in /api/patch and
-// the asset-manifest PATCH; the boot planner's segment digest re-check and
-// the incremental persister's canary are meant to report here too. Such a
-// change breaks every cache keyed on object identity, so those are dropped
-// and the next request recomputes them from the current content: today the
-// per-root and per-element hashes and the etag; a later identity-keyed cache
-// (the planner's plans, the persister's layout) must be dropped here too.
-// dbCache itself is kept, as it still holds every acknowledged write.
+// above). The callers are the test-mode patch audit in /api/patch, the
+// asset-manifest PATCH and the persister's idle audit (db-persister.cjs);
+// the boot planner's segment digest re-check is meant to report here too.
+// Such a change breaks every cache keyed on object identity, so those are
+// dropped and the next request recomputes them from the current content:
+// the per-root and per-element hashes, the etag and the persister's layout
+// (a later identity-keyed cache, such as the planner's plans, must be
+// dropped here too). dbCache itself is kept, as it still holds every
+// acknowledged write, and it is written again in full: the blob on disk
+// may hold the owner as it was before the change.
 let cachedRootMutationReports = 0;
 function reportCachedRootMutation(source, detail) {
     cachedRootMutationReports++;
     logger.error(`[Cache] In-place change of an installed database root reported by ${source}`
-        + `${detail ? `: ${detail}` : ''}. Dropping the identity-keyed hash caches and the etag.`);
+        + `${detail ? `: ${detail}` : ''}. Dropping the identity-keyed caches and the etag; rewriting database.bin.`);
     databasePatchHashCache.reset();
     dbEtag = null;
+    dbPersister.reset('root-mutation');
+    if (dbCache[DB_HEX_KEY] && !saveTimers[DB_HEX_KEY]) scheduleDatabasePersist('cache-mutation');
 }
 
 // Test hardening (POCKETRISU_TEST_FREEZE_CACHE): the installed roots are
@@ -293,6 +300,64 @@ const assetManifestStore = createAssetManifestStore(sqliteDb, {
     maxCacheBytes: process.env.POCKETRISU_ASSET_MANIFEST_CACHE_BYTES
         ? Number(process.env.POCKETRISU_ASSET_MANIFEST_CACHE_BYTES)
         : undefined,
+});
+
+// Runtime switches: save/pocketrisu-flags.json or POCKETRISU_FLAG_* (see
+// runtime-flags.cjs), re-read without a restart.
+//  persistMode: how the debounced persist writes database.bin (see
+//    db-persister.cjs): 'reference' (hydrate + encode + putValue, the old
+//    path), 'full-plan' (the same bytes composed per owner, chunked whole)
+//    or 'incremental' (unchanged owners copied from the blob on disk; off
+//    unless the flags file turns it on). An unknown value means 'reference'.
+const DEFAULT_PERSIST_MODE = 'full-plan';
+const runtimeFlags = createRuntimeFlags({
+    defaults: { persistMode: DEFAULT_PERSIST_MODE },
+    logger,
+    ...(process.env.POCKETRISU_FLAGS_STAT_INTERVAL_MS
+        ? { statIntervalMs: Number(process.env.POCKETRISU_FLAGS_STAT_INTERVAL_MS) }
+        : {}),
+});
+let unknownPersistModeLogged = null;
+function currentPersistMode() {
+    const value = runtimeFlags.get('persistMode');
+    if (isPersistMode(value)) return value;
+    if (unknownPersistModeLogged !== String(value)) {
+        unknownPersistModeLogged = String(value);
+        logger.warn(`[Persist] unknown persistMode ${JSON.stringify(value)}; using 'reference'`);
+    }
+    return 'reference';
+}
+// Every planned persist is compared with the reference encoder's bytes
+// (tests, and POCKETRISU_PERSIST_VERIFY=1 on a machine being watched): a
+// mismatch is counted and logged, and the reference path writes that persist.
+const PERSIST_VERIFY = process.env.POCKETRISU_PERSIST_VERIFY === '1' || TEST_FREEZE_CACHE;
+let persistVerifyFailures = 0;
+// The persister's idle audit waits for this long without a request
+// (POCKETRISU_PERSIST_AUDIT_IDLE_MS: tests).
+const PERSIST_AUDIT_IDLE_MS = process.env.POCKETRISU_PERSIST_AUDIT_IDLE_MS
+    ? Number(process.env.POCKETRISU_PERSIST_AUDIT_IDLE_MS)
+    : 2000;
+let lastRequestAt = 0;
+const dbPersister = createDbPersister({
+    blob: dbBlob,
+    chatBodyStore,
+    assetManifestStore,
+    hydrateAssetManifests,
+    mergeChatStubWithFullChat,
+    StoredChatBytes,
+    hydrateDatabaseForDisk,
+    applyArchivedChatBodies,
+    logger,
+    audit: {
+        getRoot: () => dbCache[DB_HEX_KEY] ?? null,
+        isIdle: () => !saveTimers[DB_HEX_KEY] && !exclusiveStorageReason
+            && Date.now() - lastRequestAt >= PERSIST_AUDIT_IDLE_MS,
+        onMismatch: (m) => reportCachedRootMutation('persist-audit',
+            `${m.owner}${m.index !== null ? ` #${m.index}` : ''} at ${m.off} (${m.len} bytes) differs from its encoding`),
+        ...(process.env.POCKETRISU_PERSIST_AUDIT_INTERVAL_MS
+            ? { intervalMs: Number(process.env.POCKETRISU_PERSIST_AUDIT_INTERVAL_MS), startDelayMs: 200, retryMs: 200 }
+            : {}),
+    },
 });
 
 // ─── Persist failure tracking (Stage 1 visibility) ───────────────────────────
@@ -653,6 +718,7 @@ async function loadDbCacheIfMissing({ createBackup = false } = {}) {
 function invalidateDbCache() {
     delete dbCache[DB_HEX_KEY];
     chatBodyStore.reset();
+    dbPersister.reset('invalidate');
     if (saveTimers[DB_HEX_KEY]) {
         clearTimeout(saveTimers[DB_HEX_KEY]);
         delete saveTimers[DB_HEX_KEY];
@@ -1252,6 +1318,15 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
         }
     }
     timings.waitMs = lap();
+    if (decodedKey === 'database/database.bin') {
+        const planned = persistDatabaseWithPlan(filePath, strippedDb, archived);
+        if (planned) {
+            Object.assign(timings, planned.timings);
+            lastDbPersistMs = Math.round(performance.now() - persistStartedAt);
+            logger.debug(`[Persist] ${decodedKey} ${formatMegabytes(planned.bytes)} (${planned.mode}): ${formatStageTimings(timings)} total ${lastDbPersistMs} ms`);
+            return;
+        }
+    }
     // No await from the token to acceptPersistedDatabase below. fullDb is
     // only guarded, encoded and accepted here, so unchanged chats stay
     // their stored bytes (no decode, no re-encode).
@@ -1259,36 +1334,8 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
     let fullDb = hydrateDatabaseForDisk(strippedDb, { storedBytes: decodedKey === 'database/database.bin' });
     timings.hydrateMs = lap();
 
-    // Disk protection guard: abort persist when reassemble produced metadata-only
-    // chats. Writing them would lock the loss in (next /api/read returns the
-    // stripped chat with no `_stub`, so hydration never re-merges chatBodyStore).
-    // Invalidate dbCache so the next request re-reads from disk and rebuilds a
-    // consistent stub view; client receives 409 on next /api/patch via hash mismatch.
     if (decodedKey === 'database/database.bin') {
-        const losses = findStubFlagLossChats(fullDb);
-        if (losses.length > 0) {
-            const sample = losses.slice(0, 3).map(l => `${l.chaId}/${l.chatId ?? l.chatIndex}`).join(', ');
-            const err = new Error(
-                `persist aborted: ${losses.length} chat(s) lost _stub flag without upgrade — `
-                + `would silently strip messages on disk. sample=[${sample}]`
-            );
-            recordPersistFailure(err, 'persistDbCacheWithChats:stub-flag-loss');
-            delete dbCache[filePath];
-            throw err;
-        }
-        // A character that came back from the archive without its chats
-        // registered in this process (e.g. server restarted in between) still
-        // has bodiless `_stub` chats after reassembly. Its payload is intact
-        // in kv: fill them from there instead of writing stubs over them.
-        // Refusing the whole persist instead left every save failing with no
-        // way out for the user. Only an unreadable row still aborts.
-        if (archived?.error) {
-            const error = archived.error;
-            const err = new Error(`persist aborted: a deactivated character's archive row is unreadable — ${error?.message || error}`);
-            recordPersistFailure(err, 'persistDbCacheWithChats:archive-unreadable');
-            delete dbCache[filePath];
-            throw err;
-        }
+        assertDatabaseDiskGuards(filePath, findStubFlagLossChats(fullDb), archived);
         if (archived) fullDb = applyArchivedChatsForDisk(fullDb, archived.bodies, 'persist');
     }
     timings.guardsMs = lap();
@@ -1321,6 +1368,144 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
         lastDbPersistMs = Math.round(performance.now() - persistStartedAt);
     }
     logger.debug(`[Persist] ${decodedKey} ${formatMegabytes(data.length)}: ${formatStageTimings(timings)} total ${Math.round(performance.now() - persistStartedAt)} ms`);
+}
+
+// The disk guards of a database persist, shared by the reference and the
+// planned path (same inputs, same messages, same failure sources).
+// losses: findStubFlagLossChats of the hydrated database. archived: the
+// archive-row decode of this persist (see persistDbCacheWithChats).
+function assertDatabaseDiskGuards(filePath, losses, archived) {
+    // Disk protection guard: abort persist when reassemble produced metadata-only
+    // chats. Writing them would lock the loss in (next /api/read returns the
+    // stripped chat with no `_stub`, so hydration never re-merges chatBodyStore).
+    // Invalidate dbCache so the next request re-reads from disk and rebuilds a
+    // consistent stub view; client receives 409 on next /api/patch via hash mismatch.
+    if (losses.length > 0) {
+        const sample = losses.slice(0, 3).map(l => `${l.chaId}/${l.chatId ?? l.chatIndex}`).join(', ');
+        const err = new Error(
+            `persist aborted: ${losses.length} chat(s) lost _stub flag without upgrade — `
+            + `would silently strip messages on disk. sample=[${sample}]`
+        );
+        recordPersistFailure(err, 'persistDbCacheWithChats:stub-flag-loss');
+        delete dbCache[filePath];
+        throw err;
+    }
+    // A character that came back from the archive without its chats
+    // registered in this process (e.g. server restarted in between) still
+    // has bodiless `_stub` chats after reassembly. Its payload is intact
+    // in kv: fill them from there instead of writing stubs over them.
+    // Refusing the whole persist instead left every save failing with no
+    // way out for the user. Only an unreadable row still aborts.
+    if (archived?.error) {
+        const error = archived.error;
+        const err = new Error(`persist aborted: a deactivated character's archive row is unreadable — ${error?.message || error}`);
+        recordPersistFailure(err, 'persistDbCacheWithChats:archive-unreadable');
+        delete dbCache[filePath];
+        throw err;
+    }
+}
+
+// database.bin through db-persister.cjs (persistMode full-plan or
+// incremental). Returns null when the reference path must write this
+// persist: mode 'reference', a shape the composer leaves to the reference
+// encoder, or a plan or commit that failed before anything was committed
+// (logged; the reference path then writes the same state). The disk guards
+// abort exactly as on the reference path. Synchronous from the store token
+// to acceptPersisted.
+const loggedPlanFallbacks = new Set();
+function persistDatabaseWithPlan(filePath, strippedDb, archived) {
+    const mode = currentPersistMode();
+    if (mode === 'reference') {
+        dbPersister.reset('mode');
+        return null;
+    }
+    const fallBack = (stage, error) => {
+        const key = `${stage}:${error?.code || error?.message}`;
+        const text = `[Persist] ${stage} failed in ${mode} mode, writing with the reference encoder: ${error?.message || error}`;
+        // A condition that repeats on every persist is logged once as a warning.
+        if (loggedPlanFallbacks.has(key)) logger.debug(text);
+        else {
+            loggedPlanFallbacks.add(key);
+            logger.warn(text);
+        }
+        dbPersister.reset(stage);
+        return null;
+    };
+    let prepared;
+    try {
+        prepared = dbPersister.prepare(strippedDb, { mode, archivedBodies: archived && !archived.error ? archived.bodies : null });
+    } catch (error) {
+        return fallBack('plan', error);
+    }
+    if (!prepared) return null;
+    assertDatabaseDiskGuards(filePath, prepared.losses, archived);
+    try {
+        chatBodyStore.assertPersistComplete({ root: strippedDb, written: prepared.written });
+    } catch (error) {
+        return fallBack('store check', error);
+    }
+    let committed;
+    try {
+        committed = dbPersister.commit(prepared, {
+            // A recovery point from before the first write in this process
+            // that copies bytes from the old blob.
+            beforeFirstIncremental: () => createBackupAndRotate({ force: true }),
+        });
+    } catch (error) {
+        return fallBack('commit', error);
+    }
+    if (PERSIST_VERIFY) {
+        const mismatch = comparePlannedPersist(strippedDb, archived);
+        if (mismatch) {
+            persistVerifyFailures++;
+            logger.error(`[Persist] verify: the ${mode} write differs from the reference encoder (${mismatch}); rewriting with the reference encoder`);
+            dbPersister.reset('verify');
+            return null;
+        }
+    }
+    // The blob is written. A failure to update the store from here on is not
+    // a failed persist: the store keeps its bodies (marked unwritten), and
+    // the next persist writes them again.
+    const storeStartedAt = performance.now();
+    try {
+        chatBodyStore.acceptPersisted({ token: prepared.token, root: strippedDb, written: prepared.written });
+    } catch (error) {
+        logger.error(`[Persist] database.bin was written, but updating the chat store after it failed: ${error?.message || error}`);
+    }
+    const { stats } = committed;
+    return {
+        mode,
+        bytes: stats.total,
+        timings: {
+            encodeMs: Math.round(stats.encodeMs),
+            chunkMs: Math.round(stats.chunkMs ?? 0),
+            walkMs: Math.round(stats.walkMs ?? 0),
+            commitMs: Math.round(stats.commitMs ?? 0),
+            storeMs: Math.round(performance.now() - storeStartedAt),
+        },
+    };
+}
+
+// PERSIST_VERIFY: database.bin as committed against the bytes the reference
+// path writes for the same state, and its manifest against cdcSplit of
+// those bytes. Returns a description of the first difference, or null.
+function comparePlannedPersist(strippedDb, archived) {
+    let fullDb = hydrateDatabaseForDisk(strippedDb, { storedBytes: true });
+    if (archived && !archived.error) fullDb = applyArchivedChatBodies(fullDb, archived.bodies).db;
+    const expected = encodeRisuSaveLegacyBuffer(fullDb);
+    const actual = kvGet('database/database.bin');
+    if (!actual || !actual.equals(expected)) {
+        let at = 0;
+        const limit = Math.min(expected.length, actual?.length ?? 0);
+        while (at < limit && expected[at] === actual[at]) at++;
+        return `bytes differ at ${at} of ${expected.length} (written ${actual?.length ?? 0})`;
+    }
+    if (dbBlob.isChunked()) {
+        const hashes = dbBlob.readManifestWithLengths().hashes;
+        const reference = cdcSplit(expected);
+        if (hashes.length !== reference.length || reference.some((c, i) => c.hash !== hashes[i])) return 'the chunk list differs from cdcSplit';
+    }
+    return null;
 }
 
 function scheduleDatabasePersist(source = 'database', delay = SAVE_INTERVAL) {
@@ -1445,6 +1630,11 @@ function shouldCompress(req, res) {
     return compression.filter(req, res);
 }
 
+// Request activity, for the persister's idle audit (dbPersister above).
+app.use((req, res, next) => {
+    lastRequestAt = Date.now();
+    next();
+});
 app.use(compression({
     filter: shouldCompress,
 }));
@@ -10299,6 +10489,14 @@ app.get('/api/debug/memory', async (req, res, next) => {
             // bytes: stored body bytes (off the V8 heap); dirty: bodies not on disk yet.
             chatBodyStore: chatStore,
             pendingSaves: Object.keys(saveTimers).length,
+            // How database.bin is written (db-persister.cjs) and what it did.
+            persist: {
+                mode: currentPersistMode(),
+                verify: PERSIST_VERIFY,
+                verifyFailures: persistVerifyFailures,
+                lastPersistMs: lastDbPersistMs,
+                persister: dbPersister.stats(),
+            },
         });
     } catch (error) {
         next(error);

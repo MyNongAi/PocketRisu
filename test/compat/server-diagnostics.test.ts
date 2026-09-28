@@ -60,7 +60,9 @@ describe('save diagnostics', () => {
     expect(flush.status).toBe(200)
     const lines = await outputLines(/\[Persist\]/, before + 1)
     expect(lines).toHaveLength(before + 1)
-    expect(lines.at(-1)).toMatch(/\[Persist\] database\/database\.bin [\d.]+MB: wait \d+ hydrate \d+ guards \d+ encode \d+ kvSet \d+ store \d+ total \d+ ms/)
+    // The reference path's stages, or the planned path's (db-persister.cjs,
+    // persistMode full-plan / incremental).
+    expect(lines.at(-1)).toMatch(/\[Persist\] database\/database\.bin [\d.]+MB(?:: wait \d+ hydrate \d+ guards \d+ encode \d+ kvSet \d+ store \d+| \((?:full-plan|incremental)\): wait \d+ encode \d+ chunk \d+ walk \d+ commit \d+ store \d+) total \d+ ms/)
   })
 
   test('GET /api/debug/memory reports process memory and cache counts', async () => {
