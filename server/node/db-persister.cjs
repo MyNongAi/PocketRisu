@@ -1226,9 +1226,12 @@ function createDbPersister({
         manifestPageRows: discoveryOptions.manifestPageRows ?? 2048,
         enabled: discoveryOptions.enabled ?? true,
         // Runs fn on a later turn of the event loop; returns a cancel function.
+        // Not unref'd: an unref'd immediate does not keep the event loop from
+        // blocking in its poll phase, so on an idle server every slice waited
+        // for some unrelated timer or I/O (about 1 s each; a real discovery
+        // took over two minutes of wall time for 1.6 s of work).
         defer: discoveryOptions.defer ?? ((fn) => {
             const handle = setImmediate(fn);
-            handle.unref?.();
             return () => clearImmediate(handle);
         }),
     };
