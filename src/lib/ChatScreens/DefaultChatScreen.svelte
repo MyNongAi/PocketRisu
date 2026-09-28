@@ -1074,7 +1074,13 @@ import { isMobile } from 'src/ts/platform'
         try {
             loadPages = Infinity
             const html2canvas = await import('html-to-image');
-            const chats = document.querySelectorAll('.default-chat-screen .risu-chat')
+            // Top to bottom as shown. The DOM order is not the reading order: the
+            // first message precedes Chats' newest-first list (its own
+            // col-reverse box), so the order is read from the layout.
+            const chats = Array.from(document.querySelectorAll('.default-chat-screen .risu-chat'))
+                .map((el) => ({ el, top: el.getBoundingClientRect().top }))
+                .sort((a, b) => a.top - b.top)
+                .map(({ el }) => el)
             alertWait("Taking screenShot...")
             let canvases:HTMLCanvasElement[] = []
 
@@ -1083,8 +1089,6 @@ import { isMobile } from 'src/ts/platform'
                 alertWait("Taking screenShot... "+canvases.length+"/"+chats.length)
                 canvases.push(cnv)
             }
-
-            canvases.reverse()
 
             alertWait("Merging images...")
 
