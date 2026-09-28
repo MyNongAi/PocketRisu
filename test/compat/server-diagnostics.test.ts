@@ -46,7 +46,7 @@ describe('save diagnostics', () => {
     expect(reads).toHaveLength(1)
     // The first read after the import loads the root (queue, flush, load),
     // plans it and streams the segments.
-    expect(reads[0]).toMatch(/\[Read\] database\/database\.bin [\d.]+MB: queue \d+ flush \d+ load \d+ plan \d+ encode \d+ stream \d+ total \d+ ms/)
+    expect(reads[0]).toMatch(/\[Read\] database\/database\.bin [\d.]+MB: queue \d+ flush \d+ load \d+ plan \d+ encode \d+ stream \d+ total \d+ ms rss \d+MB heap \d+MB$/m)
 
     const patched = await client.fetch('/api/patch', {
       method: 'POST',
@@ -64,7 +64,7 @@ describe('save diagnostics', () => {
     expect(lines).toHaveLength(before + 1)
     // The reference path's stages, or the planned path's (db-persister.cjs,
     // persistMode full-plan / incremental).
-    expect(lines.at(-1)).toMatch(/\[Persist\] database\/database\.bin [\d.]+MB(?:: wait \d+ hydrate \d+ guards \d+ encode \d+ kvSet \d+ store \d+| \((?:full-plan|incremental)\): wait \d+ encode \d+ chunk \d+ walk \d+ commit \d+ store \d+) total \d+ ms/)
+    expect(lines.at(-1)).toMatch(/\[Persist\] database\/database\.bin [\d.]+MB(?:: wait \d+ hydrate \d+ guards \d+ encode \d+ kvSet \d+ store \d+| \((?:full-plan|incremental)\): wait \d+ encode \d+ chunk \d+ walk \d+ commit \d+ store \d+) total \d+ ms rss \d+MB heap \d+MB$/m)
   })
 
   test('GET /api/debug/memory reports process memory and cache counts', async () => {

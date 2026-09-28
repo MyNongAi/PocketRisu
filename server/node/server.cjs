@@ -1312,6 +1312,13 @@ function formatMegabytes(bytes) {
     return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 }
 
+// Process memory for the timing lines: a machine being watched through its
+// console cannot call the authenticated /api/debug/memory.
+function formatProcessMemory() {
+    const { rss, heapUsed } = process.memoryUsage();
+    return `rss ${Math.round(rss / 1024 / 1024)}MB heap ${Math.round(heapUsed / 1024 / 1024)}MB`;
+}
+
 async function persistDbCacheWithChats(filePath, decodedKey) {
     if (!dbCache[filePath]) return;
     const persistStartedAt = performance.now();
@@ -1363,7 +1370,7 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
         if (planned) {
             Object.assign(timings, planned.timings);
             lastDbPersistMs = Math.round(performance.now() - persistStartedAt);
-            logger.debug(`[Persist] ${decodedKey} ${formatMegabytes(planned.bytes)} (${planned.mode}): ${formatStageTimings(timings)} total ${lastDbPersistMs} ms`);
+            logger.debug(`[Persist] ${decodedKey} ${formatMegabytes(planned.bytes)} (${planned.mode}): ${formatStageTimings(timings)} total ${lastDbPersistMs} ms ${formatProcessMemory()}`);
             return;
         }
     }
@@ -1407,7 +1414,7 @@ async function persistDbCacheWithChats(filePath, decodedKey) {
         timings.storeMs = lap();
         lastDbPersistMs = Math.round(performance.now() - persistStartedAt);
     }
-    logger.debug(`[Persist] ${decodedKey} ${formatMegabytes(data.length)}: ${formatStageTimings(timings)} total ${Math.round(performance.now() - persistStartedAt)} ms`);
+    logger.debug(`[Persist] ${decodedKey} ${formatMegabytes(data.length)}: ${formatStageTimings(timings)} total ${Math.round(performance.now() - persistStartedAt)} ms ${formatProcessMemory()}`);
 }
 
 // The disk guards of a database persist, shared by the reference and the
@@ -6362,7 +6369,7 @@ async function sendDatabaseRead(req, res) {
     const payload = captureDatabasePayload();
     timings[payload.plan ? 'planMs' : 'encodeMs'] = lap();
     const logRead = (outcome = '') => logger.debug(`[Read] database/database.bin ${formatMegabytes(payload.total)}: `
-        + `${formatStageTimings(timings)} total ${Math.round(performance.now() - startedAt)} ms${outcome}`);
+        + `${formatStageTimings(timings)} total ${Math.round(performance.now() - startedAt)} ms${outcome} ${formatProcessMemory()}`);
     setDatabasePayloadHeaders(res, payload);
     // A strong validator: express then leaves the body alone (it would hash
     // it for a weak one), and a browser revalidating its cached copy gets a
@@ -6446,7 +6453,7 @@ app.post('/api/db/boot', async (req, res, next) => {
         timings.streamMs = lap();
         logger.debug(`[Boot] database/database.bin ${formatMegabytes(payload.total)}, sent ${framed.includedSegments}`
             + `/${payload.plan.segments.length} segments ${formatMegabytes(framed.includedBytes)}: `
-            + `${formatStageTimings(timings)} total ${Math.round(performance.now() - startedAt)} ms${streamed.completed ? '' : ' (closed early)'}`);
+            + `${formatStageTimings(timings)} total ${Math.round(performance.now() - startedAt)} ms${streamed.completed ? '' : ' (closed early)'} ${formatProcessMemory()}`);
     } catch (error) {
         if (error?.code === 'STORAGE_LOCKED') {
             return res.status(409).json({ error: error.message, code: error.code });
