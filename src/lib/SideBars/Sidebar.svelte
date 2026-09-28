@@ -179,17 +179,13 @@
   let charImages: sortType[] = $state([]);
   let catalogSearch = $state('')
   let catalogQuery = $derived(catalogSearch.trim().toLocaleLowerCase())
-  // In the 80px bar the search row has no room for its text, so while the
-  // input has focus the row widens over the list.
+  // The 80px bar leaves the input little room, so the row has one button in
+  // front of it: the magnifier (focuses the input) while it is empty, the
+  // clear button once it has text.
   let catalogSearchInput: HTMLInputElement | undefined = $state()
-  let catalogSearchFocused = $state(false)
-  function focusCatalogSearch() {
-    catalogSearchInput?.focus()
-  }
-  // Buttons in the row keep the focus on the input: a blur would narrow the
-  // row under the pointer before the click lands.
+  // A tap on the row's buttons leaves the focus (and a phone keyboard) where it is.
   function keepCatalogSearchFocus(event: Event) {
-    if (catalogSearchFocused) event.preventDefault()
+    if (catalogSearchInput && document.activeElement === catalogSearchInput) event.preventDefault()
   }
   const splitCatalogStorageKey = 'pocketrisu-sidebar-catalog-split-v1'
   let splitCatalogMode = $state(
@@ -1356,58 +1352,44 @@
     {/if}
   </div>
   {/if}
-  <div class="relative mx-1 mb-1 h-7 w-[calc(100%_-_0.5rem)] shrink-0" class:max-xs:hidden={$leftBarCollapsed}>
-    <div
-      class="flex h-7 items-center gap-0.5 rounded-md border border-selected bg-darkbg pl-0.5 pr-0.5"
-      class:w-full={splitCatalogMode || !catalogSearchFocused}
-      class:absolute={!splitCatalogMode && catalogSearchFocused}
-      class:left-0={!splitCatalogMode && catalogSearchFocused}
-      class:top-0={!splitCatalogMode && catalogSearchFocused}
-      class:z-30={!splitCatalogMode && catalogSearchFocused}
-      class:w-56={!splitCatalogMode && catalogSearchFocused}
-      class:shadow-lg={!splitCatalogMode && catalogSearchFocused}
-    >
+  <div class="mx-1 mb-1 flex w-[calc(100%_-_0.5rem)] shrink-0 items-center gap-1 rounded-md border border-selected bg-darkbg px-1.5"
+    class:max-xs:hidden={$leftBarCollapsed}>
+    {#if catalogSearch}
       <button
         type="button"
-        class="shrink-0 rounded p-0.5 text-textcolor2 risu-interactive-accent"
+        class="-ml-0.5 shrink-0 rounded p-0.5 text-textcolor2 transition-colors hover:bg-red-500/15 hover:text-red-500 active:bg-red-500/25 active:text-red-500 focus-visible:text-red-500"
+        aria-label="검색어 지우기"
+        title="검색어 지우기"
+        onmousedown={keepCatalogSearchFocus}
+        onclick={() => { catalogSearch = '' }}
+      ><XIcon size={13}/></button>
+    {:else}
+      <button
+        type="button"
+        class="-ml-0.5 shrink-0 rounded p-0.5 text-textcolor2 risu-interactive-accent"
         aria-label="캐릭터 검색"
         title="캐릭터 검색"
         onmousedown={keepCatalogSearchFocus}
-        onclick={focusCatalogSearch}
+        onclick={() => catalogSearchInput?.focus()}
       ><SearchIcon size={13}/></button>
-      <input
-        bind:this={catalogSearchInput}
-        bind:value={catalogSearch}
-        aria-label="캐릭터 검색"
-        placeholder={splitCatalogMode || catalogSearchFocused ? language.search : ''}
-        class="min-w-0 grow bg-transparent py-1 text-xs text-textcolor outline-none"
-        onfocus={() => { catalogSearchFocused = true }}
-        onblur={() => { catalogSearchFocused = false }}
-      />
-      <div class="flex shrink-0 items-center">
-        {#if catalogSearch}
-          <button
-            type="button"
-            class="rounded p-0.5 text-textcolor2 transition-colors hover:bg-red-500/15 hover:text-red-500 active:bg-red-500/25 active:text-red-500 focus-visible:text-red-500"
-            aria-label="검색어 지우기"
-            title="검색어 지우기"
-            onmousedown={keepCatalogSearchFocus}
-            onclick={() => { catalogSearch = '' }}
-          ><XIcon size={14}/></button>
-        {/if}
-        <button
-          type="button"
-          class="rounded p-0.5 text-textcolor2 risu-interactive-accent"
-          aria-label={language.characterManager}
-          title={language.characterManager}
-          onmousedown={keepCatalogSearchFocus}
-          onclick={() => {
-            reseter()
-            openCharacterManager.set(true)
-          }}
-        ><LayoutGridIcon size={14}/></button>
-      </div>
-    </div>
+    {/if}
+    <input
+      bind:this={catalogSearchInput}
+      bind:value={catalogSearch}
+      aria-label="캐릭터 검색"
+      placeholder={splitCatalogMode ? language.search : ''}
+      class="min-w-0 grow bg-transparent py-1 text-xs text-textcolor outline-none"
+    />
+    <button
+      type="button"
+      class="shrink-0 rounded p-0.5 text-textcolor2 risu-interactive-accent"
+      aria-label={language.characterManager}
+      title={language.characterManager}
+      onclick={() => {
+        reseter()
+        openCharacterManager.set(true)
+      }}
+    ><LayoutGridIcon size={14}/></button>
   </div>
   <div class="flex grow min-h-0 w-full" class:max-xs:hidden={$leftBarCollapsed} use:touchDragContainer>
   {#if splitCatalogMode}
