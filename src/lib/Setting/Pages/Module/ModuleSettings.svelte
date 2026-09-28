@@ -221,10 +221,12 @@
         if (placements.length !== displayModules.length) return
         const currentFolders = displayFolders
         const folderById = new Map(placements.map(({ index, folderId }) => [displayModules[index]?.id, folderId]))
-        DBState.db.modules = DBState.db.modules.map((module) => ({
-            ...module,
-            folderId: folderById.get(module.id),
-        }))
+        // Only a module whose folder changed gets a new object: the save
+        // tracker compares every replaced module again on the next save.
+        DBState.db.modules = DBState.db.modules.map((module) => {
+            const folderId = folderById.get(module.id)
+            return module.folderId === folderId ? module : { ...module, folderId }
+        })
         const synchronized = synchronizeModuleFolderMembership(
             DBState.db.modules,
             currentFolders,
