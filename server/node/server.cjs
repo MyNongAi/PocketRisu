@@ -92,6 +92,7 @@ const { createChatBodyStore, chatToStub, mergeChatStubWithFullChat, deepFreeze, 
 const { createDbPersister, isPersistMode } = require('./db-persister.cjs');
 const {
     createBootPayloadPlanner, ifNoneMatchIncludes, isLoopbackAddress, isTrueLoopbackRequest,
+    encodeBootHeader, parseHaveList, deriveBootCacheKey, BOOT_PROTOCOL, BOOT_CONTENT_TYPE,
 } = require('./boot-payload.cjs');
 const { createRuntimeFlags } = require('./runtime-flags.cjs');
 const { cdcSplit } = require('./chunkStore.cjs');
@@ -1667,7 +1668,7 @@ function shouldCompress(req, res) {
     if (contentType.startsWith('image/') || contentType.startsWith('video/') || contentType.startsWith('audio/')) {
         return false;
     }
-    if (contentType.includes('application/octet-stream')) {
+    if (contentType.includes('application/octet-stream') || contentType.includes(BOOT_CONTENT_TYPE)) {
         return true;
     }
     return compression.filter(req, res);
@@ -6387,6 +6388,76 @@ async function sendDatabaseRead(req, res) {
     timings.streamMs = lap();
     logRead(streamed.completed ? '' : ' (closed early)');
 }
+
+// POST /api/db/boot, protocol 1: the database for a client that keeps the
+// segments it has seen in its own (encrypted) cache. The body lists the
+// 16-byte digests it holds; the answer is the manifest of the payload
+// /api/read would send, the cache key (in the body, so no header log can
+// capture it) and the bytes of every segment the client does not hold (see
+// encodeBootHeader in boot-payload.cjs). The client assembles the /api/read
+// bytes and checks every digest and the etag before decoding them. The
+// held digests count only when the client's key id is the current one.
+// 204: no database yet (an empty /api/read); 503 BOOT_DISABLED: the planner
+// is disabled, read /api/read instead.
+app.post('/api/db/boot', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (req.headers['x-boot-protocol'] !== BOOT_PROTOCOL) {
+        return res.status(400).json({ error: 'Unsupported boot protocol', code: 'BOOT_PROTOCOL_UNSUPPORTED' });
+    }
+    let held;
+    try {
+        held = parseHaveList(req.body);
+    } catch (error) {
+        return res.status(error.status ?? 400).json({ error: error.message, code: error.code });
+    }
+    const answerDisabled = () => res.status(503).set('Cache-Control', 'no-store')
+        .json({ error: 'The boot payload is disabled; read /api/read', code: 'BOOT_DISABLED' });
+    if (bootPayload.disabled()) return answerDisabled();
+    const startedAt = performance.now();
+    const lap = createStageLap(startedAt);
+    const timings = {};
+    try {
+        if (!(await ensureDatabaseForRead(timings, lap))) {
+            res.set('Cache-Control', 'no-store').status(204).end();
+            return;
+        }
+        const payload = captureDatabasePayload();
+        timings.planMs = lap();
+        if (!payload.plan) return answerDisabled();
+        const cacheKey = deriveBootCacheKey(jwtSecret);
+        const reuse = req.headers['x-boot-cache-key-id'] === cacheKey.keyId ? held : null;
+        const framed = encodeBootHeader(payload.plan, {
+            omit: reuse,
+            key: req.headers['x-boot-cache'] === '1' ? cacheKey : null,
+        });
+        res.setHeader('Content-Type', BOOT_CONTENT_TYPE);
+        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('x-boot-protocol', BOOT_PROTOCOL);
+        setDatabasePayloadHeaders(res, payload);
+        // Bytes: the assembled payload, and the segment bytes in this body.
+        res.setHeader('x-boot-total', String(payload.plan.total));
+        res.setHeader('x-boot-included', String(framed.includedBytes));
+        if (isTrueLoopbackRequest(req)) {
+            res.locals.skipCompression = true;
+            res.setHeader('Content-Length', String(framed.header.length + framed.includedBytes));
+        }
+        const streamed = await bootPayload.streamSegments(res, payload.plan, { head: framed.header, omit: reuse });
+        timings.encodeMs = streamed.encodeMs;
+        timings.streamMs = lap();
+        logger.debug(`[Boot] database/database.bin ${formatMegabytes(payload.total)}, sent ${framed.includedSegments}`
+            + `/${payload.plan.segments.length} segments ${formatMegabytes(framed.includedBytes)}: `
+            + `${formatStageTimings(timings)} total ${Math.round(performance.now() - startedAt)} ms${streamed.completed ? '' : ' (closed early)'}`);
+    } catch (error) {
+        if (error?.code === 'STORAGE_LOCKED') {
+            return res.status(409).json({ error: error.message, code: error.code });
+        }
+        logger.error('[Boot] Failed to send the database', error);
+        // Cut the response: the client's digest checks fail and it falls back.
+        if (res.headersSent) return res.destroy(error);
+        if (['BOOT_DISABLED', 'BOOT_SEGMENT_MUTATED', 'BOOT_UNFRAMEABLE'].includes(error?.code)) return answerDisabled();
+        next(error);
+    }
+});
 
 // Names + sizes of every plugin-storage key, no values. Backs the client's
 // synchronous keys()/length and the storage viewer. `migrated` is whether the

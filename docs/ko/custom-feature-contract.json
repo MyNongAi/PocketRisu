@@ -687,6 +687,29 @@
         "src/ts/storage/nodeStorage.bootLoader.test.ts",
         "src/ts/storage/bootReport.test.ts"
       ]
+    },
+    {
+      "id": "DB-BOOT-PAYLOAD",
+      "title": "database.bin 세그먼트 계획·스트리밍 읽기·부팅 델타",
+      "criticality": "performance",
+      "ownerFiles": [
+        "server/node/boot-payload.cjs",
+        "server/node/msgpack-compose.cjs",
+        "server/node/server.cjs"
+      ],
+      "requiredMarkers": [
+        { "file": "server/node/boot-payload.cjs", "contains": "function createBootPayloadPlanner" },
+        { "file": "server/node/boot-payload.cjs", "contains": "function encodeBootHeader" },
+        { "file": "server/node/server.cjs", "contains": "function dbEtagFor(databaseObject)" },
+        { "file": "server/node/server.cjs", "contains": "async function sendDatabaseRead(req, res)" },
+        { "file": "server/node/server.cjs", "contains": "app.post('/api/db/boot'" },
+        { "file": "server/node/server.cjs", "contains": "res.locals.skipCompression" }
+      ],
+      "regressionTests": [
+        "server/node/boot-payload.test.ts",
+        "test/compat/db-boot.test.ts",
+        "test/compat/db-etag-bytes.test.ts"
+      ]
     }
   ]
 }
