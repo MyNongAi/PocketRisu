@@ -227,9 +227,10 @@
                 {/snippet}
             </VirtualGrid>
         {:else if selected === 1}
-            <VirtualList items={characters} itemHeight={142} className="min-h-0 flex-1" key={(char) => char.chaId}>
+            <!-- Card: p-2 + title line 28 + mb-1 + two description lines 48 + mt-1 + stats line 20 = 120px; +m-1 = 128. -->
+            <VirtualList items={characters} itemHeight={128} className="min-h-0 flex-1" key={(char) => char.chaId}>
                 {#snippet children(char)}
-                    <div class="m-1 flex h-[134px] rounded-md border border-darkborderc p-2" class:opacity-60={char.archived}>
+                    <div class="m-1 flex h-[120px] rounded-md border border-darkborderc p-2" class:opacity-60={char.archived}>
                         <!-- self-start: stretched to the card's height, the badge sat at the card's bottom, not the thumbnail's. -->
                         <div class="relative shrink-0 self-start" class:grayscale={char.archived}>
                             <BarIcon
@@ -252,10 +253,19 @@
                             {/if}
                         </div>
                         <div class="ml-2 flex min-w-0 flex-1 flex-col">
-                            <h4 class="mb-1 flex min-w-0 items-center gap-1 text-lg font-bold text-textcolor" style:color={listTitleColor(char.titleColor, char.missingAssetCount > 0)}>
-                                <span class="truncate">{char.name || 'Unnamed'}</span>
-                                {#if char.archived}<span class="shrink-0 rounded border border-darkborderc px-1 text-xs font-normal text-textcolor2">{language.deactivatedBadge}</span>{/if}
-                            </h4>
+                            <!-- The row's actions share the title line (top right) instead of a
+                                 line of their own, which every row reserved at its fixed height. -->
+                            <div class="mb-1 flex min-w-0 items-center gap-2">
+                                <h4 class="flex min-w-0 flex-1 items-center gap-1 text-lg font-bold text-textcolor" style:color={listTitleColor(char.titleColor, char.missingAssetCount > 0)}>
+                                    <span class="truncate">{char.name || 'Unnamed'}</span>
+                                    {#if char.archived}<span class="shrink-0 rounded border border-darkborderc px-1 text-xs font-normal text-textcolor2">{language.deactivatedBadge}</span>{/if}
+                                </h4>
+                                <div class="flex shrink-0 gap-2">
+                                    {#if !char.archived}<button class="text-textcolor2 hover:text-textcolor" title="제목 색변경" aria-label="제목 색변경" onclick={() => editCharacterTitleColor(char.chaId)}><PaletteIcon/></button>{/if}
+                                    <button class="text-textcolor2 hover:text-textcolor" title={language.selectChar} aria-label={language.selectChar} onclick={() => void openChar(char)}><SquareMousePointer/></button>
+                                    {#if !char.archived}<button class="text-textcolor2 hover:text-textcolor" title={language.trash} aria-label={language.trash} onclick={() => removeChar(char.chaId, char.name)}><TrashIcon/></button>{/if}
+                                </div>
+                            </div>
                             <span class="line-clamp-2 text-textcolor2">{parseMultilangString(char.desc)['en'] || parseMultilangString(char.desc)['xx'] || 'No description'}</span>
                             <div class="mt-1 flex items-center text-sm text-textcolor2">
                                 <span class="mr-1">{char.chats}</span><MessageSquareIcon size={14}/><span class="mx-1">|</span><span>{char.agoText}</span><span class="mx-1">|</span><span>에셋 {char.assetCount.toLocaleString()}개</span>
@@ -263,11 +273,6 @@
                                 {#if (similarityCounts.get(char.chaId) ?? 0) > 0}<span class="ml-1" title="이름 유사도 90% 이상 후보">· {language.characterSimilarityCountLabel(similarityCounts.get(char.chaId) ?? 0)}</span>{/if}
                                 {#if (duplicateCounts?.get(char.chaId) ?? 0) > 0}<span class="ml-1">· {language.characterDuplicateCountLabel(duplicateCounts?.get(char.chaId) ?? 0)}</span>{/if}
                                 {#if char.importedLabel}<span class="mx-1">|</span><span title={language.characterImportedAtHint}>{char.importedLabel}</span>{/if}
-                            </div>
-                            <div class="flex justify-end gap-2">
-                                {#if !char.archived}<button class="text-textcolor2 hover:text-textcolor" title="제목 색변경" aria-label="제목 색변경" onclick={() => editCharacterTitleColor(char.chaId)}><PaletteIcon/></button>{/if}
-                                <button class="text-textcolor2 hover:text-textcolor" title={language.selectChar} aria-label={language.selectChar} onclick={() => void openChar(char)}><SquareMousePointer/></button>
-                                {#if !char.archived}<button class="text-textcolor2 hover:text-textcolor" title={language.trash} aria-label={language.trash} onclick={() => removeChar(char.chaId, char.name)}><TrashIcon/></button>{/if}
                             </div>
                         </div>
                     </div>
