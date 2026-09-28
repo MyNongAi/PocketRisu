@@ -12,6 +12,22 @@ import { normalizeChat } from "./database.svelte"
 import type { PatchServerTimings } from "./saveMetrics"
 import type { ChatSaveIntent } from './chatSaveIntent'
 import { chatHoldsAllMessages } from './chatConflict'
+import { BootAuthError, BootFallback, loadDatabaseViaBoot } from './bootPayload'
+import { BootCacheController, browserBootCacheEnv } from './bootPayloadCache'
+
+/** How the last database.bin read went (the [Boot] log line, storage settings). */
+export interface DbLoadInfo {
+    /** 'boot': delta boot (bootPayload.ts); 'read': GET /api/read. */
+    mode: 'boot' | 'read'
+    /** Why a delta boot fell back to the read, if it did. */
+    fallbackReason: string | null
+    total: number
+    /** Payload bytes the server sent, before HTTP compression. */
+    received: number
+    segments: number | null
+    cachedSegments: number | null
+    ms: number
+}
 
 export interface ChatSaveOptions {
     /**
@@ -457,6 +473,11 @@ export class NodeStorage{
         ?? (Date.now().toString(36) + Math.random().toString(36).slice(2))
 
     _lastDbEtag: string | null = null
+    /** x-db-hash of the last database.bin read: the server's hash of that view. */
+    lastBootDbHash: string | null = null
+    lastDbLoad: DbLoadInfo | null = null
+    /** Delta boot policy and encrypted segment cache (bootPayloadCache.ts). */
+    bootCache = new BootCacheController(browserBootCacheEnv())
 
     private _lastDbWriteDiagnostics: PatchHashDiagnostics | null = null
     authChecked = false
@@ -857,11 +878,25 @@ export class NodeStorage{
         return diagnostics
     }
     async getItem(key:string):Promise<Buffer> {
+        const isDatabase = key === 'database/database.bin'
+        let fallbackReason: string | null = null
+        if (isDatabase && this.bootCache.usable()) {
+            const boot = await this.getDatabaseViaBoot()
+            if (!('fallback' in boot)) return boot.data
+            fallbackReason = boot.fallback
+        }
+        const startedAt = performance.now()
         const headers: Record<string, string> = {
             'file-path': Buffer.from(key, 'utf-8').toString('hex')
         }
 
-        const da = await this.authFetch('/api/read', { method: "GET", headers })
+        // After a failed delta boot, skip the HTTP cache: the full bytes must
+        // come from the server.
+        const da = await this.authFetch('/api/read', {
+            method: "GET",
+            headers,
+            ...(fallbackReason !== null ? { cache: 'no-store' as RequestCache } : {}),
+        })
         if(da.status < 200 || da.status >= 300){
             throw await this.storageRequestError('getItem', da)
         }
@@ -876,13 +911,88 @@ export class NodeStorage{
         if (syncInstance && Number.isInteger(syncSeq) && syncSeq >= 0) {
             this.syncCursor = { instanceId: syncInstance, seq: syncSeq }
         }
+        if (isDatabase) {
+            this.lastBootDbHash = da.headers.get('x-db-hash')?.trim().toLowerCase() || null
+        }
 
         const data = Buffer.from(await da.arrayBuffer())
+        if (isDatabase) {
+            this.lastDbLoad = {
+                mode: 'read',
+                fallbackReason,
+                total: data.length,
+                received: data.length,
+                segments: null,
+                cachedSegments: null,
+                ms: Math.round(performance.now() - startedAt),
+            }
+        }
         if (data.length === 0){
             return null
         }
 
         return data
+    }
+
+    /**
+     * database.bin through the delta boot (bootPayload.ts). A fallback reason
+     * means the caller reads it the legacy way; authentication failures throw
+     * as the legacy read would.
+     */
+    private async getDatabaseViaBoot(): Promise<{ data: Buffer | null } | { fallback: string }> {
+        try {
+            const result = await loadDatabaseViaBoot({
+                fetch: (input, init) => this.bootFetch(input, init),
+                cache: this.bootCache.cache(),
+                subtle: this.bootCache.subtle,
+            })
+            this.bootCache.noteSuccess()
+            if (result.etag) this._lastDbEtag = result.etag
+            if (result.cursor) this.syncCursor = result.cursor
+            this.lastBootDbHash = result.dbHash
+            const stats = result.stats
+            this.lastDbLoad = {
+                mode: 'boot',
+                fallbackReason: null,
+                total: stats?.total ?? 0,
+                received: stats?.includedBytes ?? 0,
+                segments: stats?.segments ?? null,
+                cachedSegments: stats?.cachedSegments ?? null,
+                ms: stats?.ms ?? 0,
+            }
+            if (result.commit) this.bootCache.scheduleCommit(result.commit)
+            const bytes = result.bytes
+            if (!bytes || bytes.length === 0) return { data: null }
+            // A view, not a copy: decodeRisuSave slices a Buffer without copying.
+            return { data: Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength) }
+        } catch (error) {
+            if (error instanceof BootAuthError) {
+                if (error.response) throw await this.storageRequestError('getItem', error.response)
+                throw error.cause ?? error
+            }
+            const reason = error instanceof BootFallback ? error.reason : 'error'
+            console.warn('[Boot] Delta boot unavailable, reading database.bin in full:', error)
+            this.bootCache.noteFallback(reason)
+            return { fallback: reason }
+        }
+    }
+
+    // One attempt, no transient retries: a 503 from /api/db/boot means the
+    // delta boot is disabled, and the legacy read is the retry.
+    private async bootFetch(input: string, init: RequestInit): Promise<Response> {
+        try {
+            return await this.authFetchOnce(input, init)
+        } catch (error) {
+            // Network failures fall back to the legacy read; anything else came
+            // from the login flow and must surface as it does today.
+            if (error instanceof TypeError || this.isAbortError(error)) throw error
+            throw new BootAuthError({ cause: error })
+        }
+    }
+
+    /** Drop this device's encrypted boot segment cache (storage settings). */
+    clearBootCache(): Promise<void> {
+        return this.bootCache.clear()
     }
     async keys(prefix: string = ''):Promise<string[]>{
         const headers: Record<string, string> = {
