@@ -26,6 +26,7 @@
     import VirtualGrid from "../UI/Virtual/VirtualGrid.svelte";
     import VirtualList from "../UI/Virtual/VirtualList.svelte";
     import { buildCharacterSimilarityCounts, buildExactCharacterDuplicateCounts } from "src/ts/gui/characterCatalogMetrics";
+    import { formatImportedDate } from "src/ts/gui/importedDate";
 
     interface Props { endGrid?: () => void }
     let { endGrid = () => {} }: Props = $props();
@@ -41,7 +42,7 @@
         assetCount:number; sourceBadge:string; sourceRecorded:boolean;
         chats:number; interaction:number; agoText:string;
         missingAssetCount:number; realmRecoveryAvailable:boolean; titleColor?:string;
-        hidden:boolean;
+        hidden:boolean; importedLabel:string;
     }
 
     async function openChar(char: CatalogEntry){
@@ -120,6 +121,7 @@
                 realmRecoveryAvailable: isRealmAssetRecoveryAvailable(c),
                 titleColor: c.titleColor,
                 hidden: (db.nodeOnlyHiddenCharacterIds ?? []).includes(c.chaId),
+                importedLabel: formatImportedDate(c.importedAt ?? c.sourceInfo?.importedAt),
             })
         }
         if(!trash && !db.nodeOnlyHideArchivedCharacters){
@@ -136,6 +138,7 @@
                     realmRecoveryAvailable: isRealmAssetRecoveryAvailable(stub),
                     titleColor: stub.titleColor,
                     hidden: (db.nodeOnlyHiddenCharacterIds ?? []).includes(stub.chaId),
+                    importedLabel: formatImportedDate((stub as { importedAt?: number }).importedAt ?? stub.sourceInfo?.importedAt),
                 })
             }
         }
@@ -227,7 +230,8 @@
             <VirtualList items={characters} itemHeight={142} className="min-h-0 flex-1" key={(char) => char.chaId}>
                 {#snippet children(char)}
                     <div class="m-1 flex h-[134px] rounded-md border border-darkborderc p-2" class:opacity-60={char.archived}>
-                        <div class="relative shrink-0" class:grayscale={char.archived}>
+                        <!-- self-start: stretched to the card's height, the badge sat at the card's bottom, not the thumbnail's. -->
+                        <div class="relative shrink-0 self-start" class:grayscale={char.archived}>
                             <BarIcon
                                 onPrefetch={() => schedulePrefetch(char.index)}
                                 onPrefetchCancel={() => cancelPrefetch(char.index)}
@@ -236,7 +240,7 @@
                                 additionalStyle={() => getCharThumbnail(char.image, 'css')}
                             />
                             <span
-                                class="pointer-events-none absolute -bottom-1 left-0 z-10 rounded border border-darkborderc bg-darkbg/95 px-0.5 text-[8px] font-semibold leading-tight"
+                                class="pointer-events-none absolute -bottom-1 -left-1 z-10 rounded border border-darkborderc bg-darkbg/95 px-0.5 text-[8px] font-semibold leading-tight"
                                 class:text-sky-300={char.sourceBadge === '로컬'}
                                 class:text-violet-300={char.sourceBadge === '웹'}
                                 class:text-emerald-300={char.sourceBadge === '모바일'}
@@ -258,6 +262,7 @@
                                 {#if char.missingAssetCount > 0}<span class="ml-1 text-red-400">· 누락 {char.missingAssetCount.toLocaleString()}개</span>{/if}
                                 {#if (similarityCounts.get(char.chaId) ?? 0) > 0}<span class="ml-1" title="이름 유사도 90% 이상 후보">· {language.characterSimilarityCountLabel(similarityCounts.get(char.chaId) ?? 0)}</span>{/if}
                                 {#if (duplicateCounts?.get(char.chaId) ?? 0) > 0}<span class="ml-1">· {language.characterDuplicateCountLabel(duplicateCounts?.get(char.chaId) ?? 0)}</span>{/if}
+                                {#if char.importedLabel}<span class="mx-1">|</span><span title={language.characterImportedAtHint}>{char.importedLabel}</span>{/if}
                             </div>
                             <div class="flex justify-end gap-2">
                                 {#if !char.archived}<button class="text-textcolor2 hover:text-textcolor" title="제목 색변경" aria-label="제목 색변경" onclick={() => editCharacterTitleColor(char.chaId)}><PaletteIcon/></button>{/if}

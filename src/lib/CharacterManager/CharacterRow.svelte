@@ -12,6 +12,7 @@
     import { language } from "src/lang";
     import type { ManagerEntry } from "src/ts/characterManager";
     import { listTitleColor } from "src/ts/gui/titleColors";
+    import { formatImportedDate } from "src/ts/gui/importedDate";
 
     interface Props {
         entry: ManagerEntry;
@@ -40,15 +41,7 @@
         ? `에셋 ${entry.missingAssetCount}개 누락 · Realm 복구 가능`
         : `에셋 ${entry.missingAssetCount}개 누락 · 확인된 Realm 복구 원본 없음`);
 
-    // yy.mm.dd — compact enough to sit at the end of the metrics line.
-    // Cards imported before the field existed have no date to show.
-    let importedLabel = $derived.by(() => {
-        if (!entry.importedAt) return '';
-        const d = new Date(entry.importedAt);
-        if (Number.isNaN(d.getTime())) return '';
-        const pad = (n: number) => String(n).padStart(2, '0');
-        return `${pad(d.getFullYear() % 100)}.${pad(d.getMonth() + 1)}.${pad(d.getDate())}`;
-    });
+    let importedLabel = $derived(formatImportedDate(entry.importedAt));
 </script>
 
 <div
