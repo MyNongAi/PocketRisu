@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { buildManagerEntries } from './characterManager'
-import type { Database } from './storage/database.svelte'
+import { buildManagerEntries, folderNameMatchIds } from './characterManager'
+import { DEACTIVATED_FOLDER_IDS } from './deactivatedCharacterFolders'
+import type { Database, folder } from './storage/database.svelte'
 
 describe('character manager metadata', () => {
     it('carries source and missing-asset health into active rows', () => {
@@ -102,5 +103,24 @@ describe('import date on manager rows', () => {
         } as unknown as Database
 
         expect(buildManagerEntries(db).get('archived')?.importedAt).toBe(777)
+    })
+})
+
+describe('folder-name search in the manager', () => {
+    const similar: folder = { id: 'sim', name: '[유사 후보]', color: '', data: ['a', 'b'] }
+    const other: folder = { id: 'other', name: '판타지', color: '', data: ['c'] }
+    const idle: folder = { id: DEACTIVATED_FOLDER_IDS[60], name: '비활성 60일', color: '', data: ['d'], nodeOnlySystem: 'deactivated' }
+    const order = ['loose', similar, other, idle]
+
+    it('shows every character of a folder whose name matches', () => {
+        expect([...folderNameMatchIds(order, '유사')]).toEqual(['a', 'b'])
+    })
+
+    it('never matches an idle-age folder by its name', () => {
+        expect(folderNameMatchIds(order, '비활성').size).toBe(0)
+    })
+
+    it('matches nothing without a search', () => {
+        expect(folderNameMatchIds(order, '').size).toBe(0)
     })
 })

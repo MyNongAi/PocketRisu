@@ -65,9 +65,9 @@
     // Regular folders start open and remember being collapsed; the idle-age
     // folders (up to ~1,000 rows) start collapsed and remember being opened.
     // The same stored set holds both, read inverted. A search or filter opens
-    // the idle-age and fully deactivated folders with matches, storing nothing.
+    // every folder with matches, storing nothing, and hides the ones without.
     function isFolderCollapsed(entry: folder, visibleCount: number): boolean {
-        return !isManagerFolderOpen(entry, collapsed.has(entry.id), narrowing, visibleCount, (id) => !!entries.get(id)?.archived);
+        return !isManagerFolderOpen(entry, collapsed.has(entry.id), narrowing, visibleCount);
     }
 
     function systemFolderLabel(entry: folder): string {
@@ -180,8 +180,9 @@
             {@const count = folderVisibleCount(entry)}
             {@const isCollapsed = isFolderCollapsed(entry, count)}
             {@const FolderGlyph = isSystem ? ArchiveIcon : ((folderDisplayMode(entry) === 'icon' ? folderIconComponent(entry.nodeOnlyIcon) : undefined) ?? FolderIcon)}
+            <!-- Hidden, not unmounted: layoutFromDom reads every folder. -->
             <div data-order-key={isSystem ? undefined : `folder:${entry.id}`} data-folder-id={entry.id} data-system-folder={isSystem ? entry.id : undefined} data-sortable-no-scale
-                class="rounded-md border border-darkborderc bg-darkbg">
+                class="rounded-md border border-darkborderc bg-darkbg" class:hidden={narrowing && count === 0}>
                 <div class="flex items-center gap-2 px-2 py-2 text-textcolor cursor-pointer select-none"
                     role="button" tabindex="0"
                     onclick={() => toggleCollapsed(entry.id)}

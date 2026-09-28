@@ -31,7 +31,7 @@
     import { alertConfirm, alertError, alertInput, alertSelect, notifySuccess } from "src/ts/alert";
     import { findCharacterIndexbyId } from "src/ts/util";
     import {
-        buildManagerEntries, matchesFilter, matchesSearch, sortEntries,
+        buildManagerEntries, folderNameMatchIds, matchesFilter, matchesSearch, sortEntries,
         type ManagerEntry, type ManagerFilter, type ManagerSort,
     } from "src/ts/characterManager";
     import {
@@ -76,7 +76,9 @@
     ));
     let allTrashEntries = $derived([...entries.values()].filter((e) => e.trashed));
     let trashEntries = $derived(allTrashEntries.filter((e) => matchesSearch(e.name, search)));
-    let visible = $derived((e: ManagerEntry) => matchesSearch(e.name, search) && matchesFilter(e, filter));
+    // A folder whose name matches the search shows all of its characters (the filter still applies).
+    let folderMatchIds = $derived(folderNameMatchIds(DBState.db.characterOrder, search));
+    let visible = $derived((e: ManagerEntry) => (matchesSearch(e.name, search) || folderMatchIds.has(e.chaId)) && matchesFilter(e, filter));
     let visibleLiveCount = $derived(liveEntries.filter(visible).length);
     let baseFlatList = $derived(sortEntries(liveEntries.filter(visible), sort));
     let flatList = $derived(sortReversed ? [...baseFlatList].reverse() : baseFlatList);

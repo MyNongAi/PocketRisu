@@ -348,24 +348,28 @@ describe('age folder labels', () => {
 })
 
 describe('isManagerFolderOpen — search and filter expansion', () => {
-    const isDeactivated = (id: string) => id.startsWith('s')
     const regular = userFolder('f', ['a', 's1'])
     const fullyDeactivated = userFolder('z', ['s1', 's2'])
     const ageFolder = age(60, ['s'])
 
     it('uses the stored flag, read inverted for age folders, without a search', () => {
-        expect(isManagerFolderOpen(regular, false, false, 3, isDeactivated)).toBe(true)
-        expect(isManagerFolderOpen(regular, true, false, 3, isDeactivated)).toBe(false)
-        expect(isManagerFolderOpen(fullyDeactivated, true, false, 3, isDeactivated)).toBe(false)
-        expect(isManagerFolderOpen(ageFolder, false, false, 3, isDeactivated)).toBe(false)
-        expect(isManagerFolderOpen(ageFolder, true, false, 3, isDeactivated)).toBe(true)
+        expect(isManagerFolderOpen(regular, false, false, 3)).toBe(true)
+        expect(isManagerFolderOpen(regular, true, false, 3)).toBe(false)
+        expect(isManagerFolderOpen(fullyDeactivated, true, false, 3)).toBe(false)
+        expect(isManagerFolderOpen(ageFolder, false, false, 3)).toBe(false)
+        expect(isManagerFolderOpen(ageFolder, true, false, 3)).toBe(true)
     })
 
-    it('opens age and fully deactivated folders holding a match while a search or filter narrows the list', () => {
-        expect(isManagerFolderOpen(ageFolder, false, true, 1, isDeactivated)).toBe(true)
-        expect(isManagerFolderOpen(fullyDeactivated, true, true, 1, isDeactivated)).toBe(true)
-        expect(isManagerFolderOpen(ageFolder, false, true, 0, isDeactivated)).toBe(false)
-        // A regular folder keeps the state the user gave it.
-        expect(isManagerFolderOpen(regular, true, true, 1, isDeactivated)).toBe(false)
+    it('opens every folder holding a match while a search or filter narrows the list', () => {
+        expect(isManagerFolderOpen(ageFolder, false, true, 1)).toBe(true)
+        expect(isManagerFolderOpen(fullyDeactivated, true, true, 1)).toBe(true)
+        // A collapsed regular folder too: otherwise only its count would show.
+        expect(isManagerFolderOpen(regular, true, true, 1)).toBe(true)
+    })
+
+    it('keeps the stored state of a folder without matches', () => {
+        expect(isManagerFolderOpen(ageFolder, false, true, 0)).toBe(false)
+        expect(isManagerFolderOpen(regular, true, true, 0)).toBe(false)
+        expect(isManagerFolderOpen(regular, false, true, 0)).toBe(true)
     })
 })

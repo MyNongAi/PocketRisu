@@ -415,18 +415,17 @@ export function railFolderView(
  * Whether the character manager shows a folder open. Regular folders start
  * open and remember being collapsed; age folders start collapsed and
  * remember being opened (`toggled` is the stored flag, read inverted). While
- * a search or filter narrows the list, an age folder or a fully deactivated
- * folder holding a match is shown open without touching the stored state,
- * so matching deactivated characters are visible.
+ * a search or filter narrows the list, every folder holding a match is shown
+ * open without touching the stored state: a collapsed folder would show only
+ * its match count, never the matches.
  */
 export function isManagerFolderOpen(
     entry: folder,
     toggled: boolean,
     narrowing: boolean,
     visibleCount: number,
-    isDeactivated: (chaId: string) => boolean,
 ): boolean {
     const system = isDeactivatedSystemFolder(entry)
-    if (narrowing && visibleCount > 0 && (system || (entry.data.length > 0 && entry.data.every((id) => isDeactivated(id))))) return true
+    if (narrowing && visibleCount > 0) return true
     return toggled === system
 }

@@ -3,11 +3,12 @@
  * trashed character, keyed by chaId. Pure; the Svelte component derives it
  * from the DB and re-derives on change.
  */
-import type { Database } from './storage/database.svelte'
+import type { Database, folder } from './storage/database.svelte'
 import { matchesCatalogText } from './gui/catalogSearch'
 import { getCharacterAssetCount } from './gui/characterAssetCount'
 import { isRealmAssetRecoveryAvailable } from './gui/titleColors'
 import { resolveCharacterSourceBadge, type CharacterSourceBadge } from './gui/characterSourceBadge'
+import { isDeactivatedSystemFolder } from './deactivatedCharacterFolders'
 
 export interface ManagerEntry {
     chaId: string
@@ -89,6 +90,22 @@ export function buildManagerEntries(db: Database): Map<string, ManagerEntry> {
 
 export function matchesSearch(name: string, search: string): boolean {
     return matchesCatalogText(name, search)
+}
+
+/**
+ * Characters a folder-name match shows. As in the sidebar, a folder whose
+ * name matches the search shows all of its characters; an idle-age folder
+ * never matches by its name (short, common keystrokes like "비", "일" or
+ * digits), only by its members.
+ */
+export function folderNameMatchIds(order: readonly (string | folder)[], search: string): Set<string> {
+    const ids = new Set<string>()
+    if (!search) return ids
+    for (const entry of order) {
+        if (typeof entry === 'string' || isDeactivatedSystemFolder(entry) || !matchesSearch(entry.name, search)) continue
+        for (const id of entry.data) ids.add(id)
+    }
+    return ids
 }
 
 export function matchesFilter(entry: ManagerEntry, filter: ManagerFilter): boolean {
