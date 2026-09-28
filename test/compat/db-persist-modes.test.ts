@@ -412,6 +412,10 @@ describe('layout discovery', () => {
     }
     expect(stats.persister.discovery.last).toMatchObject({ reason: 'cold-load', stopped: 'complete', mismatchedOwners: 0 })
     expect(stats.persister.layout).toMatchObject({ discovered: true, partial: false })
+    // The live machine reads the outcome from stdout (counts and timings only).
+    const layoutLine = /\[Layout\] database\/database\.bin discovery complete \(cold-load\): (\d+)\/\1 owners, \d+ chats, 0 mismatched, cpu \d+ ms in \d+ slices \(max \d+ ms\), wall \d+ ms/
+    for (let i = 0; i < 40 && !layoutLine.test(booted.srv.stdout()); i++) await new Promise((resolve) => setTimeout(resolve, 50))
+    expect(booted.srv.stdout()).toMatch(layoutLine)
     const edit = [{ op: 'replace', path: '/characters/2/chats/1/lastDate', value: 5 }]
     expect((await sendPatch(booted, edit, utils.calculateHash(local).toString(16))).status).toBe(200)
     expect((await flush(booted)).status).toBe(200)

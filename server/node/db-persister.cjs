@@ -1347,7 +1347,13 @@ function createDbPersister({
         run.stats.cpuMs += ms;
         if (ms > run.stats.maxSliceMs) run.stats.maxSliceMs = ms;
         // endDiscovery ran in this slice: count the slice in.
-        if (ended) discoveryState.last = publicDiscoveryStats(run);
+        if (ended) {
+            const d = discoveryState.last = publicDiscoveryStats(run);
+            // Counts and timings only; the live machine reads this from stdout.
+            logger.debug(`[Layout] database/database.bin discovery ${d.stopped} (${d.reason}): `
+                + `${d.verifiedOwners}/${d.owners} owners, ${d.chats} chats, ${d.mismatchedOwners} mismatched, `
+                + `cpu ${Math.round(d.cpuMs)} ms in ${d.slices} slices (max ${Math.round(d.maxSliceMs)} ms), wall ${Math.round(d.wallMs)} ms`);
+        }
         return ended;
     }
 
