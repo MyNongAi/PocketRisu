@@ -46,8 +46,11 @@ const SPLIT_ALWAYS = new Set(['characters', 'modules']);
 // elements are large: a delta then carries the changed element only.
 const SPLIT_MIN_TOTAL = 64 * 1024;
 const SPLIT_MIN_AVERAGE = 1024;
-// Consecutive small segments go out in writes of at least this size.
-const WRITE_BYTES = 64 * 1024;
+// Consecutive segments go out in writes of at least this size. Node's
+// streaming brotli (what the compression middleware sends browsers)
+// compresses markedly worse when it is fed writes under 1MB: about 7% more
+// bytes on the real payload, 19% on a synthetic one, against 1MB or more.
+const WRITE_BYTES = 1024 * 1024;
 // A stream gives the event loop a turn after this much synchronous work,
 // even when the socket keeps accepting writes.
 const MAX_SLICE_MS = 20;
@@ -108,6 +111,7 @@ function merkleEtag(prefix, segments) {
  * @param {(root: any) => Buffer} [options.encodeWhole] - the whole payload, for the self-test (utils.encodeRisuSaveLegacyBuffer)
  * @param {(detail: string) => void} [options.onMutation] - a served segment no longer matches its digest
  * @param {() => number} [options.now]
+ * @param {number} [options.writeBytes] - the smallest coalesced write (tests)
  */
 function createBootPayloadPlanner({
     logger = console,
@@ -115,6 +119,7 @@ function createBootPayloadPlanner({
     encodeWhole = encodeRisuSaveLegacyBuffer,
     onMutation = null,
     now = () => performance.now(),
+    writeBytes = WRITE_BYTES,
 } = {}) {
     // element object -> { digest, len } of enc(element)
     let elementMemo = new WeakMap();
@@ -350,8 +355,8 @@ function createBootPayloadPlanner({
 
     /**
      * Writes `head`, then the bytes of every segment of `plan` whose digest
-     * is not in `omit`, in plan order, then ends the response. Small segments
-     * are coalesced into writes of at least WRITE_BYTES; a write the socket
+     * is not in `omit`, in plan order, then ends the response. Segments are
+     * coalesced into writes of at least writeBytes; a write the socket
      * (or the compression stream) refuses is waited out ('drain'), and the
      * loop stops when the response closes. A segment that fails its digest
      * check throws; the caller destroys the response, or answers some other
@@ -407,7 +412,7 @@ function createBootPayloadPlanner({
                 result.segments++;
                 pending.push(bytes);
                 pendingBytes += bytes.length;
-                if (pendingBytes >= WRITE_BYTES) await write(false);
+                if (pendingBytes >= writeBytes) await write(false);
             }
             if (!closed) {
                 if (pendingBytes > 0) await write(true);

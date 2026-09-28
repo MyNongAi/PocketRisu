@@ -413,8 +413,9 @@ class MockResponse extends EventEmitter {
     }
 }
 
-function streamFixture() {
-    const p = planner()
+// Small writes (64KB) so a fixture of a few hundred KB takes several.
+function streamFixture(options: Record<string, unknown> = { writeBytes: 64 * 1024 }) {
+    const p = planner(options)
     const root = {
         characters: Array.from({ length: 40 }, (_, i) => character(i, { pad: 'q'.repeat(3000 + i) })),
         modules: [{ id: 'm', text: 'z'.repeat(200 * 1024) }],
@@ -439,6 +440,17 @@ describe('streamSegments', () => {
         for (const chunk of res.chunks.slice(0, -1)) expect(chunk.length).toBeGreaterThanOrEqual(64 * 1024)
         expect(res.listenerCount('drain')).toBe(0)
         expect(res.listenerCount('close')).toBe(0)
+    })
+
+    it('writes at least 1MB at a time by default (streaming brotli compresses smaller writes worse)', async () => {
+        const p = planner()
+        const root = { characters: Array.from({ length: 300 }, (_, i) => character(i, { pad: 'r'.repeat(10000 + i) })) }
+        const plan = p.planFor(root)
+        const res = new MockResponse()
+        await p.streamSegments(res, plan, { head: plan.prefix })
+        expect(Buffer.concat(res.chunks).equals(utils.encodeRisuSaveLegacyBuffer(root))).toBe(true)
+        expect(res.chunks.length).toBeGreaterThan(1)
+        for (const chunk of res.chunks.slice(0, -1)) expect(chunk.length).toBeGreaterThanOrEqual(1024 * 1024)
     })
 
     it('leaves out the segments in omit', async () => {
