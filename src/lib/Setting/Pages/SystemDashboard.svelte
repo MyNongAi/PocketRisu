@@ -5,6 +5,7 @@
     import ShAccordion from 'src/lib/UI/GUI/ShAccordion.svelte'
     import ShLoadingDialog from 'src/lib/UI/GUI/ShLoadingDialog.svelte'
     import ShSwitch from 'src/lib/UI/GUI/ShSwitch.svelte'
+    import BootCacheCard from './BootCacheCard.svelte'
     import { Tooltip } from 'bits-ui'
     import {
         RefreshCwIcon,
@@ -704,6 +705,9 @@
             </div>
         {/if}
     </div>
+
+    <!-- Boot cache (this device) ──────────────────────────────────────── -->
+    <BootCacheCard />
 
     <!-- ② Manual WAL cleanup ────────────────────────────────────────────── -->
     <div class="border border-darkborderc bg-darkbg/40 rounded-md p-4 mb-4">

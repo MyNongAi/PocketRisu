@@ -2472,6 +2472,21 @@ export const languageKorean = {
   storageSaveMetricsPersist: "마지막 디스크 기록",
   storageSaveMetricsCopy: "진단 복사",
 
+  storageBootCache: "시작 캐시 (이 기기)",
+  storageBootCacheDesc:
+    "이 기기에 두는 데이터베이스의 암호화 사본입니다. 앱을 시작할 때 지난번 이후 바뀐 부분만 받습니다. 키는 서버에만 있습니다. 비워도 안전하며, 다음 시작에서 한 번 전체를 받습니다.",
+  storageBootCacheSize: (bytes: number, segments: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB 캐시됨 (조각 ${segments}개)`,
+  storageBootCacheEmpty: "아직 캐시 없음",
+  storageBootCacheUnsupported: "이 연결에서는 쓰지 않습니다 (HTTPS 필요, 서버 컴퓨터 자신에서는 생략)",
+  storageBootCacheOff: "이 기기에서 꺼짐",
+  storageBootCacheSuspended: (reason: string) => `이번 세션 동안 멈춤: ${reason}`,
+  storageBootCacheLastDelta: (received: number, total: number) =>
+    `지난 시작에서 ${(total / 1024 / 1024).toFixed(1)} MB 중 ${(received / 1024 / 1024).toFixed(1)} MB를 받음`,
+  storageBootCacheLastFull: (total: number) => `지난 시작에서 전체 ${(total / 1024 / 1024).toFixed(1)} MB를 받음`,
+  storageBootCacheClear: "시작 캐시 비우기",
+  storageBootCacheCleared: "시작 캐시를 비웠습니다",
+  storageBootCacheClearFailed: "시작 캐시 비우기 실패",
+
   storageWalCleanup: "WAL 수동 정리",
   storageWalCleanupHeader: (walSize: number) =>
     `현재 WAL ${(walSize / 1024 / 1024).toFixed(1)} MB`,

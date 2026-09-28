@@ -2271,6 +2271,20 @@ export const languageEnglish = {
     storageSaveMetricsPersist: "Last disk write",
     storageSaveMetricsCopy: "Copy diagnostics",
 
+    storageBootCache: "Boot cache (this device)",
+    storageBootCacheDesc: "An encrypted copy of the database on this device, so the app start downloads only what changed since the last one. The key stays on the server. Clearing it is safe: the next start downloads everything once.",
+    storageBootCacheSize: (bytes: number, segments: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB cached in ${segments} segments`,
+    storageBootCacheEmpty: "Nothing cached yet",
+    storageBootCacheUnsupported: "Not used on this connection (needs HTTPS; skipped on the server's own computer)",
+    storageBootCacheOff: "Turned off on this device",
+    storageBootCacheSuspended: (reason: string) => `Paused for this session: ${reason}`,
+    storageBootCacheLastDelta: (received: number, total: number) =>
+        `Last start downloaded ${(received / 1024 / 1024).toFixed(1)} MB of ${(total / 1024 / 1024).toFixed(1)} MB`,
+    storageBootCacheLastFull: (total: number) => `Last start downloaded all ${(total / 1024 / 1024).toFixed(1)} MB`,
+    storageBootCacheClear: "Clear boot cache",
+    storageBootCacheCleared: "Boot cache cleared",
+    storageBootCacheClearFailed: "Clearing the boot cache failed",
+
     storageWalCleanup: "Manual WAL cleanup",
     storageWalCleanupHeader: (walSize: number) => `Current WAL ${(walSize / 1024 / 1024).toFixed(1)} MB`,
     storageWalCleanupWhat: "SQLite's WAL file (risuai.db-wal) collects recent changes before merging them into the main database. A background checkpoint runs every 5 minutes, but bursts like backup import or large asset uploads can temporarily inflate it.",

@@ -656,6 +656,37 @@
         "src/ts/requestLog.test.ts",
         "server/node/gemini-pdf-input.test.ts"
       ]
+    },
+    {
+      "id": "BOOT-DELTA",
+      "title": "암호화 조각 캐시로 바뀐 부분만 받는 시작",
+      "criticality": "performance",
+      "ownerFiles": [
+        "src/ts/storage/bootPayload.ts",
+        "src/ts/storage/bootPayloadCache.ts",
+        "src/ts/storage/bootReport.ts",
+        "src/ts/storage/nodeStorage.ts",
+        "src/ts/bootstrap.ts",
+        "src/ts/globalApi.svelte.ts",
+        "src/lib/Setting/Pages/BootCacheCard.svelte",
+        "src/lib/Setting/Pages/SystemDashboard.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/storage/bootPayload.ts", "contains": "export async function loadDatabaseViaBoot" },
+        { "file": "src/ts/storage/bootPayload.ts", "contains": "if (computed !== etag) throw new BootFallback('merkle'" },
+        { "file": "src/ts/storage/bootPayloadCache.ts", "contains": "export class IdbBootSegmentCache" },
+        { "file": "src/ts/storage/bootPayloadCache.ts", "contains": "subtle.importKey('raw', raw, { name: 'AES-GCM' }, false" },
+        { "file": "src/ts/storage/nodeStorage.ts", "contains": "this.bootCache.usable()" },
+        { "file": "src/ts/bootstrap.ts", "contains": "expectBaselineHash(" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "finishBootReport({" },
+        { "file": "src/lib/Setting/Pages/SystemDashboard.svelte", "contains": "<BootCacheCard />" }
+      ],
+      "regressionTests": [
+        "src/ts/storage/bootPayload.test.ts",
+        "src/ts/storage/bootPayloadCache.test.ts",
+        "src/ts/storage/nodeStorage.bootLoader.test.ts",
+        "src/ts/storage/bootReport.test.ts"
+      ]
     }
   ]
 }
