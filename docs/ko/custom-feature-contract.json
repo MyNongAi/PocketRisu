@@ -685,7 +685,8 @@
         "src/ts/storage/bootPayload.test.ts",
         "src/ts/storage/bootPayloadCache.test.ts",
         "src/ts/storage/nodeStorage.bootLoader.test.ts",
-        "src/ts/storage/bootReport.test.ts"
+        "src/ts/storage/bootReport.test.ts",
+        "test/compat/db-boot-client.test.ts"
       ]
     },
     {
