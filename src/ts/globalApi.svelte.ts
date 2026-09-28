@@ -8,6 +8,7 @@ import { checkRisuUpdate } from "./update";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore, chatHydrationOverlayStore, chatDeselected, moduleTreeRevision } from "./stores.svelte";
 import { recordDbTransferSize } from "./transferSize";
 import { newSaveTiming, recordSaveSample, type SaveOutcome, type SaveTiming } from "./storage/saveMetrics";
+import { finishBootReport } from "./storage/bootReport";
 import { loadPlugins } from "./plugins/plugins.svelte";
 import { alertConfirm, alertConfirmMulti, alertError, alertMd, alertSelect, alertTOS, waitAlert, notifySuccess, notifyError, notifyInfo } from "./alert";
 import { hasher } from "./parser/parser.svelte";
@@ -778,7 +779,9 @@ export async function saveDb() {
     }
 
     let patcher = new RisuSavePatcher()
+    let seededFromBootBaseline = false
     if (supportsPatchSync) {
+        seededFromBootBaseline = patchSyncBaseline !== null
         await patcher.init(patchSyncBaseline ?? getDatabase())
         activeSavePatcher = patcher
         patchSyncBaseline = null
@@ -786,6 +789,13 @@ export async function saveDb() {
     } else {
         activeSavePatcher = null
     }
+    // The [Boot] timing line, and the x-db-hash cross-check of a baseline
+    // decoded from the bytes boot fetched (see bootReport.ts).
+    finishBootReport({
+        baselineHash: seededFromBootBaseline ? () => patcher.hash() : null,
+        load: forageStorage.realStorage?.lastDbLoad ?? null,
+        onHashMismatch: () => forageStorage.realStorage?.bootCache.suspend('x-db-hash mismatch'),
+    })
 
     // patcher.init leaves the payload estimate's per-entry UTF-8 sizes
     // uncounted (about 0.5s over a large catalog's JSON on a desktop). Count

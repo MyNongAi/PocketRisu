@@ -16,6 +16,7 @@ import { alertError, alertMd, alertTOS, waitAlert, alertConfirm, alertInput } fr
 import { characterURLImport } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
 import { decodeRisuSave, encodeRisuSaveLegacy, releaseDecodeSource } from "./storage/risuSave";
+import { expectBaselineHash, markBootPhase } from "./storage/bootReport";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
 import { applyEarlyLanguage, changeLanguage, language } from "src/lang";
@@ -53,6 +54,7 @@ export async function loadData() {
     const loaded = get(loadedStore)
     if (!loaded) {
         try {
+            markBootPhase('start')
             applyEarlyLanguage()
             let createdFreshDatabase = false
             {
@@ -60,6 +62,7 @@ export async function loadData() {
 
                 LoadingStatusState.text = "Loading Local Save File..."
                 let gotStorage: Uint8Array = await forageStorage.getItem('database/database.bin') as unknown as Uint8Array
+                markBootPhase('fetched')
                 LoadingStatusState.text = "Decoding Local Save File..."
                 if (checkNullish(gotStorage)) {
                     createdFreshDatabase = true
@@ -71,6 +74,9 @@ export async function loadData() {
                     // setPatchSyncBaseline takes its own copy before setDatabase
                     // and the migrations below mutate `decoded`.
                     setPatchSyncBaseline(decoded)
+                    // saveDb checks the patcher seeded from this baseline
+                    // against the server's hash of the same view.
+                    expectBaselineHash(createdFreshDatabase ? null : forageStorage.realStorage?.lastBootDbHash ?? null)
                     setDatabase(decoded)
                     // /api/read serves the chat-stripped blob — the same shape a
                     // full write sends — so its length is a first estimate of the
@@ -86,6 +92,7 @@ export async function loadData() {
                             const backupData: Uint8Array = await forageStorage.getItem(`database/dbbackup-${backup}.bin`) as unknown as Uint8Array
                             const backupDecoded = await decodeRisuSave(backupData)
                             setPatchSyncBaseline(backupDecoded)
+                            expectBaselineHash(null)
                             setDatabase(backupDecoded)
                             backupLoaded = true
                             break
@@ -102,6 +109,7 @@ export async function loadData() {
                 // the backup that loaded instead, reachable.
                 gotStorage = null
                 releaseDecodeSource()
+                markBootPhase('decoded')
 
                 if (getDatabase().didFirstSetup) {
                     characterURLImport()
@@ -194,6 +202,7 @@ export async function loadData() {
                 console.warn('[bootstrap] boot backup reminder failed:', err)
             }
             loadedStore.set(true)
+            markBootPhase('loaded')
 
             selectedCharID.set(-1)
 
