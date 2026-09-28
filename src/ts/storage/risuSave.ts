@@ -1017,6 +1017,56 @@ export function diffCompactRootArray(
     return JSON.stringify(candidate).length <= JSON.stringify(replace).length ? candidate : replace
 }
 
+/**
+ * Adding or deleting modules while the others keep their order, as ops on
+ * /modules: remove the vanished indexes (descending), then add each new
+ * module at its final index (ascending), as characters do. The whole-array
+ * replace these stand in for was the full module list (about 35 MB on a
+ * large install) for one added or deleted module. `aligned` is the array the
+ * ops leave on the server: retained baseline modules in place, added ones
+ * normalized. Null when an id is missing, not a string or repeated, or when
+ * retained modules changed order; the caller then replaces the array.
+ */
+export function moduleAddRemoveOps(last: readonly any[], cur: readonly any[]): {
+    ops: any[]
+    aligned: any[]
+    removedIds: string[]
+    added: any[]
+} | null {
+    const lastIds = last.map((m) => m?.id)
+    const curIds = cur.map((m) => m?.id)
+    const valid = (ids: unknown[]) => ids.every((id) => typeof id === 'string' && id !== '')
+        && new Set(ids).size === ids.length
+    if (!valid(lastIds) || !valid(curIds)) return null
+    const curIdSet = new Set<string>(curIds)
+    const lastIndex = new Map<string, number>()
+    lastIds.forEach((id, i) => lastIndex.set(id, i))
+    const retainedLast = lastIds.filter((id) => curIdSet.has(id))
+    const retainedCur = curIds.filter((id) => lastIndex.has(id))
+    if (retainedLast.length !== retainedCur.length || retainedLast.some((id, i) => id !== retainedCur[i])) return null
+    const ops: any[] = []
+    const removedIds: string[] = []
+    for (let i = lastIds.length - 1; i >= 0; i--) {
+        if (curIdSet.has(lastIds[i])) continue
+        ops.push({ op: 'remove', path: `/modules/${i}` })
+        removedIds.push(lastIds[i])
+    }
+    const aligned: any[] = []
+    const added: any[] = []
+    for (let i = 0; i < cur.length; i++) {
+        const at = lastIndex.get(curIds[i])
+        if (at !== undefined) {
+            aligned.push(last[at])
+            continue
+        }
+        const value = normalizeJSON(cur[i])
+        ops.push({ op: 'add', path: `/modules/${i}`, value })
+        aligned.push(value)
+        added.push(value)
+    }
+    return { ops, aligned, removedIds, added }
+}
+
 export type HashMismatchRemote = {
     serverHash?: string
     keyHashes?: Record<string, string>
@@ -1567,7 +1617,7 @@ export class RisuSavePatcher {
             // structural-vs-elementwise pivot: editing one module's lorebook
             // changes the modules block on every save, so only the edited
             // module should pay normalize + protocol hash + diff.
-            const lastModulesArr: any[] = Array.isArray(lastModules) ? lastModules : []
+            let lastModulesArr: any[] = Array.isArray(lastModules) ? lastModules : []
             const curModulesArr: any[] = Array.isArray(curModules) ? curModules : []
             let structural = lastModulesArr.length !== curModulesArr.length
             if (!structural) {
@@ -1581,8 +1631,29 @@ export class RisuSavePatcher {
                 structural = hasInvalidIds || hasDuplicates || lastModIds.some((id, i) => id !== curModIds[i])
             }
 
+            // Modules added or deleted: only those ops (moduleAddRemoveOps);
+            // the retained modules are then compared one by one below.
+            let addRemove: ReturnType<typeof moduleAddRemoveOps> = null
             if (structural) {
-                // Structural change → single whole-array replace, exactly like
+                addRemove = moduleAddRemoveOps(lastModulesArr, curModulesArr)
+                if (addRemove) {
+                    for (const op of addRemove.ops) patch.push(op)
+                    for (const id of addRemove.removedIds) {
+                        this.lastModuleJsons.delete(id)
+                        this.moduleItemHashes.delete(id)
+                    }
+                    for (const m of addRemove.added) {
+                        this.lastModuleJsons.set(m.id, JSON.stringify(m))
+                        this.moduleItemHashes.set(m.id, calculateHash(m))
+                    }
+                    lastModulesArr = addRemove.aligned
+                    this.lastSyncedDb.modules = addRemove.aligned.slice()
+                    structural = false
+                }
+            }
+
+            if (structural) {
+                // Reorder or unsafe ids → single whole-array replace, exactly like
                 // diffArrayWithIdGuard, and rebuild the per-module baselines.
                 const normModules = normalizeJSON(curModulesArr) ?? []
                 patch.push({ op: 'replace', path: '/modules', value: normModules })
@@ -1600,7 +1671,8 @@ export class RisuSavePatcher {
                 // New save tracking supplies exact dirty ids. Legacy callers
                 // omit the hint and deliberately retain the old full scan.
                 // A structural/unsafe change uses null and is handled above.
-                const hintedModuleIds = Array.isArray(toSave.moduleIds)
+                // After an add/delete every retained module is checked.
+                const hintedModuleIds = !addRemove && Array.isArray(toSave.moduleIds)
                     ? new Set(toSave.moduleIds)
                     : null
                 // Same structure (all ids valid, string-typed, aligned) → element-wise.

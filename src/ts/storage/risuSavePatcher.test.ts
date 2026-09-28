@@ -340,7 +340,7 @@ describe('RisuSavePatcher.set — modules path', () => {
         expect((draft as any).lastModuleJsons).not.toBe((patcher as any).lastModuleJsons)
     })
 
-    test('deleting a front-loaded module emits a single replace op, no RangeError', async () => {
+    test('deleting a front-loaded module emits a single remove op, no RangeError', async () => {
         const patcher = new RisuSavePatcher()
         const initialModules = [makeMod('a'), makeMod('b'), makeMod('c'), makeMod('d')]
         await patcher.init({ characters: [], botPresets: [], modules: initialModules })
@@ -350,7 +350,7 @@ describe('RisuSavePatcher.set — modules path', () => {
 
         const moduleOps = patch.filter((p: any) => p.path === '/modules' || p.path.startsWith('/modules/'))
         expect(moduleOps).toEqual([
-            { op: 'replace', path: '/modules', value: newDb.modules },
+            { op: 'remove', path: '/modules/0' },
         ])
     })
 
@@ -1259,7 +1259,7 @@ describe('fast-path — per-module granularity', () => {
         expect(r2.patch).toEqual([])
     })
 
-    test('module add/remove/reorder → single whole-array replace; then no-op', async () => {
+    test('module add/remove → only those ops; reorder → single whole-array replace; then no-op', async () => {
         const db = dbWith([chr('a')], { } as any)
         db.modules = [mod('m1'), mod('m2')]
         const p = new RisuSavePatcher()
@@ -1267,7 +1267,7 @@ describe('fast-path — per-module granularity', () => {
 
         const added = clone(db); added.modules.push(mod('m3'))
         const r1 = await p.set(clone(added), { ...emptyToSave(), modules: true })
-        expect(r1.patch).toEqual([{ op: 'replace', path: '/modules', value: normalizeJSON(clone(added)).modules }])
+        expect(r1.patch).toEqual([{ op: 'add', path: '/modules/2', value: normalizeJSON(clone(added)).modules[2] }])
         expect((await p.set(clone(added), { ...emptyToSave(), modules: true })).patch).toEqual([])
 
         const reordered = clone(added); reordered.modules = [reordered.modules[2], reordered.modules[0], reordered.modules[1]]
@@ -1275,6 +1275,81 @@ describe('fast-path — per-module granularity', () => {
         expect(r2.patch.length).toBe(1)
         expect(r2.patch[0].path).toBe('/modules')
         expect((await p.set(clone(reordered), { ...emptyToSave(), modules: true })).patch).toEqual([])
+    })
+
+    test('module add/delete ops mixed with an edit rebuild the server state and hash', async () => {
+        const { applyPatch: apply } = await import('fast-json-patch')
+        const db = dbWith([chr('a')], { } as any)
+        db.modules = [mod('m1', 'a'), mod('m2', 'b'), mod('m3', 'c'), mod('m4', 'd')]
+        const p = new RisuSavePatcher()
+        await p.init(db)
+        const serverState = JSON.parse(JSON.stringify(normalizeJSON(db)))
+
+        // One save: delete m2, edit m4, add one module at the front and one at the end.
+        const next = clone(db)
+        next.modules.splice(1, 1)
+        next.modules[2].lorebook[0].content = 'edited'
+        next.modules.unshift(mod('m0', 'new front'))
+        next.modules.push(mod('m5', 'new end'))
+        const { patch } = await p.set(clone(next), { ...emptyToSave(), modules: true })
+        expect(patch.some((op: any) => op.path === '/modules')).toBe(false)
+        expect(patch.slice(0, 3)).toEqual([
+            { op: 'remove', path: '/modules/1' },
+            { op: 'add', path: '/modules/0', value: normalizeJSON(mod('m0', 'new front')) },
+            { op: 'add', path: '/modules/4', value: normalizeJSON(mod('m5', 'new end')) },
+        ])
+        for (const op of patch.slice(3)) expect(op.path.startsWith('/modules/3/')).toBe(true)
+        // Over the wire the ops are JSON; applying copies keeps the patcher's baseline unshared.
+        apply(serverState, JSON.parse(JSON.stringify(patch)))
+        expect(serverState.modules).toEqual(normalizeJSON(clone(next)).modules)
+
+        const again = await p.set(clone(next), { ...emptyToSave(), modules: true })
+        expect(again.patch).toEqual([])
+        const fresh = new RisuSavePatcher()
+        await fresh.init(clone(next))
+        expect(again.expectedHash).toBe((await fresh.set(clone(next), emptyToSave())).expectedHash)
+    })
+
+    test('random module add/delete/edit/reorder saves keep the server state and hash in step', async () => {
+        const { applyPatch: apply } = await import('fast-json-patch')
+        let seed = 20260928
+        const rand = (n: number) => {
+            seed = (Math.imul(seed, 1103515245) + 12345) >>> 0
+            return seed % n
+        }
+        const db = dbWith([chr('a')], { } as any)
+        db.modules = Array.from({ length: 6 }, (_, i) => mod(`m${i}`, `c${i}`))
+        const p = new RisuSavePatcher()
+        await p.init(db)
+        const serverState = JSON.parse(JSON.stringify(normalizeJSON(db)))
+        const live = clone(db)
+        let nextId = 6
+        let replaces = 0
+        for (let step = 0; step < 120; step++) {
+            // One to three changes per save.
+            for (let k = 0, n = 1 + rand(3); k < n; k++) {
+                const kind = rand(4)
+                const len = live.modules.length
+                if (kind === 0 && len > 0) live.modules.splice(rand(len), 1)
+                else if (kind === 1) live.modules.splice(rand(len + 1), 0, mod(`m${nextId++}`, `added ${step}`))
+                else if (kind === 2 && len > 0) live.modules[rand(len)].lorebook[0].content = `edit ${step}`
+                else if (kind === 3 && len > 1 && rand(4) === 0) {
+                    const [moved] = live.modules.splice(rand(len), 1)
+                    live.modules.splice(rand(len), 0, moved)
+                }
+            }
+            const { patch } = await p.set(clone(live), { ...emptyToSave(), modules: true })
+            if (patch.some((op: any) => op.path === '/modules')) replaces++
+            apply(serverState, JSON.parse(JSON.stringify(patch)))
+            expect(serverState.modules).toEqual(normalizeJSON(clone(live)).modules)
+        }
+        // Reorders still replace; everything else was ops on single modules.
+        expect(replaces).toBeGreaterThan(0)
+        expect(replaces).toBeLessThan(40)
+        const fresh = new RisuSavePatcher()
+        await fresh.init(clone(live))
+        expect((await p.set(clone(live), emptyToSave())).expectedHash)
+            .toBe((await fresh.set(clone(live), emptyToSave())).expectedHash)
     })
 
     test('per-module element-wise ops reconstruct the server state (applyPatch round-trip)', async () => {

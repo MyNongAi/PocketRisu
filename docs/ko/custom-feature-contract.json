@@ -713,6 +713,22 @@
         "test/compat/db-etag-bytes.test.ts",
         "test/compat/db-prewarm.test.ts"
       ]
+    },
+    {
+      "id": "SAVE-KEYED-ARRAY",
+      "title": "봇·모듈 추가·삭제를 하나씩 보내는 저장",
+      "criticality": "performance",
+      "ownerFiles": [
+        "src/ts/storage/risuSave.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/storage/risuSave.ts", "contains": "Trash/deactivation removes cards and import/activation adds them" },
+        { "file": "src/ts/storage/risuSave.ts", "contains": "export function moduleAddRemoveOps(" },
+        { "file": "src/ts/storage/risuSave.ts", "contains": "addRemove = moduleAddRemoveOps(lastModulesArr, curModulesArr)" }
+      ],
+      "regressionTests": [
+        "src/ts/storage/risuSavePatcher.test.ts"
+      ]
     }
   ]
 }
