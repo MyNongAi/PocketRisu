@@ -7,7 +7,9 @@
     import GithubIcon from "./GithubIcon.svelte";
     import { getVersionString, openURL } from "src/ts/globalApi.svelte";
     import { language } from "src/lang";
-    import { getRisuHub, hubAdditionalHTML } from "src/ts/characterCards";
+    import { downloadRisuHub, getRisuHub, hubAdditionalHTML } from "src/ts/characterCards";
+    import { parseRealmReference } from "src/ts/realmLink";
+    import { alertError, alertInput } from "src/ts/alert";
     import RisuHubIcon from "./Realm/RealmHubIcon.svelte";
     import Title from "./Title.svelte";
     import { updateInfoStore, updatePopupStore } from "src/ts/update";
@@ -30,6 +32,19 @@
     });
 
     const fmtMB = (n: number) => `${Math.round(n / 1024 / 1024)} MB`;
+
+    // A Realm page address (or card id) pasted on the home screen imports the
+    // card directly, without searching the Realm for it.
+    async function importRealmByAddress() {
+      const input = await alertInput(language.realmImportByAddressPrompt);
+      if (!input?.trim()) return;
+      const id = parseRealmReference(input);
+      if (!id) {
+        alertError(language.realmAddressInvalid);
+        return;
+      }
+      await downloadRisuHub(id);
+    }
 
     const relatedLinkIconClass =
       "h-40 w-40 md:h-44 md:w-44 origin-right -rotate-12 opacity-[0.12] transition-all duration-500 group-hover:scale-105 group-hover:opacity-[0.22]";
@@ -123,6 +138,11 @@
             class="shrink-0 transition-transform duration-150 {realmOpen ? 'rotate-180' : ''}"
           />
         </button>
+        <button
+          type="button"
+          class="text-base font-medium p-1 bg-darkbg rounded-md hover:ring-3"
+          onclick={importRealmByAddress}
+        >{language.realmImportByAddress}</button>
         <button
           type="button"
           class="text-base font-medium p-1 bg-darkbg rounded-md hover:ring-3"

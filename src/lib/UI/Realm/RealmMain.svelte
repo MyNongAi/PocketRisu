@@ -1,7 +1,8 @@
 <script lang="ts">
-    import { downloadRisuHub, getRisuHub, hubAdditionalHTML, type hubType } from "src/ts/characterCards";
+    import { downloadRisuHub, getRealmInfo, getRisuHub, hubAdditionalHTML, type hubType } from "src/ts/characterCards";
+    import { parseRealmReference } from "src/ts/realmLink";
     import { ArrowLeft, ArrowRight, MenuIcon, SearchIcon, XIcon } from "@lucide/svelte";
-    import { alertInput } from "src/ts/alert";
+    import { alertError, alertInput } from "src/ts/alert";
     import { language } from "src/lang";
     import RisuHubIcon from "./RealmHubIcon.svelte";
     import { MobileGUI, RealmInitialOpenChar } from "src/ts/stores.svelte";
@@ -27,6 +28,20 @@
         })
     }
 
+    // A pasted Realm address (or card id) opens that card instead of searching.
+    function submitSearch() {
+        const id = parseRealmReference(search, 'uuid')
+        if(id){
+            void getRealmInfo(id)
+            return
+        }
+        if(sort === 'random' || sort === 'recommended'){
+            sort = ''
+        }
+        page = 0
+        getHub()
+    }
+
     function changeSort(type:string) {
         if(sort === type){
             sort = 'recommended'
@@ -50,15 +65,9 @@
 </script>
 <div class="w-full flex justify-center mt-4 mb-2">
     <div class="flex items-stretch w-2xl max-w-full">
-        <input bind:value={search} class="peer focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full">
+        <input bind:value={search} onkeydown={(e) => { if(e.key === 'Enter' && !e.isComposing) submitSearch() }} class="peer focus:border-textcolor transition-colors outline-hidden text-textcolor p-2 min-w-0 border border-r-0 bg-transparent rounded-md rounded-r-none input-text text-xl grow ml-4 border-darkborderc resize-none overflow-y-hidden overflow-x-hidden max-w-full">
             <button
-            onclick={() => {
-                if(sort === 'random' || sort === 'recommended'){
-                    sort = ''
-                }
-                page = 0
-                getHub()
-            }}
+            onclick={submitSearch}
             class="flex justify-center border-y border-darkborderc items-center text-textcolor p-3 peer-focus:border-textcolor hover:bg-primary/30 transition-colors"
         >
             <SearchIcon />
@@ -197,16 +206,16 @@
                 e.stopPropagation()
                 menuOpen = false
                 const input = await alertInput('Input URL or ID')
-                if(input.startsWith("http")){
-                    const url = new URL(input)
-                    const id = url.searchParams.get("realm") ?? url.searchParams.get("code") ?? input.split("/").at(-1)
-                    if(id){
-                        downloadRisuHub(id)
-                        return
-                    }
+                if(!input?.trim()){
+                    return
                 }
-                const id = input.split("?").at(-1)
-                downloadRisuHub(id)
+                const id = parseRealmReference(input)
+                if(id){
+                    downloadRisuHub(id)
+                }
+                else{
+                    alertError(language.realmAddressInvalid)
+                }
 
             })}>Import Character from URL or ID</button>
         </div>
