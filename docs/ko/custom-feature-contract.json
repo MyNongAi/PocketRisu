@@ -703,12 +703,14 @@
         { "file": "server/node/server.cjs", "contains": "function dbEtagFor(databaseObject)" },
         { "file": "server/node/server.cjs", "contains": "async function sendDatabaseRead(req, res)" },
         { "file": "server/node/server.cjs", "contains": "app.post('/api/db/boot'" },
-        { "file": "server/node/server.cjs", "contains": "res.locals.skipCompression" }
+        { "file": "server/node/server.cjs", "contains": "res.locals.skipCompression" },
+        { "file": "server/node/server.cjs", "contains": "function schedulePrewarmDatabase()" }
       ],
       "regressionTests": [
         "server/node/boot-payload.test.ts",
         "test/compat/db-boot.test.ts",
-        "test/compat/db-etag-bytes.test.ts"
+        "test/compat/db-etag-bytes.test.ts",
+        "test/compat/db-prewarm.test.ts"
       ]
     }
   ]

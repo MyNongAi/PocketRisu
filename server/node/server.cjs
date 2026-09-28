@@ -349,9 +349,12 @@ const assetManifestStore = createAssetManifestStore(sqliteDb, {
 //    path), 'full-plan' (the same bytes composed per owner, chunked whole)
 //    or 'incremental' (unchanged owners copied from the blob on disk; off
 //    unless the flags file turns it on). An unknown value means 'reference'.
+//  prewarmDb: true loads database.bin and plans its read payload shortly
+//    after the server starts, so the first read after a restart is a warm
+//    one (see schedulePrewarmDatabase). Off unless the flags file turns it on.
 const DEFAULT_PERSIST_MODE = 'full-plan';
 const runtimeFlags = createRuntimeFlags({
-    defaults: { persistMode: DEFAULT_PERSIST_MODE },
+    defaults: { persistMode: DEFAULT_PERSIST_MODE, prewarmDb: false },
     logger,
     ...(process.env.POCKETRISU_FLAGS_STAT_INTERVAL_MS
         ? { statIntervalMs: Number(process.env.POCKETRISU_FLAGS_STAT_INTERVAL_MS) }
@@ -6324,6 +6327,34 @@ async function ensureDatabaseForRead(timings, lap) {
     });
 }
 
+// prewarmDb (runtime flag): shortly after the server starts listening, do in
+// the background what the first read of database.bin would do (the cold load
+// of ensureDatabaseForRead, the payload plan with its self-test, the patch
+// hash), so the first client read after a restart is a warm one. On the live
+// machine the cold load alone took about 9 s. Queued like that cold load.
+const PREWARM_DELAY_MS = 3000;
+function schedulePrewarmDatabase() {
+    if (runtimeFlags.get('prewarmDb') !== true) return;
+    const timer = setTimeout(() => {
+        const startedAt = performance.now();
+        queueStorageOperation(async () => {
+            if (dbCache[DB_HEX_KEY] || exclusiveStorageReason) return;
+            await flushPendingDb();
+            if (!kvExists('database/database.bin')) return;
+            await loadDbCacheIfMissing({ createBackup: true });
+        }).then(() => {
+            const root = dbCache[DB_HEX_KEY];
+            if (!root) return;
+            bootPayload.tryPlan(root);
+            databasePatchHashCache.hash(root);
+            logger.debug(`[Prewarm] database/database.bin ready in ${Math.round(performance.now() - startedAt)} ms ${formatProcessMemory()}`);
+        }).catch((error) => {
+            logger.warn(`[Prewarm] database/database.bin was not preloaded: ${error?.message || error}`);
+        });
+    }, PREWARM_DELAY_MS);
+    timer.unref?.();
+}
+
 // Everything a response states about the root ensureDatabaseForRead took:
 // its plan (or, while the planner is disabled and `wholeEncode` allows it,
 // its whole encode), its etag and its patch hash. Null when there is no
@@ -12215,6 +12246,7 @@ async function startServer() {
             server.listen(port, () => {
                 console.log("[Server] HTTPS server is running.");
                 console.log(`[Server] https://localhost:${port}/`);
+                schedulePrewarmDatabase();
             });
         } else {
             // HTTP
@@ -12223,6 +12255,7 @@ async function startServer() {
             server.listen(port, () => {
                 console.log("[Server] HTTP server is running.");
                 console.log(`[Server] http://localhost:${port}/`);
+                schedulePrewarmDatabase();
             });
         }
     } catch (error) {
