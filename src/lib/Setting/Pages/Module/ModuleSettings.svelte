@@ -22,6 +22,9 @@
     import { resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
     import { cloneModuleDraft } from "src/ts/process/moduleDraft";
     import type { PromptPresetFolder } from "src/ts/storage/database.svelte";
+    import { importDroppedFiles } from "src/ts/dropImport";
+    import { FileDropSurface } from "src/ts/gui/fileDropSurface.svelte";
+    import FileDropIndicator from "src/lib/UI/GUI/FileDropIndicator.svelte";
     let tempModule:RisuModule = $state({
         name: '',
         description: '',
@@ -279,17 +282,36 @@
         return listTitleColor(folder.titleColor, indexes.some((index) => hasMissingAssets(displayModules[index])))
     }
 
+    // Files dragged in from outside onto the catalog import as modules, a CHARX
+    // too (anywhere else it imports as a character).
+    const moduleFileDrop = new FileDropSurface({
+        accepts: () => mode === 0,
+        onDrop: (files) => importDroppedFiles(files, 'module'),
+    })
+    $effect(() => moduleFileDrop.attachWindowReset())
+
     onDestroy(() => {
         refreshModules()
     })
 </script>
-<div bind:this={modulePageRoot} class="contents">
+<div
+    bind:this={modulePageRoot}
+    class="contents"
+    role="region"
+    aria-label={language.modules}
+    ondragenter={moduleFileDrop.over}
+    ondragover={moduleFileDrop.over}
+    ondragleave={moduleFileDrop.leave}
+    ondrop={moduleFileDrop.drop}
+>
 {#if mode === 0}
     <SettingPage title={language.modules}>
         {#snippet titleActions()}
             <ShButton size="sm" variant="outline" onclick={() => importMCPModule()} title="MCP"><Waypoints />MCP</ShButton>
             <ShButton size="sm" variant="outline" onclick={() => importModuleFromProtonDrive()}><CloudDownloadIcon />{language.importFromProton}</ShButton>
         {/snippet}
+
+    <FileDropIndicator active={moduleFileDrop.active} icon={HardDriveUpload} label={`${language.importModule} · CHARX / RISUM`} />
 
     <FolderedList
         bind:searchQuery={moduleSearchQuery}
