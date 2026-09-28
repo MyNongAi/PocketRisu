@@ -192,3 +192,91 @@ export async function runImportBatch<T extends { name: string }>(
 
     return { completed, failed, total: entries.length }
 }
+
+export interface PrefetchLimits<T> {
+    /** Fetches running at once. */
+    concurrency: number
+    /** Bytes fetched items may hold until their import ends (one larger item still runs, alone). */
+    maxBytes: number
+    /** An item's size in bytes, or null/undefined when unknown. */
+    sizeOf: (item: T) => number | null | undefined
+    /** What an item of unknown size counts for. */
+    unknownSizeBytes: number
+}
+
+/**
+ * runImportBatch with a fetch step that runs ahead: up to `concurrency`
+ * fetches at once (a queued task shows its fetch progress), while the
+ * imports stay one at a time in list order, so database and asset writes
+ * stay ordered. A fetched item holds its bytes until its import ends; the
+ * next fetch starts only while the held total stays within `maxBytes`.
+ */
+export async function runPrefetchedImportBatch<T extends { name: string }, F>(
+    items: readonly T[],
+    fetchItem: (item: T, report: ImportProgressReporter) => Promise<F>,
+    importItem: (item: T, fetched: F, report: ImportProgressReporter) => Promise<void>,
+    limits: PrefetchLimits<T>,
+): Promise<ImportBatchResult> {
+    const entries = items.map((item) => ({
+        item,
+        id: createImportTask(item.name),
+        bytes: Math.max(0, limits.sizeOf(item) ?? limits.unknownSizeBytes),
+        fetched: null as Promise<F> | null,
+        held: false,
+    }))
+    let running = 0
+    let heldBytes = 0
+    let next = 0
+
+    const release = (entry: typeof entries[number]) => {
+        if (!entry.held) return
+        entry.held = false
+        heldBytes -= entry.bytes
+        pump()
+    }
+    const start = (entry: typeof entries[number]) => {
+        running++
+        entry.held = true
+        heldBytes += entry.bytes
+        entry.fetched = fetchItem(entry.item, (update) => reportImportTask(entry.id, update))
+        entry.fetched.then(
+            () => { running--; pump() },
+            // A failed fetch holds nothing; its import reports the error.
+            () => { running--; release(entry) },
+        )
+    }
+    function pump() {
+        while (next < entries.length && running < limits.concurrency) {
+            const entry = entries[next]
+            if (heldBytes > 0 && heldBytes + entry.bytes > limits.maxBytes) return
+            next++
+            start(entry)
+        }
+    }
+
+    pump()
+    let completed = 0
+    let failed = 0
+    for (const entry of entries) {
+        // Everything before this entry is released, so it has started (the
+        // fallback only guards the invariant).
+        if (!entry.fetched) {
+            next = Math.max(next, entries.indexOf(entry) + 1)
+            start(entry)
+        }
+        startImportTask(entry.id)
+        try {
+            const fetched = await entry.fetched!
+            await importItem(entry.item, fetched, (update) => reportImportTask(entry.id, update))
+            completeImportTask(entry.id)
+            completed++
+        } catch (error) {
+            failImportTask(entry.id, error)
+            failed++
+        } finally {
+            release(entry)
+        }
+    }
+
+    return { completed, failed, total: entries.length }
+}

@@ -8157,7 +8157,9 @@ app.post('/api/import/proton/download', async (req, res, next) => {
         // The name comes from the share, so never let it steer a path or a
         // header; strip separators and send it percent-encoded.
         const safeName = path.basename(String(file.name)).replace(/[\r\n"\\]/g, '_');
-        const body = Buffer.from(file.bytes);
+        // A view, not a copy: the file is already whole in memory, and a
+        // client may download a few at once.
+        const body = Buffer.from(file.bytes.buffer, file.bytes.byteOffset, file.bytes.byteLength);
         res.setHeader('content-type', 'application/octet-stream');
         res.setHeader('x-proton-filename', encodeURIComponent(safeName));
         // Bot archives are already compressed, so re-compressing only costs CPU

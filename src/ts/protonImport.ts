@@ -6,13 +6,20 @@
 
 import { alertClear, alertError, alertWait, notifySuccess } from './alert'
 import { language } from 'src/lang'
-import { runImportBatch, type ImportProgressReporter } from './importProgress'
+import { runPrefetchedImportBatch, type ImportProgressReporter } from './importProgress'
 import { downloadProtonEntry, inspectProtonShare, isProtonShareUrl, type ProtonInspectResult } from './protonShareClient'
 import { openProtonBrowser, type ProtonPick } from './protonBrowser.svelte'
 import { classifySharedImport, type ImportOrigin, type SharedImportKind } from './shareTargetRouting'
 import { importCharacterProcess } from './characterCards'
 import { importModuleFile } from './process/modules'
 import { importPreset } from './storage/database.svelte'
+
+// Downloads of a multi-file pick that run at once, and the bytes downloaded
+// files may hold before their turn to import (the laptop server keeps a
+// whole file in memory per download).
+const PROTON_PARALLEL_DOWNLOADS = 3
+const PROTON_PREFETCH_BYTES = 256 * 1024 * 1024
+const PROTON_UNKNOWN_SIZE_BYTES = 64 * 1024 * 1024
 
 /**
  * Route one decrypted file to whichever importer matches its extension.
@@ -94,21 +101,29 @@ export async function importFromProtonLink(url: string, password = '', origin: I
 
     // From here on the work runs as tracked import tasks: the queue renders its
     // own progress and leaves the app usable, which a modal would not.
+    // Downloads run ahead of the imports, a few at a time (the server holds a
+    // whole file per download); the imports stay one at a time, in order.
     const skipped: string[] = []
-    const result = await runImportBatch(
+    const result = await runPrefetchedImportBatch(
         chosen.map((pick) => ({ name: pick.entry.name, pick })),
-        async (item, report) => {
-            const file = await downloadProtonEntry(url, password, {
-                linkId: info.kind === 'folder' ? item.pick.entry.linkId : undefined,
-                path: item.pick.path,
-                expectedSize: item.pick.entry.size,
-            }, report)
+        (item, report) => downloadProtonEntry(url, password, {
+            linkId: info.kind === 'folder' ? item.pick.entry.linkId : undefined,
+            path: item.pick.path,
+            expectedSize: item.pick.entry.size,
+        }, report),
+        async (_item, file, report) => {
             report({ label: `${language.protonImporting} ${file.name}`, progress: 85 })
             const kind = await importByKind(file.name, file.data, report, origin)
             if (!kind) {
                 skipped.push(file.name)
                 throw new Error(language.protonUnsupportedFile)
             }
+        },
+        {
+            concurrency: PROTON_PARALLEL_DOWNLOADS,
+            maxBytes: PROTON_PREFETCH_BYTES,
+            sizeOf: (item) => item.pick.entry.size,
+            unknownSizeBytes: PROTON_UNKNOWN_SIZE_BYTES,
         },
     )
 
