@@ -1,9 +1,9 @@
 /**
- * Every database etag the server reports is the md5 of the bytes /api/read
- * serves. /api/read, /api/write, /api/patch and its 409s each encode the
- * client view on their own (through encodeRisuSaveLegacyBuffer, without the
- * Buffer.from copy they used to make), so this pins them to the same bytes.
- * The chat-content ETag is the md5 of the chat bytes it sends.
+ * Every database etag the server reports is the etag of the bytes /api/read
+ * serves: the boot planner's Merkle etag (boot-payload.cjs) of those bytes.
+ * /api/read, /api/write, /api/patch and its 409s each derive it from the
+ * client view on their own, so this pins them to the same bytes. The
+ * chat-content ETag is the md5 of the chat bytes it sends.
  */
 import { describe, test, expect, beforeAll, afterAll } from 'vitest'
 import { createHash } from 'node:crypto'
@@ -12,9 +12,23 @@ import { createClient, type RisuClient } from './helpers/client.js'
 import { createSeedBackup } from './helpers/seed.js'
 
 const utils = require('../../server/node/utils.cjs') as typeof import('../../server/node/utils.cjs')
+const { createBootPayloadPlanner } = require('../../server/node/boot-payload.cjs')
+const { Unpackr } = require('msgpackr')
 
 const DB_KEY_HEX = Buffer.from('database/database.bin').toString('hex')
 const md5 = (bytes: Uint8Array) => createHash('md5').update(bytes).digest('hex')
+const quiet = { info() {}, warn() {}, error() {}, debug() {} }
+
+// The planner etag of a served payload: plan its decoded content and check
+// that the plan's bytes are exactly the payload.
+function payloadEtag(bytes: Buffer) {
+  const planner = createBootPayloadPlanner({ logger: quiet })
+  const root = new Unpackr({ useRecords: false, int64AsType: 'number' }).decode(bytes.subarray(utils.magicHeader.length))
+  const plan = planner.planFor(root)
+  const planned = Buffer.concat([plan.prefix, ...plan.segments.map((segment: unknown) => planner.segmentBytes(segment))])
+  expect(planned.equals(bytes)).toBe(true)
+  return plan.etag
+}
 
 let srv: ServerHandle
 let client: RisuClient
@@ -44,9 +58,9 @@ function sendPatch(patch: unknown[], expectedHash: string) {
 }
 
 describe('database etags', () => {
-  test('write, patch and a stale patch report the md5 of the bytes /api/read serves', async () => {
+  test('write, patch and a stale patch report the etag of the bytes /api/read serves', async () => {
     const first = await readDb()
-    expect(first.etag).toBe(md5(first.bytes))
+    expect(first.etag).toBe(payloadEtag(first.bytes))
 
     const write = await client.fetch('/api/write', {
       method: 'POST',
@@ -58,7 +72,7 @@ describe('database etags', () => {
     const afterWrite = await readDb()
     expect(afterWrite.db.globalNote).toBe('written')
     expect(writeEtag).toBe(afterWrite.etag)
-    expect(afterWrite.etag).toBe(md5(afterWrite.bytes))
+    expect(afterWrite.etag).toBe(payloadEtag(afterWrite.bytes))
 
     const patch = await sendPatch([{ op: 'add', path: '/globalNote', value: 'patched' }], afterWrite.hash)
     expect(patch.status).toBe(200)
@@ -66,7 +80,7 @@ describe('database etags', () => {
     const afterPatch = await readDb()
     expect(afterPatch.db.globalNote).toBe('patched')
     expect(patchEtag).toBe(afterPatch.etag)
-    expect(afterPatch.etag).toBe(md5(afterPatch.bytes))
+    expect(afterPatch.etag).toBe(payloadEtag(afterPatch.bytes))
 
     const stale = await sendPatch([{ op: 'add', path: '/globalNote', value: 'again' }], afterWrite.hash)
     expect(stale.status).toBe(409)

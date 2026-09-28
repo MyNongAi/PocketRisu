@@ -90,6 +90,7 @@ const { createPendingChatPayloads } = require('./pending-chat-payloads.cjs');
 const pendingChatPayloads = createPendingChatPayloads({ kvGet, kvSet, kvDel, kvList: kvListExactPrefix, kvExists });
 const { createChatBodyStore, chatToStub, mergeChatStubWithFullChat, deepFreeze, StoredChatBytes } = require('./chat-body-store.cjs');
 const { createDbPersister, isPersistMode } = require('./db-persister.cjs');
+const { createBootPayloadPlanner } = require('./boot-payload.cjs');
 const { createRuntimeFlags } = require('./runtime-flags.cjs');
 const { cdcSplit } = require('./chunkStore.cjs');
 // Test hardening only: every root installed in dbCache is deep-frozen, chat
@@ -166,25 +167,31 @@ const syncHub = createSyncHub();
 
 // ETag for database.bin
 let dbEtag = null;
+// The /api/read payload of a client-view root as content-addressed segments
+// (boot-payload.cjs): the database etag, the streamed read and /api/db/boot.
+const bootPayload = createBootPayloadPlanner({
+    logger,
+    onMutation: (detail) => reportCachedRootMutation('boot-payload', detail),
+});
 
 // The single place a check reports that an installed dbCache root, or
 // something reachable from it, was changed in place (see the invariant
 // above). The callers are the test-mode patch audit in /api/patch, the
-// asset-manifest PATCH and the persister's idle audit (db-persister.cjs);
-// the boot planner's segment digest re-check is meant to report here too.
-// Such a change breaks every cache keyed on object identity, so those are
-// dropped and the next request recomputes them from the current content:
-// the per-root and per-element hashes, the etag and the persister's layout
-// (a later identity-keyed cache, such as the planner's plans, must be
-// dropped here too). dbCache itself is kept, as it still holds every
-// acknowledged write, and it is written again in full: the blob on disk
-// may hold the owner as it was before the change.
+// asset-manifest PATCH, the persister's idle audit (db-persister.cjs) and
+// the boot planner's segment digest re-check (boot-payload.cjs, which also
+// disables the planner). Such a change breaks every cache keyed on object
+// identity, so those are dropped and the next request recomputes them from
+// the current content: the per-root and per-element hashes, the etag, the
+// persister's layout and the planner's plans and digests. dbCache itself is
+// kept, as it still holds every acknowledged write, and it is written again
+// in full: the blob on disk may hold the owner as it was before the change.
 let cachedRootMutationReports = 0;
 function reportCachedRootMutation(source, detail) {
     cachedRootMutationReports++;
     logger.error(`[Cache] In-place change of an installed database root reported by ${source}`
         + `${detail ? `: ${detail}` : ''}. Dropping the identity-keyed caches and the etag; rewriting database.bin.`);
     databasePatchHashCache.reset();
+    bootPayload.reset();
     dbEtag = null;
     dbPersister.reset('root-mutation');
     if (dbCache[DB_HEX_KEY] && !saveTimers[DB_HEX_KEY]) scheduleDatabasePersist('cache-mutation');
@@ -262,6 +269,17 @@ function computeBufferEtag(buffer) {
 // the whole output once more: a second ~500MB block per database encode.
 function computeDatabaseEtagFromObject(databaseObject) {
     return computeBufferEtag(encodeRisuSaveLegacyBuffer(databaseObject));
+}
+
+// The etag of a client-view root, i.e. of the bytes /api/read serves for it:
+// the boot planner's Merkle etag (milliseconds for a root that shares its
+// elements with a planned one), or, while the planner is disabled, the md5
+// of the whole encode. Every view etag comes from here; the import and
+// restore paths keep the md5 of the disk blob, which matches no view and so
+// makes every client rebase.
+function dbEtagFor(databaseObject) {
+    const plan = bootPayload.tryPlan(databaseObject);
+    return plan ? plan.etag : computeDatabaseEtagFromObject(databaseObject);
 }
 
 // Per-root-key and per-character hashes of a client-view database, in the
@@ -6282,7 +6300,7 @@ app.get('/api/read', async (req, res, next) => {
                     logger.error('[Read] Failed to strip chats from database.bin', e);
                     return next(e);
                 }
-                dbEtag = computeBufferEtag(value);
+                dbEtag = dbEtagFor(dbCache[filePath]);
                 readTimings.etagMs = lap();
                 logger.debug(`[Read] ${key} ${formatMegabytes(value.length)}: ${formatStageTimings(readTimings)} total ${Math.round(performance.now() - readStartedAt)} ms`);
                 if (req.headers['if-none-match'] === dbEtag) {
@@ -6530,7 +6548,7 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
                 // not slip through that window, so derive it from the current
                 // client view when the writer sent a precondition.
                 if (ifMatch && !dbEtag && (await loadDbCacheIfMissing())) {
-                    dbEtag = computeDatabaseEtagFromObject(dbCache[DB_HEX_KEY]);
+                    dbEtag = dbEtagFor(dbCache[DB_HEX_KEY]);
                 }
                 if (ifMatch && dbEtag && ifMatch !== dbEtag) {
                     res.status(409).send({
@@ -6691,7 +6709,7 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
                     // split above may have emptied pluginCustomStorage, so
                     // the client's copy and the served copy differ.
                     persistedView = normalizeJSON(stripDatabaseForClient(fullDb, { reconcileManifests: true }));
-                    persistedEtag = computeDatabaseEtagFromObject(persistedView);
+                    persistedEtag = dbEtagFor(persistedView);
                     // Hashes of that same view, so the client can tell at once
                     // whether the baseline it re-seeds from its own bytes matches
                     // what the server holds — a silent difference here is what
@@ -6846,7 +6864,7 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
                 );
                 let currentEtag;
                 try {
-                    currentEtag = computeDatabaseEtagFromObject(dbCache[filePath]);
+                    currentEtag = dbEtagFor(dbCache[filePath]);
                     dbEtag = currentEtag;
                 } catch {}
                 res.status(409).send({
@@ -6867,7 +6885,7 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
                     logger.warn(`[Patch] Rejected ${partition.rejected.length} plugin-storage op(s) (client must full-write): ${sample}`);
                     let currentEtag;
                     try {
-                        currentEtag = computeDatabaseEtagFromObject(dbCache[filePath]);
+                        currentEtag = dbEtagFor(dbCache[filePath]);
                         dbEtag = currentEtag;
                     } catch {}
                     res.status(409).send({
@@ -6901,7 +6919,7 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
                 if (decodedKey === 'database/database.bin') {
                     // Encode failure must not upgrade this 409 into a 500.
                     try {
-                        currentEtag = computeDatabaseEtagFromObject(dbCache[filePath]);
+                        currentEtag = dbEtagFor(dbCache[filePath]);
                         dbEtag = currentEtag;
                     } catch {}
                     try {
@@ -6954,7 +6972,7 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
             if (Array.isArray(patch) && patch.length === 0) {
                 applyPluginKvOps();
                 if (pluginKvOps.length > 0 && decodedKey === 'database/database.bin') {
-                    dbEtag = computeDatabaseEtagFromObject(dbCache[filePath]);
+                    dbEtag = dbEtagFor(dbCache[filePath]);
                 }
                 const emptyPayload = {
                     success: true,
@@ -7032,7 +7050,7 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
                     logger.warn(`[Patch] Rejected: ${manifestLosses.length} owner(s) would lose their asset manifest: ${sample}`);
                     let currentEtag;
                     try {
-                        currentEtag = computeDatabaseEtagFromObject(dbCache[filePath]);
+                        currentEtag = dbEtagFor(dbCache[filePath]);
                         dbEtag = currentEtag;
                     } catch {}
                     res.status(409).send({
@@ -7055,7 +7073,7 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
                     logger.warn(`[Patch] Rejected: ${archiveConflict}`);
                     let currentEtag;
                     try {
-                        currentEtag = computeDatabaseEtagFromObject(dbCache[filePath]);
+                        currentEtag = dbEtagFor(dbCache[filePath]);
                         dbEtag = currentEtag;
                     } catch {}
                     res.status(409).send({
@@ -7131,7 +7149,7 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
             // Update ETag after successful patch (based on stripped version)
             patchStage = 'etag';
             if (decodedKey === 'database/database.bin') {
-                dbEtag = computeDatabaseEtagFromObject(dbCache[filePath]);
+                dbEtag = dbEtagFor(dbCache[filePath]);
             }
             timings.etagMs = lap();
             timings.totalMs = Math.round(performance.now() - patchStartedAt);
@@ -7288,7 +7306,7 @@ app.patch('/api/asset-manifests/owner/:kind/:ownerId', async (req, res, next) =>
             // The client view changed, so a full write carrying the
             // pre-edit etag must conflict instead of reconciling its stale
             // inline asset list over this manifest revision.
-            dbEtag = computeDatabaseEtagFromObject(nextDatabase);
+            dbEtag = dbEtagFor(nextDatabase);
             scheduleDatabasePersist('asset-manifest');
             return enriched;
         });
@@ -10519,6 +10537,8 @@ app.get('/api/debug/memory', async (req, res, next) => {
                 lastPersistMs: lastDbPersistMs,
                 persister: dbPersister.stats(),
             },
+            // The database etag and read payload (boot-payload.cjs).
+            bootPayload: bootPayload.stats(),
         });
     } catch (error) {
         next(error);
