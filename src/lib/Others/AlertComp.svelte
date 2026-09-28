@@ -425,22 +425,41 @@
                             <ChevronRightIcon />
                         </div>
                     </button>
-                    <button class="border-darkborderc border py-2 px-8 flex rounded-md hover:ring-2 items-center mt-2" onclick={(e) => {
-                        e.stopPropagation()
-                        e.preventDefault()
-                        alertStore.set({
-                            type: 'none',
-                            msg: 'importFromProton'
-                        })
-                    }}>
-                        <div class="flex flex-col justify-start items-start">
-                            <span>{language.importFromProton}</span>
-                            <span class="text-textcolor2 text-xs">{language.importFromProtonDesc}</span>
-                        </div>
-                        <div class="ml-9 float-right flex-1 flex justify-end">
-                            <ChevronRightIcon />
-                        </div>
-                    </button>
+                    <!-- Proton, split by destination: a .charx is a bot on the left and a module on the right. -->
+                    <div class="mt-2 grid grid-cols-2 gap-2">
+                        <button class="border-darkborderc border py-2 px-4 flex rounded-md hover:ring-2 items-center min-w-0" onclick={(e) => {
+                            e.stopPropagation()
+                            e.preventDefault()
+                            alertStore.set({
+                                type: 'none',
+                                msg: 'importFromProton'
+                            })
+                        }}>
+                            <div class="flex min-w-0 flex-col justify-start items-start text-left">
+                                <span>{language.importFromProtonAsBot}</span>
+                                <span class="text-textcolor2 text-xs">{language.importFromProtonAsBotDesc}</span>
+                            </div>
+                            <div class="ml-2 flex-1 flex justify-end shrink-0">
+                                <ChevronRightIcon />
+                            </div>
+                        </button>
+                        <button class="border-darkborderc border py-2 px-4 flex rounded-md hover:ring-2 items-center min-w-0" onclick={(e) => {
+                            e.stopPropagation()
+                            e.preventDefault()
+                            alertStore.set({
+                                type: 'none',
+                                msg: 'importFromProtonModule'
+                            })
+                        }}>
+                            <div class="flex min-w-0 flex-col justify-start items-start text-left">
+                                <span>{language.importFromProtonAsModule}</span>
+                                <span class="text-textcolor2 text-xs">{language.importFromProtonAsModuleDesc}</span>
+                            </div>
+                            <div class="ml-2 flex-1 flex justify-end shrink-0">
+                                <ChevronRightIcon />
+                            </div>
+                        </button>
+                    </div>
                     <button class="border-darkborderc border py-2 px-8 flex rounded-md hover:ring-2 items-center mt-2" onclick={(e) => {
                         e.stopPropagation()
                         e.preventDefault()

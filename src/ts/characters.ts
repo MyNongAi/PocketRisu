@@ -897,6 +897,13 @@ export async function addCharacter(arg:{
         case 'importFromProton':
             await importFromProtonDrive()
             break
+        case 'importFromProtonModule': {
+            // Modules, as from the module page: nothing to select afterwards.
+            const { importModuleFromProtonDrive } = await import('./process/modules')
+            await importModuleFromProtonDrive()
+            MobileGUIStack.set(1)
+            return
+        }
         default:
             MobileGUIStack.set(1)
             return
