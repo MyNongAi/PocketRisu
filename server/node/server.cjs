@@ -189,6 +189,24 @@ function reportCachedRootMutation(source, detail) {
     if (dbCache[DB_HEX_KEY] && !saveTimers[DB_HEX_KEY]) scheduleDatabasePersist('cache-mutation');
 }
 
+// fast-json-patch formats its errors with the whole document pretty-printed
+// into the message (and keeps it as .tree). On a large database that is
+// hundreds of MB: it crashed the server with "Invalid string length", and it
+// would copy chat and prompt text into logs.db and the 500 response. Keep the
+// first message line, the op index and the op's type/path (never its value).
+function compactPatchError(error) {
+    if (!error || typeof error !== 'object') return error;
+    if (!('tree' in error) && !('operation' in error)) return error;
+    const op = error.operation && typeof error.operation === 'object' ? error.operation : null;
+    const where = op
+        ? ` (op #${error.index ?? '?'}: ${String(op.op)} ${String(op.path).slice(0, 200)}${op.from ? ` from ${String(op.from).slice(0, 200)}` : ''})`
+        : '';
+    const firstLine = String(error.message ?? '').split('\n', 1)[0].slice(0, 300);
+    const compact = new Error(`${firstLine}${where}`);
+    compact.name = typeof error.name === 'string' ? error.name : 'PatchError';
+    return compact;
+}
+
 // Test hardening (POCKETRISU_TEST_FREEZE_CACHE): the installed roots are
 // frozen, but fast-json-patch is sloppy-mode code, so an op that reached a
 // shared frozen object would be dropped silently instead of throwing. Every
@@ -201,7 +219,7 @@ function auditPatchedRootForTests(source, previous, referencePatch, next) {
     try {
         reference = applyPatch(clonePatchSnapshot(previous, referencePatch, { shareElements: false }), referencePatch, true).newDocument;
     } catch (error) {
-        return failPatchAudit(source, `the whole-branch reference failed where the patch succeeded: ${error?.message}`);
+        return failPatchAudit(source, `the whole-branch reference failed where the patch succeeded: ${compactPatchError(error)?.message}`);
     }
     if (!encodeRisuSaveLegacyBuffer(reference).equals(encodeRisuSaveLegacyBuffer(next))) {
         return failPatchAudit(source, 'the result differs from the whole-branch reference');
@@ -6981,7 +6999,7 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
                     auditFailedPatchForTests('patch', dbCache[filePath], auditPatch);
                     patchStage = 'apply';
                 }
-                throw applyError;
+                throw compactPatchError(applyError);
             }
             // Root-level ops (path "") replace the document instead of mutating
             // the snapshot, so the applied result must be taken from newDocument.
