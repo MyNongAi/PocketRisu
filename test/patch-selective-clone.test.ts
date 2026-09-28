@@ -316,9 +316,13 @@ describe('copy-on-write patch apply', () => {
         }
         expect(!!error, `${error?.message} / ${referenceError?.message}`).toBe(!!referenceError)
         if (error) {
+            // Built without the document (patch-validated-apply.cjs): the
+            // library's first message line, name, index and operation.
             expect(error.name).toBe(referenceError.name)
-            expect(error.message).toBe(referenceError.message)
+            expect(error.message.split('\n', 1)[0]).toBe(referenceError.message.split('\n', 1)[0])
             expect(error.index).toBe(referenceError.index)
+            expect(error.operation).toEqual(referenceError.operation)
+            expect(error.message.length).toBeLessThan(2000)
             return { error }
         }
         expect(result.newDocument).toStrictEqual(reference.newDocument)

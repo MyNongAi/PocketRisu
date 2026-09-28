@@ -84,6 +84,7 @@ const {
 const { diagnoseAssetReferences } = require('./asset-doctor.cjs');
 const { createExternalAssetMigrationJournal } = require('./external-asset-migration-journal.cjs');
 const { verifyStagedMigration } = require('./external-asset-staged-verifier.cjs');
+// The test-mode audits' reference; /api/patch applies with applyValidatedPatch.
 const { applyPatch } = require('fast-json-patch');
 const { decodeRisuSave, encodeRisuSaveLegacyBuffer, calculateHash, normalizeJSON, normalizeForwardHeaders, hasRemoteBlocks } = require('./utils.cjs');
 const { computeChatEtag } = require('./chat-content-etag.cjs');
@@ -111,6 +112,7 @@ const chatBodyStore = createChatBodyStore({
 });
 const { createPatchHashCache, decodePointerSegment } = require('./patch-hash-cache.cjs');
 const { clonePatchSnapshot, applyPatchCopyOnWrite } = require('./patch-selective-clone.cjs');
+const { applyValidatedPatch } = require('./patch-validated-apply.cjs');
 const pluginStorage = require('./plugin-storage-store.cjs');
 const { createAssetManifestStore } = require('./assetManifestStore.cjs');
 const {
@@ -204,8 +206,11 @@ function reportCachedRootMutation(source, detail) {
 // fast-json-patch formats its errors with the whole document pretty-printed
 // into the message (and keeps it as .tree). On a large database that is
 // hundreds of MB: it crashed the server with "Invalid string length", and it
-// would copy chat and prompt text into logs.db and the 500 response. Keep the
-// first message line, the op index and the op's type/path (never its value).
+// would copy chat and prompt text into logs.db and the 500 response. /api/patch
+// now applies through patch-validated-apply.cjs, whose errors carry no
+// document, but their message can still carry the op's value and the audits
+// below use the library itself. Keep the first message line, the op index
+// and the op's type/path (never its value).
 function compactPatchError(error) {
     if (!error || typeof error !== 'object') return error;
     if (!('tree' in error) && !('operation' in error)) return error;
@@ -238,11 +243,15 @@ function auditPatchedRootForTests(source, previous, referencePatch, next) {
     }
 }
 
-// The same audit for a patch that failed: the reference must fail too.
-function auditFailedPatchForTests(source, previous, referencePatch) {
+// The same audit for a patch that failed: the reference must fail too, with
+// the same error name at the same op.
+function auditFailedPatchForTests(source, previous, referencePatch, error) {
     try {
         applyPatch(clonePatchSnapshot(previous, referencePatch, { shareElements: false }), referencePatch, true);
-    } catch {
+    } catch (referenceError) {
+        if (referenceError?.name !== error?.name || referenceError?.index !== error?.index) {
+            failPatchAudit(source, `the whole-branch reference failed with ${referenceError?.name} at op ${referenceError?.index}, the patch with ${error?.name} at op ${error?.index}`);
+        }
         return;
     }
     failPatchAudit(source, 'the patch failed where the whole-branch reference succeeded');
@@ -7237,11 +7246,11 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
             try {
                 result = snapshot === null
                     ? applyPatchCopyOnWrite(dbCache[filePath], patch)
-                    : applyPatch(snapshot, patch, true);
+                    : applyValidatedPatch(snapshot, patch);
             } catch (applyError) {
                 if (auditPatch) {
                     patchStage = 'audit';
-                    auditFailedPatchForTests('patch', dbCache[filePath], auditPatch);
+                    auditFailedPatchForTests('patch', dbCache[filePath], auditPatch, applyError);
                     patchStage = 'apply';
                 }
                 throw compactPatchError(applyError);

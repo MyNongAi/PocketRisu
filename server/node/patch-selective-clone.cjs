@@ -1,6 +1,6 @@
 'use strict';
 
-const { applyOperation, applyPatch } = require('fast-json-patch');
+const { applyValidatedOperation, applyValidatedPatch } = require('./patch-validated-apply.cjs');
 const { decodePointerSegment } = require('./patch-hash-cache.cjs');
 
 // Root arrays whose elements a patch can share with the previous root.
@@ -202,8 +202,10 @@ function copyOnWriteEligible(key, patch) {
 // branch the patch does not name and, in `characters` and `modules`, every
 // element no op writes into (see copyOnWriteEligible; other keys and other
 // shapes get clonePatchSnapshot's whole-branch clones). The ops run one by
-// one through fast-json-patch's applyOperation with the arguments applyPatch
-// passes, so the result, which op throws and its error are applyPatch's;
+// one through applyValidatedOperation, which is fast-json-patch's
+// applyOperation with the arguments applyPatch passes, so the result and
+// which op throws are applyPatch's, and its error has the same name, index
+// and operation (built without the document, see patch-validated-apply.cjs);
 // replacing an element of the array copy by its clone does not change what
 // an op sees. A throw leaves `database` untouched: the ops before it wrote
 // only into this call's copies and the request's own values. As with
@@ -212,10 +214,10 @@ function copyOnWriteEligible(key, patch) {
 function applyPatchCopyOnWrite(database, patch) {
     if (!isPlainPatchRoot(database) || !Array.isArray(patch)) {
         // A whole copy of an odd root; applyPatch refuses a non-array patch.
-        return applyPatch(clonePatchSnapshot(database, patch), patch, true);
+        return applyValidatedPatch(clonePatchSnapshot(database, patch), patch);
     }
     const { keys, touchesRoot } = collectPatchTopLevelKeys(patch);
-    if (touchesRoot) return applyPatch(structuredClone(database), patch, true);
+    if (touchesRoot) return applyValidatedPatch(structuredClone(database), patch);
 
     const snapshot = { ...database };
     // key -> the array copy, while elements of `database[key]` may be in it.
@@ -231,7 +233,7 @@ function applyPatchCopyOnWrite(database, patch) {
             setOwnValue(snapshot, key, structuredClone(value));
         }
     }
-    if (arrays.size === 0) return applyPatch(snapshot, patch, true);
+    if (arrays.size === 0) return applyValidatedPatch(snapshot, patch);
 
     // Elements of an array copy that ops may write into: this call's clones
     // and the values an add or replace put in a slot.
@@ -261,7 +263,7 @@ function applyPatchCopyOnWrite(database, patch) {
                 arrays.delete(key);
             }
         }
-        results[i] = applyOperation(document, op, true, true, true, i);
+        results[i] = applyValidatedOperation(document, op, i);
         document = results[i].newDocument;
         if (array && parts.length === 3 && (op.op === 'add' || op.op === 'replace')
             && op.value !== null && typeof op.value === 'object') {

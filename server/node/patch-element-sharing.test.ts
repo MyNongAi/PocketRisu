@@ -541,11 +541,16 @@ function runFuzz(seed: number, iterations: number, frozen: boolean, generate = p
         expect(!!cowError, `failure differs: ${where} copy-on-write=${cowError?.message?.split('\n')[0]} old=${oldError?.message?.split('\n')[0]}`).toBe(!!oldError)
         expect(!!newError, `failure differs: ${where} new=${newError?.message} old=${oldError?.message}`).toBe(!!oldError)
         if (oldError) {
+            // applyPatchCopyOnWrite builds its errors without the document
+            // (patch-validated-apply.cjs), so only the message's first line
+            // is the library's.
             for (const error of [cowError, newError]) {
                 expect(error.name).toBe(oldError.name)
-                expect(error.message).toBe(oldError.message)
+                expect(error.message.split('\n', 1)[0]).toBe(oldError.message.split('\n', 1)[0])
                 expect(error.index).toBe(oldError.index)
+                expect(error.operation).toEqual(oldError.operation)
             }
+            expect(newError.message).toBe(oldError.message)
             stats.failed++
             continue
         }
