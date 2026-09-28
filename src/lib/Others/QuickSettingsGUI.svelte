@@ -6,8 +6,10 @@
     import BotSettings from "../Setting/Pages/BotSettings.svelte";
     import OtherBotSettings from "../Setting/Pages/OtherBotSettings.svelte";
     import ModuleSettings from "../Setting/Pages/Module/ModuleSettings.svelte";
+    import { useBoxedSettingTabs } from "../UI/GUI/SettingTabs.svelte";
 
     let activeIndex = $derived(QuickSettings.index);
+    useBoxedSettingTabs();
 </script>
 
 <div class="mb-2 flex shrink-0 gap-2">
