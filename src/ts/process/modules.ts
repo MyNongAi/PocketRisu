@@ -46,6 +46,13 @@ export interface RisuModule{
     icon?:string
     /** PocketRisu collection provenance. Ignored by upstream clients. */
     sourceInfo?: import('../sourceCollection').SourceImportInfo
+    /**
+     * PocketRisu: the Proton Drive share this module was downloaded from as a
+     * Realm card's companion module (realmCompanionModule.ts), so the next
+     * import of a card linking it pairs the module instead of downloading it
+     * again. Ignored by upstream clients.
+     */
+    nodeOnlyProtonShare?: string
 }
 
 /** Inserts modules and records them as the newest catalog entries. */

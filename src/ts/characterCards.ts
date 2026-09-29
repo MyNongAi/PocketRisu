@@ -1958,12 +1958,32 @@ export async function downloadRisuHub(id:string, arg:{
             } catch {}
         }
         notifySuccess(language.importedCharacter)
+        startRealmCompanionModules(id, db.characters[index])
         return index
     } catch (error) {
         console.error(error)
         notifyError(error instanceof Error ? error.message : String(error))
         return null
     }
+}
+
+// The card's companion module, when its Realm description (or its creator
+// notes) links a Proton Drive share: downloaded and paired with the character
+// in the background (realmCompanionModule.ts). The character is already
+// imported and selected by then.
+function startRealmCompanionModules(realmId: string, character: character | undefined) {
+    const chaId = character?.chaId
+    if (!chaId) return
+    const creatorNotes = character.creatorNotes
+    void (async () => {
+        let desc: string | undefined
+        try {
+            const res = await fetch(`${hubURL}/hub/info/${encodeURIComponent(realmId)}`)
+            if (res.ok) desc = ((await res.json()) as hubType | null)?.desc
+        } catch { /* the card's own notes still count */ }
+        const { importRealmCompanionModules } = await import('./realmCompanionModule')
+        await importRealmCompanionModules(chaId, [desc, creatorNotes])
+    })()
 }
 
 export async function getHubResources(id:string) {
