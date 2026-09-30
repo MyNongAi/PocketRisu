@@ -916,7 +916,19 @@ export async function addCharacter(arg:{
 }
 
 async function importFromProtonDrive() {
-    const url = await alertInput(language.protonDriveUrlPrompt)
+    const url = (await alertInput(language.protonDriveUrlPrompt))?.trim()
+    // Cancel or an empty box imports nothing; local files have their own button.
+    if (!url) return
+
+    // A Realm address in the Proton box: the bot comes from Realm (and with
+    // it the companion module its description links, see downloadRisuHub).
+    const { parseRealmReference } = await import('./realmLink')
+    const realmId = parseRealmReference(url, 'uuid')
+    if (realmId) {
+        const { downloadRisuHub } = await import('./characterCards')
+        await downloadRisuHub(realmId)
+        return
+    }
 
     // The server decrypts the share, so a valid link needs no download at all.
     // Only the node build has that endpoint; everywhere else, and whenever the

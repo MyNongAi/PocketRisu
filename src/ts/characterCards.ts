@@ -1878,6 +1878,75 @@ export async function fetchRealmCharacter(
     return character
 }
 
+// One Realm card as served: a card file (PNG, or a CHARX archive) or the card
+// spec with its image.
+async function fetchRealmCard(id:string):Promise<
+    | { kind: 'file', name: string, data: Uint8Array }
+    | { kind: 'spec', card: CharacterCardV3, img: Uint8Array }
+>{
+    const res = await fetch(`https://realm.risuai.net/api/v1/download/dynamic/${encodeURIComponent(id)}?cors=true`, {
+        headers: {
+            "x-risu-api-version": "4"
+        }
+    })
+    if(!res.ok){
+        throw new Error((await res.text().catch(() => '')) || `Realm download failed: ${res.status}`)
+    }
+
+    const contentType = (res.headers.get('content-type') || '').split(';', 1)[0].trim().toLowerCase()
+    if(contentType === 'image/png' || contentType === 'application/zip' || contentType === 'application/charx'){
+        const isArchive = contentType === 'application/zip' || contentType === 'application/charx'
+        return { kind: 'file', name: isArchive ? 'realm.charx' : 'realm.png', data: new Uint8Array(await res.arrayBuffer()) }
+    }
+    const result = await res.json()
+    const card:CharacterCardV3 = result.card
+    if(!card?.data){
+        throw new Error('Realm response did not contain a character card')
+    }
+    card.data.extensions ??= {}
+    card.data.extensions.risuRealmImportId = id
+    return { kind: 'spec', card, img: await getHubResources(result.img) }
+}
+
+/**
+ * A Realm card as a module (the module import's Realm branch). The card is
+ * read without being added as a bot and turned into a module the way the
+ * character settings' "Convert to module" does (convertCharacterToModule).
+ */
+export async function downloadRisuHubAsModule(id:string) {
+    try {
+        if(!(await alertTOS())){
+            return null
+        }
+        const module = await runImportTask(`Realm ${id}`, async (report) => {
+            report({ label: language.importProgress.importing, progress: null })
+            const fetched = await fetchRealmCard(id)
+            const char = fetched.kind === 'file'
+                ? await importCharacterProcess({
+                    name: fetched.name,
+                    data: fetched.data,
+                    returnCharacter: true,
+                    onProgress: report,
+                    suppressSuccess: true,
+                })
+                : await importCharacterCardSpec(fetched.card, fetched.img, 'hub', {}, null, true, report, true)
+            if(!char || typeof char === 'number'){
+                throw new Error(language.errors.noData)
+            }
+            const { convertCharacterToModule } = await import('./interchangeability')
+            const converted = convertCharacterToModule(char)
+            addModuleToDatabase(converted)
+            return converted
+        })
+        notifySuccess(language.successImport)
+        return module
+    } catch (error) {
+        console.error(error)
+        notifyError(error instanceof Error ? error.message : String(error))
+        return null
+    }
+}
+
 export async function downloadRisuHub(id:string, arg:{
     forceRedirect?: boolean
 } = {}) {
@@ -1888,22 +1957,12 @@ export async function downloadRisuHub(id:string, arg:{
 
         const index = await runImportTask(`Realm ${id}`, async (report) => {
             report({ label: language.importProgress.importing, progress: null })
-            const res = await fetch(`https://realm.risuai.net/api/v1/download/dynamic/${encodeURIComponent(id)}?cors=true`, {
-                headers: {
-                    "x-risu-api-version": "4"
-                }
-            })
-            if(!res.ok){
-                throw new Error((await res.text().catch(() => '')) || `Realm download failed: ${res.status}`)
-            }
-
-            const contentType = (res.headers.get('content-type') || '').split(';', 1)[0].trim().toLowerCase()
+            const fetched = await fetchRealmCard(id)
             let importedIndex: number | null = null
-            if(contentType === 'image/png' || contentType === 'application/zip' || contentType === 'application/charx'){
-                const isArchive = contentType === 'application/zip' || contentType === 'application/charx'
+            if(fetched.kind === 'file'){
                 const result = await importCharacterProcess({
-                    name: isArchive ? 'realm.charx' : 'realm.png',
-                    data: new Uint8Array(await res.arrayBuffer()),
+                    name: fetched.name,
+                    data: fetched.data,
                     lightningRealmImport: getDatabase().lightningRealmImport,
                     onProgress: report,
                     suppressSuccess: true,
@@ -1911,18 +1970,9 @@ export async function downloadRisuHub(id:string, arg:{
                 importedIndex = typeof result === 'number' ? result : null
             }
             else{
-                const result = await res.json()
-                const data:CharacterCardV3 = result.card
-                const img:string = result.img
-                if(!data?.data){
-                    throw new Error('Realm response did not contain a character card')
-                }
-                data.data.extensions ??= {}
-                data.data.extensions.risuRealmImportId = id
-
                 const imported = await importCharacterCardSpec(
-                    data,
-                    await getHubResources(img),
+                    fetched.card,
+                    fetched.img,
                     'hub',
                     {},
                     null,
@@ -1958,11 +2008,38 @@ export async function downloadRisuHub(id:string, arg:{
             } catch {}
         }
         notifySuccess(language.importedCharacter)
+        startRealmCompanionModules(id, db.characters[index])
         return index
     } catch (error) {
         console.error(error)
         notifyError(error instanceof Error ? error.message : String(error))
         return null
+    }
+}
+
+// The card's companion module, when its Realm description (or its creator
+// notes) links a Proton Drive share: downloaded and paired with the character
+// in the background (realmCompanionModule.ts). The character is already
+// imported and selected by then.
+function startRealmCompanionModules(realmId: string, character: character | undefined) {
+    const chaId = character?.chaId
+    if (!chaId) return
+    const creatorNotes = character.creatorNotes
+    void (async () => {
+        const desc = await fetchRealmDescription(realmId)
+        const { importRealmCompanionModules } = await import('./realmCompanionModule')
+        await importRealmCompanionModules(chaId, [desc, creatorNotes])
+    })()
+}
+
+/** A Realm card's description (its Realm page text), or undefined when it cannot be read. */
+async function fetchRealmDescription(realmId: string): Promise<string | undefined> {
+    try {
+        const res = await fetch(`${hubURL}/hub/info/${encodeURIComponent(realmId)}`)
+        if (!res.ok) return undefined
+        return ((await res.json()) as hubType | null)?.desc
+    } catch {
+        return undefined
     }
 }
 

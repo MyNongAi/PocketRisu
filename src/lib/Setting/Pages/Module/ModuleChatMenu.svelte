@@ -21,6 +21,8 @@
     import { onDestroy, onMount, untrack } from "svelte";
     import { getLatestModuleCatalogPromotion, interleaveModuleCatalogGroups, recordModuleActivation, recordModuleFolderActivation, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
     import { listTitleColor } from "src/ts/gui/titleColors";
+    import PairedModuleMark from "src/lib/UI/GUI/PairedModuleMark.svelte";
+    import { charactersByPairedModule } from "src/ts/gui/pairedModules";
     interface Props {
         close?: any;
         alertMode?: boolean;
@@ -38,6 +40,7 @@
     let expanded = $state<Set<string>>(untrack(() => alertMode ? new Set() : new Set(rememberedModuleMenuExpanded)));
 
     const query = $derived(moduleSearch.trim().toLocaleLowerCase())
+    const pairedModules = $derived(charactersByPairedModule(DBState.db.characters))
     let sortedModules = $derived(sortModulesByActivation(DBState.db.modules, '', {
         fallbackOrders: [
             DBState.db.enabledModules,
@@ -254,7 +257,7 @@
                         {#if rmodule.mcp}
                             <Waypoints size={18} class="shrink-0 text-textcolor2" />
                         {/if}
-                        <span class="min-w-0 grow truncate {!alertMode && isGlobal ? 'text-textcolor2' : ''}" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(i))}>{#if hasMissingAssets(i)}<span aria-label="에셋 누락" title="에셋 누락">❗</span> {/if}{rmodule.favorite ? '★ ' : ''}{rmodule.name}</span>
+                        <span class="min-w-0 grow truncate {!alertMode && isGlobal ? 'text-textcolor2' : ''}" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(i))}>{#if hasMissingAssets(i)}<span aria-label="에셋 누락" title="에셋 누락">❗</span> {/if}<PairedModuleMark names={pairedModules.get(rmodule.id)} />{rmodule.favorite ? '★ ' : ''}{rmodule.name}</span>
                         {#if alertMode}
                             <button class="text-textcolor2 cursor-pointer hover:text-success transition-colors shrink-0" onclick={(e) => {
                                 e.stopPropagation()
