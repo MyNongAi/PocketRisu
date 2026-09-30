@@ -464,7 +464,19 @@ export async function importModule(){
 }
 
 export async function importModuleFromProtonDrive() {
-    const url = await alertInput(language.protonDriveUrlPrompt)
+    const url = (await alertInput(language.protonDriveUrlPrompt))?.trim()
+    // Cancel or an empty box imports nothing; local files have their own button.
+    if (!url) return
+
+    // A Realm address here: the card comes in as a module, converted the way
+    // "Convert to module" converts a bot, without adding the bot.
+    const { parseRealmReference } = await import('../realmLink')
+    const realmId = parseRealmReference(url, 'uuid')
+    if (realmId) {
+        const { downloadRisuHubAsModule } = await import('../characterCards')
+        await downloadRisuHubAsModule(realmId)
+        return
+    }
 
     // Same server-side path as the character import. It routes each file by
     // extension, and from this page a .charx or .json is a module, as it is

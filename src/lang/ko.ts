@@ -1242,7 +1242,7 @@ export const languageKorean = {
   realmCompanionModuleTask: "렐름 전용 모듈",
   realmCompanionModulePaired: (n: number) => `렐름 설명의 프로톤 링크에서 전용 모듈 ${n}개를 받아 이 봇에 연결했어요`,
   realmCompanionModuleFailed: "렐름 전용 모듈을 받지 못했어요",
-  protonDriveUrlPrompt: "프로톤 드라이브 공유 링크 붙여넣기 (빈칸이면 바로 파일 선택)",
+  protonDriveUrlPrompt: "프로톤 드라이브 공유 링크나 렐름 주소 붙여넣기",
   protonImporting: "임포트 중...",
   characterImportedAtHint: "이 기기에 임포트한 날짜",
   stealthPresent: "NAI 스텔스 메타데이터 있음 — 공홈에 임포트 가능",

@@ -82,31 +82,50 @@ async function downloadShareModules(link: string, report: ImportProgressReporter
 }
 
 /**
+ * Imports the modules behind `links` (reusing ones already downloaded from the
+ * same share) and pairs them with the characters `pairWith(chaIds)` returns,
+ * looked up after the downloads. Returns the module ids, and how many pairings
+ * were added. Runs as its own background import task.
+ */
+async function importCompanionModules(
+    links: readonly string[],
+    pairWith: () => readonly { modules?: string[] }[],
+): Promise<{ moduleIds: string[], paired: number }> {
+    return runImportTask(language.realmCompanionModuleTask, async (report) => {
+        const moduleIds: string[] = []
+        for (const link of links) {
+            const existing = getDatabase().modules.filter((module) => module.nodeOnlyProtonShare === link)
+            if (existing.length > 0) {
+                moduleIds.push(...existing.map((module) => module.id))
+                continue
+            }
+            report({ label: language.importProgress.importing, progress: null })
+            moduleIds.push(...(await downloadShareModules(link, report)).map((module) => module.id))
+        }
+        let paired = 0
+        for (const character of pairWith()) paired += pairModulesWithCharacter(character, moduleIds)
+        return { moduleIds, paired }
+    })
+}
+
+function reportFailure(error: unknown) {
+    notifyError(`${language.realmCompanionModuleFailed}: ${error instanceof Error ? error.message : String(error)}`)
+}
+
+/**
  * Downloads and pairs the companion modules linked in `texts` (the Realm
- * description and the card's creator notes) with the character `chaId`.
- * Runs as its own background import task; failures are reported, never thrown.
+ * description and the card's creator notes) with the character `chaId`, right
+ * after a Realm download imported it. Quiet when there is nothing to fetch;
+ * failures are reported, never thrown.
  */
 export async function importRealmCompanionModules(chaId: string, texts: readonly (string | undefined)[]): Promise<void> {
     const links = findProtonShareLinks(texts.filter(Boolean).join('\n'))
     if (links.length === 0 || links.length > MAX_LINKS) return
     try {
-        const paired = await runImportTask(language.realmCompanionModuleTask, async (report) => {
-            const moduleIds: string[] = []
-            for (const link of links) {
-                const existing = getDatabase().modules.filter((module) => module.nodeOnlyProtonShare === link)
-                if (existing.length > 0) {
-                    moduleIds.push(...existing.map((module) => module.id))
-                    continue
-                }
-                report({ label: language.importProgress.importing, progress: null })
-                moduleIds.push(...(await downloadShareModules(link, report)).map((module) => module.id))
-            }
-            // Look the character up again: the list may have changed during the downloads.
-            const character = getDatabase().characters.find((c) => c?.chaId === chaId)
-            return character ? pairModulesWithCharacter(character, moduleIds) : 0
-        })
+        // Look the character up after the downloads: the list may have changed.
+        const { paired } = await importCompanionModules(links, () => getDatabase().characters.filter((c) => c?.chaId === chaId))
         if (paired > 0) notifySuccess(language.realmCompanionModulePaired(paired))
     } catch (error) {
-        notifyError(`${language.realmCompanionModuleFailed}: ${error instanceof Error ? error.message : String(error)}`)
+        reportFailure(error)
     }
 }
