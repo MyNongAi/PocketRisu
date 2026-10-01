@@ -319,6 +319,14 @@
         void requestImmediateSave()
     }
 
+    // Favorites become one-tap buttons next to the chat sidebar's persona binding.
+    function toggleFavorite(index: number) {
+        const persona = DBState.db.personas[index]
+        if (!persona) return
+        persona.favorite = !persona.favorite
+        void requestImmediateSave()
+    }
+
     async function exportPersona(index: number) {
         saveUserPersona()
         await exportUserPersona(index)
@@ -402,6 +410,9 @@
                 />
             </div>
             <div class="flex gap-2 max-w-full flex-wrap items-center pt-3 border-t border-darkborderc">
+                <ShButton size="sm" variant={persona.favorite ? 'default' : 'outline'} onclick={() => toggleFavorite(index)}>
+                    <StarIcon class={persona.favorite ? 'fill-yellow-400 text-yellow-400' : ''} />{persona.favorite ? language.personaFavoriteRemove : language.personaFavorite}
+                </ShButton>
                 <ShButton size="sm" variant="outline" onclick={() => exportPersona(index)}>{language.export}</ShButton>
                 <ShButton size="sm" variant="outline" onclick={() => {
                     duplicatePersona(index)
@@ -502,7 +513,7 @@
                                 </div>
                                 {@render sourceBadge(source)}
                                 </div>
-                                <span class="w-full truncate text-center text-xs">{persona.name || 'User'}</span>
+                                <span class="w-full truncate text-center text-xs">{persona.favorite ? '★ ' : ''}{persona.name || 'User'}</span>
                             </button>
                         {/each}
                     </div>
@@ -562,7 +573,7 @@
                 {@render sourceBadge(source)}
             </div>
             <div class="min-w-0 grow truncate">
-                <span>{persona.name}</span>
+                <span>{persona.favorite ? '★ ' : ''}{persona.name}</span>
                 {#if persona.note}<span class="text-textcolor2"> / {persona.note}</span>{/if}
             </div>
             <!-- Active persona marker (same convention as the memory preset default star). -->

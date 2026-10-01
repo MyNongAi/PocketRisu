@@ -1062,6 +1062,10 @@ export interface RisuPersona {
     lastAppliedAt?:number
     /** PocketRisu collection provenance. Ignored by upstream clients. */
     sourceInfo?: import('../sourceCollection').SourceImportInfo
+    /** PocketRisu: shown as a one-tap button next to the chat sidebar's persona binding. */
+    favorite?: boolean
+    /** PocketRisu: the blank persona (no description) the chat sidebar binds in one tap; created once, then reused. */
+    nodeOnlyBlank?: boolean
 }
 
 /** User-defined group for organizing list items (personas, presets, ...). */
