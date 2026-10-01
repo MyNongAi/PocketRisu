@@ -9,7 +9,7 @@ import { language } from 'src/lang'
 import { notifyError, notifySuccess } from './alert'
 import { runImportTask, type ImportProgressReporter } from './importProgress'
 import { importModuleFile, type RisuModule } from './process/modules'
-import { downloadProtonEntry, inspectProtonShare, type ProtonEntry } from './protonShareClient'
+import { downloadProtonEntry, inspectProtonShare, isProtonPasswordRequired, type ProtonEntry, type ProtonInspectResult } from './protonShareClient'
 import { getDatabase } from './storage/database.svelte'
 
 const PROTON_HOSTS = new Set(['drive.proton.me', 'drive.proton.ch'])
@@ -65,14 +65,26 @@ export function pairModulesWithCharacter(character: { modules?: string[] }, modu
 }
 
 async function downloadShareModules(link: string, report: ImportProgressReporter): Promise<RisuModule[]> {
-    const share = await inspectProtonShare(link, '')
+    let password = ''
+    let share: ProtonInspectResult
+    try {
+        share = await inspectProtonShare(link, password)
+    } catch (error) {
+        if (!isProtonPasswordRequired(error)) throw error
+        // The owner put a password on the link: ask for it; cancel skips this link.
+        const { openProtonShare } = await import('./protonImport')
+        const opened = await openProtonShare(link, '', `${language.realmCompanionModuleTask}\n${link}`)
+        if (!opened) return []
+        share = opened.info
+        password = opened.password
+    }
     const picked = pickCompanionModuleEntries(share)
     const targets = picked === 'file'
         ? [{ path: [] as string[], expectedSize: share.entries[0]?.size ?? null }]
         : picked.map((entry) => ({ linkId: entry.linkId, expectedSize: entry.size }))
     const modules: RisuModule[] = []
     for (const target of targets) {
-        const file = await downloadProtonEntry(link, '', target, report)
+        const file = await downloadProtonEntry(link, password, target, report)
         const module = await importModuleFile(file, { suppressSuccess: true, onProgress: report })
         if (!module) continue
         module.nodeOnlyProtonShare = link

@@ -925,6 +925,7 @@
             id="alert-input"
             autocomplete="off"
             list="alert-input-list"
+            hideText={$alertStore.hideText ?? false}
             fullwidth
             onkeydown={(e) => {
                 if (e.key === 'Enter' && !e.isComposing) {

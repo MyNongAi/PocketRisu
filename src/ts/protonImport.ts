@@ -4,10 +4,10 @@
 // user pastes a link and nothing is ever downloaded by hand. A folder link
 // opens PocketRisu's own folder browser rather than Proton's web UI.
 
-import { alertClear, alertError, alertWait, notifySuccess } from './alert'
+import { alertClear, alertError, alertInput, alertWait, notifySuccess } from './alert'
 import { language } from 'src/lang'
 import { runPrefetchedImportBatch, type ImportProgressReporter } from './importProgress'
-import { downloadProtonEntry, inspectProtonShare, isProtonShareUrl, type ProtonInspectResult } from './protonShareClient'
+import { downloadProtonEntry, inspectProtonShare, isProtonPasswordRequired, isProtonShareUrl, ProtonRequestError, type ProtonInspectResult } from './protonShareClient'
 import { openProtonBrowser, type ProtonPick } from './protonBrowser.svelte'
 import { classifySharedImport, type ImportOrigin, type SharedImportKind } from './shareTargetRouting'
 import { importCharacterProcess } from './characterCards'
@@ -58,6 +58,51 @@ async function importByKind(
     }
 }
 
+/** Prompts before giving up on a password-protected link. */
+const PROTON_PASSWORD_ATTEMPTS = 5
+
+/**
+ * Read a share link, asking for the password when its owner set one (the
+ * server answers 401) and again when the typed one is refused. Other failures
+ * are reported here. Returns null when the user cancels or it cannot be read;
+ * otherwise the listing and the password to use for every later call.
+ * `subject` heads the prompt when the user did not just paste this link.
+ */
+export async function openProtonShare(url: string, password = '', subject?: string): Promise<{ info: ProtonInspectResult, password: string } | null> {
+    let current = password
+    let typed = false
+    for (let attempt = 0; attempt <= PROTON_PASSWORD_ATTEMPTS; attempt++) {
+        try {
+            // Reading the link is a couple of small API calls, so a brief modal
+            // is honest here. The transfer itself must not hold the screen.
+            alertWait(language.protonInspecting)
+            const info = await inspectProtonShare(url, current)
+            alertClear()
+            return { info, password: current }
+        } catch (error) {
+            alertClear()
+            // Once a password was typed, a refusal from the share most likely
+            // means that password was wrong; a network error is still just that.
+            const askAgain = isProtonPasswordRequired(error) || (typed && error instanceof ProtonRequestError)
+            if (!askAgain || attempt === PROTON_PASSWORD_ATTEMPTS) {
+                alertError(`${language.protonImportFailed}\n${error?.message ?? error}`)
+                return null
+            }
+            const prompt = typed ? `${language.protonPasswordWrong}\n(${error?.message ?? error})` : language.protonPasswordPrompt
+            const answer = await alertInput(
+                subject ? `${subject}\n\n${prompt}` : prompt,
+                [],
+                '',
+                { hideText: true },
+            )
+            if (!answer) return null
+            current = answer
+            typed = true
+        }
+    }
+    return null
+}
+
 /**
  * Pull one or more files out of a share link.
  *
@@ -71,18 +116,10 @@ async function importByKind(
 export async function importFromProtonLink(url: string, password = '', origin: ImportOrigin = 'character'): Promise<boolean> {
     if (!isProtonShareUrl(url)) return false
 
-    let info: ProtonInspectResult
-    try {
-        // Reading the link is a couple of small API calls, so a brief modal is
-        // honest here. The transfer itself must not hold the screen.
-        alertWait(language.protonInspecting)
-        info = await inspectProtonShare(url, password)
-        alertClear()
-    } catch (error) {
-        alertClear()
-        alertError(`${language.protonImportFailed}\n${error?.message ?? error}`)
-        return true
-    }
+    const opened = await openProtonShare(url, password)
+    if (!opened) return true
+    const info = opened.info
+    password = opened.password
 
     // A folder always opens the browser, even with a single file in it, so the
     // user sees what is inside (subfolders included) before anything imports.

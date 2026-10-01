@@ -41,13 +41,27 @@ async function authHeaders(): Promise<Record<string, string>> {
     }
 }
 
+/** A refusal from the server's Proton endpoints, with its HTTP status. */
+export class ProtonRequestError extends Error {
+    constructor(message: string, readonly status: number) {
+        super(message)
+        this.name = 'ProtonRequestError'
+    }
+}
+
+/** 401: the share's owner put a password on it and none (or no valid one) was sent. */
+export function isProtonPasswordRequired(error: unknown): boolean {
+    return error instanceof ProtonRequestError && error.status === 401
+}
+
 /** Server errors carry a readable message; anything else is a network failure. */
-async function readError(response: Response): Promise<string> {
+async function readError(response: Response): Promise<ProtonRequestError> {
+    let message = `${response.status}`
     try {
         const body = await response.json()
-        if (typeof body?.error === 'string') return body.error
+        if (typeof body?.error === 'string') message = body.error
     } catch { /* fall through */ }
-    return `${response.status}`
+    return new ProtonRequestError(message, response.status)
 }
 
 /** List a share: the file itself, or the folder at `path` (empty = the shared folder). */
@@ -57,7 +71,7 @@ export async function inspectProtonShare(url: string, password: string, path: re
         headers: await authHeaders(),
         body: JSON.stringify({ url, password, path }),
     })
-    if (!response.ok) throw new Error(await readError(response))
+    if (!response.ok) throw await readError(response)
     const info = await response.json()
     return { ...info, trail: info.trail ?? [] }
 }
@@ -114,7 +128,7 @@ export async function downloadProtonEntry(
         headers: await authHeaders(),
         body: JSON.stringify({ url, password, linkId: target.linkId, path: target.path ?? [] }),
     })
-    if (!response.ok) throw new Error(await readError(response))
+    if (!response.ok) throw await readError(response)
 
     const header = response.headers.get('x-proton-filename')
     const name = header ? decodeURIComponent(header) : 'proton-download'

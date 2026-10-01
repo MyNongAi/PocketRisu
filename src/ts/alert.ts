@@ -30,6 +30,8 @@ export interface alertData{
     stackTrace?: string;
     defaultValue?: string
     actions?: AlertAction[]
+    /** 'input' only: mask the typed text (a password). */
+    hideText?: boolean
 }
 
 export interface NotifyOptions {
@@ -423,13 +425,14 @@ export async function alertTOS(){
     return false
 }
 
-export async function alertInput(msg:string, datalist?:[string, string][], defaultValue?:string) {
+export async function alertInput(msg:string, datalist?:[string, string][], defaultValue?:string, options: { hideText?: boolean } = {}) {
 
     alertStoreImported.set({
         'type': 'input',
         'msg': msg,
         'datalist': datalist ?? [],
-        'defaultValue': defaultValue ?? ''
+        'defaultValue': defaultValue ?? '',
+        'hideText': options.hideText ?? false,
     })
 
     await waitAlert()

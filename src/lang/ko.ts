@@ -1270,6 +1270,8 @@ export const languageKorean = {
   protonNoImportableFiles: "이 링크에 임포트할 수 있는 파일이 없습니다.",
   protonUnsupportedFile: "지원하지 않는 형식이라 건너뛴 파일:",
   protonImportFailed: "프로톤 링크에서 가져오지 못했습니다.",
+  protonPasswordPrompt: "비밀번호가 걸린 프로톤 링크입니다. 링크 주인이 정한 비밀번호를 입력하세요.",
+  protonPasswordWrong: "비밀번호가 맞지 않아 링크를 열지 못했습니다. 다시 입력하세요.",
   protonWatchingDownloads: "다운로드 폴더 감시 중... 프로톤에서 파일을 다운로드하면 자동 임포트됩니다",
   protonImportSuccess: "프로톤 드라이브에서 가져오기 성공",
   random: "랜덤",

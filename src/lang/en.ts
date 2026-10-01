@@ -1165,6 +1165,8 @@ export const languageEnglish = {
     protonNoImportableFiles: "This link has no files that can be imported.",
     protonUnsupportedFile: "Skipped — unsupported format:",
     protonImportFailed: "Could not import from that Proton link.",
+    protonPasswordPrompt: "This Proton link is password-protected. Enter the password its owner set.",
+    protonPasswordWrong: "That password did not open the link. Enter it again.",
     protonWatchingDownloads: "Watching downloads folder... Files downloaded from Proton will be auto-imported",
     protonImportSuccess: "Successfully imported from Proton Drive",
     random: "Random",

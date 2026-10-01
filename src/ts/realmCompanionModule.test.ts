@@ -19,7 +19,10 @@ const downloadProtonEntry = vi.fn()
 vi.mock('./protonShareClient', () => ({
     inspectProtonShare: (...a: unknown[]) => inspectProtonShare(...a),
     downloadProtonEntry: (...a: unknown[]) => downloadProtonEntry(...a),
+    isProtonPasswordRequired: (error: any) => error?.status === 401,
 }))
+const openProtonShare = vi.fn()
+vi.mock('./protonImport', () => ({ openProtonShare: (...a: unknown[]) => openProtonShare(...a) }))
 const importModuleFile = vi.fn()
 vi.mock('./process/modules', () => ({ importModuleFile: (...a: unknown[]) => importModuleFile(...a) }))
 
@@ -99,6 +102,26 @@ describe('importRealmCompanionModules', () => {
         expect(downloadProtonEntry).not.toHaveBeenCalled()
         expect(db.characters[0].modules).toEqual([])
         expect(notifySuccess).not.toHaveBeenCalled()
+    })
+
+    test('a password-protected link asks for the password and downloads with it', async () => {
+        inspectProtonShare.mockRejectedValue(Object.assign(new Error('This link needs the password its owner set'), { status: 401 }))
+        openProtonShare.mockResolvedValue({ info: { kind: 'file', name: 'assets.risum', entries: [], trail: [] }, password: 'pw' })
+        downloadProtonEntry.mockResolvedValue({ name: 'assets.risum', data: new Uint8Array([1]) })
+        importModuleFile.mockImplementation(async () => { const m = { id: 'm2', name: 'assets' }; db.modules.push(m); return m })
+        await importRealmCompanionModules('c1', [LINK])
+        expect(openProtonShare).toHaveBeenCalledWith(LINK, '', expect.stringContaining(LINK))
+        expect(downloadProtonEntry.mock.calls[0][1]).toBe('pw')
+        expect(db.characters[0].modules).toEqual(['m2'])
+    })
+
+    test('cancelling the password prompt skips the link quietly', async () => {
+        inspectProtonShare.mockRejectedValue(Object.assign(new Error('needs password'), { status: 401 }))
+        openProtonShare.mockResolvedValue(null)
+        await importRealmCompanionModules('c1', [LINK])
+        expect(downloadProtonEntry).not.toHaveBeenCalled()
+        expect(notifyError).not.toHaveBeenCalled()
+        expect(db.characters[0].modules).toEqual([])
     })
 
     test('a failure is reported, not thrown', async () => {
