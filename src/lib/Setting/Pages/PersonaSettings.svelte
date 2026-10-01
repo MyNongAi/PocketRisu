@@ -365,6 +365,27 @@
     >[{source.label}]</span>
 {/snippet}
 
+<!-- Star of a persona: on the selected one it is a button that toggles the
+     favorite (blue outline, then filled yellow); on another favorite it only
+     marks it, and a click falls through to the row or card under it. -->
+{#snippet favoriteStar(index: number, className: string)}
+    {@const persona = DBState.db.personas[index]}
+    {#if index === DBState.db.selectedPersona}
+        <button
+            type="button"
+            class={`no-sort z-10 rounded p-1 hover:bg-selected/60 ${className}`}
+            aria-pressed={!!persona.favorite}
+            aria-label={persona.favorite ? language.personaFavoriteRemove : language.personaFavorite}
+            title={persona.favorite ? language.personaFavoriteRemove : language.personaFavorite}
+            onclick={(event) => { event.stopPropagation(); toggleFavorite(index) }}
+        ><StarIcon size={14} class={persona.favorite ? 'fill-yellow-400 text-yellow-400' : 'text-primary'} /></button>
+    {:else if persona.favorite}
+        <span class={`pointer-events-none z-10 p-1 ${className}`} aria-hidden="true">
+            <StarIcon size={14} class="fill-yellow-400 text-yellow-400" />
+        </span>
+    {/if}
+{/snippet}
+
 {#snippet personaEditor(index: number)}
     {@const persona = DBState.db.personas[index]}
     <div class="flex flex-wrap gap-4 bg-dark-900/50 p-3 rounded-md">
@@ -482,6 +503,7 @@
                         {#each group.indexes as index}
                             {@const persona = DBState.db.personas[index]}
                             {@const source = personaSource(index)}
+                            <div class="relative w-24 shrink-0">
                             <button
                                 type="button"
                                 aria-label={persona.name || 'User'}
@@ -507,14 +529,14 @@
                                             <span class="line-clamp-4 wrap-break-word">{persona.name || 'User'}</span>
                                         </div>
                                     {/if}
-                                    {#if index === DBState.db.selectedPersona}
-                                        <StarIcon size={14} class="absolute right-1 top-1 text-primary" />
-                                    {/if}
                                 </div>
                                 {@render sourceBadge(source)}
                                 </div>
-                                <span class="w-full truncate text-center text-xs">{persona.favorite ? '★ ' : ''}{persona.name || 'User'}</span>
+                                <span class="w-full truncate text-center text-xs">{persona.name || 'User'}</span>
                             </button>
+                            <!-- Over the thumbnail's top-right corner (card padding + 4px inset). -->
+                            {@render favoriteStar(index, 'absolute right-2 top-1')}
+                            </div>
                         {/each}
                     </div>
                 {/if}
@@ -573,13 +595,12 @@
                 {@render sourceBadge(source)}
             </div>
             <div class="min-w-0 grow truncate">
-                <span>{persona.favorite ? '★ ' : ''}{persona.name}</span>
+                <span>{persona.name}</span>
                 {#if persona.note}<span class="text-textcolor2"> / {persona.note}</span>{/if}
             </div>
-            <!-- Active persona marker (same convention as the memory preset default star). -->
-            {#if index === DBState.db.selectedPersona}
-                <StarIcon size={14} class="shrink-0 text-primary" />
-            {/if}
+            <!-- Active persona marker (same convention as the memory preset default
+                 star); on the active persona it also toggles the favorite. -->
+            {@render favoriteStar(index, 'shrink-0')}
         {/snippet}
         {#snippet itemPanel(displayIndex)}
             {@const index = personaListIndexes[displayIndex]}
