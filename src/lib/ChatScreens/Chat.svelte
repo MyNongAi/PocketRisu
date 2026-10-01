@@ -23,6 +23,8 @@
     import { selectedCharID } from "../../ts/stores.svelte"
     import { HideIconStore, ReloadGUIPointer, selIdState } from "../../ts/stores.svelte"
     import AutoresizeArea from "../UI/GUI/TextAreaResizable.svelte"
+    import { isSendKey } from "src/ts/gui/sendKey"
+    import { isMobile } from "src/ts/platform"
     import ChatBody from './ChatBody.svelte'
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
@@ -223,6 +225,15 @@
     function startOriginalEdit() {
         if (originalEditControlDisabled) return
         editMode = true
+    }
+
+    // The chat input's send key (Enter by default on a PC) finishes the edit,
+    // like pressing the pencil again; the other combinations insert a newline.
+    function finishEditOnSendKey(e: KeyboardEvent) {
+        if (e.key !== 'Enter' || e.isComposing || !editMode) return
+        if (!isSendKey(e, isMobile ? DBState.db.sendKeyMobile : DBState.db.sendKeyPC)) return
+        e.preventDefault()
+        toggleOriginalEdit()
     }
 
     function toggleOriginalEdit() {
@@ -551,7 +562,7 @@
         }} />
     {/if}
     {#if editMode}
-        <AutoresizeArea bind:value={message} handleLongPress={() => {
+        <AutoresizeArea bind:value={message} onkeydown={finishEditOnSendKey} handleLongPress={() => {
             editMode = false
         }} />
     {:else if isComment}

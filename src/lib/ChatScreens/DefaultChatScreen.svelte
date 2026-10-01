@@ -50,20 +50,14 @@ import { isMobile } from 'src/ts/platform'
     import Button from '../UI/GUI/Button.svelte';
     import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte';
 
+    import { isSendKey } from 'src/ts/gui/sendKey';
+
     const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then(m => m.default);
 
     // Whether an Enter keydown should send (vs insert a newline), based on the
     // per-platform send-key mode. Mobile uses sendKeyMobile, desktop sendKeyPC.
     function shouldSendOnEnter(e: KeyboardEvent): boolean {
-        const mode = isMobile ? DBState.db.sendKeyMobile : DBState.db.sendKeyPC;
-        // Match the configured combo EXACTLY — every other modifier must be absent,
-        // so e.g. Alt+Enter or Ctrl+Shift+Enter inserts a newline instead of sending.
-        switch (mode) {
-            case 'enter': return !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey;
-            case 'ctrl-enter': return (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey;
-            case 'shift-enter': return e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey;
-            default: return false; // 'button'
-        }
+        return isSendKey(e, isMobile ? DBState.db.sendKeyMobile : DBState.db.sendKeyPC);
     }
 
     interface Props {
