@@ -8,6 +8,7 @@
     import RealmLicense from "./RealmLicense.svelte";
     import MultiLangDisplay from "../GUI/MultiLangDisplay.svelte";
     import { tooltip } from "src/ts/gui/tooltip";
+    import Portal from "../GUI/Portal.svelte";
 
     interface Props {
         openedData: hubType;
@@ -18,8 +19,12 @@
 </script>
 
 
+<!-- Mounted on <body>: inside the main view it shared that view's stacking
+     context, so the sidebar (z-30) and its thumbnail badges painted over it.
+     z-40 keeps it under the alerts it opens (terms, report: z-50). -->
+<Portal>
 <!-- svelte-ignore a11y_click_events_have_key_events -->
-<div class="top-0 left-0 z-50 fixed w-full h-full bg-black/50 flex justify-center items-center text-textcolor" role="button" tabindex="0" onclick={() => {
+<div class="top-0 left-0 z-40 fixed w-full h-full bg-black/50 flex justify-center items-center text-textcolor" role="button" tabindex="0" onclick={() => {
     openedData = null
 }}>
     <div class="p-6 max-w-full bg-darkbg rounded-md flex flex-col gap-4 w-2xl overflow-y-auto max-h-full">
@@ -130,3 +135,4 @@
         </div>
     </div>
 </div>
+</Portal>
