@@ -242,8 +242,10 @@
         </div>
 
       {:else}
-        <div class="flex items-center mt-4">
-          <button class="mr-2 text-textcolor2 hover:text-primary" onclick={() => ($OpenRealmStore = false)}>
+        <!-- Back sits at the right: on phones the left corner holds the button
+             that opens the sidebar, which this one used to sit under. -->
+        <div class="flex items-center justify-end mt-4">
+          <button class="ml-2 text-textcolor2 hover:text-primary" aria-label={language.goback} title={language.goback} onclick={() => ($OpenRealmStore = false)}>
             <ArrowLeft/>
           </button>
         </div>
