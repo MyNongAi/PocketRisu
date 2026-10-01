@@ -1135,6 +1135,8 @@ export const languageEnglish = {
     realmImportByAddressPrompt: "Paste a RisuRealm character address or ID",
     realmAddressInvalid: "Could not read a RisuRealm address or ID",
     realmCompanionModuleTask: "Realm companion module",
+    importProgressMinimize: "Minimize (keeps running)",
+    importProgressShow: "Show import progress",
     realmCompanionModulePaired: (n: number) => `Downloaded ${n} companion module(s) from the Proton link in the Realm description and paired them with this bot`,
     realmCompanionModuleFailed: "Could not download the Realm companion module",
     protonDriveUrlPrompt: "Paste a Proton Drive share link or a Realm address",
