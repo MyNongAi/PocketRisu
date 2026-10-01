@@ -897,6 +897,39 @@ export async function saveDb() {
         // database object: it re-runs, rebuilding the per-key watchers and
         // counting as a change, only when a key is added or removed or the
         // database is replaced.
+        // Watches one value: re-walks it when anything inside changes and
+        // reports that (not its first walk). Must run inside an effect.
+        function watchDeep(read: () => unknown, onChange: () => void) {
+            let didInit = false
+            $effect(() => {
+                deepTouch(read())
+                if (!didInit) {
+                    didInit = true
+                    return
+                }
+                onChange()
+            })
+        }
+        // Watches an array entry by entry: the outer effect reads only the
+        // slots (an add, removal, reorder or replaced entry counts as a
+        // change and rebuilds the entry watchers); each entry's fields are
+        // walked by its own watcher.
+        function watchEntriesDeep(read: () => unknown, onChange: () => void) {
+            let didInit = false
+            $effect(() => {
+                const list = read()
+                const entries: unknown[] = []
+                if (Array.isArray(list)) {
+                    for (let i = 0; i < list.length; i++) entries.push(list[i])
+                } else {
+                    deepTouch(list)
+                }
+                if (didInit) onChange()
+                didInit = true
+                for (const entry of entries) watchDeep(() => entry, onChange)
+            })
+        }
+
         const markRootChanged = () => {
             changeTracker.root = true
             saveTimeoutExecute()
@@ -910,17 +943,7 @@ export async function saveDb() {
             )
             if (didInitRootEffect) markRootChanged()
             didInitRootEffect = true
-            for (const key of keys) {
-                let didInitKey = false
-                $effect(() => {
-                    deepTouch(db[key])
-                    if (!didInitKey) {
-                        didInitKey = true
-                        return
-                    }
-                    markRootChanged()
-                })
-            }
+            for (const key of keys) watchDeep(() => db[key], markRootChanged)
         })
         $effect(() => {
             DBState.db.botPresetsId
@@ -988,22 +1011,37 @@ export async function saveDb() {
             }
             knownCharacterIds = currentCharacterIdSet
 
-            if (DBState?.db?.characters?.[selIdState]) {
-                for (const key in DBState.db.characters[selIdState]) {
-                    // Exclude chats — chat changes are tracked via chat-specific server save, not database.bin
-                    if (key !== 'chats') {
-                        deepTouch(DBState.db.characters[selIdState][key])
-                    }
+            const selected = DBState?.db?.characters?.[selIdState]
+            if (selected) {
+                const chaId = selected.chaId
+                const markSelected = () => {
+                    if (changeTracker.character[0] !== chaId) changeTracker.character.unshift(chaId)
+                    saveTimeoutExecute()
+                }
+                // One watcher per field of the selected character and one per
+                // lorebook entry, so an edit walks only what it touched. One
+                // watcher over the whole character re-walked every lorebook
+                // entry and long text (265k nodes on the largest bot) for a
+                // single lorebook edit. Reflect.ownKeys reads the field list
+                // without tracking values, so this effect itself re-runs only
+                // on the structural changes above, a new selection, a replaced
+                // character object or an added field.
+                // Chats are excluded: they save through the per-chat path.
+                const fields = (Reflect.ownKeys(selected) as Array<string | symbol>)
+                    .filter((key): key is string => typeof key === 'string' && key !== 'chats')
+                for (const key of fields) {
+                    if (key === 'globalLore') watchEntriesDeep(() => selected.globalLore, markSelected)
+                    else watchDeep(() => (selected as unknown as Record<string, unknown>)[key], markSelected)
                 }
                 // Track stub metadata and chat ordering for database.bin persistence.
-                deepTouch(DBState.db.characters[selIdState].chats.map(c => ({
+                watchDeep(() => selected.chats.map(c => ({
                     id: c.id,
                     name: c.name,
                     lastDate: c.lastDate,
                     folderId: c.folderId,
-                })))
-                if (changeTracker.character[0] !== DBState.db.characters[selIdState]?.chaId) {
-                    changeTracker.character.unshift(DBState.db.characters[selIdState]?.chaId)
+                })), markSelected)
+                if (changeTracker.character[0] !== chaId) {
+                    changeTracker.character.unshift(chaId)
                 }
             }
             if (!didInitGeneralEffect) {
