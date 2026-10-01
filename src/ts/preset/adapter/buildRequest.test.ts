@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { ModelPreset, ResolvedModelProfileSnapshot } from '../types'
-import { buildPreparedRequest } from './buildRequest'
+import { buildPreparedRequest, clampToSchemaRange } from './buildRequest'
 import { ModelPresetAdapterError } from './error'
 
 function makeSnapshot(overrides: Partial<ResolvedModelProfileSnapshot> = {}): ResolvedModelProfileSnapshot {
@@ -888,5 +888,40 @@ describe('buildPreparedRequest — Vertex project/location resolution', () => {
                 expect(err.message).toMatch(/project/i)
             }
         }
+    })
+})
+
+describe('buildPreparedRequest — Gemini numbers stay in the declared range', () => {
+    const geminiSchema: ResolvedModelProfileSnapshot['schema'] = [
+        { key: 'apiKey', type: 'string', label: 'API Key', secret: true, mapsTo: { target: 'auth', path: 'apiKey' } },
+        { key: 'maxOutputTokens', type: 'integer', label: 'Max Output Tokens', min: 1, max: 65536, default: 8192, mapsTo: { target: 'body', path: 'generationConfig.maxOutputTokens' } },
+        { key: 'temperature', type: 'number', label: 'Temperature', min: 0, max: 2, mapsTo: { target: 'body', path: 'generationConfig.temperature' } },
+        { key: 'thinkingBudget', type: 'integer', label: 'Thinking Budget', min: -1, max: 24576, mapsTo: { target: 'body', path: 'generationConfig.thinkingConfig.thinkingBudget' } },
+    ]
+
+    test('a maxOutputTokens above the cap goes out at the cap (Vertex answers 400 otherwise)', () => {
+        const preset = makePreset({
+            profileSnapshot: makeSnapshot({ adapterKind: 'google-gemini', schema: geminiSchema }),
+            userValues: { maxOutputTokens: 100000, temperature: 2, thinkingBudget: -1 },
+        })
+        const result = buildPreparedRequest({ preset, credential: { apiKey: 'k' } })
+        expect(result.body).toEqual({ generationConfig: { maxOutputTokens: 65536, temperature: 2, thinkingConfig: { thinkingBudget: -1 } } })
+    })
+
+    test('other adapters send the value as typed', () => {
+        const preset = makePreset({
+            profileSnapshot: makeSnapshot({ schema: geminiSchema }),
+            userValues: { maxOutputTokens: 100000 },
+        })
+        const result = buildPreparedRequest({ preset, credential: { apiKey: 'k' } })
+        expect(result.body).toEqual({ generationConfig: { maxOutputTokens: 100000 } })
+    })
+
+    test('clampToSchemaRange leaves non-numbers and unbounded fields alone', () => {
+        const field = geminiSchema[1]
+        expect(clampToSchemaRange(field, 0)).toBe(1)
+        expect(clampToSchemaRange(field, '100000')).toBe('100000')
+        expect(clampToSchemaRange({ key: 'seed', type: 'integer', label: 'Seed' }, 1e12)).toBe(1e12)
+        expect(clampToSchemaRange({ key: 'level', type: 'string', label: 'Level', max: 1 } as any, 'high')).toBe('high')
     })
 })

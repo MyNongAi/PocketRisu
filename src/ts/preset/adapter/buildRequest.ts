@@ -1,4 +1,4 @@
-import type { ResolvedModelProfileSnapshot } from '../types'
+import type { RegistryFieldSchema, ResolvedModelProfileSnapshot } from '../types'
 import { appendQuery, applyAuth } from './auth'
 import { ModelPresetAdapterError } from './error'
 import type { AdapterPreparedRequest, AdapterRequestContext } from './types'
@@ -24,9 +24,11 @@ export function buildPreparedRequest(ctx: AdapterRequestContext): AdapterPrepare
     const queryAdditions: Array<[string, string]> = []
 
     const userValues = ctx.preset.userValues
+    const clampNumbers = snapshot.adapterKind === 'google-gemini'
     for (const field of snapshot.schema) {
         if (!field.mapsTo) continue
-        const effective = pickEffective(userValues, field.key, field.default)
+        const picked = pickEffective(userValues, field.key, field.default)
+        const effective = clampNumbers ? clampToSchemaRange(field, picked) : picked
         // Treat an empty string as "unset": a combobox/text field cleared back
         // to blank leaves '' in userValues, and sending e.g. reasoning_effort:''
         // is rejected by providers (no enum match). Skip it like undefined.
@@ -192,6 +194,22 @@ function pickEffective(
         if (value !== undefined) return value
     }
     return fallback
+}
+
+/**
+ * Gemini rejects a number outside its range instead of capping it: a
+ * maxOutputTokens of 100000 against the 65536 cap is a 400, and so is every
+ * retry. The preset editor's number box takes any value typed in, so the
+ * value is sent at the nearest bound the profile declares. Gemini only:
+ * other providers cap such values themselves, and a bound in their profiles
+ * may be older than the model.
+ */
+export function clampToSchemaRange(field: RegistryFieldSchema, value: unknown): unknown {
+    if (field.type !== 'number' && field.type !== 'integer') return value
+    if (typeof value !== 'number' || !Number.isFinite(value)) return value
+    if (typeof field.max === 'number' && value > field.max) return field.max
+    if (typeof field.min === 'number' && value < field.min) return field.min
+    return value
 }
 
 function setNested(obj: Record<string, unknown>, path: string, value: unknown): void {

@@ -257,6 +257,15 @@ describe('resolvePresetMaxOutputTokens — output cap comes from the preset, not
         expect(resolvePresetMaxOutputTokens(preset)).toBe(2048)
     })
 
+    test('a Gemini cap above the declared max counts as the max the request is sent with', () => {
+        const field = { key: 'maxOutputTokens', type: 'integer', min: 1, max: 65536, mapsTo: { target: 'body', path: 'generationConfig.maxOutputTokens' } }
+        const gemini = presetWith({ schema: [field], userValues: { maxOutputTokens: 100000 } })
+        gemini.profileSnapshot.adapterKind = 'google-gemini'
+        expect(resolvePresetMaxOutputTokens(gemini)).toBe(65536)
+        const other = presetWith({ schema: [field], userValues: { maxOutputTokens: 100000 } })
+        expect(resolvePresetMaxOutputTokens(other)).toBe(100000)
+    })
+
     test('returns undefined when no output-token field is declared', () => {
         const preset = presetWith({
             schema: [{ key: 'temperature', mapsTo: { target: 'body', path: 'temperature' } }],

@@ -1,5 +1,6 @@
 import { getDatabase, type Chat, type Database } from 'src/ts/storage/database.svelte'
 import type { AdapterCredential } from 'src/ts/preset/adapter'
+import { clampToSchemaRange } from 'src/ts/preset/adapter/buildRequest'
 import { VISION_CAPABLE_ADAPTER_KINDS, type ModelPreset } from 'src/ts/preset/types'
 import { modelPresetIdOf } from 'src/ts/preset/pickerId'
 import type { ModelModeExtended } from './shared'
@@ -254,7 +255,10 @@ export function resolvePresetMaxOutputTokens(preset: ModelPreset): number | unde
             (typeof path === 'string' && OUTPUT_TOKEN_KEYS.some((k) => path === k || path.endsWith('.' + k)))
         if (!isOutputField) continue
         if (typeof path === 'string' && !outputPaths.includes(path)) outputPaths.push(path)
-        const raw = userValues[field.key] ?? field.default
+        // Same cap the request goes out with (buildRequest.ts), so the budget
+        // does not reserve output room Gemini will never give.
+        const value = userValues[field.key] ?? field.default
+        const raw = preset.profileSnapshot?.adapterKind === 'google-gemini' ? clampToSchemaRange(field, value) : value
         if (isPositiveNumber(raw)) return raw
     }
 

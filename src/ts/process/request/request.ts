@@ -26,7 +26,7 @@ import {
     sendChatRequest, streamChatRequest, previewChatRequest,
     sendAnthropicChatRequest, streamAnthropicChatRequest, previewAnthropicChatRequest,
     sendGoogleChatRequest, streamGoogleChatRequest, previewGoogleChatRequest,
-    runToolLoop,
+    runToolLoop, ModelPresetAdapterError,
     type AdapterCacheContext,
     type AdapterChatMessage, type AdapterChatOptions, type AdapterChatResponse,
     type AdapterChatStreamDelta, type AdapterCredential,
@@ -1085,8 +1085,11 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
             // The server-side job is still running (or another one holds the
             // chat): a re-send would only hit the per-chat guard again, so
             // spending the retry budget here just replaces the real failure
-            // text with "busy" (issue #87).
-            noRetry: err instanceof ModelJobBusyError || err instanceof ModelJobConnectionLostError,
+            // text with "busy" (issue #87). A 400 or 404 from the provider
+            // fails the same way however often the same body is sent
+            // (30 retries of a 400 in a row, 2026-10-01).
+            noRetry: err instanceof ModelJobBusyError || err instanceof ModelJobConnectionLostError
+                || (err instanceof ModelPresetAdapterError && (err.kind === 'invalid-request' || err.kind === 'not-found')),
         }
     }
 }
