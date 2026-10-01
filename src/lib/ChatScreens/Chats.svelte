@@ -166,6 +166,7 @@
                 const b = document.createElement('div');
                 b.setAttribute('x-hashed', currentHash.toString());
                 b.dataset.chatSlot = i.toString();
+                if (message.chatId) b.dataset.chatId = message.chatId;
                 b.classList.add('chat-message-container');
                 const inst = mount(Chat, {
                     target: b,
@@ -312,6 +313,62 @@
     }
 
     let pinnedToTail = false
+    // The message at the top of the view and how far its top sits from the
+    // view's top, as of the reader's last scroll. A message whose content
+    // changes after it rendered (a late image inlay, a trigger from an HTML
+    // button, a reroll pointer) is remounted; that, or anything above the
+    // reader changing height, must not move what they are reading. Resize
+    // observer callbacks run after layout and before the scroll events a
+    // shift causes, so this is still the pre-change position when they do.
+    type ReaderAnchor = { chatId: string | null, slot: string, offsetTop: number, roomId: string | null }
+    let readerAnchor: ReaderAnchor | null = null
+    let readerAnchorFrame = 0
+
+    function containerOf(anchor: ReaderAnchor): HTMLElement | null {
+        if (anchor.chatId) {
+            const byId = chatBody.querySelector<HTMLElement>(`:scope > [data-chat-id="${CSS.escape(anchor.chatId)}"]`)
+            if (byId) return byId
+        }
+        return chatBody.querySelector<HTMLElement>(`:scope > [data-chat-slot="${anchor.slot}"]`)
+    }
+
+    function recordReaderAnchor() {
+        readerAnchorFrame = 0
+        const sc = getScroller()
+        if (!sc || !chatBody) return
+        const top = sc.getBoundingClientRect().top
+        let best: HTMLElement | null = null
+        let bestTop = Infinity
+        for (const child of Array.from(chatBody.children) as HTMLElement[]) {
+            const rect = child.getBoundingClientRect()
+            if (rect.bottom <= top || rect.height === 0) continue
+            if (rect.top < bestTop) {
+                bestTop = rect.top
+                best = child
+            }
+        }
+        readerAnchor = best?.dataset.chatSlot
+            ? { chatId: best.dataset.chatId ?? null, slot: best.dataset.chatSlot, offsetTop: bestTop - top, roomId: getCurrentChatRoomId() }
+            : null
+    }
+
+    function scheduleReaderAnchor() {
+        if (readerAnchorFrame) return
+        readerAnchorFrame = requestAnimationFrame(recordReaderAnchor)
+    }
+
+    /** Put the reader's message back where it was; true if the view moved. */
+    function keepReaderAnchor(): boolean {
+        const anchor = readerAnchor
+        const sc = getScroller()
+        if (!anchor || !sc || anchor.roomId !== getCurrentChatRoomId()) return false
+        const element = containerOf(anchor)
+        if (!element) return false
+        const delta = element.getBoundingClientRect().top - sc.getBoundingClientRect().top - anchor.offsetTop
+        if (Math.abs(delta) <= 0.5) return false
+        sc.scrollTop += delta
+        return true
+    }
     // Where the reader was at their last scroll. Growth does not scroll, so
     // until they scroll again this still says whether they were at the tail.
     let readerAtTail = true
@@ -401,6 +458,7 @@
         }
         const onScroll = () => {
             readerAtTail = isAtTail(sc)
+            scheduleReaderAnchor()
         }
         let viewportHeight = sc.clientHeight
         const observer = new ResizeObserver((entries) => {
@@ -417,6 +475,7 @@
             if (follow) {
                 scrollToTail()
             } else {
+                if (pendingTailMove === null) keepReaderAnchor()
                 readerAtTail = isAtTail(sc)
             }
         })
@@ -431,7 +490,10 @@
         const inputEvents = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const
         sc.addEventListener('scroll', onScroll, { passive: true })
         for (const type of inputEvents) sc.addEventListener(type, onReaderInput, { passive: true })
+        recordReaderAnchor()
         return () => {
+            if (readerAnchorFrame) cancelAnimationFrame(readerAnchorFrame)
+            readerAnchorFrame = 0
             observer.disconnect()
             children.disconnect()
             sc.removeEventListener('scroll', onScroll)
