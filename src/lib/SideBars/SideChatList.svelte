@@ -11,6 +11,7 @@
     import { selectedCharID, chatDeselected } from "src/ts/stores.svelte";
 
     import CheckInput from "../UI/GUI/CheckInput.svelte";
+    import ChatReplyStatus from "./ChatReplyStatus.svelte";
     import ShButton from "../UI/GUI/ShButton.svelte";
     import TextInput from "../UI/GUI/TextInput.svelte";
 
@@ -281,7 +282,8 @@
                         {:else}
                             <span>{chat.name}</span>
                         {/if}
-                        <div class="grow flex justify-end">
+                        <div class="grow flex justify-end items-center">
+                            <ChatReplyStatus chatId={chat.id} current={chatIdx === chara.chatPage && !$chatDeselected} />
                             <div role="button" tabindex="0" onkeydown={(e) => {
                                 if(e.key === 'Enter'){
                                     e.currentTarget.click()
@@ -374,7 +376,8 @@
                 {:else}
                     <span>{chat.name}</span>
                 {/if}
-                <div class="grow flex justify-end">
+                <div class="grow flex justify-end items-center">
+                    <ChatReplyStatus chatId={chat.id} current={i === chara.chatPage && !$chatDeselected} />
                     <div role="button" tabindex="0" onkeydown={(e) => {
                         if(e.key === 'Enter'){
                             e.currentTarget.click()

@@ -1,4 +1,5 @@
 import { derived, get, writable, type Readable } from "svelte/store"
+import { trackFinishedReplies } from 'src/ts/gui/chatReplyStatus'
 import {
     DEFAULT_GENERATION_CONCURRENCY_POLICY,
     evaluateGenerationAdmission,
@@ -45,6 +46,8 @@ export interface GenerationContextIdentity {
 }
 
 export const generationStates = writable<Map<string, GenState>>(new Map())
+// The chat list marks chats whose reply finished since they were last opened.
+trackFinishedReplies(generationStates, ['nochat'])
 
 // Compat stores. Kept writable: Suggestion.svelte pulses doingChat true→false
 // to retrigger its subscriber (only while nothing is generating, so the pulse
