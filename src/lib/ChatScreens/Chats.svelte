@@ -323,6 +323,26 @@
     type ReaderAnchor = { chatId: string | null, slot: string, offsetTop: number, roomId: string | null }
     let readerAnchor: ReaderAnchor | null = null
     let readerAnchorFrame = 0
+    // Blank space kept under the newest message so the view need not move
+    // when the transcript gets shorter below the reader (stepping back to a
+    // shorter swipe of the last reply): without it the browser clamps the
+    // scroll position and the view jumps up. It shrinks as the reader
+    // scrolls up away from it and goes when a message is added or the chat
+    // changes.
+    let tailSlack = 0
+
+    function setTailSlack(px: number) {
+        tailSlack = Math.max(0, Math.round(px))
+        if (chatBody) chatBody.style.paddingBottom = tailSlack ? `${tailSlack}px` : ''
+    }
+
+    /** Keep only the slack the view still reaches into. */
+    function trimTailSlack() {
+        const sc = getScroller()
+        if (!sc || tailSlack === 0) return
+        const needed = sc.scrollTop + sc.clientHeight - (sc.scrollHeight - tailSlack)
+        if (needed < tailSlack) setTailSlack(needed)
+    }
 
     function containerOf(anchor: ReaderAnchor): HTMLElement | null {
         if (anchor.chatId) {
@@ -366,7 +386,10 @@
         if (!element) return false
         const delta = element.getBoundingClientRect().top - sc.getBoundingClientRect().top - anchor.offsetTop
         if (Math.abs(delta) <= 0.5) return false
-        sc.scrollTop += delta
+        const wanted = sc.scrollTop + delta
+        const max = sc.scrollHeight - sc.clientHeight
+        if (wanted > max + 0.5) setTailSlack(tailSlack + wanted - max)
+        sc.scrollTop = wanted
         return true
     }
     // Where the reader was at their last scroll. Growth does not scroll, so
@@ -457,6 +480,7 @@
             viewportIntent++
         }
         const onScroll = () => {
+            trimTailSlack()
             readerAtTail = isAtTail(sc)
             scheduleReaderAnchor()
         }
@@ -519,6 +543,7 @@
         updateChatBody()
         if (anchor) void restoreViewportAnchor(anchor, restoreRevision)
 
+        if (!isSameChat || added) setTailSlack(0)
         if (!isSameChat) {
             pinnedToTail = true
             scheduleTailMove('tail')
