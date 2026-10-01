@@ -1240,6 +1240,8 @@ export const languageKorean = {
   realmImportByAddressPrompt: "RisuRealm 캐릭터 주소나 ID를 붙여넣으세요",
   realmAddressInvalid: "RisuRealm 주소나 ID를 알아볼 수 없어요",
   realmCompanionModuleTask: "렐름 전용 모듈",
+  importProgressMinimize: "작게 보기 (진행은 계속됩니다)",
+  importProgressShow: "가져오기 진행 보기",
   realmCompanionModulePaired: (n: number) => `렐름 설명의 프로톤 링크에서 전용 모듈 ${n}개를 받아 이 봇에 연결했어요`,
   realmCompanionModuleFailed: "렐름 전용 모듈을 받지 못했어요",
   protonDriveUrlPrompt: "프로톤 드라이브 공유 링크나 렐름 주소 붙여넣기",

@@ -1,7 +1,11 @@
 <script lang="ts">
+    import { XIcon } from '@lucide/svelte'
+    import { language } from 'src/lang'
     import { importTasks } from 'src/ts/importProgress'
 
-    let { id }: { id: string } = $props()
+    // onMinimize: the X; the task keeps running and the card collapses into
+    // the toaster's small button (ImportProgressToaster).
+    let { id, onMinimize }: { id: string, onMinimize?: () => void } = $props()
     const entry = $derived($importTasks.get(id))
 </script>
 
@@ -12,6 +16,11 @@
             <span class="label">{entry.label}</span>
             {#if entry.progress !== null}
                 <span class="percent">{Math.round(entry.progress)}%</span>
+            {/if}
+            {#if onMinimize && (entry.phase === 'queued' || entry.phase === 'running')}
+                <button type="button" class="minimize" title={language.importProgressMinimize} aria-label={language.importProgressMinimize} onclick={onMinimize}>
+                    <XIcon size={14} />
+                </button>
             {/if}
         </div>
         <div class="track" aria-label={`${entry.fileName} ${entry.label}`}>
@@ -40,6 +49,8 @@
     .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
     .label { color: var(--risu-theme-textcolor2); white-space: nowrap; }
     .percent { width: 36px; text-align: right; color: var(--risu-theme-textcolor2); font-variant-numeric: tabular-nums; }
+    .minimize { display: flex; flex-shrink: 0; padding: 2px; border-radius: 4px; color: var(--risu-theme-textcolor2); }
+    .minimize:hover { color: var(--risu-theme-textcolor); background: var(--risu-theme-selected); }
     .track { position: relative; height: 4px; margin-top: 8px; overflow: hidden; border-radius: 999px; background: var(--risu-theme-selected); }
     .bar { height: 100%; border-radius: inherit; background: var(--risu-theme-primary); transition: width .18s ease; }
     .done .bar { background: var(--risu-theme-success); }
