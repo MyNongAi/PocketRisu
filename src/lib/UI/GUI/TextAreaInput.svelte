@@ -45,33 +45,28 @@
             {autocomplete}
             {placeholder}
             id={id}
-            bind:value={value}
+            value={draft}
             oninput={(e) => {
-                if(optimaizedInput){
-                    if(inpa++ > 10){
-                        value = e.currentTarget.value
-                        inpa = 0
-                        onInput()
-                    }
-                }
-                else{
+                if(!optimaizedInput){
                     value = e.currentTarget.value
                     onInput()
+                    return
                 }
+                draft = e.currentTarget.value
+                scheduleDraftCommit()
             }}
-            onchange={(e) => {
-                if(optimaizedInput){
-                    value = e.currentTarget.value
-                    onInput()
-                }
+            onchange={() => {
+                commitDraft()
                 onchange()
             }}
+            onblur={commitDraft}
             onkeydown={async (e) => {
                 if(
                     (e.ctrlKey || e.shiftKey || e.altKey)
                     && hotkeyMatches((DBState.db.hotkeys ?? []).find(hk => hk.action === 'popupEditor'), e)
                 ){
                     e.preventDefault()
+                    commitDraft()
                     popUpEditorStore.value = value
                     popUpEditorStore.mode = 'default'
                     popUpEditorStore.language = popupLanguage
@@ -82,14 +77,14 @@
                         await sleep(100)
                     }
 
-                    value = popUpEditorStore.value
-                    onInput()
+                    applyValue(popUpEditorStore.value)
                 }
             }}
 
             oncontextmenu={(e) => {
                 if(DBState.db.longPressToPopupEditor){
                     e.preventDefault()
+                    commitDraft()
                     popUpEditorStore.value = value
                     popUpEditorStore.mode = 'default'
                     popUpEditorStore.language = popupLanguage
@@ -98,8 +93,7 @@
                     //lazy wait
                     const checkInterval = setInterval(() => {
                         if(!popUpEditorStore.open){
-                            value = popUpEditorStore.value
-                            onInput()
+                            applyValue(popUpEditorStore.value)
                             clearInterval(checkInterval)
                         }
                     }, 100)
@@ -117,6 +111,7 @@
                 && hotkeyMatches((DBState.db.hotkeys ?? []).find(hk => hk.action === 'popupEditor'), e)
             ){
                 e.preventDefault()
+                commitDraft()
                 popUpEditorStore.value = value
                 popUpEditorStore.mode = 'default'
                 popUpEditorStore.language = popupLanguage
@@ -126,8 +121,7 @@
                     await sleep(100)
                 }
 
-                value = popUpEditorStore.value
-                onInput()
+                applyValue(popUpEditorStore.value)
                 return
             }
             handleKeyDown(e)
@@ -136,6 +130,7 @@
         oncontextmenu={(e) => {
             if(DBState.db.longPressToPopupEditor){
                 e.preventDefault()
+                commitDraft()
                 popUpEditorStore.value = value
                 popUpEditorStore.mode = 'default'
                 popUpEditorStore.language = popupLanguage
@@ -143,8 +138,7 @@
 
                 const checkInterval = setInterval(() => {
                     if(!popUpEditorStore.open){
-                        value = popUpEditorStore.value
-                        onInput()
+                        applyValue(popUpEditorStore.value)
                         clearInterval(checkInterval)
                     }
                 }, 100)
@@ -245,13 +239,58 @@
     // TODO: Review if highlight prop can change dynamically - if so, this needs to be reactive
     // svelte-ignore state_referenced_locally
     let highlightId = highlight ? getNewHighlightId() : 0
-    let inpa = $state(0)
     let highlightDom: HTMLDivElement = $state()
     let optiValue = $state(value)
     let hlTimer: ReturnType<typeof setTimeout> | null = null
     let autoCompleteDom: HTMLDivElement = $state()
     let autocompleteContents:string[] = $state([])
     let inputDom: HTMLDivElement = $state()
+
+    // Typing goes into a draft. The bound value is usually a database field,
+    // and every write to one makes the save watchers walk the whole selected
+    // character or all root settings (tens of thousands of nodes), so writing
+    // per keystroke made long lorebook and persona texts lag. The draft is
+    // written once typing pauses, on blur, and before the page hides.
+    // optimaizedInput=false keeps the old write-through for live previews.
+    const DRAFT_COMMIT_MS = 250
+    let draft = $state(value ?? '')
+    let draftDirty = false
+    let draftTimer: ReturnType<typeof setTimeout> | null = null
+    $effect(() => {
+        const external = value ?? ''
+        if (!draftDirty) draft = external
+    })
+    function scheduleDraftCommit() {
+        draftDirty = true
+        if (draftTimer) clearTimeout(draftTimer)
+        draftTimer = setTimeout(commitDraft, DRAFT_COMMIT_MS)
+    }
+    function commitDraft() {
+        if (draftTimer) {
+            clearTimeout(draftTimer)
+            draftTimer = null
+        }
+        if (!draftDirty) return
+        draftDirty = false
+        if ((value ?? '') !== draft) {
+            value = draft
+            onInput()
+        }
+    }
+    /** A value this component sets itself (popup editor result, reset). */
+    function applyValue(next: string) {
+        if (draftTimer) {
+            clearTimeout(draftTimer)
+            draftTimer = null
+        }
+        draftDirty = false
+        draft = next
+        value = next
+        onInput()
+    }
+    const commitOnHide = () => {
+        if (document.visibilityState === 'hidden') commitDraft()
+    }
 
     const autoComplete = () => {
         if(isMobile){
@@ -341,6 +380,7 @@
 
     // Open the Monaco popup editor for this field, mirroring the contextmenu/hotkey path.
     const openPopupEditor = () => {
+        commitDraft()
         popUpEditorStore.value = value
         popUpEditorStore.mode = 'default'
         popUpEditorStore.language = popupLanguage
@@ -348,14 +388,14 @@
 
         const checkInterval = setInterval(() => {
             if(!popUpEditorStore.open){
-                value = popUpEditorStore.value
-                onInput()
+                applyValue(popUpEditorStore.value)
                 clearInterval(checkInterval)
             }
         }, 100)
     }
 
     const copyValue = async () => {
+        commitDraft()
         const text = value ?? ''
         try {
             if(isSecureContext && navigator.clipboard?.writeText){
@@ -381,16 +421,21 @@
 
     const resetValue = async () => {
         if(await alertConfirm(language.clearInputConfirm)){
-            value = ''
-            onInput()
+            applyValue('')
         }
     }
 
     onMount(() => {
         highlighter(highlightDom, highlightId)
+        // Before the save path's own hidden/pagehide flush (capture runs first).
+        document.addEventListener('visibilitychange', commitOnHide, { capture: true })
+        window.addEventListener('pagehide', commitDraft, { capture: true })
     })
 
     onDestroy(() => {
+        document.removeEventListener('visibilitychange', commitOnHide, { capture: true })
+        window.removeEventListener('pagehide', commitDraft, { capture: true })
+        commitDraft()
         if (hlTimer) clearTimeout(hlTimer)
         if (copiedTimer) clearTimeout(copiedTimer)
         removeHighlight(highlightId)

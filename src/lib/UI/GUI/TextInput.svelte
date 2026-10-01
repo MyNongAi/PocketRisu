@@ -27,10 +27,11 @@
         {placeholder}
         id={id}
         type="password"
-        bind:value
+        value={draft}
         disabled={disabled}
-        oninput={oninput}
-        onchange={onchange}
+        oninput={handleInput}
+        onchange={handleChange}
+        onblur={commitDraft}
         onkeydown={onkeydown}
         onfocus={onfocus}
         list={list}
@@ -67,10 +68,11 @@
         {placeholder}
         id={id}
         type="text"
-        bind:value
+        value={draft}
         disabled={disabled}
-        oninput={oninput}
-        onchange={onchange}
+        oninput={handleInput}
+        onchange={handleChange}
+        onblur={commitDraft}
         onkeydown={onkeydown}
         onfocus={onfocus}
         {role}
@@ -110,6 +112,8 @@
         ariaExpanded?: 'true' | 'false';
         ariaAutocomplete?: 'none' | 'inline' | 'list' | 'both';
         ariaActiveDescendant?: string;
+        /** Write the bound value when typing pauses or the field blurs, not per keystroke (database fields). */
+        deferred?: boolean;
     }
 
     let {
@@ -135,9 +139,45 @@
         ariaControls = undefined,
         ariaExpanded = undefined,
         ariaAutocomplete = undefined,
-        ariaActiveDescendant = undefined
-        
+        ariaActiveDescendant = undefined,
+        deferred = false
     }: Props = $props();
+
+    // Same draft as TextAreaInput: a database-bound field written per
+    // keystroke makes the save watchers walk a whole character or the root
+    // settings each time. Without `deferred` the value is written at once.
+    const DRAFT_COMMIT_MS = 250
+    let draft = $state(value ?? '')
+    let draftDirty = false
+    let draftTimer: ReturnType<typeof setTimeout> | null = null
+    $effect(() => {
+        const external = value ?? ''
+        if (!draftDirty) draft = external
+    })
+    function commitDraft() {
+        if (draftTimer) {
+            clearTimeout(draftTimer)
+            draftTimer = null
+        }
+        if (!draftDirty) return
+        draftDirty = false
+        if ((value ?? '') !== draft) value = draft
+    }
+    function handleInput(event: Event & { currentTarget: EventTarget & HTMLInputElement }) {
+        draft = event.currentTarget.value
+        if (deferred) {
+            draftDirty = true
+            if (draftTimer) clearTimeout(draftTimer)
+            draftTimer = setTimeout(commitDraft, DRAFT_COMMIT_MS)
+        } else {
+            value = draft
+        }
+        oninput?.(event)
+    }
+    function handleChange(event: Event & { currentTarget: EventTarget & HTMLInputElement }) {
+        commitDraft()
+        onchange?.(event)
+    }
 </script>
 
 <style>
