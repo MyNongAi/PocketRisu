@@ -889,21 +889,38 @@ export async function saveDb() {
         });
         window.addEventListener('pagehide', flushImmediate);
 
-        $effect(() => {
-            for (const key in DBState.db) {
-                if (
-                    key !== 'characters' && key !== 'botPresets' && key !== 'modules' &&
-                    key !== 'plugins' && key !== 'pluginCustomStorage'
-                ) {
-                    deepTouch(DBState.db[key])
-                }
-            }
-            if (!didInitRootEffect) {
-                didInitRootEffect = true
-                return
-            }
+        // One watcher per root key, so a change walks only that key's value.
+        // A single watcher over all of them re-walked every root setting
+        // (all personas, the model registry cache: ~46k nodes on a large
+        // database) for one persona text or toggle. The outer effect reads
+        // only the key list (Reflect.ownKeys does not track values) and the
+        // database object: it re-runs, rebuilding the per-key watchers and
+        // counting as a change, only when a key is added or removed or the
+        // database is replaced.
+        const markRootChanged = () => {
             changeTracker.root = true
             saveTimeoutExecute()
+        }
+        $effect(() => {
+            const db = DBState.db
+            const keys = (Reflect.ownKeys(db) as Array<string | symbol>).filter((key): key is string =>
+                typeof key === 'string'
+                && key !== 'characters' && key !== 'botPresets' && key !== 'modules'
+                && key !== 'plugins' && key !== 'pluginCustomStorage'
+            )
+            if (didInitRootEffect) markRootChanged()
+            didInitRootEffect = true
+            for (const key of keys) {
+                let didInitKey = false
+                $effect(() => {
+                    deepTouch(db[key])
+                    if (!didInitKey) {
+                        didInitKey = true
+                        return
+                    }
+                    markRootChanged()
+                })
+            }
         })
         $effect(() => {
             DBState.db.botPresetsId
