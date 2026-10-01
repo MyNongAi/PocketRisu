@@ -1,15 +1,17 @@
 // Realm companion modules. A Realm card whose description links a Proton
 // Drive share almost always links the bot's own asset module. After
-// downloadRisuHub imports the character, the module files behind that link
-// are downloaded through the server's Proton pipeline, imported, and paired
-// with the character (character.modules), so they switch on in that bot's
-// chats only. A module already downloaded from the same link is paired again
-// instead of being downloaded twice.
+// downloadRisuHub imports the character, the module behind that link comes in
+// through the server's Proton pipeline and is paired with the character
+// (character.modules), so it switches on in that bot's chats only. A link to
+// one module file imports it by itself; a link to a folder opens the same
+// folder browser a pasted link does, and the modules picked there are paired.
+// A module already downloaded from the same link is paired again instead of
+// being downloaded twice.
 import { language } from 'src/lang'
 import { notifyError, notifySuccess } from './alert'
 import { runImportTask, type ImportProgressReporter } from './importProgress'
 import { importModuleFile, type RisuModule } from './process/modules'
-import { downloadProtonEntry, inspectProtonShare, isProtonPasswordRequired, type ProtonEntry, type ProtonInspectResult } from './protonShareClient'
+import { downloadProtonEntry, inspectProtonShare, isProtonPasswordRequired, type ProtonInspectResult } from './protonShareClient'
 import { getDatabase } from './storage/database.svelte'
 
 const PROTON_HOSTS = new Set(['drive.proton.me', 'drive.proton.ch'])
@@ -50,12 +52,6 @@ export function isCompanionModuleFile(name: string): boolean {
     return lower.endsWith('.risum') || lower.endsWith('.module.charx')
 }
 
-/** The module files a share holds: the shared file itself, or those at the top of a shared folder. */
-export function pickCompanionModuleEntries(share: { kind: 'file' | 'folder', name: string, entries: ProtonEntry[] }): ProtonEntry[] | 'file' {
-    if (share.kind === 'file') return isCompanionModuleFile(share.name) ? 'file' : []
-    return share.entries.filter((entry) => entry.type === 2 && isCompanionModuleFile(entry.name))
-}
-
 /** Adds module ids to a character's own modules (character.modules), keeping order and no duplicates. */
 export function pairModulesWithCharacter(character: { modules?: string[] }, moduleIds: readonly string[]): number {
     const current = character.modules ?? []
@@ -78,18 +74,24 @@ async function downloadShareModules(link: string, report: ImportProgressReporter
         share = opened.info
         password = opened.password
     }
-    const picked = pickCompanionModuleEntries(share)
-    const targets = picked === 'file'
-        ? [{ path: [] as string[], expectedSize: share.entries[0]?.size ?? null }]
-        : picked.map((entry) => ({ linkId: entry.linkId, expectedSize: entry.size }))
     const modules: RisuModule[] = []
-    for (const target of targets) {
-        const file = await downloadProtonEntry(link, password, target, report)
-        const module = await importModuleFile(file, { suppressSuccess: true, onProgress: report })
-        if (!module) continue
+    const keep = (module: RisuModule) => {
         module.nodeOnlyProtonShare = link
         modules.push(module)
     }
+    if (share.kind === 'folder') {
+        // A folder opens the same browser a pasted link does; what the user
+        // picks imports as modules, and those modules are paired.
+        const { importProtonShare } = await import('./protonImport')
+        await importProtonShare(link, password, share, 'module', keep)
+        return modules
+    }
+    // A single file imports by itself, if it is a module (a plain CHARX or PNG
+    // is the bot the Realm download already brought in).
+    if (!isCompanionModuleFile(share.name)) return modules
+    const file = await downloadProtonEntry(link, password, { path: [], expectedSize: share.entries[0]?.size ?? null }, report)
+    const module = await importModuleFile(file, { suppressSuccess: true, onProgress: report })
+    if (module) keep(module)
     return modules
 }
 

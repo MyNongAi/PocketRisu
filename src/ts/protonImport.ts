@@ -11,7 +11,7 @@ import { downloadProtonEntry, inspectProtonShare, isProtonPasswordRequired, isPr
 import { openProtonBrowser, type ProtonPick } from './protonBrowser.svelte'
 import { classifySharedImport, type ImportOrigin, type SharedImportKind } from './shareTargetRouting'
 import { importCharacterProcess } from './characterCards'
-import { importModuleFile } from './process/modules'
+import { importModuleFile, type RisuModule } from './process/modules'
 import { importPreset } from './storage/database.svelte'
 
 // Downloads of a multi-file pick that run at once, and the bytes downloaded
@@ -33,12 +33,15 @@ async function importByKind(
     data: Uint8Array,
     report: ImportProgressReporter,
     origin: ImportOrigin,
+    onModule?: (module: RisuModule) => void,
 ): Promise<SharedImportKind | null> {
     const kind = classifySharedImport(name, '', origin)
     switch (kind) {
-        case 'module':
-            await importModuleFile({ name, data }, { suppressSuccess: true, onProgress: report })
+        case 'module': {
+            const module = await importModuleFile({ name, data }, { suppressSuccess: true, onProgress: report })
+            if (module) onModule?.(module)
             return kind
+        }
         case 'preset':
             await importPreset({ name, data })
             return kind
@@ -118,22 +121,35 @@ export async function importFromProtonLink(url: string, password = '', origin: I
 
     const opened = await openProtonShare(url, password)
     if (!opened) return true
-    const info = opened.info
-    password = opened.password
+    await importProtonShare(url, opened.password, opened.info, origin)
+    return true
+}
 
+/**
+ * The part of importFromProtonLink after the link was read: the folder
+ * browser for a folder, then the downloads and imports. `onModule` sees every
+ * module this imports (the Realm companion download pairs them with its bot).
+ */
+export async function importProtonShare(
+    url: string,
+    password: string,
+    info: ProtonInspectResult,
+    origin: ImportOrigin,
+    onModule?: (module: RisuModule) => void,
+): Promise<void> {
     // A folder always opens the browser, even with a single file in it, so the
     // user sees what is inside (subfolders included) before anything imports.
     let chosen: ProtonPick[]
     if (info.kind === 'folder') {
         const picks = await openProtonBrowser(url, password, info, origin)
-        if (!picks || picks.length === 0) return true
+        if (!picks || picks.length === 0) return
         chosen = picks
     } else {
         chosen = info.entries.map((entry) => ({ entry, path: [] }))
     }
     if (chosen.length === 0) {
         alertError(language.protonNoImportableFiles)
-        return true
+        return
     }
 
     // From here on the work runs as tracked import tasks: the queue renders its
@@ -150,7 +166,7 @@ export async function importFromProtonLink(url: string, password = '', origin: I
         }, report),
         async (_item, file, report) => {
             report({ label: `${language.protonImporting} ${file.name}`, progress: 85 })
-            const kind = await importByKind(file.name, file.data, report, origin)
+            const kind = await importByKind(file.name, file.data, report, origin, onModule)
             if (!kind) {
                 skipped.push(file.name)
                 throw new Error(language.protonUnsupportedFile)
@@ -170,5 +186,4 @@ export async function importFromProtonLink(url: string, password = '', origin: I
     if (skipped.length > 0) {
         alertError(`${language.protonUnsupportedFile}\n${skipped.join('\n')}`)
     }
-    return true
 }

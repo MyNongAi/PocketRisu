@@ -22,12 +22,16 @@ vi.mock('./protonShareClient', () => ({
     isProtonPasswordRequired: (error: any) => error?.status === 401,
 }))
 const openProtonShare = vi.fn()
-vi.mock('./protonImport', () => ({ openProtonShare: (...a: unknown[]) => openProtonShare(...a) }))
+const importProtonShare = vi.fn()
+vi.mock('./protonImport', () => ({
+    openProtonShare: (...a: unknown[]) => openProtonShare(...a),
+    importProtonShare: (...a: unknown[]) => importProtonShare(...a),
+}))
 const importModuleFile = vi.fn()
 vi.mock('./process/modules', () => ({ importModuleFile: (...a: unknown[]) => importModuleFile(...a) }))
 
 const {
-    findProtonShareLinks, isCompanionModuleFile, pickCompanionModuleEntries, pairModulesWithCharacter, importRealmCompanionModules,
+    findProtonShareLinks, isCompanionModuleFile, pairModulesWithCharacter, importRealmCompanionModules,
 } = await import('./realmCompanionModule')
 
 const LINK = 'https://drive.proton.me/urls/ABC123#keyPart_-9'
@@ -48,17 +52,6 @@ describe('module file choice', () => {
         expect(isCompanionModuleFile('Assets.Module.CHARX')).toBe(true)
         expect(isCompanionModuleFile('bot.charx')).toBe(false)
         expect(isCompanionModuleFile('bot.png')).toBe(false)
-    })
-    test('a file share counts only if it is a module; a folder yields its top-level module files', () => {
-        expect(pickCompanionModuleEntries({ kind: 'file', name: 'a.risum', entries: [] })).toBe('file')
-        expect(pickCompanionModuleEntries({ kind: 'file', name: 'bot.charx', entries: [] })).toEqual([])
-        const entries = [
-            { name: 'bot.charx', linkId: '1', type: 2, size: 1, mediaType: null },
-            { name: 'assets.risum', linkId: '2', type: 2, size: 1, mediaType: null },
-            { name: 'sub.risum', linkId: '3', type: 1, size: null, mediaType: null },
-        ]
-        const picked = pickCompanionModuleEntries({ kind: 'folder', name: 'f', entries })
-        expect(Array.isArray(picked) ? picked.map((e) => e.linkId) : picked).toEqual(['2'])
     })
     test('pairing appends new ids once', () => {
         const character: { modules?: string[] } = { modules: ['a'] }
@@ -128,5 +121,38 @@ describe('importRealmCompanionModules', () => {
         inspectProtonShare.mockRejectedValue(new Error('password required'))
         await expect(importRealmCompanionModules('c1', [LINK])).resolves.toBeUndefined()
         expect(notifyError).toHaveBeenCalledWith('failed: password required')
+    })
+})
+
+describe('a folder share', () => {
+    beforeEach(() => {
+        db.modules = []
+        db.characters = [{ chaId: 'c1', modules: [] }]
+        vi.clearAllMocks()
+    })
+
+    test('opens the folder browser as a module import and pairs what it imports', async () => {
+        const share = { kind: 'folder', name: 'pack', entries: [], trail: [] }
+        inspectProtonShare.mockResolvedValue(share)
+        importProtonShare.mockImplementation(async (_link: string, _pw: string, _share: unknown, origin: string, onModule: (m: unknown) => void) => {
+            expect(origin).toBe('module')
+            const m = { id: 'picked' }
+            db.modules.push(m)
+            onModule(m)
+        })
+        await importRealmCompanionModules('c1', [LINK])
+        expect(importProtonShare).toHaveBeenCalledTimes(1)
+        expect(importProtonShare.mock.calls[0][2]).toBe(share)
+        expect(downloadProtonEntry).not.toHaveBeenCalled()
+        expect(db.modules[0].nodeOnlyProtonShare).toBe(LINK)
+        expect(db.characters[0].modules).toEqual(['picked'])
+    })
+
+    test('nothing picked pairs nothing', async () => {
+        inspectProtonShare.mockResolvedValue({ kind: 'folder', name: 'pack', entries: [], trail: [] })
+        importProtonShare.mockResolvedValue(undefined)
+        await importRealmCompanionModules('c1', [LINK])
+        expect(db.characters[0].modules).toEqual([])
+        expect(notifySuccess).not.toHaveBeenCalled()
     })
 })
