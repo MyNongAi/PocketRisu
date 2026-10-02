@@ -986,15 +986,44 @@ import { isMobile } from 'src/ts/platform'
             inputTranslateEle.style.height = inputTranslateHeight
         }
     }
-    // Measure the textarea's content height at a given css width (empty = current
-    // flex width), restoring the override afterwards.
+    // Measure the textarea's content height at a given css width (empty = the
+    // textarea's current width). The measurement uses a hidden, absolutely
+    // positioned copy: collapsing the real textarea to height 0 to read its
+    // scrollHeight forced the whole chat column (every rendered message) to
+    // relayout on each keystroke, twice per keystroke in a split view.
+    let inputMirror: HTMLTextAreaElement | null = null
     function measureHeightAt(cssWidth:string):number {
-        const prev = inputEle.style.width
-        inputEle.style.height = "0"
-        if(cssWidth) inputEle.style.width = cssWidth
-        const h = inputEle.scrollHeight
-        inputEle.style.width = prev
-        return h
+        const host = inputEle.parentElement
+        if(!host){
+            return inputEle.scrollHeight
+        }
+        if(!inputMirror || inputMirror.parentElement !== host){
+            inputMirror?.remove()
+            inputMirror = document.createElement('textarea')
+            inputMirror.setAttribute('aria-hidden', 'true')
+            inputMirror.tabIndex = -1
+            host.appendChild(inputMirror)
+        }
+        inputMirror.className = inputEle.className
+        const mirrorStyle = inputMirror.style
+        mirrorStyle.position = 'absolute'
+        mirrorStyle.visibility = 'hidden'
+        mirrorStyle.pointerEvents = 'none'
+        mirrorStyle.left = '0'
+        mirrorStyle.top = '0'
+        mirrorStyle.height = '0'
+        mirrorStyle.minHeight = '0'
+        mirrorStyle.overflow = 'hidden'
+        mirrorStyle.width = cssWidth && cssWidth !== '100%' ? cssWidth : `${cssWidth === '100%' ? host.clientWidth - horizontalPadding(host) : inputEle.clientWidth}px`
+        // The state, not the DOM: a programmatic change (cleared after send)
+        // reaches this pre-DOM-update effect before the textarea shows it.
+        inputMirror.value = messageInput ?? ''
+        return inputMirror.scrollHeight
+    }
+
+    function horizontalPadding(el: HTMLElement): number {
+        const cs = getComputedStyle(el)
+        return (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0)
     }
 
     // Width the textarea would have on a single inline row (pill content minus the
@@ -1009,7 +1038,7 @@ import { isMobile } from 'src/ts/platform'
         const gap = parseFloat(cs.columnGap || cs.gap || '0') || 0
         let used = 0, others = 0
         for(const c of Array.from(pill.children) as HTMLElement[]){
-            if(c === inputEle) continue
+            if(c === inputEle || c === inputMirror) continue
             used += c.offsetWidth
             others++
         }
@@ -1033,8 +1062,10 @@ import { isMobile } from 'src/ts/platform'
             const sh = measureHeightAt(multiline ? "100%" : ref)
             // Cap the composer at ~60% of the viewport; beyond that it scrolls.
             const maxH = Math.round(window.innerHeight * 0.6)
-            inputHeight = Math.min(sh, maxH) + "px"
-            inputEle.style.height = inputHeight
+            const nextHeight = Math.min(sh, maxH) + "px"
+            inputHeight = nextHeight
+            // Touch the real textarea only when its height changes.
+            if(inputEle.style.height !== nextHeight) inputEle.style.height = nextHeight
             inputOverflow = sh > maxH
         }
     }
@@ -1451,7 +1482,7 @@ import { isMobile } from 'src/ts/platform'
                             }
                         }
                     }}
-                          oninput={()=>{updateInputSizeAll();updateInputTransateMessage(false)}}
+                          oninput={()=>{updateInputTransateMessage(false)}}
                           onblur={persistDraftNow}
                           style:height={inputHeight}
                 ></textarea>

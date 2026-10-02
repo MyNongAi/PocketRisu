@@ -1064,9 +1064,6 @@ export async function saveDb() {
         $effect(() => {
             const activeChar = DBState?.db?.characters?.[selIdState]
             const activeChat = activeChar?.chats?.[activeChar?.chatPage]
-            if (activeChat) {
-                deepTouch(activeChat)
-            }
 
             const activeChaId = activeChar?.chaId ?? ''
             const activeChatId = activeChat?.id ?? ''
@@ -1077,24 +1074,39 @@ export async function saveDb() {
                 return
             }
 
+            const markActiveChatDirty = () => {
+                if (isHydrating(activeChaId, activeChatId)) {
+                    return
+                }
+                if (
+                    changeTracker.chat[0]?.[0] !== activeChaId ||
+                    changeTracker.chat[0]?.[1] !== activeChatId
+                ) {
+                    changeTracker.chat.unshift([activeChaId, activeChatId])
+                }
+                markHydratedChatDirty(activeChaId, activeChatId)
+                saveTimeoutExecute()
+            }
+
+            // One watcher per chat field and one per message, so a streamed
+            // chunk or a renamed chat walks only what changed. One watcher
+            // over the whole chat re-walked every message of a long chat for
+            // each streamed chunk. This effect reads the field list without
+            // tracking values (Reflect.ownKeys); it re-runs on a new
+            // selection, a replaced chat object or an added field.
+            for (const key of Reflect.ownKeys(activeChat) as Array<string | symbol>) {
+                if (typeof key !== 'string') continue
+                if (key === 'message') watchEntriesDeep(() => activeChat.message, markActiveChatDirty)
+                else watchDeep(() => (activeChat as unknown as Record<string, unknown>)[key], markActiveChatDirty)
+            }
+
             // Selecting a different chat establishes a new baseline; only later edits are dirty.
             if (trackedActiveChatKey !== activeKey) {
                 trackedActiveChatKey = activeKey
                 return
             }
-
-            if (isHydrating(activeChaId, activeChatId)) {
-                return
-            }
-
-            if (
-                changeTracker.chat[0]?.[0] !== activeChaId ||
-                changeTracker.chat[0]?.[1] !== activeChatId
-            ) {
-                changeTracker.chat.unshift([activeChaId, activeChatId])
-            }
-            markHydratedChatDirty(activeChaId, activeChatId)
-            saveTimeoutExecute()
+            // Same chat, replaced object (hydration excepted) or a new field.
+            markActiveChatDirty()
         })
     })
 
