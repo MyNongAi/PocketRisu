@@ -1204,6 +1204,7 @@ export const languageKorean = {
   download: "다운로드",
   edit: "수정",
   enableGlobal: "글로벌 활성화",
+  moduleAutoForBot: "이 봇 전용 모듈이라 이 봇 채팅에서 자동으로 켜져 있어요. 누르면 모든 채팅에서 켜는 글로벌 활성화가 돼요.",
   chatModulesInfo:
     "모듈을 이 채팅 또는 이 캐릭터 한정으로 활성화/비활성화합니다. 말풍선 버튼은 채팅, 사람 버튼은 캐릭터입니다. 지구본이 표시된 모듈은 전역으로 켜져 있어 모든 채팅에 적용되며, 설정 > 모듈에서 바꿀 수 있습니다.",
   moduleScopeChat: "이 채팅에서 사용",

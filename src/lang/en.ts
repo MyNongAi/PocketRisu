@@ -1110,6 +1110,7 @@ export const languageEnglish = {
     download: "Download",
     edit: "Edit",
     enableGlobal: "Enable Globally",
+    moduleAutoForBot: "On by itself in this bot's chats: it is this bot's own module. Clicking turns it on globally, in every chat.",
     chatModulesInfo: "Enable or disable modules for this chat or for this character. The speech bubble button is the chat scope, the person button is the character scope. A module with a globe is enabled globally and applies to every chat; change that in Settings > Modules.",
     moduleScopeChat: "Use in this chat",
     moduleScopeCharacter: "Use for this character",

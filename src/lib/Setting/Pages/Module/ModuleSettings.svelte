@@ -2,7 +2,7 @@
     import { language } from "src/lang";
     import SettingPage from "src/lib/UI/GUI/SettingPage.svelte";
 
-    import { DBState } from 'src/ts/stores.svelte';
+    import { DBState, selectedCharID } from 'src/ts/stores.svelte';
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
     import ShDropdownMenuItem from "src/lib/UI/GUI/ShDropdownMenuItem.svelte";
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
@@ -84,6 +84,12 @@
 
     function isGlobal(rmodule: RisuModule) {
         return DBState.db.enabledModules.includes(rmodule.id)
+    }
+
+    // A module the open bot has as its own (character.modules) is on by
+    // itself in that bot's chats: drawn like the other automatic case.
+    function isBotModule(rmodule: RisuModule) {
+        return !!DBState.db.characters[$selectedCharID]?.modules?.includes(rmodule.id)
     }
 
     function isIntegrated(rmodule: RisuModule) {
@@ -395,8 +401,8 @@
                     · 에셋 {moduleAssetCount(rmodule)}개 · {rmodule.description || 'No description provided'}
                 </span>
             </div>
-            <button class="no-sort shrink-0 p-1 cursor-pointer {isGlobal(rmodule) ? 'text-blue-500' : isIntegrated(rmodule) ? 'text-amber-500 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
-                use:tooltip={language.enableGlobal}
+            <button class="no-sort shrink-0 p-1 cursor-pointer {isGlobal(rmodule) ? 'text-blue-500' : isIntegrated(rmodule) || isBotModule(rmodule) ? 'text-amber-500 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
+                use:tooltip={!isGlobal(rmodule) && isBotModule(rmodule) ? language.moduleAutoForBot : language.enableGlobal}
                 onclick={(e) => { e.stopPropagation(); toggleGlobal(rmodule) }}>
                 <Globe size={18}/>
             </button>
