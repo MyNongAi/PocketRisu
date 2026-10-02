@@ -779,6 +779,7 @@ export function setDatabase(data:Database){
     data.dynamicModelRegistry ??= true
     data.saveSignatures ??= false
     data.nodeOnlyScrollButtonType ??= 'four'
+    data.nodeOnlyScrollButtonPosition ??= 'right-center'
     data.nodeOnlyHideRecentChats ??= false
     data.nodeOnlyArchivedCharacters ??= []
     data.nodeOnlyHideArchivedCharacters ??= false
@@ -1650,6 +1651,8 @@ export interface Database{
     blockquoteStyling?:boolean
     dynamicModelRegistry?:boolean
     nodeOnlyScrollButtonType?:'four'|'two'|'off'
+    /** Where the chat scroll buttons appear while scrolling. */
+    nodeOnlyScrollButtonPosition?:'right-center'|'right-bottom'|'bottom-center'
     nodeOnlyHideRecentChats?:boolean
     // Deactivated characters (src/ts/characterArchive.ts). Their bodies live
     // server-side in kv archive/<chaId>/<archivedAt>; only these stubs stay in the database

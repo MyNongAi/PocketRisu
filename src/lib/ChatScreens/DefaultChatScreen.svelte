@@ -1153,8 +1153,15 @@ import { isMobile } from 'src/ts/platform'
     {/if}
     
     {#if DBState.db.nodeOnlyScrollButtonType !== 'off' && currentChat.length > 0}
+        <!-- Where the scroll buttons sit: right edge centred (default), right
+             edge at the bottom (the old place), or bottom centre as a row. -->
+        {@const navPosition = DBState.db.nodeOnlyScrollButtonPosition ?? 'right-center'}
+        {@const navSeparator = navPosition === 'bottom-center' ? 'border-l border-darkborderc border-opacity-30' : 'border-t border-darkborderc border-opacity-30'}
         <div
-            class="absolute right-3 bottom-16 z-40 flex flex-col rounded-lg bg-bgcolor/70 backdrop-blur-sm border border-darkborderc border-opacity-30 shadow-lg overflow-hidden transition-opacity duration-300"
+            class={"absolute z-40 flex rounded-lg bg-bgcolor/70 backdrop-blur-sm border border-darkborderc border-opacity-30 shadow-lg overflow-hidden transition-opacity duration-300 "
+                + (navPosition === 'bottom-center' ? 'bottom-16 left-1/2 -translate-x-1/2 flex-row'
+                : navPosition === 'right-bottom' ? 'right-3 bottom-16 flex-col'
+                : 'right-3 top-1/2 -translate-y-1/2 flex-col')}
             class:opacity-0={!showScrollNav}
             class:pointer-events-none={!showScrollNav}
         >
@@ -1165,7 +1172,7 @@ import { isMobile } from 'src/ts/platform'
                 >
                     <ChevronsUpIcon size={18} />
                 </button>
-                <div class="border-t border-darkborderc border-opacity-30"></div>
+                <div class={navSeparator}></div>
             {/if}
             <button
                 class="w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors"
@@ -1173,7 +1180,7 @@ import { isMobile } from 'src/ts/platform'
             >
                 <ChevronUpIcon size={18} />
             </button>
-            <div class="border-t border-darkborderc border-opacity-30"></div>
+            <div class={navSeparator}></div>
             <button
                 class="w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors"
                 onclick={() => { bumpScrollNav(); navigateMessage('next') }}
@@ -1181,7 +1188,7 @@ import { isMobile } from 'src/ts/platform'
                 <ChevronDownIcon size={18} />
             </button>
             {#if DBState.db.nodeOnlyScrollButtonType === 'four'}
-                <div class="border-t border-darkborderc border-opacity-30"></div>
+                <div class={navSeparator}></div>
                 <button
                     class="w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors"
                     onclick={() => { bumpScrollNav(); scrollToLoadedBottom() }}
