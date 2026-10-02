@@ -130,11 +130,13 @@
         {:else}
           <span class="text-sm leading-none drop-shadow" aria-label="에셋 누락" title="확인된 Realm 복구 원본 없음">❗</span>
         {/if}
-        {#if missingCountText}
-          <span class="rounded bg-darkbg/90 px-0.5 text-[9px] font-bold leading-tight text-red-400" title={`깨진 에셋 ${missingAssetCount.toLocaleString()}개`}>{missingCountText}</span>
-        {/if}
       {/if}
     </span>
+  {/if}
+  {#if missingAssets && missingCountText}
+    <!-- Inside the bottom-right corner: next to the mark, which is pinned
+         past the avatar's edge, the count was cut off by the list. -->
+    <span class="pointer-events-none absolute bottom-0.5 right-0.5 z-20 rounded bg-darkbg/90 px-0.5 text-[9px] font-bold leading-tight text-red-400" title={`깨진 에셋 ${missingAssetCount.toLocaleString()}개`}>{missingCountText}</span>
   {/if}
   {#if sourceBadge}
     <span

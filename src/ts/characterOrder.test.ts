@@ -135,6 +135,17 @@ describe('characterOrder', () => {
         ])
     })
 
+    it('on delete, puts the member a folder is left with at the top of the list', () => {
+        const order: OrderEntry[] = [
+            'a',
+            { id: 'similar', name: '[유사 후보] x', color: '', data: ['keep', 'gone'] },
+            'b',
+        ]
+        expect(removeCharacter(order, 'gone')).toEqual(['keep', 'a', 'b'])
+        // A drag-style dissolve leaves it where the folder was.
+        expect(dissolveSingletonFolders(['a', { id: 'f', name: 'F', color: '', data: ['x'] }, 'b'])).toEqual(['a', 'x', 'b'])
+    })
+
     it('keeps an intentionally empty folder but removes one that just lost its members', () => {
         const empty: OrderEntry = { id: 'empty', name: 'Empty', color: '', data: [] }
         const formerlyOccupied: OrderEntry = { id: 'lost', name: 'Lost', color: '', data: ['a'] }
