@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.13.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-09-28",
+  "updatedAt": "2026-10-02",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
@@ -658,17 +658,23 @@
       ],
       "requiredMarkers": [
         { "file": "src/ts/process/request/geminiPdfInput.ts", "contains": "export function planGeminiPdfInput" },
-        { "file": "src/ts/process/request/google.ts", "contains": "applyGeminiPdfInput(body, { signal: arg.abortSignal })" },
+        { "file": "src/ts/process/request/geminiPdfInput.ts", "contains": "export function applyGeminiPdfMediaResolution" },
+        { "file": "src/ts/process/request/google.ts", "contains": "applyGeminiPdfInput(body, {" },
+        { "file": "src/ts/process/request/google.ts", "contains": "mediaResolution: db.nodeOnlyGeminiPdfMediaResolution" },
         { "file": "src/ts/process/request/request.ts", "contains": "withGeminiPdfInput(transportFetch" },
+        { "file": "src/ts/process/request/request.ts", "contains": "mediaResolution: getDatabase().nodeOnlyGeminiPdfMediaResolution" },
         { "file": "server/node/gemini-pdf-input.cjs", "contains": "app.post('/api/gemini/pdf-input'" },
         { "file": "server/node/server.cjs", "contains": "createGeminiPdfInput({ logger }).registerRoutes(app, { auth: checkProxyAuth })" },
         { "file": "src/ts/setting/advancedSettingsData.ts", "contains": "bindKey: 'nodeOnlyGeminiPdfInput'" },
+        { "file": "src/ts/setting/advancedSettingsData.ts", "contains": "bindKey: 'nodeOnlyGeminiPdfMediaResolution'" },
         { "file": "src/ts/storage/database.svelte.ts", "contains": "data.nodeOnlyGeminiPdfInput ??= false" },
+        { "file": "src/ts/storage/database.svelte.ts", "contains": "data.nodeOnlyGeminiPdfMediaResolution ??= 'default'" },
         { "file": "src/ts/requestLog.ts", "contains": "[application/pdf: " }
       ],
       "regressionTests": [
         "src/ts/process/request/geminiPdfInput.test.ts",
         "src/ts/process/request/googlePdfInputHook.test.ts",
+        "src/ts/process/request/geminiPdfPresetWire.test.ts",
         "src/ts/setting/geminiPdfInputSetting.test.ts",
         "src/ts/requestLog.test.ts",
         "server/node/gemini-pdf-input.test.ts"

@@ -444,6 +444,7 @@ export function setDatabase(data:Database){
     data.nodeOnlyServerSideRequests ??= true
     // GEMINI-PDF-INPUT: experimental, opt-in (default OFF).
     data.nodeOnlyGeminiPdfInput ??= false
+    data.nodeOnlyGeminiPdfMediaResolution ??= 'default'
     if(!data.formatingOrder.includes('personaPrompt')){
         data.formatingOrder.splice(data.formatingOrder.indexOf('main'),0,'personaPrompt')
     }
@@ -1692,6 +1693,8 @@ export interface Database{
     // request as one server-rendered PDF (GEMINI-PDF-INPUT,
     // process/request/geminiPdfInput.ts). Default OFF.
     nodeOnlyGeminiPdfInput?:boolean
+    // Media resolution asked for that PDF; 'default' sends none.
+    nodeOnlyGeminiPdfMediaResolution?:'default'|'low'|'medium'|'high'
     seperateParametersByModel?:boolean
     disableSeperateParameterChangeOnPresetChange?:boolean
     saveSignatures?:boolean

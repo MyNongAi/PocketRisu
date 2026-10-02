@@ -9,10 +9,15 @@ import {
     GEMINI_PDF_FRAMING_TEXT,
     GEMINI_PDF_MAX_PREFIX_CHARS,
     applyGeminiPdfInput,
+    applyGeminiPdfMediaResolution,
     buildGeminiPdfBody,
     clearGeminiPdfRenderMemo,
+    geminiModelFromUrl,
+    geminiPdfLogBody,
+    geminiSupportsPartMediaResolution,
     planGeminiPdfInput,
     renderGeminiPdfOnServer,
+    resolveGeminiPdfMediaResolution,
     withGeminiPdfInput,
     type GeminiPdfBlock,
     type GeminiPdfRenderer,
@@ -270,6 +275,213 @@ describe('withGeminiPdfInput (model-preset transport)', () => {
 
         await wrapped('https://x.test/cachedContents', { method: 'POST', body: JSON.stringify(body) })
         expect(onApplied).toHaveBeenCalledTimes(1)
+    })
+})
+
+// classicBody without the image in the last user turn: the PDF is then the
+// request's only media.
+function textOnlyBody(overrides: Record<string, unknown> = {}) {
+    const body = classicBody(overrides)
+    body.contents[4] = { role: 'user', parts: [{ text: '마지막 질문' }] }
+    return body
+}
+
+const LEVELS = {
+    low: 'MEDIA_RESOLUTION_LOW',
+    medium: 'MEDIA_RESOLUTION_MEDIUM',
+    high: 'MEDIA_RESOLUTION_HIGH',
+} as const
+const LEVEL_ROWS = Object.entries(LEVELS)
+
+describe('PDF media resolution: setting and model generation', () => {
+    it('maps low/medium/high to the wire level; anything else sets nothing', () => {
+        for (const value of [undefined, null, '', 'default', 'ultra_high', 'LOW', 'toString', 3]) {
+            expect(resolveGeminiPdfMediaResolution(value, 'gemini-3-flash-preview')).toBeNull()
+        }
+        for (const [value, level] of LEVEL_ROWS) {
+            expect(resolveGeminiPdfMediaResolution(value, 'gemini-3.5-flash')).toEqual({ level, placement: 'part' })
+            expect(resolveGeminiPdfMediaResolution(value, 'gemini-2.5-pro')).toEqual({ level, placement: 'generationConfig' })
+            // An unknown model takes the request-wide field, which every model accepts.
+            expect(resolveGeminiPdfMediaResolution(value, undefined)).toEqual({ level, placement: 'generationConfig' })
+        }
+    })
+
+    it('treats only the Gemini 3 family as taking a per-part resolution', () => {
+        for (const model of ['gemini-3', 'gemini-3-flash-preview', 'gemini-3-pro-preview', 'gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.7-flash', 'models/gemini-3.6-flash', ' gemini-3-pro-image-preview ']) {
+            expect(geminiSupportsPartMediaResolution(model), model).toBe(true)
+        }
+        for (const model of [undefined, '', 'gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-30-x', 'gemini-flash-latest', 'gemma-3-27b-it', 'tuned-model']) {
+            expect(geminiSupportsPartMediaResolution(model), String(model)).toBe(false)
+        }
+    })
+
+    it('reads the model id from AI Studio, Vertex and custom base URLs', () => {
+        expect(geminiModelFromUrl('https://aiplatform.googleapis.com/v1/projects/p/locations/global/publishers/google/models/gemini-3.7-flash:streamGenerateContent?alt=sse')).toBe('gemini-3.7-flash')
+        expect(geminiModelFromUrl('https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1/publishers/google/models/gemini-2.5-pro:generateContent')).toBe('gemini-2.5-pro')
+        expect(geminiModelFromUrl('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=k')).toBe('gemini-2.5-flash')
+        expect(geminiModelFromUrl('https://proxy.test/v1beta/models/gemini-3-flash-preview:streamGenerateContent?key=k&alt=sse')).toBe('gemini-3-flash-preview')
+        expect(geminiModelFromUrl('https://x.test/v1/projects/p/locations/us-central1/endpoints/123:generateContent')).toBeUndefined()
+        expect(geminiModelFromUrl('https://generativelanguage.googleapis.com/v1beta/cachedContents')).toBeUndefined()
+    })
+})
+
+describe('applyGeminiPdfInput with a media resolution', () => {
+    it('default (or no setting) sends exactly the body it sent before, on every model', async () => {
+        const before = JSON.stringify((await applyGeminiPdfInput(classicBody(), { render: okRenderer() })).body)
+        for (const mediaResolution of [undefined, 'default']) {
+            for (const model of ['gemini-3-flash-preview', 'gemini-2.5-flash', undefined]) {
+                const result = await applyGeminiPdfInput(classicBody(), { render: okRenderer(), mediaResolution, model })
+                expect(JSON.stringify(result.body)).toBe(before)
+                expect(result.mediaResolution).toBeUndefined()
+            }
+        }
+        expect(before).not.toMatch(/media_?resolution/i)
+    })
+
+    it.each(LEVEL_ROWS)('Gemini 3, %s: the level goes on the PDF part only', async (value, level) => {
+        const result = await applyGeminiPdfInput(classicBody(), { render: okRenderer('UERG'), mediaResolution: value, model: 'gemini-3-flash-preview' })
+        expect(result.mediaResolution).toEqual({ level, placement: 'part' })
+        const body = result.body as any
+        expect(body.contents[0].parts[0]).toEqual({ inlineData: { mimeType: 'application/pdf', data: 'UERG' }, mediaResolution: { level } })
+        // The image sent with the latest message and the request-wide config keep what they had.
+        expect(body.contents[0].parts[3]).toEqual({ inlineData: { mimeType: 'image/png', data: 'iVBORw0K' } })
+        expect(body.generation_config).toEqual({ maxOutputTokens: 1024, temperature: 0.8 })
+        expect(JSON.stringify(body).match(/mediaResolution/g)).toHaveLength(1)
+    })
+
+    it('Gemini 3: a per-part value sits beside an existing request-wide one, which still covers images', async () => {
+        const body = classicBody({ generation_config: { maxOutputTokens: 1024, mediaResolution: 'MEDIA_RESOLUTION_MEDIUM' } })
+        const result = await applyGeminiPdfInput(body, { render: okRenderer('UERG'), mediaResolution: 'low', model: 'gemini-3.5-flash' })
+        const sent = result.body as any
+        expect(sent.contents[0].parts[0].mediaResolution).toEqual({ level: 'MEDIA_RESOLUTION_LOW' })
+        expect(sent.generation_config).toEqual({ maxOutputTokens: 1024, mediaResolution: 'MEDIA_RESOLUTION_MEDIUM' })
+    })
+
+    it.each(LEVEL_ROWS)('earlier models, %s: the level goes request-wide when the PDF is the only media', async (value, level) => {
+        const result = await applyGeminiPdfInput(textOnlyBody(), { render: okRenderer('UERG'), mediaResolution: value, model: 'gemini-2.5-flash' })
+        expect(result.mediaResolution).toEqual({ level, placement: 'generationConfig' })
+        const body = result.body as any
+        expect(body.contents[0].parts[0]).toEqual({ inlineData: { mimeType: 'application/pdf', data: 'UERG' } })
+        expect(body.generation_config).toEqual({ maxOutputTokens: 1024, temperature: 0.8, mediaResolution: level })
+        expect(body).not.toHaveProperty('generationConfig')
+    })
+
+    it('earlier models: an image in the same request keeps the request unchanged (vision quality included)', async () => {
+        const body = classicBody({ generation_config: { maxOutputTokens: 1024, mediaResolution: 'MEDIA_RESOLUTION_MEDIUM' } })
+        const result = await applyGeminiPdfInput(body, { render: okRenderer(), mediaResolution: 'low', model: 'gemini-2.5-pro' })
+        expect(result.applied).toBe(true)
+        expect(result.mediaResolution).toBeUndefined()
+        expect((result.body as any).generation_config).toEqual({ maxOutputTokens: 1024, mediaResolution: 'MEDIA_RESOLUTION_MEDIUM' })
+        expect((result.body as any).contents[0].parts[0]).not.toHaveProperty('mediaResolution')
+        expect(console.debug).toHaveBeenCalledWith(expect.stringContaining('PDF media resolution left unset'))
+        // A file reference counts as media too.
+        const withFile = textOnlyBody()
+        withFile.contents[5] = { role: 'model', parts: [{ fileData: { mimeType: 'video/mp4', fileUri: 'gs://v' } }] } as any
+        const fileResult = await applyGeminiPdfInput(withFile, { render: okRenderer(), mediaResolution: 'low', model: 'gemini-2.5-pro' })
+        expect(fileResult.mediaResolution).toBeUndefined()
+    })
+
+    it('earlier models: replaces a request-wide value that only reached the PDF, under its own spelling', async () => {
+        const snake = await applyGeminiPdfInput(textOnlyBody({ generation_config: { media_resolution: 'MEDIA_RESOLUTION_MEDIUM' } }), { render: okRenderer(), mediaResolution: 'low', model: 'gemini-2.0-flash' })
+        expect((snake.body as any).generation_config).toEqual({ media_resolution: 'MEDIA_RESOLUTION_LOW' })
+
+        // The adapter's camelCase config.
+        const camelBody: Record<string, unknown> = textOnlyBody()
+        delete camelBody.generation_config
+        camelBody.generationConfig = { temperature: 1, mediaResolution: 'MEDIA_RESOLUTION_HIGH' }
+        const camel = await applyGeminiPdfInput(camelBody, { render: okRenderer(), mediaResolution: 'low', model: 'gemini-2.5-flash' })
+        expect((camel.body as any).generationConfig).toEqual({ temperature: 1, mediaResolution: 'MEDIA_RESOLUTION_LOW' })
+        expect(camel.body).not.toHaveProperty('generation_config')
+
+        // No config at all: one is created.
+        const bare: Record<string, unknown> = textOnlyBody()
+        delete bare.generation_config
+        const created = await applyGeminiPdfInput(bare, { render: okRenderer(), mediaResolution: 'medium', model: 'gemini-2.5-flash' })
+        expect((created.body as any).generationConfig).toEqual({ mediaResolution: 'MEDIA_RESOLUTION_MEDIUM' })
+    })
+
+    it('follows snake_case part casing for the per-part key', async () => {
+        const body = classicBody()
+        body.contents[4] = { role: 'user', parts: [{ text: 'q' }, { inline_data: { mime_type: 'image/png', data: 'x' } }] } as any
+        const result = await applyGeminiPdfInput(body, { render: okRenderer('PDF'), mediaResolution: 'low', model: 'gemini-3-pro-preview' })
+        expect((result.body as any).contents[0].parts[0]).toEqual({
+            inline_data: { mime_type: 'application/pdf', data: 'PDF' },
+            media_resolution: { level: 'MEDIA_RESOLUTION_LOW' },
+        })
+    })
+
+    it('does not mutate the body it is given', async () => {
+        const body = textOnlyBody()
+        const snapshot = JSON.stringify(body)
+        await applyGeminiPdfInput(body, { render: okRenderer(), mediaResolution: 'low', model: 'gemini-2.5-flash' })
+        await applyGeminiPdfInput(body, { render: okRenderer(), mediaResolution: 'low', model: 'gemini-3-flash-preview' })
+        expect(JSON.stringify(body)).toBe(snapshot)
+    })
+
+    it('applyGeminiPdfMediaResolution leaves a body without a leading PDF part alone', () => {
+        const body = textOnlyBody()
+        expect(applyGeminiPdfMediaResolution(body, { level: 'MEDIA_RESOLUTION_LOW', placement: 'part' })).toEqual({ body, applied: false, reason: 'no PDF part' })
+        expect(applyGeminiPdfMediaResolution(body, { level: 'MEDIA_RESOLUTION_LOW', placement: 'generationConfig' }).applied).toBe(false)
+    })
+
+    it('the request-log marker names the resolution only when one was set', () => {
+        expect(JSON.parse(geminiPdfLogBody({ contents: [] }, 2))._sentAsPdf).toEqual({ pages: 2 })
+        expect(JSON.parse(geminiPdfLogBody({ contents: [] }, 2, { level: 'MEDIA_RESOLUTION_LOW', placement: 'part' }))._sentAsPdf)
+            .toEqual({ pages: 2, mediaResolution: { level: 'MEDIA_RESOLUTION_LOW', placement: 'part' } })
+    })
+})
+
+describe('withGeminiPdfInput media resolution (model-preset transport)', () => {
+    const okResponse = () => new Response('{}', { status: 200 })
+    const VERTEX_3 = 'https://aiplatform.googleapis.com/v1/projects/p/locations/global/publishers/google/models/gemini-3.7-flash:streamGenerateContent?alt=sse'
+    const STUDIO_25 = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent'
+    const TUNED = 'https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/us-central1/endpoints/123:generateContent'
+
+    function adapterBody() {
+        const body: Record<string, unknown> = textOnlyBody()
+        delete body.generation_config
+        body.generationConfig = { maxOutputTokens: 1024 }
+        return body
+    }
+
+    it('takes the model from the URL: per part on Gemini 3, request-wide on earlier models', async () => {
+        const inner = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => okResponse())
+        const onApplied = vi.fn()
+        // The fallback model only counts when the URL names none.
+        const wrapped = withGeminiPdfInput(inner as unknown as typeof fetch, { render: okRenderer('UERG'), mediaResolution: 'low', model: 'gemini-3-flash-preview', onApplied })
+        const sent = () => inner.mock.calls.map(([, init]) => JSON.parse(init!.body as string))
+
+        await wrapped(VERTEX_3, { method: 'POST', body: JSON.stringify(adapterBody()) })
+        await wrapped(STUDIO_25, { method: 'POST', body: JSON.stringify(adapterBody()) })
+        await wrapped(TUNED, { method: 'POST', body: JSON.stringify(adapterBody()) })
+        const [vertex, studio, tuned] = sent()
+
+        expect(vertex.contents[0].parts[0]).toEqual({ inlineData: { mimeType: 'application/pdf', data: 'UERG' }, mediaResolution: { level: 'MEDIA_RESOLUTION_LOW' } })
+        expect(vertex.generationConfig).toEqual({ maxOutputTokens: 1024 })
+
+        expect(studio.contents[0].parts[0]).toEqual({ inlineData: { mimeType: 'application/pdf', data: 'UERG' } })
+        expect(studio.generationConfig).toEqual({ maxOutputTokens: 1024, mediaResolution: 'MEDIA_RESOLUTION_LOW' })
+
+        expect(tuned.contents[0].parts[0].mediaResolution).toEqual({ level: 'MEDIA_RESOLUTION_LOW' })
+
+        expect(onApplied.mock.calls.map(([log]) => JSON.parse(log)._sentAsPdf)).toEqual([
+            { pages: 3, mediaResolution: { level: 'MEDIA_RESOLUTION_LOW', placement: 'part' } },
+            { pages: 3, mediaResolution: { level: 'MEDIA_RESOLUTION_LOW', placement: 'generationConfig' } },
+            { pages: 3, mediaResolution: { level: 'MEDIA_RESOLUTION_LOW', placement: 'part' } },
+        ])
+    })
+
+    it('default sends the same bytes as a wrapper without the setting', async () => {
+        const plainInner = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => okResponse())
+        const defaultInner = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => okResponse())
+        const plain = withGeminiPdfInput(plainInner as unknown as typeof fetch, { render: okRenderer('UERG') })
+        const withDefault = withGeminiPdfInput(defaultInner as unknown as typeof fetch, { render: okRenderer('UERG'), mediaResolution: 'default' })
+        for (const url of [VERTEX_3, STUDIO_25]) {
+            await plain(url, { method: 'POST', body: JSON.stringify(adapterBody()) })
+            await withDefault(url, { method: 'POST', body: JSON.stringify(adapterBody()) })
+        }
+        expect(defaultInner.mock.calls.map(([, init]) => init!.body)).toEqual(plainInner.mock.calls.map(([, init]) => init!.body))
+        expect(String(defaultInner.mock.calls[0][1]!.body)).not.toMatch(/mediaResolution/)
     })
 })
 

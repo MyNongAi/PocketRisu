@@ -139,3 +139,109 @@ describe('google.ts Gemini PDF input hook', () => {
         expect(mocks.fetchNative).not.toHaveBeenCalled()
     })
 })
+
+// The "PDF resolution" setting (nodeOnlyGeminiPdfMediaResolution) on the
+// classic path: per part on Gemini 3 models, request-wide (generation_config)
+// on earlier ones, nothing for 'default'.
+describe('google.ts Gemini PDF media resolution', () => {
+    const LEVELS = {
+        low: 'MEDIA_RESOLUTION_LOW',
+        medium: 'MEDIA_RESOLUTION_MEDIUM',
+        high: 'MEDIA_RESOLUTION_HIGH',
+    } as const
+
+    function modelInfo(internalID: string, format: 'GoogleCloud' | 'VertexAIGemini' = 'GoogleCloud', flags: string[] = []) {
+        return { id: internalID, internalID, format, flags, parameters: [] }
+    }
+
+    function vertexDb() {
+        mocks.db.google.projectId = 'proj'
+        mocks.db.vertexAccessToken = 'vertex-token'
+        mocks.db.vertexAccessTokenExpires = Date.now() + 3_600_000
+    }
+
+    const cases: { option: keyof typeof LEVELS, model: string, format: 'GoogleCloud' | 'VertexAIGemini', placement: 'part' | 'generationConfig' }[] = []
+    for (const option of Object.keys(LEVELS) as (keyof typeof LEVELS)[]) {
+        cases.push(
+            { option, model: 'gemini-3-flash-preview', format: 'GoogleCloud', placement: 'part' },
+            { option, model: 'gemini-3.5-flash', format: 'VertexAIGemini', placement: 'part' },
+            { option, model: 'gemini-2.5-flash', format: 'GoogleCloud', placement: 'generationConfig' },
+            { option, model: 'gemini-2.5-pro', format: 'VertexAIGemini', placement: 'generationConfig' },
+        )
+    }
+
+    it.each(cases)('$option on $model ($format) goes on the $placement', async ({ option, model, format, placement }) => {
+        mocks.db.nodeOnlyGeminiPdfInput = true
+        mocks.db.nodeOnlyGeminiPdfMediaResolution = option
+        if (format === 'VertexAIGemini') vertexDb()
+        await requestGoogleCloudVertex(arg({ modelInfo: modelInfo(model, format) }))
+
+        const url = mocks.fetchNative.mock.calls[0][0] as string
+        expect(url).toContain(`/models/${model}:generateContent`)
+        const body = sentBody()
+        const pdfPart = body.contents[0].parts[0]
+        expect(pdfPart.inlineData).toEqual({ mimeType: 'application/pdf', data: 'UERGREFUQQ==' })
+        if (placement === 'part') {
+            expect(pdfPart.mediaResolution).toEqual({ level: LEVELS[option] })
+            expect(body.generation_config).not.toHaveProperty('mediaResolution')
+        } else {
+            expect(pdfPart).not.toHaveProperty('mediaResolution')
+            expect(body.generation_config).toEqual({ maxOutputTokens: 256, mediaResolution: LEVELS[option] })
+        }
+        expect(JSON.parse(mocks.fetchNative.mock.calls[0][1].logBody)._sentAsPdf)
+            .toEqual({ pages: 1, mediaResolution: { level: LEVELS[option], placement } })
+    })
+
+    it('default (and an unset value) adds no media resolution on any model', async () => {
+        mocks.db.nodeOnlyGeminiPdfInput = true
+        for (const value of ['default', undefined]) {
+            for (const model of ['gemini-3-flash-preview', 'gemini-2.5-flash']) {
+                mocks.db.nodeOnlyGeminiPdfMediaResolution = value
+                mocks.fetchNative.mockClear()
+                await requestGoogleCloudVertex(arg({ modelInfo: modelInfo(model) }))
+                const raw = mocks.fetchNative.mock.calls[0][1].body as string
+                expect(raw).not.toMatch(/media_?resolution/i)
+                expect(JSON.parse(raw).contents[0].parts[0]).toEqual({ inlineData: { mimeType: 'application/pdf', data: 'UERGREFUQQ==' } })
+                expect(JSON.parse(mocks.fetchNative.mock.calls[0][1].logBody)._sentAsPdf).toEqual({ pages: 1 })
+            }
+        }
+    })
+
+    it('does nothing while the PDF toggle is off', async () => {
+        mocks.db.nodeOnlyGeminiPdfInput = false
+        mocks.db.nodeOnlyGeminiPdfMediaResolution = 'low'
+        await requestGoogleCloudVertex(arg({ modelInfo: modelInfo('gemini-2.5-flash') }))
+        expect(JSON.stringify(sentBody())).not.toMatch(/media_?resolution/i)
+        expect(renderFetch).not.toHaveBeenCalled()
+    })
+
+    // An image sent with the latest message: Gemini 3 changes only the PDF;
+    // an earlier model would change the image too, so the request keeps the
+    // vision-quality value it had.
+    it('leaves images with their vision-quality resolution', async () => {
+        mocks.db.nodeOnlyGeminiPdfInput = true
+        mocks.db.nodeOnlyGeminiPdfMediaResolution = 'low'
+        mocks.db.gptVisionQuality = 'high'
+        const withImage = (model: string) => arg({
+            modelInfo: modelInfo(model, 'GoogleCloud', ['hasImageInput']),
+            formated: [
+                { role: 'system', content: SYSTEM },
+                { role: 'user', content: '안녕' },
+                { role: 'assistant', content: 'Hello!' },
+                { role: 'user', content: '이 그림', multimodals: [{ type: 'image', base64: 'data:image/png;base64,iVBORw0K' }] },
+            ],
+        })
+
+        await requestGoogleCloudVertex(withImage('gemini-3-flash-preview'))
+        const gemini3 = sentBody()
+        expect(gemini3.contents[0].parts[0].mediaResolution).toEqual({ level: 'MEDIA_RESOLUTION_LOW' })
+        expect(gemini3.contents[0].parts[3]).toEqual({ inlineData: { mimeType: 'image/png', data: 'iVBORw0K' } })
+        expect(gemini3.generation_config.mediaResolution).toBe('MEDIA_RESOLUTION_MEDIUM')
+
+        mocks.fetchNative.mockClear()
+        await requestGoogleCloudVertex(withImage('gemini-2.5-flash'))
+        const gemini25 = sentBody()
+        expect(gemini25.contents[0].parts[0]).not.toHaveProperty('mediaResolution')
+        expect(gemini25.generation_config.mediaResolution).toBe('MEDIA_RESOLUTION_MEDIUM')
+    })
+})
