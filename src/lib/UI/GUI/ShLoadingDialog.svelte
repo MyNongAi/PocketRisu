@@ -10,6 +10,7 @@
     import { cn } from 'src/lib/utils';
     import { handleDialogCloseAutoFocus } from './dialogFocusPolicy';
     import type { ShDialogTier } from './ShDialog.svelte';
+    import { BackLayerRank, useBackLayer } from 'src/ts/gui/backLayers.svelte';
 
     interface Props {
         open?: boolean;
@@ -34,6 +35,9 @@
     const clampedProgress = $derived(
         progress == null ? null : Math.max(0, Math.min(100, progress))
     );
+
+    // Mobile Back must not leave the page under a running operation either.
+    useBackLayer(BackLayerRank.Alert, () => open);
 
     const tierClasses: Record<ShDialogTier, string> = {
         base: 'z-40',

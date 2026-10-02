@@ -14,9 +14,12 @@
     import SecondaryChatPanel from './SecondaryChatPanel.svelte';
     import { clampSplitWidth, getSplitWidthBounds, isEmbeddedRisuPane, splitChatOpen, splitChatWidth } from 'src/ts/chatSplitPane';
     import { onDestroy, onMount } from 'svelte';
+    import { BackLayerRank, useBackLayer } from 'src/ts/gui/backLayers.svelte';
     let openChatList = $state(false)
     let openModuleList = $state(false)
     let splitRoot: HTMLDivElement | null = $state(null)
+    useBackLayer(BackLayerRank.Popup, () => openChatList, () => { openChatList = false })
+    useBackLayer(BackLayerRank.Popup, () => openModuleList && !openChatList, () => { openModuleList = false })
     let stopSplitResize: (() => void) | null = null
 
     function beginSplitResize(event: PointerEvent) {

@@ -46,6 +46,7 @@
         readSettingsSidebarWidth,
         writeSettingsSidebarWidth,
     } from 'src/ts/setting/paneSize';
+    import { BackLayerRank, useBackLayer } from 'src/ts/gui/backLayers.svelte';
 
     // Dev panel is opt-in via localStorage['risu-dev-panel']='1' in devtools.
     // Read once on mount — flag changes require reload. Gates both the menu
@@ -55,6 +56,7 @@
 
     let openLoreList = $state(false)
     let searchOpen = $state(false)
+    useBackLayer(BackLayerRank.Popup, () => openLoreList, () => { openLoreList = false })
 
     // Reactive breakpoints: the raw window.innerWidth reads these replace were
     // evaluated outside Svelte's reactivity, so the layout never responded to
