@@ -664,6 +664,7 @@ export const languageEnglish = {
             "While it imports, 'Cancel import' on its progress card stops it and rolls back the assets it newly saved.",
         ].join('\n'),
     },
+    alertMinimizedReopen: "Show the unanswered question again",
     alwaysActive: "Always Active",
     additionalPrompt: "Additional Prompt",
     descriptionPrefix: "Description Prefix",

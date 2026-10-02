@@ -737,6 +737,7 @@ export const languageKorean = {
       "가져오는 동안 진행 카드의 '가져오기 취소'를 누르면 멈추고, 이번에 새로 저장한 에셋까지 되돌려요.",
     ].join('\n'),
   },
+  alertMinimizedReopen: "아직 답하지 않은 질문 다시 보기",
   alwaysActive: "언제나 활성화",
   additionalPrompt: "추가 프롬프트",
   descriptionPrefix: "캐릭터 설명 Prefix",

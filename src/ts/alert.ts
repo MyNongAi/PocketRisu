@@ -3,7 +3,7 @@ import { toast } from "svelte-sonner"
 import { sleep } from "./util"
 import { getCurrentLocale, language } from "../lang"
 import { getDatabase, nodeOnlyVer, type MessageGenerationInfo } from "./storage/database.svelte"
-import { alertStore as alertStoreImported, togglePresetsOpenStore } from "./stores.svelte"
+import { alertMinimizedStore, alertStore as alertStoreImported, togglePresetsOpenStore } from "./stores.svelte"
 import { addLog } from "./log"
 import { nativeConsoleError } from "./log-capture"
 import type { ShButtonVariant } from "../lib/UI/GUI/ShButton.svelte"
@@ -32,8 +32,13 @@ export interface alertData{
     actions?: AlertAction[]
     /** 'input' only: mask the typed text (a password). */
     hideText?: boolean
-    /** 'ask' only: a tap outside does not answer "no"; only the buttons close it. */
+    /**
+     * 'ask' only, kept for callers: a tap outside no question answers "no"
+     * any more, it only tucks the question away (alertMinimizedStore).
+     */
     stayOpen?: boolean
+    /** Set by askQuestion: which question this alert shows, so its answer cannot go to another. */
+    questionId?: number
 }
 
 export interface NotifyOptions {
@@ -50,6 +55,50 @@ export const alertStore = {
     set: (d:alertData) => {
         alertStoreImported.set(d)
     }
+}
+
+// A tap outside a question (yes/no, pick one, type a value) only tucks it
+// into a small round button (alertMinimizedStore), and the app stays usable
+// meanwhile, so another alert can take the screen before it is answered.
+// That alert must neither answer the question nor lose it: each question
+// carries an id, its answer is recorded when the alert showing it closes,
+// and a question whose alert was replaced is shown again once the screen is
+// free. Before this, a background download's question was cancelled by a
+// tap outside it, or by any alert that came up in front of it.
+let nextQuestionId = 1
+const questionAnswers = new Map<number, string>()
+let shownAlert: alertData | null = null
+let watchingAlerts = false
+
+// Subscribed on first use: alert.ts and stores.svelte.ts import each other,
+// so the store does not exist yet while this module is first evaluated.
+function watchAlertAnswers() {
+    if (watchingAlerts) return
+    watchingAlerts = true
+    alertStoreImported.subscribe((next) => {
+        if (next.type === 'none' && shownAlert?.questionId !== undefined) {
+            questionAnswers.set(shownAlert.questionId, next.msg)
+        }
+        // Whatever comes up next is shown in full.
+        if (shownAlert !== null && next !== shownAlert) alertMinimizedStore.set(false)
+        shownAlert = next
+    })
+}
+
+async function askQuestion(request: alertData): Promise<string> {
+    watchAlertAnswers()
+    const id = nextQuestionId++
+    const shown: alertData = { ...request, questionId: id }
+    alertStoreImported.set(shown)
+    while (!questionAnswers.has(id)) {
+        await sleep(10)
+        if (!questionAnswers.has(id) && get(alertStoreImported).type === 'none') {
+            alertStoreImported.set(shown)
+        }
+    }
+    const answer = questionAnswers.get(id) ?? ''
+    questionAnswers.delete(id)
+    return answer
 }
 
 // Shared acceptance cache for both global startup TOS and Realm download confirmation.
@@ -199,14 +248,10 @@ export async function alertLogin(){
 
 export async function alertSelect(msg:string[], display?:string){
     const message = display !== undefined ? `__DISPLAY__${display}||${msg.join('||')}` : msg.join('||')
-    alertStoreImported.set({
+    return await askQuestion({
         'type': 'select',
         'msg': message
     })
-
-    await waitAlert()
-
-    return get(alertStoreImported).msg
 }
 
 export async function alertErrorWait(msg:string){
@@ -225,7 +270,8 @@ export function alertMd(msg:string){
 }
 
 export function doingAlert(){
-    return get(alertStoreImported).type !== 'none' && get(alertStoreImported).type !== 'wait'
+    // A question tucked into its round button leaves the app usable.
+    return get(alertStoreImported).type !== 'none' && get(alertStoreImported).type !== 'wait' && !get(alertMinimizedStore)
 }
 
 // ─── Non-blocking notify* family ────────────────────────────────────────────
@@ -336,15 +382,13 @@ export async function alertSelectChar(){
 
 export async function alertConfirm(msg:string, options: { stayOpen?: boolean } = {}){
 
-    alertStoreImported.set({
+    const answer = await askQuestion({
         'type': 'ask',
         'msg': msg,
         stayOpen: options.stayOpen,
     })
 
-    await waitAlert()
-
-    return get(alertStoreImported).msg === 'yes'
+    return answer === 'yes'
 }
 
 /**
@@ -365,30 +409,25 @@ export async function alertConfirmMulti(prompt:string, actions:(string | AlertAc
     const normalized: AlertAction[] = actions.map(a =>
         typeof a === 'string' ? { label: a, variant: 'default' } : a
     )
-    alertStoreImported.set({
+    const raw = await askQuestion({
         'type': 'confirmMulti',
         'msg': prompt,
         'submsg': detail,
         'actions': normalized,
     })
 
-    await waitAlert()
-
-    const raw = get(alertStoreImported).msg
     const n = parseInt(raw)
     return isNaN(n) ? -1 : n
 }
 
 export async function alertPluginConfirm(msg:string){
 
-    alertStoreImported.set({
+    const answer = await askQuestion({
         'type': 'pluginconfirm',
         'msg': msg
     })
 
-    await waitAlert()
-
-    return get(alertStoreImported).msg === 'yes'
+    return answer === 'yes'
 }
 
 export async function alertCardExport(type:string = ''){
@@ -413,14 +452,12 @@ export async function alertTOS(){
         return true
     }
 
-    alertStoreImported.set({
+    const answer = await askQuestion({
         'type': 'tos',
         'msg': 'tos'
     })
 
-    await waitAlert()
-
-    if(get(alertStoreImported).msg === 'yes'){
+    if(answer === 'yes'){
         localStorage.setItem(TOS_ACCEPTANCE_STORAGE_KEY, 'true')
         return true
     }
@@ -430,17 +467,13 @@ export async function alertTOS(){
 
 export async function alertInput(msg:string, datalist?:[string, string][], defaultValue?:string, options: { hideText?: boolean } = {}) {
 
-    alertStoreImported.set({
+    return await askQuestion({
         'type': 'input',
         'msg': msg,
         'datalist': datalist ?? [],
         'defaultValue': defaultValue ?? '',
         'hideText': options.hideText ?? false,
     })
-
-    await waitAlert()
-
-    return get(alertStoreImported).msg
 }
 
 export async function alertModuleSelect(){

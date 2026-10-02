@@ -7,7 +7,7 @@
 import { tick } from 'svelte'
 import { fromStore, get } from 'svelte/store'
 import { v4 as uuidv4 } from 'uuid'
-import { alertStore, bookmarkListOpen, DynamicGUI, hypaV3ModalOpen, memoryPresetSelectCallback, MobileGUI, MobileGUIStack, MobileSideBar, openCharacterManager, openMemoryPresetList, openModelPresetList, openModelProfileBrowser, openPersonaList, openPresetList, openThemePresetList, personaSelectCallback, pluginAlertModalStore, popupStore, popUpEditorStore, selectedCharID, SettingsMenuIndex, settingsOpen, sideBarClosing, sideBarStore } from '../stores.svelte'
+import { alertMinimizedStore, alertStore, bookmarkListOpen,DynamicGUI, hypaV3ModalOpen, memoryPresetSelectCallback, MobileGUI, MobileGUIStack, MobileSideBar, openCharacterManager, openMemoryPresetList, openModelPresetList, openModelProfileBrowser, openPersonaList, openPresetList, openThemePresetList, personaSelectCallback, pluginAlertModalStore, popupStore, popUpEditorStore, selectedCharID, SettingsMenuIndex, settingsOpen, sideBarClosing, sideBarStore } from '../stores.svelte'
 import { showRealmInfoStore } from '../characterCards'
 import { assetViewerStore, closeAssetViewer } from '../assetViewer.svelte'
 import { closeProtonBrowser, protonBrowserState } from '../protonBrowser.svelte'
@@ -25,6 +25,7 @@ export function registerStoreLayers(stack: BackLayerStack = backLayers): void {
     const layer = (rank: number, isOpen: () => boolean, close?: () => boolean | void) =>
         useBackLayer(rank, isOpen, close, stack)
     const alert = fromStore(alertStore)
+    const alertMinimized = fromStore(alertMinimizedStore)
     const settings = fromStore(settingsOpen)
     const mobileGUI = fromStore(MobileGUI)
     const dynamicGUI = fromStore(DynamicGUI)
@@ -38,7 +39,9 @@ export function registerStoreLayers(stack: BackLayerStack = backLayers): void {
     const realmInfo = fromStore(showRealmInfoStore)
 
     // Alerts: Back answers the way their cancel / "no" / close control does.
-    layer(BackLayerRank.Alert, () => alert.current.type !== 'none', () => {
+    // A question tucked into its round button is not a layer: Back passes
+    // to the app beneath and leaves the question unanswered.
+    layer(BackLayerRank.Alert, () => alert.current.type !== 'none' && !alertMinimized.current, () => {
         const dismissal = alertBackDismissal(get(alertStore))
         if (!dismissal) return false
         alertStore.set(dismissal)

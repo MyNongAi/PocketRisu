@@ -11,7 +11,7 @@ const { createBackLayerStack } = await import('./backLayers.svelte')
 const { registerStoreLayers } = await import('./mobileBackNavigation.svelte')
 
 const {
-    alertStore, DynamicGUI, MobileGUI, MobileGUIStack, MobileSideBar, openCharacterManager, openPersonaList,
+    alertMinimizedStore, alertStore, DynamicGUI, MobileGUI,MobileGUIStack, MobileSideBar, openCharacterManager, openPersonaList,
     personaSelectCallback, selectedCharID, SettingsMenuIndex, settingsOpen, sideBarClosing, sideBarStore,
 } = stores
 
@@ -37,6 +37,7 @@ afterEach(() => {
     stop()
     vi.restoreAllMocks()
     alertStore.set({ type: 'none', msg: '' })
+    alertMinimizedStore.set(false)
     settingsOpen.set(false)
     openPersonaList.set(false)
     personaSelectCallback.set(null)
@@ -77,6 +78,17 @@ describe('mobile Back over the app layers', () => {
         expect(get(sideBarClosing)).toBe(true)
         expect(stack.hasOpen()).toBe(false)
         expect(back()).toBe('none')
+    })
+
+    test('a question tucked into its round button is left unanswered; Back goes to the app', () => {
+        settingsOpen.set(true)
+        alertStore.set({ type: 'ask', msg: 'Allow low-level access?' })
+        alertMinimizedStore.set(true)
+        flushSync()
+
+        expect(back()).toBe('closed')
+        expect(get(settingsOpen)).toBe(false)
+        expect(get(alertStore)).toEqual({ type: 'ask', msg: 'Allow low-level access?' })
     })
 
     test('a picker alert or a loading alert is not dismissed', () => {

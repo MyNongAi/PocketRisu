@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.13.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-10-02",
+  "updatedAt": "2026-10-03",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
@@ -992,6 +992,34 @@
       ],
       "regressionTests": [
         "src/ts/gui/pairedModules.test.ts"
+      ]
+    },
+    {
+      "id": "ALERT-QUESTION-TUCK",
+      "title": "질문 팝업 바깥 클릭은 접기 (취소 아님)",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "src/ts/alert.ts",
+        "src/lib/Others/AlertComp.svelte",
+        "src/lib/Others/AlertMinimizedButton.svelte",
+        "src/lib/UI/GUI/ShDialog.svelte",
+        "src/lib/UI/GUI/ShAlertDialog.svelte",
+        "src/ts/hotkey.ts",
+        "src/ts/gui/mobileBackNavigation.svelte.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/alert.ts", "contains": "async function askQuestion(request: alertData): Promise<string>" },
+        { "file": "src/ts/alert.ts", "contains": "get(alertStoreImported).type !== 'wait' && !get(alertMinimizedStore)" },
+        { "file": "src/lib/Others/AlertComp.svelte", "contains": "const tuckQuestionAway = () => alertMinimizedStore.set(true)" },
+        { "file": "src/lib/Others/AlertComp.svelte", "contains": "open={$alertStore.type === 'ask' && !$alertMinimizedStore}" },
+        { "file": "src/lib/Others/AlertComp.svelte", "contains": "open={$alertStore.type === 'confirmMulti' && !$alertMinimizedStore}" },
+        { "file": "src/lib/UI/GUI/ShAlertDialog.svelte", "contains": "interactOutsideBehavior={closeOnOutsideClick || onOutsideClick ? 'close' : 'ignore'}" },
+        { "file": "src/ts/hotkey.ts", "contains": "&& !get(alertMinimizedStore)){" },
+        { "file": "src/ts/gui/mobileBackNavigation.svelte.ts", "contains": "alert.current.type !== 'none' && !alertMinimized.current" }
+      ],
+      "regressionTests": [
+        "src/ts/alertQuestion.test.ts",
+        "src/ts/gui/mobileBackNavigation.svelte.test.ts"
       ]
     }
   ]

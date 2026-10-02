@@ -2,7 +2,7 @@ import { get } from "svelte/store"
 import { alertClear, alertMd, alertSelect, alertWait, doingAlert } from "./alert"
 import { getDatabase, getCurrentCharacter, getCurrentChat } from "./storage/database.svelte"
 import { setChatMemoryPreset } from "./process/memory/memoryPresets"
-import { alertStore, DBState, MobileGUIStack, MobileSideBar, openPersonaList, personaSelectCallback, openPresetList, openModelPresetList, openMemoryPresetList, memoryPresetSelectCallback, openThemePresetList, OpenRealmStore, PlaygroundStore, QuickSettings, SafeModeStore, selectedCharID, settingsOpen } from "./stores.svelte"
+import { alertMinimizedStore, alertStore, DBState,MobileGUIStack, MobileSideBar, openPersonaList, personaSelectCallback, openPresetList, openModelPresetList, openMemoryPresetList, memoryPresetSelectCallback, openThemePresetList, OpenRealmStore, PlaygroundStore, QuickSettings, SafeModeStore, selectedCharID, settingsOpen } from "./stores.svelte"
 import { language } from "src/lang"
 import { updateTextThemeAndCSS } from "./gui/colorscheme"
 import { defaultHotkeys } from "./defaulthotkeys"
@@ -234,8 +234,10 @@ export function initHotkey(){
             ev.preventDefault()
         }
         if(ev.key === 'Enter'){
-            const alertType = get(alertStore).type 
-            if(alertType === 'ask' || alertType === 'normal' || alertType === 'error'){
+            const alertType = get(alertStore).type
+            // A question tucked into its round button is not on screen: Enter
+            // typed in the chat must not answer it "yes".
+            if((alertType === 'ask' || alertType === 'normal' || alertType === 'error') && !get(alertMinimizedStore)){
                 alertStore.set({
                     type: 'none',
                     msg: 'yes'

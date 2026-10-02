@@ -20,7 +20,8 @@
     import { language } from 'src/lang';
 
     import { fetchRequestLogs, type RequestLogEntry } from 'src/ts/requestLog';
-    import { alertStore, selectedCharID, togglePresetsOpenStore } from "src/ts/stores.svelte";
+    import { alertMinimizedStore, alertStore, selectedCharID, togglePresetsOpenStore } from "src/ts/stores.svelte";
+    import AlertMinimizedButton from "./AlertMinimizedButton.svelte";
     import ShSwitch from "../UI/GUI/ShSwitch.svelte";
     import ShDropdownMenu from '../UI/GUI/ShDropdownMenu.svelte';
     import ShDropdownMenuTrigger from '../UI/GUI/ShDropdownMenuTrigger.svelte';
@@ -82,6 +83,11 @@
     function closeTogglePresets() {
         togglePresetsOpenStore.set(false)
     }
+
+    // A tap outside a question tucks it into AlertMinimizedButton instead of
+    // answering it: a click that only meant to focus the window (say, back from
+    // another app while a download waits on "bot or module?") cancelled it.
+    const tuckQuestionAway = () => alertMinimizedStore.set(true)
 
     async function copyToClipboard(text: string, key: string) {
         try {
@@ -712,10 +718,10 @@
 </ShDialog>
 
 <ShAlertDialog
-    open={$alertStore.type === 'ask'}
-    closeOnOutsideClick={!$alertStore.stayOpen}
+    open={$alertStore.type === 'ask' && !$alertMinimizedStore}
+    onOutsideClick={tuckQuestionAway}
     onOpenChange={(v) => {
-        if (!v && $alertStore.type === 'ask') {
+        if (!v && $alertStore.type === 'ask' && !$alertMinimizedStore) {
             alertStore.set({ type: 'none', msg: 'no' })
         }
     }}
@@ -728,10 +734,10 @@
 </ShAlertDialog>
 
 <ShAlertDialog
-    open={$alertStore.type === 'pluginconfirm'}
-    closeOnOutsideClick={true}
+    open={$alertStore.type === 'pluginconfirm' && !$alertMinimizedStore}
+    onOutsideClick={tuckQuestionAway}
     onOpenChange={(v) => {
-        if (!v && $alertStore.type === 'pluginconfirm') {
+        if (!v && $alertStore.type === 'pluginconfirm' && !$alertMinimizedStore) {
             alertStore.set({ type: 'none', msg: 'no' })
         }
     }}
@@ -764,9 +770,10 @@
 </ShAlertDialog>
 
 <ShDialog
-    open={$alertStore.type === 'select'}
+    open={$alertStore.type === 'select' && !$alertMinimizedStore}
     closable={false}
     closeOnOutsideClick={false}
+    onOutsideClick={tuckQuestionAway}
 >
     {#if $alertStore.type === 'select'}
         {@const hasDisplay = $alertStore.msg.startsWith('__DISPLAY__')}
@@ -794,11 +801,11 @@
 </ShDialog>
 
 <ShAlertDialog
-    open={$alertStore.type === 'confirmMulti'}
+    open={$alertStore.type === 'confirmMulti' && !$alertMinimizedStore}
     closeOnEscape={true}
-    closeOnOutsideClick={true}
+    onOutsideClick={tuckQuestionAway}
     onOpenChange={(v) => {
-        if (!v && $alertStore.type === 'confirmMulti') {
+        if (!v && $alertStore.type === 'confirmMulti' && !$alertMinimizedStore) {
             alertStore.set({ type: 'none', msg: 'cancel' })
         }
     }}
@@ -831,9 +838,10 @@
 </ShAlertDialog>
 
 <ShDialog
-    open={$alertStore.type === 'input'}
+    open={$alertStore.type === 'input' && !$alertMinimizedStore}
     closable={false}
     closeOnOutsideClick={false}
+    onOutsideClick={tuckQuestionAway}
 >
     <div class="flex flex-col gap-3">
         {#if $alertStore.msg}
@@ -882,9 +890,10 @@
 />
 
 <ShAlertDialog
-    open={$alertStore.type === 'tos'}
+    open={$alertStore.type === 'tos' && !$alertMinimizedStore}
+    onOutsideClick={tuckQuestionAway}
     onOpenChange={(v) => {
-        if (!v && $alertStore.type === 'tos') {
+        if (!v && $alertStore.type === 'tos' && !$alertMinimizedStore) {
             alertStore.set({ type: 'none', msg: 'no' })
         }
     }}
@@ -901,6 +910,8 @@
         <ShButton onclick={() => alertStore.set({ type: 'none', msg: 'yes' })}>Accept</ShButton>
     {/snippet}
 </ShAlertDialog>
+
+<AlertMinimizedButton />
 
 <!-- tier="base" puts this below default ShDialog/ShAlertDialog tier so
      nested alertConfirm/alertInput (overwrite, rename, delete) paint on

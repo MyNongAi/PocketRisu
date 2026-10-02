@@ -123,6 +123,8 @@ export const alertStore = writable({
     type: 'none',
     msg: 'n',
 } as alertData)
+/** A question alert a tap outside it tucked into a small round button (AlertComp); a new alert unfolds it. */
+export const alertMinimizedStore = writable(false)
 export const hypaV3ModalOpen = writable(false)
 // Toggle preset selector lives outside alertStore so child alertConfirm /
 // alertInput overlays can layer on top of it without overwriting state.

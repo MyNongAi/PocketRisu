@@ -19,6 +19,8 @@
         tier?: ShDialogTier;
         closeOnEscape?: boolean;
         closeOnOutsideClick?: boolean;
+        /** Called on a tap outside instead of closing (the dialog stays open). */
+        onOutsideClick?: () => void;
         contentClass?: string;
         title?: Snippet;
         description?: Snippet;
@@ -38,6 +40,7 @@
         tier = 'alert',
         closeOnEscape = false,
         closeOnOutsideClick = false,
+        onOutsideClick,
         contentClass = '',
         title,
         description,
@@ -77,7 +80,13 @@
         <AlertDialog.Content
             class={cn(contentBase, tierClasses[tier], sizeClasses[size], contentClass)}
             escapeKeydownBehavior={closeOnEscape ? 'close' : 'ignore'}
-            interactOutsideBehavior={closeOnOutsideClick ? 'close' : 'ignore'}
+            interactOutsideBehavior={closeOnOutsideClick || onOutsideClick ? 'close' : 'ignore'}
+            onInteractOutside={(e) => {
+                // bits-ui reports the tap only under 'close'; preventDefault keeps it open.
+                if (!onOutsideClick) return;
+                e.preventDefault();
+                onOutsideClick();
+            }}
             onCloseAutoFocus={handleDialogCloseAutoFocus}
         >
             {#if title || description}
