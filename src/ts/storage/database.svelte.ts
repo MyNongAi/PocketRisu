@@ -746,6 +746,7 @@ export function setDatabase(data:Database){
     data.disableToggleBinding ??= false
     data.hideAllImages ??= false
     data.hideMessagePageCount ??= false
+    data.nodeOnlyShowInputEcho ??= true
     data.ImagenModel ??= 'imagen-4.0-generate-001'
     data.ImagenImageSize ??= '1K'
     data.ImagenAspectRatio ??= '1:1'
@@ -1634,6 +1635,8 @@ export interface Database{
     enableBookmark?: boolean
     hideAllImages?: boolean
     hideMessagePageCount?: boolean
+    /** Show the user message a reply answers under the reply (gui/inputEcho.ts). */
+    nodeOnlyShowInputEcho?: boolean
     autoScrollToNewMessage?: boolean
     alwaysScrollToNewMessage?: boolean
     newMessageButtonStyle?: string
@@ -2130,6 +2133,8 @@ export interface themePreset{
     hideRealm: boolean
     hideAllImages?: boolean
     hideMessagePageCount?: boolean
+    /** Show the user message a reply answers under the reply (gui/inputEcho.ts). */
+    nodeOnlyShowInputEcho?: boolean
     showFolderName: boolean
     customBackground: string
     roundIcons: boolean

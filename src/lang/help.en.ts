@@ -223,6 +223,7 @@ export const helpEn = {
         additionalPrompt:
             "Text that gets appended to the Main Prompt when Prompt Preprocess is enabled. Default is 'The assistant must act as {{char}}. user is {{user}}.' This helps set up basic roleplay context.",
         hideAllImagesDesc: "Hides bot icons, bot image assets, and RisuRealm cover images.",
+        showInputEchoDesc: "Shows, at the bottom of each reply, the input it answers. Its pencil edits that input: every keystroke shows in both places, and the input is saved when the edit closes.",
         hideMessagePageCountDesc: "Hides the page counter (e.g. 1/3) for regenerated messages and first message greetings. Navigation arrows and the regenerate button remain visible.",
         embedding:
             "Embedding model is used for similarity search across multiple features:\n\n" +

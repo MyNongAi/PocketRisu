@@ -25,6 +25,7 @@
     import AutoresizeArea from "../UI/GUI/TextAreaResizable.svelte"
     import { isSendKey } from "src/ts/gui/sendKey"
     import { isMobile } from "src/ts/platform"
+    import { inputEchoDraft, inputEchoKey } from "src/ts/gui/inputEcho"
     import ChatBody from './ChatBody.svelte'
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
@@ -47,6 +48,12 @@
     let copyingChat = $state(false)
     interface Props {
         message?: string;
+        /** This message's identity for the input echo draft (gui/inputEcho.ts). */
+        messageKey?: string;
+        /** For a reply: the user message it answers, echoed under it. */
+        previousInput?: string;
+        previousInputKey?: string;
+        previousInputIndex?: number;
         name?: string;
         largePortrait?: boolean;
         isLastMemory: boolean;
@@ -78,6 +85,10 @@
 
     let {
         message = $bindable(''),
+        messageKey = '',
+        previousInput = '',
+        previousInputKey = '',
+        previousInputIndex = -1,
         name = '',
         largePortrait = false,
         isLastMemory,
@@ -222,6 +233,62 @@
         }
     }
 
+    // ── Input echo ──────────────────────────────────────────────────────────
+    // Under a reply: the user message it answers. Editing it (or the original)
+    // puts every keystroke in a shared draft that both places show; the text
+    // reaches the chat once, when the edit closes.
+    let echoEditing = $state(false)
+    let echoText = $state('')
+    let showInputEcho = $derived(role === 'char' && previousInputIndex >= 0 && DBState.db.nodeOnlyShowInputEcho !== false)
+    let echoShown = $derived($inputEchoDraft && $inputEchoDraft.key === previousInputKey ? $inputEchoDraft.text : previousInput)
+
+    $effect(() => {
+        if (echoEditing) inputEchoDraft.set({ key: previousInputKey, text: echoText })
+    })
+
+    function commitInputEcho() {
+        const chara = DBState.db.characters[selIdState.selId]
+        const messages = chara?.chats?.[chara.chatPage]?.message ?? []
+        let index = previousInputIndex
+        if (inputEchoKey(messages[index], index) !== previousInputKey) {
+            index = messages.findIndex((candidate, i) => inputEchoKey(candidate, i) === previousInputKey)
+        }
+        if (index >= 0 && messages[index]?.role === 'user' && messages[index].data !== echoText) {
+            messages[index].data = echoText
+        }
+        inputEchoDraft.set(null)
+    }
+
+    function toggleInputEchoEdit() {
+        if (!echoEditing) {
+            echoText = echoShown ?? ''
+            echoEditing = true
+            return
+        }
+        echoEditing = false
+        commitInputEcho()
+    }
+
+    function finishInputEchoOnSendKey(e: KeyboardEvent) {
+        if (e.key !== 'Enter' || e.isComposing || !echoEditing) return
+        if (!isSendKey(e, isMobile ? DBState.db.sendKeyMobile : DBState.db.sendKeyPC)) return
+        e.preventDefault()
+        toggleInputEchoEdit()
+    }
+
+    // The original user message: publish its own edit to the draft, and while
+    // the copy under a reply is being edited, show that text as typed (plain;
+    // the message renders normally again once the edit is saved).
+    $effect(() => {
+        if (role === 'user' && editMode && messageKey) inputEchoDraft.set({ key: messageKey, text: message })
+    })
+    let userDraftText = $derived(role === 'user' && !editMode && $inputEchoDraft && $inputEchoDraft.key === messageKey ? $inputEchoDraft.text : null)
+
+    function clearOwnEchoDraft() {
+        const draft = $inputEchoDraft
+        if (role === 'user' && draft && draft.key === messageKey) inputEchoDraft.set(null)
+    }
+
     function startOriginalEdit() {
         if (originalEditControlDisabled) return
         editMode = true
@@ -242,6 +309,7 @@
         if (editMode) {
             editMode = false
             edit()
+            clearOwnEchoDraft()
         } else {
             startOriginalEdit()
         }
@@ -388,6 +456,10 @@
     })
 
     onDestroy(()=>{
+        if (echoEditing) {
+            echoEditing = false
+            commitInputEcho()
+        }
         unsubscribers.forEach(u => u())
     })
 
@@ -565,6 +637,8 @@
         <AutoresizeArea bind:value={message} onkeydown={finishEditOnSendKey} handleLongPress={() => {
             editMode = false
         }} />
+    {:else if userDraftText !== null}
+        <span class="block whitespace-pre-wrap wrap-break-word">{userDraftText}</span>
     {:else if isComment}
         <div class="w-full flex justify-center text-textcolor2 italic mb-12">
 
@@ -642,6 +716,27 @@
                 on:save={handlePartialEditSave}
             />
         {/if}
+    {/if}
+    {#if showInputEcho && !editMode}
+        <span class="input-echo mt-2 flex items-start gap-1.5 border-t border-darkborderc pt-1.5 text-xs text-textcolor2">
+            <span class="shrink-0 font-semibold">{language.inputEcho}</span>
+            {#if echoEditing}
+                <span class="block min-w-0 grow">
+                    <AutoresizeArea bind:value={echoText} onkeydown={finishInputEchoOnSendKey} />
+                </span>
+            {:else}
+                <span class="min-w-0 grow whitespace-pre-wrap wrap-break-word line-clamp-3" title={echoShown}>{echoShown}</span>
+            {/if}
+            <button
+                type="button"
+                class="shrink-0 transition-colors hover:text-primary"
+                class:text-blue-400={echoEditing}
+                title={language.inputEchoEdit}
+                aria-label={language.inputEchoEdit}
+                aria-pressed={echoEditing}
+                onclick={toggleInputEchoEdit}
+            ><PencilIcon size={14} /></button>
+        </span>
     {/if}
 {/snippet}
 

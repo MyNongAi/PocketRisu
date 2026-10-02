@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { character, Message, StreamingDisplayOptimizationMode } from 'src/ts/storage/database.svelte';
+    import { inputEchoKey, previousInputIndex } from 'src/ts/gui/inputEcho';
     import { mount, onDestroy, tick, unmount } from 'svelte';
     import Chat from './Chat.svelte';
     import { getCharImage } from 'src/ts/characters';
@@ -153,7 +154,10 @@
             const activeStreamingMessage = i === activeStreamingIndex && message.role === 'char';
             const resolveChatAssets = assetRenderWindow.messageIndices.has(i)
             const hashMessageData = activeStreamingMessage ? '' : message.data;
-            let hashd = hashMessageData + (message.chatId ?? '') + i.toString() + messageLargePortrait.toString() + message.disabled?.toString() + reloadPointer.toString() + (message.swipeId ?? 0).toString() + (message.swipes?.length ?? 0).toString() + resolveChatAssets.toString();
+            // The input a reply answers is echoed under it; a changed input remounts the reply.
+            const echoIndex = message.role === 'char' ? previousInputIndex(messages, i) : -1;
+            const echoText = echoIndex >= 0 ? (messages[echoIndex].data ?? '') : '';
+            let hashd = (echoIndex >= 0 ? echoText + '\u0000' : '') + hashMessageData + (message.chatId ?? '') + i.toString() + messageLargePortrait.toString() + message.disabled?.toString() + reloadPointer.toString() + (message.swipeId ?? 0).toString() + (message.swipes?.length ?? 0).toString() + resolveChatAssets.toString();
             const currentHash = hashCode(hashd);
             currentHashes.add(currentHash);
             if(!hashes.has(currentHash)){
@@ -172,6 +176,10 @@
                     target: b,
                     props: {
                         message: message.data,
+                        messageKey: inputEchoKey(message, i),
+                        previousInput: echoText,
+                        previousInputKey: echoIndex >= 0 ? inputEchoKey(messages[echoIndex], echoIndex) : '',
+                        previousInputIndex: echoIndex,
                         isLastMemory: false,
                         idx: i,
                         totalLength: messages.length,
