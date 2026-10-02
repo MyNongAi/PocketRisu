@@ -97,6 +97,7 @@ const {
     encodeBootHeader, parseHaveList, deriveBootCacheKey, BOOT_PROTOCOL, BOOT_CONTENT_TYPE,
 } = require('./boot-payload.cjs');
 const { createRuntimeFlags } = require('./runtime-flags.cjs');
+const { BUILD_ID_FILE_NAME, createBuildIdReader, createBuildFence } = require('./build-fence.cjs');
 const { cdcSplit } = require('./chunkStore.cjs');
 // Test hardening only: every root installed in dbCache is deep-frozen, chat
 // objects the store hands to a persist are frozen, and stored body bytes are
@@ -1749,6 +1750,14 @@ app.use('/assets', express.static(path.join(process.cwd(), 'dist/assets'), {
     immutable: true,
 }));
 app.use(express.static(path.join(process.cwd(), 'dist'), {index: false, maxAge: 0}));
+// Refuse writes from a tab still running an older client build (see
+// build-fence.cjs). Before the body parsers, so a refused body is never read.
+const readServedBuildId = createBuildIdReader({ file: path.join(process.cwd(), 'dist', BUILD_ID_FILE_NAME) });
+const startupBuildId = readServedBuildId();
+console.log(startupBuildId
+    ? `[BuildFence] serving client build ${startupBuildId}`
+    : `[BuildFence] no dist/${BUILD_ID_FILE_NAME}; writes from older client builds are not refused`);
+app.use(createBuildFence({ readBuildId: readServedBuildId, logger }));
 app.use(express.json({ limit: '100mb' }));
 
 // PocketRisu -> Termux native Android notification

@@ -14,6 +14,7 @@ import type { ChatSaveIntent } from './chatSaveIntent'
 import { chatHoldsAllMessages } from './chatConflict'
 import { BootAuthError, BootFallback, loadDatabaseViaBoot } from './bootPayload'
 import { BootCacheController, browserBootCacheEnv } from './bootPayloadCache'
+import { addBuildIdHeader, readStaleBuildRefusal, readStaleBuildRefusalXhr, reportStaleBuild, setXhrBuildIdHeader, StaleBuildError } from './buildFence'
 
 /** How the last database.bin read went (the [Boot] log line, storage settings). */
 export interface DbLoadInfo {
@@ -767,11 +768,22 @@ export class NodeStorage{
         headers.set('x-session-id', NodeStorage.sessionId)
         headers.set('x-chat-client-id', NodeStorage.chatClientId)
         if (isUserActive()) headers.set('x-user-active', '1')
+        addBuildIdHeader(headers)
 
         const response = await this.fetchFn(input, {
             ...init,
             headers
         })
+
+        // The server serves a newer client build and refused this request
+        // unapplied (buildFence.ts). Throw rather than return it, so no caller
+        // retries the write another way (a refused patch must not turn into a
+        // full write).
+        const staleFor = await readStaleBuildRefusal(response)
+        if (staleFor !== null) {
+            reportStaleBuild(staleFor)
+            throw new StaleBuildError(staleFor)
+        }
 
         if (response.status === 423) {
             window.dispatchEvent(new CustomEvent('risu-session-deactivated'))
@@ -843,6 +855,7 @@ export class NodeStorage{
                     )
                 }
             } catch (error) {
+                if (error instanceof StaleBuildError) throw error
                 console.warn('[ExternalAssets] Direct write unavailable; falling back to internal storage:', error)
             }
         }
@@ -1186,11 +1199,19 @@ export class NodeStorage{
                         if (data.etag) this.chatEtags.set(key, data.etag)
                         else this.chatEtags.delete(key)
                     }
-                }).catch(() => {})
+                }).catch((error) => {
+                    // A tab on an outdated build holds no lease worth renewing.
+                    if (error instanceof StaleBuildError && this.chatLeaseHeartbeats.get(key) === timer) {
+                        clearInterval(timer)
+                        this.chatLeaseHeartbeats.delete(key)
+                    }
+                })
             }, 45_000)
             this.chatLeaseHeartbeats.set(key, timer)
             return { ok: true }
-        } catch {
+        } catch (error) {
+            // Not a connection problem: the stale-build notice explains it.
+            if (error instanceof StaleBuildError) return { ok: false, reason: 'rejected', message: error.message }
             return { ok: false, reason: 'unavailable' }
         }
     }
@@ -1706,6 +1727,7 @@ export class NodeStorage{
             xhr.setRequestHeader('risu-auth', authHeader)
             xhr.setRequestHeader('x-session-id', NodeStorage.sessionId)
             if (isUserActive()) xhr.setRequestHeader('x-user-active', '1')
+            setXhrBuildIdHeader(xhr)
             // Opt into NDJSON streaming so the server keeps the response socket
             // alive during long post-upload work — prevents reverse-proxy 502s.
             xhr.setRequestHeader('accept', 'application/x-ndjson')
@@ -1752,6 +1774,12 @@ export class NodeStorage{
             xhr.onprogress = drainNdjson
             xhr.onerror = () => reject(new Error('backup import request failed'))
             xhr.onload = () => {
+                const staleFor = readStaleBuildRefusalXhr(xhr)
+                if (staleFor !== null) {
+                    reportStaleBuild(staleFor)
+                    reject(new StaleBuildError(staleFor))
+                    return
+                }
                 if (xhr.status < 200 || xhr.status >= 300) {
                     let msg = `backup import error: ${xhr.status}`
                     try {
@@ -2202,6 +2230,7 @@ export class NodeStorage{
             xhr.setRequestHeader('risu-auth', authHeader)
             xhr.setRequestHeader('x-session-id', NodeStorage.sessionId)
             if (isUserActive()) xhr.setRequestHeader('x-user-active', '1')
+            setXhrBuildIdHeader(xhr)
 
             xhr.upload.onprogress = (event) => {
                 if (event.lengthComputable) {
@@ -2211,6 +2240,12 @@ export class NodeStorage{
 
             xhr.onerror = () => reject(new Error('zip upload failed'))
             xhr.onload = () => {
+                const staleFor = readStaleBuildRefusalXhr(xhr)
+                if (staleFor !== null) {
+                    reportStaleBuild(staleFor)
+                    reject(new StaleBuildError(staleFor))
+                    return
+                }
                 if (xhr.status < 200 || xhr.status >= 300) {
                     let msg = `zip import error: ${xhr.status}`
                     try { msg = JSON.parse(xhr.responseText).error || msg } catch {}

@@ -17,6 +17,7 @@
     import UpdatePopup from './lib/Others/UpdatePopup.svelte';
     import SupportDialog from './lib/Others/SupportDialog.svelte';
     import BootBackupPrompt from './lib/Others/BootBackupPrompt.svelte';
+    import StaleBuildNotice from './lib/Others/StaleBuildNotice.svelte';
     import PopupList from './lib/UI/PopupList.svelte';
     import LoadingOverlay from './lib/Others/LoadingOverlay.svelte';
     import Toaster from './lib/UI/GUI/Toaster.svelte';
@@ -316,6 +317,7 @@
     <UpdatePopup />
     <SupportDialog />
     <BootBackupPrompt />
+    <StaleBuildNotice />
     {#if popupStore.children}
         <PopupList />
     {/if}

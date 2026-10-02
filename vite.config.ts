@@ -3,12 +3,32 @@ import { svelte, vitePreprocess } from "@sveltejs/vite-plugin-svelte";
 import wasm from "vite-plugin-wasm";
 import strip from '@rollup/plugin-strip';
 import tailwindcss from '@tailwindcss/vite'
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync } from 'fs';
+import { execSync } from 'child_process';
+import path from 'path';
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'));
 
+// One id per production build: the commit plus the build time, so a rebuild
+// of the same commit (e.g. with local changes) still gets a new id. It is
+// compiled into the client and written to dist/build-id.txt, which the server
+// reads to refuse writes from tabs still running an older build
+// (server/node/build-fence.cjs, src/ts/storage/buildFence.ts).
+function makeBuildId() {
+  let commit = 'nogit';
+  try {
+    commit = execSync('git rev-parse --short=12 HEAD', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim() || commit;
+  } catch {
+    // Not a checkout (release archive): the build time alone keeps ids unique.
+  }
+  return `${commit}-${Date.now().toString(36)}`;
+}
+
 // https://vitejs.dev/config/
 export default defineConfig(({command, mode}) => {
+  // Empty on the dev server: the client then sends no id and is never fenced.
+  const buildId = command === 'build' ? makeBuildId() : '';
+  let outDir = 'dist';
   return {
     // Keep optimizer/config metadata in the project workspace instead of
     // assuming node_modules is writable (portable installs and linked
@@ -16,8 +36,21 @@ export default defineConfig(({command, mode}) => {
     cacheDir: '.vite-cache',
     define: {
       '__APP_VERSION__': JSON.stringify(pkg.version),
+      '__POCKETRISU_BUILD_ID__': JSON.stringify(buildId),
     },
     plugins: [
+      {
+        name: 'pocketrisu-build-id',
+        apply: 'build',
+        configResolved(config) {
+          outDir = path.resolve(config.root, config.build.outDir);
+        },
+        // After every file of the bundle is on disk, so the server never
+        // names a build whose index.html is not there yet.
+        writeBundle() {
+          writeFileSync(path.join(outDir, 'build-id.txt'), `${buildId}\n`);
+        },
+      },
       svelte({
         preprocess: vitePreprocess(),
         onwarn: (warning, handler) => {

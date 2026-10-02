@@ -781,6 +781,32 @@
         "src/ts/serverReplyPush.test.ts",
         "src/ts/process/request/jobFetch.test.ts"
       ]
+    },
+    {
+      "id": "BUILD-WRITE-FENCE",
+      "title": "이전 빌드로 열린 탭의 쓰기 차단",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "server/node/build-fence.cjs",
+        "src/ts/storage/buildFence.ts",
+        "src/lib/Others/StaleBuildNotice.svelte",
+        "vite.config.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "vite.config.ts", "contains": "name: 'pocketrisu-build-id'" },
+        { "file": "server/node/server.cjs", "contains": "app.use(createBuildFence({ readBuildId: readServedBuildId, logger }));" },
+        { "file": "src/ts/storage/nodeStorage.ts", "contains": "addBuildIdHeader(headers)" },
+        { "file": "src/ts/storage/nodeStorage.ts", "contains": "const staleFor = await readStaleBuildRefusal(response)" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "setStaleBuildSaveState({" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "registerUnsavedText(" },
+        { "file": "src/App.svelte", "contains": "<StaleBuildNotice />" }
+      ],
+      "regressionTests": [
+        "server/node/build-fence.test.ts",
+        "test/compat/build-fence.test.ts",
+        "src/ts/storage/buildFence.test.ts",
+        "src/ts/storage/nodeStorage.buildFence.test.ts"
+      ]
     }
   ]
 }

@@ -99,3 +99,17 @@ describe('chatDraft round trip', () => {
         expect(loaded).toBeNull()
     })
 })
+
+describe('on an outdated client build', () => {
+    test('drafts are no longer written; the text stays in the tab', async () => {
+        const { reportStaleBuild, resetBuildFenceForTests } = await import('./buildFence')
+        try {
+            reportStaleBuild('new-build', { reload: vi.fn(), storage: null })
+            flushChatDraft('stale', 'c1', { m: 'kept on screen', t: '' })
+            await loadChatDraft('stale', 'c1') // drain
+            expect(mockStore.has(chatDraftKey('stale', 'c1'))).toBe(false)
+        } finally {
+            resetBuildFenceForTests()
+        }
+    })
+})

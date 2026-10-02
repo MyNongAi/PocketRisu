@@ -27,7 +27,7 @@ import {
     type AssetManifestTuple,
 } from "./storage/nodeStorage";
 import { getExternalAssetContentUrl, isExternalAssetLocation } from "./storage/externalAssets";
-import { supportsPatchSync } from "./platform";
+import { isNodeServer, supportsPatchSync } from "./platform";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
 import { language } from "src/lang";
@@ -37,7 +37,8 @@ import { deepTouch } from "./gui/deepTouch.svelte";
 import { updateLorebooks, deselectCharacter } from "./characters";
 import { applyCharacterOrderCheck, type CharacterOrderCheckOptions } from "./characterOrderCheck";
 import { mergeServerDbWithTrackedLocalChanges, withTrackedCharacters, hasAmbiguousCharacterIds } from "./storage/rebaseMerge";
-import { generationStates, chatGenKey, notifyDatabaseRebased, abortGeneration } from "./process/generationState";
+import { generationStates, chatGenKey, notifyDatabaseRebased, abortGeneration, doingChat as liveGenerationRunning } from "./process/generationState";
+import { onStaleBuild, setStaleBuildSaveState, watchServerBuild } from "./storage/buildFence";
 
 /** A save the server will keep refusing in this state (or one that keeps
  *  conflicting after repeated rebases). Not transient: retrying re-downloads
@@ -750,6 +751,14 @@ export async function saveDb() {
         if (supportsPatchSync) return
         handOffSession()
     })
+    // The server now serves a newer client build (storage/buildFence.ts), so
+    // this page's code is outdated: saving stops here as it does for a
+    // handoff, and the tracker keeps the edits. The fence then reloads the
+    // page, or with work unsaved keeps it open behind the stale-build notice.
+    onStaleBuild(() => {
+        gotChannel = true
+    })
+    if (isNodeServer) watchServerBuild()
 
     // Do not reload merely because the window regained focus. Database and
     // chat writes carry optimistic-concurrency preconditions, so an unrelated
@@ -2129,6 +2138,12 @@ export async function saveDb() {
     // After repeated failures the loop waits until this time before retrying.
     let saveRetryAt = 0
     unsavedWorkImpl = () => savetrys > 0 || hasDirtyHydratedChats()
+    // What a reload into a newer build would lose: the same edit count the
+    // handoff uses, failed saves, unsaved chats, or a reply still streaming.
+    setStaleBuildSaveState({
+        hasUnsavedWork: () => editSeq > savedEditSeq || unsavedWorkImpl() || get(liveGenerationRunning),
+        downloadUnsavedEdits: () => downloadFile(`pocketrisu-unsaved-edits-${Date.now()}.json`, buildUnsavedEditsJson()),
+    })
 
     let consecutiveRetries = 0
 

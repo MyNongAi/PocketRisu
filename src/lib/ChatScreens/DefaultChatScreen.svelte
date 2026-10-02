@@ -44,6 +44,7 @@ import { isMobile } from 'src/ts/platform'
     import { getInlayAsset } from 'src/ts/process/files/inlays';
     import { quickMenu } from 'src/ts/hotkey';
     import { loadChatDraft, scheduleSaveChatDraft, flushChatDraft, removeChatDraft } from 'src/ts/storage/chatDraft';
+    import { registerUnsavedText } from 'src/ts/storage/buildFence';
     import { getChatAssetRenderWindow } from 'src/ts/chatAssetWindow';
     import { chatWriterClaimMessage } from 'src/ts/storage/nodeStorage';
     import { BLANK_FIRST_MESSAGE_INDEX, firstMessagePageNumber, getFirstMessageAtIndex, lastFirstMessagePageNumber, nextFirstMessageIndex, previousFirstMessageIndex } from 'src/ts/firstMessage';
@@ -167,6 +168,11 @@ import { isMobile } from 'src/ts/platform'
         if (!chaId || !chatId || draftLoading) return
         scheduleSaveChatDraft(chaId, chatId, { m, t })
     })
+
+    // Unsent input is work only this screen holds. When the tab turns out to
+    // run an outdated build it is not reloaded away but shown on the
+    // stale-build notice for copying (storage/buildFence.ts).
+    $effect(() => registerUnsavedText(() => [messageInput, messageInputTranslate].filter(Boolean).join('\n\n')))
 
     // Best-effort persist on tab hide / unload (refresh, app switch): the
     // unmount cleanup above does not fire on a hard page teardown.
