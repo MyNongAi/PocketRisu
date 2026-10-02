@@ -4,7 +4,7 @@
     import Suggestion from './Suggestion.svelte';
     import { copyScriptstateCheckpoint, mergeRerollCheckpoint, removeSwipeCheckpoint, restoreScriptstateBeforeReroll, restoreScriptstateSnapshot, restoreShownSwipeScriptstate, snapshotScriptstate } from 'src/ts/chatScriptstateCheckpoint';
     import { deleteShownSwipe, stepSwipe } from 'src/ts/chatSwipes';
-    import { CameraIcon, ChevronUpIcon, ChevronDownIcon, ChevronsUpIcon, ChevronsDownIcon, DatabaseIcon, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2 } from "@lucide/svelte";
+    import { CameraIcon, ChevronUpIcon, ChevronDownIcon, ChevronsUpIcon, ChevronsDownIcon, DatabaseIcon, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2 } from "@lucide/svelte";
     import ShDropdownMenu from 'src/lib/UI/GUI/ShDropdownMenu.svelte';
     import ShDropdownMenuTrigger from 'src/lib/UI/GUI/ShDropdownMenuTrigger.svelte';
     import ShDropdownMenuContent from 'src/lib/UI/GUI/ShDropdownMenuContent.svelte';
@@ -50,6 +50,8 @@ import { isMobile } from 'src/ts/platform'
     import { BLANK_FIRST_MESSAGE_INDEX, firstMessagePageNumber, getFirstMessageAtIndex, lastFirstMessagePageNumber, nextFirstMessageIndex, previousFirstMessageIndex } from 'src/ts/firstMessage';
 
     import Chats from './Chats.svelte';
+    import BtwSidePanel from './BtwSidePanel.svelte';
+    import { btwSideChat, openBtwPanel } from 'src/ts/process/btwSideChat.svelte';
     import Button from '../UI/GUI/Button.svelte';
     import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte';
 
@@ -979,6 +981,14 @@ import { isMobile } from 'src/ts/platform'
         updateInputTranslateSize()
     }
 
+    // A BTW side answer (e.g. a suggested line) goes into the message box;
+    // the user still edits and sends it.
+    async function insertIntoComposer(text: string) {
+        messageInput = messageInput.trim() ? `${messageInput}\n${text}` : text
+        await tick()
+        updateInputSizeAll()
+    }
+
     function updateInputTranslateSize() {
         if(inputTranslateEle) {
             inputTranslateEle.style.height = "0";
@@ -1343,6 +1353,9 @@ import { isMobile } from 'src/ts/platform'
                                 disabled={(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length < 2) || (DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length - 1].role !== 'char')}
                                 onSelect={() => sendContinue()}>
                                 <StepForwardIcon /><span>{language.continueResponse}</span>
+                            </ShDropdownMenuItem>
+                            <ShDropdownMenuItem onSelect={() => openBtwPanel()}>
+                                <MessageCircleQuestionMarkIcon /><span>{language.btwSideChat.menu}</span>
                             </ShDropdownMenuItem>
                             {#if DBState.db.showMenuChatList}
                                 <ShDropdownMenuItem onSelect={() => { openChatList = true }}>
@@ -1739,6 +1752,9 @@ import { isMobile } from 'src/ts/platform'
             {@render composerCluster()}
         </div>
 
+        {#if btwSideChat.open && currentChatReady && currentCharacter?.chaId !== '§playground'}
+            <BtwSidePanel character={currentCharacter} chat={currentChatSlot} onInsert={insertIntoComposer} />
+        {/if}
     {/if}
 </div>
 

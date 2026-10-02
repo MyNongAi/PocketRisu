@@ -807,6 +807,30 @@
         "src/ts/storage/buildFence.test.ts",
         "src/ts/storage/nodeStorage.buildFence.test.ts"
       ]
+    },
+    {
+      "id": "CHAT-BTW-SIDECHAT",
+      "title": "채팅을 건드리지 않는 곁질문(BTW) 패널",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/process/btwSideChat.ts",
+        "src/ts/process/btwSideChat.svelte.ts",
+        "src/lib/ChatScreens/BtwSidePanel.svelte",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/ts/process/request/request.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/btwSideChat.ts", "contains": "export function buildBtwRequestMessages(" },
+        { "file": "src/ts/process/btwSideChat.svelte.ts", "contains": "routeSnapshot: captureChatModelRoute(chat, 'model')" },
+        { "file": "src/ts/process/btwSideChat.svelte.ts", "contains": "skipRequestTrigger: true" },
+        { "file": "src/ts/process/request/request.ts", "contains": "arg.skipRequestTrigger ? null : (arg.currentChar ?? getCurrentCharacter())" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "<BtwSidePanel " }
+      ],
+      "regressionTests": [
+        "src/ts/process/btwSideChat.test.ts",
+        "src/ts/process/btwSideChat.svelte.test.ts",
+        "src/ts/process/request/requestTrigger.test.ts"
+      ]
     }
   ]
 }

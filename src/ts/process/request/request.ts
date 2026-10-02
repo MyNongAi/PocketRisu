@@ -88,6 +88,10 @@ interface requestDataArgument{
     rememberToolUsage?: boolean
     forceStreaming?: boolean
     blockPlugins?: boolean
+    /** Skip the character's 'request' trigger. Its Lua can edit chat
+     *  variables; side requests that must leave the chat alone (the BTW side
+     *  chat) set this. */
+    skipRequestTrigger?: boolean
     forceLocalNetwork?: boolean
     /** Live message metadata persisted with a durable model job so a recovered
      *  message has the same model and token details as the normal write path. */
@@ -191,7 +195,7 @@ export async function requestChatData(arg:requestDataArgument, model:ModelModeEx
             }
             
             try{
-                const currentChar = arg.currentChar ?? getCurrentCharacter()
+                const currentChar = arg.skipRequestTrigger ? null : (arg.currentChar ?? getCurrentCharacter())
                 const currentChat = arg.currentChat ?? getCurrentChat()
                 if(currentChar){
                     const perf = performance.now()
