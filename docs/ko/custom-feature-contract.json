@@ -127,6 +127,8 @@
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "holdHeight" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "revealNewestMessage" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "function keepReaderAnchor(): boolean" },
+        { "file": "src/styles.css", "contains": "overflow-anchor: none;" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "unsubscribers.push(ReloadChatPointer.subscribe((pointers) => {" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "if (greeting) candidates.push(greeting)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "renderRevision={chatBodyRevision + chatReloadPointer}" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "flex flex-col overflow-y-auto overscroll-y-contain relative default-chat-screen" }

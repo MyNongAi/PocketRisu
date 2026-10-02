@@ -486,6 +486,15 @@ body {
   }
 }
 
+/* The chat keeps the reader's place itself (Chats.svelte reader anchor, as
+   Safari, which has no scroll anchoring, always needed). Chromium's own
+   scroll anchoring picks its anchor in DOM order, which in the newest-first
+   message list is the lowest message on screen: a panel that a button
+   opened in a message above it moved the view by the panel's height. */
+.default-chat-screen {
+  overflow-anchor: none;
+}
+
 * {
   font-family: var(--risu-font-family);
 }
