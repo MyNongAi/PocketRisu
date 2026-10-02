@@ -361,7 +361,19 @@
         if (needed < tailSlack) setTailSlack(needed)
     }
 
+    const GREETING_SLOT = 'greeting'
+
+    // The greeting is drawn by DefaultChatScreen above this list, in the same
+    // scroller. It must be an anchor too: anchored to the first message below
+    // it instead, a greeting that grew (a CSS button opening a panel) pushed
+    // itself up out of view by exactly the growth.
+    function greetingElement(): HTMLElement | null {
+        const element = getScroller()?.querySelector<HTMLElement>('.risu-chat[data-chat-index="-1"]') ?? null
+        return element && !chatBody?.contains(element) ? element : null
+    }
+
     function containerOf(anchor: ReaderAnchor): HTMLElement | null {
+        if (anchor.slot === GREETING_SLOT) return greetingElement()
         if (anchor.chatId) {
             const byId = chatBody.querySelector<HTMLElement>(`:scope > [data-chat-id="${CSS.escape(anchor.chatId)}"]`)
             if (byId) return byId
@@ -376,7 +388,10 @@
         const top = sc.getBoundingClientRect().top
         let best: HTMLElement | null = null
         let bestTop = Infinity
-        for (const child of Array.from(chatBody.children) as HTMLElement[]) {
+        const greeting = greetingElement()
+        const candidates = Array.from(chatBody.children) as HTMLElement[]
+        if (greeting) candidates.push(greeting)
+        for (const child of candidates) {
             const rect = child.getBoundingClientRect()
             if (rect.bottom <= top || rect.height === 0) continue
             if (rect.top < bestTop) {
@@ -384,8 +399,9 @@
                 best = child
             }
         }
-        readerAnchor = best?.dataset.chatSlot
-            ? { chatId: best.dataset.chatId ?? null, slot: best.dataset.chatSlot, offsetTop: bestTop - top, roomId: getCurrentChatRoomId() }
+        const slot = best && best === greeting ? GREETING_SLOT : best?.dataset.chatSlot
+        readerAnchor = best && slot
+            ? { chatId: best === greeting ? null : best.dataset.chatId ?? null, slot, offsetTop: bestTop - top, roomId: getCurrentChatRoomId() }
             : null
     }
 
