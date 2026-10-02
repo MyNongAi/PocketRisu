@@ -866,6 +866,29 @@
         "server/node/import-asset-journal.test.ts",
         "server/node/import-rollback.test.ts"
       ]
+    },
+    {
+      "id": "CHAT-BRANCH-GRAPH",
+      "title": "리롤·분기 읽기 전용 그래프",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/branches.ts",
+        "src/ts/gui/branchGraphSource.ts",
+        "src/ts/gui/branchGraphActions.ts",
+        "src/lib/Others/BranchGraphModal.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/gui/branches.ts", "contains": "export function buildBranchForest(" },
+        { "file": "src/ts/gui/branches.ts", "contains": "export function pickChatsToLoad(" },
+        { "file": "src/ts/storage/nodeStorage.ts", "contains": "async peekChatContent(" },
+        { "file": "src/ts/chatSwipes.ts", "contains": "export function showSwipe(" },
+        { "file": "src/lib/Others/AlertComp.svelte", "contains": "import('./BranchGraphModal.svelte')" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "alertStore.set({ type: 'branches', msg: '' })" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/branches.test.ts",
+        "src/ts/chatSwipes.test.ts"
+      ]
     }
   ]
 }

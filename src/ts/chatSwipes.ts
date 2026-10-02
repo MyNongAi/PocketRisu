@@ -25,6 +25,20 @@ export function findRerollTargetIndex(messages: readonly SwipeMessage[]): number
     return -1
 }
 
+/**
+ * Index of the newest reply: the last character message that is neither a
+ * comment nor disabled, even when the user spoke after it; -1 when there is
+ * none. Its swipes carry the chat-variable checkpoint, so showing another of
+ * them restores the variables (chatScriptstateCheckpoint.ts).
+ */
+export function findLastReplyIndex(messages: readonly (SwipeMessage | null | undefined)[]): number {
+    for (let i = messages.length - 1; i >= 0; i--) {
+        const message = messages[i]
+        if (message && message.role === 'char' && !message.isComment && !message.disabled) return i
+    }
+    return -1
+}
+
 /** Number of swipes the message can be browsed through (0 or 1 = none). */
 export function swipeCount(message: SwipeMessage | null | undefined): number {
     return Array.isArray(message?.swipes) ? message.swipes.length : 0
@@ -50,6 +64,18 @@ export function stepSwipe(message: SwipeMessage, step: -1 | 1): boolean {
     if (!Array.isArray(swipes) || swipes.length === 0 || message.swipeId === undefined) return false
     message.swipeId = wrapSwipeIndex(message.swipeId + step, swipes.length)
     message.data = swipes[message.swipeId]
+    return true
+}
+
+/**
+ * Show swipe `index` directly (the branch graph jumps to one). Returns false
+ * when the message has no such swipe.
+ */
+export function showSwipe(message: SwipeMessage, index: number): boolean {
+    const swipes = message.swipes
+    if (!Array.isArray(swipes) || !Number.isInteger(index) || index < 0 || index >= swipes.length) return false
+    message.swipeId = index
+    message.data = swipes[index]
     return true
 }
 

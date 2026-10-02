@@ -18,7 +18,6 @@
     import SelectInput from "../UI/GUI/SelectInput.svelte";
     import OptionInput from "../UI/GUI/OptionInput.svelte";
     import { language } from 'src/lang';
-    import { getFirstMessageAtIndex } from 'src/ts/firstMessage';
 
     import { fetchRequestLogs, type RequestLogEntry } from 'src/ts/requestLog';
     import { alertStore, selectedCharID, togglePresetsOpenStore } from "src/ts/stores.svelte";
@@ -34,8 +33,7 @@
     import ModuleChatMenu from "../Setting/Pages/Module/ModuleChatMenu.svelte";
     import { ColorSchemeTypeStore } from "src/ts/gui/colorscheme";
     import Help from "./Help.svelte";
-    import { getChatBranches } from "src/ts/gui/branches";
-    import { getCurrentCharacter, type TogglePreset, applyToggleValues, snapshotCurrentToggleValues } from "src/ts/storage/database.svelte";
+    import { type TogglePreset, applyToggleValues, snapshotCurrentToggleValues } from "src/ts/storage/database.svelte";
     import { alertInput, alertConfirm, alertError, alertNormalWait, notifySuccess } from "src/ts/alert";
     import { selectSingleFile } from "src/ts/util";
     import { translateStackTrace } from "../../ts/sourcemap";
@@ -76,22 +74,8 @@
     let cardExportType2 = $state('')
     let cardLicense = $state('')
     let generationInfoMenuIndex = $state(0)
-    let branchHover:null|{
-        x:number,
-        y:number,
-        content:string,
-    } = $state(null)
-    // Branch tree rows: y=0 is the greeting (not part of chat.message), the
-    // rest map to message[y-1]. Indexing message[-1] for the first row threw
-    // a TypeError on every hover.
-    function branchNodeContent(obj: { chatId: number, y: number }): string {
-        const char = getCurrentCharacter()
-        const chat = char.chats[obj.chatId]
-        if(obj.y === 0){
-            return getFirstMessageAtIndex(char, chat.fmIndex)
-        }
-        return chat.message[obj.y - 1]?.data ?? ''
-    }
+    // The branch graph is large and rarely opened: load it on demand.
+    const loadBranchGraphModal = () => import('./BranchGraphModal.svelte').then(m => m.default)
     let copiedKey: string | null = $state(null)
     let togglePresetShowAll = $state(false)
 
@@ -128,9 +112,6 @@
             input = ''
         } else {
             input = $alertStore.defaultValue ?? ''
-        }
-        if($alertStore.type !== 'branches'){
-            branchHover = null
         }
         if($alertStore.type !== 'cardexport'){
             cardExportType = ''
@@ -624,75 +605,13 @@
         </div>
     </div>
 {:else if $alertStore.type === 'branches'}
-    <div class="absolute w-full h-full z-50 bg-black/80 flex justify-center items-center overflow-x-auto overflow-y-auto">
-        {#if branchHover !== null}
-            <div class="z-30 whitespace-pre-wrap p-4 text-textcolor bg-darkbg border-darkborderc border rounded-md absolute" style="top: {branchHover.y * 80 + 24}px; left: {(branchHover.x + 1) * 80 + 24}px">
-                {branchHover.content}
-            </div>
-        {/if}
-
-        <div class="x-50 right-2 top-2 absolute">
-            <button class="bg-darkbg border-darkborderc border p-2 rounded-md" onclick={() => {
-                alertStore.set({
-                    type: 'none',
-                    msg: ''
-                })
-            }}>
-                <XIcon />
-            </button>
-        </div>
-
-        {#each getChatBranches() as obj}
-            <!-- svelte-ignore a11y_click_events_have_key_events -->
-            <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-            <div
-                role="table"
-                class="peer w-12 h-12 z-20 bg-bgcolor border border-darkborderc rounded-full flex justify-center items-center overflow-y-auto absolute"
-                style="top: {obj.y * 80 + 24}px; left: {obj.x * 80 + 24}px"
-                onmouseenter={() => {
-                    if(branchHover === null){
-                        branchHover = {
-                            x: obj.x,
-                            y: obj.y,
-                            content: branchNodeContent(obj)
-                        }
-                    }
-                }}
-                onclick={() => {
-                    if(branchHover === null){
-                        branchHover = {
-                            x: obj.x,
-                            y: obj.y,
-                            content: branchNodeContent(obj)
-                        }
-                    }
-                }}
-                onmouseleave={() => {
-                    branchHover = null
-                }}
-            >
-                
-            </div>
-            {#if obj.connectX === obj.x}
-                {#if obj.multiChild}
-                    <div class="w-0 h-20 border-x border-x-red-500 absolute" style="top: {(obj.y-1) * 80 + 24}px; left: {obj.x * 80 + 45}px">
-
-                    </div>
-                {:else}
-                    <div class="w-0 h-20 border-x border-x-blue-500 absolute" style="top: {(obj.y-1) * 80 + 24}px; left: {obj.x * 80 + 45}px">
-
-                    </div>
-                {/if}
-            {:else if obj.connectX !== -1}
-                <div class="w-0 h-10 border-x border-x-red-500 absolute" style="top: {(obj.y) * 80}px; left: {obj.x * 80 + 45}px">
-
-                </div>
-                <div class="h-0 border-y border-y-red-500 absolute" style="top: {(obj.y) * 80}px; left: {obj.connectX * 80 + 46}px" style:width={Math.abs((obj.x - obj.connectX) * 80) + 'px'}>
-
-                </div>
-            {/if}
-        {/each}
-    </div>
+    {#await loadBranchGraphModal() then BranchGraphModal}
+        <BranchGraphModal onclose={() => {
+            if($alertStore.type === 'branches'){
+                alertStore.set({ type: 'none', msg: '' })
+            }
+        }} />
+    {/await}
 {/if}
 
 <ShDialog

@@ -46,6 +46,8 @@ HaejeokRisu `b6780`의 `BranchGraphModal.svelte`와 `src/ts/gui/branches.ts`는 
 4. 그래프 노드를 누르면 기존 채팅 또는 스와이프로 이동하되, 그래프를 보는 것만으로 저장 형식을 변경하지 않습니다.
 5. 영속 SQL 브랜치 저장은 별도의 장기 실험으로 남기며 `database.bin` 백업 호환을 먼저 증명해야 합니다.
 
+2026-10-02 이식: 1~4단계를 구현했습니다(`CHAT-BRANCH-GRAPH`). `src/ts/gui/branches.ts`가 호환 projection과 레이아웃(Haejeok의 contour 트리·packed lane·git row)을, `src/lib/Others/BranchGraphModal.svelte`가 트리·타임라인·Git 보기와 확대·축소·핀치·현재 경로 강조를 맡습니다. 비활성 채팅은 그래프를 열 때만 한도 안에서 읽고, 화면 밖 노드는 그리지 않습니다. 방사형 보기는 이식하지 않았고, 5단계는 계속 보류합니다.
+
 ## 이미 PocketRisu 개조판에 있던 같은 철학
 
 - 채팅 payload를 서버에 두고 현재 채팅만 hydration하는 구조

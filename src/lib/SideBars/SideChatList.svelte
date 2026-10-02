@@ -470,7 +470,7 @@
             }}>
                 <PencilIcon size={18}/>
             </button>
-            <button class="text-textcolor2 hover:text-primary mr-2 cursor-pointer" onclick={() => {
+            <button class="text-textcolor2 hover:text-primary mr-2 cursor-pointer" title={language.branchGraphTitle} aria-label={language.branchGraphTitle} onclick={() => {
                 alertStore.set({
                   type: "branches",
                   msg: ""

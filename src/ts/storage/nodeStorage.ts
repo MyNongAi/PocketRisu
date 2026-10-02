@@ -1969,6 +1969,22 @@ export class NodeStorage{
     }
 
     /**
+     * Read a chat body without adopting it: no ETag is recorded (nor any delta
+     * base or local copy, which live in chatDeltaSync), so a read-only view
+     * such as the branch graph never changes what a later save of that chat
+     * is checked against.
+     */
+    async peekChatContent(chaId: string, chatIndex: number, chatId: string, signal?: AbortSignal): Promise<any | null> {
+        const da = await this.authFetchGetWithFirstByteTimeout(`/api/chat-content/${encodeURIComponent(chaId)}/${chatIndex}`, {
+            headers: { 'x-chat-id': chatId },
+            signal,
+        })
+        if (da.status === 404) return null
+        if (da.status < 200 || da.status >= 300) throw new Error(`peekChatContent error: ${da.status}`)
+        return normalizeChat(await decodeRisuSave(new Uint8Array(await da.arrayBuffer())))
+    }
+
+    /**
      * Chat delta sync (see server `sendChatContent`): with a base, the server
      * answers with only the messages after it when the prefix verifies —
      * `deltaBase` is then set and `chat.message` holds just the rest.

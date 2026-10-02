@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
     deleteShownSwipe,
+    findLastReplyIndex,
     findRerollTargetIndex,
     hasBrowsableSwipes,
+    showSwipe,
     stepSwipe,
     swipeCount,
     wrapSwipeIndex,
@@ -96,5 +98,34 @@ describe('hasBrowsableSwipes', () => {
         expect(hasBrowsableSwipes(char('a'))).toBe(false)
         expect(hasBrowsableSwipes({ role: 'user', data: 'u', swipes: ['u', 'v'] })).toBe(false)
         expect(swipeCount(null)).toBe(0)
+    })
+})
+
+describe('findLastReplyIndex', () => {
+    it('is the last reply even when the user spoke after it', () => {
+        expect(findLastReplyIndex([user(), char(), user()])).toBe(1)
+        expect(findLastReplyIndex([user(), char(), char('note', { isComment: true }), char('off', { disabled: true })])).toBe(1)
+    })
+
+    it('is -1 without a reply and skips empty slots', () => {
+        expect(findLastReplyIndex([user()])).toBe(-1)
+        expect(findLastReplyIndex([char(), null, undefined])).toBe(0)
+    })
+})
+
+describe('showSwipe', () => {
+    it('shows the swipe at the index', () => {
+        const message = char('a', { swipes: ['a', 'b', 'c'], swipeId: 0 })
+        expect(showSwipe(message, 2)).toBe(true)
+        expect(message).toMatchObject({ swipeId: 2, data: 'c' })
+    })
+
+    it('refuses an index the message does not have', () => {
+        const message = char('a', { swipes: ['a', 'b'], swipeId: 0 })
+        expect(showSwipe(message, 2)).toBe(false)
+        expect(showSwipe(message, -1)).toBe(false)
+        expect(showSwipe(message, 0.5)).toBe(false)
+        expect(showSwipe(char('a'), 0)).toBe(false)
+        expect(message).toMatchObject({ swipeId: 0, data: 'a' })
     })
 })

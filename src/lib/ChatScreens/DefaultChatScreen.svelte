@@ -3,8 +3,8 @@
 
     import Suggestion from './Suggestion.svelte';
     import { copyScriptstateCheckpoint, mergeRerollCheckpoint, removeSwipeCheckpoint, restoreScriptstateBeforeReroll, restoreScriptstateSnapshot, restoreShownSwipeScriptstate, snapshotScriptstate } from 'src/ts/chatScriptstateCheckpoint';
-    import { deleteShownSwipe, stepSwipe } from 'src/ts/chatSwipes';
-    import { CameraIcon, ChevronUpIcon, ChevronDownIcon, ChevronsUpIcon, ChevronsDownIcon, DatabaseIcon, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2 } from "@lucide/svelte";
+    import { deleteShownSwipe, findLastReplyIndex, stepSwipe } from 'src/ts/chatSwipes';
+    import { CameraIcon, ChevronUpIcon, ChevronDownIcon, ChevronsUpIcon, ChevronsDownIcon, DatabaseIcon, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2, GitBranch } from "@lucide/svelte";
     import ShDropdownMenu from 'src/lib/UI/GUI/ShDropdownMenu.svelte';
     import ShDropdownMenuTrigger from 'src/lib/UI/GUI/ShDropdownMenuTrigger.svelte';
     import ShDropdownMenuContent from 'src/lib/UI/GUI/ShDropdownMenuContent.svelte';
@@ -25,7 +25,7 @@
     import { sleep } from "../../ts/util";
     import { language } from "../../lang";
     import { isExpTranslator, translate } from "../../ts/translator/translator";
-    import { alertConfirm, alertError, alertWait, notifySuccess, notifyError, notifyInfo, notifyWarning } from "../../ts/alert";
+    import { alertConfirm, alertError, alertStore, alertWait, notifySuccess, notifyError, notifyInfo, notifyWarning } from "../../ts/alert";
     import { playNotificationSound } from '../../ts/notificationSound'
 import { isMobile } from 'src/ts/platform'
     import { processScript } from "src/ts/process/scripts";
@@ -631,10 +631,8 @@ import { isMobile } from 'src/ts/platform'
     function getLastCharMsgIn(chat: ChatData | null | undefined) {
         const msgs = chat?.message
         if (!msgs || msgs.length === 0) return null
-        for (let i = msgs.length - 1; i >= 0; i--) {
-            if (msgs[i].role === 'char' && !msgs[i].isComment && !msgs[i].disabled) return msgs[i]
-        }
-        return null
+        const index = findLastReplyIndex(msgs)
+        return index === -1 ? null : msgs[index]
     }
 
     function getLastCharMsg() {
@@ -1362,6 +1360,9 @@ import { isMobile } from 'src/ts/platform'
                                     <DatabaseIcon /><span>{language.chatList}</span>
                                 </ShDropdownMenuItem>
                             {/if}
+                            <ShDropdownMenuItem onSelect={() => { alertStore.set({ type: 'branches', msg: '' }) }}>
+                                <GitBranch /><span>{language.branchGraphTitle}</span>
+                            </ShDropdownMenuItem>
                             {#each additionalChatMenu as menu}
                                 <ShDropdownMenuItem onSelect={() => { menu.callback() }}>
                                     <PluginDefinedIcon ico={menu} /><span>{menu.name}</span>
