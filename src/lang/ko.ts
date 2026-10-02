@@ -1204,6 +1204,7 @@ export const languageKorean = {
   download: "다운로드",
   edit: "수정",
   enableGlobal: "글로벌 활성화",
+  moduleAutoForBot: "이 봇 전용 모듈이라 이 봇 채팅에서 자동으로 켜져 있어요. 누르면 모든 채팅에서 켜는 글로벌 활성화가 돼요.",
   chatModulesInfo:
     "모듈을 이 채팅 또는 이 캐릭터 한정으로 활성화/비활성화합니다. 말풍선 버튼은 채팅, 사람 버튼은 캐릭터입니다. 지구본이 표시된 모듈은 전역으로 켜져 있어 모든 채팅에 적용되며, 설정 > 모듈에서 바꿀 수 있습니다.",
   moduleScopeChat: "이 채팅에서 사용",
@@ -2991,6 +2992,9 @@ export const languageKorean = {
     canvasFailed: "브라우저가 이미지를 그리지 못했어요.",
   },
   logCaptureButton: "메시지 ☰ 메뉴에 ✂️ 로그 이미지",
+  favoritesFolderName: "즐겨찾기",
+  autoAllowLowLevelImport: "가져올 때 저수준 접근 자동 허용",
+  favoritesFolder: "즐겨찾기 봇을 맨 위 ★ 폴더로 묶기",
   logImageWidth: "로그 이미지 가로 폭",
   logImageTextScale: "로그 이미지 글자 크기",
   logImageHeader: "로그 이미지 맨 위에 봇 이름과 채팅 제목",

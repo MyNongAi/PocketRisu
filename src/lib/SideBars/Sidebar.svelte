@@ -26,6 +26,8 @@
     import { DBState, openCharacterManager } from 'src/ts/stores.svelte';
     import { tooltipRight } from "src/ts/gui/tooltip";
     import { folderIconComponent } from "../CharacterManager/folderIcons";
+    import { syncFavoritesWithFolderMoves } from "src/ts/favoritesFolder";
+    import { characterModuleLink as characterModuleLinkState } from "src/ts/gui/pairedModules";
     import BarIcon from "./BarIcon.svelte";
     import SidebarIndicator from "./SidebarIndicator.svelte";
     import {
@@ -403,6 +405,8 @@
 
   function commitSidebarOrder(nextOrder: Array<string | folder> | null) {
     if(!nextOrder || isEqual(nextOrder, DBState.db.characterOrder)) return
+    // A drag into or out of the ★ folder sets or clears the favorite.
+    syncFavoritesWithFolderMoves(DBState.db.characterOrder, nextOrder, DBState.db.characters)
     DBState.db.characterOrder = nextOrder
     checkCharOrder()
   }
@@ -423,6 +427,13 @@
   function setSplitCatalogMode(enabled:boolean){
     splitCatalogMode = enabled
     localStorage.setItem(splitCatalogStorageKey, splitCatalogMode ? 'split' : 'normal')
+  }
+
+  // Module ids that exist, for the chain mark on bots with a module of their
+  // own (character.modules, e.g. a Realm companion module).
+  let existingModuleIds = $derived(new Set((DBState.db.modules ?? []).map((module) => module?.id).filter(Boolean)))
+  function characterModuleLink(character: { modules?: string[] } | undefined) {
+    return characterModuleLinkState(character, existingModuleIds)
   }
 
   function favoriteCharacterIds(): Set<string> {
@@ -528,7 +539,7 @@
     const selected = parseInt(await alertSelect([
       '봇 설정 수정',
       '제목 색변경',
-      character.favorite ? '즐겨찾기 해제' : '즐겨찾기 (맨위로)',
+      character.favorite ? '즐겨찾기 해제' : DBState.db.nodeOnlyFavoritesFolder !== false ? '즐겨찾기 (★ 폴더로)' : '즐겨찾기 (맨위로)',
       language.remove,
       language.cancel,
     ], characterMenuInfo(character, makeAgoText)))
@@ -1044,6 +1055,7 @@
                       titleColor={listTitleColor(DBState.db.characters[folderChar.index]?.titleColor, Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) > 0)}
                       missingAssets={Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) > 0}
                       missingAssetCount={Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) || 0}
+                      moduleLink={characterModuleLink(DBState.db.characters[folderChar.index])}
                       realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[folderChar.index])}
                       chaId={DBState.db.characters[folderChar.index]?.chaId}
                       sourceBadge={folderChar.sourceBadge}
@@ -1175,6 +1187,7 @@
               titleColor={listTitleColor(DBState.db.characters[normalChar.index]?.titleColor, Number(DBState.db.characters[normalChar.index]?.sourceInfo?.missingAssetCount) > 0)}
               missingAssets={Number(DBState.db.characters[normalChar.index]?.sourceInfo?.missingAssetCount) > 0}
               missingAssetCount={Number(DBState.db.characters[normalChar.index]?.sourceInfo?.missingAssetCount) || 0}
+              moduleLink={characterModuleLink(DBState.db.characters[normalChar.index])}
               realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[normalChar.index])}
               chaId={DBState.db.characters[normalChar.index]?.chaId}
               sourceBadge={normalChar.sourceBadge}
@@ -1522,6 +1535,7 @@
               titleColor={listTitleColor(DBState.db.characters[char.index]?.titleColor, Number(DBState.db.characters[char.index]?.sourceInfo?.missingAssetCount) > 0)}
               missingAssets={Number(DBState.db.characters[char.index]?.sourceInfo?.missingAssetCount) > 0}
               missingAssetCount={Number(DBState.db.characters[char.index]?.sourceInfo?.missingAssetCount) || 0}
+              moduleLink={characterModuleLink(DBState.db.characters[char.index])}
               realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[char.index])}
               chaId={DBState.db.characters[char.index]?.chaId}
               sourceBadge={char.sourceBadge}
@@ -1685,6 +1699,7 @@
                     titleColor={listTitleColor(DBState.db.characters[char2.index]?.titleColor, Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) > 0)}
                     missingAssets={Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) > 0}
                     missingAssetCount={Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) || 0}
+                    moduleLink={characterModuleLink(DBState.db.characters[char2.index])}
                     realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[char2.index])}
                     chaId={DBState.db.characters[char2.index]?.chaId}
                     sourceBadge={char2.sourceBadge}
@@ -1941,6 +1956,7 @@
                   titleColor={listTitleColor(DBState.db.characters[rc.index]?.titleColor, Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0)}
                   missingAssets={Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0}
                   missingAssetCount={Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) || 0}
+                  moduleLink={characterModuleLink(DBState.db.characters[rc.index])}
                   realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[rc.index])}
                   chaId={DBState.db.characters[rc.index]?.chaId}
                   sourceBadge={rc.sourceBadge}

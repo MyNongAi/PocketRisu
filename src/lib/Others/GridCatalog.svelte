@@ -17,6 +17,7 @@
     import { exportChar } from "src/ts/characterCards";
     import { alertConfirm, alertSelect } from "src/ts/alert";
     import { isFolderEntry, moveCharacterToFolder, setHidden } from "src/ts/characterOrder";
+    import { syncFavoritesWithFolderMoves } from "src/ts/favoritesFolder";
     import { isDeactivatedSystemFolder } from "src/ts/deactivatedCharacterFolders";
     import MobileCharacters from "../Mobile/MobileCharacters.svelte";
     import { getCharacterAssetCount } from "src/ts/gui/characterAssetCount";
@@ -61,7 +62,9 @@
         const selected = Number.parseInt(await alertSelect(options))
         if(!Number.isInteger(selected) || selected >= options.length - 1) return
         const folderId = selected < folders.length ? folders[selected].id : undefined
-        DBState.db.characterOrder = moveCharacterToFolder(DBState.db.characterOrder, chaId, folderId)
+        const next = moveCharacterToFolder(DBState.db.characterOrder, chaId, folderId)
+        syncFavoritesWithFolderMoves(DBState.db.characterOrder, next, DBState.db.characters)
+        DBState.db.characterOrder = next
         checkCharOrder()
     }
 

@@ -15,6 +15,7 @@
  */
 import isEqual from 'lodash/isEqual'
 import { dissolveSingletonFolders, pruneHiddenCharacterIds, type OrderEntry } from './characterOrder'
+import { gatherFavoritesFolder } from './favoritesFolder'
 import { normalizeCharacterFavoriteOrder } from './characterRecentOrder'
 import { arrangeDeactivatedFolders, isDeactivatedGroupingEnabled } from './deactivatedCharacterFolders'
 import type { ArchivedCharacterStub, character } from './storage/database.svelte'
@@ -25,11 +26,14 @@ export interface CharacterOrderDatabase {
     nodeOnlyArchivedCharacters?: ArchivedCharacterStub[]
     nodeOnlyHiddenCharacterIds?: string[]
     nodeOnlyGroupDeactivatedCharacters?: boolean
+    nodeOnlyFavoritesFolder?: boolean
 }
 
 export interface CharacterOrderCheckOptions {
     /** Clock for the idle-age buckets (tests); defaults to Date.now(). */
     now?: number
+    /** Name of a newly made ★ favorites folder (the app passes the localized one). */
+    favoritesFolderName?: string
 }
 
 /** Returns true when anything in `db` was written. */
@@ -102,13 +106,19 @@ export function applyCharacterOrderCheck(db: CharacterOrderDatabase, options: Ch
     // deactivated member lands in its age folder in this same run. A member
     // released because the others were deleted goes to the top of the list
     // (after favorites), where the user can see it left the folder.
-    const arranged = arrangeDeactivatedFolders({
-        order: dissolveSingletonFolders(cleaned, previousOrder, { releaseToTop: true }), stubs, activeIds, enabled: grouping, now,
-    })
-    const next = normalizeCharacterFavoriteOrder(
-        arranged,
-        new Set(db.characters.filter((char) => char.favorite && !char.trashTime).map((char) => char.chaId)),
+    // Loose favorites go into the ★ folder at the top before the idle-age
+    // arrangement, so a member that was deactivated is released in time to
+    // land in its age folder.
+    const favoriteIds = new Set(db.characters.filter((char) => char.favorite && !char.trashTime).map((char) => char.chaId))
+    const withFavorites = gatherFavoritesFolder(
+        dissolveSingletonFolders(cleaned, previousOrder, { releaseToTop: true }),
+        favoriteIds,
+        { enabled: db.nodeOnlyFavoritesFolder !== false, name: options.favoritesFolderName ?? '즐겨찾기' },
     )
+    const arranged = arrangeDeactivatedFolders({
+        order: withFavorites, stubs, activeIds, enabled: grouping, now,
+    })
+    const next = normalizeCharacterFavoriteOrder(arranged, favoriteIds)
     if (!isEqual(next, currentOrder)) {
         db.characterOrder = next
         wrote = true

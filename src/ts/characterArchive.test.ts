@@ -467,6 +467,8 @@ describe('idle-age folders on the real deactivation and reactivation paths', () 
         const box = { id: 'box', name: 'Box', color: 'blue', data: ['s1', 's2'] }
         state.db = {
             characters: [card('fav', { favorite: true }), card('a')],
+            // Loose favorites at the top level (the ★ folder off; favoritesFolder.test.ts covers it).
+            nodeOnlyFavoritesFolder: false,
             characterOrder: ['fav', 'a', box, 'x'],
             nodeOnlyArchivedCharacters: [archivedStub('s1', 20), archivedStub('s2', 3), archivedStub('x', 40)],
         }
@@ -480,6 +482,8 @@ describe('idle-age folders on the real deactivation and reactivation paths', () 
     test('reactivating a loose card takes it out of its age folder to the top', async () => {
         state.db = {
             characters: [card('fav', { favorite: true }), card('a')],
+            // Loose favorites at the top level (the ★ folder off; favoritesFolder.test.ts covers it).
+            nodeOnlyFavoritesFolder: false,
             characterOrder: ['fav', 'a', 's', 't'],
             nodeOnlyArchivedCharacters: [archivedStub('s', 20), archivedStub('t', 21)],
         }

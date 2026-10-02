@@ -56,6 +56,8 @@ export interface RisuModule{
      * again. Ignored by upstream clients.
      */
     nodeOnlyProtonShare?: string
+    /** Bots this module was paired with (character.modules), for the red chain once they are gone (gui/pairedModules.ts). */
+    nodeOnlyPairedCharacterIds?: string[]
 }
 
 /** Inserts modules and records them as the newest catalog entries. */
@@ -472,8 +474,9 @@ export async function importModuleFile(
             delete importData.assetManifest
         }
 
-        if(importData.lowLevelAccess){
-            const conf = await alertConfirm(language.lowLevelAccessConfirm)
+        // Asked only when "allow low-level access on import" is turned off (on by default).
+        if(importData.lowLevelAccess && getDatabase().nodeOnlyAutoAllowLowLevelImport === false){
+            const conf = await alertConfirm(language.lowLevelAccessConfirm, { stayOpen: true })
             if(!conf) return
         }
         return finish(importData)

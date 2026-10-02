@@ -2,7 +2,7 @@
     import { language } from "src/lang";
     import SettingPage from "src/lib/UI/GUI/SettingPage.svelte";
 
-    import { DBState } from 'src/ts/stores.svelte';
+    import { DBState, selectedCharID } from 'src/ts/stores.svelte';
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
     import ShDropdownMenuItem from "src/lib/UI/GUI/ShDropdownMenuItem.svelte";
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
@@ -26,7 +26,7 @@
     import { FileDropSurface } from "src/ts/gui/fileDropSurface.svelte";
     import FileDropIndicator from "src/lib/UI/GUI/FileDropIndicator.svelte";
     import PairedModuleMark from "src/lib/UI/GUI/PairedModuleMark.svelte";
-    import { charactersByPairedModule } from "src/ts/gui/pairedModules";
+    import { moduleLinks } from "src/ts/gui/pairedModules";
     let tempModule:RisuModule = $state({
         name: '',
         description: '',
@@ -84,6 +84,12 @@
 
     function isGlobal(rmodule: RisuModule) {
         return DBState.db.enabledModules.includes(rmodule.id)
+    }
+
+    // A module the open bot has as its own (character.modules) is on by
+    // itself in that bot's chats: drawn like the other automatic case.
+    function isBotModule(rmodule: RisuModule) {
+        return !!DBState.db.characters[$selectedCharID]?.modules?.includes(rmodule.id)
     }
 
     function isIntegrated(rmodule: RisuModule) {
@@ -284,7 +290,7 @@
         return listTitleColor(folder.titleColor, indexes.some((index) => hasMissingAssets(displayModules[index])))
     }
 
-    let pairedModules = $derived(charactersByPairedModule(DBState.db.characters))
+    let pairedModules = $derived(moduleLinks(DBState.db.modules, DBState.db.characters, DBState.db.nodeOnlyArchivedCharacters ?? []))
 
     // Files dragged in from outside onto the catalog import as modules, a CHARX
     // too (anywhere else it imports as a character).
@@ -383,7 +389,7 @@
                 <Waypoints size={18} class="shrink-0 text-textcolor2" />
             {/if}
             <div class="flex flex-col min-w-0 grow">
-                <span class="truncate text-textcolor" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(rmodule))}>{#if hasMissingAssets(rmodule)}<span aria-label="에셋 누락" title="에셋 누락">❗</span> {/if}<PairedModuleMark names={pairedModules.get(rmodule.id)} />{rmodule.favorite ? '★ ' : ''}{rmodule.name}</span>
+                <span class="truncate text-textcolor" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(rmodule))}>{#if hasMissingAssets(rmodule)}<span aria-label="에셋 누락" title="에셋 누락">❗</span> {/if}<PairedModuleMark link={pairedModules.get(rmodule.id)} />{rmodule.favorite ? '★ ' : ''}{rmodule.name}</span>
                 <span class="text-xs text-textcolor2 truncate">
                     <span
                         class:text-sky-300={source.label === '로컬'}
@@ -395,8 +401,8 @@
                     · 에셋 {moduleAssetCount(rmodule)}개 · {rmodule.description || 'No description provided'}
                 </span>
             </div>
-            <button class="no-sort shrink-0 p-1 cursor-pointer {isGlobal(rmodule) ? 'text-blue-500' : isIntegrated(rmodule) ? 'text-amber-500 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
-                use:tooltip={language.enableGlobal}
+            <button class="no-sort shrink-0 p-1 cursor-pointer {isGlobal(rmodule) ? 'text-blue-500' : isIntegrated(rmodule) || isBotModule(rmodule) ? 'text-amber-500 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
+                use:tooltip={!isGlobal(rmodule) && isBotModule(rmodule) ? language.moduleAutoForBot : language.enableGlobal}
                 onclick={(e) => { e.stopPropagation(); toggleGlobal(rmodule) }}>
                 <Globe size={18}/>
             </button>

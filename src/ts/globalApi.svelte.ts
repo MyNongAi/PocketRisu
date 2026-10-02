@@ -2687,7 +2687,7 @@ export function replaceDbResources(db: Database, replacer: { [key: string]: stri
  * changed, so an idle run never schedules a save. `now` is for tests.
  */
 export function checkCharOrder(options: CharacterOrderCheckOptions = {}) {
-    applyCharacterOrderCheck(getDatabase(), options)
+    applyCharacterOrderCheck(getDatabase(), { favoritesFolderName: language.favoritesFolderName, ...options })
 }
 
 /**

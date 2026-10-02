@@ -7,6 +7,7 @@
 // folder browser a pasted link does, and the modules picked there are paired.
 // A module already downloaded from the same link is paired again instead of
 // being downloaded twice.
+import { recordModulePair } from './gui/pairedModules'
 import { language } from 'src/lang'
 import { notifyError, notifySuccess } from './alert'
 import { runImportTask, type ImportProgressReporter } from './importProgress'
@@ -104,7 +105,7 @@ async function downloadShareModules(link: string, report: ImportProgressReporter
  */
 async function importCompanionModules(
     links: readonly string[],
-    pairWith: () => readonly { modules?: string[] }[],
+    pairWith: () => readonly { chaId?: string, modules?: string[] }[],
 ): Promise<{ moduleIds: string[], paired: number }> {
     return runImportTask(language.realmCompanionModuleTask, async (report) => {
         const moduleIds: string[] = []
@@ -118,7 +119,10 @@ async function importCompanionModules(
             moduleIds.push(...(await downloadShareModules(link, report)).map((module) => module.id))
         }
         let paired = 0
-        for (const character of pairWith()) paired += pairModulesWithCharacter(character, moduleIds)
+        for (const character of pairWith()) {
+            paired += pairModulesWithCharacter(character, moduleIds)
+            recordModulePair(getDatabase().modules, moduleIds, character.chaId)
+        }
         return { moduleIds, paired }
     })
 }

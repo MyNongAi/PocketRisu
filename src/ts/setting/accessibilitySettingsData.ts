@@ -306,6 +306,20 @@ export const accessibilitySettingsItems: SettingItem[] = [
         keywords: ['deactivated', 'archived', 'folder', 'group', 'inactive', 'days', 'sidebar', 'character'],
     },
     {
+        id: 'acc.nodeOnlyFavoritesFolder',
+        type: 'check',
+        labelKey: 'favoritesFolder',
+        helpKey: 'favoritesFolder',
+        // Undefined means on.
+        getValue: (db) => db.nodeOnlyFavoritesFolder !== false,
+        setValue: (db, value) => {
+            db.nodeOnlyFavoritesFolder = !!value;
+        },
+        // Gather or dissolve the folder right away.
+        onChange: () => checkCharOrder(),
+        keywords: ['favorite', 'folder', 'star', 'top', 'sidebar', 'character', '즐겨찾기'],
+    },
+    {
         id: 'acc.nodeOnlyAutoDeactivateAfterDays',
         type: 'number',
         labelKey: 'autoDeactivateAfterDays',
@@ -455,6 +469,7 @@ export const accessibilityCharacterItems = pick([
     'acc.nodeOnlyHideRecentChats',
     'acc.nodeOnlyHideArchivedCharacters',
     'acc.nodeOnlyGroupDeactivatedCharacters',
+    'acc.nodeOnlyFavoritesFolder',
     'acc.nodeOnlyAutoDeactivateAfterDays',
 ]);
 

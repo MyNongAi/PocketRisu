@@ -190,6 +190,15 @@ export const advancedDevToolItems: SettingItem[] = [
         id: 'adv.allowV21Plugin', type: 'check', labelKey: 'allowV21Plugin', bindKey: 'allowV21Plugin',
         helpKey: 'allowV21Plugin', helpUnrecommended: true, classes: 'mt-4',
     },
+    {
+        id: 'adv.autoAllowLowLevelImport', type: 'check', labelKey: 'autoAllowLowLevelImport',
+        helpKey: 'autoAllowLowLevelImport', classes: 'mt-4',
+        // Undefined means on.
+        getValue: (db) => db.nodeOnlyAutoAllowLowLevelImport !== false,
+        setValue: (db, value) => {
+            db.nodeOnlyAutoAllowLowLevelImport = !!value;
+        },
+    },
     { type: 'custom', id: 'adv.export', componentId: 'SettingsExportButtons' },
 ];
 
