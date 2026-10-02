@@ -122,11 +122,42 @@ function stripAssetManifests(dbObj, store, { activate = true, cache = true } = {
     return { db: out, migrated };
 }
 
-function loadDescriptorItems(store, descriptor) {
+/**
+ * A descriptor whose revision row is gone was superseded, never valid: a
+ * manifest edit (PATCH) activated a newer revision of the owner and pruned
+ * this one, and a writer that had not seen the edit handed the old descriptor
+ * back (a device that saved its stale copy of the character). On 2026-10-03
+ * one such character made every database.bin persist fail for twelve minutes,
+ * the shutdown flush included, and everything written in that time was lost.
+ * The owner's live revision is the one that edit produced, so persist that.
+ * A corrupt live revision is still refused (it is the same id, or fails too).
+ */
+function supersededDescriptor(store, descriptor, kind, ownerId) {
+    if (typeof store.getLiveDescriptor !== 'function') return null;
+    const ownerKind = descriptor.ownerKind || kind;
+    const owner = descriptor.ownerId || ownerId;
+    if (!ownerKind || !owner) return null;
+    let live = null;
+    try { live = store.getLiveDescriptor(ownerKind, owner); } catch { return null; }
+    if (!live?.id || live.id === descriptor.id) return null;
+    const verified = store.loadVerifiedItems(live.id);
+    if (!verified.ok) return null;
+    console.warn(`[AssetManifest] ${ownerKind} ${owner}: revision ${descriptor.id} is gone; persisting the live revision ${live.id}`);
+    return { verified, descriptor: { ...live, ownerKind, ownerId: owner } };
+}
+
+function loadDescriptorItems(store, descriptor, kind, ownerId) {
     if (!descriptor?.id) throw new Error('Asset manifest descriptor is missing an id');
     // One decode per manifest: the persisted row is verified and its items
     // are returned from that same decode, without going through the LRU.
-    const verified = store.loadVerifiedItems(descriptor.id);
+    let verified = store.loadVerifiedItems(descriptor.id);
+    if (!verified.ok) {
+        const live = supersededDescriptor(store, descriptor, kind, ownerId);
+        if (live) {
+            verified = live.verified;
+            descriptor = live.descriptor;
+        }
+    }
     if (!verified.ok) throw new Error(`Asset manifest is unavailable or corrupt: ${descriptor.id}`);
     if (descriptor.version !== undefined && verified.version !== descriptor.version) {
         throw new Error(`Asset manifest version mismatch: ${descriptor.id}`);
@@ -155,20 +186,20 @@ function hydrateAssetManifests(dbObj, store) {
     const out = { ...dbObj };
 
     if (Array.isArray(dbObj.modules)) {
-        out.modules = dbObj.modules.map((module) => {
+        out.modules = dbObj.modules.map((module, index) => {
             if (!module?.assetManifest) return module;
-            const next = { ...module, assets: loadDescriptorItems(store, module.assetManifest) };
+            const next = { ...module, assets: loadDescriptorItems(store, module.assetManifest, 'module', moduleOwnerId(module, index)) };
             delete next.assetManifest;
             return next;
         });
     }
 
     if (Array.isArray(dbObj.characters)) {
-        out.characters = dbObj.characters.map((character) => {
+        out.characters = dbObj.characters.map((character, index) => {
             if (!character?.additionalAssetManifest) return character;
             const next = {
                 ...character,
-                additionalAssets: loadDescriptorItems(store, character.additionalAssetManifest),
+                additionalAssets: loadDescriptorItems(store, character.additionalAssetManifest, 'character', characterOwnerId(character, index)),
             };
             delete next.additionalAssetManifest;
             return next;
@@ -176,10 +207,10 @@ function hydrateAssetManifests(dbObj, store) {
     }
 
     if (Array.isArray(dbObj.personas)) {
-        out.personas = dbObj.personas.map((persona) => {
+        out.personas = dbObj.personas.map((persona, index) => {
             const embedded = persona?.embeddedModule;
             if (!embedded?.assetManifest) return persona;
-            const nextEmbedded = { ...embedded, assets: loadDescriptorItems(store, embedded.assetManifest) };
+            const nextEmbedded = { ...embedded, assets: loadDescriptorItems(store, embedded.assetManifest, 'persona-module', personaOwnerId(persona, index)) };
             delete nextEmbedded.assetManifest;
             return { ...persona, embeddedModule: nextEmbedded };
         });

@@ -217,6 +217,30 @@ describe('asset manifest migration compatibility layer', () => {
         stripped.modules[0].assetManifest.version = 999
         expect(() => hydrateAssetManifests(stripped, store)).toThrow(/version mismatch/)
     })
+
+    // 2026-10-03: a manifest edit activated a new revision and pruned the old
+    // row; a device that had not seen the edit saved its copy of the character
+    // with the old descriptor, and every persist failed until the restart.
+    it('persists the live revision when a stale descriptor points at a pruned row', () => {
+        const store = freshStore()
+        const source = { characters: [{ chaId: 'c1', name: 'Bot', additionalAssets: [['a', 'assets/old-a.png', 'png'], ['b', 'assets/old-b.png', 'png']] }] }
+        const stripped = stripAssetManifests(source, store).db
+        const stale = stripped.characters[0].additionalAssetManifest
+        store.applyOperations('character', 'c1', stale.id, [{ type: 'replace', index: 0, item: ['a', 'external://main-assets/new-a', 'png'] }])
+        expect(store.loadVerifiedItems(stale.id).ok).toBe(false)
+
+        const hydrated = hydrateAssetManifests(stripped, store)
+        expect(hydrated.characters[0].additionalAssets).toEqual([['a', 'external://main-assets/new-a', 'png'], ['b', 'assets/old-b.png', 'png']])
+        expect(hydrated.characters[0].additionalAssetManifest).toBeUndefined()
+    })
+
+    it('still refuses when the descriptor is the live revision and its row is corrupt', () => {
+        const db = new Database(':memory:')
+        const store = createAssetManifestStore(db, { maxCacheBytes: 0 })
+        const stripped = stripAssetManifests({ characters: [{ chaId: 'c1', additionalAssets: [['a', 'assets/a.png', 'png']] }] }, store).db
+        db.prepare('UPDATE asset_manifests SET content_hash = ?').run('0'.repeat(64))
+        expect(() => hydrateAssetManifests(stripped, store)).toThrow(/unavailable or corrupt/)
+    })
 })
 
 describe('hydrateAssetManifests: one decode per manifest', () => {
@@ -277,7 +301,6 @@ describe('hydrateAssetManifests: one decode per manifest', () => {
             (d) => { d.sha256 = 'f'.repeat(64) },
             (d) => { d.ownerKind = 'character' },
             (d) => { d.ownerId = 'another-module' },
-            (d) => { d.id = 'missing' },
             (d) => { delete d.id },
         ]
         for (const tamper of tamperings) {
@@ -287,6 +310,13 @@ describe('hydrateAssetManifests: one decode per manifest', () => {
             expect(expected).not.toBeNull()
             expect(errorMessage(() => hydrateAssetManifests(copy, store))).toBe(expected)
         }
+
+        // An id with no row is a superseded revision (2026-10-03): the owner's
+        // live revision is persisted instead of failing every write.
+        const superseded = structuredClone(stripped)
+        superseded.modules[0].assetManifest.id = 'missing'
+        expect(errorMessage(() => hydrateAssetManifestsOracle(superseded, store))).toMatch(/unavailable or corrupt/)
+        expect(hydrateAssetManifests(superseded, store)).toEqual(hydrateAssetManifests(stripped, store))
 
         const damagedId = stripped.personas[0].embeddedModule.assetManifest.id
         db.prepare('UPDATE asset_manifests SET payload = ? WHERE manifest_id = ?')
