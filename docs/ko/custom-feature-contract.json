@@ -924,6 +924,48 @@
       "regressionTests": [
         "src/ts/gui/logCapture.test.ts"
       ]
+    },
+    {
+      "id": "SIDEBAR-FAVORITES-FOLDER",
+      "title": "즐겨찾기 봇을 맨 위 ★ 폴더로 묶기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/favoritesFolder.ts",
+        "src/ts/characterOrderCheck.ts",
+        "src/ts/characterOrder.ts",
+        "src/lib/SideBars/Sidebar.svelte",
+        "src/lib/CharacterManager/CharacterManager.svelte",
+        "src/lib/Others/GridCatalog.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/favoritesFolder.ts", "contains": "export function gatherFavoritesFolder(" },
+        { "file": "src/ts/characterOrderCheck.ts", "contains": "gatherFavoritesFolder(" },
+        { "file": "src/ts/characterOrder.ts", "contains": "isDeactivatedSystemFolder(entry) || isFavoritesFolder(entry)" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "syncFavoritesWithFolderMoves(DBState.db.characterOrder, nextOrder, DBState.db.characters)" },
+        { "file": "src/lib/CharacterManager/CharacterManager.svelte", "contains": "syncFavoritesWithFolderMoves(" },
+        { "file": "src/lib/Others/GridCatalog.svelte", "contains": "syncFavoritesWithFolderMoves(" }
+      ],
+      "regressionTests": [
+        "src/ts/favoritesFolder.test.ts",
+        "src/ts/characterOrderCheck.test.ts"
+      ]
+    },
+    {
+      "id": "IMPORT-LOWLEVEL-TOGGLE",
+      "title": "가져올 때 저수준 접근 자동 허용 설정",
+      "criticality": "compatibility",
+      "ownerFiles": [
+        "src/ts/characterCards.ts",
+        "src/ts/process/modules.ts",
+        "src/ts/setting/advancedSettingsData.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/characterCards.ts", "contains": "risuext?.lowLevelAccess && !getDatabase().nodeOnlyAutoAllowLowLevelImport" },
+        { "file": "src/ts/characterCards.ts", "contains": "importData.lowLevelAccess && !getDatabase().nodeOnlyAutoAllowLowLevelImport" },
+        { "file": "src/ts/process/modules.ts", "contains": "importData.lowLevelAccess && !getDatabase().nodeOnlyAutoAllowLowLevelImport" },
+        { "file": "src/ts/setting/advancedSettingsData.ts", "contains": "bindKey: 'nodeOnlyAutoAllowLowLevelImport'" }
+      ],
+      "regressionTests": []
     }
   ]
 }

@@ -565,7 +565,8 @@ export async function characterURLImport() {
         const importData = JSON.parse(Buffer.from(decodeURIComponent(data), 'base64').toString('utf-8'))
         importData.id = v4()
 
-        if(importData.lowLevelAccess){
+        // Asked only while "allow low-level access on import" is off.
+        if(importData.lowLevelAccess && !getDatabase().nodeOnlyAutoAllowLowLevelImport){
             const conf = await alertConfirm(language.lowLevelAccessConfirm)
             if(!conf){
                 return false
@@ -997,7 +998,8 @@ async function importCharacterCardSpec<T extends boolean = false>(
         }
     }
 
-    if(risuext && risuext?.lowLevelAccess){
+    // Asked only while "allow low-level access on import" is off.
+    if(risuext && risuext?.lowLevelAccess && !getDatabase().nodeOnlyAutoAllowLowLevelImport){
         const conf = await alertConfirm(language.lowLevelAccessConfirm)
         if(!conf){
             return false

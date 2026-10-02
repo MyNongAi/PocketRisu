@@ -59,6 +59,34 @@ function reactivate(db: CharacterOrderDatabase, chaId: string, now = NOW) {
     applyCharacterOrderCheck(db, { now })
 }
 
+describe('checkCharOrder with the ★ favorites folder', () => {
+    it('gathers loose favorites at the very top and keeps favorites in user folders there', () => {
+        const db: CharacterOrderDatabase = {
+            characters: [char('a'), char('f1', { favorite: true }), char('f2', { favorite: true }), char('b')],
+            characterOrder: ['a', 'f1', userFolder('u', ['f2', 'b'])],
+            nodeOnlyArchivedCharacters: [],
+        }
+        applyCharacterOrderCheck(db, { now: NOW, favoritesFolderName: '즐겨찾기' })
+        expect(db.characterOrder![0]).toMatchObject({ id: 'nodeonly-favorites', name: '즐겨찾기', nodeOnlySystem: 'favorites', data: ['f1'] })
+        // The user folder with a favorite member stays pinned right below it.
+        expect(ids(db.characterOrder)).toEqual(['nodeonly-favorites', 'u', 'a'])
+    })
+
+    it('keeps the folder at one member and releases an unfavorited one to the top of the list', () => {
+        const db: CharacterOrderDatabase = {
+            characters: [char('a'), char('f1', { favorite: true }), char('was', { favorite: false })],
+            characterOrder: [{ id: 'nodeonly-favorites', name: '즐겨찾기', color: 'yellow', data: ['f1', 'was'], nodeOnlySystem: 'favorites' }, 'a'],
+            nodeOnlyArchivedCharacters: [],
+        }
+        applyCharacterOrderCheck(db, { now: NOW })
+        expect(db.characterOrder).toEqual([
+            expect.objectContaining({ id: 'nodeonly-favorites', data: ['f1'] }),
+            'was',
+            'a',
+        ])
+    })
+})
+
 describe('checkCharOrder with deactivated characters in idle-age folders', () => {
     it('files loose stubs by age on the first run and leaves stubs in user folders alone', () => {
         const db: CharacterOrderDatabase = {
@@ -100,6 +128,8 @@ describe('checkCharOrder with deactivated characters in idle-age folders', () =>
     it('keeps favorites first, then the rest, then the zone, then the age folders in 7→60 order', () => {
         const db: CharacterOrderDatabase = {
             characters: [char('a'), char('fav', { favorite: true }), char('b'), char('c')],
+            // Loose favorites at the top level (the ★ folder off; it has its own test).
+            nodeOnlyFavoritesFolder: false,
             characterOrder: [
                 's60', userFolder('zone', ['z1', 'z2']), 's7', 'a', userFolder('pinned', ['b', 'c', 'x'], { favorite: true }), 's30', 'fav',
                 userFolder('pinned-stubs', ['p1', 'p2'], { favorite: true }),
@@ -119,6 +149,8 @@ describe('checkCharOrder with deactivated characters in idle-age folders', () =>
         const box = userFolder('box', ['s1', 's2'], { color: 'blue', imgFile: 'box.png', nodeOnlyIcon: 'star' })
         const db: CharacterOrderDatabase = {
             characters: [char('fav', { favorite: true }), char('a'), char('b')],
+            // Loose favorites at the top level (the ★ folder off; it has its own test).
+            nodeOnlyFavoritesFolder: false,
             characterOrder: ['fav', box, 'a', 'b', 'loose'],
             nodeOnlyArchivedCharacters: [stub('s1', 20), stub('s2', 3), stub('loose', 40)],
         }
@@ -138,6 +170,8 @@ describe('checkCharOrder with deactivated characters in idle-age folders', () =>
     it('reactivating a loose stub puts it at the top level and promotes it', () => {
         const db: CharacterOrderDatabase = {
             characters: [char('fav', { favorite: true }), char('a')],
+            // Loose favorites at the top level (the ★ folder off; it has its own test).
+            nodeOnlyFavoritesFolder: false,
             characterOrder: ['fav', 'a', 's', 't'],
             nodeOnlyArchivedCharacters: [stub('s', 20), stub('t', 21)],
         }

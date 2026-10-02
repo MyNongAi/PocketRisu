@@ -472,7 +472,8 @@ export async function importModuleFile(
             delete importData.assetManifest
         }
 
-        if(importData.lowLevelAccess){
+        // Asked only while "allow low-level access on import" is off.
+        if(importData.lowLevelAccess && !getDatabase().nodeOnlyAutoAllowLowLevelImport){
             const conf = await alertConfirm(language.lowLevelAccessConfirm)
             if(!conf) return
         }

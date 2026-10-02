@@ -26,6 +26,7 @@
     import { DBState, openCharacterManager } from 'src/ts/stores.svelte';
     import { tooltipRight } from "src/ts/gui/tooltip";
     import { folderIconComponent } from "../CharacterManager/folderIcons";
+    import { syncFavoritesWithFolderMoves } from "src/ts/favoritesFolder";
     import BarIcon from "./BarIcon.svelte";
     import SidebarIndicator from "./SidebarIndicator.svelte";
     import {
@@ -403,6 +404,8 @@
 
   function commitSidebarOrder(nextOrder: Array<string | folder> | null) {
     if(!nextOrder || isEqual(nextOrder, DBState.db.characterOrder)) return
+    // A drag into or out of the ★ folder sets or clears the favorite.
+    syncFavoritesWithFolderMoves(DBState.db.characterOrder, nextOrder, DBState.db.characters)
     DBState.db.characterOrder = nextOrder
     checkCharOrder()
   }
@@ -528,7 +531,7 @@
     const selected = parseInt(await alertSelect([
       '봇 설정 수정',
       '제목 색변경',
-      character.favorite ? '즐겨찾기 해제' : '즐겨찾기 (맨위로)',
+      character.favorite ? '즐겨찾기 해제' : DBState.db.nodeOnlyFavoritesFolder !== false ? '즐겨찾기 (★ 폴더로)' : '즐겨찾기 (맨위로)',
       language.remove,
       language.cancel,
     ], characterMenuInfo(character, makeAgoText)))

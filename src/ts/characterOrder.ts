@@ -8,6 +8,7 @@
  * and run `checkCharOrder()` afterwards.
  */
 import type { folder } from './storage/database.svelte'
+import { isFavoritesFolder } from './favoritesFolder'
 import { isDeactivatedSystemFolder } from './deactivatedCharacterFolders'
 
 export type OrderEntry = string | folder
@@ -75,7 +76,9 @@ export function dissolveSingletonFolders(order: OrderEntry[], previous: OrderEnt
     const out: OrderEntry[] = []
     const released: string[] = []
     for (const entry of order) {
-        if (isFolderEntry(entry) && isDeactivatedSystemFolder(entry)) {
+        // The idle-age folders and the ★ favorites folder live at any size
+        // above zero; checkCharOrder fills and empties them.
+        if (isFolderEntry(entry) && (isDeactivatedSystemFolder(entry) || isFavoritesFolder(entry))) {
             if (entry.data.length > 0) out.push(cloneFolder(entry))
         } else if (isFolderEntry(entry) && entry.data.length === 1) {
             if (options.releaseToTop) released.push(entry.data[0])

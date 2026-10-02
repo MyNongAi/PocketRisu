@@ -1683,6 +1683,10 @@ export interface Database{
     // the bottom of characterOrder, and move fully deactivated folders just
     // above them (src/ts/deactivatedCharacterFolders.ts). undefined = on.
     nodeOnlyGroupDeactivatedCharacters?:boolean
+    /** Loose favorite characters in a ★ folder at the top of the list (favoritesFolder.ts); undefined = on. */
+    nodeOnlyFavoritesFolder?:boolean
+    /** Import cards and modules that use low-level access without the confirmation. */
+    nodeOnlyAutoAllowLowLevelImport?:boolean
     // Characters hidden from the sidebar rail (display only, no data impact;
     // the character manager still lists them). chaIds, kept at DB level so
     // the flag survives deactivation and never rides along in .charx exports.
@@ -2205,8 +2209,9 @@ export interface folder{
     nodeOnlyDisplay?:FolderDisplayMode
     nodeOnlyIcon?:string
     /** System folder maintained by checkCharOrder ('deactivated': the idle-age
-     * buckets at the bottom of the list). Never edited, dragged into or favorited. */
-    nodeOnlySystem?:'deactivated'
+     * buckets at the bottom of the list, never edited, dragged into or
+     * favorited; 'favorites': the ★ folder at the top, favoritesFolder.ts). */
+    nodeOnlySystem?:'deactivated'|'favorites'
 }
 
 export type FolderDisplayMode = 'icon' | 'image' | 'name'

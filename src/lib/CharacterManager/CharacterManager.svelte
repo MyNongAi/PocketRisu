@@ -38,6 +38,7 @@
         createFolder, findPlacement, isFolderEntry, moveCharacterInFolder, moveCharacterToFolder,
         moveTopLevelEntry, rebuildOrder, removeFolderKeepItems, setHidden, type OrderLayoutItem,
     } from "src/ts/characterOrder";
+    import { syncFavoritesWithFolderMoves } from 'src/ts/favoritesFolder';
     import type { folder } from "src/ts/storage/database.svelte";
     import {
         canMoveOrderEntry, deactivatedCharacterIds, isDeactivatedGroupingEnabled, isDeactivatedSystemFolder,
@@ -162,6 +163,8 @@
     }
 
     function commitOrder(next: typeof DBState.db.characterOrder) {
+        // A move into or out of the ★ folder sets or clears the favorite.
+        syncFavoritesWithFolderMoves(DBState.db.characterOrder, next, DBState.db.characters);
         DBState.db.characterOrder = next;
         checkCharOrder();
     }
