@@ -266,7 +266,8 @@ describe('checkCharOrder with deactivated characters in idle-age folders', () =>
             nodeOnlyHiddenCharacterIds: ['a', 'gone'],
         })
         applyCharacterOrderCheck(db, { now: NOW })
-        expect(db.characterOrder).toEqual(['a', 'b'])
+        // The member left alone by the deletion leads the list.
+        expect(db.characterOrder).toEqual(['b', 'a'])
         expect(db.nodeOnlyHiddenCharacterIds).toEqual(['a'])
         expect(writes.sort()).toEqual(['characterOrder', 'hidden'])
         expect(db.characterOrder!.some((entry) => isDeactivatedSystemFolder(entry))).toBe(false)

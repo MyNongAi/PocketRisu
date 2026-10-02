@@ -60,25 +60,33 @@ function cloneOrder(order: OrderEntry[]): OrderEntry[] {
  * cases without storing another flag in the database. The idle-age folders
  * (deactivatedCharacterFolders.ts) are kept at any size above zero and dropped
  * when empty.
+ *
+ * `releaseToTop` (deleting characters) puts each released member at the top
+ * of the list instead of where its folder was: after deleting all but one
+ * card of a [유사 후보] folder, the survivor used to land somewhere down the
+ * list and it was unclear whether it had left the folder at all. A drag
+ * keeps it in place, where the user is arranging.
  */
-export function dissolveSingletonFolders(order: OrderEntry[], previous: OrderEntry[] = order): OrderEntry[] {
+export function dissolveSingletonFolders(order: OrderEntry[], previous: OrderEntry[] = order, options: { releaseToTop?: boolean } = {}): OrderEntry[] {
     const previousFolderSizes = new Map<string, number>()
     for (const entry of previous) {
         if (isFolderEntry(entry)) previousFolderSizes.set(entry.id, entry.data.length)
     }
     const out: OrderEntry[] = []
+    const released: string[] = []
     for (const entry of order) {
         if (isFolderEntry(entry) && isDeactivatedSystemFolder(entry)) {
             if (entry.data.length > 0) out.push(cloneFolder(entry))
         } else if (isFolderEntry(entry) && entry.data.length === 1) {
-            out.push(entry.data[0])
+            if (options.releaseToTop) released.push(entry.data[0])
+            else out.push(entry.data[0])
         } else if (isFolderEntry(entry) && entry.data.length === 0 && (previousFolderSizes.get(entry.id) ?? 0) > 0) {
             continue
         } else {
             out.push(isFolderEntry(entry) ? cloneFolder(entry) : entry)
         }
     }
-    return out
+    return released.length > 0 ? [...released, ...out] : out
 }
 
 function removeCharacterRaw(order: OrderEntry[], chaId: string): OrderEntry[] {
@@ -89,7 +97,7 @@ function removeCharacterRaw(order: OrderEntry[], chaId: string): OrderEntry[] {
 
 /** Remove every occurrence of `chaId` (top level and inside folders). */
 export function removeCharacter(order: OrderEntry[], chaId: string): OrderEntry[] {
-    return dissolveSingletonFolders(removeCharacterRaw(order, chaId), order)
+    return dissolveSingletonFolders(removeCharacterRaw(order, chaId), order, { releaseToTop: true })
 }
 
 /**

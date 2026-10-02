@@ -99,9 +99,11 @@ export function applyCharacterOrderCheck(db: CharacterOrderDatabase, options: Ch
     }
 
     // Singletons dissolve before the arrangement so a folder left with one
-    // deactivated member lands in its age folder in this same run.
+    // deactivated member lands in its age folder in this same run. A member
+    // released because the others were deleted goes to the top of the list
+    // (after favorites), where the user can see it left the folder.
     const arranged = arrangeDeactivatedFolders({
-        order: dissolveSingletonFolders(cleaned, previousOrder), stubs, activeIds, enabled: grouping, now,
+        order: dissolveSingletonFolders(cleaned, previousOrder, { releaseToTop: true }), stubs, activeIds, enabled: grouping, now,
     })
     const next = normalizeCharacterFavoriteOrder(
         arranged,
