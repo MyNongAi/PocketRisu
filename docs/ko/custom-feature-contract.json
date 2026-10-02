@@ -118,12 +118,15 @@
       "ownerFiles": [
         "src/lib/ChatScreens/chatViewport.ts",
         "src/lib/ChatScreens/Chats.svelte",
-        "src/lib/ChatScreens/DefaultChatScreen.svelte"
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/lib/ChatScreens/Chat.svelte"
       ],
       "requiredMarkers": [
         { "file": "src/lib/ChatScreens/chatViewport.ts", "contains": "shouldFollowTail" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "holdHeight" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "revealNewestMessage" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "FIRST_MESSAGE_SLOT" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "renderRevision={chatBodyRevision + chatReloadPointer}" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "flex flex-col overflow-y-auto overscroll-y-contain relative default-chat-screen" }
       ],
       "regressionTests": ["src/lib/ChatScreens/chatViewport.test.ts"]

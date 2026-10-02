@@ -696,7 +696,12 @@
             style:font-size="{0.875 * (DBState.db.zoomsize / 100)}rem"
             style:line-height="{(DBState.db.lineHeight ?? 1.25) * (DBState.db.zoomsize / 100)}rem"
         >
-            {#key `${totalLengthPointer}|${chatReloadPointer}|${effectiveResolveChatAssets}`}
+            <!-- A reload (an HTML button's trigger, reloadChat/v2UpdateChatAt, v2UpdateGUI)
+                 re-parses in place: the body keeps showing what it showed until the new
+                 HTML is ready. Re-keying on it rebuilt the body empty, so the message
+                 collapsed and regrew and the view jumped (the first message most of all,
+                 which nothing above it holds in place). -->
+            {#key `${totalLengthPointer}|${effectiveResolveChatAssets}`}
                 <ChatBody
                     {character}
                     {firstMessage}
@@ -704,7 +709,7 @@
                     {msgDisplay}
                     {name}
                     {bodyRoot}
-                    renderRevision={chatBodyRevision}
+                    renderRevision={chatBodyRevision + chatReloadPointer}
                     modelShortName={
                         messageGenerationInfo ? getModelInfo(messageGenerationInfo?.model).shortName : ''
                     }

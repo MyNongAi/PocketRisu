@@ -361,7 +361,18 @@
         if (needed < tailSlack) setTailSlack(needed)
     }
 
+    // The first message is drawn by DefaultChatScreen above this list, as a
+    // direct child of the scroller. A reader inside it anchors on it: without
+    // that, the anchor was the next message below, and a change in the first
+    // message's height (an HTML/CSS button opening a panel, a trigger
+    // re-render) moved the view to keep that lower message in place.
+    const FIRST_MESSAGE_SLOT = 'first'
+    function firstMessageElement(): HTMLElement | null {
+        return getScroller()?.querySelector<HTMLElement>(':scope > [data-chat-index="-1"]') ?? null
+    }
+
     function containerOf(anchor: ReaderAnchor): HTMLElement | null {
+        if (anchor.slot === FIRST_MESSAGE_SLOT) return firstMessageElement()
         if (anchor.chatId) {
             const byId = chatBody.querySelector<HTMLElement>(`:scope > [data-chat-id="${CSS.escape(anchor.chatId)}"]`)
             if (byId) return byId
@@ -376,7 +387,9 @@
         const top = sc.getBoundingClientRect().top
         let best: HTMLElement | null = null
         let bestTop = Infinity
-        for (const child of Array.from(chatBody.children) as HTMLElement[]) {
+        const first = firstMessageElement()
+        const candidates = [...(first ? [first] : []), ...Array.from(chatBody.children) as HTMLElement[]]
+        for (const child of candidates) {
             const rect = child.getBoundingClientRect()
             if (rect.bottom <= top || rect.height === 0) continue
             if (rect.top < bestTop) {
@@ -384,8 +397,9 @@
                 best = child
             }
         }
-        readerAnchor = best?.dataset.chatSlot
-            ? { chatId: best.dataset.chatId ?? null, slot: best.dataset.chatSlot, offsetTop: bestTop - top, roomId: getCurrentChatRoomId() }
+        const slot = best && best === first ? FIRST_MESSAGE_SLOT : best?.dataset.chatSlot
+        readerAnchor = best && slot
+            ? { chatId: best === first ? null : (best.dataset.chatId ?? null), slot, offsetTop: bestTop - top, roomId: getCurrentChatRoomId() }
             : null
     }
 
@@ -505,12 +519,14 @@
         const observer = new ResizeObserver((entries) => {
             const viewportResized = sc.clientHeight !== viewportHeight
             viewportHeight = sc.clientHeight
-            // The transcript itself (streamed text, a remount settling) only
-            // drags the view along when the reader asked for that.
+            // The transcript itself (streamed text, a remount settling, the
+            // first message re-rendering or opening a panel) only drags the
+            // view along when the reader asked for that.
+            const first = firstMessageElement()
             const follow = shouldFollowTail({
                 pinnedToTail,
                 readerAtTail,
-                onlyTranscriptResized: !viewportResized && entries.every((entry) => entry.target === chatBody),
+                onlyTranscriptResized: !viewportResized && entries.every((entry) => entry.target === chatBody || entry.target === first),
                 autoScroll: DBState.db.autoScrollToNewMessage,
             })
             if (follow) {
