@@ -10,6 +10,7 @@
     import { get } from 'svelte/store';
     import { getChatAssetRenderWindow } from '../../ts/chatAssetWindow';
     import { isAtTail, revealScrollTop, shouldFollowTail, shouldRevealAddedMessage } from './chatViewport';
+    import { chatGenKey, isChatGenerating } from 'src/ts/process/generationState';
     
     const getCurrentChatRoomId = () => {
         const charId = get(selectedCharID);
@@ -335,6 +336,17 @@
     }
 
     let pinnedToTail = false
+    // The "just opened" pin follows the tail while the chat first renders
+    // (images and inlays arriving); after that a card's own animation (a
+    // banner that grows and shrinks) must not drag the view along.
+    const OPEN_PIN_MS = 3000
+    let pinnedAt = 0
+
+    /** A reply is being written into this chat right now. */
+    function generatingHere(): boolean {
+        const chat = currentCharacter?.chats?.[currentCharacter.chatPage]
+        return !!chat?.isStreaming || isChatGenerating(chatGenKey(chat?.id))
+    }
     // The message at the top of the view and how far its top sits from the
     // view's top, as of the reader's last scroll. A message whose content
     // changes after it rendered (a late image inlay, a trigger from an HTML
@@ -342,7 +354,13 @@
     // reader changing height, must not move what they are reading. Resize
     // observer callbacks run after layout and before the scroll events a
     // shift causes, so this is still the pre-change position when they do.
-    type ReaderAnchor = { chatId: string | null, slot: string, offsetTop: number, roomId: string | null }
+    // `line` is the element at the reader's line inside that message (a
+    // paragraph, a panel): a card's header that grows, shrinks or animates
+    // above it, in the same message, must not move it either. Anchored to
+    // the message's top, an animated banner shook the text being read by
+    // its full height change on every frame. When a re-render replaces it,
+    // the message's top is the fallback.
+    type ReaderAnchor = { chatId: string | null, slot: string, offsetTop: number, roomId: string | null, line: HTMLElement | null, lineOffsetTop: number }
     let readerAnchor: ReaderAnchor | null = null
     let readerAnchorFrame = 0
     // Blank space kept under the newest message so the view need not move
@@ -386,6 +404,25 @@
         return chatBody.querySelector<HTMLElement>(`:scope > [data-chat-slot="${anchor.slot}"]`)
     }
 
+    /** The innermost element at the view's top edge inside `container`, skipping fixed and sticky ones. */
+    function readingLine(container: HTMLElement, top: number): HTMLElement | null {
+        let node = container
+        for (let depth = 0; depth < 32; depth++) {
+            let next: HTMLElement | null = null
+            for (const child of Array.from(node.children) as HTMLElement[]) {
+                const rect = child.getBoundingClientRect()
+                if (rect.height === 0 || rect.bottom <= top) continue
+                const position = getComputedStyle(child).position
+                if (position === 'fixed' || position === 'sticky') continue
+                next = child
+                break
+            }
+            if (!next) break
+            node = next
+        }
+        return node === container ? null : node
+    }
+
     function recordReaderAnchor() {
         readerAnchorFrame = 0
         const sc = getScroller()
@@ -405,8 +442,16 @@
             }
         }
         const slot = best && best === greeting ? GREETING_SLOT : best?.dataset.chatSlot
+        const line = best && slot ? readingLine(best, top) : null
         readerAnchor = best && slot
-            ? { chatId: best === greeting ? null : best.dataset.chatId ?? null, slot, offsetTop: bestTop - top, roomId: getCurrentChatRoomId() }
+            ? {
+                chatId: best === greeting ? null : best.dataset.chatId ?? null,
+                slot,
+                offsetTop: bestTop - top,
+                roomId: getCurrentChatRoomId(),
+                line,
+                lineOffsetTop: line ? line.getBoundingClientRect().top - top : 0,
+            }
             : null
     }
 
@@ -420,9 +465,11 @@
         const anchor = readerAnchor
         const sc = getScroller()
         if (!anchor || !sc || anchor.roomId !== getCurrentChatRoomId()) return false
-        const element = containerOf(anchor)
+        // The reader's line while it is still on the page; else the message's top.
+        const line = anchor.line?.isConnected && anchor.line.getClientRects().length > 0 ? anchor.line : null
+        const element = line ?? containerOf(anchor)
         if (!element) return false
-        const delta = element.getBoundingClientRect().top - sc.getBoundingClientRect().top - anchor.offsetTop
+        const delta = element.getBoundingClientRect().top - sc.getBoundingClientRect().top - (line ? anchor.lineOffsetTop : anchor.offsetTop)
         if (Math.abs(delta) <= 0.5) return false
         const wanted = sc.scrollTop + delta
         const max = sc.scrollHeight - sc.clientHeight
@@ -530,11 +577,16 @@
             // greeting re-rendering or opening a panel) only drags the view
             // along when the reader asked for that.
             const greeting = greetingElement()
+            if (pinnedToTail && performance.now() - pinnedAt > OPEN_PIN_MS) pinnedToTail = false
             const follow = shouldFollowTail({
                 pinnedToTail,
                 readerAtTail,
                 onlyTranscriptResized: !viewportResized && entries.every((entry) => entry.target === chatBody || entry.target === greeting),
-                autoScroll: DBState.db.autoScrollToNewMessage,
+                // Auto-scroll follows a reply as it is written. Once it is
+                // done, a reader at the tail keeps their line: following the
+                // tail then made an animated panel in the reply shake the
+                // text up and down.
+                autoScroll: DBState.db.autoScrollToNewMessage && generatingHere(),
             })
             if (follow) {
                 scrollToTail()
@@ -586,6 +638,7 @@
         if (!isSameChat || added) setTailSlack(0)
         if (!isSameChat) {
             pinnedToTail = true
+            pinnedAt = performance.now()
             scheduleTailMove('tail')
         } else if (added) {
             // The first new message ends the "just opened" pin however it
