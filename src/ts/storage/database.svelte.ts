@@ -750,6 +750,7 @@ export function setDatabase(data:Database){
     data.nodeOnlyShowInputEcho ??= true
     data.nodeOnlyLogCaptureButton ??= true
     data.nodeOnlyLogImageWidth ??= 900
+    data.nodeOnlyLogImageTextScale ??= 150
     data.nodeOnlyLogImageHeader ??= true
     data.nodeOnlyLogImageAvatars ??= true
     data.ImagenModel ??= 'imagen-4.0-generate-001'
@@ -1646,6 +1647,8 @@ export interface Database{
     /** ✂️ log image capture (gui/logCaptureState.svelte.ts): the button and the image options. */
     nodeOnlyLogCaptureButton?: boolean
     nodeOnlyLogImageWidth?: number
+    /** Percent; the log is laid out at width / scale and drawn at this pixel ratio. */
+    nodeOnlyLogImageTextScale?: number
     nodeOnlyLogImageHeader?: boolean
     nodeOnlyLogImageAvatars?: boolean
     autoScrollToNewMessage?: boolean
@@ -2153,6 +2156,8 @@ export interface themePreset{
     /** ✂️ log image capture (gui/logCaptureState.svelte.ts): the button and the image options. */
     nodeOnlyLogCaptureButton?: boolean
     nodeOnlyLogImageWidth?: number
+    /** Percent; the log is laid out at width / scale and drawn at this pixel ratio. */
+    nodeOnlyLogImageTextScale?: number
     nodeOnlyLogImageHeader?: boolean
     nodeOnlyLogImageAvatars?: boolean
     showFolderName: boolean

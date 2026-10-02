@@ -223,8 +223,9 @@ export const helpEn = {
         additionalPrompt:
             "Text that gets appended to the Main Prompt when Prompt Preprocess is enabled. Default is 'The assistant must act as {{char}}. user is {{user}}.' This helps set up basic roleplay context.",
         hideAllImagesDesc: "Hides bot icons, bot image assets, and RisuRealm cover images.",
-        logCaptureButton: "Adds a ✂️ to every message. Press it on the first message of a log, then on the last one: the messages between them become one long image (several if very long), copied to the clipboard when the browser allows it, with copy, save and share buttons. Buttons and other controls are left out of the image.",
+        logCaptureButton: "Adds ✂️ to each message's ☰ menu. Pick it on the first message of a log, then on the last one (or the same one again for just that message): a dashed box shows the range, and the messages become one long image (several if very long), copied to the clipboard when the browser allows it, with copy, save and share buttons. Buttons and other controls are left out of the image.",
         logImageWidth: "The width of log images in pixels. 900 fits a desktop post on most boards.",
+        logImageTextScale: "Makes text and pictures larger in the same image width: at 150% the log is laid out 600 px wide and drawn 1.5 times, so readers can make out the text when the board shrinks the image to a phone screen.",
         logImageHeader: "Starts each log image with the bot's picture and name, the chat title and the message range.",
         logImageAvatars: "Keeps each message's profile picture in log images.",
         showInputEchoDesc: "Shows, at the bottom of each reply, the input it answers. Its pencil edits that input: every keystroke shows in both places, and the input is saved when the edit closes.",

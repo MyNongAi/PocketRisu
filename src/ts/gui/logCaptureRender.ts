@@ -16,10 +16,11 @@ import { resolveAllInlayPlaceholders } from '../parser/parser.svelte'
 import { language } from 'src/lang'
 import {
     blockSliceInPart,
+    clampLogImageScale,
     clampLogImageWidth,
     findLogCutRow,
+    formatLogRange,
     LOG_IMAGE_MAX_HEIGHT,
-    logMessageNumber,
     nextLogPartEnd,
     type LogBlock,
 } from './logCapture'
@@ -47,7 +48,23 @@ const CUT_SEARCH_ROWS = 400
 // 1x1 transparent PNG for images that cannot be fetched (cross-origin, gone).
 const TRANSPARENT_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
 
+// Inside the capture box only: controls hidden, the dashed range box off, and
+// the message cards stretched edge to edge (no centred column, small padding)
+// so the text fills the image.
 const CAPTURE_CSS = `
+.log-capture-root { --no-chat-max-width: 100%; }
+.log-capture-root .risu-chat[data-log-mark]::after { display: none !important; }
+.log-capture-root .risu-chat { margin: 0 !important; }
+.log-capture-root .risu-chat > div {
+    margin-left: 0 !important; margin-right: 0 !important;
+    padding: 5px 8px !important;
+}
+.log-capture-root .risu-chat > div > div.mx-auto {
+    max-width: none !important;
+    margin-left: 0 !important; margin-right: 0 !important;
+    padding: 14px 14px 10px !important;
+    border-radius: 8px !important;
+}
 .log-capture-root [data-log-skip],
 .log-capture-root .input-echo,
 .log-capture-root button[class*="button-icon-"] { display: none !important; }
@@ -98,14 +115,13 @@ function personaFor(chatBindedPersona: string | undefined) {
 }
 
 function rangeLabel(from: number, to: number): string {
-    const label = (index: number) => index < 0 ? language.logCapture.greeting : `#${logMessageNumber(index)}`
-    return language.logCapture.rangeLabel.replace('{}', label(from)).replace('{}', label(to))
+    return formatLogRange(from, to, { greeting: language.logCapture.greeting, range: language.logCapture.rangeLabel, single: language.logCapture.singleLabel })
 }
 
 async function buildHeader(characterName: string, image: string, chatName: string, from: number, to: number): Promise<HTMLElement> {
     const header = document.createElement('div')
     header.className = 'log-capture-block'
-    header.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:6px;padding:28px 16px 20px;margin:0 24px 8px;border-bottom:1px solid var(--risu-theme-darkborderc);text-align:center;'
+    header.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:6px;padding:22px 12px 16px;margin:0 8px 4px;border-bottom:1px solid var(--risu-theme-darkborderc);text-align:center;'
     const src = image ? await getCharImage(image, 'plain') : null
     if (src && src !== '/none.webp') {
         const avatar = document.createElement('img')
@@ -152,7 +168,11 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
     const chat = character?.chats?.[character.chatPage]
     if (!character || !chat) throw new Error(language.logCapture.noChat)
     const messages: Message[] = chat.message ?? []
-    const width = clampLogImageWidth(db.nodeOnlyLogImageWidth)
+    // Laid out at width / scale and drawn at scale: text larger in the same image width.
+    const scale = clampLogImageScale(db.nodeOnlyLogImageTextScale) / 100
+    const layoutWidth = Math.round(clampLogImageWidth(db.nodeOnlyLogImageWidth) / scale)
+    const width = Math.round(layoutWidth * scale)
+    const maxPartHeight = Math.floor(LOG_IMAGE_MAX_HEIGHT / scale)
     const persona = personaFor(chat.bindedPersona)
     const simpleChar = createSimpleCharacter(character)
     const liveScreen = document.querySelector('.default-chat-screen')
@@ -167,7 +187,7 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
     root.classList.add('log-capture-root')
     if (db.nodeOnlyLogImageAvatars === false) root.classList.add('log-capture-no-avatar')
     root.setAttribute('aria-hidden', 'true')
-    root.style.cssText = `position:fixed;left:-100000px;top:0;width:${width}px;height:auto;max-height:none;overflow:visible;display:block;transform:none;margin:0;padding:0 0 16px;pointer-events:none;z-index:-1;background-color:${background};color:var(--risu-theme-textcolor);`
+    root.style.cssText = `position:fixed;left:-100000px;top:0;width:${layoutWidth}px;height:auto;max-height:none;overflow:visible;display:block;transform:none;margin:0;padding:0 0 8px;pointer-events:none;z-index:-1;background-color:${background};color:var(--risu-theme-textcolor);`
     document.body.appendChild(root)
 
     const instances: Record<string, unknown>[] = []
@@ -287,13 +307,13 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
             const key = `${block.top}:${offset}`
             const cached = tileCache.get(key)
             if (cached) return cached
-            const height = Math.min(LOG_IMAGE_MAX_HEIGHT, block.height - offset)
+            const height = Math.min(maxPartHeight, block.height - offset)
             const canvas = await htmlToImage.toCanvas(block.el, {
                 width: block.width,
                 height,
                 canvasWidth: block.width,
                 canvasHeight: height,
-                pixelRatio: 1,
+                pixelRatio: scale,
                 skipAutoScale: true,
                 backgroundColor: background,
                 fontEmbedCSS,
@@ -307,17 +327,18 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
 
         const images: RenderedLogImage[] = []
         let drawn = 0
-        const drawTotal = blocks.reduce((sum, block) => sum + Math.ceil(block.height / LOG_IMAGE_MAX_HEIGHT), 0)
+        const drawTotal = blocks.reduce((sum, block) => sum + Math.ceil(block.height / maxPartHeight), 0)
         const drawnTiles = new Set<string>()
         onProgress?.('draw', 0, drawTotal)
         let start = 0
         while (start < totalHeight) {
             throwIfAborted(signal)
-            const { end, atBoundary } = nextLogPartEnd(blocks as LogBlock[], start, totalHeight)
+            const { end, atBoundary } = nextLogPartEnd(blocks as LogBlock[], start, totalHeight, maxPartHeight)
             const part = { top: start, height: end - start }
+            const partPixels = Math.round(part.height * scale)
             let canvas = document.createElement('canvas')
             canvas.width = width
-            canvas.height = part.height
+            canvas.height = partPixels
             let context = canvas.getContext('2d')
             if (!context) throw new Error(language.logCapture.canvasFailed)
             context.fillStyle = background
@@ -326,7 +347,7 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
                 const slice = blockSliceInPart(block, part)
                 if (!slice) continue
                 // Tiles of this block that the slice touches.
-                for (let offset = Math.floor(slice.sourceY / LOG_IMAGE_MAX_HEIGHT) * LOG_IMAGE_MAX_HEIGHT; offset < slice.sourceY + slice.height; offset += LOG_IMAGE_MAX_HEIGHT) {
+                for (let offset = Math.floor(slice.sourceY / maxPartHeight) * maxPartHeight; offset < slice.sourceY + slice.height; offset += maxPartHeight) {
                     const tile = await drawTile(block, offset)
                     throwIfAborted(signal)
                     const key = `${block.top}:${offset}`
@@ -335,26 +356,31 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
                         drawn++
                         onProgress?.('draw', drawn, drawTotal)
                     }
+                    // CSS px; the tile and the image are `scale` times larger.
                     const top = Math.max(slice.sourceY, offset)
-                    const bottom = Math.min(slice.sourceY + slice.height, offset + tile.height)
+                    const bottom = Math.min(slice.sourceY + slice.height, offset + tile.height / scale)
                     if (bottom <= top) continue
-                    context.drawImage(tile, 0, top - offset, tile.width, bottom - top, block.left, slice.targetY + (top - slice.sourceY), tile.width, bottom - top)
+                    context.drawImage(
+                        tile,
+                        0, (top - offset) * scale, tile.width, (bottom - top) * scale,
+                        block.left * scale, (slice.targetY + (top - slice.sourceY)) * scale, tile.width, (bottom - top) * scale,
+                    )
                 }
             }
             // A cut through a message moves up to a blank row between lines.
             let keep = part.height
             if (!atBoundary) {
-                const span = Math.min(CUT_SEARCH_ROWS, Math.floor(part.height * 0.25))
+                const span = Math.min(Math.round(CUT_SEARCH_ROWS * scale), Math.floor(partPixels * 0.25))
                 if (span > 2) {
-                    const data = context.getImageData(0, part.height - span, canvas.width, span)
+                    const data = context.getImageData(0, partPixels - span, canvas.width, span)
                     const row = findLogCutRow(new Uint32Array(data.data.buffer), canvas.width, span)
-                    if (row !== null) keep = part.height - span + row
+                    if (row !== null) keep = Math.max(1, Math.floor((partPixels - span + row) / scale))
                 }
             }
             if (keep < part.height) {
                 const trimmed = document.createElement('canvas')
                 trimmed.width = width
-                trimmed.height = keep
+                trimmed.height = Math.round(keep * scale)
                 const trimmedContext = trimmed.getContext('2d')
                 if (!trimmedContext) throw new Error(language.logCapture.canvasFailed)
                 trimmedContext.drawImage(canvas, 0, 0)
@@ -367,7 +393,7 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
             // Free tiles that end inside this image.
             for (const [key, tile] of tileCache) {
                 const [blockTop, offset] = key.split(':').map(Number)
-                if (blockTop + offset + tile.height <= partEnd) {
+                if (blockTop + offset + tile.height / scale <= partEnd) {
                     tile.width = 0
                     tile.height = 0
                     tileCache.delete(key)

@@ -1,6 +1,6 @@
-// ✂️ log capture: the first ✂️ marks where the log starts, the second (on
-// any other message of the same chat) where it ends; the messages between
-// them are rendered as images (logCaptureRender.ts) and copied to the
+// ✂️ log capture: the first ✂️ (in a message's ☰ menu) marks where the log
+// starts, the second where it ends (the same message again: just that one);
+// the messages between them are rendered as images (logCaptureRender.ts) and copied to the
 // clipboard when the browser allows it, with copy, save and share buttons
 // in the result window (LogCaptureOverlay.svelte).
 
@@ -11,6 +11,8 @@ import type { LogCaptureStage } from './logCaptureRender'
 
 export type LogCapturePhase = 'idle' | 'picking' | 'rendering' | 'done' | 'error'
 export type LogCaptureCopyState = 'none' | 'pending' | 'copied' | 'failed'
+/** Which piece of the dashed box a message draws. */
+export type LogCaptureMark = 'single' | 'top' | 'middle' | 'bottom'
 
 export interface LogCaptureImage {
     blob: Blob
@@ -29,6 +31,7 @@ export const logCapture = $state({
     phase: 'idle' as LogCapturePhase,
     start: null as (ChatIdentity & { index: number }) | null,
     range: null as { from: number; to: number } | null,
+    rangeChat: null as ChatIdentity | null,
     stage: 'render' as LogCaptureStage,
     done: 0,
     total: 0,
@@ -58,6 +61,16 @@ export function isLogCaptureStart(index: number): boolean {
     return sameChat(start, currentChatIdentity())
 }
 
+/** The piece of the dashed box around the start or the captured range. */
+export function logCaptureMarkFor(index: number): LogCaptureMark | null {
+    if (logCapture.phase === 'picking') return isLogCaptureStart(index) ? 'single' : null
+    if (logCapture.phase !== 'rendering' && logCapture.phase !== 'done') return null
+    const range = logCapture.range
+    if (!range || index < range.from || index > range.to || !sameChat(logCapture.rangeChat, currentChatIdentity())) return null
+    if (range.from === range.to) return 'single'
+    return index === range.from ? 'top' : index === range.to ? 'bottom' : 'middle'
+}
+
 /** The start mark belongs to the chat now open. */
 export function isLogCapturePickingHere(): boolean {
     return logCapture.phase === 'picking' && sameChat(logCapture.start, currentChatIdentity())
@@ -73,6 +86,7 @@ function reset() {
     logCapture.phase = 'idle'
     logCapture.start = null
     logCapture.range = null
+    logCapture.rangeChat = null
     logCapture.done = 0
     logCapture.total = 0
     logCapture.copy = 'none'
@@ -102,11 +116,7 @@ export function markLogCapture(index: number) {
         logCapture.phase = 'picking'
         return
     }
-    if (start.index === index) {
-        cancelLogCapture()
-        return
-    }
-    void runCapture(logCaptureRange(start.index, index))
+    void runCapture(logCaptureRange(start.index, index), here)
 }
 
 function startClipboardWrite(image: Promise<Blob>): Promise<void> | null {
@@ -118,7 +128,7 @@ function startClipboardWrite(image: Promise<Blob>): Promise<void> | null {
     }
 }
 
-async function runCapture(range: { from: number; to: number }) {
+async function runCapture(range: { from: number; to: number }, chat: ChatIdentity) {
     const run = ++runId
     controller?.abort()
     controller = new AbortController()
@@ -127,6 +137,7 @@ async function runCapture(range: { from: number; to: number }) {
     logCapture.phase = 'rendering'
     logCapture.start = null
     logCapture.range = range
+    logCapture.rangeChat = chat
     logCapture.stage = 'render'
     logCapture.done = 0
     logCapture.total = 0
