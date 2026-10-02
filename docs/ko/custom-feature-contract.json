@@ -120,7 +120,8 @@
         "src/lib/ChatScreens/chatViewport.ts",
         "src/lib/ChatScreens/Chats.svelte",
         "src/lib/ChatScreens/DefaultChatScreen.svelte",
-        "src/lib/ChatScreens/Chat.svelte"
+        "src/lib/ChatScreens/Chat.svelte",
+        "src/ts/gui/innerScrollKeeper.ts"
       ],
       "requiredMarkers": [
         { "file": "src/lib/ChatScreens/chatViewport.ts", "contains": "shouldFollowTail" },
@@ -133,9 +134,11 @@
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "unsubscribers.push(ReloadChatPointer.subscribe((pointers) => {" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "if (greeting) candidates.push(greeting)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "renderRevision={chatBodyRevision + chatReloadPointer}" },
-        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "flex flex-col overflow-y-auto overscroll-y-contain relative default-chat-screen" }
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "flex flex-col overflow-y-auto overscroll-y-contain relative default-chat-screen" },
+        { "file": "src/ts/gui/innerScrollKeeper.ts", "contains": "export function keepInnerScroll(root: HTMLElement)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "return keepInnerScroll(bodyRoot)" }
       ],
-      "regressionTests": ["src/lib/ChatScreens/chatViewport.test.ts"]
+      "regressionTests": ["src/lib/ChatScreens/chatViewport.test.ts", "src/ts/gui/innerScrollKeeper.test.ts"]
     },
     {
       "id": "CHAT-CONCURRENT",
