@@ -361,18 +361,19 @@
         if (needed < tailSlack) setTailSlack(needed)
     }
 
-    // The first message is drawn by DefaultChatScreen above this list, as a
-    // direct child of the scroller. A reader inside it anchors on it: without
-    // that, the anchor was the next message below, and a change in the first
-    // message's height (an HTML/CSS button opening a panel, a trigger
-    // re-render) moved the view to keep that lower message in place.
-    const FIRST_MESSAGE_SLOT = 'first'
-    function firstMessageElement(): HTMLElement | null {
-        return getScroller()?.querySelector<HTMLElement>(':scope > [data-chat-index="-1"]') ?? null
+    const GREETING_SLOT = 'greeting'
+
+    // The greeting is drawn by DefaultChatScreen above this list, in the same
+    // scroller. It must be an anchor too: anchored to the first message below
+    // it instead, a greeting that grew (a CSS button opening a panel) pushed
+    // itself up out of view by exactly the growth.
+    function greetingElement(): HTMLElement | null {
+        const element = getScroller()?.querySelector<HTMLElement>('.risu-chat[data-chat-index="-1"]') ?? null
+        return element && !chatBody?.contains(element) ? element : null
     }
 
     function containerOf(anchor: ReaderAnchor): HTMLElement | null {
-        if (anchor.slot === FIRST_MESSAGE_SLOT) return firstMessageElement()
+        if (anchor.slot === GREETING_SLOT) return greetingElement()
         if (anchor.chatId) {
             const byId = chatBody.querySelector<HTMLElement>(`:scope > [data-chat-id="${CSS.escape(anchor.chatId)}"]`)
             if (byId) return byId
@@ -387,8 +388,9 @@
         const top = sc.getBoundingClientRect().top
         let best: HTMLElement | null = null
         let bestTop = Infinity
-        const first = firstMessageElement()
-        const candidates = [...(first ? [first] : []), ...Array.from(chatBody.children) as HTMLElement[]]
+        const greeting = greetingElement()
+        const candidates = Array.from(chatBody.children) as HTMLElement[]
+        if (greeting) candidates.push(greeting)
         for (const child of candidates) {
             const rect = child.getBoundingClientRect()
             if (rect.bottom <= top || rect.height === 0) continue
@@ -397,9 +399,9 @@
                 best = child
             }
         }
-        const slot = best && best === first ? FIRST_MESSAGE_SLOT : best?.dataset.chatSlot
+        const slot = best && best === greeting ? GREETING_SLOT : best?.dataset.chatSlot
         readerAnchor = best && slot
-            ? { chatId: best === first ? null : (best.dataset.chatId ?? null), slot, offsetTop: bestTop - top, roomId: getCurrentChatRoomId() }
+            ? { chatId: best === greeting ? null : best.dataset.chatId ?? null, slot, offsetTop: bestTop - top, roomId: getCurrentChatRoomId() }
             : null
     }
 
@@ -520,13 +522,13 @@
             const viewportResized = sc.clientHeight !== viewportHeight
             viewportHeight = sc.clientHeight
             // The transcript itself (streamed text, a remount settling, the
-            // first message re-rendering or opening a panel) only drags the
-            // view along when the reader asked for that.
-            const first = firstMessageElement()
+            // greeting re-rendering or opening a panel) only drags the view
+            // along when the reader asked for that.
+            const greeting = greetingElement()
             const follow = shouldFollowTail({
                 pinnedToTail,
                 readerAtTail,
-                onlyTranscriptResized: !viewportResized && entries.every((entry) => entry.target === chatBody || entry.target === first),
+                onlyTranscriptResized: !viewportResized && entries.every((entry) => entry.target === chatBody || entry.target === greeting),
                 autoScroll: DBState.db.autoScrollToNewMessage,
             })
             if (follow) {

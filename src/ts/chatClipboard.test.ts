@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { buildPortableChatFragment, chatClipboardErrorMessage, coverImagePlacement, decodeClipboardCssContent, extractCssUrls, fetchClipboardDataUrl, inlineCssUrls, writeChatClipboard } from './chatClipboard'
+import { buildPortableChatFragment, chatClipboardErrorMessage, replaceFormControls, coverImagePlacement, decodeClipboardCssContent, extractCssUrls, fetchClipboardDataUrl, inlineCssUrls, writeChatClipboard } from './chatClipboard'
 
 afterEach(() => {
     vi.restoreAllMocks()
@@ -136,6 +136,27 @@ describe('clipboard layout snapshot', () => {
         expect(copy.querySelector('img')!.getAttribute('src')).toBe('data:image/png;base64,HEART')
         expect(copy.querySelector('img')!.style.width).toBe('20px')
         expect(root.querySelector('svg')).toBe(svg)
+    })
+
+    it('turns card buttons and form fields into styled spans that editors keep', async () => {
+        const root = document.createElement('section')
+        root.innerHTML = '<div><button risu-btn="attack" style="background:#2563eb;color:#fff;padding:4px 10px">공격 <b>!</b></button><input type="button" value="도망" style="color:red"><select><option>A</option><option selected>B</option></select><input type="hidden" value="x"></div>'
+        document.body.append(root)
+        const copy = new DOMParser().parseFromString(await buildPortableChatFragment(root), 'text/html')
+        expect(copy.querySelector('button, input, select')).toBeNull()
+        const spans = Array.from(copy.querySelectorAll('div > span'))
+        expect(spans.map((span) => span.textContent)).toEqual(['공격 !', '도망', 'B'])
+        expect((spans[0] as HTMLElement).style.backgroundColor).not.toBe('')
+        expect((spans[0] as HTMLElement).style.display).toBe('inline-block')
+        expect(spans[0].querySelector('b')).not.toBeNull()
+        expect(copy.body.innerHTML).not.toContain('risu-btn')
+    })
+
+    it('also turns buttons into spans in parsed HTML of a message that is not on screen', () => {
+        const doc = new DOMParser().parseFromString('<div><button style="color:red">열기</button><textarea>메모\n둘</textarea></div>', 'text/html')
+        replaceFormControls(doc.body)
+        expect(doc.querySelector('button, textarea')).toBeNull()
+        expect(Array.from(doc.querySelectorAll('span')).map((span) => span.textContent)).toEqual(['열기', '메모\n둘'])
     })
 
     it('lets details and text containers reflow instead of fixing the old measured height', async () => {

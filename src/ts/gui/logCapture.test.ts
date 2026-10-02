@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { blockSliceInPart, clampLogImageWidth, findLogCutRow, logCaptureRange, logImageFileName, nextLogPartEnd, planLogImageParts } from './logCapture'
+import { blockSliceInPart, clampLogImageScale, clampLogImageWidth, findLogCutRow, formatLogRange, logCaptureRange, logImageFileName, nextLogPartEnd, planLogImageParts } from './logCapture'
 
 describe('logCaptureRange', () => {
     it('orders the two marked messages, either way round', () => {
@@ -77,6 +77,15 @@ describe('blockSliceInPart', () => {
     })
 })
 
+describe('formatLogRange', () => {
+    const text = { greeting: '인사말', range: '메시지 {}부터 {}까지', single: '메시지 {}' }
+    it('names a range, a single message and the greeting', () => {
+        expect(formatLogRange(2, 6, text)).toBe('메시지 #3부터 #7까지')
+        expect(formatLogRange(4, 4, text)).toBe('메시지 #5')
+        expect(formatLogRange(-1, 1, text)).toBe('메시지 인사말부터 #2까지')
+    })
+})
+
 describe('file names and width', () => {
     it('names images after the bot and 1-based message numbers', () => {
         expect(logImageFileName('Sia', 2, 6, 0, 1)).toBe('Sia_3-7.png')
@@ -89,5 +98,12 @@ describe('file names and width', () => {
         expect(clampLogImageWidth(100)).toBe(360)
         expect(clampLogImageWidth(5000)).toBe(1600)
         expect(clampLogImageWidth(720.4)).toBe(720)
+    })
+
+    it('keeps the text size between 100% and 250%', () => {
+        expect(clampLogImageScale(undefined)).toBe(150)
+        expect(clampLogImageScale(50)).toBe(100)
+        expect(clampLogImageScale(400)).toBe(250)
+        expect(clampLogImageScale(125)).toBe(125)
     })
 })

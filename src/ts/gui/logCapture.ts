@@ -9,6 +9,7 @@ export const LOG_IMAGE_MIN_PART_SHARE = 0.25
 export const LOG_IMAGE_DEFAULT_WIDTH = 900
 export const LOG_IMAGE_MIN_WIDTH = 360
 export const LOG_IMAGE_MAX_WIDTH = 1600
+export const LOG_IMAGE_DEFAULT_SCALE = 150
 
 /** One rendered block (header or message) in the capture root, in CSS px from its top. */
 export interface LogBlock {
@@ -30,6 +31,12 @@ export function logCaptureRange(a: number, b: number): { from: number; to: numbe
 export function clampLogImageWidth(value: unknown): number {
     const n = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : LOG_IMAGE_DEFAULT_WIDTH
     return Math.min(LOG_IMAGE_MAX_WIDTH, Math.max(LOG_IMAGE_MIN_WIDTH, n))
+}
+
+/** Text size in percent: the log is laid out at width / scale and drawn at scale. */
+export function clampLogImageScale(value: unknown): number {
+    const n = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : LOG_IMAGE_DEFAULT_SCALE
+    return Math.min(250, Math.max(100, n))
 }
 
 /**
@@ -97,6 +104,13 @@ export function blockSliceInPart(block: LogBlock, part: LogPart): { sourceY: num
 /** Message number shown to people: the greeting is 0, the first message 1. */
 export function logMessageNumber(index: number): number {
     return index + 1
+}
+
+/** "messages #3 to #7", or "message #3" for one; the greeting by name. */
+export function formatLogRange(from: number, to: number, text: { greeting: string; range: string; single: string }): string {
+    const label = (index: number) => index < 0 ? text.greeting : `#${logMessageNumber(index)}`
+    if (from === to) return text.single.replace('{}', label(from))
+    return text.range.replace('{}', label(from)).replace('{}', label(to))
 }
 
 function safeFilePart(text: string): string {

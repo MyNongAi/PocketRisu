@@ -5,7 +5,7 @@
     import { language } from 'src/lang'
     import Portal from '../UI/GUI/Portal.svelte'
     import { BackLayerRank, useBackLayer } from 'src/ts/gui/backLayers.svelte'
-    import { logMessageNumber } from 'src/ts/gui/logCapture'
+    import { formatLogRange, logMessageNumber } from 'src/ts/gui/logCapture'
     import {
         canShareLogImages,
         cancelLogCapture,
@@ -79,7 +79,7 @@
                     <div class="min-w-0 flex-1">
                         <h2 class="text-sm font-semibold">{language.logCapture.title}</h2>
                         {#if logCapture.range}
-                            <p class="text-xs text-textcolor2">{language.logCapture.rangeLabel.replace('{}', messageLabel(logCapture.range.from)).replace('{}', messageLabel(logCapture.range.to))}</p>
+                            <p class="text-xs text-textcolor2">{formatLogRange(logCapture.range.from, logCapture.range.to, { greeting: language.logCapture.greeting, range: language.logCapture.rangeLabel, single: language.logCapture.singleLabel })}</p>
                         {/if}
                     </div>
                     <button type="button" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-textcolor2 transition-colors hover:bg-selected hover:text-textcolor" aria-label={language.close ?? 'Close'} onclick={cancelLogCapture}><XIcon size={18} /></button>
@@ -140,3 +140,39 @@
         </div>
     </Portal>
 {/if}
+
+<style>
+    /* The dashed box around the marked start, then around the range being
+       captured: each message draws its piece (Chat.svelte data-log-mark). */
+    :global(.risu-chat[data-log-mark]) {
+        position: relative;
+    }
+    :global(.risu-chat[data-log-mark]::after) {
+        content: '';
+        position: absolute;
+        inset: 4px 6px;
+        border: 2px dashed var(--risu-theme-primary, #3b82f6);
+        border-radius: 12px;
+        pointer-events: none;
+        z-index: 5;
+    }
+    :global(.risu-chat[data-log-mark='top']::after) {
+        bottom: 0;
+        border-bottom: 0;
+        border-bottom-left-radius: 0;
+        border-bottom-right-radius: 0;
+    }
+    :global(.risu-chat[data-log-mark='middle']::after) {
+        top: 0;
+        bottom: 0;
+        border-top: 0;
+        border-bottom: 0;
+        border-radius: 0;
+    }
+    :global(.risu-chat[data-log-mark='bottom']::after) {
+        top: 0;
+        border-top: 0;
+        border-top-left-radius: 0;
+        border-top-right-radius: 0;
+    }
+</style>

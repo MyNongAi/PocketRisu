@@ -26,12 +26,12 @@
     import { isSendKey } from "src/ts/gui/sendKey"
     import { isMobile } from "src/ts/platform"
     import { inputEchoDraft, inputEchoKey } from "src/ts/gui/inputEcho"
-    import { isLogCaptureStart, markLogCapture } from "src/ts/gui/logCaptureState.svelte"
+    import { isLogCapturePickingHere, isLogCaptureStart, logCaptureMarkFor, markLogCapture } from "src/ts/gui/logCaptureState.svelte"
     import ChatBody from './ChatBody.svelte'
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
     import { getChatAssetRenderWindow, normalizeExternalAssetRecentOutputs, shouldResolveChatAssets } from '../../ts/chatAssetWindow';
-    import { buildPortableChatFragment, chatClipboardErrorMessage, embedParsedChatAssets, fetchClipboardDataUrl, writeChatClipboard } from '../../ts/chatClipboard';
+    import { buildPortableChatFragment, chatClipboardErrorMessage, embedParsedChatAssets, fetchClipboardDataUrl, replaceFormControls, writeChatClipboard } from '../../ts/chatClipboard';
 
     // Reactive breakpoint: a raw window.innerWidth read here is evaluated once
     // at mount and never follows a resize (#79).
@@ -446,6 +446,13 @@
     let blankMessage = $derived((message === '{{none}}' || message === '{{blank}}' || message === '') && idx === -1 && !altGreeting || isComment)
     let showLogCaptureButton = $derived(DBState.db.nodeOnlyLogCaptureButton !== false && !blankMessage && !isComment && (idx >= 0 || firstMessage))
     let logCaptureStart = $derived(isLogCaptureStart(idx))
+    // Dashed box around the marked start, then around the range being captured.
+    let logCaptureMark = $derived(logCaptureMarkFor(idx))
+    let logCaptureMenuLabel = $derived(
+        logCaptureStart ? language.logCapture.menuSingle
+        : isLogCapturePickingHere() ? language.logCapture.menuEnd
+        : language.logCapture.menuStart
+    )
     let displayMessage = $derived(isOptimizedStreamingMessage ? rawStreamingText : message)
     let renderRawStreaming = $derived(isOptimizedStreamingMessage && streamingOptimizationMode === 'strong')
 
@@ -774,13 +781,13 @@
         {:else}
             <span class="text-xs">{statusMessage}</span>
             <div class="flex items-center ml-2 gap-2 flex-wrap justify-end">
-                {#if showLogCaptureButton}
-                    <!-- ✂️ log image: first press marks the start, a press on another message the end. -->
+                {#if showLogCaptureButton && idx < 0}
+                    <!-- ✂️ log image; the greeting has no ☰ menu, other messages carry it there. -->
                     <button
                         type="button"
                         class={"flex items-center justify-center shrink-0 rounded-md px-0.5 leading-none transition-colors button-icon-logcapture " + (logCaptureStart ? 'ring-2 ring-primary bg-primary/25' : 'hover:bg-primary/20')}
-                        title={logCaptureStart ? language.logCapture.cancelStart : language.logCapture.button}
-                        aria-label={logCaptureStart ? language.logCapture.cancelStart : language.logCapture.button}
+                        title={logCaptureMenuLabel}
+                        aria-label={logCaptureMenuLabel}
                         aria-pressed={logCaptureStart}
                         onclick={() => markLogCapture(idx)}
                     ><span class="text-[17px]" aria-hidden="true">✂️</span></button>
@@ -860,6 +867,7 @@
 
                 if(!hasLiveBody){
                     await embedParsedChatAssets(doc.body)
+                    replaceFormControls(doc.body)
                 
                 doc.querySelectorAll('mark').forEach((el) => {
                     const d = el.getAttribute('risu-mark')
@@ -1076,6 +1084,15 @@
 
 {#snippet minorIconButtonsBody(showNames:boolean)}
     {#if idx > -1}
+    {#if showLogCaptureButton}
+        <!-- ✂️ log image: first press marks the start, the next the end (the same message: just it). -->
+        <button type="button" class="flex items-center hover:text-primary transition-colors button-icon-logcapture" title={logCaptureMenuLabel} aria-label={logCaptureMenuLabel} onclick={() => markLogCapture(idx)}>
+            <span class="w-5 text-center text-[17px] leading-none" aria-hidden="true">✂️</span>
+            {#if showNames}
+                <span class="ml-1">{logCaptureMenuLabel}</span>
+            {/if}
+        </button>
+    {/if}
     {#if DBState.db.enableBookmark}
         <button class="flex items-center hover:text-primary transition-colors button-icon-bookmark {isBookmarked ? 'text-yellow-400' : ''}" onclick={async () => {
             await sleep(1)
@@ -1346,6 +1363,7 @@
      bind:this={chatRoot}
      data-chat-index={idx}
      data-chat-id={DBState.db.characters?.[selIdState.selId]?.chats?.[DBState.db.characters?.[selIdState.selId]?.chatPage]?.message?.[idx]?.chatId ?? ''}
+     data-log-mark={logCaptureMark ?? undefined}
      style={isLastMemory ? `border-top:${DBState.db.memoryLimitThickness}px solid rgba(98, 114, 164, 0.7);` : ''}
      onclickcapture={handleButtonTriggerWithin}>
     <div class="text-textcolor grow max-w-full sm:px-4 py-4">
@@ -1410,6 +1428,7 @@
      bind:this={chatRoot}
      data-chat-index={idx}
      data-chat-id={DBState.db.characters?.[selIdState.selId]?.chats?.[DBState.db.characters?.[selIdState.selId]?.chatPage]?.message?.[idx]?.chatId ?? ''}
+     data-log-mark={logCaptureMark ?? undefined}
      style={isLastMemory ? `border-top:${DBState.db.memoryLimitThickness}px solid rgba(98, 114, 164, 0.7);` : ''}
      onclickcapture={handleButtonTriggerWithin}>
     <div class="text-textcolor mt-1 ml-4 mr-4 mb-1 p-2 bg-transparent grow border-t-gray-900 border-opacity/30 border-transparent flexium items-start max-w-full" >

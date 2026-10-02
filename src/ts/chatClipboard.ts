@@ -307,6 +307,34 @@ async function embedElementAssets(
 }
 
 /**
+ * Post editors drop form controls on paste, so the buttons a character card
+ * draws (risu-btn menus, status-window tabs) vanished from pasted logs. Each
+ * becomes a span with the same snapshot style and its visible text.
+ */
+export function replaceFormControls(root: HTMLElement): void {
+    for (const control of Array.from(root.querySelectorAll<HTMLElement>('button, input, select, textarea'))) {
+        if (control instanceof HTMLInputElement && /^(hidden|checkbox|radio|file|range|color)$/i.test(control.type)) {
+            if (control.type.toLowerCase() === 'hidden') control.remove()
+            continue
+        }
+        const span = control.ownerDocument.createElement('span')
+        span.setAttribute('style', control.getAttribute('style') ?? '')
+        if (!span.style.display || span.style.display === 'inline') span.style.display = 'inline-block'
+        if (control instanceof HTMLButtonElement) {
+            while (control.firstChild) span.appendChild(control.firstChild)
+        } else if (control instanceof HTMLSelectElement) {
+            span.textContent = control.selectedOptions[0]?.textContent ?? ''
+        } else if (control instanceof HTMLTextAreaElement) {
+            span.textContent = control.value
+            span.style.whiteSpace = 'pre-wrap'
+        } else if (control instanceof HTMLInputElement) {
+            span.textContent = control.value || control.placeholder || ''
+        }
+        control.replaceWith(span)
+    }
+}
+
+/**
  * Flatten the currently rendered chat DOM into portable clipboard HTML.
  * Risu-only class rules and local/blob asset URLs cannot survive on another
  * origin, so computed styles and bytes are embedded while the source DOM is
@@ -439,6 +467,7 @@ export async function buildPortableChatFragment(
         } catch { /* preserve SVG markup if the browser cannot rasterize it */ }
     }
     cloneRoot.querySelectorAll('script, style, link, [data-risu-copy-ignore]').forEach((node) => node.remove())
+    replaceFormControls(cloneRoot)
     for (const element of [cloneRoot, ...cloneRoot.querySelectorAll('*')]) {
         // Retained class rules on the destination must not re-enable hover or
         // override the snapshot. The portable copy needs no executable hooks.

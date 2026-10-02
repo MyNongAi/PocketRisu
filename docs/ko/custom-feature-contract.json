@@ -71,6 +71,7 @@
         { "file": "src/ts/chatClipboard.ts", "contains": "rasterizeCoverImage" },
         { "file": "src/ts/chatClipboard.ts", "contains": "rasterizeSvg" },
         { "file": "src/ts/chatClipboard.ts", "contains": "writeChatClipboard" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "replaceFormControls(cloneRoot)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "viewportAssetVisible" },
         { "file": "src/lib/UI/TwoClickDeleteButton.svelte", "contains": "aria-pressed={armed}" },
         { "file": "src/lib/SideBars/CharConfig.svelte", "contains": "<TwoClickDeleteButton" },
@@ -125,7 +126,8 @@
         { "file": "src/lib/ChatScreens/chatViewport.ts", "contains": "shouldFollowTail" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "holdHeight" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "revealNewestMessage" },
-        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "FIRST_MESSAGE_SLOT" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "function keepReaderAnchor(): boolean" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "if (greeting) candidates.push(greeting)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "renderRevision={chatBodyRevision + chatReloadPointer}" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "flex flex-col overflow-y-auto overscroll-y-contain relative default-chat-screen" }
       ],
@@ -913,7 +915,9 @@
         { "file": "src/lib/ChatScreens/ChatBody.svelte", "contains": "if(!destroyed) onRendered?.()" },
         { "file": "src/ts/parser/parser.svelte.ts", "contains": "export function resolveAllInlayPlaceholders(root: HTMLElement): void" },
         { "file": "src/ts/gui/logCaptureState.svelte.ts", "contains": "navigator.clipboard.write([new ClipboardItem({ 'image/png': image })])" },
-        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "<LogCaptureOverlay />" }
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "<LogCaptureOverlay />" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "data-log-mark={logCaptureMark ?? undefined}" },
+        { "file": "src/ts/gui/logCaptureRender.ts", "contains": "pixelRatio: scale," }
       ],
       "regressionTests": [
         "src/ts/gui/logCapture.test.ts"
