@@ -5,6 +5,7 @@
     import { DownloadIcon } from '@lucide/svelte'
     import { language } from 'src/lang'
     import { clearImportTask, importTasks } from 'src/ts/importProgress'
+    import { isTouchDevice } from 'src/ts/stores.svelte'
     import ImportProgressToast from './ImportProgressToast.svelte'
 
     const shown = new Set<string>()
@@ -120,9 +121,13 @@
 </script>
 
 {#if pill.count > 0}
+    <!-- Where the cards were (Toaster.svelte: top-right, top-center on touch
+         devices), so a folded download stays where the user last saw it. -->
     <button
         type="button"
-        class="fixed bottom-24 right-3 z-50 flex items-center gap-1.5 rounded-full border bg-darkbg px-3 py-1.5 text-xs font-semibold text-textcolor shadow-lg transition-colors hover:border-primary"
+        class="fixed z-50 flex items-center gap-1.5 rounded-full border bg-darkbg px-3 py-1.5 text-xs font-semibold text-textcolor shadow-lg transition-colors hover:border-primary {$isTouchDevice
+            ? 'top-[calc(1rem+env(safe-area-inset-top))] left-1/2 -translate-x-1/2'
+            : 'top-6 right-6'}"
         class:border-darkborderc={!pill.failed}
         class:border-red-500={pill.failed}
         title={language.importProgressShow}
