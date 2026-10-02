@@ -966,6 +966,31 @@
         { "file": "src/ts/setting/advancedSettingsData.ts", "contains": "getValue: (db) => db.nodeOnlyAutoAllowLowLevelImport !== false" }
       ],
       "regressionTests": []
+    },
+    {
+      "id": "MODULE-PAIR-CHAIN",
+      "title": "봇·전용 모듈 체인 (연결 초록, 끊김 빨강)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/pairedModules.ts",
+        "src/lib/UI/GUI/PairedModuleMark.svelte",
+        "src/lib/SideBars/SidebarAvatar.svelte",
+        "src/lib/SideBars/Sidebar.svelte",
+        "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte",
+        "src/ts/realmCompanionModule.ts",
+        "src/ts/storage/database.svelte.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/gui/pairedModules.ts", "contains": "export function moduleLinks(" },
+        { "file": "src/ts/gui/pairedModules.ts", "contains": "export function characterModuleLink(" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "moduleLink={characterModuleLink(" },
+        { "file": "src/ts/realmCompanionModule.ts", "contains": "recordModulePair(getDatabase().modules, moduleIds, character.chaId)" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "forgetModulePair(DBState.db.modules, moduleId, character.chaId)" },
+        { "file": "src/ts/storage/database.svelte.ts", "contains": "backfillModulePairs(data.modules, data.characters)" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/pairedModules.test.ts"
+      ]
     }
   ]
 }

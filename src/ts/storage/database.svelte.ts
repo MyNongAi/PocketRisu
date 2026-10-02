@@ -1,3 +1,4 @@
+import { backfillModulePairs } from '../gui/pairedModules'
 import { get } from 'svelte/store';
 import { checkNullish, decryptBuffer, encryptBuffer, selectSingleFile } from '../util';
 import { changeLanguage, language } from '../../lang';
@@ -749,6 +750,8 @@ export function setDatabase(data:Database){
     data.hideMessagePageCount ??= false
     data.nodeOnlyShowInputEcho ??= true
     data.nodeOnlyLogCaptureButton ??= true
+    // Modules remember the bots that list them, for the red chain once those bots are gone.
+    backfillModulePairs(data.modules, data.characters)
     data.nodeOnlyLogImageWidth ??= 900
     data.nodeOnlyLogImageTextScale ??= 150
     data.nodeOnlyLogImageHeader ??= true

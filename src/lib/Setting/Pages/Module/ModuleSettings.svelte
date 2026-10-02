@@ -26,7 +26,7 @@
     import { FileDropSurface } from "src/ts/gui/fileDropSurface.svelte";
     import FileDropIndicator from "src/lib/UI/GUI/FileDropIndicator.svelte";
     import PairedModuleMark from "src/lib/UI/GUI/PairedModuleMark.svelte";
-    import { charactersByPairedModule } from "src/ts/gui/pairedModules";
+    import { moduleLinks } from "src/ts/gui/pairedModules";
     let tempModule:RisuModule = $state({
         name: '',
         description: '',
@@ -284,7 +284,7 @@
         return listTitleColor(folder.titleColor, indexes.some((index) => hasMissingAssets(displayModules[index])))
     }
 
-    let pairedModules = $derived(charactersByPairedModule(DBState.db.characters))
+    let pairedModules = $derived(moduleLinks(DBState.db.modules, DBState.db.characters, DBState.db.nodeOnlyArchivedCharacters ?? []))
 
     // Files dragged in from outside onto the catalog import as modules, a CHARX
     // too (anywhere else it imports as a character).
@@ -383,7 +383,7 @@
                 <Waypoints size={18} class="shrink-0 text-textcolor2" />
             {/if}
             <div class="flex flex-col min-w-0 grow">
-                <span class="truncate text-textcolor" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(rmodule))}>{#if hasMissingAssets(rmodule)}<span aria-label="에셋 누락" title="에셋 누락">❗</span> {/if}<PairedModuleMark names={pairedModules.get(rmodule.id)} />{rmodule.favorite ? '★ ' : ''}{rmodule.name}</span>
+                <span class="truncate text-textcolor" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(rmodule))}>{#if hasMissingAssets(rmodule)}<span aria-label="에셋 누락" title="에셋 누락">❗</span> {/if}<PairedModuleMark link={pairedModules.get(rmodule.id)} />{rmodule.favorite ? '★ ' : ''}{rmodule.name}</span>
                 <span class="text-xs text-textcolor2 truncate">
                     <span
                         class:text-sky-300={source.label === '로컬'}

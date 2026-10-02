@@ -20,8 +20,8 @@
     missingAssets?: boolean;
     /** Recorded missing-asset count, shown next to the ❗ / ! mark. */
     missingAssetCount?: number;
-    /** The bot carries a module of its own (character.modules): a chain in the bottom-right corner. */
-    linkedModule?: boolean;
+    /** The bot's own modules (character.modules): a green chain, red once one of them is gone. */
+    moduleLink?: 'linked' | 'broken' | null;
     realmRecoveryAvailable?: boolean;
     sourceBadge?: string;
     sourceRecorded?: boolean;
@@ -46,7 +46,7 @@
     favorite = false,
     missingAssets = false,
     missingAssetCount = 0,
-    linkedModule = false,
+    moduleLink = null,
     realmRecoveryAvailable = false,
     sourceBadge = '',
     sourceRecorded = true,
@@ -137,7 +137,7 @@
       {/if}
     </span>
   {/if}
-  {#if (missingAssets && missingCountText) || linkedModule}
+  {#if (missingAssets && missingCountText) || moduleLink}
     <!-- Inside the bottom-right corner (next to the mark, which is pinned past
          the avatar's edge, the count was cut off by the list): the missing
          count, then the chain of a bot with a module of its own. -->
@@ -145,8 +145,10 @@
       {#if missingAssets && missingCountText}
         <span class="rounded bg-darkbg/90 px-0.5 text-[9px] font-bold leading-tight text-red-400" title={`깨진 에셋 ${missingAssetCount.toLocaleString()}개`}>{missingCountText}</span>
       {/if}
-      {#if linkedModule}
-        <span class="flex items-center justify-center rounded bg-darkbg/90 p-px text-sky-300" aria-label="전용 모듈" title="전용 모듈이 연결된 봇"><Link2Icon size={11} strokeWidth={2.5} /></span>
+      {#if moduleLink}
+        <span class="flex items-center justify-center rounded bg-darkbg/90 p-px {moduleLink === 'linked' ? 'text-emerald-400' : 'text-red-400'}"
+          aria-label={moduleLink === 'linked' ? '전용 모듈 연결됨' : '전용 모듈 연결 끊김'}
+          title={moduleLink === 'linked' ? '전용 모듈이 연결된 봇' : '전용 모듈 연결 끊김 (모듈이 삭제됨)'}><Link2Icon size={11} strokeWidth={2.5} /></span>
       {/if}
     </span>
   {/if}

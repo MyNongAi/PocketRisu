@@ -56,6 +56,8 @@ export interface RisuModule{
      * again. Ignored by upstream clients.
      */
     nodeOnlyProtonShare?: string
+    /** Bots this module was paired with (character.modules), for the red chain once they are gone (gui/pairedModules.ts). */
+    nodeOnlyPairedCharacterIds?: string[]
 }
 
 /** Inserts modules and records them as the newest catalog entries. */

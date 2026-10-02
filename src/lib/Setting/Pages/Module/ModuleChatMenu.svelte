@@ -22,7 +22,7 @@
     import { getLatestModuleCatalogPromotion, interleaveModuleCatalogGroups, recordModuleActivation, recordModuleFolderActivation, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
     import { listTitleColor } from "src/ts/gui/titleColors";
     import PairedModuleMark from "src/lib/UI/GUI/PairedModuleMark.svelte";
-    import { charactersByPairedModule } from "src/ts/gui/pairedModules";
+    import { forgetModulePair, moduleLinks, recordModulePair } from "src/ts/gui/pairedModules";
     interface Props {
         close?: any;
         alertMode?: boolean;
@@ -40,7 +40,7 @@
     let expanded = $state<Set<string>>(untrack(() => alertMode ? new Set() : new Set(rememberedModuleMenuExpanded)));
 
     const query = $derived(moduleSearch.trim().toLocaleLowerCase())
-    const pairedModules = $derived(charactersByPairedModule(DBState.db.characters))
+    const pairedModules = $derived(moduleLinks(DBState.db.modules, DBState.db.characters, DBState.db.nodeOnlyArchivedCharacters ?? []))
     let sortedModules = $derived(sortModulesByActivation(DBState.db.modules, '', {
         fallbackOrders: [
             DBState.db.enabledModules,
@@ -144,9 +144,14 @@
         const character = DBState.db.characters[$selectedCharID]
         if (!character) return
         character.modules ??= []
-        if (character.modules.includes(moduleId)) character.modules.splice(character.modules.indexOf(moduleId), 1)
+        if (character.modules.includes(moduleId)) {
+            character.modules.splice(character.modules.indexOf(moduleId), 1)
+            // Taken off on purpose: no red chain for this pair.
+            forgetModulePair(DBState.db.modules, moduleId, character.chaId)
+        }
         else {
             character.modules.push(moduleId)
+            recordModulePair(DBState.db.modules, [moduleId], character.chaId)
             rememberActivation(moduleId)
         }
         $ReloadGUIPointer += 1
@@ -257,7 +262,7 @@
                         {#if rmodule.mcp}
                             <Waypoints size={18} class="shrink-0 text-textcolor2" />
                         {/if}
-                        <span class="min-w-0 grow truncate {!alertMode && isGlobal ? 'text-textcolor2' : ''}" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(i))}>{#if hasMissingAssets(i)}<span aria-label="에셋 누락" title="에셋 누락">❗</span> {/if}<PairedModuleMark names={pairedModules.get(rmodule.id)} />{rmodule.favorite ? '★ ' : ''}{rmodule.name}</span>
+                        <span class="min-w-0 grow truncate {!alertMode && isGlobal ? 'text-textcolor2' : ''}" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(i))}>{#if hasMissingAssets(i)}<span aria-label="에셋 누락" title="에셋 누락">❗</span> {/if}<PairedModuleMark link={pairedModules.get(rmodule.id)} />{rmodule.favorite ? '★ ' : ''}{rmodule.name}</span>
                         {#if alertMode}
                             <button class="text-textcolor2 cursor-pointer hover:text-success transition-colors shrink-0" onclick={(e) => {
                                 e.stopPropagation()
