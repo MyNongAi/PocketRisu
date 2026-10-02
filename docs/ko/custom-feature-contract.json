@@ -746,6 +746,35 @@
       "regressionTests": [
         "src/ts/storage/risuSavePatcher.test.ts"
       ]
+    },
+    {
+      "id": "SERVER-REPLY-PUSH",
+      "title": "서버 답변 완료 웹 푸시 알림",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "server/node/push-notifications.cjs",
+        "server/node/model-jobs.cjs",
+        "public/sw.js",
+        "src/ts/serverReplyPush.ts",
+        "src/ts/process/request/jobFetch.ts",
+        "src/lib/Setting/Pages/Display/ServerReplyPushToggle.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "server/node/push-notifications.cjs", "contains": "function encryptPushPayload(plaintext, keys, options = {})" },
+        { "file": "server/node/push-notifications.cjs", "contains": "function createVapidJwt(" },
+        { "file": "server/node/model-jobs.cjs", "contains": "function reportTerminal(job)" },
+        { "file": "server/node/server.cjs", "contains": "onJobTerminal: (job, attachment) => pushNotifications.handleJobTerminal(job, attachment)" },
+        { "file": "server/node/server.cjs", "contains": "pushNotifications.registerRoutes(app, { auth: checkProxyAuth })" },
+        { "file": "public/sw.js", "contains": "self.addEventListener('push'" },
+        { "file": "public/sw.js", "contains": "self.addEventListener('notificationclick'" },
+        { "file": "src/ts/process/request/jobFetch.ts", "contains": "export async function claimModelJob(" },
+        { "file": "src/lib/Setting/Pages/NotificationSoundSettings.svelte", "contains": "<ServerReplyPushToggle />" }
+      ],
+      "regressionTests": [
+        "server/node/push-notifications.test.ts",
+        "src/ts/serverReplyPush.test.ts",
+        "src/ts/process/request/jobFetch.test.ts"
+      ]
     }
   ]
 }

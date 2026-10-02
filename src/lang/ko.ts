@@ -1691,6 +1691,17 @@ export const languageKorean = {
   descBrowserNotification: "응답이 완료되면 브라우저 알림을 표시합니다.",
   descMessageSound: "응답이 완료되면 효과음을 재생합니다.",
   descTranslateSound: "번역이 완료되면 효과음을 재생합니다.",
+  serverReplyPush: "서버 답변 완료 알림 받기",
+  descServerReplyPush:
+    "서버 사이드 요청으로 만들던 답변이 앱을 닫아 두었거나 다른 앱을 보는 사이에 끝나면 이 기기로 푸시 알림을 보냅니다. HTTPS 주소(예: Tailscale HTTPS)로 접속해야 하고, iPhone·iPad는 Safari의 '홈 화면에 추가'로 설치한 앱에서 켜야 합니다. 기기마다 따로 켭니다.",
+  serverReplyPushDone: "답변이 도착했습니다",
+  serverReplyPushFailed: "답변 생성에 실패했습니다",
+  serverReplyPushUnsupported: "이 브라우저는 푸시 알림을 지원하지 않습니다.",
+  serverReplyPushInsecure: "푸시 알림은 HTTPS 주소로 접속했을 때만 켤 수 있습니다.",
+  serverReplyPushIosHomeScreen:
+    "iPhone·iPad에서는 Safari 공유 메뉴의 '홈 화면에 추가'로 설치한 앱에서만 알림을 켤 수 있습니다.",
+  serverReplyPushServerError: "서버에 알림 구독을 등록하지 못했습니다.",
+  serverReplyPushSubscribeError: "이 브라우저에서 푸시 구독을 만들지 못했습니다.",
   auxModelUnderModelSettings: "보조 모델 분리를 모델 설정에 표시",
   showModelInSidebar: "사이드바에 모델 선택 표시",
   showPresetInSidebar: "사이드바에 프리셋 선택 표시",

@@ -4872,9 +4872,32 @@ app.delete('/proxy-stream-jobs/:jobId', async (req, res) => {
 // to the client unchanged, and journals the same bytes to disk so a client
 // that disconnects mid-generation can recover the response. All logic lives
 // in model-jobs.cjs; registers /api/model-jobs* with /proxy2-level auth.
+//
+// Server reply push (SERVER-REPLY-PUSH): when a main job finishes and no page
+// is watching it, push-notifications.cjs sends a Web Push to every subscribed
+// browser; /api/push/* manages the subscriptions (same auth).
+const { createPushNotifications } = require('./push-notifications.cjs');
+const pushNotifications = createPushNotifications({ saveDir: savePath, logger, resolveChatLabel: findChatLabelForPush });
 const { createModelJobs } = require('./model-jobs.cjs');
-const modelJobs = createModelJobs({ saveDir: savePath, logger });
+const modelJobs = createModelJobs({
+    saveDir: savePath,
+    logger,
+    onJobTerminal: (job, attachment) => pushNotifications.handleJobTerminal(job, attachment),
+    onJobClaimed: (jobId, meta) => pushNotifications.noteJobClaimed(jobId, meta),
+});
 modelJobs.registerRoutes(app, { auth: checkProxyAuth });
+pushNotifications.registerRoutes(app, { auth: checkProxyAuth });
+
+// Names for a reply push, from the cached catalog (chat stubs keep `name`).
+// A cold cache yields no label — a notification never decodes the database.
+function findChatLabelForPush(chatId) {
+    const database = dbCache[DB_HEX_KEY];
+    for (const character of database?.characters ?? []) {
+        const chat = character?.chats?.find(candidate => candidate?.id === chatId);
+        if (chat) return { characterName: character.name, chatName: chat.name };
+    }
+    return null;
+}
 
 // --- Gemini PDF input (GEMINI-PDF-INPUT) ---
 // POST /api/gemini/pdf-input renders the context of a native-Gemini request

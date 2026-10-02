@@ -3,6 +3,7 @@
     import SettingPage from 'src/lib/UI/GUI/SettingPage.svelte';
     import { DBState } from 'src/ts/stores.svelte';
     import NotificationToggle from './Display/NotificationToggle.svelte';
+    import ServerReplyPushToggle from './Display/ServerReplyPushToggle.svelte';
     import SoundGroup from './Sound/SoundGroup.svelte';
     import SoundSetting from './Sound/SoundSetting.svelte';
 </script>
@@ -10,6 +11,7 @@
 <SettingPage title={language.soundAndNotification}>
     <SoundGroup title={language.groupBrowserNotification}>
         <NotificationToggle />
+        <ServerReplyPushToggle />
     </SoundGroup>
 
     <SoundGroup title={language.groupMessageNotification}>

@@ -215,3 +215,65 @@ async function registerCache(urlr, buffer, noContentType = false){
         "done": true
     }))
 }
+
+// Server reply push (SERVER-REPLY-PUSH): the server sends one encrypted push
+// when a server-side generation finishes while no page is watching it
+// (server/node/push-notifications.cjs). The payload holds only what to show
+// (title, body, tag, url), never message content.
+
+self.addEventListener('install', () => {
+    // Activate an updated worker right away; a waiting one would leave pushes
+    // to an older worker that has no push handler.
+    self.skipWaiting()
+})
+
+self.addEventListener('push', (event) => {
+    event.waitUntil(showPushNotification(event.data))
+})
+
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close()
+    event.waitUntil(focusOrOpenApp(event.notification.data && event.notification.data.url))
+})
+
+function readPushPayload(data){
+    if(!data) return {}
+    try {
+        const parsed = data.json()
+        return parsed && typeof parsed === 'object' ? parsed : {}
+    } catch {
+        return {}
+    }
+}
+
+async function showPushNotification(data){
+    // An empty or unreadable payload still shows a notification: browsers
+    // penalize (Safari revokes) pushes that display nothing.
+    const payload = readPushPayload(data)
+    const title = typeof payload.title === 'string' && payload.title ? payload.title : 'PocketRisu'
+    const tag = typeof payload.tag === 'string' && payload.tag ? payload.tag : 'pocketrisu-reply'
+    await self.registration.showNotification(title, {
+        body: typeof payload.body === 'string' ? payload.body : '',
+        tag,
+        // Same-tag replacement (a newer reply in the same chat) alerts again.
+        renotify: true,
+        icon: '/logo_192.png',
+        data: { url: typeof payload.url === 'string' ? payload.url : '/' },
+    })
+}
+
+async function focusOrOpenApp(url){
+    let target = new URL('/', self.location.origin)
+    try {
+        const candidate = new URL(typeof url === 'string' ? url : '/', self.location.origin)
+        if(candidate.origin === self.location.origin) target = candidate
+    } catch { /* keep the app root */ }
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    const existing = windows.find((client) => new URL(client.url).origin === self.location.origin)
+    if(existing){
+        try {
+            return await existing.focus()
+        } catch { /* fall through to a new window */ }
+    }
+    return self.clients.openWindow(target.href)
+}
