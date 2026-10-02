@@ -152,13 +152,11 @@
             loadEnd = Math.max(0, chatFoldedStateMessageIndex.index - loadPages)
         }
 
-        const reloadPointerMap = get(ReloadChatPointer);
 
         for(let i=loadStart ; i >= loadEnd; i--){
             if(i < 0) break; // Prevent out of bounds
             const message = messages[i];
             const messageLargePortrait = message.role === 'user' ? (userIconPortrait ?? false) : ((currentCharacter as character).largePortrait ?? false);
-            const reloadPointer = reloadPointerMap[i] ?? 0;
             const isRerollTarget = i === lastRealCharIdx;
             const activeStreamingMessage = i === activeStreamingIndex && message.role === 'char';
             const resolveChatAssets = assetRenderWindow.messageIndices.has(i)
@@ -166,7 +164,14 @@
             // The input a reply answers is echoed under it; a changed input remounts the reply.
             const echoIndex = message.role === 'char' ? previousInputIndex(messages, i) : -1;
             const echoText = echoIndex >= 0 ? (messages[echoIndex].data ?? '') : '';
-            let hashd = (echoIndex >= 0 ? echoText + '\u0000' : '') + hashMessageData + (message.chatId ?? '') + i.toString() + messageLargePortrait.toString() + message.disabled?.toString() + reloadPointer.toString() + (message.swipeId ?? 0).toString() + (message.swipes?.length ?? 0).toString() + resolveChatAssets.toString();
+            // A reload signal (an HTML button's trigger, reloadChat, v2UpdateChatAt)
+            // is not part of the hash: the message re-renders in place
+            // (Chat.svelte), as before upstream's "New chat loading"
+            // (2025-06-07). Rebuilding it swapped the whole element under the
+            // reader, and the browser's scroll anchoring then moved the view
+            // by the size of the panel the button opened. The role is, since
+            // a role switch (playground) needs the new sender.
+            let hashd = (echoIndex >= 0 ? echoText + '\u0000' : '') + hashMessageData + (message.chatId ?? '') + i.toString() + (message.role ?? '') + messageLargePortrait.toString() + message.disabled?.toString() + (message.swipeId ?? 0).toString() + (message.swipes?.length ?? 0).toString() + resolveChatAssets.toString();
             const currentHash = hashCode(hashd);
             currentHashes.add(currentHash);
             if(!hashes.has(currentHash)){

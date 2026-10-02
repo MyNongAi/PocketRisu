@@ -13,7 +13,7 @@
 
     import { capitalize, getUserIcon, getUserName, sleep } from "src/ts/util"
     import { onDestroy, onMount } from "svelte"
-    import { type Unsubscriber } from "svelte/store"
+    import { get, type Unsubscriber } from "svelte/store"
     import { v4 as uuidv4, v4 } from 'uuid'
     import { language } from "../../lang"
     import { alertConfirm, alertConfirmMulti, alertInput, alertRequestData, notifyError, notifyInfo, notifySuccess, type AlertAction } from "../../ts/alert"
@@ -471,6 +471,17 @@
 
     onMount(()=>{
         unsubscribers.push(ReloadGUIPointer.subscribe((v) => {
+            updateDisplayedMessage()
+        }))
+        // This message's reload (an HTML button's trigger, reloadChat,
+        // v2UpdateChatAt) re-renders it in place instead of rebuilding it
+        // (Chats.svelte): the displayed text is worked out again so changed
+        // variables show, and the body re-parses on chatReloadPointer.
+        let reloadMark = get(ReloadChatPointer)[idx] ?? 0
+        unsubscribers.push(ReloadChatPointer.subscribe((pointers) => {
+            const mark = pointers[idx] ?? 0
+            if (mark === reloadMark) return
+            reloadMark = mark
             updateDisplayedMessage()
         }))
     })
