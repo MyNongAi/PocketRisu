@@ -87,11 +87,15 @@ import { isMobile } from 'src/ts/platform'
     let currentChatReady = $derived(!!currentChatSlot && !currentChatSlot._placeholder)
     let currentChat = $derived(currentChatReady ? currentChatSlot.message : [])
     let currentChatFmIndex = $derived(currentChatReady ? (currentChatSlot.fmIndex ?? -1) : -1)
-    let resolveFirstMessageAssets = $derived.by(() => currentChatFmIndex !== BLANK_FIRST_MESSAGE_INDEX && getChatAssetRenderWindow(
+    // Whether the greeting falls in the recent-outputs asset window. The blank
+    // page 0 greeting resolves no assets of its own, but still shows the bot's
+    // profile image like any other greeting.
+    let firstMessageInAssetWindow = $derived(getChatAssetRenderWindow(
         currentChat,
         DBState.db.externalAssetRecentOutputs,
         currentChatSlot?.firstMessageDisabled !== true,
     ).firstMessage)
+    let resolveFirstMessageAssets = $derived(currentChatFmIndex !== BLANK_FIRST_MESSAGE_INDEX && firstMessageInAssetWindow)
 
     $effect(() => {
         const active = $chatHydrationOverlayStore.active
@@ -1604,10 +1608,10 @@ import { isMobile } from 'src/ts/platform'
                     name={DBState.db.characters[$selectedCharID].name}
                     message={getFirstMessageAtIndex(DBState.db.characters[$selectedCharID], currentChatFmIndex)}
                     role='char'
-                    img={resolveFirstMessageAssets ? getCharImage(DBState.db.characters[$selectedCharID].image, 'css') : ''}
+                    img={firstMessageInAssetWindow ? getCharImage(DBState.db.characters[$selectedCharID].image, 'css') : ''}
                     loadSenderImage={() => getCharImage(DBState.db.characters[$selectedCharID].image, 'css')}
                     resolveChatAssets={resolveFirstMessageAssets}
-                    resolveSenderIcon={resolveFirstMessageAssets}
+                    resolveSenderIcon={firstMessageInAssetWindow}
                     allowViewportAssetActivation={currentChatSlot?.firstMessageDisabled !== true && currentChatFmIndex !== BLANK_FIRST_MESSAGE_INDEX}
                     idx={-1}
                     altGreeting={true}
