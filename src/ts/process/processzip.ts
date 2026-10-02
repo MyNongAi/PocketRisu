@@ -12,6 +12,8 @@ const CHUNK_SIZE_BYTES = 1024 * 1024; // 1MB
 
 // Queue management constants
 const MAX_CONCURRENT_ASSET_SAVES = 10;
+// Largest slice handed to the streaming unzipper at once (see #feedChunk).
+const UNZIP_PUSH_SLICE_BYTES = 32 * 1024
 
 // HTTP status code ranges
 const HTTP_STATUS_OK_MIN = 200;
@@ -272,7 +274,17 @@ export class CharXImporter{
      * When final=true, marks input as complete and finalizes the save queue.
      */
     async #feedChunk(data:Uint8Array, final:boolean = false){
-        this.unzip.push(data, final)
+        // fflate's Unzip.push recurses once per archive entry that starts in
+        // the buffer it is given, so a stream chunk holding thousands of tiny
+        // entries (an asset-heavy CHARX) overflowed the call stack. Feeding it
+        // in small slices bounds that depth to the entries one slice can hold.
+        if (data.length === 0) {
+            this.unzip.push(data, final)
+        }
+        for (let offset = 0; offset < data.length; offset += UNZIP_PUSH_SLICE_BYTES) {
+            const end = Math.min(offset + UNZIP_PUSH_SLICE_BYTES, data.length)
+            this.unzip.push(data.subarray(offset, end), final && end === data.length)
+        }
 
         if(final){
             await this.#finalize()
