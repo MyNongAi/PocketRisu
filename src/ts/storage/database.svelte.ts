@@ -748,6 +748,10 @@ export function setDatabase(data:Database){
     data.hideAllImages ??= false
     data.hideMessagePageCount ??= false
     data.nodeOnlyShowInputEcho ??= true
+    data.nodeOnlyLogCaptureButton ??= true
+    data.nodeOnlyLogImageWidth ??= 900
+    data.nodeOnlyLogImageHeader ??= true
+    data.nodeOnlyLogImageAvatars ??= true
     data.ImagenModel ??= 'imagen-4.0-generate-001'
     data.ImagenImageSize ??= '1K'
     data.ImagenAspectRatio ??= '1:1'
@@ -1639,6 +1643,11 @@ export interface Database{
     hideMessagePageCount?: boolean
     /** Show the user message a reply answers under the reply (gui/inputEcho.ts). */
     nodeOnlyShowInputEcho?: boolean
+    /** ✂️ log image capture (gui/logCaptureState.svelte.ts): the button and the image options. */
+    nodeOnlyLogCaptureButton?: boolean
+    nodeOnlyLogImageWidth?: number
+    nodeOnlyLogImageHeader?: boolean
+    nodeOnlyLogImageAvatars?: boolean
     autoScrollToNewMessage?: boolean
     alwaysScrollToNewMessage?: boolean
     newMessageButtonStyle?: string
@@ -2141,6 +2150,11 @@ export interface themePreset{
     hideMessagePageCount?: boolean
     /** Show the user message a reply answers under the reply (gui/inputEcho.ts). */
     nodeOnlyShowInputEcho?: boolean
+    /** ✂️ log image capture (gui/logCaptureState.svelte.ts): the button and the image options. */
+    nodeOnlyLogCaptureButton?: boolean
+    nodeOnlyLogImageWidth?: number
+    nodeOnlyLogImageHeader?: boolean
+    nodeOnlyLogImageAvatars?: boolean
     showFolderName: boolean
     customBackground: string
     roundIcons: boolean

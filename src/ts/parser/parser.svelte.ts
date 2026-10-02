@@ -1091,6 +1091,25 @@ export function resolveInlayPlaceholders(root: HTMLElement) {
     }
 }
 
+/**
+ * Resolves every placeholder under `root` now, on screen or not. The log
+ * image capture renders off screen, where the observer above never fires.
+ */
+export function resolveAllInlayPlaceholders(root: HTMLElement): void {
+    if (!root) return
+    for (const img of Array.from(root.querySelectorAll<HTMLImageElement>('img[data-inlay-pending]'))) {
+        const id = img.getAttribute('data-inlay-pending')
+        img.removeAttribute('data-inlay-pending')
+        if (id) sizeInlayImage(img, id)
+    }
+    const placeholders = Array.from(root.querySelectorAll('[data-inlay-id]')) as HTMLElement[]
+    for (const el of placeholders) {
+        const id = el.getAttribute('data-inlay-id')
+        if (id) resolveQueue.push({ el, id, type: el.getAttribute('data-inlay-type') || 'inlay' })
+    }
+    if (placeholders.length > 0) processInlayQueue()
+}
+
 export interface simpleCharacterArgument{
     type: 'simple'
     additionalAssets?: [string, string, string][]

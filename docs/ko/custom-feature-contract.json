@@ -889,6 +889,32 @@
         "src/ts/gui/branches.test.ts",
         "src/ts/chatSwipes.test.ts"
       ]
+    },
+    {
+      "id": "CHAT-LOG-IMAGE",
+      "title": "✂️ 로그 이미지 캡처 (두 메시지 사이를 긴 이미지로 복사)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/logCapture.ts",
+        "src/ts/gui/logCaptureState.svelte.ts",
+        "src/ts/gui/logCaptureRender.ts",
+        "src/lib/ChatScreens/LogCaptureOverlay.svelte",
+        "src/lib/ChatScreens/Chat.svelte",
+        "src/lib/ChatScreens/ChatBody.svelte",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/ts/parser/parser.svelte.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "onclick={() => markLogCapture(idx)}" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "<div class=\"grow flex items-center justify-end\" class:text-textcolor2={options?.applyTextColors !== false} data-log-skip>" },
+        { "file": "src/lib/ChatScreens/ChatBody.svelte", "contains": "if(!destroyed) onRendered?.()" },
+        { "file": "src/ts/parser/parser.svelte.ts", "contains": "export function resolveAllInlayPlaceholders(root: HTMLElement): void" },
+        { "file": "src/ts/gui/logCaptureState.svelte.ts", "contains": "navigator.clipboard.write([new ClipboardItem({ 'image/png': image })])" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "<LogCaptureOverlay />" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/logCapture.test.ts"
+      ]
     }
   ]
 }

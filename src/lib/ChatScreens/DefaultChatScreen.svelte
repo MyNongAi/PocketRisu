@@ -51,6 +51,7 @@ import { isMobile } from 'src/ts/platform'
 
     import Chats from './Chats.svelte';
     import BtwSidePanel from './BtwSidePanel.svelte';
+    import LogCaptureOverlay from './LogCaptureOverlay.svelte';
     import { btwSideChat, openBtwPanel } from 'src/ts/process/btwSideChat.svelte';
     import Button from '../UI/GUI/Button.svelte';
     import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte';
@@ -1756,6 +1757,7 @@ import { isMobile } from 'src/ts/platform'
         {#if btwSideChat.open && currentChatReady && currentCharacter?.chaId !== '§playground'}
             <BtwSidePanel character={currentCharacter} chat={currentChatSlot} onInsert={insertIntoComposer} />
         {/if}
+        <LogCaptureOverlay />
     {/if}
 </div>
 

@@ -28,6 +28,8 @@
         renderRawStreaming?: boolean
         rawStreamingText?: string
         resolveAssets?: boolean
+        /** Called each time the parsed body is in the DOM (log image capture waits on it). */
+        onRendered?: () => void
     }
 
     let {
@@ -45,6 +47,7 @@
         renderRawStreaming = false,
         rawStreamingText = '',
         resolveAssets = true,
+        onRendered,
     }: Props =  $props()
 
     // svelte-ignore non_reactive_update
@@ -506,6 +509,7 @@
         markParsingResult
         markParsingResult.then(async () => {
             await tick() // Wait for Svelte to render the parsed HTML into DOM.
+            if(!destroyed) onRendered?.()
             if(destroyed || !resolveAssets || !bodyRoot?.isConnected) return
             await checkImg()
             if (!destroyed && resolveAssets && bodyRoot?.isConnected){

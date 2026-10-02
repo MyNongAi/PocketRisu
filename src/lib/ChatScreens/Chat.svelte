@@ -26,6 +26,7 @@
     import { isSendKey } from "src/ts/gui/sendKey"
     import { isMobile } from "src/ts/platform"
     import { inputEchoDraft, inputEchoKey } from "src/ts/gui/inputEcho"
+    import { isLogCaptureStart, markLogCapture } from "src/ts/gui/logCaptureState.svelte"
     import ChatBody from './ChatBody.svelte'
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
@@ -83,6 +84,8 @@
         resolveChatAssets?: boolean;
         resolveSenderIcon?: boolean;
         allowViewportAssetActivation?: boolean;
+        /** The body is in the DOM (log image capture, logCaptureRender.ts). */
+        onBodyRendered?: () => void;
     }
 
     let {
@@ -119,6 +122,7 @@
         resolveChatAssets,
         resolveSenderIcon,
         allowViewportAssetActivation = true,
+        onBodyRendered,
     }: Props = $props();
 
     let chatRoot:HTMLElement|null = $state(null)
@@ -440,6 +444,8 @@
 
 
     let blankMessage = $derived((message === '{{none}}' || message === '{{blank}}' || message === '') && idx === -1 && !altGreeting || isComment)
+    let showLogCaptureButton = $derived(DBState.db.nodeOnlyLogCaptureButton !== false && !blankMessage && !isComment && (idx >= 0 || firstMessage))
+    let logCaptureStart = $derived(isLogCaptureStart(idx))
     let displayMessage = $derived(isOptimizedStreamingMessage ? rawStreamingText : message)
     let renderRawStreaming = $derived(isOptimizedStreamingMessage && streamingOptimizationMode === 'strong')
 
@@ -583,7 +589,7 @@
 
 
 {#snippet genInfo()}
-    <div class="flex flex-col items-end">
+    <div class="flex flex-col items-end" data-log-skip>
         {#if messageGenerationInfo && (DBState.db.requestInfoInsideChat || aiLawApplies())}
             <button class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
                     hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center" 
@@ -708,6 +714,7 @@
                     bind:retranslate={retranslate}
                     {renderRawStreaming}
                     {rawStreamingText}
+                    onRendered={onBodyRendered}
                     resolveAssets={effectiveResolveChatAssets} />
             {/key}
         </span>
@@ -748,7 +755,7 @@
 {/snippet}
 
 {#snippet iconButtons(options:{applyTextColors?:boolean} = {})}
-    <div class="grow flex items-center justify-end" class:text-textcolor2={options?.applyTextColors !== false}>
+    <div class="grow flex items-center justify-end" class:text-textcolor2={options?.applyTextColors !== false} data-log-skip>
         {#if isComment}
             <button
                 class="flex items-center hover:text-red-400 transition-colors button-icon-remove"
@@ -762,6 +769,17 @@
         {:else}
             <span class="text-xs">{statusMessage}</span>
             <div class="flex items-center ml-2 gap-2 flex-wrap justify-end">
+                {#if showLogCaptureButton}
+                    <!-- ✂️ log image: first press marks the start, a press on another message the end. -->
+                    <button
+                        type="button"
+                        class={"flex items-center justify-center shrink-0 rounded-md px-0.5 leading-none transition-colors button-icon-logcapture " + (logCaptureStart ? 'ring-2 ring-primary bg-primary/25' : 'hover:bg-primary/20')}
+                        title={logCaptureStart ? language.logCapture.cancelStart : language.logCapture.button}
+                        aria-label={logCaptureStart ? language.logCapture.cancelStart : language.logCapture.button}
+                        aria-pressed={logCaptureStart}
+                        onclick={() => markLogCapture(idx)}
+                    ><span class="text-[17px]" aria-hidden="true">✂️</span></button>
+                {/if}
                 {@render translationButton()}
                 {#if wide640.current}
                     {@render majorIconButtonsBody(false)}
@@ -1145,7 +1163,7 @@
 {#snippet senderIcon(options:{rounded?:boolean,styleFix?:string} = {})}
     {#if !blankMessage && !$HideIconStore}
         {#if DBState.db.characters[selIdState.selId]?.chaId === "§playground"}
-        <div class="shadow-lg border-textcolor2 border flex justify-center items-center text-textcolor2" style={options?.styleFix ?? `height:${DBState.db.iconsize * 3.5 / 100}rem;width:${DBState.db.iconsize * 3.5 / 100}rem;min-width:${DBState.db.iconsize * 3.5 / 100}rem`}
+        <div data-log-avatar class="shadow-lg border-textcolor2 border flex justify-center items-center text-textcolor2" style={options?.styleFix ?? `height:${DBState.db.iconsize * 3.5 / 100}rem;width:${DBState.db.iconsize * 3.5 / 100}rem;min-width:${DBState.db.iconsize * 3.5 / 100}rem`}
             class:rounded-md={options?.rounded} class:rounded-full={options?.rounded}>
                 {#if name === 'assistant'}
                     <BotIcon />
@@ -1155,19 +1173,19 @@
             </div>
         {:else if effectiveResolveSenderIcon}
             {#await effectiveSenderImage}
-                <div class="shadow-lg bg-textcolor2" style={options?.styleFix ??`height:${DBState.db.iconsize * 3.5 / 100}rem;width:${DBState.db.iconsize * 3.5 / 100}rem;min-width:${DBState.db.iconsize * 3.5 / 100}rem`}
+                <div data-log-avatar class="shadow-lg bg-textcolor2" style={options?.styleFix ??`height:${DBState.db.iconsize * 3.5 / 100}rem;width:${DBState.db.iconsize * 3.5 / 100}rem;min-width:${DBState.db.iconsize * 3.5 / 100}rem`}
                 class:rounded-md={!options?.rounded} class:rounded-full={options?.rounded}></div>
             {:then m}
                 {#if largePortrait && (!options?.rounded)}
-                    <div class="shadow-lg bg-textcolor2" style={m + (options?.styleFix ?? `height:${DBState.db.iconsize * 3.5 / 100 / 0.75}rem;width:${DBState.db.iconsize * 3.5 / 100}rem;min-width:${DBState.db.iconsize * 3.5 / 100}rem`)}
+                    <div data-log-avatar class="shadow-lg bg-textcolor2" style={m + (options?.styleFix ?? `height:${DBState.db.iconsize * 3.5 / 100 / 0.75}rem;width:${DBState.db.iconsize * 3.5 / 100}rem;min-width:${DBState.db.iconsize * 3.5 / 100}rem`)}
                     class:rounded-md={!options?.rounded} class:rounded-full={options?.rounded}></div>
                 {:else}
-                    <div class="shadow-lg bg-textcolor2" style={m + (options?.styleFix ?? `height:${DBState.db.iconsize * 3.5 / 100}rem;width:${DBState.db.iconsize * 3.5 / 100}rem;min-width:${DBState.db.iconsize * 3.5 / 100}rem`)}
+                    <div data-log-avatar class="shadow-lg bg-textcolor2" style={m + (options?.styleFix ?? `height:${DBState.db.iconsize * 3.5 / 100}rem;width:${DBState.db.iconsize * 3.5 / 100}rem;min-width:${DBState.db.iconsize * 3.5 / 100}rem`)}
                     class:rounded-md={!options?.rounded} class:rounded-full={options?.rounded}></div>
                 {/if}
             {/await}
         {:else}
-            <div class="shadow-lg bg-textcolor2" style={options?.styleFix ??`height:${DBState.db.iconsize * 3.5 / 100}rem;width:${DBState.db.iconsize * 3.5 / 100}rem;min-width:${DBState.db.iconsize * 3.5 / 100}rem`}
+            <div data-log-avatar class="shadow-lg bg-textcolor2" style={options?.styleFix ??`height:${DBState.db.iconsize * 3.5 / 100}rem;width:${DBState.db.iconsize * 3.5 / 100}rem;min-width:${DBState.db.iconsize * 3.5 / 100}rem`}
             class:rounded-md={!options?.rounded} class:rounded-full={options?.rounded}></div>
         {/if}
     {/if}
@@ -1315,7 +1333,7 @@
 
 
 {#if disabled === true}
-<div class="w-full border-t-2 border-dashed border-blue-500"></div>
+<div class="w-full border-t-2 border-dashed border-blue-500" data-log-skip></div>
 {/if}
 {#if DBState.db.theme === ''}
 <!-- NodeOnly Standard: 전용 외부 구조 -->
@@ -1360,7 +1378,7 @@
                     {@render textBox()}
                 </div>
                 <!-- Footer: geninfo + buttons -->
-                <div class="flex flex-wrap items-center justify-between pt-2 border-t border-darkborderc border-opacity-30 text-textcolor2 gap-2">
+                <div class="flex flex-wrap items-center justify-between pt-2 border-t border-darkborderc border-opacity-30 text-textcolor2 gap-2" data-log-skip>
                     <div class="min-w-0">
                         {@render genInfo()}
                     </div>
@@ -1438,7 +1456,7 @@
                         {/if}
                     </div>
                 </div>
-                <div class="absolute bottom-0 right-0 bg-linear-to-b from-gray-200 to-gray-300 p-2 rounded-md border border-gray-400 text-gray-400">
+                <div class="absolute bottom-0 right-0 bg-linear-to-b from-gray-200 to-gray-300 p-2 rounded-md border border-gray-400 text-gray-400" data-log-skip>
                     {@render iconButtons({applyTextColors: false})}
                 </div>
             </div>
@@ -1500,7 +1518,7 @@
 {/if}
 
 {#if disabled}
-<div class={{
+<div data-log-skip class={{
     "w-full border-t-2 border-dashed": true,
     "border-blue-500": disabled === true,
     "border-amber-500": disabled === 'allBefore',

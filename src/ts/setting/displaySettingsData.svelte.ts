@@ -325,6 +325,19 @@ export const displayOtherHomeItems: SettingItem[] = [
 
 export const displayOtherChatItems: SettingItem[] = [
     { id: 'display.showInputEcho', type: 'check', labelKey: 'showInputEcho', helpKey: 'showInputEchoDesc', bindKey: 'nodeOnlyShowInputEcho', keywords: ['input', 'echo', 'reply', '인풋'] },
+    { id: 'display.logCaptureButton', type: 'check', labelKey: 'logCaptureButton', helpKey: 'logCaptureButton', bindKey: 'nodeOnlyLogCaptureButton', keywords: ['log', 'image', 'capture', 'screenshot', 'scissors', '로그', '가위', '캡처'] },
+    {
+        id: 'display.logImageWidth',
+        type: 'slider',
+        labelKey: 'logImageWidth',
+        helpKey: 'logImageWidth',
+        bindKey: 'nodeOnlyLogImageWidth',
+        condition: (ctx) => ctx.db.nodeOnlyLogCaptureButton !== false,
+        options: { min: 360, max: 1600, step: 20, customText: (value) => `${value}px` },
+        keywords: ['log', 'image', 'width', '로그', '폭'],
+    },
+    { id: 'display.logImageHeader', type: 'check', labelKey: 'logImageHeader', helpKey: 'logImageHeader', bindKey: 'nodeOnlyLogImageHeader', condition: (ctx) => ctx.db.nodeOnlyLogCaptureButton !== false, keywords: ['log', 'image', 'header', 'title', '로그'] },
+    { id: 'display.logImageAvatars', type: 'check', labelKey: 'logImageAvatars', helpKey: 'logImageAvatars', bindKey: 'nodeOnlyLogImageAvatars', condition: (ctx) => ctx.db.nodeOnlyLogCaptureButton !== false, keywords: ['log', 'image', 'avatar', 'profile', '로그', '프로필'] },
     { id: 'display.showRequestStatus', type: 'check', labelKey: 'showRequestStatus', helpKey: 'showRequestStatus', bindKey: 'showRequestStatus', keywords: ['request', 'status', 'toast', 'token', 'thinking'] },
     { id: 'display.customBackground', type: 'custom', componentId: 'CustomBackgroundToggle', keywords: ['custom', 'background'] },
     { id: 'display.hideAllImages', type: 'check', labelKey: 'hideAllImages', helpKey: 'hideAllImagesDesc', bindKey: 'hideAllImages', keywords: ['images', 'hide'] },
