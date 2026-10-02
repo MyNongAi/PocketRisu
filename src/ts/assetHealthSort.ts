@@ -27,11 +27,20 @@ export interface AssetHealthCount {
     unknown: number
 }
 
+type AssetTuple = [string, string, string] | [string, string] | string[]
+
 interface AssetOwner {
     chaId: string
     image?: string
     emotionImages?: Array<[string, string] | string[]>
-    additionalAssets?: Array<[string, string, string] | string[]>
+    additionalAssets?: AssetTuple[]
+    /**
+     * In the app the additional-asset list is usually not in memory: the boot
+     * payload carries only this descriptor and the list loads on demand. A
+     * count that read `additionalAssets` alone saw none of it (2026-10-03:
+     * 1,806 references instead of ~200,000, and 542 counts written too low).
+     */
+    additionalAssetManifest?: unknown
     ccAssets?: Array<{ uri?: string }>
 }
 
@@ -58,7 +67,28 @@ export interface CountOptions {
     attempts?: number
     signal?: AbortSignal
     onProgress?: (checked: number, total: number) => void
+    /** Loading the lazy additional-asset lists: (loaded, total). */
+    onListProgress?: (loaded: number, total: number) => void
     sleep?: (ms: number) => Promise<void>
+    /**
+     * The full additional-asset list of a card that only carries
+     * `additionalAssetManifest`. Without it, or when it fails, such a card
+     * gets no count at all (its record and place are left alone).
+     */
+    loadAdditionalAssets?: (character: AssetOwner) => Promise<AssetTuple[]>
+}
+
+/** The card's complete additional-asset list, or null when it cannot be known. */
+async function fullAdditionalAssets(character: AssetOwner, options: CountOptions): Promise<AssetTuple[] | null> {
+    if (Array.isArray(character.additionalAssets)) return character.additionalAssets
+    if (!character.additionalAssetManifest) return []
+    if (!options.loadAdditionalAssets) return null
+    try {
+        const items = await options.loadAdditionalAssets(character)
+        return Array.isArray(items) ? items : null
+    } catch {
+        return null
+    }
 }
 
 /** Ask the server about every distinct reference once, then count per card. */
@@ -74,11 +104,23 @@ export async function countAssetHealth(
 
     const perCharacter = new Map<string, string[]>()
     const unique = new Set<string>()
-    for (const character of characters) {
-        const references = characterAssetReferences(character)
-        perCharacter.set(character.chaId, references)
-        for (const reference of references) unique.add(reference)
+    let listed = 0
+    let nextCharacter = 0
+    options.onListProgress?.(0, characters.length)
+    const listWorker = async () => {
+        while (nextCharacter < characters.length) {
+            if (options.signal?.aborted) throw new DOMException('Asset count canceled.', 'AbortError')
+            const character = characters[nextCharacter++]
+            const additionalAssets = await fullAdditionalAssets(character, options)
+            listed++
+            options.onListProgress?.(listed, characters.length)
+            if (!additionalAssets) continue
+            const references = characterAssetReferences({ ...character, additionalAssets })
+            perCharacter.set(character.chaId, references)
+            for (const reference of references) unique.add(reference)
+        }
     }
+    await Promise.all(Array.from({ length: Math.min(4, characters.length) }, listWorker))
     const all = [...unique]
     const batches: string[][] = []
     for (let i = 0; i < all.length; i += batchSize) batches.push(all.slice(i, i + batchSize))

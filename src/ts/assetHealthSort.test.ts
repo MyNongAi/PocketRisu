@@ -30,6 +30,28 @@ describe('countAssetHealth', () => {
         expect(counts.get('b')).toEqual(health(1, 2))
     })
 
+    it('counts a lazy additional-asset list from its manifest, and leaves a card whose list cannot be read uncounted', async () => {
+        const inspect = vi.fn(async (paths: string[]) => paths.map((path) => ({ path, status: path.includes('gone') ? 'missing' : 'exists' })))
+        const loadAdditionalAssets = vi.fn(async (character: { chaId: string }) => {
+            if (character.chaId === 'unreadable') throw new Error('manifest 404')
+            return [['a', 'assets/gone-a.png', 'png'], ['b', 'assets/ok-b.png', 'png']]
+        })
+        const counts = await countAssetHealth([
+            { chaId: 'lazy', image: 'assets/ok.png', additionalAssetManifest: { id: 'm1' } },
+            { chaId: 'unreadable', image: 'assets/ok.png', additionalAssetManifest: { id: 'm2' } },
+            { chaId: 'plain', image: 'assets/ok.png' },
+        ], inspect, { loadAdditionalAssets })
+        expect(counts.get('lazy')).toEqual(health(1, 3))
+        expect(counts.has('unreadable')).toBe(false)
+        expect(counts.get('plain')).toEqual(health(0, 1))
+    })
+
+    it('never guesses a lazy list it was given no way to read', async () => {
+        const counts = await countAssetHealth([{ chaId: 'lazy', image: 'assets/ok.png', additionalAssetManifest: { id: 'm1' } }],
+            async (paths) => paths.map((path) => ({ path, status: 'exists' })))
+        expect(counts.size).toBe(0)
+    })
+
     it('retries a busy server, and a batch that keeps failing counts as unknown, never missing', async () => {
         let calls = 0
         const inspect = vi.fn(async (paths: string[]) => {

@@ -1,7 +1,8 @@
 import type { character } from './storage/database.svelte'
 import { fetchRealmCharacter, getCharacterRealmId, getRisuHub, type hubType } from './characterCards'
 import { moveCharacterToRecoveryFolder, moveRecoveredCharacter, releaseCharacterFromMissingFolders } from './characterRecoveryFolders'
-import { forageStorage, requestImmediateSave } from './globalApi.svelte'
+import { editAssetManifest, forageStorage, loadAssetManifestItems, requestImmediateSave } from './globalApi.svelte'
+import type { AssetManifestOperation, AssetManifestTuple } from './storage/nodeStorage'
 import {
     normalizeRealmName,
     scoreRealmCandidate,
@@ -70,7 +71,19 @@ function realmCardAssetSlotKey(asset: { type?: unknown, name?: unknown, ext?: un
     return slotKey(`cc-${type}`, asset.name, asset.ext ?? 'unknown')
 }
 
-function characterAssetSlots(character: character): AssetSlot[] {
+/**
+ * `lazyAdditional` is the card's additional-asset list read from its manifest
+ * when the card carries only `additionalAssetManifest` (the usual case in the
+ * app); replacements in it are queued in `manifestEdits` and written through
+ * the manifest. Reading `additionalAssets` alone saw none of those slots, so a
+ * card got its profile image back and was called healthy (2026-09 run: 45
+ * cards released with every additional asset still missing).
+ */
+function characterAssetSlots(
+    character: character,
+    lazyAdditional: AssetManifestTuple[] | null = null,
+    manifestEdits: AssetManifestOperation[] = [],
+): AssetSlot[] {
     const slots: AssetSlot[] = []
     if (character.image) {
         slots.push({ key: 'profile', reference: character.image, replace: (value) => { character.image = value } })
@@ -84,13 +97,20 @@ function characterAssetSlots(character: character): AssetSlot[] {
             replace: (value) => { character.emotionImages[index][1] = value },
         })
     }
-    for (let index = 0; index < (character.additionalAssets ?? []).length; index++) {
-        const item = character.additionalAssets[index]
+    const additional: AssetManifestTuple[] = Array.isArray(character.additionalAssets)
+        ? character.additionalAssets
+        : (lazyAdditional ?? [])
+    const lazy = !Array.isArray(character.additionalAssets)
+    for (let index = 0; index < additional.length; index++) {
+        const item = additional[index]
         if (!item?.[1]) continue
         slots.push({
             key: slotKey('asset', item[0], item[2] ?? ''),
             reference: item[1],
-            replace: (value) => { character.additionalAssets[index][1] = value },
+            replace: (value) => {
+                additional[index][1] = value
+                if (lazy) manifestEdits.push({ type: 'replace', index, item: [...additional[index]] as AssetManifestTuple })
+            },
         })
     }
     for (let index = 0; index < (character.ccAssets ?? []).length; index++) {
@@ -103,6 +123,36 @@ function characterAssetSlots(character: character): AssetSlot[] {
         })
     }
     return slots
+}
+
+/**
+ * Which of these references have a file. Asks the server's metadata-only
+ * inspection in batches of 128 (assetExists downloads each asset, which for a
+ * card with thousands of assets meant reading all of them); an answer other
+ * than exists/missing falls back to assetExists for that reference.
+ */
+async function existingReferences(references: string[]): Promise<Set<string>> {
+    const present = new Set<string>()
+    const checkable: string[] = []
+    for (const reference of new Set(references)) {
+        if (!reference) continue
+        if (reference.startsWith('assets/') || reference.startsWith('external://')) checkable.push(reference)
+        else present.add(reference) // assetExists treats other kinds as present
+    }
+    for (let offset = 0; offset < checkable.length; offset += 128) {
+        const batch = checkable.slice(offset, offset + 128)
+        let results: Array<{ status: string }> | null = null
+        try {
+            results = await forageStorage.inspectAssetReferences(batch)
+        } catch {
+            results = null
+        }
+        for (let i = 0; i < batch.length; i++) {
+            const status = results?.[i]?.status
+            if (status === 'exists' || (status !== 'missing' && await assetExists(batch[i]))) present.add(batch[i])
+        }
+    }
+    return present
 }
 
 async function assetExists(reference: string): Promise<boolean> {
@@ -170,10 +220,16 @@ export async function recoverCharacterAssetsFromRealm(
     options: { save?: boolean } = {},
 ): Promise<RealmAssetRecoveryResult> {
     if (!realmId) throw new Error('Realm source ID is required for asset recovery')
-    const slots = characterAssetSlots(character)
+    // A lazy additional-asset list is read in full; a list that cannot be read
+    // throws, so the card is counted as failed instead of being called healthy.
+    const manifest = !Array.isArray(character.additionalAssets) ? character.additionalAssetManifest : undefined
+    const lazyAdditional = manifest ? await loadAssetManifestItems(manifest) as AssetManifestTuple[] : null
+    const manifestEdits: AssetManifestOperation[] = []
+    const slots = characterAssetSlots(character, lazyAdditional, manifestEdits)
+    const present = await existingReferences(slots.map((slot) => slot.reference))
     const needed = new Map<string, number>()
     for (const slot of slots) {
-        if (await assetExists(slot.reference)) continue
+        if (present.has(slot.reference)) continue
         needed.set(slot.key, (needed.get(slot.key) ?? 0) + 1)
     }
     const candidate = await fetchRealmCharacter(realmId, {
@@ -195,7 +251,7 @@ export async function recoverCharacterAssetsFromRealm(
     let recovered = 0
     let remainingKnownMissing = 0
     for (const slot of slots) {
-        if (await assetExists(slot.reference)) continue
+        if (present.has(slot.reference)) continue
         const queue = queues.get(slot.key) ?? []
         let replacement = ''
         while (queue.length > 0 && !replacement) {
@@ -208,6 +264,14 @@ export async function recoverCharacterAssetsFromRealm(
         } else {
             remainingKnownMissing++
         }
+    }
+
+    if (manifest && manifestEdits.length > 0) {
+        let current = manifest
+        for (let offset = 0; offset < manifestEdits.length; offset += 1000) {
+            current = await editAssetManifest(current, manifestEdits.slice(offset, offset + 1000))
+        }
+        character.additionalAssetManifest = current
     }
 
     character.realmId = realmId
