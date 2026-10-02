@@ -35,6 +35,7 @@ import { forageStorage, readImage, resolvePrioritizedAssetManifestNames } from "
 import { pluginV2 } from "../plugins/plugins.svelte";
 import { abortGeneration, chatGenKey, chatProcessStage, endGeneration, getGenerationAdmission, onDatabaseRebased, registerAbort, setGenerationStage, tryStartGeneration } from "./generationState";
 import { clearPendingSend, registerPendingSend } from "./request/pendingSends";
+import { pruneScriptstateCheckpoints, recordScriptstateCheckpoint, snapshotScriptstate } from "../chatScriptstateCheckpoint";
 import { captureGenerationTarget, resolveGenerationTarget, type GenerationTargetIdentity } from './generationTarget';
 
 export interface OpenAIChat{
@@ -455,6 +456,9 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 
     let chatAdditonalTokens = arg.chatAdditonalTokens ?? caculatedChatTokens
     const tokenizer = new ChatTokenizer(chatAdditonalTokens, DBState.db.aiModel.startsWith('gpt') ? 'noName' : 'name')
+    // The chat variables this turn starts from (a reroll restores them first),
+    // recorded on the reply once it is done; see chatScriptstateCheckpoint.ts.
+    const scriptstateBefore = snapshotScriptstate(nowChatroom.chats[selectedChat].scriptstate)
     currentChat = runCurrentChatFunction(nowChatroom.chats[selectedChat])
     nowChatroom.chats[selectedChat] = currentChat
     const capturedModuleContext = getRuntimeModuleContext()
@@ -2065,6 +2069,25 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         if(outputMessageId){
             outputMessageIndex = findMessageIndexByChatId(currentChat, outputMessageId)
             await runChatOutputListeners(currentChar, currentChat, selectedChar, selectedChat, outputMessageIndex)
+        }
+    }
+
+    // The newest reply keeps the chat variables from before and after its
+    // turn, so a reroll starts from that baseline and switching swipes brings
+    // back what each one left. A continue keeps the turn's first baseline.
+    {
+        const checkpointChat = DBState.db.characters[selectedChar]?.chats?.[selectedChat]
+        const replies = checkpointChat?.message ?? []
+        let reply = null
+        for (let i = replies.length - 1; i >= 0; i--) {
+            if (replies[i]?.role === 'char' && !replies[i].isComment) {
+                reply = replies[i]
+                break
+            }
+        }
+        if (checkpointChat && reply) {
+            recordScriptstateCheckpoint(reply, scriptstateBefore, snapshotScriptstate(checkpointChat.scriptstate))
+            pruneScriptstateCheckpoints(replies, reply)
         }
     }
 

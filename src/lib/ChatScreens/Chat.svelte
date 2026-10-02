@@ -68,6 +68,8 @@
         onNextSwipe?: () => void;
         unReroll?: () => void;
         onDeleteSwipe?: () => void;
+        /** An older reply: arrows browse its swipes, no regenerate. */
+        swipeOnly?: boolean;
         character?: simpleCharacterArgument|string|null;
         firstMessage?: boolean;
         altGreeting?: boolean;
@@ -103,6 +105,7 @@
         onNextSwipe = () => {},
         unReroll = () => {},
         onDeleteSwipe = () => {},
+        swipeOnly = false,
         character = null,
         firstMessage = false,
         altGreeting = false,
@@ -186,14 +189,18 @@
     // (and collapsing its height) whenever a newer message takes over.
     export function updateRerollTarget(state: {
         rerollIcon: boolean|'dynamic'|'force'
+        swipeOnly: boolean
         onNextSwipe: () => void
         onDeleteSwipe: () => void
+        unReroll: () => void
         currentPage: number
         totalPages: number
     }){
         rerollIcon = state.rerollIcon
+        swipeOnly = state.swipeOnly
         onNextSwipe = state.onNextSwipe
         onDeleteSwipe = state.onDeleteSwipe
+        unReroll = state.unReroll
         currentPage = state.currentPage
         totalPages = state.totalPages
     }
@@ -989,6 +996,23 @@
             <button class="flex items-center shrink-0 hover:text-primary transition-colors button-icon-reroll" onclick={async () => {
                 await sleep(1)
                 onReroll()
+            }}>
+                <ArrowRight size={22}/>
+            </button>
+        {:else if swipeOnly}
+            <!-- Older replies: ← counter → browses the kept swipes; no regenerate -->
+            <button class="flex items-center shrink-0 hover:text-primary transition-colors button-icon-unreroll" class:force-show={rerollIcon === 'force'} onclick={async () => {
+                await sleep(1)
+                unReroll()
+            }}>
+                <ArrowLeft size={22}/>
+            </button>
+            {#if !DBState.db.hideMessagePageCount}
+                <span class="flex items-center text-xs text-textcolor2 shrink overflow-hidden whitespace-nowrap min-w-0" class:force-show={rerollIcon === 'force'}>{currentPage}/{totalPages}</span>
+            {/if}
+            <button class="flex items-center shrink-0 hover:text-primary transition-colors button-icon-swipe-next" class:force-show={rerollIcon === 'force'} onclick={async () => {
+                await sleep(1)
+                onNextSwipe()
             }}>
                 <ArrowRight size={22}/>
             </button>

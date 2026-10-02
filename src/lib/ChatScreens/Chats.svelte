@@ -1,5 +1,6 @@
 <script lang="ts">
     import type { character, Message, StreamingDisplayOptimizationMode } from 'src/ts/storage/database.svelte';
+    import { hasBrowsableSwipes } from 'src/ts/chatSwipes';
     import { inputEchoKey, previousInputIndex } from 'src/ts/gui/inputEcho';
     import { mount, onDestroy, tick, unmount } from 'svelte';
     import Chat from './Chat.svelte';
@@ -34,9 +35,9 @@
         messages: Message[]
         currentCharacter: character
         onReroll: () => void
-        onNextSwipe?: () => void
-        unReroll: () => void
-        onDeleteSwipe?: () => void
+        onNextSwipe?: (index?: number) => void
+        unReroll: (index?: number) => void
+        onDeleteSwipe?: (index?: number) => void
         currentUsername: string
         userIcon: string
         loadPages: number
@@ -54,8 +55,10 @@
         }) => void
         updateRerollTarget?: (state: {
             rerollIcon: boolean|'dynamic'|'force'
+            swipeOnly: boolean
             onNextSwipe: () => void
             onDeleteSwipe: () => void
+            unReroll: () => void
             currentPage: number
             totalPages: number
         }) => void
@@ -76,16 +79,22 @@
         return hash;
     }
 
-    const rerollTargetState = (message: Message, isRerollTarget: boolean) => isRerollTarget ? {
+    // The newest reply gets the full reroll controls; an older reply with
+    // swipes gets only the arrows (and swipe delete) to browse them.
+    const rerollTargetState = (message: Message, isRerollTarget: boolean, index: number) => isRerollTarget || hasBrowsableSwipes(message) ? {
         rerollIcon: 'force' as const,
-        onNextSwipe,
-        onDeleteSwipe,
+        swipeOnly: !isRerollTarget,
+        onNextSwipe: () => onNextSwipe(index),
+        onDeleteSwipe: () => onDeleteSwipe(index),
+        unReroll: () => unReroll(index),
         currentPage: (message.swipeId ?? 0) + 1,
         totalPages: message.swipes?.length ?? 1,
     } : {
         rerollIcon: false as const,
+        swipeOnly: false,
         onNextSwipe: () => {},
         onDeleteSwipe: () => {},
+        unReroll: () => {},
         currentPage: 1,
         totalPages: 1,
     };
@@ -187,7 +196,7 @@
                         loadSenderImage: () => getSenderImage(message.role),
                         onReroll: onReroll,
                         unReroll: unReroll,
-                        ...rerollTargetState(message, isRerollTarget),
+                        ...rerollTargetState(message, isRerollTarget, i),
                         character: simpleChar,
                         largePortrait: messageLargePortrait,
                         messageGenerationInfo: message.generationInfo,
@@ -222,7 +231,7 @@
                 })
                 // A message that stopped being the reroll target must also drop its
                 // swipe-delete control: onDeleteSwipe acts on the current last message.
-                inst?.updateRerollTarget?.(rerollTargetState(message, isRerollTarget))
+                inst?.updateRerollTarget?.(rerollTargetState(message, isRerollTarget, i))
             }
             nextHash = currentHash;
 

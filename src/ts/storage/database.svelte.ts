@@ -2398,6 +2398,8 @@ export interface Message{
     disabled?:false|true|'allBefore'
     isComment?:boolean
     swipes?: string[]
+    /** Chat variables around this reply's turn (chatScriptstateCheckpoint.ts); newest reply only. */
+    scriptstateCheckpoint?: import('../chatScriptstateCheckpoint').ScriptstateCheckpoint
     swipeId?: number
 }
 

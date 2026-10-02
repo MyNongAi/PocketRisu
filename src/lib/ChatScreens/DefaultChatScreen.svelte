@@ -2,6 +2,8 @@
     import { getActiveHypaV3Preset } from "src/ts/process/memory/memoryPresets";
 
     import Suggestion from './Suggestion.svelte';
+    import { copyScriptstateCheckpoint, mergeRerollCheckpoint, removeSwipeCheckpoint, restoreScriptstateBeforeReroll, restoreScriptstateSnapshot, restoreShownSwipeScriptstate, snapshotScriptstate } from 'src/ts/chatScriptstateCheckpoint';
+    import { deleteShownSwipe, stepSwipe } from 'src/ts/chatSwipes';
     import { CameraIcon, ChevronUpIcon, ChevronDownIcon, ChevronsUpIcon, ChevronsDownIcon, DatabaseIcon, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2 } from "@lucide/svelte";
     import ShDropdownMenu from 'src/lib/UI/GUI/ShDropdownMenu.svelte';
     import ShDropdownMenuTrigger from 'src/lib/UI/GUI/ShDropdownMenuTrigger.svelte';
@@ -659,6 +661,11 @@ import { isMobile } from 'src/ts/platform'
 
         // Save existing swipes before clone replaces the array
         const savedSwipes = lastMsg.swipes ? [...lastMsg.swipes] : [lastMsg.data]
+        // Chat variables: the new candidate starts from the turn's baseline,
+        // not from what the previous candidate left (chatScriptstateCheckpoint.ts).
+        const previousCheckpoint = copyScriptstateCheckpoint(lastMsg)
+        const scriptstateBeforeReroll = snapshotScriptstate(activeChat.scriptstate)
+        const targetIndex = activeChat.message.indexOf(lastMsg)
 
         // Generate new response
         // Preserve trailing comment/disabled messages (e.g. branch comments)
@@ -683,6 +690,9 @@ import { isMobile } from 'src/ts/platform'
             let msg = cha.pop()
             if(!msg) return
         }
+        // Roll the variables back only when the rerolled reply is among the
+        // popped messages (a chat ending on the user's turn rerolls nothing old).
+        const restoredBaseline = targetIndex >= cha.length && restoreScriptstateBeforeReroll(activeChat, lastMsg)
         activeChat.message = cha
         preparingChatSends.delete(genKey)
         const generated = await sendChatMain(false, generationTarget)
@@ -695,6 +705,7 @@ import { isMobile } from 'src/ts/platform'
         // If generation failed, restore original messages
         if (!generated) {
             attached.chat.message = originalMessages
+            if (restoredBaseline) restoreScriptstateSnapshot(attached.chat, scriptstateBeforeReroll)
             return
         }
 
@@ -707,8 +718,12 @@ import { isMobile } from 'src/ts/platform'
         // Save new response to swipes
         const newLastMsg = getLastCharMsgIn(attached.chat)
         if (newLastMsg && !newLastMsg.swipes) {
+            const generatedCheckpoint = copyScriptstateCheckpoint(newLastMsg)
             newLastMsg.swipes = [...savedSwipes, newLastMsg.data]
             newLastMsg.swipeId = newLastMsg.swipes.length - 1
+            const merged = mergeRerollCheckpoint(restoredBaseline ? previousCheckpoint : undefined, savedSwipes.length, generatedCheckpoint)
+            if (merged) newLastMsg.scriptstateCheckpoint = merged
+            else delete newLastMsg.scriptstateCheckpoint
         }
         } finally {
             preparingChatSends.delete(genKey)
@@ -716,41 +731,41 @@ import { isMobile } from 'src/ts/platform'
         }
     }
 
-    async function unReroll() {
+    // Swipes of any reply (`index`), the newest one by default. Only switching
+    // the newest reply brings back the chat variables its swipe left: later
+    // messages have changed them since an older reply was written.
+    function swipeContext(index?: number) {
+        const char = DBState.db.characters[$selectedCharID]
+        const chat = char?.chats?.[char.chatPage]
+        const target = getLastCharMsgIn(chat)
+        const msg = index === undefined ? target : (chat?.message?.[index] ?? null)
+        return { chat, msg, isTarget: !!msg && msg === target }
+    }
+
+    function switchSwipe(step: -1 | 1, index?: number) {
         if(currentChatGenerating) return
-        const lastMsg = getLastCharMsg()
-        if (!lastMsg || !lastMsg.swipes || lastMsg.swipeId === undefined) return
-
-        lastMsg.swipeId = lastMsg.swipeId <= 0 ? lastMsg.swipes.length - 1 : lastMsg.swipeId - 1
-        lastMsg.data = lastMsg.swipes[lastMsg.swipeId]
+        const { chat, msg, isTarget } = swipeContext(index)
+        if (!chat || !msg || !stepSwipe(msg, step)) return
+        if (isTarget) restoreShownSwipeScriptstate(chat, msg)
         DBState.db.characters[$selectedCharID].reloadKeys += 1
     }
 
-    function nextSwipe() {
-        const lastMsg = getLastCharMsg()
-        if (!lastMsg || !lastMsg.swipes || lastMsg.swipeId === undefined) return
-
-        lastMsg.swipeId = lastMsg.swipeId >= lastMsg.swipes.length - 1 ? 0 : lastMsg.swipeId + 1
-        lastMsg.data = lastMsg.swipes[lastMsg.swipeId]
-        DBState.db.characters[$selectedCharID].reloadKeys += 1
+    function unReroll(index?: number) {
+        switchSwipe(-1, index)
     }
 
-    function deleteSwipe() {
-        const lastMsg = getLastCharMsg()
-        if (!lastMsg || !lastMsg.swipes || lastMsg.swipes.length <= 1) return
+    function nextSwipe(index?: number) {
+        switchSwipe(1, index)
+    }
 
-        const idx = lastMsg.swipeId ?? 0
-        lastMsg.swipes.splice(idx, 1)
-
-        if (idx >= lastMsg.swipes.length) {
-            lastMsg.swipeId = lastMsg.swipes.length - 1
-        }
-        lastMsg.data = lastMsg.swipes[lastMsg.swipeId]
-
-        if (lastMsg.swipes.length === 1) {
-            delete lastMsg.swipes
-            delete lastMsg.swipeId
-        }
+    function deleteSwipe(index?: number) {
+        if(currentChatGenerating) return
+        const { chat, msg, isTarget } = swipeContext(index)
+        if (!chat || !msg) return
+        const removed = deleteShownSwipe(msg)
+        if (!removed) return
+        removeSwipeCheckpoint(msg, removed.removedIndex, removed.previousCount)
+        if (isTarget) restoreShownSwipeScriptstate(chat, msg)
         DBState.db.characters[$selectedCharID].reloadKeys += 1
     }
 
