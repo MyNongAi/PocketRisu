@@ -10,6 +10,7 @@
 import { language } from 'src/lang'
 import { notifyError, notifySuccess } from './alert'
 import { runImportTask, type ImportProgressReporter } from './importProgress'
+import { isImportCancelled } from './importTransaction'
 import { importModuleFile, type RisuModule } from './process/modules'
 import { downloadProtonEntry, inspectProtonShare, isProtonPasswordRequired, type ProtonInspectResult } from './protonShareClient'
 import { getDatabase } from './storage/database.svelte'
@@ -140,6 +141,7 @@ export async function importRealmCompanionModules(chaId: string, texts: readonly
         const { paired } = await importCompanionModules(links, () => getDatabase().characters.filter((c) => c?.chaId === chaId))
         if (paired > 0) notifySuccess(language.realmCompanionModulePaired(paired))
     } catch (error) {
-        reportFailure(error)
+        // The user cancelled a large module from its progress card.
+        if (!isImportCancelled(error)) reportFailure(error)
     }
 }

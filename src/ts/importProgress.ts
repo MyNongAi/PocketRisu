@@ -1,7 +1,8 @@
 import { writable } from 'svelte/store'
 import { language } from 'src/lang'
+import { describeImportRollback, isImportCancelled, rollbackSummaryOf } from './importTransaction'
 
-export type ImportTaskPhase = 'queued' | 'running' | 'done' | 'failed'
+export type ImportTaskPhase = 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
 
 /** Imports and exports share one progress surface; the kind only picks the labels. */
 export type ImportTaskKind = 'import' | 'export'
@@ -11,7 +12,14 @@ export interface ImportProgressUpdate {
     progress?: number | null
 }
 
-export type ImportProgressReporter = (update: ImportProgressUpdate) => void
+export interface ImportProgressReporter {
+    (update: ImportProgressUpdate): void
+    /**
+     * Present on the reporters of tracked tasks: offers a cancel action on the
+     * task's card while set, and withdraws it with null.
+     */
+    cancellable?: (cancel: (() => void) | null) => void
+}
 
 export interface ImportTaskEntry {
     id: string
@@ -23,6 +31,12 @@ export interface ImportTaskEntry {
     startedAt?: number
     endedAt?: number
     error?: string
+    /** A neutral line under the label (what a rollback removed and kept). */
+    detail?: string
+    /** Set while the running import can be cancelled (runImportTransaction). */
+    cancel?: () => void
+    /** Cancel was pressed: the import is stopping and rolling back. */
+    cancelling?: boolean
 }
 
 export interface ImportBatchResult {
@@ -78,13 +92,43 @@ export function startImportTask(id: string): void {
 
 export function reportImportTask(id: string, update: ImportProgressUpdate): void {
     updateTask(id, (entry) => {
-        if (entry.phase === 'done' || entry.phase === 'failed') return entry
+        // Once cancel was pressed, writes still finishing must not paint the
+        // card back to "saving assets".
+        if ((entry.phase !== 'queued' && entry.phase !== 'running') || entry.cancelling) return entry
         return {
             ...entry,
             label: update.label,
             progress: clampProgress(update.progress),
         }
     })
+}
+
+/** A reporter bound to one task, with the cancel hook of tracked tasks. */
+function taskReporter(id: string): ImportProgressReporter {
+    const report: ImportProgressReporter = (update) => reportImportTask(id, update)
+    report.cancellable = (cancel) => updateTask(id, (entry) => (
+        entry.phase === 'queued' || entry.phase === 'running'
+            ? { ...entry, cancel: cancel ?? undefined }
+            : entry
+    ))
+    return report
+}
+
+/** The card's cancel action: stops the import, which then rolls back. */
+export function cancelImportTask(id: string): void {
+    let cancel: (() => void) | undefined
+    updateTask(id, (entry) => {
+        if (entry.phase !== 'running' || !entry.cancel || entry.cancelling) return entry
+        cancel = entry.cancel
+        return {
+            ...entry,
+            cancel: undefined,
+            cancelling: true,
+            label: language.importProgress.cancelling,
+            progress: null,
+        }
+    })
+    cancel?.()
 }
 
 export function completeImportTask(id: string): void {
@@ -94,10 +138,26 @@ export function completeImportTask(id: string): void {
         progress: 100,
         phase: 'done',
         endedAt: Date.now(),
+        cancel: undefined,
+        cancelling: false,
     }))
 }
 
 export function failImportTask(id: string, error: unknown): void {
+    const rollback = rollbackSummaryOf(error)
+    const detail = rollback ? describeImportRollback(rollback) : undefined
+    if (isImportCancelled(error)) {
+        updateTask(id, (entry) => ({
+            ...entry,
+            label: rollback ? language.importProgress.cancelledRolledBack : language.importProgress.cancelled,
+            phase: 'cancelled',
+            endedAt: Date.now(),
+            cancel: undefined,
+            cancelling: false,
+            detail,
+        }))
+        return
+    }
     const message = error instanceof Error ? error.message : String(error)
     updateTask(id, (entry) => ({
         ...entry,
@@ -105,6 +165,9 @@ export function failImportTask(id: string, error: unknown): void {
         phase: 'failed',
         endedAt: Date.now(),
         error: message,
+        cancel: undefined,
+        cancelling: false,
+        detail,
     }))
 }
 
@@ -129,7 +192,7 @@ export async function runImportTask<T>(
     const id = createImportTask(fileName)
     startImportTask(id)
     try {
-        const value = await importer((update) => reportImportTask(id, update))
+        const value = await importer(taskReporter(id))
         completeImportTask(id)
         return value
     } catch (error) {
@@ -157,7 +220,7 @@ export async function runExportTask<T>(
     const id = createImportTask(fileName, 'export')
     startImportTask(id)
     try {
-        const value = await exporter((update) => reportImportTask(id, update))
+        const value = await exporter(taskReporter(id))
         completeImportTask(id)
         return value
     } catch (error) {
@@ -181,7 +244,7 @@ export async function runImportBatch<T extends { name: string }>(
     for (const { file, id } of entries) {
         startImportTask(id)
         try {
-            await importer(file, (update) => reportImportTask(id, update))
+            await importer(file, taskReporter(id))
             completeImportTask(id)
             completed++
         } catch (error) {
@@ -267,7 +330,7 @@ export async function runPrefetchedImportBatch<T extends { name: string }, F>(
         startImportTask(entry.id)
         try {
             const fetched = await entry.fetched!
-            await importItem(entry.item, fetched, (update) => reportImportTask(entry.id, update))
+            await importItem(entry.item, fetched, taskReporter(entry.id))
             completeImportTask(entry.id)
             completed++
         } catch (error) {

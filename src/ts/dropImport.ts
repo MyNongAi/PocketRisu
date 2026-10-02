@@ -24,7 +24,11 @@ export async function importDroppedFiles(
         }
 
         if(kind === 'module'){
-            const data = new Uint8Array(await file.arrayBuffer())
+            // A CHARX streams from the File (a large one is inspected first,
+            // see charxPreflight.ts); other module formats are read whole.
+            const data = file.name.toLocaleLowerCase().endsWith('.charx')
+                ? file
+                : new Uint8Array(await file.arrayBuffer())
             await importModuleFile(
                 { name: file.name, data },
                 { suppressSuccess: true, onProgress: report },

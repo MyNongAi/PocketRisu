@@ -671,7 +671,9 @@ export async function importCharacterPackage(): Promise<void> {
             }
             const result = await importCharacterProcess({
                 name: manifest.character.file.split('/').pop() || 'package.charx',
-                data: charxBytes
+                data: charxBytes,
+                // The package needs this bot back: no bot/module question.
+                charxGuard: false,
             })
             if (result === undefined || result === null) {
                 alertError('Failed to import character from package')

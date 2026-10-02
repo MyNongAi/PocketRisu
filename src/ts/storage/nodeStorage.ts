@@ -828,13 +828,18 @@ export class NodeStorage{
         )
     }
 
-    async setItem(key:string, value:Uint8Array, etag?:string): Promise<string|undefined> {
+    async setItem(key:string, value:Uint8Array, etag?:string, options: { importId?: string } = {}): Promise<string|undefined> {
         const headers: Record<string, string> = {
             'content-type': 'application/octet-stream',
             'file-path': Buffer.from(key, 'utf-8').toString('hex')
         }
         if (etag) {
             headers['x-if-match'] = etag
+        }
+        // The server journals which asset objects this import created, so a
+        // cancel can delete exactly those (importTransaction.ts).
+        if (options.importId && key.startsWith('assets/')) {
+            headers['x-import-id'] = options.importId
         }
         if (key.startsWith('assets/')) {
             try {
@@ -1336,6 +1341,47 @@ export class NodeStorage{
                 }
             })
             if (da.status < 200 || da.status >= 300) throw await this.storageRequestError('setItems', da)
+        }
+    }
+
+    // ─── Cancellable imports (importTransaction.ts) ──────────────────────────
+    /** Opens the server's journal for one import; false when the server cannot keep one. */
+    async beginImportJournal(id: string): Promise<boolean> {
+        const response = await this.authFetch('/api/import-journal/begin', {
+            method: 'POST',
+            body: JSON.stringify({ id }),
+            headers: { 'content-type': 'application/json' },
+        })
+        return response.ok
+    }
+
+    /** The import finished: the server forgets it and deletes nothing. */
+    async commitImportJournal(id: string): Promise<void> {
+        const response = await this.authFetch('/api/import-journal/commit', {
+            method: 'POST',
+            body: JSON.stringify({ id }),
+            headers: { 'content-type': 'application/json' },
+        })
+        if (!response.ok) throw await this.storageRequestError('commitImportJournal', response)
+    }
+
+    /**
+     * The import was cancelled: the server deletes the asset objects only it
+     * created and nothing else uses, and keeps the rest.
+     */
+    async rollbackImportJournal(id: string): Promise<{ removed: number, kept: number, tracked: boolean }> {
+        const response = await this.authFetch('/api/import-journal/rollback', {
+            method: 'POST',
+            body: JSON.stringify({ id }),
+            headers: { 'content-type': 'application/json' },
+        })
+        if (!response.ok) throw await this.storageRequestError('rollbackImportJournal', response)
+        const data = await response.json()
+        return {
+            removed: Number(data?.removed) || 0,
+            kept: Number(data?.kept) || 0,
+            // The server lost the journal (restart, expiry): it deleted nothing.
+            tracked: data?.unknown !== true,
         }
     }
 

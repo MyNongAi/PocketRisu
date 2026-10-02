@@ -11,9 +11,9 @@ export class AutoStorage{
 
     realStorage:NodeStorage
 
-    async setItem(key:string, value:Uint8Array, etag?:string):Promise<string|null> {
+    async setItem(key:string, value:Uint8Array, etag?:string, options?: { importId?: string }):Promise<string|null> {
         await this.Init()
-        return (await this.realStorage.setItem(key, value, etag)) ?? null
+        return (await this.realStorage.setItem(key, value, etag, options)) ?? null
     }
     async getItem(key:string):Promise<Buffer> {
         return await this.realStorage.getItem(key)
@@ -127,6 +127,11 @@ export class AutoStorage{
     async finalizeExternalAssetMigration(jobId: string) { await this.Init(); return this.realStorage.finalizeExternalAssetMigration(jobId) }
     async verifyExternalAssets(migrationId?: string) { await this.Init(); return this.realStorage.verifyExternalAssets(migrationId) }
     async purgeExternalAssetTrash(migrationId?: string) { await this.Init(); return this.realStorage.purgeExternalAssetTrash(migrationId) }
+
+    // ─── Cancellable imports (importTransaction.ts) ─────────────────────────
+    async beginImportJournal(id: string) { await this.Init(); return this.realStorage.beginImportJournal(id) }
+    async commitImportJournal(id: string) { await this.Init(); return this.realStorage.commitImportJournal(id) }
+    async rollbackImportJournal(id: string) { await this.Init(); return this.realStorage.rollbackImportJournal(id) }
 
     // ── Plugin storage (server kv, per key) ───────────────────────────────────
     async getPluginStorageIndex() { await this.Init(); return this.realStorage.getPluginStorageIndex() }

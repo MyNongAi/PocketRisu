@@ -1,6 +1,8 @@
 import { get } from 'svelte/store'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { adaptLegacyProgress, importTasks, reportImportTask, runExportTask, runImportBatch, runImportTask, runPrefetchedImportBatch } from './importProgress'
+import { language } from 'src/lang'
+import { adaptLegacyProgress, cancelImportTask, importTasks, reportImportTask, runExportTask, runImportBatch, runImportTask, runPrefetchedImportBatch } from './importProgress'
+import { ImportCancelledError } from './importTransaction'
 
 describe('import progress queue', () => {
     beforeEach(() => {
@@ -222,5 +224,59 @@ describe('import progress queue', () => {
         const [task] = [...get(importTasks).values()]
         expect(task.phase).toBe('failed')
         expect(task.error).toBe('realm unavailable')
+    })
+})
+
+describe('cancelling an import from its card', () => {
+    beforeEach(() => {
+        importTasks.set(new Map())
+    })
+
+    it('cancels once, ignores progress from writes still finishing, and ends with the rollback summary', async () => {
+        let cancels = 0
+        let release!: () => void
+        const running = runImportTask('big.charx', async (report) => {
+            report.cancellable?.(() => { cancels++; release() })
+            report({ label: 'saving assets', progress: 40 })
+            await new Promise<void>((resolve) => { release = resolve })
+            report({ label: 'saving assets', progress: 60 })
+            throw new ImportCancelledError({ owners: 0, removedAssets: 5, keptAssets: 1, assetCleanup: 'done' })
+        })
+        const [id] = [...get(importTasks).keys()]
+        expect(get(importTasks).get(id)?.cancel).toBeTypeOf('function')
+
+        cancelImportTask(id)
+        cancelImportTask(id)
+        expect(cancels).toBe(1)
+        expect(get(importTasks).get(id)).toMatchObject({
+            cancelling: true,
+            cancel: undefined,
+            label: language.importProgress.cancelling,
+        })
+
+        await expect(running).rejects.toBeInstanceOf(ImportCancelledError)
+        const entry = get(importTasks).get(id)!
+        expect(entry.phase).toBe('cancelled')
+        expect(entry.label).toBe(language.importProgress.cancelledRolledBack)
+        expect(entry.detail).toMatch(/5/)
+        expect(entry.error).toBeUndefined()
+    })
+
+    it('shows a cancel before anything was written as plain cancelled', async () => {
+        const result = await runImportBatch([{ name: 'huge.charx' }], async () => {
+            throw new ImportCancelledError()
+        })
+        expect(result).toEqual({ completed: 0, failed: 1, total: 1 })
+        const [entry] = [...get(importTasks).values()]
+        expect(entry).toMatchObject({ phase: 'cancelled', label: language.importProgress.cancelled })
+        expect(entry.detail).toBeUndefined()
+    })
+
+    it('offers no cancel on tasks that never registered one', () => {
+        importTasks.set(new Map([['task', {
+            id: 'task', fileName: 'a.png', kind: 'import', label: 'running', progress: 0, phase: 'running',
+        }]]))
+        cancelImportTask('task')
+        expect(get(importTasks).get('task')).toMatchObject({ phase: 'running', label: 'running' })
     })
 })

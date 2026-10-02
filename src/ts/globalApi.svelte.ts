@@ -66,6 +66,7 @@ import {
 import { createManifestItemsLoader, getCachedFullAssetManifest } from './storage/assetManifestCache';
 import { resolveNamesLocally } from './storage/assetNameLocalResolver';
 import { createAssetNameResolver, createBatchedResolve, type AssetNameHit } from './storage/assetNameResolver'
+import type { ImportWriteScope } from './importTransaction'
 import { addLog } from './log'
 
 export const forageStorage = new AutoStorage()
@@ -410,9 +411,13 @@ export async function readImage(data: string) {
  * @param {Uint8Array} data - The data of the asset file.
  * @param {string} [customId=''] - The custom ID for the asset file.
  * @param {string} [fileName=''] - The name of the asset file.
+ * @param importScope - PocketRisu: the cancellable import this write belongs
+ *   to. The write is refused once that import was cancelled, carries its id so
+ *   the server journals what it created, and a rollback waits for it.
  * @returns {Promise<string>} - A promise that resolves to the path of the saved asset file.
  */
-export async function saveAsset(data: Uint8Array, customId: string = '', fileName: string = '') {
+export async function saveAsset(data: Uint8Array, customId: string = '', fileName: string = '', importScope?: ImportWriteScope) {
+    importScope?.check()
     let id = ''
     if (customId !== '') {
         id = customId
@@ -429,7 +434,11 @@ export async function saveAsset(data: Uint8Array, customId: string = '', fileNam
         fileExtension = fileName.split('.').pop()
     }
     let form = `assets/${id}.${fileExtension}`
-    const replacer = await forageStorage.setItem(form, data)
+    // Hashing took a while: do not start a write for an import cancelled meanwhile.
+    importScope?.check()
+    const replacer = importScope
+        ? await importScope.track(forageStorage.setItem(form, data, undefined, { importId: importScope.id }))
+        : await forageStorage.setItem(form, data)
     if (replacer) {
         return replacer
     }

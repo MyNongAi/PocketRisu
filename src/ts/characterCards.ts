@@ -15,9 +15,12 @@ import { reencodeImage } from "./process/files/inlays"
 import { PngChunk } from "./pngChunk"
 import type { OnnxModelFiles } from "./process/transformers"
 import { CharXImporter, CharXSkippableChecker, CharXWriter } from "./process/processzip"
-import { addModuleToDatabase, exportModuleLegacy, readModule, type RisuModule } from "./process/modules"
+import { addModuleToDatabase, exportModuleLegacy, importModuleFile, readModule, type RisuModule } from "./process/modules"
 import { promoteNewlyImportedCharacter } from "./characterRecentOrder"
 import { adaptLegacyProgress, runExportTask, runImportBatch, runImportTask, type ImportProgressReporter } from "./importProgress"
+import { isCharxFileName, type CharxDestination } from "./charxPreflight"
+import { planLargeCharxImport } from "./largeCharxImport"
+import { ImportCancelledError, isImportCancelled, runImportTransaction, type ImportWriteScope } from "./importTransaction"
 import { organizeImportedCharacterSimilarity } from "./process/similarityFolders"
 
 
@@ -96,14 +99,68 @@ export async function importCharacter() {
     }
 }
 
-export async function importCharacterProcess<T extends boolean = false>(f:{
+type CharacterImportFile = {
     name: string;
     data: Uint8Array|File|ReadableStream<Uint8Array>
     lightningRealmImport?:boolean
-    returnCharacter?:T //note That this option only works with v3 charx
+    returnCharacter?:boolean //note That this option only works with v3 charx
     onProgress?:ImportProgressReporter
     suppressSuccess?:boolean
+    /**
+     * PocketRisu: the cancellable import this runs in (importTransaction.ts).
+     * Set by the large-CHARX guard; callers leave it unset.
+     */
+    importScope?:ImportWriteScope
+    /** PocketRisu: false skips the large-CHARX question and cancel guard (the caller needs a bot). */
+    charxGuard?:boolean
+    /** PocketRisu: the large-CHARX question sent the file to the module importer instead. */
+    onImportedAsModule?:(module: RisuModule | undefined) => void
+}
+
+/**
+ * A large CHARX (charxPreflight.ts) after the user picked what it is: the
+ * import runs as a cancellable transaction. A caller that has no progress card
+ * gets one, so the cancel action is always there.
+ */
+async function importLargeCharx(f: CharacterImportFile, destination: CharxDestination): Promise<number | null> {
+    const run = (report: ImportProgressReporter) => runImportTransaction(report, async (scope) => {
+        if(destination === 'module'){
+            const module = await importModuleFile({ name: f.name, data: f.data as Uint8Array|File }, {
+                suppressSuccess: f.suppressSuccess,
+                onProgress: report,
+                importScope: scope,
+            })
+            f.onImportedAsModule?.(module)
+            return null
+        }
+        const index = await importCharacterProcess({ ...f, returnCharacter: false, onProgress: report, importScope: scope })
+        return typeof index === 'number' ? index : null
+    })
+    if(f.onProgress) return run(f.onProgress)
+    try {
+        return await runImportTask(f.name, run)
+    } catch (error) {
+        if(isImportCancelled(error)) return null
+        throw error
+    }
+}
+
+export async function importCharacterProcess<T extends boolean = false>(f:CharacterImportFile & {
+    returnCharacter?:T
 }):Promise<T extends true ? character | number | null : number | null>{
+    // PocketRisu: a large CHARX first asks bot / module / cancel. Callers that
+    // need the character object itself (returnCharacter) decided already.
+    if(!f.importScope && !f.returnCharacter && f.charxGuard !== false && isCharxFileName(f.name)){
+        const plan = await planLargeCharxImport(f.name, f.data, 'character')
+        if(plan.kind === 'cancel'){
+            // A tracked task shows "cancelled"; a blocking-alert caller just stops.
+            if(f.onProgress) throw new ImportCancelledError()
+            return null
+        }
+        if(plan.kind === 'guarded'){
+            return await importLargeCharx(f, plan.destination) as any
+        }
+    }
     const progress = f.onProgress
     reportCharacterImport(progress, language.importProgress.readingFile, 2)
     if(f.name.endsWith('json')){
@@ -121,6 +178,7 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
             f.returnCharacter,
             progress,
             f.suppressSuccess,
+            f.importScope,
         )
         if(f.returnCharacter){
             return (imported || null) as any
@@ -149,6 +207,7 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
         reportCharacterImport(progress, language.importProgress.readingCharx)
 
         const importer = new CharXImporter()
+        importer.importScope = f.importScope
         importer.alertInfo = !progress
         importer.progressCallback = progress
             ? (done, total) => reportCharacterImport(
@@ -172,6 +231,7 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
         if(importer.moduleData){
             const md = await readModule(Buffer.from(importer.moduleData), {
                 onProgress: progress,
+                importScope: f.importScope,
             })
             card.data.extensions ??= {}
             card.data.extensions.risuai ??= {}
@@ -191,6 +251,7 @@ export async function importCharacterProcess<T extends boolean = false>(f:{
             f.returnCharacter,
             progress,
             f.suppressSuccess,
+            f.importScope,
         )
         if(f.returnCharacter){
             return v as any
@@ -733,6 +794,7 @@ async function importCharacterCardSpec<T extends boolean = false>(
     returnValue:T = false as T,
     progress?:ImportProgressReporter,
     suppressSuccess:boolean = false,
+    importScope?:ImportWriteScope,
 ):Promise<T extends true ? character|false : boolean>{
     if(!card ||(card.spec !== 'chara_card_v2' && card.spec !== 'chara_card_v3' )){
         return false
@@ -742,7 +804,7 @@ async function importCharacterCardSpec<T extends boolean = false>(
 
     const data = card.data
     reportCharacterImport(progress, language.importProgress.savingProfileImage, 52)
-    let im = img ? await saveAsset(img) : undefined
+    let im = img ? await saveAsset(img, '', '', importScope) : undefined
     let db = getDatabase()
 
     const risuext = safeStructuredClone(data.extensions.risuai)
@@ -779,7 +841,7 @@ async function importCharacterCardSpec<T extends boolean = false>(
                     emotions.push([risuext.emotions[i][0],imgp])
                     continue
                 }
-                const imgp = await saveAsset(mode === 'hub' ? (await getHubResources(risuext.emotions[i][1])) : Buffer.from(risuext.emotions[i][1], 'base64'))
+                const imgp = await saveAsset(mode === 'hub' ? (await getHubResources(risuext.emotions[i][1])) : Buffer.from(risuext.emotions[i][1], 'base64'), '', '', importScope)
                 emotions.push([risuext.emotions[i][0],imgp])
             }
         }
@@ -806,7 +868,7 @@ async function importCharacterCardSpec<T extends boolean = false>(
                     extAssets.push([risuext.additionalAssets[i][0],imgp,fileName])
                     continue
                 }
-                const imgp = await saveAsset(mode === 'hub' ? (await getHubResources(risuext.additionalAssets[i][1])) :Buffer.from(risuext.additionalAssets[i][1], 'base64'), '', fileName)
+                const imgp = await saveAsset(mode === 'hub' ? (await getHubResources(risuext.additionalAssets[i][1])) :Buffer.from(risuext.additionalAssets[i][1], 'base64'), '', fileName, importScope)
                 extAssets.push([risuext.additionalAssets[i][0],imgp,fileName])
             }
         }
@@ -829,7 +891,7 @@ async function importCharacterCardSpec<T extends boolean = false>(
                     risuext.vits[key] = imgp
                     continue
                 }
-                const imgp = await saveAsset(mode === 'hub' ? (await getHubResources(risuext.vits[key])) : Buffer.from(risuext.vits[key], 'base64'))
+                const imgp = await saveAsset(mode === 'hub' ? (await getHubResources(risuext.vits[key])) : Buffer.from(risuext.vits[key], 'base64'), '', '', importScope)
                 risuext.vits[key] = imgp
             }
 
@@ -863,6 +925,7 @@ async function importCharacterCardSpec<T extends boolean = false>(
                 )
                 if(i % 100 === 0){
                     await sleep(10)
+                    importScope?.check()
                 }
                 let fileName = ''
                 let imgp = ''
@@ -890,7 +953,7 @@ async function importCharacterCardSpec<T extends boolean = false>(
                     //data uri
                     const b64 = data.assets[i].uri.split(',')[1]
                     if(b64.length < 50 * 1024 * 1024){
-                        imgp = await saveAsset(Buffer.from(b64, 'base64'))
+                        imgp = await saveAsset(Buffer.from(b64, 'base64'), '', '', importScope)
                     }
                     else{
                         if(progress){
@@ -1054,7 +1117,11 @@ async function importCharacterCardSpec<T extends boolean = false>(
     }
 
     reportCharacterImport(progress, language.importProgress.addingCharacter, 98)
+    // Nothing awaits between this check and the append, so a cancel either
+    // stops the import here or the character is registered for the rollback.
+    importScope?.check()
     appendImportedCharacter(db, char)
+    importScope?.registerOwner('character', char.chaId)
     notifyCharacterImported(suppressSuccess)
     return true as any
 
@@ -1921,6 +1988,14 @@ export async function downloadRisuHubAsModule(id:string) {
         const module = await runImportTask(`Realm ${id}`, async (report) => {
             report({ label: language.importProgress.importing, progress: null })
             const fetched = await fetchRealmCard(id)
+            if(fetched.kind === 'file' && isCharxFileName(fetched.name)){
+                // The module importer converts the card the same way, and asks
+                // first when the archive is large (charxPreflight.ts).
+                return importModuleFile({ name: fetched.name, data: fetched.data }, {
+                    suppressSuccess: true,
+                    onProgress: report,
+                })
+            }
             const char = fetched.kind === 'file'
                 ? await importCharacterProcess({
                     name: fetched.name,
@@ -1941,6 +2016,7 @@ export async function downloadRisuHubAsModule(id:string) {
         notifySuccess(language.successImport)
         return module
     } catch (error) {
+        if(isImportCancelled(error)) return null
         console.error(error)
         notifyError(error instanceof Error ? error.message : String(error))
         return null
@@ -1955,6 +2031,8 @@ export async function downloadRisuHub(id:string, arg:{
             return
         }
 
+        // A large CHARX can be sent to the module importer instead (charxPreflight.ts).
+        let importedAsModule = false
         const index = await runImportTask(`Realm ${id}`, async (report) => {
             report({ label: language.importProgress.importing, progress: null })
             const fetched = await fetchRealmCard(id)
@@ -1966,7 +2044,9 @@ export async function downloadRisuHub(id:string, arg:{
                     lightningRealmImport: getDatabase().lightningRealmImport,
                     onProgress: report,
                     suppressSuccess: true,
+                    onImportedAsModule: () => { importedAsModule = true },
                 })
+                if(importedAsModule) return null
                 importedIndex = typeof result === 'number' ? result : null
             }
             else{
@@ -1994,6 +2074,10 @@ export async function downloadRisuHub(id:string, arg:{
             checkCharOrder()
             return importedIndex
         })
+        if(importedAsModule){
+            notifySuccess(language.successImport)
+            return null
+        }
 
         const db = getDatabase()
         checkCharOrder()
@@ -2011,6 +2095,7 @@ export async function downloadRisuHub(id:string, arg:{
         startRealmCompanionModules(id, db.characters[index])
         return index
     } catch (error) {
+        if(isImportCancelled(error)) return null
         console.error(error)
         notifyError(error instanceof Error ? error.message : String(error))
         return null

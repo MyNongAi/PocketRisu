@@ -4,6 +4,7 @@ import { asBuffer, Semaphore, sleep } from "../util";
 import { alertStore } from "../alert";
 import { hasher } from "../parser/parser.svelte";
 import { hubURL } from "../characterCards";
+import type { ImportWriteScope } from "../importTransaction";
 
 // File size and chunk size constants
 const MAX_ASSET_SIZE_BYTES = 50 * 1024 * 1024; // 50MB
@@ -198,6 +199,9 @@ export class CharXImporter{
      * decompressed. card.json/module.risum are always read. */
     assetAllowlist?: ReadonlySet<string>
     hashSignal: string|undefined  // Hash to signal server for sync (when skipSaving is false)
+    /** PocketRisu: the cancellable import whose asset writes these are. A
+     * cancel stops reading the archive and every save not yet started. */
+    importScope?: ImportWriteScope
 
     constructor(){
         this.unzip = new fflate.Unzip()
@@ -246,6 +250,12 @@ export class CharXImporter{
 
         const reader = stream.getReader()
         while(true){
+            try {
+                this.importScope?.check()
+            } catch (error) {
+                await reader.cancel().catch(() => {})
+                throw error
+            }
             const {done, value} = await reader.read()
             if(value){
                 await this.#feedChunk(value, false)
@@ -405,7 +415,7 @@ export class CharXImporter{
             acquired = true
             const assetSaveId = this.skipSaving
                 ? `assets/${await hasher(asset.data)}.png`
-                : await saveAsset(asset.data)
+                : await saveAsset(asset.data, '', '', this.importScope)
 
             this.assets[asset.id] = assetSaveId
         } catch (error) {

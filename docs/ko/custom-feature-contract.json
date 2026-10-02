@@ -831,6 +831,41 @@
         "src/ts/process/btwSideChat.svelte.test.ts",
         "src/ts/process/request/requestTrigger.test.ts"
       ]
+    },
+    {
+      "id": "IMPORT-CHARX-GUARD",
+      "title": "대용량 CHARX 종류 확인과 취소·되돌리기",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "src/ts/charxPreflight.ts",
+        "src/ts/largeCharxImport.ts",
+        "src/ts/importTransaction.ts",
+        "src/ts/importProgress.ts",
+        "src/lib/UI/GUI/ImportProgressToast.svelte",
+        "server/node/import-asset-journal.cjs",
+        "server/node/external-assets.cjs"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/charxPreflight.ts", "contains": "export const LARGE_CHARX_BYTES = 150_000_000" },
+        { "file": "src/ts/charxPreflight.ts", "contains": "export const LARGE_CHARX_ASSETS = 5_000" },
+        { "file": "src/ts/characterCards.ts", "contains": "planLargeCharxImport(f.name, f.data, 'character')" },
+        { "file": "src/ts/process/modules.ts", "contains": "planLargeCharxImport(file.name, file.data, 'module')" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "importScope.track(forageStorage.setItem(form, data, undefined, { importId: importScope.id }))" },
+        { "file": "src/ts/importProgress.ts", "contains": "export function cancelImportTask(id: string)" },
+        { "file": "server/node/server.cjs", "contains": "app.post('/api/import-journal/rollback'" },
+        { "file": "server/node/server.cjs", "contains": "importAssetJournal.recordWrite(written.uri, importId, written.created === true)" },
+        { "file": "server/node/server.cjs", "contains": "importAssetJournal.markUnsafe(reason)" },
+        { "file": "server/node/external-assets.cjs", "contains": "async function discardImported(uri)" }
+      ],
+      "regressionTests": [
+        "src/ts/charxPreflight.test.ts",
+        "src/ts/largeCharxImport.test.ts",
+        "src/ts/importTransaction.test.ts",
+        "src/ts/importProgress.test.ts",
+        "src/lib/UI/GUI/ImportProgressToast.test.ts",
+        "server/node/import-asset-journal.test.ts",
+        "server/node/import-rollback.test.ts"
+      ]
     }
   ]
 }
