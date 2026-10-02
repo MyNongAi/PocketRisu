@@ -1,6 +1,6 @@
 import type { character } from './storage/database.svelte'
 import { fetchRealmCharacter, getCharacterRealmId, getRisuHub, type hubType } from './characterCards'
-import { moveCharacterToRecoveryFolder, releaseCharacterFromMissingFolders } from './characterRecoveryFolders'
+import { moveCharacterToRecoveryFolder, moveRecoveredCharacter, releaseCharacterFromMissingFolders } from './characterRecoveryFolders'
 import { forageStorage, requestImmediateSave } from './globalApi.svelte'
 import {
     normalizeRealmName,
@@ -222,7 +222,9 @@ export async function recoverCharacterAssetsFromRealm(
     }
     if ((Number(character.sourceInfo?.missingAssetCount) || 0) === 0) {
         const db = getDatabase()
-        db.characterOrder = releaseCharacterFromMissingFolders(db.characterOrder ?? [], character.chaId)
+        db.characterOrder = recovered > 0
+            ? moveRecoveredCharacter(db.characterOrder ?? [], character.chaId, uuidv4())
+            : releaseCharacterFromMissingFolders(db.characterOrder ?? [], character.chaId)
     }
     if (recovered > 0 && options.save !== false) await requestImmediateSave()
     return { realmId, recovered, inspected: slots.length, remainingKnownMissing }

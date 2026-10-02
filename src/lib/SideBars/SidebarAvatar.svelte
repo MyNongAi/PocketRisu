@@ -17,6 +17,8 @@
     titleColor?: string;
     favorite?: boolean;
     missingAssets?: boolean;
+    /** Recorded missing-asset count, shown next to the ❗ / ! mark. */
+    missingAssetCount?: number;
     realmRecoveryAvailable?: boolean;
     sourceBadge?: string;
     sourceRecorded?: boolean;
@@ -40,6 +42,7 @@
     titleColor,
     favorite = false,
     missingAssets = false,
+    missingAssetCount = 0,
     realmRecoveryAvailable = false,
     sourceBadge = '',
     sourceRecorded = true,
@@ -55,6 +58,20 @@
     e.preventDefault();
     oncontextmenu?.(e);
   }
+
+  // What stands in for a missing or broken image: the name, or "?" for a card
+  // without one (an empty box looked like a transparent thumbnail).
+  let fallbackText = $derived(name?.trim() ? name : "?");
+  // 1,234 → "1.2k": the mark sits on a 22–48px avatar.
+  let missingCountText = $derived(
+    missingAssetCount <= 0 ? "" :
+    missingAssetCount < 1000 ? String(missingAssetCount) :
+    missingAssetCount < 10000 ? `${(missingAssetCount / 1000).toFixed(1).replace(/\.0$/, "")}k` :
+    `${Math.round(missingAssetCount / 1000)}k`
+  );
+  // An image whose file is gone fails to load and used to leave a transparent
+  // square; the source that failed falls back to the name instead.
+  let failedSrc: string | null = $state(null);
 
   let observerTarget: HTMLSpanElement = $state();
   let shouldResolve = $state(false);
@@ -112,6 +129,9 @@
           <span class="rounded-full bg-darkbg px-1 text-sm font-black leading-none text-emerald-400 drop-shadow" aria-label="Realm 에셋 복구 가능" title="Realm 에셋 복구 가능">!</span>
         {:else}
           <span class="text-sm leading-none drop-shadow" aria-label="에셋 누락" title="확인된 Realm 복구 원본 없음">❗</span>
+        {/if}
+        {#if missingCountText}
+          <span class="rounded bg-darkbg/90 px-0.5 text-[9px] font-bold leading-tight text-red-400" title={`깨진 에셋 ${missingAssetCount.toLocaleString()}개`}>{missingCountText}</span>
         {/if}
       {/if}
     </span>
@@ -185,9 +205,10 @@
           class:rounded-md={!rounded} class:rounded-full={rounded} 
 ></div>
       {:then img}
-        {#if img}
+        {#if img && img !== failedSrc}
         <img
           src={img}
+          onerror={() => { failedSrc = img; }}
           loading="lazy"
           class="bg-skin-border sidebar-avatar sidebar-touch-target rounded-md object-cover object-top"
           style:width={size + "px"}
@@ -205,7 +226,7 @@
           style:min-width={size + "px"}
           style:min-height={size + "px"}
           class:rounded-md={!rounded} class:rounded-full={rounded}
-        ><span class="line-clamp-3 wrap-break-word" style:color={titleColor}>{name}</span></div>
+        ><span class="line-clamp-3 wrap-break-word" style:color={titleColor}>{fallbackText}</span></div>
         {/if}
       {/await}
     {/if}
@@ -217,7 +238,7 @@
       style:min-width={size + "px"}
       style:min-height={size + "px"}
       class:rounded-md={!rounded} class:rounded-full={rounded} 
-    ><span class="line-clamp-3 wrap-break-word" style:color={titleColor}>{name}</span></div>
+    ><span class="line-clamp-3 wrap-break-word" style:color={titleColor}>{fallbackText}</span></div>
   {/if}
 </span>
 

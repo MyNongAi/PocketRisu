@@ -1028,6 +1028,7 @@
                       favorite={folderChar.favorite}
                       titleColor={listTitleColor(DBState.db.characters[folderChar.index]?.titleColor, Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) > 0)}
                       missingAssets={Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) > 0}
+                      missingAssetCount={Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) || 0}
                       realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[folderChar.index])}
                       chaId={DBState.db.characters[folderChar.index]?.chaId}
                       sourceBadge={folderChar.sourceBadge}
@@ -1158,6 +1159,7 @@
               favorite={normalChar.favorite}
               titleColor={listTitleColor(DBState.db.characters[normalChar.index]?.titleColor, Number(DBState.db.characters[normalChar.index]?.sourceInfo?.missingAssetCount) > 0)}
               missingAssets={Number(DBState.db.characters[normalChar.index]?.sourceInfo?.missingAssetCount) > 0}
+              missingAssetCount={Number(DBState.db.characters[normalChar.index]?.sourceInfo?.missingAssetCount) || 0}
               realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[normalChar.index])}
               chaId={DBState.db.characters[normalChar.index]?.chaId}
               sourceBadge={normalChar.sourceBadge}
@@ -1504,6 +1506,7 @@
               favorite={char.favorite}
               titleColor={listTitleColor(DBState.db.characters[char.index]?.titleColor, Number(DBState.db.characters[char.index]?.sourceInfo?.missingAssetCount) > 0)}
               missingAssets={Number(DBState.db.characters[char.index]?.sourceInfo?.missingAssetCount) > 0}
+              missingAssetCount={Number(DBState.db.characters[char.index]?.sourceInfo?.missingAssetCount) || 0}
               realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[char.index])}
               chaId={DBState.db.characters[char.index]?.chaId}
               sourceBadge={char.sourceBadge}
@@ -1666,6 +1669,7 @@
                     favorite={char2.favorite}
                     titleColor={listTitleColor(DBState.db.characters[char2.index]?.titleColor, Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) > 0)}
                     missingAssets={Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) > 0}
+                    missingAssetCount={Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) || 0}
                     realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[char2.index])}
                     chaId={DBState.db.characters[char2.index]?.chaId}
                     sourceBadge={char2.sourceBadge}
@@ -1921,6 +1925,7 @@
                   favorite={rc.favorite}
                   titleColor={listTitleColor(DBState.db.characters[rc.index]?.titleColor, Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0)}
                   missingAssets={Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0}
+                  missingAssetCount={Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) || 0}
                   realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[rc.index])}
                   chaId={DBState.db.characters[rc.index]?.chaId}
                   sourceBadge={rc.sourceBadge}
