@@ -40,6 +40,10 @@
     let folderRecoveryProgress: RealmFolderRecoveryProgress | null = $state(null)
     let folderRecoveryResult: RealmFolderRecoveryResult | null = $state(null)
     let folderRecoveryController: AbortController | null = $state(null)
+    // The recount/sort buttons have their own busy flag: `loading` is also on
+    // while this page loads the external asset status, and tying them to it
+    // left them disabled (🚫) for as long as that took (2026-10-02).
+    let healthBusy = $state(false)
     let healthController: AbortController | null = $state(null)
     let healthProgress: { checked: number, total: number } | null = $state(null)
     let migrationJob: ExternalAssetMigrationJob | null = $state(null)
@@ -403,7 +407,7 @@
     }
 
     async function recountOnly() {
-        loading = true
+        healthBusy = true
         try {
             const result = await recountAssetHealth()
             if (!result) return
@@ -412,7 +416,7 @@
                 + (result.unknown > 0 ? ` · 확인 실패 에셋 ${result.unknown.toLocaleString()}개(기존 기록 유지)` : '')
             notifySuccess(message)
         } finally {
-            loading = false
+            healthBusy = false
         }
     }
 
@@ -424,7 +428,7 @@
             + `· 깨진 에셋 있음 → ${folders.missing} (Realm 복구 버튼 대상)\n· 이름도 에셋도 없는 빈 봇 → ${folders.empty}\n\n`
             + `[유사 후보]·${PROTON_RECOVERY_FOLDER}·직접 만든 폴더의 봇은 그대로 둡니다. 계속할까요?`
         )) return
-        loading = true
+        healthBusy = true
         try {
             const recount = await recountAssetHealth()
             if (!recount) return
@@ -444,7 +448,7 @@
                 + (plan.counts.missing > 0 ? ` · 이제 'Recover mobile-web missing folder'로 ${folders.missing}의 봇을 Realm에서 복구할 수 있습니다.` : '')
             notifySuccess(message)
         } finally {
-            loading = false
+            healthBusy = false
         }
     }
 
@@ -634,7 +638,7 @@
             <Button
                 styled="outlined"
                 onclick={recoverMobileWebFolderFromRealm}
-                disabled={loading || mobileMissingFolderCount === 0}
+                disabled={loading || healthBusy || mobileMissingFolderCount === 0}
             >Recover mobile-web missing folder</Button>
             {#if folderRecoveryController}
                 <Button styled="outlined" onclick={cancelFolderRecovery}>Stop after current card</Button>
@@ -642,8 +646,8 @@
         </div>
 
         <div class="mt-3 flex flex-wrap gap-2">
-            <Button styled="outlined" onclick={recountOnly} disabled={loading}>깨진 에셋 다시 세기</Button>
-            <Button styled="outlined" onclick={sortMobileWebCards} disabled={loading}>{MOBILE_WEB_LABEL} 봇 정리</Button>
+            <Button styled="outlined" onclick={recountOnly} disabled={healthBusy || !!folderRecoveryController}>깨진 에셋 다시 세기</Button>
+            <Button styled="outlined" onclick={sortMobileWebCards} disabled={healthBusy || !!folderRecoveryController}>{MOBILE_WEB_LABEL} 봇 정리</Button>
             {#if healthController}
                 <Button styled="outlined" onclick={() => healthController?.abort()}>세기 멈추기</Button>
             {/if}
