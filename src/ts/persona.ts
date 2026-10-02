@@ -83,6 +83,30 @@ export function saveUserPersona() {
     db.personas[db.selectedPersona].note = db.userNote
 }
 
+/**
+ * Index of the blank persona (named User, no description), created on first
+ * use and reused after; the persona picker offers it next to "default".
+ */
+export function ensureBlankPersonaIndex(): number {
+    const db = getDatabase()
+    let index = db.personas.findIndex((persona) => persona.nodeOnlyBlank)
+    if (index < 0) {
+        const now = Date.now()
+        db.personas = [...db.personas, {
+            id: v4(),
+            name: 'User',
+            icon: '',
+            personaPrompt: '',
+            note: language.personaBlank,
+            createdAt: now,
+            lastAppliedAt: now,
+            nodeOnlyBlank: true,
+        }]
+        index = db.personas.length - 1
+    }
+    return index
+}
+
 export function markPersonaApplied(id: number, at = Date.now()) {
     const persona = getDatabase().personas[id]
     if (!persona) return

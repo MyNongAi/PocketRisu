@@ -1,8 +1,8 @@
 <script lang="ts">
-    import { ChevronDownIcon, ChevronRightIcon, FolderIcon, SearchIcon, SettingsIcon, XIcon } from "@lucide/svelte";
+    import { ChevronDownIcon, ChevronRightIcon, FolderIcon, SearchIcon, SettingsIcon, StarIcon, UserRoundIcon, XIcon } from "@lucide/svelte";
     import { language } from "../../lang";
     import { DBState, selectedCharID } from 'src/ts/stores.svelte';
-    import { changeUserPersona } from "src/ts/persona";
+    import { changeUserPersona, ensureBlankPersonaIndex } from "src/ts/persona";
     import { groupByFolder } from "src/ts/folders";
     import { openSettings, SettingsRoute } from "src/ts/routing";
     import LazyAssetPreview from "src/lib/Others/LazyAssetPreview.svelte";
@@ -29,6 +29,17 @@
         DBState.db.personas.map((persona) => persona.folderId),
         DBState.db.personaFolders ?? [],
     ));
+
+    // One-tap row at the top: "default" (binding only), the blank persona and
+    // the favorited personas.
+    const favorites = $derived(DBState.db.personas
+        .map((persona, index) => ({ persona, index }))
+        .filter(({ persona }) => persona.favorite && !persona.nodeOnlyBlank && matches(DBState.db.personas.indexOf(persona))));
+    const blankIndex = $derived(DBState.db.personas.findIndex((persona) => persona.nodeOnlyBlank));
+
+    function selectBlank() {
+        select(ensureBlankPersonaIndex());
+    }
 
     function toggle(key: string) {
         const next = new Set(expanded);
@@ -85,18 +96,63 @@
         </div>
 
         <div class="min-h-0 flex-1 overflow-y-auto p-4">
-            {#if bindingMode}
+            <div class="mb-3 flex flex-wrap content-start gap-3">
+                {#if bindingMode}
+                    <button
+                        type="button"
+                        aria-label={language.memoryPresetInherit}
+                        aria-pressed={boundIndex < 0}
+                        onclick={() => select(-1)}
+                        class={`flex min-h-20 w-20 items-center justify-center rounded-md border p-2 text-center text-xs font-semibold text-textcolor shadow-lg hover:border-primary hover:bg-primary/10
+                            ${boundIndex < 0 ? 'border-primary ring-2 ring-primary/40' : 'border-darkborderc bg-selected/20'}`}
+                    >
+                        {language.memoryPresetInherit}
+                    </button>
+                {/if}
                 <button
                     type="button"
-                    aria-label={language.memoryPresetInherit}
-                    aria-pressed={boundIndex < 0}
-                    onclick={() => select(-1)}
-                    class={`mb-3 flex min-h-20 w-20 items-center justify-center rounded-md border p-2 text-center text-xs font-semibold text-textcolor shadow-lg hover:border-primary hover:bg-primary/10
-                        ${boundIndex < 0 ? 'border-primary ring-2 ring-primary/40' : 'border-darkborderc bg-selected/20'}`}
+                    aria-label={language.personaBlankBind}
+                    title={language.personaBlankBind}
+                    aria-pressed={blankIndex >= 0 && blankIndex === highlightIndex}
+                    onclick={selectBlank}
+                    class={`flex min-h-20 w-20 flex-col items-center justify-center gap-1 rounded-md border p-2 text-center text-xs font-semibold text-textcolor shadow-lg hover:border-primary hover:bg-primary/10
+                        ${blankIndex >= 0 && blankIndex === highlightIndex ? 'border-primary ring-2 ring-primary/40' : 'border-darkborderc bg-selected/20'}`}
                 >
-                    {language.memoryPresetInherit}
+                    <UserRoundIcon size={20} class="text-textcolor2" />
+                    {language.personaBlank}
                 </button>
-            {/if}
+                {#each favorites as { persona, index } (persona.id ?? index)}
+                    <button
+                        type="button"
+                        aria-label={persona.name || 'User'}
+                        aria-pressed={index === highlightIndex}
+                        onclick={() => select(index)}
+                        class={`group relative h-20 w-20 shrink-0 cursor-pointer overflow-hidden rounded-md border bg-selected/20 text-textcolor shadow-lg transition-colors hover:border-primary hover:bg-primary/10
+                            ${index === highlightIndex ? 'border-primary ring-2 ring-primary/40' : 'border-darkborderc'}`}
+                    >
+                        <div class="relative h-full w-full overflow-hidden bg-selected/45">
+                            {#if persona.icon}
+                                <LazyAssetPreview
+                                    path={persona.icon}
+                                    kind="image"
+                                    alt={persona.name || 'User'}
+                                    mediaClass="h-full w-full object-cover"
+                                    wrapperClass="h-full w-full"
+                                    rootMargin="160px"
+                                />
+                            {:else}
+                                <div class="flex h-full w-full items-center justify-center p-2 text-center text-xs font-semibold leading-tight text-textcolor">
+                                    <span class="line-clamp-4 wrap-break-word">{persona.name || 'User'}</span>
+                                </div>
+                            {/if}
+                            <StarIcon size={14} class="absolute right-1 top-1 fill-yellow-400 text-yellow-400" />
+                            {#if persona.icon}
+                                <span class="absolute inset-x-0 bottom-0 truncate bg-darkbg/80 px-1 text-[10px]">{persona.name || 'User'}</span>
+                            {/if}
+                        </div>
+                    </button>
+                {/each}
+            </div>
 
             {#each groups as group (group.folder?.id ?? '')}
                 {@const visible = group.indexes.filter(matches)}
