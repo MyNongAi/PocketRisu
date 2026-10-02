@@ -444,6 +444,7 @@ export function setDatabase(data:Database){
     data.nodeOnlyServerSideRequests ??= true
     // GEMINI-PDF-INPUT: experimental, opt-in (default OFF).
     data.nodeOnlyGeminiPdfInput ??= false
+    data.nodeOnlyGeminiPdfMediaResolution ??= 'default'
     if(!data.formatingOrder.includes('personaPrompt')){
         data.formatingOrder.splice(data.formatingOrder.indexOf('main'),0,'personaPrompt')
     }
@@ -746,6 +747,7 @@ export function setDatabase(data:Database){
     data.disableToggleBinding ??= false
     data.hideAllImages ??= false
     data.hideMessagePageCount ??= false
+    data.nodeOnlyShowInputEcho ??= true
     data.ImagenModel ??= 'imagen-4.0-generate-001'
     data.ImagenImageSize ??= '1K'
     data.ImagenAspectRatio ??= '1:1'
@@ -778,6 +780,7 @@ export function setDatabase(data:Database){
     data.dynamicModelRegistry ??= true
     data.saveSignatures ??= false
     data.nodeOnlyScrollButtonType ??= 'four'
+    data.nodeOnlyScrollButtonPosition ??= 'right-center'
     data.nodeOnlyHideRecentChats ??= false
     data.nodeOnlyArchivedCharacters ??= []
     data.nodeOnlyHideArchivedCharacters ??= false
@@ -1634,6 +1637,8 @@ export interface Database{
     enableBookmark?: boolean
     hideAllImages?: boolean
     hideMessagePageCount?: boolean
+    /** Show the user message a reply answers under the reply (gui/inputEcho.ts). */
+    nodeOnlyShowInputEcho?: boolean
     autoScrollToNewMessage?: boolean
     alwaysScrollToNewMessage?: boolean
     newMessageButtonStyle?: string
@@ -1647,6 +1652,8 @@ export interface Database{
     blockquoteStyling?:boolean
     dynamicModelRegistry?:boolean
     nodeOnlyScrollButtonType?:'four'|'two'|'off'
+    /** Where the chat scroll buttons appear while scrolling. */
+    nodeOnlyScrollButtonPosition?:'right-center'|'right-bottom'|'bottom-center'
     nodeOnlyHideRecentChats?:boolean
     // Deactivated characters (src/ts/characterArchive.ts). Their bodies live
     // server-side in kv archive/<chaId>/<archivedAt>; only these stubs stay in the database
@@ -1686,6 +1693,8 @@ export interface Database{
     // request as one server-rendered PDF (GEMINI-PDF-INPUT,
     // process/request/geminiPdfInput.ts). Default OFF.
     nodeOnlyGeminiPdfInput?:boolean
+    // Media resolution asked for that PDF; 'default' sends none.
+    nodeOnlyGeminiPdfMediaResolution?:'default'|'low'|'medium'|'high'
     seperateParametersByModel?:boolean
     disableSeperateParameterChangeOnPresetChange?:boolean
     saveSignatures?:boolean
@@ -2130,6 +2139,8 @@ export interface themePreset{
     hideRealm: boolean
     hideAllImages?: boolean
     hideMessagePageCount?: boolean
+    /** Show the user message a reply answers under the reply (gui/inputEcho.ts). */
+    nodeOnlyShowInputEcho?: boolean
     showFolderName: boolean
     customBackground: string
     roundIcons: boolean
@@ -2390,6 +2401,8 @@ export interface Message{
     disabled?:false|true|'allBefore'
     isComment?:boolean
     swipes?: string[]
+    /** Chat variables around this reply's turn (chatScriptstateCheckpoint.ts); newest reply only. */
+    scriptstateCheckpoint?: import('../chatScriptstateCheckpoint').ScriptstateCheckpoint
     swipeId?: number
 }
 

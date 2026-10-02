@@ -344,6 +344,21 @@ export const accessibilitySettingsItems: SettingItem[] = [
         keywords: ['scroll', 'button', 'navigate', 'message'],
     },
     {
+        id: 'acc.nodeOnlyScrollButtonPosition',
+        type: 'select',
+        labelKey: 'nodeOnlyScrollButtonPosition',
+        bindKey: 'nodeOnlyScrollButtonPosition',
+        helpKey: 'nodeOnlyScrollButtonPosition',
+        options: {
+            selectOptions: [
+                { value: 'right-center', labelKey: 'scrollButtonPositionRightCenter' },
+                { value: 'right-bottom', labelKey: 'scrollButtonPositionRightBottom' },
+                { value: 'bottom-center', labelKey: 'scrollButtonPositionBottomCenter' },
+            ],
+        },
+        keywords: ['scroll', 'button', 'position', 'center', '위치'],
+    },
+    {
         id: 'acc.showModelInSidebar',
         type: 'check',
         labelKey: 'showModelInSidebar',
@@ -418,6 +433,7 @@ export const accessibilityScrollItems = pick([
     'acc.alwaysScrollToNewMessage',
     'acc.newMessageButtonStyle',
     'acc.nodeOnlyScrollButtonType',
+    'acc.nodeOnlyScrollButtonPosition',
     'acc.chatLoadInitialPages',
     'acc.chatLoadAdditionalPages',
 ]);

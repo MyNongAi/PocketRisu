@@ -612,11 +612,17 @@ export async function requestGoogleCloudVertex(arg:RequestDataArgumentExtended):
     // GEMINI-PDF-INPUT: send the context before the last user turn as one PDF
     // (geminiPdfInput.ts); the body stays as-is whenever that cannot apply.
     // The request log keeps the text form (geminiPdfLogBody) for chat recovery.
+    // The PDF media resolution setting goes per part on Gemini 3 and
+    // request-wide on earlier models (resolveGeminiPdfMediaResolution).
     let logBody: string | undefined
     if(db.nodeOnlyGeminiPdfInput === true){
-        const pdf = await applyGeminiPdfInput(body, { signal: arg.abortSignal })
+        const pdf = await applyGeminiPdfInput(body, {
+            signal: arg.abortSignal,
+            mediaResolution: db.nodeOnlyGeminiPdfMediaResolution,
+            model: arg.modelInfo.internalID,
+        })
         if(pdf.applied){
-            logBody = geminiPdfLogBody(body, pdf.pages)
+            logBody = geminiPdfLogBody(body, pdf.pages, pdf.mediaResolution)
             body = pdf.body
         }
     }

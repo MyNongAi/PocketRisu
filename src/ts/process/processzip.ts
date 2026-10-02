@@ -4,6 +4,7 @@ import { asBuffer, Semaphore, sleep } from "../util";
 import { alertStore } from "../alert";
 import { hasher } from "../parser/parser.svelte";
 import { hubURL } from "../characterCards";
+import type { ImportWriteScope } from "../importTransaction";
 
 // File size and chunk size constants
 const MAX_ASSET_SIZE_BYTES = 50 * 1024 * 1024; // 50MB
@@ -11,6 +12,8 @@ const CHUNK_SIZE_BYTES = 1024 * 1024; // 1MB
 
 // Queue management constants
 const MAX_CONCURRENT_ASSET_SAVES = 10;
+// Largest slice handed to the streaming unzipper at once (see #feedChunk).
+const UNZIP_PUSH_SLICE_BYTES = 32 * 1024
 
 // HTTP status code ranges
 const HTTP_STATUS_OK_MIN = 200;
@@ -198,6 +201,9 @@ export class CharXImporter{
      * decompressed. card.json/module.risum are always read. */
     assetAllowlist?: ReadonlySet<string>
     hashSignal: string|undefined  // Hash to signal server for sync (when skipSaving is false)
+    /** PocketRisu: the cancellable import whose asset writes these are. A
+     * cancel stops reading the archive and every save not yet started. */
+    importScope?: ImportWriteScope
 
     constructor(){
         this.unzip = new fflate.Unzip()
@@ -246,6 +252,12 @@ export class CharXImporter{
 
         const reader = stream.getReader()
         while(true){
+            try {
+                this.importScope?.check()
+            } catch (error) {
+                await reader.cancel().catch(() => {})
+                throw error
+            }
             const {done, value} = await reader.read()
             if(value){
                 await this.#feedChunk(value, false)
@@ -262,7 +274,17 @@ export class CharXImporter{
      * When final=true, marks input as complete and finalizes the save queue.
      */
     async #feedChunk(data:Uint8Array, final:boolean = false){
-        this.unzip.push(data, final)
+        // fflate's Unzip.push recurses once per archive entry that starts in
+        // the buffer it is given, so a stream chunk holding thousands of tiny
+        // entries (an asset-heavy CHARX) overflowed the call stack. Feeding it
+        // in small slices bounds that depth to the entries one slice can hold.
+        if (data.length === 0) {
+            this.unzip.push(data, final)
+        }
+        for (let offset = 0; offset < data.length; offset += UNZIP_PUSH_SLICE_BYTES) {
+            const end = Math.min(offset + UNZIP_PUSH_SLICE_BYTES, data.length)
+            this.unzip.push(data.subarray(offset, end), final && end === data.length)
+        }
 
         if(final){
             await this.#finalize()
@@ -405,7 +427,7 @@ export class CharXImporter{
             acquired = true
             const assetSaveId = this.skipSaving
                 ? `assets/${await hasher(asset.data)}.png`
-                : await saveAsset(asset.data)
+                : await saveAsset(asset.data, '', '', this.importScope)
 
             this.assets[asset.id] = assetSaveId
         } catch (error) {

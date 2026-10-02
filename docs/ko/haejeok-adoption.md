@@ -25,6 +25,11 @@ HaejeokRisu 전체를 병합하지 않습니다. HaejeokRisu는 캐릭터·채�
    - 같은 경로의 동시 요청은 한 번으로 합칩니다.
    - 에셋 2,000개를 넘는 캐릭터는 매 매크로마다 전체 목록에 Levenshtein 비교를 하지 않고 같은 파일명 stem 후보만 비교합니다.
 
+4. **곁질문(BTW) 패널** (HaejeokRisuai `a91718cce4`, 2026-10-02 이식)
+   - 채팅 옆에서 이야기 밖 질문을 하고 답을 채팅에 넣지 않는 아이디어만 가져왔습니다. 코드는 PocketRisu 구조에 맞춰 새로 썼습니다.
+   - Haejeok는 곁대화를 채팅 객체의 `btwSessions`에 저장하고 프롬프트 파이프라인 전체를 프리셋·모듈·토글 재정의와 함께 다시 돌립니다. PocketRisu의 `sendChat`에는 그런 진입점이 없으므로 캐릭터 설명·페르소나·최근 메시지만 담은 작은 요청을 따로 만들고, 트리거·Lua·정규식·CBS 파서는 돌리지 않습니다.
+   - 기록은 채팅 본문에 쓰지 않고 메모리와 탭 sessionStorage에만 둡니다. 채팅 본문 재저장과 다른 기기 생성 중 ETag 충돌을 피하기 위해서입니다. 상세는 장부의 `CHAT-BTW-SIDECHAT`을 봅니다.
+
 ## 다음 이식 후보: 브랜치 그래프 UI
 
 2026-09-24 추가 이식: `6c52c34b`의 `src/ts/util/koreanSearch.ts`에서 검토한 초성·혼합 한글·공백 정규화 원칙을 `src/ts/gui/catalogSearch.ts`로 제한적으로 구현했습니다. 검색어 64개 캐시와 길이 한도를 두고, 화면별 검색기를 통일했습니다. `es-hangul` 기반 로마자 발음 추정·영문 키보드 변환이나 점수 정렬 전체를 이식한 것은 아닙니다.
@@ -40,6 +45,8 @@ HaejeokRisu `b6780`의 `BranchGraphModal.svelte`와 `src/ts/gui/branches.ts`는 
 3. Haejeok 그래프의 확대·축소·이동·현재 경로 강조 UI만 PocketRisu 테마에 맞춰 이식합니다.
 4. 그래프 노드를 누르면 기존 채팅 또는 스와이프로 이동하되, 그래프를 보는 것만으로 저장 형식을 변경하지 않습니다.
 5. 영속 SQL 브랜치 저장은 별도의 장기 실험으로 남기며 `database.bin` 백업 호환을 먼저 증명해야 합니다.
+
+2026-10-02 이식: 1~4단계를 구현했습니다(`CHAT-BRANCH-GRAPH`). `src/ts/gui/branches.ts`가 호환 projection과 레이아웃(Haejeok의 contour 트리·packed lane·git row)을, `src/lib/Others/BranchGraphModal.svelte`가 트리·타임라인·Git 보기와 확대·축소·핀치·현재 경로 강조를 맡습니다. 비활성 채팅은 그래프를 열 때만 한도 안에서 읽고, 화면 밖 노드는 그리지 않습니다. 방사형 보기는 이식하지 않았고, 5단계는 계속 보류합니다.
 
 ## 이미 PocketRisu 개조판에 있던 같은 철학
 

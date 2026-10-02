@@ -87,6 +87,19 @@ export async function authHeader(): Promise<Record<string, string>> {
     return { 'risu-auth': await forageStorage.createAuth() }
 }
 
+/** POST /api/model-jobs/:id/claim. The body reports whether this page was
+ *  visible when it collected the job: the server's reply push
+ *  (push-notifications.cjs) is skipped only for a page the user was looking
+ *  at, so a phone that finished the stream in the background still gets it. */
+export async function claimModelJob(jobId: string): Promise<Response> {
+    const visible = typeof document === 'undefined' ? undefined : document.visibilityState === 'visible'
+    return fetch(`/api/model-jobs/${jobId}/claim`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...await authHeader() },
+        body: JSON.stringify({ visible }),
+    })
+}
+
 export function makeJobFetch(opts: JobFetchOptions): typeof fetch {
     return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
         const url = typeof input === 'string' ? input : input.toString()
@@ -287,9 +300,7 @@ export function makeJobFetch(opts: JobFetchOptions): typeof fetch {
         }
 
         const claim = () => {
-            void (async () => {
-                await fetch(`/api/model-jobs/${jobId}/claim`, { method: 'POST', headers: await authHeader() })
-            })().catch(() => {})
+            void claimModelJob(jobId).catch(() => {})
         }
 
         const wrapped = new ReadableStream<Uint8Array>({

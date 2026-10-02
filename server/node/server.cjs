@@ -74,13 +74,20 @@ const {
     createHttpProvider,
     externalAssetProviderFingerprint,
     isExternalAssetUri,
+    makeExternalAssetUri,
     parseExternalAssetUri,
+    sha256: sha256Hex,
 } = require('./external-assets.cjs');
 const { createSqliteManifestStore } = require('./external-asset-manifest-store.cjs');
 const {
+    collectEmbeddedAssetReferenceCounts,
     collectExternalAssetReferences,
     rewriteExternalAssetReferences,
 } = require('./external-asset-references.cjs');
+const { createImportAssetJournal, isImportId } = require('./import-asset-journal.cjs');
+// Which asset objects each cancellable client import created, so a cancel
+// deletes exactly those and nothing another writer relies on.
+const importAssetJournal = createImportAssetJournal();
 const { diagnoseAssetReferences } = require('./asset-doctor.cjs');
 const { createExternalAssetMigrationJournal } = require('./external-asset-migration-journal.cjs');
 const { verifyStagedMigration } = require('./external-asset-staged-verifier.cjs');
@@ -97,6 +104,7 @@ const {
     encodeBootHeader, parseHaveList, deriveBootCacheKey, BOOT_PROTOCOL, BOOT_CONTENT_TYPE,
 } = require('./boot-payload.cjs');
 const { createRuntimeFlags } = require('./runtime-flags.cjs');
+const { BUILD_ID_FILE_NAME, createBuildIdReader, createBuildFence } = require('./build-fence.cjs');
 const { cdcSplit } = require('./chunkStore.cjs');
 // Test hardening only: every root installed in dbCache is deep-frozen, chat
 // objects the store hands to a persist are frozen, and stored body bytes are
@@ -1749,6 +1757,14 @@ app.use('/assets', express.static(path.join(process.cwd(), 'dist/assets'), {
     immutable: true,
 }));
 app.use(express.static(path.join(process.cwd(), 'dist'), {index: false, maxAge: 0}));
+// Refuse writes from a tab still running an older client build (see
+// build-fence.cjs). Before the body parsers, so a refused body is never read.
+const readServedBuildId = createBuildIdReader({ file: path.join(process.cwd(), 'dist', BUILD_ID_FILE_NAME) });
+const startupBuildId = readServedBuildId();
+console.log(startupBuildId
+    ? `[BuildFence] serving client build ${startupBuildId}`
+    : `[BuildFence] no dist/${BUILD_ID_FILE_NAME}; writes from older client builds are not refused`);
+app.use(createBuildFence({ readBuildId: readServedBuildId, logger }));
 app.use(express.json({ limit: '100mb' }));
 
 // PocketRisu -> Termux native Android notification
@@ -1884,6 +1900,9 @@ function rejectDuringExclusiveStorage(req, res, next) {
 function beginExclusiveStorage(reason) {
     if (exclusiveStorageReason) return false;
     exclusiveStorageReason = reason;
+    // Backup imports, migrations and cleanups rewrite storage wholesale: an
+    // import open now may no longer delete anything when it is cancelled.
+    importAssetJournal.markUnsafe(reason);
     return true;
 }
 
@@ -1943,6 +1962,9 @@ function refreshExternalAssetMigrationBusy() {
         || externalAssetStageRunner !== null
         || externalAssetVerificationJobId !== null
         || externalAssetFinalizeWorker !== null;
+    // A migration copies and re-points assets: an open import may no longer
+    // delete anything when it is cancelled.
+    if (externalAssetMigrationInProgress) importAssetJournal.markUnsafe('external asset migration');
 }
 
 function defaultExternalAssetConfig() {
@@ -4872,9 +4894,32 @@ app.delete('/proxy-stream-jobs/:jobId', async (req, res) => {
 // to the client unchanged, and journals the same bytes to disk so a client
 // that disconnects mid-generation can recover the response. All logic lives
 // in model-jobs.cjs; registers /api/model-jobs* with /proxy2-level auth.
+//
+// Server reply push (SERVER-REPLY-PUSH): when a main job finishes and no page
+// is watching it, push-notifications.cjs sends a Web Push to every subscribed
+// browser; /api/push/* manages the subscriptions (same auth).
+const { createPushNotifications } = require('./push-notifications.cjs');
+const pushNotifications = createPushNotifications({ saveDir: savePath, logger, resolveChatLabel: findChatLabelForPush });
 const { createModelJobs } = require('./model-jobs.cjs');
-const modelJobs = createModelJobs({ saveDir: savePath, logger });
+const modelJobs = createModelJobs({
+    saveDir: savePath,
+    logger,
+    onJobTerminal: (job, attachment) => pushNotifications.handleJobTerminal(job, attachment),
+    onJobClaimed: (jobId, meta) => pushNotifications.noteJobClaimed(jobId, meta),
+});
 modelJobs.registerRoutes(app, { auth: checkProxyAuth });
+pushNotifications.registerRoutes(app, { auth: checkProxyAuth });
+
+// Names for a reply push, from the cached catalog (chat stubs keep `name`).
+// A cold cache yields no label — a notification never decodes the database.
+function findChatLabelForPush(chatId) {
+    const database = dbCache[DB_HEX_KEY];
+    for (const character of database?.characters ?? []) {
+        const chat = character?.chats?.find(candidate => candidate?.id === chatId);
+        if (chat) return { characterName: character.name, chatName: chat.name };
+    }
+    return null;
+}
 
 // --- Gemini PDF input (GEMINI-PDF-INPUT) ---
 // POST /api/gemini/pdf-input renders the context of a native-Gemini request
@@ -5627,17 +5672,26 @@ app.post('/api/external-assets/write', rejectDuringExclusiveStorage, async (req,
     if (!key.startsWith('assets/') || key.includes('..')) {
         return res.status(400).json({ error: 'Only canonical assets/* paths may be externalized' });
     }
+    const importId = readImportIdHeader(req, res);
+    if (importId === false) return;
     try {
         const runtime = await getExternalAssetRuntime();
         if (!runtime.config.enabled) {
             return res.status(409).json({ error: 'External asset storage is disabled' });
         }
         const { binary, contentType } = resolveAssetPayload(key, Buffer.from(req.body));
-        const result = await runtime.service.writeDirect({
-            providerId: runtime.config.activeProvider,
-            data: binary,
-            mimeType: contentType,
-            assetName: path.basename(key),
+        // One writer per object at a time, so the import journal sees whether
+        // this write created it and who wrote it after (import-asset-journal.cjs).
+        const uri = makeExternalAssetUri(runtime.config.activeProvider, sha256Hex(binary));
+        const result = await importAssetJournal.withKeyLock(uri, async () => {
+            const written = await runtime.service.writeDirect({
+                providerId: runtime.config.activeProvider,
+                data: binary,
+                mimeType: contentType,
+                assetName: path.basename(key),
+            });
+            importAssetJournal.recordWrite(written.uri, importId, written.created === true);
+            return written;
         });
         res.json({ success: true, uri: result.uri, hash: result.hash, size: result.size });
     } catch (error) {
@@ -6755,6 +6809,8 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
         return;
     }
     const decodedWriteKey = Buffer.from(filePath, 'hex').toString('utf-8');
+    const importId = decodedWriteKey.startsWith('assets/') ? readImportIdHeader(req, res) : null;
+    if (importId === false) return;
     // database.bin carries an ETag precondition. Let stale browser sessions
     // reach that optimistic-concurrency check instead of rejecting them with
     // 423 first; a mismatched copy receives 409 and the client rebases its
@@ -6993,6 +7049,12 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
                     res.status(500).json({ error: 'Database merge failed' });
                     return;
                 }
+            } else if (key.startsWith('assets/')) {
+                // The import journal needs to know whether this write created
+                // the object (import-asset-journal.cjs).
+                const created = importId ? !kvExists(key) : false;
+                kvSet(key, fileContent);
+                importAssetJournal.recordWrite(key, importId, created);
             } else {
                 kvSet(key, fileContent);
             }
@@ -7647,6 +7709,8 @@ app.post('/api/assets/bulk-write', rejectDuringExclusiveStorage, async (req, res
                 const writeBatch = sqliteDb.transaction(() => {
                     for(const { key, value } of batch){
                         kvSet(key, Buffer.from(value, 'base64'));
+                        // An open import must not delete what this write now relies on.
+                        if (typeof key === 'string' && key.startsWith('assets/')) importAssetJournal.recordWrite(key, null, false);
                     }
                 });
                 writeBatch();
@@ -10601,28 +10665,40 @@ function applySweep(victims, remoteMetaCreates, now, checkpointLabel) {
     return victims.reduce((sum, it) => sum + it.size, 0);
 }
 
+// The persisted-database half of the reference scan the orphan purge trusts:
+// basenames from the decoded blob's structured fields, live asset manifests
+// and deactivated characters. Returns { error } rather than a partial set when
+// a source cannot be read. Runs inside the storage queue.
+async function collectPersistedAssetReferences() {
+    await flushPendingDb();
+    const raw = kvGet(DB_BLOB_KEY);
+    if (!raw) return { error: 'No database blob' };
+    const dbObj = await decodeRisuSave(raw);
+    if (!dbObj || !Array.isArray(dbObj.characters)) return { error: 'Database decode failed' };
+
+    const uncleanable = new Set(buildUncleanableSet(dbObj));
+    try {
+        addLiveManifestRefs(uncleanable, dbObj);
+    } catch (error) {
+        return { error: `Manifest reference scan failed — refusing to purge: ${error?.message || error}` };
+    }
+    try {
+        addArchivedCharacterRefs(uncleanable, dbObj);
+    } catch (error) {
+        return { error: `Deactivated-character reference scan failed — refusing to purge: ${error?.message || error}` };
+    }
+    return { dbObj, uncleanable };
+}
+
 async function computeAssetSweep({ includeAssets, assetGraceMs = 0, includeRemotes = false, checkpointLabel = 'AssetSweep' } = {}) {
     let dbObj;
     const assets = includeAssets ? kvListWithSizesAndUpdatedAt('assets/') : [];
     const uncleanable = new Set();
     if (includeAssets) {
-        await flushPendingDb();
-        const raw = kvGet(DB_BLOB_KEY);
-        if (!raw) return { error: 'No database blob' };
-        dbObj = await decodeRisuSave(raw);
-        if (!dbObj || !Array.isArray(dbObj.characters)) return { error: 'Database decode failed' };
-
-        for (const bn of buildUncleanableSet(dbObj)) uncleanable.add(bn);
-        try {
-            addLiveManifestRefs(uncleanable, dbObj);
-        } catch (error) {
-            return { error: `Manifest reference scan failed — refusing to purge: ${error?.message || error}` };
-        }
-        try {
-            addArchivedCharacterRefs(uncleanable, dbObj);
-        } catch (error) {
-            return { error: `Deactivated-character reference scan failed — refusing to purge: ${error?.message || error}` };
-        }
+        const references = await collectPersistedAssetReferences();
+        if (references.error) return { error: references.error };
+        dbObj = references.dbObj;
+        for (const bn of references.uncleanable) uncleanable.add(bn);
 
         // A walker that returns nothing while assets exist means the decode
         // produced a shape we do not understand — every asset would look orphaned.
@@ -11186,6 +11262,113 @@ app.post('/api/db/assets/purge-orphans', rejectDuringExclusiveStorage, async (re
         if (result.error) return res.status(400).json(result);
         logger.info(`[PurgeOrphans] removed ${result.deleted}/${result.scanned} assets (${result.bytes} bytes)`);
         res.json(result);
+    } catch (err) { next(err); }
+});
+
+// ── Cancellable client imports (src/ts/importTransaction.ts) ────────────────
+//
+// A large CHARX install tags its asset writes with an import id. Cancelling it
+// deletes the objects that import created and nothing else wrote since, after
+// the orphan purge's reference scan plus an exact token scan of the whole
+// database; everything else stays (import-asset-journal.cjs).
+
+// The import id of a tagged asset write: null when untagged, false after
+// answering a malformed or finished one.
+function readImportIdHeader(req, res) {
+    const value = req.headers['x-import-id'];
+    if (value === undefined || value === '') return null;
+    if (!isImportId(value)) {
+        res.status(400).json({ error: 'Invalid import id' });
+        return false;
+    }
+    if (importAssetJournal.isClosed(value)) {
+        res.status(409).json({ error: 'This import was cancelled or already finished', code: 'IMPORT_CLOSED' });
+        return false;
+    }
+    return value;
+}
+
+// isReferenced for a rollback, or null when the scan is incomplete (then the
+// rollback deletes nothing).
+async function importRollbackReferenceCheck() {
+    const references = await collectPersistedAssetReferences();
+    if (references.error) {
+        logger.warn(`[ImportRollback] reference scan failed, keeping every asset: ${references.error}`);
+        return null;
+    }
+    const { dbObj, uncleanable } = references;
+    // Cold-storage bodies are not in the blob: their references are unknown.
+    if (dbObj.characters.some((character) => character?.coldstorage)) {
+        logger.warn('[ImportRollback] cold-stored characters present, keeping every asset');
+        return null;
+    }
+    // A walk that finds nothing in a populated database read a shape it does
+    // not understand (computeAssetSweep refuses the same way).
+    if (uncleanable.size === 0 && (dbObj.characters.length > 0 || (dbObj.modules?.length ?? 0) > 0)) {
+        logger.warn('[ImportRollback] reference scan found no references, keeping every asset');
+        return null;
+    }
+    for (const bn of collectPluginStorageAssetRefs()) uncleanable.add(bn);
+    // Exact assets/... and external://... tokens anywhere in the database
+    // (HTML, CSS, scripts, chat text), beyond the structured fields.
+    const embedded = collectEmbeddedAssetReferenceCounts(dbObj);
+    return (key) => {
+        if (embedded.has(key)) return true;
+        const name = key.startsWith('assets/') ? statsBasename(key) : key.slice(key.lastIndexOf('/') + 1);
+        return uncleanable.has(name);
+    };
+}
+
+app.post('/api/import-journal/begin', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    try {
+        importAssetJournal.begin(req.body?.id);
+        // Opened while storage is being rewritten: never delete on cancel.
+        if (exclusiveStorageReason || externalAssetMigrationInProgress || importInProgress) {
+            importAssetJournal.markUnsafe(exclusiveStorageReason || 'storage operation in progress');
+        }
+        res.json({ ok: true });
+    } catch (err) {
+        if (err?.statusCode) return res.status(err.statusCode).json({ error: err.message });
+        next(err);
+    }
+});
+
+app.post('/api/import-journal/commit', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    try {
+        importAssetJournal.commit(req.body?.id);
+        res.json({ ok: true });
+    } catch (err) {
+        if (err?.statusCode) return res.status(err.statusCode).json({ error: err.message });
+        next(err);
+    }
+});
+
+app.post('/api/import-journal/rollback', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!checkActiveSession(req, res)) return;
+    const id = req.body?.id;
+    if (!isImportId(id)) return res.status(400).json({ error: 'Invalid import id' });
+    try {
+        let runtime = null;
+        // The reference scan and internal deletes run in the storage queue;
+        // external objects are deleted after it, under their key locks.
+        const result = await importAssetJournal.rollback(id, {
+            storageQueue: queueMutableStorageOperation,
+            referenceCheck: importRollbackReferenceCheck,
+            removeInternal: (keys) => {
+                sqliteDb.transaction(() => {
+                    for (const key of keys) kvDel(key);
+                })();
+            },
+            removeExternal: async (uri) => {
+                runtime ??= await getExternalAssetRuntime();
+                return (await runtime.service.discardImported(uri)).removed;
+            },
+        });
+        logger.info(`[ImportRollback] ${id}: removed ${result.removed}, kept ${result.kept}${result.unknown ? ' (journal unknown)' : ''}`);
+        res.json({ ok: true, ...result });
     } catch (err) { next(err); }
 });
 

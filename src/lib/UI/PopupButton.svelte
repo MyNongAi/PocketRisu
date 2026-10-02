@@ -12,9 +12,12 @@
     let buttonId = Math.random()
 </script>
 
-<button onclick={async (e:MouseEvent) => {
+<button data-popup-button onclick={async (e:MouseEvent) => {
     await sleep(0)
-    if(popupStore.openId === buttonId){
+    // Close only while this button's popup is still shown: a popup closed by
+    // a tap outside, a picked item or Back leaves openId behind, and the next
+    // tap on the same button used to "close" it again instead of opening.
+    if(popupStore.children && popupStore.openId === buttonId){
         popupStore.children = null
         popupStore.openId = 0
         return

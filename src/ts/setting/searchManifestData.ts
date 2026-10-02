@@ -133,6 +133,15 @@ export const searchManifestEntries: ManualSearchEntry[] = [
         route: SettingsRoute.SoundAndNotification,
     },
     {
+        // Hand-coded row on the Sound & Notification page (per-device push
+        // subscription, no DB setting to index declaratively).
+        id: 'manual.soundAndNotification.serverReplyPush',
+        label: () => language.serverReplyPush,
+        help: () => language.descServerReplyPush,
+        keywords: ['push', 'web push', 'notification', 'server', 'reply', 'background', '푸시', '알림', '서버', '답변', '백그라운드'],
+        route: SettingsRoute.SoundAndNotification,
+    },
+    {
         id: 'manual.page.prompt',
         label: () => language.promptTemplate,
         keywords: ['prompt', 'main prompt', 'jailbreak', 'global note', '프롬프트'],

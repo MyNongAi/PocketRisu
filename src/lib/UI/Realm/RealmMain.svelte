@@ -19,12 +19,25 @@
     let menuOpen = $state(false)
     let nsfw = $state(false)
 
+    // The Realm matches a plain search against card names only; an author is
+    // its own syntax, `author:<name>` (the whole name, any case). A one-word
+    // search asks for both, the author's cards first.
+    let hubRequest = 0
     async function getHub(){
-        charas = await getRisuHub({
-            search: search,
-            page: page,
-            nsfw: nsfw,
-            sort: sort
+        const request = ++hubRequest
+        const term = search.trim()
+        const [authored, named] = await Promise.all([
+            /^[^\s:]+$/.test(term)
+                ? getRisuHub({ search: `author:${term}`, page, nsfw, sort })
+                : Promise.resolve([] as hubType[]),
+            getRisuHub({ search, page, nsfw, sort }),
+        ])
+        if (request !== hubRequest) return
+        const seen = new Set<string>()
+        charas = [...authored, ...named].filter((chara) => {
+            if (seen.has(chara.id)) return false
+            seen.add(chara.id)
+            return true
         })
     }
 

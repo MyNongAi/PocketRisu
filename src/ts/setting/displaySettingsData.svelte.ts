@@ -324,6 +324,7 @@ export const displayOtherHomeItems: SettingItem[] = [
 ];
 
 export const displayOtherChatItems: SettingItem[] = [
+    { id: 'display.showInputEcho', type: 'check', labelKey: 'showInputEcho', helpKey: 'showInputEchoDesc', bindKey: 'nodeOnlyShowInputEcho', keywords: ['input', 'echo', 'reply', '인풋'] },
     { id: 'display.showRequestStatus', type: 'check', labelKey: 'showRequestStatus', helpKey: 'showRequestStatus', bindKey: 'showRequestStatus', keywords: ['request', 'status', 'toast', 'token', 'thinking'] },
     { id: 'display.customBackground', type: 'custom', componentId: 'CustomBackgroundToggle', keywords: ['custom', 'background'] },
     { id: 'display.hideAllImages', type: 'check', labelKey: 'hideAllImages', helpKey: 'hideAllImagesDesc', bindKey: 'hideAllImages', keywords: ['images', 'hide'] },

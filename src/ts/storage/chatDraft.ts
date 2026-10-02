@@ -1,4 +1,5 @@
 import { forageStorage } from "../globalApi.svelte"
+import { isStaleBuild } from "./buildFence"
 
 // Per-chat composer drafts. The unsent text in the message input is stored
 // outside the chat content so that unmounting the chat view (e.g. opening
@@ -56,7 +57,9 @@ const maybeSaved = new Set<string>()
 // a failed draft write must never disrupt chatting.
 let writeChain: Promise<void> = Promise.resolve()
 function enqueue(op: () => Promise<void>): void {
-    writeChain = writeChain.then(() => op().catch(() => {}))
+    // A tab on an outdated build no longer writes (buildFence.ts); its text
+    // stays in the input and on the stale-build notice instead.
+    writeChain = writeChain.then(() => isStaleBuild() ? undefined : op().catch(() => {}))
 }
 
 async function persistSave(key: string, draft: ChatDraft): Promise<void> {

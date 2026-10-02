@@ -317,7 +317,7 @@ function createFilesystemProvider(options = {}) {
     return {
         id,
         type: 'filesystem',
-        capabilities: Object.freeze({ read: true, write: true, stat: true, verify: true, directUrl: false, androidSaf: false, hardLinkTrash: true }),
+        capabilities: Object.freeze({ read: true, write: true, stat: true, verify: true, directUrl: false, androidSaf: false, hardLinkTrash: true, remove: true }),
 
         async get(hash) {
             const key = normalizeHash(hash);
@@ -451,6 +451,23 @@ function createFilesystemProvider(options = {}) {
                 throw new ExternalAssetError('FILESYSTEM_REPAIR_FAILED', `Could not repair external asset ${key}.`, {
                     cause: error,
                     retryable: error && ['EBUSY', 'EMFILE', 'ENFILE'].includes(error.code),
+                });
+            }
+        },
+
+        // Only a cancelled import's rollback deletes content, and only for an
+        // object it created that nothing else wrote or references since
+        // (import-asset-journal.cjs). A missing file is already gone.
+        async remove(hash) {
+            const key = normalizeHash(hash);
+            try {
+                await fsp.unlink(contentPath(rootDir, key));
+                return true;
+            } catch (error) {
+                if (error && error.code === 'ENOENT') return false;
+                throw new ExternalAssetError('FILESYSTEM_REMOVE_FAILED', `Could not remove external asset ${key}.`, {
+                    cause: error,
+                    retryable: error && ['EBUSY', 'EMFILE', 'ENFILE', 'EPERM'].includes(error.code),
                 });
             }
         },
@@ -1114,27 +1131,54 @@ function createExternalAssetService(options = {}) {
         const data = toBuffer(writeOptions.data);
         const hash = sha256(data);
         const uri = makeExternalAssetUri(providerId, hash);
-        await callProvider(provider, () => provider.put(hash, data, { mimeType: writeOptions.mimeType }));
+        const stored = await callProvider(provider, () => provider.put(hash, data, { mimeType: writeOptions.mimeType }));
         const downloaded = await callProvider(provider, () => provider.get(hash));
         verifyContent(downloaded, hash, data.length);
         const timestamp = now();
+        let hadEntry = false;
         const [entry] = await upsertManifestEntries([{
             uri,
-            updater: (old) => ({
-                ...(old || {}),
-                uri,
-                providerId,
-                hash,
-                size: data.length,
-                mimeType: writeOptions.mimeType || old?.mimeType || 'application/octet-stream',
-                assetName: writeOptions.assetName || old?.assetName || null,
-                status: 'verified',
-                createdAt: old?.createdAt || timestamp,
-                lastVerifiedAt: timestamp,
-            }),
+            updater: (old) => {
+                hadEntry = !!old;
+                return {
+                    ...(old || {}),
+                    uri,
+                    providerId,
+                    hash,
+                    size: data.length,
+                    mimeType: writeOptions.mimeType || old?.mimeType || 'application/octet-stream',
+                    assetName: writeOptions.assetName || old?.assetName || null,
+                    status: 'verified',
+                    createdAt: old?.createdAt || timestamp,
+                    lastVerifiedAt: timestamp,
+                };
+            },
         }]);
         cache.set(uri, downloaded);
-        return { uri, hash, size: data.length, entry };
+        // `created`: neither the content nor its manifest entry existed before
+        // this write. Providers that cannot tell (HTTP) never report it.
+        return { uri, hash, size: data.length, entry, created: stored?.existed === false && !hadEntry };
+    }
+
+    // Removes an object a cancelled import created (import-asset-journal.cjs
+    // proved that nothing else wrote or references it). Objects that carry a
+    // migration's recovery copies stay, and so does anything on a provider
+    // that cannot delete. The manifest entry goes first: a failed unlink then
+    // leaves only unreachable bytes, never an entry pointing at nothing.
+    async function discardImported(uri) {
+        const parsed = parseExternalAssetUri(uri);
+        const provider = providers.get(parsed.providerId);
+        if (!provider || provider.capabilities?.remove !== true || typeof provider.remove !== 'function') {
+            return { removed: false, reason: 'provider-cannot-remove' };
+        }
+        const record = await manifest.get(parsed.uri);
+        if (record && Array.isArray(record.fallbacks) && record.fallbacks.length > 0) {
+            return { removed: false, reason: 'has-fallbacks' };
+        }
+        if (record && typeof manifest.remove === 'function') await manifest.remove(parsed.uri);
+        cache.delete(parsed.uri);
+        await callProvider(provider, () => provider.remove(parsed.hash));
+        return { removed: true };
     }
 
     // Upload, re-download verify, and write the recoverable trash copy without
@@ -1519,6 +1563,7 @@ function createExternalAssetService(options = {}) {
         providers,
         stage,
         writeDirect,
+        discardImported,
         stageDetached,
         publishStaged,
         stageMany,

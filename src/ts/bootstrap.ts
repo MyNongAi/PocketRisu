@@ -36,6 +36,7 @@ import {
 } from "./globalApi.svelte";
 import { registerModelDynamic } from "./model/modellist";
 import { initModelJobRecovery } from "./process/request/jobRecovery";
+import { syncServerReplyPush } from "./serverReplyPush";
 import { convertStubsToPlaceholders } from "./storage/chatStorage";
 import { isChatStub, purgeUnsupportedGroupChats } from "./storage/database.svelte";
 import { organizeAllSimilarityFolders } from "./process/similarityFolders";
@@ -232,6 +233,14 @@ export async function loadData() {
             void handleShareTarget()
             if ('serviceWorker' in navigator) {
                 navigator.serviceWorker.register('/sw.js').catch(() => {})
+            }
+            // Server reply push: re-send this browser's subscription (if it has
+            // one) so the server's copy stays current. Off the boot path; the
+            // split-chat pane shares the top window's subscription.
+            if (!isEmbeddedRisuPane) {
+                setTimeout(() => {
+                    void syncServerReplyPush()
+                }, 5_000)
             }
             startObserveDom()
             assignIds()

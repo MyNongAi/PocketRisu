@@ -88,6 +88,10 @@ interface requestDataArgument{
     rememberToolUsage?: boolean
     forceStreaming?: boolean
     blockPlugins?: boolean
+    /** Skip the character's 'request' trigger. Its Lua can edit chat
+     *  variables; side requests that must leave the chat alone (the BTW side
+     *  chat) set this. */
+    skipRequestTrigger?: boolean
     forceLocalNetwork?: boolean
     /** Live message metadata persisted with a durable model job so a recovered
      *  message has the same model and token details as the normal write path. */
@@ -191,7 +195,7 @@ export async function requestChatData(arg:requestDataArgument, model:ModelModeEx
             }
             
             try{
-                const currentChar = arg.currentChar ?? getCurrentCharacter()
+                const currentChar = arg.skipRequestTrigger ? null : (arg.currentChar ?? getCurrentCharacter())
                 const currentChat = arg.currentChat ?? getCurrentChat()
                 if(currentChar){
                     const perf = performance.now()
@@ -971,13 +975,18 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
         // before the transport. It sits INSIDE the log scope: the log keeps the
         // text form (marked _sentAsPdf) so request-log chat recovery still
         // works. Explicit context caching keeps the text shape: its
-        // cachedContent is built from the text turns.
+        // cachedContent is built from the text turns. The PDF media resolution
+        // follows the model in the request URL (wireModel as a fallback).
         const usePdfInput = kind === 'google-gemini' && getDatabase().nodeOnlyGeminiPdfInput === true
         if (usePdfInput && cache) console.debug('[GeminiPdfInput] left as plain text: explicit context caching is on for this preset')
         const options: AdapterChatOptions = {
             messages, abortSignal: abortSignal ?? undefined, generationId: genId, cache,
             fetchImpl: usePdfInput && !cache
-                ? logScope.wrap(withGeminiPdfInput(transportFetch, { onApplied: (logBody) => logScope.setRequestBody(logBody) }))
+                ? logScope.wrap(withGeminiPdfInput(transportFetch, {
+                    mediaResolution: getDatabase().nodeOnlyGeminiPdfMediaResolution,
+                    model: wireModel,
+                    onApplied: (logBody) => logScope.setRequestBody(logBody),
+                }))
                 : fetchImpl,
             // Opt-in (System > Request Logs): without it a streamed response
             // reports no tokens at all, so chat usage statistics stay empty.

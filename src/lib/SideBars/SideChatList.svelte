@@ -11,6 +11,7 @@
     import { selectedCharID, chatDeselected } from "src/ts/stores.svelte";
 
     import CheckInput from "../UI/GUI/CheckInput.svelte";
+    import ChatReplyStatus from "./ChatReplyStatus.svelte";
     import ShButton from "../UI/GUI/ShButton.svelte";
     import TextInput from "../UI/GUI/TextInput.svelte";
 
@@ -277,11 +278,12 @@
                         }
                     }} class="risu-chats flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"class:bg-selected={chatIdx === chara.chatPage && !$chatDeselected}>
                         {#if editMode}
-                            <TextInput bind:value={chat.name} className="grow min-w-0" padding={false}/>
+                            <TextInput deferred bind:value={chat.name} className="grow min-w-0" padding={false}/>
                         {:else}
                             <span>{chat.name}</span>
                         {/if}
-                        <div class="grow flex justify-end">
+                        <div class="grow flex justify-end items-center">
+                            <ChatReplyStatus chatId={chat.id} current={chatIdx === chara.chatPage && !$chatDeselected} />
                             <div role="button" tabindex="0" onkeydown={(e) => {
                                 if(e.key === 'Enter'){
                                     e.currentTarget.click()
@@ -370,11 +372,12 @@
             class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
             class:bg-selected={i === chara.chatPage && !$chatDeselected}>
                 {#if editMode}
-                    <TextInput bind:value={chara.chats[i].name} className="grow min-w-0" padding={false}/>
+                    <TextInput deferred bind:value={chara.chats[i].name} className="grow min-w-0" padding={false}/>
                 {:else}
                     <span>{chat.name}</span>
                 {/if}
-                <div class="grow flex justify-end">
+                <div class="grow flex justify-end items-center">
+                    <ChatReplyStatus chatId={chat.id} current={i === chara.chatPage && !$chatDeselected} />
                     <div role="button" tabindex="0" onkeydown={(e) => {
                         if(e.key === 'Enter'){
                             e.currentTarget.click()
@@ -467,7 +470,7 @@
             }}>
                 <PencilIcon size={18}/>
             </button>
-            <button class="text-textcolor2 hover:text-primary mr-2 cursor-pointer" onclick={() => {
+            <button class="text-textcolor2 hover:text-primary mr-2 cursor-pointer" title={language.branchGraphTitle} aria-label={language.branchGraphTitle} onclick={() => {
                 alertStore.set({
                   type: "branches",
                   msg: ""

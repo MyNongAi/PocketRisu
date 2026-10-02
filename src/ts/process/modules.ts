@@ -1,7 +1,7 @@
 import { language } from "src/lang"
 import { alertClear, alertConfirm, alertError, alertInput, alertModuleSelect, alertNormal, alertStore, alertWait, notifySuccess } from "../alert"
 import { getCurrentCharacter, getCurrentChat, getDatabase, setCurrentCharacter, setDatabase, type Chat, type character, type customscript, type loreBook, type RisuPersona, type triggerscript } from "../storage/database.svelte"
-import { AppendableBuffer, downloadFile, forageStorage, loadAssetManifestItems, LocalWriter, readImage, saveAsset, VirtualWriter } from "../globalApi.svelte"
+import { AppendableBuffer, checkCharOrder, downloadFile, forageStorage, loadAssetManifestItems, LocalWriter, readImage, saveAsset, VirtualWriter } from "../globalApi.svelte"
 import { checkPersonaBinded, selectMultipleFile, sleep } from "../util"
 import { isNodeServer } from "../platform"
 import { v4 } from "uuid"
@@ -16,7 +16,10 @@ import { exportCharacterCard, importCharacterProcess } from "../characterCards"
 import { collectModuleRuntimeIds, collectModuleRuntimeUi } from "./moduleRuntime"
 import { recordModuleFolderActivation, recordNewModules } from "./moduleSort"
 import { organizeImportedModuleSimilarity } from "./similarityFolders"
-import { adaptLegacyProgress, runExportTask, runImportBatch, type ImportProgressReporter } from "../importProgress"
+import { adaptLegacyProgress, runExportTask, runImportBatch, runImportTask, type ImportProgressReporter } from "../importProgress"
+import type { CharxDestination } from "../charxPreflight"
+import { planLargeCharxImport } from "../largeCharxImport"
+import { ImportCancelledError, isImportCancelled, runImportTransaction, type ImportWriteScope } from "../importTransaction"
 
 export interface MCPModule{
     url: string
@@ -200,7 +203,7 @@ export async function exportModuleLegacy(module:RisuModule, arg:{
 
 export async function readModule(
     buf: Buffer,
-    options: { onProgress?: ImportProgressReporter } = {},
+    options: { onProgress?: ImportProgressReporter, importScope?: ImportWriteScope } = {},
 ):Promise<RisuModule> {
     let pos = 0
 
@@ -270,10 +273,11 @@ export async function readModule(
                     if (!module.assets?.[task.index]) {
                         throw new Error(`Missing asset metadata for index ${task.index}`)
                     }
-                    module.assets[task.index][1] = await saveAsset(decoded)
+                    module.assets[task.index][1] = await saveAsset(decoded, '', '', options.importScope)
                     completed += 1
                 } catch (error) {
-                    failed.push(task)
+                    // A cancelled import is not retried below.
+                    if (!isImportCancelled(error)) failed.push(task)
                 } finally {
                     if(options.onProgress){
                         options.onProgress({
@@ -293,6 +297,7 @@ export async function readModule(
             while (inFlight.size >= maxConcurrentAssetSaves) {
                 await Promise.race(inFlight)
             }
+            options.importScope?.check()
             runTask(task)
         }
 
@@ -322,9 +327,11 @@ export async function readModule(
 
     try {
         let failed = await runAssetTasks(tasks)
+        options.importScope?.check()
         let retryCount = 0
         while (failed.length > 0 && retryCount < maxRetries) {
             await sleep(retryDelayMs)
+            options.importScope?.check()
             retryCount += 1
             failed = await runAssetTasks(failed)
         }
@@ -342,15 +349,66 @@ export async function readModule(
 export interface ImportModuleFileOptions {
     suppressSuccess?: boolean
     onProgress?: ImportProgressReporter
+    /** PocketRisu: the cancellable import this runs in (importTransaction.ts). */
+    importScope?: ImportWriteScope
+    /** PocketRisu: false skips the large-CHARX question and cancel guard. */
+    charxGuard?: boolean
+}
+
+/**
+ * A large module CHARX (charxPreflight.ts) after the user picked what it is,
+ * run as a cancellable transaction. A caller that has no progress card gets
+ * one, so the cancel action is always there.
+ */
+async function importLargeModuleCharx(
+    file: { name: string, data: Uint8Array | File },
+    options: ImportModuleFileOptions,
+    destination: CharxDestination,
+): Promise<RisuModule | undefined> {
+    const run = (report: ImportProgressReporter) => runImportTransaction(report, async (scope) => {
+        if (destination === 'character') {
+            await importCharacterProcess({
+                name: file.name,
+                data: file.data,
+                onProgress: report,
+                suppressSuccess: options.suppressSuccess,
+                importScope: scope,
+            })
+            checkCharOrder()
+            return undefined
+        }
+        return importModuleFile(file, { ...options, onProgress: report, importScope: scope })
+    })
+    if (options.onProgress) return run(options.onProgress)
+    try {
+        return await runImportTask(file.name, run)
+    } catch (error) {
+        if (isImportCancelled(error)) return undefined
+        throw error
+    }
 }
 
 export async function importModuleFile(
-    file: { name: string, data: Uint8Array },
+    file: { name: string, data: Uint8Array | File },
     options: ImportModuleFileOptions = {},
 ): Promise<RisuModule | undefined> {
     const fileName = file.name.toLocaleLowerCase()
+    // PocketRisu: a large CHARX first asks module / bot / cancel.
+    if (fileName.endsWith('.charx') && !options.importScope && options.charxGuard !== false) {
+        const plan = await planLargeCharxImport(file.name, file.data, 'module')
+        if (plan.kind === 'cancel') {
+            // A tracked task shows "cancelled"; a blocking-alert caller just stops.
+            if (options.onProgress) throw new ImportCancelledError()
+            return undefined
+        }
+        if (plan.kind === 'guarded') return importLargeModuleCharx(file, options, plan.destination)
+    }
     const finish = (module: RisuModule) => {
+        // Nothing awaits between this check and the insert, so a cancel either
+        // stops the import here or the module is registered for the rollback.
+        options.importScope?.check()
         addModuleToDatabase(module)
+        options.importScope?.registerOwner('module', module.id)
         options.onProgress?.({
             label: language.importProgress.savingModule,
             progress: 90,
@@ -366,10 +424,13 @@ export async function importModuleFile(
         })
         const char = await importCharacterProcess({
             name: file.name,
-            data: Buffer.from(file.data),
+            // Streamed as is: copying a several-hundred-MB archive first
+            // doubled the memory a large module import needs.
+            data: file.data,
             returnCharacter: true,
             onProgress: options.onProgress,
             suppressSuccess: true,
+            importScope: options.importScope,
         })
         if(!char || typeof char === 'number'){
             throw new Error(language.errors.noData)
@@ -377,19 +438,23 @@ export async function importModuleFile(
         return finish(convertCharacterToModule(char))
     }
 
+    // Only a CHARX streams from a File; the other formats are read whole.
+    const bytes = file.data instanceof Uint8Array ? file.data : new Uint8Array(await file.data.arrayBuffer())
+
     if(fileName.endsWith('.risum')){
         options.onProgress?.({
             label: language.importProgress.readingModule,
             progress: 20,
         })
-        const module = await readModule(Buffer.from(file.data), {
+        const module = await readModule(Buffer.from(bytes), {
             onProgress: options.onProgress,
+            importScope: options.importScope,
         })
         if(!module) throw new Error(language.errors.noData)
         return finish(module)
     }
 
-    const importData = JSON.parse(Buffer.from(file.data).toString())
+    const importData = JSON.parse(Buffer.from(bytes).toString())
     if(importData.type === 'risuModule'){
         if((!importData.name) || (!importData.id)){
             throw new Error(language.errors.noData)

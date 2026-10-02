@@ -18,6 +18,8 @@
 //     stays as it was.
 // Anything that cannot be carried faithfully leaves the request untouched
 // (plain text, as before) with a console.debug note; see planGeminiPdfInput.
+// An optional media resolution for the PDF is set on top of that; see
+// resolveGeminiPdfMediaResolution.
 //
 // This module holds no database access: callers gate on the setting and pass
 // the renderer, which keeps it unit-testable and out of the adapter layer.
@@ -55,6 +57,26 @@ export interface GeminiPdfApplyResult<T> {
     applied: boolean
     reason?: string
     pages?: number
+    // Set only when a media resolution was written into the request.
+    mediaResolution?: GeminiPdfMediaResolutionTarget
+}
+
+// The "PDF resolution" setting. 'default' sends no media resolution at all
+// (the request is exactly what it was before the setting existed).
+export type GeminiPdfMediaResolution = 'default' | 'low' | 'medium' | 'high'
+
+const MEDIA_RESOLUTION_LEVELS = {
+    low: 'MEDIA_RESOLUTION_LOW',
+    medium: 'MEDIA_RESOLUTION_MEDIUM',
+    high: 'MEDIA_RESOLUTION_HIGH',
+} as const
+
+export type GeminiMediaResolutionLevel = typeof MEDIA_RESOLUTION_LEVELS[keyof typeof MEDIA_RESOLUTION_LEVELS]
+
+export interface GeminiPdfMediaResolutionTarget {
+    level: GeminiMediaResolutionLevel
+    // 'part': on the PDF part only; 'generationConfig': request-wide.
+    placement: 'part' | 'generationConfig'
 }
 
 type JsonObject = Record<string, unknown>
@@ -192,6 +214,81 @@ export function buildGeminiPdfBody<T extends JsonObject>(body: T, plan: Extract<
     return next as T
 }
 
+// Media resolution for the PDF
+// (https://ai.google.dev/gemini-api/docs/generate-content/media-resolution):
+//   - Gemini 3 models accept it per part (`mediaResolution: { level }` next
+//     to the inlineData; Vertex v1 has the same Part.media_resolution), and a
+//     per-part value wins over a request-wide one. Only the PDF changes; any
+//     image in the request keeps its resolution.
+//   - Earlier models only have the request-wide
+//     generationConfig.mediaResolution, which every media part follows. It is
+//     set only when the PDF is the request's only media, so an image sent
+//     with the latest message keeps today's resolution.
+// Unknown model ids take the request-wide field: Google documents it for all
+// multimodal models, the per-part one for Gemini 3 only.
+export function geminiSupportsPartMediaResolution(model: string | undefined): boolean {
+    if (typeof model !== 'string') return false
+    const id = model.trim().split('/').pop() ?? ''
+    return /^gemini-3(?:[.-]|$)/i.test(id)
+}
+
+export function resolveGeminiPdfMediaResolution(setting: unknown, model: string | undefined): GeminiPdfMediaResolutionTarget | null {
+    if (typeof setting !== 'string' || !Object.prototype.hasOwnProperty.call(MEDIA_RESOLUTION_LEVELS, setting)) return null
+    return {
+        level: MEDIA_RESOLUTION_LEVELS[setting as keyof typeof MEDIA_RESOLUTION_LEVELS],
+        placement: geminiSupportsPartMediaResolution(model) ? 'part' : 'generationConfig',
+    }
+}
+
+const MEDIA_PART_KEYS = ['inlineData', 'inline_data', 'fileData', 'file_data']
+
+function hasOtherMedia(contents: unknown[], pdfPart: JsonObject): boolean {
+    return contents.some((content) => isPlainObject(content) && Array.isArray(content.parts) && content.parts.some((part) =>
+        part !== pdfPart && isPlainObject(part) && MEDIA_PART_KEYS.some((key) => key in part)))
+}
+
+export type GeminiPdfMediaResolutionResult<T> =
+    | { body: T; applied: true; target: GeminiPdfMediaResolutionTarget }
+    | { body: T; applied: false; reason: string }
+
+// Writes the target into a body built by buildGeminiPdfBody (the PDF is the
+// first part of the first content). Returns a new body; the input is not
+// mutated.
+export function applyGeminiPdfMediaResolution<T extends JsonObject>(body: T, target: GeminiPdfMediaResolutionTarget): GeminiPdfMediaResolutionResult<T> {
+    const contents = Array.isArray(body.contents) ? body.contents : []
+    const first = contents[0]
+    const parts = isPlainObject(first) && Array.isArray(first.parts) ? first.parts : []
+    const pdfPart = parts[0]
+    const inline = isPlainObject(pdfPart) ? pdfPart.inlineData ?? pdfPart.inline_data : undefined
+    if (!isPlainObject(first) || !isPlainObject(pdfPart) || !isPlainObject(inline)
+        || (inline.mimeType ?? inline.mime_type) !== 'application/pdf') {
+        return { body, applied: false, reason: 'no PDF part' }
+    }
+
+    if (target.placement === 'part') {
+        const key = 'inline_data' in pdfPart ? 'media_resolution' : 'mediaResolution'
+        const nextPart = { ...pdfPart, [key]: { level: target.level } }
+        const next: JsonObject = { ...body, contents: [{ ...first, parts: [nextPart, ...parts.slice(1)] }, ...contents.slice(1)] }
+        return { body: next as T, applied: true, target }
+    }
+
+    if (hasOtherMedia(contents, pdfPart)) {
+        return { body, applied: false, reason: 'other media in the request would follow the request-wide setting too' }
+    }
+    // google.ts writes generation_config; the adapter writes generationConfig.
+    const configKey = 'generation_config' in body && !('generationConfig' in body) ? 'generation_config' : 'generationConfig'
+    const config = body[configKey]
+    if (config !== undefined && !isPlainObject(config)) return { body, applied: false, reason: 'malformed generationConfig' }
+    const nextConfig: JsonObject = isPlainObject(config) ? { ...config } : {}
+    // Replace a request-wide value already there (e.g. the vision-quality
+    // setting) under whichever spelling it uses; it only reached the PDF.
+    const levelKey = 'media_resolution' in nextConfig ? 'media_resolution' : 'mediaResolution'
+    delete nextConfig.media_resolution
+    delete nextConfig.mediaResolution
+    nextConfig[levelKey] = target.level
+    return { body: { ...body, [configKey]: nextConfig } as T, applied: true, target }
+}
+
 let warnedUnavailable = false
 
 function noteSkipped(reason: string): void {
@@ -262,9 +359,11 @@ export function clearGeminiPdfRenderMemo(): void {
 // Plan, render, splice. Never throws for a skip or a render failure: the
 // caller always gets a sendable body (the original one when not applied). An
 // abort during the render propagates so the request stops as it would anyway.
+// `mediaResolution` is the setting value and `model` the wire model id, which
+// picks where the resolution goes (see resolveGeminiPdfMediaResolution).
 export async function applyGeminiPdfInput<T>(
     body: T,
-    opts: { render?: GeminiPdfRenderer, signal?: AbortSignal } = {},
+    opts: { render?: GeminiPdfRenderer, signal?: AbortSignal, mediaResolution?: GeminiPdfMediaResolution | string, model?: string } = {},
 ): Promise<GeminiPdfApplyResult<T>> {
     const plan = planGeminiPdfInput(body)
     if (plan.apply === false) {
@@ -282,23 +381,50 @@ export async function applyGeminiPdfInput<T>(
         noteSkipped(rendered.reason)
         return { body, applied: false, reason: rendered.reason }
     }
-    const next = buildGeminiPdfBody(body as JsonObject, plan, rendered.data) as T
-    console.debug(`[GeminiPdfInput] sent ${plan.chars} characters of context as a ${rendered.pages ?? '?'}-page PDF`)
-    return { body: next, applied: true, pages: rendered.pages }
+    let next = buildGeminiPdfBody(body as JsonObject, plan, rendered.data)
+    let mediaResolution: GeminiPdfMediaResolutionTarget | undefined
+    const target = resolveGeminiPdfMediaResolution(opts.mediaResolution, opts.model)
+    if (target) {
+        const resolved = applyGeminiPdfMediaResolution(next, target)
+        if (resolved.applied === false) {
+            console.debug(`[GeminiPdfInput] PDF media resolution left unset: ${resolved.reason}`)
+        } else {
+            next = resolved.body
+            mediaResolution = resolved.target
+        }
+    }
+    console.debug(`[GeminiPdfInput] sent ${plan.chars} characters of context as a ${rendered.pages ?? '?'}-page PDF`
+        + (mediaResolution ? ` (${mediaResolution.level} on the ${mediaResolution.placement})` : ''))
+    return { body: next as T, applied: true, pages: rendered.pages, mediaResolution }
 }
 
 // Native generateContent / streamGenerateContent endpoints (AI Studio, Vertex,
 // custom base URLs). Other calls through the same fetch — cachedContents,
 // countTokens — pass through untouched.
 const NATIVE_GEMINI_CHAT_URL = /:(?:stream)?generateContent(?:[?#]|$)/i
+// AI Studio .../models/{id}:..., Vertex .../publishers/google/models/{id}:...
+const GEMINI_URL_MODEL = /\/models\/([^/:?#]+):(?:stream)?generateContent(?:[?#]|$)/i
+
+export function geminiModelFromUrl(url: string): string | undefined {
+    const match = GEMINI_URL_MODEL.exec(url)
+    if (!match) return undefined
+    try {
+        return decodeURIComponent(match[1])
+    } catch {
+        return match[1]
+    }
+}
 
 // The request log keeps the TEXT form of a request sent as a PDF: the chat
 // recovery tool (tools/recover-chat-from-request-logs.cjs) rebuilds lost
 // turns from the logged prompts, and a PDF would leave only the last message.
-// `_sentAsPdf` marks the row so the log still shows what went over the wire.
-export function geminiPdfLogBody(textBody: unknown, pages: number | undefined): string {
+// `_sentAsPdf` marks the row so the log still shows what went over the wire,
+// including the media resolution when one was set.
+export function geminiPdfLogBody(textBody: unknown, pages: number | undefined, mediaResolution?: GeminiPdfMediaResolutionTarget): string {
+    const marker: JsonObject = { pages: pages ?? null }
+    if (mediaResolution) marker.mediaResolution = { level: mediaResolution.level, placement: mediaResolution.placement }
     const marked = textBody && typeof textBody === 'object' && !Array.isArray(textBody)
-        ? { _sentAsPdf: { pages: pages ?? null }, ...(textBody as JsonObject) }
+        ? { _sentAsPdf: marker, ...(textBody as JsonObject) }
         : textBody
     return JSON.stringify(marked)
 }
@@ -307,10 +433,16 @@ export function geminiPdfLogBody(textBody: unknown, pages: number | undefined): 
 // body itself: parses a native Gemini JSON body, applies the transform, and
 // forwards the (possibly rewritten) request to the inner transport. Wrap it
 // INSIDE the request-log scope and pass onApplied, so the log records the
-// text form (see geminiPdfLogBody).
+// text form (see geminiPdfLogBody). The model for the media resolution comes
+// from the request URL, falling back to `model`.
 export function withGeminiPdfInput(
     fetchImpl: typeof fetch,
-    opts: { render?: GeminiPdfRenderer, onApplied?: (logBody: string) => void } = {},
+    opts: {
+        render?: GeminiPdfRenderer,
+        onApplied?: (logBody: string) => void,
+        mediaResolution?: GeminiPdfMediaResolution | string,
+        model?: string,
+    } = {},
 ): typeof fetch {
     return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
         const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url
@@ -321,9 +453,14 @@ export function withGeminiPdfInput(
         } catch {
             return fetchImpl(input, init)
         }
-        const result = await applyGeminiPdfInput(parsed, { render: opts.render, signal: init.signal ?? undefined })
+        const result = await applyGeminiPdfInput(parsed, {
+            render: opts.render,
+            signal: init.signal ?? undefined,
+            mediaResolution: opts.mediaResolution,
+            model: geminiModelFromUrl(url) ?? opts.model,
+        })
         if (!result.applied) return fetchImpl(input, init)
-        opts.onApplied?.(geminiPdfLogBody(parsed, result.pages))
+        opts.onApplied?.(geminiPdfLogBody(parsed, result.pages, result.mediaResolution))
         return fetchImpl(input, { ...init, body: JSON.stringify(result.body) })
     }) as typeof fetch
 }

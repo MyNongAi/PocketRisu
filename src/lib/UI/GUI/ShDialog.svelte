@@ -15,6 +15,7 @@
     import { XIcon } from '@lucide/svelte';
     import { handleDialogCloseAutoFocus } from './dialogFocusPolicy';
     import { cn } from 'src/lib/utils';
+    import { BackLayerRank, useBackLayer } from 'src/ts/gui/backLayers.svelte';
 
     interface Props {
         open?: boolean;
@@ -77,6 +78,14 @@
         'data-[state=open]:animate-in data-[state=closed]:animate-out ' +
         'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 ' +
         'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95';
+
+    // Mobile Back dismisses the dialog as its X / Escape / outside click
+    // would; one offering none of those keeps Back from passing beneath it.
+    useBackLayer(BackLayerRank.Dialog, () => open, () => {
+        if (!closable && !closeOnEscape && !closeOnOutsideClick) return false;
+        open = false;
+        onOpenChange?.(false);
+    });
 </script>
 
 <Dialog.Root bind:open {onOpenChange}>

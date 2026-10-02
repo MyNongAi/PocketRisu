@@ -217,7 +217,7 @@
         {#if value.mode === 'folder'}
         <div class="border-0 outline-hidden w-full mt-2 flex flex-col mb-2">
             <span class="text-textcolor mt-6 mb-2">{language.folderName}</span>
-            <TextInput bind:value={value.comment} className={loreComparisonClass}/>
+            <TextInput deferred bind:value={value.comment} className={loreComparisonClass}/>
 
             <div class="mt-4">
                 <LoreBookList externalLoreBooks={externalLoreBooks} showFolder={value.key} {comparisonStatuses} />
@@ -244,16 +244,16 @@
         {:else}
         <div class="border-0 outline-hidden w-full mt-2 flex flex-col mb-2">
             <span class="text-textcolor mt-6">{language.name} <Help key="loreName"/></span>
-            <TextInput bind:value={value.comment} className={loreComparisonClass}/>
+            <TextInput deferred bind:value={value.comment} className={loreComparisonClass}/>
             {#if !value.alwaysActive}
                 <span class="text-textcolor mt-6">{language.activationKeys} <Help key="loreActivationKey"/></span>
                 <span class="text-xs text-textcolor2">{language.activationKeysInfo}</span>
-                <TextInput bind:value={value.key}/>
+                <TextInput deferred bind:value={value.key}/>
 
                 {#if value.selective}
                     <span class="text-textcolor mt-6">{language.SecondaryKeys}</span>
                     <span class="text-xs text-textcolor2">{language.activationKeysInfo}</span>
-                    <TextInput bind:value={value.secondkey}/>
+                    <TextInput deferred bind:value={value.secondkey}/>
                 {/if}
             {/if}
             {#if !(value.activationPercent === undefined || value.activationPercent === null)}

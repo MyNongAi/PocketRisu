@@ -14,6 +14,7 @@ import type { ChatSaveIntent } from './chatSaveIntent'
 import { chatHoldsAllMessages } from './chatConflict'
 import { BootAuthError, BootFallback, loadDatabaseViaBoot } from './bootPayload'
 import { BootCacheController, browserBootCacheEnv } from './bootPayloadCache'
+import { addBuildIdHeader, readStaleBuildRefusal, readStaleBuildRefusalXhr, reportStaleBuild, setXhrBuildIdHeader, StaleBuildError } from './buildFence'
 
 /** How the last database.bin read went (the [Boot] log line, storage settings). */
 export interface DbLoadInfo {
@@ -767,11 +768,22 @@ export class NodeStorage{
         headers.set('x-session-id', NodeStorage.sessionId)
         headers.set('x-chat-client-id', NodeStorage.chatClientId)
         if (isUserActive()) headers.set('x-user-active', '1')
+        addBuildIdHeader(headers)
 
         const response = await this.fetchFn(input, {
             ...init,
             headers
         })
+
+        // The server serves a newer client build and refused this request
+        // unapplied (buildFence.ts). Throw rather than return it, so no caller
+        // retries the write another way (a refused patch must not turn into a
+        // full write).
+        const staleFor = await readStaleBuildRefusal(response)
+        if (staleFor !== null) {
+            reportStaleBuild(staleFor)
+            throw new StaleBuildError(staleFor)
+        }
 
         if (response.status === 423) {
             window.dispatchEvent(new CustomEvent('risu-session-deactivated'))
@@ -816,13 +828,18 @@ export class NodeStorage{
         )
     }
 
-    async setItem(key:string, value:Uint8Array, etag?:string): Promise<string|undefined> {
+    async setItem(key:string, value:Uint8Array, etag?:string, options: { importId?: string } = {}): Promise<string|undefined> {
         const headers: Record<string, string> = {
             'content-type': 'application/octet-stream',
             'file-path': Buffer.from(key, 'utf-8').toString('hex')
         }
         if (etag) {
             headers['x-if-match'] = etag
+        }
+        // The server journals which asset objects this import created, so a
+        // cancel can delete exactly those (importTransaction.ts).
+        if (options.importId && key.startsWith('assets/')) {
+            headers['x-import-id'] = options.importId
         }
         if (key.startsWith('assets/')) {
             try {
@@ -843,6 +860,7 @@ export class NodeStorage{
                     )
                 }
             } catch (error) {
+                if (error instanceof StaleBuildError) throw error
                 console.warn('[ExternalAssets] Direct write unavailable; falling back to internal storage:', error)
             }
         }
@@ -1186,11 +1204,19 @@ export class NodeStorage{
                         if (data.etag) this.chatEtags.set(key, data.etag)
                         else this.chatEtags.delete(key)
                     }
-                }).catch(() => {})
+                }).catch((error) => {
+                    // A tab on an outdated build holds no lease worth renewing.
+                    if (error instanceof StaleBuildError && this.chatLeaseHeartbeats.get(key) === timer) {
+                        clearInterval(timer)
+                        this.chatLeaseHeartbeats.delete(key)
+                    }
+                })
             }, 45_000)
             this.chatLeaseHeartbeats.set(key, timer)
             return { ok: true }
-        } catch {
+        } catch (error) {
+            // Not a connection problem: the stale-build notice explains it.
+            if (error instanceof StaleBuildError) return { ok: false, reason: 'rejected', message: error.message }
             return { ok: false, reason: 'unavailable' }
         }
     }
@@ -1315,6 +1341,47 @@ export class NodeStorage{
                 }
             })
             if (da.status < 200 || da.status >= 300) throw await this.storageRequestError('setItems', da)
+        }
+    }
+
+    // ─── Cancellable imports (importTransaction.ts) ──────────────────────────
+    /** Opens the server's journal for one import; false when the server cannot keep one. */
+    async beginImportJournal(id: string): Promise<boolean> {
+        const response = await this.authFetch('/api/import-journal/begin', {
+            method: 'POST',
+            body: JSON.stringify({ id }),
+            headers: { 'content-type': 'application/json' },
+        })
+        return response.ok
+    }
+
+    /** The import finished: the server forgets it and deletes nothing. */
+    async commitImportJournal(id: string): Promise<void> {
+        const response = await this.authFetch('/api/import-journal/commit', {
+            method: 'POST',
+            body: JSON.stringify({ id }),
+            headers: { 'content-type': 'application/json' },
+        })
+        if (!response.ok) throw await this.storageRequestError('commitImportJournal', response)
+    }
+
+    /**
+     * The import was cancelled: the server deletes the asset objects only it
+     * created and nothing else uses, and keeps the rest.
+     */
+    async rollbackImportJournal(id: string): Promise<{ removed: number, kept: number, tracked: boolean }> {
+        const response = await this.authFetch('/api/import-journal/rollback', {
+            method: 'POST',
+            body: JSON.stringify({ id }),
+            headers: { 'content-type': 'application/json' },
+        })
+        if (!response.ok) throw await this.storageRequestError('rollbackImportJournal', response)
+        const data = await response.json()
+        return {
+            removed: Number(data?.removed) || 0,
+            kept: Number(data?.kept) || 0,
+            // The server lost the journal (restart, expiry): it deleted nothing.
+            tracked: data?.unknown !== true,
         }
     }
 
@@ -1706,6 +1773,7 @@ export class NodeStorage{
             xhr.setRequestHeader('risu-auth', authHeader)
             xhr.setRequestHeader('x-session-id', NodeStorage.sessionId)
             if (isUserActive()) xhr.setRequestHeader('x-user-active', '1')
+            setXhrBuildIdHeader(xhr)
             // Opt into NDJSON streaming so the server keeps the response socket
             // alive during long post-upload work — prevents reverse-proxy 502s.
             xhr.setRequestHeader('accept', 'application/x-ndjson')
@@ -1752,6 +1820,12 @@ export class NodeStorage{
             xhr.onprogress = drainNdjson
             xhr.onerror = () => reject(new Error('backup import request failed'))
             xhr.onload = () => {
+                const staleFor = readStaleBuildRefusalXhr(xhr)
+                if (staleFor !== null) {
+                    reportStaleBuild(staleFor)
+                    reject(new StaleBuildError(staleFor))
+                    return
+                }
                 if (xhr.status < 200 || xhr.status >= 300) {
                     let msg = `backup import error: ${xhr.status}`
                     try {
@@ -1892,6 +1966,22 @@ export class NodeStorage{
         const chat = normalizeChat(await decodeRisuSave(buffer))
         if (etag) this.chatEtags.set(this.chatEtagKey(chaId, chatId), etag)
         return chat
+    }
+
+    /**
+     * Read a chat body without adopting it: no ETag is recorded (nor any delta
+     * base or local copy, which live in chatDeltaSync), so a read-only view
+     * such as the branch graph never changes what a later save of that chat
+     * is checked against.
+     */
+    async peekChatContent(chaId: string, chatIndex: number, chatId: string, signal?: AbortSignal): Promise<any | null> {
+        const da = await this.authFetchGetWithFirstByteTimeout(`/api/chat-content/${encodeURIComponent(chaId)}/${chatIndex}`, {
+            headers: { 'x-chat-id': chatId },
+            signal,
+        })
+        if (da.status === 404) return null
+        if (da.status < 200 || da.status >= 300) throw new Error(`peekChatContent error: ${da.status}`)
+        return normalizeChat(await decodeRisuSave(new Uint8Array(await da.arrayBuffer())))
     }
 
     /**
@@ -2202,6 +2292,7 @@ export class NodeStorage{
             xhr.setRequestHeader('risu-auth', authHeader)
             xhr.setRequestHeader('x-session-id', NodeStorage.sessionId)
             if (isUserActive()) xhr.setRequestHeader('x-user-active', '1')
+            setXhrBuildIdHeader(xhr)
 
             xhr.upload.onprogress = (event) => {
                 if (event.lengthComputable) {
@@ -2211,6 +2302,12 @@ export class NodeStorage{
 
             xhr.onerror = () => reject(new Error('zip upload failed'))
             xhr.onload = () => {
+                const staleFor = readStaleBuildRefusalXhr(xhr)
+                if (staleFor !== null) {
+                    reportStaleBuild(staleFor)
+                    reject(new StaleBuildError(staleFor))
+                    return
+                }
                 if (xhr.status < 200 || xhr.status >= 300) {
                     let msg = `zip import error: ${xhr.status}`
                     try { msg = JSON.parse(xhr.responseText).error || msg } catch {}

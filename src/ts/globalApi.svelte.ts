@@ -27,7 +27,7 @@ import {
     type AssetManifestTuple,
 } from "./storage/nodeStorage";
 import { getExternalAssetContentUrl, isExternalAssetLocation } from "./storage/externalAssets";
-import { supportsPatchSync } from "./platform";
+import { isNodeServer, supportsPatchSync } from "./platform";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
 import { language } from "src/lang";
@@ -37,7 +37,8 @@ import { deepTouch } from "./gui/deepTouch.svelte";
 import { updateLorebooks, deselectCharacter } from "./characters";
 import { applyCharacterOrderCheck, type CharacterOrderCheckOptions } from "./characterOrderCheck";
 import { mergeServerDbWithTrackedLocalChanges, withTrackedCharacters, hasAmbiguousCharacterIds } from "./storage/rebaseMerge";
-import { generationStates, chatGenKey, notifyDatabaseRebased, abortGeneration } from "./process/generationState";
+import { generationStates, chatGenKey, notifyDatabaseRebased, abortGeneration, doingChat as liveGenerationRunning } from "./process/generationState";
+import { onStaleBuild, setStaleBuildSaveState, watchServerBuild } from "./storage/buildFence";
 
 /** A save the server will keep refusing in this state (or one that keeps
  *  conflicting after repeated rebases). Not transient: retrying re-downloads
@@ -65,6 +66,7 @@ import {
 import { createManifestItemsLoader, getCachedFullAssetManifest } from './storage/assetManifestCache';
 import { resolveNamesLocally } from './storage/assetNameLocalResolver';
 import { createAssetNameResolver, createBatchedResolve, type AssetNameHit } from './storage/assetNameResolver'
+import type { ImportWriteScope } from './importTransaction'
 import { addLog } from './log'
 
 export const forageStorage = new AutoStorage()
@@ -409,9 +411,13 @@ export async function readImage(data: string) {
  * @param {Uint8Array} data - The data of the asset file.
  * @param {string} [customId=''] - The custom ID for the asset file.
  * @param {string} [fileName=''] - The name of the asset file.
+ * @param importScope - PocketRisu: the cancellable import this write belongs
+ *   to. The write is refused once that import was cancelled, carries its id so
+ *   the server journals what it created, and a rollback waits for it.
  * @returns {Promise<string>} - A promise that resolves to the path of the saved asset file.
  */
-export async function saveAsset(data: Uint8Array, customId: string = '', fileName: string = '') {
+export async function saveAsset(data: Uint8Array, customId: string = '', fileName: string = '', importScope?: ImportWriteScope) {
+    importScope?.check()
     let id = ''
     if (customId !== '') {
         id = customId
@@ -428,7 +434,11 @@ export async function saveAsset(data: Uint8Array, customId: string = '', fileNam
         fileExtension = fileName.split('.').pop()
     }
     let form = `assets/${id}.${fileExtension}`
-    const replacer = await forageStorage.setItem(form, data)
+    // Hashing took a while: do not start a write for an import cancelled meanwhile.
+    importScope?.check()
+    const replacer = importScope
+        ? await importScope.track(forageStorage.setItem(form, data, undefined, { importId: importScope.id }))
+        : await forageStorage.setItem(form, data)
     if (replacer) {
         return replacer
     }
@@ -750,6 +760,14 @@ export async function saveDb() {
         if (supportsPatchSync) return
         handOffSession()
     })
+    // The server now serves a newer client build (storage/buildFence.ts), so
+    // this page's code is outdated: saving stops here as it does for a
+    // handoff, and the tracker keeps the edits. The fence then reloads the
+    // page, or with work unsaved keeps it open behind the stale-build notice.
+    onStaleBuild(() => {
+        gotChannel = true
+    })
+    if (isNodeServer) watchServerBuild()
 
     // Do not reload merely because the window regained focus. Database and
     // chat writes carry optimistic-concurrency preconditions, so an unrelated
@@ -889,21 +907,61 @@ export async function saveDb() {
         });
         window.addEventListener('pagehide', flushImmediate);
 
-        $effect(() => {
-            for (const key in DBState.db) {
-                if (
-                    key !== 'characters' && key !== 'botPresets' && key !== 'modules' &&
-                    key !== 'plugins' && key !== 'pluginCustomStorage'
-                ) {
-                    deepTouch(DBState.db[key])
+        // One watcher per root key, so a change walks only that key's value.
+        // A single watcher over all of them re-walked every root setting
+        // (all personas, the model registry cache: ~46k nodes on a large
+        // database) for one persona text or toggle. The outer effect reads
+        // only the key list (Reflect.ownKeys does not track values) and the
+        // database object: it re-runs, rebuilding the per-key watchers and
+        // counting as a change, only when a key is added or removed or the
+        // database is replaced.
+        // Watches one value: re-walks it when anything inside changes and
+        // reports that (not its first walk). Must run inside an effect.
+        function watchDeep(read: () => unknown, onChange: () => void) {
+            let didInit = false
+            $effect(() => {
+                deepTouch(read())
+                if (!didInit) {
+                    didInit = true
+                    return
                 }
-            }
-            if (!didInitRootEffect) {
-                didInitRootEffect = true
-                return
-            }
+                onChange()
+            })
+        }
+        // Watches an array entry by entry: the outer effect reads only the
+        // slots (an add, removal, reorder or replaced entry counts as a
+        // change and rebuilds the entry watchers); each entry's fields are
+        // walked by its own watcher.
+        function watchEntriesDeep(read: () => unknown, onChange: () => void) {
+            let didInit = false
+            $effect(() => {
+                const list = read()
+                const entries: unknown[] = []
+                if (Array.isArray(list)) {
+                    for (let i = 0; i < list.length; i++) entries.push(list[i])
+                } else {
+                    deepTouch(list)
+                }
+                if (didInit) onChange()
+                didInit = true
+                for (const entry of entries) watchDeep(() => entry, onChange)
+            })
+        }
+
+        const markRootChanged = () => {
             changeTracker.root = true
             saveTimeoutExecute()
+        }
+        $effect(() => {
+            const db = DBState.db
+            const keys = (Reflect.ownKeys(db) as Array<string | symbol>).filter((key): key is string =>
+                typeof key === 'string'
+                && key !== 'characters' && key !== 'botPresets' && key !== 'modules'
+                && key !== 'plugins' && key !== 'pluginCustomStorage'
+            )
+            if (didInitRootEffect) markRootChanged()
+            didInitRootEffect = true
+            for (const key of keys) watchDeep(() => db[key], markRootChanged)
         })
         $effect(() => {
             DBState.db.botPresetsId
@@ -971,22 +1029,37 @@ export async function saveDb() {
             }
             knownCharacterIds = currentCharacterIdSet
 
-            if (DBState?.db?.characters?.[selIdState]) {
-                for (const key in DBState.db.characters[selIdState]) {
-                    // Exclude chats — chat changes are tracked via chat-specific server save, not database.bin
-                    if (key !== 'chats') {
-                        deepTouch(DBState.db.characters[selIdState][key])
-                    }
+            const selected = DBState?.db?.characters?.[selIdState]
+            if (selected) {
+                const chaId = selected.chaId
+                const markSelected = () => {
+                    if (changeTracker.character[0] !== chaId) changeTracker.character.unshift(chaId)
+                    saveTimeoutExecute()
+                }
+                // One watcher per field of the selected character and one per
+                // lorebook entry, so an edit walks only what it touched. One
+                // watcher over the whole character re-walked every lorebook
+                // entry and long text (265k nodes on the largest bot) for a
+                // single lorebook edit. Reflect.ownKeys reads the field list
+                // without tracking values, so this effect itself re-runs only
+                // on the structural changes above, a new selection, a replaced
+                // character object or an added field.
+                // Chats are excluded: they save through the per-chat path.
+                const fields = (Reflect.ownKeys(selected) as Array<string | symbol>)
+                    .filter((key): key is string => typeof key === 'string' && key !== 'chats')
+                for (const key of fields) {
+                    if (key === 'globalLore') watchEntriesDeep(() => selected.globalLore, markSelected)
+                    else watchDeep(() => (selected as unknown as Record<string, unknown>)[key], markSelected)
                 }
                 // Track stub metadata and chat ordering for database.bin persistence.
-                deepTouch(DBState.db.characters[selIdState].chats.map(c => ({
+                watchDeep(() => selected.chats.map(c => ({
                     id: c.id,
                     name: c.name,
                     lastDate: c.lastDate,
                     folderId: c.folderId,
-                })))
-                if (changeTracker.character[0] !== DBState.db.characters[selIdState]?.chaId) {
-                    changeTracker.character.unshift(DBState.db.characters[selIdState]?.chaId)
+                })), markSelected)
+                if (changeTracker.character[0] !== chaId) {
+                    changeTracker.character.unshift(chaId)
                 }
             }
             if (!didInitGeneralEffect) {
@@ -1000,9 +1073,6 @@ export async function saveDb() {
         $effect(() => {
             const activeChar = DBState?.db?.characters?.[selIdState]
             const activeChat = activeChar?.chats?.[activeChar?.chatPage]
-            if (activeChat) {
-                deepTouch(activeChat)
-            }
 
             const activeChaId = activeChar?.chaId ?? ''
             const activeChatId = activeChat?.id ?? ''
@@ -1013,24 +1083,39 @@ export async function saveDb() {
                 return
             }
 
+            const markActiveChatDirty = () => {
+                if (isHydrating(activeChaId, activeChatId)) {
+                    return
+                }
+                if (
+                    changeTracker.chat[0]?.[0] !== activeChaId ||
+                    changeTracker.chat[0]?.[1] !== activeChatId
+                ) {
+                    changeTracker.chat.unshift([activeChaId, activeChatId])
+                }
+                markHydratedChatDirty(activeChaId, activeChatId)
+                saveTimeoutExecute()
+            }
+
+            // One watcher per chat field and one per message, so a streamed
+            // chunk or a renamed chat walks only what changed. One watcher
+            // over the whole chat re-walked every message of a long chat for
+            // each streamed chunk. This effect reads the field list without
+            // tracking values (Reflect.ownKeys); it re-runs on a new
+            // selection, a replaced chat object or an added field.
+            for (const key of Reflect.ownKeys(activeChat) as Array<string | symbol>) {
+                if (typeof key !== 'string') continue
+                if (key === 'message') watchEntriesDeep(() => activeChat.message, markActiveChatDirty)
+                else watchDeep(() => (activeChat as unknown as Record<string, unknown>)[key], markActiveChatDirty)
+            }
+
             // Selecting a different chat establishes a new baseline; only later edits are dirty.
             if (trackedActiveChatKey !== activeKey) {
                 trackedActiveChatKey = activeKey
                 return
             }
-
-            if (isHydrating(activeChaId, activeChatId)) {
-                return
-            }
-
-            if (
-                changeTracker.chat[0]?.[0] !== activeChaId ||
-                changeTracker.chat[0]?.[1] !== activeChatId
-            ) {
-                changeTracker.chat.unshift([activeChaId, activeChatId])
-            }
-            markHydratedChatDirty(activeChaId, activeChatId)
-            saveTimeoutExecute()
+            // Same chat, replaced object (hydration excepted) or a new field.
+            markActiveChatDirty()
         })
     })
 
@@ -2074,6 +2159,12 @@ export async function saveDb() {
     // After repeated failures the loop waits until this time before retrying.
     let saveRetryAt = 0
     unsavedWorkImpl = () => savetrys > 0 || hasDirtyHydratedChats()
+    // What a reload into a newer build would lose: the same edit count the
+    // handoff uses, failed saves, unsaved chats, or a reply still streaming.
+    setStaleBuildSaveState({
+        hasUnsavedWork: () => editSeq > savedEditSeq || unsavedWorkImpl() || get(liveGenerationRunning),
+        downloadUnsavedEdits: () => downloadFile(`pocketrisu-unsaved-edits-${Date.now()}.json`, buildUnsavedEditsJson()),
+    })
 
     let consecutiveRetries = 0
 

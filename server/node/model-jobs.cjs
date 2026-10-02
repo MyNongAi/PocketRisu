@@ -138,6 +138,13 @@ function requestUpstreamStream(targetUrl, arg) {
 // module load against process.cwd(), and job metadata has a different
 // lifecycle (rotation by job, not by row count), so a dedicated file keeps
 // the two domains independent and testable.
+//
+// Optional hooks (server.cjs wires them to push-notifications.cjs):
+//   opts.onJobTerminal(job, { readers, lastPolledAt }) — after a job reaches
+//     done/failed/aborted; `readers` = journal streams still open at that
+//     moment, `lastPolledAt` = last GET /api/model-jobs/:id while running.
+//   opts.onJobClaimed(jobId, { visible }) — after a successful claim;
+//     `visible` is the claiming page's visibility when the client sent it.
 function createModelJobs(opts = {}) {
     const saveDir = opts.saveDir || path.join(process.cwd(), 'save');
     const journalDir = path.join(saveDir, 'model-jobs');
@@ -462,6 +469,27 @@ function createModelJobs(opts = {}) {
             stmtFinalize.run(status, message, Date.now(), job.bytesWritten, job.id);
             activeJobs.delete(job.id);
             notifyJobWaiters(job);
+            reportTerminal(job);
+        }
+    }
+
+    // Hand the finished job to opts.onJobTerminal with the attach signals.
+    // Called synchronously right after the terminal flip, before any woken
+    // tail reader can deliver the last bytes and claim. A hook failure never
+    // affects the job itself.
+    function reportTerminal(job) {
+        if (typeof opts.onJobTerminal !== 'function') return;
+        try {
+            const row = stmtGet.get(job.id);
+            if (!row) return;
+            Promise.resolve(opts.onJobTerminal(rowToJson(row), {
+                readers: job.readers,
+                lastPolledAt: job.lastPolledAt,
+            })).catch((err) => {
+                if (opts.logger) opts.logger.warn('[model-jobs] onJobTerminal failed', err);
+            });
+        } catch (err) {
+            if (opts.logger) opts.logger.warn('[model-jobs] onJobTerminal failed', err);
         }
     }
 
@@ -516,7 +544,11 @@ function createModelJobs(opts = {}) {
             id: jobId,
             controller: new AbortController(),
             bytesWritten: 0,
-            waiters: []
+            waiters: [],
+            // Attach signals for onJobTerminal: open journal streams and the
+            // last status poll (jobRecovery's reattach polls instead).
+            readers: 0,
+            lastPolledAt: 0
         };
         stmtInsert.run(
             jobId,
@@ -551,11 +583,18 @@ function createModelJobs(opts = {}) {
         return { jobId, runPromise };
     }
 
-    function claimJob(jobId) {
+    function claimJob(jobId, meta = {}) {
         const row = stmtGet.get(jobId);
         if (!row) return { error: 'Job not found', httpStatus: 404 };
         if (row.status === 'running') return { error: 'Job is still running', httpStatus: 409 };
         stmtClaim.run(jobId);
+        if (typeof opts.onJobClaimed === 'function') {
+            try {
+                opts.onJobClaimed(jobId, { visible: typeof meta.visible === 'boolean' ? meta.visible : undefined });
+            } catch (err) {
+                if (opts.logger) opts.logger.warn('[model-jobs] onJobClaimed failed', err);
+            }
+        }
         return { success: true };
     }
 
@@ -588,6 +627,13 @@ function createModelJobs(opts = {}) {
         }
         let clientGone = false;
         res.on('close', () => { clientGone = true; });
+        // Count this stream as an attached page until its connection closes
+        // (onJobTerminal's `readers`).
+        const active = activeJobs.get(jobId);
+        if (active) {
+            active.readers += 1;
+            res.once('close', () => { active.readers -= 1; });
+        }
 
         // Wait for the upstream response headers before sending ours, so the
         // client can mirror status/content-type — same as a fetch awaiting
@@ -703,6 +749,9 @@ function createModelJobs(opts = {}) {
 
         app.get('/api/model-jobs/:id', async (req, res) => {
             if (!await auth(req, res)) return;
+            // A running job's status poll marks a page attached to it.
+            const active = activeJobs.get(req.params.id);
+            if (active) active.lastPolledAt = Date.now();
             const job = getJob(req.params.id);
             if (!job) {
                 res.status(404).send({ error: 'Job not found' });
@@ -713,7 +762,7 @@ function createModelJobs(opts = {}) {
 
         app.post('/api/model-jobs/:id/claim', async (req, res) => {
             if (!await auth(req, res)) return;
-            const result = claimJob(req.params.id);
+            const result = claimJob(req.params.id, { visible: req.body?.visible });
             if (result.error) {
                 res.status(result.httpStatus).send({ error: result.error });
                 return;

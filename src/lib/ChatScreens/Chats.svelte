@@ -1,5 +1,7 @@
 <script lang="ts">
     import type { character, Message, StreamingDisplayOptimizationMode } from 'src/ts/storage/database.svelte';
+    import { hasBrowsableSwipes } from 'src/ts/chatSwipes';
+    import { inputEchoKey, previousInputIndex } from 'src/ts/gui/inputEcho';
     import { mount, onDestroy, tick, unmount } from 'svelte';
     import Chat from './Chat.svelte';
     import { getCharImage } from 'src/ts/characters';
@@ -33,9 +35,9 @@
         messages: Message[]
         currentCharacter: character
         onReroll: () => void
-        onNextSwipe?: () => void
-        unReroll: () => void
-        onDeleteSwipe?: () => void
+        onNextSwipe?: (index?: number) => void
+        unReroll: (index?: number) => void
+        onDeleteSwipe?: (index?: number) => void
         currentUsername: string
         userIcon: string
         loadPages: number
@@ -53,8 +55,10 @@
         }) => void
         updateRerollTarget?: (state: {
             rerollIcon: boolean|'dynamic'|'force'
+            swipeOnly: boolean
             onNextSwipe: () => void
             onDeleteSwipe: () => void
+            unReroll: () => void
             currentPage: number
             totalPages: number
         }) => void
@@ -75,16 +79,22 @@
         return hash;
     }
 
-    const rerollTargetState = (message: Message, isRerollTarget: boolean) => isRerollTarget ? {
+    // The newest reply gets the full reroll controls; an older reply with
+    // swipes gets only the arrows (and swipe delete) to browse them.
+    const rerollTargetState = (message: Message, isRerollTarget: boolean, index: number) => isRerollTarget || hasBrowsableSwipes(message) ? {
         rerollIcon: 'force' as const,
-        onNextSwipe,
-        onDeleteSwipe,
+        swipeOnly: !isRerollTarget,
+        onNextSwipe: () => onNextSwipe(index),
+        onDeleteSwipe: () => onDeleteSwipe(index),
+        unReroll: () => unReroll(index),
         currentPage: (message.swipeId ?? 0) + 1,
         totalPages: message.swipes?.length ?? 1,
     } : {
         rerollIcon: false as const,
+        swipeOnly: false,
         onNextSwipe: () => {},
         onDeleteSwipe: () => {},
+        unReroll: () => {},
         currentPage: 1,
         totalPages: 1,
     };
@@ -153,7 +163,10 @@
             const activeStreamingMessage = i === activeStreamingIndex && message.role === 'char';
             const resolveChatAssets = assetRenderWindow.messageIndices.has(i)
             const hashMessageData = activeStreamingMessage ? '' : message.data;
-            let hashd = hashMessageData + (message.chatId ?? '') + i.toString() + messageLargePortrait.toString() + message.disabled?.toString() + reloadPointer.toString() + (message.swipeId ?? 0).toString() + (message.swipes?.length ?? 0).toString() + resolveChatAssets.toString();
+            // The input a reply answers is echoed under it; a changed input remounts the reply.
+            const echoIndex = message.role === 'char' ? previousInputIndex(messages, i) : -1;
+            const echoText = echoIndex >= 0 ? (messages[echoIndex].data ?? '') : '';
+            let hashd = (echoIndex >= 0 ? echoText + '\u0000' : '') + hashMessageData + (message.chatId ?? '') + i.toString() + messageLargePortrait.toString() + message.disabled?.toString() + reloadPointer.toString() + (message.swipeId ?? 0).toString() + (message.swipes?.length ?? 0).toString() + resolveChatAssets.toString();
             const currentHash = hashCode(hashd);
             currentHashes.add(currentHash);
             if(!hashes.has(currentHash)){
@@ -166,11 +179,16 @@
                 const b = document.createElement('div');
                 b.setAttribute('x-hashed', currentHash.toString());
                 b.dataset.chatSlot = i.toString();
+                if (message.chatId) b.dataset.chatId = message.chatId;
                 b.classList.add('chat-message-container');
                 const inst = mount(Chat, {
                     target: b,
                     props: {
                         message: message.data,
+                        messageKey: inputEchoKey(message, i),
+                        previousInput: echoText,
+                        previousInputKey: echoIndex >= 0 ? inputEchoKey(messages[echoIndex], echoIndex) : '',
+                        previousInputIndex: echoIndex,
                         isLastMemory: false,
                         idx: i,
                         totalLength: messages.length,
@@ -178,7 +196,7 @@
                         loadSenderImage: () => getSenderImage(message.role),
                         onReroll: onReroll,
                         unReroll: unReroll,
-                        ...rerollTargetState(message, isRerollTarget),
+                        ...rerollTargetState(message, isRerollTarget, i),
                         character: simpleChar,
                         largePortrait: messageLargePortrait,
                         messageGenerationInfo: message.generationInfo,
@@ -213,7 +231,7 @@
                 })
                 // A message that stopped being the reroll target must also drop its
                 // swipe-delete control: onDeleteSwipe acts on the current last message.
-                inst?.updateRerollTarget?.(rerollTargetState(message, isRerollTarget))
+                inst?.updateRerollTarget?.(rerollTargetState(message, isRerollTarget, i))
             }
             nextHash = currentHash;
 
@@ -312,6 +330,85 @@
     }
 
     let pinnedToTail = false
+    // The message at the top of the view and how far its top sits from the
+    // view's top, as of the reader's last scroll. A message whose content
+    // changes after it rendered (a late image inlay, a trigger from an HTML
+    // button, a reroll pointer) is remounted; that, or anything above the
+    // reader changing height, must not move what they are reading. Resize
+    // observer callbacks run after layout and before the scroll events a
+    // shift causes, so this is still the pre-change position when they do.
+    type ReaderAnchor = { chatId: string | null, slot: string, offsetTop: number, roomId: string | null }
+    let readerAnchor: ReaderAnchor | null = null
+    let readerAnchorFrame = 0
+    // Blank space kept under the newest message so the view need not move
+    // when the transcript gets shorter below the reader (stepping back to a
+    // shorter swipe of the last reply): without it the browser clamps the
+    // scroll position and the view jumps up. It shrinks as the reader
+    // scrolls up away from it and goes when a message is added or the chat
+    // changes.
+    let tailSlack = 0
+
+    function setTailSlack(px: number) {
+        tailSlack = Math.max(0, Math.round(px))
+        if (chatBody) chatBody.style.paddingBottom = tailSlack ? `${tailSlack}px` : ''
+    }
+
+    /** Keep only the slack the view still reaches into. */
+    function trimTailSlack() {
+        const sc = getScroller()
+        if (!sc || tailSlack === 0) return
+        const needed = sc.scrollTop + sc.clientHeight - (sc.scrollHeight - tailSlack)
+        if (needed < tailSlack) setTailSlack(needed)
+    }
+
+    function containerOf(anchor: ReaderAnchor): HTMLElement | null {
+        if (anchor.chatId) {
+            const byId = chatBody.querySelector<HTMLElement>(`:scope > [data-chat-id="${CSS.escape(anchor.chatId)}"]`)
+            if (byId) return byId
+        }
+        return chatBody.querySelector<HTMLElement>(`:scope > [data-chat-slot="${anchor.slot}"]`)
+    }
+
+    function recordReaderAnchor() {
+        readerAnchorFrame = 0
+        const sc = getScroller()
+        if (!sc || !chatBody) return
+        const top = sc.getBoundingClientRect().top
+        let best: HTMLElement | null = null
+        let bestTop = Infinity
+        for (const child of Array.from(chatBody.children) as HTMLElement[]) {
+            const rect = child.getBoundingClientRect()
+            if (rect.bottom <= top || rect.height === 0) continue
+            if (rect.top < bestTop) {
+                bestTop = rect.top
+                best = child
+            }
+        }
+        readerAnchor = best?.dataset.chatSlot
+            ? { chatId: best.dataset.chatId ?? null, slot: best.dataset.chatSlot, offsetTop: bestTop - top, roomId: getCurrentChatRoomId() }
+            : null
+    }
+
+    function scheduleReaderAnchor() {
+        if (readerAnchorFrame) return
+        readerAnchorFrame = requestAnimationFrame(recordReaderAnchor)
+    }
+
+    /** Put the reader's message back where it was; true if the view moved. */
+    function keepReaderAnchor(): boolean {
+        const anchor = readerAnchor
+        const sc = getScroller()
+        if (!anchor || !sc || anchor.roomId !== getCurrentChatRoomId()) return false
+        const element = containerOf(anchor)
+        if (!element) return false
+        const delta = element.getBoundingClientRect().top - sc.getBoundingClientRect().top - anchor.offsetTop
+        if (Math.abs(delta) <= 0.5) return false
+        const wanted = sc.scrollTop + delta
+        const max = sc.scrollHeight - sc.clientHeight
+        if (wanted > max + 0.5) setTailSlack(tailSlack + wanted - max)
+        sc.scrollTop = wanted
+        return true
+    }
     // Where the reader was at their last scroll. Growth does not scroll, so
     // until they scroll again this still says whether they were at the tail.
     let readerAtTail = true
@@ -400,7 +497,9 @@
             viewportIntent++
         }
         const onScroll = () => {
+            trimTailSlack()
             readerAtTail = isAtTail(sc)
+            scheduleReaderAnchor()
         }
         let viewportHeight = sc.clientHeight
         const observer = new ResizeObserver((entries) => {
@@ -417,6 +516,7 @@
             if (follow) {
                 scrollToTail()
             } else {
+                if (pendingTailMove === null) keepReaderAnchor()
                 readerAtTail = isAtTail(sc)
             }
         })
@@ -431,7 +531,10 @@
         const inputEvents = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const
         sc.addEventListener('scroll', onScroll, { passive: true })
         for (const type of inputEvents) sc.addEventListener(type, onReaderInput, { passive: true })
+        recordReaderAnchor()
         return () => {
+            if (readerAnchorFrame) cancelAnimationFrame(readerAnchorFrame)
+            readerAnchorFrame = 0
             observer.disconnect()
             children.disconnect()
             sc.removeEventListener('scroll', onScroll)
@@ -457,6 +560,7 @@
         updateChatBody()
         if (anchor) void restoreViewportAnchor(anchor, restoreRevision)
 
+        if (!isSameChat || added) setTailSlack(0)
         if (!isSameChat) {
             pinnedToTail = true
             scheduleTailMove('tail')

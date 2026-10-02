@@ -5,6 +5,7 @@ import { getDatabase } from "src/ts/storage/database.svelte";
 import { makeHashedStorageKey, readPersistentJson, writePersistentJson } from "src/ts/storage/persistentKv";
 import { isContextModel, getContextProvider } from "./contextualEmbedding";
 import { isLocalNetworkUrl } from "src/ts/network/localNetwork";
+import { LruMap } from "src/ts/util/lruMap";
 
 export type HypaModel = 'custom'|'ada'|'openai3small'|'openai3large'|'MiniLM'|'MiniLMGPU'|'nomic'|'nomicGPU'|'bgeSmallEn'|'bgeSmallEnGPU'|'bgem3'|'bgem3GPU'|'multiMiniLM'|'multiMiniLMGPU'|'bgeM3Ko'|'bgeM3KoGPU'|'voyageContext3'|'voyageContext4'
 
@@ -36,8 +37,12 @@ export const localModels = {
     ]
 }
 
-// Shared embedding vector cache across all HypaProcesser instances
-export const hypaVectorCache = new Map<string, memoryVector>();
+// Shared embedding vector cache across all HypaProcesser instances.
+// Bounded so a long session across many bots doesn't keep every vector it
+// ever touched in memory; an evicted vector is read back from persistent
+// storage on its next use, not embedded again.
+export const HYPA_VECTOR_CACHE_LIMIT = 1024
+export const hypaVectorCache = new LruMap<string, memoryVector>(HYPA_VECTOR_CACHE_LIMIT);
 const hypaVectorCachePrefix = 'cache/hypa-vector/';
 
 const MAX_ERROR_BODY_LENGTH = 300
@@ -65,7 +70,15 @@ export async function getPersistedHypaVector(cacheKey: string): Promise<memoryVe
     if (!payload || payload.key !== cacheKey) {
         return undefined
     }
-    hypaVectorCache.set(cacheKey, payload.value)
+    // A vector read back from storage is cached only while there is room.
+    // HypaV3 looks up every summary chunk each turn, in the same order; past
+    // the cap, letting those reads evict each other would leave no hits at
+    // all, while keeping the first ones still answers that many from memory.
+    // Newly embedded vectors (setPersistedHypaVector) still evict the least
+    // recently used entry.
+    if (hypaVectorCache.size < HYPA_VECTOR_CACHE_LIMIT) {
+        hypaVectorCache.set(cacheKey, payload.value)
+    }
     return payload.value
 }
 

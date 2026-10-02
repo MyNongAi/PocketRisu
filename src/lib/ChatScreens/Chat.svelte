@@ -23,6 +23,9 @@
     import { selectedCharID } from "../../ts/stores.svelte"
     import { HideIconStore, ReloadGUIPointer, selIdState } from "../../ts/stores.svelte"
     import AutoresizeArea from "../UI/GUI/TextAreaResizable.svelte"
+    import { isSendKey } from "src/ts/gui/sendKey"
+    import { isMobile } from "src/ts/platform"
+    import { inputEchoDraft, inputEchoKey } from "src/ts/gui/inputEcho"
     import ChatBody from './ChatBody.svelte'
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
@@ -45,6 +48,12 @@
     let copyingChat = $state(false)
     interface Props {
         message?: string;
+        /** This message's identity for the input echo draft (gui/inputEcho.ts). */
+        messageKey?: string;
+        /** For a reply: the user message it answers, echoed under it. */
+        previousInput?: string;
+        previousInputKey?: string;
+        previousInputIndex?: number;
         name?: string;
         largePortrait?: boolean;
         isLastMemory: boolean;
@@ -59,6 +68,8 @@
         onNextSwipe?: () => void;
         unReroll?: () => void;
         onDeleteSwipe?: () => void;
+        /** An older reply: arrows browse its swipes, no regenerate. */
+        swipeOnly?: boolean;
         character?: simpleCharacterArgument|string|null;
         firstMessage?: boolean;
         altGreeting?: boolean;
@@ -76,6 +87,10 @@
 
     let {
         message = $bindable(''),
+        messageKey = '',
+        previousInput = '',
+        previousInputKey = '',
+        previousInputIndex = -1,
         name = '',
         largePortrait = false,
         isLastMemory,
@@ -90,6 +105,7 @@
         onNextSwipe = () => {},
         unReroll = () => {},
         onDeleteSwipe = () => {},
+        swipeOnly = false,
         character = null,
         firstMessage = false,
         altGreeting = false,
@@ -173,14 +189,18 @@
     // (and collapsing its height) whenever a newer message takes over.
     export function updateRerollTarget(state: {
         rerollIcon: boolean|'dynamic'|'force'
+        swipeOnly: boolean
         onNextSwipe: () => void
         onDeleteSwipe: () => void
+        unReroll: () => void
         currentPage: number
         totalPages: number
     }){
         rerollIcon = state.rerollIcon
+        swipeOnly = state.swipeOnly
         onNextSwipe = state.onNextSwipe
         onDeleteSwipe = state.onDeleteSwipe
+        unReroll = state.unReroll
         currentPage = state.currentPage
         totalPages = state.totalPages
     }
@@ -220,9 +240,74 @@
         }
     }
 
+    // ── Input echo ──────────────────────────────────────────────────────────
+    // Under a reply: the user message it answers. Editing it (or the original)
+    // puts every keystroke in a shared draft that both places show; the text
+    // reaches the chat once, when the edit closes.
+    let echoEditing = $state(false)
+    let echoText = $state('')
+    let showInputEcho = $derived(role === 'char' && previousInputIndex >= 0 && DBState.db.nodeOnlyShowInputEcho !== false)
+    let echoShown = $derived($inputEchoDraft && $inputEchoDraft.key === previousInputKey ? $inputEchoDraft.text : previousInput)
+
+    $effect(() => {
+        if (echoEditing) inputEchoDraft.set({ key: previousInputKey, text: echoText })
+    })
+
+    function commitInputEcho() {
+        const chara = DBState.db.characters[selIdState.selId]
+        const messages = chara?.chats?.[chara.chatPage]?.message ?? []
+        let index = previousInputIndex
+        if (inputEchoKey(messages[index], index) !== previousInputKey) {
+            index = messages.findIndex((candidate, i) => inputEchoKey(candidate, i) === previousInputKey)
+        }
+        if (index >= 0 && messages[index]?.role === 'user' && messages[index].data !== echoText) {
+            messages[index].data = echoText
+        }
+        inputEchoDraft.set(null)
+    }
+
+    function toggleInputEchoEdit() {
+        if (!echoEditing) {
+            echoText = echoShown ?? ''
+            echoEditing = true
+            return
+        }
+        echoEditing = false
+        commitInputEcho()
+    }
+
+    function finishInputEchoOnSendKey(e: KeyboardEvent) {
+        if (e.key !== 'Enter' || e.isComposing || !echoEditing) return
+        if (!isSendKey(e, isMobile ? DBState.db.sendKeyMobile : DBState.db.sendKeyPC)) return
+        e.preventDefault()
+        toggleInputEchoEdit()
+    }
+
+    // The original user message: publish its own edit to the draft, and while
+    // the copy under a reply is being edited, show that text as typed (plain;
+    // the message renders normally again once the edit is saved).
+    $effect(() => {
+        if (role === 'user' && editMode && messageKey) inputEchoDraft.set({ key: messageKey, text: message })
+    })
+    let userDraftText = $derived(role === 'user' && !editMode && $inputEchoDraft && $inputEchoDraft.key === messageKey ? $inputEchoDraft.text : null)
+
+    function clearOwnEchoDraft() {
+        const draft = $inputEchoDraft
+        if (role === 'user' && draft && draft.key === messageKey) inputEchoDraft.set(null)
+    }
+
     function startOriginalEdit() {
         if (originalEditControlDisabled) return
         editMode = true
+    }
+
+    // The chat input's send key (Enter by default on a PC) finishes the edit,
+    // like pressing the pencil again; the other combinations insert a newline.
+    function finishEditOnSendKey(e: KeyboardEvent) {
+        if (e.key !== 'Enter' || e.isComposing || !editMode) return
+        if (!isSendKey(e, isMobile ? DBState.db.sendKeyMobile : DBState.db.sendKeyPC)) return
+        e.preventDefault()
+        toggleOriginalEdit()
     }
 
     function toggleOriginalEdit() {
@@ -231,6 +316,7 @@
         if (editMode) {
             editMode = false
             edit()
+            clearOwnEchoDraft()
         } else {
             startOriginalEdit()
         }
@@ -377,6 +463,10 @@
     })
 
     onDestroy(()=>{
+        if (echoEditing) {
+            echoEditing = false
+            commitInputEcho()
+        }
         unsubscribers.forEach(u => u())
     })
 
@@ -551,9 +641,11 @@
         }} />
     {/if}
     {#if editMode}
-        <AutoresizeArea bind:value={message} handleLongPress={() => {
+        <AutoresizeArea bind:value={message} onkeydown={finishEditOnSendKey} handleLongPress={() => {
             editMode = false
         }} />
+    {:else if userDraftText !== null}
+        <span class="block whitespace-pre-wrap wrap-break-word">{userDraftText}</span>
     {:else if isComment}
         <div class="w-full flex justify-center text-textcolor2 italic mb-12">
 
@@ -631,6 +723,27 @@
                 on:save={handlePartialEditSave}
             />
         {/if}
+    {/if}
+    {#if showInputEcho && !editMode}
+        <span class="input-echo mt-2 flex items-start gap-1.5 border-t border-darkborderc pt-1.5 text-xs text-textcolor2">
+            <span class="shrink-0 font-semibold">{language.inputEcho}</span>
+            {#if echoEditing}
+                <span class="block min-w-0 grow">
+                    <AutoresizeArea bind:value={echoText} onkeydown={finishInputEchoOnSendKey} />
+                </span>
+            {:else}
+                <span class="min-w-0 grow whitespace-pre-wrap wrap-break-word line-clamp-3" title={echoShown}>{echoShown}</span>
+            {/if}
+            <button
+                type="button"
+                class="shrink-0 transition-colors hover:text-primary"
+                class:text-blue-400={echoEditing}
+                title={language.inputEchoEdit}
+                aria-label={language.inputEchoEdit}
+                aria-pressed={echoEditing}
+                onclick={toggleInputEchoEdit}
+            ><PencilIcon size={14} /></button>
+        </span>
     {/if}
 {/snippet}
 
@@ -883,6 +996,23 @@
             <button class="flex items-center shrink-0 hover:text-primary transition-colors button-icon-reroll" onclick={async () => {
                 await sleep(1)
                 onReroll()
+            }}>
+                <ArrowRight size={22}/>
+            </button>
+        {:else if swipeOnly}
+            <!-- Older replies: ← counter → browses the kept swipes; no regenerate -->
+            <button class="flex items-center shrink-0 hover:text-primary transition-colors button-icon-unreroll" class:force-show={rerollIcon === 'force'} onclick={async () => {
+                await sleep(1)
+                unReroll()
+            }}>
+                <ArrowLeft size={22}/>
+            </button>
+            {#if !DBState.db.hideMessagePageCount}
+                <span class="flex items-center text-xs text-textcolor2 shrink overflow-hidden whitespace-nowrap min-w-0" class:force-show={rerollIcon === 'force'}>{currentPage}/{totalPages}</span>
+            {/if}
+            <button class="flex items-center shrink-0 hover:text-primary transition-colors button-icon-swipe-next" class:force-show={rerollIcon === 'force'} onclick={async () => {
+                await sleep(1)
+                onNextSwipe()
             }}>
                 <ArrowRight size={22}/>
             </button>

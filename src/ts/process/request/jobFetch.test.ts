@@ -183,6 +183,25 @@ describe('makeJobFetch', () => {
         })
     })
 
+    test('the claim reports page visibility for the server reply push', async () => {
+        const original = Object.getOwnPropertyDescriptor(document, 'visibilityState')
+        Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' })
+        try {
+            const { calls } = setupServer({ streamChunks: ['ok'], job: { status: 'done' } })
+            const res = await makeJobFetch(makeOpts())('https://provider.example/v1/chat', { method: 'POST', body: '{}' })
+            await drain(res)
+            await vi.waitFor(() => {
+                expect(callsFor(calls, '/api/model-jobs/job-1/claim', 'POST')).toHaveLength(1)
+            })
+            const [claim] = callsFor(calls, '/api/model-jobs/job-1/claim', 'POST')
+            expect(JSON.parse(claim.init?.body as string)).toEqual({ visible: false })
+            expect((claim.init?.headers as Record<string, string>)['risu-auth']).toBe('test-auth')
+        } finally {
+            if (original) Object.defineProperty(document, 'visibilityState', original)
+            else delete (document as { visibilityState?: unknown }).visibilityState
+        }
+    })
+
     test('mirrors the upstream status onto the returned Response', async () => {
         setupServer({
             streamChunks: ['{"error":"rate limited"}'],

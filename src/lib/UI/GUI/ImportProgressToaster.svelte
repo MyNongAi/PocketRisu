@@ -91,11 +91,12 @@
 
     const unsubscribe = importTasks.subscribe((tasks) => {
         for (const [id, entry] of tasks) {
-            // A failure shows its card again, so the error is not missed.
-            if (entry.phase === 'failed' && minimized.has(id)) showCard(id)
+            // A failure or a rollback shows its card again, so its summary is not missed.
+            if ((entry.phase === 'failed' || entry.phase === 'cancelled') && minimized.has(id)) showCard(id)
             if (!shown.has(id) && !minimized.has(id) && !dismissTimers.has(id)) showCard(id)
-            if (entry.phase === 'done' || entry.phase === 'failed') {
-                scheduleDismiss(id, entry.phase === 'failed')
+            if (entry.phase === 'done' || entry.phase === 'failed' || entry.phase === 'cancelled') {
+                // A cancelled card can carry a rollback summary: keep it up like a failure.
+                scheduleDismiss(id, entry.phase !== 'done')
             }
         }
 

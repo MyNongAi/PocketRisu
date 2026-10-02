@@ -65,6 +65,7 @@
     import { onMount } from "svelte";
     import { checkCharOrder, getFileSrc, saveAsset } from "src/ts/globalApi.svelte";
     import { alertInput, alertSelect } from "src/ts/alert";
+    import { characterMenuInfo, folderMenuInfo, type MenuInfoCharacter } from "src/ts/gui/sidebarMenuInfo";
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
     import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
     import { resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
@@ -453,6 +454,20 @@
     checkCharOrder()
   }
 
+  // A folder's bots by id, including deactivated ones (kept as stubs).
+  function folderMenuMembers(ind: number): MenuInfoCharacter[] {
+    const entry = DBState.db.characterOrder[ind]
+    if (!entry || typeof entry === 'string') return []
+    const byId = new Map<string, MenuInfoCharacter>()
+    for (const stub of DBState.db.nodeOnlyArchivedCharacters ?? []) {
+      if (stub?.chaId) byId.set(stub.chaId, stub as MenuInfoCharacter)
+    }
+    for (const character of DBState.db.characters) {
+      if (character?.chaId) byId.set(character.chaId, character)
+    }
+    return (entry.data ?? []).map((id) => byId.get(id)).filter((member): member is MenuInfoCharacter => !!member)
+  }
+
   async function editSidebarFolder(ind:number, char: Extract<sortType, { type: 'folder' }>, e:MouseEvent){
     e.preventDefault()
     e.stopPropagation()
@@ -462,7 +477,7 @@
       language.changeFolderImage,
       char.favorite ? '즐겨찾기 해제' : '즐겨찾기 (맨위로)',
       language.cancel,
-    ]))
+    ], folderMenuInfo(char.name, folderMenuMembers(ind))))
     if(sel === 0){
       const value = await alertInput(language.changeFolderName, [], char.name)
       const entry = DBState.db.characterOrder[ind]
@@ -516,7 +531,7 @@
       character.favorite ? '즐겨찾기 해제' : '즐겨찾기 (맨위로)',
       language.remove,
       language.cancel,
-    ]))
+    ], characterMenuInfo(character, makeAgoText)))
     if(selected === 0){
       changeChar(characterIndex, { reseter })
       botMakerMode.set(true)

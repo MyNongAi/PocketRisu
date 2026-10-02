@@ -17,6 +17,7 @@
     import UpdatePopup from './lib/Others/UpdatePopup.svelte';
     import SupportDialog from './lib/Others/SupportDialog.svelte';
     import BootBackupPrompt from './lib/Others/BootBackupPrompt.svelte';
+    import StaleBuildNotice from './lib/Others/StaleBuildNotice.svelte';
     import PopupList from './lib/UI/PopupList.svelte';
     import LoadingOverlay from './lib/Others/LoadingOverlay.svelte';
     import Toaster from './lib/UI/GUI/Toaster.svelte';
@@ -27,12 +28,19 @@
     import { importDroppedFiles } from './ts/dropImport';
     import { isEmbeddedRisuPane, parseChatRoomDragPayload, splitChatOpen } from './ts/chatSplitPane';
     import { changeChatTo } from './ts/globalApi.svelte';
+    import { BackLayerRank, useBackLayer } from './ts/gui/backLayers.svelte';
 
     let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
     let aprilFoolsPage = $state(0)
     let keepingSessionAlive = $state(false)
     let legacyGridOpen = $state(false)
     let LegacyGridComponent = $state<any>(null)
+    // The grid only replaces the regular shell (see the markup below).
+    useBackLayer(
+        BackLayerRank.Popup,
+        () => legacyGridOpen && !!LegacyGridComponent && !$settingsOpen && !$MobileGUI,
+        () => { legacyGridOpen = false },
+    )
 
     const settingsLoader = () => import('./lib/Setting/Settings.svelte')
     const characterManagerLoader = () => import('./lib/CharacterManager/CharacterManager.svelte')
@@ -316,6 +324,7 @@
     <UpdatePopup />
     <SupportDialog />
     <BootBackupPrompt />
+    <StaleBuildNotice />
     {#if popupStore.children}
         <PopupList />
     {/if}

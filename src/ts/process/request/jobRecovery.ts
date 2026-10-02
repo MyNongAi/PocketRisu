@@ -9,7 +9,7 @@ import { language } from 'src/lang'
 import { chatGenKey, endGeneration, generationStates, registerAbort, startGeneration } from 'src/ts/process/generationState'
 import { getGenerationModelString } from 'src/ts/process/models/modelString'
 import { clearStatus, endStatus, startStatus } from 'src/ts/status/requestStatus'
-import { authHeader } from './jobFetch'
+import { authHeader, claimModelJob } from './jobFetch'
 import { clearPendingSend, listPendingSends, markResumable, resumableSends, type PendingSendRecord } from './pendingSends'
 import { parseSseStream } from 'src/ts/preset/adapter/sse'
 import { parseChatCompletion, parseChatStreamDelta } from 'src/ts/preset/adapter/openaiCompatible'
@@ -276,7 +276,7 @@ async function persistRecoveredChat(loc: LocatedChat, job: ModelJobRecord): Prom
 
 async function claimJob(jobId: string): Promise<void> {
     try {
-        await fetch(`/api/model-jobs/${jobId}/claim`, { method: 'POST', headers: await authHeader() })
+        await claimModelJob(jobId)
     } catch {
         // Best effort: a missed claim is covered by generationId idempotency
         // on the next discovery pass.

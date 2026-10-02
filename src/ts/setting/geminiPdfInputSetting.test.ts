@@ -50,3 +50,51 @@ describe('Gemini PDF input setting', () => {
         expect(hits.some((r) => r.subTab === 1)).toBe(true)
     })
 })
+
+describe('Gemini PDF media resolution setting', () => {
+    const index = advancedRequestItems.findIndex((i) => i.id === 'adv.geminiPdfMediaResolution')
+    const item = advancedRequestItems[index]
+
+    it('is a dropdown right under the PDF toggle: default (not set), low, medium, high', () => {
+        expect(advancedRequestItems[index - 1]?.id).toBe('adv.geminiPdfInput')
+        expect(item).toMatchObject({
+            type: 'select',
+            bindKey: 'nodeOnlyGeminiPdfMediaResolution',
+            labelKey: 'nodeOnlyGeminiPdfMediaResolution',
+            helpKey: 'nodeOnlyGeminiPdfMediaResolution',
+        })
+        // The first option is the fallback default (SelectOption convention).
+        expect(item.options?.selectOptions?.map((o) => o.value)).toEqual(['default', 'low', 'medium', 'high'])
+    })
+
+    it('shows only while the PDF toggle is on', () => {
+        const at = (value: unknown) => item.condition!({ ...ctx, db: { nodeOnlyGeminiPdfInput: value } } as any)
+        expect(at(true)).toBe(true)
+        expect(at(false)).toBe(false)
+        expect(at(undefined)).toBe(false)
+    })
+
+    it('has Korean option labels and en/ko help on tokens and small Korean text', () => {
+        expect(item.options?.selectOptions?.map((o) => (languageKorean as Record<string, any>)[o.labelKey!]))
+            .toEqual(['기본 (지정 안 함)', '낮음', '중간', '높음'])
+        for (const o of item.options?.selectOptions ?? []) {
+            expect((languageEnglish as Record<string, any>)[o.labelKey!]).toBeTruthy()
+        }
+        expect(languageKorean.nodeOnlyGeminiPdfMediaResolution).toBeTruthy()
+        expect(languageEnglish.nodeOnlyGeminiPdfMediaResolution).toBeTruthy()
+        const ko = (helpKo as Record<string, string>).nodeOnlyGeminiPdfMediaResolution
+        const en = (helpEn as Record<string, string>).nodeOnlyGeminiPdfMediaResolution
+        expect(ko).toMatch(/토큰/)
+        expect(ko).toMatch(/작은 한국어 글자/)
+        expect(ko).toMatch(/실제 채팅에서 먼저/)
+        expect(en).toMatch(/fewer tokens/)
+        expect(en).toMatch(/small Korean text/)
+    })
+
+    it('is findable in settings search while the toggle is on', () => {
+        const on = { ...ctx, db: new Proxy({}, { get: (_t, key) => (key === 'then' ? undefined : key === 'nodeOnlyGeminiPdfInput' ? true : '') }) } as any
+        const ids = (c: any) => searchSettings('해상도', c).map((r) => r.itemId)
+        expect(ids(on)).toContain('adv.geminiPdfMediaResolution')
+        expect(ids(ctx)).not.toContain('adv.geminiPdfMediaResolution')
+    })
+})

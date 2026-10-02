@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.13.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-09-28",
+  "updatedAt": "2026-10-02",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
@@ -658,17 +658,23 @@
       ],
       "requiredMarkers": [
         { "file": "src/ts/process/request/geminiPdfInput.ts", "contains": "export function planGeminiPdfInput" },
-        { "file": "src/ts/process/request/google.ts", "contains": "applyGeminiPdfInput(body, { signal: arg.abortSignal })" },
+        { "file": "src/ts/process/request/geminiPdfInput.ts", "contains": "export function applyGeminiPdfMediaResolution" },
+        { "file": "src/ts/process/request/google.ts", "contains": "applyGeminiPdfInput(body, {" },
+        { "file": "src/ts/process/request/google.ts", "contains": "mediaResolution: db.nodeOnlyGeminiPdfMediaResolution" },
         { "file": "src/ts/process/request/request.ts", "contains": "withGeminiPdfInput(transportFetch" },
+        { "file": "src/ts/process/request/request.ts", "contains": "mediaResolution: getDatabase().nodeOnlyGeminiPdfMediaResolution" },
         { "file": "server/node/gemini-pdf-input.cjs", "contains": "app.post('/api/gemini/pdf-input'" },
         { "file": "server/node/server.cjs", "contains": "createGeminiPdfInput({ logger }).registerRoutes(app, { auth: checkProxyAuth })" },
         { "file": "src/ts/setting/advancedSettingsData.ts", "contains": "bindKey: 'nodeOnlyGeminiPdfInput'" },
+        { "file": "src/ts/setting/advancedSettingsData.ts", "contains": "bindKey: 'nodeOnlyGeminiPdfMediaResolution'" },
         { "file": "src/ts/storage/database.svelte.ts", "contains": "data.nodeOnlyGeminiPdfInput ??= false" },
+        { "file": "src/ts/storage/database.svelte.ts", "contains": "data.nodeOnlyGeminiPdfMediaResolution ??= 'default'" },
         { "file": "src/ts/requestLog.ts", "contains": "[application/pdf: " }
       ],
       "regressionTests": [
         "src/ts/process/request/geminiPdfInput.test.ts",
         "src/ts/process/request/googlePdfInputHook.test.ts",
+        "src/ts/process/request/geminiPdfPresetWire.test.ts",
         "src/ts/setting/geminiPdfInputSetting.test.ts",
         "src/ts/requestLog.test.ts",
         "server/node/gemini-pdf-input.test.ts"
@@ -745,6 +751,143 @@
       ],
       "regressionTests": [
         "src/ts/storage/risuSavePatcher.test.ts"
+      ]
+    },
+    {
+      "id": "SERVER-REPLY-PUSH",
+      "title": "서버 답변 완료 웹 푸시 알림",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "server/node/push-notifications.cjs",
+        "server/node/model-jobs.cjs",
+        "public/sw.js",
+        "src/ts/serverReplyPush.ts",
+        "src/ts/process/request/jobFetch.ts",
+        "src/lib/Setting/Pages/Display/ServerReplyPushToggle.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "server/node/push-notifications.cjs", "contains": "function encryptPushPayload(plaintext, keys, options = {})" },
+        { "file": "server/node/push-notifications.cjs", "contains": "function createVapidJwt(" },
+        { "file": "server/node/model-jobs.cjs", "contains": "function reportTerminal(job)" },
+        { "file": "server/node/server.cjs", "contains": "onJobTerminal: (job, attachment) => pushNotifications.handleJobTerminal(job, attachment)" },
+        { "file": "server/node/server.cjs", "contains": "pushNotifications.registerRoutes(app, { auth: checkProxyAuth })" },
+        { "file": "public/sw.js", "contains": "self.addEventListener('push'" },
+        { "file": "public/sw.js", "contains": "self.addEventListener('notificationclick'" },
+        { "file": "src/ts/process/request/jobFetch.ts", "contains": "export async function claimModelJob(" },
+        { "file": "src/lib/Setting/Pages/NotificationSoundSettings.svelte", "contains": "<ServerReplyPushToggle />" }
+      ],
+      "regressionTests": [
+        "server/node/push-notifications.test.ts",
+        "src/ts/serverReplyPush.test.ts",
+        "src/ts/process/request/jobFetch.test.ts"
+      ]
+    },
+    {
+      "id": "BUILD-WRITE-FENCE",
+      "title": "이전 빌드로 열린 탭의 쓰기 차단",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "server/node/build-fence.cjs",
+        "src/ts/storage/buildFence.ts",
+        "src/lib/Others/StaleBuildNotice.svelte",
+        "vite.config.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "vite.config.ts", "contains": "name: 'pocketrisu-build-id'" },
+        { "file": "server/node/server.cjs", "contains": "app.use(createBuildFence({ readBuildId: readServedBuildId, logger }));" },
+        { "file": "src/ts/storage/nodeStorage.ts", "contains": "addBuildIdHeader(headers)" },
+        { "file": "src/ts/storage/nodeStorage.ts", "contains": "const staleFor = await readStaleBuildRefusal(response)" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "setStaleBuildSaveState({" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "registerUnsavedText(" },
+        { "file": "src/App.svelte", "contains": "<StaleBuildNotice />" }
+      ],
+      "regressionTests": [
+        "server/node/build-fence.test.ts",
+        "test/compat/build-fence.test.ts",
+        "src/ts/storage/buildFence.test.ts",
+        "src/ts/storage/nodeStorage.buildFence.test.ts"
+      ]
+    },
+    {
+      "id": "CHAT-BTW-SIDECHAT",
+      "title": "채팅을 건드리지 않는 곁질문(BTW) 패널",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/process/btwSideChat.ts",
+        "src/ts/process/btwSideChat.svelte.ts",
+        "src/lib/ChatScreens/BtwSidePanel.svelte",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/ts/process/request/request.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/btwSideChat.ts", "contains": "export function buildBtwRequestMessages(" },
+        { "file": "src/ts/process/btwSideChat.svelte.ts", "contains": "routeSnapshot: captureChatModelRoute(chat, 'model')" },
+        { "file": "src/ts/process/btwSideChat.svelte.ts", "contains": "skipRequestTrigger: true" },
+        { "file": "src/ts/process/request/request.ts", "contains": "arg.skipRequestTrigger ? null : (arg.currentChar ?? getCurrentCharacter())" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "<BtwSidePanel " }
+      ],
+      "regressionTests": [
+        "src/ts/process/btwSideChat.test.ts",
+        "src/ts/process/btwSideChat.svelte.test.ts",
+        "src/ts/process/request/requestTrigger.test.ts"
+      ]
+    },
+    {
+      "id": "IMPORT-CHARX-GUARD",
+      "title": "대용량 CHARX 종류 확인과 취소·되돌리기",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "src/ts/charxPreflight.ts",
+        "src/ts/largeCharxImport.ts",
+        "src/ts/importTransaction.ts",
+        "src/ts/importProgress.ts",
+        "src/lib/UI/GUI/ImportProgressToast.svelte",
+        "server/node/import-asset-journal.cjs",
+        "server/node/external-assets.cjs"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/charxPreflight.ts", "contains": "export const LARGE_CHARX_BYTES = 150_000_000" },
+        { "file": "src/ts/charxPreflight.ts", "contains": "export const LARGE_CHARX_ASSETS = 5_000" },
+        { "file": "src/ts/characterCards.ts", "contains": "planLargeCharxImport(f.name, f.data, 'character')" },
+        { "file": "src/ts/process/modules.ts", "contains": "planLargeCharxImport(file.name, file.data, 'module')" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "importScope.track(forageStorage.setItem(form, data, undefined, { importId: importScope.id }))" },
+        { "file": "src/ts/importProgress.ts", "contains": "export function cancelImportTask(id: string)" },
+        { "file": "server/node/server.cjs", "contains": "app.post('/api/import-journal/rollback'" },
+        { "file": "server/node/server.cjs", "contains": "importAssetJournal.recordWrite(written.uri, importId, written.created === true)" },
+        { "file": "server/node/server.cjs", "contains": "importAssetJournal.markUnsafe(reason)" },
+        { "file": "server/node/external-assets.cjs", "contains": "async function discardImported(uri)" }
+      ],
+      "regressionTests": [
+        "src/ts/charxPreflight.test.ts",
+        "src/ts/largeCharxImport.test.ts",
+        "src/ts/importTransaction.test.ts",
+        "src/ts/importProgress.test.ts",
+        "src/lib/UI/GUI/ImportProgressToast.test.ts",
+        "server/node/import-asset-journal.test.ts",
+        "server/node/import-rollback.test.ts"
+      ]
+    },
+    {
+      "id": "CHAT-BRANCH-GRAPH",
+      "title": "리롤·분기 읽기 전용 그래프",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/branches.ts",
+        "src/ts/gui/branchGraphSource.ts",
+        "src/ts/gui/branchGraphActions.ts",
+        "src/lib/Others/BranchGraphModal.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/gui/branches.ts", "contains": "export function buildBranchForest(" },
+        { "file": "src/ts/gui/branches.ts", "contains": "export function pickChatsToLoad(" },
+        { "file": "src/ts/storage/nodeStorage.ts", "contains": "async peekChatContent(" },
+        { "file": "src/ts/chatSwipes.ts", "contains": "export function showSwipe(" },
+        { "file": "src/lib/Others/AlertComp.svelte", "contains": "import('./BranchGraphModal.svelte')" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "alertStore.set({ type: 'branches', msg: '' })" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/branches.test.ts",
+        "src/ts/chatSwipes.test.ts"
       ]
     }
   ]

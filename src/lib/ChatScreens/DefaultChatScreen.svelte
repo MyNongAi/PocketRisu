@@ -2,7 +2,9 @@
     import { getActiveHypaV3Preset } from "src/ts/process/memory/memoryPresets";
 
     import Suggestion from './Suggestion.svelte';
-    import { CameraIcon, ChevronUpIcon, ChevronDownIcon, ChevronsUpIcon, ChevronsDownIcon, DatabaseIcon, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2 } from "@lucide/svelte";
+    import { copyScriptstateCheckpoint, mergeRerollCheckpoint, removeSwipeCheckpoint, restoreScriptstateBeforeReroll, restoreScriptstateSnapshot, restoreShownSwipeScriptstate, snapshotScriptstate } from 'src/ts/chatScriptstateCheckpoint';
+    import { deleteShownSwipe, findLastReplyIndex, stepSwipe } from 'src/ts/chatSwipes';
+    import { CameraIcon, ChevronUpIcon, ChevronDownIcon, ChevronsUpIcon, ChevronsDownIcon, DatabaseIcon, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2, GitBranch } from "@lucide/svelte";
     import ShDropdownMenu from 'src/lib/UI/GUI/ShDropdownMenu.svelte';
     import ShDropdownMenuTrigger from 'src/lib/UI/GUI/ShDropdownMenuTrigger.svelte';
     import ShDropdownMenuContent from 'src/lib/UI/GUI/ShDropdownMenuContent.svelte';
@@ -23,7 +25,7 @@
     import { sleep } from "../../ts/util";
     import { language } from "../../lang";
     import { isExpTranslator, translate } from "../../ts/translator/translator";
-    import { alertConfirm, alertError, alertWait, notifySuccess, notifyError, notifyInfo, notifyWarning } from "../../ts/alert";
+    import { alertConfirm, alertError, alertStore, alertWait, notifySuccess, notifyError, notifyInfo, notifyWarning } from "../../ts/alert";
     import { playNotificationSound } from '../../ts/notificationSound'
 import { isMobile } from 'src/ts/platform'
     import { processScript } from "src/ts/process/scripts";
@@ -42,28 +44,25 @@ import { isMobile } from 'src/ts/platform'
     import { getInlayAsset } from 'src/ts/process/files/inlays';
     import { quickMenu } from 'src/ts/hotkey';
     import { loadChatDraft, scheduleSaveChatDraft, flushChatDraft, removeChatDraft } from 'src/ts/storage/chatDraft';
+    import { registerUnsavedText } from 'src/ts/storage/buildFence';
     import { getChatAssetRenderWindow } from 'src/ts/chatAssetWindow';
     import { chatWriterClaimMessage } from 'src/ts/storage/nodeStorage';
     import { BLANK_FIRST_MESSAGE_INDEX, firstMessagePageNumber, getFirstMessageAtIndex, lastFirstMessagePageNumber, nextFirstMessageIndex, previousFirstMessageIndex } from 'src/ts/firstMessage';
 
     import Chats from './Chats.svelte';
+    import BtwSidePanel from './BtwSidePanel.svelte';
+    import { btwSideChat, openBtwPanel } from 'src/ts/process/btwSideChat.svelte';
     import Button from '../UI/GUI/Button.svelte';
     import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte';
+
+    import { isSendKey } from 'src/ts/gui/sendKey';
 
     const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then(m => m.default);
 
     // Whether an Enter keydown should send (vs insert a newline), based on the
     // per-platform send-key mode. Mobile uses sendKeyMobile, desktop sendKeyPC.
     function shouldSendOnEnter(e: KeyboardEvent): boolean {
-        const mode = isMobile ? DBState.db.sendKeyMobile : DBState.db.sendKeyPC;
-        // Match the configured combo EXACTLY — every other modifier must be absent,
-        // so e.g. Alt+Enter or Ctrl+Shift+Enter inserts a newline instead of sending.
-        switch (mode) {
-            case 'enter': return !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey;
-            case 'ctrl-enter': return (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey;
-            case 'shift-enter': return e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey;
-            default: return false; // 'button'
-        }
+        return isSendKey(e, isMobile ? DBState.db.sendKeyMobile : DBState.db.sendKeyPC);
     }
 
     interface Props {
@@ -93,11 +92,15 @@ import { isMobile } from 'src/ts/platform'
     let currentChatReady = $derived(!!currentChatSlot && !currentChatSlot._placeholder)
     let currentChat = $derived(currentChatReady ? currentChatSlot.message : [])
     let currentChatFmIndex = $derived(currentChatReady ? (currentChatSlot.fmIndex ?? -1) : -1)
-    let resolveFirstMessageAssets = $derived.by(() => currentChatFmIndex !== BLANK_FIRST_MESSAGE_INDEX && getChatAssetRenderWindow(
+    // Whether the greeting falls in the recent-outputs asset window. The blank
+    // page 0 greeting resolves no assets of its own, but still shows the bot's
+    // profile image like any other greeting.
+    let firstMessageInAssetWindow = $derived(getChatAssetRenderWindow(
         currentChat,
         DBState.db.externalAssetRecentOutputs,
         currentChatSlot?.firstMessageDisabled !== true,
     ).firstMessage)
+    let resolveFirstMessageAssets = $derived(currentChatFmIndex !== BLANK_FIRST_MESSAGE_INDEX && firstMessageInAssetWindow)
 
     $effect(() => {
         const active = $chatHydrationOverlayStore.active
@@ -167,6 +170,11 @@ import { isMobile } from 'src/ts/platform'
         if (!chaId || !chatId || draftLoading) return
         scheduleSaveChatDraft(chaId, chatId, { m, t })
     })
+
+    // Unsent input is work only this screen holds. When the tab turns out to
+    // run an outdated build it is not reloaded away but shown on the
+    // stale-build notice for copying (storage/buildFence.ts).
+    $effect(() => registerUnsavedText(() => [messageInput, messageInputTranslate].filter(Boolean).join('\n\n')))
 
     // Best-effort persist on tab hide / unload (refresh, app switch): the
     // unmount cleanup above does not fire on a hard page teardown.
@@ -623,10 +631,8 @@ import { isMobile } from 'src/ts/platform'
     function getLastCharMsgIn(chat: ChatData | null | undefined) {
         const msgs = chat?.message
         if (!msgs || msgs.length === 0) return null
-        for (let i = msgs.length - 1; i >= 0; i--) {
-            if (msgs[i].role === 'char' && !msgs[i].isComment && !msgs[i].disabled) return msgs[i]
-        }
-        return null
+        const index = findLastReplyIndex(msgs)
+        return index === -1 ? null : msgs[index]
     }
 
     function getLastCharMsg() {
@@ -661,6 +667,11 @@ import { isMobile } from 'src/ts/platform'
 
         // Save existing swipes before clone replaces the array
         const savedSwipes = lastMsg.swipes ? [...lastMsg.swipes] : [lastMsg.data]
+        // Chat variables: the new candidate starts from the turn's baseline,
+        // not from what the previous candidate left (chatScriptstateCheckpoint.ts).
+        const previousCheckpoint = copyScriptstateCheckpoint(lastMsg)
+        const scriptstateBeforeReroll = snapshotScriptstate(activeChat.scriptstate)
+        const targetIndex = activeChat.message.indexOf(lastMsg)
 
         // Generate new response
         // Preserve trailing comment/disabled messages (e.g. branch comments)
@@ -685,6 +696,9 @@ import { isMobile } from 'src/ts/platform'
             let msg = cha.pop()
             if(!msg) return
         }
+        // Roll the variables back only when the rerolled reply is among the
+        // popped messages (a chat ending on the user's turn rerolls nothing old).
+        const restoredBaseline = targetIndex >= cha.length && restoreScriptstateBeforeReroll(activeChat, lastMsg)
         activeChat.message = cha
         preparingChatSends.delete(genKey)
         const generated = await sendChatMain(false, generationTarget)
@@ -697,6 +711,7 @@ import { isMobile } from 'src/ts/platform'
         // If generation failed, restore original messages
         if (!generated) {
             attached.chat.message = originalMessages
+            if (restoredBaseline) restoreScriptstateSnapshot(attached.chat, scriptstateBeforeReroll)
             return
         }
 
@@ -709,8 +724,12 @@ import { isMobile } from 'src/ts/platform'
         // Save new response to swipes
         const newLastMsg = getLastCharMsgIn(attached.chat)
         if (newLastMsg && !newLastMsg.swipes) {
+            const generatedCheckpoint = copyScriptstateCheckpoint(newLastMsg)
             newLastMsg.swipes = [...savedSwipes, newLastMsg.data]
             newLastMsg.swipeId = newLastMsg.swipes.length - 1
+            const merged = mergeRerollCheckpoint(restoredBaseline ? previousCheckpoint : undefined, savedSwipes.length, generatedCheckpoint)
+            if (merged) newLastMsg.scriptstateCheckpoint = merged
+            else delete newLastMsg.scriptstateCheckpoint
         }
         } finally {
             preparingChatSends.delete(genKey)
@@ -718,41 +737,41 @@ import { isMobile } from 'src/ts/platform'
         }
     }
 
-    async function unReroll() {
+    // Swipes of any reply (`index`), the newest one by default. Only switching
+    // the newest reply brings back the chat variables its swipe left: later
+    // messages have changed them since an older reply was written.
+    function swipeContext(index?: number) {
+        const char = DBState.db.characters[$selectedCharID]
+        const chat = char?.chats?.[char.chatPage]
+        const target = getLastCharMsgIn(chat)
+        const msg = index === undefined ? target : (chat?.message?.[index] ?? null)
+        return { chat, msg, isTarget: !!msg && msg === target }
+    }
+
+    function switchSwipe(step: -1 | 1, index?: number) {
         if(currentChatGenerating) return
-        const lastMsg = getLastCharMsg()
-        if (!lastMsg || !lastMsg.swipes || lastMsg.swipeId === undefined) return
-
-        lastMsg.swipeId = lastMsg.swipeId <= 0 ? lastMsg.swipes.length - 1 : lastMsg.swipeId - 1
-        lastMsg.data = lastMsg.swipes[lastMsg.swipeId]
+        const { chat, msg, isTarget } = swipeContext(index)
+        if (!chat || !msg || !stepSwipe(msg, step)) return
+        if (isTarget) restoreShownSwipeScriptstate(chat, msg)
         DBState.db.characters[$selectedCharID].reloadKeys += 1
     }
 
-    function nextSwipe() {
-        const lastMsg = getLastCharMsg()
-        if (!lastMsg || !lastMsg.swipes || lastMsg.swipeId === undefined) return
-
-        lastMsg.swipeId = lastMsg.swipeId >= lastMsg.swipes.length - 1 ? 0 : lastMsg.swipeId + 1
-        lastMsg.data = lastMsg.swipes[lastMsg.swipeId]
-        DBState.db.characters[$selectedCharID].reloadKeys += 1
+    function unReroll(index?: number) {
+        switchSwipe(-1, index)
     }
 
-    function deleteSwipe() {
-        const lastMsg = getLastCharMsg()
-        if (!lastMsg || !lastMsg.swipes || lastMsg.swipes.length <= 1) return
+    function nextSwipe(index?: number) {
+        switchSwipe(1, index)
+    }
 
-        const idx = lastMsg.swipeId ?? 0
-        lastMsg.swipes.splice(idx, 1)
-
-        if (idx >= lastMsg.swipes.length) {
-            lastMsg.swipeId = lastMsg.swipes.length - 1
-        }
-        lastMsg.data = lastMsg.swipes[lastMsg.swipeId]
-
-        if (lastMsg.swipes.length === 1) {
-            delete lastMsg.swipes
-            delete lastMsg.swipeId
-        }
+    function deleteSwipe(index?: number) {
+        if(currentChatGenerating) return
+        const { chat, msg, isTarget } = swipeContext(index)
+        if (!chat || !msg) return
+        const removed = deleteShownSwipe(msg)
+        if (!removed) return
+        removeSwipeCheckpoint(msg, removed.removedIndex, removed.previousCount)
+        if (isTarget) restoreShownSwipeScriptstate(chat, msg)
         DBState.db.characters[$selectedCharID].reloadKeys += 1
     }
 
@@ -960,6 +979,14 @@ import { isMobile } from 'src/ts/platform'
         updateInputTranslateSize()
     }
 
+    // A BTW side answer (e.g. a suggested line) goes into the message box;
+    // the user still edits and sends it.
+    async function insertIntoComposer(text: string) {
+        messageInput = messageInput.trim() ? `${messageInput}\n${text}` : text
+        await tick()
+        updateInputSizeAll()
+    }
+
     function updateInputTranslateSize() {
         if(inputTranslateEle) {
             inputTranslateEle.style.height = "0";
@@ -967,15 +994,44 @@ import { isMobile } from 'src/ts/platform'
             inputTranslateEle.style.height = inputTranslateHeight
         }
     }
-    // Measure the textarea's content height at a given css width (empty = current
-    // flex width), restoring the override afterwards.
+    // Measure the textarea's content height at a given css width (empty = the
+    // textarea's current width). The measurement uses a hidden, absolutely
+    // positioned copy: collapsing the real textarea to height 0 to read its
+    // scrollHeight forced the whole chat column (every rendered message) to
+    // relayout on each keystroke, twice per keystroke in a split view.
+    let inputMirror: HTMLTextAreaElement | null = null
     function measureHeightAt(cssWidth:string):number {
-        const prev = inputEle.style.width
-        inputEle.style.height = "0"
-        if(cssWidth) inputEle.style.width = cssWidth
-        const h = inputEle.scrollHeight
-        inputEle.style.width = prev
-        return h
+        const host = inputEle.parentElement
+        if(!host){
+            return inputEle.scrollHeight
+        }
+        if(!inputMirror || inputMirror.parentElement !== host){
+            inputMirror?.remove()
+            inputMirror = document.createElement('textarea')
+            inputMirror.setAttribute('aria-hidden', 'true')
+            inputMirror.tabIndex = -1
+            host.appendChild(inputMirror)
+        }
+        inputMirror.className = inputEle.className
+        const mirrorStyle = inputMirror.style
+        mirrorStyle.position = 'absolute'
+        mirrorStyle.visibility = 'hidden'
+        mirrorStyle.pointerEvents = 'none'
+        mirrorStyle.left = '0'
+        mirrorStyle.top = '0'
+        mirrorStyle.height = '0'
+        mirrorStyle.minHeight = '0'
+        mirrorStyle.overflow = 'hidden'
+        mirrorStyle.width = cssWidth && cssWidth !== '100%' ? cssWidth : `${cssWidth === '100%' ? host.clientWidth - horizontalPadding(host) : inputEle.clientWidth}px`
+        // The state, not the DOM: a programmatic change (cleared after send)
+        // reaches this pre-DOM-update effect before the textarea shows it.
+        inputMirror.value = messageInput ?? ''
+        return inputMirror.scrollHeight
+    }
+
+    function horizontalPadding(el: HTMLElement): number {
+        const cs = getComputedStyle(el)
+        return (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0)
     }
 
     // Width the textarea would have on a single inline row (pill content minus the
@@ -990,7 +1046,7 @@ import { isMobile } from 'src/ts/platform'
         const gap = parseFloat(cs.columnGap || cs.gap || '0') || 0
         let used = 0, others = 0
         for(const c of Array.from(pill.children) as HTMLElement[]){
-            if(c === inputEle) continue
+            if(c === inputEle || c === inputMirror) continue
             used += c.offsetWidth
             others++
         }
@@ -1014,8 +1070,10 @@ import { isMobile } from 'src/ts/platform'
             const sh = measureHeightAt(multiline ? "100%" : ref)
             // Cap the composer at ~60% of the viewport; beyond that it scrolls.
             const maxH = Math.round(window.innerHeight * 0.6)
-            inputHeight = Math.min(sh, maxH) + "px"
-            inputEle.style.height = inputHeight
+            const nextHeight = Math.min(sh, maxH) + "px"
+            inputHeight = nextHeight
+            // Touch the real textarea only when its height changes.
+            if(inputEle.style.height !== nextHeight) inputEle.style.height = nextHeight
             inputOverflow = sh > maxH
         }
     }
@@ -1155,8 +1213,15 @@ import { isMobile } from 'src/ts/platform'
     {/if}
     
     {#if DBState.db.nodeOnlyScrollButtonType !== 'off' && currentChat.length > 0}
+        <!-- Where the scroll buttons sit: right edge centred (default), right
+             edge at the bottom (the old place), or bottom centre as a row. -->
+        {@const navPosition = DBState.db.nodeOnlyScrollButtonPosition ?? 'right-center'}
+        {@const navSeparator = navPosition === 'bottom-center' ? 'border-l border-darkborderc border-opacity-30' : 'border-t border-darkborderc border-opacity-30'}
         <div
-            class="absolute right-3 bottom-16 z-40 flex flex-col rounded-lg bg-bgcolor/70 backdrop-blur-sm border border-darkborderc border-opacity-30 shadow-lg overflow-hidden transition-opacity duration-300"
+            class={"absolute z-40 flex rounded-lg bg-bgcolor/70 backdrop-blur-sm border border-darkborderc border-opacity-30 shadow-lg overflow-hidden transition-opacity duration-300 "
+                + (navPosition === 'bottom-center' ? 'bottom-16 left-1/2 -translate-x-1/2 flex-row'
+                : navPosition === 'right-bottom' ? 'right-3 bottom-16 flex-col'
+                : 'right-3 top-1/2 -translate-y-1/2 flex-col')}
             class:opacity-0={!showScrollNav}
             class:pointer-events-none={!showScrollNav}
         >
@@ -1167,7 +1232,7 @@ import { isMobile } from 'src/ts/platform'
                 >
                     <ChevronsUpIcon size={18} />
                 </button>
-                <div class="border-t border-darkborderc border-opacity-30"></div>
+                <div class={navSeparator}></div>
             {/if}
             <button
                 class="w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors"
@@ -1175,7 +1240,7 @@ import { isMobile } from 'src/ts/platform'
             >
                 <ChevronUpIcon size={18} />
             </button>
-            <div class="border-t border-darkborderc border-opacity-30"></div>
+            <div class={navSeparator}></div>
             <button
                 class="w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors"
                 onclick={() => { bumpScrollNav(); navigateMessage('next') }}
@@ -1183,7 +1248,7 @@ import { isMobile } from 'src/ts/platform'
                 <ChevronDownIcon size={18} />
             </button>
             {#if DBState.db.nodeOnlyScrollButtonType === 'four'}
-                <div class="border-t border-darkborderc border-opacity-30"></div>
+                <div class={navSeparator}></div>
                 <button
                     class="w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors"
                     onclick={() => { bumpScrollNav(); scrollToLoadedBottom() }}
@@ -1287,11 +1352,17 @@ import { isMobile } from 'src/ts/platform'
                                 onSelect={() => sendContinue()}>
                                 <StepForwardIcon /><span>{language.continueResponse}</span>
                             </ShDropdownMenuItem>
+                            <ShDropdownMenuItem onSelect={() => openBtwPanel()}>
+                                <MessageCircleQuestionMarkIcon /><span>{language.btwSideChat.menu}</span>
+                            </ShDropdownMenuItem>
                             {#if DBState.db.showMenuChatList}
                                 <ShDropdownMenuItem onSelect={() => { openChatList = true }}>
                                     <DatabaseIcon /><span>{language.chatList}</span>
                                 </ShDropdownMenuItem>
                             {/if}
+                            <ShDropdownMenuItem onSelect={() => { alertStore.set({ type: 'branches', msg: '' }) }}>
+                                <GitBranch /><span>{language.branchGraphTitle}</span>
+                            </ShDropdownMenuItem>
                             {#each additionalChatMenu as menu}
                                 <ShDropdownMenuItem onSelect={() => { menu.callback() }}>
                                     <PluginDefinedIcon ico={menu} /><span>{menu.name}</span>
@@ -1425,7 +1496,7 @@ import { isMobile } from 'src/ts/platform'
                             }
                         }
                     }}
-                          oninput={()=>{updateInputSizeAll();updateInputTransateMessage(false)}}
+                          oninput={()=>{updateInputTransateMessage(false)}}
                           onblur={persistDraftNow}
                           style:height={inputHeight}
                 ></textarea>
@@ -1610,10 +1681,10 @@ import { isMobile } from 'src/ts/platform'
                     name={DBState.db.characters[$selectedCharID].name}
                     message={getFirstMessageAtIndex(DBState.db.characters[$selectedCharID], currentChatFmIndex)}
                     role='char'
-                    img={resolveFirstMessageAssets ? getCharImage(DBState.db.characters[$selectedCharID].image, 'css') : ''}
+                    img={firstMessageInAssetWindow ? getCharImage(DBState.db.characters[$selectedCharID].image, 'css') : ''}
                     loadSenderImage={() => getCharImage(DBState.db.characters[$selectedCharID].image, 'css')}
                     resolveChatAssets={resolveFirstMessageAssets}
-                    resolveSenderIcon={resolveFirstMessageAssets}
+                    resolveSenderIcon={firstMessageInAssetWindow}
                     allowViewportAssetActivation={currentChatSlot?.firstMessageDisabled !== true && currentChatFmIndex !== BLANK_FIRST_MESSAGE_INDEX}
                     idx={-1}
                     altGreeting={true}
@@ -1682,6 +1753,9 @@ import { isMobile } from 'src/ts/platform'
             {@render composerCluster()}
         </div>
 
+        {#if btwSideChat.open && currentChatReady && currentCharacter?.chaId !== '§playground'}
+            <BtwSidePanel character={currentCharacter} chat={currentChatSlot} onInsert={insertIntoComposer} />
+        {/if}
     {/if}
 </div>
 

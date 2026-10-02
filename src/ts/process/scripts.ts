@@ -13,6 +13,7 @@ import { runLuaEditTrigger } from "./scriptings";
 import { pluginV2 } from "../plugins/plugins.svelte";
 import { runTrigger } from "./triggers";
 import { getFirstMessageAtIndex } from "../firstMessage";
+import { LruMap } from "../util/lruMap";
 
 const dreg = /{{data}}/g
 const randomness = /\|\|\|/g
@@ -73,7 +74,10 @@ export async function importRegex(o?:customscript[]):Promise<customscript[]>{
     return o
 }
 
-let bestMatchCache = new Map<string, string>()
+// Dynamic-asset best matches keyed by chat scope (persona prompt included)
+// and asset name. Bounded because it is never reset; a dropped entry costs
+// one query embedding to find again.
+let bestMatchCache = new LruMap<string, string>(512)
 let processScriptCache = new Map<string, string>()
 
 function generateScriptCacheKey(
