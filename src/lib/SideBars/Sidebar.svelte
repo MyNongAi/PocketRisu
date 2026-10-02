@@ -428,6 +428,13 @@
     localStorage.setItem(splitCatalogStorageKey, splitCatalogMode ? 'split' : 'normal')
   }
 
+  // Module ids that exist, for the chain mark on bots with a module of their
+  // own (character.modules, e.g. a Realm companion module).
+  let existingModuleIds = $derived(new Set((DBState.db.modules ?? []).map((module) => module?.id).filter(Boolean)))
+  function characterHasLinkedModule(character: { modules?: string[] } | undefined): boolean {
+    return !!character?.modules?.some((id) => existingModuleIds.has(id))
+  }
+
   function favoriteCharacterIds(): Set<string> {
     return new Set(DBState.db.characters
       .filter((character) => character.favorite && !character.trashTime)
@@ -1047,6 +1054,7 @@
                       titleColor={listTitleColor(DBState.db.characters[folderChar.index]?.titleColor, Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) > 0)}
                       missingAssets={Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) > 0}
                       missingAssetCount={Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) || 0}
+                      linkedModule={characterHasLinkedModule(DBState.db.characters[folderChar.index])}
                       realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[folderChar.index])}
                       chaId={DBState.db.characters[folderChar.index]?.chaId}
                       sourceBadge={folderChar.sourceBadge}
@@ -1178,6 +1186,7 @@
               titleColor={listTitleColor(DBState.db.characters[normalChar.index]?.titleColor, Number(DBState.db.characters[normalChar.index]?.sourceInfo?.missingAssetCount) > 0)}
               missingAssets={Number(DBState.db.characters[normalChar.index]?.sourceInfo?.missingAssetCount) > 0}
               missingAssetCount={Number(DBState.db.characters[normalChar.index]?.sourceInfo?.missingAssetCount) || 0}
+              linkedModule={characterHasLinkedModule(DBState.db.characters[normalChar.index])}
               realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[normalChar.index])}
               chaId={DBState.db.characters[normalChar.index]?.chaId}
               sourceBadge={normalChar.sourceBadge}
@@ -1525,6 +1534,7 @@
               titleColor={listTitleColor(DBState.db.characters[char.index]?.titleColor, Number(DBState.db.characters[char.index]?.sourceInfo?.missingAssetCount) > 0)}
               missingAssets={Number(DBState.db.characters[char.index]?.sourceInfo?.missingAssetCount) > 0}
               missingAssetCount={Number(DBState.db.characters[char.index]?.sourceInfo?.missingAssetCount) || 0}
+              linkedModule={characterHasLinkedModule(DBState.db.characters[char.index])}
               realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[char.index])}
               chaId={DBState.db.characters[char.index]?.chaId}
               sourceBadge={char.sourceBadge}
@@ -1688,6 +1698,7 @@
                     titleColor={listTitleColor(DBState.db.characters[char2.index]?.titleColor, Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) > 0)}
                     missingAssets={Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) > 0}
                     missingAssetCount={Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) || 0}
+                    linkedModule={characterHasLinkedModule(DBState.db.characters[char2.index])}
                     realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[char2.index])}
                     chaId={DBState.db.characters[char2.index]?.chaId}
                     sourceBadge={char2.sourceBadge}
@@ -1944,6 +1955,7 @@
                   titleColor={listTitleColor(DBState.db.characters[rc.index]?.titleColor, Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0)}
                   missingAssets={Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0}
                   missingAssetCount={Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) || 0}
+                  linkedModule={characterHasLinkedModule(DBState.db.characters[rc.index])}
                   realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[rc.index])}
                   chaId={DBState.db.characters[rc.index]?.chaId}
                   sourceBadge={rc.sourceBadge}

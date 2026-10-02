@@ -32,6 +32,8 @@ export interface alertData{
     actions?: AlertAction[]
     /** 'input' only: mask the typed text (a password). */
     hideText?: boolean
+    /** 'ask' only: a tap outside does not answer "no"; only the buttons close it. */
+    stayOpen?: boolean
 }
 
 export interface NotifyOptions {
@@ -332,11 +334,12 @@ export async function alertSelectChar(){
     return get(alertStoreImported).msg
 }
 
-export async function alertConfirm(msg:string){
+export async function alertConfirm(msg:string, options: { stayOpen?: boolean } = {}){
 
     alertStoreImported.set({
         'type': 'ask',
-        'msg': msg
+        'msg': msg,
+        stayOpen: options.stayOpen,
     })
 
     await waitAlert()

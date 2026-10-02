@@ -713,7 +713,7 @@
 
 <ShAlertDialog
     open={$alertStore.type === 'ask'}
-    closeOnOutsideClick={true}
+    closeOnOutsideClick={!$alertStore.stayOpen}
     onOpenChange={(v) => {
         if (!v && $alertStore.type === 'ask') {
             alertStore.set({ type: 'none', msg: 'no' })

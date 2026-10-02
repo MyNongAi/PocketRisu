@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Link2Icon } from "@lucide/svelte";
   import { onMount } from "svelte";
   import { tooltipRight } from "src/ts/gui/tooltip";
 
@@ -19,6 +20,8 @@
     missingAssets?: boolean;
     /** Recorded missing-asset count, shown next to the ❗ / ! mark. */
     missingAssetCount?: number;
+    /** The bot carries a module of its own (character.modules): a chain in the bottom-right corner. */
+    linkedModule?: boolean;
     realmRecoveryAvailable?: boolean;
     sourceBadge?: string;
     sourceRecorded?: boolean;
@@ -43,6 +46,7 @@
     favorite = false,
     missingAssets = false,
     missingAssetCount = 0,
+    linkedModule = false,
     realmRecoveryAvailable = false,
     sourceBadge = '',
     sourceRecorded = true,
@@ -133,10 +137,18 @@
       {/if}
     </span>
   {/if}
-  {#if missingAssets && missingCountText}
-    <!-- Inside the bottom-right corner: next to the mark, which is pinned
-         past the avatar's edge, the count was cut off by the list. -->
-    <span class="pointer-events-none absolute bottom-0.5 right-0.5 z-20 rounded bg-darkbg/90 px-0.5 text-[9px] font-bold leading-tight text-red-400" title={`깨진 에셋 ${missingAssetCount.toLocaleString()}개`}>{missingCountText}</span>
+  {#if (missingAssets && missingCountText) || linkedModule}
+    <!-- Inside the bottom-right corner (next to the mark, which is pinned past
+         the avatar's edge, the count was cut off by the list): the missing
+         count, then the chain of a bot with a module of its own. -->
+    <span class="pointer-events-none absolute bottom-0.5 right-0.5 z-20 flex items-center gap-0.5">
+      {#if missingAssets && missingCountText}
+        <span class="rounded bg-darkbg/90 px-0.5 text-[9px] font-bold leading-tight text-red-400" title={`깨진 에셋 ${missingAssetCount.toLocaleString()}개`}>{missingCountText}</span>
+      {/if}
+      {#if linkedModule}
+        <span class="flex items-center justify-center rounded bg-darkbg/90 p-px text-sky-300" aria-label="전용 모듈" title="전용 모듈이 연결된 봇"><Link2Icon size={11} strokeWidth={2.5} /></span>
+      {/if}
+    </span>
   {/if}
   {#if sourceBadge}
     <span

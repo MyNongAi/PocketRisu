@@ -1685,7 +1685,7 @@ export interface Database{
     nodeOnlyGroupDeactivatedCharacters?:boolean
     /** Loose favorite characters in a ★ folder at the top of the list (favoritesFolder.ts); undefined = on. */
     nodeOnlyFavoritesFolder?:boolean
-    /** Import cards and modules that use low-level access without the confirmation. */
+    /** Import cards and modules that use low-level access without the confirmation; undefined = on. */
     nodeOnlyAutoAllowLowLevelImport?:boolean
     // Characters hidden from the sidebar rail (display only, no data impact;
     // the character manager still lists them). chaIds, kept at DB level so

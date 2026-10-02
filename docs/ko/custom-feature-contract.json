@@ -960,10 +960,10 @@
         "src/ts/setting/advancedSettingsData.ts"
       ],
       "requiredMarkers": [
-        { "file": "src/ts/characterCards.ts", "contains": "risuext?.lowLevelAccess && !getDatabase().nodeOnlyAutoAllowLowLevelImport" },
-        { "file": "src/ts/characterCards.ts", "contains": "importData.lowLevelAccess && !getDatabase().nodeOnlyAutoAllowLowLevelImport" },
-        { "file": "src/ts/process/modules.ts", "contains": "importData.lowLevelAccess && !getDatabase().nodeOnlyAutoAllowLowLevelImport" },
-        { "file": "src/ts/setting/advancedSettingsData.ts", "contains": "bindKey: 'nodeOnlyAutoAllowLowLevelImport'" }
+        { "file": "src/ts/characterCards.ts", "contains": "risuext?.lowLevelAccess && getDatabase().nodeOnlyAutoAllowLowLevelImport === false" },
+        { "file": "src/ts/characterCards.ts", "contains": "importData.lowLevelAccess && getDatabase().nodeOnlyAutoAllowLowLevelImport === false" },
+        { "file": "src/ts/process/modules.ts", "contains": "importData.lowLevelAccess && getDatabase().nodeOnlyAutoAllowLowLevelImport === false" },
+        { "file": "src/ts/setting/advancedSettingsData.ts", "contains": "getValue: (db) => db.nodeOnlyAutoAllowLowLevelImport !== false" }
       ],
       "regressionTests": []
     }
