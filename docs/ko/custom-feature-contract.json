@@ -1123,6 +1123,28 @@
       "regressionTests": [
         "src/ts/gui/fileDropSurface.svelte.test.ts"
       ]
+    },
+    {
+      "id": "REALM-NSFW-RELAY",
+      "title": "렐름 NSFW 검색 중계 (내 중계기 경유)",
+      "criticality": "compatibility",
+      "ownerFiles": [
+        "server/node/realmRelay.cjs",
+        "server/node/server.cjs",
+        "src/ts/characterCards.ts",
+        "src/ts/setting/advancedSettingsData.ts",
+        "src/ts/storage/database.svelte.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "server/node/realmRelay.cjs", "contains": "function realmRelayTarget(relay, pathAndQuery)" },
+        { "file": "server/node/server.cjs", "contains": "externalURL = realmRelayTarget(req.headers[REALM_RELAY_HEADER], pathAndQuery) ?? (hubURL + pathAndQuery);" },
+        { "file": "server/node/server.cjs", "contains": "delete headersToSend[REALM_RELAY_HEADER];" },
+        { "file": "src/ts/characterCards.ts", "contains": "headers['x-risu-realm-relay'] = relay" },
+        { "file": "src/ts/setting/advancedSettingsData.ts", "contains": "bindKey: 'nodeOnlyRealmRelay'" }
+      ],
+      "regressionTests": [
+        "server/node/realmRelay.test.ts"
+      ]
     }
   ]
 }

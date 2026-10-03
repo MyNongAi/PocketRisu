@@ -1648,6 +1648,8 @@ export interface Database{
     hideMessagePageCount?: boolean
     /** Show the user message a reply answers under the reply (gui/inputEcho.ts). */
     nodeOnlyShowInputEcho?: boolean
+    /** Base URL of the reader's Realm relay (server/node/realmRelay.cjs); an NSFW Realm search goes through it. Empty = off. */
+    nodeOnlyRealmRelay?: string
     /** A message body changes only where its HTML changed (gui/morphHtml.ts), keeping panel scroll, <details>, tabs and animations; off = the upstream {@html} swap. */
     nodeOnlyChatBodyInPlace?: boolean
     /** ✂️ log image capture (gui/logCaptureState.svelte.ts): the button and the image options. */
@@ -2163,6 +2165,8 @@ export interface themePreset{
     hideMessagePageCount?: boolean
     /** Show the user message a reply answers under the reply (gui/inputEcho.ts). */
     nodeOnlyShowInputEcho?: boolean
+    /** Base URL of the reader's Realm relay (server/node/realmRelay.cjs); an NSFW Realm search goes through it. Empty = off. */
+    nodeOnlyRealmRelay?: string
     /** A message body changes only where its HTML changed (gui/morphHtml.ts), keeping panel scroll, <details>, tabs and animations; off = the upstream {@html} swap. */
     nodeOnlyChatBodyInPlace?: boolean
     /** ✂️ log image capture (gui/logCaptureState.svelte.ts): the button and the image options. */

@@ -1814,10 +1814,18 @@ export async function getRisuHub(arg:{
         arg.search += ' __shared'
         const stringArg = `search==${arg.search}&&page==${arg.page}&&nsfw==${arg.nsfw}&&sort==${arg.sort}&&web==other`
 
+        const headers: Record<string, string> = {
+            "x-risuai-info": appVer + ';node'
+        }
+        // The hub's results can depend on the region a search comes from; with
+        // NSFW on, the server sends this search through the reader's relay
+        // (server/node/realmRelay.cjs). Thumbnails and downloads stay direct.
+        const relay = getDatabase().nodeOnlyRealmRelay?.trim()
+        if(arg.nsfw && relay){
+            headers['x-risu-realm-relay'] = relay
+        }
         const da = await fetch(hubURL + '/realm/' + encodeURIComponent(stringArg) + "?cache=30", {
-            headers: {
-                "x-risuai-info": appVer + ';node'
-            }
+            headers
         })
         if(da.status !== 200){
             return []

@@ -132,6 +132,10 @@ export const advancedRequestItems: SettingItem[] = [
             ]
         }
     },
+    {
+        id: 'adv.realmRelay', type: 'text', labelKey: 'realmRelay', bindKey: 'nodeOnlyRealmRelay',
+        helpKey: 'realmRelay', options: { placeholder: 'http://realm-relay:8787' }
+    },
 ];
 
 /** Display & assets tab */

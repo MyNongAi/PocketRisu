@@ -56,6 +56,7 @@ const {
     logger, installProcessHandlers, expressErrorMiddleware,
 } = require('./logs.cjs');
 const { createRequestLogs } = require('./request-logs.cjs');
+const { REALM_RELAY_HEADER, realmRelayTarget } = require('./realmRelay.cjs');
 const { cacheFileName, createThumbnailCache } = require('./thumbnail-cache.cjs');
 const { validateInspectionBatch, inspectAssetReferences } = require('./plugin-asset-inspection.cjs');
 const {
@@ -4732,7 +4733,8 @@ async function hubProxyFunc(req, res) {
             externalURL = decodedPath;
         } else {
             const pathAndQuery = req.originalUrl.replace(/^\/hub-proxy/, '');
-            externalURL = hubURL + pathAndQuery;
+            // A Realm search can go out through the reader's relay (realmRelay.cjs).
+            externalURL = realmRelayTarget(req.headers[REALM_RELAY_HEADER], pathAndQuery) ?? (hubURL + pathAndQuery);
         }
         
         const headersToSend = { ...req.headers };
@@ -4740,6 +4742,7 @@ async function hubProxyFunc(req, res) {
         delete headersToSend.connection;
         delete headersToSend['content-length'];
         delete headersToSend['x-risu-node-path'];
+        delete headersToSend[REALM_RELAY_HEADER];
 
         const hubOrigin = new URL(hubURL).origin;
         headersToSend.origin = hubOrigin;

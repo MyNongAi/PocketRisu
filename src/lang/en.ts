@@ -2781,6 +2781,7 @@ export const languageEnglish = {
     logCaptureButton: "✂️ log image in the message menu",
     favoritesFolderName: "Favorites",
     autoAllowLowLevelImport: "Allow low-level access on import without asking",
+    realmRelay: "Realm NSFW search relay",
     favoritesFolder: "Group favorite characters in a ★ folder at the top",
     logImageWidth: "Log image width",
     logImageTextScale: "Log image text size",

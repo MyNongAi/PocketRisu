@@ -3007,6 +3007,7 @@ export const languageKorean = {
   logCaptureButton: "메시지 ☰ 메뉴에 ✂️ 로그 이미지",
   favoritesFolderName: "즐겨찾기",
   autoAllowLowLevelImport: "가져올 때 저수준 접근 자동 허용",
+  realmRelay: "렐름 NSFW 검색 중계 주소",
   favoritesFolder: "즐겨찾기 봇을 맨 위 ★ 폴더로 묶기",
   logImageWidth: "로그 이미지 가로 폭",
   logImageTextScale: "로그 이미지 글자 크기",
