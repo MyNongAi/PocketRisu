@@ -1021,6 +1021,24 @@
         "src/ts/alertQuestion.test.ts",
         "src/ts/gui/mobileBackNavigation.svelte.test.ts"
       ]
+    },
+    {
+      "id": "CHAT-BODY-MORPH",
+      "title": "메시지 본문은 바뀐 부분만 고침 (패널 스크롤·펼침 유지)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/morphHtml.ts",
+        "src/lib/ChatScreens/ChatBody.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/gui/morphHtml.ts", "contains": "export class MorphedHtml" },
+        { "file": "src/ts/gui/morphHtml.ts", "contains": "if (prev.isEqualNode(next)) return live" },
+        { "file": "src/lib/ChatScreens/ChatBody.svelte", "contains": "const rendered = new MorphedHtml()" },
+        { "file": "src/lib/ChatScreens/ChatBody.svelte", "contains": "renderParsed(root, md, shortName)" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/morphHtml.test.ts"
+      ]
     }
   ]
 }

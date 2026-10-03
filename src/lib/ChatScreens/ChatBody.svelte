@@ -3,7 +3,8 @@
     import { DBState } from 'src/ts/stores.svelte'
     import { sleep } from "src/ts/util"
     import { alertError } from "../../ts/alert"
-    import { onDestroy, tick } from 'svelte'
+    import { onDestroy, tick, untrack } from 'svelte'
+    import { MorphedHtml } from "src/ts/gui/morphHtml"
     import { addMetadataToElement, getDistance, ParseMarkdown, postTranslationParse, resolveInlayPlaceholders, trimMarkdown, type CbsConditions, type simpleCharacterArgument } from "../../ts/parser/parser.svelte"
     import { getLLMCache, translateHTML } from "../../ts/translator/translator"
     import { getModuleAssets, getModules } from "src/ts/process/modules";
@@ -491,12 +492,24 @@
         return () => bodyRoot?.removeEventListener('error', showExternalAssetError, true)
     })
 
+    // The parsed body is not an {@html} block: that swapped the whole fragment
+    // on every re-render, so a button in a reply reset its panel's scroll, an
+    // opened <details>, a picked tab and any animation. MorphedHtml changes
+    // only what the new HTML changes (src/ts/gui/morphHtml.ts). Its nodes sit
+    // at the end of bodyRoot, after anything Svelte renders here.
+    const rendered = new MorphedHtml()
+
     onDestroy(() => {
         destroyed = true
         releaseRenderedAssets()
+        rendered.clear()
     })
 
     let markParsingResult = $derived.by(() => markParsing(msgDisplay, character, idx, renderRevision))
+
+    const renderParsed = (root: HTMLElement, parsed: string, shortName: string) => {
+        rendered.render(root, untrack(() => addMetadataToElement(trimMarkdown(parsed), shortName)))
+    }
 
     $effect(() => {
         if(!resolveAssets){
@@ -504,11 +517,23 @@
         }
 
         if(shouldRenderRawStreaming){
+            rendered.clear()
             return
         }
-        markParsingResult
-        markParsingResult.then(async () => {
-            await tick() // Wait for Svelte to render the parsed HTML into DOM.
+        const root = bodyRoot
+        const result = markParsingResult
+        const shortName = modelShortName
+        // trimMarkdown rewrites <img> by this setting: re-render when it changes.
+        DBState.db?.hideAllImages
+        if(!root) return
+        // Until the new HTML is ready, show what the body showed (or the
+        // translation spinner markParsing put there), as {#await} did.
+        renderParsed(root, lastParsed, shortName)
+        let current = true
+        result.then(async (md) => {
+            if(!current || destroyed) return
+            renderParsed(root, md, shortName)
+            await tick()
             if(!destroyed) onRendered?.()
             if(destroyed || !resolveAssets || !bodyRoot?.isConnected) return
             await checkImg()
@@ -516,18 +541,13 @@
                 stopInlayResolution()
                 stopInlayResolution = resolveInlayPlaceholders(bodyRoot)
             }
-        })
+        }, () => {})
+        return () => { current = false }
     })
 </script>
 
 {#if shouldRenderRawStreaming}
     <span class="whitespace-pre-wrap">{rawStreamingText}</span>
-{:else}
-    {#await markParsingResult}
-        {@html addMetadataToElement(trimMarkdown(lastParsed), modelShortName)}
-    {:then md}
-        {@html addMetadataToElement(trimMarkdown(md), modelShortName)}
-    {/await}
 {/if}
 
 <style>
