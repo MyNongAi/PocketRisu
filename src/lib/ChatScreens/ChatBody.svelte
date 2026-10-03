@@ -492,11 +492,15 @@
         return () => bodyRoot?.removeEventListener('error', showExternalAssetError, true)
     })
 
-    // The parsed body is not an {@html} block: that swapped the whole fragment
-    // on every re-render, so a button in a reply reset its panel's scroll, an
-    // opened <details>, a picked tab and any animation. MorphedHtml changes
-    // only what the new HTML changes (src/ts/gui/morphHtml.ts). Its nodes sit
-    // at the end of bodyRoot, after anything Svelte renders here.
+    // "Keep a message's state" (display setting, on unless turned off): the
+    // parsed body is not the {@html} block below, which swaps the whole
+    // fragment on every re-render, so a button in a reply reset its panel's
+    // scroll, an opened <details>, a picked tab and any animation.
+    // MorphedHtml changes only what the new HTML changes
+    // (src/ts/gui/morphHtml.ts); its nodes sit at the end of bodyRoot, after
+    // anything Svelte renders here. Turned off, the upstream {@html} path
+    // below draws the body exactly as before.
+    let morphBody = $derived(DBState.db?.nodeOnlyChatBodyInPlace !== false)
     const rendered = new MorphedHtml()
 
     onDestroy(() => {
@@ -511,12 +515,10 @@
         rendered.render(root, untrack(() => addMetadataToElement(trimMarkdown(parsed), shortName)))
     }
 
+    // Declared before the effect below so the new HTML is in place before its
+    // tick() (onRendered, checkImg, inlays).
     $effect(() => {
-        if(!resolveAssets){
-            releaseRenderedAssets()
-        }
-
-        if(shouldRenderRawStreaming){
+        if(!morphBody || shouldRenderRawStreaming){
             rendered.clear()
             return
         }
@@ -530,10 +532,24 @@
         // translation spinner markParsing put there), as {#await} did.
         renderParsed(root, lastParsed, shortName)
         let current = true
-        result.then(async (md) => {
+        result.then((md) => {
             if(!current || destroyed) return
             renderParsed(root, md, shortName)
-            await tick()
+        }, () => {})
+        return () => { current = false }
+    })
+
+    $effect(() => {
+        if(!resolveAssets){
+            releaseRenderedAssets()
+        }
+
+        if(shouldRenderRawStreaming){
+            return
+        }
+        markParsingResult
+        markParsingResult.then(async () => {
+            await tick() // Wait for Svelte to render the parsed HTML into DOM.
             if(!destroyed) onRendered?.()
             if(destroyed || !resolveAssets || !bodyRoot?.isConnected) return
             await checkImg()
@@ -541,13 +557,18 @@
                 stopInlayResolution()
                 stopInlayResolution = resolveInlayPlaceholders(bodyRoot)
             }
-        }, () => {})
-        return () => { current = false }
+        })
     })
 </script>
 
 {#if shouldRenderRawStreaming}
     <span class="whitespace-pre-wrap">{rawStreamingText}</span>
+{:else if !morphBody}
+    {#await markParsingResult}
+        {@html addMetadataToElement(trimMarkdown(lastParsed), modelShortName)}
+    {:then md}
+        {@html addMetadataToElement(trimMarkdown(md), modelShortName)}
+    {/await}
 {/if}
 
 <style>

@@ -230,6 +230,7 @@ export const helpEn = {
         logImageTextScale: "Makes text and pictures larger in the same image width: at 150% the log is laid out 600 px wide and drawn 1.5 times, so readers can make out the text when the board shrinks the image to a phone screen.",
         logImageHeader: "Starts each log image with the bot's picture and name, the chat title and the message range.",
         logImageAvatars: "Keeps each message's profile picture in log images.",
+        chatBodyInPlaceDesc: "When a bot's HTML/CSS button (or anything else) redraws a message, only what changed is updated instead of rebuilding it whole. A panel's scroll, an opened fold, a picked tab and a running animation or video stay as they were. If a bot's buttons or animations misbehave, turn this off to go back to the original way (the whole message is redrawn every time).",
         showInputEchoDesc: "Shows, at the bottom of each reply, the input it answers. Its pencil edits that input: every keystroke shows in both places, and the input is saved when the edit closes.",
         hideMessagePageCountDesc: "Hides the page counter (e.g. 1/3) for regenerated messages and first message greetings. Navigation arrows and the regenerate button remain visible.",
         embedding:

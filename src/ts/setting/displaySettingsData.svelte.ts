@@ -325,6 +325,15 @@ export const displayOtherHomeItems: SettingItem[] = [
 
 export const displayOtherChatItems: SettingItem[] = [
     { id: 'display.showInputEcho', type: 'check', labelKey: 'showInputEcho', helpKey: 'showInputEchoDesc', bindKey: 'nodeOnlyShowInputEcho', keywords: ['input', 'echo', 'reply', '인풋'] },
+    {
+        id: 'display.chatBodyInPlace', type: 'check', labelKey: 'chatBodyInPlace', helpKey: 'chatBodyInPlaceDesc', bindKey: 'nodeOnlyChatBodyInPlace',
+        // Undefined means on.
+        getValue: (db) => db.nodeOnlyChatBodyInPlace !== false,
+        setValue: (db, value) => {
+            db.nodeOnlyChatBodyInPlace = !!value;
+        },
+        keywords: ['button', 'panel', 'scroll', 'state', 'render', 'morph', '버튼', '패널', '스크롤', '상태'],
+    },
     { id: 'display.logCaptureButton', type: 'check', labelKey: 'logCaptureButton', helpKey: 'logCaptureButton', bindKey: 'nodeOnlyLogCaptureButton', keywords: ['log', 'image', 'capture', 'screenshot', 'scissors', '로그', '가위', '캡처'] },
     {
         id: 'display.logImageWidth',

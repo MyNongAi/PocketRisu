@@ -1081,6 +1081,7 @@ export const languageKorean = {
   hideAllImages: "모든 이미지 숨기기",
   hideMessagePageCount: "메세지 페이지 숫자 숨기기",
   showInputEcho: "아웃풋 아래에 이전 인풋 표시",
+  chatBodyInPlace: "버튼을 눌러도 메시지 안 상태 유지",
   inputEcho: "인풋",
   inputEchoEdit: "이 인풋 수정",
   popularityLevel: "{} 인기도",

@@ -749,6 +749,7 @@ export function setDatabase(data:Database){
     data.hideAllImages ??= false
     data.hideMessagePageCount ??= false
     data.nodeOnlyShowInputEcho ??= true
+    data.nodeOnlyChatBodyInPlace ??= true
     data.nodeOnlyLogCaptureButton ??= true
     // Modules remember the bots that list them, for the red chain once those bots are gone.
     backfillModulePairs(data.modules, data.characters)
@@ -1647,6 +1648,8 @@ export interface Database{
     hideMessagePageCount?: boolean
     /** Show the user message a reply answers under the reply (gui/inputEcho.ts). */
     nodeOnlyShowInputEcho?: boolean
+    /** A message body changes only where its HTML changed (gui/morphHtml.ts), keeping panel scroll, <details>, tabs and animations; off = the upstream {@html} swap. */
+    nodeOnlyChatBodyInPlace?: boolean
     /** ✂️ log image capture (gui/logCaptureState.svelte.ts): the button and the image options. */
     nodeOnlyLogCaptureButton?: boolean
     nodeOnlyLogImageWidth?: number
@@ -2160,6 +2163,8 @@ export interface themePreset{
     hideMessagePageCount?: boolean
     /** Show the user message a reply answers under the reply (gui/inputEcho.ts). */
     nodeOnlyShowInputEcho?: boolean
+    /** A message body changes only where its HTML changed (gui/morphHtml.ts), keeping panel scroll, <details>, tabs and animations; off = the upstream {@html} swap. */
+    nodeOnlyChatBodyInPlace?: boolean
     /** ✂️ log image capture (gui/logCaptureState.svelte.ts): the button and the image options. */
     nodeOnlyLogCaptureButton?: boolean
     nodeOnlyLogImageWidth?: number

@@ -520,6 +520,7 @@ export const languageEnglish = {
     reroll: "Regenerate",
     hideMessagePageCount: "Hide Message Page Counter",
     showInputEcho: "Show the input under each reply",
+    chatBodyInPlace: "Keep a message's state when a button redraws it",
     inputEcho: "Input",
     inputEchoEdit: "Edit this input",
     deleteRerollMessage: "Delete Regenerated Message",

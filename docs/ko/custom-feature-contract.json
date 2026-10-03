@@ -1027,17 +1027,23 @@
     },
     {
       "id": "CHAT-BODY-MORPH",
-      "title": "메시지 본문은 바뀐 부분만 고침 (패널 스크롤·펼침 유지)",
+      "title": "메시지 본문은 바뀐 부분만 고침 (패널 스크롤·펼침 유지, 표시 설정 토글)",
       "criticality": "core-ux",
       "ownerFiles": [
         "src/ts/gui/morphHtml.ts",
-        "src/lib/ChatScreens/ChatBody.svelte"
+        "src/lib/ChatScreens/ChatBody.svelte",
+        "src/ts/setting/displaySettingsData.svelte.ts",
+        "src/ts/storage/database.svelte.ts"
       ],
       "requiredMarkers": [
         { "file": "src/ts/gui/morphHtml.ts", "contains": "export class MorphedHtml" },
         { "file": "src/ts/gui/morphHtml.ts", "contains": "if (prev.isEqualNode(next)) return live" },
         { "file": "src/lib/ChatScreens/ChatBody.svelte", "contains": "const rendered = new MorphedHtml()" },
-        { "file": "src/lib/ChatScreens/ChatBody.svelte", "contains": "renderParsed(root, md, shortName)" }
+        { "file": "src/lib/ChatScreens/ChatBody.svelte", "contains": "renderParsed(root, md, shortName)" },
+        { "file": "src/lib/ChatScreens/ChatBody.svelte", "contains": "let morphBody = $derived(DBState.db?.nodeOnlyChatBodyInPlace !== false)" },
+        { "file": "src/lib/ChatScreens/ChatBody.svelte", "contains": "{:else if !morphBody}" },
+        { "file": "src/ts/setting/displaySettingsData.svelte.ts", "contains": "bindKey: 'nodeOnlyChatBodyInPlace'" },
+        { "file": "src/ts/storage/database.svelte.ts", "contains": "data.nodeOnlyChatBodyInPlace ??= true" }
       ],
       "regressionTests": [
         "src/ts/gui/morphHtml.test.ts"
