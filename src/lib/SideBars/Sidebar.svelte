@@ -23,7 +23,8 @@
     import { promptActivateCharacter } from "../../ts/characterArchive";
     import { DEACTIVATED_FOLDER_PAGE_SIZE, deactivatedCharacterIds, railFolderView, type DeactivatedFolderDays } from "../../ts/deactivatedCharacterFolders";
     import { ArchiveIcon } from "@lucide/svelte";
-    import { DBState, openCharacterManager } from 'src/ts/stores.svelte';
+    import { DBState, folderSettingsTarget, openCharacterManager } from 'src/ts/stores.svelte';
+    import { folderChildren, folderParents, setFolderParent } from 'src/ts/folderNesting';
     import { tooltipRight } from "src/ts/gui/tooltip";
     import { folderIconComponent } from "../CharacterManager/folderIcons";
     import { syncFavoritesWithFolderMoves } from "src/ts/favoritesFolder";
@@ -62,16 +63,16 @@
     import isEqual from "lodash/isEqual";
     import SidebarAvatar from "./SidebarAvatar.svelte";
     import BaseRoundedButton from "../UI/BaseRoundedButton.svelte";
-    import { getCharacterIndexObject, makeAgoText, selectSingleFile } from "src/ts/util";
+    import { getCharacterIndexObject, makeAgoText } from "src/ts/util";
     import { v4 } from "uuid";
     import { onMount } from "svelte";
-    import { checkCharOrder, getFileSrc, saveAsset } from "src/ts/globalApi.svelte";
-    import { alertInput, alertSelect } from "src/ts/alert";
-    import { characterMenuInfo, folderMenuInfo, type MenuInfoCharacter } from "src/ts/gui/sidebarMenuInfo";
+    import { checkCharOrder } from "src/ts/globalApi.svelte";
+    import { alertSelect } from "src/ts/alert";
+    import { characterMenuInfo } from "src/ts/gui/sidebarMenuInfo";
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
     import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
     import { resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
-    import { promoteCharacterFolder, promoteRecentlyViewedCharacter } from "src/ts/characterRecentOrder";
+    import { promoteRecentlyViewedCharacter } from "src/ts/characterRecentOrder";
     import MeasuredVirtualList from "../UI/Virtual/MeasuredVirtualList.svelte";
     import { initSupport } from "src/ts/support";
 
@@ -181,6 +182,33 @@
   let charImages: sortType[] = $state([]);
   let catalogSearch = $state('')
   let catalogQuery = $derived(catalogSearch.trim().toLocaleLowerCase())
+  // Folders shown inside another folder (src/ts/folderNesting.ts). Display
+  // only: each stays a top-level characterOrder entry with its own members.
+  // A nesting counts while both folders are drawn here; a search shows every
+  // folder flat, so no match hides inside a closed parent.
+  let railFolderById = $derived(new Map(charImages
+    .filter((item): item is sortTypeFolder => item.type === 'folder' && item.system === undefined)
+    .map((item) => [item.id, item] as const)))
+  let railFolderParents = $derived.by(() => {
+    const parents = new Map<string, string>()
+    if (catalogQuery) return parents
+    for (const [child, parent] of folderParents(DBState.db.characterOrder)) {
+      if (railFolderById.has(child) && railFolderById.has(parent)) parents.set(child, parent)
+    }
+    return parents
+  })
+  let railFolderChildren = $derived.by(() => {
+    const children = new Map<string, sortTypeFolder[]>()
+    for (const item of charImages) {
+      if (item.type !== 'folder') continue
+      const parent = railFolderParents.get(item.id)
+      if (!parent) continue
+      const list = children.get(parent)
+      if (list) list.push(item)
+      else children.set(parent, [item])
+    }
+    return children
+  })
   // The 80px bar leaves the input little room, so the row has one button in
   // front of it: the magnifier (focuses the input) while it is empty, the
   // clear button once it has text.
@@ -202,7 +230,7 @@
   type splitCatalogBlock = { type: 'control', position: 'top' | 'bottom' } | splitCatalogCharacter
   let filteredCatalogItems = $derived.by(() => charImages
     .map((char, sourceOrder) => {
-      if (!catalogQuery) return { char, sourceOrder }
+      if (!catalogQuery) return char.type === 'folder' && railFolderParents.has(char.id) ? null : { char, sourceOrder }
       if (char.type === 'normal' || char.type === 'archived') {
         return matchesCatalogText(char.name, catalogQuery) ? { char, sourceOrder } : null
       }
@@ -418,10 +446,18 @@
   }
 
   const inserter = (source:DragData, target:SidebarInsertTarget) => {
+    if (source.kind === 'folder' && target.kind === 'folder') {
+      // A folder dropped in another folder's gap is shown inside it.
+      commitSidebarOrder(setFolderParent(DBState.db.characterOrder, source.id, target.folderId))
+      return
+    }
     const orderTarget: SidebarInsertTarget = target.kind === 'root'
       ? { kind: 'root', index: rootSlotOrderIndex(target.index) }
       : target
-    commitSidebarOrder(moveSidebarItem(DBState.db.characterOrder, source, orderTarget))
+    let next = moveSidebarItem(DBState.db.characterOrder, source, orderTarget)
+    // A folder dropped between top-level entries comes out to the top level.
+    if (next && source.kind === 'folder') next = setFolderParent(next, source.id, null) ?? next
+    commitSidebarOrder(next)
   }
 
   function setSplitCatalogMode(enabled:boolean){
@@ -442,16 +478,6 @@
       .map((character) => character.chaId))
   }
 
-  function toggleSidebarFolderFavorite(ind:number) {
-    const current = DBState.db.characterOrder[ind]
-    if(typeof current === 'string') return
-    const next = { ...current, favorite: !current.favorite }
-    const order = DBState.db.characterOrder.slice()
-    order[ind] = next
-    DBState.db.characterOrder = promoteCharacterFolder(order, next.id, favoriteCharacterIds())
-    checkCharOrder()
-  }
-
   function toggleSidebarCharacterFavorite(characterIndex:number) {
     const character = DBState.db.characters[characterIndex]
     if(!character) return
@@ -465,70 +491,31 @@
     checkCharOrder()
   }
 
-  // A folder's bots by id, including deactivated ones (kept as stubs).
-  function folderMenuMembers(ind: number): MenuInfoCharacter[] {
-    const entry = DBState.db.characterOrder[ind]
-    if (!entry || typeof entry === 'string') return []
-    const byId = new Map<string, MenuInfoCharacter>()
-    for (const stub of DBState.db.nodeOnlyArchivedCharacters ?? []) {
-      if (stub?.chaId) byId.set(stub.chaId, stub as MenuInfoCharacter)
-    }
-    for (const character of DBState.db.characters) {
-      if (character?.chaId) byId.set(character.chaId, character)
-    }
-    return (entry.data ?? []).map((id) => byId.get(id)).filter((member): member is MenuInfoCharacter => !!member)
+  // Right-click on a folder opens the folder settings dialog, as upstream
+  // PocketRisu does (FolderSettingsDialog: name, color, look, the favorite
+  // pin, its bots and import dates, and the folder it is shown inside). It
+  // replaced the list menu this rail kept from the original RisuAI.
+  function toggleRailFolder(id: string) {
+    if (openFolders.includes(id)) openFolders.splice(openFolders.indexOf(id), 1)
+    else openFolders.push(id)
+    openFolders = openFolders
   }
 
-  async function editSidebarFolder(ind:number, char: Extract<sortType, { type: 'folder' }>, e:MouseEvent){
+  function railFolderTint(color: string): string {
+    return color === 'red' ? 'bg-red-700/20'
+      : color === 'yellow' ? 'bg-yellow-700/20'
+      : color === 'green' ? 'bg-green-700/20'
+      : color === 'blue' ? 'bg-blue-700/20'
+      : color === 'indigo' ? 'bg-indigo-700/20'
+      : color === 'purple' ? 'bg-purple-700/20'
+      : color === 'pink' ? 'bg-pink-700/20'
+      : 'bg-darkbg/20'
+  }
+
+  function openSidebarFolderSettings(folderId: string, e: MouseEvent) {
     e.preventDefault()
     e.stopPropagation()
-    const sel = parseInt(await alertSelect([
-      language.renameFolder,
-      language.changeFolderColor,
-      language.changeFolderImage,
-      char.favorite ? '즐겨찾기 해제' : '즐겨찾기 (맨위로)',
-      language.cancel,
-    ], folderMenuInfo(char.name, folderMenuMembers(ind))))
-    if(sel === 0){
-      const value = await alertInput(language.changeFolderName, [], char.name)
-      const entry = DBState.db.characterOrder[ind]
-      if(value && typeof entry !== 'string'){
-        entry.name = value
-        DBState.db.characterOrder[ind] = entry
-      }
-      return
-    }
-    if(sel === 1){
-      const colors = ["red","green","blue","yellow","indigo","purple","pink","default"]
-      const colorIndex = parseInt(await alertSelect(colors))
-      const entry = DBState.db.characterOrder[ind]
-      if(typeof entry !== 'string' && colors[colorIndex]){
-        entry.color = colors[colorIndex].toLocaleLowerCase()
-        DBState.db.characterOrder[ind] = entry
-      }
-      return
-    }
-    if(sel === 3){
-      toggleSidebarFolderFavorite(ind)
-      return
-    }
-    if(sel !== 2) return
-    const imageChoice = parseInt(await alertSelect(['Reset to Default Image', 'Select Image File']))
-    const entry = DBState.db.characterOrder[ind]
-    if(typeof entry === 'string') return
-    if(imageChoice === 0){
-      entry.imgFile = null
-      entry.img = ''
-      DBState.db.characterOrder[ind] = entry
-      return
-    }
-    if(imageChoice !== 1) return
-    const folderImage = await selectSingleFile(['png','jpg','webp'])
-    if(!folderImage) return
-    const folderImageData = await saveAsset(folderImage.data)
-    entry.imgFile = folderImageData
-    entry.img = await getFileSrc(folderImageData)
-    DBState.db.characterOrder[ind] = entry
+    folderSettingsTarget.set(folderId)
   }
 
   async function editSidebarCharacter(characterIndex:number, e:MouseEvent){
@@ -589,14 +576,21 @@
       }
     }
     
-    if (targetFolderId && !openFolders.includes(targetFolderId)) {
-      openFolders.push(targetFolderId)
+    if (targetFolderId) {
+      // A folder shown inside others opens with them; the list scrolls to the
+      // outermost one, the entry it draws.
+      for (let id: string | undefined = targetFolderId; id; id = railFolderParents.get(id)) {
+        if (!openFolders.includes(id)) openFolders.push(id)
+        const drawnAt = charImages.findIndex((item) => item.type === 'folder' && item.id === id)
+        if (drawnAt >= 0) targetTopLevelIndex = drawnAt
+      }
       openFolders = openFolders
     }
 
-    if (targetTopLevelIndex >= 0) {
+    const blockIndex = filteredCatalogItems.findIndex((item) => item.sourceOrder === targetTopLevelIndex)
+    if (targetTopLevelIndex >= 0 && blockIndex >= 0) {
       // +1 accounts for the virtual catalog's top add-character control.
-      sidebarScrollIndex = targetTopLevelIndex + 1
+      sidebarScrollIndex = blockIndex + 1
       sidebarScrollRequest += 1
     }
     setTimeout(() => {
@@ -629,6 +623,11 @@
 
 
   const createFolder = (source:DragData, target:SidebarItemTarget) => {
+    // A folder dropped on a folder is shown inside it (folderNesting.ts).
+    if (source.kind === 'folder') {
+      if (target.kind === 'folder') commitSidebarOrder(setFolderParent(DBState.db.characterOrder, source.id, target.id))
+      return
+    }
     commitSidebarOrder(applySidebarItemDrop(
       DBState.db.characterOrder,
       source,
@@ -914,6 +913,133 @@
   </div>
 {/snippet}
 
+{#snippet railNestedMember(member: sortTypeEntry)}
+  <div
+    class="sidebar-folder-character group relative flex items-center px-0.5"
+    role="listitem"
+    data-drag-kind={member.type === 'normal' ? 'character' : undefined}
+    data-drag-id={member.type === 'normal' ? member.id : undefined}
+    draggable={!isTouchDevice && member.type === 'normal' ? "true" : undefined}
+    ondragstart={!isTouchDevice && member.type === 'normal' ? (e) => avatarDragStart({ kind: 'character', id: member.id }, e) : undefined}
+    ondragend={!isTouchDevice && member.type === 'normal' ? clearCurrentDrag : undefined}
+    ontouchstart={touchDragEnabled && member.type === 'normal' ? (e) => onTouchDragStart({ kind: 'character', id: member.id }, e) : undefined}
+  >
+    <SidebarIndicator isActive={member.type === 'normal' && $selectedCharID === member.index && sideBarMode !== 1}/>
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+    <div
+      role="button"
+      tabindex="0"
+      onpointerenter={() => member.type === 'normal' && scheduleCharacterChatPrefetch(member.index)}
+      onpointerleave={() => member.type === 'normal' && cancelCharacterChatPrefetch(member.index)}
+      onpointerdown={() => member.type === 'normal' && void prefetchCharacterChat(member.index)}
+      onclick={() => {
+        if(suppressNextClick) return
+        if(member.type === 'normal') changeChar(member.index, { reseter })
+        else void promptActivateCharacter(member.chaId, { reseter })
+      }}
+      onkeydown={(e) => {
+        if(e.key !== 'Enter') return
+        if(member.type === 'normal') changeChar(member.index, { reseter })
+        else void promptActivateCharacter(member.chaId, { reseter })
+      }}
+    >
+      {#if member.type === 'archived'}
+        <div class="relative grayscale opacity-60 archived-character-muted">
+          <SidebarAvatar
+            src={member.img ? () => getCharThumbnail(member.img, "plain") : ""}
+            size="56"
+            rounded={IconRounded}
+            name={`${member.name} (${language.deactivatedBadge})`}
+            chaId={member.chaId}
+            sourceBadge={member.sourceBadge}
+            sourceRecorded={member.sourceRecorded}
+          />
+          <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55" class:rounded-md={!IconRounded} class:rounded-full={IconRounded}>
+            <ArchiveIcon size={20} class="text-white/90" />
+          </div>
+        </div>
+      {:else}
+        <SidebarAvatar
+          src={member.img ? () => getCharThumbnail(member.img, "plain") : ""}
+          size="56"
+          rounded={IconRounded}
+          name={member.name}
+          favorite={member.favorite}
+          titleColor={listTitleColor(DBState.db.characters[member.index]?.titleColor, Number(DBState.db.characters[member.index]?.sourceInfo?.missingAssetCount) > 0)}
+          missingAssets={Number(DBState.db.characters[member.index]?.sourceInfo?.missingAssetCount) > 0}
+          missingAssetCount={Number(DBState.db.characters[member.index]?.sourceInfo?.missingAssetCount) || 0}
+          moduleLink={characterModuleLink(DBState.db.characters[member.index])}
+          realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[member.index])}
+          chaId={DBState.db.characters[member.index]?.chaId}
+          sourceBadge={member.sourceBadge}
+          sourceRecorded={member.sourceRecorded}
+          oncontextmenu={(e) => { void editSidebarCharacter(member.index, e) }}
+        />
+      {/if}
+    </div>
+  </div>
+{/snippet}
+
+<!-- Folders shown inside the folder `parentId` (folderNesting.ts): each one
+     a folder slot that opens in place, its own child folders first, then its
+     bots. Drop a bot on it to add the bot, a folder to nest that folder. -->
+{#snippet railNestedFolders(parentId: string)}
+  {#each railFolderChildren.get(parentId) ?? [] as child (child.id)}
+    {@const CustomIcon = folderIconComponent(child.icon)}
+    <div class="flex w-full flex-col items-center">
+      <div
+        class="group relative flex items-center px-0.5"
+        role="listitem"
+        data-drag-kind="folder"
+        data-drag-id={child.id}
+        draggable={!isTouchDevice ? "true" : undefined}
+        ondragstart={!isTouchDevice ? (e) => avatarDragStart({ kind: 'folder', id: child.id }, e) : undefined}
+        ondragend={!isTouchDevice ? clearCurrentDrag : undefined}
+        ondragover={!isTouchDevice ? avatarDragOver : undefined}
+        ondrop={!isTouchDevice ? (e) => avatarDrop({ kind: 'folder', id: child.id }, e) : undefined}
+        ondragenter={!isTouchDevice ? preventAll : undefined}
+        ontouchstart={touchDragEnabled ? (e) => onTouchDragStart({ kind: 'folder', id: child.id }, e) : undefined}
+      >
+        <SidebarAvatar
+          src="slot"
+          size="56"
+          rounded={IconRounded}
+          folderShape
+          name={child.name}
+          color={child.color}
+          favorite={child.favorite}
+          backgroundimg={child.display === 'image' && child.img ? () => getCharThumbnail(child.img, "plain") : ""}
+          oncontextmenu={(e) => openSidebarFolderSettings(child.id, e)}
+          onClick={() => {
+            if(suppressNextClick) return
+            toggleRailFolder(child.id)
+          }}
+        >
+          {#if child.display === 'name'}
+            <div class="flex h-full w-full items-center justify-center">
+              <span class="hyphens-auto truncate font-bold">{child.name}</span>
+            </div>
+          {:else if child.display === 'icon' && CustomIcon}
+            <CustomIcon />
+          {:else if openFolders.includes(child.id)}
+            <FolderOpenIcon />
+          {:else}
+            <FolderIcon />
+          {/if}
+        </SidebarAvatar>
+      </div>
+      {#if openFolders.includes(child.id)}
+        <div class="relative mt-1 flex w-full flex-col items-center gap-1 rounded-lg border border-selected py-1 {railFolderTint(child.color)}">
+          {@render railNestedFolders(child.id)}
+          {#each child.folder as member (member.type === 'normal' ? member.id : member.chaId)}
+            {@render railNestedMember(member)}
+          {/each}
+        </div>
+      {/if}
+    </div>
+  {/each}
+{/snippet}
+
 {#snippet splitFolderColumn()}
   <div class="h-full w-20 min-w-20 overflow-y-auto overflow-x-hidden border-r border-selected" aria-label="캐릭터 폴더">
     <div class="h-4 min-h-4 w-full" role="listitem" data-spacer-index="0" ondragover={(e) => {
@@ -954,7 +1080,7 @@
             color={item.char.color}
             favorite={item.char.favorite}
             backgroundimg={item.char.display === 'image' && item.char.img ? () => getCharThumbnail(item.char.img, "plain") : ""}
-            oncontextmenu={item.char.system !== undefined ? undefined : (e) => { void editSidebarFolder(item.sourceOrder, item.char, e) }}
+            oncontextmenu={item.char.system !== undefined ? undefined : (e) => openSidebarFolderSettings(item.char.id, e)}
             onClick={() => {
               if(suppressNextClick) return
               if(openFolders.includes(item.char.id)) openFolders.splice(openFolders.indexOf(item.char.id), 1)
@@ -998,6 +1124,7 @@
                 try { inserter(drag, { kind: 'folder', folderId: item.char.id, index: 0 }) } finally { clearCurrentDrag() }
               }}
             ></div>
+            {@render railNestedFolders(item.char.id)}
             {#each railFolderMembers(item.char) as folderChar, folderIndex}
               {@const sourceFolderIndex = folderChar.folderIndex ?? folderIndex}
               <div
@@ -1561,7 +1688,7 @@
             {#key char.color}
             {#key char.name}
               <SidebarAvatar src="slot" size="56" rounded={IconRounded} folderShape name={char.name} color={char.color} favorite={char.favorite} backgroundimg={char.display === 'image' && char.img ? () => getCharThumbnail(char.img, "plain") : ""}
-              oncontextmenu={char.system ? undefined : (e) => { void editSidebarFolder(ind, char, e) }}
+              oncontextmenu={char.system ? undefined : (e) => openSidebarFolderSettings(char.id, e)}
               onClick={() => {
                 if(suppressNextClick) return
                 if(char.type !== 'folder'){
@@ -1631,6 +1758,7 @@
               clearCurrentDrag()
             }
           }} ondragenter={preventAll}></div>
+          <div class="relative z-10 flex w-full flex-col items-center gap-1">{@render railNestedFolders(char.id)}</div>
           {#each railFolderMembers(char) as char2, ind}
               {@const sourceFolderIndex = char2.folderIndex ?? ind}
               <div class="sidebar-folder-character group relative flex items-center px-2 z-10"

@@ -10,6 +10,7 @@
 import type { folder } from './storage/database.svelte'
 import { isFavoritesFolder } from './favoritesFolder'
 import { isDeactivatedSystemFolder } from './deactivatedCharacterFolders'
+import { folderChildren, reparentChildrenOf } from './folderNesting'
 
 export type OrderEntry = string | folder
 
@@ -67,12 +68,16 @@ function cloneOrder(order: OrderEntry[]): OrderEntry[] {
  * card of a [유사 후보] folder, the survivor used to land somewhere down the
  * list and it was unclear whether it had left the folder at all. A drag
  * keeps it in place, where the user is arranging.
+ *
+ * A folder that other folders are shown in (folderNesting.ts) is kept at any
+ * size: it can hold only folders, and dissolving it would spill them out.
  */
 export function dissolveSingletonFolders(order: OrderEntry[], previous: OrderEntry[] = order, options: { releaseToTop?: boolean } = {}): OrderEntry[] {
     const previousFolderSizes = new Map<string, number>()
     for (const entry of previous) {
         if (isFolderEntry(entry)) previousFolderSizes.set(entry.id, entry.data.length)
     }
+    const parentFolders = new Set(folderChildren(order).keys())
     const out: OrderEntry[] = []
     const released: string[] = []
     for (const entry of order) {
@@ -80,6 +85,8 @@ export function dissolveSingletonFolders(order: OrderEntry[], previous: OrderEnt
         // above zero; checkCharOrder fills and empties them.
         if (isFolderEntry(entry) && (isDeactivatedSystemFolder(entry) || isFavoritesFolder(entry))) {
             if (entry.data.length > 0) out.push(cloneFolder(entry))
+        } else if (isFolderEntry(entry) && parentFolders.has(entry.id)) {
+            out.push(cloneFolder(entry))
         } else if (isFolderEntry(entry) && entry.data.length === 1) {
             if (options.releaseToTop) released.push(entry.data[0])
             else out.push(entry.data[0])
@@ -202,10 +209,11 @@ export function updateFolder(order: OrderEntry[], folderId: string, patch: Parti
     return order.map((entry) => (isFolderEntry(entry) && entry.id === folderId ? { ...cloneFolder(entry), ...patch } : entry))
 }
 
-/** Remove a folder, leaving its characters at the same position on the top level. */
+/** Remove a folder, leaving its characters at the same position on the top level.
+ * Folders shown inside it move up one level (folderNesting.ts). */
 export function removeFolderKeepItems(order: OrderEntry[], folderId: string): OrderEntry[] {
     const next: OrderEntry[] = []
-    for (const entry of order) {
+    for (const entry of reparentChildrenOf(order, folderId)) {
         if (isFolderEntry(entry) && entry.id === folderId) {
             next.push(...entry.data)
         } else {

@@ -1048,6 +1048,31 @@
       "regressionTests": [
         "src/ts/gui/morphHtml.test.ts"
       ]
+    },
+    {
+      "id": "FOLDER-NESTING",
+      "title": "사이드바 폴더 속 폴더 (표시 전용) · 폴더 우클릭은 폴더 설정 창",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/folderNesting.ts",
+        "src/ts/characterOrder.ts",
+        "src/lib/SideBars/Sidebar.svelte",
+        "src/lib/CharacterManager/FolderSettingsDialog.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/storage/database.svelte.ts", "contains": "nodeOnlyParentFolderId?:string" },
+        { "file": "src/ts/folderNesting.ts", "contains": "export function folderParents(order: readonly OrderEntry[])" },
+        { "file": "src/ts/characterOrder.ts", "contains": "} else if (isFolderEntry(entry) && parentFolders.has(entry.id)) {" },
+        { "file": "src/ts/characterOrder.ts", "contains": "for (const entry of reparentChildrenOf(order, folderId)) {" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "folderSettingsTarget.set(folderId)" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{@render railNestedFolders(char.id)}" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{@render railNestedFolders(item.char.id)}" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "railFolderParents.has(char.id) ? null : { char, sourceOrder }" },
+        { "file": "src/lib/CharacterManager/FolderSettingsDialog.svelte", "contains": "setFolderParent(DBState.db.characterOrder, id, value || null)" }
+      ],
+      "regressionTests": [
+        "src/ts/folderNesting.test.ts"
+      ]
     }
   ]
 }

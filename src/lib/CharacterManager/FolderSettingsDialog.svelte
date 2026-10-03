@@ -19,6 +19,12 @@
     import { FOLDER_ICONS, FOLDER_ICON_NAMES, folderIconComponent } from "./folderIcons";
     import { language } from "src/lang";
     import { folderDisplayMode, type folder, type FolderDisplayMode } from "src/ts/storage/database.svelte";
+    import ShSwitch from "src/lib/UI/GUI/ShSwitch.svelte";
+    import SelectInput from "src/lib/UI/GUI/SelectInput.svelte";
+    import OptionInput from "src/lib/UI/GUI/OptionInput.svelte";
+    import { folderChildren, folderParents, nestableParents, setFolderParent } from "src/ts/folderNesting";
+    import { promoteCharacterFolder } from "src/ts/characterRecentOrder";
+    import { folderMenuInfo, type MenuInfoCharacter } from "src/ts/gui/sidebarMenuInfo";
 
     // '' is the default (no color). Same set the rail has always offered.
     const FOLDER_COLORS = ['', 'red', 'green', 'blue', 'yellow', 'indigo', 'purple', 'pink'] as const;
@@ -43,6 +49,45 @@
         const id = $folderSettingsTarget;
         if (!id) return;
         DBState.db.characterOrder = updateFolder(DBState.db.characterOrder, id, patch);
+        checkCharOrder();
+    }
+
+    // What the sidebar's old right-click list showed and did, now in this
+    // dialog: the folder's bots and import dates, its favorite pin, and the
+    // folder it is shown inside on the rail (folderNesting.ts).
+    let members = $derived.by(() => {
+        if (!target) return [] as MenuInfoCharacter[];
+        const byId = new Map<string, MenuInfoCharacter>();
+        for (const stub of DBState.db.nodeOnlyArchivedCharacters ?? []) {
+            if (stub?.chaId) byId.set(stub.chaId, stub as MenuInfoCharacter);
+        }
+        for (const character of DBState.db.characters) {
+            if (character?.chaId) byId.set(character.chaId, character);
+        }
+        return target.data.map((id) => byId.get(id)).filter((member): member is MenuInfoCharacter => !!member);
+    });
+    let info = $derived(target ? folderMenuInfo(target.name, members).split('\n').slice(1).join(' · ') : '');
+    let childCount = $derived(target ? (folderChildren(DBState.db.characterOrder).get(target.id) ?? []).length : 0);
+    let parentOptions = $derived(target ? nestableParents(DBState.db.characterOrder, target.id) : []);
+    let parentId = $derived(target ? folderParents(DBState.db.characterOrder).get(target.id) ?? '' : '');
+
+    function setParent(value: string) {
+        const id = $folderSettingsTarget;
+        if (!id) return;
+        const next = setFolderParent(DBState.db.characterOrder, id, value || null);
+        if (!next) return;
+        DBState.db.characterOrder = next;
+        checkCharOrder();
+    }
+
+    function toggleFavorite(on: boolean) {
+        const id = $folderSettingsTarget;
+        if (!id) return;
+        const order = updateFolder(DBState.db.characterOrder, id, { favorite: on });
+        const favoriteIds = new Set(DBState.db.characters
+            .filter((character) => character.favorite && !character.trashTime)
+            .map((character) => character.chaId));
+        DBState.db.characterOrder = promoteCharacterFolder(order, id, favoriteIds);
         checkCharOrder();
     }
 
@@ -83,6 +128,9 @@
                     </SidebarAvatar>
                 {/key}
             </div>
+            <p class="-mt-2 text-center text-xs text-textcolor2">
+                {info}{#if childCount > 0} · {language.folderChildCount(childCount)}{/if}
+            </p>
 
             <label class="flex flex-col gap-1">
                 <span class="text-sm text-textcolor2">{language.name}</span>
@@ -91,6 +139,24 @@
                     oninput={(e) => apply({ name: e.currentTarget.value })}
                 />
             </label>
+
+            <label class="flex items-center justify-between gap-3">
+                <span class="text-sm text-textcolor">{language.folderFavoritePin}</span>
+                <ShSwitch checked={!!target.favorite} onCheckedChange={toggleFavorite} />
+            </label>
+
+            {#if parentOptions.length > 0 || parentId}
+                <div class="flex flex-col gap-1">
+                    <span class="text-sm text-textcolor2">{language.folderParent}</span>
+                    <SelectInput value={parentId} onchange={(e) => setParent(e.currentTarget.value)}>
+                        <OptionInput value="">{language.folderParentNone}</OptionInput>
+                        {#each parentOptions as option (option.id)}
+                            <OptionInput value={option.id}>{option.name || language.defaultLabel}</OptionInput>
+                        {/each}
+                    </SelectInput>
+                    <span class="text-xs text-textcolor2">{language.folderParentHint}</span>
+                </div>
+            {/if}
 
             <div class="flex flex-col gap-1">
                 <span class="text-sm text-textcolor2">{language.folderColor}</span>

@@ -2216,6 +2216,10 @@ export interface folder{
     // 'name'. Missing → 'image' when imgFile is set, else 'icon'.
     nodeOnlyDisplay?:FolderDisplayMode
     nodeOnlyIcon?:string
+    /** The folder this one is shown inside on the sidebar rail (src/ts/folderNesting.ts).
+     * Display only: the folder stays a top-level characterOrder entry, so
+     * other Risu builds show it side by side as before. */
+    nodeOnlyParentFolderId?:string
     /** System folder maintained by checkCharOrder ('deactivated': the idle-age
      * buckets at the bottom of the list, never edited, dragged into or
      * favorited; 'favorites': the ★ folder at the top, favoritesFolder.ts). */
