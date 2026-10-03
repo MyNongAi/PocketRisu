@@ -128,6 +128,19 @@ describe('keepInnerScroll', () => {
         stop()
     })
 
+    it('a box that survives a change in place keeps its own position, and no other box takes it', async () => {
+        const root = mount('<p>intro</p><div class="other">o<br>p<br>q</div><div class="panel">a<br>b<br>c</div>')
+        const stop = keepInnerScroll(root)
+        const panel = root.querySelector('.panel')!
+        scrollBy(panel, 40)
+        // A node inserted above the panel (as MorphedHtml does) shifts its path onto .other.
+        root.insertBefore(document.createElement('p'), root.querySelector('.other'))
+        await flush()
+        expect(panel.scrollTop).toBe(40)
+        expect(root.querySelector('.other')!.scrollTop).toBe(0)
+        stop()
+    })
+
     it('stops after cleanup', async () => {
         const root = mount()
         const stop = keepInnerScroll(root)

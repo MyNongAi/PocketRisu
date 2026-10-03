@@ -31,7 +31,12 @@ export function elementAtPath(root: Element, path: ElementPath): Element | null 
     return node
 }
 
-type KeptScroll = { path: ElementPath, tag: string, id: string, top: number, left: number }
+// `element` is the box that was scrolled. The body now changes in place
+// (MorphedHtml, src/ts/gui/morphHtml.ts), so that box usually survives a
+// button press and is put back as itself: a node inserted above it no longer
+// sends its position to whatever box now sits at its old path. Only a box
+// that was really rebuilt is looked up by id or path.
+type KeptScroll = { path: ElementPath, tag: string, id: string, top: number, left: number, element: Element }
 
 /**
  * After a rebuild, scroll events on the new boxes come from the restore (or
@@ -77,12 +82,12 @@ export function keepInnerScroll(root: HTMLElement): () => void {
         if (!path) return
         const key = path.join('/')
         if (target.scrollTop === 0 && target.scrollLeft === 0) kept.delete(key)
-        else kept.set(key, { path, tag: target.tagName, id: target.id, top: target.scrollTop, left: target.scrollLeft })
+        else kept.set(key, { path, tag: target.tagName, id: target.id, top: target.scrollTop, left: target.scrollLeft, element: target })
     }
 
     const restore = () => {
         for (const entry of kept.values()) {
-            const el = findKept(root, entry)
+            const el = entry.element.isConnected && root.contains(entry.element) ? entry.element : findKept(root, entry)
             if (el) scrollBoxTo(el, entry.top, entry.left)
         }
     }
