@@ -4,6 +4,7 @@
     import { DBState, selectedCharID } from './ts/stores.svelte';
     import ChatScreen from './lib/ChatScreens/ChatScreen.svelte';
     import AlertComp from './lib/Others/AlertComp.svelte';
+    import LaptopRestartOverlay from './lib/Others/LaptopRestartOverlay.svelte';
     import RealmPopUp from './lib/UI/Realm/RealmPopUp.svelte';
     import FolderSettingsDialog from './lib/CharacterManager/FolderSettingsDialog.svelte';
     import { showRealmInfoStore } from './ts/characterCards';
@@ -287,6 +288,7 @@
         {/if}
     {/if}
     <AlertComp />
+    <LaptopRestartOverlay />
     {#if $showRealmInfoStore}
         <RealmPopUp bind:openedData={$showRealmInfoStore} />
     {/if}

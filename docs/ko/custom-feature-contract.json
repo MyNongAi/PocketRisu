@@ -1073,6 +1073,56 @@
       "regressionTests": [
         "src/ts/folderNesting.test.ts"
       ]
+    },
+    {
+      "id": "RELOAD-LAPTOP-RESTART",
+      "title": "사이드바 새로고침 = 노트북 서버 업데이트·재시작 후 새로고침",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "server/node/laptop-switch.cjs",
+        "src/ts/laptopRestart.svelte.ts",
+        "src/lib/Others/LaptopRestartOverlay.svelte",
+        "src/lib/SideBars/Sidebar.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "server/node/server.cjs", "contains": "app.post('/api/laptop/restart'" },
+        { "file": "server/node/build-fence.cjs", "contains": "'/api/laptop/restart'," },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "reloadThroughLaptop()" },
+        { "file": "src/App.svelte", "contains": "<LaptopRestartOverlay />" }
+      ],
+      "regressionTests": [
+        "server/node/laptop-switch.test.ts",
+        "src/ts/laptopRestart.test.ts"
+      ]
+    },
+    {
+      "id": "LAPTOP-NIGHT-SLEEP",
+      "title": "노트북 새벽 자동 절전용 사용 기록 (열어만 둔 탭은 사용 아님)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "server/node/laptop-switch.cjs"
+      ],
+      "requiredMarkers": [
+        { "file": "server/node/server.cjs", "contains": "app.use(laptopUse.middleware);" },
+        { "file": "server/node/server.cjs", "contains": "app.get('/api/laptop/activity'" }
+      ],
+      "regressionTests": [
+        "server/node/laptop-switch.test.ts"
+      ]
+    },
+    {
+      "id": "PLUGIN-FILE-DROP",
+      "title": "플러그인 탭에 .js/.ts 파일 끌어 놓아 가져오기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/Setting/Pages/PluginSettings.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/Setting/Pages/PluginSettings.svelte", "contains": "ondrop={pluginFileDrop.drop}" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/fileDropSurface.svelte.test.ts"
+      ]
     }
   ]
 }

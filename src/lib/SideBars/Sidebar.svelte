@@ -81,6 +81,7 @@
     import { loadCharConfig, loadDevTool, loadQuickSettings, loadSideChatList, preloadCharacterSidebarPanel, preloadChatSidebarPanel } from "./sidebarPanelLoaders";
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
     import { reloadApp } from "src/ts/reloadApp";
+    import { reloadThroughLaptop } from "src/ts/laptopRestart.svelte";
   const isTouchDevice = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
   const touchDragEnabled = $derived(isTouchDevice && !DBState.db.disableMobileDragDrop);
     import { RISU_SIDEBAR_DRAG_TYPE } from "src/ts/dragTypes";
@@ -852,13 +853,15 @@
   }
 
   // The installed phone app has no browser reload button, and reloading is
-  // also how the page picks up a new build. reloadApp saves first.
+  // also how the page picks up a new build. reloadApp saves first; on the
+  // laptop server the reload first has the laptop stop, update and start the
+  // server, like the desktop's PocketRisu button (laptopRestart.svelte.ts).
   let reloading = $state(false)
   async function reloadFromMenu() {
     if (reloading) return
     reloading = true
     try {
-      if (!(await reloadApp())) reloading = false
+      if (!(await reloadApp({ reload: () => { void reloadThroughLaptop().finally(() => { reloading = false }) } }))) reloading = false
     } catch {
       reloading = false
     }

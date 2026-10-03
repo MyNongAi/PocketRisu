@@ -105,6 +105,7 @@ const {
 } = require('./boot-payload.cjs');
 const { createRuntimeFlags } = require('./runtime-flags.cjs');
 const { BUILD_ID_FILE_NAME, createBuildIdReader, createBuildFence } = require('./build-fence.cjs');
+const { createUseTracker, requestLaptopRestart, DEFAULT_SWITCH_URL } = require('./laptop-switch.cjs');
 const { cdcSplit } = require('./chunkStore.cjs');
 // Test hardening only: every root installed in dbCache is deep-frozen, chat
 // objects the store hands to a persist are frozen, and stored body bytes are
@@ -1748,6 +1749,9 @@ app.use((req, res, next) => {
     lastRequestAt = Date.now();
     next();
 });
+// Someone using the app, for the laptop's night-time sleep (laptop-switch.cjs).
+const laptopUse = createUseTracker();
+app.use(laptopUse.middleware);
 app.use(compression({
     filter: shouldCompress,
 }));
@@ -11856,6 +11860,32 @@ app.get('/api/supporters', async (req, res) => {
     } catch {
         res.status(502).json({ error: 'fetch failed' });
     }
+});
+
+// ── The laptop's remote switch (laptop-switch.cjs) ───────────────────────────
+// POCKETRISU_REMOTE_SWITCH_URL: tests point it at a stand-in switch.
+const LAPTOP_SWITCH_URL = process.env.POCKETRISU_REMOTE_SWITCH_URL || DEFAULT_SWITCH_URL;
+
+// When someone last used the app. Only for the switch on this machine.
+app.get('/api/laptop/activity', (req, res) => {
+    if (!isTrueLoopbackRequest(req)) return res.status(403).json({ error: 'localhost only' });
+    res.set('Cache-Control', 'no-store').json(laptopUse.snapshot());
+});
+
+// The sidebar's reload button: have the switch stop this server, pull, build
+// if needed and start it again. 503 when there is no switch for this install;
+// the page then just reloads.
+app.post('/api/laptop/restart', async (req, res) => {
+    if (!await checkAuth(req, res)) return;
+    const { status, body } = await requestLaptopRestart({ switchUrl: LAPTOP_SWITCH_URL });
+    if (status === 202 || (status === 409 && body?.result === 'busy')) {
+        // Where the page reads the launcher's progress while this server is
+        // down: the switch itself on this machine, its Tailscale Serve path
+        // (same origin) from anywhere else.
+        const log = isTrueLoopbackRequest(req) ? LAPTOP_SWITCH_URL : '/pocketrisu-control';
+        return res.status(202).json({ result: status === 202 ? 'started' : 'busy', log });
+    }
+    res.status(503).json({ result: 'unavailable', switchStatus: status, reason: body?.result ?? body?.error ?? null });
 });
 
 // ── Update check endpoint ────────────────────────────────────────────────────

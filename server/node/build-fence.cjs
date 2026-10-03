@@ -35,6 +35,9 @@ const NON_MUTATING_POSTS = new Set([
     '/api/crypto',
     // Persists writes the server already accepted; refusing it saves nothing.
     '/api/db/flush',
+    // The reload button restarting the laptop's server: a tab on an older
+    // build is the one that most needs it, and it writes no data.
+    '/api/laptop/restart',
 ]);
 
 // GETs that change state.

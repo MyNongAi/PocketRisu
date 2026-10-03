@@ -5,7 +5,7 @@
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
     import ShDropdownMenuItem from "src/lib/UI/GUI/ShDropdownMenuItem.svelte";
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
-    import { alertConfirm, alertMd, alertSelect, notifySuccess } from "src/ts/alert";
+    import { alertConfirm, alertError, alertMd, alertSelect, notifySuccess } from "src/ts/alert";
     import { TriangleAlert } from '@lucide/svelte';
     import ShAlert from "src/lib/UI/GUI/ShAlert.svelte";
 
@@ -23,6 +23,8 @@
     import { isSecureContext } from "src/ts/secureContext";
     import { openSettings, SettingsRoute } from "src/ts/routing";
     import * as pluginStorageStore from "src/ts/plugins/pluginStorageStore";
+    import { FileDropSurface, draggedItemsAreImages } from "src/ts/gui/fileDropSurface.svelte";
+    import FileDropIndicator from "src/lib/UI/GUI/FileDropIndicator.svelte";
 
     // Plugins are keyed by name (no id); track expanded parameter panels by name.
     let showParams = $state<string[]>([])
@@ -90,6 +92,26 @@
         void requestImmediateSave()
     }
 
+    // Plugin files dragged in from outside install the same as the import
+    // button, one after another (a duplicate still asks before replacing).
+    const pluginFileDrop = new FileDropSurface({
+        accepts: (event) => !draggedItemsAreImages(event),
+        onDrop: importPluginFiles,
+    })
+    $effect(() => pluginFileDrop.attachWindowReset())
+
+    async function importPluginFiles(files: File[]) {
+        const scripts = files.filter((file) => /\.(js|ts)$/i.test(file.name))
+        if (scripts.length === 0) {
+            alertError(language.pluginDropScriptsOnly)
+            return
+        }
+        for (const file of scripts) {
+            const code = (await file.text()).replace(/^\uFEFF/gm, '')
+            await importPlugin(code, { isTypescript: /\.ts$/i.test(file.name) })
+        }
+    }
+
     async function openDevTools() {
         const v = parseInt(await alertSelect([
             "Import plugin with hot reload",
@@ -110,7 +132,17 @@
     }
 </script>
 
+<div
+    class="contents"
+    role="region"
+    aria-label={language.plugin}
+    ondragenter={pluginFileDrop.over}
+    ondragover={pluginFileDrop.over}
+    ondragleave={pluginFileDrop.leave}
+    ondrop={pluginFileDrop.drop}
+>
 <SettingPage title={language.plugin}>
+<FileDropIndicator active={pluginFileDrop.active} icon={HardDriveUploadIcon} label={`${language.pluginImport} · JS / TS`} />
 {#if !isSecureContext}
     <div class="mb-4 flex flex-wrap items-center gap-3 rounded-md border border-yellow-700/40 bg-yellow-900/30 px-3 py-3 text-yellow-300">
         <TriangleAlert size={18} class="shrink-0 text-yellow-400" />
@@ -323,3 +355,4 @@
     <span class="text-textcolor2 p-3">{language.noPlugins}</span>
 {/if}
 </SettingPage>
+</div>
