@@ -27,6 +27,7 @@
     import { isMobile } from "src/ts/platform"
     import { inputEchoDraft, inputEchoKey } from "src/ts/gui/inputEcho"
     import { isLogCapturePickingHere, isLogCaptureStart, logCaptureMarkFor, markLogCapture } from "src/ts/gui/logCaptureState.svelte"
+    import { keepInnerScroll } from "src/ts/gui/innerScrollKeeper"
     import ChatBody from './ChatBody.svelte'
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
@@ -146,6 +147,12 @@
     ))
     let effectiveResolveSenderIcon = $derived((resolveSenderIcon ?? false) || effectiveResolveChatAssets)
     let effectiveSenderImage = $derived(img || deferredSenderImage)
+
+    // A card's scrolled panel keeps its place when an HTML/CSS button rebuilds the body.
+    $effect(() => {
+        if(!bodyRoot) return
+        return keepInnerScroll(bodyRoot)
+    })
 
     $effect(() => {
         const root = chatRoot
