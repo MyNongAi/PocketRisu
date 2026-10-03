@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { reissueMessageIds } from './chatClone'
+import { chatCopyNameFromLastInput, reissueMessageIds } from './chatClone'
 import type { Chat } from './storage/database.svelte'
 
 function makeChat(): Chat {
@@ -66,5 +66,29 @@ describe('reissueMessageIds', () => {
         const chat: Chat = { name: '', note: '', localLore: [], message: [{ role: 'user', data: 'x' }] }
         expect(() => reissueMessageIds(chat, [])).not.toThrow()
         expect(chat.message[0].chatId).toBeTruthy()
+    })
+})
+
+describe('chatCopyNameFromLastInput', () => {
+    it('names a copy after the first line of the last user input', () => {
+        const name = chatCopyNameFromLastInput([
+            { role: 'user', data: 'old question' },
+            { role: 'char', data: 'reply' },
+            { role: 'user', data: '\n  <b>Go</b> to   the harbor\nsecond line' },
+            { role: 'char', data: 'reply 2' },
+        ])
+        expect(name).toBe('Go to the harbor')
+    })
+
+    it('cuts a long line and keeps names unique', () => {
+        const long = '가'.repeat(60)
+        expect(chatCopyNameFromLastInput([{ role: 'user', data: long }])).toBe('가'.repeat(40) + '…')
+        expect(chatCopyNameFromLastInput([{ role: 'user', data: 'hi' }], ['hi', 'hi (2)'])).toBe('hi (3)')
+    })
+
+    it('is null without a user input, so the old (Copy) name is used', () => {
+        expect(chatCopyNameFromLastInput([{ role: 'char', data: 'greeting' }])).toBeNull()
+        expect(chatCopyNameFromLastInput([{ role: 'user', data: '  <br>  ' }])).toBeNull()
+        expect(chatCopyNameFromLastInput(undefined)).toBeNull()
     })
 })

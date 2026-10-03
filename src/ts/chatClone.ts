@@ -62,3 +62,32 @@ export function reissueMessageIds(chat: Chat, sourceMessageIds: Iterable<string 
     }
     return chat
 }
+
+const COPY_NAME_MAX = 40
+
+/**
+ * A copied chat's name: the first line of its last user input (asked for on
+ * 2026-10-03, so copies read as where they left off instead of "X (Copy 3)").
+ * Markup is dropped and the line is cut to 40 characters. A name another chat
+ * already has gets " (2)", " (3)", ... Null when the chat has no user input,
+ * and the caller keeps the old "(Copy)" name.
+ */
+export function chatCopyNameFromLastInput(
+    messages: readonly { role?: string, data?: string }[] | undefined,
+    takenNames: readonly (string | undefined)[] = [],
+): string | null {
+    const last = [...(messages ?? [])].reverse().find((message) => message?.role === 'user' && message.data?.trim())
+    if (!last?.data) return null
+    const line = last.data
+        .replace(/<[^>]*>/g, ' ')
+        .split('\n')
+        .map((part) => part.replace(/\s+/g, ' ').trim())
+        .find((part) => part.length > 0)
+    if (!line) return null
+    const chars = Array.from(line)
+    const base = chars.length > COPY_NAME_MAX ? chars.slice(0, COPY_NAME_MAX).join('').trimEnd() + '…' : line
+    const taken = new Set(takenNames)
+    let name = base
+    for (let index = 2; taken.has(name); index++) name = `${base} (${index})`
+    return name
+}
