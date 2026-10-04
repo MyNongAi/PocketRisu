@@ -2,8 +2,28 @@
 // into images). The rendering lives in logCaptureRender.ts, the ✂️ selection
 // in logCaptureState.svelte.ts.
 
-/** Tallest image (CSS px at pixel ratio 1). Browsers refuse or squeeze canvases above 16384 px. */
+/**
+ * Tallest tile html-to-image draws (pixels): it squeezes a canvas above
+ * 16384 px. Also the image height when the browser takes nothing taller.
+ */
 export const LOG_IMAGE_MAX_HEIGHT = 16000
+/**
+ * Image heights to try, tallest first (pixels): as much of the log as the
+ * browser lets one canvas hold goes into one image, so one copy takes it all.
+ * Chromium and Firefox take 32767 px a side; Safari's area limit is far lower.
+ */
+export const LOG_IMAGE_HEIGHT_STEPS = [32000, 28000, 24000, 20000] as const
+/** Chromium's canvas area limit; no browser takes more. */
+export const LOG_IMAGE_MAX_AREA = 268_435_456
+
+/** The tallest step a `width` px canvas takes, by `works`; LOG_IMAGE_MAX_HEIGHT when none does. */
+export function pickLogImageHeight(width: number, works: (width: number, height: number) => boolean): number {
+    for (const height of LOG_IMAGE_HEIGHT_STEPS) {
+        if (width * height > LOG_IMAGE_MAX_AREA) continue
+        if (works(width, height)) return height
+    }
+    return LOG_IMAGE_MAX_HEIGHT
+}
 /** A cut may move up to a message boundary, but never leave an image shorter than this share. */
 export const LOG_IMAGE_MIN_PART_SHARE = 0.25
 export const LOG_IMAGE_DEFAULT_WIDTH = 900

@@ -3,8 +3,9 @@
 // hidden box at the chosen width, with every asset resolved: the live list
 // leaves images of messages far from the screen unloaded, and its width is
 // the phone's. Buttons, the input echo and other controls are hidden; each
-// block is drawn with html-to-image and the blocks are stacked into images
-// no taller than LOG_IMAGE_MAX_HEIGHT, cut between messages where possible.
+// block is drawn with html-to-image (in tiles of LOG_IMAGE_MAX_HEIGHT) and
+// the blocks are stacked into images as tall as this browser lets a canvas
+// be (tallestLogImageHeight), cut between messages where possible.
 
 import { mount, unmount } from 'svelte'
 import type { Message } from '../storage/database.svelte'
@@ -22,8 +23,36 @@ import {
     formatLogRange,
     LOG_IMAGE_MAX_HEIGHT,
     nextLogPartEnd,
+    pickLogImageHeight,
     type LogBlock,
 } from './logCapture'
+
+// Measured once per width: a canvas that size really holds pixels (one over
+// the browser's limit gets no context, or reads back blank).
+const imageHeightByWidth = new Map<number, number>()
+function tallestLogImageHeight(width: number): number {
+    const known = imageHeightByWidth.get(width)
+    if (known) return known
+    const height = pickLogImageHeight(width, (w, h) => {
+        const canvas = document.createElement('canvas')
+        try {
+            canvas.width = w
+            canvas.height = h
+            const context = canvas.getContext('2d')
+            if (!context) return false
+            context.fillStyle = '#fff'
+            context.fillRect(w - 1, h - 1, 1, 1)
+            return context.getImageData(w - 1, h - 1, 1, 1).data[3] === 255
+        } catch {
+            return false
+        } finally {
+            canvas.width = 0
+            canvas.height = 0
+        }
+    })
+    imageHeightByWidth.set(width, height)
+    return height
+}
 
 export type LogCaptureStage = 'render' | 'images' | 'draw'
 
@@ -172,7 +201,7 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
     const scale = clampLogImageScale(db.nodeOnlyLogImageTextScale) / 100
     const layoutWidth = Math.round(clampLogImageWidth(db.nodeOnlyLogImageWidth) / scale)
     const width = Math.round(layoutWidth * scale)
-    const maxPartHeight = Math.floor(LOG_IMAGE_MAX_HEIGHT / scale)
+    const tileHeight = Math.floor(LOG_IMAGE_MAX_HEIGHT / scale)
     const persona = personaFor(chat.bindedPersona)
     const simpleChar = createSimpleCharacter(character)
     const liveScreen = document.querySelector('.default-chat-screen')
@@ -301,13 +330,13 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
         }
         throwIfAborted(signal)
 
-        // A block is drawn in tiles no taller than an image.
+        // A block is drawn in tiles no taller than html-to-image draws unsqueezed.
         const tileCache = new Map<string, HTMLCanvasElement>()
         const drawTile = async (block: typeof blocks[number], offset: number) => {
             const key = `${block.top}:${offset}`
             const cached = tileCache.get(key)
             if (cached) return cached
-            const height = Math.min(maxPartHeight, block.height - offset)
+            const height = Math.min(tileHeight, block.height - offset)
             const canvas = await htmlToImage.toCanvas(block.el, {
                 width: block.width,
                 height,
@@ -325,87 +354,106 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
             return canvas
         }
 
-        const images: RenderedLogImage[] = []
-        let drawn = 0
-        const drawTotal = blocks.reduce((sum, block) => sum + Math.ceil(block.height / maxPartHeight), 0)
-        const drawnTiles = new Set<string>()
-        onProgress?.('draw', 0, drawTotal)
-        let start = 0
-        while (start < totalHeight) {
-            throwIfAborted(signal)
-            const { end, atBoundary } = nextLogPartEnd(blocks as LogBlock[], start, totalHeight, maxPartHeight)
-            const part = { top: start, height: end - start }
-            const partPixels = Math.round(part.height * scale)
-            let canvas = document.createElement('canvas')
-            canvas.width = width
-            canvas.height = partPixels
-            let context = canvas.getContext('2d')
-            if (!context) throw new Error(language.logCapture.canvasFailed)
-            context.fillStyle = background
-            context.fillRect(0, 0, canvas.width, canvas.height)
-            for (const block of blocks) {
-                const slice = blockSliceInPart(block, part)
-                if (!slice) continue
-                // Tiles of this block that the slice touches.
-                for (let offset = Math.floor(slice.sourceY / maxPartHeight) * maxPartHeight; offset < slice.sourceY + slice.height; offset += maxPartHeight) {
-                    const tile = await drawTile(block, offset)
-                    throwIfAborted(signal)
-                    const key = `${block.top}:${offset}`
-                    if (!drawnTiles.has(key)) {
-                        drawnTiles.add(key)
-                        drawn++
-                        onProgress?.('draw', drawn, drawTotal)
+        const drawTotal = blocks.reduce((sum, block) => sum + Math.ceil(block.height / tileHeight), 0)
+        // Images up to `maxPartHeight` CSS px tall. Null when an image taller
+        // than a tile could not be made after all (the browser ran out of
+        // canvas memory); the caller then draws again at the tile height.
+        const drawImages = async (maxPartHeight: number): Promise<RenderedLogImage[] | null> => {
+            const canRetry = maxPartHeight > tileHeight
+            const images: RenderedLogImage[] = []
+            let drawn = 0
+            const drawnTiles = new Set<string>()
+            onProgress?.('draw', 0, drawTotal)
+            let start = 0
+            while (start < totalHeight) {
+                throwIfAborted(signal)
+                const { end, atBoundary } = nextLogPartEnd(blocks as LogBlock[], start, totalHeight, maxPartHeight)
+                const part = { top: start, height: end - start }
+                const partPixels = Math.round(part.height * scale)
+                let canvas = document.createElement('canvas')
+                canvas.width = width
+                canvas.height = partPixels
+                let context = canvas.getContext('2d')
+                if (!context) {
+                    if (canRetry) return null
+                    throw new Error(language.logCapture.canvasFailed)
+                }
+                context.fillStyle = background
+                context.fillRect(0, 0, canvas.width, canvas.height)
+                for (const block of blocks) {
+                    const slice = blockSliceInPart(block, part)
+                    if (!slice) continue
+                    // Tiles of this block that the slice touches.
+                    for (let offset = Math.floor(slice.sourceY / tileHeight) * tileHeight; offset < slice.sourceY + slice.height; offset += tileHeight) {
+                        const tile = await drawTile(block, offset)
+                        throwIfAborted(signal)
+                        const key = `${block.top}:${offset}`
+                        if (!drawnTiles.has(key)) {
+                            drawnTiles.add(key)
+                            drawn++
+                            onProgress?.('draw', drawn, drawTotal)
+                        }
+                        // CSS px; the tile and the image are `scale` times larger.
+                        const top = Math.max(slice.sourceY, offset)
+                        const bottom = Math.min(slice.sourceY + slice.height, offset + tile.height / scale)
+                        if (bottom <= top) continue
+                        context.drawImage(
+                            tile,
+                            0, (top - offset) * scale, tile.width, (bottom - top) * scale,
+                            block.left * scale, (slice.targetY + (top - slice.sourceY)) * scale, tile.width, (bottom - top) * scale,
+                        )
                     }
-                    // CSS px; the tile and the image are `scale` times larger.
-                    const top = Math.max(slice.sourceY, offset)
-                    const bottom = Math.min(slice.sourceY + slice.height, offset + tile.height / scale)
-                    if (bottom <= top) continue
-                    context.drawImage(
-                        tile,
-                        0, (top - offset) * scale, tile.width, (bottom - top) * scale,
-                        block.left * scale, (slice.targetY + (top - slice.sourceY)) * scale, tile.width, (bottom - top) * scale,
-                    )
                 }
-            }
-            // A cut through a message moves up to a blank row between lines.
-            let keep = part.height
-            if (!atBoundary) {
-                const span = Math.min(Math.round(CUT_SEARCH_ROWS * scale), Math.floor(partPixels * 0.25))
-                if (span > 2) {
-                    const data = context.getImageData(0, partPixels - span, canvas.width, span)
-                    const row = findLogCutRow(new Uint32Array(data.data.buffer), canvas.width, span)
-                    if (row !== null) keep = Math.max(1, Math.floor((partPixels - span + row) / scale))
+                // A cut through a message moves up to a blank row between lines.
+                let keep = part.height
+                if (!atBoundary) {
+                    const span = Math.min(Math.round(CUT_SEARCH_ROWS * scale), Math.floor(partPixels * 0.25))
+                    if (span > 2) {
+                        const data = context.getImageData(0, partPixels - span, canvas.width, span)
+                        const row = findLogCutRow(new Uint32Array(data.data.buffer), canvas.width, span)
+                        if (row !== null) keep = Math.max(1, Math.floor((partPixels - span + row) / scale))
+                    }
                 }
-            }
-            if (keep < part.height) {
-                const trimmed = document.createElement('canvas')
-                trimmed.width = width
-                trimmed.height = Math.round(keep * scale)
-                const trimmedContext = trimmed.getContext('2d')
-                if (!trimmedContext) throw new Error(language.logCapture.canvasFailed)
-                trimmedContext.drawImage(canvas, 0, 0)
+                if (keep < part.height) {
+                    const trimmed = document.createElement('canvas')
+                    trimmed.width = width
+                    trimmed.height = Math.round(keep * scale)
+                    const trimmedContext = trimmed.getContext('2d')
+                    if (!trimmedContext) throw new Error(language.logCapture.canvasFailed)
+                    trimmedContext.drawImage(canvas, 0, 0)
+                    canvas.width = 0
+                    canvas.height = 0
+                    canvas = trimmed
+                    context = trimmedContext
+                }
+                const partEnd = start + keep
+                // Free tiles that end inside this image.
+                for (const [key, tile] of tileCache) {
+                    const [blockTop, offset] = key.split(':').map(Number)
+                    if (blockTop + offset + tile.height / scale <= partEnd) {
+                        tile.width = 0
+                        tile.height = 0
+                        tileCache.delete(key)
+                    }
+                }
+                const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+                const size = { width: canvas.width, height: canvas.height }
                 canvas.width = 0
                 canvas.height = 0
-                canvas = trimmed
-                context = trimmedContext
-            }
-            const partEnd = start + keep
-            // Free tiles that end inside this image.
-            for (const [key, tile] of tileCache) {
-                const [blockTop, offset] = key.split(':').map(Number)
-                if (blockTop + offset + tile.height / scale <= partEnd) {
-                    tile.width = 0
-                    tile.height = 0
-                    tileCache.delete(key)
+                if (!blob) {
+                    if (canRetry) return null
+                    throw new Error(language.logCapture.canvasFailed)
                 }
+                images.push({ blob, ...size })
+                start = partEnd
             }
-            const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
-            if (!blob) throw new Error(language.logCapture.canvasFailed)
-            images.push({ blob, width: canvas.width, height: canvas.height })
-            canvas.width = 0
-            canvas.height = 0
-            start = partEnd
+            return images
         }
+
+        // One image holds as much as this browser lets a canvas be, so a log
+        // that fits is one copy; only a longer one is cut into several.
+        const images = await drawImages(Math.floor(tallestLogImageHeight(width) / scale)) ?? await drawImages(tileHeight)
+        if (!images) throw new Error(language.logCapture.canvasFailed)
         for (const tile of tileCache.values()) {
             tile.width = 0
             tile.height = 0

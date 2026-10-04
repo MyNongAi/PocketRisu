@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { blockSliceInPart, clampLogImageScale, clampLogImageWidth, findLogCutRow, formatLogRange, logCaptureRange, logImageFileName, nextLogPartEnd, planLogImageParts } from './logCapture'
+import { blockSliceInPart, clampLogImageScale, clampLogImageWidth, findLogCutRow, formatLogRange, logCaptureRange, logImageFileName, LOG_IMAGE_MAX_HEIGHT, nextLogPartEnd, pickLogImageHeight, planLogImageParts } from './logCapture'
 
 describe('logCaptureRange', () => {
     it('orders the two marked messages, either way round', () => {
@@ -105,5 +105,23 @@ describe('file names and width', () => {
         expect(clampLogImageScale(50)).toBe(100)
         expect(clampLogImageScale(400)).toBe(250)
         expect(clampLogImageScale(125)).toBe(125)
+    })
+})
+
+describe('pickLogImageHeight', () => {
+    it('takes the tallest height the browser holds', () => {
+        const tried: number[] = []
+        expect(pickLogImageHeight(900, (_w, h) => { tried.push(h); return h <= 24000 })).toBe(24000)
+        expect(tried).toEqual([32000, 28000, 24000])
+    })
+
+    it('skips heights over the area limit without trying them', () => {
+        const tried: number[] = []
+        expect(pickLogImageHeight(10000, (_w, h) => { tried.push(h); return true })).toBe(24000)
+        expect(tried).toEqual([24000])
+    })
+
+    it('falls back to the tile height when nothing taller works (Safari)', () => {
+        expect(pickLogImageHeight(900, () => false)).toBe(LOG_IMAGE_MAX_HEIGHT)
     })
 })
