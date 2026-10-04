@@ -7,6 +7,7 @@ import { reencodeImage } from "./process/files/inlays"
 import { PngChunk } from "./pngChunk"
 import { v4 } from "uuid"
 import { PERSONA_IMAGE_EXTENSIONS, validatePersonaImage } from "./personaImage"
+import { splitBlankPersona } from "./blankPersona"
 
 /**
  * Shared persona-image write path for the picker and drag-and-drop UI.
@@ -77,6 +78,9 @@ export async function selectUserImg(personaIndex?: number) {
 
 export function saveUserPersona() {
     let db = getDatabase()
+    // Edits made while the blank persona is the global one go to a new
+    // persona, which becomes the global one; the blank stays blank.
+    splitBlankPersona(db, v4())
     db.personas[db.selectedPersona].name = db.username
     db.personas[db.selectedPersona].icon = db.userIcon
     db.personas[db.selectedPersona].personaPrompt = db.personaPrompt

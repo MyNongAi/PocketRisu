@@ -18,6 +18,7 @@ import { migrateMemoryPresets, MEMORY_PRESET_DEFAULT, type MemoryPreset } from '
 import { normalizeTranslatorPresetState, type TranslatorPreset } from '../translator/presets'
 import { safeStructuredClone } from '../polyfill';
 import { v4 as uuidv4 } from 'uuid';
+import { splitBlankPersona } from '../blankPersona';
 import { applyModelPresetDefaults } from '../preset/dbDefaults';
 import type { ApiKeyPoolEntry, ModelBindingFields, ModelBindingSet, ModelPreset, ModelPresetMigrationSummary, RegistryCache } from '../preset/types';
 import { emptyModelBinding } from '../preset/types';
@@ -462,6 +463,9 @@ export function setDatabase(data:Database){
             largePortrait: false
         }]
     }
+    // The blank persona stays blank (blankPersona.ts): text that reached it
+    // while it was the global persona becomes a persona of its own.
+    splitBlankPersona(data, uuidv4())
     data.personaFolders ??= []
     data.promptPresetFolders ??= []
     data.classicMaxWidth ??= false
