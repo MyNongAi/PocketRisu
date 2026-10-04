@@ -60,7 +60,7 @@ vi.mock(import('./pngChunk'), () => ({
 
 vi.mock('uuid', () => ({ v4: vi.fn(() => 'generated-persona-id') } as any))
 
-import { importUserPersonaImage, markPersonaApplied, setUserPersonaImage } from './persona'
+import { importUserPersonaImage, markPersonaApplied, personaFromBlank, setUserPersonaImage, updatePersonaText } from './persona'
 
 type Deferred<T> = {
     promise: Promise<T>
@@ -235,5 +235,34 @@ describe('setUserPersonaImage', () => {
         imageWrite.resolve('assets/new-beta.png')
         await result
         expect(mocks.dbRef.db.personas[1].icon).toBe('assets/new-beta.png')
+    })
+})
+
+describe('binding popup edits', () => {
+    it('edits a persona in place, and the active one in the root fields too', () => {
+        const { alpha, beta } = setupDatabase()
+        updatePersonaText(1, { name: 'Beta 2', personaPrompt: 'new beta' })
+        expect(beta).toMatchObject({ name: 'Beta 2', personaPrompt: 'new beta', note: 'Beta note' })
+        expect(mocks.dbRef.db.username).toBe('Alpha')
+
+        updatePersonaText(0, { name: 'Alpha 2', note: 'memo' })
+        expect(alpha).toMatchObject({ name: 'Alpha 2', note: 'memo' })
+        expect(mocks.dbRef.db.username).toBe('Alpha 2')
+        expect(mocks.dbRef.db.userNote).toBe('memo')
+        expect(mocks.dbRef.db.personaPrompt).toBe('Alpha prompt')
+    })
+
+    it('makes a new persona from the blank one and leaves the blank one blank', () => {
+        setupDatabase()
+        const blank = { id: 'blank', name: 'User', icon: '', personaPrompt: '', note: '빈 페르소나', nodeOnlyBlank: true, favorite: true }
+        mocks.dbRef.db.personas = [...mocks.dbRef.db.personas, blank]
+        const index = personaFromBlank(2, { personaPrompt: 'a knight' })
+        expect(index).toBe(3)
+        const created = mocks.dbRef.db.personas[3]
+        expect(created).toMatchObject({ id: 'generated-persona-id', name: 'User', personaPrompt: 'a knight', note: '' })
+        expect(created.nodeOnlyBlank).toBeUndefined()
+        expect(created.favorite).toBeUndefined()
+        expect(mocks.dbRef.db.personas[2]).toEqual(blank)
+        expect(personaFromBlank(9)).toBe(-1)
     })
 })

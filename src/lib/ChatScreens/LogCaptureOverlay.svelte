@@ -47,6 +47,23 @@
     const sizeText = (image: LogCaptureImage) => `${image.width}×${image.height} · ${(image.blob.size / 1024 / 1024).toFixed(1)}MB`
 </script>
 
+<!-- An image's copy and save buttons, above it and again below it: a log
+     image can be very tall, and the user wanted them at both ends. -->
+{#snippet imageActions(image: LogCaptureImage, i: number, edge: 'top' | 'bottom')}
+    <div class="flex items-center gap-2 text-xs text-textcolor2 {edge === 'top' ? 'mb-1' : 'mt-1'}" data-log-image-actions={edge}>
+        {#if logCapture.images.length > 1}
+            <span class="font-semibold text-textcolor">{i + 1}/{logCapture.images.length}</span>
+        {/if}
+        <span class="min-w-0 flex-1 truncate">{edge === 'top' ? sizeText(image) : ''}</span>
+        <button type="button" class="flex items-center gap-1 rounded-md border border-darkborderc px-2 py-0.5 transition-colors hover:bg-selected hover:text-textcolor" onclick={() => copyOne(image, i)}>
+            {#if copiedIndex === i}<CheckIcon size={12} />{:else}<CopyIcon size={12} />{/if}{language.logCapture.copy}
+        </button>
+        <button type="button" class="flex items-center gap-1 rounded-md border border-darkborderc px-2 py-0.5 transition-colors hover:bg-selected hover:text-textcolor" onclick={() => saveLogImage(image)}>
+            <DownloadIcon size={12} />{language.logCapture.save}
+        </button>
+    </div>
+{/snippet}
+
 {#if picking && logCapture.start}
     <div class="pointer-events-none absolute inset-x-0 top-2 z-[45] flex justify-center px-3" data-log-capture-bar>
         <div class="pointer-events-auto flex max-w-full items-center gap-2 rounded-full border border-primary/60 bg-bgcolor/95 py-1.5 pl-3 pr-1.5 text-sm text-textcolor shadow-lg">
@@ -101,22 +118,10 @@
                     </p>
                     <div class="min-h-0 flex-1 overflow-y-auto px-4 py-3">
                         {#each logCapture.images as image, i (image.url)}
-                            <figure class="mb-3 last:mb-0">
-                                {#if logCapture.images.length > 1}
-                                    <figcaption class="mb-1 flex items-center gap-2 text-xs text-textcolor2">
-                                        <span class="font-semibold text-textcolor">{i + 1}/{logCapture.images.length}</span>
-                                        <span class="min-w-0 flex-1 truncate">{sizeText(image)}</span>
-                                        <button type="button" class="flex items-center gap-1 rounded-md border border-darkborderc px-2 py-0.5 transition-colors hover:bg-selected hover:text-textcolor" onclick={() => copyOne(image, i)}>
-                                            {#if copiedIndex === i}<CheckIcon size={12} />{:else}<CopyIcon size={12} />{/if}{language.logCapture.copy}
-                                        </button>
-                                        <button type="button" class="flex items-center gap-1 rounded-md border border-darkborderc px-2 py-0.5 transition-colors hover:bg-selected hover:text-textcolor" onclick={() => saveLogImage(image)}>
-                                            <DownloadIcon size={12} />{language.logCapture.save}
-                                        </button>
-                                    </figcaption>
-                                {:else}
-                                    <figcaption class="mb-1 text-xs text-textcolor2">{sizeText(image)}</figcaption>
-                                {/if}
+                            <figure class="mb-4 last:mb-0">
+                                <figcaption>{@render imageActions(image, i, 'top')}</figcaption>
                                 <img src={image.url} alt={language.logCapture.title} class="block w-full rounded-md border border-darkborderc" />
+                                {@render imageActions(image, i, 'bottom')}
                             </figure>
                         {/each}
                     </div>

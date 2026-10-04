@@ -1,4 +1,4 @@
-import { getDatabase, saveImage, setDatabase } from "./storage/database.svelte"
+import { getDatabase, saveImage, setDatabase, type RisuPersona } from "./storage/database.svelte"
 import { selectSingleFile, sleep } from "./util"
 import { alertError, alertStore, notifySuccess, notifyError } from "./alert"
 import { AppendableBuffer, downloadFile, readImage, requestImmediateSave } from "./globalApi.svelte"
@@ -105,6 +105,45 @@ export function ensureBlankPersonaIndex(): number {
         index = db.personas.length - 1
     }
     return index
+}
+
+export type PersonaTextFields = Partial<Pick<RisuPersona, 'name' | 'personaPrompt' | 'note'>>
+
+/**
+ * Edit one persona's text in place (the chat sidebar's binding popup). The
+ * active persona's text also lives in the root fields that saveUserPersona
+ * copies back into its card, so those change with it.
+ */
+export function updatePersonaText(index: number, patch: PersonaTextFields) {
+    const db = getDatabase()
+    const persona = db.personas[index]
+    if (!persona) return
+    Object.assign(persona, patch)
+    if (index !== db.selectedPersona) return
+    if (patch.name !== undefined) db.username = patch.name
+    if (patch.personaPrompt !== undefined) db.personaPrompt = patch.personaPrompt
+    if (patch.note !== undefined) db.userNote = patch.note
+}
+
+/**
+ * A new persona from the blank one with `patch` applied, appended to the
+ * list; the blank one stays blank for the next time. Returns its index.
+ */
+export function personaFromBlank(blankIndex: number, patch: PersonaTextFields = {}): number {
+    const db = getDatabase()
+    const blank = db.personas[blankIndex]
+    if (!blank) return -1
+    const now = Date.now()
+    const { nodeOnlyBlank: _blank, favorite: _favorite, ...rest } = blank
+    db.personas = [...db.personas, {
+        ...rest,
+        id: v4(),
+        note: '',
+        createdAt: now,
+        lastAppliedAt: now,
+        ...patch,
+    }]
+    return db.personas.length - 1
 }
 
 export function markPersonaApplied(id: number, at = Date.now()) {

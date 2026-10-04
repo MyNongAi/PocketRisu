@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
         ],
     },
     changeUserPersona: vi.fn(),
+    updatePersonaText: vi.fn(),
     getFileThumbnailSrc: vi.fn(async (path: string) => `/thumbnail/${encodeURIComponent(path)}`),
     getFileSrc: vi.fn(async (path: string) => `/original/${encodeURIComponent(path)}`),
     saveAsset: vi.fn(),
@@ -29,7 +30,7 @@ vi.mock('src/ts/stores.svelte', () => ({
         },
     },
 }))
-vi.mock('src/ts/persona', () => ({ changeUserPersona: mocks.changeUserPersona }))
+vi.mock('src/ts/persona', () => ({ changeUserPersona: mocks.changeUserPersona, updatePersonaText: mocks.updatePersonaText }))
 vi.mock('src/ts/globalApi.svelte', () => ({
     getFileThumbnailSrc: mocks.getFileThumbnailSrc,
     getFileSrc: mocks.getFileSrc,
@@ -99,8 +100,17 @@ describe('persona image picker', () => {
         beta?.click()
         await tick()
         expect(onSelect).toHaveBeenCalledWith(1)
-        expect(close).toHaveBeenCalledOnce()
         expect(mocks.changeUserPersona).not.toHaveBeenCalled()
+
+        // Binding stays open on the edit tab for that persona; only X closes.
+        expect(close).not.toHaveBeenCalled()
+        const name = target.querySelector<HTMLInputElement>('[data-persona-bind-edit] input')
+        expect(name?.value).toBe('Beta')
+        name!.value = 'Beta 2'
+        name!.dispatchEvent(new Event('input', { bubbles: true }))
+        expect(mocks.updatePersonaText).toHaveBeenCalledWith(1, { name: 'Beta 2' })
+        target.querySelector<HTMLButtonElement>('[role="dialog"] button[aria-label]:not([role="tab"])')?.click()
+        expect(close).toHaveBeenCalledOnce()
     })
 
     it('changes the global persona when no binding callback is supplied', async () => {
