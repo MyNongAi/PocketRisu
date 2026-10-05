@@ -10,7 +10,7 @@
 
     const shown = new Set<string>()
     const dismissTimers = new Map<string, ReturnType<typeof setTimeout>>()
-    // Tasks whose card the user closed (its X, or a swipe) while they still
+    // Tasks whose card the user folded (its "-", or a swipe) while they still
     // run: they collapse into the small button below, which brings them back.
     const minimized = new Set<string>()
     // Our own dismissals, so they are not taken for the user's.
@@ -33,7 +33,7 @@
             componentProps: { id, onMinimize: () => minimize(id) },
             onDismiss: () => {
                 if (dismissing.delete(id)) return
-                // A swipe: same as the card's own X.
+                // A swipe: same as the card's own "-" (fold, keep running).
                 collapse(id)
             },
         })
