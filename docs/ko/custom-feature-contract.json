@@ -1166,6 +1166,23 @@
       "regressionTests": [
         "src/ts/creatorFolders.test.ts"
       ]
+    },
+    {
+      "id": "CHAT-TITLE-LAST-INPUT",
+      "title": "채팅방 제목은 항상 마지막 인풋",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/chatClone.ts",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/lib/ChatScreens/Chat.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "retitleChatFromLastInput(attached.character.chats, attached.chatIndex)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "function retitleCurrentChat()" }
+      ],
+      "regressionTests": [
+        "src/ts/chatClone.test.ts"
+      ]
     }
   ]
 }

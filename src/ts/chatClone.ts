@@ -68,21 +68,26 @@ const COPY_NAME_MAX = 40
 /**
  * A copied chat's name: the first line of its last user input (asked for on
  * 2026-10-03, so copies read as where they left off instead of "X (Copy 3)").
- * Markup is dropped and the line is cut to 40 characters. A name another chat
- * already has gets " (2)", " (3)", ... Null when the chat has no user input,
- * and the caller keeps the old "(Copy)" name.
+ * Markup and attached images are dropped and the line is cut to 40
+ * characters; an empty send ("*says nothing*") is not an input. A name another
+ * chat already has gets " (2)", " (3)", ... Null when the chat has no user
+ * input, and the caller keeps the old "(Copy)" name.
  */
 export function chatCopyNameFromLastInput(
     messages: readonly { role?: string, data?: string }[] | undefined,
     takenNames: readonly (string | undefined)[] = [],
 ): string | null {
-    const last = [...(messages ?? [])].reverse().find((message) => message?.role === 'user' && message.data?.trim())
-    if (!last?.data) return null
-    const line = last.data
-        .replace(/<[^>]*>/g, ' ')
-        .split('\n')
-        .map((part) => part.replace(/\s+/g, ' ').trim())
-        .find((part) => part.length > 0)
+    let line: string | undefined
+    for (let index = (messages?.length ?? 0) - 1; index >= 0 && !line; index--) {
+        const message = messages![index]
+        if (message?.role !== 'user' || !message.data || message.data.trim() === '*says nothing*') continue
+        line = message.data
+            .replace(/\{\{inlay(?:ed|eddata)?::[^}]*\}\}/g, ' ')
+            .replace(/<[^>]*>/g, ' ')
+            .split('\n')
+            .map((part) => part.replace(/\s+/g, ' ').trim())
+            .find((part) => part.length > 0)
+    }
     if (!line) return null
     const chars = Array.from(line)
     const base = chars.length > COPY_NAME_MAX ? chars.slice(0, COPY_NAME_MAX).join('').trimEnd() + '…' : line
@@ -90,4 +95,22 @@ export function chatCopyNameFromLastInput(
     let name = base
     for (let index = 2; taken.has(name); index++) name = `${base} (${index})`
     return name
+}
+
+/**
+ * A chat's title is always its last input (the user's request, 2026-10-06):
+ * renames chats[index] the way a copy is named, kept apart from the bot's
+ * other chats. Called where an input is sent, edited or deleted; a chat with
+ * no input keeps its name. Returns whether the name changed.
+ */
+export function retitleChatFromLastInput(
+    chats: { name?: string, message?: { role?: string, data?: string }[] }[] | undefined,
+    index: number,
+): boolean {
+    const chat = chats?.[index]
+    if (!chat) return false
+    const name = chatCopyNameFromLastInput(chat.message, chats!.filter((_, other) => other !== index).map((other) => other.name))
+    if (!name || name === chat.name) return false
+    chat.name = name
+    return true
 }

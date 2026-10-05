@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chatCopyNameFromLastInput, reissueMessageIds } from './chatClone'
+import { chatCopyNameFromLastInput, reissueMessageIds, retitleChatFromLastInput } from './chatClone'
 import type { Chat } from './storage/database.svelte'
 
 function makeChat(): Chat {
@@ -90,5 +90,25 @@ describe('chatCopyNameFromLastInput', () => {
         expect(chatCopyNameFromLastInput([{ role: 'char', data: 'greeting' }])).toBeNull()
         expect(chatCopyNameFromLastInput([{ role: 'user', data: '  <br>  ' }])).toBeNull()
         expect(chatCopyNameFromLastInput(undefined)).toBeNull()
+    })
+})
+
+describe('retitleChatFromLastInput', () => {
+    it('names the chat after its last input, skipping empty sends and attached images', () => {
+        const chats = [
+            { name: 'Chat 1', message: [{ role: 'user', data: 'first' }, { role: 'char', data: 'r' }, { role: 'user', data: '{{inlayed::abc}}\nLook at this' }, { role: 'user', data: '*says nothing*' }] },
+            { name: 'Look at this', message: [] },
+        ]
+        expect(retitleChatFromLastInput(chats, 0)).toBe(true)
+        expect(chats[0].name).toBe('Look at this (2)')
+        // Unchanged input: the name stays, including its own (2).
+        expect(retitleChatFromLastInput(chats, 0)).toBe(false)
+    })
+
+    it('keeps the name of a chat without an input', () => {
+        const chats = [{ name: 'Chat 1', message: [{ role: 'char', data: 'greeting' }] }]
+        expect(retitleChatFromLastInput(chats, 0)).toBe(false)
+        expect(chats[0].name).toBe('Chat 1')
+        expect(retitleChatFromLastInput(chats, 3)).toBe(false)
     })
 })

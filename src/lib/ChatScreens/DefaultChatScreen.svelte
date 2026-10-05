@@ -39,6 +39,7 @@ import { isMobile } from 'src/ts/platform'
     import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile, forageStorage, requestImmediateSave } from 'src/ts/globalApi.svelte';
     import { runTrigger } from 'src/ts/process/triggers';
     import { v4 } from 'uuid';
+    import { retitleChatFromLastInput } from 'src/ts/chatClone';
     import { processMultiCommand } from 'src/ts/process/command';
     import { postChatFile } from 'src/ts/process/files/multisend';
     import { getInlayAsset } from 'src/ts/process/files/inlays';
@@ -568,6 +569,7 @@ import { isMobile } from 'src/ts/platform'
         const attached = resolveGenerationTarget(DBState.db.characters, generationTarget)
         if(!attached) return
         attached.chat.message = cha
+        retitleChatFromLastInput(attached.character.chats, attached.chatIndex)
         generationTarget = captureGenerationTarget(attached.character, attached.chat)
         if($selectedCharID === attached.characterIndex && attached.character.chatPage === attached.chatIndex){
             messageInput = ''

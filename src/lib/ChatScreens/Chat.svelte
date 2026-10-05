@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { reissueMessageIds } from "src/ts/chatClone";
+    import { reissueMessageIds, retitleChatFromLastInput } from "src/ts/chatClone";
     import { ArrowLeft, ArrowLeftRightIcon, ArrowRight, BookmarkIcon, BotIcon, CopyIcon, PowerOff, GitBranch, HamburgerIcon, LanguagesIcon, MenuIcon, PencilIcon, RefreshCcwIcon, SplitIcon, TrashIcon, UserIcon, Volume2Icon, Scissors, EyeOff } from "@lucide/svelte"
     import { aiLawApplies, changeChatTo, foldChatToMessage, getFileSrc, createChatCopyName } from "src/ts/globalApi.svelte"
     import { ColorSchemeTypeStore } from "src/ts/gui/colorscheme"
@@ -241,6 +241,14 @@
             notifySuccess(language.messageRemoved)
         }
         DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message = msg
+        retitleCurrentChat()
+    }
+
+    // The chat's title is always its last input (chatClone.ts): it follows
+    // an input that is edited or deleted, as it does one that is sent.
+    function retitleCurrentChat() {
+        const chara = DBState.db.characters[selIdState.selId]
+        if (chara) retitleChatFromLastInput(chara.chats, chara.chatPage)
     }
 
     async function edit(){
@@ -249,6 +257,7 @@
         if (msg.swipes && msg.swipeId !== undefined) {
             msg.swipes[msg.swipeId] = message
         }
+        if (msg.role === 'user') retitleCurrentChat()
     }
 
     // ── Input echo ──────────────────────────────────────────────────────────
@@ -273,6 +282,7 @@
         }
         if (index >= 0 && messages[index]?.role === 'user' && messages[index].data !== echoText) {
             messages[index].data = echoText
+            retitleCurrentChat()
         }
         inputEchoDraft.set(null)
     }
@@ -359,6 +369,7 @@
         if (msg.swipes && msg.swipeId !== undefined) {
             msg.swipes[msg.swipeId] = e.detail.newData
         }
+        if (msg.role === 'user') retitleCurrentChat()
         displaya(e.detail.newData)
     }
 
