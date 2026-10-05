@@ -557,6 +557,14 @@ import { isMobile } from 'src/ts/platform'
             }
         }
 
+        // The new input gets its id now, not when sendChat assigns missing ids
+        // a moment later: the id is part of a message's render key
+        // (Chats.svelte), so getting one then remounted the message and closed
+        // an edit opened on it right after sending.
+        for(const message of cha){
+            message.chatId ??= v4()
+        }
+
         const attached = resolveGenerationTarget(DBState.db.characters, generationTarget)
         if(!attached) return
         attached.chat.message = cha
