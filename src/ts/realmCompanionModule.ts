@@ -9,7 +9,7 @@
 // being downloaded twice.
 import { recordModulePair } from './gui/pairedModules'
 import { language } from 'src/lang'
-import { notifyError, notifySuccess } from './alert'
+import { alertSelect, notifyError, notifyInfo, notifySuccess } from './alert'
 import { runImportTask, type ImportProgressReporter } from './importProgress'
 import { isImportCancelled } from './importTransaction'
 import { importModuleFile, type RisuModule } from './process/modules'
@@ -45,13 +45,40 @@ export function findProtonShareLinks(text: string): string[] {
 }
 
 /**
- * Whether a shared file is a module: a RISUM, or a CHARX named
- * `*.module.charx` (how modules are exported as CHARX). A plain CHARX or PNG
- * is the bot itself, which the Realm download already imported.
+ * Whether a shared file is a module: a RISUM, or a CHARX whose name says so —
+ * `*.module.charx` (how modules are exported as CHARX), or "module"/"모듈" as
+ * a word in it ("… Image Module.charx", "에셋 모듈.charx"; the space form was
+ * taken for the bot, and the download vanished without a word, 2026-10-05).
+ * A plain CHARX or PNG is the bot itself, which the Realm download already
+ * imported.
  */
 export function isCompanionModuleFile(name: string): boolean {
     const lower = name.toLocaleLowerCase()
-    return lower.endsWith('.risum') || lower.endsWith('.module.charx')
+    if (lower.endsWith('.risum')) return true
+    if (!lower.endsWith('.charx')) return false
+    const base = lower.slice(0, -'.charx'.length)
+    return /(^|[^a-z])modules?([^a-z]|$)/.test(base) || base.includes('모듈')
+}
+
+const sizeText = (bytes: number | null | undefined) => bytes ? ` (${(bytes / 1024 / 1024).toFixed(0)}MB)` : ''
+
+/**
+ * A single shared file that is not named as a module: a CHARX may still be
+ * the bot's asset module, so the user decides; anything else is skipped with
+ * a word, instead of the progress card just going away.
+ */
+async function wantsUnnamedFileAsModule(name: string, size: number | null | undefined): Promise<boolean> {
+    if (!name.toLocaleLowerCase().endsWith('.charx')) {
+        notifyInfo(language.realmCompanionModuleSkipped(name))
+        return false
+    }
+    const choice = await alertSelect(
+        [language.realmCompanionModuleImportCharx, language.realmCompanionModuleSkipCharx],
+        language.realmCompanionModuleAskCharx(`${name}${sizeText(size)}`),
+    )
+    if (choice === '0') return true
+    notifyInfo(language.realmCompanionModuleSkipped(name))
+    return false
 }
 
 /** Adds module ids to a character's own modules (character.modules), keeping order and no duplicates. */
@@ -89,9 +116,10 @@ async function downloadShareModules(link: string, report: ImportProgressReporter
         return modules
     }
     // A single file imports by itself, if it is a module (a plain CHARX or PNG
-    // is the bot the Realm download already brought in).
-    if (!isCompanionModuleFile(share.name)) return modules
-    const file = await downloadProtonEntry(link, password, { path: [], expectedSize: share.entries[0]?.size ?? null }, report)
+    // is the bot the Realm download already brought in; an unclear CHARX asks).
+    const size = share.entries[0]?.size ?? null
+    if (!isCompanionModuleFile(share.name) && !await wantsUnnamedFileAsModule(share.name, size)) return modules
+    const file = await downloadProtonEntry(link, password, { path: [], expectedSize: size }, report)
     const module = await importModuleFile(file, { suppressSuccess: true, onProgress: report })
     if (module) keep(module)
     return modules

@@ -23,6 +23,7 @@ import {
     formatLogRange,
     LOG_IMAGE_MAX_HEIGHT,
     nextLogPartEnd,
+    pickLogImageDensity,
     pickLogImageHeight,
     type LogBlock,
 } from './logCapture'
@@ -200,8 +201,6 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
     // Laid out at width / scale and drawn at scale: text larger in the same image width.
     const scale = clampLogImageScale(db.nodeOnlyLogImageTextScale) / 100
     const layoutWidth = Math.round(clampLogImageWidth(db.nodeOnlyLogImageWidth) / scale)
-    const width = Math.round(layoutWidth * scale)
-    const tileHeight = Math.floor(LOG_IMAGE_MAX_HEIGHT / scale)
     const persona = personaFor(chat.bindedPersona)
     const simpleChar = createSimpleCharacter(character)
     const liveScreen = document.querySelector('.default-chat-screen')
@@ -320,6 +319,11 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
             return { el, left: Math.round(rect.left - rootRect.left), width: Math.ceil(rect.width), top: Math.round(rect.top - rootRect.top), height: Math.ceil(rect.height) }
         }).filter((block) => block.height > 0)
         const totalHeight = Math.ceil(root.scrollHeight)
+        // Pixels per CSS px: the text size's scale, drawn up to twice as sharp
+        // while the whole log still fits one image (pickLogImageDensity).
+        const ratio = scale * pickLogImageDensity(layoutWidth * scale, totalHeight * scale, tallestLogImageHeight)
+        const width = Math.round(layoutWidth * ratio)
+        const tileHeight = Math.floor(LOG_IMAGE_MAX_HEIGHT / ratio)
 
         const htmlToImage = await import('html-to-image')
         let fontEmbedCSS: string | undefined
@@ -342,7 +346,7 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
                 height,
                 canvasWidth: block.width,
                 canvasHeight: height,
-                pixelRatio: scale,
+                pixelRatio: ratio,
                 skipAutoScale: true,
                 backgroundColor: background,
                 fontEmbedCSS,
@@ -369,7 +373,7 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
                 throwIfAborted(signal)
                 const { end, atBoundary } = nextLogPartEnd(blocks as LogBlock[], start, totalHeight, maxPartHeight)
                 const part = { top: start, height: end - start }
-                const partPixels = Math.round(part.height * scale)
+                const partPixels = Math.round(part.height * ratio)
                 let canvas = document.createElement('canvas')
                 canvas.width = width
                 canvas.height = partPixels
@@ -393,31 +397,31 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
                             drawn++
                             onProgress?.('draw', drawn, drawTotal)
                         }
-                        // CSS px; the tile and the image are `scale` times larger.
+                        // CSS px; the tile and the image are `ratio` times larger.
                         const top = Math.max(slice.sourceY, offset)
-                        const bottom = Math.min(slice.sourceY + slice.height, offset + tile.height / scale)
+                        const bottom = Math.min(slice.sourceY + slice.height, offset + tile.height / ratio)
                         if (bottom <= top) continue
                         context.drawImage(
                             tile,
-                            0, (top - offset) * scale, tile.width, (bottom - top) * scale,
-                            block.left * scale, (slice.targetY + (top - slice.sourceY)) * scale, tile.width, (bottom - top) * scale,
+                            0, (top - offset) * ratio, tile.width, (bottom - top) * ratio,
+                            block.left * ratio, (slice.targetY + (top - slice.sourceY)) * ratio, tile.width, (bottom - top) * ratio,
                         )
                     }
                 }
                 // A cut through a message moves up to a blank row between lines.
                 let keep = part.height
                 if (!atBoundary) {
-                    const span = Math.min(Math.round(CUT_SEARCH_ROWS * scale), Math.floor(partPixels * 0.25))
+                    const span = Math.min(Math.round(CUT_SEARCH_ROWS * ratio), Math.floor(partPixels * 0.25))
                     if (span > 2) {
                         const data = context.getImageData(0, partPixels - span, canvas.width, span)
                         const row = findLogCutRow(new Uint32Array(data.data.buffer), canvas.width, span)
-                        if (row !== null) keep = Math.max(1, Math.floor((partPixels - span + row) / scale))
+                        if (row !== null) keep = Math.max(1, Math.floor((partPixels - span + row) / ratio))
                     }
                 }
                 if (keep < part.height) {
                     const trimmed = document.createElement('canvas')
                     trimmed.width = width
-                    trimmed.height = Math.round(keep * scale)
+                    trimmed.height = Math.round(keep * ratio)
                     const trimmedContext = trimmed.getContext('2d')
                     if (!trimmedContext) throw new Error(language.logCapture.canvasFailed)
                     trimmedContext.drawImage(canvas, 0, 0)
@@ -430,7 +434,7 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
                 // Free tiles that end inside this image.
                 for (const [key, tile] of tileCache) {
                     const [blockTop, offset] = key.split(':').map(Number)
-                    if (blockTop + offset + tile.height / scale <= partEnd) {
+                    if (blockTop + offset + tile.height / ratio <= partEnd) {
                         tile.width = 0
                         tile.height = 0
                         tileCache.delete(key)
@@ -452,7 +456,7 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
 
         // One image holds as much as this browser lets a canvas be, so a log
         // that fits is one copy; only a longer one is cut into several.
-        const images = await drawImages(Math.floor(tallestLogImageHeight(width) / scale)) ?? await drawImages(tileHeight)
+        const images = await drawImages(Math.floor(tallestLogImageHeight(width) / ratio)) ?? await drawImages(tileHeight)
         if (!images) throw new Error(language.logCapture.canvasFailed)
         for (const tile of tileCache.values()) {
             tile.width = 0

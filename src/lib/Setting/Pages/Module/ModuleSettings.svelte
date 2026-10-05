@@ -8,7 +8,7 @@
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
     import ModuleMenu from "src/lib/Setting/Pages/Module/ModuleMenu.svelte";
     import { addModuleToDatabase, exportModule, exportModuleLegacy, hydrateModuleAssets, importModule, importModuleFromProtonDrive, refreshModules, type RisuModule } from "src/ts/process/modules";
-    import { Clock3Icon, SquarePen, Globe, Share2Icon, PlusIcon, HardDriveUpload, ListOrderedIcon, PaletteIcon, StarIcon, Waypoints, CloudDownloadIcon } from "@lucide/svelte";
+    import { Clock3Icon, SquarePen, Globe, Share2Icon, PlusIcon, HardDriveUpload, ListOrderedIcon, PaletteIcon, StarIcon, Waypoints, CloudDownloadIcon, LinkIcon, UnlinkIcon } from "@lucide/svelte";
     import { v4 } from "uuid";
     import { tooltip } from "src/ts/gui/tooltip";
     import { alertConfirm, alertError, alertSelect, notifySuccess } from "src/ts/alert";
@@ -26,7 +26,7 @@
     import { FileDropSurface } from "src/ts/gui/fileDropSurface.svelte";
     import FileDropIndicator from "src/lib/UI/GUI/FileDropIndicator.svelte";
     import PairedModuleMark from "src/lib/UI/GUI/PairedModuleMark.svelte";
-    import { moduleLinks } from "src/ts/gui/pairedModules";
+    import { forgetModulePair, moduleLinks, recordModulePair } from "src/ts/gui/pairedModules";
     let tempModule:RisuModule = $state({
         name: '',
         description: '',
@@ -157,6 +157,27 @@
             rememberActivation(rmodule.id)
         }
         DBState.db.enabledModules = DBState.db.enabledModules
+    }
+
+    // The bot open now: a module's ⋮ menu links the module to it as one of
+    // its own modules (the chain), or unlinks it — the same pairing as the
+    // chat's module menu "이 캐릭터에서 사용" (the user's request, 2026-10-05).
+    let openBot = $derived(DBState.db.characters[$selectedCharID])
+
+    function toggleBotLink(rmodule: RisuModule) {
+        const character = DBState.db.characters[$selectedCharID]
+        if (!character) return
+        const current = character.modules ?? []
+        if (current.includes(rmodule.id)) {
+            character.modules = current.filter((id) => id !== rmodule.id)
+            forgetModulePair(DBState.db.modules, rmodule.id, character.chaId)
+            notifySuccess(language.moduleBotUnlinked.replace('{}', character.name || 'Unnamed'))
+        } else {
+            character.modules = [...current, rmodule.id]
+            recordModulePair(DBState.db.modules, [rmodule.id], character.chaId)
+            rememberActivation(rmodule.id)
+            notifySuccess(language.moduleBotLinked.replace('{}', character.name || 'Unnamed'))
+        }
     }
 
     function toggleFolderGlobal(indexes: number[]) {
@@ -412,6 +433,12 @@
             {#if !rmodule.mcp}
                 <ShDropdownMenuItem onSelect={() => openEditor(index)}><SquarePen /><span>{language.edit}</span></ShDropdownMenuItem>
                 <ShDropdownMenuItem onSelect={() => exportModuleAt(index)}><Share2Icon /><span>{language.download}</span></ShDropdownMenuItem>
+            {/if}
+            {#if openBot}
+                <ShDropdownMenuItem onSelect={() => toggleBotLink(rmodule)}>
+                    {#if openBot.modules?.includes(rmodule.id)}<UnlinkIcon /><span>{language.moduleBotUnlink.replace('{}', openBot.name || 'Unnamed')}</span>
+                    {:else}<LinkIcon /><span>{language.moduleBotLink.replace('{}', openBot.name || 'Unnamed')}</span>{/if}
+                </ShDropdownMenuItem>
             {/if}
             <ShDropdownMenuItem onSelect={() => changeModuleColor(rmodule)}><PaletteIcon /><span>색변경</span></ShDropdownMenuItem>
             <ShDropdownMenuItem onSelect={() => { rmodule.favorite = !rmodule.favorite }}><StarIcon /><span>{rmodule.favorite ? '즐겨찾기 해제' : '즐겨찾기 (맨위로)'}</span></ShDropdownMenuItem>

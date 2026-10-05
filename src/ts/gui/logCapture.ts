@@ -13,16 +13,40 @@ export const LOG_IMAGE_MAX_HEIGHT = 16000
  * Chromium and Firefox take 32767 px a side; Safari's area limit is far lower.
  */
 export const LOG_IMAGE_HEIGHT_STEPS = [32000, 28000, 24000, 20000] as const
-/** Chromium's canvas area limit; no browser takes more. */
-export const LOG_IMAGE_MAX_AREA = 268_435_456
+/**
+ * One image's pixel budget (a canvas of about 160 MB): a phone tab can be
+ * killed for memory well below the browser's own canvas limits.
+ */
+export const LOG_IMAGE_MAX_PIXELS = 40_000_000
 
 /** The tallest step a `width` px canvas takes, by `works`; LOG_IMAGE_MAX_HEIGHT when none does. */
 export function pickLogImageHeight(width: number, works: (width: number, height: number) => boolean): number {
     for (const height of LOG_IMAGE_HEIGHT_STEPS) {
-        if (width * height > LOG_IMAGE_MAX_AREA) continue
+        if (width * height > LOG_IMAGE_MAX_PIXELS) continue
         if (works(width, height)) return height
     }
     return LOG_IMAGE_MAX_HEIGHT
+}
+
+/** Sharpest drawing: twice the pixels of the chosen width and text size. */
+export const LOG_IMAGE_MAX_DENSITY = 2
+
+/**
+ * How many times sharper than its base size (`baseWidth` × `baseHeight` px
+ * for the whole log, at the chosen width and text size) to draw the log: up
+ * to LOG_IMAGE_MAX_DENSITY while the whole log still fits one image
+ * (`maxHeightFor(width)`) within the pixel budget, in steps of 0.25. Never
+ * below 1: a log too long for one image is cut into several, as before.
+ * Text on a phone's dense screen looked soft at the base size (2026-10-05).
+ */
+export function pickLogImageDensity(baseWidth: number, baseHeight: number, maxHeightFor: (width: number) => number): number {
+    if (!(baseWidth > 0) || !(baseHeight > 0)) return 1
+    let density = Math.min(LOG_IMAGE_MAX_DENSITY, Math.sqrt(LOG_IMAGE_MAX_PIXELS / (baseWidth * baseHeight)))
+    density = Math.floor(density * 4) / 4
+    for (; density > 1; density -= 0.25) {
+        if (baseHeight * density <= maxHeightFor(Math.round(baseWidth * density))) return density
+    }
+    return 1
 }
 /** A cut may move up to a message boundary, but never leave an image shorter than this share. */
 export const LOG_IMAGE_MIN_PART_SHARE = 0.25

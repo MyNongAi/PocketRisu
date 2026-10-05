@@ -7,12 +7,23 @@ vi.mock('src/lang', () => ({
         realmCompanionModuleTask: 'task',
         realmCompanionModulePaired: (n: number) => `paired ${n}`,
         realmCompanionModuleFailed: 'failed',
+        realmCompanionModuleAskCharx: (file: string) => `ask ${file}`,
+        realmCompanionModuleImportCharx: 'as module',
+        realmCompanionModuleSkipCharx: 'skip',
+        realmCompanionModuleSkipped: (name: string) => `skipped ${name}`,
         importProgress: { importing: 'importing' },
     },
 }))
 const notifySuccess = vi.fn()
 const notifyError = vi.fn()
-vi.mock('./alert', () => ({ notifySuccess: (m: string) => notifySuccess(m), notifyError: (m: string) => notifyError(m) }))
+const notifyInfo = vi.fn()
+const alertSelect = vi.fn()
+vi.mock('./alert', () => ({
+    notifySuccess: (m: string) => notifySuccess(m),
+    notifyError: (m: string) => notifyError(m),
+    notifyInfo: (m: string) => notifyInfo(m),
+    alertSelect: (...a: unknown[]) => alertSelect(...a),
+}))
 vi.mock('./importProgress', () => ({ runImportTask: (_name: string, fn: (report: () => void) => unknown) => fn(() => {}) }))
 const inspectProtonShare = vi.fn()
 const downloadProtonEntry = vi.fn()
@@ -52,6 +63,12 @@ describe('module file choice', () => {
         expect(isCompanionModuleFile('Assets.Module.CHARX')).toBe(true)
         expect(isCompanionModuleFile('bot.charx')).toBe(false)
         expect(isCompanionModuleFile('bot.png')).toBe(false)
+        // "module" or "모듈" as a word in a CHARX name (a space form came through as the bot).
+        expect(isCompanionModuleFile('Combatant Modification Simulator Image Module.charx')).toBe(true)
+        expect(isCompanionModuleFile('루미너스 에셋모듈.charx')).toBe(true)
+        expect(isCompanionModuleFile('Asset_Modules.charx')).toBe(true)
+        expect(isCompanionModuleFile('Modular City.charx')).toBe(false)
+        expect(isCompanionModuleFile('Image Module.png')).toBe(false)
     })
     test('pairing appends new ids once', () => {
         const character: { modules?: string[] } = { modules: ['a'] }
@@ -90,11 +107,33 @@ describe('importRealmCompanionModules', () => {
         const many = ['A1', 'A2', 'A3', 'A4'].map((id) => `https://drive.proton.me/urls/${id}#k`).join(' ')
         await importRealmCompanionModules('c1', [many])
         expect(inspectProtonShare).not.toHaveBeenCalled()
-        inspectProtonShare.mockResolvedValue({ kind: 'file', name: 'bot.charx', entries: [], trail: [] })
+        inspectProtonShare.mockResolvedValue({ kind: 'file', name: 'bot.png', entries: [], trail: [] })
         await importRealmCompanionModules('c1', [LINK])
         expect(downloadProtonEntry).not.toHaveBeenCalled()
+        expect(alertSelect).not.toHaveBeenCalled()
+        expect(notifyInfo).toHaveBeenCalledWith('skipped bot.png')
         expect(db.characters[0].modules).toEqual([])
         expect(notifySuccess).not.toHaveBeenCalled()
+    })
+
+    test('a CHARX not named as a module asks; skipping says so and downloads nothing', async () => {
+        inspectProtonShare.mockResolvedValue({ kind: 'file', name: 'bot.charx', entries: [{ size: 600 * 1024 * 1024 }], trail: [] })
+        alertSelect.mockResolvedValue('1')
+        await importRealmCompanionModules('c1', [LINK])
+        expect(alertSelect).toHaveBeenCalledWith(['as module', 'skip'], 'ask bot.charx (600MB)')
+        expect(downloadProtonEntry).not.toHaveBeenCalled()
+        expect(notifyInfo).toHaveBeenCalledWith('skipped bot.charx')
+        expect(db.characters[0].modules).toEqual([])
+    })
+
+    test('a CHARX not named as a module imports as one when the user says so', async () => {
+        inspectProtonShare.mockResolvedValue({ kind: 'file', name: 'bot.charx', entries: [], trail: [] })
+        alertSelect.mockResolvedValue('0')
+        downloadProtonEntry.mockResolvedValue({ name: 'bot.charx', data: new Uint8Array([1]) })
+        importModuleFile.mockImplementation(async () => { const m = { id: 'm3', name: 'bot' }; db.modules.push(m); return m })
+        await importRealmCompanionModules('c1', [LINK])
+        expect(downloadProtonEntry).toHaveBeenCalledTimes(1)
+        expect(db.characters[0].modules).toEqual(['m3'])
     })
 
     test('a password-protected link asks for the password and downloads with it', async () => {

@@ -191,10 +191,11 @@
     }
 
     async function moveToFolderPrompt(chaIds: string[]) {
-        const options = [...folders.map((f) => f.name), language.noFolder, language.cancel];
+        // "No folder" first, then the folders (the user's request, 2026-10-05).
+        const options = [language.noFolder, ...folders.map((f) => f.name), language.cancel];
         const sel = parseInt(await alertSelect(options));
         if (Number.isNaN(sel) || sel >= options.length - 1) return;
-        const folderId = sel < folders.length ? folders[sel].id : undefined;
+        const folderId = sel === 0 ? undefined : folders[sel - 1].id;
         let next = DBState.db.characterOrder;
         for (const id of chaIds) next = moveCharacterToFolder(next, id, folderId);
         commitOrder(next);

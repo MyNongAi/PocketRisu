@@ -58,10 +58,11 @@
     async function moveToFolderPrompt(chaId:string){
         // The idle-age folders of deactivated characters are filled automatically, never by hand.
         const folders = DBState.db.characterOrder.filter(isFolderEntry).filter((entry) => !isDeactivatedSystemFolder(entry))
-        const options = [...folders.map((folder) => folder.name), language.noFolder, language.cancel]
+        // "No folder" first, then the folders (the user's request, 2026-10-05).
+        const options = [language.noFolder, ...folders.map((folder) => folder.name), language.cancel]
         const selected = Number.parseInt(await alertSelect(options))
         if(!Number.isInteger(selected) || selected >= options.length - 1) return
-        const folderId = selected < folders.length ? folders[selected].id : undefined
+        const folderId = selected === 0 ? undefined : folders[selected - 1].id
         const next = moveCharacterToFolder(DBState.db.characterOrder, chaId, folderId)
         syncFavoritesWithFolderMoves(DBState.db.characterOrder, next, DBState.db.characters)
         DBState.db.characterOrder = next

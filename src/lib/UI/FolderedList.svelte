@@ -251,10 +251,11 @@
     }
 
     async function moveItemToFolder(index: number) {
-        const options = [...folders.map(f => f.name), language.folderUncategorized, language.cancel];
+        // Uncategorized first, then the folders (the user's request, 2026-10-05).
+        const options = [language.folderUncategorized, ...folders.map(f => f.name), language.cancel];
         const sel = parseInt(await alertSelect(options));
         if (Number.isNaN(sel) || sel >= options.length - 1) return;
-        const folderId = sel < folders.length ? folders[sel].id : undefined;
+        const folderId = sel === 0 ? undefined : folders[sel - 1].id;
         const placements = placementsFromData().filter(p => p.index !== index);
         // Append at the end of the chosen group.
         const lastInGroup = placements.map(p => p.folderId).lastIndexOf(folderId);

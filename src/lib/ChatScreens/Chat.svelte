@@ -453,6 +453,9 @@
     let blankMessage = $derived((message === '{{none}}' || message === '{{blank}}' || message === '') && idx === -1 && !altGreeting || isComment)
     let showLogCaptureButton = $derived(DBState.db.nodeOnlyLogCaptureButton !== false && !blankMessage && !isComment && (idx >= 0 || firstMessage))
     let logCaptureStart = $derived(isLogCaptureStart(idx))
+    // Once a start is marked, every message shows ✂️ in its button row, so
+    // the end is one tap away without opening each message's ☰ menu.
+    let logCapturePicking = $derived(isLogCapturePickingHere())
     // Dashed box around the marked start, then around the range being captured.
     let logCaptureMark = $derived(logCaptureMarkFor(idx))
     let logCaptureMenuLabel = $derived(
@@ -799,8 +802,9 @@
         {:else}
             <span class="text-xs">{statusMessage}</span>
             <div class="flex items-center ml-2 gap-2 flex-wrap justify-end">
-                {#if showLogCaptureButton && idx < 0}
-                    <!-- ✂️ log image; the greeting has no ☰ menu, other messages carry it there. -->
+                {#if showLogCaptureButton && (idx < 0 || logCapturePicking)}
+                    <!-- ✂️ log image; the greeting has no ☰ menu, other messages carry it
+                         there, and show it here too while the end is being picked. -->
                     <button
                         type="button"
                         class={"flex items-center justify-center shrink-0 rounded-md px-0.5 leading-none transition-colors button-icon-logcapture " + (logCaptureStart ? 'ring-2 ring-primary bg-primary/25' : 'hover:bg-primary/20')}

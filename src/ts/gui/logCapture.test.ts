@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { blockSliceInPart, clampLogImageScale, clampLogImageWidth, findLogCutRow, formatLogRange, logCaptureRange, logImageFileName, LOG_IMAGE_MAX_HEIGHT, nextLogPartEnd, pickLogImageHeight, planLogImageParts } from './logCapture'
+import { blockSliceInPart, clampLogImageScale, clampLogImageWidth, findLogCutRow, formatLogRange, logCaptureRange, logImageFileName, LOG_IMAGE_MAX_HEIGHT, nextLogPartEnd, pickLogImageDensity, pickLogImageHeight, planLogImageParts } from './logCapture'
 
 describe('logCaptureRange', () => {
     it('orders the two marked messages, either way round', () => {
@@ -115,10 +115,36 @@ describe('pickLogImageHeight', () => {
         expect(tried).toEqual([32000, 28000, 24000])
     })
 
-    it('skips heights over the area limit without trying them', () => {
+    it('skips heights over the pixel budget without trying them', () => {
         const tried: number[] = []
-        expect(pickLogImageHeight(10000, (_w, h) => { tried.push(h); return true })).toBe(24000)
+        expect(pickLogImageHeight(1600, (_w, h) => { tried.push(h); return true })).toBe(24000)
         expect(tried).toEqual([24000])
+        expect(pickLogImageHeight(10000, () => true)).toBe(LOG_IMAGE_MAX_HEIGHT)
+    })
+})
+
+describe('pickLogImageDensity', () => {
+    const roomy = () => 32000
+
+    it('draws a short log twice as sharp', () => {
+        expect(pickLogImageDensity(900, 3000, roomy)).toBe(2)
+    })
+
+    it('lowers the sharpness so the whole log still fits one image', () => {
+        // 600 x 22000 base: x1.5 = 33000 px tall does not fit 32000; x1.25 = 27500 does.
+        expect(pickLogImageDensity(600, 22000, roomy)).toBe(1.25)
+        // The measured height depends on the width asked for.
+        expect(pickLogImageDensity(900, 10000, (w) => (w > 1500 ? 16000 : 32000))).toBe(1.5)
+    })
+
+    it('stays within the pixel budget', () => {
+        // 1600 x 9000 base = 14.4M px: x1.5 is 32.4M px, x1.75 would be 44.1M.
+        expect(pickLogImageDensity(1600, 9000, roomy)).toBe(1.5)
+    })
+
+    it('never goes below 1, for a log that needs several images anyway', () => {
+        expect(pickLogImageDensity(900, 60000, roomy)).toBe(1)
+        expect(pickLogImageDensity(0, 100, roomy)).toBe(1)
     })
 
     it('falls back to the tile height when nothing taller works (Safari)', () => {
