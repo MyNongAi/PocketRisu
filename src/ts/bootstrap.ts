@@ -47,7 +47,9 @@ import { isEmbeddedRisuPane } from "./chatSplitPane";
 // v1 had already completed against the web collection alone, so later imports
 // remained isolated in source folders even when their names matched.
 const SIMILARITY_FOLDER_MIGRATION_VERSION = 2
-let similarityFolderMigrationAppliedAtBoot = false
+// A one-shot characterOrder migration ran during load: incremental saves do
+// not see changes made before saving starts, so write the whole DB once.
+let orderMigrationAppliedAtBoot = false
 
 /**
  * Loads the application data.
@@ -247,8 +249,8 @@ export async function loadData() {
             assignIds()
             registerModelDynamic()
             saveDb()
-            if(similarityFolderMigrationAppliedAtBoot){
-                similarityFolderMigrationAppliedAtBoot = false
+            if(orderMigrationAppliedAtBoot){
+                orderMigrationAppliedAtBoot = false
                 setTimeout(() => {
                     void requestImmediateSave({ forceFullWrite: true })
                 }, 0)
@@ -499,13 +501,14 @@ async function checkNewFormat(): Promise<void> {
     if((db.similarityFolderMigrationVersion ?? 0) < SIMILARITY_FOLDER_MIGRATION_VERSION){
         organizeAllSimilarityFolders(db, uuidv4)
         db.similarityFolderMigrationVersion = SIMILARITY_FOLDER_MIGRATION_VERSION
-        similarityFolderMigrationAppliedAtBoot = true
+        orderMigrationAppliedAtBoot = true
     }
     // Once: loose bots of one creator into creator folders (the user's request,
     // 2026-10-05); new imports join them on import (placeImportedByCreator).
     if((db.nodeOnlyCreatorFolderVersion ?? 0) < 1){
         db.characterOrder = organizeCreatorFolders(db.characterOrder, creatorsOf(db.characters), uuidv4)
         db.nodeOnlyCreatorFolderVersion = 1
+        orderMigrationAppliedAtBoot = true
     }
 
     db.personas = (db.personas ?? []).map((v) => {
