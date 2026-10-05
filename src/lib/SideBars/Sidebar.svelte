@@ -239,18 +239,24 @@
     sourceOrder: number
   }
   type splitCatalogBlock = { type: 'control', position: 'top' | 'bottom' } | splitCatalogCharacter
+  // A bot matches by its name or its creator's (the user's request, 2026-10-05).
+  function botMatchesCatalog(entry: { type: string, name: string, index?: number }): boolean {
+    if (matchesCatalogText(entry.name, catalogQuery)) return true
+    const creator = entry.type === 'normal' && entry.index !== undefined ? DBState.db.characters[entry.index]?.creator : ''
+    return !!creator && matchesCatalogText(creator, catalogQuery)
+  }
   let filteredCatalogItems = $derived.by(() => charImages
     .map((char, sourceOrder) => {
       if (!catalogQuery) return char.type === 'folder' && railFolderParents.has(char.id) ? null : { char, sourceOrder }
       if (char.type === 'normal' || char.type === 'archived') {
-        return matchesCatalogText(char.name, catalogQuery) ? { char, sourceOrder } : null
+        return botMatchesCatalog(char) ? { char, sourceOrder } : null
       }
       // An idle-age folder never matches by its name (short, common keystrokes
       // like "비", "일" or digits); only its members do.
       const folderMatches = char.system === undefined && matchesCatalogText(char.name, catalogQuery)
       const matchingMembers = folderMatches
         ? char.folder
-        : char.folder.filter((member) => matchesCatalogText(member.name, catalogQuery))
+        : char.folder.filter((member) => botMatchesCatalog(member))
       return folderMatches || matchingMembers.length > 0
         ? { char: { ...char, folder: matchingMembers }, sourceOrder }
         : null

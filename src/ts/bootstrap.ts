@@ -40,6 +40,7 @@ import { syncServerReplyPush } from "./serverReplyPush";
 import { convertStubsToPlaceholders } from "./storage/chatStorage";
 import { isChatStub, purgeUnsupportedGroupChats } from "./storage/database.svelte";
 import { organizeAllSimilarityFolders } from "./process/similarityFolders";
+import { creatorsOf, organizeCreatorFolders } from "./creatorFolders";
 import { isEmbeddedRisuPane } from "./chatSplitPane";
 
 // v2 reruns the one-shot grouping after the web/local/mobile collection merge.
@@ -499,6 +500,12 @@ async function checkNewFormat(): Promise<void> {
         organizeAllSimilarityFolders(db, uuidv4)
         db.similarityFolderMigrationVersion = SIMILARITY_FOLDER_MIGRATION_VERSION
         similarityFolderMigrationAppliedAtBoot = true
+    }
+    // Once: loose bots of one creator into creator folders (the user's request,
+    // 2026-10-05); new imports join them on import (placeImportedByCreator).
+    if((db.nodeOnlyCreatorFolderVersion ?? 0) < 1){
+        db.characterOrder = organizeCreatorFolders(db.characterOrder, creatorsOf(db.characters), uuidv4)
+        db.nodeOnlyCreatorFolderVersion = 1
     }
 
     db.personas = (db.personas ?? []).map((v) => {

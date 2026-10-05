@@ -1147,6 +1147,25 @@
       "regressionTests": [
         "server/node/realmRelay.test.ts"
       ]
+    },
+    {
+      "id": "CREATOR-FOLDERS",
+      "title": "같은 제작자 봇을 [제작자] 폴더로 모으기 · 제작자 이름으로 검색",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/creatorFolders.ts",
+        "src/ts/bootstrap.ts",
+        "src/ts/characterCards.ts",
+        "src/lib/SideBars/Sidebar.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/bootstrap.ts", "contains": "organizeCreatorFolders(db.characterOrder, creatorsOf(db.characters), uuidv4)" },
+        { "file": "src/ts/characterCards.ts", "contains": "placeImportedByCreator(db.characterOrder, char.chaId, creatorsOf(db.characters))" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "function botMatchesCatalog(" }
+      ],
+      "regressionTests": [
+        "src/ts/creatorFolders.test.ts"
+      ]
     }
   ]
 }

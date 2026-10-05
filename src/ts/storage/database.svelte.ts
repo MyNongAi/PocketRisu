@@ -1356,6 +1356,8 @@ export interface Database{
     moduleActivationHistory?: string[]
     /** One-shot migration marker for grouping pre-existing high-similarity names. */
     similarityFolderMigrationVersion?: number
+    /** One-shot marker: the bots already here were grouped into creator folders (creatorFolders.ts). */
+    nodeOnlyCreatorFolderVersion?: number
     sideMenuRerollButton?:boolean
     requestInfoInsideChat?:boolean
     additionalParams:[string, string][]
@@ -2238,6 +2240,8 @@ export interface folder{
      * buckets at the bottom of the list, never edited, dragged into or
      * favorited; 'favorites': the ★ folder at the top, favoritesFolder.ts). */
     nodeOnlySystem?:'deactivated'|'favorites'
+    /** A creator folder (creatorFolders.ts): the creator key whose bots it gathers. */
+    nodeOnlyCreatorKey?:string
 }
 
 export type FolderDisplayMode = 'icon' | 'image' | 'name'

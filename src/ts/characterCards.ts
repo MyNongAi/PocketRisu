@@ -22,6 +22,7 @@ import { isCharxFileName, type CharxDestination } from "./charxPreflight"
 import { planLargeCharxImport } from "./largeCharxImport"
 import { ImportCancelledError, isImportCancelled, runImportTransaction, type ImportWriteScope } from "./importTransaction"
 import { organizeImportedCharacterSimilarity } from "./process/similarityFolders"
+import { creatorsOf, placeImportedByCreator } from "./creatorFolders"
 
 
 const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz';
@@ -39,6 +40,8 @@ function appendImportedCharacter(db: ReturnType<typeof getDatabase>, char: chara
         new Set(db.characters.filter((character) => character.favorite).map((character) => character.chaId)),
     )
     organizeImportedCharacterSimilarity(db, char.chaId, uuidv4)
+    // Into the creator's folder, when there is one (creatorFolders.ts).
+    db.characterOrder = placeImportedByCreator(db.characterOrder, char.chaId, creatorsOf(db.characters))
 }
 
 function reportCharacterImport(
