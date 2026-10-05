@@ -71,7 +71,8 @@
     import { characterMenuInfo } from "src/ts/gui/sidebarMenuInfo";
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
     import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
-    import { resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
+    import { localOriginOf, resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
+    import { copyProtonLink, protonLinkOf } from "src/ts/protonSource";
     import { promoteRecentlyViewedCharacter } from "src/ts/characterRecentOrder";
     import MeasuredVirtualList from "../UI/Virtual/MeasuredVirtualList.svelte";
     import { initSupport } from "src/ts/support";
@@ -283,7 +284,7 @@
   let recentChars = $derived(
     DBState.db.characters
       .map((c, index) => {
-        const source = resolveCharacterSourceBadge(c.sourceInfo?.label, c.importedAt)
+        const source = resolveCharacterSourceBadge(c.sourceInfo?.label, localOriginOf(c))
         return { index, name: c.name, image: c.image, favorite: !!c.favorite, lastInteraction: c.lastInteraction ?? 0, sourceBadge: source.label, sourceRecorded: source.recorded }
       })
       .filter((c) => c.lastInteraction > 0)
@@ -340,7 +341,7 @@
     const archivedEntry = (id: string): sortTypeArchived | null => {
       const stub = archivedById.get(id)
       if(!stub) return null
-      const source = resolveCharacterSourceBadge(stub.sourceInfo?.label, stub.importedAt)
+      const source = resolveCharacterSourceBadge(stub.sourceInfo?.label, localOriginOf(stub))
       return { type: 'archived', img: stub.image ?? '', chaId: stub.chaId, name: stub.name ?? '', sourceBadge: source.label, sourceRecorded: source.recorded }
     }
     for (const [orderIndex, id] of DBState.db.characterOrder.entries()) {
@@ -349,7 +350,7 @@
         const index = idObject[id] ?? -1
         if(index !== -1){
           const cha = DBState.db.characters[index]
-          const source = resolveCharacterSourceBadge(cha.sourceInfo?.label, cha.importedAt)
+          const source = resolveCharacterSourceBadge(cha.sourceInfo?.label, localOriginOf(cha))
           newCharImages.push({
             id: cha.chaId,
             img:cha.image ?? "",
@@ -381,7 +382,7 @@
           const index = idObject[id] ?? -1
           if(index !== -1){
             const cha = DBState.db.characters[index]
-            const source = resolveCharacterSourceBadge(cha.sourceInfo?.label, cha.importedAt)
+            const source = resolveCharacterSourceBadge(cha.sourceInfo?.label, localOriginOf(cha))
             folderCharImages.push({
               id: cha.chaId,
               img:cha.image ?? "",
@@ -533,29 +534,24 @@
     e.stopPropagation()
     const character = DBState.db.characters[characterIndex]
     if(!character) return
-    const selected = parseInt(await alertSelect([
-      '봇 설정 수정',
-      '제목 색변경',
-      character.favorite ? '즐겨찾기 해제' : DBState.db.nodeOnlyFavoritesFolder !== false ? '즐겨찾기 (★ 폴더로)' : '즐겨찾기 (맨위로)',
-      language.remove,
-      language.cancel,
-    ], characterMenuInfo(character, makeAgoText)))
-    if(selected === 0){
-      changeChar(characterIndex, { reseter })
-      botMakerMode.set(true)
-      return
-    }
-    if(selected === 1){
-      await editCharacterTitleColor(character.chaId)
-      return
-    }
-    if(selected === 2){
-      toggleSidebarCharacterFavorite(characterIndex)
-      return
-    }
-    if(selected === 3){
-      await removeChar(character.chaId, character.name)
-    }
+    // The Proton link the card was downloaded from, to fetch it again if it breaks.
+    const protonLink = protonLinkOf(character)
+    const actions: Array<[string, () => unknown]> = [
+      ['봇 설정 수정', () => {
+        changeChar(characterIndex, { reseter })
+        botMakerMode.set(true)
+      }],
+      ['제목 색변경', () => editCharacterTitleColor(character.chaId)],
+      [character.favorite ? '즐겨찾기 해제' : DBState.db.nodeOnlyFavoritesFolder !== false ? '즐겨찾기 (★ 폴더로)' : '즐겨찾기 (맨위로)',
+        () => toggleSidebarCharacterFavorite(characterIndex)],
+      ...(protonLink ? [[language.protonLinkCopy, () => copyProtonLink(protonLink)] as [string, () => unknown]] : []),
+      [language.remove, () => removeChar(character.chaId, character.name)],
+    ]
+    const selected = parseInt(await alertSelect(
+      [...actions.map(([label]) => label), language.cancel],
+      characterMenuInfo(character, makeAgoText),
+    ))
+    await actions[selected]?.[1]()
   }
 
   function scrollToActiveCharacter() {

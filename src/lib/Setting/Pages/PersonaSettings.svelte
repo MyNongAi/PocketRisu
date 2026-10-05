@@ -17,7 +17,7 @@
     import { v4 } from "uuid"
     import { groupByFolder } from "src/ts/folders";
     import LazyAssetPreview from "src/lib/Others/LazyAssetPreview.svelte";
-    import { resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
+    import { localOriginOf, resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
     import { FileDropSurface, draggedItemsAreImages } from "src/ts/gui/fileDropSurface.svelte";
     import FileDropIndicator from "src/lib/UI/GUI/FileDropIndicator.svelte";
 
@@ -69,7 +69,7 @@
                     .filter((index) => {
                         if (!query) return true
                         const persona = DBState.db.personas[index]
-                        const source = resolveCharacterSourceBadge(persona?.sourceInfo?.label, persona?.createdAt).label
+                        const source = resolveCharacterSourceBadge(persona?.sourceInfo?.label, localOriginOf(persona)).label
                         return `${persona?.name ?? ''}\n${persona?.note ?? ''}\n${persona?.personaPrompt ?? ''}\n${source}`
                             .replace(/\s+/g, '')
                             .toLocaleLowerCase()
@@ -113,7 +113,7 @@
     }
 
     function personaSource(index: number) {
-        return resolveCharacterSourceBadge(DBState.db.personas[index]?.sourceInfo?.label, DBState.db.personas[index]?.createdAt)
+        return resolveCharacterSourceBadge(DBState.db.personas[index]?.sourceInfo?.label, localOriginOf(DBState.db.personas[index]))
     }
 
     function isFileDrag(event: DragEvent) {
@@ -361,6 +361,8 @@
         class:text-violet-300={source.label === '웹'}
         class:text-emerald-300={source.label === '모바일'}
         class:text-amber-300={source.label === '포켓'}
+        class:text-rose-300={source.label === '렐름'}
+        class:text-teal-300={source.label === '프로톤'}
         class:border-dashed={!source.recorded}
         title={source.recorded ? `기록된 출처: ${source.label}` : '출처 기록 없음 · 기존 웹리스 기준'}
     >[{source.label}]</span>

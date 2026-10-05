@@ -19,7 +19,8 @@
     import { dissolveShrunkenModuleFolders, synchronizeModuleFolderMembership } from "src/ts/process/moduleFolders";
     import { activationHistoryAfterPlacement, getLatestModuleCatalogPromotion, recordModuleActivation, recordModuleFolderActivation, recordModuleFolderOrder, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
     import { chooseTitleColor, listTitleColor } from "src/ts/gui/titleColors";
-    import { resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
+    import { localOriginOf, resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
+    import { copyProtonLink, protonLinkOf } from "src/ts/protonSource";
     import { cloneModuleDraft } from "src/ts/process/moduleDraft";
     import type { PromptPresetFolder } from "src/ts/storage/database.svelte";
     import { importDroppedFiles } from "src/ts/dropImport";
@@ -110,8 +111,7 @@
     }
 
     function moduleSource(rmodule: RisuModule) {
-        // A module from a Proton link came in here even without a stamp.
-        return resolveCharacterSourceBadge(rmodule.sourceInfo?.label, rmodule.importedAt ?? (rmodule.nodeOnlyProtonShare ? 1 : 0))
+        return resolveCharacterSourceBadge(rmodule.sourceInfo?.label, localOriginOf(rmodule))
     }
 
     function listScrollElement() {
@@ -428,6 +428,8 @@
                         class:text-violet-300={source.label === '웹'}
                         class:text-emerald-300={source.label === '모바일'}
                         class:text-amber-300={source.label === '포켓'}
+                        class:text-rose-300={source.label === '렐름'}
+                        class:text-teal-300={source.label === '프로톤'}
                         class:border-dashed={!source.recorded}
                         title={source.recorded ? `기록된 출처: ${source.label}` : '출처 기록 없음 · 기존 웹리스 기준'}
                     >[{source.label}]</span>
@@ -451,6 +453,10 @@
                     {#if openBot.modules?.includes(rmodule.id)}<UnlinkIcon /><span>{language.moduleBotUnlink.replace('{}', openBot.name || 'Unnamed')}</span>
                     {:else}<LinkIcon /><span>{language.moduleBotLink.replace('{}', openBot.name || 'Unnamed')}</span>{/if}
                 </ShDropdownMenuItem>
+            {/if}
+            {#if protonLinkOf(rmodule)}
+                <!-- The Proton link it was downloaded from, to fetch it again if it breaks. -->
+                <ShDropdownMenuItem onSelect={() => copyProtonLink(protonLinkOf(rmodule))}><LinkIcon /><span>{language.protonLinkCopy}</span></ShDropdownMenuItem>
             {/if}
             <ShDropdownMenuItem onSelect={() => changeModuleColor(rmodule)}><PaletteIcon /><span>색변경</span></ShDropdownMenuItem>
             <ShDropdownMenuItem onSelect={() => { rmodule.favorite = !rmodule.favorite }}><StarIcon /><span>{rmodule.favorite ? '즐겨찾기 해제' : '즐겨찾기 (맨위로)'}</span></ShDropdownMenuItem>

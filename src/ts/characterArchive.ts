@@ -68,7 +68,7 @@ function bulletList(names: string[], max = 5): string {
     return lines.join('\n')
 }
 
-type ArchivedStubCatalogMeta = Pick<ArchivedCharacterStub, 'assetCount' | 'titleColor' | 'sourceInfo' | 'exactDefinitionFingerprint' | 'importedAt'>
+type ArchivedStubCatalogMeta = Pick<ArchivedCharacterStub, 'assetCount' | 'titleColor' | 'sourceInfo' | 'exactDefinitionFingerprint' | 'importedAt' | 'realmId' | 'nodeOnlyProtonSource'>
 
 /**
  * Catalog metadata a stub keeps while the full character is cold (asset
@@ -81,6 +81,8 @@ function archivedStubCatalogMeta(char: character, trash: boolean): ArchivedStubC
         titleColor: char.titleColor,
         sourceInfo: char.sourceInfo ? { ...char.sourceInfo } : undefined,
         importedAt: char.importedAt,
+        realmId: char.realmId,
+        nodeOnlyProtonSource: char.nodeOnlyProtonSource ? { ...char.nodeOnlyProtonSource } : undefined,
     }
     // Trashed stubs are excluded from duplicate counts, so serializing a large
     // card merely to compute a never-read fingerprint wastes several temporary

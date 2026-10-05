@@ -12,7 +12,9 @@ import { openProtonBrowser, type ProtonPick } from './protonBrowser.svelte'
 import { classifySharedImport, type ImportOrigin, type SharedImportKind } from './shareTargetRouting'
 import { importCharacterProcess } from './characterCards'
 import { importModuleFile, type RisuModule } from './process/modules'
-import { importPreset } from './storage/database.svelte'
+import { getDatabase, importPreset } from './storage/database.svelte'
+import { snapshotImportedIds, stampProtonSource, type ProtonSourceRecord } from './protonSource'
+import { trackCharacterForSave } from './globalApi.svelte'
 
 // Downloads of a multi-file pick that run at once, and the bytes downloaded
 // files may hold before their turn to import (the laptop server keeps a
@@ -29,6 +31,23 @@ const PROTON_UNKNOWN_SIZE_BYTES = 64 * 1024 * 1024
  * is supplied, which would put a modal back over a background task.
  */
 async function importByKind(
+    name: string,
+    data: Uint8Array,
+    report: ImportProgressReporter,
+    origin: ImportOrigin,
+    onModule?: (module: RisuModule) => void,
+    source?: ProtonSourceRecord,
+): Promise<SharedImportKind | null> {
+    if (!source) return importByKindOnly(name, data, report, origin, onModule)
+    // What this file adds keeps the link it came from (protonSource.ts).
+    const before = snapshotImportedIds(getDatabase())
+    const kind = await importByKindOnly(name, data, report, origin, onModule)
+    const stamped = stampProtonSource(getDatabase(), before, source)
+    for (const chaId of stamped.characters) trackCharacterForSave(chaId)
+    return kind
+}
+
+async function importByKindOnly(
     name: string,
     data: Uint8Array,
     report: ImportProgressReporter,
@@ -167,9 +186,14 @@ export async function importProtonShare(
             path: item.pick.path,
             expectedSize: item.pick.entry.size,
         }, report),
-        async (_item, file, report) => {
+        async (item, file, report) => {
             report({ label: `${language.protonImporting} ${file.name}`, progress: 85 })
-            const kind = await importByKind(file.name, file.data, report, origin, onModule)
+            const kind = await importByKind(file.name, file.data, report, origin, onModule, {
+                link: url,
+                file: item.pick.entry.name,
+                ...(info.kind === 'folder' ? { linkId: item.pick.entry.linkId, path: item.pick.path } : {}),
+                at: Date.now(),
+            })
             if (!kind) {
                 skipped.push(file.name)
                 throw new Error(language.protonUnsupportedFile)

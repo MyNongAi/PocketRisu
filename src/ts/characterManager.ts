@@ -7,7 +7,7 @@ import type { Database, folder } from './storage/database.svelte'
 import { matchesCatalogText } from './gui/catalogSearch'
 import { getCharacterAssetCount } from './gui/characterAssetCount'
 import { isRealmAssetRecoveryAvailable } from './gui/titleColors'
-import { resolveCharacterSourceBadge, type CharacterSourceBadge } from './gui/characterSourceBadge'
+import { localOriginOf, resolveCharacterSourceBadge, type CharacterSourceBadge } from './gui/characterSourceBadge'
 import { isDeactivatedSystemFolder } from './deactivatedCharacterFolders'
 
 export interface ManagerEntry {
@@ -41,7 +41,7 @@ export function buildManagerEntries(db: Database): Map<string, ManagerEntry> {
     for (let i = 0; i < db.characters.length; i++) {
         const c = db.characters[i]
         if (!c?.chaId || c.chaId === '§temp' || c.chaId === '§playground') continue
-        const source = resolveCharacterSourceBadge(c.sourceInfo?.label, c.importedAt)
+        const source = resolveCharacterSourceBadge(c.sourceInfo?.label, localOriginOf(c))
         out.set(c.chaId, {
             chaId: c.chaId,
             index: i,
@@ -64,7 +64,7 @@ export function buildManagerEntries(db: Database): Map<string, ManagerEntry> {
     }
     for (const stub of db.nodeOnlyArchivedCharacters ?? []) {
         if (!stub?.chaId || out.has(stub.chaId)) continue
-        const source = resolveCharacterSourceBadge(stub.sourceInfo?.label, stub.importedAt)
+        const source = resolveCharacterSourceBadge(stub.sourceInfo?.label, localOriginOf(stub))
         out.set(stub.chaId, {
             chaId: stub.chaId,
             index: -1,

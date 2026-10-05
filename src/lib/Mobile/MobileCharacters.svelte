@@ -9,7 +9,7 @@
     import { language } from "src/lang";
     import { MessageSquareIcon, PaletteIcon, PlusIcon, SquareMousePointer, TrashIcon } from "@lucide/svelte";
     import { getCharacterAssetCount } from "src/ts/gui/characterAssetCount";
-    import { resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
+    import { localOriginOf, resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
     import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
     import VirtualList from "../UI/Virtual/VirtualList.svelte";
@@ -26,7 +26,7 @@
 
     function sortChar(db: Database) {
         const list = db.characters.map((c, i) => {
-            const source = resolveCharacterSourceBadge(c.sourceInfo?.label, c.importedAt)
+            const source = resolveCharacterSourceBadge(c.sourceInfo?.label, localOriginOf(c))
             return {
                 name: c.name || "Unnamed",
                 image: c.image,
@@ -57,8 +57,8 @@
                     archived: true,
                     chaId: stub.chaId,
                     assetCount: stub.assetCount ?? 0,
-                    sourceBadge: resolveCharacterSourceBadge(stub.sourceInfo?.label, stub.importedAt).label,
-                    sourceRecorded: resolveCharacterSourceBadge(stub.sourceInfo?.label, stub.importedAt).recorded,
+                    sourceBadge: resolveCharacterSourceBadge(stub.sourceInfo?.label, localOriginOf(stub)).label,
+                    sourceRecorded: resolveCharacterSourceBadge(stub.sourceInfo?.label, localOriginOf(stub)).recorded,
                     missingAssetCount: stub.sourceInfo?.missingAssetCount ?? 0,
                     realmRecoveryAvailable: isRealmAssetRecoveryAvailable(stub),
                     titleColor: stub.titleColor,
@@ -112,6 +112,8 @@
                     class:text-violet-300={char.sourceBadge === '웹'}
                     class:text-emerald-300={char.sourceBadge === '모바일'}
                     class:text-amber-300={char.sourceBadge === '포켓'}
+                    class:text-rose-300={char.sourceBadge === '렐름'}
+                    class:text-teal-300={char.sourceBadge === '프로톤'}
                     class:border-dashed={!char.sourceRecorded}
                     title={char.sourceRecorded ? `기록된 출처: ${char.sourceBadge}` : '출처 기록 없음 · 기존 웹리스 기준'}
                 >[{char.sourceBadge}]</span>

@@ -21,7 +21,7 @@
     import { isDeactivatedSystemFolder } from "src/ts/deactivatedCharacterFolders";
     import MobileCharacters from "../Mobile/MobileCharacters.svelte";
     import { getCharacterAssetCount } from "src/ts/gui/characterAssetCount";
-    import { resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
+    import { localOriginOf, resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
     import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
     import VirtualGrid from "../UI/Virtual/VirtualGrid.svelte";
@@ -114,7 +114,7 @@
         for(let i=0;i<db.characters.length;i++){
             const c = db.characters[i]
             if(!!c.trashTime !== trash || !matchesSearch(c.name, value)) continue
-            const source = resolveCharacterSourceBadge(c.sourceInfo?.label, c.importedAt)
+            const source = resolveCharacterSourceBadge(c.sourceInfo?.label, localOriginOf(c))
             charas.push({
                 image: c.image, index: i, name: c.name, desc: c.creatorNotes ?? 'No description',
                 chaId: c.chaId, archived: false, assetCount: getCharacterAssetCount(c),
@@ -131,7 +131,7 @@
         if(!trash && !db.nodeOnlyHideArchivedCharacters){
             for(const stub of db.nodeOnlyArchivedCharacters ?? []){
                 if(!stub?.chaId || stub.trashedAt || !matchesSearch(stub.name, value)) continue
-                const source = resolveCharacterSourceBadge(stub.sourceInfo?.label, stub.importedAt)
+                const source = resolveCharacterSourceBadge(stub.sourceInfo?.label, localOriginOf(stub))
                 charas.push({
                     image: stub.image, index: -1, name: stub.name, desc: language.deactivatedBadge,
                     chaId: stub.chaId, archived: true, assetCount: stub.assetCount ?? 0,
@@ -250,6 +250,8 @@
                                 class:text-violet-300={char.sourceBadge === '웹'}
                                 class:text-emerald-300={char.sourceBadge === '모바일'}
                                 class:text-amber-300={char.sourceBadge === '포켓'}
+                                class:text-rose-300={char.sourceBadge === '렐름'}
+                                class:text-teal-300={char.sourceBadge === '프로톤'}
                                 class:border-dashed={!char.sourceRecorded}
                                 title={char.sourceRecorded ? `기록된 출처: ${char.sourceBadge}` : '출처 기록 없음 · 기존 웹리스 기준'}
                             >[{char.sourceBadge}]</span>

@@ -95,7 +95,11 @@ async function downloadShareModules(link: string, report: ImportProgressReporter
     // A plain module file downloads and imports by itself.
     const file = await downloadProtonEntry(link, password, { path: [], expectedSize: share.entries[0]?.size ?? null }, report)
     const module = await importModuleFile(file, { suppressSuccess: true, onProgress: report })
-    if (module) keep(module)
+    if (module) {
+        // The browser path records this itself (importProtonShare).
+        module.nodeOnlyProtonSource ??= { link, file: share.name, at: Date.now() }
+        keep(module)
+    }
     return modules
 }
 

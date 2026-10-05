@@ -932,6 +932,8 @@ export const languageEnglish = {
     folderNew: "New folder",
     folderMoveTo: "Move to folder",
     searchClear: "Clear search",
+    protonLinkCopy: "Copy Proton link",
+    protonLinkCopied: "Copied the Proton link.",
     folderDeleteKeepItems: "Delete this folder? Items in it will become uncategorized.",
     moveUp: "Move up",
     moveDown: "Move down",

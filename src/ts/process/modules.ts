@@ -64,6 +64,8 @@ export interface RisuModule{
      * upstream clients.
      */
     importedAt?: number
+    /** PocketRisu: the Proton file this module was downloaded from (protonSource.ts). */
+    nodeOnlyProtonSource?: import('../protonSource').ProtonSourceRecord
 }
 
 /** Inserts modules and records them as the newest catalog entries. */

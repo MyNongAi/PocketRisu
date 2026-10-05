@@ -1807,8 +1807,10 @@ export interface ArchivedCharacterStub{
     /** Display metadata retained so the cold catalog keeps origin and health warnings. */
     titleColor?: string
     sourceInfo?: import('../sourceCollection').SourceImportInfo
-    /** The character's importedAt, kept so a deactivated card still shows the 포켓 badge. */
+    /** The character's importedAt, Realm id and Proton source, kept for its source badge while it is cold. */
     importedAt?: number
+    realmId?: string
+    nodeOnlyProtonSource?: import('../protonSource').ProtonSourceRecord
     /** Present only when the automatic inactivity policy created this stub. */
     autoDeactivatedAt?: number
 }
@@ -1962,6 +1964,8 @@ export interface character{
      * freshly downloaded card can carry from years ago, this is local truth.
      */
     importedAt?:number
+    /** PocketRisu: the Proton share this card was downloaded from (protonSource.ts). */
+    nodeOnlyProtonSource?: import('../protonSource').ProtonSourceRecord
     ccAssets?: Array<{
         type: string
         uri: string

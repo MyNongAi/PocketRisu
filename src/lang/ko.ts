@@ -1016,6 +1016,8 @@ export const languageKorean = {
   folderNew: "새 폴더",
   folderMoveTo: "폴더로 이동",
   searchClear: "검색어 지우기",
+  protonLinkCopy: "프로톤 링크 복사",
+  protonLinkCopied: "프로톤 링크를 복사했습니다.",
   folderDeleteKeepItems: "이 폴더를 삭제할까요? 폴더 안의 항목은 미분류로 이동합니다.",
   moveUp: "위로",
   moveDown: "아래로",

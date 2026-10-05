@@ -579,6 +579,8 @@
                                     class:text-violet-300={entry.sourceBadge === '웹'}
                                     class:text-emerald-300={entry.sourceBadge === '모바일'}
                                     class:text-amber-300={entry.sourceBadge === '포켓'}
+                                    class:text-rose-300={entry.sourceBadge === '렐름'}
+                                    class:text-teal-300={entry.sourceBadge === '프로톤'}
                                     class:border-dashed={!entry.sourceRecorded}
                                     title={entry.sourceRecorded ? `기록된 출처: ${entry.sourceBadge}` : '출처 기록 없음 · 기존 웹리스 기준'}
                                 >[{entry.sourceBadge}]</span>
