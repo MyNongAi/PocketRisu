@@ -1506,7 +1506,7 @@ export const languageChineseTraditional = {
     "modelPresetCacheMinTokensHelp": "提示詞低於此 Token 數時不建立快取",
     "modelPresetCacheGrowth": "提示詞增加指定 Token 數後重建",
     "modelPresetCacheGrowthHelp": "快取建立後，提示詞增加達到此 Token 數時重新建立快取",
-    "maxContextHelp": "此預設集可用於輸入（提示詞）的 Token 預算。留空時使用預設值（65000），並受模型上下文長度上限限制。這不是回應長度；回應長度由 Max Tokens 控制",
+    "maxContextHelp": "此預設集的上下文 Token 預算。留空時沿用聊天機器人設定的最大上下文大小，並受模型上下文長度上限限制。會先從中保留回應長度（Max Tokens），其餘用於提示詞",
     "modelPresetTabPresets": "預設集",
     "modelPresetTabOptions": "設定",
     "modelPresetTabTest": "測試",

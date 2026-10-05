@@ -475,15 +475,17 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     // own settings.
     let maxContextSource = 'global max context setting'
     // When this chat is bound to a ModelPreset, use the preset's own input
-    // budget (preset.maxContext, default 65000) instead of the global
-    // db.maxContext — clamped to the model's context window when known.
-    // Without this, a small global maxContext blocks large-context presets.
+    // budget (preset.maxContext) instead of the global db.maxContext, clamped
+    // to the model's context window when known. A preset that leaves it
+    // empty follows the chat bot's max context (db.maxContext; 65000 without
+    // one) instead of a fixed 65000.
     {
         const mainBinding = routeSnapshot
         if (mainBinding.kind === 'modelPreset') {
             const contextBudget = resolveModelPresetContextBudget(
                 mainBinding.preset,
                 mainBinding.preset.profileSnapshot.limits?.contextWindowTokens,
+                DBState.db.maxContext,
             )
             maxContextTokens = contextBudget.maxContextTokens
             maxContextSource = contextBudget.source

@@ -1183,6 +1183,21 @@
       "regressionTests": [
         "src/ts/chatClone.test.ts"
       ]
+    },
+    {
+      "id": "PRESET-CONTEXT-FOLLOWS-CHATBOT",
+      "title": "모델 프리셋 최대 컨텍스트가 비면 채팅 봇 값을 따름",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/process/request/contextBudget.ts",
+        "src/ts/process/index.svelte.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/request/contextBudget.ts", "contains": "const followsChatBot = !explicit && typeof fallback === 'number' && fallback > 0" }
+      ],
+      "regressionTests": [
+        "src/ts/process/request/contextBudget.test.ts"
+      ]
     }
   ]
 }

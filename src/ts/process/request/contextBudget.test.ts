@@ -29,4 +29,15 @@ describe('resolveModelPresetContextBudget', () => {
         expect(resolveModelPresetContextBudget({ name: 'p', maxContext: 120000 }, 0).maxContextTokens).toBe(120000)
         expect(resolveModelPresetContextBudget({ name: 'p', maxContext: 0 }, undefined).maxContextTokens).toBe(65000)
     })
+
+    test('empty value follows the chat bot max context, still capped by the window', () => {
+        const follows = resolveModelPresetContextBudget({ name: 'p' }, 1048576, 200000)
+        expect(follows.maxContextTokens).toBe(200000)
+        expect(follows.source).toContain('chat bot max context 200000')
+        expect(resolveModelPresetContextBudget({ name: 'p', maxContext: 0 }, undefined, 200000).maxContextTokens).toBe(200000)
+        expect(resolveModelPresetContextBudget({ name: 'p' }, 128000, 200000).maxContextTokens).toBe(128000)
+        // A value the preset sets wins; no chat bot value keeps the default.
+        expect(resolveModelPresetContextBudget({ name: 'p', maxContext: 90000 }, undefined, 200000).maxContextTokens).toBe(90000)
+        expect(resolveModelPresetContextBudget({ name: 'p' }, undefined, 0).maxContextTokens).toBe(65000)
+    })
 })

@@ -1682,7 +1682,7 @@ export const languageEnglish = {
     modelPresetCacheMinTokensHelp: "Do not create a cache while the prompt is below this size.",
     modelPresetCacheGrowth: "Recreate after growth (tokens)",
     modelPresetCacheGrowthHelp: "Recreate the cache once the prompt has grown by this many tokens since it was created.",
-    maxContextHelp: "Input (prompt) token budget for this preset. Leave empty for the default (65000), capped at the model's context window. Not the response length (that is Max Tokens).",
+    maxContextHelp: "Context token budget for this preset. Leave empty to follow the chat bot's Max Context Size, capped at the model's context window. The response length (Max Tokens) is set aside from it first; the prompt gets the rest.",
     modelPresetTabPresets: "Presets",
     modelPresetTabOptions: "Settings",
     modelPresetTabTest: "Test",

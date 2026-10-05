@@ -1817,7 +1817,7 @@ export const languageKorean = {
   modelPresetCacheMinTokensHelp: "프롬프트가 이 토큰 수보다 작으면 캐시를 만들지 않습니다.",
   modelPresetCacheGrowth: "재생성 증가량 (토큰)",
   modelPresetCacheGrowthHelp: "캐시 생성 후 프롬프트가 이만큼 자라면 캐시를 다시 만듭니다.",
-  maxContextHelp: "이 프리셋의 입력(프롬프트) 토큰 예산. 비우면 기본값(65000)을 쓰고, 모델 컨텍스트 윈도우 한도로 제한됩니다. 응답 길이(Max Tokens)와는 다릅니다.",
+  maxContextHelp: "이 프리셋의 컨텍스트 토큰 예산. 비우면 채팅 봇 설정의 최대 컨텍스트 크기를 따르고, 모델 컨텍스트 윈도우 한도로 제한됩니다. 응답 길이(Max Tokens)만큼은 이 안에서 먼저 떼어 두고 나머지를 프롬프트에 씁니다.",
   modelPresetTabPresets: "프리셋",
   modelPresetTabOptions: "설정",
   modelPresetTabTest: "테스트",

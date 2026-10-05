@@ -221,7 +221,7 @@
                             <span class="text-sm text-textcolor">{language.maxContextSize}</span>
                             <span class="text-xs text-textcolor2">{language.maxContextHelp}</span>
                         </div>
-                        <NumberInput bind:value={editingPreset.maxContext as number} placeholder="65000" className="w-32 shrink-0" />
+                        <NumberInput bind:value={editingPreset.maxContext as number} placeholder={String(DBState.db.maxContext || 65000)} className="w-32 shrink-0" />
                     </div>
                     {#if editingPreset.profileSnapshot?.limits?.contextWindowTokens}
                         {@const contextCap = editingPreset.profileSnapshot.limits.contextWindowTokens}
