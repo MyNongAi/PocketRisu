@@ -17,7 +17,7 @@
     import { convertModuleToCharacter } from "src/ts/interchangeability";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
     import { dissolveShrunkenModuleFolders, synchronizeModuleFolderMembership } from "src/ts/process/moduleFolders";
-    import { getLatestModuleCatalogPromotion, recordModuleActivation, recordModuleFolderActivation, recordModuleFolderOrder, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
+    import { activationHistoryAfterPlacement, getLatestModuleCatalogPromotion, recordModuleActivation, recordModuleFolderActivation, recordModuleFolderOrder, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
     import { chooseTitleColor, listTitleColor } from "src/ts/gui/titleColors";
     import { resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
     import { cloneModuleDraft } from "src/ts/process/moduleDraft";
@@ -110,7 +110,8 @@
     }
 
     function moduleSource(rmodule: RisuModule) {
-        return resolveCharacterSourceBadge(rmodule.sourceInfo?.label)
+        // A module from a Proton link came in here even without a stamp.
+        return resolveCharacterSourceBadge(rmodule.sourceInfo?.label, rmodule.importedAt ?? (rmodule.nodeOnlyProtonShare ? 1 : 0))
     }
 
     function listScrollElement() {
@@ -253,6 +254,14 @@
         if (placements.length !== displayModules.length) return
         const currentFolders = displayFolders
         const folderById = new Map(placements.map(({ index, folderId }) => [displayModules[index]?.id, folderId]))
+        // The rows before and after, read before the modules change under displayModules.
+        const placedBefore = displayModules.map((module) => ({
+            id: module.id,
+            folderId: module.folderId || currentFolders.find((folder) => folder.moduleIds?.includes(module.id))?.id,
+        }))
+        const placedAfter = placements
+            .map(({ index, folderId }) => ({ id: displayModules[index]?.id, folderId }))
+            .filter((item): item is { id: string, folderId: string | undefined } => !!item.id)
         // Only a module whose folder changed gets a new object: the save
         // tracker compares every replaced module again on the next save.
         DBState.db.modules = DBState.db.modules.map((module) => {
@@ -270,10 +279,12 @@
         if (moduleCatalogSort === 'registered') {
             return
         }
-        DBState.db.moduleActivationHistory = placements
-            .map(({ index }) => displayModules[index]?.id)
-            .filter((id): id is string => !!id)
-            .reverse()
+        DBState.db.moduleActivationHistory = activationHistoryAfterPlacement(
+            placedBefore,
+            placedAfter,
+            DBState.db.moduleActivationHistory ?? [],
+            [DBState.db.enabledModules],
+        )
         DBState.db.moduleFolders = recordModuleFolderOrder(DBState.db.moduleFolders)
     }
 
@@ -416,6 +427,7 @@
                         class:text-sky-300={source.label === '로컬'}
                         class:text-violet-300={source.label === '웹'}
                         class:text-emerald-300={source.label === '모바일'}
+                        class:text-amber-300={source.label === '포켓'}
                         class:border-dashed={!source.recorded}
                         title={source.recorded ? `기록된 출처: ${source.label}` : '출처 기록 없음 · 기존 웹리스 기준'}
                     >[{source.label}]</span>

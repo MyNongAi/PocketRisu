@@ -114,7 +114,7 @@
         for(let i=0;i<db.characters.length;i++){
             const c = db.characters[i]
             if(!!c.trashTime !== trash || !matchesSearch(c.name, value)) continue
-            const source = resolveCharacterSourceBadge(c.sourceInfo?.label)
+            const source = resolveCharacterSourceBadge(c.sourceInfo?.label, c.importedAt)
             charas.push({
                 image: c.image, index: i, name: c.name, desc: c.creatorNotes ?? 'No description',
                 chaId: c.chaId, archived: false, assetCount: getCharacterAssetCount(c),
@@ -131,7 +131,7 @@
         if(!trash && !db.nodeOnlyHideArchivedCharacters){
             for(const stub of db.nodeOnlyArchivedCharacters ?? []){
                 if(!stub?.chaId || stub.trashedAt || !matchesSearch(stub.name, value)) continue
-                const source = resolveCharacterSourceBadge(stub.sourceInfo?.label)
+                const source = resolveCharacterSourceBadge(stub.sourceInfo?.label, stub.importedAt)
                 charas.push({
                     image: stub.image, index: -1, name: stub.name, desc: language.deactivatedBadge,
                     chaId: stub.chaId, archived: true, assetCount: stub.assetCount ?? 0,
@@ -249,6 +249,7 @@
                                 class:text-sky-300={char.sourceBadge === '로컬'}
                                 class:text-violet-300={char.sourceBadge === '웹'}
                                 class:text-emerald-300={char.sourceBadge === '모바일'}
+                                class:text-amber-300={char.sourceBadge === '포켓'}
                                 class:border-dashed={!char.sourceRecorded}
                                 title={char.sourceRecorded ? `기록된 출처: ${char.sourceBadge}` : '출처 기록 없음 · 기존 웹리스 기준'}
                             >[{char.sourceBadge}]</span>

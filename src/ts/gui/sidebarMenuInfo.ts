@@ -31,7 +31,7 @@ export function characterImportedAt(character: MenuInfoCharacter): number {
 
 export function characterMenuInfo(character: MenuInfoCharacter, agoText: (time: number) => string): string {
     const imported = formatImportedDate(characterImportedAt(character))
-    const source = resolveCharacterSourceBadge(character.sourceInfo?.label)
+    const source = resolveCharacterSourceBadge(character.sourceInfo?.label, characterImportedAt(character))
     const chats = character.chats?.length ?? character.chatCount ?? 0
     const assets = character.assetCount ?? getCharacterAssetCount(character)
     const missing = Math.max(0, Number(character.sourceInfo?.missingAssetCount) || 0)

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+    activationHistoryAfterPlacement,
     getLatestModuleCatalogPromotion,
     interleaveModuleCatalogGroups,
     recordModuleActivation,
@@ -235,5 +236,45 @@ describe('sortModulesByActivation', () => {
         const first = sortModuleFoldersByActivation(folders, modules, { activationHistory: ['charlie'] })
         expect(first.map((folder) => folder.id)).toEqual(['ranked', 'unranked', 'unranked-second'])
         expect(sortModuleFoldersByActivation(first, modules, { activationHistory: ['bravo'] })).toEqual(first)
+    })
+})
+
+describe('activationHistoryAfterPlacement', () => {
+    // Recency, oldest first: M4 M3 M5 M2 M1 M6 M8. Shown newest first.
+    const history = ['M4', 'M3', 'M5', 'M2', 'M1', 'M6', 'M8']
+    const before = [
+        { id: 'M8', folderId: 'F3' }, { id: 'M6' }, { id: 'M1', folderId: 'F1' }, { id: 'M2', folderId: 'F1' },
+        { id: 'M5' }, { id: 'M3', folderId: 'F2' }, { id: 'M4', folderId: 'F2' }, { id: 'M7', folderId: 'F3' },
+    ]
+
+    it('keeps the history when a folder is deleted (its modules only change group)', () => {
+        // FolderedList lists folders first, then the top level.
+        const after = [
+            { id: 'M8', folderId: 'F3' }, { id: 'M7', folderId: 'F3' }, { id: 'M3', folderId: 'F2' }, { id: 'M4', folderId: 'F2' },
+            { id: 'M6' }, { id: 'M1' }, { id: 'M2' }, { id: 'M5' },
+        ]
+        expect(activationHistoryAfterPlacement(before, after, history)).toEqual(history)
+    })
+
+    it('keeps the history when a module moves to another folder', () => {
+        const after = before.map((item) => (item.id === 'M6' ? { id: 'M6', folderId: 'F2' } : item))
+        expect(activationHistoryAfterPlacement(before, after, history)).toEqual(history)
+    })
+
+    it('swaps only the recency slots of modules reordered within their group', () => {
+        // M5 dragged above M6 at the top level; nothing else moves.
+        const after = [
+            { id: 'M8', folderId: 'F3' }, { id: 'M7', folderId: 'F3' }, { id: 'M1', folderId: 'F1' }, { id: 'M2', folderId: 'F1' },
+            { id: 'M3', folderId: 'F2' }, { id: 'M4', folderId: 'F2' }, { id: 'M5' }, { id: 'M6' },
+        ]
+        expect(activationHistoryAfterPlacement(before, after, history)).toEqual(['M4', 'M3', 'M6', 'M2', 'M1', 'M5', 'M8'])
+    })
+
+    it('gives a slot to a module without recency that was dragged up', () => {
+        // M7 (never used) above M8 in F3.
+        const after = before.map((item) => item.id === 'M8' ? { id: 'M7', folderId: 'F3' } : item.id === 'M7' ? { id: 'M8', folderId: 'F3' } : item)
+        const next = activationHistoryAfterPlacement(before, after, history)
+        expect(next.indexOf('M7')).toBeGreaterThan(next.indexOf('M8'))
+        expect(next.filter((id) => id !== 'M7' && id !== 'M8')).toEqual(['M4', 'M3', 'M5', 'M2', 'M1', 'M6'])
     })
 })

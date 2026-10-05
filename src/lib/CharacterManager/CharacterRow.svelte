@@ -80,6 +80,7 @@
             class:text-sky-300={entry.sourceBadge === '로컬'}
             class:text-violet-300={entry.sourceBadge === '웹'}
             class:text-emerald-300={entry.sourceBadge === '모바일'}
+            class:text-amber-300={entry.sourceBadge === '포켓'}
             class:border-dashed={!entry.sourceRecorded}
             title={sourceBadgeTitle}
         >{sourceBadgeLabel}</span>

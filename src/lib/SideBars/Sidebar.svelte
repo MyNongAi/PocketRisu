@@ -121,6 +121,15 @@
     CharEmotion.set({});
   }
 
+  // Switching bots keeps the sidebar tab the user is on (chat, character or
+  // module; the user's request, 2026-10-05). Everything else reseter does
+  // still happens; leaving for settings or home still resets the tab.
+  function botSwitchReseter() {
+    const moduleTabOpen = QuickSettings.open
+    reseter()
+    QuickSettings.open = moduleTabOpen
+  }
+
   function openChatTab() {
     void preloadChatSidebarPanel()
     QuickSettings.open = false;
@@ -274,7 +283,7 @@
   let recentChars = $derived(
     DBState.db.characters
       .map((c, index) => {
-        const source = resolveCharacterSourceBadge(c.sourceInfo?.label)
+        const source = resolveCharacterSourceBadge(c.sourceInfo?.label, c.importedAt)
         return { index, name: c.name, image: c.image, favorite: !!c.favorite, lastInteraction: c.lastInteraction ?? 0, sourceBadge: source.label, sourceRecorded: source.recorded }
       })
       .filter((c) => c.lastInteraction > 0)
@@ -331,7 +340,7 @@
     const archivedEntry = (id: string): sortTypeArchived | null => {
       const stub = archivedById.get(id)
       if(!stub) return null
-      const source = resolveCharacterSourceBadge(stub.sourceInfo?.label)
+      const source = resolveCharacterSourceBadge(stub.sourceInfo?.label, stub.importedAt)
       return { type: 'archived', img: stub.image ?? '', chaId: stub.chaId, name: stub.name ?? '', sourceBadge: source.label, sourceRecorded: source.recorded }
     }
     for (const [orderIndex, id] of DBState.db.characterOrder.entries()) {
@@ -340,7 +349,7 @@
         const index = idObject[id] ?? -1
         if(index !== -1){
           const cha = DBState.db.characters[index]
-          const source = resolveCharacterSourceBadge(cha.sourceInfo?.label)
+          const source = resolveCharacterSourceBadge(cha.sourceInfo?.label, cha.importedAt)
           newCharImages.push({
             id: cha.chaId,
             img:cha.image ?? "",
@@ -372,7 +381,7 @@
           const index = idObject[id] ?? -1
           if(index !== -1){
             const cha = DBState.db.characters[index]
-            const source = resolveCharacterSourceBadge(cha.sourceInfo?.label)
+            const source = resolveCharacterSourceBadge(cha.sourceInfo?.label, cha.importedAt)
             folderCharImages.push({
               id: cha.chaId,
               img:cha.image ?? "",
@@ -937,13 +946,13 @@
       onpointerdown={() => member.type === 'normal' && void prefetchCharacterChat(member.index)}
       onclick={() => {
         if(suppressNextClick) return
-        if(member.type === 'normal') changeChar(member.index, { reseter })
-        else void promptActivateCharacter(member.chaId, { reseter })
+        if(member.type === 'normal') changeChar(member.index, { reseter: botSwitchReseter })
+        else void promptActivateCharacter(member.chaId, { reseter: botSwitchReseter })
       }}
       onkeydown={(e) => {
         if(e.key !== 'Enter') return
-        if(member.type === 'normal') changeChar(member.index, { reseter })
-        else void promptActivateCharacter(member.chaId, { reseter })
+        if(member.type === 'normal') changeChar(member.index, { reseter: botSwitchReseter })
+        else void promptActivateCharacter(member.chaId, { reseter: botSwitchReseter })
       }}
     >
       {#if member.type === 'archived'}
@@ -1151,13 +1160,13 @@
                   onpointerdown={() => folderChar.type === 'normal' && void prefetchCharacterChat(folderChar.index)}
                   onclick={() => {
                     if(suppressNextClick) return
-                    if(folderChar.type === 'normal') changeChar(folderChar.index, { reseter })
-                    else void promptActivateCharacter(folderChar.chaId, { reseter })
+                    if(folderChar.type === 'normal') changeChar(folderChar.index, { reseter: botSwitchReseter })
+                    else void promptActivateCharacter(folderChar.chaId, { reseter: botSwitchReseter })
                   }}
                   onkeydown={(e) => {
                     if(e.key !== 'Enter') return
-                    if(folderChar.type === 'normal') changeChar(folderChar.index, { reseter })
-                    else void promptActivateCharacter(folderChar.chaId, { reseter })
+                    if(folderChar.type === 'normal') changeChar(folderChar.index, { reseter: botSwitchReseter })
+                    else void promptActivateCharacter(folderChar.chaId, { reseter: botSwitchReseter })
                   }}
                 >
                   {#if folderChar.type === 'archived'}
@@ -1282,13 +1291,13 @@
           onpointerdown={() => block.char.type === 'normal' && void prefetchCharacterChat(block.char.index)}
           onclick={() => {
             if(suppressNextClick) return
-            if(block.char.type === 'normal') changeChar(block.char.index, { reseter })
-            else void promptActivateCharacter(block.char.chaId, { reseter })
+            if(block.char.type === 'normal') changeChar(block.char.index, { reseter: botSwitchReseter })
+            else void promptActivateCharacter(block.char.chaId, { reseter: botSwitchReseter })
           }}
           onkeydown={(e) => {
             if(e.key !== 'Enter') return
-            if(block.char.type === 'normal') changeChar(block.char.index, { reseter })
-            else void promptActivateCharacter(block.char.chaId, { reseter })
+            if(block.char.type === 'normal') changeChar(block.char.index, { reseter: botSwitchReseter })
+            else void promptActivateCharacter(block.char.chaId, { reseter: botSwitchReseter })
           }}
         >
           {#if block.char.type === 'archived'}
@@ -1640,17 +1649,17 @@
             onclick={() => {
               if(suppressNextClick) return
               if(char.type === "normal"){
-                changeChar(char.index, {reseter});
+                changeChar(char.index, { reseter: botSwitchReseter });
               } else if(char.type === "archived"){
-                void promptActivateCharacter(char.chaId, {reseter});
+                void promptActivateCharacter(char.chaId, { reseter: botSwitchReseter });
               }
             }}
             onkeydown={(e) => {
               if (e.key === "Enter") {
                 if(char.type === "normal"){
-                  changeChar(char.index, {reseter});
+                  changeChar(char.index, { reseter: botSwitchReseter });
                 } else if(char.type === "archived"){
-                  void promptActivateCharacter(char.chaId, {reseter});
+                  void promptActivateCharacter(char.chaId, { reseter: botSwitchReseter });
                 }
               }
             }}
@@ -1790,17 +1799,17 @@
                   onclick={() => {
                     if(suppressNextClick) return
                     if(char2.type === "normal"){
-                      changeChar(char2.index, {reseter});
+                      changeChar(char2.index, { reseter: botSwitchReseter });
                     } else if(char2.type === "archived"){
-                      void promptActivateCharacter(char2.chaId, {reseter});
+                      void promptActivateCharacter(char2.chaId, { reseter: botSwitchReseter });
                     }
                   }}
                   onkeydown={(e) => {
                     if (e.key === "Enter") {
                       if(char2.type === "normal"){
-                        changeChar(char2.index, {reseter});
+                        changeChar(char2.index, { reseter: botSwitchReseter });
                       } else if(char2.type === "archived"){
-                        void promptActivateCharacter(char2.chaId, {reseter});
+                        void promptActivateCharacter(char2.chaId, { reseter: botSwitchReseter });
                       }
                     }
                   }}
@@ -2075,7 +2084,7 @@
               onpointerdown={() => void prefetchCharacterChat(rc.index)}
               onfocus={() => scheduleCharacterChatPrefetch(rc.index)}
               onblur={() => cancelCharacterChatPrefetch(rc.index)}
-              onclick={() => changeChar(rc.index, {reseter})}
+              onclick={() => changeChar(rc.index, { reseter: botSwitchReseter })}
             >
               <div class="shrink-0">
                 <SidebarAvatar

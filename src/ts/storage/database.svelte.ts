@@ -1807,6 +1807,8 @@ export interface ArchivedCharacterStub{
     /** Display metadata retained so the cold catalog keeps origin and health warnings. */
     titleColor?: string
     sourceInfo?: import('../sourceCollection').SourceImportInfo
+    /** The character's importedAt, kept so a deactivated card still shows the 포켓 badge. */
+    importedAt?: number
     /** Present only when the automatic inactivity policy created this stub. */
     autoDeactivatedAt?: number
 }

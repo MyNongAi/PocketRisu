@@ -245,6 +245,53 @@ export function sortModuleFoldersByActivation<T extends SortableModuleFolder>(
         .map(({ folder }) => folder)
 }
 
+/** One catalog row: a module and its group (folder id; undefined at the top level). */
+export interface PlacedModule {
+    id: string
+    folderId?: string
+}
+
+/**
+ * The activation history after the catalog's modules were placed in 최근순
+ * (dragged, moved up or down, moved to a folder, or their folder deleted).
+ * There the list order is the recency, so only a reorder among modules that
+ * stayed in the same group changes it: those modules trade their recency
+ * slots, and every other module keeps its own. A module that only changed
+ * folder keeps its recency. It used to rewrite the whole history in the
+ * list's folders-first order, which lifted every folder above the loose
+ * modules whenever a folder was deleted or a module moved (2026-10-05).
+ * `before`/`after`: the modules in display order (newest first).
+ */
+export function activationHistoryAfterPlacement(
+    before: ReadonlyArray<PlacedModule>,
+    after: ReadonlyArray<PlacedModule>,
+    history: ReadonlyArray<string>,
+    fallbackOrders: Array<ReadonlyArray<string> | undefined> = [],
+): string[] {
+    const oldGroup = new Map(before.map((item) => [item.id, item.folderId ?? '']))
+    const shownAt = new Map(before.map((item, index) => [item.id, index]))
+    const stayers = new Map<string, string[]>()
+    for (const item of after) {
+        const group = item.folderId ?? ''
+        if (!oldGroup.has(item.id) || oldGroup.get(item.id) !== group) continue
+        stayers.set(group, [...(stayers.get(group) ?? []), item.id])
+    }
+    const reordered = [...stayers.values()].filter((ids) => ids.some((id, i) => i > 0 && shownAt.get(ids[i - 1])! > shownAt.get(id)!))
+    if (reordered.length === 0) return [...history]
+
+    // Recency, oldest first, as the catalog sorts it. Modules it has none for
+    // join at the old end, in the order shown, so they can take a slot too.
+    let order = mergeActivationOrders([...fallbackOrders, history])
+    const missing = reordered.flat().filter((id) => !order.includes(id))
+        .sort((a, b) => shownAt.get(b)! - shownAt.get(a)!)
+    order = [...missing, ...order]
+    for (const ids of reordered) {
+        const slots = ids.map((id) => order.indexOf(id)).sort((a, b) => b - a)
+        ids.forEach((id, k) => { order[slots[k]] = id })
+    }
+    return order
+}
+
 /** Store a menu/drag order in the small folder overlay, not in db.modules. */
 export function recordModuleFolderOrder<T extends SortableModuleFolder>(folders: ReadonlyArray<T>): T[] {
     return folders.map((folder, sortOrder) => ({ ...folder, sortOrder }))

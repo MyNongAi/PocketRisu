@@ -847,6 +847,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
             // share the character's manifest, so editing one would change the
             // other until the next reload.
             const m = convertCharacterToModule(await hydrateCharacterAssets(char))
+            m.importedAt ??= Date.now()
             DBState.db.modules.push(m)
             notifySuccess(language.successfullyConverted)
         } catch (error) {

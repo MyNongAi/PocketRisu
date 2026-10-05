@@ -58,12 +58,20 @@ export interface RisuModule{
     nodeOnlyProtonShare?: string
     /** Bots this module was paired with (character.modules), for the red chain once they are gone (gui/pairedModules.ts). */
     nodeOnlyPairedCharacterIds?: string[]
+    /**
+     * PocketRisu: when this install added the module (imported or made here),
+     * like a character's importedAt; its source badge reads 포켓. Ignored by
+     * upstream clients.
+     */
+    importedAt?: number
 }
 
 /** Inserts modules and records them as the newest catalog entries. */
 export function addModulesToDatabase(modules: readonly RisuModule[]): void {
     if(modules.length === 0) return
     const db = getDatabase()
+    const now = Date.now()
+    for (const module of modules) module.importedAt ??= now
     db.modules.push(...modules)
     db.moduleActivationHistory = recordNewModules(
         db.moduleActivationHistory,

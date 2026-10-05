@@ -41,7 +41,7 @@ export function buildManagerEntries(db: Database): Map<string, ManagerEntry> {
     for (let i = 0; i < db.characters.length; i++) {
         const c = db.characters[i]
         if (!c?.chaId || c.chaId === '§temp' || c.chaId === '§playground') continue
-        const source = resolveCharacterSourceBadge(c.sourceInfo?.label)
+        const source = resolveCharacterSourceBadge(c.sourceInfo?.label, c.importedAt)
         out.set(c.chaId, {
             chaId: c.chaId,
             index: i,
@@ -64,7 +64,7 @@ export function buildManagerEntries(db: Database): Map<string, ManagerEntry> {
     }
     for (const stub of db.nodeOnlyArchivedCharacters ?? []) {
         if (!stub?.chaId || out.has(stub.chaId)) continue
-        const source = resolveCharacterSourceBadge(stub.sourceInfo?.label)
+        const source = resolveCharacterSourceBadge(stub.sourceInfo?.label, stub.importedAt)
         out.set(stub.chaId, {
             chaId: stub.chaId,
             index: -1,

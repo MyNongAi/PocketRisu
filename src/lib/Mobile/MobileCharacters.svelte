@@ -26,7 +26,7 @@
 
     function sortChar(db: Database) {
         const list = db.characters.map((c, i) => {
-            const source = resolveCharacterSourceBadge(c.sourceInfo?.label)
+            const source = resolveCharacterSourceBadge(c.sourceInfo?.label, c.importedAt)
             return {
                 name: c.name || "Unnamed",
                 image: c.image,
@@ -57,8 +57,8 @@
                     archived: true,
                     chaId: stub.chaId,
                     assetCount: stub.assetCount ?? 0,
-                    sourceBadge: resolveCharacterSourceBadge(stub.sourceInfo?.label).label,
-                    sourceRecorded: resolveCharacterSourceBadge(stub.sourceInfo?.label).recorded,
+                    sourceBadge: resolveCharacterSourceBadge(stub.sourceInfo?.label, stub.importedAt).label,
+                    sourceRecorded: resolveCharacterSourceBadge(stub.sourceInfo?.label, stub.importedAt).recorded,
                     missingAssetCount: stub.sourceInfo?.missingAssetCount ?? 0,
                     realmRecoveryAvailable: isRealmAssetRecoveryAvailable(stub),
                     titleColor: stub.titleColor,
@@ -111,6 +111,7 @@
                     class:text-sky-300={char.sourceBadge === '로컬'}
                     class:text-violet-300={char.sourceBadge === '웹'}
                     class:text-emerald-300={char.sourceBadge === '모바일'}
+                    class:text-amber-300={char.sourceBadge === '포켓'}
                     class:border-dashed={!char.sourceRecorded}
                     title={char.sourceRecorded ? `기록된 출처: ${char.sourceBadge}` : '출처 기록 없음 · 기존 웹리스 기준'}
                 >[{char.sourceBadge}]</span>
