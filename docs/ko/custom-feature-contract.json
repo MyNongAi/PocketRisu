@@ -1201,6 +1201,25 @@
       "regressionTests": [
         "src/ts/process/request/contextBudget.test.ts"
       ]
+    },
+    {
+      "id": "MODULE-BOT-LINK-MENU",
+      "title": "모듈 ⋮ 메뉴에서 지금 보는 봇에 연결 · 폴더째 연결",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
+        "src/lib/UI/FolderedList.svelte",
+        "src/ts/gui/pairedModules.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "function toggleBotLink(" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "function toggleFolderBotLink(" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "folderMenuItems?.(folder, indexes)" },
+        { "file": "src/ts/gui/pairedModules.ts", "contains": "export function folderBotLinkChange(" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/pairedModules.test.ts"
+      ]
     }
   ]
 }

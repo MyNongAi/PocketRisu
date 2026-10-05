@@ -127,3 +127,18 @@ export function backfillModulePairs(modules: PairModule[] | undefined, character
     }
     return changed
 }
+
+/**
+ * A folder's "link every module to the open bot" (the user's request,
+ * 2026-10-06): links the folder's modules the bot does not have yet, after
+ * its own; when it already has them all, unlinks them all instead.
+ */
+export function folderBotLinkChange(botModules: readonly string[] | undefined, folderModules: readonly string[]): { modules: string[], linked: string[], unlinked: string[] } {
+    const current = botModules ?? []
+    const ids = [...new Set(folderModules)]
+    if (ids.length > 0 && ids.every((id) => current.includes(id))) {
+        return { modules: current.filter((id) => !ids.includes(id)), linked: [], unlinked: ids }
+    }
+    const linked = ids.filter((id) => !current.includes(id))
+    return { modules: [...current, ...linked], linked, unlinked: [] }
+}

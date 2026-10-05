@@ -1214,6 +1214,10 @@ export const languageKorean = {
   moduleBotUnlink: "지금 보는 봇({})에서 연결 해제",
   moduleBotLinked: "{}에 이 모듈을 연결했습니다.",
   moduleBotUnlinked: "{}에서 이 모듈 연결을 해제했습니다.",
+  moduleFolderBotLink: "폴더 모듈 전부 지금 보는 봇({})에 연결 ({n})",
+  moduleFolderBotUnlink: "폴더 모듈 전부 지금 보는 봇({})에서 연결 해제",
+  moduleFolderBotLinked: "{}에 이 폴더 모듈 {n}개를 연결했습니다.",
+  moduleFolderBotUnlinked: "{}에서 이 폴더 모듈 {n}개 연결을 해제했습니다.",
   chatModulesInfo:
     "모듈을 이 채팅 또는 이 캐릭터 한정으로 활성화/비활성화합니다. 말풍선 버튼은 채팅, 사람 버튼은 캐릭터입니다. 지구본이 표시된 모듈은 전역으로 켜져 있어 모든 채팅에 적용되며, 설정 > 모듈에서 바꿀 수 있습니다.",
   moduleScopeChat: "이 채팅에서 사용",

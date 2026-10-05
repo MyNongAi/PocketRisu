@@ -27,7 +27,7 @@
     import { FileDropSurface } from "src/ts/gui/fileDropSurface.svelte";
     import FileDropIndicator from "src/lib/UI/GUI/FileDropIndicator.svelte";
     import PairedModuleMark from "src/lib/UI/GUI/PairedModuleMark.svelte";
-    import { forgetModulePair, moduleLinks, recordModulePair } from "src/ts/gui/pairedModules";
+    import { folderBotLinkChange, forgetModulePair, moduleLinks, recordModulePair } from "src/ts/gui/pairedModules";
     let tempModule:RisuModule = $state({
         name: '',
         description: '',
@@ -179,6 +179,29 @@
             rememberActivation(rmodule.id)
             notifySuccess(language.moduleBotLinked.replace('{}', character.name || 'Unnamed'))
         }
+    }
+
+    // A folder's ⋮ menu: every module in it linked to the open bot at once,
+    // or all unlinked when the bot already has them all (folderBotLinkChange).
+    function folderModuleIds(indexes: number[]) {
+        return indexes.map((index) => displayModules[index]?.id).filter((id): id is string => !!id)
+    }
+
+    function toggleFolderBotLink(indexes: number[]) {
+        const character = DBState.db.characters[$selectedCharID]
+        const ids = folderModuleIds(indexes)
+        if (!character || ids.length === 0) return
+        const change = folderBotLinkChange(character.modules, ids)
+        character.modules = change.modules
+        const name = character.name || 'Unnamed'
+        if (change.unlinked.length > 0) {
+            for (const id of change.unlinked) forgetModulePair(DBState.db.modules, id, character.chaId)
+            notifySuccess(language.moduleFolderBotUnlinked.replace('{}', name).replace('{n}', String(change.unlinked.length)))
+            return
+        }
+        recordModulePair(DBState.db.modules, change.linked, character.chaId)
+        for (const id of change.linked) rememberActivation(id)
+        notifySuccess(language.moduleFolderBotLinked.replace('{}', name).replace('{n}', String(change.linked.length)))
     }
 
     function toggleFolderGlobal(indexes: number[]) {
@@ -413,6 +436,16 @@
                 aria-label={`폴더 모듈 전체 활성화 (${activeCount}/${indexes.length})`}
                 onclick={(event) => { event.stopPropagation(); toggleFolderGlobal(indexes) }}
             ><Globe size={17}/></button>
+        {/snippet}
+        {#snippet folderMenuItems(_folder, indexes)}
+            {#if openBot && indexes.length > 0}
+                {@const ids = folderModuleIds(indexes)}
+                {@const linkedCount = ids.filter((id) => openBot.modules?.includes(id)).length}
+                <ShDropdownMenuItem onSelect={() => toggleFolderBotLink(indexes)}>
+                    {#if linkedCount === ids.length}<UnlinkIcon /><span>{language.moduleFolderBotUnlink.replace('{}', openBot.name || 'Unnamed')}</span>
+                    {:else}<LinkIcon /><span>{language.moduleFolderBotLink.replace('{}', openBot.name || 'Unnamed').replace('{n}', `${linkedCount}/${ids.length}`)}</span>{/if}
+                </ShDropdownMenuItem>
+            {/if}
         {/snippet}
         {#snippet itemContent(index)}
             {@const rmodule = displayModules[index]}

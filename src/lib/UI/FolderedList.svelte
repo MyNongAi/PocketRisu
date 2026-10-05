@@ -93,6 +93,8 @@
         folderActions?: Snippet<[PromptPresetFolder, number[]]>;
         /** Optional status rendered before the folder title. */
         folderLeadingActions?: Snippet<[PromptPresetFolder, number[]]>;
+        /** Extra entries in a folder's ⋮ menu, given the folder's item indexes. */
+        folderMenuItems?: Snippet<[PromptPresetFolder, number[]]>;
     }
 
     let {
@@ -132,6 +134,7 @@
         showItemCount = false,
         folderActions,
         folderLeadingActions,
+        folderMenuItems,
     }: Props = $props();
 
     let rootEl: HTMLDivElement = $state();
@@ -367,7 +370,7 @@
                 <span class="truncate grow" style:color={folderTitleColor(folder, group.indexes)}>{folder.name}</span>
                 {@render folderActions?.(folder, group.indexes)}
                 <span class="text-xs text-textcolor2">{group.indexes.length}</span>
-                {@render folderMenu(folder)}
+                {@render folderMenu(folder, group.indexes)}
             </div>
             <div data-folder-container={folder.id} class:hidden={isCollapsed}>
                 <ShSortableList
@@ -476,7 +479,7 @@
     </div>
 {/snippet}
 
-{#snippet folderMenu(folder)}
+{#snippet folderMenu(folder, indexes)}
     <ShDropdownMenu>
         <ShDropdownMenuTrigger>
             {#snippet child({ props })}
@@ -492,6 +495,7 @@
             <ShDropdownMenuItem disabled={!canMoveFolder(folder, 1)} onSelect={() => moveFolder(folder, 1)}><span>{language.moveDown}</span></ShDropdownMenuItem>
             {#if onFolderColor}<ShDropdownMenuItem onSelect={() => onFolderColor(folder)}><PaletteIcon /><span>색변경</span></ShDropdownMenuItem>{/if}
             {#if onFolderFavorite}<ShDropdownMenuItem onSelect={() => onFolderFavorite(folder)}><StarIcon /><span>{folder.favorite ? '즐겨찾기 해제' : '즐겨찾기 (맨위로)'}</span></ShDropdownMenuItem>{/if}
+            {@render folderMenuItems?.(folder, indexes)}
             {#if showFolderDelete}
                 <ShDropdownMenuSeparator />
                 <ShDropdownMenuItem variant="destructive" onSelect={() => deleteFolder(folder)}><span>{language.remove}</span></ShDropdownMenuItem>

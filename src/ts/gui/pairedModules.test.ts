@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { backfillModulePairs, characterModuleLink, charactersByPairedModule, forgetModulePair, moduleLinks, recordModulePair } from './pairedModules'
+import { backfillModulePairs, characterModuleLink, folderBotLinkChange, charactersByPairedModule, forgetModulePair, moduleLinks, recordModulePair } from './pairedModules'
 
 describe('charactersByPairedModule', () => {
     test('maps each module to the bots that have it as their own module', () => {
@@ -56,5 +56,20 @@ describe('chain states', () => {
         expect(backfillModulePairs(modules, [{ chaId: 'b', modules: ['m2', 'missing'] }])).toBe(true)
         expect(modules[1].nodeOnlyPairedCharacterIds).toEqual(['b'])
         expect(backfillModulePairs(modules, [{ chaId: 'b', modules: ['m2'] }])).toBe(false)
+    })
+})
+
+describe('folderBotLinkChange', () => {
+    test('links the folder modules the bot lacks, after its own', () => {
+        expect(folderBotLinkChange(['x', 'a'], ['a', 'b', 'c'])).toEqual({ modules: ['x', 'a', 'b', 'c'], linked: ['b', 'c'], unlinked: [] })
+        expect(folderBotLinkChange(undefined, ['a'])).toEqual({ modules: ['a'], linked: ['a'], unlinked: [] })
+    })
+
+    test('unlinks them all when the bot already has every one', () => {
+        expect(folderBotLinkChange(['a', 'x', 'b'], ['b', 'a'])).toEqual({ modules: ['x'], linked: [], unlinked: ['b', 'a'] })
+    })
+
+    test('an empty folder changes nothing', () => {
+        expect(folderBotLinkChange(['x'], [])).toEqual({ modules: ['x'], linked: [], unlinked: [] })
     })
 })
