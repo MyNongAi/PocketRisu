@@ -428,8 +428,6 @@
                         class:text-violet-300={source.label === '웹'}
                         class:text-emerald-300={source.label === '모바일'}
                         class:text-amber-300={source.label === '포켓'}
-                        class:text-rose-300={source.label === '렐름'}
-                        class:text-teal-300={source.label === '프로톤'}
                         class:border-dashed={!source.recorded}
                         title={source.recorded ? `기록된 출처: ${source.label}` : '출처 기록 없음 · 기존 웹리스 기준'}
                     >[{source.label}]</span>

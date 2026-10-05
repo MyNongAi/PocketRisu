@@ -2,7 +2,7 @@
 // character manager lists for a bot (when it was imported, its source, chats,
 // last chat, assets), and for a folder its bot count and import date range.
 import { getCharacterAssetCount } from './characterAssetCount'
-import { localOriginOf, resolveCharacterSourceBadge } from './characterSourceBadge'
+import { downloadPlaceOf, localOriginOf, resolveCharacterSourceBadge } from './characterSourceBadge'
 import { formatImportedDate } from './importedDate'
 
 export type MenuInfoCharacter = {
@@ -41,7 +41,8 @@ export function characterMenuInfo(character: MenuInfoCharacter, agoText: (time: 
     const origin = [
         imported ? `가져온 날짜 ${imported}` : '가져온 날짜 기록 없음',
         `출처 [${source.label}]${source.recorded ? '' : '(추정)'}`,
-        ...(character.nodeOnlyProtonSource?.file ? [`프로톤 파일 ${character.nodeOnlyProtonSource.file}`] : []),
+        // Where it was downloaded from is bot information, not the source badge.
+        ...(downloadPlaceOf(character) ? [`받은 곳 ${downloadPlaceOf(character)}`] : []),
     ]
     const usage = [`채팅 ${chats.toLocaleString()}개`]
     if ((character.lastInteraction ?? 0) > 0) usage.push(`최근 대화 ${agoText(character.lastInteraction!)}`)

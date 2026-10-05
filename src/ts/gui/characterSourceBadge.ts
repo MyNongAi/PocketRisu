@@ -1,4 +1,10 @@
-export type CharacterSourceBadge = '로컬' | '웹' | '모바일' | '포켓' | '렐름' | '프로톤'
+/**
+ * Which Risu an item came from (the user's terms, 2026-10-05): the PC web
+ * Risu (웹), the mobile web Risu (모바일), the local Risu (로컬), or this
+ * PocketRisu (포켓). Where a bot was downloaded from (Realm, Proton) is not
+ * a badge; it is bot information (downloadPlaceOf), shown in its info popup.
+ */
+export type CharacterSourceBadge = '로컬' | '웹' | '모바일' | '포켓'
 
 export interface ResolvedCharacterSource {
     label: CharacterSourceBadge
@@ -6,7 +12,7 @@ export interface ResolvedCharacterSource {
     recorded: boolean
 }
 
-/** What this install itself recorded about where an item came from. */
+/** What this install itself recorded about an item. */
 export interface LocalOrigin {
     /** When this install brought it in (a bot's or module's importedAt, a persona's createdAt). */
     stamp?: number
@@ -38,11 +44,9 @@ export function localOriginOf(item: {
  * The current PocketRisu collection was seeded from the PC web collection, so
  * old entries without sourceInfo use 웹 as an explicit baseline fallback. New
  * source-collection imports carry their own label and never hit that fallback.
- *
- * Without a collection label, what this install itself brought in (`local`,
- * only PocketRisu records it) shows where it came from: 프로톤 for a Proton
- * download, 렐름 for a Realm download, 포켓 for anything else made or imported
- * here (the user's request, 2026-10-05), instead of the 웹 guess.
+ * Without a collection label, what this install itself brought in (`local`:
+ * an import stamp or a Proton download, which only PocketRisu records) shows
+ * 포켓 instead of the 웹 guess.
  */
 export function resolveCharacterSourceBadge(value: unknown, local: LocalOrigin = {}): ResolvedCharacterSource {
     const raw = typeof value === 'string' ? value.trim() : ''
@@ -59,9 +63,26 @@ export function resolveCharacterSourceBadge(value: unknown, local: LocalOrigin =
     if (normalized.includes('웹') || normalized.includes('web')) {
         return { label: '웹', recorded: true }
     }
-    if (local.proton) return { label: '프로톤', recorded: true }
-    if (typeof local.stamp === 'number' && local.stamp > 0) {
-        return { label: local.realm ? '렐름' : '포켓', recorded: true }
+    if (local.proton || (typeof local.stamp === 'number' && local.stamp > 0)) {
+        return { label: '포켓', recorded: true }
     }
     return { label: '웹', recorded: false }
+}
+
+/**
+ * Where a bot was downloaded from, for its info popup (not its badge):
+ * 프로톤 for a recorded Proton download (with the file), 렐름 for a Realm
+ * card, '' when nothing tells.
+ */
+export function downloadPlaceOf(item: {
+    realmId?: string
+    nodeOnlyProtonSource?: { file?: string }
+    nodeOnlyProtonShare?: string
+} | null | undefined): string {
+    if (!item) return ''
+    if (item.nodeOnlyProtonSource || item.nodeOnlyProtonShare) {
+        const file = item.nodeOnlyProtonSource?.file
+        return file ? `프로톤 (${file})` : '프로톤'
+    }
+    return item.realmId ? '렐름' : ''
 }
