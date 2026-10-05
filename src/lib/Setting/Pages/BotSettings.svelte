@@ -38,6 +38,7 @@
     import { getModelInfo, LLMFlags, LLMFormat, LLMProvider } from "src/ts/model/modellist";
     import SettingRenderer from "../SettingRenderer.svelte";
     import { allBasicParameterItems } from "src/ts/setting/botSettingsParamsData";
+    import { geminiPdfInputItems } from "src/ts/setting/geminiPdfSettingsData";
     import SeparateParametersSection from "./SeparateParametersSection.svelte";
     import AuxModelSelectors from './Model/AuxModelSelectors.svelte'
     import CustomModelsSettings from './Model/CustomModelsSettings.svelte'
@@ -172,6 +173,11 @@
 <div class="py-3 border-t border-darkborderc flex flex-col gap-2">
         <SettingFieldLabel label={language.submodel} helpKey="submodel" />
     <ModelList bind:value={DBState.db.subModel}/>
+    </div>
+
+    <!-- Gemini PDF input, next to the model it applies to (geminiPdfSettingsData.ts). -->
+    <div class="py-3 border-t border-darkborderc">
+        <SettingRenderer items={geminiPdfInputItems} {modelInfo} {subModelInfo} />
     </div>
 
     {#if modelInfo.provider === LLMProvider.GoogleCloud || subModelInfo.provider === LLMProvider.GoogleCloud}

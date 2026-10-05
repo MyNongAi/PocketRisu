@@ -665,7 +665,8 @@
         "server/node/gemini-pdf-input.cjs",
         "src/ts/process/request/google.ts",
         "src/ts/process/request/request.ts",
-        "src/ts/setting/advancedSettingsData.ts",
+        "src/ts/setting/geminiPdfSettingsData.ts",
+        "src/ts/gui/geminiPdfToggle.ts",
         "src/ts/requestLog.ts"
       ],
       "requiredMarkers": [
@@ -677,8 +678,9 @@
         { "file": "src/ts/process/request/request.ts", "contains": "mediaResolution: getDatabase().nodeOnlyGeminiPdfMediaResolution" },
         { "file": "server/node/gemini-pdf-input.cjs", "contains": "app.post('/api/gemini/pdf-input'" },
         { "file": "server/node/server.cjs", "contains": "createGeminiPdfInput({ logger }).registerRoutes(app, { auth: checkProxyAuth })" },
-        { "file": "src/ts/setting/advancedSettingsData.ts", "contains": "bindKey: 'nodeOnlyGeminiPdfInput'" },
-        { "file": "src/ts/setting/advancedSettingsData.ts", "contains": "bindKey: 'nodeOnlyGeminiPdfMediaResolution'" },
+        { "file": "src/ts/setting/geminiPdfSettingsData.ts", "contains": "bindKey: 'nodeOnlyGeminiPdfInput'" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "chatSendsToNativeGemini(currentChatSlot)" },
+        { "file": "src/ts/setting/geminiPdfSettingsData.ts", "contains": "bindKey: 'nodeOnlyGeminiPdfMediaResolution'" },
         { "file": "src/ts/storage/database.svelte.ts", "contains": "data.nodeOnlyGeminiPdfInput ??= false" },
         { "file": "src/ts/storage/database.svelte.ts", "contains": "data.nodeOnlyGeminiPdfMediaResolution ??= 'default'" },
         { "file": "src/ts/requestLog.ts", "contains": "[application/pdf: " }
@@ -688,6 +690,7 @@
         "src/ts/process/request/googlePdfInputHook.test.ts",
         "src/ts/process/request/geminiPdfPresetWire.test.ts",
         "src/ts/setting/geminiPdfInputSetting.test.ts",
+        "src/ts/gui/geminiPdfToggle.test.ts",
         "src/ts/requestLog.test.ts",
         "server/node/gemini-pdf-input.test.ts"
       ]

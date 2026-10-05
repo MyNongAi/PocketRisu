@@ -2008,6 +2008,7 @@ export const languageEnglish = {
     scrollButtonPositionBottomCenter: "Bottom, centered",
     nodeOnlyServerSideRequests: "Server-Side Requests",
     nodeOnlyGeminiPdfInput: "Send Gemini Context as PDF",
+    geminiPdfInputMenu: "Send as PDF (Gemini)",
     nodeOnlyGeminiPdfMediaResolution: "PDF Resolution",
     geminiPdfMediaResolutionDefault: "Default (not set)",
     geminiPdfMediaResolutionLow: "Low",

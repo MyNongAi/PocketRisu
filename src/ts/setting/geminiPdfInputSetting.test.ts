@@ -2,23 +2,26 @@ import { describe, expect, it } from 'vitest'
 // searchIndex first: it loads the settings graph in the order the app does.
 import { searchSettings } from './searchIndex'
 import { advancedRequestItems } from './advancedSettingsData'
+import { geminiPdfInputItems } from './geminiPdfSettingsData'
 import { SettingsRoute } from '../routing'
 import { languageEnglish } from 'src/lang/en'
 import { languageKorean } from 'src/lang/ko'
 import { helpEn } from 'src/lang/help.en'
 import { helpKo } from 'src/lang/help.ko'
 
-// GEMINI-PDF-INPUT settings wiring: one global, default-off toggle on the
-// Advanced > Request & model tab, labelled and explained in en/ko.
+// GEMINI-PDF-INPUT settings wiring: one global, default-off toggle on
+// Chat bot > Model (moved from Advanced > Request, 2026-10-06), labelled and
+// explained in en/ko.
 
 const db: any = new Proxy({}, { get: (_t, key) => (key === 'then' ? undefined : '') })
 const modelInfo: any = new Proxy({}, { get: () => '' })
 const ctx = { db, modelInfo, subModelInfo: modelInfo } as any
 
 describe('Gemini PDF input setting', () => {
-    const item = advancedRequestItems.find((i) => i.id === 'adv.geminiPdfInput')
+    const item = geminiPdfInputItems.find((i) => i.id === 'adv.geminiPdfInput')
 
-    it('is a check bound to nodeOnlyGeminiPdfInput on the request tab', () => {
+    it('is a check bound to nodeOnlyGeminiPdfInput on the chat bot model tab, not in Advanced', () => {
+        expect(advancedRequestItems.some((i) => i.id.startsWith('adv.geminiPdf'))).toBe(false)
         expect(item).toMatchObject({
             type: 'check',
             bindKey: 'nodeOnlyGeminiPdfInput',
@@ -46,17 +49,17 @@ describe('Gemini PDF input setting', () => {
     })
 
     it('is findable in settings search', () => {
-        const hits = searchSettings('pdf', ctx).filter((r) => r.route === SettingsRoute.Advanced)
-        expect(hits.some((r) => r.subTab === 1)).toBe(true)
+        const hits = searchSettings('pdf', ctx).filter((r) => r.route === SettingsRoute.ChatBot)
+        expect(hits.some((r) => r.subTab === 0)).toBe(true)
     })
 })
 
 describe('Gemini PDF media resolution setting', () => {
-    const index = advancedRequestItems.findIndex((i) => i.id === 'adv.geminiPdfMediaResolution')
-    const item = advancedRequestItems[index]
+    const index = geminiPdfInputItems.findIndex((i) => i.id === 'adv.geminiPdfMediaResolution')
+    const item = geminiPdfInputItems[index]
 
     it('is a dropdown right under the PDF toggle: default (not set), low, medium, high', () => {
-        expect(advancedRequestItems[index - 1]?.id).toBe('adv.geminiPdfInput')
+        expect(geminiPdfInputItems[index - 1]?.id).toBe('adv.geminiPdfInput')
         expect(item).toMatchObject({
             type: 'select',
             bindKey: 'nodeOnlyGeminiPdfMediaResolution',

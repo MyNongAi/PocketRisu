@@ -2288,6 +2288,7 @@ export const languageKorean = {
   scrollButtonPositionBottomCenter: "아래 가운데",
   nodeOnlyServerSideRequests: "서버 사이드 요청",
   nodeOnlyGeminiPdfInput: "Gemini 컨텍스트를 PDF로 보내기",
+  geminiPdfInputMenu: "PDF로 보내기 (Gemini)",
   nodeOnlyGeminiPdfMediaResolution: "PDF 해상도",
   geminiPdfMediaResolutionDefault: "기본 (지정 안 함)",
   geminiPdfMediaResolutionLow: "낮음",

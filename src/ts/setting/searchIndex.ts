@@ -67,6 +67,7 @@ import {
     advancedUnrecommendedItems,
 } from './advancedSettingsData';
 import { allBasicParameterItems } from './botSettingsParamsData';
+import { geminiPdfInputItems } from './geminiPdfSettingsData';
 import { languageSettingsItems } from './languageSettingsData.svelte';
 import { inlayImageSettingsItems } from './inlayImageSettingsData';
 import { modelPresetOptionsItems } from './modelPresetOptionsData';
@@ -116,6 +117,7 @@ const declarativeSources: DeclarativeSource[] = [
     { items: advancedDevToolItems, route: SettingsRoute.Advanced, subTab: 3, tabLabel: () => language.advTabDev, sectionLabel: () => language.advSectionDevTools },
     { items: advancedExperimentalItems, route: SettingsRoute.Advanced, subTab: 3, tabLabel: () => language.advTabDev, sectionLabel: () => language.advSectionExperimental },
     { items: advancedUnrecommendedItems, route: SettingsRoute.Advanced, subTab: 3, tabLabel: () => language.advTabDev, sectionLabel: () => language.unrecommended },
+    { items: geminiPdfInputItems, route: SettingsRoute.ChatBot, subTab: 0, tabLabel: () => language.model },
     { items: allBasicParameterItems, route: SettingsRoute.ChatBot, subTab: 1, tabLabel: () => language.parameters },
     { items: languageSettingsItems, route: SettingsRoute.Language },
     { items: inlayImageSettingsItems, route: SettingsRoute.InlayImageGallery, subTab: 1, tabLabel: () => language.settings },

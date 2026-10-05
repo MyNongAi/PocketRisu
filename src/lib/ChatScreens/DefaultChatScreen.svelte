@@ -4,7 +4,7 @@
     import Suggestion from './Suggestion.svelte';
     import { copyScriptstateCheckpoint, mergeRerollCheckpoint, removeSwipeCheckpoint, restoreScriptstateBeforeReroll, restoreScriptstateSnapshot, restoreShownSwipeScriptstate, snapshotScriptstate } from 'src/ts/chatScriptstateCheckpoint';
     import { deleteShownSwipe, findLastReplyIndex, stepSwipe } from 'src/ts/chatSwipes';
-    import { CameraIcon, ChevronUpIcon, ChevronDownIcon, ChevronsUpIcon, ChevronsDownIcon, DatabaseIcon, GlobeIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2, GitBranch } from "@lucide/svelte";
+    import { CameraIcon, ChevronUpIcon, ChevronDownIcon, ChevronsUpIcon, ChevronsDownIcon, DatabaseIcon, GlobeIcon, FileTextIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2, GitBranch } from "@lucide/svelte";
     import ShDropdownMenu from 'src/lib/UI/GUI/ShDropdownMenu.svelte';
     import ShDropdownMenuTrigger from 'src/lib/UI/GUI/ShDropdownMenuTrigger.svelte';
     import ShDropdownMenuContent from 'src/lib/UI/GUI/ShDropdownMenuContent.svelte';
@@ -40,6 +40,7 @@ import { isMobile } from 'src/ts/platform'
     import { runTrigger } from 'src/ts/process/triggers';
     import { v4 } from 'uuid';
     import { retitleChatFromLastInput } from 'src/ts/chatClone';
+    import { chatSendsToNativeGemini } from 'src/ts/gui/geminiPdfToggle';
     import { processMultiCommand } from 'src/ts/process/command';
     import { postChatFile } from 'src/ts/process/files/multisend';
     import { getInlayAsset } from 'src/ts/process/files/inlays';
@@ -1387,6 +1388,12 @@ import { isMobile } from 'src/ts/platform'
                             {#if DBState.db.translator !== ''}
                                 <ShDropdownMenuItem class={DBState.db.useAutoTranslateInput ? 'text-green-500' : ''} onSelect={() => { DBState.db.useAutoTranslateInput = !DBState.db.useAutoTranslateInput }}>
                                     <GlobeIcon /><span>{language.autoTranslateInput}</span>
+                                </ShDropdownMenuItem>
+                            {/if}
+                            {#if currentChatReady && chatSendsToNativeGemini(currentChatSlot)}
+                                <!-- The Gemini PDF input switch (Chat bot > Model), green while on. -->
+                                <ShDropdownMenuItem class={DBState.db.nodeOnlyGeminiPdfInput ? 'text-green-500' : ''} onSelect={() => { DBState.db.nodeOnlyGeminiPdfInput = !DBState.db.nodeOnlyGeminiPdfInput }}>
+                                    <FileTextIcon /><span>{language.geminiPdfInputMenu}</span>
                                 </ShDropdownMenuItem>
                             {/if}
                             <ShDropdownMenuItem onSelect={() => { screenShot() }}>

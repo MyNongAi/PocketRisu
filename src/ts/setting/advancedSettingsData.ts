@@ -5,7 +5,8 @@ import { loadPlugins } from '../plugins/plugins.svelte';
 // that belong to another page moved there with their ids unchanged:
 // CSS error / height mode → Display, bookmark / scroll-to-active →
 // Accessibility, no-wait / experimental Google translate → Language,
-// new image handling → Inlay images. Experimental and unrecommended items
+// new image handling → Inlay images, Gemini PDF input → Chat bot > Model.
+// Experimental and unrecommended items
 // all live in the Developer tab so toggling their visibility reveals them
 // in one place.
 
@@ -98,28 +99,7 @@ export const advancedRequestItems: SettingItem[] = [
     { id: 'adv.disableSeperateParameterChangeOnPresetChange', type: 'check', labelKey: 'disableSeperateParameterChangeOnPresetChange', bindKey: 'disableSeperateParameterChangeOnPresetChange', helpKey: 'disableSeperateParameterChangeOnPresetChange', classes: 'mt-4' },
     { id: 'adv.antiOverload', type: 'check', labelKey: 'antiServerOverload', bindKey: 'antiServerOverloads', helpKey: 'antiServerOverload', classes: 'mt-4' },
     { id: 'adv.claudeCache', type: 'check', labelKey: 'claude1HourCaching', bindKey: 'claude1HourCaching', helpKey: 'claude1HourCaching', classes: 'mt-4' },
-    {
-        // GEMINI-PDF-INPUT: one global switch for every native-Gemini request
-        // (classic Google/Vertex models and google-gemini model presets).
-        id: 'adv.geminiPdfInput', type: 'check', labelKey: 'nodeOnlyGeminiPdfInput', bindKey: 'nodeOnlyGeminiPdfInput',
-        helpKey: 'nodeOnlyGeminiPdfInput', showExperimental: true, classes: 'mt-4',
-        keywords: ['gemini', 'vertex', 'pdf', 'token', 'cost', '제미나이', '토큰', '비용'],
-    },
-    {
-        // Media resolution of that PDF; only meaningful while it is on.
-        id: 'adv.geminiPdfMediaResolution', type: 'select', labelKey: 'nodeOnlyGeminiPdfMediaResolution',
-        bindKey: 'nodeOnlyGeminiPdfMediaResolution', helpKey: 'nodeOnlyGeminiPdfMediaResolution',
-        condition: (ctx) => ctx.db.nodeOnlyGeminiPdfInput === true,
-        options: {
-            selectOptions: [
-                { value: 'default', labelKey: 'geminiPdfMediaResolutionDefault' },
-                { value: 'low', labelKey: 'geminiPdfMediaResolutionLow' },
-                { value: 'medium', labelKey: 'geminiPdfMediaResolutionMedium' },
-                { value: 'high', labelKey: 'geminiPdfMediaResolutionHigh' },
-            ]
-        },
-        keywords: ['gemini', 'pdf', 'media resolution', 'resolution', 'token', '해상도', '토큰'],
-    },
+    // Gemini PDF input moved to Chat bot > Model (geminiPdfSettingsData.ts).
     { id: 'adv.tokCache', type: 'check', labelKey: 'useTokenizerCaching', bindKey: 'useTokenizerCaching', helpKey: 'useTokenizerCaching', classes: 'mt-4' },
     {
         id: 'adv.reqLoc', type: 'segmented', labelKey: 'requestLocation', bindKey: 'requestLocation',
