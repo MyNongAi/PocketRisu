@@ -136,11 +136,14 @@ export async function importProtonShare(
     info: ProtonInspectResult,
     origin: ImportOrigin,
     onModule?: (module: RisuModule) => void,
+    options: { browse?: boolean } = {},
 ): Promise<void> {
     // A folder always opens the browser, even with a single file in it, so the
     // user sees what is inside (subfolders included) before anything imports.
+    // `browse` opens it for a single shared file too (a Realm link to a file
+    // that is not plainly a module: the user picks it or closes the browser).
     let chosen: ProtonPick[]
-    if (info.kind === 'folder') {
+    if (info.kind === 'folder' || options.browse) {
         const picks = await openProtonBrowser(url, password, info, origin)
         if (!picks || picks.length === 0) return
         chosen = picks

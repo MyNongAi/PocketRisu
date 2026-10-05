@@ -3,13 +3,14 @@
 // downloadRisuHub imports the character, the module behind that link comes in
 // through the server's Proton pipeline and is paired with the character
 // (character.modules), so it switches on in that bot's chats only. A link to
-// one module file imports it by itself; a link to a folder opens the same
-// folder browser a pasted link does, and the modules picked there are paired.
+// one RISUM or *.module.charx imports it by itself; a folder, or any other
+// file, opens the same Proton browser a pasted folder link does, and the
+// modules picked there are paired.
 // A module already downloaded from the same link is paired again instead of
 // being downloaded twice.
 import { recordModulePair } from './gui/pairedModules'
 import { language } from 'src/lang'
-import { alertSelect, notifyError, notifyInfo, notifySuccess } from './alert'
+import { notifyError, notifySuccess } from './alert'
 import { runImportTask, type ImportProgressReporter } from './importProgress'
 import { isImportCancelled } from './importTransaction'
 import { importModuleFile, type RisuModule } from './process/modules'
@@ -45,40 +46,15 @@ export function findProtonShareLinks(text: string): string[] {
 }
 
 /**
- * Whether a shared file is a module: a RISUM, or a CHARX whose name says so —
- * `*.module.charx` (how modules are exported as CHARX), or "module"/"모듈" as
- * a word in it ("… Image Module.charx", "에셋 모듈.charx"; the space form was
- * taken for the bot, and the download vanished without a word, 2026-10-05).
- * A plain CHARX or PNG is the bot itself, which the Realm download already
- * imported.
+ * Whether a shared file is plainly a module, downloaded without asking: a
+ * RISUM, or a CHARX named `*.module.charx` (how modules are exported as
+ * CHARX). Any other file opens in the Proton browser instead (the user
+ * picks it, or closes the browser), the way a folder does: a name like
+ * "… Image Module.charx" was taken for the bot and silently skipped.
  */
 export function isCompanionModuleFile(name: string): boolean {
     const lower = name.toLocaleLowerCase()
-    if (lower.endsWith('.risum')) return true
-    if (!lower.endsWith('.charx')) return false
-    const base = lower.slice(0, -'.charx'.length)
-    return /(^|[^a-z])modules?([^a-z]|$)/.test(base) || base.includes('모듈')
-}
-
-const sizeText = (bytes: number | null | undefined) => bytes ? ` (${(bytes / 1024 / 1024).toFixed(0)}MB)` : ''
-
-/**
- * A single shared file that is not named as a module: a CHARX may still be
- * the bot's asset module, so the user decides; anything else is skipped with
- * a word, instead of the progress card just going away.
- */
-async function wantsUnnamedFileAsModule(name: string, size: number | null | undefined): Promise<boolean> {
-    if (!name.toLocaleLowerCase().endsWith('.charx')) {
-        notifyInfo(language.realmCompanionModuleSkipped(name))
-        return false
-    }
-    const choice = await alertSelect(
-        [language.realmCompanionModuleImportCharx, language.realmCompanionModuleSkipCharx],
-        language.realmCompanionModuleAskCharx(`${name}${sizeText(size)}`),
-    )
-    if (choice === '0') return true
-    notifyInfo(language.realmCompanionModuleSkipped(name))
-    return false
+    return lower.endsWith('.risum') || lower.endsWith('.module.charx')
 }
 
 /** Adds module ids to a character's own modules (character.modules), keeping order and no duplicates. */
@@ -108,18 +84,16 @@ async function downloadShareModules(link: string, report: ImportProgressReporter
         module.nodeOnlyProtonShare = link
         modules.push(module)
     }
-    if (share.kind === 'folder') {
-        // A folder opens the same browser a pasted link does; what the user
-        // picks imports as modules, and those modules are paired.
+    if (share.kind === 'folder' || !isCompanionModuleFile(share.name)) {
+        // A folder, or a file that is not plainly a module, opens the same
+        // browser a pasted folder link does; what the user picks imports as
+        // modules, and those modules are paired.
         const { importProtonShare } = await import('./protonImport')
-        await importProtonShare(link, password, share, 'module', keep)
+        await importProtonShare(link, password, share, 'module', keep, { browse: true })
         return modules
     }
-    // A single file imports by itself, if it is a module (a plain CHARX or PNG
-    // is the bot the Realm download already brought in; an unclear CHARX asks).
-    const size = share.entries[0]?.size ?? null
-    if (!isCompanionModuleFile(share.name) && !await wantsUnnamedFileAsModule(share.name, size)) return modules
-    const file = await downloadProtonEntry(link, password, { path: [], expectedSize: size }, report)
+    // A plain module file downloads and imports by itself.
+    const file = await downloadProtonEntry(link, password, { path: [], expectedSize: share.entries[0]?.size ?? null }, report)
     const module = await importModuleFile(file, { suppressSuccess: true, onProgress: report })
     if (module) keep(module)
     return modules

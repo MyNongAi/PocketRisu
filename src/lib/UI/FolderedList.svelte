@@ -9,7 +9,7 @@
     // reports the full new item order + folder membership via `onItemsChange`
     // and the folder array via `onFoldersChange`.
     import type { Snippet } from "svelte";
-    import { ChevronDownIcon, ChevronRightIcon, EllipsisVerticalIcon, FolderIcon, FolderPlusIcon, PaletteIcon, SearchIcon, StarIcon } from "@lucide/svelte";
+    import { ChevronDownIcon, ChevronRightIcon, EllipsisVerticalIcon, FolderIcon, FolderPlusIcon, PaletteIcon, SearchIcon, StarIcon, XIcon } from "@lucide/svelte";
     import type { SortableEvent } from "sortablejs";
     import { v4 as uuidv4 } from "uuid";
     import { language } from "src/lang";
@@ -139,6 +139,7 @@
 
     const groups = $derived(groupByFolder(itemFolderIds, folders));
     const query = $derived(searchQuery.trim().toLocaleLowerCase());
+    let searchInput = $state<HTMLInputElement | null>(null);
     // Dragging while a search filter hides rows would reorder against an
     // incomplete DOM, so drag is disabled during search (menus still work).
     const dragDisabled = $derived(query.length > 0 || reorderDisabled);
@@ -288,8 +289,14 @@
         </div>
     {/if}
     <div class="risu-field-border flex items-center gap-2 rounded-md px-3">
-        <SearchIcon size={18} class="text-textcolor2 shrink-0"/>
-        <input bind:value={searchQuery} placeholder={searchPlaceholder}
+        <!-- With text in the box the magnifier turns into X, which clears it. -->
+        {#if searchQuery}
+            <button type="button" class="shrink-0 text-textcolor2 hover:text-textcolor" aria-label={language.searchClear} title={language.searchClear}
+                onclick={() => { searchQuery = ''; searchInput?.focus() }}><XIcon size={18}/></button>
+        {:else}
+            <SearchIcon size={18} class="text-textcolor2 shrink-0"/>
+        {/if}
+        <input bind:this={searchInput} bind:value={searchQuery} placeholder={searchPlaceholder}
             class="w-full py-2 bg-transparent text-textcolor outline-none"/>
     </div>
     {#if showItemCount}
