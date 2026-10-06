@@ -849,7 +849,7 @@
     },
     {
       "id": "IMPORT-CHARX-GUARD",
-      "title": "대용량 CHARX 종류 확인과 취소·되돌리기",
+      "title": "대용량 CHARX 보호 가져오기와 취소·되돌리기",
       "criticality": "data-safety",
       "ownerFiles": [
         "src/ts/charxPreflight.ts",
