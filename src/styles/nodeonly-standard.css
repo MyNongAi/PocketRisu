@@ -65,3 +65,11 @@ body:has(.default-chat-screen.nodeonly-standard) {
   flex-wrap: wrap;
   gap: 0.25rem;
 }
+
+/* 본문 위 genInfo: 공식 레이아웃 그대로 우측 정렬 (Chat.svelte .nodeonly-geninfo-top) */
+.nodeonly-standard .risu-chat .nodeonly-geninfo-top > .flex.flex-col.items-end {
+  align-items: flex-end;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 0;
+}
