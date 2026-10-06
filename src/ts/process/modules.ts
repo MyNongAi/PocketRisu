@@ -87,6 +87,17 @@ export function addModulesToDatabase(modules: readonly RisuModule[]): void {
         })
     }
     refreshModules()
+    rerenderChatForModules()
+}
+
+/**
+ * Re-parses the open chat after its modules changed, so their assets show:
+ * a bot opened before its asset module finished downloading (a Realm
+ * companion) shows the module's images now, not after a reload
+ * (parser.svelte.ts, inlineModuleAssetKey).
+ */
+export function rerenderChatForModules(): void {
+    ReloadGUIPointer.set(get(ReloadGUIPointer) + 1)
 }
 
 export function addModuleToDatabase(module: RisuModule): void {

@@ -488,7 +488,22 @@ const simpleAssetCaches = new WeakMap<object, {
     emotions: AssetPaths,
     fuzzy: FuzzyAssetIndex,
     fuzzyCount: number,
+    moduleKey: string,
 }>()
+
+// The chat's modules that still carry an inline asset list. On the client
+// that is only a module imported in this session: the server hands every
+// other one over as a manifest (stripAssetManifests), and manifests resolve
+// through resolvePrioritizedAssetManifestNames. Chat messages render with a
+// simple character that took no module assets, so a just-downloaded asset
+// module showed no images until a reload turned its list into a manifest.
+// The key changes when such a module arrives, leaves or changes size.
+function inlineModuleAssetKey(): string {
+    return getModules()
+        .map((module) => module?.assets?.length ? `${module.id}:${module.assets.length}` : '')
+        .filter(Boolean)
+        .join('|')
+}
 // Cache owner guard: parsing a character other than the one the cache was built
 // for (group members, previews, parses racing a selection switch) must rebuild
 // instead of reusing the previous character's assets.
@@ -554,19 +569,21 @@ async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|c
     let fuzzyIndex = fuzzyAssetCache
     let fuzzyCount = fuzzyAssetCount
     if (char.type === 'simple') {
+        const moduleKey = char.moduleAssets ? '' : inlineModuleAssetKey()
         let cache = simpleAssetCaches.get(char)
-        if (!cache) {
+        if (!cache || cache.moduleKey !== moduleKey) {
             const assets: AssetPaths = {}
             const emotions: AssetPaths = {}
             const fuzzy: FuzzyAssetIndex = new Map()
             getAssetSrc(char.additionalAssets ?? [], assets, fuzzy)
-            getAssetSrc(char.moduleAssets ?? [], assets)
+            getAssetSrc(char.moduleAssets ?? (moduleKey ? getModuleAssets() : []), assets)
             getEmoSrc(char.emotionImages ?? [], emotions)
             cache = {
                 assets,
                 emotions,
                 fuzzy,
                 fuzzyCount: char.additionalAssets?.length ?? 0,
+                moduleKey,
             }
             simpleAssetCaches.set(char, cache)
         }

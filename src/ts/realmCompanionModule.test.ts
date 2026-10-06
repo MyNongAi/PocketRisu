@@ -31,7 +31,8 @@ vi.mock('./protonImport', () => ({
     importProtonShare: (...a: unknown[]) => importProtonShare(...a),
 }))
 const importModuleFile = vi.fn()
-vi.mock('./process/modules', () => ({ importModuleFile: (...a: unknown[]) => importModuleFile(...a) }))
+const rerenderChatForModules = vi.fn()
+vi.mock('./process/modules', () => ({ importModuleFile: (...a: unknown[]) => importModuleFile(...a), rerenderChatForModules: () => rerenderChatForModules() }))
 
 const {
     findProtonShareLinks, isCompanionModuleFile, pairModulesWithCharacter, importRealmCompanionModules,
@@ -81,6 +82,8 @@ describe('importRealmCompanionModules', () => {
         expect(db.modules[0].nodeOnlyProtonShare).toBe(LINK)
         expect(db.characters[0].modules).toEqual(['m1'])
         expect(notifySuccess).toHaveBeenCalledWith('paired 1')
+        // The open chat re-renders so the module's images show without a reload.
+        expect(rerenderChatForModules).toHaveBeenCalled()
     })
 
     test('a module already downloaded from the link is paired without downloading again', async () => {
