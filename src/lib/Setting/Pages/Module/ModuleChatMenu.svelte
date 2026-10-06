@@ -23,6 +23,7 @@
     import { listTitleColor } from "src/ts/gui/titleColors";
     import PairedModuleMark from "src/lib/UI/GUI/PairedModuleMark.svelte";
     import { forgetModulePair, moduleLinks, recordModulePair } from "src/ts/gui/pairedModules";
+    import { syncLinkedModuleFolder } from "src/ts/process/modules";
     interface Props {
         close?: any;
         alertMode?: boolean;
@@ -154,6 +155,7 @@
             recordModulePair(DBState.db.modules, [moduleId], character.chaId)
             rememberActivation(moduleId)
         }
+        syncLinkedModuleFolder()
         $ReloadGUIPointer += 1
     }
 

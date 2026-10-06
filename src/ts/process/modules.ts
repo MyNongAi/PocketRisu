@@ -16,6 +16,7 @@ import { exportCharacterCard, importCharacterProcess } from "../characterCards"
 import { collectModuleRuntimeIds, collectModuleRuntimeUi } from "./moduleRuntime"
 import { recordModuleFolderActivation, recordNewModules } from "./moduleSort"
 import { organizeImportedModuleSimilarity } from "./similarityFolders"
+import { gatherLinkedModules, linkedModuleIds } from "./linkedModuleFolder"
 import { adaptLegacyProgress, runExportTask, runImportBatch, runImportTask, type ImportProgressReporter } from "../importProgress"
 import type { CharxDestination } from "../charxPreflight"
 import { planLargeCharxImport } from "../largeCharxImport"
@@ -98,6 +99,19 @@ export function addModulesToDatabase(modules: readonly RisuModule[]): void {
  */
 export function rerenderChatForModules(): void {
     ReloadGUIPointer.set(get(ReloadGUIPointer) + 1)
+}
+
+/**
+ * Gathers the modules bots carry as their own into the catalog's [링크]
+ * folder, and sends unlinked ones out of it (linkedModuleFolder.ts). Called
+ * where a link changes and on load; true when the catalog changed.
+ */
+export function syncLinkedModuleFolder(db = getDatabase()): boolean {
+    const gathered = gatherLinkedModules(db.modules, db.moduleFolders ?? [], linkedModuleIds(db.characters), v4)
+    if (!gathered) return false
+    db.modules = gathered.modules
+    db.moduleFolders = gathered.folders
+    return true
 }
 
 export function addModuleToDatabase(module: RisuModule): void {

@@ -7,7 +7,7 @@
     import ShDropdownMenuItem from "src/lib/UI/GUI/ShDropdownMenuItem.svelte";
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
     import ModuleMenu from "src/lib/Setting/Pages/Module/ModuleMenu.svelte";
-    import { addModuleToDatabase, exportModule, exportModuleLegacy, hydrateModuleAssets, importModule, importModuleFromProtonDrive, refreshModules, rerenderChatForModules, type RisuModule } from "src/ts/process/modules";
+    import { addModuleToDatabase, exportModule, exportModuleLegacy, hydrateModuleAssets, importModule, importModuleFromProtonDrive, refreshModules, rerenderChatForModules, syncLinkedModuleFolder, type RisuModule } from "src/ts/process/modules";
     import { Clock3Icon, SquarePen, Globe, Share2Icon, PlusIcon, HardDriveUpload, ListOrderedIcon, PaletteIcon, StarIcon, Waypoints, CloudDownloadIcon, LinkIcon, UnlinkIcon } from "@lucide/svelte";
     import { v4 } from "uuid";
     import { tooltip } from "src/ts/gui/tooltip";
@@ -179,6 +179,7 @@
             rememberActivation(rmodule.id)
             notifySuccess(language.moduleBotLinked.replace('{}', character.name || 'Unnamed'))
         }
+        syncLinkedModuleFolder()
         rerenderChatForModules()
     }
 
@@ -194,6 +195,7 @@
         if (!character || ids.length === 0) return
         const change = folderBotLinkChange(character.modules, ids)
         character.modules = change.modules
+        syncLinkedModuleFolder()
         rerenderChatForModules()
         const name = character.name || 'Unnamed'
         if (change.unlinked.length > 0) {

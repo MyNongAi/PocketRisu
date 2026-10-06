@@ -1220,6 +1220,27 @@
       "regressionTests": [
         "src/ts/gui/pairedModules.test.ts"
       ]
+    },
+    {
+      "id": "MODULE-LINK-FOLDER",
+      "title": "봇에 연결된 모듈을 [링크] 폴더로 모으기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/process/linkedModuleFolder.ts",
+        "src/ts/process/modules.ts",
+        "src/ts/bootstrap.ts",
+        "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
+        "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte",
+        "src/ts/realmCompanionModule.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/modules.ts", "contains": "export function syncLinkedModuleFolder(" },
+        { "file": "src/ts/bootstrap.ts", "contains": "if(syncLinkedModuleFolder(db)){" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "syncLinkedModuleFolder()" }
+      ],
+      "regressionTests": [
+        "src/ts/process/linkedModuleFolder.test.ts"
+      ]
     }
   ]
 }

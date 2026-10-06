@@ -13,7 +13,7 @@ import { language } from 'src/lang'
 import { notifyError, notifySuccess } from './alert'
 import { runImportTask, type ImportProgressReporter } from './importProgress'
 import { isImportCancelled } from './importTransaction'
-import { importModuleFile, rerenderChatForModules, type RisuModule } from './process/modules'
+import { importModuleFile, rerenderChatForModules, syncLinkedModuleFolder, type RisuModule } from './process/modules'
 import { downloadProtonEntry, inspectProtonShare, isProtonPasswordRequired, type ProtonInspectResult } from './protonShareClient'
 import { getDatabase } from './storage/database.svelte'
 
@@ -129,7 +129,10 @@ async function importCompanionModules(
             paired += pairModulesWithCharacter(character, moduleIds)
             recordModulePair(getDatabase().modules, moduleIds, character.chaId)
         }
-        if (paired > 0) rerenderChatForModules()
+        if (paired > 0) {
+            syncLinkedModuleFolder()
+            rerenderChatForModules()
+        }
         return { moduleIds, paired }
     })
 }

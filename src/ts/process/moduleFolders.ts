@@ -10,6 +10,8 @@ export interface ModuleFolder {
         kind: 'module'
         key: string
     }
+    /** The [링크] folder of modules bots carry as their own (linkedModuleFolder.ts). */
+    nodeOnlyLinkFolder?: boolean
 }
 
 export interface FolderableModule {
