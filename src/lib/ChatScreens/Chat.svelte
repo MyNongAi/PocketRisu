@@ -1429,15 +1429,15 @@
                         {@render iconButtons()}
                     </div>
                 </div>
+                <!-- The model it was made with, above the text as in the official
+                     layout (the user's request, 2026-10-07; it sat in the footer). -->
+                {@render genInfo()}
                 <!-- Body: message text -->
                 <div class="mb-3 leading-relaxed">
                     {@render textBox()}
                 </div>
-                <!-- Footer: geninfo + buttons -->
+                <!-- Footer: buttons -->
                 <div class="flex flex-wrap items-center justify-between pt-2 border-t border-darkborderc border-opacity-30 text-textcolor2 gap-2" data-log-skip>
-                    <div class="min-w-0">
-                        {@render genInfo()}
-                    </div>
                     <div class="w-full sm:w-auto ml-auto">
                         {@render iconButtons()}
                     </div>
