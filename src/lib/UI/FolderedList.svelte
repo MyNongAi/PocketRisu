@@ -154,12 +154,29 @@
     // Filtering only the item rows left unrelated folder headers on screen and
     // also mounted every hidden result. Build a display-only view instead;
     // `groups` remains the complete source of truth for drag/menu operations.
-    const displayGroups = $derived.by(() => groups
-        .map((group) => ({
-            ...group,
-            indexes: query ? group.indexes.filter(matches) : group.indexes,
-        }))
-        .filter((group) => !query || group.indexes.length > 0));
+    const filteredGroups = $derived(groups.map((group) => ({
+        ...group,
+        indexes: query ? group.indexes.filter(matches) : group.indexes,
+    })));
+    // A folder may be shown inside another (nodeOnlyParentFolderId, display
+    // only, as on the bot list; one level): it renders under its parent, after
+    // the parent's own items, and never at the top level.
+    function parentOf(folder: PromptPresetFolder | undefined): string | undefined {
+        const parentId = folder?.nodeOnlyParentFolderId;
+        if (!parentId || parentId === folder.id) return undefined;
+        return folders.some((candidate) => candidate.id === parentId && !candidate.nodeOnlyParentFolderId) ? parentId : undefined;
+    }
+    const childGroupsByParent = $derived.by(() => {
+        const byParent = new Map<string, typeof filteredGroups>();
+        for (const group of filteredGroups) {
+            const parentId = parentOf(group.folder);
+            if (!parentId || (query && group.indexes.length === 0)) continue;
+            byParent.set(parentId, [...(byParent.get(parentId) ?? []), group]);
+        }
+        return byParent;
+    });
+    const displayGroups = $derived(filteredGroups.filter((group) => !parentOf(group.folder)
+        && (!query || group.indexes.length > 0 || (!!group.folder && childGroupsByParent.has(group.folder.id)))));
     const rootIndexes = $derived(displayGroups.find((group) => !group.folder)?.indexes ?? []);
     const promotedRootIndex = $derived(rootIndexes.includes(promotedItemIndex) ? promotedItemIndex : -1);
     const promotedFolderGroup = $derived(displayGroups.find((group) => group.folder?.id === promotedFolderId));
@@ -168,7 +185,7 @@
     const interleavedBlocks = $derived(interleaveItems
         ? interleaveModuleCatalogGroups(displayGroups, promotedRootIndex, promotedFolderId)
         : []);
-    const displayItemCount = $derived(displayGroups.reduce((count, group) => count + group.indexes.length, 0));
+    const displayItemCount = $derived(filteredGroups.reduce((count, group) => count + group.indexes.length, 0));
 
     function loadCollapsed(): Set<string> {
         if (!storageKey) return new Set();
@@ -215,7 +232,10 @@
 
     function onFolderDrop(orderedIds: string[]) {
         const byId = new Map(folders.map(folder => [folder.id, folder]));
-        onFoldersChange(orderedIds.map(id => byId.get(id)).filter((folder): folder is PromptPresetFolder => !!folder));
+        const ordered = orderedIds.map(id => byId.get(id)).filter((folder): folder is PromptPresetFolder => !!folder);
+        // Folders shown inside another are not in the dragged list: keep them.
+        const rest = folders.filter(folder => !orderedIds.includes(folder.id));
+        onFoldersChange([...ordered, ...rest]);
     }
 
     async function createFolder() {
@@ -354,11 +374,13 @@
     </ShSortableList>
 </div>
 
-{#snippet folderGroup(group)}
+{#snippet folderGroup(group, nested = false)}
     {@const folder = group.folder}
     {#if folder}
         {@const isCollapsed = !query && isFolderCollapsed(folder.id, collapsed, defaultCollapsed)}
-        <div data-folder-key={folder.id} class="rounded-md border border-darkborderc bg-darkbg">
+        {@const children = nested ? [] : (childGroupsByParent.get(folder.id) ?? [])}
+        <!-- A folder shown inside another has no data-folder-key: only top-level folders drag. -->
+        <div data-folder-key={nested ? undefined : folder.id} data-nested-folder={nested ? folder.id : undefined} class="rounded-md border border-darkborderc bg-darkbg">
             <div class="flex items-center gap-2 px-2 py-2 text-textcolor cursor-pointer select-none"
                 role="button" tabindex="0"
                 onclick={() => toggleCollapsed(folder.id)}
@@ -369,7 +391,7 @@
                 {@render folderLeadingActions?.(folder, group.indexes)}
                 <span class="truncate grow" style:color={folderTitleColor(folder, group.indexes)}>{folder.name}</span>
                 {@render folderActions?.(folder, group.indexes)}
-                <span class="text-xs text-textcolor2">{group.indexes.length}</span>
+                <span class="text-xs text-textcolor2">{group.indexes.length + children.reduce((count, child) => count + child.indexes.length, 0)}</span>
                 {@render folderMenu(folder, group.indexes)}
             </div>
             <div data-folder-container={folder.id} class:hidden={isCollapsed}>
@@ -382,10 +404,18 @@
                     {#each group.indexes as index (index)}
                         {@render row(index)}
                     {:else}
-                        <div class="no-sort text-xs text-textcolor2 text-center py-1">{language.none}</div>
+                        {#if children.length === 0}<div class="no-sort text-xs text-textcolor2 text-center py-1">{language.none}</div>{/if}
                     {/each}
                 </ShSortableList>
             </div>
+            {#if children.length > 0}
+                <!-- Outside the parent's item container, so a drop reads each folder's own rows. -->
+                <div class="flex flex-col gap-2 pl-4 pr-2 pb-2" class:hidden={isCollapsed}>
+                    {#each children as child (child.folder?.id)}
+                        {@render folderGroup(child, true)}
+                    {/each}
+                </div>
+            {/if}
         </div>
     {/if}
 {/snippet}

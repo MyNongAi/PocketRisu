@@ -1094,6 +1094,8 @@ export interface PromptPresetFolder {
     sortOrder?: number
     /** Legacy/compact module catalog membership; synchronized with module.folderId. */
     moduleIds?: string[]
+    /** Shown inside this folder (display-only nesting; FolderedList). */
+    nodeOnlyParentFolderId?: string
 }
 
 export interface Database{

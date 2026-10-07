@@ -84,6 +84,26 @@ function similarityComponent<T extends { name?: unknown }>(items: readonly T[], 
     return component
 }
 
+/** Groups of two or more items whose names are near-duplicates (the [유사 후보] rule). */
+export function similarNameGroups<T extends { name?: unknown }>(items: readonly T[]): T[][] {
+    const seen = new Set<T>()
+    const groups: T[][] = []
+    for(const item of items){
+        if(seen.has(item)) continue
+        const component = similarityComponent(items, item)
+        for(const member of component) seen.add(member)
+        if(component.length >= 2) groups.push(component)
+    }
+    return groups
+}
+
+/** A [유사 후보] folder's name for these members. */
+export function similarityFolderName(members: readonly { name?: unknown, sourceInfo?: { label?: string } }[]): string {
+    const representative = members[0]
+    const label = typeof representative?.name === 'string' ? representative.name.trim() : normalizeDuplicateName(representative?.name)
+    return folderName(label, members.length, members.map((member) => member.sourceInfo?.label ?? ''))
+}
+
 function promoteModuleGroups(db: SimilarityFolderDatabase, groups: readonly string[][]): void {
     const promoted = new Set(groups.flat())
     const history = (db.moduleActivationHistory ?? []).filter((id) => !promoted.has(id))

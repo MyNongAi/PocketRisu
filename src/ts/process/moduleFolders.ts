@@ -12,6 +12,8 @@ export interface ModuleFolder {
     }
     /** The [링크] folder of modules bots carry as their own (linkedModuleFolder.ts). */
     nodeOnlyLinkFolder?: boolean
+    /** Shown inside this folder (display-only nesting, as on the bot list). */
+    nodeOnlyParentFolderId?: string
 }
 
 export interface FolderableModule {
