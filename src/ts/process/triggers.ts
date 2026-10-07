@@ -4,7 +4,7 @@ import { getDatabase, type Chat, type character } from "../storage/database.svel
 import { tokenize } from "../tokenizer";
 import { getModuleTriggers, type ModuleRuntimeContext } from "./modules";
 import { get } from "svelte/store";
-import { ReloadChatPointer, ReloadGUIPointer } from "../stores.svelte";
+import { reloadChatDisplay, reloadChatMessage } from "./chatDisplayReload";
 import { processMultiCommand } from "./command";
 import { parseKeyValue, sleep } from "../util";
 import { alertError, alertInput, alertNormal, alertSelect } from "../alert";
@@ -2385,15 +2385,13 @@ export async function runTrigger(char:character,mode:triggerMode, arg:{
                     arg.displayData = effect.valueType === 'value' ? risuChatParser(effect.value,{chara:char}) : getVar(risuChatParser(effect.value,{chara:char}))
                     break
                 }
+                // Only the chat on screen redraws (chatDisplayReload.ts).
                 case 'v2UpdateGUI':{
-                    ReloadGUIPointer.set(get(ReloadGUIPointer) + 1)
+                    reloadChatDisplay(currentChat)
                     break
                 }
                 case 'v2UpdateChatAt':{
-                    ReloadChatPointer.update((v) => {
-                        v[effect.index] = (v[effect.index] ?? 0) + 1
-                        return v
-                    })
+                    reloadChatMessage(currentChat, effect.index)
                     break
                 }
                 case 'v2Wait':{
@@ -2816,7 +2814,7 @@ export async function runTrigger(char:character,mode:triggerMode, arg:{
     }
     if(varChanged){
         currentChat.scriptstate = chat.scriptstate
-        ReloadGUIPointer.set(get(ReloadGUIPointer) + 1)
+        reloadChatDisplay(currentChat)
     }
     
     return {additonalSysPrompt, chat, tokens:caculatedTokens, stopSending, sendAIprompt, displayData: arg.displayData, tempVars: arg.tempVars}

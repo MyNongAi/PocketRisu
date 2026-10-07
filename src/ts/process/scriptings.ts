@@ -4,7 +4,7 @@ import { hasher, type simpleCharacterArgument, risuChatParser } from "../parser/
 import { LuaEngine, LuaFactory } from "wasmoon";
 import { getCurrentCharacter, getCurrentChat, getDatabase, type Chat, type character, type triggerscript } from "../storage/database.svelte";
 import { get } from "svelte/store";
-import { ReloadChatPointer, ReloadGUIPointer } from "../stores.svelte";
+import { reloadChatDisplay, reloadChatMessage } from "./chatDisplayReload";
 import { alertSelect, alertError, alertInput, alertNormal, alertConfirm } from "../alert";
 import { HypaProcesser } from "./memory/hypamemory";
 import { generateAIImage } from "./stableDiff";
@@ -327,21 +327,20 @@ export async function runScripted(code:string, arg:{
                 console.log(JSON.parse(value))
             })
 
+            // Only the chat on screen redraws (chatDisplayReload.ts): a reply
+            // finishing in another chat must not re-render the one being read.
             declareAPI('reloadDisplay', (id:string) => {
                 if(!ScriptingSafeIds.has(id)){
                     return
                 }
-                ReloadGUIPointer.set(get(ReloadGUIPointer) + 1)
+                reloadChatDisplay(ScriptingEngineState.chat)
             })
 
             declareAPI('reloadChat', (id: string, index: number) => {
                 if(!ScriptingSafeIds.has(id)){
                     return
                 }
-                ReloadChatPointer.update((v) => {
-                    v[index] = (v[index] ?? 0) + 1
-                    return v
-                })
+                reloadChatMessage(ScriptingEngineState.chat, index)
             })
 
             //Low Level Access

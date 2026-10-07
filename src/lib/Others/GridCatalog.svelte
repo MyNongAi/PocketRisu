@@ -1,7 +1,7 @@
 <script lang="ts">
     import { matchesCatalogText } from "src/ts/gui/catalogSearch";
     import { cancelCharacterChatPrefetch, changeChar, getCharThumbnail, prefetchCharacterChat, removeChar, scheduleCharacterChatPrefetch } from "../../ts/characters";
-    import { archiveCharacter, promptActivateCharacter, trashDeactivatedCharacter } from "../../ts/characterArchive";
+    import { archiveCharacter, deleteTrashedCharacter, promptActivateCharacter, restoreTrashedCharacter, trashDeactivatedCharacter } from "../../ts/characterArchive";
     import { type Database } from "../../ts/storage/database.svelte";
     import { onDestroy, onMount } from "svelte";
     import { DBState } from 'src/ts/stores.svelte';
@@ -15,7 +15,7 @@
     import { makeAgoText, parseMultilangString } from "src/ts/util";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
     import { exportChar } from "src/ts/characterCards";
-    import { alertConfirm, alertSelect } from "src/ts/alert";
+    import { alertConfirm, alertError, alertSelect } from "src/ts/alert";
     import { isFolderEntry, moveCharacterToFolder, setHidden } from "src/ts/characterOrder";
     import { syncFavoritesWithFolderMoves } from "src/ts/favoritesFolder";
     import { isDeactivatedSystemFolder } from "src/ts/deactivatedCharacterFolders";
@@ -105,6 +105,33 @@
         await actions[selected]()
     }
 
+    // Trash rows: a trashed deactivated character, or a legacy live one.
+    function restoreTrashEntry(char: CatalogEntry){
+        if(char.archived){
+            restoreTrashedCharacter(char.chaId)
+            return
+        }
+        const idx = findCharacterIndexbyId(char.chaId)
+        if(idx !== -1){
+            DBState.db.characters[idx].trashTime = undefined
+            checkCharOrder()
+        }
+    }
+
+    async function deleteTrashEntry(char: CatalogEntry){
+        if(!char.archived){
+            await removeChar(char.chaId, char.name, 'permanent')
+            return
+        }
+        if(!await alertConfirm(language.removeConfirm + char.name)) return
+        if(!await alertConfirm(language.removeConfirm2 + char.name)) return
+        try {
+            await deleteTrashedCharacter(char.chaId)
+        } catch (error) {
+            alertError(language.deleteCharacterFailed + (error instanceof Error ? error.message : String(error)))
+        }
+    }
+
     function matchesSearch(name:string, value:string){
         return matchesCatalogText(name, value)
     }
@@ -128,9 +155,12 @@
                 importedLabel: formatImportedDate(c.importedAt ?? c.sourceInfo?.importedAt),
             })
         }
-        if(!trash && !db.nodeOnlyHideArchivedCharacters){
+        // The trash is deactivated characters marked trashed since 2026-09-06
+        // (characterArchive.ts); the live trashTime shape above is only legacy
+        // data not yet migrated, so the trash tab lists both.
+        if(trash || !db.nodeOnlyHideArchivedCharacters){
             for(const stub of db.nodeOnlyArchivedCharacters ?? []){
-                if(!stub?.chaId || stub.trashedAt || !matchesSearch(stub.name, value)) continue
+                if(!stub?.chaId || !!stub.trashedAt !== trash || !matchesSearch(stub.name, value)) continue
                 const source = resolveCharacterSourceBadge(stub.sourceInfo?.label, localOriginOf(stub))
                 charas.push({
                     image: stub.image, index: -1, name: stub.name, desc: language.deactivatedBadge,
@@ -288,12 +318,12 @@
             <VirtualList items={trashedCharacters} itemHeight={126} className="min-h-0 flex-1" key={(char) => char.chaId}>
                 {#snippet children(char)}
                     <div class="m-1 flex h-[118px] rounded-md border border-darkborderc p-2">
-                        <BarIcon onClick={() => selectAndClose(char.index)} additionalStyle={() => getCharThumbnail(char.image, 'css')}/>
+                        <BarIcon onClick={() => { if(!char.archived) selectAndClose(char.index) }} additionalStyle={() => getCharThumbnail(char.image, 'css')}/>
                         <div class="ml-2 flex flex-1 flex-col">
                             <h4 class="mb-1 text-lg font-bold text-textcolor" style:color={listTitleColor(char.titleColor, char.missingAssetCount > 0)}>{char.name || 'Unnamed'}</h4>
                             <div class="flex justify-end gap-2">
-                                <button class="text-textcolor2 hover:text-textcolor" onclick={() => { const idx=findCharacterIndexbyId(char.chaId); if(idx!==-1){DBState.db.characters[idx].trashTime=undefined; checkCharOrder()} }}><Undo2Icon/></button>
-                                <button class="text-textcolor2 hover:text-textcolor" onclick={() => removeChar(char.chaId, char.name, 'permanent')}><TrashIcon/></button>
+                                <button class="text-textcolor2 hover:text-textcolor" title={language.restore} aria-label={language.restore} onclick={() => restoreTrashEntry(char)}><Undo2Icon/></button>
+                                <button class="text-textcolor2 hover:text-textcolor" title={language.remove} aria-label={language.remove} onclick={() => deleteTrashEntry(char)}><TrashIcon/></button>
                             </div>
                         </div>
                     </div>
