@@ -1,4 +1,4 @@
-// The bot list's 🔗 [링크] folder (the user's request, 2026-10-08), the twin of
+// The bot list's [링크] folder (the user's request, 2026-10-08), the twin of
 // the module catalog's (process/linkedModuleFolder.ts): bots that carry
 // modules of their own (character.modules) gather there.
 //
@@ -19,7 +19,9 @@ import { isDeactivatedSystemFolder } from './deactivatedCharacterFolders'
 
 type OrderEntry = string | folder
 
-export const BOT_LINK_FOLDER_NAME = '🔗 [링크]'
+export const BOT_LINK_FOLDER_NAME = '[링크]'
+/** The name it carried on 2026-10-08; the UI now draws the green chain itself. */
+const LEGACY_BOT_LINK_FOLDER_NAME = '🔗 [링크]'
 
 function isFolder(entry: OrderEntry): entry is folder {
     return typeof entry !== 'string'
@@ -76,8 +78,9 @@ export function gatherLinkedBots(
     // A folder the user put inside [링크] keeps it too.
     const userNested = !!link && folders.some((entry) => entry.nodeOnlyParentFolderId === linkId && !entry.nodeOnlyLinkNested)
     const used = linkData.length > 0 || wanted.size > 0 || userNested
+    const renamed = !!link && link.name === LEGACY_BOT_LINK_FOLDER_NAME
 
-    let changed = looseLinked.length > 0 || leaving.length > 0 || (!link && used) || (!!link && !used)
+    let changed = looseLinked.length > 0 || leaving.length > 0 || (!link && used) || (!!link && !used) || (renamed && used)
     const next: OrderEntry[] = []
     if (!link && used) {
         next.push({ id: linkId, name: BOT_LINK_FOLDER_NAME, color: '', data: linkData, nodeOnlyLinkFolder: true })
@@ -88,7 +91,7 @@ export function gatherLinkedBots(
             continue
         }
         if (entry.id === linkId) {
-            if (used) next.push({ ...entry, data: linkData })
+            if (used) next.push({ ...entry, name: renamed ? BOT_LINK_FOLDER_NAME : entry.name, data: linkData })
             next.push(...leaving)
             continue
         }

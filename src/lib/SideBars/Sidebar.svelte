@@ -38,6 +38,7 @@
     LayoutGridIcon,
     FolderIcon,
     FolderOpenIcon,
+    Link2Icon,
     SearchIcon,
     XIcon,
     HomeIcon,
@@ -163,7 +164,7 @@
   type sortTypeEntry = sortTypeNormal | sortTypeArchived
   // `system`: one of the idle-age folders of deactivated characters (days).
   // checkCharOrder maintains them, so the rail offers no drag, drop or menu.
-  type sortTypeFolder = {type:'folder',folder:sortTypeEntry[],id:string,name:string,color:string,favorite?:boolean,img?:string,icon?:string,display:FolderDisplayMode,system?:DeactivatedFolderDays}
+  type sortTypeFolder = {type:'folder',folder:sortTypeEntry[],id:string,name:string,color:string,favorite?:boolean,link?:boolean,img?:string,icon?:string,display:FolderDisplayMode,system?:DeactivatedFolderDays}
   type sortType = sortTypeEntry | sortTypeFolder
   // Deactivated characters and the idle-age folders never move by drag;
   // checkCharOrder places them.
@@ -427,6 +428,8 @@
           name: folder.name,
           color: folder.color,
           favorite: !!folder.favorite,
+          // The [링크] folder (linkedBotFolder.ts): the green chain of a linked bot, on the folder.
+          link: !!folder.nodeOnlyLinkFolder,
           // A folder without a custom cover borrows its top member's
           // thumbnail. SidebarAvatar clips it into a folder silhouette so it
           // remains visibly distinct from an ordinary character card.
@@ -929,7 +932,7 @@
 
 {#snippet railNestedMember(member: sortTypeEntry)}
   <div
-    class="sidebar-folder-character group relative flex items-center px-0.5"
+    class="sidebar-folder-character group relative z-10 flex items-center px-2"
     role="listitem"
     data-drag-kind={member.type === 'normal' ? 'character' : undefined}
     data-drag-id={member.type === 'normal' ? member.id : undefined}
@@ -994,15 +997,41 @@
   </div>
 {/snippet}
 
-<!-- Folders shown inside the folder `parentId` (folderNesting.ts): each one
-     a folder slot that opens in place, its own child folders first, then its
-     bots. Drop a bot on it to add the bot, a folder to nest that folder. -->
-{#snippet railNestedFolders(parentId: string)}
+<!-- Folders shown inside the folder `parentId` (folderNesting.ts), drawn in
+     the same slot as a top-level folder (px-2, the 16px gap under it, the same
+     open panel: the user's note of 2026-10-08, "a folder in a folder is not
+     the same shape"). `split` picks the split column's panel. Each opens in
+     place: its own child folders first, then its bots. Drop a bot on it to
+     add the bot, a folder to nest that folder; the spacer at the top of the
+     open panel inserts at its first place. -->
+{#snippet railNestedDropSpacer(folderId: string, cls: string)}
+  <div
+    class="h-4 min-h-4 {cls}"
+    role="listitem"
+    data-spacer-index="0"
+    data-spacer-folder={folderId}
+    ondragover={(e) => {
+      if(!getCurrentSidebarDrag(e)) return
+      e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = 'move'
+      e.currentTarget.classList.add('bg-green-500')
+    }}
+    ondragleave={(e) => e.currentTarget.classList.remove('bg-green-500')}
+    ondrop={(e) => {
+      const drag = getCurrentSidebarDrag(e)
+      if(!drag) return
+      e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('bg-green-500')
+      try { inserter(drag, { kind: 'folder', folderId, index: 0 }) } finally { clearCurrentDrag() }
+    }}
+    ondragenter={preventAll}
+  ></div>
+{/snippet}
+
+{#snippet railNestedFolders(parentId: string, split = false)}
   {#each railFolderChildren.get(parentId) ?? [] as child (child.id)}
     {@const CustomIcon = folderIconComponent(child.icon)}
     <div class="flex w-full flex-col items-center">
       <div
-        class="group relative flex items-center px-0.5"
+        class="group relative flex items-center px-2"
         role="listitem"
         data-drag-kind="folder"
         data-drag-id={child.id}
@@ -1022,6 +1051,7 @@
           name={child.name}
           color={child.color}
           favorite={child.favorite}
+          moduleLink={child.link ? 'linked' : null}
           backgroundimg={child.display === 'image' && child.img ? () => getCharThumbnail(child.img, "plain") : ""}
           oncontextmenu={(e) => openSidebarFolderSettings(child.id, e)}
           onClick={() => {
@@ -1031,7 +1061,7 @@
         >
           {#if child.display === 'name'}
             <div class="flex h-full w-full items-center justify-center">
-              <span class="hyphens-auto truncate font-bold">{child.name}</span>
+              {#if child.link}<Link2Icon size={12} strokeWidth={2.5} class="mr-0.5 shrink-0 text-emerald-400" />{/if}<span class="hyphens-auto truncate font-bold">{child.name}</span>
             </div>
           {:else if child.display === 'icon' && CustomIcon}
             <CustomIcon />
@@ -1043,13 +1073,27 @@
         </SidebarAvatar>
       </div>
       {#if openFolders.includes(child.id)}
-        <div class="relative mt-1 flex w-full flex-col items-center gap-1 rounded-lg border border-selected py-1 {railFolderTint(child.color)}">
-          {@render railNestedFolders(child.id)}
-          {#each child.folder as member (member.type === 'normal' ? member.id : member.chaId)}
-            {@render railNestedMember(member)}
-          {/each}
-        </div>
+        {#if split}
+          <div class="relative mt-1 flex w-full flex-col items-center rounded-lg border border-selected py-1">
+            {@render railNestedDropSpacer(child.id, 'w-full')}
+            {@render railNestedFolders(child.id, true)}
+            {#each child.folder as member (member.type === 'normal' ? member.id : member.chaId)}
+              {@render railNestedMember(member)}
+            {/each}
+          </div>
+        {:else}
+          <div class="p-1 flex flex-col items-center py-1 mt-1 rounded-lg relative">
+            <div class="absolute top-0 left-1 border border-selected w-full h-full rounded-lg z-0 {railFolderTint(child.color)}"></div>
+            {@render railNestedDropSpacer(child.id, 'w-14 relative z-10')}
+            <div class="relative z-10 flex w-full flex-col items-center">{@render railNestedFolders(child.id)}</div>
+            {#each child.folder as member (member.type === 'normal' ? member.id : member.chaId)}
+              {@render railNestedMember(member)}
+            {/each}
+          </div>
+        {/if}
       {/if}
+      <!-- The gap every top-level entry has under it. -->
+      <div class="h-4 min-h-4 w-14" aria-hidden="true"></div>
     </div>
   {/each}
 {/snippet}
@@ -1093,6 +1137,7 @@
             name={item.char.name}
             color={item.char.color}
             favorite={item.char.favorite}
+            moduleLink={item.char.link ? 'linked' : null}
             backgroundimg={item.char.display === 'image' && item.char.img ? () => getCharThumbnail(item.char.img, "plain") : ""}
             oncontextmenu={item.char.system !== undefined ? undefined : (e) => openSidebarFolderSettings(item.char.id, e)}
             onClick={() => {
@@ -1107,7 +1152,7 @@
               {@render deactivatedFolderGlyph(item.char.system)}
             {:else if item.char.display === 'name'}
               <div class="flex h-full w-full items-center justify-center">
-                <span class="truncate font-bold">{item.char.name}</span>
+                {#if item.char.link}<Link2Icon size={12} strokeWidth={2.5} class="mr-0.5 shrink-0 text-emerald-400" />{/if}<span class="truncate font-bold">{item.char.name}</span>
               </div>
             {:else if item.char.display === 'icon' && CustomIcon}
               <CustomIcon />
@@ -1138,7 +1183,7 @@
                 try { inserter(drag, { kind: 'folder', folderId: item.char.id, index: 0 }) } finally { clearCurrentDrag() }
               }}
             ></div>
-            {@render railNestedFolders(item.char.id)}
+            {@render railNestedFolders(item.char.id, true)}
             {#each railFolderMembers(item.char) as folderChar, folderIndex}
               {@const sourceFolderIndex = folderChar.folderIndex ?? folderIndex}
               <div
@@ -1701,7 +1746,7 @@
           {:else if char.type === "folder"}
             {#key char.color}
             {#key char.name}
-              <SidebarAvatar src="slot" size="56" rounded={IconRounded} folderShape name={char.name} color={char.color} favorite={char.favorite} backgroundimg={char.display === 'image' && char.img ? () => getCharThumbnail(char.img, "plain") : ""}
+              <SidebarAvatar src="slot" size="56" rounded={IconRounded} folderShape name={char.name} color={char.color} favorite={char.favorite} moduleLink={char.link ? 'linked' : null} backgroundimg={char.display === 'image' && char.img ? () => getCharThumbnail(char.img, "plain") : ""}
               oncontextmenu={char.system ? undefined : (e) => openSidebarFolderSettings(char.id, e)}
               onClick={() => {
                 if(suppressNextClick) return
@@ -1721,7 +1766,7 @@
                   {@render deactivatedFolderGlyph(char.system)}
                 {:else if char.display === 'name'}
                   <div class="h-full w-full flex justify-center items-center">
-                    <span class="hyphens-auto truncate font-bold">{char.name}</span>
+                    {#if char.link}<Link2Icon size={12} strokeWidth={2.5} class="mr-0.5 shrink-0 text-emerald-400" />{/if}<span class="hyphens-auto truncate font-bold">{char.name}</span>
                   </div>
                 {:else if char.display === 'icon' && CustomIcon}
                   <CustomIcon />
@@ -1772,7 +1817,7 @@
               clearCurrentDrag()
             }
           }} ondragenter={preventAll}></div>
-          <div class="relative z-10 flex w-full flex-col items-center gap-1">{@render railNestedFolders(char.id)}</div>
+          <div class="relative z-10 flex w-full flex-col items-center">{@render railNestedFolders(char.id)}</div>
           {#each railFolderMembers(char) as char2, ind}
               {@const sourceFolderIndex = char2.folderIndex ?? ind}
               <div class="sidebar-folder-character group relative flex items-center px-2 z-10"

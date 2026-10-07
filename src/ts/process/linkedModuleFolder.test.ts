@@ -16,7 +16,7 @@ describe('gatherLinkedModules', () => {
     const userFolder = { id: 'U', name: 'Mine', moduleIds: [] }
     const similar = (id: string) => ({ id, name: `[유사 후보] ${id} · 2개`, moduleIds: [], duplicateCandidate: { kind: 'module', key: id } })
 
-    it('moves loose linked modules into a new 🔗 [링크] folder at the top; a user folder keeps its own and shows inside it', () => {
+    it('moves loose linked modules into a new [링크] folder at the top; a user folder keeps its own and shows inside it', () => {
         n = 0
         const result = gatherLinkedModules([m('loose', undefined, 'Alpha'), m('u1', 'U'), m('u2', 'U'), m('other')], [userFolder], new Set(['loose', 'u1']), newId)!
         expect(result.folders[0]).toMatchObject({ id: 'N1', name: LINK_FOLDER_NAME, nodeOnlyLinkFolder: true, moduleIds: ['loose'] })
@@ -40,7 +40,7 @@ describe('gatherLinkedModules', () => {
 
     it('groups near-duplicate modules loose in [링크] into a [유사 후보] folder inside it, and renames the old [링크]', () => {
         n = 0
-        const link = { id: 'L', name: '[링크]', moduleIds: [], nodeOnlyLinkFolder: true }
+        const link = { id: 'L', name: '🔗 [링크]', moduleIds: [], nodeOnlyLinkFolder: true }
         const result = gatherLinkedModules(
             [m('w1', 'L', 'WW-Sim v1.2.0 에셋 모듈 · 상'), m('w2', 'L', 'WW-Sim v1.2.0 에셋 모듈 · 하'), m('k', 'L', 'Kivotos')],
             [link], new Set(['w1', 'w2', 'k']), newId)!

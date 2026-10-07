@@ -8,7 +8,7 @@
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
     import ModuleMenu from "src/lib/Setting/Pages/Module/ModuleMenu.svelte";
     import { addModuleToDatabase, exportModule, exportModuleLegacy, hydrateModuleAssets, importModule, importModuleFromProtonDrive, refreshModules, rerenderChatForModules, syncLinkedFolders, type RisuModule } from "src/ts/process/modules";
-    import { Clock3Icon, SquarePen, Globe, Share2Icon, PlusIcon, HardDriveUpload, ListOrderedIcon, PaletteIcon, StarIcon, Waypoints, CloudDownloadIcon, LinkIcon, UnlinkIcon } from "@lucide/svelte";
+    import { Clock3Icon, SquarePen, Globe, Share2Icon, PlusIcon, HardDriveUpload, ListOrderedIcon, PaletteIcon, StarIcon, Waypoints, CloudDownloadIcon, LinkIcon, Link2Icon, UnlinkIcon } from "@lucide/svelte";
     import { v4 } from "uuid";
     import { tooltip } from "src/ts/gui/tooltip";
     import { alertConfirm, alertError, alertSelect, notifySuccess } from "src/ts/alert";
@@ -427,7 +427,11 @@
             </ShButton>
             </div>
         {/snippet}
-        {#snippet folderLeadingActions(_folder, indexes)}
+        {#snippet folderLeadingActions(folder, indexes)}
+            {#if folder.nodeOnlyLinkFolder}
+                <!-- The [링크] folder (linkedModuleFolder.ts): the green chain its modules carry, on the folder. -->
+                <span class="no-sort inline-flex shrink-0 text-emerald-500" role="img" aria-label="봇에 연결된 모듈 폴더" title="봇에 연결된 모듈 폴더"><Link2Icon size={14} strokeWidth={2.5} /></span>
+            {/if}
             {#if indexes.some((index) => hasMissingAssets(displayModules[index]))}
                 <span class="no-sort shrink-0" aria-label="에셋 누락" title="에셋 누락">❗</span>
             {/if}

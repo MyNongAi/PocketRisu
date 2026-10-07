@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.13.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-10-03",
+  "updatedAt": "2026-10-08",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
@@ -1071,7 +1071,8 @@
         { "file": "src/ts/characterOrder.ts", "contains": "for (const entry of reparentChildrenOf(order, folderId)) {" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "folderSettingsTarget.set(folderId)" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{@render railNestedFolders(char.id)}" },
-        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{@render railNestedFolders(item.char.id)}" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{@render railNestedFolders(item.char.id, true)}" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{#snippet railNestedFolders(parentId: string, split = false)}" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "railFolderParents.has(char.id) ? null : { char, sourceOrder }" },
         { "file": "src/lib/CharacterManager/FolderSettingsDialog.svelte", "contains": "setFolderParent(DBState.db.characterOrder, id, value || null)" }
       ],
@@ -1236,7 +1237,9 @@
       "requiredMarkers": [
         { "file": "src/ts/process/modules.ts", "contains": "export function syncLinkedFolders(" },
         { "file": "src/ts/bootstrap.ts", "contains": "if(syncLinkedFolders(db)){" },
-        { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "syncLinkedFolders()" }
+        { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "syncLinkedFolders()" },
+        { "file": "src/ts/process/linkedModuleFolder.ts", "contains": "export const LINK_FOLDER_NAME = '[링크]'" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "{#if folder.nodeOnlyLinkFolder}" }
       ],
       "regressionTests": [
         "src/ts/process/linkedModuleFolder.test.ts"
@@ -1274,14 +1277,18 @@
     },
     {
       "id": "BOT-LINK-FOLDER",
-      "title": "모듈을 가진 봇을 봇 목록 🔗 [링크] 폴더로 모으기",
+      "title": "모듈을 가진 봇을 봇 목록 [링크] 폴더로 모으기",
       "criticality": "core-ux",
       "ownerFiles": [
         "src/ts/linkedBotFolder.ts",
         "src/ts/process/modules.ts",
-        "src/ts/bootstrap.ts"
+        "src/ts/bootstrap.ts",
+        "src/lib/SideBars/Sidebar.svelte"
       ],
       "requiredMarkers": [
+        { "file": "src/ts/linkedBotFolder.ts", "contains": "export const BOT_LINK_FOLDER_NAME = '[링크]'" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "link: !!folder.nodeOnlyLinkFolder," },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "moduleLink={char.link ? 'linked' : null}" },
         { "file": "src/ts/process/modules.ts", "contains": "gatherLinkedBots(db.characterOrder ?? [], botsWithOwnModules(db.characters), v4)" },
         { "file": "src/ts/bootstrap.ts", "contains": "if(syncLinkedFolders(db)){" }
       ],

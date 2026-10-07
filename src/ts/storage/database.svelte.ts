@@ -1096,6 +1096,8 @@ export interface PromptPresetFolder {
     moduleIds?: string[]
     /** Shown inside this folder (display-only nesting; FolderedList). */
     nodeOnlyParentFolderId?: string
+    /** The [링크] folder of linked modules (linkedModuleFolder.ts); the UI draws a green chain. */
+    nodeOnlyLinkFolder?: boolean
 }
 
 export interface Database{
@@ -2244,9 +2246,9 @@ export interface folder{
     nodeOnlySystem?:'deactivated'|'favorites'
     /** A creator folder (creatorFolders.ts): the creator key whose bots it gathers. */
     nodeOnlyCreatorKey?:string
-    /** The 🔗 [링크] folder of bots that carry modules of their own (linkedBotFolder.ts). */
+    /** The [링크] folder of bots that carry modules of their own (linkedBotFolder.ts); the UI draws a green chain. */
     nodeOnlyLinkFolder?:boolean
-    /** Shown inside 🔗 [링크] by linkedBotFolder.ts (not by the user), so it may undo it. */
+    /** Shown inside [링크] by linkedBotFolder.ts (not by the user), so it may undo it. */
     nodeOnlyLinkNested?:boolean
 }
 

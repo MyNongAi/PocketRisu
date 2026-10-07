@@ -103,7 +103,7 @@ export function rerenderChatForModules(): void {
 }
 
 /**
- * The 🔗 [링크] folders, after a module link changed or on load: modules bots
+ * The [링크] folders, after a module link changed or on load: modules bots
  * carry as their own in the module catalog's (linkedModuleFolder.ts), and the
  * bots that carry them in the bot list's (linkedBotFolder.ts). True when
  * either changed.

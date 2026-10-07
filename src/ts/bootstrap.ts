@@ -510,7 +510,7 @@ async function checkNewFormat(): Promise<void> {
         db.nodeOnlyCreatorFolderVersion = 1
         orderMigrationAppliedAtBoot = true
     }
-    // The 🔗 [링크] folders of the module catalog and the bot list; links made
+    // The [링크] folders of the module catalog and the bot list; links made
     // on another device or by an older build are gathered here.
     if(syncLinkedFolders(db)){
         orderMigrationAppliedAtBoot = true

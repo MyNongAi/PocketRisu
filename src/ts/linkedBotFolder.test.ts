@@ -15,7 +15,7 @@ describe('botsWithOwnModules', () => {
 })
 
 describe('gatherLinkedBots', () => {
-    it('moves loose linked bots into a new 🔗 [링크] folder at the top and shows their folders inside it', () => {
+    it('moves loose linked bots into a new [링크] folder at the top and shows their folders inside it', () => {
         n = 0
         const order: Entry[] = ['x', 'a', f('Creator', ['k1', 'k2']), 'b', f('User', ['u'])]
         const next = gatherLinkedBots(order, new Set(['a', 'b', 'k1']), newId)!
@@ -35,6 +35,11 @@ describe('gatherLinkedBots', () => {
         expect(show(gatherLinkedBots(order, new Set(), newId)!)).toEqual(['x', `[${BOT_LINK_FOLDER_NAME}:]`, 'a', '[C:k]', '[Mine:m^L]'])
         const bare: Entry[] = ['x', link]
         expect(show(gatherLinkedBots(bare, new Set(), newId)!)).toEqual(['x', 'a'])
+    })
+
+    it('renames the [링크] folder that still carries the emoji of 2026-10-08', () => {
+        const link = f('L', ['a'], { name: '🔗 [링크]', nodeOnlyLinkFolder: true })
+        expect(show(gatherLinkedBots([link, 'x'], new Set(['a']), newId)!)).toEqual([`[${BOT_LINK_FOLDER_NAME}:a]`, 'x'])
     })
 
     it('leaves system folders alone and changes nothing when everything is in place', () => {

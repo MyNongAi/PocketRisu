@@ -10,7 +10,7 @@ import { normalizeDuplicateName } from '../sourceCollectionDuplicates'
 
 // Modules a bot carries as its own (character.modules: the chat module menu's
 // "이 캐릭터에서 사용", the module ⋮ menu's link, a Realm companion module)
-// gather in one 🔗 [링크] folder of the module catalog (the user's request,
+// gather in one [링크] folder of the module catalog (the user's request,
 // 2026-10-07; the bot list has the same, linkedBotFolder.ts). Only loose
 // modules move into it. A folder that holds a linked module is shown inside
 // [링크] as it is, folder in folder like the bot list (display-only:
@@ -20,9 +20,9 @@ import { normalizeDuplicateName } from '../sourceCollectionDuplicates'
 // own [유사 후보] folder inside it. A module no bot links any more leaves
 // [링크] for the top level, and a folder with none comes back out.
 
-export const LINK_FOLDER_NAME = '🔗 [링크]'
-/** The name the folder had before it carried the emoji. */
-const LEGACY_LINK_FOLDER_NAME = '[링크]'
+export const LINK_FOLDER_NAME = '[링크]'
+/** The name it carried on 2026-10-07/08; the UI now draws the green chain itself. */
+const LEGACY_LINK_FOLDER_NAME = '🔗 [링크]'
 
 /** Module ids that a bot outside the trash lists as its own. */
 export function linkedModuleIds(characters: readonly ({ modules?: string[], trashTime?: number } | null | undefined)[] | undefined): Set<string> {
