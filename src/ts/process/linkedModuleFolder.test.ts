@@ -16,11 +16,12 @@ describe('gatherLinkedModules', () => {
     const userFolder = { id: 'U', name: 'Mine', moduleIds: [] }
     const similar = (id: string) => ({ id, name: `[유사 후보] ${id} · 2개`, moduleIds: [], duplicateCandidate: { kind: 'module', key: id } })
 
-    it('moves loose linked modules into a new 🔗 [링크] folder at the top; a user folder keeps its own', () => {
+    it('moves loose linked modules into a new 🔗 [링크] folder at the top; a user folder keeps its own and shows inside it', () => {
         n = 0
-        const result = gatherLinkedModules([m('loose', undefined, 'Alpha'), m('u1', 'U'), m('other')], [userFolder], new Set(['loose', 'u1']), newId)!
+        const result = gatherLinkedModules([m('loose', undefined, 'Alpha'), m('u1', 'U'), m('u2', 'U'), m('other')], [userFolder], new Set(['loose', 'u1']), newId)!
         expect(result.folders[0]).toMatchObject({ id: 'N1', name: LINK_FOLDER_NAME, nodeOnlyLinkFolder: true, moduleIds: ['loose'] })
-        expect(ids(result)).toEqual(['loose:N1', 'u1:U', 'other:-'])
+        expect(ids(result)).toEqual(['loose:N1', 'u1:U', 'u2:U', 'other:-'])
+        expect(result.folders.find((f) => f.id === 'U')).toMatchObject({ nodeOnlyParentFolderId: 'N1', moduleIds: ['u1', 'u2'] })
     })
 
     it('shows a generated folder whose modules are all linked inside [링크], keeping its modules', () => {
@@ -30,11 +31,11 @@ describe('gatherLinkedModules', () => {
         expect(result.folders.find((f) => f.id === 'S')).toMatchObject({ nodeOnlyParentFolderId: 'N1', moduleIds: ['s1', 's2'] })
     })
 
-    it('takes the linked modules out of a partly linked generated folder', () => {
+    it('shows a partly linked folder inside [링크] too, leaving every module in it', () => {
         n = 0
         const result = gatherLinkedModules([m('s1', 'S'), m('s2', 'S'), m('s3', 'S')], [similar('S')], new Set(['s1']), newId)!
-        expect(ids(result)).toEqual(['s1:N1', 's2:S', 's3:S'])
-        expect(result.folders.find((f) => f.id === 'S')?.nodeOnlyParentFolderId).toBeUndefined()
+        expect(ids(result)).toEqual(['s1:S', 's2:S', 's3:S'])
+        expect(result.folders.find((f) => f.id === 'S')?.nodeOnlyParentFolderId).toBe('N1')
     })
 
     it('groups near-duplicate modules loose in [링크] into a [유사 후보] folder inside it, and renames the old [링크]', () => {

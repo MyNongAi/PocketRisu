@@ -25,7 +25,7 @@ import { updateGuisize } from "./gui/guisize";
 import { changeChar, updateLorebooks } from "./characters";
 import { handleShareTarget } from "./shareTarget";
 import { initMobileGesture } from "./hotkey";
-import { moduleUpdate, syncLinkedModuleFolder } from "./process/modules";
+import { moduleUpdate, syncLinkedFolders } from "./process/modules";
 import {
     forageStorage,
     saveDb,
@@ -510,9 +510,9 @@ async function checkNewFormat(): Promise<void> {
         db.nodeOnlyCreatorFolderVersion = 1
         orderMigrationAppliedAtBoot = true
     }
-    // Modules bots carry as their own sit in the catalog's [링크] folder;
-    // links made on another device or by an older build are gathered here.
-    if(syncLinkedModuleFolder(db)){
+    // The 🔗 [링크] folders of the module catalog and the bot list; links made
+    // on another device or by an older build are gathered here.
+    if(syncLinkedFolders(db)){
         orderMigrationAppliedAtBoot = true
     }
 

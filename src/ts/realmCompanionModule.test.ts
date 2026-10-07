@@ -32,7 +32,7 @@ vi.mock('./protonImport', () => ({
 }))
 const importModuleFile = vi.fn()
 const rerenderChatForModules = vi.fn()
-vi.mock('./process/modules', () => ({ importModuleFile: (...a: unknown[]) => importModuleFile(...a), rerenderChatForModules: () => rerenderChatForModules(), syncLinkedModuleFolder: () => false }))
+vi.mock('./process/modules', () => ({ importModuleFile: (...a: unknown[]) => importModuleFile(...a), rerenderChatForModules: () => rerenderChatForModules(), syncLinkedFolders: () => false }))
 
 const {
     findProtonShareLinks, isCompanionModuleFile, pairModulesWithCharacter, importRealmCompanionModules,

@@ -2244,6 +2244,10 @@ export interface folder{
     nodeOnlySystem?:'deactivated'|'favorites'
     /** A creator folder (creatorFolders.ts): the creator key whose bots it gathers. */
     nodeOnlyCreatorKey?:string
+    /** The 🔗 [링크] folder of bots that carry modules of their own (linkedBotFolder.ts). */
+    nodeOnlyLinkFolder?:boolean
+    /** Shown inside 🔗 [링크] by linkedBotFolder.ts (not by the user), so it may undo it. */
+    nodeOnlyLinkNested?:boolean
 }
 
 export type FolderDisplayMode = 'icon' | 'image' | 'name'

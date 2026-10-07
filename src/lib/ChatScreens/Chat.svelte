@@ -1406,14 +1406,14 @@
                 DBState.db.nodeOnlyStandardChatWidth === 'wide' ? 'max-w-6xl' :
                 'max-w-3xl'}
             <div class="flex flex-col w-full min-w-0 {nodeOnlyWidthClass} mx-auto py-6 px-4 sm:px-8 bg-bgcolor sm:rounded-lg">
-                <!-- Header: icon + name + mirrored actions. The footer remains
-                     available for long messages while the header keeps the
-                     official-Risu-style controls close to the sender name. The
-                     geninfo copy sits right under the header row, as in the
-                     official layout, so the spacing is on their wrapper. -->
-                <div class="mb-4">
-                <div class="flex items-center gap-3">
+                <!-- Header: icon, then a column beside it as in the official layout
+                     (the user's request, 2026-10-08): the name and the mirrored
+                     actions along the icon's top edge, the model button under
+                     them. The footer keeps its own actions for long messages. -->
+                <div class="mb-4 flex items-start gap-3">
                     {@render senderIcon({rounded: DBState.db.roundIcons})}
+                <div class="flex min-w-0 flex-1 flex-col">
+                <div class="flex items-center gap-3">
                     {#if DBState.db.characters[selIdState.selId]?.chaId === "§playground" && DBState.db.characters[selIdState.selId]?.chats?.[DBState.db.characters[selIdState.selId]?.chatPage]?.message?.[idx]}
                         <span class="text-lg sm:text-xl text-textcolor flex items-center min-w-0">
                             <span>{DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].role === 'char' ? 'Assistant' : 'User'}</span>
@@ -1438,6 +1438,7 @@
                      .nodeonly-geninfo-top). -->
                 <div class="nodeonly-geninfo-top">
                     {@render genInfo()}
+                </div>
                 </div>
                 </div>
                 <!-- Body: message text -->

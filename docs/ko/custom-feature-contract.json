@@ -1234,9 +1234,9 @@
         "src/ts/realmCompanionModule.ts"
       ],
       "requiredMarkers": [
-        { "file": "src/ts/process/modules.ts", "contains": "export function syncLinkedModuleFolder(" },
-        { "file": "src/ts/bootstrap.ts", "contains": "if(syncLinkedModuleFolder(db)){" },
-        { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "syncLinkedModuleFolder()" }
+        { "file": "src/ts/process/modules.ts", "contains": "export function syncLinkedFolders(" },
+        { "file": "src/ts/bootstrap.ts", "contains": "if(syncLinkedFolders(db)){" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "syncLinkedFolders()" }
       ],
       "regressionTests": [
         "src/ts/process/linkedModuleFolder.test.ts"
@@ -1271,6 +1271,23 @@
         { "file": "src/lib/Others/GridCatalog.svelte", "contains": "function restoreTrashEntry(" }
       ],
       "regressionTests": []
+    },
+    {
+      "id": "BOT-LINK-FOLDER",
+      "title": "모듈을 가진 봇을 봇 목록 🔗 [링크] 폴더로 모으기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/linkedBotFolder.ts",
+        "src/ts/process/modules.ts",
+        "src/ts/bootstrap.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/modules.ts", "contains": "gatherLinkedBots(db.characterOrder ?? [], botsWithOwnModules(db.characters), v4)" },
+        { "file": "src/ts/bootstrap.ts", "contains": "if(syncLinkedFolders(db)){" }
+      ],
+      "regressionTests": [
+        "src/ts/linkedBotFolder.test.ts"
+      ]
     }
   ]
 }

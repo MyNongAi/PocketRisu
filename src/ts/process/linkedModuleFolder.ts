@@ -11,13 +11,14 @@ import { normalizeDuplicateName } from '../sourceCollectionDuplicates'
 // Modules a bot carries as its own (character.modules: the chat module menu's
 // "이 캐릭터에서 사용", the module ⋮ menu's link, a Realm companion module)
 // gather in one 🔗 [링크] folder of the module catalog (the user's request,
-// 2026-10-07). A folder the user made keeps its modules. A generated folder
-// ([유사 후보], source folders) whose modules are all linked is shown inside
+// 2026-10-07; the bot list has the same, linkedBotFolder.ts). Only loose
+// modules move into it. A folder that holds a linked module is shown inside
 // [링크] as it is, folder in folder like the bot list (display-only:
-// nodeOnlyParentFolderId); one that is only partly linked gives up its linked
-// modules. Linked modules with near-duplicate names that sit loose in [링크]
-// get their own [유사 후보] folder inside it. A module no bot links any more
-// leaves [링크] for the top level.
+// nodeOnlyParentFolderId), so a catalog without folders in folders still has
+// every folder with its own modules (2026-10-08: no module leaves its folder).
+// Linked modules with near-duplicate names that sit loose in [링크] get their
+// own [유사 후보] folder inside it. A module no bot links any more leaves
+// [링크] for the top level, and a folder with none comes back out.
 
 export const LINK_FOLDER_NAME = '🔗 [링크]'
 /** The name the folder had before it carried the emoji. */
@@ -31,12 +32,6 @@ export function linkedModuleIds(characters: readonly ({ modules?: string[], tras
         for (const id of character.modules ?? []) ids.add(id)
     }
     return ids
-}
-
-function isGeneratedFolder(folder: ModuleFolder): boolean {
-    return folder.duplicateCandidate?.kind === 'module'
-        || folder.name.trimStart().startsWith('[유사 후보]')
-        || !!folder.sourceInfo
 }
 
 type GatherModule = FolderableModule & { sourceInfo?: { label?: string } }
@@ -59,24 +54,16 @@ export function gatherLinkedModules<T extends GatherModule>(
     const linkId = link?.id ?? createId()
     let changed = false
 
-    // Generated folders whose modules are all linked are shown inside [링크].
-    const members = new Map<string, string[]>()
+    // Folders that hold a linked module are shown inside [링크].
+    const nested = new Set<string>()
     for (const module of modules) {
-        if (module.folderId && byId.has(module.folderId)) members.set(module.folderId, [...(members.get(module.folderId) ?? []), module.id])
+        if (linked.has(module.id) && module.folderId && module.folderId !== linkId && byId.has(module.folderId)) nested.add(module.folderId)
     }
-    const nested = new Set(current
-        .filter((folder) => folder.id !== linkId && isGeneratedFolder(folder))
-        .filter((folder) => {
-            const ids = members.get(folder.id) ?? []
-            return ids.length > 0 && ids.every((id) => linked.has(id))
-        })
-        .map((folder) => folder.id))
 
     let nextModules = modules.map((module) => {
         const folder = module.folderId ? byId.get(module.folderId) : undefined
         if (linked.has(module.id)) {
-            if (folder?.id === linkId) return module
-            if (folder && (!isGeneratedFolder(folder) || nested.has(folder.id))) return module
+            if (folder) return module
             changed = true
             return { ...module, folderId: linkId }
         }

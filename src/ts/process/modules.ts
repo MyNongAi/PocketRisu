@@ -17,6 +17,7 @@ import { collectModuleRuntimeIds, collectModuleRuntimeUi } from "./moduleRuntime
 import { recordModuleFolderActivation, recordNewModules } from "./moduleSort"
 import { organizeImportedModuleSimilarity } from "./similarityFolders"
 import { gatherLinkedModules, linkedModuleIds } from "./linkedModuleFolder"
+import { botsWithOwnModules, gatherLinkedBots } from "../linkedBotFolder"
 import { adaptLegacyProgress, runExportTask, runImportBatch, runImportTask, type ImportProgressReporter } from "../importProgress"
 import type { CharxDestination } from "../charxPreflight"
 import { planLargeCharxImport } from "../largeCharxImport"
@@ -102,16 +103,25 @@ export function rerenderChatForModules(): void {
 }
 
 /**
- * Gathers the modules bots carry as their own into the catalog's [링크]
- * folder, and sends unlinked ones out of it (linkedModuleFolder.ts). Called
- * where a link changes and on load; true when the catalog changed.
+ * The 🔗 [링크] folders, after a module link changed or on load: modules bots
+ * carry as their own in the module catalog's (linkedModuleFolder.ts), and the
+ * bots that carry them in the bot list's (linkedBotFolder.ts). True when
+ * either changed.
  */
-export function syncLinkedModuleFolder(db = getDatabase()): boolean {
+export function syncLinkedFolders(db = getDatabase()): boolean {
+    let changed = false
     const gathered = gatherLinkedModules(db.modules, db.moduleFolders ?? [], linkedModuleIds(db.characters), v4)
-    if (!gathered) return false
-    db.modules = gathered.modules
-    db.moduleFolders = gathered.folders
-    return true
+    if (gathered) {
+        db.modules = gathered.modules
+        db.moduleFolders = gathered.folders
+        changed = true
+    }
+    const order = gatherLinkedBots(db.characterOrder ?? [], botsWithOwnModules(db.characters), v4)
+    if (order) {
+        db.characterOrder = order
+        changed = true
+    }
+    return changed
 }
 
 export function addModuleToDatabase(module: RisuModule): void {
