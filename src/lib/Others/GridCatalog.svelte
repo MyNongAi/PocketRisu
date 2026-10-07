@@ -315,15 +315,23 @@
             </VirtualList>
         {:else if selected === 2}
             <span class="mb-2 shrink-0 text-sm text-textcolor2">{language.trashDesc}</span>
-            <VirtualList items={trashedCharacters} itemHeight={126} className="min-h-0 flex-1" key={(char) => char.chaId}>
+            <!-- Card: p-2 + the 56px thumbnail = 72px; +m-1 = 80. The title line carries
+                 the actions and a stats line sits under it, so the card has no empty
+                 bottom (it was a fixed 118px holding a title and one button row). -->
+            <VirtualList items={trashedCharacters} itemHeight={80} className="min-h-0 flex-1" key={(char) => char.chaId}>
                 {#snippet children(char)}
-                    <div class="m-1 flex h-[118px] rounded-md border border-darkborderc p-2">
+                    <div class="m-1 flex h-[72px] rounded-md border border-darkborderc p-2">
                         <BarIcon onClick={() => { if(!char.archived) selectAndClose(char.index) }} additionalStyle={() => getCharThumbnail(char.image, 'css')}/>
-                        <div class="ml-2 flex flex-1 flex-col">
-                            <h4 class="mb-1 text-lg font-bold text-textcolor" style:color={listTitleColor(char.titleColor, char.missingAssetCount > 0)}>{char.name || 'Unnamed'}</h4>
-                            <div class="flex justify-end gap-2">
-                                <button class="text-textcolor2 hover:text-textcolor" title={language.restore} aria-label={language.restore} onclick={() => restoreTrashEntry(char)}><Undo2Icon/></button>
-                                <button class="text-textcolor2 hover:text-textcolor" title={language.remove} aria-label={language.remove} onclick={() => deleteTrashEntry(char)}><TrashIcon/></button>
+                        <div class="ml-2 flex min-w-0 flex-1 flex-col justify-center">
+                            <div class="flex min-w-0 items-center gap-2">
+                                <h4 class="min-w-0 flex-1 truncate text-lg font-bold text-textcolor" style:color={listTitleColor(char.titleColor, char.missingAssetCount > 0)}>{char.name || 'Unnamed'}</h4>
+                                <div class="flex shrink-0 gap-2">
+                                    <button class="text-textcolor2 hover:text-textcolor" title={language.restore} aria-label={language.restore} onclick={() => restoreTrashEntry(char)}><Undo2Icon/></button>
+                                    <button class="text-textcolor2 hover:text-textcolor" title={language.remove} aria-label={language.remove} onclick={() => deleteTrashEntry(char)}><TrashIcon/></button>
+                                </div>
+                            </div>
+                            <div class="mt-1 flex items-center text-sm text-textcolor2">
+                                <span class="mr-1">{char.chats}</span><MessageSquareIcon size={14}/><span class="mx-1">|</span><span>{char.agoText}</span><span class="mx-1">|</span><span>에셋 {char.assetCount.toLocaleString()}개</span>
                             </div>
                         </div>
                     </div>

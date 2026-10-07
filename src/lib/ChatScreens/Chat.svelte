@@ -1408,8 +1408,11 @@
             <div class="flex flex-col w-full min-w-0 {nodeOnlyWidthClass} mx-auto py-6 px-4 sm:px-8 bg-bgcolor sm:rounded-lg">
                 <!-- Header: icon + name + mirrored actions. The footer remains
                      available for long messages while the header keeps the
-                     official-Risu-style controls close to the sender name. -->
-                <div class="flex items-center gap-3 mb-4">
+                     official-Risu-style controls close to the sender name. The
+                     geninfo copy sits right under the header row, as in the
+                     official layout, so the spacing is on their wrapper. -->
+                <div class="mb-4">
+                <div class="flex items-center gap-3">
                     {@render senderIcon({rounded: DBState.db.roundIcons})}
                     {#if DBState.db.characters[selIdState.selId]?.chaId === "§playground" && DBState.db.characters[selIdState.selId]?.chats?.[DBState.db.characters[selIdState.selId]?.chatPage]?.message?.[idx]}
                         <span class="text-lg sm:text-xl text-textcolor flex items-center min-w-0">
@@ -1429,11 +1432,13 @@
                         {@render iconButtons()}
                     </div>
                 </div>
-                <!-- geninfo above the text too, right-aligned as in the official
-                     layout (the user's request, 2026-10-07); the footer keeps its
-                     own copy (nodeonly-standard.css, .nodeonly-geninfo-top). -->
+                <!-- geninfo above the text too, right under the header's buttons
+                     as in the official layout (the user's request, 2026-10-07);
+                     the footer keeps its own copy (nodeonly-standard.css,
+                     .nodeonly-geninfo-top). -->
                 <div class="nodeonly-geninfo-top">
                     {@render genInfo()}
+                </div>
                 </div>
                 <!-- Body: message text -->
                 <div class="mb-3 leading-relaxed">
