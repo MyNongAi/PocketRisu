@@ -1001,14 +1001,14 @@
      the same slot as a top-level folder (px-2, the 16px gap under it, the same
      open panel: the user's note of 2026-10-08, "a folder in a folder is not
      the same shape"). `split` picks the split column's panel. Each opens in
-     place: its own child folders first, then its bots. Drop a bot on it to
-     add the bot, a folder to nest that folder; the spacer at the top of the
-     open panel inserts at its first place. -->
-{#snippet railNestedDropSpacer(folderId: string, cls: string)}
+     place: its own child folders first, then its bots, each bot followed by
+     the 16px drop spacer a top-level folder's bots have. Drop a bot on it to
+     add the bot, a folder to nest that folder; a spacer inserts at its place. -->
+{#snippet railNestedDropSpacer(folderId: string, index: number, cls: string)}
   <div
     class="h-4 min-h-4 {cls}"
     role="listitem"
-    data-spacer-index="0"
+    data-spacer-index={index}
     data-spacer-folder={folderId}
     ondragover={(e) => {
       if(!getCurrentSidebarDrag(e)) return
@@ -1020,7 +1020,7 @@
       const drag = getCurrentSidebarDrag(e)
       if(!drag) return
       e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('bg-green-500')
-      try { inserter(drag, { kind: 'folder', folderId, index: 0 }) } finally { clearCurrentDrag() }
+      try { inserter(drag, { kind: 'folder', folderId, index }) } finally { clearCurrentDrag() }
     }}
     ondragenter={preventAll}
   ></div>
@@ -1075,19 +1075,21 @@
       {#if openFolders.includes(child.id)}
         {#if split}
           <div class="relative mt-1 flex w-full flex-col items-center rounded-lg border border-selected py-1">
-            {@render railNestedDropSpacer(child.id, 'w-full')}
+            {@render railNestedDropSpacer(child.id, 0, 'w-full')}
             {@render railNestedFolders(child.id, true)}
-            {#each child.folder as member (member.type === 'normal' ? member.id : member.chaId)}
+            {#each child.folder as member, memberIndex (member.type === 'normal' ? member.id : member.chaId)}
               {@render railNestedMember(member)}
+              {@render railNestedDropSpacer(child.id, (member.folderIndex ?? memberIndex) + 1, 'w-full')}
             {/each}
           </div>
         {:else}
           <div class="p-1 flex flex-col items-center py-1 mt-1 rounded-lg relative">
             <div class="absolute top-0 left-1 border border-selected w-full h-full rounded-lg z-0 {railFolderTint(child.color)}"></div>
-            {@render railNestedDropSpacer(child.id, 'w-14 relative z-10')}
+            {@render railNestedDropSpacer(child.id, 0, 'w-14 relative z-10')}
             <div class="relative z-10 flex w-full flex-col items-center">{@render railNestedFolders(child.id)}</div>
-            {#each child.folder as member (member.type === 'normal' ? member.id : member.chaId)}
+            {#each child.folder as member, memberIndex (member.type === 'normal' ? member.id : member.chaId)}
               {@render railNestedMember(member)}
+              {@render railNestedDropSpacer(child.id, (member.folderIndex ?? memberIndex) + 1, 'w-14 relative z-20')}
             {/each}
           </div>
         {/if}
