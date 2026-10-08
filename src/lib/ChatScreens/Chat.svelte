@@ -87,6 +87,9 @@
         allowViewportAssetActivation?: boolean;
         /** The body is in the DOM (log image capture, logCaptureRender.ts). */
         onBodyRendered?: () => void;
+        /** The old reply shown while it is rerolled (gui/rerollPlaceholder.ts):
+         *  not in the chat any more, so only its swipe arrows act. */
+        placeholder?: boolean;
     }
 
     let {
@@ -124,6 +127,7 @@
         resolveSenderIcon,
         allowViewportAssetActivation = true,
         onBodyRendered,
+        placeholder = false,
     }: Props = $props();
 
     let chatRoot:HTMLElement|null = $state(null)
@@ -633,13 +637,13 @@
             <button class="text-sm p-1 text-textcolor2 border-darkborderc float-end mr-2 my-1
                     hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center" 
                     onclick={() => {
-                        const currentGenerationInfo = idx >= 0 ? 
+                        const currentGenerationInfo = idx >= 0 && !placeholder ? 
                             DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[idx].generationInfo :
                             messageGenerationInfo
 
                         alertRequestData({
                             genInfo: currentGenerationInfo,
-                            idx: idx,
+                            idx: placeholder ? -1 : idx,
                         })
                     }}
             >
@@ -728,7 +732,7 @@
             class:prose-invert={$ColorSchemeTypeStore === 'dark'}
             bind:this={bodyRoot}
             onclick={() => {
-            if(DBState.db.clickToEdit && idx > -1 && !isOptimizedStreamingMessage){
+            if(DBState.db.clickToEdit && idx > -1 && !isOptimizedStreamingMessage && !placeholder){
                 startOriginalEdit()
             }
         }}
@@ -762,7 +766,7 @@
                     resolveAssets={effectiveResolveChatAssets} />
             {/key}
         </span>
-        {#if idx >= 0 && !editMode && !editTranslationMode && !isOptimizedStreamingMessage && partialEditEnabled && (DBState.db.enableBlockPartialEdit || DBState.db.enableDragPartialEdit)}
+        {#if idx >= 0 && !placeholder && !editMode && !editTranslationMode && !isOptimizedStreamingMessage && partialEditEnabled && (DBState.db.enableBlockPartialEdit || DBState.db.enableDragPartialEdit)}
             <PartialEditController
                 messageData={message}
                 chatIndex={idx}
@@ -810,6 +814,11 @@
                 <TrashIcon size={20} />
 
             </button>
+        {:else if placeholder}
+            <!-- The old reply while it is rerolled: only its swipes can be browsed. -->
+            <div class="flex items-center ml-2 gap-1">
+                {@render rerolls()}
+            </div>
         {:else}
             <span class="text-xs">{statusMessage}</span>
             <div class="flex items-center ml-2 gap-2 flex-wrap justify-end">

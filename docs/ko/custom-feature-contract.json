@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.13.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-10-08",
+  "updatedAt": "2026-10-09",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
@@ -1313,6 +1313,28 @@
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "rounded-b-md z-30 pb-2" }
       ],
       "regressionTests": []
+    },
+    {
+      "id": "REROLL-PLACEHOLDER",
+      "title": "리롤 중 이전 응답 유지 · 생성 중 스와이프 넘기기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/rerollPlaceholder.ts",
+        "src/lib/ChatScreens/Chats.svelte",
+        "src/lib/ChatScreens/Chat.svelte",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "setRerollPlaceholder({ chatId: activeChat.id, index: cha.length, message: safeStructuredClone(lastMsg) })" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (placeholderChatId) clearRerollPlaceholder(placeholderChatId)" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (isTarget && !currentChatGenerating) restoreShownSwipeScriptstate(chat, msg)" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "if(i === placeholderIndex) continue;" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "if (!hold.rendered) hold.release = holdHeight(b, previousHeight);" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "{:else if placeholder}" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/rerollPlaceholder.test.ts"
+      ]
     }
   ]
 }

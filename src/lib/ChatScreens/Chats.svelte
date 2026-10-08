@@ -11,6 +11,7 @@
     import { getChatAssetRenderWindow } from '../../ts/chatAssetWindow';
     import { isAtTail, revealScrollTop, shouldFollowTail, shouldRevealAddedMessage } from './chatViewport';
     import { chatGenKey, isChatGenerating } from 'src/ts/process/generationState';
+    import { rerollPlaceholderShows, rerollPlaceholders, stepRerollPlaceholderSwipe } from 'src/ts/gui/rerollPlaceholder';
     
     const getCurrentChatRoomId = () => {
         const charId = get(selectedCharID);
@@ -154,8 +155,71 @@
         }
 
 
+        // The old reply while it is rerolled (gui/rerollPlaceholder.ts): drawn
+        // as the newest message, in place of the new reply's empty stream
+        // start, until the new reply has text. Only its swipe arrows act.
+        const placeholder = currentChat?.id ? get(rerollPlaceholders).get(currentChat.id) : undefined
+        const placeholderIndex = placeholder && rerollPlaceholderShows(messages, placeholder) ? placeholder.index : -1
+        if (placeholder && placeholderIndex >= 0) {
+            const placeholderChatId = placeholder.chatId
+            const message = placeholder.message as Message
+            const echoIndex = previousInputIndex(messages, Math.min(placeholderIndex, messages.length))
+            const echoText = echoIndex >= 0 ? (messages[echoIndex].data ?? '') : ''
+            const currentHash = hashCode(['reroll-placeholder', placeholderChatId, placeholderIndex, message.swipeId ?? 0, message.swipes?.length ?? 0, echoText, message.data].join('\u0000'))
+            currentHashes.add(currentHash)
+            if (!hashes.has(currentHash)) {
+                const previous = chatBody.querySelector<HTMLElement>(`:scope > [data-chat-slot="${placeholderIndex}"]`)
+                const previousHeight = previous?.offsetHeight ?? 0
+                const b = document.createElement('div')
+                b.setAttribute('x-hashed', currentHash.toString())
+                b.dataset.chatSlot = placeholderIndex.toString()
+                b.classList.add('chat-message-container')
+                const hold = { rendered: false, release: () => {} }
+                const browsable = hasBrowsableSwipes(message)
+                const inst = mount(Chat, {
+                    target: b,
+                    props: {
+                        message: message.data,
+                        messageKey: '',
+                        previousInput: echoText,
+                        previousInputKey: echoIndex >= 0 ? inputEchoKey(messages[echoIndex], echoIndex) : '',
+                        previousInputIndex: echoIndex,
+                        isLastMemory: false,
+                        idx: placeholderIndex,
+                        totalLength: messages.length,
+                        img: getSenderImage('char'),
+                        loadSenderImage: () => getSenderImage('char'),
+                        onReroll: () => {},
+                        rerollIcon: browsable ? 'force' : false,
+                        swipeOnly: true,
+                        onNextSwipe: () => { stepRerollPlaceholderSwipe(placeholderChatId, 1) },
+                        unReroll: () => { stepRerollPlaceholderSwipe(placeholderChatId, -1) },
+                        onDeleteSwipe: () => {},
+                        currentPage: (message.swipeId ?? 0) + 1,
+                        totalPages: message.swipes?.length ?? 1,
+                        character: simpleChar,
+                        largePortrait: (currentCharacter as character).largePortrait ?? false,
+                        messageGenerationInfo: message.generationInfo,
+                        role: 'char',
+                        name: currentCharacter.name,
+                        isComment: false,
+                        disabled: false,
+                        resolveChatAssets: true,
+                        resolveSenderIcon: true,
+                        onBodyRendered: () => { hold.rendered = true; hold.release() },
+                        placeholder: true,
+                    },
+                })
+                mountInstances.set(currentHash, inst)
+                chatBody.prepend(b)
+                if (!hold.rendered) hold.release = holdHeight(b, previousHeight)
+            }
+            nextHash = currentHash
+        }
+
         for(let i=loadStart ; i >= loadEnd; i--){
             if(i < 0) break; // Prevent out of bounds
+            if(i === placeholderIndex) continue; // the empty stream start the old reply stands in for
             const message = messages[i];
             const messageLargePortrait = message.role === 'user' ? (userIconPortrait ?? false) : ((currentCharacter as character).largePortrait ?? false);
             const isRerollTarget = i === lastRealCharIdx;
@@ -187,6 +251,7 @@
                 b.dataset.chatSlot = i.toString();
                 if (message.chatId) b.dataset.chatId = message.chatId;
                 b.classList.add('chat-message-container');
+                const hold = { rendered: false, release: () => {} };
                 const inst = mount(Chat, {
                     target: b,
                     props: {
@@ -215,6 +280,7 @@
                         rawStreamingText: message.data,
                         resolveChatAssets,
                         resolveSenderIcon: resolveChatAssets,
+                        onBodyRendered: () => { hold.rendered = true; hold.release(); },
                     },
 
                 })
@@ -226,7 +292,7 @@
                 else{
                     chatBody.prepend(b);
                 }
-                holdHeight(b, previousHeight);
+                if (!hold.rendered) hold.release = holdHeight(b, previousHeight);
             }
             else{
                 const inst = mountInstances.get(currentHash)
@@ -311,9 +377,12 @@
     }
 
     /** Keep a remounted message at its previous height until its body has
-     *  rendered at least that tall (or briefly, if it really got shorter). */
-    function holdHeight(el: HTMLElement, height: number) {
-        if (height <= 0) return
+     *  rendered (the caller releases it then, Chat's onBodyRendered) or grown
+     *  that tall, or 1.5 s at most. Waiting for the old height alone left a
+     *  gap under a shorter swipe for the whole 1.5 s, and then the view
+     *  jumped (the user's report, 2026-10-09). Returns the release. */
+    function holdHeight(el: HTMLElement, height: number): () => void {
+        if (height <= 0) return () => {}
         el.style.minHeight = `${height}px`
         let released = false
         const contentHeight = () => {
@@ -333,6 +402,7 @@
         })
         for (const child of Array.from(el.children)) observer.observe(child)
         const timer = setTimeout(release, 1500)
+        return release
     }
 
     let pinnedToTail = false
@@ -623,6 +693,7 @@
 
     $effect(() => {
         void $ReloadChatPointer; // Make $effect track ReloadChatPointer changes
+        void $rerollPlaceholders; // and the old reply shown while it is rerolled
         const currentChatRoomId = getCurrentChatRoomId();
         const isSameChat = currentChatRoomId === previousChatRoomId;
         const added = isSameChat && messages.length > previousLength;

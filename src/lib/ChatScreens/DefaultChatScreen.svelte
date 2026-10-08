@@ -4,6 +4,7 @@
     import Suggestion from './Suggestion.svelte';
     import { copyScriptstateCheckpoint, mergeRerollCheckpoint, removeSwipeCheckpoint, restoreScriptstateBeforeReroll, restoreScriptstateSnapshot, restoreShownSwipeScriptstate, snapshotScriptstate } from 'src/ts/chatScriptstateCheckpoint';
     import { deleteShownSwipe, findLastReplyIndex, stepSwipe } from 'src/ts/chatSwipes';
+    import { clearRerollPlaceholder, setRerollPlaceholder } from 'src/ts/gui/rerollPlaceholder';
     import { CameraIcon, ChevronUpIcon, ChevronDownIcon, ChevronsUpIcon, ChevronsDownIcon, DatabaseIcon, GlobeIcon, FileTextIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2, GitBranch } from "@lucide/svelte";
     import ShDropdownMenu from 'src/lib/UI/GUI/ShDropdownMenu.svelte';
     import ShDropdownMenuTrigger from 'src/lib/UI/GUI/ShDropdownMenuTrigger.svelte';
@@ -654,6 +655,7 @@ import { isMobile } from 'src/ts/platform'
 
     async function reroll() {
         if(currentChatGenerating) return
+        let placeholderChatId: string | null = null
         const targetCharacter = DBState.db.characters[$selectedCharID]
         const targetChat = targetCharacter?.chats?.[targetCharacter.chatPage]
         if(!targetCharacter || !targetChat) return
@@ -712,6 +714,12 @@ import { isMobile } from 'src/ts/platform'
         // popped messages (a chat ending on the user's turn rerolls nothing old).
         const restoredBaseline = targetIndex >= cha.length && restoreScriptstateBeforeReroll(activeChat, lastMsg)
         activeChat.message = cha
+        // The old reply stays on screen, its swipes browsable, until the new
+        // one has text (gui/rerollPlaceholder.ts; the user's request, 2026-10-09).
+        if (targetIndex >= cha.length && activeChat.id) {
+            placeholderChatId = activeChat.id
+            setRerollPlaceholder({ chatId: activeChat.id, index: cha.length, message: safeStructuredClone(lastMsg) })
+        }
         preparingChatSends.delete(genKey)
         const generated = await sendChatMain(false, generationTarget)
 
@@ -744,6 +752,7 @@ import { isMobile } from 'src/ts/platform'
             else delete newLastMsg.scriptstateCheckpoint
         }
         } finally {
+            if (placeholderChatId) clearRerollPlaceholder(placeholderChatId)
             preparingChatSends.delete(genKey)
             await finishChatLease(chatLease)
         }
@@ -761,10 +770,12 @@ import { isMobile } from 'src/ts/platform'
     }
 
     function switchSwipe(step: -1 | 1, index?: number) {
-        if(currentChatGenerating) return
         const { chat, msg, isTarget } = swipeContext(index)
         if (!chat || !msg || !stepSwipe(msg, step)) return
-        if (isTarget) restoreShownSwipeScriptstate(chat, msg)
+        // Swipes can be browsed while a reply is being written (the user's
+        // request, 2026-10-09); the chat variables stay as the generation
+        // found them then.
+        if (isTarget && !currentChatGenerating) restoreShownSwipeScriptstate(chat, msg)
         DBState.db.characters[$selectedCharID].reloadKeys += 1
     }
 
