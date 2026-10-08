@@ -60,7 +60,7 @@ vi.mock(import('./pngChunk'), () => ({
 
 vi.mock('uuid', () => ({ v4: vi.fn(() => 'generated-persona-id') } as any))
 
-import { importUserPersonaImage, markPersonaApplied, personaFromBlank, setUserPersonaImage, updatePersonaText } from './persona'
+import { compareRecentlyApplied, importUserPersonaImage, markPersonaApplied, personaFromBlank, setUserPersonaImage, updatePersonaText } from './persona'
 
 type Deferred<T> = {
     promise: Promise<T>
@@ -264,5 +264,13 @@ describe('binding popup edits', () => {
         expect(created.favorite).toBeUndefined()
         expect(mocks.dbRef.db.personas[2]).toEqual(blank)
         expect(personaFromBlank(9)).toBe(-1)
+    })
+})
+
+describe('compareRecentlyApplied', () => {
+    it('puts the last applied first and personas never applied last, in list order', () => {
+        // Most personas predate lastAppliedAt; NaN differences used to scramble this order.
+        const personas = [{}, { lastAppliedAt: 100 }, {}, { lastAppliedAt: 300 }, { lastAppliedAt: undefined }, { lastAppliedAt: 200 }, {}]
+        expect([0, 1, 2, 3, 4, 5, 6].sort(compareRecentlyApplied(personas))).toEqual([3, 5, 1, 0, 2, 4, 6])
     })
 })

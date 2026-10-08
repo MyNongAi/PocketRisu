@@ -150,6 +150,21 @@ export function personaFromBlank(blankIndex: number, patch: PersonaTextFields = 
     return db.personas.length - 1
 }
 
+/**
+ * When a persona was last applied; one never applied since lastAppliedAt
+ * arrived counts as the oldest. Most personas predate the field, and
+ * Number(undefined) is NaN: a NaN difference made the "recently applied"
+ * sort inconsistent, so the persona just picked did not come first.
+ */
+export function personaAppliedAt(persona: { lastAppliedAt?: number } | null | undefined): number {
+    return Number(persona?.lastAppliedAt) || 0
+}
+
+/** Persona indexes, the last applied first; ties keep the list order. */
+export function compareRecentlyApplied(personas: readonly ({ lastAppliedAt?: number } | null | undefined)[]) {
+    return (left: number, right: number) => (personaAppliedAt(personas[right]) - personaAppliedAt(personas[left])) || left - right
+}
+
 export function markPersonaApplied(id: number, at = Date.now()) {
     const persona = getDatabase().personas[id]
     if (!persona) return

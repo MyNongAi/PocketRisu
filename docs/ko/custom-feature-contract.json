@@ -394,6 +394,8 @@
         { "file": "src/ts/persona.ts", "contains": "importUserPersonaImage" },
         { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "risu-persona-detail-height" },
         { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "최근 적용순" },
+        { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "compareRecentlyApplied(DBState.db.personas)" },
+        { "file": "src/ts/persona.ts", "contains": "return Number(persona?.lastAppliedAt) || 0" },
         { "file": "src/lib/Setting/Settings.svelte", "contains": "startSettingsPaneResize" },
         { "file": "src/lib/Setting/listedPersona.svelte", "contains": "LazyAssetPreview" }
       ],

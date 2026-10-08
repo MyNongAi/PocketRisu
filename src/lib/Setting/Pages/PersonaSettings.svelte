@@ -10,7 +10,7 @@
     import { Clock3Icon, FolderPlusIcon, Grid3X3Icon, GripHorizontalIcon, HardDriveUploadIcon, ListIcon, ListOrderedIcon, PlusIcon, SearchIcon, StarIcon } from "@lucide/svelte";
     import { alertConfirm, alertInput, notifyError, notifySuccess } from "src/ts/alert";
     import { getCharImage } from "src/ts/characters";
-    import { changeUserPersona, exportUserPersona, importUserPersona, importUserPersonaImage, saveUserPersona, selectUserImg, setUserPersonaImage } from "src/ts/persona";
+    import { changeUserPersona, compareRecentlyApplied, exportUserPersona, importUserPersona, importUserPersonaImage, personaAppliedAt, saveUserPersona, selectUserImg, setUserPersonaImage } from "src/ts/persona";
     import { onDestroy } from "svelte";
     import { DBState } from 'src/ts/stores.svelte';
     import { requestImmediateSave } from "src/ts/globalApi.svelte";
@@ -75,24 +75,20 @@
                             .toLocaleLowerCase()
                             .includes(query)
                     })
-                    .sort((left, right) => personaSort === 'recent'
-                        ? (Number(DBState.db.personas[right]?.lastAppliedAt) - Number(DBState.db.personas[left]?.lastAppliedAt)) || left - right
-                        : left - right),
+                    .sort(personaSort === 'recent' ? compareRecentlyApplied(DBState.db.personas) : (left, right) => left - right),
             }))
             .filter((group) => group.indexes.length > 0)
         if (personaSort === 'recent') {
             groups.sort((left, right) => (
-                Math.max(0, ...right.indexes.map((index) => Number(DBState.db.personas[index]?.lastAppliedAt) || 0))
-                - Math.max(0, ...left.indexes.map((index) => Number(DBState.db.personas[index]?.lastAppliedAt) || 0))
+                Math.max(0, ...right.indexes.map((index) => personaAppliedAt(DBState.db.personas[index])))
+                - Math.max(0, ...left.indexes.map((index) => personaAppliedAt(DBState.db.personas[index])))
             ))
         }
         return groups
     })
     const personaListIndexes = $derived(DBState.db.personas
         .map((_, index) => index)
-        .sort((left, right) => personaSort === 'recent'
-            ? (Number(DBState.db.personas[right]?.lastAppliedAt) - Number(DBState.db.personas[left]?.lastAppliedAt)) || left - right
-            : left - right))
+        .sort(personaSort === 'recent' ? compareRecentlyApplied(DBState.db.personas) : (left, right) => left - right))
 
     function loadDetailHeight() {
         try {
