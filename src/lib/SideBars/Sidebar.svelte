@@ -221,6 +221,24 @@
     }
     return children
   })
+  // Bots a folder holds, shown on its thumbnail (the user's request, 2026-10-08):
+  // its own plus those of the folders shown inside it, i.e. what opening it lists.
+  let railFolderCounts = $derived.by(() => {
+    const counts = new Map<string, number>()
+    const countOf = (item: sortTypeFolder, seen: Set<string>): number => {
+      const known = counts.get(item.id)
+      if (known !== undefined) return known
+      seen.add(item.id)
+      let total = item.folder.length
+      for (const child of railFolderChildren.get(item.id) ?? []) {
+        if (!seen.has(child.id)) total += countOf(child, seen)
+      }
+      counts.set(item.id, total)
+      return total
+    }
+    for (const item of charImages) if (item.type === 'folder') countOf(item, new Set())
+    return counts
+  })
   // The 80px bar leaves the input little room, so the row has one button in
   // front of it: the magnifier (focuses the input) while it is empty, the
   // clear button once it has text.
@@ -1052,6 +1070,7 @@
           color={child.color}
           favorite={child.favorite}
           moduleLink={child.link ? 'linked' : null}
+          count={railFolderCounts.get(child.id) ?? child.folder.length}
           backgroundimg={child.display === 'image' && child.img ? () => getCharThumbnail(child.img, "plain") : ""}
           oncontextmenu={(e) => openSidebarFolderSettings(child.id, e)}
           onClick={() => {
@@ -1140,6 +1159,7 @@
             color={item.char.color}
             favorite={item.char.favorite}
             moduleLink={item.char.link ? 'linked' : null}
+            count={railFolderCounts.get(item.char.id) ?? item.char.folder.length}
             backgroundimg={item.char.display === 'image' && item.char.img ? () => getCharThumbnail(item.char.img, "plain") : ""}
             oncontextmenu={item.char.system !== undefined ? undefined : (e) => openSidebarFolderSettings(item.char.id, e)}
             onClick={() => {
@@ -1505,7 +1525,7 @@
        unneeded, 2026-10-01); the expand button below stays for a collapsed bar. -->
   <div class="mt-2 border-b border-b-selected w-full relative text-white" class:max-xs:hidden={$leftBarCollapsed}>
     {#if menuMode === 1}
-      <div class="absolute w-20 min-w-20 flex border-b-selected border-b bg-bgcolor flex-col items-center pt-2 rounded-b-md z-20 pb-2 max-h-[calc(100dvh-4rem)] overflow-x-hidden overflow-y-auto hamburger-menu">
+      <div class="absolute w-20 min-w-20 flex border-b-selected border-b bg-bgcolor flex-col items-center pt-2 rounded-b-md z-30 pb-2 max-h-[calc(100dvh-4rem)] overflow-x-hidden overflow-y-auto hamburger-menu">
         <BarIcon
         onClick={() => {
           if ($settingsOpen) {
@@ -1748,7 +1768,7 @@
           {:else if char.type === "folder"}
             {#key char.color}
             {#key char.name}
-              <SidebarAvatar src="slot" size="56" rounded={IconRounded} folderShape name={char.name} color={char.color} favorite={char.favorite} moduleLink={char.link ? 'linked' : null} backgroundimg={char.display === 'image' && char.img ? () => getCharThumbnail(char.img, "plain") : ""}
+              <SidebarAvatar src="slot" size="56" rounded={IconRounded} folderShape name={char.name} color={char.color} favorite={char.favorite} moduleLink={char.link ? 'linked' : null} count={railFolderCounts.get(char.id) ?? char.folder.length} backgroundimg={char.display === 'image' && char.img ? () => getCharThumbnail(char.img, "plain") : ""}
               oncontextmenu={char.system ? undefined : (e) => openSidebarFolderSettings(char.id, e)}
               onClick={() => {
                 if(suppressNextClick) return
@@ -1957,7 +1977,7 @@
   {#if DBState.db.hamburgerButtonBottom}
   <div class="border-t border-t-selected w-full relative text-white" class:max-xs:hidden={$leftBarCollapsed}>
     {#if menuMode === 1}
-      <div class="absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-20 pb-2 max-h-[calc(100dvh-4rem)] overflow-x-hidden overflow-y-auto hamburger-menu">
+      <div class="absolute bottom-full w-20 min-w-20 flex border-t-selected border-t bg-bgcolor flex-col items-center pt-2 rounded-t-md z-30 pb-2 max-h-[calc(100dvh-4rem)] overflow-x-hidden overflow-y-auto hamburger-menu">
         <BarIcon
         onClick={() => {
           if ($settingsOpen) {

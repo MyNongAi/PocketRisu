@@ -1295,6 +1295,22 @@
       "regressionTests": [
         "src/ts/linkedBotFolder.test.ts"
       ]
+    },
+    {
+      "id": "SIDEBAR-FOLDER-COUNT",
+      "title": "사이드바 폴더 썸네일 봇 수",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/SideBars/Sidebar.svelte",
+        "src/lib/SideBars/SidebarAvatar.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "let railFolderCounts = $derived.by(() => {" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "count={railFolderCounts.get(char.id) ?? char.folder.length}" },
+        { "file": "src/lib/SideBars/SidebarAvatar.svelte", "contains": "{#if count !== null && count !== undefined}" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "rounded-b-md z-30 pb-2" }
+      ],
+      "regressionTests": []
     }
   ]
 }

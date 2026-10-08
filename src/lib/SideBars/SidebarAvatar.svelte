@@ -22,6 +22,8 @@
     missingAssetCount?: number;
     /** The bot's own modules (character.modules): a green chain, red once one of them is gone. */
     moduleLink?: 'linked' | 'broken' | null;
+    /** A folder's bot count, in its bottom-left corner. */
+    count?: number | null;
     realmRecoveryAvailable?: boolean;
     sourceBadge?: string;
     sourceRecorded?: boolean;
@@ -47,6 +49,7 @@
     missingAssets = false,
     missingAssetCount = 0,
     moduleLink = null,
+    count = null,
     realmRecoveryAvailable = false,
     sourceBadge = '',
     sourceRecorded = true,
@@ -136,6 +139,11 @@
         {/if}
       {/if}
     </span>
+  {/if}
+  {#if count !== null && count !== undefined}
+    <!-- The bottom-left corner, which a folder never needs for a source badge. -->
+    <span class="pointer-events-none absolute bottom-0.5 left-0.5 z-20 rounded bg-darkbg/90 px-1 text-[10px] font-bold leading-tight text-textcolor"
+      aria-label={`봇 ${count.toLocaleString()}개`} title={`봇 ${count.toLocaleString()}개`}>{count.toLocaleString()}</span>
   {/if}
   {#if (missingAssets && missingCountText) || moduleLink}
     <!-- Inside the bottom-right corner (next to the mark, which is pinned past
