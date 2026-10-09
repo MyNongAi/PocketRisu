@@ -179,7 +179,7 @@
                     <div class="flex min-w-0 grow basis-48 flex-col gap-3">
                         <label class="flex flex-col gap-1">
                             <span class="text-xs text-textcolor2">{language.name}</span>
-                            <input class="risu-field-border rounded-md bg-transparent px-3 py-1.5 text-sm text-textcolor outline-none" placeholder="User" value={editPersona.name} oninput={(e) => editText({ name: e.currentTarget.value })} />
+                            <input class="risu-field-border rounded-md bg-transparent px-3 py-1.5 text-sm text-textcolor outline-none" value={editPersona.name} oninput={(e) => editText({ name: e.currentTarget.value })} />
                         </label>
                         {#if DBState.db.personaNote}
                             <label class="flex flex-col gap-1">

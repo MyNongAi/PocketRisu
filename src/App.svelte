@@ -283,7 +283,7 @@
         {/if}
         <ChatScreen />
         {#if $openCharacterManager}
-            <LazyComponent loader={characterManagerLoader} />
+            <LazyComponent overlay loader={characterManagerLoader} />
         {/if}
         {/if}
     {/if}
@@ -294,32 +294,32 @@
     {/if}
     <FolderSettingsDialog />
     {#if $openPresetList}
-        <LazyComponent loader={botPresetLoader} props={{ close: () => {$openPresetList = false} }} />
+        <LazyComponent overlay loader={botPresetLoader} props={{ close: () => {$openPresetList = false} }} />
     {/if}
     {#if $openModelPresetList}
-        <LazyComponent loader={modelPresetLoader} props={{ close: () => {$openModelPresetList = false} }} />
+        <LazyComponent overlay loader={modelPresetLoader} props={{ close: () => {$openModelPresetList = false} }} />
     {/if}
     {#if $openModelProfileBrowser}
-        <LazyComponent loader={modelProfileBrowserLoader} props={{ close: () => {$openModelProfileBrowser = false} }} />
+        <LazyComponent overlay loader={modelProfileBrowserLoader} props={{ close: () => {$openModelProfileBrowser = false} }} />
     {/if}
     {#if $openThemePresetList}
-        <LazyComponent loader={themePresetLoader} props={{ close: () => {$openThemePresetList = false} }} />
+        <LazyComponent overlay loader={themePresetLoader} props={{ close: () => {$openThemePresetList = false} }} />
     {/if}
     {#if $openPersonaList}
-        <LazyComponent loader={personaLoader} props={{ close: () => {$openPersonaList = false; $personaSelectCallback = null}, onSelect: $personaSelectCallback }} />
+        <LazyComponent overlay loader={personaLoader} props={{ close: () => {$openPersonaList = false; $personaSelectCallback = null}, onSelect: $personaSelectCallback }} />
     {/if}
     {#if $openMemoryPresetList}
-        <LazyComponent loader={memoryPresetLoader} props={{ close: () => {$openMemoryPresetList = false; $memoryPresetSelectCallback = null}, onSelect: $memoryPresetSelectCallback }} />
+        <LazyComponent overlay loader={memoryPresetLoader} props={{ close: () => {$openMemoryPresetList = false; $memoryPresetSelectCallback = null}, onSelect: $memoryPresetSelectCallback }} />
     {/if}
     {#if $bookmarkListOpen}
-        <LazyComponent loader={bookmarkLoader} />
+        <LazyComponent overlay loader={bookmarkLoader} />
     {/if}
     {#if $hypaV3ModalOpen}
-        <LazyComponent loader={hypaModalLoader} />
+        <LazyComponent overlay loader={hypaModalLoader} />
     {/if}
     <SavePopupIconComp />
     {#if $hypaV3ProgressStore.open}
-        <LazyComponent loader={hypaProgressLoader} />
+        <LazyComponent overlay loader={hypaProgressLoader} />
     {/if}
     <PluginAlertModal />
     <LoadingOverlay />
@@ -331,13 +331,13 @@
         <PopupList />
     {/if}
     {#if popUpEditorStore.open}
-        <LazyComponent loader={popupEditorLoader} />
+        <LazyComponent overlay loader={popupEditorLoader} />
     {/if}
     {#if assetViewerStore.open}
-        <LazyComponent loader={assetViewerLoader} />
+        <LazyComponent overlay loader={assetViewerLoader} />
     {/if}
     {#if protonBrowserState.open}
-        <LazyComponent loader={protonBrowserLoader} />
+        <LazyComponent overlay loader={protonBrowserLoader} />
     {/if}
     <Toaster />
     <RequestStatusToaster />

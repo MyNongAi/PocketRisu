@@ -254,12 +254,12 @@ describe('binding popup edits', () => {
 
     it('makes a new persona from the blank one and leaves the blank one blank', () => {
         setupDatabase()
-        const blank = { id: 'blank', name: 'User', icon: '', personaPrompt: '', note: '빈 페르소나', nodeOnlyBlank: true, favorite: true }
+        const blank = { id: 'blank', name: '', icon: '', personaPrompt: '', note: '빈 페르소나', nodeOnlyBlank: true, favorite: true }
         mocks.dbRef.db.personas = [...mocks.dbRef.db.personas, blank]
         const index = personaFromBlank(2, { personaPrompt: 'a knight' })
         expect(index).toBe(3)
         const created = mocks.dbRef.db.personas[3]
-        expect(created).toMatchObject({ id: 'generated-persona-id', name: 'User', personaPrompt: 'a knight', note: '' })
+        expect(created).toMatchObject({ id: 'generated-persona-id', name: '', personaPrompt: 'a knight', note: '' })
         expect(created.nodeOnlyBlank).toBeUndefined()
         expect(created.favorite).toBeUndefined()
         expect(mocks.dbRef.db.personas[2]).toEqual(blank)

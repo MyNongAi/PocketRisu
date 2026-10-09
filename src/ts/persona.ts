@@ -7,7 +7,7 @@ import { reencodeImage } from "./process/files/inlays"
 import { PngChunk } from "./pngChunk"
 import { v4 } from "uuid"
 import { PERSONA_IMAGE_EXTENSIONS, validatePersonaImage } from "./personaImage"
-import { splitBlankPersona } from "./blankPersona"
+import { BLANK_PERSONA_NAME, splitBlankPersona } from "./blankPersona"
 
 /**
  * Shared persona-image write path for the picker and drag-and-drop UI.
@@ -88,7 +88,7 @@ export function saveUserPersona() {
 }
 
 /**
- * Index of the blank persona (named User, no description), created on first
+ * Index of the blank persona (no name, no description), created on first
  * use and reused after; the persona picker offers it next to "default".
  */
 export function ensureBlankPersonaIndex(): number {
@@ -98,7 +98,7 @@ export function ensureBlankPersonaIndex(): number {
         const now = Date.now()
         db.personas = [...db.personas, {
             id: v4(),
-            name: 'User',
+            name: BLANK_PERSONA_NAME,
             icon: '',
             personaPrompt: '',
             note: language.personaBlank,

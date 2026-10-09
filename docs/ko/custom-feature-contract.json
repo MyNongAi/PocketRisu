@@ -396,12 +396,15 @@
         { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "최근 적용순" },
         { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "compareRecentlyApplied(DBState.db.personas)" },
         { "file": "src/ts/persona.ts", "contains": "return Number(persona?.lastAppliedAt) || 0" },
+        { "file": "src/ts/blankPersona.ts", "contains": "export const BLANK_PERSONA_NAME = ''" },
+        { "file": "src/ts/storage/database.svelte.ts", "contains": "clearLegacyBlankName(data)" },
         { "file": "src/lib/Setting/Settings.svelte", "contains": "startSettingsPaneResize" },
         { "file": "src/lib/Setting/listedPersona.svelte", "contains": "LazyAssetPreview" }
       ],
       "regressionTests": [
         "src/lib/Setting/listedPersona.test.ts",
         "src/ts/persona.test.ts",
+        "src/ts/blankPersona.test.ts",
         "src/ts/personaImage.test.ts"
       ]
     },
@@ -625,6 +628,8 @@
       "requiredMarkers": [
         { "file": "src/App.svelte", "contains": "const settingsLoader = () => import('./lib/Setting/Settings.svelte')" },
         { "file": "src/lib/Others/LazyComponent.svelte", "contains": "const moduleCache" },
+        { "file": "src/lib/Others/LazyComponent.svelte", "contains": "{:else if overlay}" },
+        { "file": "src/App.svelte", "contains": "<LazyComponent overlay loader={characterManagerLoader} />" },
         { "file": "src/lib/SideBars/sidebarPanelLoaders.ts", "contains": "createCachedLoader" },
         { "file": "src/ts/characterRuntime.ts", "contains": "needsCharacterRuntimeNormalization" },
         { "file": "src/ts/storage/assetNameLocalResolver.ts", "contains": "resolveNamesLocally" },

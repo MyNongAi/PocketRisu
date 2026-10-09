@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { personaHasContent, splitBlankPersona } from './blankPersona'
+import { clearLegacyBlankName, personaHasContent, splitBlankPersona } from './blankPersona'
 
-const blank = () => ({ id: 'blank', name: 'User', personaPrompt: '', icon: '', note: '빈 페르소나', nodeOnlyBlank: true, favorite: true })
+const blank = () => ({ id: 'blank', name: '', personaPrompt: '', icon: '', note: '빈 페르소나', nodeOnlyBlank: true, favorite: true })
 const other = () => ({ id: 'alpha', name: 'Alpha', personaPrompt: 'alpha', icon: 'a.png', note: '' })
 
 describe('personaHasContent', () => {
@@ -47,14 +47,31 @@ describe('splitBlankPersona', () => {
         const db = { personas: [other(), { ...blank(), personaPrompt: 'oops' }], selectedPersona: 0, username: 'Alpha', personaPrompt: 'alpha', userIcon: 'a.png', userNote: '' }
         expect(splitBlankPersona(db, 'new-id', 7)).toBe(2)
         expect(db.personas[1].personaPrompt).toBe('')
-        expect(db.personas[2]).toMatchObject({ name: 'User', personaPrompt: 'oops', note: '' })
+        expect(db.personas[2]).toMatchObject({ name: '', personaPrompt: 'oops', note: '' })
         expect(db.selectedPersona).toBe(0)
         expect(db.username).toBe('Alpha')
     })
 
     it('leaves a blank blank persona and a list without one alone', () => {
-        const db = { personas: [other(), blank()], selectedPersona: 1, username: 'User', personaPrompt: '', userIcon: '', userNote: '빈 페르소나' }
+        const db = { personas: [other(), blank()], selectedPersona: 1, username: '', personaPrompt: '', userIcon: '', userNote: '빈 페르소나' }
         expect(splitBlankPersona(db, 'x')).toBe(-1)
         expect(splitBlankPersona({ ...db, personas: [other()] }, 'x')).toBe(-1)
+    })
+})
+
+describe('clearLegacyBlankName', () => {
+    it('takes the name User off a blank persona and off the root while it is global', () => {
+        const db = { personas: [other(), { ...blank(), name: 'User' }], selectedPersona: 1, username: 'User', personaPrompt: '', userIcon: '', userNote: '빈 페르소나' }
+        expect(clearLegacyBlankName(db)).toBe(true)
+        expect(db.personas[1]).toEqual(blank())
+        expect(db.username).toBe('')
+        expect(clearLegacyBlankName(db)).toBe(false)
+    })
+
+    it('leaves the root of another global persona and a renamed blank alone', () => {
+        const db = { personas: [other(), { ...blank(), name: 'User' }], selectedPersona: 0, username: 'User', personaPrompt: '', userIcon: '', userNote: '' }
+        expect(clearLegacyBlankName(db)).toBe(true)
+        expect(db.username).toBe('User')
+        expect(clearLegacyBlankName({ ...db, personas: [other(), { ...blank(), name: 'Kim' }] })).toBe(false)
     })
 })
