@@ -1,6 +1,7 @@
 import { allowedDbKeys, customProviderStore, getV2PluginAPIs, handlePluginInstallViaPlugin, pluginV2, type PluginV2ProviderArgument, type PluginV2ProviderOptions, type RisuPlugin } from "../plugins.svelte";
 import { SandboxHost } from "./factory";
-import { getDatabase, normalizeChat } from "src/ts/storage/database.svelte";
+import { getCurrentChat, getDatabase, normalizeChat } from "src/ts/storage/database.svelte";
+import { resolveClassicModelId } from "src/ts/process/request/modelPresetBinding";
 import { fetchChatFromServer, saveChatToServer } from "src/ts/storage/chatStorage";
 import { SafeLocalPluginStorage, tagWhitelist } from "../pluginSafeClass";
 import { recordOwner, removeOwner, clearOwners } from "../pluginStorageMeta";
@@ -1606,7 +1607,10 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
                 throw new Error("A chat is already in progress");
             }
 
-            if(getModelInfo(DBState.db.aiModel).id.startsWith('pluginmodel:::')){
+            // The model the main request would go to: a plugin provider there
+            // (global or slot-pinned) is blocked; a ModelPreset main is not.
+            const mainModelId = resolveClassicModelId(getCurrentChat(), 'model')
+            if(mainModelId && getModelInfo(mainModelId).id.startsWith('pluginmodel:::')){
                 // Executing plugin provider is block because it can be used for loopholes for ipc right now.
                 throw new Error("Sending chat with plugin-based model is currently blocked");
             }
