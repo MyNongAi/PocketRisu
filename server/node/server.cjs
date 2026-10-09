@@ -76,6 +76,10 @@ let dbCache = {};
 let saveTimers = {};
 const SAVE_INTERVAL = 5000;
 let fullChatStore = null; // Map<chaId, Map<chatId, chatObject>> — lazy-initialized
+// chaId → archivedAt of characters activated in this process whose return to
+// `characters` the client has not saved yet. Their chats live only in
+// fullChatStore until then, so initChatStore carries them over (see there).
+const pendingActivations = new Map();
 const databasePatchHashCache = createPatchHashCache(calculateHash);
 
 // ETag for database.bin
@@ -421,6 +425,7 @@ async function loadDbCacheIfMissing({ createBackup = false } = {}) {
 function invalidateDbCache() {
     delete dbCache[DB_HEX_KEY];
     fullChatStore = null;
+    pendingActivations.clear();
     if (saveTimers[DB_HEX_KEY]) {
         clearTimeout(saveTimers[DB_HEX_KEY]);
         delete saveTimers[DB_HEX_KEY];
@@ -639,7 +644,9 @@ function chatToStub(chat) {
  * reproduce the hybrid on disk.
  */
 function initChatStore(dbObj) {
+    const previous = fullChatStore;
     fullChatStore = new Map();
+    carryPendingActivations(previous, dbObj);
     if (!dbObj?.characters) return;
     for (const char of dbObj.characters) {
         if (!char?.chaId || !char.chats) continue;
@@ -662,6 +669,27 @@ function initChatStore(dbObj) {
         if (charChats.size > 0) {
             fullChatStore.set(char.chaId, charChats);
         }
+    }
+}
+
+// An activated character's chats are registered here before the client's save
+// puts the character back into `characters`. A store rebuild in between (any
+// persist) would drop them: the save that returns the character is then
+// refused as "returned from the archive without activation", and chat bodies
+// posted meanwhile are lost. Keep them while the character is still off the
+// list and its archive stub is the version that was activated; forget the
+// activation once it is listed or the stub is gone or replaced.
+function carryPendingActivations(previous, dbObj) {
+    if (pendingActivations.size === 0) return;
+    const listed = new Set((Array.isArray(dbObj?.characters) ? dbObj.characters : []).map((c) => c?.chaId).filter(Boolean));
+    const stubAt = new Map(archivedStubsOf(dbObj).map((s) => [s.chaId, s.archivedAt]));
+    for (const [chaId, archivedAt] of pendingActivations) {
+        if (listed.has(chaId) || stubAt.get(chaId) !== archivedAt) {
+            pendingActivations.delete(chaId);
+            continue;
+        }
+        const chats = previous?.get(chaId);
+        if (chats) fullChatStore.set(chaId, chats);
     }
 }
 
@@ -7094,6 +7122,7 @@ app.post('/api/characters/:chaId/activate', async (req, res, next) => {
                 charChats.set(chat.id, chat);
             }
             fullChatStore.set(chaId, charChats);
+            pendingActivations.set(chaId, archivedAt);
             // Client view: chats as stubs, asset array as a manifest descriptor.
             // `reconcile` reuses the live manifest when the content is unchanged.
             const clientView = stripDatabaseForClient({ characters: [full] }, { reconcileManifests: true }).characters[0];
