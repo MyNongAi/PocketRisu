@@ -7,15 +7,15 @@
     import ShInput from "src/lib/UI/GUI/ShInput.svelte";
     import TextAreaInput from "src/lib/UI/GUI/TextAreaInput.svelte";
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
-    import { Clock3Icon, FolderPlusIcon, Grid3X3Icon, GripHorizontalIcon, HardDriveUploadIcon, ListIcon, ListOrderedIcon, PlusIcon, SearchIcon, StarIcon } from "@lucide/svelte";
+    import { Clock3Icon, CornerDownRightIcon, FolderPlusIcon, Grid3X3Icon, GripHorizontalIcon, HardDriveUploadIcon, ListIcon, ListOrderedIcon, PlusIcon, SearchIcon, StarIcon } from "@lucide/svelte";
     import { alertConfirm, alertInput, notifyError, notifySuccess } from "src/ts/alert";
     import { getCharImage } from "src/ts/characters";
-    import { changeUserPersona, compareRecentlyApplied, exportUserPersona, importUserPersona, importUserPersonaImage, personaAppliedAt, saveUserPersona, selectUserImg, setUserPersonaImage } from "src/ts/persona";
+    import { changeUserPersona, compareRecentlyApplied, exportUserPersona, importUserPersona, importUserPersonaImage, personaAppliedAt, removePersona, saveUserPersona, selectUserImg, setUserPersonaImage } from "src/ts/persona";
     import { onDestroy } from "svelte";
     import { DBState } from 'src/ts/stores.svelte';
     import { requestImmediateSave } from "src/ts/globalApi.svelte";
     import { v4 } from "uuid"
-    import { groupByFolder } from "src/ts/folders";
+    import { groupByFolder, nestGroups, shownInside } from "src/ts/folders";
     import LazyAssetPreview from "src/lib/Others/LazyAssetPreview.svelte";
     import { localOriginOf, resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
     import { FileDropSurface, draggedItemsAreImages } from "src/ts/gui/fileDropSurface.svelte";
@@ -77,14 +77,27 @@
                     })
                     .sort(personaSort === 'recent' ? compareRecentlyApplied(DBState.db.personas) : (left, right) => left - right),
             }))
-            .filter((group) => group.indexes.length > 0)
+        const keyOf = (group: { folder: { id: string } | null }) => group.folder?.id ?? ''
         if (personaSort === 'recent') {
-            groups.sort((left, right) => (
-                Math.max(0, ...right.indexes.map((index) => personaAppliedAt(DBState.db.personas[index])))
-                - Math.max(0, ...left.indexes.map((index) => personaAppliedAt(DBState.db.personas[index])))
-            ))
+            // A folder is as recent as the folders inside it.
+            const latest = new Map(groups.map((group) => [keyOf(group), Math.max(0, ...group.indexes.map((index) => personaAppliedAt(DBState.db.personas[index])))]))
+            for (const group of groups) {
+                const parentId = shownInside(group.folder, folders)
+                if (parentId && latest.has(parentId)) latest.set(parentId, Math.max(latest.get(parentId) ?? 0, latest.get(keyOf(group)) ?? 0))
+            }
+            groups.sort((left, right) => (latest.get(keyOf(right)) ?? 0) - (latest.get(keyOf(left)) ?? 0))
         }
-        return groups
+        // Folders in folders (made in the list view's folder menu): each
+        // folder, then the ones shown inside it, indented; a folder counts
+        // their personas too.
+        const inside = new Map<string, number>()
+        for (const group of groups) {
+            const parentId = shownInside(group.folder, folders)
+            if (parentId) inside.set(parentId, (inside.get(parentId) ?? 0) + group.indexes.length)
+        }
+        return nestGroups(groups, folders)
+            .map(({ group, depth }) => ({ ...group, depth, total: group.indexes.length + (depth === 0 ? (inside.get(keyOf(group)) ?? 0) : 0) }))
+            .filter((group) => group.total > 0)
     })
     const personaListIndexes = $derived(DBState.db.personas
         .map((_, index) => index)
@@ -331,18 +344,10 @@
     }
 
     async function deletePersona(index: number) {
-        const persona = DBState.db.personas[index]
-        if (!persona || DBState.db.personas.length === 1) return
-        if (!await alertConfirm(`${language.removeConfirm}${persona.name}`)) return
-        saveUserPersona()
         const selected = DBState.db.personas[DBState.db.selectedPersona]
-        const next = DBState.db.personas.filter((_, i) => i !== index)
-        DBState.db.personas = next
-        const selectedIndex = next.indexOf(selected)
-        changeUserPersona(selectedIndex >= 0 ? selectedIndex : 0, 'noSave', false)
+        if (!await removePersona(index)) return
         // Don't pop open whichever persona became selected after the removal.
-        if (selectedIndex < 0) expanded = false
-        void requestImmediateSave()
+        if (DBState.db.personas[DBState.db.selectedPersona] !== selected) expanded = false
     }
 
     onDestroy(() => {
@@ -493,12 +498,13 @@
         <div class="persona-grid-shell flex min-h-0 grow flex-col" role="region" aria-label="페르소나 그리드">
         <div class="persona-grid-catalog min-h-0 grow rounded-md border border-darkborderc p-3">
             {#each personaGroups as group (group.folder?.id ?? '')}
+                <div class="mb-2 mt-1 flex items-center gap-2 text-sm text-textcolor2" class:pl-4={group.depth === 1}>
+                    {#if group.depth === 1}<CornerDownRightIcon size={14} class="shrink-0" />{/if}
+                    <span class="truncate">{group.folder?.name ?? language.folderUncategorized}</span>
+                    <span class="text-xs">{group.total}</span>
+                </div>
                 {#if group.indexes.length > 0}
-                    <div class="mb-2 mt-1 flex items-center gap-2 text-sm text-textcolor2">
-                        <span class="truncate">{group.folder?.name ?? language.folderUncategorized}</span>
-                        <span class="text-xs">{group.indexes.length}</span>
-                    </div>
-                    <div class="mb-4 flex flex-wrap content-start gap-3">
+                    <div class="mb-4 flex flex-wrap content-start gap-3" class:pl-4={group.depth === 1}>
                         {#each group.indexes as index}
                             {@const persona = DBState.db.personas[index]}
                             {@const source = personaSource(index)}

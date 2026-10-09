@@ -19,7 +19,7 @@ vi.mock('sortablejs', () => ({ default: { create: mocks.sortableCreate } }))
 vi.mock('@lucide/svelte', async () => {
     const { default: Icon } = await import('./test/FolderedListIcon.svelte')
     return { ChevronDownIcon: Icon, ChevronRightIcon: Icon, EllipsisVerticalIcon: Icon,
-        FolderIcon: Icon, FolderPlusIcon: Icon, PaletteIcon: Icon, SearchIcon: Icon, StarIcon: Icon, XIcon: Icon }
+        FolderIcon: Icon, FolderInputIcon: Icon, FolderOutputIcon: Icon, FolderPlusIcon: Icon, PaletteIcon: Icon, SearchIcon: Icon, StarIcon: Icon, XIcon: Icon }
 })
 vi.mock('./GUI/ShDropdownMenu.svelte', () => import('./test/FolderedListSlot.svelte'))
 vi.mock('./GUI/ShDropdownMenuTrigger.svelte', () => import('./test/FolderedListSlot.svelte'))

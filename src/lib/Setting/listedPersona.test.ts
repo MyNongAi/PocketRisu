@@ -83,6 +83,13 @@ describe('persona image picker', () => {
         mounted.push(mount(ListedPersona, { target, props: { onSelect, close } }))
         await tick()
 
+        // The chat has Beta bound: the popup opens on its edit tab.
+        const tabs = target.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+        expect(tabs[1]?.getAttribute('aria-selected')).toBe('true')
+        expect(target.querySelector<HTMLInputElement>('[data-persona-bind-edit] input')?.value).toBe('Beta')
+        tabs[0].click()
+        await tick()
+
         const beta = target.querySelector<HTMLButtonElement>('button[aria-label="Beta"]')
         expect(beta).not.toBeNull()
         expect(beta?.getAttribute('aria-pressed')).toBe('true')
@@ -111,6 +118,22 @@ describe('persona image picker', () => {
         expect(mocks.updatePersonaText).toHaveBeenCalledWith(1, { name: 'Beta 2' })
         target.querySelector<HTMLButtonElement>('[role="dialog"] button[aria-label]:not([role="tab"])')?.click()
         expect(close).toHaveBeenCalledOnce()
+    })
+
+    it('opens on the list while the chat has no persona bound', async () => {
+        vi.stubGlobal('IntersectionObserver', TestIntersectionObserver)
+        const chat = mocks.db.characters[0].chats[0]
+        chat.bindedPersona = ''
+        try {
+            const target = document.createElement('div')
+            document.body.appendChild(target)
+            mounted.push(mount(ListedPersona, { target, props: { onSelect: vi.fn(), close: vi.fn() } }))
+            await tick()
+            expect(target.querySelector('[role="tab"]')?.getAttribute('aria-selected')).toBe('true')
+            expect(target.querySelector('button[aria-label="Beta"]')).not.toBeNull()
+        } finally {
+            chat.bindedPersona = 'beta'
+        }
     })
 
     it('changes the global persona when no binding callback is supplied', async () => {

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.13.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-10-09",
+  "updatedAt": "2026-10-10",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
@@ -400,7 +400,13 @@
         { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "// No made-up name: it would reach the AI as {{user}}" },
         { "file": "src/ts/storage/database.svelte.ts", "contains": "clearLegacyBlankName(data)" },
         { "file": "src/lib/Setting/Settings.svelte", "contains": "startSettingsPaneResize" },
-        { "file": "src/lib/Setting/listedPersona.svelte", "contains": "LazyAssetPreview" }
+        { "file": "src/lib/Setting/listedPersona.svelte", "contains": "LazyAssetPreview" },
+        { "file": "src/lib/Setting/listedPersona.svelte", "contains": "let tab = $state<'list' | 'edit'>(initialTab());" },
+        { "file": "src/lib/Setting/listedPersona.test.ts", "contains": "opens on the list while the chat has no persona bound" },
+        { "file": "src/lib/Setting/listedPersona.svelte", "contains": "{#snippet personaMenuItems(index: number)}" },
+        { "file": "src/lib/Setting/listedPersona.svelte", "contains": "nestGroups(groups, DBState.db.personaFolders ?? [])" },
+        { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "return nestGroups(groups, folders)" },
+        { "file": "src/ts/persona.ts", "contains": "export async function removePersona(index: number): Promise<boolean>" }
       ],
       "regressionTests": [
         "src/lib/Setting/listedPersona.test.ts",
@@ -846,6 +852,7 @@
         { "file": "src/ts/process/btwSideChat.ts", "contains": "export function buildBtwRequestMessages(" },
         { "file": "src/ts/process/btwSideChat.svelte.ts", "contains": "routeSnapshot: captureChatModelRoute(chat, 'model')" },
         { "file": "src/ts/process/btwSideChat.svelte.ts", "contains": "skipRequestTrigger: true" },
+        { "file": "src/ts/process/btwSideChat.svelte.ts", "contains": "const userName = context.userName ?? 'User'" },
         { "file": "src/ts/process/request/request.ts", "contains": "arg.skipRequestTrigger ? null : (arg.currentChar ?? getCurrentCharacter())" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "<BtwSidePanel " }
       ],
@@ -1082,10 +1089,14 @@
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{@render railNestedFolders(item.char.id, true)}" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{#snippet railNestedFolders(parentId: string, split = false)}" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "railFolderParents.has(char.id) ? null : { char, sourceOrder }" },
-        { "file": "src/lib/CharacterManager/FolderSettingsDialog.svelte", "contains": "setFolderParent(DBState.db.characterOrder, id, value || null)" }
+        { "file": "src/lib/CharacterManager/FolderSettingsDialog.svelte", "contains": "setFolderParent(DBState.db.characterOrder, id, value || null)" },
+        { "file": "src/ts/folders.ts", "contains": "export function nestGroups<G extends { folder: PromptPresetFolder | null }>(" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "async function createSubfolder(parent: PromptPresetFolder)" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "function folderSiblings(folder: PromptPresetFolder)" }
       ],
       "regressionTests": [
-        "src/ts/folderNesting.test.ts"
+        "src/ts/folderNesting.test.ts",
+        "src/ts/folders.test.ts"
       ]
     },
     {

@@ -1,14 +1,16 @@
 <script lang="ts">
-    import { ChevronDownIcon, ChevronRightIcon, FolderIcon, ImageIcon, SearchIcon, SettingsIcon, StarIcon, UserRoundIcon, XIcon } from "@lucide/svelte";
+    import { ChevronDownIcon, ChevronRightIcon, CornerDownRightIcon, FolderIcon, ImageIcon, SearchIcon, SettingsIcon, StarIcon, Trash2Icon, UserRoundIcon, XIcon } from "@lucide/svelte";
     import { language } from "../../lang";
     import { DBState, selectedCharID } from 'src/ts/stores.svelte';
-    import { changeUserPersona, ensureBlankPersonaIndex, personaFromBlank, setUserPersonaImage, updatePersonaText, type PersonaTextFields } from "src/ts/persona";
+    import { changeUserPersona, ensureBlankPersonaIndex, personaFromBlank, removePersona, setUserPersonaImage, updatePersonaText, type PersonaTextFields } from "src/ts/persona";
     import { PERSONA_IMAGE_EXTENSIONS } from "src/ts/personaImage";
     import { selectSingleFile } from "src/ts/util";
     import { alertError } from "src/ts/alert";
-    import { groupByFolder } from "src/ts/folders";
+    import { groupByFolder, nestGroups, shownInside } from "src/ts/folders";
     import { openSettings, SettingsRoute } from "src/ts/routing";
     import LazyAssetPreview from "src/lib/Others/LazyAssetPreview.svelte";
+    import ShContextMenu from "src/lib/UI/GUI/ShContextMenu.svelte";
+    import ShDropdownMenuItem from "src/lib/UI/GUI/ShDropdownMenuItem.svelte";
 
     interface Props {
         close?: () => void;
@@ -32,6 +34,17 @@
         DBState.db.personas.map((persona) => persona.folderId),
         DBState.db.personaFolders ?? [],
     ));
+    // A folder shown inside another (made in the persona tab) sits under it,
+    // indented, and opens and closes with it.
+    const nestedGroups = $derived(nestGroups(groups, DBState.db.personaFolders ?? []));
+    const visibleByKey = $derived(new Map(groups.map((group) => [group.folder?.id ?? '', group.indexes.filter(listed)])));
+    /** Personas shown in the folders inside the folder `key`. */
+    function childTotal(key: string) {
+        const folders = DBState.db.personaFolders ?? [];
+        return nestedGroups
+            .filter(({ group, depth }) => depth === 1 && shownInside(group.folder, folders) === key)
+            .reduce((count, { group }) => count + (visibleByKey.get(group.folder?.id ?? '')?.length ?? 0), 0);
+    }
 
     // One-tap row at the top: "default" (binding only), the blank persona and
     // the favorited personas.
@@ -42,6 +55,10 @@
 
     function selectBlank() {
         select(ensureBlankPersonaIndex());
+    }
+
+    function isOpen(key: string) {
+        return !!query || (key === '' ? !expanded.has(key) : expanded.has(key));
     }
 
     function toggle(key: string) {
@@ -60,7 +77,12 @@
     // edit tab for it instead of closing; only X (or back/Escape) closes.
     // Editing the blank persona leaves it blank and makes a new persona with
     // the edit, bound to the chat in its place.
-    let tab = $state<'list' | 'edit'>('list');
+    // A chat with a persona bound opens on its edit tab (the user's request,
+    // 2026-10-09); otherwise on the list.
+    let tab = $state<'list' | 'edit'>(initialTab());
+    function initialTab(): 'list' | 'edit' {
+        return boundIndex >= 0 ? 'edit' : 'list';
+    }
     let editId = $state<string | null>(null);
     $effect.pre(() => {
         if (!bindingMode || editId !== null || boundIndex < 0) return;
@@ -116,17 +138,32 @@
         }
     }
 
+    // A persona's right-click menu (long press on touch): remove it.
+    async function deletePersona(index: number) {
+        const id = DBState.db.personas[index]?.id;
+        if (!await removePersona(index)) return;
+        if (id && editId === id) editId = null;
+    }
+
     function closeFromBackdrop(event: MouseEvent) {
         if (bindingMode) return;
         if (event.target === event.currentTarget) close();
     }
 
     function closeFromKeyboard(event: KeyboardEvent) {
-        if (event.key === 'Escape') close();
+        // An open right-click menu takes the Escape; it is still in the DOM
+        // when the key reaches the window.
+        if (event.key === 'Escape' && !document.querySelector('[role="menu"]')) close();
     }
 </script>
 
 <svelte:window onkeydown={closeFromKeyboard} />
+
+<!-- A persona's right-click menu (long press on touch); the blank persona and
+     "default" have none. -->
+{#snippet personaMenuItems(index: number)}
+    <ShDropdownMenuItem variant="destructive" onSelect={() => { void deletePersona(index) }}><Trash2Icon /><span>{language.remove}</span></ShDropdownMenuItem>
+{/snippet}
 
 <div
     class="absolute inset-0 z-40 flex items-center justify-center bg-black/55 p-3 sm:p-6"
@@ -229,7 +266,11 @@
                     {language.personaBlank}
                 </button>
                 {#each favorites as { persona, index } (persona.id ?? index)}
+                    <ShContextMenu>
+                    {#snippet items()}{@render personaMenuItems(index)}{/snippet}
+                    {#snippet trigger(props)}
                     <button
+                        {...props}
                         type="button"
                         aria-label={persona.name || 'User'}
                         aria-pressed={index === highlightIndex}
@@ -258,30 +299,39 @@
                             {/if}
                         </div>
                     </button>
+                    {/snippet}
+                    </ShContextMenu>
                 {/each}
             </div>
 
-            {#each groups as group (group.folder?.id ?? '')}
-                {@const visible = group.indexes.filter(listed)}
+            {#each nestedGroups as { group, depth } (group.folder?.id ?? '')}
                 {@const key = group.folder?.id ?? ''}
-                {@const open = !!query || (key === '' ? !expanded.has(key) : expanded.has(key))}
-                {#if visible.length > 0}
+                {@const visible = visibleByKey.get(key) ?? []}
+                {@const parentKey = depth === 1 ? shownInside(group.folder, DBState.db.personaFolders ?? []) : undefined}
+                {@const total = visible.length + (depth === 0 && group.folder ? childTotal(key) : 0)}
+                {@const open = isOpen(key)}
+                {#if total > 0 && (!parentKey || isOpen(parentKey))}
                     <button
                         type="button"
-                        class="mt-1 flex w-full cursor-pointer select-none items-center gap-2 rounded-md px-2 py-2 text-textcolor hover:bg-selected/30"
+                        class="mt-1 flex w-full cursor-pointer select-none items-center gap-2 rounded-md py-2 pr-2 text-textcolor hover:bg-selected/30 {depth ? 'pl-6' : 'pl-2'}"
                         onclick={() => toggle(key)}
                     >
+                        {#if depth}<CornerDownRightIcon size={14} class="shrink-0 text-textcolor2"/>{/if}
                         {#if open}<ChevronDownIcon size={16} class="shrink-0 text-textcolor2"/>{:else}<ChevronRightIcon size={16} class="shrink-0 text-textcolor2"/>{/if}
                         <FolderIcon size={16} class="shrink-0 text-textcolor2"/>
                         <span class="grow truncate text-left {group.folder ? '' : 'text-textcolor2'}">{group.folder?.name ?? language.folderUncategorized}</span>
-                        <span class="text-xs text-textcolor2">{visible.length}</span>
+                        <span class="text-xs text-textcolor2">{total}</span>
                     </button>
 
-                    {#if open}
-                        <div class="flex content-start flex-wrap gap-3 px-2 pb-3 pt-1">
+                    {#if open && visible.length > 0}
+                        <div class="flex content-start flex-wrap gap-3 pb-3 pt-1 pr-2 {depth ? 'pl-10' : 'pl-2'}">
                             {#each visible as i}
                                 {@const persona = DBState.db.personas[i]}
+                                <ShContextMenu>
+                                {#snippet items()}{@render personaMenuItems(i)}{/snippet}
+                                {#snippet trigger(props)}
                                 <button
+                                    {...props}
                                     type="button"
                                     aria-label={persona.name || 'User'}
                                     aria-pressed={i === highlightIndex}
@@ -311,6 +361,8 @@
                                         {/if}
                                     </div>
                                 </button>
+                                {/snippet}
+                                </ShContextMenu>
                             {/each}
                         </div>
                     {/if}

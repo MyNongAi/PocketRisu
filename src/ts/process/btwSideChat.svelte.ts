@@ -140,7 +140,9 @@ function writeStoredHistory(key: string, history: readonly BtwExchange[]): void 
 /** The side request for `question`, built from the chat without changing it. */
 export function buildBtwRequestFor(char: character, chat: Chat, history: readonly BtwExchange[], question: string): OpenAIChat[] {
     const context = captureModuleRuntimeContext(char, chat)
-    const userName = context.userName || 'User'
+    // An empty persona name stays empty, as in the main request; only the
+    // transcript still marks whose line it is.
+    const userName = context.userName ?? 'User'
     const charName = char.name || 'Character'
     const fill = (text: string | undefined) => fillBtwPlaceholders(text ?? '', charName, userName)
 
@@ -152,7 +154,7 @@ export function buildBtwRequestFor(char: character, chat: Chat, history: readonl
 
     const greeting = chat.firstMessageDisabled ? '' : getFirstMessageAtIndex(char, chat.fmIndex)
     const transcript = selectBtwTranscript(chat.message ?? [], (message) => {
-        if (message.role === 'user') return userName
+        if (message.role === 'user') return userName || 'User'
         if (message.saying && message.saying !== char.chaId) return findCharacterbyId(message.saying)?.name || charName
         return charName
     }, {

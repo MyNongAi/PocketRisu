@@ -9,13 +9,13 @@
     // reports the full new item order + folder membership via `onItemsChange`
     // and the folder array via `onFoldersChange`.
     import type { Snippet } from "svelte";
-    import { ChevronDownIcon, ChevronRightIcon, EllipsisVerticalIcon, FolderIcon, FolderPlusIcon, PaletteIcon, SearchIcon, StarIcon, XIcon } from "@lucide/svelte";
+    import { ChevronDownIcon, ChevronRightIcon, EllipsisVerticalIcon, FolderIcon, FolderInputIcon, FolderOutputIcon, FolderPlusIcon, PaletteIcon, SearchIcon, StarIcon, XIcon } from "@lucide/svelte";
     import type { SortableEvent } from "sortablejs";
     import { v4 as uuidv4 } from "uuid";
     import { language } from "src/lang";
     import { matchesCatalogText } from "src/ts/gui/catalogSearch";
     import { alertConfirm, alertInput, alertSelect } from "src/ts/alert";
-    import { groupByFolder, isFolderCollapsed } from "src/ts/folders";
+    import { folderTree, groupByFolder, isFolderCollapsed, shownInside } from "src/ts/folders";
     import { interleaveModuleCatalogGroups } from "src/ts/process/moduleSort";
     import type { PromptPresetFolder } from "src/ts/storage/database.svelte";
     import ShSortableList from "./GUI/ShSortableList.svelte";
@@ -162,9 +162,7 @@
     // only, as on the bot list; one level): it renders under its parent, after
     // the parent's own items, and never at the top level.
     function parentOf(folder: PromptPresetFolder | undefined): string | undefined {
-        const parentId = folder?.nodeOnlyParentFolderId;
-        if (!parentId || parentId === folder.id) return undefined;
-        return folders.some((candidate) => candidate.id === parentId && !candidate.nodeOnlyParentFolderId) ? parentId : undefined;
+        return shownInside(folder, folders);
     }
     const childGroupsByParent = $derived.by(() => {
         const byParent = new Map<string, typeof filteredGroups>();
@@ -251,35 +249,100 @@
         onFoldersChange(folders.map(f => f.id === folder.id ? { ...f, name } : f));
     }
 
+    function withoutParent(folder: PromptPresetFolder): PromptPresetFolder {
+        const { nodeOnlyParentFolderId: _parent, ...rest } = folder;
+        return rest;
+    }
+
     async function deleteFolder(folder: PromptPresetFolder) {
         if (!await alertConfirm(language.folderDeleteKeepItems)) return;
         onItemsChange(placementsFromData().map(p => p.folderId === folder.id ? { ...p, folderId: undefined } : p));
-        onFoldersChange(folders.filter(f => f.id !== folder.id));
+        // The folders shown inside it come out to the top level.
+        onFoldersChange(folders.filter(f => f.id !== folder.id).map(f => f.nodeOnlyParentFolderId === folder.id ? withoutParent(f) : f));
+    }
+
+    // Up/down move a folder among the folders shown beside it (the top level,
+    // or the same parent); in `folders` the two trade places.
+    function folderSiblings(folder: PromptPresetFolder) {
+        const parentId = parentOf(folder);
+        return folders.filter(f => parentOf(f) === parentId);
     }
 
     function moveFolder(folder: PromptPresetFolder, delta: -1 | 1) {
         if (!canMoveFolder(folder, delta)) return;
+        const siblings = folderSiblings(folder);
+        const neighbor = siblings[siblings.findIndex(f => f.id === folder.id) + delta];
         const from = folders.findIndex(f => f.id === folder.id);
-        const to = from + delta;
-        if (from < 0 || to < 0 || to >= folders.length) return;
+        const to = folders.findIndex(f => f.id === neighbor.id);
         const next = [...folders];
-        next.splice(from, 1);
-        next.splice(to, 0, folder);
+        next[from] = neighbor;
+        next[to] = folder;
         onFoldersChange(next);
     }
 
     function canMoveFolder(folder: PromptPresetFolder, delta: -1 | 1) {
-        const from = folders.findIndex(f => f.id === folder.id);
-        const neighbor = folders[from + delta];
+        const siblings = folderSiblings(folder);
+        const from = siblings.findIndex(f => f.id === folder.id);
+        const neighbor = siblings[from + delta];
         return from >= 0 && !!neighbor && (!onFolderFavorite || !!folder.favorite === !!neighbor.favorite);
     }
 
+    // Folders in folders, one level deep (the user's request, 2026-10-09).
+    // [링크] gathers its folders itself, so it takes none from the user and
+    // the ones in it stay there.
+    function inLinkFolder(folder: PromptPresetFolder) {
+        const parentId = parentOf(folder);
+        return !!parentId && !!folders.find(f => f.id === parentId)?.nodeOnlyLinkFolder;
+    }
+
+    function canHoldFolders(folder: PromptPresetFolder) {
+        return !folder.nodeOnlyLinkFolder && !parentOf(folder);
+    }
+
+    function hasChildFolders(folder: PromptPresetFolder) {
+        return folders.some(f => parentOf(f) === folder.id);
+    }
+
+    /** Folders `folder` can be moved inside: it holds none itself (one level). */
+    function nestTargets(folder: PromptPresetFolder) {
+        if (folder.nodeOnlyLinkFolder || inLinkFolder(folder) || hasChildFolders(folder)) return [];
+        const parentId = parentOf(folder);
+        return folders.filter(f => f.id !== folder.id && f.id !== parentId && canHoldFolders(f));
+    }
+
+    async function createSubfolder(parent: PromptPresetFolder) {
+        const name = (await alertInput(language.folderNameInput))?.trim();
+        if (!name) return;
+        // After the parent's last folder (its first with newFoldersFirst).
+        const family = folders.map((f, i) => (f.id === parent.id || parentOf(f) === parent.id ? i : -1)).filter(i => i >= 0);
+        const at = (newFoldersFirst ? family[0] : family[family.length - 1]) + 1;
+        const next = [...folders];
+        next.splice(at, 0, { id: uuidv4(), name, nodeOnlyParentFolderId: parent.id });
+        onFoldersChange(next);
+        if (isFolderCollapsed(parent.id, collapsed, defaultCollapsed)) toggleCollapsed(parent.id);
+    }
+
+    async function moveFolderInto(folder: PromptPresetFolder) {
+        const targets = nestTargets(folder);
+        if (targets.length === 0) return;
+        const sel = parseInt(await alertSelect([...targets.map(f => f.name), language.cancel]));
+        if (Number.isNaN(sel) || sel < 0 || sel >= targets.length) return;
+        const parentId = targets[sel].id;
+        onFoldersChange(folders.map(f => f.id === folder.id ? { ...f, nodeOnlyParentFolderId: parentId } : f));
+    }
+
+    function moveFolderOut(folder: PromptPresetFolder) {
+        onFoldersChange(folders.map(f => f.id === folder.id ? withoutParent(f) : f));
+    }
+
     async function moveItemToFolder(index: number) {
-        // Uncategorized first, then the folders (the user's request, 2026-10-05).
-        const options = [language.folderUncategorized, ...folders.map(f => f.name), language.cancel];
+        // Uncategorized first, then the folders (the user's request, 2026-10-05),
+        // each followed by the ones shown inside it.
+        const tree = folderTree(folders);
+        const options = [language.folderUncategorized, ...tree.map(({ folder, depth }) => depth ? `└ ${folder.name}` : folder.name), language.cancel];
         const sel = parseInt(await alertSelect(options));
         if (Number.isNaN(sel) || sel >= options.length - 1) return;
-        const folderId = sel === 0 ? undefined : folders[sel - 1].id;
+        const folderId = sel === 0 ? undefined : tree[sel - 1].folder.id;
         const placements = placementsFromData().filter(p => p.index !== index);
         // Append at the end of the chosen group.
         const lastInGroup = placements.map(p => p.folderId).lastIndexOf(folderId);
@@ -525,6 +588,9 @@
             <ShDropdownMenuItem disabled={!canMoveFolder(folder, 1)} onSelect={() => moveFolder(folder, 1)}><span>{language.moveDown}</span></ShDropdownMenuItem>
             {#if onFolderColor}<ShDropdownMenuItem onSelect={() => onFolderColor(folder)}><PaletteIcon /><span>색변경</span></ShDropdownMenuItem>{/if}
             {#if onFolderFavorite}<ShDropdownMenuItem onSelect={() => onFolderFavorite(folder)}><StarIcon /><span>{folder.favorite ? '즐겨찾기 해제' : '즐겨찾기 (맨위로)'}</span></ShDropdownMenuItem>{/if}
+            {#if canHoldFolders(folder)}<ShDropdownMenuItem onSelect={() => createSubfolder(folder)}><FolderPlusIcon /><span>하위 폴더 만들기</span></ShDropdownMenuItem>{/if}
+            {#if nestTargets(folder).length > 0}<ShDropdownMenuItem onSelect={() => moveFolderInto(folder)}><FolderInputIcon /><span>다른 폴더 안으로</span></ShDropdownMenuItem>{/if}
+            {#if parentOf(folder) && !inLinkFolder(folder)}<ShDropdownMenuItem onSelect={() => moveFolderOut(folder)}><FolderOutputIcon /><span>폴더 밖으로 꺼내기</span></ShDropdownMenuItem>{/if}
             {@render folderMenuItems?.(folder, indexes)}
             {#if showFolderDelete}
                 <ShDropdownMenuSeparator />

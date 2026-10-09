@@ -1,6 +1,6 @@
 import { getDatabase, saveImage, setDatabase, type RisuPersona } from "./storage/database.svelte"
 import { selectSingleFile, sleep } from "./util"
-import { alertError, alertStore, notifySuccess, notifyError } from "./alert"
+import { alertConfirm, alertError, alertStore, notifySuccess, notifyError } from "./alert"
 import { AppendableBuffer, downloadFile, readImage, requestImmediateSave } from "./globalApi.svelte"
 import { language } from "src/lang"
 import { reencodeImage } from "./process/files/inlays"
@@ -187,6 +187,30 @@ export function changeUserPersona(
     db.userNote = pr.note
     db.selectedPersona = id
     if (markApplied) markPersonaApplied(id)
+}
+
+/**
+ * Removes the persona at `index` after asking, from the persona tab or the
+ * chat's persona picker (its right-click menu, the user's request of
+ * 2026-10-09). The selected persona stays selected; when it is the one
+ * removed, the first persona takes over. The last persona is never removed.
+ * Chats bound to it fall back to the selected persona. Returns whether it
+ * was removed.
+ */
+export async function removePersona(index: number): Promise<boolean> {
+    const db = getDatabase()
+    const persona = db.personas[index]
+    if (!persona || db.personas.length <= 1) return false
+    if (!await alertConfirm(`${language.removeConfirm}${persona.name}`)) return false
+    saveUserPersona()
+    const selected = db.personas[db.selectedPersona]
+    const next = db.personas.filter((entry) => entry !== persona)
+    if (next.length === db.personas.length) return false
+    db.personas = next
+    const selectedIndex = next.indexOf(selected)
+    changeUserPersona(selectedIndex >= 0 ? selectedIndex : 0, 'noSave', false)
+    void requestImmediateSave()
+    return true
 }
 
 export interface PersonaCard {
