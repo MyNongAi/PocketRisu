@@ -1157,7 +1157,13 @@ function shouldCompress(req, res) {
     // 502-avoidance the streaming endpoints were built for. compressible's
     // mime-db happens not to list application/x-ndjson today (so this is
     // a no-op in practice) but a future dep upgrade could flip it on.
+    // Exception: the plugin-storage dump is a bulk transfer the client reads
+    // to the end (no heartbeats), and long-term-memory plugins push it to
+    // hundreds of MB of text — over a remote link gzip pays off (#93).
     if (contentType.includes('application/x-ndjson')) {
+        if (url.split('?')[0] === '/api/plugin-storage/all') {
+            return true;
+        }
         return false;
     }
     // Already-compressed media formats: gzip adds CPU cost with ~0% size gain
@@ -4127,9 +4133,14 @@ app.get('/api/plugin-storage/all', async (req, res, next) => {
             if (closed) return;
             const ok = res.write(JSON.stringify([entry.key, entry.text]) + '\n');
             // Wait for backpressure to clear, but stop if the client went away.
+            // When compressed, the compression middleware forwards 'drain'
+            // listeners to its zlib stream, so remove the listener from the
+            // emitter res.on returned — res.off would leave one behind per
+            // backpressure cycle.
             if (!ok) await new Promise((resolve) => {
-                const done = () => { res.off('drain', done); res.off('close', done); resolve(); };
-                res.once('drain', done);
+                let drainEmitter;
+                const done = () => { drainEmitter.off('drain', done); res.off('close', done); resolve(); };
+                drainEmitter = res.on('drain', done);
                 res.once('close', done);
             });
         }

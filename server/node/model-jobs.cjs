@@ -801,4 +801,4 @@ function createModelJobs(opts = {}) {
     };
 }
 
-module.exports = { createModelJobs, normalizeUpstreamHeaders };
+module.exports = { createModelJobs, normalizeUpstreamHeaders, requestUpstreamStream };
