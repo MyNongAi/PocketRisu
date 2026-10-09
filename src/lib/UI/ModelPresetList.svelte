@@ -31,7 +31,9 @@
     }: Props = $props();
 
     let openOptions = $state(false);
-    let legacyPickerOpen = $state(false);
+    // Legacy model lists run long (plugin providers add many), so legacy
+    // models get their own tab instead of sharing the preset list.
+    let activeTab = $state<'preset' | 'legacy'>('preset');
 
     let presets = $derived(DBState.db.modelPresets ?? []);
     let legacy = $derived(allowLegacy ? parseLegacySlot(value) : null);
@@ -60,9 +62,9 @@
         if (id && !parseLegacySlot(id)) notifySuccess(language.modelPresetBindedSuccess);
     }
 
-    function pickLegacyModel() {
-        openOptions = false;
-        legacyPickerOpen = true;
+    function openPicker() {
+        activeTab = legacy ? 'legacy' : 'preset';
+        openOptions = true;
     }
 
     function goToPresetSettings() {
@@ -93,19 +95,21 @@
             </ShButton>
             <div class="shrink-0 border-t-1 border-y-selected mb-2"></div>
 
+            {#if allowLegacy}
+                <div class="shrink-0 flex w-full rounded-md border border-selected mb-2">
+                    <button class="p-1.5 flex-1 text-sm" class:bg-selected={activeTab === 'preset'} onclick={() => { activeTab = 'preset' }}>{language.modelSlotPresetSection}</button>
+                    <button class="p-1.5 flex-1 text-sm" class:bg-selected={activeTab === 'legacy'} onclick={() => { activeTab = 'legacy' }}>{language.modelSlotLegacySection}</button>
+                </div>
+            {/if}
+
+            {#if allowLegacy && activeTab === 'legacy'}
+                <button class="shrink-0 w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-selected rounded mb-1" class:bg-selected={value === LEGACY_SLOT} onclick={() => pick(LEGACY_SLOT)}>
+                    <span class="truncate flex-1">{language.modelSlotLegacyGlobal}</span>
+                    {#if value === LEGACY_SLOT}<CheckIcon size={14} class="shrink-0 text-primary" />{/if}
+                </button>
+                <ModelList embedded value={legacy?.model ?? ''} onChange={(model) => pick(legacySlotValue(model))} />
+            {:else}
             <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col">
-                {#if allowLegacy}
-                    <div class="shrink-0 px-3 pt-1 pb-1 text-[11px] text-textcolor2">{language.modelSlotLegacySection}</div>
-                    <button class="shrink-0 w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-selected rounded" class:bg-selected={value === LEGACY_SLOT} onclick={() => pick(LEGACY_SLOT)}>
-                        <span class="truncate flex-1">{language.modelSlotLegacyGlobal}</span>
-                        {#if value === LEGACY_SLOT}<CheckIcon size={14} class="shrink-0 text-primary" />{/if}
-                    </button>
-                    <button class="shrink-0 w-full flex items-center gap-2 text-left px-3 py-1.5 text-sm hover:bg-selected rounded" class:bg-selected={!!legacy?.model} onclick={pickLegacyModel}>
-                        <span class="truncate flex-1">{language.modelSlotLegacyPick}</span>
-                        {#if legacy?.model}<span class="truncate text-xs text-textcolor2 max-w-[45%]">{label}</span>{/if}
-                    </button>
-                    <div class="shrink-0 px-3 pt-3 pb-1 text-[11px] text-textcolor2">{language.modelSlotPresetSection}</div>
-                {/if}
                 {#if presets.length === 0}
                     <div class="px-3 py-4 text-sm text-textcolor2 text-center">{language.modelPresetEmpty}</div>
                 {:else}
@@ -123,12 +127,9 @@
                     </button>
                 {/if}
             </div>
+            {/if}
         </div>
     </div>
-{/if}
-
-{#if allowLegacy}
-    <ModelList hideTrigger bind:open={legacyPickerOpen} value={legacy?.model ?? ''} onChange={(model) => pick(legacySlotValue(model))} />
 {/if}
 
 <ShButton
@@ -137,7 +138,7 @@
         : (dangling || (warnIfEmpty && !value)) ? 'border-amber-500 text-amber-500'
         : 'text-textcolor2 opacity-75 hover:opacity-100'
     }`}
-    onclick={() => { if (!disabled) { openOptions = true } }}
+    onclick={() => { if (!disabled) { openPicker() } }}
 >
     {#if legacy}
         <HistoryIcon size={16} class="shrink-0" />

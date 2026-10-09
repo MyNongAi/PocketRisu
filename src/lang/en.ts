@@ -1489,7 +1489,6 @@ export const languageEnglish = {
     modelSlotLegacySection: "Legacy model",
     modelSlotLegacyGlobal: "Legacy · global setting",
     modelSlotLegacyGlobalShort: "Follows global setting",
-    modelSlotLegacyPick: "Choose a legacy model…",
     modelSlotPresetSection: "Model presets",
     modelSlotLegacyBadge: "Legacy",
     modelSlotLegacyGlobalHint: "Global legacy model (changes with the prompt preset):",

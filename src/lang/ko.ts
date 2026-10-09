@@ -1618,7 +1618,6 @@ export const languageKorean = {
   modelSlotLegacySection: "레거시 모델",
   modelSlotLegacyGlobal: "레거시 · 전역 설정 따름",
   modelSlotLegacyGlobalShort: "전역 설정 따름",
-  modelSlotLegacyPick: "레거시 모델 고르기…",
   modelSlotPresetSection: "모델 프리셋",
   modelSlotLegacyBadge: "레거시",
   modelSlotLegacyGlobalHint: "전역 레거시 모델 (프롬프트 프리셋을 바꾸면 같이 바뀜):",
