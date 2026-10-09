@@ -20,10 +20,13 @@
         label?: string
         disabled?: boolean
         blankLabel?: string
+        // Picker-only use: the caller opens the model list itself (bind:open)
+        // and renders no trigger button.
+        open?: boolean
+        hideTrigger?: boolean
     }
 
-    let { value = $bindable(""), onChange = (v) => {}, onclick, blankable, excludesPrefix, compact, label, disabled = false, blankLabel }: Props = $props();
-    let openOptions = $state(false)
+    let { value = $bindable(""), onChange = (v) => {}, onclick, blankable, excludesPrefix, compact, label, disabled = false, blankLabel, open: openOptions = $bindable(false), hideTrigger = false }: Props = $props();
     let showUnrec = $state(false)
     let activeTab = $state<'base' | 'plugin'>('base')
     let expandedGroups = $state<Set<string>>(new Set())
@@ -176,7 +179,9 @@
 
 {/if}
 
-{#if compact}
+{#if hideTrigger}
+    <!-- opened by the caller through bind:open -->
+{:else if compact}
     <ShButton className={`w-full min-w-0 justify-start${disabled ? ' opacity-50 pointer-events-none' : ''}`} onclick={() => { if(!disabled){ openOptions = true } }}>
         <span class="truncate">{(blankable && !value && blankLabel) ? blankLabel : (getModelInfo(value)?.shortName || getModelInfo(value)?.name || language.none)}</span>
     </ShButton>
