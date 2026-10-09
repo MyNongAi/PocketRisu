@@ -32,7 +32,7 @@
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
     import { getChatAssetRenderWindow, normalizeExternalAssetRecentOutputs, shouldResolveChatAssets } from '../../ts/chatAssetWindow';
-    import { buildPortableChatFragment, chatClipboardErrorMessage, embedParsedChatAssets, fetchClipboardDataUrl, replaceFormControls, writeChatClipboard } from '../../ts/chatClipboard';
+    import { buildPortableChatFragment, chatClipboardErrorMessage, embedParsedChatAssets, fetchClipboardDataUrl, hasPortableDecoration, hexColors, replaceFormControls, writeChatClipboard } from '../../ts/chatClipboard';
 
     // Reactive breakpoint: a raw window.innerWidth read here is evaluated once
     // at mount and never follows a resize (#79).
@@ -900,7 +900,11 @@
                 }
 
                 const parser = new DOMParser()
+                // A plain message (no frame, media or CSS decoration) goes out
+                // in the stock format, which boards like Arca keep; see
+                // hasPortableDecoration.
                 const hasLiveBody = !!bodyRoot?.isConnected && effectiveResolveChatAssets && !renderRawStreaming
+                    && hasPortableDecoration(bodyRoot!)
                 const doc = parser.parseFromString(
                     hasLiveBody
                         ? await buildPortableChatFragment(bodyRoot!)
@@ -976,7 +980,7 @@
 </div>
 </div>`
 
-                return html
+                return hexColors(html)
             })()
             await writeChatClipboard(copyText, htmlPromise)
             notifyInfo(language.copied)

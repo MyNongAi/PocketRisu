@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { buildPortableChatFragment, chatClipboardErrorMessage, replaceFormControls, coverImagePlacement, decodeClipboardCssContent, extractCssUrls, fetchClipboardDataUrl, inlineCssUrls, writeChatClipboard } from './chatClipboard'
+import { buildPortableChatFragment, chatClipboardErrorMessage, hasPortableDecoration, hexColors, replaceFormControls, coverImagePlacement, decodeClipboardCssContent, extractCssUrls, fetchClipboardDataUrl, inlineCssUrls, writeChatClipboard } from './chatClipboard'
 
 afterEach(() => {
     vi.restoreAllMocks()
@@ -211,5 +211,44 @@ describe('clipboard focus and promised HTML', () => {
         await expect(writeChatClipboard('plain', Promise.resolve('<p>frame</p>'))).rejects.toThrow('리스 창')
         expect(writeText).not.toHaveBeenCalled()
         expect(chatClipboardErrorMessage(new DOMException('Document is not focused.', 'NotAllowedError'))).toContain('포커스')
+    })
+})
+
+describe('hasPortableDecoration', () => {
+    const plain = { backgroundImage: 'none', backgroundColor: 'rgba(0, 0, 0, 0)', boxShadow: 'none', borderTopStyle: 'none', borderRightStyle: 'none', borderBottomStyle: 'none', borderLeftStyle: 'none', borderTopWidth: '0px', borderRightWidth: '0px', borderBottomWidth: '0px', borderLeftWidth: '0px', content: 'none' } as unknown as CSSStyleDeclaration
+    const styleOf = (overrides: Map<Element, Partial<CSSStyleDeclaration>>) => (element: Element, pseudo?: string) =>
+        (pseudo ? plain : { ...plain, ...(overrides.get(element) ?? {}) }) as CSSStyleDeclaration
+
+    it('a message of paragraphs, emphasis, quotes and rules is plain', () => {
+        const root = document.createElement('span')
+        root.innerHTML = '<p>one <em>two</em> <strong>three</strong></p><hr><blockquote>q</blockquote><mark risu-mark="quote1">"hi"</mark>'
+        const hr = root.querySelector('hr')!
+        const mark = root.querySelector('mark')!
+        expect(hasPortableDecoration(root, styleOf(new Map<Element, Partial<CSSStyleDeclaration>>([
+            [hr, { borderTopStyle: 'inset', borderTopWidth: '1px' }],
+            [mark, { backgroundColor: 'rgb(40, 40, 40)' }],
+        ])))).toBe(false)
+    })
+
+    it('an author frame, media or a style block needs the full snapshot', () => {
+        const framed = document.createElement('span')
+        framed.innerHTML = '<div class="status"><p>HP 10</p></div>'
+        const frame = framed.querySelector('div')!
+        expect(hasPortableDecoration(framed, styleOf(new Map([[frame, { backgroundColor: 'rgb(20, 20, 60)' }]])))).toBe(true)
+        expect(hasPortableDecoration(framed, styleOf(new Map([[frame, { borderLeftStyle: 'solid', borderLeftWidth: '2px' }]])))).toBe(true)
+        const media = document.createElement('span')
+        media.innerHTML = '<p>look <img src="/a.png"></p>'
+        expect(hasPortableDecoration(media, styleOf(new Map()))).toBe(true)
+        const styled = document.createElement('span')
+        styled.innerHTML = '<style>.x{color:red}</style><p class="x">red</p>'
+        expect(hasPortableDecoration(styled, styleOf(new Map()))).toBe(true)
+    })
+})
+
+describe('hexColors', () => {
+    it('writes opaque rgb() as hex and leaves alpha colors alone', () => {
+        expect(hexColors('<p style="color: rgb(250, 250, 250);">a</p><i style="background-color:rgba(0, 0, 0, 0.5)">b</i>'))
+            .toBe('<p style="color: #fafafa;">a</p><i style="background-color:rgba(0, 0, 0, 0.5)">b</i>')
+        expect(hexColors('<p>rgb(1, 2, 3) stays</p>')).toBe('<p>rgb(1, 2, 3) stays</p>')
     })
 })

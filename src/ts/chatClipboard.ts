@@ -484,6 +484,59 @@ export async function buildPortableChatFragment(
     return cloneRoot.outerHTML
 }
 
+// Markdown and theme elements (a rule, a quote bar, inline code, a quote
+// highlight) style themselves in the app; they are not an author's frame.
+const THEME_ELEMENTS = /^(HR|BLOCKQUOTE|CODE|PRE|KBD|MARK|BR)$/
+
+function transparentColor(color: string): boolean {
+    return !color || color === 'transparent' || /^rgba\([^)]*,\s*0\)$/.test(color.trim())
+}
+
+/**
+ * Whether a rendered message carries decorations only its live styles hold:
+ * media or a table, a <style> block, a background (color or image), a
+ * border, a shadow, or a ::before/::after decoration. Without them a copy
+ * takes the stock format instead (the message's HTML with a color per
+ * paragraph inside the card), which a board like Arca keeps as is; the full
+ * computed-style snapshot of buildPortableChatFragment stays for the frames
+ * that need it. (2026-10-10: a plain message copied that way and posted to
+ * Arca came out white on white; the stock format posts there as a dark card.)
+ */
+export function hasPortableDecoration(
+    root: Element,
+    getStyle: (element: Element, pseudo?: string) => CSSStyleDeclaration = (element, pseudo) => getComputedStyle(element, pseudo),
+): boolean {
+    if (root.querySelector('img,svg,video,canvas,iframe,table,style')) return true
+    for (const element of [root, ...Array.from(root.querySelectorAll('*'))]) {
+        if (THEME_ELEMENTS.test(element.tagName)) continue
+        const style = getStyle(element)
+        if (style.backgroundImage && style.backgroundImage !== 'none') return true
+        if (!transparentColor(style.backgroundColor)) return true
+        if (style.boxShadow && style.boxShadow !== 'none') return true
+        for (const side of ['Top', 'Right', 'Bottom', 'Left'] as const) {
+            if (style[`border${side}Style`] !== 'none' && parseFloat(style[`border${side}Width`]) > 0) return true
+        }
+        for (const pseudo of ['::before', '::after']) {
+            const decoration = getStyle(element, pseudo)
+            if (decoration.content && decoration.content !== 'none' && decoration.content !== 'normal') return true
+        }
+    }
+    return false
+}
+
+/**
+ * Opaque rgb() colors as #rrggbb, the form stock copies carry and boards like
+ * Arca are known to keep (the CSSOM writes every color it sets as rgb()).
+ */
+export function hexColors(html: string): string {
+    const hex = (n: string) => Math.min(255, Number(n)).toString(16).padStart(2, '0')
+    // Inside style attributes only: the message text itself stays as written.
+    return html.replace(/style="[^"]*"/g, (attribute) => attribute.replace(
+        /rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)/g,
+        (_, r, g, b) => `#${hex(r)}${hex(g)}${hex(b)}`,
+    ))
+}
+
 /** Embed ordinary parsed HTML when no live chat body is mounted. */
 export async function embedParsedChatAssets(
     root: HTMLElement,
