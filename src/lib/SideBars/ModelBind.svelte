@@ -16,8 +16,8 @@
 
     let auxExpanded = $state(false);
 
-    // Global lock. 'legacy' keeps every chat on the global classic config and
-    // shows the classic selectors; otherwise each chat shows its binding slots.
+    // Global lock. Only 'preset' remains reachable (a stored 'legacy' lock is
+    // released on load); it binds every chat, falling back to the default.
     let lock = $derived(DBState.db.nodeOnlyModelModeLock ?? 'none');
 
     // Whether THIS chat resolves through its binding (mirrors
@@ -144,37 +144,14 @@
 <div class="flex flex-col gap-1 mt-4">
     <div class="flex items-center gap-1">
         <div class="text-[11px] text-textcolor2 px-1 flex-1 min-w-0">
-            {lock === 'legacy' ? `${language.model}/${language.submodel}` : language.modelBindingTitle}
+            {language.modelBindingTitle}
         </div>
-        <ShButton size="xs" variant="ghost" className="shrink-0" onclick={openModelModeSettings} title={language.modelModeSettingsTitle}>
+        <ShButton size="xs" variant="ghost" className="shrink-0" onclick={openModelModeSettings} title={language.modelPresetConfigure}>
             <SettingsIcon size={14} />
         </ShButton>
     </div>
 
-    {#if lock === 'legacy'}
-        <!-- Legacy lock: global model selection, untouched. -->
-        <ModelList compact bind:value={DBState.db.aiModel} />
-        <div class="flex gap-1 items-stretch">
-            <div class="flex-1 min-w-0">
-                <ModelList compact bind:value={DBState.db.subModel} />
-            </div>
-            <ShButton size="icon" className="shrink-0" onclick={() => { auxExpanded = !auxExpanded }} title={language.seperateModelsForAxModels}>
-                <ChevronDownIcon size={16} class={`transition-transform${auxExpanded ? ' rotate-180' : ''}`} />
-            </ShButton>
-        </div>
-        {#if auxExpanded}
-            <div class="flex flex-col gap-1 mt-1 pl-2 border-l border-selected">
-                <div class="w-full flex items-center justify-between gap-2 min-h-10 rounded-md px-1">
-                    <span class="min-w-0">{language.seperateModelsForAxModels}</span>
-                    <ShSwitch className="shrink-0" bind:checked={DBState.db.seperateModelsForAxModels} />
-                </div>
-                {#each AUX_TASKS as task}
-                    <div class="text-[11px] text-textcolor2 px-1">{auxLabels[task]()}</div>
-                    <ModelList compact blankable blankLabel={language.useDefaultSubModel} disabled={!DBState.db.seperateModelsForAxModels} bind:value={DBState.db.seperateModels[task]} />
-                {/each}
-            </div>
-        {/if}
-    {:else if shown}
+    {#if shown}
         <!-- Binding slots: each holds a model preset or a legacy model. -->
         <ModelPresetList allowLegacy warnIfEmpty value={shown.main} onChange={(v) => setSlot('main', v)} />
         {#if shown.main === LEGACY_SLOT}

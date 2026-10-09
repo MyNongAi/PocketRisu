@@ -735,6 +735,12 @@ export function setDatabase(data:Database){
     data.showPresetInSidebar ??= true
     data.showPersonaInSidebar ??= true
     data.nodeOnlyModelModeLock ??= 'none'
+    // The legacy lock has no setting any more (each binding slot picks a
+    // preset or a legacy model). A stored one is released: chats without a
+    // binding keep the global legacy models; chats bound before the lock go
+    // back to their binding. A 'preset' lock stays — it only lends the default
+    // binding to old chats that never got one.
+    if (data.nodeOnlyModelModeLock === 'legacy') data.nodeOnlyModelModeLock = 'none'
     data.moduleModelBindingsEnabled ??= false
     data.moduleModelBindings ??= {}
     data.disableMobileDragDrop ??= false
