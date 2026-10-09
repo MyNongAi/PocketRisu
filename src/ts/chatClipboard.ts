@@ -481,47 +481,41 @@ export async function buildPortableChatFragment(
     // Keep the chat body's own box as well. Many character cards attach the
     // visible frame/background to this top-level element rather than one of
     // its children, so returning only innerHTML silently dropped the frame.
-    return cloneRoot.outerHTML
+    const holder = cloneRoot.ownerDocument.createElement('div')
+    holder.append(cloneRoot)
+    boardSafeTags(holder)
+    return holder.innerHTML
 }
 
-// Markdown and theme elements (a rule, a quote bar, inline code, a quote
-// highlight) style themselves in the app; they are not an author's frame.
-const THEME_ELEMENTS = /^(HR|BLOCKQUOTE|CODE|PRE|KBD|MARK|BR)$/
-
-function transparentColor(color: string): boolean {
-    return !color || color === 'transparent' || /^rgba\([^)]*,\s*0\)$/.test(color.trim())
-}
+// Tags a board like Arca keeps: every tag found in 45 of its stored chat-log
+// posts (2026-10-10). Any other tag is unwrapped there and its style goes
+// with it: a dialogue quote (<mark risu-mark="quote2">) lost its color and
+// showed in the paragraph's white. Such an element goes out as a span or a
+// div carrying the same inline style.
+const BOARD_SAFE_TAGS = new Set([
+    'A', 'B', 'BR', 'DETAILS', 'DIV', 'EM', 'FIGCAPTION', 'FIGURE',
+    'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HR', 'IFRAME', 'IMG', 'LI', 'OL', 'P', 'PRE',
+    'S', 'SPAN', 'STRONG', 'SUMMARY', 'TABLE', 'TBODY', 'THEAD', 'TFOOT', 'TD', 'TH', 'TR', 'UL',
+    'VIDEO', 'SOURCE',
+])
+const BLOCK_TAGS = /^(ADDRESS|ARTICLE|ASIDE|BLOCKQUOTE|CENTER|DD|DL|DT|FIELDSET|FOOTER|FORM|HEADER|MAIN|NAV|SECTION)$/
 
 /**
- * Whether a rendered message carries decorations only its live styles hold:
- * media or a table, a <style> block, a background (color or image), a
- * border, a shadow, or a ::before/::after decoration. Without them a copy
- * takes the stock format instead (the message's HTML with a color per
- * paragraph inside the card), which a board like Arca keeps as is; the full
- * computed-style snapshot of buildPortableChatFragment stays for the frames
- * that need it. (2026-10-10: a plain message copied that way and posted to
- * Arca came out white on white; the stock format posts there as a dark card.)
+ * Renames, inside `root`, every element a board would unwrap (see
+ * BOARD_SAFE_TAGS) to a span, or a div when it lays out as a block, keeping
+ * its inline style and children. SVG is left alone (rasterized elsewhere).
  */
-export function hasPortableDecoration(
-    root: Element,
-    getStyle: (element: Element, pseudo?: string) => CSSStyleDeclaration = (element, pseudo) => getComputedStyle(element, pseudo),
-): boolean {
-    if (root.querySelector('img,svg,video,canvas,iframe,table,style')) return true
-    for (const element of [root, ...Array.from(root.querySelectorAll('*'))]) {
-        if (THEME_ELEMENTS.test(element.tagName)) continue
-        const style = getStyle(element)
-        if (style.backgroundImage && style.backgroundImage !== 'none') return true
-        if (!transparentColor(style.backgroundColor)) return true
-        if (style.boxShadow && style.boxShadow !== 'none') return true
-        for (const side of ['Top', 'Right', 'Bottom', 'Left'] as const) {
-            if (style[`border${side}Style`] !== 'none' && parseFloat(style[`border${side}Width`]) > 0) return true
-        }
-        for (const pseudo of ['::before', '::after']) {
-            const decoration = getStyle(element, pseudo)
-            if (decoration.content && decoration.content !== 'none' && decoration.content !== 'normal') return true
-        }
+export function boardSafeTags(root: Element): void {
+    for (const element of Array.from(root.querySelectorAll('*'))) {
+        if (BOARD_SAFE_TAGS.has(element.tagName) || element.namespaceURI !== 'http://www.w3.org/1999/xhtml') continue
+        const display = (element as HTMLElement).style?.display ?? ''
+        const block = display ? /^(block|flex|grid|list-item|table|flow-root)/.test(display) : BLOCK_TAGS.test(element.tagName)
+        const replacement = element.ownerDocument.createElement(block ? 'div' : 'span')
+        const style = element.getAttribute('style')
+        if (style) replacement.setAttribute('style', style)
+        replacement.append(...Array.from(element.childNodes))
+        element.replaceWith(replacement)
     }
-    return false
 }
 
 /**

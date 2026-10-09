@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { buildPortableChatFragment, chatClipboardErrorMessage, hasPortableDecoration, hexColors, replaceFormControls, coverImagePlacement, decodeClipboardCssContent, extractCssUrls, fetchClipboardDataUrl, inlineCssUrls, writeChatClipboard } from './chatClipboard'
+import { buildPortableChatFragment, chatClipboardErrorMessage, boardSafeTags, hexColors, replaceFormControls, coverImagePlacement, decodeClipboardCssContent, extractCssUrls, fetchClipboardDataUrl, inlineCssUrls, writeChatClipboard } from './chatClipboard'
 
 afterEach(() => {
     vi.restoreAllMocks()
@@ -40,8 +40,11 @@ describe('portable chat clipboard assets', () => {
         expect(html).toContain('<details')
         expect(html).not.toContain('<details open')
         const copy = new DOMParser().parseFromString(html, 'text/html')
-        expect(copy.querySelector('section')!.style.borderTopWidth).toBe('2px')
-        expect(copy.querySelector('section')!.style.borderTopColor).toBe('rgb(1, 2, 3)')
+        // A board unwraps <section>: the frame goes out on a div.
+        const frame = copy.body.firstElementChild as HTMLElement
+        expect(frame.tagName).toBe('DIV')
+        expect(frame.style.borderTopWidth).toBe('2px')
+        expect(frame.style.borderTopColor).toBe('rgb(1, 2, 3)')
         expect(html).toContain('data:image/png;base64,AA==')
         root.remove()
     })
@@ -63,8 +66,9 @@ describe('clipboard layout snapshot', () => {
         })
         const copy = new DOMParser().parseFromString(html, 'text/html')
         expect(copy.querySelector('b')!.textContent).toBe('🍽️ Status')
-        expect(copy.querySelector('div')!.style.height).toBe('40px')
-        expect(copy.querySelector('div span')!.getAttribute('style')).toContain('rotate(-45deg)')
+        const icon = copy.body.firstElementChild!.querySelector(':scope > div') as HTMLElement
+        expect(icon.style.height).toBe('40px')
+        expect(icon.querySelector('span')!.getAttribute('style')).toContain('rotate(-45deg)')
         expect(root.querySelector('b')!.textContent).toBe('Status')
     })
 
@@ -80,8 +84,8 @@ describe('clipboard layout snapshot', () => {
         root.innerHTML = '<div class="book" style="position:relative;height:700px"><div style="position:absolute;top:0;height:700px">cover</div><div style="position:absolute;top:0;height:700px">inside</div></div><div class="image" style="height:300px;background-image:url(data:image/png;base64,AA==)"></div>'
         document.body.append(root)
         const copy = new DOMParser().parseFromString(await buildPortableChatFragment(root), 'text/html')
-        expect(copy.querySelector('section > div')!.getAttribute('style')).toContain('700px')
-        expect(copy.querySelector('section > div:last-child')!.getAttribute('style')).toContain('300px')
+        expect(copy.querySelector('body > div > div')!.getAttribute('style')).toContain('700px')
+        expect(copy.querySelector('body > div > div:last-child')!.getAttribute('style')).toContain('300px')
     })
 
     it('keeps a cropped hover frame as an aspect-ratio image, not the full portrait', async () => {
@@ -214,34 +218,19 @@ describe('clipboard focus and promised HTML', () => {
     })
 })
 
-describe('hasPortableDecoration', () => {
-    const plain = { backgroundImage: 'none', backgroundColor: 'rgba(0, 0, 0, 0)', boxShadow: 'none', borderTopStyle: 'none', borderRightStyle: 'none', borderBottomStyle: 'none', borderLeftStyle: 'none', borderTopWidth: '0px', borderRightWidth: '0px', borderBottomWidth: '0px', borderLeftWidth: '0px', content: 'none' } as unknown as CSSStyleDeclaration
-    const styleOf = (overrides: Map<Element, Partial<CSSStyleDeclaration>>) => (element: Element, pseudo?: string) =>
-        (pseudo ? plain : { ...plain, ...(overrides.get(element) ?? {}) }) as CSSStyleDeclaration
-
-    it('a message of paragraphs, emphasis, quotes and rules is plain', () => {
-        const root = document.createElement('span')
-        root.innerHTML = '<p>one <em>two</em> <strong>three</strong></p><hr><blockquote>q</blockquote><mark risu-mark="quote1">"hi"</mark>'
-        const hr = root.querySelector('hr')!
-        const mark = root.querySelector('mark')!
-        expect(hasPortableDecoration(root, styleOf(new Map<Element, Partial<CSSStyleDeclaration>>([
-            [hr, { borderTopStyle: 'inset', borderTopWidth: '1px' }],
-            [mark, { backgroundColor: 'rgb(40, 40, 40)' }],
-        ])))).toBe(false)
-    })
-
-    it('an author frame, media or a style block needs the full snapshot', () => {
-        const framed = document.createElement('span')
-        framed.innerHTML = '<div class="status"><p>HP 10</p></div>'
-        const frame = framed.querySelector('div')!
-        expect(hasPortableDecoration(framed, styleOf(new Map([[frame, { backgroundColor: 'rgb(20, 20, 60)' }]])))).toBe(true)
-        expect(hasPortableDecoration(framed, styleOf(new Map([[frame, { borderLeftStyle: 'solid', borderLeftWidth: '2px' }]])))).toBe(true)
-        const media = document.createElement('span')
-        media.innerHTML = '<p>look <img src="/a.png"></p>'
-        expect(hasPortableDecoration(media, styleOf(new Map()))).toBe(true)
-        const styled = document.createElement('span')
-        styled.innerHTML = '<style>.x{color:red}</style><p class="x">red</p>'
-        expect(hasPortableDecoration(styled, styleOf(new Map()))).toBe(true)
+describe('boardSafeTags', () => {
+    it('turns a quote mark into a span with its color, a blockquote into a div, and keeps safe tags', () => {
+        const root = document.createElement('div')
+        root.innerHTML = '<p>She said <mark risu-mark="quote2" style="color: rgb(255, 215, 0);">“hi”</mark> <em style="color: #8be9fd;">softly</em></p>'
+            + '<blockquote style="display: block; color: #aaa;"><strong>note</strong></blockquote><span><kbd>K</kbd></span>'
+        boardSafeTags(root)
+        expect(root.querySelector('mark, blockquote, kbd')).toBeNull()
+        const quote = root.querySelector('p > span')!
+        expect(quote.textContent).toBe('“hi”')
+        expect(quote.getAttribute('style')).toBe('color: rgb(255, 215, 0);')
+        expect(root.querySelector('p > em')!.getAttribute('style')).toBe('color: #8be9fd;')
+        expect(root.querySelector('div > strong')!.textContent).toBe('note')
+        expect(root.querySelector('span > span')!.textContent).toBe('K')
     })
 })
 
