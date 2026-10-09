@@ -1157,7 +1157,13 @@ function shouldCompress(req, res) {
     // 502-avoidance the streaming endpoints were built for. compressible's
     // mime-db happens not to list application/x-ndjson today (so this is
     // a no-op in practice) but a future dep upgrade could flip it on.
+    // Exception: the plugin-storage dump is a bulk transfer the client reads
+    // to the end (no heartbeats), and long-term-memory plugins push it to
+    // hundreds of MB of text — over a remote link gzip pays off (#93).
     if (contentType.includes('application/x-ndjson')) {
+        if (url.split('?')[0] === '/api/plugin-storage/all') {
+            return true;
+        }
         return false;
     }
     // Already-compressed media formats: gzip adds CPU cost with ~0% size gain
