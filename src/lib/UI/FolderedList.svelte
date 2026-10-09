@@ -25,6 +25,7 @@
     import ShDropdownMenuContent from "./GUI/ShDropdownMenuContent.svelte";
     import ShDropdownMenuItem from "./GUI/ShDropdownMenuItem.svelte";
     import ShDropdownMenuSeparator from "./GUI/ShDropdownMenuSeparator.svelte";
+    import ShContextMenu from "./GUI/ShContextMenu.svelte";
 
     export interface FolderedItemPlacement {
         /** Index into the parent's current item array. */
@@ -95,6 +96,8 @@
         folderLeadingActions?: Snippet<[PromptPresetFolder, number[]]>;
         /** Extra entries in a folder's ⋮ menu, given the folder's item indexes. */
         folderMenuItems?: Snippet<[PromptPresetFolder, number[]]>;
+        /** A right-click (long press on touch) on a row opens its ⋮ menu's entries there. */
+        rowContextMenu?: boolean;
     }
 
     let {
@@ -135,6 +138,7 @@
         folderActions,
         folderLeadingActions,
         folderMenuItems,
+        rowContextMenu = false,
     }: Props = $props();
 
     let rootEl: HTMLDivElement = $state();
@@ -529,8 +533,41 @@
 
 {#snippet row(index)}
     <div data-sortable-key={String(index)} data-sortable-no-scale>
+    {#if rowContextMenu}
+        <ShContextMenu>
+            {#snippet trigger(props)}{@render rowHeader(index, props)}{/snippet}
+            {#snippet items()}{@render rowMenuItems(index)}{/snippet}
+        </ShContextMenu>
+    {:else}
+        {@render rowHeader(index, {})}
+    {/if}
+    {#if itemPanel && isExpanded(index)}
+        <div class="no-sort px-2 pb-2 cursor-default">
+            {@render itemPanel(index)}
+        </div>
+    {/if}
+    </div>
+{/snippet}
+
+<!-- The entries of a row's ⋮ menu (and of its right-click menu). -->
+{#snippet rowMenuItems(index)}
+    {@render itemMenu?.(index)}
+    <ShDropdownMenuItem onSelect={() => moveItemToFolder(index)}><FolderIcon /><span>{language.folderMoveTo}</span></ShDropdownMenuItem>
+    <ShDropdownMenuItem onSelect={() => moveItem(index, -1)}><span>{language.moveUp}</span></ShDropdownMenuItem>
+    <ShDropdownMenuItem onSelect={() => moveItem(index, 1)}><span>{language.moveDown}</span></ShDropdownMenuItem>
+    {#if onDuplicate || onExport || onDelete}
+        <ShDropdownMenuSeparator />
+        {#if onDuplicate}<ShDropdownMenuItem onSelect={() => onDuplicate(index)}><span>{language.personaDuplicate}</span></ShDropdownMenuItem>{/if}
+        {#if onExport}<ShDropdownMenuItem onSelect={() => onExport(index)}><span>{language.export}</span></ShDropdownMenuItem>{/if}
+        {#if onDelete}<ShDropdownMenuItem variant="destructive" onSelect={() => onDelete(index)}><span>{language.remove}</span></ShDropdownMenuItem>{/if}
+    {/if}
+    {#if showMenuCancel}<ShDropdownMenuItem><span>{language.cancel}</span></ShDropdownMenuItem>{/if}
+{/snippet}
+
+{#snippet rowHeader(index, triggerProps: Record<string, unknown>)}
     <!-- Header line is the only click/hover target; an expanded panel below it is inert. -->
     <div
+        {...triggerProps}
         class="flex items-center gap-2 rounded-md px-2 min-h-11 py-1 text-textcolor cursor-pointer {index === selectedIndex ? 'bg-selected' : 'risu-interactive-surface'}"
         role="button" tabindex="0"
         onclick={() => onSelect(index)}
@@ -550,25 +587,9 @@
                 {/snippet}
             </ShDropdownMenuTrigger>
             <ShDropdownMenuContent align="end" class="min-w-40">
-                {@render itemMenu?.(index)}
-                <ShDropdownMenuItem onSelect={() => moveItemToFolder(index)}><FolderIcon /><span>{language.folderMoveTo}</span></ShDropdownMenuItem>
-                <ShDropdownMenuItem onSelect={() => moveItem(index, -1)}><span>{language.moveUp}</span></ShDropdownMenuItem>
-                <ShDropdownMenuItem onSelect={() => moveItem(index, 1)}><span>{language.moveDown}</span></ShDropdownMenuItem>
-                {#if onDuplicate || onExport || onDelete}
-                    <ShDropdownMenuSeparator />
-                    {#if onDuplicate}<ShDropdownMenuItem onSelect={() => onDuplicate(index)}><span>{language.personaDuplicate}</span></ShDropdownMenuItem>{/if}
-                    {#if onExport}<ShDropdownMenuItem onSelect={() => onExport(index)}><span>{language.export}</span></ShDropdownMenuItem>{/if}
-                    {#if onDelete}<ShDropdownMenuItem variant="destructive" onSelect={() => onDelete(index)}><span>{language.remove}</span></ShDropdownMenuItem>{/if}
-                {/if}
-                {#if showMenuCancel}<ShDropdownMenuItem><span>{language.cancel}</span></ShDropdownMenuItem>{/if}
+                {@render rowMenuItems(index)}
             </ShDropdownMenuContent>
         </ShDropdownMenu>
-    </div>
-    {#if itemPanel && isExpanded(index)}
-        <div class="no-sort px-2 pb-2 cursor-default">
-            {@render itemPanel(index)}
-        </div>
-    {/if}
     </div>
 {/snippet}
 

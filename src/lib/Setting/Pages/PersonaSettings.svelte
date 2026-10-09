@@ -17,6 +17,9 @@
     import { v4 } from "uuid"
     import { groupByFolder, nestGroups, shownInside } from "src/ts/folders";
     import LazyAssetPreview from "src/lib/Others/LazyAssetPreview.svelte";
+    import ShContextMenu from "src/lib/UI/GUI/ShContextMenu.svelte";
+    import ShDropdownMenuItem from "src/lib/UI/GUI/ShDropdownMenuItem.svelte";
+    import ShDropdownMenuSeparator from "src/lib/UI/GUI/ShDropdownMenuSeparator.svelte";
     import { localOriginOf, resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
     import { FileDropSurface, draggedItemsAreImages } from "src/ts/gui/fileDropSurface.svelte";
     import FileDropIndicator from "src/lib/UI/GUI/FileDropIndicator.svelte";
@@ -509,7 +512,18 @@
                             {@const persona = DBState.db.personas[index]}
                             {@const source = personaSource(index)}
                             <div class="relative w-24 shrink-0">
+                            <!-- Right-click (long press on touch): the list view's ⋮ entries
+                                 that make sense here (the user's request, 2026-10-10). -->
+                            <ShContextMenu>
+                            {#snippet items()}
+                                <ShDropdownMenuItem onSelect={() => duplicatePersona(index)}><span>{language.personaDuplicate}</span></ShDropdownMenuItem>
+                                <ShDropdownMenuItem onSelect={() => exportPersona(index)}><span>{language.export}</span></ShDropdownMenuItem>
+                                <ShDropdownMenuSeparator />
+                                <ShDropdownMenuItem variant="destructive" onSelect={() => { void deletePersona(index) }}><span>{language.remove}</span></ShDropdownMenuItem>
+                            {/snippet}
+                            {#snippet trigger(props)}
                             <button
+                                {...props}
                                 type="button"
                                 aria-label={persona.name || 'User'}
                                 aria-pressed={index === DBState.db.selectedPersona}
@@ -539,6 +553,8 @@
                                 </div>
                                 <span class="w-full truncate text-center text-xs">{persona.name || 'User'}</span>
                             </button>
+                            {/snippet}
+                            </ShContextMenu>
                             <!-- Over the thumbnail's top-right corner (card padding + 4px inset). -->
                             {@render favoriteStar(index, 'absolute right-2 top-1')}
                             </div>
@@ -580,6 +596,7 @@
         onDuplicate={(displayIndex) => duplicatePersona(personaListIndexes[displayIndex])}
         onExport={(displayIndex) => exportPersona(personaListIndexes[displayIndex])}
         onDelete={(displayIndex) => deletePersona(personaListIndexes[displayIndex])}
+        rowContextMenu
     >
         {#snippet actions()}
             <ShButton size="sm" onclick={createPersona}><PlusIcon />{language.createfromScratch}</ShButton>

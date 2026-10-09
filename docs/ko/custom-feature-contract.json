@@ -409,7 +409,10 @@
         { "file": "src/lib/Setting/listedPersona.svelte", "contains": "{#snippet personaMenuItems(index: number)}" },
         { "file": "src/lib/Setting/listedPersona.svelte", "contains": "nestGroups(groups, DBState.db.personaFolders ?? [])" },
         { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "return nestGroups(groups, folders)" },
-        { "file": "src/ts/persona.ts", "contains": "export async function removePersona(index: number): Promise<boolean>" }
+        { "file": "src/ts/persona.ts", "contains": "export async function removePersona(index: number): Promise<boolean>" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "{#snippet rowMenuItems(index)}" },
+        { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "        rowContextMenu" },
+        { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "<ShDropdownMenuItem variant=\"destructive\" onSelect={() => { void deletePersona(index) }}>" }
       ],
       "regressionTests": [
         "src/lib/Setting/listedPersona.test.ts",
