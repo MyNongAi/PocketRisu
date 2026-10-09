@@ -1214,6 +1214,23 @@
       ]
     },
     {
+      "id": "CHAT-COPY-DRAFT",
+      "title": "채팅 복사 시 입력 중인 글도 복사",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/storage/chatDraft.ts",
+        "src/lib/SideBars/SideChatList.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/storage/chatDraft.ts", "contains": "export function copyChatDraft(chaId: string, fromChatId: string, toChatId: string): void" },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "copyChatDraft((chara as character).chaId, chara.chats[chatIdx].id, newChat.id)" },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "copyChatDraft((chara as character).chaId, chara.chats[i].id, newChat.id)" }
+      ],
+      "regressionTests": [
+        "src/ts/storage/chatDraft.test.ts"
+      ]
+    },
+    {
       "id": "PRESET-CONTEXT-FOLLOWS-CHATBOT",
       "title": "모델 프리셋 최대 컨텍스트가 비면 채팅 봇 값을 따름",
       "criticality": "core-ux",

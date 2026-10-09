@@ -27,6 +27,7 @@
     import ModelBind from "./ModelBind.svelte";
     import { changeChatTo, createChatCopyName, requestImmediateSave } from "src/ts/globalApi.svelte";
     import { chatCopyNameFromLastInput, reissueMessageIds } from "src/ts/chatClone";
+    import { copyChatDraft } from "src/ts/storage/chatDraft";
     import MemoryBind from "./MemoryBind.svelte";
     import { RISU_CHAT_ROOM_DRAG_TYPE } from "src/ts/dragTypes";
     import { serializeChatRoomDragPayload } from "src/ts/chatSplitPane";
@@ -304,6 +305,8 @@
                                 newChat.name = chatCopyNameFromLastInput(newChat.message, chara.chats.map((c) => c.name))
                                     ?? createChatCopyName(newChat.name, 'Copy')
                                 newChat.id = v4()
+                                // The unsent text in the input goes along (the user's request, 2026-10-10).
+                                copyChatDraft((chara as character).chaId, chara.chats[chatIdx].id, newChat.id)
                                 chara.chats.unshift(newChat)
                                 changeChatTo(0)
                                 chara.chats = chara.chats
@@ -398,6 +401,8 @@
                         newChat.name = chatCopyNameFromLastInput(newChat.message, chara.chats.map((c) => c.name))
                             ?? createChatCopyName(newChat.name, 'Copy')
                         newChat.id = v4()
+                        // The unsent text in the input goes along (the user's request, 2026-10-10).
+                        copyChatDraft((chara as character).chaId, chara.chats[i].id, newChat.id)
                         chara.chats.unshift(newChat)
                         changeChatTo(0)
                         chara.chats = chara.chats

@@ -83,6 +83,11 @@ async function persistRemove(key: string): Promise<void> {
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 
+// The latest text handed in per key this session (typing, flush), so
+// copyChatDraft can take what is in the input right now: the debounced save
+// of the last keystrokes may not have run yet.
+const latest = new Map<string, ChatDraft>()
+
 function cancelPending() {
     if (saveTimer) {
         clearTimeout(saveTimer)
@@ -90,15 +95,14 @@ function cancelPending() {
     }
 }
 
-/** Load a chat's draft, or null if none. No round trip when the index says none. */
-export async function loadChatDraft(chaId: string, chatId: string): Promise<ChatDraft | null> {
-    if (!chaId || !chatId) return null
-    const key = chatDraftKey(chaId, chatId)
+/**
+ * The stored draft of `key`; inside the write queue, or after waiting for it.
+ * `trustIndex` false reads even a key the index does not list (one another
+ * device saved this session), at the cost of a round trip.
+ */
+async function readStored(key: string, { trustIndex = true } = {}): Promise<ChatDraft | null> {
     await ensureIndex()
-    // Let any in-flight writes land first so a quick leave→return reads the value
-    // we just saved, not a stale one.
-    await writeChain
-    if (!draftKeys!.has(key)) return null
+    if (trustIndex && !draftKeys!.has(key)) return null
     try {
         const buf = await forageStorage.getItem(key)
         if (!buf || buf.length === 0) return null
@@ -109,10 +113,21 @@ export async function loadChatDraft(chaId: string, chatId: string): Promise<Chat
     }
 }
 
+/** Load a chat's draft, or null if none. No round trip when the index says none. */
+export async function loadChatDraft(chaId: string, chatId: string): Promise<ChatDraft | null> {
+    if (!chaId || !chatId) return null
+    // Let any in-flight writes land first so a quick leave→return reads the value
+    // we just saved, not a stale one.
+    await ensureIndex()
+    await writeChain
+    return readStored(chatDraftKey(chaId, chatId))
+}
+
 /** Debounced save while the user is typing. */
 export function scheduleSaveChatDraft(chaId: string, chatId: string, draft: ChatDraft): void {
     if (!chaId || !chatId) return
     const key = chatDraftKey(chaId, chatId)
+    latest.set(key, { ...draft })
     cancelPending()
     saveTimer = setTimeout(() => {
         saveTimer = null
@@ -123,6 +138,7 @@ export function scheduleSaveChatDraft(chaId: string, chatId: string, draft: Chat
 /** Immediate save (blur / chat switch / unmount / page hide). Cancels any pending debounce. */
 export function flushChatDraft(chaId: string, chatId: string, draft: ChatDraft): void {
     if (!chaId || !chatId) return
+    latest.set(chatDraftKey(chaId, chatId), { ...draft })
     cancelPending()
     enqueue(() => persistSave(chatDraftKey(chaId, chatId), draft))
 }
@@ -130,8 +146,32 @@ export function flushChatDraft(chaId: string, chatId: string, draft: ChatDraft):
 /** Drop a chat's draft after its message is sent. The chat lives on, so the key stays writable. */
 export function removeChatDraft(chaId: string, chatId: string): void {
     if (!chaId || !chatId) return
+    latest.delete(chatDraftKey(chaId, chatId))
     cancelPending()
     enqueue(() => persistRemove(chatDraftKey(chaId, chatId)))
+}
+
+/**
+ * A copied chat starts with the unsent text of the chat it was copied from
+ * (the user's request, 2026-10-10); that chat keeps its own. Call before
+ * switching to the copy, so its draft is queued ahead of the load.
+ */
+export function copyChatDraft(chaId: string, fromChatId: string, toChatId: string): void {
+    if (!chaId || !fromChatId || !toChatId || fromChatId === toChatId) return
+    const from = chatDraftKey(chaId, fromChatId)
+    const to = chatDraftKey(chaId, toChatId)
+    const known = latest.get(from)
+    if (known) {
+        if (!known.m && !known.t) return
+        const draft = { ...known }
+        latest.set(to, draft)
+        enqueue(() => persistSave(to, draft))
+        return
+    }
+    enqueue(async () => {
+        const draft = await readStored(from, { trustIndex: false })
+        if (draft && (draft.m || draft.t)) await persistSave(to, draft)
+    })
 }
 
 /**

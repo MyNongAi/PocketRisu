@@ -34,6 +34,8 @@ const {
     removeChatDraft,
     sweepOrphanDrafts,
     chatDraftKey,
+    scheduleSaveChatDraft,
+    copyChatDraft,
 } = await import('./chatDraft')
 
 beforeEach(() => {
@@ -111,5 +113,28 @@ describe('on an outdated client build', () => {
         } finally {
             resetBuildFenceForTests()
         }
+    })
+})
+
+describe('copyChatDraft', () => {
+    test('the copy gets the text in the input now, before its debounced save ran', async () => {
+        scheduleSaveChatDraft('cp', 'src', { m: 'half-written reply', t: 'tr' }) // still debounced
+        copyChatDraft('cp', 'src', 'copy')
+        expect(await loadChatDraft('cp', 'copy')).toEqual({ m: 'half-written reply', t: 'tr' })
+        flushChatDraft('cp', 'src', { m: 'half-written reply', t: 'tr' }) // the source keeps its own
+        expect(await loadChatDraft('cp', 'src')).toEqual({ m: 'half-written reply', t: 'tr' })
+    })
+
+    test('a chat not typed in this session copies its stored draft', async () => {
+        mockStore.set(chatDraftKey('cp2', 'src'), new TextEncoder().encode(JSON.stringify({ m: 'from another device', t: '' })))
+        copyChatDraft('cp2', 'src', 'copy')
+        expect(await loadChatDraft('cp2', 'copy')).toEqual({ m: 'from another device', t: '' })
+    })
+
+    test('nothing to copy: the copy has no draft', async () => {
+        flushChatDraft('cp3', 'src', { m: 'sent', t: '' })
+        removeChatDraft('cp3', 'src')
+        copyChatDraft('cp3', 'src', 'copy')
+        expect(await loadChatDraft('cp3', 'copy')).toBeNull()
     })
 })
