@@ -263,6 +263,31 @@ function pairKey(chaId, chatId) {
 function createChatBodyStore({ pendingChatPayloads, logger = console, isColdStorageChat = () => false, testHardening = false } = {}) {
     let chars = new Map();          // chaId -> Map<chatId, Entry>; a map may be empty (registered by /activate)
     let registeredAt = new Map();   // chaId -> wseq of the replaceCharacter that registered it
+    // chaId -> archivedAt of a character /activate registered that no
+    // persisted catalog lists yet (upstream v1.14.0's pendingActivations).
+    // Its client save lists it again; a persist or reload in between must not
+    // drop it, or that save is refused as "returned from the archive without
+    // activation" and the chats saved meanwhile are lost. Held while the
+    // catalog does not list it and its archive stub is the activated
+    // version; forgotten once it is listed or the stub is gone or replaced.
+    let activations = new Map();
+
+    /** Activated characters `root` (a catalog just persisted or loaded) still leaves unlisted. */
+    function heldActivations(root) {
+        const held = new Set();
+        if (activations.size === 0) return held;
+        const listed = new Set();
+        for (const char of Array.isArray(root?.characters) ? root.characters : []) if (char?.chaId) listed.add(char.chaId);
+        const stubAt = new Map();
+        for (const stub of Array.isArray(root?.nodeOnlyArchivedCharacters) ? root.nodeOnlyArchivedCharacters : []) {
+            if (stub && typeof stub.chaId === 'string') stubAt.set(stub.chaId, stub.archivedAt);
+        }
+        for (const [chaId, archivedAt] of activations) {
+            if (listed.has(chaId) || stubAt.get(chaId) !== archivedAt) activations.delete(chaId);
+            else held.add(chaId);
+        }
+        return held;
+    }
     let charRev = new Map();        // chaId -> revision
     let loaded = false;
     let storeId = 1;
@@ -480,6 +505,7 @@ function createChatBodyStore({ pendingChatPayloads, logger = console, isColdStor
                         if (!entry.onDisk) mapFor(next, chaId).set(chatId, entry);
                     }
                 }
+                for (const chaId of heldActivations(dbObj)) if (chars.has(chaId)) mapFor(next, chaId);
             }
             // ── nothing below can throw ──
             if (fixInPlace) for (const [chat, plan] of fixes) applyFixInPlace(chat, plan);
@@ -496,6 +522,7 @@ function createChatBodyStore({ pendingChatPayloads, logger = console, isColdStor
         reset() {
             chars = new Map();
             registeredAt = new Map();
+            activations = new Map();
             charRev = new Map();
             loadRev = ++rev;
             noopMerged = new WeakMap();
@@ -679,8 +706,11 @@ function createChatBodyStore({ pendingChatPayloads, logger = console, isColdStor
         /**
          * /activate: the character's bodies, as a new map (possibly empty,
          * which still registers the character until the next persist).
+         * `archivedAt`: the archive version activated; the character then
+         * stays registered across persists and reloads until a catalog lists
+         * it (see heldActivations).
          */
-        replaceCharacter(chaId, chats) {
+        replaceCharacter(chaId, chats, { archivedAt } = {}) {
             assertLoaded();
             const bodies = [];
             for (const chat of chats ?? []) {
@@ -692,6 +722,8 @@ function createChatBodyStore({ pendingChatPayloads, logger = console, isColdStor
             for (const [chatId, body] of bodies) m.set(chatId, { body, wseq: w, onDisk: false });
             chars.set(chaId, m);
             registeredAt.set(chaId, w);
+            if (archivedAt !== undefined) activations.set(chaId, archivedAt);
+            else activations.delete(chaId);
             bumpRev(chaId);
         },
 
@@ -789,7 +821,9 @@ function createChatBodyStore({ pendingChatPayloads, logger = console, isColdStor
                 for (const chat of char.chats) if (chat?.id) referenced.add(pairKey(char.chaId, chat.id));
             }
             const pending = pendingPairs();
+            const held = heldActivations(root);
             for (const [chaId, m] of next) {
+                if (held.has(chaId)) continue;
                 for (const [chatId, entry] of m) {
                     const key = pairKey(chaId, chatId);
                     if (w.has(key) || entry.wseq > token.wseq || pending.has(key)) continue;
@@ -891,7 +925,9 @@ function createChatBodyStore({ pendingChatPayloads, logger = console, isColdStor
             }
             if (prune) {
                 const pending = pendingPairs();
+                const held = heldActivations(fullDb);
                 for (const [chaId, m] of next) {
+                    if (held.has(chaId)) continue;
                     for (const [chatId, entry] of m) {
                         const key = pairKey(chaId, chatId);
                         if (written.has(key) || entry.wseq > token.wseq || pending.has(key)) continue;

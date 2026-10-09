@@ -21,9 +21,12 @@
         label?: string
         disabled?: boolean
         blankLabel?: string
+        // Render only the model list, in place (no trigger, no dialog) — for a
+        // caller that shows it inside its own picker.
+        embedded?: boolean
     }
 
-    let { value = $bindable(""), onChange = (v) => {}, onclick, blankable, excludesPrefix, compact, label, disabled = false, blankLabel }: Props = $props();
+    let { value = $bindable(""), onChange = (v) => {}, onclick, blankable, excludesPrefix, compact, label, disabled = false, blankLabel, embedded = false }: Props = $props();
     let openOptions = $state(false)
     let showUnrec = $state(false)
     // Model presets sit next to built-in and plugin models: picking one here
@@ -51,7 +54,9 @@
     let pluginModels = $derived(providers.find(g => g.providerName === 'Plugins')?.models ?? [])
     let hasPlugins = $derived(pluginModels.length > 0)
     let presets = $derived(DBState?.db?.modelPresets ?? [])
-    let hasPresets = $derived(presets.length > 0)
+    // Embedded in the binding slot picker (its legacy tab): the picker has its
+    // own preset tab, so this one stays out.
+    let hasPresets = $derived(!embedded && presets.length > 0)
     let showTabs = $derived(hasPlugins || hasPresets)
 </script>
 
@@ -99,7 +104,78 @@
     {/each}
 {/snippet}
 
-{#if openOptions}
+{#snippet listBody()}
+    {#if showTabs}
+        <div class="shrink-0 flex w-full rounded-md border border-selected mb-2">
+            <button class="p-1.5 flex-1 text-sm" class:bg-selected={activeTab === 'base'} onclick={() => { activeTab = 'base' }}>{language.modelTabBuiltin}</button>
+            {#if hasPlugins}
+                <button class="p-1.5 flex-1 text-sm" class:bg-selected={activeTab === 'plugin'} onclick={() => { activeTab = 'plugin' }}>{language.modelTabPlugin}</button>
+            {/if}
+            {#if hasPresets}
+                <button class="p-1.5 flex-1 text-sm" class:bg-selected={activeTab === 'preset'} onclick={() => { activeTab = 'preset' }}>{language.modelTabPreset}</button>
+            {/if}
+        </div>
+    {:else}
+        <div class="shrink-0 border-t-1 border-y-selected mb-2"></div>
+    {/if}
+
+    <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col">
+        {#if hasPlugins && activeTab === 'plugin'}
+            {#each pluginModels as model}
+                {@render modelRow(model.id, model.name, false)}
+            {/each}
+        {:else if hasPresets && activeTab === 'preset'}
+            {#each presets as preset (preset.id)}
+                {@render modelRow(modelPresetPickerId(preset.id), preset.name, false)}
+            {/each}
+            {#if blankable}
+                {@render modelRow('', blankLabel ?? language.none, false)}
+            {/if}
+        {:else}
+            {@render providerList(providers)}
+
+            {#if DBState?.db.customModels?.length > 0}
+                {@render groupHeader('__custom', language.customModels, false)}
+                {#if expandedGroups.has('__custom')}
+                    <div class="pl-4 flex flex-col">
+                        {#each DBState.db.customModels as model}
+                            {@render modelRow(model.id, model.name ?? "Unnamed", false)}
+                        {/each}
+                    </div>
+                {/if}
+            {/if}
+
+            {#if blankable}
+                {@render modelRow('', blankLabel ?? language.none, false)}
+            {/if}
+
+            {#if showUnrec}
+                {@render groupHeader('Horde', 'Horde', true)}
+                {#if expandedGroups.has('Horde')}
+                    <div class="pl-4 flex flex-col">
+                        {#await getHordeModels()}
+                            <div class="px-3 py-1.5 text-sm text-textcolor2">Loading...</div>
+                        {:then models}
+                            {@render modelRow('horde:::auto', 'Auto Model', true)}
+                            {#each models as model}
+                                {@render modelRow('horde:::' + model.name, model.name.trim(), true)}
+                            {/each}
+                        {/await}
+                    </div>
+                {/if}
+            {/if}
+        {/if}
+    </div>
+
+    {#if activeTab === 'base' || !showTabs}
+        <div class="shrink-0 border-t border-selected mt-2 pt-2 flex items-center justify-between gap-2 px-1">
+            <span class="text-sm text-textcolor2">{language.showUnrecommended}</span>
+            <ShSwitch className="shrink-0" bind:checked={showUnrec} />
+        </div>
+    {/if}
+{/snippet}
+
+{#if openOptions && !embedded}
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="fixed top-0 w-full h-full left-0 bg-black/50 z-50 flex justify-center items-center" role="button" tabindex="0" onclick={() => {
         openOptions = false
@@ -121,80 +197,17 @@
                 <h1 class="font-bold text-xl flex-1">{language.model}</h1>
             </div>
 
-            {#if showTabs}
-                <div class="shrink-0 flex w-full rounded-md border border-selected mb-2">
-                    <button class="p-1.5 flex-1 text-sm" class:bg-selected={activeTab === 'base'} onclick={() => { activeTab = 'base' }}>{language.modelTabBuiltin}</button>
-                    {#if hasPlugins}
-                        <button class="p-1.5 flex-1 text-sm" class:bg-selected={activeTab === 'plugin'} onclick={() => { activeTab = 'plugin' }}>{language.modelTabPlugin}</button>
-                    {/if}
-                    {#if hasPresets}
-                        <button class="p-1.5 flex-1 text-sm" class:bg-selected={activeTab === 'preset'} onclick={() => { activeTab = 'preset' }}>{language.modelTabPreset}</button>
-                    {/if}
-                </div>
-            {:else}
-                <div class="shrink-0 border-t-1 border-y-selected mb-2"></div>
-            {/if}
-
-            <div class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col">
-                {#if hasPlugins && activeTab === 'plugin'}
-                    {#each pluginModels as model}
-                        {@render modelRow(model.id, model.name, false)}
-                    {/each}
-                {:else if hasPresets && activeTab === 'preset'}
-                    {#each presets as preset (preset.id)}
-                        {@render modelRow(modelPresetPickerId(preset.id), preset.name, false)}
-                    {/each}
-                    {#if blankable}
-                        {@render modelRow('', blankLabel ?? language.none, false)}
-                    {/if}
-                {:else}
-                    {@render providerList(providers)}
-
-                    {#if DBState?.db.customModels?.length > 0}
-                        {@render groupHeader('__custom', language.customModels, false)}
-                        {#if expandedGroups.has('__custom')}
-                            <div class="pl-4 flex flex-col">
-                                {#each DBState.db.customModels as model}
-                                    {@render modelRow(model.id, model.name ?? "Unnamed", false)}
-                                {/each}
-                            </div>
-                        {/if}
-                    {/if}
-
-                    {#if blankable}
-                        {@render modelRow('', blankLabel ?? language.none, false)}
-                    {/if}
-
-                    {#if showUnrec}
-                        {@render groupHeader('Horde', 'Horde', true)}
-                        {#if expandedGroups.has('Horde')}
-                            <div class="pl-4 flex flex-col">
-                                {#await getHordeModels()}
-                                    <div class="px-3 py-1.5 text-sm text-textcolor2">Loading...</div>
-                                {:then models}
-                                    {@render modelRow('horde:::auto', 'Auto Model', true)}
-                                    {#each models as model}
-                                        {@render modelRow('horde:::' + model.name, model.name.trim(), true)}
-                                    {/each}
-                                {/await}
-                            </div>
-                        {/if}
-                    {/if}
-                {/if}
-            </div>
-
-            {#if activeTab === 'base' || !showTabs}
-                <div class="shrink-0 border-t border-selected mt-2 pt-2 flex items-center justify-between gap-2 px-1">
-                    <span class="text-sm text-textcolor2">{language.showUnrecommended}</span>
-                    <ShSwitch className="shrink-0" bind:checked={showUnrec} />
-                </div>
-            {/if}
+            {@render listBody()}
         </div>
     </div>
 
 {/if}
 
-{#if compact}
+{#if embedded}
+    <div class="flex-1 min-h-0 flex flex-col">
+        {@render listBody()}
+    </div>
+{:else if compact}
     <ShButton className={`w-full min-w-0 justify-start${disabled ? ' opacity-50 pointer-events-none' : ''}`} onclick={() => { if(!disabled){ openOptions = true } }}>
         <span class="truncate">{(blankable && !value && blankLabel) ? blankLabel : (getModelInfo(value)?.shortName || getModelInfo(value)?.name || language.none)}</span>
     </ShButton>

@@ -1,8 +1,8 @@
 import { getDatabase, type Chat, type Database } from 'src/ts/storage/database.svelte'
 import type { AdapterCredential } from 'src/ts/preset/adapter'
 import { clampToSchemaRange } from 'src/ts/preset/adapter/buildRequest'
-import { VISION_CAPABLE_ADAPTER_KINDS, type ModelPreset } from 'src/ts/preset/types'
 import { modelPresetIdOf } from 'src/ts/preset/pickerId'
+import { parseLegacySlot, VISION_CAPABLE_ADAPTER_KINDS, type ModelPreset } from 'src/ts/preset/types'
 import type { ModelModeExtended } from './shared'
 
 /**
@@ -30,9 +30,16 @@ import type { ModelModeExtended } from './shared'
  * "Unresolved" = the id is undefined OR dangling (points at a preset that no
  * longer exists). Both are treated identically; dangling ids are never
  * auto-cleared so a re-imported preset reconnects.
+ *
+ * A slot may name a legacy model instead (`@legacy` / `@legacy:<model>`, see
+ * parseLegacySlot) → `classic` with `fromSlot`. Its model is decided by the
+ * slot alone: `model` when pinned, else the slot's global legacy model —
+ * never the global db.seperateModelsForAxModels switch, which only governs
+ * chats outside the binding regime.
  */
 export type ResolvedBinding =
-    | { kind: 'classic' }
+    | { kind: 'classic'; fromSlot?: false }
+    | { kind: 'classic'; fromSlot: true; model?: string }
     | { kind: 'modelPreset'; preset: ModelPreset }
     | { kind: 'block'; reason: 'main-unset' | 'sub-unset' }
 
@@ -100,20 +107,7 @@ export function resolveChatModelBinding(
         lock === 'legacy' ? false :
         (chat?.useModelPreset ?? false)
 
-    if (!usePreset) {
-        // The ordinary model picker can hold a model preset too
-        // ("modelpreset:::<id>", see preset/pickerId.ts). Route it like a
-        // bound preset; a picked preset that was deleted blocks rather than
-        // silently falling back to some other model.
-        const pickedId = modelPresetIdOf(resolveClassicModelId(db, mode))
-        if (pickedId !== null) {
-            const picked = findPreset(pickedId, db.modelPresets ?? [])
-            return picked
-                ? { kind: 'modelPreset', preset: picked }
-                : { kind: 'block', reason: mode === 'model' ? 'main-unset' : 'sub-unset' }
-        }
-        return { kind: 'classic' }
-    }
+    if (!usePreset) return classicOrPicked({ kind: 'classic' }, mode, db)
 
     // Preset regime. Use the chat's own bundle. Under a global preset lock, a
     // pre-existing chat may have no bundle yet (it predates the lock); fall back
@@ -128,6 +122,8 @@ export function resolveChatModelBinding(
     const presets = db.modelPresets ?? []
 
     if (mode === 'model') {
+        const legacy = parseLegacySlot(set.main)
+        if (legacy) return classicOrPicked({ kind: 'classic', fromSlot: true, model: legacy.model }, mode, db)
         const main = findPreset(set.main, presets)
         return main
             ? { kind: 'modelPreset', preset: main }
@@ -137,24 +133,26 @@ export function resolveChatModelBinding(
     // submodel + all aux modes resolve against the sub slot, with aux slots
     // overriding when separateAux is on (mirrors classic: db.subModel default,
     // db.seperateModels[task] override).
-    const sub = findPreset(set.sub, presets)
-
     if (mode !== 'submodel' && set.separateAux) {
-        const auxPreset = findPreset(set.aux?.[mode], presets)
+        const auxValue = set.aux?.[mode]
+        const auxLegacy = parseLegacySlot(auxValue)
+        if (auxLegacy) {
+            // The global legacy model for this task, or the sub model when the
+            // task has none — like classic's seperateModels override.
+            const model = auxLegacy.model ?? (db.seperateModels?.[mode as keyof typeof db.seperateModels] || undefined)
+            return classicOrPicked({ kind: 'classic', fromSlot: true, model }, mode, db)
+        }
+        const auxPreset = findPreset(auxValue, presets)
         if (auxPreset) return { kind: 'modelPreset', preset: auxPreset }
     }
+
+    const subLegacy = parseLegacySlot(set.sub)
+    if (subLegacy) return classicOrPicked({ kind: 'classic', fromSlot: true, model: subLegacy.model }, mode, db)
+    const sub = findPreset(set.sub, presets)
 
     return sub
         ? { kind: 'modelPreset', preset: sub }
         : { kind: 'block', reason: 'sub-unset' }
-}
-
-function resolveClassicModelId(db: Database, mode: ModelModeExtended): string {
-    let modelId = mode === 'model' ? db.aiModel : db.subModel
-    if (db.seperateModelsForAxModels && db.seperateModels?.[mode]) {
-        modelId = db.seperateModels[mode]
-    }
-    return modelId
 }
 
 function classicProviderKey(modelId: string, db: Database): string {
@@ -194,13 +192,61 @@ export function captureChatModelRoute(
             fallbackModels,
         }
     }
-    const aiModel = resolveClassicModelId(db, mode)
+    const aiModel = classicModelIdFor(binding, mode, db)
     return {
         kind: 'classic',
         aiModel,
         providerKey: classicProviderKey(aiModel, db),
         fallbackModels,
     }
+}
+
+/**
+ * A classic result, unless its model is a preset picked in the ordinary model
+ * picker ("modelpreset:::<id>", see preset/pickerId.ts): that routes like a
+ * bound preset, and a picked preset that was deleted blocks rather than
+ * silently falling back to some other model. A binding slot's legacy model
+ * (upstream v1.14.0) goes through here too: "the global legacy model" may be
+ * such a preset.
+ */
+function classicOrPicked(
+    binding: Extract<ResolvedBinding, { kind: 'classic' }>,
+    mode: ModelModeExtended,
+    db: Database,
+): ResolvedBinding {
+    const pickedId = modelPresetIdOf(classicModelIdFor(binding, mode, db))
+    if (pickedId === null) return binding
+    const picked = findPreset(pickedId, db.modelPresets ?? [])
+    return picked
+        ? { kind: 'modelPreset', preset: picked }
+        : { kind: 'block', reason: mode === 'model' ? 'main-unset' : 'sub-unset' }
+}
+
+/**
+ * The classic model id a request in `mode` uses once resolution chose the
+ * classic path. A slot-bound legacy model decides alone; otherwise the global
+ * classic config applies (db.aiModel / db.subModel, with db.seperateModels
+ * overriding aux tasks when db.seperateModelsForAxModels is on).
+ */
+export function classicModelIdFor(
+    binding: Extract<ResolvedBinding, { kind: 'classic' }>,
+    mode: ModelModeExtended,
+    db: Database = getDatabase(),
+): string {
+    const base = mode === 'model' ? db.aiModel : db.subModel
+    if (binding.fromSlot) return binding.model || base
+    if (db.seperateModelsForAxModels && mode !== 'model') {
+        const task = db.seperateModels?.[mode as keyof typeof db.seperateModels]
+        if (task) return task
+    }
+    return base
+}
+
+/** The classic model id `chat` would send `mode` to, or undefined when that
+ * request goes to a ModelPreset (or is blocked). */
+export function resolveClassicModelId(chat: Chat | null | undefined, mode: ModelModeExtended, moduleId?: string): string | undefined {
+    const binding = resolveChatModelBinding(chat, mode, moduleId)
+    return binding.kind === 'classic' ? classicModelIdFor(binding, mode) : undefined
 }
 
 export function presetSupportsVision(preset: ModelPreset): boolean {

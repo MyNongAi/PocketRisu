@@ -39,7 +39,7 @@ import { pumpPresetStream } from "./presetStreamPump";
 import { makeJobFetch, ModelJobBusyError, ModelJobConnectionLostError } from "./jobFetch";
 import { withGeminiPdfInput } from "./geminiPdfInput";
 import { toLogSource, toRequestKind } from "./logSource";
-import { resolveChatModelBinding, buildModelPresetCredential, applyPromptPresetParams, presetSupportsVision, type RequestModelRouteSnapshot } from "./modelPresetBinding";
+import { resolveChatModelBinding, classicModelIdFor, buildModelPresetCredential, applyPromptPresetParams, presetSupportsVision, type RequestModelRouteSnapshot } from "./modelPresetBinding";
 import { modelPresetIdOf } from "src/ts/preset/pickerId";
 import { expandAdapterMessages, toAdapterMessage, toolResponseText } from "./modelPresetMessages";
 import { isLocalNetworkUrl } from "src/ts/network/localNetwork";
@@ -418,6 +418,7 @@ export async function requestChatDataMain(arg:requestDataArgument, model:ModelMo
     // binding BEFORE any classic model selection so a binding chat never touches
     // db.aiModel / db.seperateModels. Skipped when a staticModel (fallback retry)
     // is forced — fallbacks are classic model ids.
+    let classicModel: string | undefined
     if(!arg.staticModel){
         const currentChat = arg.currentChat ?? getCurrentChat()
         const binding = arg.routeSnapshot ?? resolveChatModelBinding(currentChat, model, arg.moduleId)
@@ -436,21 +437,16 @@ export async function requestChatDataMain(arg:requestDataArgument, model:ModelMo
                     : language.modelPresetBindingSubUnset,
             }
         }
-        // binding.kind === 'classic' → fall through to the classic path below.
+        // binding.kind === 'classic' → fall through to the classic path below,
+        // with the model a legacy slot names (or the global classic config);
+        // a route captured for this request already holds that model.
+        classicModel = arg.routeSnapshot?.kind === 'classic'
+            ? arg.routeSnapshot.aiModel
+            : classicModelIdFor(binding as Parameters<typeof classicModelIdFor>[0], model, db)
     }
 
-    targ.aiModel = arg.staticModel
-        ? arg.staticModel
-        : arg.routeSnapshot?.kind === 'classic'
-            ? arg.routeSnapshot.aiModel
-            : (model === 'model' ? db.aiModel : db.subModel)
+    targ.aiModel = arg.staticModel ? arg.staticModel : (classicModel ?? db.aiModel)
     targ.modelInfo = getModelInfo(targ.aiModel)
-    if(db.seperateModelsForAxModels && !arg.staticModel && !arg.routeSnapshot){
-        if(db.seperateModels[model]){
-            targ.aiModel = db.seperateModels[model]
-            targ.modelInfo = getModelInfo(targ.aiModel)
-        }
-    }
 
     // A model preset picked in the ordinary model picker, reached here as a
     // fallback or a forced model: send it through the preset path.

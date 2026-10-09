@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "upstreamBaseline": "PocketRisu v1.13.0",
+  "upstreamBaseline": "PocketRisu v1.14.0",
   "branch": "feature/external-assets",
   "updatedAt": "2026-10-10",
   "features": [
@@ -102,13 +102,16 @@
         { "file": "src/ts/storage/chatStorage.ts", "contains": "evictHydratedChatCache" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "captureViewportAnchor" },
         { "file": "server/node/pending-chat-payloads.cjs", "contains": "createPendingChatPayloads" },
-        { "file": "server/node/chat-body-store.cjs", "contains": "createChatBodyStore" }
+        { "file": "server/node/chat-body-store.cjs", "contains": "createChatBodyStore" },
+        { "file": "server/node/chat-body-store.cjs", "contains": "function heldActivations(root)" },
+        { "file": "server/node/server.cjs", "contains": "chatBodyStore.replaceCharacter(chaId, full.chats, { archivedAt });" }
       ],
       "regressionTests": [
         "src/ts/storage/chatStorage.test.ts",
         "src/ts/storage/chatStub.test.ts",
         "src/ts/storage/chatGuards.test.ts",
         "server/node/chat-body-store.test.ts",
+        "server/node/archiveRestore.test.ts",
         "test/compat/chat-body-store.test.ts"
       ]
     },

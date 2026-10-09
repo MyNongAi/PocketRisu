@@ -830,6 +830,23 @@ describe('acceptPersistedDatabase', () => {
         expect(store.hasCharacter('Z')).toBe(false)
     })
 
+    it('keeps an activated character until a catalog lists it or its stub changes (upstream v1.14.0)', () => {
+        const { store } = setup()
+        store.loadFromDatabase(diskDb({ A: { c1: 'v1' } }))
+        store.replaceCharacter('Z', [chat('z1', 'activated')], { archivedAt: 1000 })
+        store.setChat('Z', 'z1', chat('z1', 'edited after activation'))
+        const unlisted = { ...diskDb({ A: { c1: 'v1' } }), nodeOnlyArchivedCharacters: [{ chaId: 'Z', archivedAt: 1000 }] }
+        // A persist (and a reload) before the client's save lists Z again.
+        store.acceptPersistedDatabase(unlisted, store.snapshotToken())
+        store.loadFromDatabase(unlisted)
+        expect(store.hasCharacter('Z')).toBe(true)
+        expect(lastText(store, 'Z', 'z1')).toBe('edited after activation')
+        // The stub was replaced (deactivated again): the hold ends.
+        const replaced = { ...diskDb({ A: { c1: 'v1' } }), nodeOnlyArchivedCharacters: [{ chaId: 'Z', archivedAt: 2000 }] }
+        store.acceptPersistedDatabase(replaced, store.snapshotToken())
+        expect(store.hasCharacter('Z')).toBe(false)
+    })
+
     it('restores a journaled body the store lost to /activate', () => {
         const { store, pending } = setup()
         store.loadFromDatabase(null)
