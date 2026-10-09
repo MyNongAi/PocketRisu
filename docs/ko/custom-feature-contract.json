@@ -397,6 +397,7 @@
         { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "compareRecentlyApplied(DBState.db.personas)" },
         { "file": "src/ts/persona.ts", "contains": "return Number(persona?.lastAppliedAt) || 0" },
         { "file": "src/ts/blankPersona.ts", "contains": "export const BLANK_PERSONA_NAME = ''" },
+        { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "// No made-up name: it would reach the AI as {{user}}" },
         { "file": "src/ts/storage/database.svelte.ts", "contains": "clearLegacyBlankName(data)" },
         { "file": "src/lib/Setting/Settings.svelte", "contains": "startSettingsPaneResize" },
         { "file": "src/lib/Setting/listedPersona.svelte", "contains": "LazyAssetPreview" }

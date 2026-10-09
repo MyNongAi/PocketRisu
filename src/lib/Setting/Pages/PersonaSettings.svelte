@@ -183,7 +183,7 @@
         const now = Date.now()
         DBState.db.personas = [...DBState.db.personas, {
             id,
-            name: fileName.replace(/\.[^.]+$/, '') || 'New Persona',
+            name: fileName.replace(/\.[^.]+$/, ''),
             icon: '',
             personaPrompt: '',
             note: '',
@@ -282,7 +282,9 @@
         saveUserPersona()
         DBState.db.personas = [...DBState.db.personas, {
             id: v4(),
-            name: 'New Persona',
+            // No made-up name: it would reach the AI as {{user}} ("New Persona");
+            // the user types one (their request, 2026-10-09).
+            name: '',
             icon: '',
             personaPrompt: '',
             note: '',
