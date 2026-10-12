@@ -5,7 +5,7 @@
     import { copyScriptstateCheckpoint, mergeRerollCheckpoint, removeSwipeCheckpoint, restoreScriptstateBeforeReroll, restoreScriptstateSnapshot, restoreShownSwipeScriptstate, snapshotScriptstate } from 'src/ts/chatScriptstateCheckpoint';
     import { deleteShownSwipe, findLastReplyIndex, stepSwipe } from 'src/ts/chatSwipes';
     import { clearRerollPlaceholder, setRerollPlaceholder } from 'src/ts/gui/rerollPlaceholder';
-    import { CameraIcon, ChevronUpIcon, ChevronDownIcon, ChevronsUpIcon, ChevronsDownIcon, DatabaseIcon, GlobeIcon, FileTextIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2, GitBranch } from "@lucide/svelte";
+    import { CameraIcon, ChevronUpIcon, ChevronDownIcon, DatabaseIcon, GlobeIcon, FileTextIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2, GitBranch } from "@lucide/svelte";
     import ShDropdownMenu from 'src/lib/UI/GUI/ShDropdownMenu.svelte';
     import ShDropdownMenuTrigger from 'src/lib/UI/GUI/ShDropdownMenuTrigger.svelte';
     import ShDropdownMenuContent from 'src/lib/UI/GUI/ShDropdownMenuContent.svelte';
@@ -281,14 +281,61 @@ import { isMobile } from 'src/ts/platform'
         scrollWithinContainer(messages[0].el, container, { block: 'start', behavior: 'smooth' })
     }
 
-    // Literal bottom of the scroll (end of the latest message).
+    // Literal bottom of the scroll: the latest message's end and the composer.
     function scrollToLoadedBottom() {
         const container = document.querySelector('.default-chat-screen') as HTMLElement | null
         chatsInstance?.releaseViewport?.()
         if (!container) return
-        const messages = getLoadedMessages(container)
-        if (messages.length === 0) return
-        scrollWithinContainer(messages[messages.length - 1].el, container, { block: 'end', behavior: 'smooth' })
+        container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
+    }
+
+    /** Pixels a fixed (sticky) composer covers at the bottom of the chat. */
+    function composerInset(container: HTMLElement): number {
+        if (!DBState.db.fixedChatTextarea) return 0
+        const composer = container.querySelector<HTMLElement>(':scope > [data-chat-composer]')
+        if (!composer) return 0
+        return Math.max(0, container.getBoundingClientRect().bottom - composer.getBoundingClientRect().top)
+    }
+
+    // The two scroll buttons: a tap steps one message (navigateMessage),
+    // holding one jumps to the loaded top or bottom (the user's request,
+    // 2026-10-13; it replaced the separate top/bottom buttons).
+    const NAV_DIRECTIONS = ['prev', 'next'] as const
+    const NAV_HOLD_MS = 450
+    let navHoldTimer: ReturnType<typeof setTimeout> | null = null
+    let navHeld = false
+
+    function navPress(direction: 'prev' | 'next') {
+        bumpScrollNav()
+        navHeld = false
+        if (navHoldTimer) clearTimeout(navHoldTimer)
+        navHoldTimer = setTimeout(() => {
+            navHoldTimer = null
+            navHeld = true
+            bumpScrollNav()
+            if (direction === 'prev') scrollToLoadedTop()
+            else scrollToLoadedBottom()
+        }, NAV_HOLD_MS)
+    }
+
+    function navRelease() {
+        if (navHoldTimer) clearTimeout(navHoldTimer)
+        navHoldTimer = null
+    }
+
+    /** The finger left the button: no click follows. */
+    function navCancel() {
+        navRelease()
+        navHeld = false
+    }
+
+    function navClick(direction: 'prev' | 'next') {
+        bumpScrollNav()
+        if (navHeld) {
+            navHeld = false
+            return
+        }
+        navigateMessage(direction)
     }
 
     function navigateMessage(direction: 'prev' | 'next') {
@@ -301,6 +348,10 @@ import { isMobile } from 'src/ts/platform'
         if (messages.length === 0) return
 
         const containerRect = container.getBoundingClientRect()
+        // A fixed composer hides the bottom of the view: a message end under
+        // it is not seen, and 'end' lands above it.
+        const bottomInset = composerInset(container)
+        const visibleBottom = containerRect.bottom - bottomInset
         const threshold = 30
 
         // Find the message currently at the top of the viewport
@@ -328,10 +379,10 @@ import { isMobile } from 'src/ts/platform'
                 }
             }
         } else {
-            const bottomVisible = currentRect.bottom <= containerRect.bottom + threshold
+            const bottomVisible = currentRect.bottom <= visibleBottom + threshold
             if (!bottomVisible) {
                 // Current message bottom is hidden → scroll to its end
-                scrollWithinContainer(current.el, container, { block: 'end', behavior: 'smooth' })
+                scrollWithinContainer(current.el, container, { block: 'end', behavior: 'smooth', bottomInset })
             } else {
                 // Already see the end → go to next message start
                 const next = messages.find(m => m.idx === current.idx + 1)
@@ -1248,37 +1299,28 @@ import { isMobile } from 'src/ts/platform'
             class:opacity-0={!showScrollNav}
             class:pointer-events-none={!showScrollNav}
         >
-            {#if DBState.db.nodeOnlyScrollButtonType === 'four'}
+            {#each NAV_DIRECTIONS as direction, i (direction)}
+                {#if i > 0}<div class={navSeparator}></div>{/if}
+                <!-- touch-none and the contextmenu guard keep a long press on a
+                     phone from scrolling the page or opening the browser menu. -->
                 <button
-                    class="w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors"
-                    onclick={() => { bumpScrollNav(); scrollToLoadedTop() }}
+                    class="w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors select-none touch-none [-webkit-touch-callout:none]"
+                    title={direction === 'prev' ? language.scrollNavPrev : language.scrollNavNext}
+                    aria-label={direction === 'prev' ? language.scrollNavPrev : language.scrollNavNext}
+                    onpointerdown={() => navPress(direction)}
+                    onpointerup={navRelease}
+                    onpointerleave={navCancel}
+                    onpointercancel={navCancel}
+                    oncontextmenu={(e) => e.preventDefault()}
+                    onclick={() => navClick(direction)}
                 >
-                    <ChevronsUpIcon size={18} />
+                    {#if direction === 'prev'}
+                        <ChevronUpIcon size={18} />
+                    {:else}
+                        <ChevronDownIcon size={18} />
+                    {/if}
                 </button>
-                <div class={navSeparator}></div>
-            {/if}
-            <button
-                class="w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors"
-                onclick={() => { bumpScrollNav(); navigateMessage('prev') }}
-            >
-                <ChevronUpIcon size={18} />
-            </button>
-            <div class={navSeparator}></div>
-            <button
-                class="w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors"
-                onclick={() => { bumpScrollNav(); navigateMessage('next') }}
-            >
-                <ChevronDownIcon size={18} />
-            </button>
-            {#if DBState.db.nodeOnlyScrollButtonType === 'four'}
-                <div class={navSeparator}></div>
-                <button
-                    class="w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors"
-                    onclick={() => { bumpScrollNav(); scrollToLoadedBottom() }}
-                >
-                    <ChevronsDownIcon size={18} />
-                </button>
-            {/if}
+            {/each}
         </div>
     {/if}
 
@@ -1344,6 +1386,7 @@ import { isMobile } from 'src/ts/platform'
     {:else}
         {#snippet composerCluster()}
             <div
+                    data-chat-composer
                     class="{DBState.db.fixedChatTextarea ? 'sticky pt-2 pb-2 right-0 bottom-0 bg-bgcolor' : 'mt-2 mb-2'} w-full"
                     style="{DBState.db.fixedChatTextarea ? 'z-index:29;' : ''}"
             >

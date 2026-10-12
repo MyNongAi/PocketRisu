@@ -799,7 +799,8 @@ export function setDatabase(data:Database){
     data.hideLeftBarCollapseButton ??= false
     data.dynamicModelRegistry ??= true
     data.saveSignatures ??= false
-    data.nodeOnlyScrollButtonType ??= 'four'
+    // 'four' (separate top/bottom buttons) became the two buttons' hold.
+    if (data.nodeOnlyScrollButtonType !== 'off') data.nodeOnlyScrollButtonType = 'two'
     data.nodeOnlyScrollButtonPosition ??= 'right-center'
     data.nodeOnlyHideRecentChats ??= false
     data.nodeOnlyArchivedCharacters ??= []
@@ -1719,7 +1720,7 @@ export interface Database{
     enableRemoteSaving?:boolean
     blockquoteStyling?:boolean
     dynamicModelRegistry?:boolean
-    nodeOnlyScrollButtonType?:'four'|'two'|'off'
+    nodeOnlyScrollButtonType?:'two'|'off'|'four'
     /** Where the chat scroll buttons appear while scrolling. */
     nodeOnlyScrollButtonPosition?:'right-center'|'right-bottom'|'bottom-center'
     nodeOnlyHideRecentChats?:boolean

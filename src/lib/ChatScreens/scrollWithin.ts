@@ -5,12 +5,14 @@
 export function scrollWithinContainer(
     el: HTMLElement,
     container: HTMLElement,
-    options: { block: 'start' | 'end'; behavior: ScrollBehavior }
+    // bottomInset: pixels at the container's bottom the reader cannot see
+    // (a sticky composer over it); 'end' lands above them.
+    options: { block: 'start' | 'end'; behavior: ScrollBehavior; bottomInset?: number }
 ) {
     const elRect = el.getBoundingClientRect()
     const containerRect = container.getBoundingClientRect()
     const offset = options.block === 'start'
         ? elRect.top - containerRect.top
-        : elRect.bottom - containerRect.bottom
+        : elRect.bottom - (containerRect.bottom - (options.bottomInset ?? 0))
     container.scrollTo({ top: container.scrollTop + offset, behavior: options.behavior })
 }

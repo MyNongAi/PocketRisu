@@ -350,7 +350,6 @@ export const accessibilitySettingsItems: SettingItem[] = [
         helpKey: 'nodeOnlyScrollButtonType',
         options: {
             selectOptions: [
-                { value: 'four', labelKey: 'scrollButtonTypeFour' },
                 { value: 'two', labelKey: 'scrollButtonTypeTwo' },
                 { value: 'off', labelKey: 'scrollButtonTypeOff' },
             ],

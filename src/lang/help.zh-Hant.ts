@@ -298,7 +298,7 @@ export const helpZhHant = {
         "hypaV3QueryChatCount":
             "用於相似度搜尋的近期對話訊息數量。數值越高，搜尋查詢就會涵蓋更多對話內容",
         "nodeOnlyRestoreLastChat": "啟動或重新載入應用程式時，重新開啟您最後查看角色的對話。這可避免行動瀏覽器回收背景分頁後，重新回到 PocketRisu 時被送回首頁。若您原本是從首頁離開，仍會停留在首頁",
-        "nodeOnlyScrollButtonType": "設定對話捲動按鈕的顯示方式。「4 個按鈕」會加入跳到頂端／底端；「2 個按鈕」只保留上一則／下一則訊息導覽；「關閉」則隱藏所有捲動按鈕",
+        "nodeOnlyScrollButtonType": "設定對話捲動按鈕的顯示方式。「2 個按鈕」為上下兩個按鈕：點一下移動一則訊息，長按跳到頂端／底端；「關閉」則隱藏所有捲動按鈕",
         "nodeOnlyServerSideRequests": "由伺服器代替瀏覽器送出請求並儲存回應。即使螢幕關閉或連線中斷，生成仍會繼續；重新連線後會自動還原完成的回應。只套用於模型預設集請求；關閉後會恢復先前由用戶端直接送出請求的方式",
         "confirmReroll": "重新生成訊息前先要求確認",
         "sendWithEnter": "按 Enter 送出訊息",

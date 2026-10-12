@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.14.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-10-10",
+  "updatedAt": "2026-10-13",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
@@ -1232,6 +1232,25 @@
       ],
       "regressionTests": [
         "src/ts/storage/chatDraft.test.ts"
+      ]
+    },
+    {
+      "id": "CHAT-SCROLL-NAV",
+      "title": "채팅 스크롤 버튼 2개: 누르면 한 칸, 길게 누르면 맨 위·맨 아래",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/lib/ChatScreens/scrollWithin.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "function navPress(direction: 'prev' | 'next')" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "function composerInset(container: HTMLElement): number" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "data-chat-composer" },
+        { "file": "src/lib/ChatScreens/scrollWithin.ts", "contains": "bottomInset?: number" },
+        { "file": "src/ts/storage/database.svelte.ts", "contains": "if (data.nodeOnlyScrollButtonType !== 'off') data.nodeOnlyScrollButtonType = 'two'" }
+      ],
+      "regressionTests": [
+        "src/lib/ChatScreens/scrollWithin.test.ts"
       ]
     },
     {
