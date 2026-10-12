@@ -408,8 +408,9 @@
         { "file": "src/ts/storage/database.svelte.ts", "contains": "clearLegacyBlankName(data)" },
         { "file": "src/lib/Setting/Settings.svelte", "contains": "startSettingsPaneResize" },
         { "file": "src/lib/Setting/listedPersona.svelte", "contains": "LazyAssetPreview" },
-        { "file": "src/lib/Setting/listedPersona.svelte", "contains": "let tab = $state<'list' | 'edit'>(initialTab());" },
-        { "file": "src/lib/Setting/listedPersona.test.ts", "contains": "opens on the list while the chat has no persona bound" },
+        { "file": "src/lib/Setting/listedPersona.svelte", "contains": "let tab = $state<'list' | 'edit'>('edit');" },
+        { "file": "src/lib/Setting/listedPersona.svelte", "contains": "const editingDefault = $derived(bindingMode && editId === null);" },
+        { "file": "src/lib/Setting/listedPersona.test.ts", "contains": "edits the global persona on the edit tab while the chat uses the default" },
         { "file": "src/lib/Setting/listedPersona.svelte", "contains": "{#snippet personaMenuItems(index: number)}" },
         { "file": "src/lib/Setting/listedPersona.svelte", "contains": "nestGroups(groups, DBState.db.personaFolders ?? [])" },
         { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "return nestGroups(groups, folders)" },
@@ -1232,6 +1233,25 @@
       ],
       "regressionTests": [
         "src/ts/storage/chatDraft.test.ts"
+      ]
+    },
+    {
+      "id": "BOOT-REASON-LOG",
+      "title": "페이지가 새로 열린 이유를 서버 로그에 기록",
+      "criticality": "compatibility",
+      "ownerFiles": [
+        "src/ts/bootReason.ts",
+        "src/ts/storage/nodeStorage.ts",
+        "server/node/server.cjs"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/bootReason.ts", "contains": "export function bootReason(): string" },
+        { "file": "src/ts/storage/buildFence.ts", "contains": "export function startedByBuildReload(): boolean" },
+        { "file": "src/ts/storage/nodeStorage.ts", "contains": "'x-boot-reason': bootReason()," },
+        { "file": "server/node/server.cjs", "contains": "console.log(`[Session] Session boot registered${describeBoot(req)}`)" }
+      ],
+      "regressionTests": [
+        "src/ts/bootReason.test.ts"
       ]
     },
     {

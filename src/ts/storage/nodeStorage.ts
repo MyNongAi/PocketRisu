@@ -15,6 +15,7 @@ import { chatHoldsAllMessages } from './chatConflict'
 import { BootAuthError, BootFallback, loadDatabaseViaBoot } from './bootPayload'
 import { BootCacheController, browserBootCacheEnv } from './bootPayloadCache'
 import { addBuildIdHeader, readStaleBuildRefusal, readStaleBuildRefusalXhr, reportStaleBuild, setXhrBuildIdHeader, StaleBuildError } from './buildFence'
+import { bootReason } from '../bootReason'
 
 /** How the last database.bin read went (the [Boot] log line, storage settings). */
 export interface DbLoadInfo {
@@ -574,6 +575,8 @@ export class NodeStorage{
                 headers: {
                     'risu-auth': await this.createAuth(),
                     'x-session-id': NodeStorage.sessionId,
+                    // Logged by the server: why this page opened (bootReason.ts).
+                    'x-boot-reason': bootReason(),
                 },
             })
             if (res.ok) {

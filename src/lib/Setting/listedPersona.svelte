@@ -77,18 +77,20 @@
     // edit tab for it instead of closing; only X (or back/Escape) closes.
     // Editing the blank persona leaves it blank and makes a new persona with
     // the edit, bound to the chat in its place.
-    // A chat with a persona bound opens on its edit tab (the user's request,
-    // 2026-10-09); otherwise on the list.
-    let tab = $state<'list' | 'edit'>(initialTab());
-    function initialTab(): 'list' | 'edit' {
-        return boundIndex >= 0 ? 'edit' : 'list';
-    }
+    // The popup opens on the edit tab: for the bound persona, or, when the
+    // chat uses the default, for the global persona, which it then edits
+    // (the user's requests, 2026-10-09 and 2026-10-13).
+    let tab = $state<'list' | 'edit'>('edit');
+    // null: the chat uses the default; the edit tab edits the global persona.
     let editId = $state<string | null>(null);
     $effect.pre(() => {
         if (!bindingMode || editId !== null || boundIndex < 0) return;
         editId = DBState.db.personas[boundIndex]?.id ?? null;
     });
-    const editIndex = $derived(editId ? DBState.db.personas.findIndex((persona) => persona.id === editId) : -1);
+    const editIndex = $derived(editId
+        ? DBState.db.personas.findIndex((persona) => persona.id === editId)
+        : bindingMode ? DBState.db.selectedPersona : -1);
+    const editingDefault = $derived(bindingMode && editId === null);
     const editPersona = $derived(editIndex >= 0 ? DBState.db.personas[editIndex] : null);
     const globalPersonaName = $derived(DBState.db.personas[DBState.db.selectedPersona]?.name || 'User');
 
@@ -113,7 +115,11 @@
         const index = editIndex;
         if (index < 0 || !DBState.db.personas[index]?.nodeOnlyBlank) return { index, created: false };
         const created = personaFromBlank(index, patch);
-        if (created >= 0) {
+        if (created >= 0 && editingDefault) {
+            // The default is the blank persona: the edit becomes the new
+            // global persona, and the chat keeps following the default.
+            changeUserPersona(created);
+        } else if (created >= 0) {
             onSelect?.(created);
             editId = DBState.db.personas[created]?.id ?? null;
         }
@@ -230,7 +236,9 @@
                     <span class="text-xs text-textcolor2">{language.description}</span>
                     <textarea class="risu-field-border min-h-48 resize-y rounded-md bg-transparent px-3 py-2 text-sm text-textcolor outline-none" rows="10" placeholder={`Put the description of this persona here.\nExample: [<user> is a 20 year old girl.]`} value={editPersona.personaPrompt} oninput={(e) => editText({ personaPrompt: e.currentTarget.value })}></textarea>
                 </label>
-                <p class="mt-2 text-xs text-textcolor2">{editPersona.nodeOnlyBlank ? language.personaBindEditBlank : language.personaBindEditShared}</p>
+                <p class="mt-2 text-xs text-textcolor2">{editingDefault
+                    ? (editPersona.nodeOnlyBlank ? language.personaBindEditDefaultBlank : language.personaBindEditDefault)
+                    : (editPersona.nodeOnlyBlank ? language.personaBindEditBlank : language.personaBindEditShared)}</p>
             {/if}
         </div>
         {:else}

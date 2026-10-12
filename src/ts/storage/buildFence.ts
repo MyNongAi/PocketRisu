@@ -27,6 +27,16 @@ const BUILD_ID_URL = '/build-id.txt'
 const BUILD_ID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/
 // The server build this tab last reloaded for (sessionStorage, per tab).
 const RELOAD_MARK_KEY = 'pocketrisu-stale-build-reload'
+// The reload mark as this page found it, read before a build check clears
+// it: set means the page before this one reloaded itself into a new build.
+const reloadMarkAtLoad: string | null = (() => {
+    try { return typeof sessionStorage === 'undefined' ? null : sessionStorage.getItem(RELOAD_MARK_KEY) } catch { return null }
+})()
+
+/** This page life began with the fence's own reload (bootReason.ts). */
+export function startedByBuildReload(): boolean {
+    return reloadMarkAtLoad !== null
+}
 const CHECK_INTERVAL_MS = 15_000
 
 // Empty outside production builds (vite dev server, tests): no header is sent

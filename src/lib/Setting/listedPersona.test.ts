@@ -120,16 +120,29 @@ describe('persona image picker', () => {
         expect(close).toHaveBeenCalledOnce()
     })
 
-    it('opens on the list while the chat has no persona bound', async () => {
+    it('edits the global persona on the edit tab while the chat uses the default', async () => {
         vi.stubGlobal('IntersectionObserver', TestIntersectionObserver)
         const chat = mocks.db.characters[0].chats[0]
         chat.bindedPersona = ''
+        mocks.updatePersonaText.mockClear()
         try {
             const target = document.createElement('div')
             document.body.appendChild(target)
-            mounted.push(mount(ListedPersona, { target, props: { onSelect: vi.fn(), close: vi.fn() } }))
+            const onSelect = vi.fn()
+            mounted.push(mount(ListedPersona, { target, props: { onSelect, close: vi.fn() } }))
             await tick()
-            expect(target.querySelector('[role="tab"]')?.getAttribute('aria-selected')).toBe('true')
+            const tabs = target.querySelectorAll<HTMLButtonElement>('[role="tab"]')
+            expect(tabs[1]?.getAttribute('aria-selected')).toBe('true')
+            // selectedPersona is Beta: the default edits it, and nothing gets bound.
+            const name = target.querySelector<HTMLInputElement>('[data-persona-bind-edit] input')
+            expect(name?.value).toBe('Beta')
+            name!.value = 'Beta 3'
+            name!.dispatchEvent(new Event('input', { bubbles: true }))
+            expect(mocks.updatePersonaText).toHaveBeenCalledWith(1, { name: 'Beta 3' })
+            expect(onSelect).not.toHaveBeenCalled()
+            // The list tab still offers the personas to bind.
+            tabs[0].click()
+            await tick()
             expect(target.querySelector('button[aria-label="Beta"]')).not.toBeNull()
         } finally {
             chat.bindedPersona = 'beta'

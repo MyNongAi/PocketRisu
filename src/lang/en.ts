@@ -1312,6 +1312,8 @@ export const languageEnglish = {
     personaBindEditInherit: "This chat uses the default (the global persona {}). Tap a profile in the list to bind it and edit it here.",
     personaBindEditBlank: "The blank persona stays blank: the first edit makes a new persona and binds it to this chat.",
     personaBindEditShared: "Edits save at once and apply to every chat that uses this persona.",
+    personaBindEditDefault: "This chat uses the default (the global persona). Edits save at once and apply to every chat that uses the default.",
+    personaBindEditDefaultBlank: "The default is the blank persona. It stays blank: the first edit makes a new persona and makes it the default (the global persona).",
     personaUnbindedSuccess: "Persona is successfully unbinded",
     personaBindChange: "Change Persona",
     personaBindUnbind: "Unbind",

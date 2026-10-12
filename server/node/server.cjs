@@ -5088,6 +5088,21 @@ app.delete('/api/chat-session/:chaId/:chatId', async (req, res) => {
     ))
 })
 
+// Why a page opened and on what (src/ts/bootReason.ts), for the log: the
+// user's phone app reopened after a short time in the background
+// (2026-10-13), and the log could not tell that device or cause apart.
+function describeBoot(req) {
+    const clean = (value, max) => String(value ?? '').replace(/[^\x20-\x7e]/g, '').slice(0, max).trim()
+    const reason = clean(req.headers['x-boot-reason'], 120)
+    const ua = String(req.headers['user-agent'] ?? '')
+    // In list order: an Android UA also says Linux; Edge and Samsung also say Chrome.
+    const device = ['Android', 'iPhone', 'iPad', 'Windows', 'Macintosh', 'CrOS', 'Linux'].find((name) => ua.includes(name)) ?? '?'
+    const browser = ['SamsungBrowser', 'EdgA', 'Edg', 'OPR', 'Firefox', 'CriOS', 'Chrome', 'Safari']
+        .map((name) => new RegExp(`${name}/\\d+`).exec(ua)?.[0]).find(Boolean) ?? '?'
+    const from = clean(req.headers['x-forwarded-for'], 60)
+    return ` (${reason || 'no reason'}; ${device} ${browser}${from ? `; from ${from}` : ''})`
+}
+
 // ── Session cookie issuance (F-0) ──────────────────────────────────────────
 // Called once after JWT auth succeeds. Issues a long-lived cookie so that
 // <img src="/api/asset/..."> requests can be authenticated without JS.
@@ -5097,7 +5112,7 @@ app.post('/api/session', async (req, res) => {
     if (typeof clientSessionId === 'string') {
         // Registers the boot; takes the lock only if nobody holds it.
         sessionLock.register(clientSessionId)
-        console.log('[Session] Session boot registered')
+        console.log(`[Session] Session boot registered${describeBoot(req)}`)
     }
     const token = nodeCrypto.randomBytes(32).toString('hex')
     const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000

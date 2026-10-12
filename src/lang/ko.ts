@@ -1425,6 +1425,8 @@ export const languageKorean = {
   personaBindEditInherit: "이 채팅은 기본값(전역 페르소나 {})을 씁니다. 목록에서 프로필을 누르면 그 페르소나를 바인딩하고 여기서 고칠 수 있어요.",
   personaBindEditBlank: "빈 페르소나는 그대로 두고, 고치는 순간 새 페르소나를 만들어 이 채팅에 바인딩합니다.",
   personaBindEditShared: "고친 내용은 바로 저장되고, 이 페르소나를 쓰는 다른 채팅에도 적용됩니다.",
+  personaBindEditDefault: "이 채팅은 기본값(전역 페르소나)을 씁니다. 고친 내용은 바로 저장되고, 기본값을 쓰는 다른 채팅에도 적용됩니다.",
+  personaBindEditDefaultBlank: "기본값이 빈 페르소나입니다. 빈 페르소나는 그대로 두고, 고치는 순간 새 페르소나를 만들어 기본값(전역 페르소나)으로 씁니다.",
   personaUnbindedSuccess: "페르소나가 성공적으로 언바인드되었습니다.",
   personaBindChange: "페르소나 변경",
   personaBindUnbind: "바인딩 해제",
