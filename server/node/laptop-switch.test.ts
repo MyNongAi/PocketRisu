@@ -18,7 +18,7 @@ describe('isBackgroundRequest', () => {
     })
 
     it('counts everything else', () => {
-        for (const p of ['/', '/api/write', '/api/patch', '/proxy-stream-jobs', '/api/chat-session/a/b', '/api/laptop/restart']) {
+        for (const p of ['/', '/api/write', '/api/patch', '/proxy-stream-jobs', '/api/chat-session/a/b', '/api/laptop/restart', '/api/laptop/use']) {
             expect(isBackgroundRequest(p), p).toBe(false)
         }
     })

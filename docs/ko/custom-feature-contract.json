@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.14.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-10-13",
+  "updatedAt": "2026-10-14",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
@@ -1233,6 +1233,25 @@
       ],
       "regressionTests": [
         "src/ts/storage/chatDraft.test.ts"
+      ]
+    },
+    {
+      "id": "LAPTOP-USE-BEAT",
+      "title": "읽거나 쓰는 동안 노트북 서버를 깨워 둠",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/laptopUseBeat.ts",
+        "src/ts/bootstrap.ts",
+        "server/node/server.cjs"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/laptopUseBeat.ts", "contains": "export function startLaptopUseBeat(deps: LaptopUseBeatDeps = {}): (() => void) | null" },
+        { "file": "src/ts/bootstrap.ts", "contains": "if (isNodeServer && !isEmbeddedRisuPane) startLaptopUseBeat()" },
+        { "file": "server/node/server.cjs", "contains": "app.post('/api/laptop/use', (req, res) => {" }
+      ],
+      "regressionTests": [
+        "src/ts/laptopUseBeat.test.ts",
+        "server/node/laptop-switch.test.ts"
       ]
     },
     {

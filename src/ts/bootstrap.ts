@@ -42,6 +42,8 @@ import { isChatStub, purgeUnsupportedGroupChats } from "./storage/database.svelt
 import { organizeAllSimilarityFolders } from "./process/similarityFolders";
 import { creatorsOf, organizeCreatorFolders } from "./creatorFolders";
 import { isEmbeddedRisuPane } from "./chatSplitPane";
+import { isNodeServer } from "./platform";
+import { startLaptopUseBeat } from "./laptopUseBeat";
 
 // v2 reruns the one-shot grouping after the web/local/mobile collection merge.
 // v1 had already completed against the web collection alone, so later imports
@@ -245,6 +247,8 @@ export async function loadData() {
                     void syncServerReplyPush()
                 }, 5_000)
             }
+            // Reading or typing keeps the laptop server awake (laptopUseBeat.ts).
+            if (isNodeServer && !isEmbeddedRisuPane) startLaptopUseBeat()
             startObserveDom()
             assignIds()
             registerModelDynamic()

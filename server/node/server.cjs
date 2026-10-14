@@ -11901,6 +11901,13 @@ app.get('/api/laptop/activity', (req, res) => {
     res.set('Cache-Control', 'no-store').json(laptopUse.snapshot());
 });
 
+// "Someone is reading or typing" from the page (src/ts/laptopUseBeat.ts):
+// the use tracker above counts it like any request, so the switch does not
+// put the laptop to sleep under a phone that only reads (2026-10-14).
+app.post('/api/laptop/use', (req, res) => {
+    res.status(204).end();
+});
+
 // The sidebar's reload button: have the switch stop this server, pull, build
 // if needed and start it again. 503 when there is no switch for this install;
 // the page then just reloads.
