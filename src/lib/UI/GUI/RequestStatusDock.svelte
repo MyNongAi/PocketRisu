@@ -7,11 +7,15 @@
     import { toast } from 'svelte-sonner'
     import { requestStatuses, clearStatus } from 'src/ts/status/requestStatus'
     import { dockState, minimizedRequests, unminimizeRequest } from 'src/ts/status/requestStatusDock'
-    import { DBState, selIdState } from 'src/ts/stores.svelte'
+    import { DBState, MobileGUI, selIdState } from 'src/ts/stores.svelte'
+    import { splitChatOpen, splitChatWidth, splitRightInset } from 'src/ts/chatSplitPane'
     import { changeChar } from 'src/ts/characters'
     import { changeChatTo } from 'src/ts/globalApi.svelte'
     import { language } from 'src/lang'
     import RequestStatusToast from './RequestStatusToast.svelte'
+
+    // Inside the left workspace while split (the right pane has its own dock).
+    const inset = $derived(splitRightInset($splitChatOpen, $splitChatWidth, $MobileGUI))
 
     const items = $derived($minimizedRequests
         .map((id) => ({ id, entry: $requestStatuses.get(id) }))
@@ -66,7 +70,7 @@
 </script>
 
 {#if items.length > 0}
-    <div class="request-dock" role="group" aria-label={rs()?.dockLabel ?? 'Folded requests'}>
+    <div class="request-dock" style:right={`calc(0.5rem + ${inset}px)`} role="group" aria-label={rs()?.dockLabel ?? 'Folded requests'}>
         {#each items as { id, entry } (id)}
             {@const state = dockState(entry)}
             {#if state === 'running'}

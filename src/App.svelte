@@ -3,6 +3,7 @@
     import Sidebar from './lib/SideBars/Sidebar.svelte';
     import { DBState, selectedCharID } from './ts/stores.svelte';
     import ChatScreen from './lib/ChatScreens/ChatScreen.svelte';
+    import SplitWorkspace from './lib/ChatScreens/SplitWorkspace.svelte';
     import AlertComp from './lib/Others/AlertComp.svelte';
     import LaptopRestartOverlay from './lib/Others/LaptopRestartOverlay.svelte';
     import RealmPopUp from './lib/UI/Realm/RealmPopUp.svelte';
@@ -242,7 +243,11 @@
 
             <span class="text-sm mt-2 text-textcolor2">{LoadingStatusState.text}</span>
         </div>
-    {:else if $settingsOpen}
+    {:else}
+        <!-- The PC split's right pane sits beside whatever the left shows,
+             chat or settings, so opening settings does not reload it. -->
+        <SplitWorkspace>
+        {#if $settingsOpen}
         <LazyComponent loader={settingsLoader} />
     {:else if $MobileGUI}
         <div class="w-full h-full flex flex-col">
@@ -287,6 +292,8 @@
             <LazyComponent overlay loader={characterManagerLoader} />
         {/if}
         {/if}
+        {/if}
+        </SplitWorkspace>
     {/if}
     <AlertComp />
     <LaptopRestartOverlay />

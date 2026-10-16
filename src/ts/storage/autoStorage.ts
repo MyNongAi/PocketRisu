@@ -81,9 +81,9 @@ export class AutoStorage{
     }
 
     /** Claim/release only the chat that is about to generate. */
-    async claimChatWriterSession(chaId: string, chatId: string) {
+    async claimChatWriterSession(chaId: string, chatId: string, options: { force?: boolean } = {}) {
         await this.Init()
-        return this.realStorage.claimChatWriterSession(chaId, chatId)
+        return this.realStorage.claimChatWriterSession(chaId, chatId, options)
     }
 
     async releaseChatWriterSession(chaId: string, chatId: string) {

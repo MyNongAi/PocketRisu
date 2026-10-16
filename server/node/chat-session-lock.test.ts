@@ -3,7 +3,7 @@ import pkg from './chat-session-lock.cjs'
 
 const { createChatSessionLock } = pkg as {
     createChatSessionLock: (opts?: { now?: () => number, ttlMs?: number }) => {
-        claim: (key: string, clientId: string, sessionId?: string) => { ok: boolean, reason?: string }
+        claim: (key: string, clientId: string, sessionId?: string, options?: { force?: boolean }) => { ok: boolean, reason?: string, renewed?: boolean, takenOver?: boolean }
         checkWrite: (key: string, clientId: string) => { ok: boolean, reason?: string, leased?: boolean }
         release: (key: string, clientId: string) => { released: boolean }
         activeCount: () => number
@@ -24,6 +24,19 @@ describe('chat-session-lock', () => {
         expect(lock.claim('char-a/chat-a', 'pc').ok).toBe(true)
         expect(lock.claim('char-a/chat-a', 'phone')).toMatchObject({ ok: false, reason: 'busy' })
         expect(lock.checkWrite('char-a/chat-a', 'phone')).toEqual({ ok: false, reason: 'busy' })
+    })
+
+    it('lets a page that sends take the chat over (force)', () => {
+        const lock = createChatSessionLock()
+        expect(lock.claim('char-a/chat-a', 'phone').ok).toBe(true)
+        expect(lock.claim('char-a/chat-a', 'pc')).toMatchObject({ ok: false, reason: 'busy' })
+        expect(lock.claim('char-a/chat-a', 'pc', '', { force: true })).toMatchObject({ ok: true, takenOver: true, renewed: false })
+        // The old owner is now the one refused, and cannot release it.
+        expect(lock.checkWrite('char-a/chat-a', 'phone')).toEqual({ ok: false, reason: 'busy' })
+        expect(lock.claim('char-a/chat-a', 'phone')).toMatchObject({ ok: false, reason: 'busy' })
+        expect(lock.release('char-a/chat-a', 'phone').released).toBe(false)
+        expect(lock.checkWrite('char-a/chat-a', 'pc')).toMatchObject({ ok: true, leased: true })
+        expect(lock.claim('char-a/chat-a', 'pc')).toMatchObject({ ok: true, renewed: true, takenOver: false })
     })
 
     it('renews for the owner and releases only for the owner', () => {

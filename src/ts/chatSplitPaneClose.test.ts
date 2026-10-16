@@ -32,3 +32,12 @@ describe('closing the split from its right pane', () => {
         expect(get(splitChatOpen)).toBe(false)
     })
 })
+
+describe('splitRightInset', () => {
+    it('is the right pane plus its divider while split, else 0', async () => {
+        const { splitRightInset, SPLIT_DIVIDER_PX } = await import('./chatSplitPane')
+        expect(splitRightInset(true, 520, false)).toBe(520 + SPLIT_DIVIDER_PX)
+        expect(splitRightInset(false, 520, false)).toBe(0)
+        expect(splitRightInset(true, 520, true)).toBe(0)
+    })
+})

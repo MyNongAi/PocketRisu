@@ -21,6 +21,7 @@ import { landRemoteDbPatch } from "./sync/remoteDbPatch";
 import { AutoStorage } from "./storage/autoStorage";
 import {
     ConflictError,
+    ChatYieldError,
     type PersistWarning,
     type AssetManifestDescriptor,
     type AssetManifestOperation,
@@ -44,6 +45,14 @@ import { onStaleBuild, setStaleBuildSaveState, watchServerBuild } from "./storag
  *  conflicting after repeated rebases). Not transient: retrying re-downloads
  *  the whole DB for the same answer, so triggerSave surfaces it at once
  *  instead of feeding it to the generic retry/backoff path. */
+/** Only chats another page is generating in are left: save them once it ends. */
+class ChatBusyDeferral extends Error {
+    constructor() {
+        super('A chat is generating on another page; saving it once that ends')
+        this.name = 'ChatBusyDeferral'
+    }
+}
+
 export class SaveRejectedError extends Error {
     constructor(message: string) {
         super(message)
@@ -1416,7 +1425,7 @@ export async function saveDb() {
             stageAt = now
             return ms
         }
-        const failedChats: { chaId: string, chatId: string, reason: string }[] = []
+        const failedChats: { chaId: string, chatId: string, reason: string, busy: boolean }[] = []
         for (const [chaId, chatId] of collectChatsToPersist(db, toSave)) {
             const char = db.characters.find(c => c?.chaId === chaId)
             if (!char) continue
@@ -1437,14 +1446,34 @@ export async function saveDb() {
                 knownChatIds.add(chatId)
                 knownChatIdsByCharacter.set(chaId, knownChatIds)
                 markHydratedChatPersisted(chaId, chatId)
+                // Saved: a rebase of the catalog below must not queue it
+                // again. Re-saving an already saved chat kept two pages
+                // overwriting each other's copy on every save cycle, each
+                // time keeping the other's as "(다른 기기 사본)" (2026-10-15:
+                // 80+ copies in an hour, PC and phone, nobody touching them).
+                toSave.chat = toSave.chat.filter((pair) => pair?.[0] !== chaId || pair?.[1] !== chatId)
             } catch (e) {
-                console.error(`[Save] Failed to save chat ${chaId}/${chatId}:`, e)
+                if (e instanceof ChatYieldError) {
+                    console.warn(`[Save] chat ${chaId}/${chatId} conflicted again right after a copy was kept; taking the server's copy`)
+                    await replaceChatBody(char.chats, chaId, chatId, e.serverChat)
+                    markHydratedChatPersisted(chaId, chatId)
+                    toSave.chat = toSave.chat.filter((pair) => pair?.[0] !== chaId || pair?.[1] !== chatId)
+                    continue
+                }
+                const busy = e instanceof ConflictError && e.code === 'CHAT_BUSY'
+                if (busy) console.warn(`[Save] chat ${chaId}/${chatId} is generating on another page; saving it once that ends`)
+                else console.error(`[Save] Failed to save chat ${chaId}/${chatId}:`, e)
                 failedChats.push({
                     chaId,
                     chatId,
                     reason: e instanceof Error ? e.message : String(e),
+                    busy,
                 })
             }
+        }
+        // Only chats another page is generating in: wait quietly for it.
+        if (failedChats.length > 0 && failedChats.every((chat) => chat.busy)) {
+            throw new ChatBusyDeferral()
         }
         if (failedChats.length > 0) {
             const details = [...new Set(failedChats.map(chat => chat.reason))].slice(0, 2).join(' / ')
@@ -1820,7 +1849,19 @@ export async function saveDb() {
     // anyway (NodeStorage.saveOverConflict). When that copy holds messages
     // this page lacks, it is kept first as a chat of its own — appended, so
     // no existing chat index shifts — and saved before the overwrite.
+    // Loop breaker: a page that already kept a copy of this chat a moment ago
+    // and conflicts on it again is fighting another page that keeps saving
+    // its own version. It takes the server's copy then, instead of saving
+    // over it and keeping yet another copy (2026-10-15: two pages did that
+    // every save cycle). One copy per chat per page every 10 minutes.
+    const CONFLICT_COPY_QUIET_MS = 10 * 60 * 1000
+    const recentConflictCopies = new Map<string, number>()
+
     async function keepServerChatCopy(char: { chaId: string, chats: Chat[] }, serverChat: Chat) {
+        const key = `${char.chaId}|${serverChat.id}`
+        const last = recentConflictCopies.get(key)
+        if (last !== undefined && Date.now() - last < CONFLICT_COPY_QUIET_MS) throw new ChatYieldError(serverChat)
+        recentConflictCopies.set(key, Date.now())
         const copy: Chat = { ...serverChat, id: v4(), name: language.chatConflictCopyName(serverChat.name ?? '') }
         char.chats.push(copy)
         await saveChatToServer(char.chaId, char.chats.length - 1, copy.id, copy, 'create')
@@ -1874,16 +1915,27 @@ export async function saveDb() {
                     // settles must surface instead of re-downloading forever.
                     consecutiveRetries += 1
                     if (consecutiveRetries > MAX_CONSECUTIVE_SAVE_RETRIES) {
-                        consecutiveRetries = 0
-                        throw new SaveRejectedError('Saving keeps conflicting with the server after repeated rebases. Another device may be saving continuously; reload this page to resync, and your unsaved changes are retried on the next edit.')
+                        // Another page keeps saving too (the other split
+                        // pane, a phone): keep saving, more slowly, instead
+                        // of stopping behind a modal that said to reload
+                        // (the user's request, 2026-10-17).
+                        const over = consecutiveRetries - MAX_CONSECUTIVE_SAVE_RETRIES
+                        saveRetryAt = Date.now() + Math.min(2000 * over, 30000)
+                        if (over === 1) console.warn('[Save] still rebasing after repeated conflicts; retrying with backoff')
                     }
                 } else if (result === 'noop' && hasTrackedChanges(toSave)) {
                     requeueTrackedChanges(toSave)
                     changed = true
                 }
             } catch (error) {
-                recordSample('error')
                 requeueTrackedChanges(toSave)
+                if (error instanceof ChatBusyDeferral) {
+                    recordSample('retry')
+                    saveRetryAt = Date.now() + 5000
+                    changed = true
+                    return
+                }
+                recordSample('error')
                 if (error instanceof SaveRejectedError) {
                     // Deterministic rejection: the generic backoff below would
                     // only repeat the download/replay cycle (up to 30 full

@@ -5026,10 +5026,12 @@ app.post('/api/chat-session/:chaId/:chatId/claim', rejectDuringExclusiveStorage,
             const chaId = req.params.chaId
             const chatId = req.params.chatId
             await ensureChatStore()
+            const force = req.headers['x-chat-force'] === '1'
             const result = chatSessionLock.claim(
                 chatSessionKey(chaId, chatId),
                 clientId,
                 typeof req.headers['x-session-id'] === 'string' ? req.headers['x-session-id'] : '',
+                { force },
             )
             if (!result.ok) {
                 return res.status(409).json({
@@ -5058,6 +5060,13 @@ app.post('/api/chat-session/:chaId/:chatId/claim', rejectDuringExclusiveStorage,
                 hasCurrentPayload: hasCurrent,
                 hasCatalogStub: catalogChat?._stub === true,
             })
+            if (!version.ok && force) {
+                // Taken over although this page's copy is behind the server:
+                // the send goes ahead, and no ETag is handed out, so the
+                // page's next save still meets the conflict and keeps the
+                // server copy as its own chat when the two diverged.
+                return res.json({ ok: true, forced: true, versionConflict: version.reason, expiresInMs: result.expiresInMs })
+            }
             if (!version.ok) {
                 chatSessionLock.release(chatSessionKey(chaId, chatId), clientId)
                 return res.status(409).json({

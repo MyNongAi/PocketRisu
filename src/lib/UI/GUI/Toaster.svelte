@@ -1,15 +1,21 @@
 <script lang="ts">
     import { Toaster as SonnerToaster, type ToasterProps } from 'svelte-sonner';
-    import { isTouchDevice } from 'src/ts/stores.svelte';
+    import { isTouchDevice, MobileGUI } from 'src/ts/stores.svelte';
+    import { splitChatOpen, splitChatWidth, splitRightInset } from 'src/ts/chatSplitPane';
 
     let { ...rest }: ToasterProps = $props();
 
-    const position = $derived<ToasterProps['position']>($isTouchDevice ? 'top-center' : 'top-right');
+    // With the PC split open, this window's toasts stay at the top right of
+    // its own (left) workspace, clear of the right pane, which shows its own.
+    const inset = $derived(splitRightInset($splitChatOpen, $splitChatWidth, $MobileGUI));
+    const position = $derived<ToasterProps['position']>(inset > 0 || !$isTouchDevice ? 'top-right' : 'top-center');
+    const offset = $derived<ToasterProps['offset']>(inset > 0 ? { top: '24px', right: `${inset + 24}px` } : undefined);
 </script>
 
 <SonnerToaster
     theme="dark"
     {position}
+    {offset}
     richColors
     swipeDirections={['top', 'left', 'right']}
     duration={3500}

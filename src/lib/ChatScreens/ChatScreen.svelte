@@ -1,7 +1,7 @@
 <script lang="ts">
     import { getCustomBackground, getEmotion } from "../../ts/util";
     
-    import { DBState, MobileGUI } from 'src/ts/stores.svelte';
+    import { DBState } from 'src/ts/stores.svelte';
     import { CharEmotion, selectedCharID, openModuleListStore } from "../../ts/stores.svelte";
     import ResizeBox from './ResizeBox.svelte'
     import DefaultChatScreen from "./DefaultChatScreen.svelte";
@@ -11,71 +11,11 @@
     import BackgroundDom from "./BackgroundDom.svelte";
     import SideBarArrow from "../UI/GUI/SideBarArrow.svelte";
     import ModuleChatMenu from "../Setting/Pages/Module/ModuleChatMenu.svelte";
-    import SecondaryChatPanel from './SecondaryChatPanel.svelte';
-    import { clampSplitWidth, getSplitWidthBounds, isEmbeddedRisuPane, splitChatOpen, splitChatWidth } from 'src/ts/chatSplitPane';
-    import { onDestroy, onMount } from 'svelte';
     import { BackLayerRank, useBackLayer } from 'src/ts/gui/backLayers.svelte';
     let openChatList = $state(false)
     let openModuleList = $state(false)
-    let splitRoot: HTMLDivElement | null = $state(null)
     useBackLayer(BackLayerRank.Popup, () => openChatList, () => { openChatList = false })
     useBackLayer(BackLayerRank.Popup, () => openModuleList && !openChatList, () => { openModuleList = false })
-    let stopSplitResize: (() => void) | null = null
-
-    function beginSplitResize(event: PointerEvent) {
-        if (!splitRoot) return
-        event.preventDefault()
-        const pointerId = event.pointerId
-        const handle = event.currentTarget as HTMLElement
-        handle.setPointerCapture?.(pointerId)
-
-        const move = (moveEvent: PointerEvent) => {
-            if (!splitRoot) return
-            const rect = splitRoot.getBoundingClientRect()
-            splitChatWidth.set(clampSplitWidth(rect.right - moveEvent.clientX, rect.width))
-        }
-        const stop = () => {
-            window.removeEventListener('pointermove', move)
-            window.removeEventListener('pointerup', stop)
-            window.removeEventListener('pointercancel', stop)
-            stopSplitResize = null
-        }
-        stopSplitResize?.()
-        stopSplitResize = stop
-        window.addEventListener('pointermove', move)
-        window.addEventListener('pointerup', stop)
-        window.addEventListener('pointercancel', stop)
-    }
-
-    function resetSplitWidth() {
-        if (!splitRoot) return
-        splitChatWidth.set(clampSplitWidth(splitRoot.clientWidth / 2, splitRoot.clientWidth))
-    }
-
-    function handleSplitDividerKeydown(event: KeyboardEvent) {
-        if (!splitRoot) return
-        const bounds = getSplitWidthBounds(splitRoot.clientWidth)
-        const step = event.shiftKey ? 80 : 24
-        let nextWidth: number | undefined
-        if (event.key === 'ArrowLeft') nextWidth = $splitChatWidth + step
-        if (event.key === 'ArrowRight') nextWidth = $splitChatWidth - step
-        if (event.key === 'Home') nextWidth = bounds.max
-        if (event.key === 'End') nextWidth = bounds.min
-        if (nextWidth === undefined) return
-        event.preventDefault()
-        splitChatWidth.set(clampSplitWidth(nextWidth, splitRoot.clientWidth))
-    }
-
-    onDestroy(() => stopSplitResize?.())
-    onMount(() => {
-        const clampStoredWidth = () => {
-            if (!splitRoot) return
-            splitChatWidth.update((width) => clampSplitWidth(width, splitRoot?.clientWidth ?? window.innerWidth))
-        }
-        clampStoredWidth()
-        window.addEventListener('resize', clampStoredWidth)
-        return () => window.removeEventListener('resize', clampStoredWidth)
-    })
 
     $effect(() => {
         if ($openModuleListStore) {
@@ -102,12 +42,12 @@
     });
 </script>
 
-<!-- `isolate` keeps bot HTML/CSS z-index inside the chat layer; the outer
-     wrapper additionally owns the optional second workspace. -->
-<div class="grow h-full min-w-0 flex relative" bind:this={splitRoot}>
+<!-- `isolate` keeps bot HTML/CSS z-index inside the chat layer. The PC
+     split's second workspace sits beside the whole left side now
+     (SplitWorkspace in App), so settings no longer unmount it. -->
+<div class="grow h-full min-w-0 flex relative">
 <section
     class="grow h-full min-w-0 relative"
-    class:split-chat-contained={$splitChatOpen && !$MobileGUI && !isEmbeddedRisuPane}
 >
 {#if DBState.db.theme === 'waifu'}
     <div class="isolate grow h-full flex justify-center relative" style="{bgImg.length < 4 ? wallPaper : bgImg}">
@@ -157,24 +97,6 @@
     </div>
 {/if}
 </section>
-{#if $splitChatOpen && !$MobileGUI && !isEmbeddedRisuPane}
-    <div
-        class="split-chat-divider h-full w-1.5 shrink-0 cursor-col-resize border-0 bg-darkborderc p-0 transition-colors hover:bg-primary focus-visible:bg-primary focus-visible:outline-none"
-        role="slider"
-        aria-label="Resize split chat"
-        aria-orientation="vertical"
-        aria-valuemin={getSplitWidthBounds(splitRoot?.clientWidth ?? 0).min}
-        aria-valuemax={getSplitWidthBounds(splitRoot?.clientWidth ?? 0).max}
-        aria-valuenow={$splitChatWidth}
-        tabindex="0"
-        onpointerdown={beginSplitResize}
-        ondblclick={resetSplitWidth}
-        onkeydown={handleSplitDividerKeydown}
-    ></div>
-    <div class="h-full min-w-0 shrink-0" style:width={`${$splitChatWidth}px`}>
-        <SecondaryChatPanel />
-    </div>
-{/if}
 </div>
 {#if openChatList}
     <ChatList close={() => {openChatList = false}}/>
@@ -193,16 +115,4 @@
         height: 33.333333%;
     }
 
-    .split-chat-divider {
-        touch-action: none;
-    }
-
-    .split-chat-contained {
-        /* User CSS often places chat controls with position:fixed. Paint
-           containment gives the primary workspace its own fixed-position
-           viewport, matching the secondary iframe instead of the full page. */
-        contain: paint;
-        isolation: isolate;
-        overflow: clip;
-    }
 </style>

@@ -178,6 +178,7 @@
         "src/ts/dragTypes.ts",
         "src/lib/ChatScreens/SecondaryChatPanel.svelte",
         "src/lib/ChatScreens/ChatScreen.svelte",
+        "src/lib/ChatScreens/SplitWorkspace.svelte",
         "src/lib/SideBars/SideChatList.svelte",
         "src/lib/SideBars/Sidebar.svelte"
       ],
@@ -195,8 +196,9 @@
         { "file": "src/ts/chatSplitPane.ts", "contains": "export function pressSplitButton(): void {" },
         { "file": "src/ts/chatSplitPane.ts", "contains": "export function listenForSplitClose(pane: () => Window | null | undefined): () => void {" },
         { "file": "src/lib/ChatScreens/SecondaryChatPanel.svelte", "contains": "$effect(() => listenForSplitClose(() => frame?.contentWindow))" },
-        { "file": "src/lib/ChatScreens/ChatScreen.svelte", "contains": "SecondaryChatPanel" },
-        { "file": "src/lib/ChatScreens/ChatScreen.svelte", "contains": "split-chat-contained" }
+        { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "<SecondaryChatPanel />" },
+        { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "class:split-chat-contained={enabled}" },
+        { "file": "src/App.svelte", "contains": "<SplitWorkspace>" }
       ],
       "regressionTests": [
         "src/ts/chatSplitPane.test.ts",
@@ -1242,6 +1244,32 @@
       ],
       "regressionTests": [
         "src/ts/storage/chatDraft.test.ts"
+      ]
+    },
+    {
+      "id": "SYNC-NO-PINGPONG",
+      "title": "동기화 핑퐁·생성 중 대기 없애기",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "src/ts/globalApi.svelte.ts",
+        "src/ts/storage/nodeStorage.ts",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "server/node/chat-session-lock.cjs",
+        "server/node/server.cjs"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "toSave.chat = toSave.chat.filter((pair) => pair?.[0] !== chaId || pair?.[1] !== chatId)" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "if (last !== undefined && Date.now() - last < CONFLICT_COPY_QUIET_MS) throw new ChatYieldError(serverChat)" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "if (error instanceof ChatBusyDeferral) {" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "saveRetryAt = Date.now() + Math.min(2000 * over, 30000)" },
+        { "file": "src/ts/storage/nodeStorage.ts", "contains": "export class ChatYieldError extends Error {" },
+        { "file": "src/ts/storage/nodeStorage.ts", "contains": "if (options.force) headers['x-chat-force'] = '1'" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "async function claimChatForSend(chaId: string, chatId: string) {" },
+        { "file": "server/node/chat-session-lock.cjs", "contains": "function claim(key, clientId, sessionId = '', { force = false } = {}) {" },
+        { "file": "server/node/server.cjs", "contains": "if (!version.ok && force) {" }
+      ],
+      "regressionTests": [
+        "server/node/chat-session-lock.test.ts"
       ]
     },
     {

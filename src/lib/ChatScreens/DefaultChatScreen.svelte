@@ -220,6 +220,18 @@ import { isMobile } from 'src/ts/platform'
 
     type ChatLeaseTarget = { chaId: string, chatId: string }
 
+    // A send or reroll here is the user acting on this page, so it never
+    // waits for another page that holds the chat (often nothing was
+    // generating there: a closed phone app, the other split pane). It takes
+    // the chat over; a copy behind the server is still saved through the
+    // usual conflict handling (the user's request, 2026-10-17).
+    async function claimChatForSend(chaId: string, chatId: string) {
+        const claim = await forageStorage.claimChatWriterSession(chaId, chatId)
+        if (claim.ok === true || (claim.reason !== 'busy' && claim.reason !== 'conflict')) return claim
+        console.warn(`[ChatLease] ${claim.reason}: taking ${chaId}/${chatId} over for this send`)
+        return forageStorage.claimChatWriterSession(chaId, chatId, { force: true })
+    }
+
     async function finishChatLease(target: ChatLeaseTarget | null) {
         if (!target) return
         try {
@@ -537,7 +549,7 @@ import { isMobile } from 'src/ts/platform'
         generationTarget = ready.target
         const targetCharacter = ready.character
         const activeChat = ready.chat
-        const claim = await forageStorage.claimChatWriterSession(targetCharacter.chaId, activeChat.id)
+        const claim = await claimChatForSend(targetCharacter.chaId, activeChat.id)
         if (claim.ok === false) {
             notifyError(chatWriterClaimMessage(claim))
             return
@@ -721,7 +733,7 @@ import { isMobile } from 'src/ts/platform'
         if(!ready) return
         generationTarget = ready.target
         const activeChat = ready.chat
-        const claim = await forageStorage.claimChatWriterSession(ready.character.chaId, activeChat.id)
+        const claim = await claimChatForSend(ready.character.chaId, activeChat.id)
         if (claim.ok === false) {
             notifyError(chatWriterClaimMessage(claim))
             return

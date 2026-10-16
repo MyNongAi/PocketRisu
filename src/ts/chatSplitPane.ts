@@ -92,6 +92,20 @@ export const splitChatWidth = writable(readNumber(WIDTH_KEY, 520))
 splitChatOpen.subscribe((value) => persist(OPEN_KEY, String(value)))
 splitChatWidth.subscribe((value) => persist(WIDTH_KEY, String(Math.round(value))))
 
+/** Divider width between the two workspaces (SplitWorkspace). */
+export const SPLIT_DIVIDER_PX = 6
+
+/**
+ * Pixels the right pane (and its divider) covers at the right of the main
+ * window, so floating UI of the left workspace (toasts, the request dock)
+ * stays inside it instead of landing on the right pane (the user's report,
+ * 2026-10-17). `mobileLayout`: MobileGUI, where the split is not shown.
+ */
+export function splitRightInset(open: boolean, width: number, mobileLayout: boolean): number {
+    if (!open || mobileLayout || isEmbeddedRisuPane) return 0
+    return Math.max(0, Math.round(width)) + SPLIT_DIVIDER_PX
+}
+
 export function toggleSplitChat() {
     splitChatOpen.update((value) => !value)
 }

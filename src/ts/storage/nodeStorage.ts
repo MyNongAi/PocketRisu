@@ -86,6 +86,20 @@ function isUserActive(): boolean {
 }
 
 // Custom error class for database conflict detection
+/**
+ * Thrown from a conflict copy hook (ChatSaveOptions.preserveServerCopy) when
+ * this page should take the server's copy instead of saving over it; the
+ * save loop puts `serverChat` in place of the local body.
+ */
+export class ChatYieldError extends Error {
+    serverChat: any
+    constructor(serverChat: any) {
+        super('Took the server copy of the chat instead of saving over it')
+        this.name = 'ChatYieldError'
+        this.serverChat = serverChat
+    }
+}
+
 export class ConflictError extends Error {
     currentEtag: string
     /** Server guard code (e.g. ARCHIVE_GUARD_REJECTED); undefined for a plain etag conflict. */
@@ -1151,15 +1165,16 @@ export class NodeStorage{
     /** Claim only one conversation for a model request. Other conversations
      * remain writable on other devices. The cached ETag makes this a preflight
      * version check as well as a short-lived lease. */
-    async claimChatWriterSession(chaId: string, chatId: string): Promise<ChatWriterClaimResult> {
-        return this.runChatOperation(this.chatEtagKey(chaId, chatId), () => this.claimChatWriterSessionNow(chaId, chatId))
+    async claimChatWriterSession(chaId: string, chatId: string, options: { force?: boolean } = {}): Promise<ChatWriterClaimResult> {
+        return this.runChatOperation(this.chatEtagKey(chaId, chatId), () => this.claimChatWriterSessionNow(chaId, chatId, options))
     }
 
-    private async claimChatWriterSessionNow(chaId: string, chatId: string): Promise<ChatWriterClaimResult> {
+    private async claimChatWriterSessionNow(chaId: string, chatId: string, options: { force?: boolean } = {}): Promise<ChatWriterClaimResult> {
         const key = this.chatEtagKey(chaId, chatId)
         const headers: Record<string, string> = {}
         const baselineEtag = this.chatEtags.get(key)
         if (baselineEtag) headers['x-chat-etag'] = baselineEtag
+        if (options.force) headers['x-chat-force'] = '1'
         try {
             const res = await this.authFetch(
                 `/api/chat-session/${encodeURIComponent(chaId)}/${encodeURIComponent(chatId)}/claim`,

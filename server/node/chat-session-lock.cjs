@@ -21,19 +21,23 @@ function createChatSessionLock(opts = {}) {
         return lease;
     }
 
-    function claim(key, clientId, sessionId = '') {
+    // `force`: the user sent in this chat on this page, so it takes the
+    // chat over from whichever page held it (the user's request,
+    // 2026-10-17: "wait N seconds" with nothing generating elsewhere).
+    function claim(key, clientId, sessionId = '', { force = false } = {}) {
         if (!key || !clientId) return { ok: false, reason: 'invalid-client' };
         const current = liveLease(key);
-        if (current && current.clientId !== clientId) {
+        if (current && current.clientId !== clientId && !force) {
             return {
                 ok: false,
                 reason: 'busy',
                 retryAfterMs: Math.max(0, ttlMs - (now() - current.updatedAt)),
             };
         }
-        const renewed = !!current;
+        const renewed = !!current && current.clientId === clientId;
+        const takenOver = !!current && current.clientId !== clientId;
         leases.set(key, { clientId, sessionId, updatedAt: now() });
-        return { ok: true, renewed, expiresInMs: ttlMs };
+        return { ok: true, renewed, takenOver, expiresInMs: ttlMs };
     }
 
     // A normal chat edit is allowed when nobody is generating. While a lease
