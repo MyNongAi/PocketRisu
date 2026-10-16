@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.14.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-10-14",
+  "updatedAt": "2026-10-16",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
@@ -1094,6 +1094,8 @@
         { "file": "src/ts/storage/database.svelte.ts", "contains": "nodeOnlyParentFolderId?:string" },
         { "file": "src/ts/folderNesting.ts", "contains": "export function folderParents(order: readonly OrderEntry[])" },
         { "file": "src/ts/characterOrder.ts", "contains": "} else if (isFolderEntry(entry) && parentFolders.has(entry.id)) {" },
+        { "file": "src/ts/characterOrder.ts", "contains": "if (parentId) toParent.set(parentId, [...(toParent.get(parentId) ?? []), entry.data[0]])" },
+        { "file": "src/ts/characterOrder.test.ts", "contains": "hands the last card of a folder shown inside another to that folder" },
         { "file": "src/ts/characterOrder.ts", "contains": "for (const entry of reparentChildrenOf(order, folderId)) {" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "folderSettingsTarget.set(folderId)" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{@render railNestedFolders(char.id)}" },
@@ -1107,7 +1109,8 @@
       ],
       "regressionTests": [
         "src/ts/folderNesting.test.ts",
-        "src/ts/folders.test.ts"
+        "src/ts/folders.test.ts",
+        "src/ts/characterOrder.test.ts"
       ]
     },
     {

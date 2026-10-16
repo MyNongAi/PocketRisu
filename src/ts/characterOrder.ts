@@ -10,7 +10,7 @@
 import type { folder } from './storage/database.svelte'
 import { isFavoritesFolder } from './favoritesFolder'
 import { isDeactivatedSystemFolder } from './deactivatedCharacterFolders'
-import { folderChildren, reparentChildrenOf } from './folderNesting'
+import { folderChildren, folderParents, reparentChildrenOf } from './folderNesting'
 
 export type OrderEntry = string | folder
 
@@ -71,6 +71,11 @@ function cloneOrder(order: OrderEntry[]): OrderEntry[] {
  *
  * A folder that other folders are shown in (folderNesting.ts) is kept at any
  * size: it can hold only folders, and dissolving it would spill them out.
+ *
+ * A folder shown inside another one hands its last card to that folder
+ * (first, with `releaseToTop`; last otherwise), so the card stays where the
+ * user filed it. Released to the top level instead, it left the parent
+ * folder as well (the user's report, 2026-10-16).
  */
 export function dissolveSingletonFolders(order: OrderEntry[], previous: OrderEntry[] = order, options: { releaseToTop?: boolean } = {}): OrderEntry[] {
     const previousFolderSizes = new Map<string, number>()
@@ -78,6 +83,8 @@ export function dissolveSingletonFolders(order: OrderEntry[], previous: OrderEnt
         if (isFolderEntry(entry)) previousFolderSizes.set(entry.id, entry.data.length)
     }
     const parentFolders = new Set(folderChildren(order).keys())
+    const shownIn = folderParents(order)
+    const toParent = new Map<string, string[]>()
     const out: OrderEntry[] = []
     const released: string[] = []
     for (const entry of order) {
@@ -88,13 +95,22 @@ export function dissolveSingletonFolders(order: OrderEntry[], previous: OrderEnt
         } else if (isFolderEntry(entry) && parentFolders.has(entry.id)) {
             out.push(cloneFolder(entry))
         } else if (isFolderEntry(entry) && entry.data.length === 1) {
-            if (options.releaseToTop) released.push(entry.data[0])
+            const parentId = shownIn.get(entry.id)
+            if (parentId) toParent.set(parentId, [...(toParent.get(parentId) ?? []), entry.data[0]])
+            else if (options.releaseToTop) released.push(entry.data[0])
             else out.push(entry.data[0])
         } else if (isFolderEntry(entry) && entry.data.length === 0 && (previousFolderSizes.get(entry.id) ?? 0) > 0) {
             continue
         } else {
             out.push(isFolderEntry(entry) ? cloneFolder(entry) : entry)
         }
+    }
+    for (let index = 0; index < out.length; index++) {
+        const entry = out[index]
+        const cards = isFolderEntry(entry) ? toParent.get(entry.id) : undefined
+        if (!cards || !isFolderEntry(entry)) continue
+        const kept = entry.data.filter((id) => !cards.includes(id))
+        out[index] = cloneFolder(entry, options.releaseToTop ? [...cards, ...kept] : [...kept, ...cards])
     }
     return released.length > 0 ? [...released, ...out] : out
 }

@@ -146,6 +146,22 @@ describe('characterOrder', () => {
         expect(dissolveSingletonFolders(['a', { id: 'f', name: 'F', color: '', data: ['x'] }, 'b'])).toEqual(['a', 'x', 'b'])
     })
 
+    it('hands the last card of a folder shown inside another to that folder', () => {
+        const parent = { id: 'p', name: 'P', color: '', data: ['a'] }
+        const child = { id: 'c', name: 'C', color: '', data: ['x'], nodeOnlyParentFolderId: 'p' }
+        const other = { id: 'o', name: 'O', color: '', data: ['y', 'z'], nodeOnlyParentFolderId: 'p' }
+        // A drag leaves one card in C: it goes to the end of P, not the top level.
+        expect(dissolveSingletonFolders(['top', parent, child, other])).toEqual([
+            'top', { ...parent, data: ['a', 'x'] }, other,
+        ])
+        // Deleting a card (releaseToTop) puts the survivor first in P.
+        expect(removeCharacter(['top', parent, { ...child, data: ['x', 'gone'] }, other], 'gone')).toEqual([
+            'top', { ...parent, data: ['x', 'a'] }, other,
+        ])
+        // A top-level folder still releases its last card to the top level.
+        expect(dissolveSingletonFolders(['top', { id: 'f', name: 'F', color: '', data: ['x'] }])).toEqual(['top', 'x'])
+    })
+
     it('keeps an intentionally empty folder but removes one that just lost its members', () => {
         const empty: OrderEntry = { id: 'empty', name: 'Empty', color: '', data: [] }
         const formerlyOccupied: OrderEntry = { id: 'lost', name: 'Lost', color: '', data: ['a'] }
