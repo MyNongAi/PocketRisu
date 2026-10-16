@@ -47,12 +47,15 @@
     WrenchIcon,
     User2Icon,
     ArrowRight,
+    ArrowLeft,
   } from "@lucide/svelte";
-    import { isEmbeddedRisuPane, splitChatOpen, toggleSplitChat } from 'src/ts/chatSplitPane';
+    import { isEmbeddedRisuPane, pressSplitButton, splitChatOpen } from 'src/ts/chatSplitPane';
     // The split's open button closes it again (the user's request, 2026-10-17;
     // the pane's own X in its top-right corner is gone).
     const SPLIT_OPEN_LABEL = '분할 채팅 열기'
     const SPLIT_CLOSE_LABEL = '분할 채팅 닫기 (채팅 데이터는 삭제하지 않음)'
+    // The right pane is only ever shown as part of an open split.
+    const splitShownOpen = $derived(isEmbeddedRisuPane || $splitChatOpen)
     import {
   addCharacter,
     cancelCharacterChatPrefetch,
@@ -1486,22 +1489,18 @@
   <User2Icon />
   <span class="text-xs">{language.character}</span>
 </button>
-{#if !isEmbeddedRisuPane}
-  <button
-    class="flex items-center justify-center py-2 flex-col gap-1 w-full"
-    class:text-textcolor2={!$splitChatOpen}
-    class:text-primary={$splitChatOpen}
-    aria-pressed={$splitChatOpen}
-    aria-label={$splitChatOpen ? SPLIT_CLOSE_LABEL : SPLIT_OPEN_LABEL}
-    title={$splitChatOpen ? SPLIT_CLOSE_LABEL : SPLIT_OPEN_LABEL}
-    onclick={() => {
-      toggleSplitChat()
-    }}
-  >
-    {#if $splitChatOpen}<PanelRightCloseIcon />{:else}<Columns2 />{/if}
-    <span class="text-xs">{$splitChatOpen ? '분할 닫기' : '분할'}</span>
-  </button>
-{/if}
+<button
+  class="flex items-center justify-center py-2 flex-col gap-1 w-full"
+  class:text-textcolor2={!splitShownOpen}
+  class:text-primary={splitShownOpen}
+  aria-pressed={splitShownOpen}
+  aria-label={splitShownOpen ? SPLIT_CLOSE_LABEL : SPLIT_OPEN_LABEL}
+  title={splitShownOpen ? SPLIT_CLOSE_LABEL : SPLIT_OPEN_LABEL}
+  onclick={pressSplitButton}
+>
+  {#if splitShownOpen}<PanelRightCloseIcon />{:else}<Columns2 />{/if}
+  <span class="text-xs">{splitShownOpen ? '분할 닫기' : '분할'}</span>
+</button>
 </div>
 {:else}
 <div
@@ -1551,17 +1550,13 @@
           PlaygroundStore.set(0)
           OpenRealmStore.set(false)
         }}><HomeIcon /></BarIcon>
-      {#if !isEmbeddedRisuPane}
-        <div class="mt-2"></div>
-        <BarIcon
-          ariaLabel={$splitChatOpen ? SPLIT_CLOSE_LABEL : SPLIT_OPEN_LABEL}
-          title={$splitChatOpen ? SPLIT_CLOSE_LABEL : SPLIT_OPEN_LABEL}
-          pressed={$splitChatOpen}
-          onClick={() => {
-            toggleSplitChat()
-          }}
-        >{#if $splitChatOpen}<PanelRightCloseIcon class="text-primary" />{:else}<Columns2 />{/if}</BarIcon>
-      {/if}
+      <div class="mt-2"></div>
+      <BarIcon
+        ariaLabel={splitShownOpen ? SPLIT_CLOSE_LABEL : SPLIT_OPEN_LABEL}
+        title={splitShownOpen ? SPLIT_CLOSE_LABEL : SPLIT_OPEN_LABEL}
+        pressed={splitShownOpen}
+        onClick={pressSplitButton}
+      >{#if splitShownOpen}<PanelRightCloseIcon class="text-primary" />{:else}<Columns2 />{/if}</BarIcon>
       <div class="mt-2"></div>
       <BarIcon
         onClick={() => {
@@ -2003,17 +1998,13 @@
           PlaygroundStore.set(0)
           OpenRealmStore.set(false)
         }}><HomeIcon /></BarIcon>
-      {#if !isEmbeddedRisuPane}
-        <div class="mt-2"></div>
-        <BarIcon
-          ariaLabel={$splitChatOpen ? SPLIT_CLOSE_LABEL : SPLIT_OPEN_LABEL}
-          title={$splitChatOpen ? SPLIT_CLOSE_LABEL : SPLIT_OPEN_LABEL}
-          pressed={$splitChatOpen}
-          onClick={() => {
-            toggleSplitChat()
-          }}
-        >{#if $splitChatOpen}<PanelRightCloseIcon class="text-primary" />{:else}<Columns2 />{/if}</BarIcon>
-      {/if}
+      <div class="mt-2"></div>
+      <BarIcon
+        ariaLabel={splitShownOpen ? SPLIT_CLOSE_LABEL : SPLIT_OPEN_LABEL}
+        title={splitShownOpen ? SPLIT_CLOSE_LABEL : SPLIT_OPEN_LABEL}
+        pressed={splitShownOpen}
+        onClick={pressSplitButton}
+      >{#if splitShownOpen}<PanelRightCloseIcon class="text-primary" />{:else}<Columns2 />{/if}</BarIcon>
       <div class="mt-2"></div>
       <BarIcon
         onClick={() => {
@@ -2225,7 +2216,17 @@
       }}
       class:sidebar-dark-animation={!$sideBarClosing}
       class:sidebar-dark-close-animation={$sideBarClosing}>
-
+      {#if isEmbeddedRisuPane}
+        <!-- The right pane of a split is narrow, so its sidebar overlays the
+             chat; it gets the same ← close button as the main window's
+             docked sidebar (the user's request, 2026-10-17). -->
+        <button type="button" aria-label={language.close ?? 'Close'} title={language.close ?? 'Close'}
+          class="mt-3 h-12 w-12 border-r border-b border-t border-transparent rounded-r-md bg-darkbg hover:border-neutral-200 transition-colors flex items-center justify-center text-textcolor"
+          onclick={(event) => {
+            event.stopPropagation()
+            if (!$sideBarClosing) $sideBarClosing = true
+          }}><ArrowLeft /></button>
+      {/if}
     </div>
 
 {/if}

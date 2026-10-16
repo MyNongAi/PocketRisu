@@ -95,3 +95,32 @@ splitChatWidth.subscribe((value) => persist(WIDTH_KEY, String(Math.round(value))
 export function toggleSplitChat() {
     splitChatOpen.update((value) => !value)
 }
+
+// The right pane is this app again in an iframe; its own menu closes the
+// split by asking the window around it (the user's request, 2026-10-17).
+// Its splitChatOpen store is only its own copy of the saved flag.
+const SPLIT_CLOSE_MESSAGE = 'pocketrisu:split-close'
+
+/** The split button in either pane: the main window toggles, the right pane closes. */
+export function pressSplitButton(): void {
+    if (!isEmbeddedRisuPane) {
+        toggleSplitChat()
+        return
+    }
+    try {
+        window.parent.postMessage({ type: SPLIT_CLOSE_MESSAGE }, window.location.origin)
+    } catch {
+        // No parent to ask.
+    }
+}
+
+/** In the main window, while the right pane is shown: close the split when it asks. */
+export function listenForSplitClose(pane: () => Window | null | undefined): () => void {
+    const onMessage = (event: MessageEvent) => {
+        if (event.origin !== window.location.origin || event.data?.type !== SPLIT_CLOSE_MESSAGE) return
+        if (event.source !== pane()) return
+        splitChatOpen.set(false)
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+}
