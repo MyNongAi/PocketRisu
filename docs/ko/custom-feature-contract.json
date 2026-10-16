@@ -190,7 +190,7 @@
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "serializeChatRoomDragPayload" },
         { "file": "src/lib/ChatScreens/SecondaryChatPanel.svelte", "contains": "getSecondaryRisuPaneUrl" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "const SPLIT_CLOSE_LABEL = '분할 채팅 닫기 (채팅 데이터는 삭제하지 않음)'" },
-        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{#if splitShownOpen}<PanelRightCloseIcon class=\"text-primary\" />{:else}<Columns2 />{/if}" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{#if splitShownOpen}<PanelRightCloseIcon />{:else}<Columns2 />{/if}</BarIcon>" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "const splitShownOpen = $derived(isEmbeddedRisuPane || $splitChatOpen)" },
         { "file": "src/ts/chatSplitPane.ts", "contains": "export function pressSplitButton(): void {" },
         { "file": "src/ts/chatSplitPane.ts", "contains": "export function listenForSplitClose(pane: () => Window | null | undefined): () => void {" },

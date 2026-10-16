@@ -1556,7 +1556,7 @@
         title={splitShownOpen ? SPLIT_CLOSE_LABEL : SPLIT_OPEN_LABEL}
         pressed={splitShownOpen}
         onClick={pressSplitButton}
-      >{#if splitShownOpen}<PanelRightCloseIcon class="text-primary" />{:else}<Columns2 />{/if}</BarIcon>
+      >{#if splitShownOpen}<PanelRightCloseIcon />{:else}<Columns2 />{/if}</BarIcon>
       <div class="mt-2"></div>
       <BarIcon
         onClick={() => {
@@ -2004,7 +2004,7 @@
         title={splitShownOpen ? SPLIT_CLOSE_LABEL : SPLIT_OPEN_LABEL}
         pressed={splitShownOpen}
         onClick={pressSplitButton}
-      >{#if splitShownOpen}<PanelRightCloseIcon class="text-primary" />{:else}<Columns2 />{/if}</BarIcon>
+      >{#if splitShownOpen}<PanelRightCloseIcon />{:else}<Columns2 />{/if}</BarIcon>
       <div class="mt-2"></div>
       <BarIcon
         onClick={() => {
@@ -2216,10 +2216,11 @@
       }}
       class:sidebar-dark-animation={!$sideBarClosing}
       class:sidebar-dark-close-animation={$sideBarClosing}>
-      {#if isEmbeddedRisuPane}
-        <!-- The right pane of a split is narrow, so its sidebar overlays the
-             chat; it gets the same ← close button as the main window's
-             docked sidebar (the user's request, 2026-10-17). -->
+      {#if isEmbeddedRisuPane || $splitChatOpen}
+        <!-- Narrow panes of a split (the right one always; both on a phone
+             such as an unfolded Fold) overlay their sidebar on the chat;
+             they get the same ← close button as a docked sidebar (the
+             user's request, 2026-10-17). -->
         <button type="button" aria-label={language.close ?? 'Close'} title={language.close ?? 'Close'}
           class="mt-3 h-12 w-12 border-r border-b border-t border-transparent rounded-r-md bg-darkbg hover:border-neutral-200 transition-colors flex items-center justify-center text-textcolor"
           onclick={(event) => {
