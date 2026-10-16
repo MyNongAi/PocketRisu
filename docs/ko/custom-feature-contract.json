@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.14.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-10-16",
+  "updatedAt": "2026-10-17",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
@@ -1236,6 +1236,28 @@
       ],
       "regressionTests": [
         "src/ts/storage/chatDraft.test.ts"
+      ]
+    },
+    {
+      "id": "REQUEST-STATUS-DOCK",
+      "title": "요청 상태 창 접기: 생성 중 원형 버튼, 완료 시 체크로 채팅 이동",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/status/requestStatusDock.ts",
+        "src/lib/UI/GUI/RequestStatusDock.svelte",
+        "src/lib/UI/GUI/RequestStatusToast.svelte",
+        "src/lib/UI/GUI/RequestStatusToaster.svelte",
+        "src/App.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/status/requestStatusDock.ts", "contains": "export function keepsDoneButton(" },
+        { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "function minimize(): void {" },
+        { "file": "src/lib/UI/GUI/RequestStatusToaster.svelte", "contains": "if (get(minimizedRequests).includes(id) && keepsDoneButton(entry, currentChatId())) continue" },
+        { "file": "src/lib/UI/GUI/RequestStatusDock.svelte", "contains": "function openChat(id: string, chatId: string | undefined): void {" },
+        { "file": "src/App.svelte", "contains": "<RequestStatusDock />" }
+      ],
+      "regressionTests": [
+        "src/ts/status/requestStatusDock.test.ts"
       ]
     },
     {

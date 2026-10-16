@@ -11,9 +11,10 @@
     //   row3+: cache/search/tool badges (future)
     import { onMount } from 'svelte'
     import { toast } from 'svelte-sonner'
-    import { requestStatuses, clearStatus, isTerminalPhase, type RequestPhase, type RequestKind } from 'src/ts/status/requestStatus'
+    import { requestStatuses, isTerminalPhase, type RequestPhase, type RequestKind } from 'src/ts/status/requestStatus'
     import { language } from 'src/lang'
-    import { RotateCwIcon, XIcon } from '@lucide/svelte'
+    import { MinusIcon, RotateCwIcon } from '@lucide/svelte'
+    import { minimizeRequest } from 'src/ts/status/requestStatusDock'
 
     let { id }: { id: string } = $props()
 
@@ -93,11 +94,11 @@
 
     const spinning = $derived(entry ? !isTerminalPhase(entry.phase) && entry.phase !== 'stalled' : false)
 
-    // Manual dismiss: clear the store entry and the sonner toast. Late phase
-    // updates for a cleared entry are no-ops in the store, so the toast is not
-    // re-issued after closing.
-    function dismiss(): void {
-        clearStatus(id)
+    // "−" folds the toast into a round button (RequestStatusDock): spinning
+    // while the reply is written, a check that opens its chat once it is
+    // done (the user's request, 2026-10-17; it replaced closing with X).
+    function minimize(): void {
+        minimizeRequest(id)
         toast.dismiss(`req:${id}`)
     }
 </script>
@@ -126,7 +127,7 @@
                 {/if}
                 <span class="rs-actions">
                     {#if right}<span class="rs-right">{right.label} <b>{right.value}</b></span>{/if}
-                    <button class="rs-close" type="button" aria-label={language.close ?? 'Close'} onclick={dismiss}><XIcon size={14} /></button>
+                    <button class="rs-close" type="button" aria-label={rs?.minimize ?? 'Fold'} title={rs?.minimize ?? 'Fold'} onclick={minimize}><MinusIcon size={14} /></button>
                 </span>
             </div>
 

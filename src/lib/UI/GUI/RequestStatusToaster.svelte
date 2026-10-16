@@ -11,9 +11,17 @@
     // (notify*), so they never collide even on the same Toaster. See
     // .agent/notes/request-status-toast-infra.md §4-3.
     import { onDestroy } from 'svelte'
+    import { get } from 'svelte/store'
     import { toast } from 'svelte-sonner'
     import { requestStatuses, isTerminalPhase, clearStatus } from 'src/ts/status/requestStatus'
     import RequestStatusToast from './RequestStatusToast.svelte'
+    import { keepsDoneButton, minimizedRequests, unminimizeRequest } from 'src/ts/status/requestStatusDock'
+    import { DBState, selIdState } from 'src/ts/stores.svelte'
+
+    function currentChatId(): string | null {
+        const character = DBState.db.characters?.[selIdState.selId]
+        return character?.chats?.[character.chatPage]?.id ?? null
+    }
 
     // How long a finished toast lingers so the user can read the final
     // tokens / cache savings before it disappears.
@@ -33,6 +41,7 @@
             dismissTimers.delete(id)
             shown.delete(id)
             toast.dismiss(toastId(id))
+            unminimizeRequest(id)
             // Drop the store entry too so the map doesn't grow unbounded.
             clearStatus(id)
         }, RETENTION_MS)
@@ -55,6 +64,9 @@
                 })
             }
             if (isTerminalPhase(entry.phase)) {
+                // Folded and written in another chat: the dock's check stays
+                // until it is tapped (RequestStatusDock clears the entry).
+                if (get(minimizedRequests).includes(id) && keepsDoneButton(entry, currentChatId())) continue
                 scheduleDismiss(id)
             } else if (dismissTimers.has(id)) {
                 // Revived (e.g. fallback/retry reuses the same generationId): the

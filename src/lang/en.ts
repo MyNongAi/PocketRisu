@@ -2705,6 +2705,10 @@ export const languageEnglish = {
 
     showRequestStatus: "Show request status",
     requestStatus: {
+        minimize: "Fold",
+        dockLabel: "Folded requests",
+        dockExpand: "Show the request",
+        dockOpenChat: "Reply ready: open the chat",
         connecting: "Connecting…",
         thinking: "Thinking…",
         responding: "Responding…",
