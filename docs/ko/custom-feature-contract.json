@@ -189,7 +189,8 @@
         { "file": "src/ts/dragTypes.ts", "contains": "RISU_CHAT_ROOM_DRAG_TYPE" },
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "serializeChatRoomDragPayload" },
         { "file": "src/lib/ChatScreens/SecondaryChatPanel.svelte", "contains": "getSecondaryRisuPaneUrl" },
-        { "file": "src/lib/ChatScreens/SecondaryChatPanel.svelte", "contains": "우측 채팅 닫기" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "const SPLIT_CLOSE_LABEL = '분할 채팅 닫기 (채팅 데이터는 삭제하지 않음)'" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{#if $splitChatOpen}<PanelRightCloseIcon class=\"text-primary\" />{:else}<Columns2 />{/if}" },
         { "file": "src/lib/ChatScreens/ChatScreen.svelte", "contains": "SecondaryChatPanel" },
         { "file": "src/lib/ChatScreens/ChatScreen.svelte", "contains": "split-chat-contained" }
       ],

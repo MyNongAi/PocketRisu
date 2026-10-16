@@ -33,6 +33,7 @@
     import SidebarIndicator from "./SidebarIndicator.svelte";
     import {
     Columns2,
+    PanelRightCloseIcon,
     Settings,
     ListIcon,
     LayoutGridIcon,
@@ -48,6 +49,10 @@
     ArrowRight,
   } from "@lucide/svelte";
     import { isEmbeddedRisuPane, splitChatOpen, toggleSplitChat } from 'src/ts/chatSplitPane';
+    // The split's open button closes it again (the user's request, 2026-10-17;
+    // the pane's own X in its top-right corner is gone).
+    const SPLIT_OPEN_LABEL = '분할 채팅 열기'
+    const SPLIT_CLOSE_LABEL = '분할 채팅 닫기 (채팅 데이터는 삭제하지 않음)'
     import {
   addCharacter,
     cancelCharacterChatPrefetch,
@@ -1487,14 +1492,14 @@
     class:text-textcolor2={!$splitChatOpen}
     class:text-primary={$splitChatOpen}
     aria-pressed={$splitChatOpen}
-    aria-label="분할 채팅"
-    title="분할 채팅 켜기/끄기"
+    aria-label={$splitChatOpen ? SPLIT_CLOSE_LABEL : SPLIT_OPEN_LABEL}
+    title={$splitChatOpen ? SPLIT_CLOSE_LABEL : SPLIT_OPEN_LABEL}
     onclick={() => {
       toggleSplitChat()
     }}
   >
-    <Columns2 />
-    <span class="text-xs">분할</span>
+    {#if $splitChatOpen}<PanelRightCloseIcon />{:else}<Columns2 />{/if}
+    <span class="text-xs">{$splitChatOpen ? '분할 닫기' : '분할'}</span>
   </button>
 {/if}
 </div>
@@ -1549,13 +1554,13 @@
       {#if !isEmbeddedRisuPane}
         <div class="mt-2"></div>
         <BarIcon
-          ariaLabel="분할 채팅"
-          title="분할 채팅 켜기/끄기"
+          ariaLabel={$splitChatOpen ? SPLIT_CLOSE_LABEL : SPLIT_OPEN_LABEL}
+          title={$splitChatOpen ? SPLIT_CLOSE_LABEL : SPLIT_OPEN_LABEL}
           pressed={$splitChatOpen}
           onClick={() => {
             toggleSplitChat()
           }}
-        ><Columns2 class={$splitChatOpen ? 'text-primary' : ''} /></BarIcon>
+        >{#if $splitChatOpen}<PanelRightCloseIcon class="text-primary" />{:else}<Columns2 />{/if}</BarIcon>
       {/if}
       <div class="mt-2"></div>
       <BarIcon
@@ -2001,13 +2006,13 @@
       {#if !isEmbeddedRisuPane}
         <div class="mt-2"></div>
         <BarIcon
-          ariaLabel="분할 채팅"
-          title="분할 채팅 켜기/끄기"
+          ariaLabel={$splitChatOpen ? SPLIT_CLOSE_LABEL : SPLIT_OPEN_LABEL}
+          title={$splitChatOpen ? SPLIT_CLOSE_LABEL : SPLIT_OPEN_LABEL}
           pressed={$splitChatOpen}
           onClick={() => {
             toggleSplitChat()
           }}
-        ><Columns2 class={$splitChatOpen ? 'text-primary' : ''} /></BarIcon>
+        >{#if $splitChatOpen}<PanelRightCloseIcon class="text-primary" />{:else}<Columns2 />{/if}</BarIcon>
       {/if}
       <div class="mt-2"></div>
       <BarIcon
