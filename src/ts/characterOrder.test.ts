@@ -70,16 +70,27 @@ describe('characterOrder', () => {
         expect(findPlacement(next, 'a')).toEqual({ chaId: 'a', folderId: 'f1' })
     })
 
-    it('moveCharacterToFolder(undefined) moves out to the top level; unknown folder is a no-op', () => {
+    it('moveCharacterToFolder(undefined) moves out right after the folder; unknown folder is a no-op', () => {
         const out = moveCharacterToFolder(sample(), 'b', undefined)
+        // f1 is left with one card and dissolves where it was; b sits next to it.
         expect(out).toEqual([
             'a',
             'c',
+            'b',
             'd',
             { id: 'f2', name: 'Two', color: '', data: [] },
-            'b',
         ])
         expect(moveCharacterToFolder(sample(), 'b', 'nope')).toEqual(sample())
+        // A card already outside stays where it is.
+        expect(moveCharacterToFolder(sample(), 'a', undefined)).toEqual(sample())
+    })
+
+    it('moveCharacterToFolder(undefined) from a folder shown inside another lands right after the outer folder', () => {
+        const parent = { id: 'p', name: 'P', color: '', data: ['a', 'b'] }
+        const child = { id: 'c', name: 'C', color: '', data: ['x', 'y', 'z'], nodeOnlyParentFolderId: 'p' }
+        expect(moveCharacterToFolder(['top', parent, 'mid', child, 'end'], 'y', undefined)).toEqual([
+            'top', parent, 'y', 'mid', { ...child, data: ['x', 'z'] }, 'end',
+        ])
     })
 
     it('moveTopLevelEntry moves characters and folders, clamped at the edges', () => {
@@ -150,9 +161,10 @@ describe('characterOrder', () => {
         const parent = { id: 'p', name: 'P', color: '', data: ['a'] }
         const child = { id: 'c', name: 'C', color: '', data: ['x'], nodeOnlyParentFolderId: 'p' }
         const other = { id: 'o', name: 'O', color: '', data: ['y', 'z'], nodeOnlyParentFolderId: 'p' }
-        // A drag leaves one card in C: it goes to the end of P, not the top level.
+        // A drag leaves one card in C: it goes first in P (right under the
+        // folders shown there, where C was), not the top level or P's end.
         expect(dissolveSingletonFolders(['top', parent, child, other])).toEqual([
-            'top', { ...parent, data: ['a', 'x'] }, other,
+            'top', { ...parent, data: ['x', 'a'] }, other,
         ])
         // Deleting a card (releaseToTop) puts the survivor first in P.
         expect(removeCharacter(['top', parent, { ...child, data: ['x', 'gone'] }, other], 'gone')).toEqual([
@@ -190,6 +202,6 @@ describe('deactivated-character system folders', () => {
         const order: OrderEntry[] = ['a', 'b', system(['s'])]
         expect(moveTopLevelEntry(order, 'a', 1)).toEqual(['b', 'a', system(['s'])])
         expect(removeCharacter(order, 'a')).toEqual(['b', system(['s'])])
-        expect(moveCharacterToFolder(order, 'a', undefined)).toEqual(['b', system(['s']), 'a'])
+        expect(moveCharacterToFolder(order, 'a', undefined)).toEqual(order)
     })
 })

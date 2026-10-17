@@ -197,7 +197,9 @@
         if (Number.isNaN(sel) || sel >= options.length - 1) return;
         const folderId = sel === 0 ? undefined : folders[sel - 1].id;
         let next = DBState.db.characterOrder;
-        for (const id of chaIds) next = moveCharacterToFolder(next, id, folderId);
+        // Out of a folder, each lands right after it; going backwards keeps
+        // the selection's order there.
+        for (const id of folderId === undefined ? [...chaIds].reverse() : chaIds) next = moveCharacterToFolder(next, id, folderId);
         commitOrder(next);
     }
 

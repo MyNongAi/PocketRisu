@@ -72,10 +72,12 @@ function cloneOrder(order: OrderEntry[]): OrderEntry[] {
  * A folder that other folders are shown in (folderNesting.ts) is kept at any
  * size: it can hold only folders, and dissolving it would spill them out.
  *
- * A folder shown inside another one hands its last card to that folder
- * (first, with `releaseToTop`; last otherwise), so the card stays where the
- * user filed it. Released to the top level instead, it left the parent
- * folder as well (the user's report, 2026-10-16).
+ * A folder shown inside another one hands its last card to that folder, so
+ * the card stays where the user filed it. Released to the top level instead,
+ * it left the parent folder as well (the user's report, 2026-10-16). It goes
+ * first among the parent's cards, right under the folders shown there, where
+ * the dissolved folder was: at the end of a long folder it was out of sight
+ * (the user's report, 2026-10-17).
  */
 export function dissolveSingletonFolders(order: OrderEntry[], previous: OrderEntry[] = order, options: { releaseToTop?: boolean } = {}): OrderEntry[] {
     const previousFolderSizes = new Map<string, number>()
@@ -110,9 +112,21 @@ export function dissolveSingletonFolders(order: OrderEntry[], previous: OrderEnt
         const cards = isFolderEntry(entry) ? toParent.get(entry.id) : undefined
         if (!cards || !isFolderEntry(entry)) continue
         const kept = entry.data.filter((id) => !cards.includes(id))
-        out[index] = cloneFolder(entry, options.releaseToTop ? [...cards, ...kept] : [...kept, ...cards])
+        out[index] = cloneFolder(entry, [...cards, ...kept])
     }
     return released.length > 0 ? [...released, ...out] : out
+}
+
+/** The top-level folder a folder is drawn in (itself when it is not shown inside another). */
+function outermostShownFolder(order: OrderEntry[], folderId: string): string {
+    const parents = folderParents(order)
+    let current = folderId
+    const seen = new Set([current])
+    for (let parent = parents.get(current); parent && !seen.has(parent); parent = parents.get(current)) {
+        seen.add(parent)
+        current = parent
+    }
+    return current
 }
 
 function removeCharacterRaw(order: OrderEntry[], chaId: string): OrderEntry[] {
@@ -175,14 +189,21 @@ export function rebuildOrder(previous: OrderEntry[], layout: OrderLayoutItem[]):
 }
 
 /**
- * Move a character to the end of `folderId` (or to the end of the top level
- * when undefined). Unknown folder → unchanged copy.
+ * Move a character to the end of `folderId`, or out of its folder when
+ * undefined: to the top level right after that folder (after the folder it is
+ * shown in, for a folder inside another), where the user is looking. At the
+ * end of the list it was out of sight (the user's report, 2026-10-17). A
+ * character already outside stays put. Unknown folder → unchanged copy.
  */
 export function moveCharacterToFolder(order: OrderEntry[], chaId: string, folderId: string | undefined): OrderEntry[] {
     if (folderId !== undefined && !findFolder(order, folderId)) return cloneOrder(order)
+    const placement = findPlacement(order, chaId)
+    if (folderId === undefined && placement && !placement.folderId) return cloneOrder(order)
     const next = removeCharacterRaw(order, chaId)
     if (folderId === undefined) {
-        next.push(chaId)
+        const anchor = placement?.folderId ? outermostShownFolder(order, placement.folderId) : undefined
+        const at = anchor ? next.findIndex((entry) => isFolderEntry(entry) && entry.id === anchor) : -1
+        next.splice(at < 0 ? next.length : at + 1, 0, chaId)
         return dissolveSingletonFolders(next, order)
     }
     const moved = next.map((entry) => (isFolderEntry(entry) && entry.id === folderId ? cloneFolder(entry, [...entry.data, chaId]) : entry))
