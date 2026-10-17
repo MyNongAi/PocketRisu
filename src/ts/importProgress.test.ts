@@ -1,12 +1,33 @@
 import { get } from 'svelte/store'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { language } from 'src/lang'
-import { adaptLegacyProgress, cancelImportTask, importTasks, reportImportTask, runExportTask, runImportBatch, runImportTask, runPrefetchedImportBatch } from './importProgress'
+import { adaptLegacyProgress, cancelImportTask, dropQueuedImportTask, importTasks, reportImportTask, runExportTask, runImportBatch, runImportTask, runPrefetchedImportBatch } from './importProgress'
 import { ImportCancelledError } from './importTransaction'
 
 describe('import progress queue', () => {
     beforeEach(() => {
         importTasks.set(new Map())
+    })
+
+    it('skips a queued task taken off the queue, and only a queued one', async () => {
+        const seen: string[] = []
+        const result = await runImportBatch(
+            [{ name: 'a.png' }, { name: 'b.png' }],
+            async (file) => {
+                seen.push(file.name)
+                if (file.name === 'a.png') {
+                    const ids = [...get(importTasks).keys()]
+                    // a is running: the X for queued tasks leaves it alone.
+                    dropQueuedImportTask(ids[0])
+                    dropQueuedImportTask(ids[1])
+                }
+            },
+        )
+        expect(seen).toEqual(['a.png'])
+        const entries = [...get(importTasks).values()]
+        expect(entries.map((entry) => entry.phase)).toEqual(['done', 'cancelled'])
+        expect(entries[1].label).toBe(language.importProgress.dropped)
+        expect(result).toEqual({ completed: 1, failed: 0, total: 2 })
     })
 
     it('publishes the entire queue before importing sequentially', async () => {

@@ -1271,7 +1271,7 @@
     },
     {
       "id": "GENERATION-NO-CAP",
-      "title": "동시 생성 개수 제한 없음 · 응답 중 복사는 끝난 뒤",
+      "title": "동시 생성 개수 제한 없음 · 응답 중 복사는 마지막 아웃풋까지 바로",
       "criticality": "core-ux",
       "ownerFiles": [
         "src/ts/process/generationConcurrency.ts",
@@ -1280,10 +1280,11 @@
       ],
       "requiredMarkers": [
         { "file": "src/ts/process/generationConcurrency.ts", "contains": "maxConcurrentChats: Number.POSITIVE_INFINITY," },
-        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "async function waitUntilChatIdle(chatId: string) {" }
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "const newChat = reissueMessageIds(copyableChat(chara.chats[i]), chara.chats[i].message.map(m => m.chatId))" }
       ],
       "regressionTests": [
-        "src/ts/process/generationConcurrency.test.ts"
+        "src/ts/process/generationConcurrency.test.ts",
+        "src/ts/chatCopySnapshot.test.ts"
       ]
     },
     {

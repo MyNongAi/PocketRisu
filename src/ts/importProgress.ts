@@ -1,4 +1,4 @@
-import { writable } from 'svelte/store'
+import { get, writable } from 'svelte/store'
 import { language } from 'src/lang'
 import { describeImportRollback, isImportCancelled, rollbackSummaryOf } from './importTransaction'
 
@@ -79,6 +79,24 @@ export function createImportTask(fileName: string, kind: ImportTaskKind = 'impor
         return next
     })
     return id
+}
+
+/**
+ * A queued task's X: it leaves the queue before it starts, so nothing of it
+ * was imported (the user asked for a way not to take a queued download at
+ * all, 2026-10-17). The batch skips it.
+ */
+export function dropQueuedImportTask(id: string): void {
+    updateTask(id, (entry) => entry.phase !== 'queued' ? entry : {
+        ...entry,
+        label: language.importProgress.dropped,
+        phase: 'cancelled',
+        endedAt: Date.now(),
+    })
+}
+
+function wasDropped(id: string): boolean {
+    return get(importTasks).get(id)?.phase === 'cancelled'
 }
 
 export function startImportTask(id: string): void {
@@ -242,6 +260,7 @@ export async function runImportBatch<T extends { name: string }>(
     let failed = 0
 
     for (const { file, id } of entries) {
+        if (wasDropped(id)) continue
         startImportTask(id)
         try {
             await importer(file, taskReporter(id))
@@ -326,6 +345,11 @@ export async function runPrefetchedImportBatch<T extends { name: string }, F>(
         if (!entry.fetched) {
             next = Math.max(next, entries.indexOf(entry) + 1)
             start(entry)
+        }
+        if (wasDropped(entry.id)) {
+            // Its fetch may still be running; it no longer holds room.
+            release(entry)
+            continue
         }
         startImportTask(entry.id)
         try {

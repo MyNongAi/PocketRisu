@@ -714,6 +714,8 @@ export const languageKorean = {
     savingModule: "모듈 저장 중",
     cancel: "가져오기 취소",
     cancelConfirm: "한 번 더 누르면 취소",
+    drop: "받지 않고 빼기",
+    dropped: "받지 않음",
     cancelling: "취소하고 되돌리는 중",
     cancelled: "취소됨",
     cancelledRolledBack: "취소됨 · 되돌림 완료",
@@ -1412,7 +1414,6 @@ export const languageKorean = {
   createCopy: "복사본 생성",
   copyChatConfirm: "복사본을 만드시겠습니까: ",
   copyChatSuccess: "채팅을 복사했어요",
-  copyChatAfterReply: "응답이 끝나면 복사할게요",
   bindPersona: "페르소나 바인드",
   chatOptions: "채팅 옵션",
   doYouWantToBindCurrentPersona:

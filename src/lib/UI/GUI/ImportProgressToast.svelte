@@ -2,7 +2,7 @@
     import { onDestroy } from 'svelte'
     import { MinusIcon, XIcon } from '@lucide/svelte'
     import { language } from 'src/lang'
-    import { cancelImportTask, importTasks } from 'src/ts/importProgress'
+    import { cancelImportTask, dropQueuedImportTask, importTasks } from 'src/ts/importProgress'
 
     // The header's two buttons (the user's choice, 2026-10-05): "-" folds the
     // card into the toaster's small button and the task keeps running
@@ -41,7 +41,12 @@
                     <MinusIcon size={14} />
                 </button>
             {/if}
-            {#if entry.cancel && entry.phase === 'running'}
+            {#if entry.phase === 'queued'}
+                <!-- Not started yet: one tap takes it off the queue (nothing to undo). -->
+                <button type="button" class="icon cancel" title={language.importProgress.drop} aria-label={language.importProgress.drop} onclick={() => dropQueuedImportTask(id)}>
+                    <XIcon size={14} />
+                </button>
+            {:else if entry.cancel && entry.phase === 'running'}
                 {@const cancelLabel = armed ? language.importProgress.cancelConfirm : language.importProgress.cancel}
                 <button type="button" class="icon cancel" class:armed title={cancelLabel} aria-label={cancelLabel} onclick={pressCancel}>
                     {#if armed}<span class="armed-text">{language.importProgress.cancelConfirm}</span>{/if}

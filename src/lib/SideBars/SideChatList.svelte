@@ -21,7 +21,9 @@
     import { exportChat, importChat, exportAllChats } from "src/ts/characters";
     import { alertConfirm, alertError, alertSelect, alertStore, notifySuccess, notifyError, notifyInfo } from "src/ts/alert";
     import { get } from "svelte/store";
-    import { auxiliaryGenerating, chatGenKey, generationStates } from "src/ts/process/generationState";
+    import { chatGenKey, generationStates } from "src/ts/process/generationState";
+    import { rerollPlaceholders } from "src/ts/gui/rerollPlaceholder";
+    import { messagesWithoutPendingReply } from "src/ts/chatCopySnapshot";
     import { findCharacterbyId, sleep, sortableOptions } from "src/ts/util";
 
     import { bookmarkListOpen, openModuleListStore } from "src/ts/stores.svelte";
@@ -43,15 +45,18 @@
 
     let { chara = $bindable() }: Props = $props();
 
-    // A copy taken while the chat is still answering missed that answer (the
-    // user's report, 2026-10-17): it waits for the reply (and a status line
-    // written after it) to finish, then copies.
-    async function waitUntilChatIdle(chatId: string) {
-        const key = chatGenKey(chatId)
-        const busy = () => get(generationStates).has(key) || get(auxiliaryGenerating).has(key)
-        if (!busy()) return
-        notifyInfo(language.copyChatAfterReply)
-        while (busy()) await sleep(400)
+    // A copy taken while the chat is answering holds everything up to the
+    // last finished output, without the reply being written; a reroll's old
+    // reply goes back in its place (chatCopySnapshot.ts). It no longer waits.
+    function copyableChat(chat: Chat): Chat {
+        const snapshot = $state.snapshot(chat) as Chat
+        const pending = get(generationStates).get(chatGenKey(chat.id))?.generationId
+        const placeholder = get(rerollPlaceholders).get(chat.id)
+        if (!pending && !placeholder) return snapshot
+        snapshot.message = messagesWithoutPendingReply(snapshot.message, pending, placeholder
+            ? { index: placeholder.index, message: structuredClone($state.snapshot(placeholder.message)) }
+            : null)
+        return snapshot
     }
     // Title colors: white automatic, green renamed, yellow renamed and answered
     // past since (chatTitleState.ts). Typing a name marks it renamed;
@@ -327,7 +332,6 @@
                                 e.stopPropagation()
                                 const confirmed = await alertConfirm(`${language.copyChatConfirm}${chat.name}`)
                                 if(!confirmed) return
-                                await waitUntilChatIdle(chat.id)
                                 const chatIdx = chara.chats.indexOf(chat)
                                 if(chatIdx < 0) return
                                 if(chara.chats[chatIdx]?._placeholder){
@@ -337,7 +341,7 @@
                                     alertError('Failed to load chat data.')
                                     return
                                 }
-                                const newChat = reissueMessageIds($state.snapshot(chara.chats[chatIdx]), chara.chats[chatIdx].message.map(m => m.chatId))
+                                const newChat = reissueMessageIds(copyableChat(chara.chats[chatIdx]), chara.chats[chatIdx].message.map(m => m.chatId))
                                 newChat.name = chatCopyNameFromLastInput(newChat.message, chara.chats.map((c) => c.name))
                                     ?? createChatCopyName(newChat.name, 'Copy')
                                 newChat.id = v4()
@@ -426,7 +430,6 @@
                         e.stopPropagation()
                         const confirmed = await alertConfirm(`${language.copyChatConfirm}${chat.name}`)
                         if(!confirmed) return
-                        await waitUntilChatIdle(chat.id)
                         // The list may have changed while waiting.
                         const i = chara.chats.indexOf(chat)
                         if(i < 0) return
@@ -437,7 +440,7 @@
                             alertError('Failed to load chat data.')
                             return
                         }
-                        const newChat = reissueMessageIds($state.snapshot(chara.chats[i]), chara.chats[i].message.map(m => m.chatId))
+                        const newChat = reissueMessageIds(copyableChat(chara.chats[i]), chara.chats[i].message.map(m => m.chatId))
                         newChat.name = chatCopyNameFromLastInput(newChat.message, chara.chats.map((c) => c.name))
                             ?? createChatCopyName(newChat.name, 'Copy')
                         newChat.id = v4()
