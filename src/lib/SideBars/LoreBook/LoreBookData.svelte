@@ -270,7 +270,7 @@
             <span class="text-textcolor mt-4">{language.insertOrder} <Help key="loreorder"/></span>
             <NumberInput bind:value={value.insertorder} min={0} max={1000}/>
             <span class="text-textcolor mt-4 mb-2">{language.prompt}</span>
-            <TextAreaInput highlight autocomplete="off" bind:value={value.content} className={loreComparisonClass} />
+            <TextAreaInput highlight autocomplete="off" bind:value={value.content} className={loreComparisonClass} resizeKey="lorebook" />
             <span class="text-textcolor2 mt-2 mb-2 text-sm">{tokens} {language.tokens}</span>
             <div class="flex items-center mt-4">
                 <Check bind:check={value.alwaysActive} name={language.alwaysActive}/>

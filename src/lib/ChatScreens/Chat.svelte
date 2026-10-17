@@ -27,6 +27,7 @@
     import { isSendKey } from "src/ts/gui/sendKey"
     import { isMobile } from "src/ts/platform"
     import { inputEchoDraft, inputEchoKey } from "src/ts/gui/inputEcho"
+    import { inputVersionIndex, isRequestInput, recordInputEdit, stepInputVersion } from "src/ts/inputVersions"
     import { isLogCapturePickingHere, isLogCaptureStart, logCaptureMarkFor, markLogCapture } from "src/ts/gui/logCaptureState.svelte"
     import { keepInnerScroll } from "src/ts/gui/innerScrollKeeper"
     import ChatBody from './ChatBody.svelte'
@@ -259,7 +260,8 @@
 
     async function edit(){
         const msg = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx]
-        msg.data = message
+        if (msg.role === 'user') recordInputEdit(msg, message)
+        else msg.data = message
         if (msg.swipes && msg.swipeId !== undefined) {
             msg.swipes[msg.swipeId] = message
         }
@@ -279,18 +281,54 @@
         if (echoEditing) inputEchoDraft.set({ key: previousInputKey, text: echoText })
     })
 
-    function commitInputEcho() {
+    /** The user message echoed under this reply, found again by its key. */
+    function echoTarget() {
         const chara = DBState.db.characters[selIdState.selId]
         const messages = chara?.chats?.[chara.chatPage]?.message ?? []
         let index = previousInputIndex
         if (inputEchoKey(messages[index], index) !== previousInputKey) {
             index = messages.findIndex((candidate, i) => inputEchoKey(candidate, i) === previousInputKey)
         }
-        if (index >= 0 && messages[index]?.role === 'user' && messages[index].data !== echoText) {
-            messages[index].data = echoText
-            retitleCurrentChat()
-        }
+        return index >= 0 && messages[index]?.role === 'user' ? messages[index] : null
+    }
+
+    function commitInputEcho() {
+        const target = echoTarget()
+        if (target && recordInputEdit(target, echoText)) retitleCurrentChat()
         inputEchoDraft.set(null)
+    }
+
+    // The input's versions (inputVersions.ts): the text as sent, then each
+    // saved edit. The arrows make the version shown the input, like a reply's
+    // swipes; the one this reply was requested with is marked.
+    let echoMessage = $derived.by(() => {
+        if (!showInputEcho) return null
+        const chara = DBState.db.characters[selIdState.selId]
+        const candidate = chara?.chats?.[chara.chatPage]?.message?.[previousInputIndex]
+        return candidate?.role === 'user' ? candidate : null
+    })
+    let echoVersionCount = $derived(echoMessage?.nodeOnlyInputVersions?.length ?? 0)
+    let echoVersionIndex = $derived(inputVersionIndex(echoMessage))
+    let echoIsRequestInput = $derived.by(() => {
+        if (echoVersionCount < 2) return false
+        const chara = DBState.db.characters[selIdState.selId]
+        const reply = chara?.chats?.[chara.chatPage]?.message?.[idx]
+        return isRequestInput(reply, echoShown)
+    })
+
+    function stepEchoVersion(step: -1 | 1) {
+        if (echoEditing) return
+        const target = echoTarget()
+        if (target && stepInputVersion(target, step)) retitleCurrentChat()
+    }
+
+    async function copyInputEcho() {
+        try {
+            await navigator.clipboard.writeText(echoShown ?? '')
+            notifyInfo(language.copied)
+        } catch (error) {
+            notifyError(chatClipboardErrorMessage(error))
+        }
     }
 
     function toggleInputEchoEdit() {
@@ -371,7 +409,8 @@
 
         message = e.detail.newData
         const msg = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx]
-        msg.data = e.detail.newData
+        if (msg.role === 'user') recordInputEdit(msg, e.detail.newData)
+        else msg.data = e.detail.newData
         if (msg.swipes && msg.swipeId !== undefined) {
             msg.swipes[msg.swipeId] = e.detail.newData
         }
@@ -790,6 +829,22 @@
                 </span>
             {:else}
                 <span class="min-w-0 grow whitespace-pre-wrap wrap-break-word line-clamp-3" title={echoShown}>{echoShown}</span>
+            {/if}
+            {#if echoVersionCount >= 2 && !echoEditing}
+                <span class="input-echo-versions flex shrink-0 items-center gap-0.5">
+                    <button type="button" class="transition-colors hover:text-primary" title={language.inputEchoPrevious} aria-label={language.inputEchoPrevious} onclick={() => stepEchoVersion(-1)}><ArrowLeft size={14} /></button>
+                    <span class="tabular-nums" class:text-primary={echoIsRequestInput} title={echoIsRequestInput ? language.inputEchoRequested : undefined}>{echoVersionIndex + 1}/{echoVersionCount}{#if echoIsRequestInput}<span class="ml-0.5 rounded bg-selected px-1">{language.inputEchoRequestedShort}</span>{/if}</span>
+                    <button type="button" class="transition-colors hover:text-primary" title={language.inputEchoNext} aria-label={language.inputEchoNext} onclick={() => stepEchoVersion(1)}><ArrowRight size={14} /></button>
+                </span>
+            {/if}
+            {#if !echoEditing}
+                <button
+                    type="button"
+                    class="shrink-0 transition-colors hover:text-primary"
+                    title={language.inputEchoCopy}
+                    aria-label={language.inputEchoCopy}
+                    onclick={copyInputEcho}
+                ><CopyIcon size={14} /></button>
             {/if}
             <button
                 type="button"

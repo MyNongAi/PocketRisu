@@ -4,6 +4,8 @@
     import Suggestion from './Suggestion.svelte';
     import { copyScriptstateCheckpoint, mergeRerollCheckpoint, removeSwipeCheckpoint, restoreScriptstateBeforeReroll, restoreScriptstateSnapshot, restoreShownSwipeScriptstate, snapshotScriptstate } from 'src/ts/chatScriptstateCheckpoint';
     import { deleteShownSwipe, dropShownSwipe, findLastReplyIndex, markErrorLikeReply, shiftErrorMarkAfterDelete, shownSwipeIsErrorLike, stepSwipe } from 'src/ts/chatSwipes';
+    import { previousInputIndex } from 'src/ts/gui/inputEcho';
+    import { recordRequestInput } from 'src/ts/inputVersions';
     import { clearRerollPlaceholder, setRerollPlaceholder } from 'src/ts/gui/rerollPlaceholder';
     import { CameraIcon, ChevronUpIcon, ChevronDownIcon, DatabaseIcon, GlobeIcon, FileTextIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2, GitBranch } from "@lucide/svelte";
     import ShDropdownMenu from 'src/lib/UI/GUI/ShDropdownMenu.svelte';
@@ -715,6 +717,16 @@ import { isMobile } from 'src/ts/platform'
         return index === -1 ? null : msgs[index]
     }
 
+    /** The newest reply remembers the input its request was made from (inputVersions.ts). */
+    function markRequestInput(chat: ChatData | null | undefined) {
+        const msgs = chat?.message
+        if (!msgs) return
+        const replyIndex = findLastReplyIndex(msgs)
+        if (replyIndex < 0) return
+        const inputIndex = previousInputIndex(msgs, replyIndex)
+        if (inputIndex >= 0) recordRequestInput(msgs[replyIndex], msgs[inputIndex].data ?? '')
+    }
+
     function getLastCharMsg() {
         const char = DBState.db.characters[$selectedCharID]
         return getLastCharMsgIn(char?.chats?.[char.chatPage])
@@ -827,6 +839,7 @@ import { isMobile } from 'src/ts/platform'
             else delete newLastMsg.scriptstateCheckpoint
         }
         if (newLastMsg) markErrorLikeReply(newLastMsg, Date.now() - rerollStartedAt)
+        markRequestInput(attached.chat)
         } finally {
             if (placeholderChatId) clearRerollPlaceholder(placeholderChatId)
             preparingChatSends.delete(genKey)
@@ -873,6 +886,7 @@ import { isMobile } from 'src/ts/platform'
         const resolved = resolveGenerationTarget(DBState.db.characters, target)
         const reply = resolved ? getLastCharMsgIn(resolved.chat) : null
         if (reply) markErrorLikeReply(reply, Date.now() - startedAt)
+        if (resolved) markRequestInput(resolved.chat)
         // A renamed (green) title turns yellow once the chat answers past it.
         if (resolved) ageManualChatTitle(resolved.character, resolved.chat.id)
     }

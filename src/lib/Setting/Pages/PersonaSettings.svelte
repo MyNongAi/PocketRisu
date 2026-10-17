@@ -395,7 +395,12 @@
 
 {#snippet personaEditor(index: number)}
     {@const persona = DBState.db.personas[index]}
-    <div class="flex flex-wrap gap-4 bg-dark-900/50 p-3 rounded-md">
+    <!-- Only the name and note sit beside the image; the description and
+         the rest run the full width under it. With everything in the column
+         beside the image, a phone left a blank strip under the image down the
+         whole editor and squeezed the fields (the user's report, 2026-10-17). -->
+    <div class="flex flex-col gap-4 bg-dark-900/50 p-3 rounded-md">
+        <div class="flex items-start gap-4">
         <button
             class="shrink-0 self-start rounded-md"
             onclick={() => { void selectUserImg(index) }}
@@ -413,7 +418,7 @@
                 {/await}
             {/if}
         </button>
-        <div class="flex grow flex-col min-w-0 basis-64 gap-4">
+        <div class="flex grow flex-col min-w-0 gap-4">
             <div class="flex flex-col gap-1">
                 <SettingFieldLabel label={language.name} helpKey="personaName" />
                 <ShInput className="mt-1" placeholder="User" bind:value={DBState.db.username}/>
@@ -424,6 +429,9 @@
                     <ShInput className="mt-1" bind:value={DBState.db.userNote} placeholder={`Put a unique identifier for this persona here.\nExample: [Alternate Hunters persona]`} />
                 </div>
             {/if}
+        </div>
+        </div>
+        <div class="flex flex-col min-w-0 gap-4">
             <div class="flex flex-col gap-1">
                 <SettingFieldLabel label={language.description} helpKey="personaDescription" />
                 <TextAreaInput className="mt-1" autocomplete="off" bind:value={DBState.db.personaPrompt} placeholder={`Put the description of this persona here.\nExample: [<user> is a 20 year old girl.]`} />

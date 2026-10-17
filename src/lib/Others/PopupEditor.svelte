@@ -1,6 +1,6 @@
 <script lang="ts">
-    import { onMount } from 'svelte';
-    import { DBState, popUpEditorStore } from '../../ts/stores.svelte';
+    import { DBState, isTouchDevice, popUpEditorStore } from '../../ts/stores.svelte';
+    import { get } from 'svelte/store';
     import type MonacoEditorType from './MonacoEditor.svelte';
     import { language } from 'src/lang';
     import { risuChatParser } from "src/ts/parser/parser.svelte";
@@ -38,7 +38,30 @@
         })
     })
 
-    onMount(() => {
+    // The code editor (Monaco) does not take touch selection: a drag scrolls
+    // and a long press opens its line menu, so a phone could not select an
+    // arbitrary range (the user's report, 2026-10-17). A plain textarea gets
+    // the phone's own selection handles. Plain is the default on a touch
+    // screen; the header switches, and the choice is remembered.
+    const PLAIN_KEY = 'pocketrisu:popup-editor-plain'
+    function readPlain(): boolean {
+        try {
+            const stored = localStorage.getItem(PLAIN_KEY)
+            if (stored === '1') return true
+            if (stored === '0') return false
+        } catch {
+            // default below
+        }
+        return get(isTouchDevice)
+    }
+    let plain = $state(readPlain())
+    function togglePlain() {
+        plain = !plain
+        try { localStorage.setItem(PLAIN_KEY, plain ? '1' : '0') } catch { /* this time only */ }
+    }
+
+    $effect(() => {
+        if (plain || MonacoComponent) return
         import('./MonacoEditor.svelte').then((module) => {
             MonacoComponent = module.default;
         });
@@ -78,6 +101,13 @@
                 {:else}
                     <span class="bg-bgcolor border-none rounded px-2 py-1 text-sm">{languageMode}</span>
                 {/if}
+                {#if !previewing}
+                    <button
+                        class="bg-bgcolor px-3 py-1 rounded text-sm hover:bg-selected transition"
+                        onclick={togglePlain}
+                        title={plain ? language.popupEditorUseCode : language.popupEditorUsePlain}
+                    >{plain ? language.popupEditorUseCode : language.popupEditorUsePlain}</button>
+                {/if}
                 <button
                     class="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 transition"
                     onclick={() => (popUpEditorStore.open = false)}
@@ -111,6 +141,13 @@
                         </div>
                     {/if}
                 </div>
+            {:else if plain}
+                <textarea
+                    class="block h-full w-full resize-none bg-bgcolor p-3 font-mono text-sm text-textcolor outline-none"
+                    spellcheck="false"
+                    autocomplete="off"
+                    bind:value={popUpEditorStore.value}
+                ></textarea>
             {:else}
                 {#if MonacoComponent}
                     <MonacoComponent bind:value={popUpEditorStore.value} language={languageMode} />

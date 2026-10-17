@@ -1557,6 +1557,62 @@
       "regressionTests": [
         "src/ts/gui/rerollPlaceholder.test.ts"
       ]
+    },
+    {
+      "id": "INPUT-ECHO-VERSIONS",
+      "title": "답변 아래 인풋: 복사 버튼, 인풋 버전 화살표",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/inputVersions.ts",
+        "src/lib/ChatScreens/Chat.svelte",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (target && stepInputVersion(target, step)) retitleCurrentChat()" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (target && recordInputEdit(target, echoText)) retitleCurrentChat()" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "onclick={copyInputEcho}" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (resolved) markRequestInput(resolved.chat)" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "markRequestInput(attached.chat)" }
+      ],
+      "regressionTests": [
+        "src/ts/inputVersions.test.ts"
+      ]
+    },
+    {
+      "id": "TEXTAREA-RESIZE-GRIP",
+      "title": "로어북 내용 칸 모서리 손잡이로 높이 조절",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/UI/GUI/TextAreaInput.svelte",
+        "src/lib/SideBars/LoreBook/LoreBookData.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "resizeKey=\"lorebook\"" },
+        { "file": "src/lib/UI/GUI/TextAreaInput.svelte", "contains": "onpointerdown={startResize}" }
+      ]
+    },
+    {
+      "id": "POPUP-EDITOR-PLAIN",
+      "title": "팝업 에디터 일반 입력(터치 선택) 전환",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/Others/PopupEditor.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/Others/PopupEditor.svelte", "contains": "{:else if plain}" },
+        { "file": "src/lib/Others/PopupEditor.svelte", "contains": "return get(isTouchDevice)" }
+      ]
+    },
+    {
+      "id": "PERSONA-EDITOR-STACK",
+      "title": "페르소나 편집: 이미지 옆엔 이름·메모만, 나머지는 전체 폭",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/Setting/Pages/PersonaSettings.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "<div class=\"flex flex-col gap-4 bg-dark-900/50 p-3 rounded-md\">" }
+      ]
     }
   ]
 }

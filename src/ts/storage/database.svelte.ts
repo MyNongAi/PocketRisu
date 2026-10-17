@@ -2507,6 +2507,10 @@ export interface Message{
     data: string
     /** PocketRisu: swipe index of a reply that looked like an error (chatSwipes.ts). */
     nodeOnlyErrorSwipe?: number
+    /** PocketRisu: an input's text as sent and after each saved edit (inputVersions.ts). */
+    nodeOnlyInputVersions?: string[]
+    /** PocketRisu: a reply's swipes -> the input each was requested with, as hashes (inputVersions.ts). */
+    nodeOnlyRequestInputs?: Record<string, string>
     saying?: string
     chatId?:string
     time?: number
