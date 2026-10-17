@@ -1295,6 +1295,7 @@ export const languageEnglish = {
     loadInternalBackup: "Load Internal Backup",
     createCopy: "Create a Copy",
     copyChatConfirm: "Create a copy of: ",
+    copyChatAfterReply: "Copying once the reply finishes",
     copyChatSuccess: "Chat copied",
     bindPersona: "Bind Persona",
     chatOptions: "Chat Options",

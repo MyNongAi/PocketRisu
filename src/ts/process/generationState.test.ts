@@ -84,10 +84,18 @@ describe('map lifecycle', () => {
 })
 
 describe('bounded user-send admission', () => {
-    it('claims two distinct chats and rejects a third', () => {
-        expect(tryStartGeneration('c1', 'g1', { providerKey: 'openai' })).toEqual({ allowed: true })
-        expect(tryStartGeneration('c2', 'g2', { providerKey: 'openai' })).toEqual({ allowed: true })
-        expect(tryStartGeneration('c3', 'g3', { providerKey: 'anthropic' })).toMatchObject({
+    it('claims any number of distinct chats by default (no cap since 2026-10-17)', () => {
+        for (let i = 1; i <= 5; i++) {
+            expect(tryStartGeneration(`c${i}`, `g${i}`, { providerKey: 'openai' })).toEqual({ allowed: true })
+        }
+        expect(get(generationStates).size).toBe(5)
+    })
+
+    it('rejects a third chat under a two-chat policy', () => {
+        const policy = { maxConcurrentChats: 2, defaultProviderLimit: 2 }
+        expect(tryStartGeneration('c1', 'g1', { providerKey: 'openai' }, policy)).toEqual({ allowed: true })
+        expect(tryStartGeneration('c2', 'g2', { providerKey: 'openai' }, policy)).toEqual({ allowed: true })
+        expect(tryStartGeneration('c3', 'g3', { providerKey: 'anthropic' }, policy)).toMatchObject({
             allowed: false,
             reason: 'global-limit',
             limit: 2,
@@ -119,7 +127,9 @@ describe('bounded user-send admission', () => {
     it('offers a side-effect-free preflight', () => {
         startGeneration('c1', 'g1')
         startGeneration('c2', 'g2')
-        expect(getGenerationAdmission('c3')).toMatchObject({ allowed: false, reason: 'global-limit' })
+        expect(getGenerationAdmission('c3')).toEqual({ allowed: true })
+        expect(getGenerationAdmission('c3', undefined, 'live', { maxConcurrentChats: 2, defaultProviderLimit: 2 })).toMatchObject({ allowed: false, reason: 'global-limit' })
+        expect(getGenerationAdmission('c1')).toMatchObject({ allowed: false, reason: 'same-chat' })
         expect(get(generationStates).size).toBe(2)
     })
 

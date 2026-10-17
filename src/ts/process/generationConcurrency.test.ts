@@ -29,14 +29,21 @@ describe('evaluateGenerationAdmission', () => {
         )).toEqual({ allowed: false, reason: 'same-chat', limit: 1 })
     })
 
-    it('rejects a third distinct chat at the global limit', () => {
+    it('has no cap by default: many chats on one provider at once', () => {
+        const active = Array.from({ length: 12 }, (_, i) => live(`chat-${i}`, 'openai'))
+        expect(DEFAULT_GENERATION_CONCURRENCY_POLICY.maxConcurrentChats).toBe(Number.POSITIVE_INFINITY)
+        expect(evaluateGenerationAdmission(active, live('chat-new', 'openai'))).toEqual({ allowed: true })
+    })
+
+    it('rejects a third distinct chat at a configured global limit', () => {
         expect(evaluateGenerationAdmission(
             [live('chat-a', 'openai'), live('chat-b', 'anthropic')],
             live('chat-c', 'google'),
+            { maxConcurrentChats: 2, defaultProviderLimit: 2 },
         )).toEqual({
             allowed: false,
             reason: 'global-limit',
-            limit: DEFAULT_GENERATION_CONCURRENCY_POLICY.maxConcurrentChats,
+            limit: 2,
         })
     })
 
@@ -64,6 +71,7 @@ describe('evaluateGenerationAdmission', () => {
                 live('chat-b', 'anthropic'),
             ],
             live('chat-c', 'google'),
+            { maxConcurrentChats: 2, defaultProviderLimit: 2 },
         )).toMatchObject({ allowed: false, reason: 'global-limit' })
     })
 })

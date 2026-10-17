@@ -1247,6 +1247,42 @@
       ]
     },
     {
+      "id": "ERROR-REPLY-NO-PAGE",
+      "title": "에러 같은 짧은 답은 스와이프 페이지로 남기지 않음",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/chatSwipes.ts",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/chatSwipes.ts", "contains": "export function isErrorLikeReply(text: string | undefined, elapsedMs: number): boolean {" },
+        { "file": "src/ts/chatSwipes.ts", "contains": "export function dropShownSwipe(message: SwipeMessage, step: -1 | 1)" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (!currentChatGenerating && shownSwipeIsErrorLike(msg)) {" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (newLastMsg) markErrorLikeReply(newLastMsg, Date.now() - rerollStartedAt)" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (sent && !continueResponse) markGeneratedReply(generationTarget, sendStartedAt)" }
+      ],
+      "regressionTests": [
+        "src/ts/chatSwipes.test.ts"
+      ]
+    },
+    {
+      "id": "GENERATION-NO-CAP",
+      "title": "동시 생성 개수 제한 없음 · 응답 중 복사는 끝난 뒤",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/process/generationConcurrency.ts",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/lib/SideBars/SideChatList.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/generationConcurrency.ts", "contains": "maxConcurrentChats: Number.POSITIVE_INFINITY," },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "async function waitUntilChatIdle(chatId: string) {" }
+      ],
+      "regressionTests": [
+        "src/ts/process/generationConcurrency.test.ts"
+      ]
+    },
+    {
       "id": "BOT-CHAT-MEMO",
       "title": "봇별·채팅별 개인 메모 (포켓리스 전용)",
       "criticality": "core-ux",

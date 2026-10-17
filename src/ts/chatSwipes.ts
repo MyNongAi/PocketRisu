@@ -9,6 +9,40 @@ export interface SwipeMessage {
     swipeId?: number
     isComment?: boolean
     disabled?: unknown
+    /** Swipe index of a reply that looked like an error (isErrorLikeReply). */
+    nodeOnlyErrorSwipe?: number
+}
+
+// A reply that arrives within 10 s with 100 characters or fewer is usually a
+// provider error, not a real answer (the user's rule, 2026-10-17): it keeps
+// no swipe page once the user moves off it or rerolls it.
+export const ERROR_LIKE_REPLY_MS = 10_000
+export const ERROR_LIKE_REPLY_CHARS = 100
+
+export function isErrorLikeReply(text: string | undefined, elapsedMs: number): boolean {
+    return elapsedMs < ERROR_LIKE_REPLY_MS && (text ?? '').trim().length <= ERROR_LIKE_REPLY_CHARS
+}
+
+/** Mark (or unmark) the shown swipe of a reply that just finished generating. */
+export function markErrorLikeReply(message: SwipeMessage, elapsedMs: number): void {
+    const shown = message.swipeId ?? 0
+    if (isErrorLikeReply(message.data, elapsedMs)) message.nodeOnlyErrorSwipe = shown
+    else if (message.nodeOnlyErrorSwipe === shown) delete message.nodeOnlyErrorSwipe
+}
+
+/** The shown swipe is a marked error-like reply (still short, so not edited into a real one). */
+export function shownSwipeIsErrorLike(message: SwipeMessage): boolean {
+    return message.nodeOnlyErrorSwipe !== undefined
+        && message.nodeOnlyErrorSwipe === (message.swipeId ?? 0)
+        && (message.data ?? '').trim().length <= ERROR_LIKE_REPLY_CHARS
+}
+
+/** Keep the error mark on the same swipe after swipe `removedIndex` was deleted. */
+export function shiftErrorMarkAfterDelete(message: SwipeMessage, removedIndex: number): void {
+    const mark = message.nodeOnlyErrorSwipe
+    if (mark === undefined) return
+    if (mark === removedIndex || !Array.isArray(message.swipes)) delete message.nodeOnlyErrorSwipe
+    else if (mark > removedIndex) message.nodeOnlyErrorSwipe = mark - 1
 }
 
 /**
@@ -85,6 +119,20 @@ export function showSwipe(message: SwipeMessage, index: number): boolean {
  * to a plain message. Returns where the deleted swipe was, or null when there
  * was nothing to delete.
  */
+/**
+ * Delete the shown swipe and show its neighbour in the `step` direction
+ * (wrapping like stepSwipe): moving back off a dropped page lands on the one
+ * before it.
+ */
+export function dropShownSwipe(message: SwipeMessage, step: -1 | 1): { removedIndex: number, previousCount: number } | null {
+    const removed = deleteShownSwipe(message)
+    if (!removed) return null
+    if (Array.isArray(message.swipes)) {
+        showSwipe(message, wrapSwipeIndex(step === -1 ? removed.removedIndex - 1 : removed.removedIndex, message.swipes.length))
+    }
+    return removed
+}
+
 export function deleteShownSwipe(message: SwipeMessage): { removedIndex: number, previousCount: number } | null {
     const swipes = message.swipes
     if (!Array.isArray(swipes) || swipes.length <= 1) return null

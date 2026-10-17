@@ -3,7 +3,7 @@
 
     import Suggestion from './Suggestion.svelte';
     import { copyScriptstateCheckpoint, mergeRerollCheckpoint, removeSwipeCheckpoint, restoreScriptstateBeforeReroll, restoreScriptstateSnapshot, restoreShownSwipeScriptstate, snapshotScriptstate } from 'src/ts/chatScriptstateCheckpoint';
-    import { deleteShownSwipe, findLastReplyIndex, stepSwipe } from 'src/ts/chatSwipes';
+    import { deleteShownSwipe, dropShownSwipe, findLastReplyIndex, markErrorLikeReply, shiftErrorMarkAfterDelete, shownSwipeIsErrorLike, stepSwipe } from 'src/ts/chatSwipes';
     import { clearRerollPlaceholder, setRerollPlaceholder } from 'src/ts/gui/rerollPlaceholder';
     import { CameraIcon, ChevronUpIcon, ChevronDownIcon, DatabaseIcon, GlobeIcon, FileTextIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2, GitBranch } from "@lucide/svelte";
     import ShDropdownMenu from 'src/lib/UI/GUI/ShDropdownMenu.svelte';
@@ -526,14 +526,14 @@ import { isMobile } from 'src/ts/platform'
                     }
                 }
                 else{
-                    alertError('At most two chats can generate at the same time.')
+                    alertError('Another chat is holding a generation slot.')
                 }
             }
             return
         }
-        const occupiedChatKeys = new Set([...$generationStates.keys(), ...preparingChatSends])
-        if(preparingChatSends.has(genKey) || occupiedChatKeys.size >= 2){
-            if(!preparingChatSends.has(genKey)) alertError('At most two chats can generate at the same time.')
+        // Any number of chats may generate at once (the user's request,
+        // 2026-10-17); only this chat's own pending send blocks a second one.
+        if(preparingChatSends.has(genKey)){
             return
         }
         preparingChatSends.add(genKey)
@@ -652,7 +652,8 @@ import { isMobile } from 'src/ts/platform'
         // await, so releasing the pre-send guard immediately before this call
         // leaves no event-loop gap for a duplicate click.
         preparingChatSends.delete(genKey)
-        return await sendChatMain(
+        const sendStartedAt = Date.now()
+        const sent = await sendChatMain(
             continueResponse,
             generationTarget,
             moduleContext,
@@ -660,6 +661,8 @@ import { isMobile } from 'src/ts/platform'
             emotionRoute,
             memoryRoute,
         )
+        if (sent && !continueResponse) markGeneratedReply(generationTarget, sendStartedAt)
+        return sent
         } finally {
             preparingChatSends.delete(genKey)
             await finishChatLease(chatLease)
@@ -724,8 +727,7 @@ import { isMobile } from 'src/ts/platform'
         if(!targetCharacter || !targetChat) return
         let generationTarget = captureGenerationTarget(targetCharacter, targetChat)
         const genKey = chatGenKey(generationTarget.chatId)
-        const occupiedChatKeys = new Set([...$generationStates.keys(), ...preparingChatSends])
-        if(preparingChatSends.has(genKey) || occupiedChatKeys.size >= 2) return
+        if(preparingChatSends.has(genKey)) return
         preparingChatSends.add(genKey)
         let chatLease: ChatLeaseTarget | null = null
         try {
@@ -742,8 +744,16 @@ import { isMobile } from 'src/ts/platform'
         const lastMsg = getLastCharMsgIn(activeChat)
         if (!lastMsg) return
 
+        // A reply that looked like an error is replaced, not kept as a page.
+        let dropErrorReply = false
+        if (shownSwipeIsErrorLike(lastMsg)) {
+            const removed = deleteShownSwipe(lastMsg)
+            if (removed) removeSwipeCheckpoint(lastMsg, removed.removedIndex, removed.previousCount)
+            else dropErrorReply = true
+            delete lastMsg.nodeOnlyErrorSwipe
+        }
         // Save existing swipes before clone replaces the array
-        const savedSwipes = lastMsg.swipes ? [...lastMsg.swipes] : [lastMsg.data]
+        const savedSwipes = dropErrorReply ? [] : lastMsg.swipes ? [...lastMsg.swipes] : [lastMsg.data]
         // Chat variables: the new candidate starts from the turn's baseline,
         // not from what the previous candidate left (chatScriptstateCheckpoint.ts).
         const previousCheckpoint = copyScriptstateCheckpoint(lastMsg)
@@ -784,6 +794,7 @@ import { isMobile } from 'src/ts/platform'
             setRerollPlaceholder({ chatId: activeChat.id, index: cha.length, message: safeStructuredClone(lastMsg) })
         }
         preparingChatSends.delete(genKey)
+        const rerollStartedAt = Date.now()
         const generated = await sendChatMain(false, generationTarget)
 
         const attached = resolveGenerationTarget(DBState.db.characters, generationTarget)
@@ -814,6 +825,7 @@ import { isMobile } from 'src/ts/platform'
             if (merged) newLastMsg.scriptstateCheckpoint = merged
             else delete newLastMsg.scriptstateCheckpoint
         }
+        if (newLastMsg) markErrorLikeReply(newLastMsg, Date.now() - rerollStartedAt)
         } finally {
             if (placeholderChatId) clearRerollPlaceholder(placeholderChatId)
             preparingChatSends.delete(genKey)
@@ -834,12 +846,32 @@ import { isMobile } from 'src/ts/platform'
 
     function switchSwipe(step: -1 | 1, index?: number) {
         const { chat, msg, isTarget } = swipeContext(index)
-        if (!chat || !msg || !stepSwipe(msg, step)) return
+        if (!chat || !msg) return
+        // Moving off a reply that looked like an error (10 s, 100 chars or
+        // fewer) drops its page (the user's request, 2026-10-17).
+        if (!currentChatGenerating && shownSwipeIsErrorLike(msg)) {
+            const removed = dropShownSwipe(msg, step)
+            if (removed) {
+                removeSwipeCheckpoint(msg, removed.removedIndex, removed.previousCount)
+                delete msg.nodeOnlyErrorSwipe
+                if (isTarget) restoreShownSwipeScriptstate(chat, msg)
+                DBState.db.characters[$selectedCharID].reloadKeys += 1
+                return
+            }
+        }
+        if (!stepSwipe(msg, step)) return
         // Swipes can be browsed while a reply is being written (the user's
         // request, 2026-10-09); the chat variables stay as the generation
         // found them then.
         if (isTarget && !currentChatGenerating) restoreShownSwipeScriptstate(chat, msg)
         DBState.db.characters[$selectedCharID].reloadKeys += 1
+    }
+
+    /** After a send: mark its reply when it looks like an error (chatSwipes.ts). */
+    function markGeneratedReply(target: GenerationTargetIdentity, startedAt: number) {
+        const resolved = resolveGenerationTarget(DBState.db.characters, target)
+        const reply = resolved ? getLastCharMsgIn(resolved.chat) : null
+        if (reply) markErrorLikeReply(reply, Date.now() - startedAt)
     }
 
     function unReroll(index?: number) {
@@ -857,6 +889,7 @@ import { isMobile } from 'src/ts/platform'
         const removed = deleteShownSwipe(msg)
         if (!removed) return
         removeSwipeCheckpoint(msg, removed.removedIndex, removed.previousCount)
+        shiftErrorMarkAfterDelete(msg, removed.removedIndex)
         if (isTarget) restoreShownSwipeScriptstate(chat, msg)
         DBState.db.characters[$selectedCharID].reloadKeys += 1
     }

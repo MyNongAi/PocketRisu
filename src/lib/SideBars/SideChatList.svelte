@@ -17,7 +17,9 @@
     import TextInput from "../UI/GUI/TextInput.svelte";
 
     import { exportChat, importChat, exportAllChats } from "src/ts/characters";
-    import { alertConfirm, alertError, alertSelect, alertStore, notifySuccess, notifyError } from "src/ts/alert";
+    import { alertConfirm, alertError, alertSelect, alertStore, notifySuccess, notifyError, notifyInfo } from "src/ts/alert";
+    import { get } from "svelte/store";
+    import { auxiliaryGenerating, chatGenKey, generationStates } from "src/ts/process/generationState";
     import { findCharacterbyId, sleep, sortableOptions } from "src/ts/util";
 
     import { bookmarkListOpen, openModuleListStore } from "src/ts/stores.svelte";
@@ -38,6 +40,17 @@
     }
 
     let { chara = $bindable() }: Props = $props();
+
+    // A copy taken while the chat is still answering missed that answer (the
+    // user's report, 2026-10-17): it waits for the reply (and a status line
+    // written after it) to finish, then copies.
+    async function waitUntilChatIdle(chatId: string) {
+        const key = chatGenKey(chatId)
+        const busy = () => get(generationStates).has(key) || get(auxiliaryGenerating).has(key)
+        if (!busy()) return
+        notifyInfo(language.copyChatAfterReply)
+        while (busy()) await sleep(400)
+    }
     // Private bot/chat memos (MemoDialog); a dot on the button when any is written.
     let memoOpen = $state(false)
     const hasMemo = $derived(!!(chara?.nodeOnlyMemo?.trim() || chara?.chats?.[chara.chatPage]?.nodeOnlyMemo?.trim()))
@@ -297,7 +310,9 @@
                                 e.stopPropagation()
                                 const confirmed = await alertConfirm(`${language.copyChatConfirm}${chat.name}`)
                                 if(!confirmed) return
+                                await waitUntilChatIdle(chat.id)
                                 const chatIdx = chara.chats.indexOf(chat)
+                                if(chatIdx < 0) return
                                 if(chara.chats[chatIdx]?._placeholder){
                                     await ensureChatHydrated(chara.chats, chatIdx, (chara as character).chaId)
                                 }
@@ -394,6 +409,10 @@
                         e.stopPropagation()
                         const confirmed = await alertConfirm(`${language.copyChatConfirm}${chat.name}`)
                         if(!confirmed) return
+                        await waitUntilChatIdle(chat.id)
+                        // The list may have changed while waiting.
+                        const i = chara.chats.indexOf(chat)
+                        if(i < 0) return
                         if(chara.chats[i]?._placeholder){
                             await ensureChatHydrated(chara.chats, i, (chara as character).chaId)
                         }

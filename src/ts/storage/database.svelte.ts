@@ -2503,6 +2503,8 @@ export interface ChatFolder{
 export interface Message{
     role: 'user'|'char'
     data: string
+    /** PocketRisu: swipe index of a reply that looked like an error (chatSwipes.ts). */
+    nodeOnlyErrorSwipe?: number
     saying?: string
     chatId?:string
     time?: number

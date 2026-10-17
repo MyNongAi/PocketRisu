@@ -26,15 +26,17 @@ export type GenerationAdmissionDecision =
         providerKey?: string
     }
 
+// No cap by default (the user's request, 2026-10-17: "only two at once"):
+// any number of chats may generate together, on any provider. Only a second
+// request for the SAME chat is refused. A provider that only tolerates a
+// single in-flight call can still set a limit in providerLimits.
 export const DEFAULT_GENERATION_CONCURRENCY_POLICY: GenerationConcurrencyPolicy = {
-    maxConcurrentChats: 2,
-    // Two chats may share the same provider. A provider that only tolerates a
-    // single in-flight call can override this key without changing the state
-    // registry or the send pipeline.
-    defaultProviderLimit: 2,
+    maxConcurrentChats: Number.POSITIVE_INFINITY,
+    defaultProviderLimit: Number.POSITIVE_INFINITY,
 }
 
 function normalizedLimit(value: number): number {
+    if (value === Number.POSITIVE_INFINITY) return value
     if (!Number.isFinite(value)) return 0
     return Math.max(0, Math.floor(value))
 }

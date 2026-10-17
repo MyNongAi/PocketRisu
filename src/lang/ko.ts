@@ -1407,6 +1407,7 @@ export const languageKorean = {
   createCopy: "복사본 생성",
   copyChatConfirm: "복사본을 만드시겠습니까: ",
   copyChatSuccess: "채팅을 복사했어요",
+  copyChatAfterReply: "응답이 끝나면 복사할게요",
   bindPersona: "페르소나 바인드",
   chatOptions: "채팅 옵션",
   doYouWantToBindCurrentPersona:
