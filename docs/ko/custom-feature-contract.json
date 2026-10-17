@@ -1247,6 +1247,25 @@
       ]
     },
     {
+      "id": "BOT-CHAT-MEMO",
+      "title": "봇별·채팅별 개인 메모 (포켓리스 전용)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/SideBars/MemoDialog.svelte",
+        "src/lib/SideBars/SideChatList.svelte",
+        "src/ts/storage/database.svelte.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/SideBars/MemoDialog.svelte", "contains": "oninput={(e) => { chara.nodeOnlyMemo = e.currentTarget.value }}" },
+        { "file": "src/lib/SideBars/MemoDialog.svelte", "contains": "oninput={(e) => { chat.nodeOnlyMemo = e.currentTarget.value }}" },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "<MemoDialog bind:chara close={() => { memoOpen = false }} />" },
+        { "file": "src/ts/storage/database.svelte.ts", "contains": "/** PocketRisu-only private memo for this bot (MemoDialog). Never put in a prompt or a card export. */" }
+      ],
+      "regressionTests": [
+        "src/lib/SideBars/MemoDialog.test.ts"
+      ]
+    },
+    {
       "id": "SYNC-NO-PINGPONG",
       "title": "동기화 핑퐁·생성 중 대기 없애기",
       "criticality": "data-safety",

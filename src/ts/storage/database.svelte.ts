@@ -1863,6 +1863,8 @@ export interface ArchivedCharacterStub{
 export interface character{
     type?:"character"
     name:string
+    /** PocketRisu-only private memo for this bot (MemoDialog). Never put in a prompt or a card export. */
+    nodeOnlyMemo?:string
     /** Pins the character above the recent-order section in character lists. */
     favorite?:boolean
     /** Optional list title color; missing-asset warnings take precedence. */
@@ -2435,6 +2437,8 @@ export interface Chat{
     message: Message[]
     note:string
     name:string
+    /** PocketRisu-only private memo for this chat (MemoDialog); unlike `note` it is never sent. */
+    nodeOnlyMemo?:string
     localLore: loreBook[]
     sdData?:string
     suggestMessages?:string[]

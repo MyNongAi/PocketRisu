@@ -2,7 +2,8 @@
     import { onDestroy, onMount } from "svelte";
     import { v4 } from "uuid";
     import Sortable from 'sortablejs/modular/sortable.core.esm.js';
-    import { DownloadIcon, PencilIcon, HardDriveUploadIcon, MenuIcon, TrashIcon, SplitIcon, FolderPlusIcon, BookmarkCheckIcon, PackageIcon, CopyIcon } from "@lucide/svelte";
+    import { DownloadIcon, PencilIcon, HardDriveUploadIcon, MenuIcon, TrashIcon, SplitIcon, FolderPlusIcon, BookmarkCheckIcon, PackageIcon, CopyIcon, NotebookPenIcon } from "@lucide/svelte";
+    import MemoDialog from "./MemoDialog.svelte";
 
     import type { Chat, ChatFolder, character } from "src/ts/storage/database.svelte";
     import { newChatModelDefaults } from "src/ts/storage/database.svelte";
@@ -37,6 +38,9 @@
     }
 
     let { chara = $bindable() }: Props = $props();
+    // Private bot/chat memos (MemoDialog); a dot on the button when any is written.
+    let memoOpen = $state(false)
+    const hasMemo = $derived(!!(chara?.nodeOnlyMemo?.trim() || chara?.chats?.[chara.chatPage]?.nodeOnlyMemo?.trim()))
     let editMode = $state(false)
 
     // Safety net: chats whose folderId references a deleted folder would
@@ -490,6 +494,10 @@
             }}>
                 <BookmarkCheckIcon size={18}/>
             </button>
+            <button class="relative text-textcolor2 hover:text-primary mr-2 cursor-pointer" title={language.memoTitle} aria-label={language.memoTitle} onclick={() => { memoOpen = true }}>
+                <NotebookPenIcon size={18}/>
+                {#if hasMemo}<span class="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-primary" aria-hidden="true"></span>{/if}
+            </button>
             <button class="ml-auto text-textcolor2 hover:text-primary mr-2 cursor-pointer" onclick={() => {
                 if (!chara.chatFolders) {
                     chara.chatFolders = []
@@ -532,3 +540,6 @@
         {/if}
     </div>
 </div>
+{#if memoOpen}
+    <MemoDialog bind:chara close={() => { memoOpen = false }} />
+{/if}
