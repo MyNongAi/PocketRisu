@@ -12,7 +12,7 @@
     import { changeChar } from 'src/ts/characters'
     import { changeChatTo } from 'src/ts/globalApi.svelte'
     import { language } from 'src/lang'
-    import RequestStatusToast from './RequestStatusToast.svelte'
+    import RequestStatusToast, { REQUEST_TOAST_CLASS } from './RequestStatusToast.svelte'
 
     // Inside the left workspace while split (the right pane has its own dock).
     const inset = $derived(splitRightInset($splitChatOpen, $splitChatWidth, $MobileGUI))
@@ -43,6 +43,7 @@
         unminimizeRequest(id)
         toast.custom(RequestStatusToast, {
             id: `req:${id}`,
+            class: REQUEST_TOAST_CLASS,
             duration: Number.POSITIVE_INFINITY,
             componentProps: { id },
         })

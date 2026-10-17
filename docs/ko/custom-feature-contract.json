@@ -1288,7 +1288,9 @@
         { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "function minimize(): void {" },
         { "file": "src/lib/UI/GUI/RequestStatusToaster.svelte", "contains": "if (get(minimizedRequests).includes(id) && keepsDoneButton(entry, currentChatId())) continue" },
         { "file": "src/lib/UI/GUI/RequestStatusDock.svelte", "contains": "function openChat(id: string, chatId: string | undefined): void {" },
-        { "file": "src/App.svelte", "contains": "<RequestStatusDock />" }
+        { "file": "src/App.svelte", "contains": "<RequestStatusDock />" },
+        { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "export const REQUEST_TOAST_CLASS = 'rs-toast'" },
+        { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "width: fit-content;" }
       ],
       "regressionTests": [
         "src/ts/status/requestStatusDock.test.ts"

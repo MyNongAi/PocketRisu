@@ -14,7 +14,7 @@
     import { get } from 'svelte/store'
     import { toast } from 'svelte-sonner'
     import { requestStatuses, isTerminalPhase, clearStatus } from 'src/ts/status/requestStatus'
-    import RequestStatusToast from './RequestStatusToast.svelte'
+    import RequestStatusToast, { REQUEST_TOAST_CLASS } from './RequestStatusToast.svelte'
     import { keepsDoneButton, minimizedRequests, unminimizeRequest } from 'src/ts/status/requestStatusDock'
     import { DBState, selIdState } from 'src/ts/stores.svelte'
 
@@ -59,6 +59,7 @@
                 shown.add(id)
                 toast.custom(RequestStatusToast, {
                     id: toastId(id),
+                    class: REQUEST_TOAST_CLASS,
                     duration: Number.POSITIVE_INFINITY,
                     componentProps: { id },
                 })

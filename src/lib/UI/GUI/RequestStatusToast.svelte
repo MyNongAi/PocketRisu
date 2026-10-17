@@ -1,3 +1,8 @@
+<script lang="ts" module>
+    /** Class on the sonner item that holds this card (see the styles below). */
+    export const REQUEST_TOAST_CLASS = 'rs-toast'
+</script>
+
 <script lang="ts">
     // Body of a single request-status toast. Rendered as a sonner custom toast
     // (one per generationId). Subscribes to the shared store and reads its own
@@ -149,9 +154,30 @@
 {/if}
 
 <style>
+    /* The card is as wide as its text (the user's request, 2026-10-17): on a
+       phone sonner stretches the toast item across the screen, which left a
+       wide blank card over the sidebar button. The item itself lets taps
+       through; the card takes them (swipes still reach the item). */
+    :global([data-sonner-toast].rs-toast) {
+        pointer-events: none;
+        display: flex;
+        justify-content: flex-end;
+    }
+    :global([data-sonner-toast].rs-toast[data-x-position='center']) {
+        justify-content: center;
+    }
+    :global([data-sonner-toast].rs-toast[data-x-position='left']) {
+        justify-content: flex-start;
+    }
+    /* A hidden or leaving toast takes no taps either. */
+    :global([data-sonner-toast].rs-toast:is([data-visible='false'], [data-removed='true'])) .rs-card {
+        pointer-events: none;
+    }
     .rs-card {
         display: flex;
-        width: 100%;
+        width: fit-content;
+        max-width: min(100%, 22rem);
+        pointer-events: auto;
         background: var(--risu-theme-darkbg);
         color: var(--risu-theme-textcolor);
         border: 1px solid var(--risu-theme-darkborderc);
