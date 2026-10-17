@@ -1223,10 +1223,14 @@
       ],
       "requiredMarkers": [
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "retitleChatFromLastInput(attached.character.chats, attached.chatIndex)" },
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "function retitleCurrentChat()" }
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "function retitleCurrentChat()" },
+        { "file": "src/ts/chatTitleState.ts", "contains": "export function ageManualChatTitle(holder: ChatTitleHolder, chatId: string | undefined): void {" },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "<span class={chatTitleClass(chatTitleState(chara, chat.id))}>{chat.name}</span>" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (resolved) ageManualChatTitle(resolved.character, resolved.chat.id)" }
       ],
       "regressionTests": [
-        "src/ts/chatClone.test.ts"
+        "src/ts/chatClone.test.ts",
+        "src/ts/chatTitleState.test.ts"
       ]
     },
     {

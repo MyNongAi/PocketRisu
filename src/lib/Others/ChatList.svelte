@@ -1,6 +1,7 @@
 <script>
     import { alertConfirm, notifyError } from "../../ts/alert";
     import { language } from "../../lang";
+    import { chatTitleClass, chatTitleState, markChatTitleManual } from "src/ts/chatTitleState";
     
     import { DBState } from 'src/ts/stores.svelte';
     import { newChatModelDefaults } from 'src/ts/storage/database.svelte';
@@ -35,9 +36,9 @@
                 }
             }} class="flex items-center text-textcolor border-t-1 border-solid border-0 border-darkborderc p-2 cursor-pointer" class:bg-selected={i === DBState.db.characters[$selectedCharID].chatPage}>
                 {#if editMode}
-                    <TextInput bind:value={DBState.db.characters[$selectedCharID].chats[i].name} padding={false}/>
+                    <TextInput bind:value={DBState.db.characters[$selectedCharID].chats[i].name} padding={false} oninput={() => markChatTitleManual(DBState.db.characters[$selectedCharID], chat.id)}/>
                 {:else}
-                    <span>{chat.name}</span>
+                    <span class={chatTitleClass(chatTitleState(DBState.db.characters[$selectedCharID], chat.id))}>{chat.name}</span>
                 {/if}
                 <div class="grow flex justify-end">
                     <div class="text-textcolor2 hover:text-primary mr-2 cursor-pointer" role="button" tabindex="0" onclick={async (e) => {

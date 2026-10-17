@@ -41,6 +41,7 @@ import { isMobile } from 'src/ts/platform'
     import { runTrigger } from 'src/ts/process/triggers';
     import { v4 } from 'uuid';
     import { retitleChatFromLastInput } from 'src/ts/chatClone';
+    import { ageManualChatTitle, chatTitleState } from 'src/ts/chatTitleState';
     import { chatSendsToNativeGemini } from 'src/ts/gui/geminiPdfToggle';
     import { processMultiCommand } from 'src/ts/process/command';
     import { postChatFile } from 'src/ts/process/files/multisend';
@@ -634,7 +635,7 @@ import { isMobile } from 'src/ts/platform'
         const attached = resolveGenerationTarget(DBState.db.characters, generationTarget)
         if(!attached) return
         attached.chat.message = cha
-        retitleChatFromLastInput(attached.character.chats, attached.chatIndex)
+        if (chatTitleState(attached.character, attached.chat.id) === 'auto') retitleChatFromLastInput(attached.character.chats, attached.chatIndex)
         generationTarget = captureGenerationTarget(attached.character, attached.chat)
         if($selectedCharID === attached.characterIndex && attached.character.chatPage === attached.chatIndex){
             messageInput = ''
@@ -872,6 +873,8 @@ import { isMobile } from 'src/ts/platform'
         const resolved = resolveGenerationTarget(DBState.db.characters, target)
         const reply = resolved ? getLastCharMsgIn(resolved.chat) : null
         if (reply) markErrorLikeReply(reply, Date.now() - startedAt)
+        // A renamed (green) title turns yellow once the chat answers past it.
+        if (resolved) ageManualChatTitle(resolved.character, resolved.chat.id)
     }
 
     function unReroll(index?: number) {

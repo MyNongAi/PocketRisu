@@ -1865,6 +1865,8 @@ export interface character{
     name:string
     /** PocketRisu-only private memo for this bot (MemoDialog). Never put in a prompt or a card export. */
     nodeOnlyMemo?:string
+    /** PocketRisu: chat id -> renamed title state for the chat lists' title colors (chatTitleState.ts). */
+    nodeOnlyChatTitles?:Record<string, 'manual' | 'stale'>
     /** Pins the character above the recent-order section in character lists. */
     favorite?:boolean
     /** Optional list title color; missing-asset warnings take precedence. */

@@ -4,6 +4,8 @@
     import Sortable from 'sortablejs/modular/sortable.core.esm.js';
     import { DownloadIcon, PencilIcon, HardDriveUploadIcon, MenuIcon, TrashIcon, SplitIcon, FolderPlusIcon, BookmarkCheckIcon, PackageIcon, CopyIcon, NotebookPenIcon } from "@lucide/svelte";
     import MemoDialog from "./MemoDialog.svelte";
+    import { chatTitleClass, chatTitleState, clearChatTitleManual, markChatTitleManual } from "src/ts/chatTitleState";
+    import { retitleChatFromLastInput } from "src/ts/chatClone";
 
     import type { Chat, ChatFolder, character } from "src/ts/storage/database.svelte";
     import { newChatModelDefaults } from "src/ts/storage/database.svelte";
@@ -51,6 +53,21 @@
         notifyInfo(language.copyChatAfterReply)
         while (busy()) await sleep(400)
     }
+    // Title colors: white automatic, green renamed, yellow renamed and answered
+    // past since (chatTitleState.ts). Typing a name marks it renamed;
+    // clearing it hands the title back to the last input.
+    function titleTyped(chat: Chat) {
+        markChatTitleManual(chara, chat.id)
+    }
+    function titleCommitted(chat: Chat, value: string) {
+        if (value.trim()) return
+        clearChatTitleManual(chara, chat.id)
+        const index = chara.chats.indexOf(chat)
+        if (index >= 0 && !retitleChatFromLastInput(chara.chats, index) && !chara.chats[index].name.trim()) {
+            chara.chats[index].name = 'New Chat'
+        }
+    }
+
     // Private bot/chat memos (MemoDialog); a dot on the button when any is written.
     let memoOpen = $state(false)
     const hasMemo = $derived(!!(chara?.nodeOnlyMemo?.trim() || chara?.chats?.[chara.chatPage]?.nodeOnlyMemo?.trim()))
@@ -296,9 +313,9 @@
                         }
                     }} class="risu-chats flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"class:bg-selected={chatIdx === chara.chatPage && !$chatDeselected}>
                         {#if editMode}
-                            <TextInput deferred bind:value={chat.name} className="grow min-w-0" padding={false}/>
+                            <TextInput deferred bind:value={chat.name} className="grow min-w-0" padding={false} oninput={() => titleTyped(chat)} onchange={(e) => titleCommitted(chat, e.currentTarget.value)}/>
                         {:else}
-                            <span>{chat.name}</span>
+                            <span class={chatTitleClass(chatTitleState(chara, chat.id))}>{chat.name}</span>
                         {/if}
                         <div class="grow flex justify-end items-center">
                             <ChatReplyStatus chatId={chat.id} current={chatIdx === chara.chatPage && !$chatDeselected} />
@@ -395,9 +412,9 @@
             class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
             class:bg-selected={i === chara.chatPage && !$chatDeselected}>
                 {#if editMode}
-                    <TextInput deferred bind:value={chara.chats[i].name} className="grow min-w-0" padding={false}/>
+                    <TextInput deferred bind:value={chara.chats[i].name} className="grow min-w-0" padding={false} oninput={() => titleTyped(chat)} onchange={(e) => titleCommitted(chat, e.currentTarget.value)}/>
                 {:else}
-                    <span>{chat.name}</span>
+                    <span class={chatTitleClass(chatTitleState(chara, chat.id))}>{chat.name}</span>
                 {/if}
                 <div class="grow flex justify-end items-center">
                     <ChatReplyStatus chatId={chat.id} current={i === chara.chatPage && !$chatDeselected} />
