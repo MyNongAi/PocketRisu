@@ -12582,8 +12582,13 @@ for (const sig of ['SIGTERM', 'SIGINT']) {
     process.on(sig, async () => {
         console.log(`[Server] Received ${sig}, flushing pending data...`);
         stopTunnel();
+        // How long the stop took, so a slow one can be told apart (the
+        // launcher waits for the process to exit; 2026-10-17 it took over a minute).
+        const stopStartedAt = Date.now();
         try { await queueStorageOperation(flushPendingDb); } catch (e) { logger.error('[Server] Flush error:', e); }
+        const flushedAt = Date.now();
         try { checkpointWal('TRUNCATE'); } catch { /* non-fatal */ }
+        console.log(`[Server] Stopped: flush ${flushedAt - stopStartedAt} ms, checkpoint ${Date.now() - flushedAt} ms`);
         process.exit(0);
     });
 }
