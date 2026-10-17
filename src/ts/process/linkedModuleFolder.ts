@@ -54,7 +54,15 @@ export function gatherLinkedModules<T extends GatherModule>(
     const linkId = link?.id ?? createId()
     let changed = false
 
-    // Folders that hold a linked module are shown inside [링크].
+    // The folders `id` is shown inside, nearest first (loops cut off).
+    const ancestors = (id: string): string[] => {
+        const chain: string[] = []
+        for (let parent = byId.get(id)?.nodeOnlyParentFolderId; parent && byId.has(parent) && !chain.includes(parent) && parent !== id; parent = byId.get(parent)?.nodeOnlyParentFolderId) chain.push(parent)
+        return chain
+    }
+
+    // Folders that hold a linked module are shown inside [링크] (at any
+    // depth: one the user nested inside a folder there stays where it is).
     const nested = new Set<string>()
     for (const module of modules) {
         if (linked.has(module.id) && module.folderId && module.folderId !== linkId && byId.has(module.folderId)) nested.add(module.folderId)
@@ -97,11 +105,13 @@ export function gatherLinkedModules<T extends GatherModule>(
             return { ...folder, name: LINK_FOLDER_NAME }
         }
         const under = folder.nodeOnlyParentFolderId === linkId
-        if (nested.has(folder.id) && !under) {
+        if (nested.has(folder.id) && !ancestors(folder.id).includes(linkId)) {
             changed = true
             return { ...folder, nodeOnlyParentFolderId: linkId }
         }
-        if (!nested.has(folder.id) && under) {
+        // A folder directly in [링크] stays while it, or a folder inside it, holds a linked module.
+        const holdsLinked = nested.has(folder.id) || [...nested].some((id) => ancestors(id).includes(folder.id))
+        if (!holdsLinked && under) {
             changed = true
             const { nodeOnlyParentFolderId: _dropped, ...rest } = folder
             return rest

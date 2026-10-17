@@ -36,34 +36,52 @@ export function groupByFolder(
 }
 
 /**
- * The folder `folder` is shown inside (display only, `nodeOnlyParentFolderId`),
- * one level deep as FolderedList draws it: a parent that is gone, the folder
- * itself or a parent that is itself inside another leaves it at the top.
+ * The folder `folder` is shown inside (display only, `nodeOnlyParentFolderId`).
+ * Folders nest to any depth (FolderedList limits how deep a list lets the user
+ * go, by `maxFolderDepth`); a parent that is gone, the folder itself or a
+ * loop up the chain (A in B in A) leaves it at the top.
  */
 export function shownInside(
     folder: PromptPresetFolder | null | undefined,
     folders: readonly PromptPresetFolder[],
 ): string | undefined {
     const parentId = folder?.nodeOnlyParentFolderId
-    if (!parentId || parentId === folder.id) return undefined
-    return folders.some((candidate) => candidate.id === parentId && !candidate.nodeOnlyParentFolderId) ? parentId : undefined
+    if (!folder || !parentId || parentId === folder.id) return undefined
+    const byId = new Map(folders.map((candidate) => [candidate.id, candidate] as const))
+    if (!byId.has(parentId)) return undefined
+    const seen = new Set([folder.id])
+    for (let cursor: string | undefined = parentId; cursor; ) {
+        if (seen.has(cursor)) return undefined
+        seen.add(cursor)
+        const next: string | undefined = byId.get(cursor)?.nodeOnlyParentFolderId
+        cursor = next && byId.has(next) ? next : undefined
+    }
+    return parentId
 }
 
-/** The folders in display order: each top-level folder, then the ones inside it. */
-export function folderTree(folders: readonly PromptPresetFolder[]): { folder: PromptPresetFolder, depth: 0 | 1 }[] {
+/** How many folders `folder` is shown inside (0 at the top). */
+export function folderDepth(folder: PromptPresetFolder, folders: readonly PromptPresetFolder[]): number {
+    const byId = new Map(folders.map((candidate) => [candidate.id, candidate] as const))
+    let depth = 0
+    for (let parentId = shownInside(folder, folders); parentId; parentId = shownInside(byId.get(parentId), folders)) depth++
+    return depth
+}
+
+/** The folders in display order: each folder, then the ones inside it, depth first. */
+export function folderTree(folders: readonly PromptPresetFolder[]): { folder: PromptPresetFolder, depth: number }[] {
     return nestGroups(folders.map((folder) => ({ folder })), folders)
         .map(({ group, depth }) => ({ folder: group.folder, depth }))
 }
 
 /**
  * `groups` in display order for a list that draws folders in folders by
- * indenting: each group, then the groups shown inside its folder (depth 1).
- * A group whose parent is not among `groups` stays where it was.
+ * indenting: each group, then the groups shown inside its folder (one deeper),
+ * depth first. A group whose parent is not among `groups` stays where it was.
  */
 export function nestGroups<G extends { folder: PromptPresetFolder | null }>(
     groups: readonly G[],
     folders: readonly PromptPresetFolder[],
-): { group: G, depth: 0 | 1 }[] {
+): { group: G, depth: number }[] {
     const present = new Set(groups.map((group) => group.folder?.id).filter(Boolean))
     const parentOf = (group: G) => {
         const parentId = shownInside(group.folder, folders)
@@ -74,11 +92,14 @@ export function nestGroups<G extends { folder: PromptPresetFolder | null }>(
         const parentId = parentOf(group)
         if (parentId) children.set(parentId, [...(children.get(parentId) ?? []), group])
     }
-    const out: { group: G, depth: 0 | 1 }[] = []
-    for (const group of groups) {
-        if (parentOf(group)) continue
-        out.push({ group, depth: 0 })
-        for (const child of group.folder ? (children.get(group.folder.id) ?? []) : []) out.push({ group: child, depth: 1 })
+    const out: { group: G, depth: number }[] = []
+    const placed = new Set<G>()
+    const visit = (group: G, depth: number) => {
+        if (placed.has(group)) return
+        placed.add(group)
+        out.push({ group, depth })
+        for (const child of group.folder ? (children.get(group.folder.id) ?? []) : []) visit(child, depth + 1)
     }
+    for (const group of groups) if (!parentOf(group)) visit(group, 0)
     return out
 }

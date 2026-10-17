@@ -384,6 +384,7 @@
 
     <FolderedList
         bind:searchQuery={moduleSearchQuery}
+        maxFolderDepth={5}
         folders={displayFolders}
         itemFolderIds={displayModules.map(m => m.folderId)}
         itemSearchTexts={displayModules.map(m => `${m.name}\n${m.description ?? ''}`)}

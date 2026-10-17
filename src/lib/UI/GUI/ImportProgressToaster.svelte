@@ -2,10 +2,8 @@
     import { onDestroy } from 'svelte'
     import { get } from 'svelte/store'
     import { toast } from 'svelte-sonner'
-    import { DownloadIcon } from '@lucide/svelte'
-    import { language } from 'src/lang'
     import { clearImportTask, importTasks } from 'src/ts/importProgress'
-    import { isTouchDevice } from 'src/ts/stores.svelte'
+    import { importDockPill, setImportDockRestore } from 'src/ts/importDock'
     import ImportProgressToast from './ImportProgressToast.svelte'
 
     const shown = new Set<string>()
@@ -15,7 +13,8 @@
     const minimized = new Set<string>()
     // Our own dismissals, so they are not taken for the user's.
     const dismissing = new Set<string>()
-    let pill = $state<{ count: number, progress: number | null, failed: boolean }>({ count: 0, progress: null, failed: false })
+    // The folded cards' button lives in the request dock's column (importDock.ts).
+    setImportDockRestore(() => restoreAll())
 
     const toastId = (id: string) => `import:${id}`
 
@@ -75,7 +74,7 @@
                 measured++
             }
         }
-        pill = { count, progress: measured > 0 ? Math.round(sum / measured) : null, failed }
+        importDockPill.set({ count, progress: measured > 0 ? Math.round(sum / measured) : null, failed })
     }
 
     function scheduleDismiss(id: string, failed: boolean): void {
@@ -117,25 +116,7 @@
         unsubscribe()
         for (const timer of dismissTimers.values()) clearTimeout(timer)
         dismissTimers.clear()
+        importDockPill.set({ count: 0, progress: null, failed: false })
+        setImportDockRestore(() => {})
     })
 </script>
-
-{#if pill.count > 0}
-    <!-- Where the cards were (Toaster.svelte: top-right, top-center on touch
-         devices), so a folded download stays where the user last saw it. -->
-    <button
-        type="button"
-        class="fixed z-50 flex items-center gap-1.5 rounded-full border bg-darkbg px-3 py-1.5 text-xs font-semibold text-textcolor shadow-lg transition-colors hover:border-primary {$isTouchDevice
-            ? 'top-[calc(1rem+env(safe-area-inset-top))] left-1/2 -translate-x-1/2'
-            : 'top-6 right-6'}"
-        class:border-darkborderc={!pill.failed}
-        class:border-red-500={pill.failed}
-        title={language.importProgressShow}
-        aria-label={`${language.importProgressShow} (${pill.count})`}
-        onclick={restoreAll}
-    >
-        <DownloadIcon size={14} class={pill.failed ? 'text-red-500' : 'animate-pulse text-primary'} />
-        <span>{pill.count}</span>
-        <span class="text-textcolor2">{pill.progress === null ? '…' : `${pill.progress}%`}</span>
-    </button>
-{/if}

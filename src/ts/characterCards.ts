@@ -1960,14 +1960,15 @@ export async function fetchRealmCharacter(
 
 // One Realm card as served: a card file (PNG, or a CHARX archive) or the card
 // spec with its image.
-async function fetchRealmCard(id:string):Promise<
+async function fetchRealmCard(id:string, signal?:AbortSignal):Promise<
     | { kind: 'file', name: string, data: Uint8Array }
     | { kind: 'spec', card: CharacterCardV3, img: Uint8Array }
 >{
     const res = await fetch(`https://realm.risuai.net/api/v1/download/dynamic/${encodeURIComponent(id)}?cors=true`, {
         headers: {
             "x-risu-api-version": "4"
-        }
+        },
+        signal,
     })
     if(!res.ok){
         throw new Error((await res.text().catch(() => '')) || `Realm download failed: ${res.status}`)
@@ -1985,7 +1986,25 @@ async function fetchRealmCard(id:string):Promise<
     }
     card.data.extensions ??= {}
     card.data.extensions.risuRealmImportId = id
-    return { kind: 'spec', card, img: await getHubResources(result.img) }
+    return { kind: 'spec', card, img: await getHubResources(result.img, signal) }
+}
+
+/**
+ * fetchRealmCard with the task card's X (cancel) offered while the file comes
+ * down: the X was missing on Realm downloads (the user's report, 2026-10-17).
+ * The import after it offers its own cancel where it can roll back.
+ */
+async function fetchRealmCardCancellable(id:string, report:ImportProgressReporter){
+    const controller = new AbortController()
+    report.cancellable?.(() => controller.abort())
+    try {
+        return await fetchRealmCard(id, controller.signal)
+    } catch (error) {
+        if(controller.signal.aborted) throw new ImportCancelledError()
+        throw error
+    } finally {
+        report.cancellable?.(null)
+    }
 }
 
 /**
@@ -2000,7 +2019,7 @@ export async function downloadRisuHubAsModule(id:string) {
         }
         const module = await runImportTask(`Realm ${id}`, async (report) => {
             report({ label: language.importProgress.importing, progress: null })
-            const fetched = await fetchRealmCard(id)
+            const fetched = await fetchRealmCardCancellable(id, report)
             if(fetched.kind === 'file' && isCharxFileName(fetched.name)){
                 // The module importer converts the card the same way, and asks
                 // first when the archive is large (charxPreflight.ts).
@@ -2048,7 +2067,7 @@ export async function downloadRisuHub(id:string, arg:{
         let importedAsModule = false
         const index = await runImportTask(`Realm ${id}`, async (report) => {
             report({ label: language.importProgress.importing, progress: null })
-            const fetched = await fetchRealmCard(id)
+            const fetched = await fetchRealmCardCancellable(id, report)
             let importedIndex: number | null = null
             if(fetched.kind === 'file'){
                 const result = await importCharacterProcess({
@@ -2141,8 +2160,8 @@ async function fetchRealmDescription(realmId: string): Promise<string | undefine
     }
 }
 
-export async function getHubResources(id:string) {
-    const res = await fetch(`${hubURL}/resource/${id}`)
+export async function getHubResources(id:string, signal?:AbortSignal) {
+    const res = await fetch(`${hubURL}/resource/${id}`, { signal })
     if(res.status !== 200){
         throw (await res.text())
     }

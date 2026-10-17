@@ -2,6 +2,7 @@
     import { Toaster as SonnerToaster, type ToasterProps } from 'svelte-sonner';
     import { isTouchDevice, MobileGUI } from 'src/ts/stores.svelte';
     import { splitChatOpen, splitChatWidth, splitRightInset } from 'src/ts/chatSplitPane';
+    import { dockVisible } from 'src/ts/importDock';
 
     let { ...rest }: ToasterProps = $props();
 
@@ -9,7 +10,10 @@
     // its own (left) workspace, clear of the right pane, which shows its own.
     const inset = $derived(splitRightInset($splitChatOpen, $splitChatWidth, $MobileGUI));
     const position = $derived<ToasterProps['position']>(inset > 0 || !$isTouchDevice ? 'top-right' : 'top-center');
-    const offset = $derived<ToasterProps['offset']>(inset > 0 ? { top: '24px', right: `${inset + 24}px` } : undefined);
+    // Left of the dock column of folded requests and downloads while it shows
+    // (RequestStatusDock: 2.5rem buttons 0.5rem from the edge).
+    const dockRoom = $derived($dockVisible && position === 'top-right' ? 48 : 0);
+    const offset = $derived<ToasterProps['offset']>(inset > 0 || dockRoom > 0 ? { top: '24px', right: `${inset + 24 + dockRoom}px` } : undefined);
 </script>
 
 <SonnerToaster
@@ -17,6 +21,7 @@
     {position}
     {offset}
     richColors
+    expand
     swipeDirections={['top', 'left', 'right']}
     duration={3500}
     visibleToasts={8}

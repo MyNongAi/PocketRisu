@@ -66,4 +66,12 @@ describe('gatherLinkedModules', () => {
         const nestedFolder = { ...similar('S'), nodeOnlyParentFolderId: 'L' }
         expect(gatherLinkedModules([m('s1', 'S'), m('s2', 'S')], [link, nestedFolder], new Set(['s1', 's2']), newId)).toBeNull()
     })
+
+    it('leaves a folder the user nested deeper inside [링크] where it is, and its parent in [링크]', () => {
+        n = 0
+        const linkFolder = { id: 'L', name: LINK_FOLDER_NAME, moduleIds: [], nodeOnlyLinkFolder: true }
+        const middle = { id: 'M', name: 'Middle', moduleIds: [], nodeOnlyParentFolderId: 'L' }
+        const inner = { id: 'I', name: 'Inner', moduleIds: [], nodeOnlyParentFolderId: 'M' }
+        expect(gatherLinkedModules([m('i1', 'I')], [linkFolder, middle, inner], new Set(['i1']), newId)).toBeNull()
+    })
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { folderTree, groupByFolder, isFolderCollapsed, nestGroups, shownInside } from './folders'
+import { folderDepth, folderTree, groupByFolder, isFolderCollapsed, nestGroups, shownInside } from './folders'
 
 const folders = [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }]
 
@@ -49,10 +49,11 @@ describe('folders in folders', () => {
     const deep = { id: 'deep', name: 'Deep', nodeOnlyParentFolderId: 'a1' }
     const lost = { id: 'lost', name: 'Lost', nodeOnlyParentFolderId: 'gone' }
 
-    it('resolves one level only; a missing or nested parent leaves the folder on top', () => {
+    it('resolves the parent; a missing parent or the folder itself leaves it on top', () => {
         const folders = [a, a1, b, deep, lost]
         expect(shownInside(a1, folders)).toBe('a')
-        expect(shownInside(deep, folders)).toBeUndefined()
+        // Folders nest at any depth now (FolderedList limits how deep the user goes).
+        expect(shownInside(deep, folders)).toBe('a1')
         expect(shownInside(lost, folders)).toBeUndefined()
         expect(shownInside({ id: 'self', name: 'S', nodeOnlyParentFolderId: 'self' }, folders)).toBeUndefined()
     })
@@ -70,5 +71,15 @@ describe('folders in folders', () => {
         // The parent group was filtered out: the child shows on its own.
         expect(nestGroups(groups.filter((group) => group.folder?.id !== 'a'), folders).map(({ group }) => group.folder?.id ?? '-'))
             .toEqual(['a1', 'b', '-'])
+    })
+
+    it('nests deeper, depth first, and leaves a loop on top', () => {
+        const folders = [deep, b, a1, a]
+        expect(folderTree(folders).map(({ folder, depth }) => `${folder.id}:${depth}`)).toEqual(['b:0', 'a:0', 'a1:1', 'deep:2'])
+        expect(folderDepth(deep, folders)).toBe(2)
+        const x = { id: 'x', name: 'X', nodeOnlyParentFolderId: 'y' }
+        const y = { id: 'y', name: 'Y', nodeOnlyParentFolderId: 'x' }
+        expect(shownInside(x, [x, y])).toBeUndefined()
+        expect(folderTree([x, y]).map(({ folder, depth }) => `${folder.id}:${depth}`)).toEqual(['x:0', 'y:0'])
     })
 })

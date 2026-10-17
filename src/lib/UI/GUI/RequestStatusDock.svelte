@@ -12,6 +12,8 @@
     import { changeChar } from 'src/ts/characters'
     import { changeChatTo } from 'src/ts/globalApi.svelte'
     import { language } from 'src/lang'
+    import { DownloadIcon } from '@lucide/svelte'
+    import { importDockPill, restoreImportDock } from 'src/ts/importDock'
     import RequestStatusToast, { REQUEST_TOAST_CLASS } from './RequestStatusToast.svelte'
 
     // Inside the left workspace while split (the right pane has its own dock).
@@ -70,8 +72,16 @@
     const rs = () => language.requestStatus
 </script>
 
-{#if items.length > 0}
+{#if items.length > 0 || $importDockPill.count > 0}
     <div class="request-dock" style:right={`calc(0.5rem + ${inset}px)`} role="group" aria-label={rs()?.dockLabel ?? 'Folded requests'}>
+        {#if $importDockPill.count > 0}
+            <!-- Folded downloads (ImportProgressToaster): a tap shows their cards again. -->
+            <button type="button" class="request-dock-button request-dock-import" class:request-dock-failed={$importDockPill.failed} title={language.importProgressShow} aria-label={`${language.importProgressShow} (${$importDockPill.count})`} onclick={restoreImportDock}>
+                <DownloadIcon size={15} class={$importDockPill.failed ? 'text-red-500' : 'animate-pulse text-primary'} />
+                <span class="request-dock-import-progress">{$importDockPill.progress === null ? '…' : `${$importDockPill.progress}%`}</span>
+                {#if $importDockPill.count > 1}<span class="request-dock-count">{$importDockPill.count}</span>{/if}
+            </button>
+        {/if}
         {#each items as { id, entry } (id)}
             {@const state = dockState(entry)}
             {#if state === 'running'}
@@ -118,6 +128,22 @@
     .request-dock-button:active { transform: scale(0.94); }
     .request-dock-button:focus-visible { outline: 2px solid var(--risu-theme-primary); outline-offset: 2px; }
     .request-dock-done { border-color: var(--risu-theme-success); }
+    .request-dock-import { position: relative; display: flex; flex-direction: column; gap: 0; }
+    .request-dock-import-progress { font-size: 0.6rem; line-height: 1; color: var(--risu-theme-textcolor2); }
+    .request-dock-count {
+        position: absolute;
+        top: -0.3rem;
+        right: -0.3rem;
+        min-width: 1.1rem;
+        height: 1.1rem;
+        padding: 0 0.25rem;
+        border-radius: 999px;
+        background: var(--risu-theme-primary);
+        color: white;
+        font-size: 0.65rem;
+        line-height: 1.1rem;
+        text-align: center;
+    }
     .request-dock-failed { border-color: var(--risu-theme-draculared); }
     .request-dock-spinner {
         width: 1.25rem;

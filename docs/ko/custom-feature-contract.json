@@ -1634,6 +1634,43 @@
         "src/ts/chatClipboard.test.ts",
         "src/ts/gui/logImageFit.test.ts"
       ]
+    },
+    {
+      "id": "DOWNLOAD-DOCK",
+      "title": "다운로드 카드 겹침 없애기 · 접은 다운로드는 요청 접기 줄에 · 허브 다운로드 중단",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/importDock.ts",
+        "src/lib/UI/GUI/ImportProgressToaster.svelte",
+        "src/lib/UI/GUI/RequestStatusDock.svelte",
+        "src/lib/UI/GUI/Toaster.svelte",
+        "src/ts/characterCards.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/UI/GUI/RequestStatusDock.svelte", "contains": "onclick={restoreImportDock}" },
+        { "file": "src/lib/UI/GUI/Toaster.svelte", "contains": "const dockRoom = $derived($dockVisible && position === 'top-right' ? 48 : 0);" },
+        { "file": "src/ts/characterCards.ts", "contains": "const fetched = await fetchRealmCardCancellable(id, report)" }
+      ]
+    },
+    {
+      "id": "MODULE-FOLDER-DEPTH",
+      "title": "모듈 폴더 속 폴더 여러 단계",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/folders.ts",
+        "src/lib/UI/FolderedList.svelte",
+        "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
+        "src/ts/process/linkedModuleFolder.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "maxFolderDepth={5}" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "folderDepth(folder, folders) < maxFolderDepth" },
+        { "file": "src/ts/process/linkedModuleFolder.ts", "contains": "nested.has(folder.id) && !ancestors(folder.id).includes(linkId)" }
+      ],
+      "regressionTests": [
+        "src/ts/folders.test.ts",
+        "src/ts/process/linkedModuleFolder.test.ts"
+      ]
     }
   ]
 }

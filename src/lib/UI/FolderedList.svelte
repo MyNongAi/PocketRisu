@@ -15,7 +15,7 @@
     import { language } from "src/lang";
     import { matchesCatalogText } from "src/ts/gui/catalogSearch";
     import { alertConfirm, alertInput, alertSelect } from "src/ts/alert";
-    import { folderTree, groupByFolder, isFolderCollapsed, shownInside } from "src/ts/folders";
+    import { folderDepth, folderTree, groupByFolder, isFolderCollapsed, shownInside } from "src/ts/folders";
     import { interleaveModuleCatalogGroups } from "src/ts/process/moduleSort";
     import type { PromptPresetFolder } from "src/ts/storage/database.svelte";
     import ShSortableList from "./GUI/ShSortableList.svelte";
@@ -49,6 +49,10 @@
         /** Opt-in: saved IDs are expanded exceptions instead of collapsed ones. */
         defaultCollapsed?: boolean;
         newFoldersFirst?: boolean;
+        /** How many folders deep the user can nest folders (1: folders in
+         *  top-level folders only). The module list goes deeper, as the bot
+         *  list does (the user's request, 2026-10-17). */
+        maxFolderDepth?: number;
         /** Render items without a folder as ordinary root rows instead of a
          *  synthetic "Uncategorized" folder card. The root remains a drop
          *  target so items can still be dragged out of real folders. */
@@ -139,6 +143,7 @@
         folderLeadingActions,
         folderMenuItems,
         rowContextMenu = false,
+        maxFolderDepth = 1,
     }: Props = $props();
 
     let rootEl: HTMLDivElement = $state();
@@ -163,8 +168,9 @@
         indexes: query ? group.indexes.filter(matches) : group.indexes,
     })));
     // A folder may be shown inside another (nodeOnlyParentFolderId, display
-    // only, as on the bot list; one level): it renders under its parent, after
-    // the parent's own items, and never at the top level.
+    // only, as on the bot list; as deep as maxFolderDepth lets the user nest):
+    // it renders under its parent, after the parent's own items, and never at
+    // the top level.
     function parentOf(folder: PromptPresetFolder | undefined): string | undefined {
         return shownInside(folder, folders);
     }
@@ -172,13 +178,28 @@
         const byParent = new Map<string, typeof filteredGroups>();
         for (const group of filteredGroups) {
             const parentId = parentOf(group.folder);
-            if (!parentId || (query && group.indexes.length === 0)) continue;
+            if (!parentId) continue;
             byParent.set(parentId, [...(byParent.get(parentId) ?? []), group]);
         }
         return byParent;
     });
+    // A search keeps a folder while it or a folder inside it (any depth) has a match.
+    function groupHasMatches(group: (typeof filteredGroups)[number], seen = new Set<string>()): boolean {
+        if (group.indexes.length > 0) return true;
+        const id = group.folder?.id;
+        if (!id || seen.has(id)) return false;
+        seen.add(id);
+        return (childGroupsByParent.get(id) ?? []).some((child) => groupHasMatches(child, seen));
+    }
+    /** Items in a folder and in the folders inside it, at any depth. */
+    function groupItemCount(group: (typeof filteredGroups)[number], seen = new Set<string>()): number {
+        const id = group.folder?.id;
+        if (!id || seen.has(id)) return group.indexes.length;
+        seen.add(id);
+        return group.indexes.length + (childGroupsByParent.get(id) ?? []).reduce((count, child) => count + groupItemCount(child, seen), 0);
+    }
     const displayGroups = $derived(filteredGroups.filter((group) => !parentOf(group.folder)
-        && (!query || group.indexes.length > 0 || (!!group.folder && childGroupsByParent.has(group.folder.id)))));
+        && (!query || groupHasMatches(group))));
     const rootIndexes = $derived(displayGroups.find((group) => !group.folder)?.indexes ?? []);
     const promotedRootIndex = $derived(rootIndexes.includes(promotedItemIndex) ? promotedItemIndex : -1);
     const promotedFolderGroup = $derived(displayGroups.find((group) => group.folder?.id === promotedFolderId));
@@ -261,8 +282,10 @@
     async function deleteFolder(folder: PromptPresetFolder) {
         if (!await alertConfirm(language.folderDeleteKeepItems)) return;
         onItemsChange(placementsFromData().map(p => p.folderId === folder.id ? { ...p, folderId: undefined } : p));
-        // The folders shown inside it come out to the top level.
-        onFoldersChange(folders.filter(f => f.id !== folder.id).map(f => f.nodeOnlyParentFolderId === folder.id ? withoutParent(f) : f));
+        // The folders shown inside it take its place (in its parent, or at the top).
+        const parentId = parentOf(folder);
+        onFoldersChange(folders.filter(f => f.id !== folder.id).map(f => f.nodeOnlyParentFolderId !== folder.id ? f
+            : parentId ? { ...f, nodeOnlyParentFolderId: parentId } : withoutParent(f)));
     }
 
     // Up/down move a folder among the folders shown beside it (the top level,
@@ -291,7 +314,7 @@
         return from >= 0 && !!neighbor && (!onFolderFavorite || !!folder.favorite === !!neighbor.favorite);
     }
 
-    // Folders in folders, one level deep (the user's request, 2026-10-09).
+    // Folders in folders (the user's request, 2026-10-09), maxFolderDepth deep.
     // [링크] gathers its folders itself, so it takes none from the user and
     // the ones in it stay there.
     function inLinkFolder(folder: PromptPresetFolder) {
@@ -300,25 +323,47 @@
     }
 
     function canHoldFolders(folder: PromptPresetFolder) {
-        return !folder.nodeOnlyLinkFolder && !parentOf(folder);
+        return !folder.nodeOnlyLinkFolder && folderDepth(folder, folders) < maxFolderDepth;
     }
 
-    function hasChildFolders(folder: PromptPresetFolder) {
-        return folders.some(f => parentOf(f) === folder.id);
+    /** The folders shown inside `folder`, at any depth. */
+    function descendantsOf(folder: PromptPresetFolder): Set<string> {
+        const found = new Set<string>();
+        const stack = [folder.id];
+        while (stack.length > 0) {
+            const id = stack.pop()!;
+            for (const f of folders) {
+                if (!found.has(f.id) && parentOf(f) === id) { found.add(f.id); stack.push(f.id); }
+            }
+        }
+        return found;
     }
 
-    /** Folders `folder` can be moved inside: it holds none itself (one level). */
+    /** How many levels of folders `folder` holds below it (0: none). */
+    function heightOf(folder: PromptPresetFolder): number {
+        const below = descendantsOf(folder);
+        const base = folderDepth(folder, folders);
+        let height = 0;
+        for (const f of folders) if (below.has(f.id)) height = Math.max(height, folderDepth(f, folders) - base);
+        return height;
+    }
+
+    /** Folders `folder` can be moved inside: not itself or its own, and within maxFolderDepth with what it holds. */
     function nestTargets(folder: PromptPresetFolder) {
-        if (folder.nodeOnlyLinkFolder || inLinkFolder(folder) || hasChildFolders(folder)) return [];
+        if (folder.nodeOnlyLinkFolder || inLinkFolder(folder)) return [];
         const parentId = parentOf(folder);
-        return folders.filter(f => f.id !== folder.id && f.id !== parentId && canHoldFolders(f));
+        const below = descendantsOf(folder);
+        const height = heightOf(folder);
+        return folders.filter(f => f.id !== folder.id && f.id !== parentId && !below.has(f.id)
+            && canHoldFolders(f) && folderDepth(f, folders) + 1 + height <= maxFolderDepth);
     }
 
     async function createSubfolder(parent: PromptPresetFolder) {
         const name = (await alertInput(language.folderNameInput))?.trim();
         if (!name) return;
         // After the parent's last folder (its first with newFoldersFirst).
-        const family = folders.map((f, i) => (f.id === parent.id || parentOf(f) === parent.id ? i : -1)).filter(i => i >= 0);
+        const below = descendantsOf(parent);
+        const family = folders.map((f, i) => (f.id === parent.id || below.has(f.id) ? i : -1)).filter(i => i >= 0);
         const at = (newFoldersFirst ? family[0] : family[family.length - 1]) + 1;
         const next = [...folders];
         next.splice(at, 0, { id: uuidv4(), name, nodeOnlyParentFolderId: parent.id });
@@ -335,15 +380,19 @@
         onFoldersChange(folders.map(f => f.id === folder.id ? { ...f, nodeOnlyParentFolderId: parentId } : f));
     }
 
+    /** One level up: into the parent's parent, or to the top. */
     function moveFolderOut(folder: PromptPresetFolder) {
-        onFoldersChange(folders.map(f => f.id === folder.id ? withoutParent(f) : f));
+        const parentId = parentOf(folder);
+        const grandParentId = parentId ? parentOf(folders.find(f => f.id === parentId)) : undefined;
+        onFoldersChange(folders.map(f => f.id !== folder.id ? f
+            : grandParentId ? { ...f, nodeOnlyParentFolderId: grandParentId } : withoutParent(f)));
     }
 
     async function moveItemToFolder(index: number) {
         // Uncategorized first, then the folders (the user's request, 2026-10-05),
         // each followed by the ones shown inside it.
         const tree = folderTree(folders);
-        const options = [language.folderUncategorized, ...tree.map(({ folder, depth }) => depth ? `└ ${folder.name}` : folder.name), language.cancel];
+        const options = [language.folderUncategorized, ...tree.map(({ folder, depth }) => depth ? `${'\u3000'.repeat(depth - 1)}└ ${folder.name}` : folder.name), language.cancel];
         const sel = parseInt(await alertSelect(options));
         if (Number.isNaN(sel) || sel >= options.length - 1) return;
         const folderId = sel === 0 ? undefined : tree[sel - 1].folder.id;
@@ -445,7 +494,7 @@
     {@const folder = group.folder}
     {#if folder}
         {@const isCollapsed = !query && isFolderCollapsed(folder.id, collapsed, defaultCollapsed)}
-        {@const children = nested ? [] : (childGroupsByParent.get(folder.id) ?? [])}
+        {@const children = (childGroupsByParent.get(folder.id) ?? []).filter((child) => !query || groupHasMatches(child))}
         <!-- A folder shown inside another has no data-folder-key: only top-level folders drag. -->
         <div data-folder-key={nested ? undefined : folder.id} data-nested-folder={nested ? folder.id : undefined} class="rounded-md border border-darkborderc bg-darkbg">
             <div class="flex items-center gap-2 px-2 py-2 text-textcolor cursor-pointer select-none"
@@ -458,7 +507,7 @@
                 {@render folderLeadingActions?.(folder, group.indexes)}
                 <span class="truncate grow" style:color={folderTitleColor(folder, group.indexes)}>{folder.name}</span>
                 {@render folderActions?.(folder, group.indexes)}
-                <span class="text-xs text-textcolor2">{group.indexes.length + children.reduce((count, child) => count + child.indexes.length, 0)}</span>
+                <span class="text-xs text-textcolor2">{groupItemCount(group)}</span>
                 {@render folderMenu(folder, group.indexes)}
             </div>
             <div data-folder-container={folder.id} class:hidden={isCollapsed}>
