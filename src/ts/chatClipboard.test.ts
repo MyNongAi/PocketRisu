@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { buildPortableChatFragment, chatClipboardErrorMessage, boardSafeTags, hexColors, replaceFormControls, coverImagePlacement, decodeClipboardCssContent, extractCssUrls, fetchClipboardDataUrl, inlineCssUrls, writeChatClipboard } from './chatClipboard'
+import { buildPortableChatFragment, chatClipboardErrorMessage, boardSafeTags, clipboardImageSize, clipboardSizeLabel, isAnimatedImageDataUrl, shrinkClipboardImage, hexColors, replaceFormControls, coverImagePlacement, decodeClipboardCssContent, extractCssUrls, fetchClipboardDataUrl, inlineCssUrls, writeChatClipboard } from './chatClipboard'
 
 afterEach(() => {
     vi.restoreAllMocks()
@@ -239,5 +239,51 @@ describe('hexColors', () => {
         expect(hexColors('<p style="color: rgb(250, 250, 250);">a</p><i style="background-color:rgba(0, 0, 0, 0.5)">b</i>'))
             .toBe('<p style="color: #fafafa;">a</p><i style="background-color:rgba(0, 0, 0, 0.5)">b</i>')
         expect(hexColors('<p>rgb(1, 2, 3) stays</p>')).toBe('<p>rgb(1, 2, 3) stays</p>')
+    })
+})
+
+describe('clipboard image size (board post limits)', () => {
+    it('keeps an image no larger than twice its shown box, 1600 px on the long side at most', () => {
+        // A 2000×3000 portrait drawn at 80×80: 160 px covers the box at 2×.
+        expect(clipboardImageSize(2000, 3000, 80, 80)).toEqual({ width: 160, height: 240 })
+        // Never enlarged.
+        expect(clipboardImageSize(100, 50, 400, 300)).toEqual({ width: 100, height: 50 })
+        // Box unknown: only the edge cap.
+        expect(clipboardImageSize(4000, 2000)).toEqual({ width: 1600, height: 800 })
+        // A wide box still gets enough height for cover.
+        expect(clipboardImageSize(1000, 1000, 400, 100)).toEqual({ width: 800, height: 800 })
+    })
+
+    it('tells animated PNG and WebP apart from still ones', () => {
+        const b64 = (text: string) => btoa(text)
+        expect(isAnimatedImageDataUrl(`data:image/png;base64,${b64('PNGxxxxIHDRxxxxacTLxxxx')}`)).toBe(true)
+        expect(isAnimatedImageDataUrl(`data:image/png;base64,${b64('PNGxxxxIHDRxxxxIDATxxxx')}`)).toBe(false)
+        expect(isAnimatedImageDataUrl(`data:image/webp;base64,${b64('RIFFxxxxWEBPVP8XxxxxANIMxxxx')}`)).toBe(true)
+        expect(isAnimatedImageDataUrl('data:image/gif;base64,R0lGOD')).toBe(false)
+    })
+
+    it('leaves the image as it is where it cannot be redrawn', async () => {
+        // jsdom has no createImageBitmap.
+        expect(await shrinkClipboardImage('data:image/png;base64,AA==', 80, 80)).toBe('data:image/png;base64,AA==')
+        expect(await shrinkClipboardImage('data:image/gif;base64,R0lGOD', 80, 80)).toBe('data:image/gif;base64,R0lGOD')
+    })
+
+    it('shrinks each image and background to the box it is shown in', async () => {
+        const root = document.createElement('section')
+        root.innerHTML = '<img src="data:image/png;base64,PORTRAIT"><div style="background-image:url(/frame.png)">text</div>'
+        document.body.append(root)
+        vi.spyOn(root.querySelector('img')!, 'getBoundingClientRect').mockReturnValue({ width: 80, height: 80 } as DOMRect)
+        vi.spyOn(root.querySelector('div')!, 'getBoundingClientRect').mockReturnValue({ width: 300, height: 120 } as DOMRect)
+        const shrinkImage = vi.fn(async (dataUrl: string, width: number, height: number) => `data:image/webp;base64,${dataUrl.startsWith('data:image/png;base64,PORTRAIT') ? 'PORTRAIT' : 'FRAME'}-${width}x${height}`)
+        const fetchFn = vi.fn(async () => new Response(new Blob(['frame'], { type: 'image/png' })))
+        const copy = new DOMParser().parseFromString(await buildPortableChatFragment(root, { shrinkImage, fetchFn }), 'text/html')
+        expect(copy.querySelector('img')!.getAttribute('src')).toBe('data:image/webp;base64,PORTRAIT-80x80')
+        expect(copy.querySelector('div div, section div')!.getAttribute('style')).toContain('data:image/webp;base64,FRAME-300x120')
+    })
+
+    it('labels the copy size', () => {
+        expect(clipboardSizeLabel(500)).toBe('1KB')
+        expect(clipboardSizeLabel(300 * 1024)).toBe('300KB')
+        expect(clipboardSizeLabel(12.34 * 1024 * 1024)).toBe('12.3MB')
     })
 })

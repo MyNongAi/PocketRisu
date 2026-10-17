@@ -106,7 +106,9 @@
                     <p class="px-4 py-6 text-sm text-red-400" role="alert">{language.logCapture.failed}: {logCapture.error}</p>
                 {:else}
                     <p class="shrink-0 px-4 pt-3 text-xs" class:text-green-400={logCapture.copy === 'copied'} class:text-textcolor2={logCapture.copy !== 'copied'} aria-live="polite" data-log-capture-status>
-                        {#if logCapture.copy === 'copied'}
+                        {#if logCapture.copy === 'copied' && logCapture.copiedSmaller > 0}
+                            {language.logCapture.copiedSmaller.replace('{}', `${(logCapture.copiedSmaller / 1024 / 1024).toFixed(1)}MB`)}
+                        {:else if logCapture.copy === 'copied'}
                             {language.logCapture.copied}
                         {:else if logCapture.copy === 'pending'}
                             {language.logCapture.copying}

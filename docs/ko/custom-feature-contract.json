@@ -1613,6 +1613,27 @@
       "requiredMarkers": [
         { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "<div class=\"flex flex-col gap-4 bg-dark-900/50 p-3 rounded-md\">" }
       ]
+    },
+    {
+      "id": "CLIPBOARD-BOARD-SIZE",
+      "title": "채팅 복사·로그 이미지 복사를 게시판(아카) 크기에 맞추기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/chatClipboard.ts",
+        "src/ts/gui/logImageFit.ts",
+        "src/ts/gui/logCaptureState.svelte.ts",
+        "src/lib/ChatScreens/Chat.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/chatClipboard.ts", "contains": "export async function shrinkClipboardImage(" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "clone.src = await toShownDataUrl(imageUrl, imageBox?.width ?? 0, imageBox?.height ?? 0)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "shrinkClipboardImage(await fetchClipboardDataUrl(iconImage), 80, 80)" },
+        { "file": "src/ts/gui/logCaptureState.svelte.ts", "contains": "new ClipboardItem({ 'image/png': fitForCopy(image.blob) })" }
+      ],
+      "regressionTests": [
+        "src/ts/chatClipboard.test.ts",
+        "src/ts/gui/logImageFit.test.ts"
+      ]
     }
   ]
 }

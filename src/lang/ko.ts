@@ -3026,6 +3026,7 @@ export const languageKorean = {
     stageImages: "이미지 불러오는 중…",
     stageDraw: "이미지 만드는 중…",
     copied: "클립보드에 복사했어요. 글쓰기 창에 붙여 넣으세요.",
+    copiedSmaller: "게시판에 올라가도록 {}로 줄여서 복사했어요. 원래 크기는 저장으로 받으세요.",
     copying: "클립보드에 복사하는 중…",
     copyManually: "복사 버튼을 누르면 클립보드에 들어가요. 저장해도 돼요.",
     manyImages: "로그가 길어서 메시지 사이에서 {}장으로 나눴어요. 한 장씩 복사하거나 저장하세요.",

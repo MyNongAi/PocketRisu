@@ -34,7 +34,7 @@
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
     import { getChatAssetRenderWindow, normalizeExternalAssetRecentOutputs, shouldResolveChatAssets } from '../../ts/chatAssetWindow';
-    import { boardSafeTags, buildPortableChatFragment, chatClipboardErrorMessage, embedParsedChatAssets, fetchClipboardDataUrl, hexColors, replaceFormControls, writeChatClipboard } from '../../ts/chatClipboard';
+    import { boardSafeTags, buildPortableChatFragment, chatClipboardErrorMessage, clipboardSizeLabel, embedParsedChatAssets, fetchClipboardDataUrl, hexColors, replaceFormControls, shrinkClipboardImage, writeChatClipboard } from '../../ts/chatClipboard';
 
     // Reactive breakpoint: a raw window.innerWidth read here is evaluated once
     // at mount and never follows a resize (#79).
@@ -1013,7 +1013,8 @@
                 try {
                     if (iconPath) {
                         const iconImage = await getFileSrc(iconPath)
-                        if (iconImage) finalIconDataUrl = await fetchClipboardDataUrl(iconImage)
+                        // Drawn at 80 px: the full portrait made the copy megabytes larger.
+                        if (iconImage) finalIconDataUrl = await shrinkClipboardImage(await fetchClipboardDataUrl(iconImage), 80, 80)
                     }
                 } catch (error) {
                     console.error('Icon error:', error)
@@ -1038,8 +1039,11 @@
                 return hexColors(html)
             })()
             await writeChatClipboard(copyText, htmlPromise)
-            notifyInfo(language.copied)
-            setStatusMessage(language.copied, 3000)
+            // How large the copy is: a board refuses a post past its limit
+            // (Arca's "413 request entity too large").
+            const copiedLabel = `${language.copied} (${clipboardSizeLabel(new Blob([await htmlPromise]).size)})`
+            notifyInfo(copiedLabel)
+            setStatusMessage(copiedLabel, 3000)
         } catch (error) {
             setStatusMessage('')
             notifyError(chatClipboardErrorMessage(error))

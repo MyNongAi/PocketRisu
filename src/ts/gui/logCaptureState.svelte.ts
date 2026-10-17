@@ -7,6 +7,7 @@
 import { DBState, selIdState } from '../stores.svelte'
 import { language } from 'src/lang'
 import { logCaptureRange, logImageFileName } from './logCapture'
+import { fitPngToBytes } from './logImageFit'
 import type { LogCaptureStage } from './logCaptureRender'
 
 export type LogCapturePhase = 'idle' | 'picking' | 'rendering' | 'done' | 'error'
@@ -37,6 +38,8 @@ export const logCapture = $state({
     total: 0,
     images: [] as LogCaptureImage[],
     copy: 'none' as LogCaptureCopyState,
+    /** Bytes of the PNG last copied, when it was scaled down to fit a post (logImageFit.ts); else 0. */
+    copiedSmaller: 0,
     error: '',
 })
 
@@ -148,8 +151,9 @@ async function runCapture(range: { from: number; to: number }, chat: ChatIdentit
     let refuse: (reason: unknown) => void = () => {}
     const single = new Promise<Blob>((resolve, reject) => { deliver = resolve; refuse = reject })
     single.catch(() => {})
-    const write = startClipboardWrite(single)
+    const write = startClipboardWrite(single.then((blob) => fitForCopy(blob, run)))
     logCapture.copy = write ? 'pending' : 'none'
+    logCapture.copiedSmaller = 0
     write?.then(
         () => { if (run === runId) logCapture.copy = 'copied' },
         () => { if (run === runId) logCapture.copy = logCapture.images.length > 1 ? 'none' : 'failed' },
@@ -191,10 +195,18 @@ async function runCapture(range: { from: number; to: number }, chat: ChatIdentit
     }
 }
 
+/** The PNG a copy carries: scaled down to fit a post when it is larger (logImageFit.ts). */
+async function fitForCopy(blob: Blob, run = runId): Promise<Blob> {
+    const fitted = await fitPngToBytes(blob)
+    if (run === runId) logCapture.copiedSmaller = fitted === blob ? 0 : fitted.size
+    return fitted
+}
+
 export async function copyLogImage(image: LogCaptureImage): Promise<boolean> {
     try {
         if (typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) throw new Error('no clipboard')
-        await navigator.clipboard.write([new ClipboardItem({ 'image/png': image.blob })])
+        // A promised Blob: the write is registered within the click.
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': fitForCopy(image.blob) })])
         logCapture.copy = 'copied'
         return true
     } catch {

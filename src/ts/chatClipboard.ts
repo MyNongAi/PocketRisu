@@ -67,6 +67,79 @@ export function extractCssUrls(value: string): string[] {
     return urls
 }
 
+// Images go into a copy no larger than they are shown (twice that, for
+// sharp screens; CLIPBOARD_IMAGE_MAX_EDGE on the long side at most) and as
+// WebP. A board keeps the pasted images inline in the post it sends, and
+// full-size originals (a portrait drawn at 80 px, a large background on every
+// box that uses it) made a single reply too large for Arca: "413 request
+// entity too large" (the user's report, 2026-10-17).
+export const CLIPBOARD_IMAGE_MAX_EDGE = 1600
+const CLIPBOARD_IMAGE_DENSITY = 2
+const CLIPBOARD_WEBP_QUALITY = 0.85
+
+/** Pixel size an image of `naturalWidth`×`naturalHeight` goes into a copy at, shown in a box of `boxWidth`×`boxHeight` CSS px (unknown: only the edge cap). */
+export function clipboardImageSize(naturalWidth: number, naturalHeight: number, boxWidth = 0, boxHeight = 0): { width: number; height: number } {
+    let scale = 1
+    // Enough to cover the box at twice its size whatever the fit (cover, contain, fill).
+    if (boxWidth > 0 && boxHeight > 0) scale = Math.min(1, Math.max(boxWidth * CLIPBOARD_IMAGE_DENSITY / naturalWidth, boxHeight * CLIPBOARD_IMAGE_DENSITY / naturalHeight))
+    scale = Math.min(scale, CLIPBOARD_IMAGE_MAX_EDGE / Math.max(naturalWidth, naturalHeight))
+    return { width: Math.max(1, Math.round(naturalWidth * scale)), height: Math.max(1, Math.round(naturalHeight * scale)) }
+}
+
+/** An animated PNG (acTL) or WebP (ANIM) would lose its motion when redrawn. */
+export function isAnimatedImageDataUrl(dataUrl: string): boolean {
+    const match = /^data:image\/(png|webp);base64,/i.exec(dataUrl)
+    if (!match) return false
+    try {
+        // 8192 base64 characters (a multiple of 4) decode on their own.
+        const head = atob(dataUrl.slice(match[0].length, match[0].length + 8192))
+        return match[1].toLowerCase() === 'png' ? head.includes('acTL') : head.includes('ANIM')
+    } catch {
+        return false
+    }
+}
+
+/** A canvas as WebP, or PNG where the browser does not write WebP (it keeps transparency either way). */
+function encodeClipboardCanvas(canvas: HTMLCanvasElement): string {
+    const webp = canvas.toDataURL('image/webp', CLIPBOARD_WEBP_QUALITY)
+    return webp.startsWith('data:image/webp') ? webp : canvas.toDataURL('image/png')
+}
+
+/**
+ * The embedded image `dataUrl` redrawn at clipboardImageSize as WebP, when
+ * that is smaller. GIF, SVG and animated PNG/WebP stay as they are. Without
+ * createImageBitmap (or on any failure) the image is left as it is.
+ */
+export async function shrinkClipboardImage(dataUrl: string, boxWidth = 0, boxHeight = 0): Promise<string> {
+    if (!/^data:image\/(?:png|jpe?g|webp|bmp|avif)[;,]/i.test(dataUrl) || isAnimatedImageDataUrl(dataUrl)) return dataUrl
+    if (typeof createImageBitmap !== 'function') return dataUrl
+    try {
+        const bitmap = await createImageBitmap(await (await fetch(dataUrl)).blob())
+        try {
+            const { width, height } = clipboardImageSize(bitmap.width, bitmap.height, boxWidth, boxHeight)
+            const canvas = document.createElement('canvas')
+            canvas.width = width
+            canvas.height = height
+            const context = canvas.getContext('2d')
+            if (!context) return dataUrl
+            context.imageSmoothingEnabled = true
+            context.imageSmoothingQuality = 'high'
+            context.drawImage(bitmap, 0, 0, width, height)
+            const encoded = encodeClipboardCanvas(canvas)
+            return encoded.length < dataUrl.length ? encoded : dataUrl
+        } finally {
+            bitmap.close()
+        }
+    } catch {
+        return dataUrl
+    }
+}
+
+/** A copy's size for the "copied" notice: KB under 1 MB, else MB with one decimal. */
+export function clipboardSizeLabel(bytes: number): string {
+    return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))}KB` : `${(bytes / 1024 / 1024).toFixed(1)}MB`
+}
+
 function blobToDataUrl(blob: Blob): Promise<string> {
     return new Promise((resolve, reject) => {
         const reader = new FileReader()
@@ -227,7 +300,7 @@ async function rasterizeCoverImage(url: string, width: number, height: number, p
     const [canvas, context] = clipboardCanvas(width, height)
     const placement = coverImagePlacement(image.naturalWidth, image.naturalHeight, width, height, position)
     context.drawImage(image, placement.x, placement.y, placement.width, placement.height)
-    return canvas.toDataURL('image/png')
+    return encodeClipboardCanvas(canvas)
 }
 
 async function rasterizeSvg(svg: SVGSVGElement, width: number, height: number): Promise<string> {
@@ -239,7 +312,7 @@ async function rasterizeSvg(svg: SVGSVGElement, width: number, height: number): 
     const image = await loadClipboardImage(source)
     const [canvas, context] = clipboardCanvas(width, height)
     context.drawImage(image, 0, 0, width, height)
-    return canvas.toDataURL('image/png')
+    return encodeClipboardCanvas(canvas)
 }
 
 /** Decode resolved quoted CSS content only; never interpret it as HTML. */
@@ -347,6 +420,7 @@ export async function buildPortableChatFragment(
         getPseudoStyle?: (element: Element, pseudo: '::before' | '::after') => CSSStyleDeclaration
         rasterizeSvg?: (svg: SVGSVGElement, width: number, height: number) => Promise<string>
         rasterizeCover?: (url: string, width: number, height: number, position: string) => Promise<string>
+        shrinkImage?: (dataUrl: string, boxWidth: number, boxHeight: number) => Promise<string>
     } = {},
 ): Promise<string> {
     const cloneRoot = sourceRoot.cloneNode(true) as HTMLElement
@@ -359,6 +433,19 @@ export async function buildPortableChatFragment(
         if (!pending) {
             pending = fetchClipboardDataUrl(url, fetchFn)
             cache.set(url, pending)
+        }
+        return pending
+    }
+    // One shrunk copy per image and shown size (to 8 px), shared by every
+    // element that draws it at that size.
+    const shrink = options.shrinkImage ?? shrinkClipboardImage
+    const shrunk = new Map<string, Promise<string>>()
+    const toShownDataUrl = (url: string, width: number, height: number) => {
+        const key = `${url}\u0000${Math.ceil(width / 8)}x${Math.ceil(height / 8)}`
+        let pending = shrunk.get(key)
+        if (!pending) {
+            pending = toDataUrl(url).then((embedded) => shrink(embedded, width, height))
+            shrunk.set(key, pending)
         }
         return pending
     }
@@ -387,7 +474,8 @@ export async function buildPortableChatFragment(
 
         const background = computed.backgroundImage
         if (background && background !== 'none') {
-            assetTasks.push(async () => { clone.style.backgroundImage = await inlineCssUrls(background, toDataUrl) })
+            const box = source.getBoundingClientRect()
+            assetTasks.push(async () => { clone.style.backgroundImage = await inlineCssUrls(background, (url) => toShownDataUrl(url, box.width, box.height)) })
         }
 
         let hasPseudo = false
@@ -403,9 +491,9 @@ export async function buildPortableChatFragment(
                     const pseudoBackground = style.backgroundImage
                     const pseudoSource = decoration.getAttribute('src')
                     assetTasks.push(async () => {
-                        if (pseudoBackground && pseudoBackground !== 'none') decoration.style.backgroundImage = await inlineCssUrls(pseudoBackground, toDataUrl)
+                        if (pseudoBackground && pseudoBackground !== 'none') decoration.style.backgroundImage = await inlineCssUrls(pseudoBackground, (url) => toShownDataUrl(url, 0, 0))
                         if (pseudoSource && decoration instanceof HTMLImageElement) {
-                            try { decoration.src = await toDataUrl(pseudoSource) } catch { /* keep link */ }
+                            try { decoration.src = await toShownDataUrl(pseudoSource, 0, 0) } catch { /* keep link */ }
                         }
                     })
                 } catch { /* DOM adapters or older engines may not expose pseudo styles. */ }
@@ -434,7 +522,9 @@ export async function buildPortableChatFragment(
                             clone.style.setProperty('height', 'auto', 'important')
                             clone.style.setProperty('width', '100%', 'important')
                             clone.style.setProperty('object-fit', 'fill', 'important')
-                        } catch { /* keep the original embedded image */ }
+                        } catch { clone.src = await toShownDataUrl(imageUrl, imageBox.width, imageBox.height) }
+                    } else {
+                        clone.src = await toShownDataUrl(imageUrl, imageBox?.width ?? 0, imageBox?.height ?? 0)
                     }
                 } catch { clone.src = imageUrl }
                 clone.removeAttribute('srcset')
@@ -547,16 +637,26 @@ export async function embedParsedChatAssets(
         return pending
     }
 
+    // Not laid out: only the edge cap applies (see shrinkClipboardImage).
+    const shrunk = new Map<string, Promise<string>>()
+    const toSmallDataUrl = (url: string) => {
+        let pending = shrunk.get(url)
+        if (!pending) {
+            pending = toDataUrl(url).then((embedded) => shrinkClipboardImage(embedded))
+            shrunk.set(url, pending)
+        }
+        return pending
+    }
     for (const image of Array.from(root.querySelectorAll('img'))) {
         const url = image.getAttribute('src') ?? ''
         if (!url) continue
         try {
-            image.src = await toDataUrl(url)
+            image.src = await toSmallDataUrl(url)
             image.removeAttribute('srcset')
         } catch { /* preserve source URL */ }
     }
     for (const element of Array.from(root.querySelectorAll<HTMLElement>('[style*="background"]'))) {
         if (!element.style.backgroundImage) continue
-        element.style.backgroundImage = await inlineCssUrls(element.style.backgroundImage, toDataUrl)
+        element.style.backgroundImage = await inlineCssUrls(element.style.backgroundImage, toSmallDataUrl)
     }
 }

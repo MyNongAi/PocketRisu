@@ -2800,6 +2800,7 @@ export const languageEnglish = {
         stageImages: "Loading images…",
         stageDraw: "Making the image…",
         copied: "Copied to the clipboard. Paste it into your post.",
+        copiedSmaller: "Copied scaled down to {} so a board takes it. Save it for the full size.",
         copying: "Copying to the clipboard…",
         copyManually: "Press Copy to put the image on the clipboard, or save it.",
         manyImages: "The log is long, so it was cut into {} images between messages. Copy or save each one.",
