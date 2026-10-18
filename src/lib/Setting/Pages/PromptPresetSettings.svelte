@@ -5,7 +5,7 @@
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
     import SettingRenderer from "../SettingRenderer.svelte";
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
-    import { ArrowLeftIcon, GitCompare, HardDriveUploadIcon, InfoIcon, PlusIcon } from "@lucide/svelte";
+    import { ArrowLeftIcon, CloudDownloadIcon, GitCompare, HardDriveUploadIcon, InfoIcon, PlusIcon } from "@lucide/svelte";
     import PromptDiffModal from "src/lib/Others/PromptDiffModal.svelte";
     import { tooltip } from "src/ts/gui/tooltip";
     import { language } from "src/lang";
@@ -72,6 +72,17 @@
             changeToPreset(DBState.db.botPresets.length - 1)
             notifySuccess(language.presetImported)
         }
+        void requestImmediateSave()
+    }
+
+    // A preset from a Proton Drive share link (protonImport.ts), selected
+    // once it is in, as a file import is.
+    async function importPresetFromProton() {
+        saveCurrentPreset()
+        const before = DBState.db.botPresets.length
+        const { importPresetsFromProtonLink } = await import('src/ts/protonImport')
+        await importPresetsFromProtonLink()
+        if (DBState.db.botPresets.length > before) changeToPreset(DBState.db.botPresets.length - 1)
         void requestImmediateSave()
     }
 
@@ -160,6 +171,7 @@
         {#snippet actions()}
             <ShButton size="sm" onclick={createPreset}><PlusIcon />{language.presetNew}</ShButton>
             <ShButton size="sm" variant="outline" onclick={importPresetFile}><HardDriveUploadIcon />{language.presetImport}</ShButton>
+            <ShButton size="sm" variant="outline" onclick={importPresetFromProton}><CloudDownloadIcon />{language.importFromProton}</ShButton>
         {/snippet}
         {#snippet itemContent(index)}
             {@const preset = DBState.db.botPresets[index]}

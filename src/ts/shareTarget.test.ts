@@ -29,6 +29,14 @@ describe('PWA share target import routing', () => {
         expect(classifySharedImport('model.risup', '', 'module')).toBe('preset')
     })
 
+    test('the prompt preset page reads a .json or .preset as a preset', () => {
+        expect(classifySharedImport('my-preset.json', 'application/json', 'preset')).toBe('preset')
+        expect(classifySharedImport('old.preset', '', 'preset')).toBe('preset')
+        expect(classifySharedImport('model.risupreset', '', 'preset')).toBe('preset')
+        // Elsewhere a .json stays a character card.
+        expect(classifySharedImport('my-preset.json', 'application/json', 'character')).toBe('character')
+    })
+
     test('unrelated shared files are rejected', () => {
         expect(classifySharedImport('archive.zip', 'application/zip')).toBeNull()
         expect(classifySharedImport('notes.txt', 'text/plain')).toBeNull()

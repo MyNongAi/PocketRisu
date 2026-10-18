@@ -1672,6 +1672,24 @@
         "src/ts/folders.test.ts",
         "src/ts/process/linkedModuleFolder.test.ts"
       ]
+    },
+    {
+      "id": "PRESET-PROTON-IMPORT",
+      "title": "프롬프트 프리셋 프로톤 링크 불러오기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/protonImport.ts",
+        "src/ts/shareTargetRouting.ts",
+        "src/lib/Setting/Pages/PromptPresetSettings.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/protonImport.ts", "contains": "if (isNodeServer && await importFromProtonLink(url, '', 'preset')) return" },
+        { "file": "src/ts/shareTargetRouting.ts", "contains": "if (origin === 'preset' && (lowerName.endsWith('.json') || lowerName.endsWith('.preset'))) return 'preset'" },
+        { "file": "src/lib/Setting/Pages/PromptPresetSettings.svelte", "contains": "onclick={importPresetFromProton}" }
+      ],
+      "regressionTests": [
+        "src/ts/shareTarget.test.ts"
+      ]
     }
   ]
 }

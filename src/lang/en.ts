@@ -1187,6 +1187,7 @@ export const languageEnglish = {
     realmCompanionModulePaired: (n: number) => `Downloaded ${n} companion module(s) from the Proton link in the Realm description and paired them with this bot`,
     realmCompanionModuleFailed: "Could not download the Realm companion module",
     protonDriveUrlPrompt: "Paste a Proton Drive share link or a Realm address",
+    protonPresetUrlPrompt: "Paste a Proton Drive share link (.risup, .risupreset or .json presets; folders too)",
     protonImporting: "Importing...",
     characterImportedAtHint: "When this device imported the card",
     stealthPresent: "Has NAI stealth metadata — can be imported on novelai.net",

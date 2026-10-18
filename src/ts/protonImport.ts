@@ -15,6 +15,7 @@ import { importModuleFile, type RisuModule } from './process/modules'
 import { getDatabase, importPreset } from './storage/database.svelte'
 import { snapshotImportedIds, stampProtonSource, type ProtonSourceRecord } from './protonSource'
 import { trackCharacterForSave } from './globalApi.svelte'
+import { isNodeServer } from './platform'
 
 // Downloads of a multi-file pick that run at once, and the bytes downloaded
 // files may hold before their turn to import (the laptop server keeps a
@@ -78,6 +79,21 @@ async function importByKindOnly(
         default:
             return null
     }
+}
+
+/**
+ * The prompt preset page's Proton button (the user's request, 2026-10-18),
+ * like the module page's: a share link to a preset (.risup, .risupreset or a
+ * preset .json), or a folder of them, comes in without a manual download.
+ * A link this server cannot read opens in a tab and the file picker follows,
+ * as on the module page.
+ */
+export async function importPresetsFromProtonLink(): Promise<void> {
+    const url = (await alertInput(language.protonPresetUrlPrompt))?.trim()
+    if (!url) return
+    if (isNodeServer && await importFromProtonLink(url, '', 'preset')) return
+    if (url.includes('drive.proton.me/urls/')) window.open(url, '_blank')
+    await importPreset()
 }
 
 /** Prompts before giving up on a password-protected link. */
