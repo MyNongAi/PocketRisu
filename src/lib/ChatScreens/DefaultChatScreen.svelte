@@ -13,7 +13,8 @@
     import ShDropdownMenuContent from 'src/lib/UI/GUI/ShDropdownMenuContent.svelte';
     import ShDropdownMenuItem from 'src/lib/UI/GUI/ShDropdownMenuItem.svelte';
     import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, chatDeselected, chatHydrationOverlayStore, chatPanelStore } from "../../ts/stores.svelte";
-    import { tick, untrack } from 'svelte';
+    import { onMount, tick, untrack } from 'svelte';
+    import { SCROLL_CHAT_TO_END_EVENT } from 'src/ts/status/requestActions';
     import Chat from "./Chat.svelte";
     import { getAdditionalChatLoadPages, getInitialChatLoadPages } from 'src/ts/chatLoadPages';
     import { type Chat as ChatData, type Message, loadTogglesFromChat } from "../../ts/storage/database.svelte";
@@ -295,6 +296,13 @@ import { isMobile } from 'src/ts/platform'
         if (messages.length === 0) return
         scrollWithinContainer(messages[0].el, container, { block: 'start', behavior: 'smooth' })
     }
+
+    // The request card's ">" on this chat (requestActions.ts) brings its end into view.
+    onMount(() => {
+        const toEnd = () => scrollToLoadedBottom()
+        window.addEventListener(SCROLL_CHAT_TO_END_EVENT, toEnd)
+        return () => window.removeEventListener(SCROLL_CHAT_TO_END_EVENT, toEnd)
+    })
 
     // Literal bottom of the scroll: the latest message's end and the composer.
     function scrollToLoadedBottom() {
