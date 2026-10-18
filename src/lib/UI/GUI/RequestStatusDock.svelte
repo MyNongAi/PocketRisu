@@ -9,8 +9,7 @@
     import { dockState, minimizedRequests, requestToastDismissed, requestToastShown, unminimizeRequest } from 'src/ts/status/requestStatusDock'
     import { DBState, MobileGUI, selIdState } from 'src/ts/stores.svelte'
     import { splitChatOpen, splitChatWidth, splitRightInset } from 'src/ts/chatSplitPane'
-    import { changeChar } from 'src/ts/characters'
-    import { changeChatTo } from 'src/ts/globalApi.svelte'
+    import { openChatById } from 'src/ts/status/requestActions'
     import { language } from 'src/lang'
     import { DownloadIcon } from '@lucide/svelte'
     import { importDockPill, restoreImportDock } from 'src/ts/importDock'
@@ -56,19 +55,7 @@
 
     function openChat(id: string, chatId: string | undefined): void {
         close(id)
-        if (!chatId) return
-        const characters = DBState.db.characters ?? []
-        const characterIndex = characters.findIndex((character) => character?.chats?.some((chat) => chat?.id === chatId))
-        if (characterIndex < 0) return
-        if (characterIndex === selIdState.selId) {
-            changeChatTo(chatId)
-            return
-        }
-        // Open the character on that chat directly.
-        const character = characters[characterIndex]
-        const chatIndex = character.chats.findIndex((chat) => chat?.id === chatId)
-        if (chatIndex >= 0) character.chatPage = chatIndex
-        changeChar(characterIndex)
+        openChatById(chatId)
     }
 
     // Read when drawn: the dock mounts before the saved language is applied.

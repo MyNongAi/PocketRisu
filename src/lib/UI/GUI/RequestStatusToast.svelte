@@ -18,7 +18,10 @@
     import { toast } from 'svelte-sonner'
     import { requestStatuses, isTerminalPhase, type RequestPhase, type RequestKind } from 'src/ts/status/requestStatus'
     import { language } from 'src/lang'
-    import { MinusIcon, RotateCwIcon, XIcon } from '@lucide/svelte'
+    import { ArrowRightIcon, MinusIcon, RotateCwIcon, XIcon } from '@lucide/svelte'
+    import { DBState, selIdState } from 'src/ts/stores.svelte'
+    import { openChatById } from 'src/ts/status/requestActions'
+    import { stopRequestReply } from 'src/ts/status/requestStop'
     import { dismissRequestToast, minimizeRequest, unminimizeRequest } from 'src/ts/status/requestStatusDock'
 
     let { id }: { id: string } = $props()
@@ -107,11 +110,23 @@
         dismissRequestToast(id)
     }
 
-    // "×" under it closes the card for good, with no round button left; the
-    // request itself goes on (the user's request, 2026-10-18).
+    // "×" under it stops the reply, as the chat's stop button does, and
+    // closes the card with no round button left (the user's request,
+    // 2026-10-18). A finished request, or one of no chat, just closes.
     function close(): void {
+        if (entry && !isTerminalPhase(entry.phase)) stopRequestReply(id, entry.chatId)
         unminimizeRequest(id)
         dismissRequestToast(id)
+    }
+
+    // The arrow opens the chat the reply is written in (hidden on that chat).
+    const onItsChat = $derived.by(() => {
+        const character = DBState.db.characters?.[selIdState.selId]
+        return !!entry?.chatId && character?.chats?.[character.chatPage]?.id === entry.chatId
+    })
+    const closeLabel = $derived(entry && !isTerminalPhase(entry.phase) && entry.chatId ? (rs?.stopAndClose ?? 'Stop and close') : (rs?.close ?? 'Close'))
+    function goToChat(): void {
+        openChatById(entry?.chatId)
     }
 </script>
 
@@ -160,7 +175,10 @@
         </div>
         <div class="rs-side">
             <button class="rs-close" type="button" aria-label={rs?.minimize ?? 'Fold'} title={rs?.minimize ?? 'Fold'} onclick={minimize}><MinusIcon size={14} /></button>
-            <button class="rs-close" type="button" aria-label={rs?.close ?? 'Close'} title={rs?.close ?? 'Close'} onclick={close}><XIcon size={14} /></button>
+            <button class="rs-close" type="button" aria-label={closeLabel} title={closeLabel} onclick={close}><XIcon size={14} /></button>
+            {#if entry.chatId && !onItsChat}
+                <button class="rs-close" type="button" aria-label={rs?.openChat ?? 'Open the chat'} title={rs?.openChat ?? 'Open the chat'} onclick={goToChat}><ArrowRightIcon size={14} /></button>
+            {/if}
         </div>
     </div>
 {/if}

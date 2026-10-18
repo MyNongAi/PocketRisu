@@ -2954,7 +2954,9 @@ export const languageKorean = {
   showRequestStatus: "요청 상태 표시",
   requestStatus: {
     minimize: "접기",
-    close: "닫기 (응답은 계속)",
+    close: "닫기",
+    stopAndClose: "응답 중단하고 닫기",
+    openChat: "이 채팅으로 이동",
     dockLabel: "접어 둔 요청",
     dockExpand: "요청 상태 펼치기",
     dockOpenChat: "답변 완료: 그 채팅으로 이동",

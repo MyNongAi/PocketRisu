@@ -2727,7 +2727,9 @@ export const languageEnglish = {
     showRequestStatus: "Show request status",
     requestStatus: {
         minimize: "Fold",
-        close: "Close (the reply goes on)",
+        close: "Close",
+        stopAndClose: "Stop the reply and close",
+        openChat: "Open this chat",
         dockLabel: "Folded requests",
         dockExpand: "Show the request",
         dockOpenChat: "Reply ready: open the chat",
