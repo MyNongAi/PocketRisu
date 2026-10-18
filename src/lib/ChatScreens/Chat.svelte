@@ -30,6 +30,7 @@
     import { inputVersionIndex, isRequestInput, recordInputEdit, stepInputVersion } from "src/ts/inputVersions"
     import { isLogCapturePickingHere, isLogCaptureStart, logCaptureMarkFor, markLogCapture } from "src/ts/gui/logCaptureState.svelte"
     import { keepInnerScroll } from "src/ts/gui/innerScrollKeeper"
+    import { closeTogglePanels, looksLikeCloseControl } from "src/ts/gui/closeTogglePanels"
     import ChatBody from './ChatBody.svelte'
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
@@ -586,6 +587,12 @@
         const triggerName = origin.getAttribute('risu-trigger')
         const triggerId = origin.getAttribute('risu-id')
         const btnEvent = origin.getAttribute('risu-btn')
+
+        // A ✕ that runs a trigger closes the panel a ticked box shows, as a
+        // re-created message did before bodies changed in place (closeTogglePanels.ts).
+        if (looksLikeCloseControl(origin) && event.currentTarget instanceof Element) {
+            closeTogglePanels(origin, event.currentTarget)
+        }
 
         const triggerResult =
             triggerName ?

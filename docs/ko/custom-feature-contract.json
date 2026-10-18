@@ -1721,6 +1721,21 @@
       "regressionTests": [
         "src/ts/status/requestStatusDock.test.ts"
       ]
+    },
+    {
+      "id": "TOGGLE-PANEL-CLOSE",
+      "title": "트리거 ✕로 닫는 체크박스 패널이 닫히게",
+      "criticality": "compatibility",
+      "ownerFiles": [
+        "src/ts/gui/closeTogglePanels.ts",
+        "src/lib/ChatScreens/Chat.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (looksLikeCloseControl(origin) && event.currentTarget instanceof Element) {" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/closeTogglePanels.test.ts"
+      ]
     }
   ]
 }
