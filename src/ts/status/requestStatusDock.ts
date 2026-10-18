@@ -5,7 +5,8 @@
 // state, so a tap never means both "open the toast" and "go to the chat".
 
 import { get, writable } from 'svelte/store'
-import { isTerminalPhase, type RequestStatusEntry } from './requestStatus'
+import { toast } from 'svelte-sonner'
+import { isTerminalPhase, requestStatuses, type RequestStatusEntry } from './requestStatus'
 
 /** Ids (generation ids) of the folded toasts, in folding order. */
 export const minimizedRequests = writable<string[]>([])
@@ -16,6 +17,30 @@ export function minimizeRequest(id: string): void {
 
 export function unminimizeRequest(id: string): void {
     minimizedRequests.update((ids) => (ids.includes(id) ? ids.filter((other) => other !== id) : ids))
+}
+
+// A swipe folds a request card like its "−" (the user's request, 2026-10-18:
+// swiped away, a running request's card was gone for good). sonner reports
+// every dismissal the same way, so the app's own (the "−", a finished card
+// leaving) are marked here first and are not taken for swipes.
+const quietDismissals = new Set<string>()
+
+/** Close a request card from the app (not a swipe). */
+export function dismissRequestToast(id: string): void {
+    quietDismissals.add(id)
+    toast.dismiss(`req:${id}`)
+}
+
+/** A request card is (re)shown: no stale mark from an earlier one. */
+export function requestToastShown(id: string): void {
+    quietDismissals.delete(id)
+}
+
+/** sonner's onDismiss for a request card: a swipe on a running request folds it. */
+export function requestToastDismissed(id: string): void {
+    if (quietDismissals.delete(id)) return
+    const entry = get(requestStatuses).get(id)
+    if (entry && !isTerminalPhase(entry.phase)) minimizeRequest(id)
 }
 
 export function isMinimizedRequest(id: string): boolean {

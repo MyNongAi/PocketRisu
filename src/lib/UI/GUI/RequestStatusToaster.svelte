@@ -15,7 +15,7 @@
     import { toast } from 'svelte-sonner'
     import { requestStatuses, isTerminalPhase, clearStatus } from 'src/ts/status/requestStatus'
     import RequestStatusToast, { REQUEST_TOAST_CLASS } from './RequestStatusToast.svelte'
-    import { keepsDoneButton, minimizedRequests, unminimizeRequest } from 'src/ts/status/requestStatusDock'
+    import { dismissRequestToast, keepsDoneButton, minimizedRequests, requestToastDismissed, requestToastShown, unminimizeRequest } from 'src/ts/status/requestStatusDock'
     import { DBState, selIdState } from 'src/ts/stores.svelte'
 
     function currentChatId(): string | null {
@@ -40,7 +40,7 @@
         const t = setTimeout(() => {
             dismissTimers.delete(id)
             shown.delete(id)
-            toast.dismiss(toastId(id))
+            dismissRequestToast(id)
             unminimizeRequest(id)
             // Drop the store entry too so the map doesn't grow unbounded.
             clearStatus(id)
@@ -48,20 +48,21 @@
         dismissTimers.set(id, t)
     }
 
-    // Swipe-to-dismiss policy: sonner toasts are dismissible by default, so the
-    // user can swipe/click a status toast away. We do NOT re-show it — `shown`
-    // keeps the id, so subsequent store updates for the same request won't
-    // re-issue the toast (it stays closed until the request ends and its store
-    // entry is cleared). "Close = closed for good."
+    // A swipe folds a running request's card into the dock, like its "−"
+    // (requestStatusDock.ts, the user's request 2026-10-18); a finished one
+    // just closes. `shown` keeps the id either way, so later store updates
+    // for the same request do not re-issue the card; the dock's button does.
     const unsub = requestStatuses.subscribe((map) => {
         for (const [id, entry] of map) {
             if (!shown.has(id)) {
                 shown.add(id)
+                requestToastShown(id)
                 toast.custom(RequestStatusToast, {
                     id: toastId(id),
                     class: REQUEST_TOAST_CLASS,
                     duration: Number.POSITIVE_INFINITY,
                     componentProps: { id },
+                    onDismiss: () => requestToastDismissed(id),
                 })
             }
             if (isTerminalPhase(entry.phase)) {
@@ -82,7 +83,7 @@
         for (const id of [...shown]) {
             if (!map.has(id) && !dismissTimers.has(id)) {
                 shown.delete(id)
-                toast.dismiss(toastId(id))
+                dismissRequestToast(id)
             }
         }
     })

@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { get } from 'svelte/store'
-import { dockState, isMinimizedRequest, keepsDoneButton, minimizedRequests, minimizeRequest, unminimizeRequest } from './requestStatusDock'
+import { dismissRequestToast, dockState, isMinimizedRequest, keepsDoneButton, minimizedRequests, minimizeRequest, requestToastDismissed, requestToastShown, unminimizeRequest } from './requestStatusDock'
+import { requestStatuses } from './requestStatus'
 
-afterEach(() => minimizedRequests.set([]))
+afterEach(() => {
+    minimizedRequests.set([])
+    requestStatuses.set(new Map())
+})
 
 describe('requestStatusDock', () => {
     it('folds and unfolds a request once, in order', () => {
@@ -29,5 +33,25 @@ describe('requestStatusDock', () => {
         expect(keepsDoneButton({ phase: 'done', kind: 'translate', chatId: 'c1' }, 'c2')).toBe(false)
         expect(keepsDoneButton({ phase: 'done', kind: 'main', chatId: undefined }, 'c2')).toBe(false)
         expect(keepsDoneButton({ phase: 'failed', kind: 'main', chatId: 'c1' }, 'c2')).toBe(false)
+    })
+
+    it('folds a running request when its card is swiped, not when the app closes it', () => {
+        requestStatuses.set(new Map([
+            ['run', { phase: 'streaming' } as any],
+            ['done', { phase: 'done' } as any],
+        ]))
+        requestToastShown('run')
+        requestToastDismissed('run')
+        expect(isMinimizedRequest('run')).toBe(true)
+        unminimizeRequest('run')
+
+        // The app's own dismissal (the "−", a finished card leaving) is not a swipe.
+        dismissRequestToast('run')
+        requestToastDismissed('run')
+        expect(isMinimizedRequest('run')).toBe(false)
+
+        // A finished request's card just closes.
+        requestToastDismissed('done')
+        expect(isMinimizedRequest('done')).toBe(false)
     })
 })

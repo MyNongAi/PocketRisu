@@ -14,19 +14,20 @@ afterEach(async () => {
     vi.useRealTimers()
 })
 
-function show(entry: Partial<ImportTaskEntry>, onMinimize?: () => void) {
+function show(entry: Partial<ImportTaskEntry>, onMinimize?: () => void, onClose?: () => void) {
     importTasks.set(new Map([['task', {
         id: 'task', fileName: 'huge.charx', kind: 'import', label: 'saving assets', progress: 40, phase: 'running',
         ...entry,
     } as ImportTaskEntry]]))
     const target = document.createElement('div')
     document.body.append(target)
-    mounted.push(mount(ImportProgressToast, { target, props: { id: 'task', onMinimize } }))
+    mounted.push(mount(ImportProgressToast, { target, props: { id: 'task', onMinimize, onClose } }))
     flushSync()
     return target
 }
 
-// The header's x: it stops the download (the "-" beside it only folds the card).
+// The x under the "-": it stops a download that can roll back, takes a queued
+// one off the queue, and otherwise closes the card (the "-" only folds it).
 const cancelButton = (root: HTMLElement) => root.querySelector('button.cancel') as HTMLButtonElement | null
 const cancelLabel = (root: HTMLElement) => cancelButton(root)?.getAttribute('aria-label')
 
@@ -40,12 +41,13 @@ describe('import progress card', () => {
         flushSync()
         expect(cancel).not.toHaveBeenCalled()
         expect(cancelLabel(root)).toBe(language.importProgress.cancelConfirm)
-        expect(cancelButton(root)?.textContent?.trim()).toBe(language.importProgress.cancelConfirm)
+        expect(root.querySelector('.label')?.textContent?.trim()).toBe(language.importProgress.cancelConfirm)
 
         cancelButton(root)!.click()
         flushSync()
         expect(cancel).toHaveBeenCalledTimes(1)
-        expect(cancelButton(root)).toBeNull()
+        // Stopping: the x now only closes the card.
+        expect(cancelLabel(root)).toBe(language.importProgress.close)
         expect(root.textContent).toContain(language.importProgress.cancelling)
     })
 
@@ -63,8 +65,20 @@ describe('import progress card', () => {
         expect(cancel).not.toHaveBeenCalled()
     })
 
-    it('has no cancel button for imports that cannot be cancelled', () => {
-        expect(cancelButton(show({}))).toBeNull()
+    it('closes the card, without stopping, when the import cannot be cancelled', () => {
+        const onClose = vi.fn()
+        const root = show({}, undefined, onClose)
+        expect(cancelLabel(root)).toBe(language.importProgress.close)
+        cancelButton(root)!.click()
+        expect(onClose).toHaveBeenCalledTimes(1)
+    })
+
+    it('takes a queued import off the queue with one tap', () => {
+        const root = show({ phase: 'queued', label: language.importProgress.queued })
+        expect(cancelLabel(root)).toBe(language.importProgress.drop)
+        cancelButton(root)!.click()
+        flushSync()
+        expect(root.textContent).toContain(language.importProgress.dropped)
     })
 
     it('folds the card with "-", without cancelling', () => {
@@ -88,6 +102,6 @@ describe('import progress card', () => {
         expect(root.querySelector('.import-card')?.classList.contains('cancelled')).toBe(true)
         expect(root.textContent).toContain(language.importProgress.cancelledRolledBack)
         expect(root.querySelector('.detail')?.textContent).toBe('Deleted 12 assets')
-        expect(cancelButton(root)).toBeNull()
+        expect(cancelLabel(root)).toBe(language.importProgress.close)
     })
 })

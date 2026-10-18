@@ -5,7 +5,8 @@
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
     import SettingRenderer from "../SettingRenderer.svelte";
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
-    import { ArrowLeftIcon, CloudDownloadIcon, GitCompare, HardDriveUploadIcon, InfoIcon, PlusIcon } from "@lucide/svelte";
+    import { ArrowLeftIcon, CloudDownloadIcon, GitCompare, Globe, HardDriveUploadIcon, InfoIcon, PlusIcon } from "@lucide/svelte";
+    import { onDestroy } from "svelte";
     import PromptDiffModal from "src/lib/Others/PromptDiffModal.svelte";
     import { tooltip } from "src/ts/gui/tooltip";
     import { language } from "src/lang";
@@ -32,14 +33,56 @@
 
     const folders = $derived(DBState.db.promptPresetFolders ?? [])
 
+    // A row opens the preset's editor; the globe on its right makes it the
+    // one in use (the user's request, 2026-10-18; a row click used to switch
+    // presets). The editor edits the preset in use (the setting schema reads
+    // the DB's top-level fields), so a preset opened for editing is in use
+    // only while its editor is open, and the one in use before comes back.
+    // The preset in use when the editor opened, by id: the editor's own
+    // duplicate/import/delete move what it edits and shift indexes.
+    let returnToPresetId = $state<string | null>(null)
+
+    function rememberUsedPreset() {
+        if (returnToPresetId !== null) return
+        const used = DBState.db.botPresets[DBState.db.botPresetsId]
+        if (!used) return
+        used.id ??= uuidv4()
+        returnToPresetId = used.id
+    }
+    // A settings-search link opens the editor directly: remember from the start.
+    // svelte-ignore state_referenced_locally
+    if (view === 'edit') rememberUsedPreset()
+
     function openEditor(index: number) {
-        changeToPreset(index)
+        saveCurrentPreset()
+        rememberUsedPreset()
+        changeToPreset(index, false)
         view = 'edit'
     }
 
-    function backToList() {
+    /** Leave the editor: the edits are kept, and the preset in use before is back. */
+    function restoreUsedPreset() {
         saveCurrentPreset()
+        const id = returnToPresetId
+        returnToPresetId = null
+        const back = id ? DBState.db.botPresets.findIndex((preset) => preset.id === id) : -1
+        if (back >= 0 && back !== DBState.db.botPresetsId) changeToPreset(back, false)
+    }
+
+    function backToList() {
+        restoreUsedPreset()
         view = 'list'
+    }
+
+    // Closing settings from the editor leaves the same way.
+    onDestroy(() => {
+        if (view === 'edit') restoreUsedPreset()
+    })
+
+    function usePreset(index: number) {
+        saveCurrentPreset()
+        changeToPreset(index, false)
+        void requestImmediateSave()
     }
 
     /** Rebuilds `db.botPresets` from the list's reported order/folder membership. */
@@ -68,31 +111,24 @@
         saveCurrentPreset()
         const before = DBState.db.botPresets.length
         await importPreset()
-        if (DBState.db.botPresets.length > before) {
-            changeToPreset(DBState.db.botPresets.length - 1)
-            notifySuccess(language.presetImported)
-        }
+        // Added to the list; only the globe puts a preset in use.
+        if (DBState.db.botPresets.length > before) notifySuccess(language.presetImported)
         void requestImmediateSave()
     }
 
-    // A preset from a Proton Drive share link (protonImport.ts), selected
-    // once it is in, as a file import is.
+    // A preset from a Proton Drive share link (protonImport.ts), added to
+    // the list like a file import.
     async function importPresetFromProton() {
         saveCurrentPreset()
-        const before = DBState.db.botPresets.length
         const { importPresetsFromProtonLink } = await import('src/ts/protonImport')
         await importPresetsFromProtonLink()
-        if (DBState.db.botPresets.length > before) changeToPreset(DBState.db.botPresets.length - 1)
         void requestImmediateSave()
     }
 
     function duplicatePreset(index: number) {
         const before = DBState.db.botPresets.length
         copyPreset(index)
-        if (DBState.db.botPresets.length > before) {
-            changeToPreset(DBState.db.botPresets.length - 1)
-            notifySuccess(language.presetDuplicated)
-        }
+        if (DBState.db.botPresets.length > before) notifySuccess(language.presetDuplicated)
         void requestImmediateSave()
     }
 
@@ -181,6 +217,12 @@
                 <div class="h-8 w-8 shrink-0 rounded-md bg-textcolor2/30"></div>
             {/if}
             <span class="min-w-0 grow truncate">{preset.name}</span>
+            <button class="no-sort shrink-0 p-1 cursor-pointer {DBState.db.botPresetsId === index ? 'text-blue-500' : 'text-textcolor2 hover:text-primary'}"
+                aria-label={DBState.db.botPresetsId === index ? language.presetInUse : language.presetUse}
+                use:tooltip={DBState.db.botPresetsId === index ? language.presetInUse : language.presetUse}
+                onclick={(e) => { e.stopPropagation(); usePreset(index) }}>
+                <Globe size={18}/>
+            </button>
             {#if DBState.db.showPromptComparison}
                 <button class="no-sort shrink-0 p-1 rounded {selectedDiffPreset === index ? 'text-green-500' : 'text-textcolor2 hover:text-primary'}"
                     aria-label="compare" use:tooltip={language.showPromptComparison}
@@ -201,6 +243,7 @@
 <div class="flex items-center gap-2 mt-2 mb-2">
     <ShButton size="sm" variant="ghost" onclick={backToList}><ArrowLeftIcon />{language.backToList}</ShButton>
     <span class="text-sm text-textcolor2 truncate">{DBState.db.botPresets?.[DBState.db.botPresetsId]?.name ?? '—'}</span>
+    {#if returnToPresetId !== null && DBState.db.botPresets?.[DBState.db.botPresetsId]?.id !== returnToPresetId}<span class="shrink-0 rounded bg-selected px-1.5 text-xs text-textcolor2">{language.presetEditingOnly}</span>{/if}
 </div>
 <SettingTabs
     tabs={[

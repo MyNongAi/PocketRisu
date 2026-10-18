@@ -13,6 +13,8 @@
     const minimized = new Set<string>()
     // Our own dismissals, so they are not taken for the user's.
     const dismissing = new Set<string>()
+    // Cards the user closed with "×" while the task goes on: not shown again.
+    const closed = new Set<string>()
     // The folded cards' button lives in the request dock's column (importDock.ts).
     setImportDockRestore(() => restoreAll())
 
@@ -29,13 +31,21 @@
         toast.custom(ImportProgressToast, {
             id: toastId(id),
             duration: Number.POSITIVE_INFINITY,
-            componentProps: { id, onMinimize: () => minimize(id) },
+            componentProps: { id, onMinimize: () => minimize(id), onClose: () => closeCard(id) },
             onDismiss: () => {
                 if (dismissing.delete(id)) return
                 // A swipe: same as the card's own "-" (fold, keep running).
                 collapse(id)
             },
         })
+    }
+
+    function closeCard(id: string): void {
+        closed.add(id)
+        shown.delete(id)
+        minimized.delete(id)
+        dismiss(id)
+        refreshPill()
     }
 
     function minimize(id: string): void {
@@ -93,7 +103,7 @@
         for (const [id, entry] of tasks) {
             // A failure or a rollback shows its card again, so its summary is not missed.
             if ((entry.phase === 'failed' || entry.phase === 'cancelled') && minimized.has(id)) showCard(id)
-            if (!shown.has(id) && !minimized.has(id) && !dismissTimers.has(id)) showCard(id)
+            if (!shown.has(id) && !minimized.has(id) && !dismissTimers.has(id) && !closed.has(id)) showCard(id)
             if (entry.phase === 'done' || entry.phase === 'failed' || entry.phase === 'cancelled') {
                 // A cancelled card can carry a rollback summary: keep it up like a failure.
                 scheduleDismiss(id, entry.phase !== 'done')
@@ -108,6 +118,9 @@
         }
         for (const id of [...minimized]) {
             if (!tasks.has(id)) minimized.delete(id)
+        }
+        for (const id of [...closed]) {
+            if (!tasks.has(id)) closed.delete(id)
         }
         refreshPill()
     })

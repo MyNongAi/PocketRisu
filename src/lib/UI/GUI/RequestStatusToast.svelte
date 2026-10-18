@@ -18,8 +18,8 @@
     import { toast } from 'svelte-sonner'
     import { requestStatuses, isTerminalPhase, type RequestPhase, type RequestKind } from 'src/ts/status/requestStatus'
     import { language } from 'src/lang'
-    import { MinusIcon, RotateCwIcon } from '@lucide/svelte'
-    import { minimizeRequest } from 'src/ts/status/requestStatusDock'
+    import { MinusIcon, RotateCwIcon, XIcon } from '@lucide/svelte'
+    import { dismissRequestToast, minimizeRequest, unminimizeRequest } from 'src/ts/status/requestStatusDock'
 
     let { id }: { id: string } = $props()
 
@@ -104,7 +104,14 @@
     // done (the user's request, 2026-10-17; it replaced closing with X).
     function minimize(): void {
         minimizeRequest(id)
-        toast.dismiss(`req:${id}`)
+        dismissRequestToast(id)
+    }
+
+    // "×" under it closes the card for good, with no round button left; the
+    // request itself goes on (the user's request, 2026-10-18).
+    function close(): void {
+        unminimizeRequest(id)
+        dismissRequestToast(id)
     }
 </script>
 
@@ -130,10 +137,11 @@
                 {#if entry.retryAttempt}
                     <span class="rs-retry">#{entry.retryAttempt}</span>
                 {/if}
-                <span class="rs-actions">
-                    {#if right}<span class="rs-right">{right.label} <b>{right.value}</b></span>{/if}
-                    <button class="rs-close" type="button" aria-label={rs?.minimize ?? 'Fold'} title={rs?.minimize ?? 'Fold'} onclick={minimize}><MinusIcon size={14} /></button>
-                </span>
+                {#if right}
+                    <span class="rs-actions">
+                        <span class="rs-right">{right.label} <b>{right.value}</b></span>
+                    </span>
+                {/if}
             </div>
 
             {#if entry.error}
@@ -149,6 +157,10 @@
                     {badge.text}
                 </div>
             {/each}
+        </div>
+        <div class="rs-side">
+            <button class="rs-close" type="button" aria-label={rs?.minimize ?? 'Fold'} title={rs?.minimize ?? 'Fold'} onclick={minimize}><MinusIcon size={14} /></button>
+            <button class="rs-close" type="button" aria-label={rs?.close ?? 'Close'} title={rs?.close ?? 'Close'} onclick={close}><XIcon size={14} /></button>
         </div>
     </div>
 {/if}
@@ -192,7 +204,8 @@
     .rs-accent-danger  { border-left-color: var(--risu-theme-draculared); }
     .rs-accent-muted   { border-left-color: var(--risu-theme-textcolor2); }
 
-    .rs-body { flex: 1; min-width: 0; padding: 10px 13px; }
+    .rs-body { flex: 1; min-width: 0; padding: 10px 6px 10px 13px; }
+    .rs-side { display: flex; flex-direction: column; gap: 2px; padding: 7px 7px 7px 0; flex-shrink: 0; }
     .rs-row1 { display: flex; align-items: center; gap: 8px; }
 
     .rs-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;

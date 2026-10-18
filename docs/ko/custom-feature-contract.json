@@ -1690,6 +1690,35 @@
       "regressionTests": [
         "src/ts/shareTarget.test.ts"
       ]
+    },
+    {
+      "id": "PRESET-GLOBE-USE",
+      "title": "프롬프트 프리셋은 지구본으로 사용, 줄 클릭은 편집만",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/Setting/Pages/PromptPresetSettings.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/Setting/Pages/PromptPresetSettings.svelte", "contains": "onclick={(e) => { e.stopPropagation(); usePreset(index) }}>" },
+        { "file": "src/lib/Setting/Pages/PromptPresetSettings.svelte", "contains": "const back = id ? DBState.db.botPresets.findIndex((preset) => preset.id === id) : -1" }
+      ]
+    },
+    {
+      "id": "REQUEST-SWIPE-FOLDS",
+      "title": "응답 진행 창을 밀면 접기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/status/requestStatusDock.ts",
+        "src/lib/UI/GUI/RequestStatusToaster.svelte",
+        "src/lib/UI/GUI/RequestStatusDock.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/status/requestStatusDock.ts", "contains": "if (entry && !isTerminalPhase(entry.phase)) minimizeRequest(id)" },
+        { "file": "src/lib/UI/GUI/RequestStatusToaster.svelte", "contains": "onDismiss: () => requestToastDismissed(id)," }
+      ],
+      "regressionTests": [
+        "src/ts/status/requestStatusDock.test.ts"
+      ]
     }
   ]
 }

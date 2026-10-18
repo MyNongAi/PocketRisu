@@ -6,7 +6,7 @@
     // with its toast (RequestStatusToaster clears it).
     import { toast } from 'svelte-sonner'
     import { requestStatuses, clearStatus } from 'src/ts/status/requestStatus'
-    import { dockState, minimizedRequests, unminimizeRequest } from 'src/ts/status/requestStatusDock'
+    import { dockState, minimizedRequests, requestToastDismissed, requestToastShown, unminimizeRequest } from 'src/ts/status/requestStatusDock'
     import { DBState, MobileGUI, selIdState } from 'src/ts/stores.svelte'
     import { splitChatOpen, splitChatWidth, splitRightInset } from 'src/ts/chatSplitPane'
     import { changeChar } from 'src/ts/characters'
@@ -43,11 +43,14 @@
 
     function expand(id: string): void {
         unminimizeRequest(id)
+        requestToastShown(id)
         toast.custom(RequestStatusToast, {
             id: `req:${id}`,
             class: REQUEST_TOAST_CLASS,
             duration: Number.POSITIVE_INFINITY,
             componentProps: { id },
+            // A swipe folds it again (requestStatusDock.ts).
+            onDismiss: () => requestToastDismissed(id),
         })
     }
 
