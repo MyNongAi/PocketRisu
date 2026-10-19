@@ -137,6 +137,9 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     /** Internal: persona/module selection captured before the first await. */
     moduleContext?:ModuleRuntimeContext
     responseStartedAt?:number
+    /** Each input as the prompt reads it (the newest comes last), so the
+     * reply can mark the version it was requested with (inputVersions.ts). */
+    onRequestInput?:(chatId:string, text:string) => void
 } = {}):Promise<boolean> {
 
     chatProcessStage.set(0)
@@ -1065,7 +1068,8 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 
     let index = 0
     for(const msg of ms){
-        let formatedChat = (await processScriptFull(nowChatroom,risuChatParser(msg.data, {chara: currentChar, role: msg.role}), 'editprocess', index, {
+        const sentData = msg.data
+        let formatedChat = (await processScriptFull(nowChatroom,risuChatParser(sentData, {chara: currentChar, role: msg.role}), 'editprocess', index, {
             chatRole: msg.role,
         }, getRuntimeModuleContext())).data
         let name = ''
@@ -1083,6 +1087,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         if(!msg.chatId){
             msg.chatId = v4()
         }
+        if(msg.role === 'user') arg.onRequestInput?.(msg.chatId, sentData)
         let inlays:string[] = []
         if(msg.role === 'char'){
             formatedChat = formatedChat.replace(/{{(inlay|inlayed|inlayeddata)::(.+?)}}/g, (

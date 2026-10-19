@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inputVersionIndex, isRequestInput, recordInputEdit, recordRequestInput, stepInputVersion, textHash } from './inputVersions'
+import { inputVersionIndex, isRequestInput, recordInputEdit, recordRequestInput, recordSentRequestInput, stepInputVersion, textHash } from './inputVersions'
 
 describe('input versions', () => {
     it('keeps the sent input and each saved edit, in order', () => {
@@ -50,5 +50,35 @@ describe('input versions', () => {
         reply.data = 'second reply'
         recordRequestInput(reply, 'input b')
         expect(Object.keys(reply.nodeOnlyRequestInputs)).toEqual([textHash('second reply')])
+    })
+
+    it('marks the input the request read, not the one shown when the reply is done', () => {
+        const input = { chatId: 'in-1', data: 'b', nodeOnlyInputVersions: ['a', 'b'] } as any
+        const sent = { chatId: 'in-1', text: input.data }
+        // The arrows are used while the reply is being written.
+        stepInputVersion(input, -1)
+        expect(input.data).toBe('a')
+
+        const reply = { data: 'reply', swipes: ['reply'] } as any
+        expect(recordSentRequestInput(reply, input, sent)).toBe(true)
+        expect(isRequestInput(reply, 'b')).toBe(true)
+        expect(isRequestInput(reply, 'a')).toBe(false)
+    })
+
+    it('marks nothing when the read input is not the one before the reply', () => {
+        const reply = { data: 'reply' } as any
+        expect(recordSentRequestInput(reply, { chatId: 'in-2' }, { chatId: 'in-1', text: 'a' })).toBe(false)
+        expect(recordSentRequestInput(reply, { chatId: 'in-1' }, undefined)).toBe(false)
+        expect(reply.nodeOnlyRequestInputs).toBeUndefined()
+    })
+
+    it('keeps the marks of earlier swipes when a reroll carries them to the new reply', () => {
+        const old = { data: 'first', swipes: ['first'] } as any
+        recordRequestInput(old, 'input a')
+        const next = { data: 'second', swipes: ['first', 'second'], nodeOnlyRequestInputs: { ...old.nodeOnlyRequestInputs } } as any
+        recordRequestInput(next, 'input b')
+        expect(isRequestInput(next, 'input b')).toBe(true)
+        next.data = 'first'
+        expect(isRequestInput(next, 'input a')).toBe(true)
     })
 })

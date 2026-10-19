@@ -5,7 +5,7 @@
     import { copyScriptstateCheckpoint, mergeRerollCheckpoint, removeSwipeCheckpoint, restoreScriptstateBeforeReroll, restoreScriptstateSnapshot, restoreShownSwipeScriptstate, snapshotScriptstate } from 'src/ts/chatScriptstateCheckpoint';
     import { deleteShownSwipe, dropShownSwipe, findLastReplyIndex, markErrorLikeReply, shiftErrorMarkAfterDelete, shownSwipeIsErrorLike, stepSwipe } from 'src/ts/chatSwipes';
     import { previousInputIndex } from 'src/ts/gui/inputEcho';
-    import { recordRequestInput } from 'src/ts/inputVersions';
+    import { recordSentRequestInput, type SentInput } from 'src/ts/inputVersions';
     import { clearRerollPlaceholder, setRerollPlaceholder } from 'src/ts/gui/rerollPlaceholder';
     import { CameraIcon, ChevronUpIcon, ChevronDownIcon, DatabaseIcon, GlobeIcon, FileTextIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2, GitBranch } from "@lucide/svelte";
     import ShDropdownMenu from 'src/lib/UI/GUI/ShDropdownMenu.svelte';
@@ -725,14 +725,20 @@ import { isMobile } from 'src/ts/platform'
         return index === -1 ? null : msgs[index]
     }
 
-    /** The newest reply remembers the input its request was made from (inputVersions.ts). */
+    // The newest input each running send read into its prompt, by chat id
+    // (sendChatMain fills it, markRequestInput takes it).
+    const requestInputs = new Map<string, SentInput>()
+
+    /** The newest reply remembers the input its request read (inputVersions.ts). */
     function markRequestInput(chat: ChatData | null | undefined) {
+        const sent = chat?.id ? requestInputs.get(chat.id) : undefined
+        if (chat?.id) requestInputs.delete(chat.id)
         const msgs = chat?.message
         if (!msgs) return
         const replyIndex = findLastReplyIndex(msgs)
         if (replyIndex < 0) return
         const inputIndex = previousInputIndex(msgs, replyIndex)
-        if (inputIndex >= 0) recordRequestInput(msgs[replyIndex], msgs[inputIndex].data ?? '')
+        if (inputIndex >= 0) recordSentRequestInput(msgs[replyIndex], msgs[inputIndex], sent)
     }
 
     function getLastCharMsg() {
@@ -845,6 +851,8 @@ import { isMobile } from 'src/ts/platform'
             const merged = mergeRerollCheckpoint(restoredBaseline ? previousCheckpoint : undefined, savedSwipes.length, generatedCheckpoint)
             if (merged) newLastMsg.scriptstateCheckpoint = merged
             else delete newLastMsg.scriptstateCheckpoint
+            // The new reply is a new message: the earlier swipes keep their marks.
+            if (lastMsg.nodeOnlyRequestInputs) newLastMsg.nodeOnlyRequestInputs = { ...lastMsg.nodeOnlyRequestInputs }
         }
         if (newLastMsg) markErrorLikeReply(newLastMsg, Date.now() - rerollStartedAt)
         markRequestInput(attached.chat)
@@ -970,6 +978,7 @@ import { isMobile } from 'src/ts/platform'
         }
         const abortController = new AbortController()
         registerAbort(genKey, abortController)
+        requestInputs.delete(genKey)
         let generated = false
         try {
             generated = await sendChat(-1, {
@@ -980,6 +989,7 @@ import { isMobile } from 'src/ts/platform'
                 routeSnapshot: capturedRoute,
                 emotionRouteSnapshot: capturedEmotionRoute,
                 memoryRouteSnapshot: capturedMemoryRoute,
+                onRequestInput: (chatId, text) => requestInputs.set(genKey, { chatId, text }),
             })
         } catch (error) {
             console.error(error)

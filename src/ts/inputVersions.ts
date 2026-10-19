@@ -81,6 +81,24 @@ export function recordRequestInput(reply: RequestMarkedReply, input: string) {
     reply.nodeOnlyRequestInputs = marks
 }
 
+/** The input a request read, by the message it came from. */
+export interface SentInput {
+    chatId: string
+    text: string
+}
+
+/**
+ * Mark `reply` with the input its request read (`sent`), when `input`, the
+ * message right before the reply, is the one that was read. The text comes
+ * from the request, not from `input`: the arrows may have shown another
+ * version while the reply was being written.
+ */
+export function recordSentRequestInput(reply: RequestMarkedReply, input: { chatId?: string } | null | undefined, sent: SentInput | null | undefined): boolean {
+    if (!sent || !input?.chatId || input.chatId !== sent.chatId) return false
+    recordRequestInput(reply, sent.text)
+    return true
+}
+
 /** Whether `input` is the one the shown reply's request was made from. */
 export function isRequestInput(reply: RequestMarkedReply | null | undefined, input: string | null | undefined): boolean {
     if (!reply || input == null) return false

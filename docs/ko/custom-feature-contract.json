@@ -1568,14 +1568,18 @@
       "ownerFiles": [
         "src/ts/inputVersions.ts",
         "src/lib/ChatScreens/Chat.svelte",
-        "src/lib/ChatScreens/DefaultChatScreen.svelte"
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/ts/process/index.svelte.ts"
       ],
       "requiredMarkers": [
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (target && stepInputVersion(target, step)) retitleCurrentChat()" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (target && recordInputEdit(target, echoText)) retitleCurrentChat()" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "onclick={copyInputEcho}" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (resolved) markRequestInput(resolved.chat)" },
-        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "markRequestInput(attached.chat)" }
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "markRequestInput(attached.chat)" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "onRequestInput: (chatId, text) => requestInputs.set(genKey, { chatId, text })" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (lastMsg.nodeOnlyRequestInputs) newLastMsg.nodeOnlyRequestInputs = { ...lastMsg.nodeOnlyRequestInputs }" },
+        { "file": "src/ts/process/index.svelte.ts", "contains": "if(msg.role === 'user') arg.onRequestInput?.(msg.chatId, sentData)" }
       ],
       "regressionTests": [
         "src/ts/inputVersions.test.ts"
