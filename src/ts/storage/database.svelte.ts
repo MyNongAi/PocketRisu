@@ -1831,6 +1831,8 @@ export interface loreBook{
     bookVersion?:number
     id?:string
     folder?:string
+    /** PocketRisu: sent to the auxiliary model after each reply, never to the main one (auxLorebook.ts). */
+    nodeOnlyAuxModel?:boolean
 }
 
 /** Stub kept in `nodeOnlyArchivedCharacters` for a deactivated character. Built by the server (/api/characters/:chaId/archive). */
@@ -2518,6 +2520,8 @@ export interface Message{
     nodeOnlyInputVersions?: string[]
     /** PocketRisu: a reply's swipes -> the input each was requested with, as hashes (inputVersions.ts). */
     nodeOnlyRequestInputs?: Record<string, string>
+    /** PocketRisu: lines the auxiliary model added to this reply (auxLorebook.ts). */
+    nodeOnlyAuxLines?: string[]
     saying?: string
     chatId?:string
     time?: number

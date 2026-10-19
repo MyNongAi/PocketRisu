@@ -1582,7 +1582,7 @@
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "onRequestInput: (chatId, text) => requestInputs.set(genKey, { chatId, text })" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (lastMsg.nodeOnlyRequestInputs) newLastMsg.nodeOnlyRequestInputs = { ...lastMsg.nodeOnlyRequestInputs }" },
         { "file": "src/ts/process/index.svelte.ts", "contains": "if(msg.role === 'user') arg.onRequestInput?.(msg.chatId, sentData)" },
-        { "file": "src/ts/process/index.svelte.ts", "contains": "const sentData = requestInputText(msg, arg.requestInput)" },
+        { "file": "src/ts/process/index.svelte.ts", "contains": "requestInputText(msg, arg.requestInput)" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const capturedRequestInput = pressedInput(selectedChatRoom.message)" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const requestInput = pressedInput(targetChat.message)" }
       ],
@@ -1791,6 +1791,31 @@
       ],
       "regressionTests": [
         "src/ts/gui/floatingBotControls.test.ts"
+      ]
+    },
+    {
+      "id": "AUX-MODEL-LOREBOOK",
+      "title": "로어북을 보조모델로 (🌙): 답이 끝나면 보조모델이 에셋 태그를 넣음",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/process/auxLorebook.ts",
+        "src/ts/process/auxLorebookRun.ts",
+        "src/ts/process/lorebook.svelte.ts",
+        "src/ts/process/index.svelte.ts",
+        "src/lib/SideBars/LoreBook/LoreBookData.svelte",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/lorebook.svelte.ts", "contains": "if(fullLore[i].nodeOnlyAuxModel){" },
+        { "file": "src/ts/process/index.svelte.ts", "contains": "await tagReplyByAuxLorebook({" },
+        { "file": "src/ts/process/index.svelte.ts", "contains": "withoutAuxLines(msg.data, msg.nodeOnlyAuxLines)" },
+        { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "setAuxMark(value, externalLoreBooks ?? [], !value.nodeOnlyAuxModel)" },
+        { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "<Help key=\"loreAuxModel\" name={language.loreAuxModel}/>" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const auxLines = mergeAuxLines(lastMsg.nodeOnlyAuxLines, newLastMsg.nodeOnlyAuxLines)" }
+      ],
+      "regressionTests": [
+        "src/ts/process/auxLorebook.test.ts",
+        "src/ts/process/auxLorebookRun.test.ts"
       ]
     }
   ]

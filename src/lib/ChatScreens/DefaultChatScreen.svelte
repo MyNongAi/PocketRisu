@@ -6,6 +6,7 @@
     import { deleteShownSwipe, dropShownSwipe, findLastReplyIndex, markErrorLikeReply, shiftErrorMarkAfterDelete, showSwipe, shownSwipeIsErrorLike, stepSwipe } from 'src/ts/chatSwipes';
     import { previousInputIndex } from 'src/ts/gui/inputEcho';
     import { pressedInput, recordSentRequestInput, type SentInput } from 'src/ts/inputVersions';
+    import { mergeAuxLines } from 'src/ts/process/auxLorebook';
     import { clearRerollPlaceholder, heldRerollSwipe, setRerollPlaceholder } from 'src/ts/gui/rerollPlaceholder';
     import { CameraIcon, ChevronUpIcon, ChevronDownIcon, DatabaseIcon, GlobeIcon, FileTextIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2, GitBranch } from "@lucide/svelte";
     import ShDropdownMenu from 'src/lib/UI/GUI/ShDropdownMenu.svelte';
@@ -860,8 +861,11 @@ import { isMobile } from 'src/ts/platform'
             const merged = mergeRerollCheckpoint(restoredBaseline ? previousCheckpoint : undefined, savedSwipes.length, generatedCheckpoint)
             if (merged) newLastMsg.scriptstateCheckpoint = merged
             else delete newLastMsg.scriptstateCheckpoint
-            // The new reply is a new message: the earlier swipes keep their marks.
+            // The new reply is a new message: the earlier swipes keep their marks,
+            // and the lines the auxiliary model added to them (auxLorebook.ts).
             if (lastMsg.nodeOnlyRequestInputs) newLastMsg.nodeOnlyRequestInputs = { ...lastMsg.nodeOnlyRequestInputs }
+            const auxLines = mergeAuxLines(lastMsg.nodeOnlyAuxLines, newLastMsg.nodeOnlyAuxLines)
+            if (auxLines) newLastMsg.nodeOnlyAuxLines = auxLines
         }
         if (newLastMsg) markErrorLikeReply(newLastMsg, Date.now() - rerollStartedAt)
         markRequestInput(attached.chat)

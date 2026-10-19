@@ -306,6 +306,10 @@ export async function loadLoreBookV3Prompt(context?: ModuleRuntimeContext){
             if(!fullLore[i].alwaysActive && !fullLore[i].key){
                 continue
             }
+            // Marked for the auxiliary model: never in the main prompt (auxLorebook.ts).
+            if(fullLore[i].nodeOnlyAuxModel){
+                continue
+            }
             let activated = true
             let pos = ''
             let inject:{

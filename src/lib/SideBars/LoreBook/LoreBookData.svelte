@@ -1,5 +1,6 @@
 <script lang="ts">
-    import { XIcon, LinkIcon, SunIcon, BookCopyIcon, FolderIcon, FolderOpen, PlusIcon } from "@lucide/svelte";
+    import { XIcon, LinkIcon, SunIcon, MoonIcon, BookCopyIcon, FolderIcon, FolderOpen, PlusIcon } from "@lucide/svelte";
+    import { setAuxMark } from "src/ts/process/auxLorebook";
     import { v4 } from "uuid";
     import { language } from "../../../lang";
     import { getCurrentCharacter, getCurrentChat, type loreBook } from "../../../ts/storage/database.svelte";
@@ -155,11 +156,23 @@
                 <span class={loreComparisonClass} title={loreComparisonTitle}>{value.comment.length === 0 ? value.key.length === 0 ? "Unnamed Lore" : value.key : value.comment}</span>
             {/if}
         </button>
+        <!-- Right-click (a long press on touch) marks the entry for the
+             auxiliary model, 🌙 (auxLorebook.ts); a click on 🌙 undoes it. -->
         <button
             class="mr-1"
-            class:text-textcolor2={!value.alwaysActive}
-            class:text-textcolor={value.alwaysActive}
+            class:text-textcolor2={!value.alwaysActive && !value.nodeOnlyAuxModel}
+            class:text-textcolor={value.alwaysActive && !value.nodeOnlyAuxModel}
+            class:text-emerald-400={value.nodeOnlyAuxModel}
+            title={value.nodeOnlyAuxModel ? language.loreAuxModelIcon : language.loreAuxModelSet}
+            oncontextmenu={(event) => {
+                event.preventDefault()
+                setAuxMark(value, externalLoreBooks ?? [], !value.nodeOnlyAuxModel)
+            }}
             onclick={async () => {
+                if(value.nodeOnlyAuxModel){
+                    setAuxMark(value, externalLoreBooks ?? [], false)
+                    return
+                }
                 if(value.mode === 'folder'){
                     for(let i = 0; i < externalLoreBooks.length; i++){
                         if(externalLoreBooks[i].folder === value.key){
@@ -170,7 +183,9 @@
                 value.alwaysActive = !value.alwaysActive
             }}
         >
-            {#if value.alwaysActive}
+            {#if value.nodeOnlyAuxModel}
+                <MoonIcon size={20} />
+            {:else if value.alwaysActive}
                 <SunIcon size={20} />
             {:else}
                 <LinkIcon size={20} />
@@ -274,6 +289,10 @@
             <span class="text-textcolor2 mt-2 mb-2 text-sm">{tokens} {language.tokens}</span>
             <div class="flex items-center mt-4">
                 <Check bind:check={value.alwaysActive} name={language.alwaysActive}/>
+            </div>
+            <div class="flex items-center mt-2">
+                <Check check={!!value.nodeOnlyAuxModel} onChange={(check: boolean) => setAuxMark(value, externalLoreBooks ?? [], check)} name={language.loreAuxModel}/>
+                <Help key="loreAuxModel" name={language.loreAuxModel}/>
             </div>
             {#if !value.alwaysActive && getCurrentCharacter()?.globalLore?.includes(value) && DBState.db.localActivationInGlobalLorebook}
                 <div class="flex items-center mt-2">

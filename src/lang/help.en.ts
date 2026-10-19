@@ -280,6 +280,13 @@ export const helpEn = {
             "Stored per chat, so other chats of the same character are not affected.",
         memoryPresetDefault:
             "The long-term memory preset used by chats left on 'Default'. With 'Off', memory only runs in chats that picked a preset themselves.",
+        loreAuxModel:
+            "Sends this entry to the auxiliary model instead of the main one. Put it on an asset module's asset instructions: the main model only writes the story, and after each reply the auxiliary model reads the instructions and places the asset tags.\n\n" +
+            "- Right-clicking (holding, on a phone) the entry's icon does the same; a marked entry shows 🌙.\n" +
+            "- On a module it applies to every bot with the module on, and stops when the module is off.\n" +
+            "- The auxiliary model is the one set in the settings.\n" +
+            "- Conditions and toggles inside ({{#if}}) are evaluated as usual.\n" +
+            "- The lines the auxiliary model adds are hidden from the main model's later requests (so it does not imitate them).",
         hideFloatingBotButtons:
             "Hides the small buttons this bot keeps floating at the screen edge (toggles that open a status window, a map or a menu, expand/collapse buttons).\n\n" +
             "- Saved per bot.\n" +

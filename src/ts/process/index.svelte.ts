@@ -2,6 +2,8 @@ import { get } from "svelte/store";
 import { type character, type MessageGenerationInfo, type Chat, type MessagePresetInfo, changeToPreset, type Message, normalizeChat, type StreamingDisplayOptimizationMode } from "../storage/database.svelte";
 import { DBState } from '../stores.svelte';
 import { requestInputText, type SentInput } from '../inputVersions';
+import { withoutAuxLines } from './auxLorebook';
+import { tagReplyByAuxLorebook } from './auxLorebookRun';
 import { CharEmotion, selectedCharID } from "../stores.svelte";
 import { ChatTokenizer, tokenize, tokenizeNum } from "../tokenizer";
 import { language } from "../../lang";
@@ -1072,7 +1074,8 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 
     let index = 0
     for(const msg of ms){
-        const sentData = requestInputText(msg, arg.requestInput)
+        // A reply leaves out the lines the auxiliary model added (auxLorebook.ts).
+        const sentData = msg.role === 'user' ? requestInputText(msg, arg.requestInput) : withoutAuxLines(msg.data, msg.nodeOnlyAuxLines)
         let formatedChat = (await processScriptFull(nowChatroom,risuChatParser(sentData, {chara: currentChar, role: msg.role}), 'editprocess', index, {
             chatRole: msg.role,
         }, getRuntimeModuleContext())).data
@@ -2135,6 +2138,25 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             moduleContext,
             requestInput: arg.requestInput,
         })
+    }
+
+    // Lorebook entries marked for the auxiliary model place their tags in
+    // the finished reply (auxLorebook.ts).
+    if(runAuxiliaryModel && !abortSignal.aborted){
+        if (!refreshGenerationTarget()) return false
+        try {
+            await tagReplyByAuxLorebook({
+                character: currentChar,
+                chat: currentChat,
+                currentChat: () => refreshGenerationTarget() ? currentChat : null,
+                moduleContext: getRuntimeModuleContext(),
+                userName: generationUserName,
+                signal: abortSignal,
+            })
+        } catch (error) {
+            console.error(error)
+        }
+        if (!refreshGenerationTarget()) return false
     }
 
     const igp = risuChatParser(DBState.db.igpPrompt ?? "")
