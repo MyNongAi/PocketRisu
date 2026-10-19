@@ -1354,7 +1354,8 @@
         { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "width: fit-content;" }
       ],
       "regressionTests": [
-        "src/ts/status/requestStatusDock.test.ts"
+        "src/ts/status/requestStatusDock.test.ts",
+        "src/ts/status/requestStop.test.ts"
       ]
     },
     {
@@ -1718,6 +1719,7 @@
         { "file": "src/lib/UI/GUI/RequestStatusToaster.svelte", "contains": "onDismiss: () => requestToastDismissed(id)," },
         { "file": "src/lib/UI/GUI/RequestStatusToaster.svelte", "contains": "if (!get(minimizedRequests).includes(id) && staysOpenUnseen(entry, currentChatId())) {" },
         { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "onclick={goToChat}><ChevronRightIcon size={14} /></button>" },
+        { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "if (entry && !isTerminalPhase(entry.phase)) stopRequestReply(id, entry.chatId)" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "window.addEventListener(SCROLL_CHAT_TO_END_EVENT, toEnd)" }
       ],
       "regressionTests": [

@@ -18,9 +18,11 @@
     import { toast } from 'svelte-sonner'
     import { requestStatuses, isTerminalPhase, type RequestPhase, type RequestKind } from 'src/ts/status/requestStatus'
     import { language } from 'src/lang'
-    import { ChevronRightIcon, MinusIcon, RotateCwIcon } from '@lucide/svelte'
+    import { ChevronRightIcon, MinusIcon, RotateCwIcon, XIcon } from '@lucide/svelte'
+    import { DBState, selIdState } from 'src/ts/stores.svelte'
     import { openChatById } from 'src/ts/status/requestActions'
-    import { dismissRequestToast, minimizeRequest } from 'src/ts/status/requestStatusDock'
+    import { stopRequestReply } from 'src/ts/status/requestStop'
+    import { dismissRequestToast, minimizeRequest, unminimizeRequest } from 'src/ts/status/requestStatusDock'
 
     let { id }: { id: string } = $props()
 
@@ -108,10 +110,25 @@
         dismissRequestToast(id)
     }
 
-    // ">" under it opens the chat the reply is written in, or scrolls that
-    // chat to its end when it is on screen (the user's request, 2026-10-19).
+    // Under it (the user's request, 2026-10-19): ">" for a reply written in
+    // another chat opens that chat; on the chat it is written in (or for a
+    // request of no chat) "×" closes the card, stopping a reply still being
+    // written as the chat's own stop button does (requestStop.ts).
+    const onItsChat = $derived.by(() => {
+        if (!entry?.chatId) return false
+        const character = DBState.db.characters?.[selIdState.selId]
+        return character?.chats?.[character.chatPage]?.id === entry.chatId
+    })
+    const closeLabel = $derived(entry && !isTerminalPhase(entry.phase) && entry.chatId ? (rs?.stopAndClose ?? 'Stop and close') : (rs?.close ?? 'Close'))
+
     function goToChat(): void {
         openChatById(entry?.chatId)
+    }
+
+    function close(): void {
+        if (entry && !isTerminalPhase(entry.phase)) stopRequestReply(id, entry.chatId)
+        unminimizeRequest(id)
+        dismissRequestToast(id)
     }
 </script>
 
@@ -160,8 +177,10 @@
         </div>
         <div class="rs-side">
             <button class="rs-close" type="button" aria-label={rs?.minimize ?? 'Fold'} title={rs?.minimize ?? 'Fold'} onclick={minimize}><MinusIcon size={14} /></button>
-            {#if entry.chatId}
+            {#if entry.chatId && !onItsChat}
                 <button class="rs-close" type="button" aria-label={rs?.openChat ?? 'Open the chat'} title={rs?.openChat ?? 'Open the chat'} onclick={goToChat}><ChevronRightIcon size={14} /></button>
+            {:else}
+                <button class="rs-close" type="button" aria-label={closeLabel} title={closeLabel} onclick={close}><XIcon size={14} /></button>
             {/if}
         </div>
     </div>
