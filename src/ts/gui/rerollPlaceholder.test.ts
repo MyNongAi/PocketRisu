@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { get } from 'svelte/store'
 import {
     clearRerollPlaceholder,
+    heldRerollSwipe,
+    rerollPlaceholderPages,
     rerollPlaceholderShows,
     rerollPlaceholders,
     setRerollPlaceholder,
@@ -44,5 +46,38 @@ describe('the placeholder store', () => {
         expect(stepRerollPlaceholderSwipe('nope', 1)).toBe(false)
         clearRerollPlaceholder('c1')
         expect([...get(rerollPlaceholders).keys()]).toEqual(['c2'])
+    })
+})
+
+describe('a held placeholder', () => {
+    beforeEach(() => rerollPlaceholders.set(new Map()))
+
+    it('stays for the whole reroll, even once the new reply has text', () => {
+        expect(rerollPlaceholderShows([user, { role: 'char', data: 'new' }], { index: 1, hold: true })).toBe(true)
+    })
+
+    it('counts the new reply as one more page and lets it show when stepped onto', () => {
+        setRerollPlaceholder({ chatId: 'c1', index: 1, message: { ...old, swipes: [...old.swipes] }, hold: true })
+        expect(rerollPlaceholderPages(get(rerollPlaceholders).get('c1')!)).toEqual({ current: 2, total: 4 })
+        expect(heldRerollSwipe('c1')).toBe(1)
+        // within the old pages it browses as before
+        expect(stepRerollPlaceholderSwipe('c1', 1)).toBe(true)
+        expect(heldRerollSwipe('c1')).toBe(2)
+        // one past the last old page is the new reply
+        expect(stepRerollPlaceholderSwipe('c1', 1)).toBe(true)
+        expect(get(rerollPlaceholders).get('c1')?.hold).toBe(false)
+        expect(heldRerollSwipe('c1')).toBeNull()
+    })
+
+    it('reaches the new page backwards from the first one, and from a reply without swipes', () => {
+        setRerollPlaceholder({ chatId: 'c1', index: 1, message: { ...old, swipeId: 0, data: 'A' }, hold: true })
+        expect(stepRerollPlaceholderSwipe('c1', -1)).toBe(true)
+        expect(get(rerollPlaceholders).get('c1')?.hold).toBe(false)
+
+        setRerollPlaceholder({ chatId: 'c2', index: 1, message: { role: 'char', data: 'only' }, hold: true })
+        expect(rerollPlaceholderPages(get(rerollPlaceholders).get('c2')!)).toEqual({ current: 1, total: 2 })
+        expect(heldRerollSwipe('c2')).toBe(0)
+        expect(stepRerollPlaceholderSwipe('c2', 1)).toBe(true)
+        expect(heldRerollSwipe('c2')).toBeNull()
     })
 })

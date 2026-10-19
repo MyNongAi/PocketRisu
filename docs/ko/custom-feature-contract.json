@@ -1541,7 +1541,7 @@
     },
     {
       "id": "REROLL-PLACEHOLDER",
-      "title": "리롤 중 이전 응답 유지 · 생성 중 스와이프 넘기기",
+      "title": "리롤 중 이전 응답 유지 · 생성 중 스와이프 넘기기 · 새 응답은 다음 페이지",
       "criticality": "core-ux",
       "ownerFiles": [
         "src/ts/gui/rerollPlaceholder.ts",
@@ -1550,7 +1550,9 @@
         "src/lib/ChatScreens/DefaultChatScreen.svelte"
       ],
       "requiredMarkers": [
-        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "setRerollPlaceholder({ chatId: activeChat.id, index: cha.length, message: safeStructuredClone(lastMsg) })" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "setRerollPlaceholder({ chatId: activeChat.id, index: cha.length, message: safeStructuredClone(lastMsg), hold: !replacesError })" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (newLastMsg && keptSwipe !== null && onScreen && showSwipe(newLastMsg, keptSwipe)) {" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "totalPages: pages.total," },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (placeholderChatId) clearRerollPlaceholder(placeholderChatId)" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (isTarget && !currentChatGenerating) restoreShownSwipeScriptstate(chat, msg)" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "if(i === placeholderIndex) continue;" },

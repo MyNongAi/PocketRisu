@@ -3,10 +3,10 @@
 
     import Suggestion from './Suggestion.svelte';
     import { copyScriptstateCheckpoint, mergeRerollCheckpoint, removeSwipeCheckpoint, restoreScriptstateBeforeReroll, restoreScriptstateSnapshot, restoreShownSwipeScriptstate, snapshotScriptstate } from 'src/ts/chatScriptstateCheckpoint';
-    import { deleteShownSwipe, dropShownSwipe, findLastReplyIndex, markErrorLikeReply, shiftErrorMarkAfterDelete, shownSwipeIsErrorLike, stepSwipe } from 'src/ts/chatSwipes';
+    import { deleteShownSwipe, dropShownSwipe, findLastReplyIndex, markErrorLikeReply, shiftErrorMarkAfterDelete, showSwipe, shownSwipeIsErrorLike, stepSwipe } from 'src/ts/chatSwipes';
     import { previousInputIndex } from 'src/ts/gui/inputEcho';
     import { pressedInput, recordSentRequestInput, type SentInput } from 'src/ts/inputVersions';
-    import { clearRerollPlaceholder, setRerollPlaceholder } from 'src/ts/gui/rerollPlaceholder';
+    import { clearRerollPlaceholder, heldRerollSwipe, setRerollPlaceholder } from 'src/ts/gui/rerollPlaceholder';
     import { CameraIcon, ChevronUpIcon, ChevronDownIcon, DatabaseIcon, GlobeIcon, FileTextIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2, GitBranch } from "@lucide/svelte";
     import ShDropdownMenu from 'src/lib/UI/GUI/ShDropdownMenu.svelte';
     import ShDropdownMenuTrigger from 'src/lib/UI/GUI/ShDropdownMenuTrigger.svelte';
@@ -778,7 +778,8 @@ import { isMobile } from 'src/ts/platform'
 
         // A reply that looked like an error is replaced, not kept as a page.
         let dropErrorReply = false
-        if (shownSwipeIsErrorLike(lastMsg)) {
+        const replacesError = shownSwipeIsErrorLike(lastMsg)
+        if (replacesError) {
             const removed = deleteShownSwipe(lastMsg)
             if (removed) removeSwipeCheckpoint(lastMsg, removed.removedIndex, removed.previousCount)
             else dropErrorReply = true
@@ -823,7 +824,10 @@ import { isMobile } from 'src/ts/platform'
         // one has text (gui/rerollPlaceholder.ts; the user's request, 2026-10-09).
         if (targetIndex >= cha.length && activeChat.id) {
             placeholderChatId = activeChat.id
-            setRerollPlaceholder({ chatId: activeChat.id, index: cha.length, message: safeStructuredClone(lastMsg) })
+            // Held: the reply shown now stays shown, the new one is the next
+            // page (the user's request, 2026-10-19); one being replaced as an
+            // error is not.
+            setRerollPlaceholder({ chatId: activeChat.id, index: cha.length, message: safeStructuredClone(lastMsg), hold: !replacesError })
         }
         preparingChatSends.delete(genKey)
         const rerollStartedAt = Date.now()
@@ -861,6 +865,13 @@ import { isMobile } from 'src/ts/platform'
         }
         if (newLastMsg) markErrorLikeReply(newLastMsg, Date.now() - rerollStartedAt)
         markRequestInput(attached.chat)
+        // The chat is still open: the page shown while it was rerolled stays
+        // shown (rerollPlaceholder.ts). Away from it, the new reply shows.
+        const keptSwipe = placeholderChatId ? heldRerollSwipe(placeholderChatId) : null
+        const onScreen = $selectedCharID === attached.characterIndex && attached.character.chatPage === attached.chatIndex
+        if (newLastMsg && keptSwipe !== null && onScreen && showSwipe(newLastMsg, keptSwipe)) {
+            restoreShownSwipeScriptstate(attached.chat, newLastMsg)
+        }
         } finally {
             if (placeholderChatId) clearRerollPlaceholder(placeholderChatId)
             preparingChatSends.delete(genKey)

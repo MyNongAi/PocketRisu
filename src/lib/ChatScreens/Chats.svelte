@@ -11,7 +11,7 @@
     import { getChatAssetRenderWindow } from '../../ts/chatAssetWindow';
     import { isAtTail, revealScrollTop, shouldFollowTail, shouldRevealAddedMessage } from './chatViewport';
     import { chatGenKey, isChatGenerating } from 'src/ts/process/generationState';
-    import { rerollPlaceholderShows, rerollPlaceholders, stepRerollPlaceholderSwipe } from 'src/ts/gui/rerollPlaceholder';
+    import { rerollPlaceholderPages, rerollPlaceholderShows, rerollPlaceholders, stepRerollPlaceholderSwipe } from 'src/ts/gui/rerollPlaceholder';
     
     const getCurrentChatRoomId = () => {
         const charId = get(selectedCharID);
@@ -157,7 +157,8 @@
 
         // The old reply while it is rerolled (gui/rerollPlaceholder.ts): drawn
         // as the newest message, in place of the new reply's empty stream
-        // start, until the new reply has text. Only its swipe arrows act.
+        // start, until the new reply has text (a held one: until the reroll
+        // ends). Only its swipe arrows act.
         const placeholder = currentChat?.id ? get(rerollPlaceholders).get(currentChat.id) : undefined
         const placeholderIndex = placeholder && rerollPlaceholderShows(messages, placeholder) ? placeholder.index : -1
         if (placeholder && placeholderIndex >= 0) {
@@ -165,7 +166,8 @@
             const message = placeholder.message as Message
             const echoIndex = previousInputIndex(messages, Math.min(placeholderIndex, messages.length))
             const echoText = echoIndex >= 0 ? (messages[echoIndex].data ?? '') : ''
-            const currentHash = hashCode(['reroll-placeholder', placeholderChatId, placeholderIndex, message.swipeId ?? 0, message.swipes?.length ?? 0, echoText, message.data].join('\u0000'))
+            const pages = rerollPlaceholderPages(placeholder)
+            const currentHash = hashCode(['reroll-placeholder', placeholderChatId, placeholderIndex, pages.current, pages.total, echoText, message.data].join('\u0000'))
             currentHashes.add(currentHash)
             if (!hashes.has(currentHash)) {
                 const previous = chatBody.querySelector<HTMLElement>(`:scope > [data-chat-slot="${placeholderIndex}"]`)
@@ -175,7 +177,7 @@
                 b.dataset.chatSlot = placeholderIndex.toString()
                 b.classList.add('chat-message-container')
                 const hold = { rendered: false, release: () => {} }
-                const browsable = hasBrowsableSwipes(message)
+                const browsable = pages.total > 1
                 const inst = mount(Chat, {
                     target: b,
                     props: {
@@ -195,8 +197,8 @@
                         onNextSwipe: () => { stepRerollPlaceholderSwipe(placeholderChatId, 1) },
                         unReroll: () => { stepRerollPlaceholderSwipe(placeholderChatId, -1) },
                         onDeleteSwipe: () => {},
-                        currentPage: (message.swipeId ?? 0) + 1,
-                        totalPages: message.swipes?.length ?? 1,
+                        currentPage: pages.current,
+                        totalPages: pages.total,
                         character: simpleChar,
                         largePortrait: (currentCharacter as character).largePortrait ?? false,
                         messageGenerationInfo: message.generationInfo,
