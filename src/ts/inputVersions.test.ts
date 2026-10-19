@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inputVersionIndex, isRequestInput, recordInputEdit, recordRequestInput, recordSentRequestInput, stepInputVersion, textHash } from './inputVersions'
+import { inputVersionIndex, isRequestInput, pressedInput, recordInputEdit, recordRequestInput, recordSentRequestInput, requestInputText, stepInputVersion, textHash } from './inputVersions'
 
 describe('input versions', () => {
     it('keeps the sent input and each saved edit, in order', () => {
@@ -80,5 +80,38 @@ describe('input versions', () => {
         expect(isRequestInput(next, 'input b')).toBe(true)
         next.data = 'first'
         expect(isRequestInput(next, 'input a')).toBe(true)
+    })
+
+    it('takes the newest input as it is when pressed', () => {
+        const messages = [
+            { role: 'user', data: 'old', chatId: 'u1' },
+            { role: 'char', data: 'reply', chatId: 'c1' },
+            { role: 'user', data: 'newest', chatId: 'u2' },
+            { role: 'user', data: 'note', chatId: 'u3', isComment: true },
+            { role: 'char', data: 'reply 2', chatId: 'c2' },
+            { role: 'user', data: 'off', chatId: 'u4', disabled: true },
+        ]
+        expect(pressedInput(messages)).toEqual({ chatId: 'u2', text: 'newest' })
+        expect(pressedInput([{ role: 'char', data: 'only a reply' }])).toBeUndefined()
+        expect(pressedInput([{ role: 'user', data: 'no id' }])).toBeUndefined()
+    })
+
+    it('a request reads the version shown when it was pressed, not one picked after', () => {
+        const input = { chatId: 'u1', data: 'b', nodeOnlyInputVersions: ['a', 'b'] } as any
+        const pressed = pressedInput([{ role: 'user', ...input }])
+        stepInputVersion(input, -1)
+        expect(input.data).toBe('a')
+        expect(requestInputText(input, pressed)).toBe('b')
+        // the version picked after the press is the input for the next request
+        expect(requestInputText(input, undefined)).toBe('a')
+    })
+
+    it('reads a change from elsewhere as it is', () => {
+        const pressed = { chatId: 'u1', text: 'b' }
+        // a trigger rewrote the input: not one of its versions
+        expect(requestInputText({ chatId: 'u1', data: 'rewritten', nodeOnlyInputVersions: ['a', 'b'] } as any, pressed)).toBe('rewritten')
+        // another message, or one without versions
+        expect(requestInputText({ chatId: 'u2', data: 'a', nodeOnlyInputVersions: ['a', 'b'] } as any, pressed)).toBe('a')
+        expect(requestInputText({ chatId: 'u1', data: 'a' } as any, pressed)).toBe('a')
     })
 })

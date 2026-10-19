@@ -5,7 +5,7 @@
     import { copyScriptstateCheckpoint, mergeRerollCheckpoint, removeSwipeCheckpoint, restoreScriptstateBeforeReroll, restoreScriptstateSnapshot, restoreShownSwipeScriptstate, snapshotScriptstate } from 'src/ts/chatScriptstateCheckpoint';
     import { deleteShownSwipe, dropShownSwipe, findLastReplyIndex, markErrorLikeReply, shiftErrorMarkAfterDelete, shownSwipeIsErrorLike, stepSwipe } from 'src/ts/chatSwipes';
     import { previousInputIndex } from 'src/ts/gui/inputEcho';
-    import { recordSentRequestInput, type SentInput } from 'src/ts/inputVersions';
+    import { pressedInput, recordSentRequestInput, type SentInput } from 'src/ts/inputVersions';
     import { clearRerollPlaceholder, setRerollPlaceholder } from 'src/ts/gui/rerollPlaceholder';
     import { CameraIcon, ChevronUpIcon, ChevronDownIcon, DatabaseIcon, GlobeIcon, FileTextIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2, GitBranch } from "@lucide/svelte";
     import ShDropdownMenu from 'src/lib/UI/GUI/ShDropdownMenu.svelte';
@@ -552,6 +552,8 @@ import { isMobile } from 'src/ts/platform'
 
         try {
         const capturedInput = messageInput
+        // The input versions shown now are what this send uses (inputVersions.ts).
+        const capturedRequestInput = pressedInput(selectedChatRoom.message)
         const capturedFiles = [...fileInput]
         const capturedDraftChaId = draftChaId
         const capturedDraftChatId = draftChatId
@@ -671,6 +673,7 @@ import { isMobile } from 'src/ts/platform'
             route,
             emotionRoute,
             memoryRoute,
+            capturedRequestInput,
         )
         if (sent && !continueResponse) markGeneratedReply(generationTarget, sendStartedAt)
         return sent
@@ -755,6 +758,8 @@ import { isMobile } from 'src/ts/platform'
         let generationTarget = captureGenerationTarget(targetCharacter, targetChat)
         const genKey = chatGenKey(generationTarget.chatId)
         if(preparingChatSends.has(genKey)) return
+        // The input version shown now is what this reroll uses (inputVersions.ts).
+        const requestInput = pressedInput(targetChat.message)
         preparingChatSends.add(genKey)
         let chatLease: ChatLeaseTarget | null = null
         try {
@@ -822,7 +827,7 @@ import { isMobile } from 'src/ts/platform'
         }
         preparingChatSends.delete(genKey)
         const rerollStartedAt = Date.now()
-        const generated = await sendChatMain(false, generationTarget)
+        const generated = await sendChatMain(false, generationTarget, undefined, undefined, undefined, undefined, requestInput)
 
         const attached = resolveGenerationTarget(DBState.db.characters, generationTarget)
         if(!attached) return
@@ -951,6 +956,7 @@ import { isMobile } from 'src/ts/platform'
         capturedRoute?:RequestModelRouteSnapshot,
         capturedEmotionRoute?:RequestModelRouteSnapshot,
         capturedMemoryRoute?:RequestModelRouteSnapshot,
+        capturedRequestInput?:SentInput,
     ) {
 
         let generationTarget = capturedTarget
@@ -990,6 +996,7 @@ import { isMobile } from 'src/ts/platform'
                 emotionRouteSnapshot: capturedEmotionRoute,
                 memoryRouteSnapshot: capturedMemoryRoute,
                 onRequestInput: (chatId, text) => requestInputs.set(genKey, { chatId, text }),
+                requestInput: capturedRequestInput,
             })
         } catch (error) {
             console.error(error)

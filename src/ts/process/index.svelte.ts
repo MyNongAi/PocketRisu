@@ -1,6 +1,7 @@
 import { get } from "svelte/store";
 import { type character, type MessageGenerationInfo, type Chat, type MessagePresetInfo, changeToPreset, type Message, normalizeChat, type StreamingDisplayOptimizationMode } from "../storage/database.svelte";
 import { DBState } from '../stores.svelte';
+import { requestInputText, type SentInput } from '../inputVersions';
 import { CharEmotion, selectedCharID } from "../stores.svelte";
 import { ChatTokenizer, tokenize, tokenizeNum } from "../tokenizer";
 import { language } from "../../lang";
@@ -140,6 +141,9 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     /** Each input as the prompt reads it (the newest comes last), so the
      * reply can mark the version it was requested with (inputVersions.ts). */
     onRequestInput?:(chatId:string, text:string) => void
+    /** The newest input as it was when send or reroll was pressed: a version
+     * shown after that is left for the next request (inputVersions.ts). */
+    requestInput?:SentInput
 } = {}):Promise<boolean> {
 
     chatProcessStage.set(0)
@@ -1068,7 +1072,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 
     let index = 0
     for(const msg of ms){
-        const sentData = msg.data
+        const sentData = requestInputText(msg, arg.requestInput)
         let formatedChat = (await processScriptFull(nowChatroom,risuChatParser(sentData, {chara: currentChar, role: msg.role}), 'editprocess', index, {
             chatRole: msg.role,
         }, getRuntimeModuleContext())).data
@@ -2129,6 +2133,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             emotionRouteSnapshot,
             memoryRouteSnapshot,
             moduleContext,
+            requestInput: arg.requestInput,
         })
     }
 
@@ -2185,6 +2190,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
               memoryRouteSnapshot,
               moduleContext,
               responseStartedAt,
+              requestInput: arg.requestInput,
           })
     }
 

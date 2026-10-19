@@ -3,6 +3,9 @@
 // under a reply step through them in order, starting with the input as it was
 // sent. The version shown becomes the input, like a reply's swipes.
 //
+// A request uses the version shown when send or reroll was pressed; a version
+// picked after that is for the next request (the user's request, 2026-10-19).
+//
 // A reply also records which input its request was made from, per swipe, so
 // that version can be pointed out. Only hashes are kept (reply text -> input
 // text), so a long input is not copied into every reply; a reply edited since
@@ -97,6 +100,29 @@ export function recordSentRequestInput(reply: RequestMarkedReply, input: { chatI
     if (!sent || !input?.chatId || input.chatId !== sent.chatId) return false
     recordRequestInput(reply, sent.text)
     return true
+}
+
+/** The newest input of a chat as it is when send or reroll is pressed. */
+export function pressedInput(messages: readonly ({ role?: string, data?: string, chatId?: string, disabled?: unknown, isComment?: boolean } | undefined)[] | null | undefined): SentInput | undefined {
+    for (let i = (messages?.length ?? 0) - 1; i >= 0; i--) {
+        const message = messages![i]
+        if (!message || message.disabled || message.isComment) continue
+        if (message.role !== 'user') continue
+        return message.chatId ? { chatId: message.chatId, text: message.data ?? '' } : undefined
+    }
+    return undefined
+}
+
+/**
+ * The text a request reads from `message`: the version shown when the
+ * request was pressed (`pressed`) if the arrows or a saved edit have shown
+ * another of its versions since. A change from anywhere else (a trigger
+ * rewriting the input) is read as it is.
+ */
+export function requestInputText(message: VersionedInput & { chatId?: string }, pressed: SentInput | null | undefined): string {
+    if (!pressed || message.chatId !== pressed.chatId || message.data === pressed.text) return message.data
+    const versions = message.nodeOnlyInputVersions ?? []
+    return versions.includes(message.data) && versions.includes(pressed.text) ? pressed.text : message.data
 }
 
 /** Whether `input` is the one the shown reply's request was made from. */

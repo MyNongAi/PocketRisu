@@ -1579,7 +1579,10 @@
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "markRequestInput(attached.chat)" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "onRequestInput: (chatId, text) => requestInputs.set(genKey, { chatId, text })" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (lastMsg.nodeOnlyRequestInputs) newLastMsg.nodeOnlyRequestInputs = { ...lastMsg.nodeOnlyRequestInputs }" },
-        { "file": "src/ts/process/index.svelte.ts", "contains": "if(msg.role === 'user') arg.onRequestInput?.(msg.chatId, sentData)" }
+        { "file": "src/ts/process/index.svelte.ts", "contains": "if(msg.role === 'user') arg.onRequestInput?.(msg.chatId, sentData)" },
+        { "file": "src/ts/process/index.svelte.ts", "contains": "const sentData = requestInputText(msg, arg.requestInput)" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const capturedRequestInput = pressedInput(selectedChatRoom.message)" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const requestInput = pressedInput(targetChat.message)" }
       ],
       "regressionTests": [
         "src/ts/inputVersions.test.ts"
