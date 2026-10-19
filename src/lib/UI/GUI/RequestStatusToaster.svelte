@@ -15,7 +15,7 @@
     import { toast } from 'svelte-sonner'
     import { requestStatuses, isTerminalPhase, clearStatus } from 'src/ts/status/requestStatus'
     import RequestStatusToast, { REQUEST_TOAST_CLASS } from './RequestStatusToast.svelte'
-    import { dismissRequestToast, keepsDoneButton, minimizedRequests, requestToastDismissed, requestToastShown, unminimizeRequest } from 'src/ts/status/requestStatusDock'
+    import { dismissRequestToast, keepsDoneButton, minimizedRequests, requestToastDismissed, requestToastShown, staysOpenUnseen, unminimizeRequest } from 'src/ts/status/requestStatusDock'
     import { DBState, selIdState } from 'src/ts/stores.svelte'
 
     function currentChatId(): string | null {
@@ -30,6 +30,8 @@
     // genIds we've issued a toast for, and pending dismissal timers.
     const shown = new Set<string>()
     const dismissTimers = new Map<string, ReturnType<typeof setTimeout>>()
+    // Open cards of a reply finished in another chat (staysOpenUnseen).
+    const keptUnseen = new Set<string>()
 
     function toastId(id: string): string {
         return `req:${id}`
@@ -69,6 +71,12 @@
                 // Folded and written in another chat: the dock's check stays
                 // until it is tapped (RequestStatusDock clears the entry).
                 if (get(minimizedRequests).includes(id) && keepsDoneButton(entry, currentChatId())) continue
+                // Open and finished in another chat: the card stays until that
+                // chat is opened (the effect below), or it is folded or swiped.
+                if (!get(minimizedRequests).includes(id) && staysOpenUnseen(entry, currentChatId())) {
+                    keptUnseen.add(id)
+                    continue
+                }
                 scheduleDismiss(id)
             } else if (dismissTimers.has(id)) {
                 // Revived (e.g. fallback/retry reuses the same generationId): the
@@ -88,7 +96,39 @@
         }
     })
 
+    // Cards kept up for a reply finished in another chat leave as usual once
+    // that chat is the one on screen.
+    const chatOnScreen = $derived.by(() => {
+        const character = DBState.db.characters?.[selIdState.selId]
+        return character?.chats?.[character.chatPage]?.id ?? null
+    })
+    $effect(() => {
+        const here = chatOnScreen
+        for (const id of [...keptUnseen]) {
+            const entry = get(requestStatuses).get(id)
+            if (!entry || get(minimizedRequests).includes(id)) {
+                keptUnseen.delete(id)
+                continue
+            }
+            if (entry.chatId === here) {
+                keptUnseen.delete(id)
+                scheduleDismiss(id)
+            }
+        }
+    })
+
+    // Folded while kept up: the dock takes it (a done reply keeps its check
+    // there; anything else leaves as usual).
+    const unsubFolded = minimizedRequests.subscribe((ids) => {
+        for (const id of ids) {
+            if (!keptUnseen.delete(id)) continue
+            const entry = get(requestStatuses).get(id)
+            if (!entry || !keepsDoneButton(entry, currentChatId())) scheduleDismiss(id)
+        }
+    })
+
     onDestroy(() => {
+        unsubFolded()
         unsub()
         for (const t of dismissTimers.values()) clearTimeout(t)
         dismissTimers.clear()

@@ -60,6 +60,16 @@ export function dockState(entry: Pick<RequestStatusEntry, 'phase'>): DockState {
  * request, a reply in the chat being read, a failure or a cancel) leaves
  * with its toast as before.
  */
+/**
+ * Whether a finished card that is open (not folded) stays up: a main reply
+ * done or failed in another chat than the one on screen (the user's request,
+ * 2026-10-19: it closed on its own while the reader was elsewhere). It closes
+ * as usual once that chat is opened.
+ */
+export function staysOpenUnseen(entry: Pick<RequestStatusEntry, 'phase' | 'chatId' | 'kind'>, currentChatId: string | null | undefined): boolean {
+    return (entry.phase === 'done' || entry.phase === 'failed') && entry.kind === 'main' && !!entry.chatId && entry.chatId !== currentChatId
+}
+
 export function keepsDoneButton(entry: Pick<RequestStatusEntry, 'phase' | 'chatId' | 'kind'>, currentChatId: string | null | undefined): boolean {
     return entry.phase === 'done' && entry.kind === 'main' && !!entry.chatId && entry.chatId !== currentChatId
 }

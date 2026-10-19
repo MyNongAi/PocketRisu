@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { get } from 'svelte/store'
-import { dismissRequestToast, dockState, isMinimizedRequest, keepsDoneButton, minimizedRequests, minimizeRequest, requestToastDismissed, requestToastShown, unminimizeRequest } from './requestStatusDock'
+import { dismissRequestToast, staysOpenUnseen, dockState, isMinimizedRequest, keepsDoneButton, minimizedRequests, minimizeRequest, requestToastDismissed, requestToastShown, unminimizeRequest } from './requestStatusDock'
 import { requestStatuses } from './requestStatus'
 
 afterEach(() => {
@@ -53,5 +53,14 @@ describe('requestStatusDock', () => {
         // A finished request's card just closes.
         requestToastDismissed('done')
         expect(isMinimizedRequest('done')).toBe(false)
+    })
+
+    it('keeps an open card of a reply finished in another chat until that chat is on screen', () => {
+        const done = { phase: 'done', kind: 'main', chatId: 'other' } as const
+        expect(staysOpenUnseen(done, 'here')).toBe(true)
+        expect(staysOpenUnseen({ ...done, phase: 'failed' }, 'here')).toBe(true)
+        expect(staysOpenUnseen(done, 'other')).toBe(false)
+        expect(staysOpenUnseen({ ...done, kind: 'translate' }, 'here')).toBe(false)
+        expect(staysOpenUnseen({ ...done, phase: 'aborted' }, 'here')).toBe(false)
     })
 })

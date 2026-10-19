@@ -347,8 +347,9 @@
                                 newChat.id = v4()
                                 // The unsent text in the input goes along (the user's request, 2026-10-10).
                                 copyChatDraft((chara as character).chaId, chara.chats[chatIdx].id, newChat.id)
-                                chara.chats.unshift(newChat)
-                                changeChatTo(0)
+                                // Right under the chat it copies, not at the top (the user's request, 2026-10-19).
+                                chara.chats.splice(chatIdx + 1, 0, newChat)
+                                changeChatTo(chatIdx + 1)
                                 chara.chats = chara.chats
                                 void requestImmediateSave()
                                 notifySuccess(language.copyChatSuccess)
@@ -446,8 +447,9 @@
                         newChat.id = v4()
                         // The unsent text in the input goes along (the user's request, 2026-10-10).
                         copyChatDraft((chara as character).chaId, chara.chats[i].id, newChat.id)
-                        chara.chats.unshift(newChat)
-                        changeChatTo(0)
+                        // Right under the chat it copies, not at the top (the user's request, 2026-10-19).
+                        chara.chats.splice(i + 1, 0, newChat)
+                        changeChatTo(i + 1)
                         chara.chats = chara.chats
                         void requestImmediateSave()
                         notifySuccess(language.copyChatSuccess)

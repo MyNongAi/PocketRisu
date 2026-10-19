@@ -1280,7 +1280,8 @@
       ],
       "requiredMarkers": [
         { "file": "src/ts/process/generationConcurrency.ts", "contains": "maxConcurrentChats: Number.POSITIVE_INFINITY," },
-        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "const newChat = reissueMessageIds(copyableChat(chara.chats[i]), chara.chats[i].message.map(m => m.chatId))" }
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "const newChat = reissueMessageIds(copyableChat(chara.chats[i]), chara.chats[i].message.map(m => m.chatId))" },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "chara.chats.splice(i + 1, 0, newChat)" }
       ],
       "regressionTests": [
         "src/ts/process/generationConcurrency.test.ts",
@@ -1715,6 +1716,7 @@
       "requiredMarkers": [
         { "file": "src/ts/status/requestStatusDock.ts", "contains": "if (entry && !isTerminalPhase(entry.phase)) minimizeRequest(id)" },
         { "file": "src/lib/UI/GUI/RequestStatusToaster.svelte", "contains": "onDismiss: () => requestToastDismissed(id)," },
+        { "file": "src/lib/UI/GUI/RequestStatusToaster.svelte", "contains": "if (!get(minimizedRequests).includes(id) && staysOpenUnseen(entry, currentChatId())) {" },
         { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "onclick={goToChat}><ChevronRightIcon size={14} /></button>" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "window.addEventListener(SCROLL_CHAT_TO_END_EVENT, toEnd)" }
       ],
