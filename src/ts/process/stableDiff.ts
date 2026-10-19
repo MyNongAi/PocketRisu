@@ -79,6 +79,8 @@ export interface AIImageOptions {
     width?: number
     height?: number
     characters?: { positive: string, negative: string }[]
+    /** A preset's own NovelAI settings, over the app's (illustration.ts). */
+    nai?: import('./illustration').NaiParams
 }
 
 export async function generateAIImage(genPrompt:string, currentChar:character, neg:string, returnSdData:string, options:AIImageOptions = {}):Promise<string|false>{
@@ -161,6 +163,7 @@ export async function generateAIImage(genPrompt:string, currentChar:character, n
         const naiCharNegatives = naiV4Up ? naiCharacters.map((c) => ({ char_caption: naiEmphasis(c.negative ?? ''), centers: [{ x: 0.5, y: 0.5 }] })) : []
         const naiWidth = options.width ?? db.NAIImgConfig.width
         const naiHeight = options.height ?? db.NAIImgConfig.height
+        const naiOwn = options.nai ?? {}
 
         let reqlist:any = {}
 
@@ -171,19 +174,19 @@ export async function generateAIImage(genPrompt:string, currentChar:character, n
                 "parameters": {
                     "params_version": 3,
                     "add_original_image": true,
-                    "cfg_rescale": db.NAIImgConfig.cfg_rescale,
+                    "cfg_rescale": naiOwn.cfg_rescale ?? db.NAIImgConfig.cfg_rescale,
                     "controlnet_strength": 1,
                     "dynamic_thresholding": db.NAIImgModel.includes('nai-diffusion-3') || db.NAIImgModel.includes('nai-diffusion-furry-3') || db.NAIImgModel.includes('nai-diffusion-2') ? db.NAIImgConfig.decrisp : false,
                     "n_samples": 1,
                     "width": naiWidth,
                     "height": naiHeight,
-                    "sampler": db.NAIImgConfig.sampler,
-                    "steps": db.NAIImgConfig.steps,
-                    "scale": db.NAIImgConfig.scale,
+                    "sampler": naiOwn.sampler ?? db.NAIImgConfig.sampler,
+                    "steps": naiOwn.steps ?? db.NAIImgConfig.steps,
+                    "scale": naiOwn.scale ?? db.NAIImgConfig.scale,
                     "negative_prompt": neg,
-                    "sm": db.NAIImgModel.includes('nai-diffusion-3') || db.NAIImgModel.includes('nai-diffusion-furry-3') || db.NAIImgModel.includes('nai-diffusion-2') ? db.NAIImgConfig.sm : undefined,
-                    "sm_dyn": db.NAIImgModel.includes('nai-diffusion-3') || db.NAIImgModel.includes('nai-diffusion-furry-3') ? db.NAIImgConfig.sm_dyn : undefined,
-                    "noise_schedule": db.NAIImgConfig.noise_schedule,
+                    "sm": db.NAIImgModel.includes('nai-diffusion-3') || db.NAIImgModel.includes('nai-diffusion-furry-3') || db.NAIImgModel.includes('nai-diffusion-2') ? (naiOwn.sm ?? db.NAIImgConfig.sm) : undefined,
+                    "sm_dyn": db.NAIImgModel.includes('nai-diffusion-3') || db.NAIImgModel.includes('nai-diffusion-furry-3') ? (naiOwn.sm_dyn ?? db.NAIImgConfig.sm_dyn) : undefined,
+                    "noise_schedule": naiOwn.noise_schedule ?? db.NAIImgConfig.noise_schedule,
                     "normalize_reference_strength_multiple":true,
                     "ucPreset": 3,
                     "uncond_scale": 1,
@@ -216,7 +219,7 @@ export async function generateAIImage(genPrompt:string, currentChar:character, n
                     "strength": undefined,
                     "noise": undefined,
                     //add additional parameters
-                    "seed": random(0, 2**32-1),
+                    "seed": naiOwn.seed ?? random(0, 2**32-1),
                     "extra_noise_seed": random(0, 2**32-1),
                     "prefer_brownian": true,
                     "deliberate_euler_ancestral_bug": false,
@@ -235,7 +238,7 @@ export async function generateAIImage(genPrompt:string, currentChar:character, n
         }
 
         // Add Variety+ option 
-        if(db.NAIImgConfig.variety_plus) {
+        if(naiOwn.variety ?? db.NAIImgConfig.variety_plus) {
             if(db.NAIImgModel.includes('nai-diffusion-4-full') || db.NAIImgModel.includes('nai-diffusion-4-curated')
             || db.NAIImgModel.includes('nai-diffusion-3') || db.NAIImgModel.includes('nai-diffusion-furry-3')) {
                 commonReq.body.parameters.skip_cfg_above_sigma = Math.sqrt(naiWidth * naiHeight) * 0.01889;

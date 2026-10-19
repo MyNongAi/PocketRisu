@@ -8,7 +8,7 @@ import { DBState } from '../stores.svelte'
 import { risuChatParser } from '../parser/parser.svelte'
 import { notifyError, notifyInfo } from '../alert'
 import { language } from '../../lang'
-import { getModuleLorebooks, type ModuleRuntimeContext } from './modules'
+import { getModuleLorebooks, getModules, type ModuleRuntimeContext } from './modules'
 import { requestChatData } from './request/request'
 import { collectStreamingText } from './request/shared'
 import { generateAIImage } from './stableDiff'
@@ -23,7 +23,9 @@ import {
     illustrationSettings,
     inlayLine,
     insertSceneLines,
+    lorebookPresets,
     parseScenes,
+    placeScenes,
     ratioSize,
     replaceReplyLine,
     replaceReplyText,
@@ -50,6 +52,15 @@ function findReply(chaId: string, chatId: string, messageId: string): { characte
     const index = chat?.message?.findIndex((m) => m?.chatId === messageId) ?? -1
     if (!char || !chat || index < 0) return null
     return { character: char as character, chat, message: chat.message[index], index }
+}
+
+/** The style presets a bot can use: its own lorebook, the chat's, then each module's on. */
+export function presetsFor(character: character, chat: Chat | null | undefined, moduleContext?: ModuleRuntimeContext) {
+    return lorebookPresets([
+        { label: '봇', entries: character.globalLore },
+        { label: '채팅', entries: chat?.localLore },
+        ...getModules(moduleContext).filter(Boolean).map((module) => ({ label: module.name, entries: module.lorebook })),
+    ])
 }
 
 /** Change a reply's text wherever it shows (its swipe too); its request mark follows. */
@@ -119,6 +130,10 @@ export async function illustrateReply(arg: {
                 character: { name: character.name, description: parse(character.desc ?? '') },
                 user: { name: arg.moduleContext?.userName ?? DBState.db.username ?? 'User', description: parse(arg.moduleContext?.personaPrompt ?? '') },
                 count: settings.count,
+                position: settings.position,
+                maxCharacters: settings.maxCharacters,
+                nsfw: settings.nsfw,
+                direction: settings.direction,
             }),
             bias: {},
             useStreaming: false,
@@ -136,7 +151,7 @@ export async function illustrateReply(arg: {
         else if (response.type === 'multiline') answer = response.result.map(([, text]) => text).join('\n')
         else answer = response.result
 
-        const scenes = parseScenes(answer, lines.length, countRange(settings.count).max)
+        const scenes = placeScenes(parseScenes(answer, lines.length, countRange(settings.count).max, settings.maxCharacters), settings.position, lines.length)
         if (scenes.length === 0) {
             if (arg.manual) notifyInfo(language.illustrationNothing)
             return 0
@@ -152,13 +167,12 @@ export async function illustrateReply(arg: {
         placed.push(...drawing)
         rememberAuxLines(now.message, drawing)
 
-        const presetId = settings.presetId
-        const preset = (DBState.db.nodeOnlyIllustrationPresets ?? []).find((p) => p.id === presetId)
+        const preset = settings.preset ? presetsFor(character, chat, arg.moduleContext).find((p) => p.name === settings.preset) : undefined
         const size = ratioSize(settings.ratio)
         let drawn = 0
         for (let index = 0; index < scenes.length; index++) {
             const prompt = composeImagePrompt(preset, scenes[index])
-            const image = await generateAIImage(prompt.positive, character, prompt.negative, 'inlay', { ...size, characters: prompt.characters })
+            const image = await generateAIImage(prompt.positive, character, prompt.negative, 'inlay', { ...size, characters: prompt.characters, ...(prompt.nai ? { nai: prompt.nai } : {}) })
             const target = findReply(arg.chaId, arg.chatId, arg.messageId)
             if (!target) break
             if (!image) {

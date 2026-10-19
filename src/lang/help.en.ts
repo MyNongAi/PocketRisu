@@ -282,7 +282,8 @@ export const helpEn = {
             "The long-term memory preset used by chats left on 'Default'. With 'Off', memory only runs in chats that picked a preset themselves.",
         illustration:
             "Draws NovelAI illustrations into this bot's replies. After a reply, the auxiliary model picks the scenes and writes scene and character tags; with the chosen style preset they are drawn by the image generation in the settings and put after their lines.\n\n" +
-            "- Per bot; ⚙ sets when to draw (after every reply / only from the message menu), how many, the ratio and the style.\n" +
+            "- Per bot; ⚙ sets when to draw (after every reply / only from the message menu), how many, where (picked / top / middle / bottom), the ratio, max characters, NSFW, the style and extra directions.\n" +
+            "- Style presets are \"프리셋 X\" lorebook entries (Lightboard's formats): a bot's for that bot, a module's for every bot with it on. A [NAI] section (steps, scale, sampler, …) draws that preset with those values.\n" +
             "- Pictures are drawn in the background after the reply: you can go on meanwhile.\n" +
             "- 🎨 in the message menu (☰) draws a reply again.\n" +
             "- Lorebook entries marked 🎨 (character looks, art rules) go with the request, never to the main model.\n" +

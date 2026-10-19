@@ -351,7 +351,8 @@
                 class="p-1 text-textcolor2 hover:text-textcolor"
                 title={language.illustrationSettings}
                 aria-label={language.illustrationSettings}
-                onclick={() => { illustrationSettingsOpen = true }}
+                aria-expanded={illustrationSettingsOpen}
+                onclick={() => { illustrationSettingsOpen = !illustrationSettingsOpen }}
             ><SettingsIcon size={18} /></button>
             <ShSwitch
                 className="shrink-0"
@@ -364,9 +365,9 @@
             />
         </span>
     </div>
-{/if}
-{#if illustrationSettingsOpen}
-    <IllustrationSettings onClose={() => { illustrationSettingsOpen = false }} />
+    {#if illustrationSettingsOpen}
+        <IllustrationSettings />
+    {/if}
 {/if}
 
 {#if !DBState.db.disableToggleBinding && currentChat}

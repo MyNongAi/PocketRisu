@@ -1,13 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
     buildScenePrompt,
-    collectLightboardPresets,
     composeImagePrompt,
     countRange,
     illustrationSettings,
     insertSceneLines,
-    parseLightboardPreset,
+    lorebookPresets,
+    parseNaiParams,
+    parsePresetEntry,
     parseScenes,
+    placeScenes,
     ratioSize,
     replaceReplyLine,
     replaceReplyText,
@@ -15,10 +17,11 @@ import {
 
 describe('illustration settings', () => {
     it('fills in what is missing or unknown', () => {
-        expect(illustrationSettings(undefined)).toEqual({ enabled: false, trigger: 'auto', count: '0-1', ratio: 'portrait', presetId: undefined })
-        expect(illustrationSettings({ enabled: true, trigger: 'button', count: '1-3', ratio: 'square', presetId: 'p' }))
-            .toEqual({ enabled: true, trigger: 'button', count: '1-3', ratio: 'square', presetId: 'p' })
-        expect(illustrationSettings({ count: 'many' as any, ratio: 'wide' as any }).count).toBe('0-1')
+        expect(illustrationSettings(undefined)).toEqual({ enabled: false, trigger: 'auto', count: '0-1', ratio: 'portrait', position: 'auto', maxCharacters: 3, nsfw: false, direction: '', preset: undefined })
+        expect(illustrationSettings({ enabled: true, trigger: 'button', count: '1-3', ratio: 'square', position: 'bottom', maxCharacters: 1, nsfw: true, direction: 'faces', preset: '도트' }))
+            .toEqual({ enabled: true, trigger: 'button', count: '1-3', ratio: 'square', position: 'bottom', maxCharacters: 1, nsfw: true, direction: 'faces', preset: '도트' })
+        expect(illustrationSettings({ count: 'many' as any, ratio: 'wide' as any, position: 'left' as any, maxCharacters: 9 }))
+            .toMatchObject({ count: '0-1', ratio: 'portrait', position: 'auto', maxCharacters: 3 })
     })
 
     it('maps counts and ratios (sizes NovelAI draws free on Opus)', () => {
@@ -46,6 +49,24 @@ describe('the scene request and answer', () => {
         expect(user.content).not.toContain('(the user)')
         expect(user.content).toContain('# Rules\nMaah: silver hair, red eyes')
         expect(user.content).toContain('[1] She draws her sword.\n[2] "Run."')
+    })
+
+    it('says where the picture goes, how many characters, NSFW and the extra directions', () => {
+        const base = { lines: ['a'], rules: [], context: [], character: { name: 'M', description: '' }, user: { name: 'U', description: '' }, count: '1' as const }
+        const [system, user] = buildScenePrompt({ ...base, position: 'bottom', maxCharacters: 1, nsfw: false, direction: 'show the sea' })
+        expect(system.content).toContain('at the end of the reply')
+        expect(system.content).toContain('at most 1')
+        expect(system.content).toContain('non-explicit')
+        expect(user.content).toContain('# Directions\nshow the sea')
+        expect(buildScenePrompt({ ...base, nsfw: true })[0].content).toContain('tagged explicitly')
+    })
+
+    it('puts every picture at a fixed place when asked', () => {
+        const scenes = [{ line: 2 }, { line: 5 }]
+        expect(placeScenes(scenes, 'auto', 6)).toEqual(scenes)
+        expect(placeScenes(scenes, 'top', 6).map((s) => s.line)).toEqual([0, 0])
+        expect(placeScenes(scenes, 'middle', 6).map((s) => s.line)).toEqual([3, 3])
+        expect(placeScenes(scenes, 'bottom', 6).map((s) => s.line)).toEqual([6, 6])
     })
 
     it('reads the scenes and drops what does not fit', () => {
@@ -77,14 +98,35 @@ describe('the image prompt', () => {
         expect(composeImagePrompt(undefined, scene).positive).toBe('cowboy shot, 1girl, castle')
     })
 
-    it('reads Lightboard presets, once each, without the ones already listed', () => {
+    it('reads presets from "프리셋 X" lorebook entries, in both Lightboard formats', () => {
         const content = 'https://arca.live/x\n\n[Positive]\n{prompt}, artist:a\n\n[Negative]\nlowres'
-        expect(parseLightboardPreset('프리셋 도트', content)).toEqual({ name: '도트', positive: '{prompt}, artist:a', negative: 'lowres' })
-        expect(parseLightboardPreset('lb-xnai.lb', content)).toBeNull()
-        expect(parseLightboardPreset('프리셋 빈', 'no sections')).toBeNull()
-        const books = [[{ comment: '프리셋 도트', content }, { comment: '프리셋 1', content: '[Positive]\nx' }], [{ comment: '프리셋 도트', content }]]
-        expect(collectLightboardPresets(books, []).map((p) => p.name)).toEqual(['도트', '1'])
-        expect(collectLightboardPresets(books, [{ name: '도트', positive: '{prompt}, artist:a' }]).map((p) => p.name)).toEqual(['1'])
+        expect(parsePresetEntry('프리셋 도트', content)).toEqual({ name: '도트', positive: '{prompt}, artist:a', negative: 'lowres' })
+        expect(parsePresetEntry('lb-xnai.lb', content)).toBeNull()
+        expect(parsePresetEntry('프리셋 빈', 'no sections')).toBeNull()
+        // Lightboard NAI: [Author] [Quality] [Negative], each section inline
+        expect(parsePresetEntry('프리셋1', '[Author] artist:x, year 2025\n[Quality] best quality\n[Negative] lowres, censored')).toEqual({
+            name: '1', positive: 'artist:x, year 2025, {prompt}, best quality', negative: 'lowres, censored',
+        })
+    })
+
+    it('reads a preset own NovelAI values from its [NAI] section', () => {
+        expect(parseNaiParams('# comment\nsteps: 23\nscale=5.5\nsampler: k_dpmpp_2m\nSMEA: on\nvariety+: false\nseed: 42\nunknown: 1')).toEqual({
+            steps: 23, scale: 5.5, sampler: 'k_dpmpp_2m', sm: true, variety: false, seed: 42,
+        })
+        expect(parseNaiParams('# steps: 28')).toBeUndefined()
+        const preset = parsePresetEntry('프리셋 빠른', '[Positive]\n{prompt}\n[NAI]\nsteps: 20')!
+        expect(preset.nai).toEqual({ steps: 20 })
+        const scene = { line: 1, camera: 'c', scene: 's', characters: [] }
+        expect(composeImagePrompt(preset, scene).nai).toEqual({ steps: 20 })
+    })
+
+    it('lists the presets of the bot, the chat and the modules, the bot first', () => {
+        const presets = lorebookPresets([
+            { label: '봇', entries: [{ comment: '프리셋 도트', content: '[Positive]\nbot' }] },
+            { label: '채팅', entries: undefined },
+            { label: 'Lightboard', entries: [{ comment: '프리셋 도트', content: '[Positive]\nmodule' }, { comment: '프리셋 블아', content: '[Positive]\nba' }, { comment: 'lb-xnai.lb', content: 'x' }] },
+        ])
+        expect(presets.map((p) => [p.name, p.source, p.positive])).toEqual([['도트', '봇', 'bot'], ['블아', 'Lightboard', 'ba']])
     })
 })
 

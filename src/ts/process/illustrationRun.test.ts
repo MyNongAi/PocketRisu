@@ -9,7 +9,7 @@ const notifyInfo = vi.hoisted(() => vi.fn())
 
 vi.mock('../stores.svelte', () => ({ DBState: { get db() { return db.value } } }))
 vi.mock('../parser/parser.svelte', () => ({ risuChatParser: (text: string) => text }))
-vi.mock('./modules', () => ({ getModuleLorebooks: () => [] }))
+vi.mock('./modules', () => ({ getModuleLorebooks: () => [], getModules: () => [] }))
 vi.mock('./request/request', () => ({ requestChatData }))
 vi.mock('./request/shared', () => ({ collectStreamingText: vi.fn() }))
 vi.mock('./stableDiff', () => ({ generateAIImage }))
@@ -25,8 +25,8 @@ const scene = (line: number) => ({ line, camera: 'cowboy shot', scene: '1girl', 
 function setup(settings: any = { enabled: true }) {
     const reply = { role: 'char', data: 'She smiles.\n"Hello."', chatId: 'r1' } as any
     const chat = { id: 'c1', localLore: [], message: [{ role: 'user', data: 'Hi', chatId: 'u1' }, reply] } as any
-    const character = { chaId: 'ch1', name: 'Maah', desc: 'A demon princess.', globalLore: [{ comment: 'looks', content: 'Maah: silver hair', nodeOnlyIllustration: true }, { comment: 'story', content: 'The world', alwaysActive: true }], chats: [chat], nodeOnlyIllustration: settings } as any
-    db.value = { characters: [character], sdProvider: 'novelai', username: 'User', nodeOnlyIllustrationPresets: [{ id: 'p1', name: 'P', positive: 'artist:a, {prompt}', negative: 'lowres' }] }
+    const character = { chaId: 'ch1', name: 'Maah', desc: 'A demon princess.', globalLore: [{ comment: 'looks', content: 'Maah: silver hair', nodeOnlyIllustration: true }, { comment: 'story', content: 'The world', alwaysActive: true }, { comment: '프리셋 P', content: '[Positive]\nartist:a, {prompt}\n[Negative]\nlowres\n[NAI]\nsteps: 20' }], chats: [chat], nodeOnlyIllustration: settings } as any
+    db.value = { characters: [character], sdProvider: 'novelai', username: 'User' }
     return { character, chat, reply }
 }
 
@@ -42,7 +42,7 @@ beforeEach(() => {
 
 describe('drawing the illustrations of a reply', () => {
     it('asks for scenes with the 🎨 entries, draws them with the preset and puts each after its line', async () => {
-        const { character, reply } = setup({ enabled: true, presetId: 'p1', ratio: 'landscape', count: '1-2' })
+        const { character, reply } = setup({ enabled: true, preset: 'P', ratio: 'landscape', count: '1-2' })
         requestChatData.mockResolvedValue({ type: 'success', result: JSON.stringify([scene(1)]) })
         generateAIImage.mockResolvedValue('data:image/png;base64,AAA')
         writeInlayImage.mockResolvedValue('inlay-1')
@@ -53,9 +53,10 @@ describe('drawing the illustrations of a reply', () => {
         const prompt = request.formated[1].content
         expect(prompt).toContain('Maah: silver hair')
         expect(prompt).not.toContain('The world')
+        expect(prompt).not.toContain('artist:a')
         expect(prompt).toContain('A demon princess.')
         expect(generateAIImage).toHaveBeenCalledWith('artist:a, cowboy shot, 1girl', character, 'lowres', 'inlay', {
-            width: 1216, height: 832, characters: [{ positive: 'silver hair', negative: '' }],
+            width: 1216, height: 832, characters: [{ positive: 'silver hair', negative: '' }], nai: { steps: 20 },
         })
         expect(reply.data).toBe('She smiles.\n{{inlay::inlay-1}}\n"Hello."')
         expect(reply.nodeOnlyIllustrations['inlay-1'].positive).toBe('artist:a, cowboy shot, 1girl')

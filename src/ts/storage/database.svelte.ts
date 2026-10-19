@@ -1670,8 +1670,6 @@ export interface Database{
      * active chat page. 0 disables the window and keeps legacy all-message
      * rendering. */
     externalAssetRecentOutputs?: number
-    /** PocketRisu: style presets for illustrations, shared by every bot (illustration.ts). */
-    nodeOnlyIllustrationPresets?: import('../process/illustration').IllustrationPreset[]
     streamingDisplayOptimizationMode?: StreamingDisplayOptimizationMode
     ImagenModel:string
     ImagenImageSize:string

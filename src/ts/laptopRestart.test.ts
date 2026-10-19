@@ -99,6 +99,17 @@ describe('reloadThroughLaptop', () => {
         expect(h.reload).toHaveBeenCalledOnce()
     })
 
+    it('does not reload when the page already runs the build the laptop serves', async () => {
+        const log = (round: number): Reply => round < 2
+            ? { status: 200, body: { text: '20:09:12 서버는 끄지 않았습니다.\n', next: 30, running: true } }
+            : { status: 200, body: { text: '', next: 30, running: false } }
+        const h = harness({ restart: { status: 202, body: { log: '/pocketrisu-control' } }, log, up: () => true, build: () => 'build-a' })
+        h.deps.clientBuild = () => 'build-a'
+        await reloadThroughLaptop(h.deps)
+        expect(h.reload).not.toHaveBeenCalled()
+        expect(laptopRestart.phase).toBe('done')
+    })
+
     it('gives up after 15 minutes', async () => {
         const h = harness({ restart: { status: 202, body: { log: '/pocketrisu-control' } }, up: () => false })
         await reloadThroughLaptop(h.deps)

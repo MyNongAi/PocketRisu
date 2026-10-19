@@ -8,8 +8,10 @@
 // button just reloads.
 
 import { forageStorage } from './globalApi.svelte'
+import { getClientBuildId } from './storage/buildFence'
 
-export type LaptopRestartPhase = 'idle' | 'running' | 'warned' | 'failed'
+/** 'done': the run is over and this page already runs what the laptop serves. */
+export type LaptopRestartPhase = 'idle' | 'running' | 'warned' | 'failed' | 'done'
 
 class LaptopRestartState {
     phase = $state<LaptopRestartPhase>('idle')
@@ -30,6 +32,8 @@ export interface LaptopRestartDeps {
     now: () => number
     sleep: (ms: number) => Promise<void>
     reload: () => void
+    /** The build this page runs ('' when unknown: then it always reloads). */
+    clientBuild?: () => string
 }
 
 const defaultDeps = (): LaptopRestartDeps => ({
@@ -37,6 +41,7 @@ const defaultDeps = (): LaptopRestartDeps => ({
     now: Date.now,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     reload: () => location.reload(),
+    clientBuild: getClientBuildId,
 })
 
 /** Where to read the launcher's progress, or null when this server has no switch. */
@@ -106,6 +111,13 @@ export async function watchLaptopRestart(logBase: string, deps: LaptopRestartDep
         if (!ended || !up) continue
         if (laptopRestart.warnings.length > 0) {
             laptopRestart.phase = 'warned'
+            return
+        }
+        // The server keeps running through most updates now (2026-10-20):
+        // reload only when the laptop serves another build than this page.
+        const mine = deps.clientBuild?.() ?? ''
+        if (mine && build === mine) {
+            laptopRestart.phase = 'done'
             return
         }
         deps.reload()
