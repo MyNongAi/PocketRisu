@@ -318,6 +318,27 @@
     {@render toggles(groupedToggles)}
 {/if}
 
+<!-- Per bot, where the HypaMemory switch used to be (the user's request,
+     2026-10-19): hides the bot's always-on-screen launcher buttons. -->
+{#if chara && currentChat}
+    <div class="w-full flex mt-2 items-center justify-between gap-2 min-h-10 rounded-md px-1">
+        <span class="flex items-center gap-1 min-w-0">
+            <span class="break-words">{language.hideFloatingBotButtons}</span>
+            <Help key="hideFloatingBotButtons" />
+        </span>
+        <ShSwitch
+            className="shrink-0"
+            checked={!!DBState.db.characters[$selectedCharID]?.nodeOnlyHideFloatingButtons}
+            onCheckedChange={(checked) => {
+                const char = DBState.db.characters[$selectedCharID]
+                if (!char) return
+                if (checked) char.nodeOnlyHideFloatingButtons = true
+                else delete char.nodeOnlyHideFloatingButtons
+            }}
+        />
+    </div>
+{/if}
+
 {#if !DBState.db.disableToggleBinding && currentChat}
     <ShButton variant="ghost" size="xs" className="w-full text-textcolor2 mt-1" onclick={saveAsDefault}>
         {DBState.db.defaultToggleValues ? language.toggleDefaultSavedButton : language.toggleSaveAsDefaultButton}

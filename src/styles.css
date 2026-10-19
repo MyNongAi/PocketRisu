@@ -741,3 +741,8 @@ body {
 annotation {
   display: none;
 }
+
+/* A bot's floating launcher, hidden by its "hide floating buttons" switch (floatingBotControls.ts). */
+[data-pr-float-hidden] {
+  display: none !important;
+}

@@ -280,6 +280,11 @@ export const helpEn = {
             "Stored per chat, so other chats of the same character are not affected.",
         memoryPresetDefault:
             "The long-term memory preset used by chats left on 'Default'. With 'Off', memory only runs in chats that picked a preset themselves.",
+        hideFloatingBotButtons:
+            "Hides the small buttons this bot keeps floating at the screen edge (toggles that open a status window, a map or a menu, expand/collapse buttons).\n\n" +
+            "- Saved per bot.\n" +
+            "- Buttons in the message text and an open, larger popup are left as they are.\n" +
+            "- Turn it off and they show again at once.",
         toggleHypaMemory:
             "Whether to use HypaMemory (long-term memory) for this chat.\n\n" +
             "- When on, past messages are automatically summarized into long-term memory once the context fills up, and relevant summaries are pulled back into later responses.\n" +

@@ -1762,6 +1762,27 @@
       "requiredMarkers": [
         { "file": "src/lib/SideBars/CharConfig.svelte", "contains": "            addModuleToDatabase(m)" }
       ]
+    },
+    {
+      "id": "HIDE-FLOATING-BOT-BUTTONS",
+      "title": "봇마다 떠 있는 버튼 숨기기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/floatingBotControls.ts",
+        "src/lib/SideBars/Toggles.svelte",
+        "src/lib/ChatScreens/ChatScreen.svelte",
+        "src/lib/ChatScreens/BackgroundDom.svelte",
+        "src/styles.css"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/ChatScreen.svelte", "contains": "use:hideFloatingBotControls={!!DBState.db.characters[$selectedCharID]?.nodeOnlyHideFloatingButtons}" },
+        { "file": "src/lib/ChatScreens/BackgroundDom.svelte", "contains": "data-pr-bot-background" },
+        { "file": "src/lib/SideBars/Toggles.svelte", "contains": "<Help key=\"hideFloatingBotButtons\" />" },
+        { "file": "src/styles.css", "contains": "[data-pr-float-hidden] {" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/floatingBotControls.test.ts"
+      ]
     }
   ]
 }

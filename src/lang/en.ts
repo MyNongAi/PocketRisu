@@ -1011,6 +1011,7 @@ export const languageEnglish = {
     innerFormat: "Inner Format",
     HypaMemory: "HypaMemory",
     ToggleHypaMemory: "Toggle HypaMemory",
+    hideFloatingBotButtons: "Hide floating buttons",
     resetPromptTemplateConfirm: "Do you really want to reset prompt template?",
     emotionMethod: "Emotion Method",
     continueResponse: "Continue Response",

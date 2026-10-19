@@ -1972,6 +1972,8 @@ export interface character{
     ttsReadOnlyQuoted?:boolean
     replaceGlobalNote:string
     backgroundHTML?:string
+    /** NodeOnly: hide this bot's small launchers fixed to the screen (floatingBotControls.ts). */
+    nodeOnlyHideFloatingButtons?:boolean
     reloadKeys?:number
     backgroundCSS?:string
     license?:string

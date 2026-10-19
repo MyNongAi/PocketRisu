@@ -12,6 +12,7 @@
     import SideBarArrow from "../UI/GUI/SideBarArrow.svelte";
     import ModuleChatMenu from "../Setting/Pages/Module/ModuleChatMenu.svelte";
     import { BackLayerRank, useBackLayer } from 'src/ts/gui/backLayers.svelte';
+    import { hideFloatingBotControls } from 'src/ts/gui/floatingBotControls';
     let openChatList = $state(false)
     let openModuleList = $state(false)
     useBackLayer(BackLayerRank.Popup, () => openChatList, () => { openChatList = false })
@@ -45,7 +46,7 @@
 <!-- `isolate` keeps bot HTML/CSS z-index inside the chat layer. The PC
      split's second workspace sits beside the whole left side now
      (SplitWorkspace in App), so settings no longer unmount it. -->
-<div class="grow h-full min-w-0 flex relative">
+<div class="grow h-full min-w-0 flex relative" use:hideFloatingBotControls={!!DBState.db.characters[$selectedCharID]?.nodeOnlyHideFloatingButtons}>
 <section
     class="grow h-full min-w-0 relative"
 >
