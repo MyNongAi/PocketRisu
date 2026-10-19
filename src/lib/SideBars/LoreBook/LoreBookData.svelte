@@ -1,6 +1,8 @@
 <script lang="ts">
-    import { XIcon, LinkIcon, SunIcon, MoonIcon, BookCopyIcon, FolderIcon, FolderOpen, PlusIcon } from "@lucide/svelte";
-    import { setAuxMark } from "src/ts/process/auxLorebook";
+    import { XIcon, LinkIcon, SunIcon, MoonIcon, PaletteIcon, CheckIcon, BookCopyIcon, FolderIcon, FolderOpen, PlusIcon } from "@lucide/svelte";
+    import { loreRole, setLoreRole, type LoreRole } from "src/ts/process/auxLorebook";
+    import ShContextMenu from "../../UI/GUI/ShContextMenu.svelte";
+    import ShDropdownMenuItem from "../../UI/GUI/ShDropdownMenuItem.svelte";
     import { v4 } from "uuid";
     import { language } from "../../../lang";
     import { getCurrentCharacter, getCurrentChat, type loreBook } from "../../../ts/storage/database.svelte";
@@ -44,6 +46,13 @@
         comparisonStatus,
         comparisonStatuses,
     }: Props = $props();
+    // Where this entry goes (auxLorebook.ts), and the right-click choices.
+    let role = $derived<LoreRole>(loreRole(value))
+    const roleChoices: { role: LoreRole, label: string }[] = [
+        { role: 'main', label: language.loreRoleMain },
+        { role: 'asset', label: language.loreRoleAsset },
+        { role: 'illustration', label: language.loreRoleIllustration },
+    ]
     
     let open = $derived(isOpen)
     let loreComparisonClass = $derived(comparisonStatus === 'match'
@@ -156,21 +165,39 @@
                 <span class={loreComparisonClass} title={loreComparisonTitle}>{value.comment.length === 0 ? value.key.length === 0 ? "Unnamed Lore" : value.key : value.comment}</span>
             {/if}
         </button>
-        <!-- Right-click (a long press on touch) marks the entry for the
-             auxiliary model, 🌙 (auxLorebook.ts); a click on 🌙 undoes it. -->
+        <!-- Right-click (a long press on touch) picks where the entry goes:
+             the main model, 🌙 asset tagging or 🎨 illustrations
+             (auxLorebook.ts); a click on 🌙/🎨 brings it back to the main one. -->
+        <ShContextMenu>
+        {#snippet items()}
+            {#each roleChoices as choice (choice.role)}
+                <ShDropdownMenuItem onSelect={() => setLoreRole(value, externalLoreBooks ?? [], choice.role)}>
+                    {#if choice.role === 'asset'}
+                        <MoonIcon size={16} class="text-emerald-400" />
+                    {:else if choice.role === 'illustration'}
+                        <PaletteIcon size={16} class="text-pink-400" />
+                    {:else if value.alwaysActive}
+                        <SunIcon size={16} />
+                    {:else}
+                        <LinkIcon size={16} />
+                    {/if}
+                    <span class="grow">{choice.label}</span>
+                    {#if role === choice.role}<CheckIcon size={14} />{/if}
+                </ShDropdownMenuItem>
+            {/each}
+        {/snippet}
+        {#snippet trigger(props)}
         <button
+            {...props}
             class="mr-1"
-            class:text-textcolor2={!value.alwaysActive && !value.nodeOnlyAuxModel}
-            class:text-textcolor={value.alwaysActive && !value.nodeOnlyAuxModel}
-            class:text-emerald-400={value.nodeOnlyAuxModel}
-            title={value.nodeOnlyAuxModel ? language.loreAuxModelIcon : language.loreAuxModelSet}
-            oncontextmenu={(event) => {
-                event.preventDefault()
-                setAuxMark(value, externalLoreBooks ?? [], !value.nodeOnlyAuxModel)
-            }}
+            class:text-textcolor2={!value.alwaysActive && role === 'main'}
+            class:text-textcolor={value.alwaysActive && role === 'main'}
+            class:text-emerald-400={role === 'asset'}
+            class:text-pink-400={role === 'illustration'}
+            title={role === 'asset' ? language.loreAuxModelIcon : role === 'illustration' ? language.loreRoleIllustrationIcon : language.loreRoleMenu}
             onclick={async () => {
-                if(value.nodeOnlyAuxModel){
-                    setAuxMark(value, externalLoreBooks ?? [], false)
+                if(role !== 'main'){
+                    setLoreRole(value, externalLoreBooks ?? [], 'main')
                     return
                 }
                 if(value.mode === 'folder'){
@@ -183,14 +210,18 @@
                 value.alwaysActive = !value.alwaysActive
             }}
         >
-            {#if value.nodeOnlyAuxModel}
+            {#if role === 'asset'}
                 <MoonIcon size={20} />
+            {:else if role === 'illustration'}
+                <PaletteIcon size={20} />
             {:else if value.alwaysActive}
                 <SunIcon size={20} />
             {:else}
                 <LinkIcon size={20} />
             {/if}
         </button>
+        {/snippet}
+        </ShContextMenu>
         <button class="valuer" onclick={async () => {
             let shouldRemove = true;
             if (value.mode === 'folder' && externalLoreBooks.some(e => e.folder === value.key)) {
@@ -291,8 +322,12 @@
                 <Check bind:check={value.alwaysActive} name={language.alwaysActive}/>
             </div>
             <div class="flex items-center mt-2">
-                <Check check={!!value.nodeOnlyAuxModel} onChange={(check: boolean) => setAuxMark(value, externalLoreBooks ?? [], check)} name={language.loreAuxModel}/>
+                <Check check={role === 'asset'} onChange={(check: boolean) => setLoreRole(value, externalLoreBooks ?? [], check ? 'asset' : 'main')} name={language.loreAuxModel}/>
                 <Help key="loreAuxModel" name={language.loreAuxModel}/>
+            </div>
+            <div class="flex items-center mt-2">
+                <Check check={role === 'illustration'} onChange={(check: boolean) => setLoreRole(value, externalLoreBooks ?? [], check ? 'illustration' : 'main')} name={language.loreIllustration}/>
+                <Help key="loreIllustration" name={language.loreIllustration}/>
             </div>
             {#if !value.alwaysActive && getCurrentCharacter()?.globalLore?.includes(value) && DBState.db.localActivationInGlobalLorebook}
                 <div class="flex items-center mt-2">

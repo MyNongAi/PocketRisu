@@ -5,10 +5,13 @@ import {
     auxLorebookEntries,
     buildAuxTagPrompt,
     insertAuxTags,
+    loreRole,
+    markedLorebookEntries,
     mergeAuxLines,
     parseAuxTagEdits,
     rememberAuxLines,
     setAuxMark,
+    setLoreRole,
     splitReplyForTags,
     withoutAuxLines,
 } from './auxLorebook'
@@ -22,6 +25,20 @@ describe('marked entries', () => {
         const list = { comment: 'names', content: 'happy, sad', nodeOnlyAuxModel: true }
         expect(auxLorebookEntries([[story, rules], undefined, [folder, empty, list]])).toEqual([rules, list])
         expect(auxLorebookEntries([[story]])).toEqual([])
+    })
+
+    it('gives each entry one role: main, asset (🌙) or illustration (🎨)', () => {
+        const entry = { content: 'x' } as any
+        expect(loreRole(entry)).toBe('main')
+        setLoreRole(entry, [], 'illustration')
+        expect(loreRole(entry)).toBe('illustration')
+        setLoreRole(entry, [], 'asset')
+        expect([loreRole(entry), entry.nodeOnlyIllustration]).toEqual(['asset', undefined])
+        const art = { content: 'looks', nodeOnlyIllustration: true }
+        expect(markedLorebookEntries([[entry, art]], 'illustration')).toEqual([art])
+        expect(markedLorebookEntries([[entry, art]], 'asset')).toEqual([entry])
+        setLoreRole(entry, [], 'main')
+        expect('nodeOnlyAuxModel' in entry || 'nodeOnlyIllustration' in entry).toBe(false)
     })
 
     it('reads an entry without its decorator lines', () => {

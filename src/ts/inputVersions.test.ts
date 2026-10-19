@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inputVersionIndex, isRequestInput, pressedInput, recordInputEdit, recordRequestInput, recordSentRequestInput, requestInputText, stepInputVersion, textHash } from './inputVersions'
+import { inputVersionIndex, isRequestInput, pressedInput, recordInputEdit, recordRequestInput, recordSentRequestInput, rekeyRequestMark, requestInputText, stepInputVersion, textHash } from './inputVersions'
 
 describe('input versions', () => {
     it('keeps the sent input and each saved edit, in order', () => {
@@ -113,5 +113,15 @@ describe('input versions', () => {
         // another message, or one without versions
         expect(requestInputText({ chatId: 'u2', data: 'a', nodeOnlyInputVersions: ['a', 'b'] } as any, pressed)).toBe('a')
         expect(requestInputText({ chatId: 'u1', data: 'a' } as any, pressed)).toBe('a')
+    })
+
+    it('keeps the mark when a picture is added to the reply afterwards', () => {
+        const reply = { data: 'reply' } as any
+        recordRequestInput(reply, 'input a')
+        const tagged = 'reply\n{{inlay::x}}'
+        rekeyRequestMark(reply, 'reply', tagged)
+        reply.data = tagged
+        expect(isRequestInput(reply, 'input a')).toBe(true)
+        expect(Object.keys(reply.nodeOnlyRequestInputs)).toEqual([textHash(tagged)])
     })
 })

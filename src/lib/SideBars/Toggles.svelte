@@ -9,7 +9,8 @@
     import { alertConfirm, alertConfirmMulti, alertTogglePresets, notifySuccess } from "src/ts/alert";
     import { requestImmediateSave } from "src/ts/globalApi.svelte";
     import { tooltip } from "src/ts/gui/tooltip";
-    import { PinIcon, SaveIcon, FolderHeartIcon } from "@lucide/svelte";
+    import { PinIcon, SaveIcon, FolderHeartIcon, SettingsIcon } from "@lucide/svelte";
+    import IllustrationSettings from "./IllustrationSettings.svelte";
     import ShAccordion from '../UI/GUI/ShAccordion.svelte'
     import ShButton from "../UI/GUI/ShButton.svelte";
     import ShSwitch from "../UI/GUI/ShSwitch.svelte";
@@ -27,6 +28,8 @@
     let { chara = $bindable(), noContainer }: Props = $props();
 
     let currentChat = $derived(DBState.db.characters[$selectedCharID]?.chats?.[DBState.db.characters[$selectedCharID]?.chatPage])
+    // The ⚙ beside the 🎨 switch (IllustrationSettings.svelte).
+    let illustrationSettingsOpen = $state(false)
     let isPinned = $derived(!DBState.db.disableToggleBinding && !!currentChat?.savedToggleValues)
     let toggleTemplate = $derived.by(() => {
         // Track chat/module changes so the toggle list re-derives on chat switch
@@ -337,6 +340,33 @@
             }}
         />
     </div>
+    <!-- Per bot: draw illustrations into the replies (illustration.ts). -->
+    <div class="w-full flex mt-2 items-center justify-between gap-2 min-h-10 rounded-md px-1">
+        <span class="flex items-center gap-1 min-w-0">
+            <span class="break-words">{language.illustrationToggle}</span>
+            <Help key="illustration" />
+        </span>
+        <span class="flex items-center gap-1 shrink-0">
+            <button
+                class="p-1 text-textcolor2 hover:text-textcolor"
+                title={language.illustrationSettings}
+                aria-label={language.illustrationSettings}
+                onclick={() => { illustrationSettingsOpen = true }}
+            ><SettingsIcon size={18} /></button>
+            <ShSwitch
+                className="shrink-0"
+                checked={!!DBState.db.characters[$selectedCharID]?.nodeOnlyIllustration?.enabled}
+                onCheckedChange={(checked) => {
+                    const char = DBState.db.characters[$selectedCharID]
+                    if (!char) return
+                    char.nodeOnlyIllustration = { ...(char.nodeOnlyIllustration ?? {}), enabled: checked }
+                }}
+            />
+        </span>
+    </div>
+{/if}
+{#if illustrationSettingsOpen}
+    <IllustrationSettings onClose={() => { illustrationSettingsOpen = false }} />
 {/if}
 
 {#if !DBState.db.disableToggleBinding && currentChat}

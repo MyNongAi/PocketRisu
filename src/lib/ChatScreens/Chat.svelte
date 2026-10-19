@@ -1,7 +1,9 @@
 <script lang="ts">
     import { reissueMessageIds, retitleChatFromLastInput } from "src/ts/chatClone";
     import { chatTitleState } from "src/ts/chatTitleState";
-    import { ArrowLeft, ArrowLeftRightIcon, ArrowRight, BookmarkIcon, BotIcon, CopyIcon, PowerOff, GitBranch, HamburgerIcon, LanguagesIcon, MenuIcon, PencilIcon, RefreshCcwIcon, SplitIcon, TrashIcon, UserIcon, Volume2Icon, Scissors, EyeOff } from "@lucide/svelte"
+    import { ArrowLeft, ArrowLeftRightIcon, ArrowRight, BookmarkIcon, BotIcon, CopyIcon, PowerOff, GitBranch, HamburgerIcon, LanguagesIcon, MenuIcon, PencilIcon, RefreshCcwIcon, SplitIcon, TrashIcon, UserIcon, Volume2Icon, Scissors, EyeOff, PaletteIcon } from "@lucide/svelte"
+    import { illustrateReply, illustratingReplies, removeIllustrations } from "src/ts/process/illustrationRun"
+    import { captureModuleRuntimeContext } from "src/ts/process/modules"
     import { aiLawApplies, changeChatTo, foldChatToMessage, getFileSrc, createChatCopyName } from "src/ts/globalApi.svelte"
     import { ColorSchemeTypeStore } from "src/ts/gui/colorscheme"
     import { MediaQuery } from "svelte/reactivity"
@@ -316,6 +318,25 @@
         const reply = chara?.chats?.[chara.chatPage]?.message?.[idx]
         return isRequestInput(reply, echoShown)
     })
+
+    // 🎨 in the message menu (illustrationRun.ts).
+    let illustrationMessage = $derived.by(() => {
+        if (role !== 'char' || idx < 0) return null
+        const chara = DBState.db.characters[selIdState.selId]
+        return chara?.chats?.[chara.chatPage]?.message?.[idx] ?? null
+    })
+    let hasIllustrations = $derived(Object.keys(illustrationMessage?.nodeOnlyIllustrations ?? {}).length > 0)
+    let illustrationBusy = $derived(!!illustrationMessage?.chatId && $illustratingReplies.has(illustrationMessage.chatId))
+
+    function drawIllustrations() {
+        const chara = DBState.db.characters[selIdState.selId]
+        const chat = chara?.chats?.[chara.chatPage]
+        const message = chat?.message?.[idx]
+        if (!chara || !chat || !message || message.role !== 'char') return
+        message.chatId ??= v4()
+        removeIllustrations(message)
+        void illustrateReply({ chaId: chara.chaId, chatId: chat.id, messageId: message.chatId, moduleContext: captureModuleRuntimeContext(chara, chat), manual: true })
+    }
 
     function stepEchoVersion(step: -1 | 1) {
         if (echoEditing) return
@@ -1201,6 +1222,18 @@
 
 {#snippet minorIconButtonsBody(showNames:boolean)}
     {#if idx > -1}
+    {#if role === 'char' && !placeholder && DBState.db.characters[selIdState.selId]?.nodeOnlyIllustration?.enabled}
+        <!-- 🎨 Draw this reply's illustrations, or draw them again (illustration.ts). -->
+        <button class="flex items-center hover:text-primary transition-colors button-icon-illustration" disabled={illustrationBusy} onclick={async () => {
+            await sleep(1)
+            drawIllustrations()
+        }}>
+            <PaletteIcon size={20}/>
+            {#if showNames}
+                <span class="ml-1">{illustrationBusy ? language.illustrationDrawing : hasIllustrations ? language.illustrationRedraw : language.illustrationDraw}</span>
+            {/if}
+        </button>
+    {/if}
     {#if showLogCaptureButton}
         <!-- ✂️ log image: first press marks the start, the next the end (the same message: just it). -->
         <button type="button" class="flex items-center hover:text-primary transition-colors button-icon-logcapture" title={logCaptureMenuLabel} aria-label={logCaptureMenuLabel} onclick={() => markLogCapture(idx)}>

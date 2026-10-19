@@ -4,6 +4,7 @@ import { DBState } from '../stores.svelte';
 import { requestInputText, type SentInput } from '../inputVersions';
 import { withoutAuxLines } from './auxLorebook';
 import { tagReplyByAuxLorebook } from './auxLorebookRun';
+import { startAutoIllustration } from './illustrationRun';
 import { CharEmotion, selectedCharID } from "../stores.svelte";
 import { ChatTokenizer, tokenize, tokenizeNum } from "../tokenizer";
 import { language } from "../../lang";
@@ -2157,6 +2158,13 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             console.error(error)
         }
         if (!refreshGenerationTarget()) return false
+        // Illustrations are drawn in the background; the reply is done
+        // (illustrationRun.ts).
+        try {
+            startAutoIllustration({ character: currentChar, chat: currentChat, moduleContext: getRuntimeModuleContext() })
+        } catch (error) {
+            console.error(error)
+        }
     }
 
     const igp = risuChatParser(DBState.db.igpPrompt ?? "")

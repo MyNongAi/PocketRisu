@@ -1670,6 +1670,8 @@ export interface Database{
      * active chat page. 0 disables the window and keeps legacy all-message
      * rendering. */
     externalAssetRecentOutputs?: number
+    /** PocketRisu: style presets for illustrations, shared by every bot (illustration.ts). */
+    nodeOnlyIllustrationPresets?: import('../process/illustration').IllustrationPreset[]
     streamingDisplayOptimizationMode?: StreamingDisplayOptimizationMode
     ImagenModel:string
     ImagenImageSize:string
@@ -1833,6 +1835,8 @@ export interface loreBook{
     folder?:string
     /** PocketRisu: sent to the auxiliary model after each reply, never to the main one (auxLorebook.ts). */
     nodeOnlyAuxModel?:boolean
+    /** PocketRisu: sent with the illustration request, never to the main model (illustration.ts). */
+    nodeOnlyIllustration?:boolean
 }
 
 /** Stub kept in `nodeOnlyArchivedCharacters` for a deactivated character. Built by the server (/api/characters/:chaId/archive). */
@@ -1976,6 +1980,8 @@ export interface character{
     backgroundHTML?:string
     /** NodeOnly: hide this bot's small launchers fixed to the screen (floatingBotControls.ts). */
     nodeOnlyHideFloatingButtons?:boolean
+    /** PocketRisu: draw illustrations into this bot's replies (illustration.ts). */
+    nodeOnlyIllustration?: import('../process/illustration').IllustrationBotSettings
     reloadKeys?:number
     backgroundCSS?:string
     license?:string
@@ -2522,6 +2528,8 @@ export interface Message{
     nodeOnlyRequestInputs?: Record<string, string>
     /** PocketRisu: lines the auxiliary model added to this reply (auxLorebook.ts). */
     nodeOnlyAuxLines?: string[]
+    /** PocketRisu: the prompt of each picture drawn into this reply, by inlay id (illustration.ts). */
+    nodeOnlyIllustrations?: Record<string, import('../process/illustration').IllustrationPrompt>
     saying?: string
     chatId?:string
     time?: number

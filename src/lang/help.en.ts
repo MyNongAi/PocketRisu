@@ -280,6 +280,17 @@ export const helpEn = {
             "Stored per chat, so other chats of the same character are not affected.",
         memoryPresetDefault:
             "The long-term memory preset used by chats left on 'Default'. With 'Off', memory only runs in chats that picked a preset themselves.",
+        illustration:
+            "Draws NovelAI illustrations into this bot's replies. After a reply, the auxiliary model picks the scenes and writes scene and character tags; with the chosen style preset they are drawn by the image generation in the settings and put after their lines.\n\n" +
+            "- Per bot; ⚙ sets when to draw (after every reply / only from the message menu), how many, the ratio and the style.\n" +
+            "- Pictures are drawn in the background after the reply: you can go on meanwhile.\n" +
+            "- 🎨 in the message menu (☰) draws a reply again.\n" +
+            "- Lorebook entries marked 🎨 (character looks, art rules) go with the request, never to the main model.\n" +
+            "- Uses Settings › Other bots › Image generation. NovelAI may cost Anlas per picture (free on Opus up to 1024×1024 and 28 steps).",
+        loreIllustration:
+            "Sends this entry only with illustration requests (🎨), never to the main model. For what only pictures need: character looks, art rules.\n\n" +
+            "- Right-clicking (holding, on a phone) the entry's icon picks it too.\n" +
+            "- Used only while the bot's 🎨 illustrations are on.",
         loreAuxModel:
             "Sends this entry to the auxiliary model instead of the main one. Put it on an asset module's asset instructions: the main model only writes the story, and after each reply the auxiliary model reads the instructions and places the asset tags.\n\n" +
             "- Right-clicking (holding, on a phone) the entry's icon does the same; a marked entry shows 🌙.\n" +

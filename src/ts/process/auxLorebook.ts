@@ -17,6 +17,46 @@ export interface AuxMarkedEntry {
     folder?: string
     key?: string
     nodeOnlyAuxModel?: boolean
+    nodeOnlyIllustration?: boolean
+}
+
+/**
+ * Where an entry goes: the main prompt, the auxiliary model's asset tagging
+ * (🌙), or the illustration request (🎨, illustration.ts). Never both marks.
+ */
+export type LoreRole = 'main' | 'asset' | 'illustration'
+
+export function loreRole(entry: AuxMarkedEntry): LoreRole {
+    if (entry.nodeOnlyAuxModel) return 'asset'
+    if (entry.nodeOnlyIllustration) return 'illustration'
+    return 'main'
+}
+
+/** Set an entry's role; a folder passes it on to the entries in it. */
+export function setLoreRole<E extends AuxMarkedEntry>(entry: E, entries: readonly E[], role: LoreRole): void {
+    const apply = (target: E) => {
+        delete target.nodeOnlyAuxModel
+        delete target.nodeOnlyIllustration
+        if (role === 'asset') target.nodeOnlyAuxModel = true
+        if (role === 'illustration') target.nodeOnlyIllustration = true
+    }
+    apply(entry)
+    if (entry.mode === 'folder' && entry.key) {
+        for (const child of entries) if (child.folder === entry.key) apply(child)
+    }
+}
+
+/** The entries of the given lorebooks marked for `role`, in order (folders hold no text). */
+export function markedLorebookEntries<E extends AuxMarkedEntry>(sources: readonly (readonly E[] | null | undefined)[], role: Exclude<LoreRole, 'main'>): E[] {
+    const found: E[] = []
+    for (const source of sources) {
+        for (const entry of source ?? []) {
+            if (!entry || entry.mode === 'folder' || loreRole(entry) !== role) continue
+            if (!(entry.content ?? '').trim()) continue
+            found.push(entry)
+        }
+    }
+    return found
 }
 
 export interface AuxTagEdit {
@@ -28,17 +68,9 @@ export interface AuxLinesHolder {
     nodeOnlyAuxLines?: string[]
 }
 
-/** The marked entries of the given lorebooks, in order (folders hold no text). */
+/** The entries marked for the auxiliary model's asset tagging (🌙). */
 export function auxLorebookEntries<E extends AuxMarkedEntry>(sources: readonly (readonly E[] | null | undefined)[]): E[] {
-    const found: E[] = []
-    for (const source of sources) {
-        for (const entry of source ?? []) {
-            if (!entry?.nodeOnlyAuxModel || entry.mode === 'folder') continue
-            if (!(entry.content ?? '').trim()) continue
-            found.push(entry)
-        }
-    }
-    return found
+    return markedLorebookEntries(sources, 'asset')
 }
 
 /** An entry's text without its decorator lines (@@depth 0, @@unrecursive ...). */
@@ -50,16 +82,9 @@ export function auxEntryText(content: string): string {
     }
 }
 
-/** Mark or unmark an entry; a folder passes it on to the entries in it. */
+/** Mark or unmark an entry for asset tagging (🌙). */
 export function setAuxMark<E extends AuxMarkedEntry>(entry: E, entries: readonly E[], marked: boolean): void {
-    const apply = (target: E) => {
-        if (marked) target.nodeOnlyAuxModel = true
-        else delete target.nodeOnlyAuxModel
-    }
-    apply(entry)
-    if (entry.mode === 'folder' && entry.key) {
-        for (const child of entries) if (child.folder === entry.key) apply(child)
-    }
+    setLoreRole(entry, entries, marked ? 'asset' : 'main')
 }
 
 /** `text` without the lines the auxiliary model added earlier. */

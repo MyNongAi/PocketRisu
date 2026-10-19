@@ -74,7 +74,14 @@ export async function stableDiff(currentChar:character,prompt:string){
     return await generateAIImage(genPrompt, currentChar, neg, '')
 }
 
-export async function generateAIImage(genPrompt:string, currentChar:character, neg:string, returnSdData:string):Promise<string|false>{
+/** PocketRisu (illustration.ts): a size, and characters drawn apart (NovelAI V4+). */
+export interface AIImageOptions {
+    width?: number
+    height?: number
+    characters?: { positive: string, negative: string }[]
+}
+
+export async function generateAIImage(genPrompt:string, currentChar:character, neg:string, returnSdData:string, options:AIImageOptions = {}):Promise<string|false>{
     const db = getDatabase()
     console.log(db.sdProvider)
     if(db.sdProvider === 'webui'){
@@ -136,13 +143,24 @@ export async function generateAIImage(genPrompt:string, currentChar:character, n
         }
     }
     if(db.sdProvider === 'novelai'){
-        genPrompt = genPrompt
+        const naiEmphasis = (text:string) => text
             .replaceAll('\\(', "♧")
             .replaceAll('\\)', "♤")
             .replaceAll('(','{')
             .replaceAll(')','}')
             .replaceAll('♧','(')
             .replaceAll('♤',')')
+        genPrompt = naiEmphasis(genPrompt)
+        // Characters apart (V4 and later); an older model gets them in the prompt.
+        const naiV4Up = /nai-diffusion-(4|5)/.test(db.NAIImgModel ?? '')
+        const naiCharacters = (options.characters ?? []).filter((c) => c.positive?.trim())
+        if (!naiV4Up && naiCharacters.length > 0) {
+            genPrompt = [genPrompt, ...naiCharacters.map((c) => naiEmphasis(c.positive))].join(', ')
+        }
+        const naiCharCaptions = naiV4Up ? naiCharacters.map((c) => ({ char_caption: naiEmphasis(c.positive), centers: [{ x: 0.5, y: 0.5 }] })) : []
+        const naiCharNegatives = naiV4Up ? naiCharacters.map((c) => ({ char_caption: naiEmphasis(c.negative ?? ''), centers: [{ x: 0.5, y: 0.5 }] })) : []
+        const naiWidth = options.width ?? db.NAIImgConfig.width
+        const naiHeight = options.height ?? db.NAIImgConfig.height
 
         let reqlist:any = {}
 
@@ -157,8 +175,8 @@ export async function generateAIImage(genPrompt:string, currentChar:character, n
                     "controlnet_strength": 1,
                     "dynamic_thresholding": db.NAIImgModel.includes('nai-diffusion-3') || db.NAIImgModel.includes('nai-diffusion-furry-3') || db.NAIImgModel.includes('nai-diffusion-2') ? db.NAIImgConfig.decrisp : false,
                     "n_samples": 1,
-                    "width": db.NAIImgConfig.width,
-                    "height": db.NAIImgConfig.height,
+                    "width": naiWidth,
+                    "height": naiHeight,
                     "sampler": db.NAIImgConfig.sampler,
                     "steps": db.NAIImgConfig.steps,
                     "scale": db.NAIImgConfig.scale,
@@ -179,7 +197,7 @@ export async function generateAIImage(genPrompt:string, currentChar:character, n
                     "v4_prompt":{
                         caption:{
                             base_caption:genPrompt,
-                            char_captions: []
+                            char_captions: naiCharCaptions
                         },
                         use_coords: false,
                         use_order: true,
@@ -187,7 +205,7 @@ export async function generateAIImage(genPrompt:string, currentChar:character, n
                     "v4_negative_prompt":{
                         caption:{
                             base_caption:neg,
-                            char_captions: []
+                            char_captions: naiCharNegatives
                         },
                         legacy_uc: db.NAIImgConfig.legacy_uc,
                     },
@@ -220,10 +238,10 @@ export async function generateAIImage(genPrompt:string, currentChar:character, n
         if(db.NAIImgConfig.variety_plus) {
             if(db.NAIImgModel.includes('nai-diffusion-4-full') || db.NAIImgModel.includes('nai-diffusion-4-curated')
             || db.NAIImgModel.includes('nai-diffusion-3') || db.NAIImgModel.includes('nai-diffusion-furry-3')) {
-                commonReq.body.parameters.skip_cfg_above_sigma = Math.sqrt(db.NAIImgConfig.width * db.NAIImgConfig.height) * 0.01889;
+                commonReq.body.parameters.skip_cfg_above_sigma = Math.sqrt(naiWidth * naiHeight) * 0.01889;
             }
             if(db.NAIImgModel.includes('nai-diffusion-4-5-full') || db.NAIImgModel.includes('nai-diffusion-4-5-curated')) {
-                commonReq.body.parameters.skip_cfg_above_sigma = Math.sqrt(db.NAIImgConfig.width * db.NAIImgConfig.height) * 0.05766;
+                commonReq.body.parameters.skip_cfg_above_sigma = Math.sqrt(naiWidth * naiHeight) * 0.05766;
             }
         }
 

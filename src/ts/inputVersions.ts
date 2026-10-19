@@ -125,6 +125,18 @@ export function requestInputText(message: VersionedInput & { chatId?: string }, 
     return versions.includes(message.data) && versions.includes(pressed.text) ? pressed.text : message.data
 }
 
+/** A reply's text changed afterwards (a picture added): its mark follows it. */
+export function rekeyRequestMark(reply: RequestMarkedReply, before: string, after: string): void {
+    const marks = reply.nodeOnlyRequestInputs
+    if (!marks || before === after) return
+    const mark = marks[textHash(before)]
+    if (!mark) return
+    const next = { ...marks }
+    delete next[textHash(before)]
+    next[textHash(after)] = mark
+    reply.nodeOnlyRequestInputs = next
+}
+
 /** Whether `input` is the one the shown reply's request was made from. */
 export function isRequestInput(reply: RequestMarkedReply | null | undefined, input: string | null | undefined): boolean {
     if (!reply || input == null) return false

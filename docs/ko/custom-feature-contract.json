@@ -1808,16 +1808,42 @@
         "src/lib/ChatScreens/DefaultChatScreen.svelte"
       ],
       "requiredMarkers": [
-        { "file": "src/ts/process/lorebook.svelte.ts", "contains": "if(fullLore[i].nodeOnlyAuxModel){" },
+        { "file": "src/ts/process/lorebook.svelte.ts", "contains": "if(fullLore[i].nodeOnlyAuxModel || fullLore[i].nodeOnlyIllustration){" },
         { "file": "src/ts/process/index.svelte.ts", "contains": "await tagReplyByAuxLorebook({" },
         { "file": "src/ts/process/index.svelte.ts", "contains": "withoutAuxLines(msg.data, msg.nodeOnlyAuxLines)" },
-        { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "setAuxMark(value, externalLoreBooks ?? [], !value.nodeOnlyAuxModel)" },
+        { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "<ShDropdownMenuItem onSelect={() => setLoreRole(value, externalLoreBooks ?? [], choice.role)}>" },
         { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "<Help key=\"loreAuxModel\" name={language.loreAuxModel}/>" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const auxLines = mergeAuxLines(lastMsg.nodeOnlyAuxLines, newLastMsg.nodeOnlyAuxLines)" }
       ],
       "regressionTests": [
         "src/ts/process/auxLorebook.test.ts",
         "src/ts/process/auxLorebookRun.test.ts"
+      ]
+    },
+    {
+      "id": "ILLUSTRATION",
+      "title": "🎨 삽화: 보조모델이 장면을 고르고 NovelAI로 그려 답에 넣음",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/process/illustration.ts",
+        "src/ts/process/illustrationRun.ts",
+        "src/ts/process/stableDiff.ts",
+        "src/lib/SideBars/IllustrationSettings.svelte",
+        "src/lib/SideBars/Toggles.svelte",
+        "src/lib/ChatScreens/Chat.svelte",
+        "src/lib/SideBars/LoreBook/LoreBookData.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/index.svelte.ts", "contains": "startAutoIllustration({ character: currentChar, chat: currentChat, moduleContext: getRuntimeModuleContext() })" },
+        { "file": "src/ts/process/lorebook.svelte.ts", "contains": "if(fullLore[i].nodeOnlyAuxModel || fullLore[i].nodeOnlyIllustration){" },
+        { "file": "src/ts/process/stableDiff.ts", "contains": "char_captions: naiCharCaptions" },
+        { "file": "src/lib/SideBars/Toggles.svelte", "contains": "<Help key=\"illustration\" />" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "button-icon-illustration" },
+        { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "<Help key=\"loreIllustration\" name={language.loreIllustration}/>" }
+      ],
+      "regressionTests": [
+        "src/ts/process/illustration.test.ts",
+        "src/ts/process/illustrationRun.test.ts"
       ]
     }
   ]
