@@ -338,6 +338,22 @@
         void illustrateReply({ chaId: chara.chaId, chatId: chat.id, messageId: message.chatId, moduleContext: captureModuleRuntimeContext(chara, chat), manual: true })
     }
 
+    // The same version arrows on the input itself, where a reply has its
+    // swipe arrows (the user's request, 2026-10-19).
+    let ownInputMessage = $derived.by(() => {
+        if (role !== 'user' || idx < 0 || placeholder) return null
+        const chara = DBState.db.characters[selIdState.selId]
+        return chara?.chats?.[chara.chatPage]?.message?.[idx] ?? null
+    })
+    let ownVersionCount = $derived(ownInputMessage?.nodeOnlyInputVersions?.length ?? 0)
+    let ownVersionIndex = $derived(inputVersionIndex(ownInputMessage))
+
+    function stepOwnVersion(step: -1 | 1) {
+        if (editMode) return
+        const target = ownInputMessage
+        if (target && stepInputVersion(target, step)) retitleCurrentChat()
+    }
+
     function stepEchoVersion(step: -1 | 1) {
         if (echoEditing) return
         const target = echoTarget()
@@ -953,6 +969,16 @@
                 </div>
                 <div class="flex items-center gap-1">
                     {@render rerolls()}
+                    {#if ownVersionCount >= 2}
+                        <!-- The input's versions (inputVersions.ts): the one shown is the input. -->
+                        <button class="flex items-center shrink-0 hover:text-primary transition-colors button-icon-input-version" title={language.inputEchoPrevious} aria-label={language.inputEchoPrevious} onclick={() => stepOwnVersion(-1)}>
+                            <ArrowLeft size={22}/>
+                        </button>
+                        <span class="flex items-center text-xs text-textcolor2 tabular-nums">{ownVersionIndex + 1}/{ownVersionCount}</span>
+                        <button class="flex items-center shrink-0 hover:text-primary transition-colors button-icon-input-version" title={language.inputEchoNext} aria-label={language.inputEchoNext} onclick={() => stepOwnVersion(1)}>
+                            <ArrowRight size={22}/>
+                        </button>
+                    {/if}
                     {#if placeholder}
                         <!-- Where the reply's ↻ stands. -->
                         <span class="flex items-center shrink-0 button-icon-reroll dyna-icon force-show opacity-40" aria-hidden="true"><RefreshCcwIcon size={20}/></span>

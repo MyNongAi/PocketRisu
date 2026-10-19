@@ -1579,6 +1579,7 @@
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (target && stepInputVersion(target, step)) retitleCurrentChat()" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (target && recordInputEdit(target, echoText)) retitleCurrentChat()" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "onclick={copyInputEcho}" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "onclick={() => stepOwnVersion(-1)}" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (resolved) markRequestInput(resolved.chat)" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "markRequestInput(attached.chat)" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "onRequestInput: (chatId, text) => requestInputs.set(genKey, { chatId, text })" },
