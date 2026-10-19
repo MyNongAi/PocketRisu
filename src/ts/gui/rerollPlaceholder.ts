@@ -22,6 +22,8 @@ export type RerollPlaceholder<M extends SwipeMessage = SwipeMessage> = {
     message: M
     /** Stays until the reroll ends, and the page it shows stays shown after. */
     hold?: boolean
+    /** Comments and disabled messages after the old reply, out with it. */
+    trailing?: M[]
 }
 
 export const rerollPlaceholders = writable<ReadonlyMap<string, RerollPlaceholder<any>>>(new Map())

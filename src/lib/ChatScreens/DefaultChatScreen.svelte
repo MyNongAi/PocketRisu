@@ -828,7 +828,9 @@ import { isMobile } from 'src/ts/platform'
             // Held: the reply shown now stays shown, the new one is the next
             // page (the user's request, 2026-10-19); one being replaced as an
             // error is not.
-            setRerollPlaceholder({ chatId: activeChat.id, index: cha.length, message: safeStructuredClone(lastMsg), hold: !replacesError })
+            // The copy (and the comments after it) is also what a save puts
+            // back while the reply is out of the chat (chatCopySnapshot.ts).
+            setRerollPlaceholder({ chatId: activeChat.id, index: cha.length, message: safeStructuredClone(lastMsg), hold: !replacesError, trailing: safeStructuredClone(trailingComments) })
         }
         preparingChatSends.delete(genKey)
         const rerollStartedAt = Date.now()

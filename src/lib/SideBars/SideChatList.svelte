@@ -54,7 +54,7 @@
         const placeholder = get(rerollPlaceholders).get(chat.id)
         if (!pending && !placeholder) return snapshot
         snapshot.message = messagesWithoutPendingReply(snapshot.message, pending, placeholder
-            ? { index: placeholder.index, message: structuredClone($state.snapshot(placeholder.message)) }
+            ? { index: placeholder.index, message: structuredClone($state.snapshot(placeholder.message)), trailing: placeholder.trailing ? structuredClone($state.snapshot(placeholder.trailing)) : undefined }
             : null)
         return snapshot
     }

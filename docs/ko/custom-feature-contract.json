@@ -1550,17 +1550,19 @@
         "src/lib/ChatScreens/DefaultChatScreen.svelte"
       ],
       "requiredMarkers": [
-        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "setRerollPlaceholder({ chatId: activeChat.id, index: cha.length, message: safeStructuredClone(lastMsg), hold: !replacesError })" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "setRerollPlaceholder({ chatId: activeChat.id, index: cha.length, message: safeStructuredClone(lastMsg), hold: !replacesError, trailing: safeStructuredClone(trailingComments) })" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "chatForSave(chat, pendingGenerationId, placeholder)" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (newLastMsg && keptSwipe !== null && onScreen && showSwipe(newLastMsg, keptSwipe)) {" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "totalPages: pages.total," },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (placeholderChatId) clearRerollPlaceholder(placeholderChatId)" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (isTarget && !currentChatGenerating) restoreShownSwipeScriptstate(chat, msg)" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "if(i === placeholderIndex) continue;" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "if (!hold.rendered) hold.release = holdHeight(b, previousHeight);" },
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "{:else if placeholder}" }
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "<div class=\"contents\" inert={placeholder}>" }
       ],
       "regressionTests": [
-        "src/ts/gui/rerollPlaceholder.test.ts"
+        "src/ts/gui/rerollPlaceholder.test.ts",
+        "src/ts/chatCopySnapshot.test.ts"
       ]
     },
     {

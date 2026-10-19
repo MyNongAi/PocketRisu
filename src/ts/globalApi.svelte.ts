@@ -39,6 +39,8 @@ import { updateLorebooks, deselectCharacter } from "./characters";
 import { applyCharacterOrderCheck, type CharacterOrderCheckOptions } from "./characterOrderCheck";
 import { mergeServerDbWithTrackedLocalChanges, withTrackedCharacters, hasAmbiguousCharacterIds } from "./storage/rebaseMerge";
 import { generationStates, chatGenKey, notifyDatabaseRebased, abortGeneration, doingChat as liveGenerationRunning } from "./process/generationState";
+import { rerollPlaceholders } from "./gui/rerollPlaceholder";
+import { chatForSave } from "./chatCopySnapshot";
 import { onStaleBuild, setStaleBuildSaveState, watchServerBuild } from "./storage/buildFence";
 
 /** A save the server will keep refusing in this state (or one that keeps
@@ -1436,7 +1438,11 @@ export async function saveDb() {
             if (!chat || chat._placeholder) continue
             try {
                 const intent = classifyChatSaveIntent(knownChatIdsByCharacter, chaId, chatId)
-                await saveChatToServer(chaId, chatIndex, chatId, chat, intent, {
+                // Mid-reroll the old reply is out of the chat: save it in place
+                // (chatCopySnapshot.ts), never the chat without it.
+                const placeholder = get(rerollPlaceholders).get(chatId)
+                const pendingGenerationId = placeholder ? get(generationStates).get(chatGenKey(chatId))?.generationId : undefined
+                await saveChatToServer(chaId, chatIndex, chatId, chatForSave(chat, pendingGenerationId, placeholder), intent, {
                     preserveServerCopy: (serverChat) => keepServerChatCopy(char, serverChat),
                 })
                 // The body endpoint has now acknowledged this identity even if

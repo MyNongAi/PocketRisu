@@ -878,14 +878,14 @@
                 <TrashIcon size={20} />
 
             </button>
-        {:else if placeholder}
-            <!-- The old reply while it is rerolled: only its swipes can be browsed. -->
-            <div class="flex items-center ml-2 gap-1">
-                {@render rerolls()}
-            </div>
         {:else}
             <span class="text-xs">{statusMessage}</span>
             <div class="flex items-center ml-2 gap-2 flex-wrap justify-end">
+                <!-- The old reply while it is rerolled (placeholder) draws the same
+                     buttons, inert, so its header wraps like the reply that
+                     replaces it and the text does not jump at either end; only its
+                     swipes can be browsed. -->
+                <div class="contents" inert={placeholder}>
                 {#if showLogCaptureButton && (idx < 0 || logCapturePicking)}
                     <!-- ✂️ log image; the greeting has no ☰ menu, other messages carry it
                          there, and show it here too while the end is being picked. -->
@@ -929,8 +929,13 @@
                         <EyeOff size={20}/>
                     </button>
                 {/if}
+                </div>
                 <div class="flex items-center gap-1">
                     {@render rerolls()}
+                    {#if placeholder}
+                        <!-- Where the reply's ↻ stands. -->
+                        <span class="flex items-center shrink-0 button-icon-reroll dyna-icon force-show opacity-40" aria-hidden="true"><RefreshCcwIcon size={20}/></span>
+                    {/if}
                 </div>
             </div>
         {/if}
