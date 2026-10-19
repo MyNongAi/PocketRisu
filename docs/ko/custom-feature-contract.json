@@ -1751,6 +1751,17 @@
       "requiredMarkers": [
         { "file": "server/node/server.cjs", "contains": "const host = process.env.POCKETRISU_HOST || undefined;" }
       ]
+    },
+    {
+      "id": "MODULE-CONVERT-AS-IMPORT",
+      "title": "봇 → 모듈 변환은 가져오기처럼 최근순 맨 위에",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/SideBars/CharConfig.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/SideBars/CharConfig.svelte", "contains": "            addModuleToDatabase(m)" }
+      ]
     }
   ]
 }

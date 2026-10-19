@@ -852,8 +852,10 @@ import ShButton from "../UI/GUI/ShButton.svelte";
             // share the character's manifest, so editing one would change the
             // other until the next reload.
             const m = convertCharacterToModule(await hydrateCharacterAssets(char))
-            m.importedAt ??= Date.now()
-            DBState.db.modules.push(m)
+            // As an import adds one: recorded as new, so it shows at the top of
+            // the recent order (it used to land at the bottom, 2026-10-19), and
+            // filed like an import (similar names, folders).
+            addModuleToDatabase(m)
             notifySuccess(language.successfullyConverted)
         } catch (error) {
             alertError(`${error}`)
