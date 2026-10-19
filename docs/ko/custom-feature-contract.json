@@ -1123,7 +1123,7 @@
     },
     {
       "id": "RELOAD-LAPTOP-RESTART",
-      "title": "사이드바 새로고침 = 노트북 서버 업데이트·재시작 후 새로고침",
+      "title": "사이드바 새로고침 = 노트북 서버 업데이트(서버는 켜 둔 채, 필요할 때만 재시작) 후 새로고침",
       "criticality": "core-ux",
       "ownerFiles": [
         "server/node/laptop-switch.cjs",

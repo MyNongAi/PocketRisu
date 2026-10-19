@@ -13,6 +13,7 @@ function harness(options: {
     restart: Reply
     log?: (round: number) => Reply
     up: (round: number) => boolean
+    build?: (round: number) => string
 }) {
     let clock = 0
     let round = 0
@@ -30,7 +31,7 @@ function harness(options: {
             const url = String(input)
             calls.push(`${init?.method ?? 'GET'} ${url}`)
             if (url === '/api/laptop/restart') return reply(options.restart)
-            if (url.startsWith('/build-id.txt')) return options.up(round) ? reply({ status: 200 }) : reply('refused')
+            if (url.startsWith('/build-id.txt')) return options.up(round) ? Promise.resolve(new Response(options.build?.(round) ?? 'build-a', { status: 200 })) : reply('refused')
             if (url.includes('/log?from=')) return reply(options.log ? options.log(round) : 'refused')
             throw new Error(`unexpected ${url}`)
         }) as typeof fetch,
@@ -80,6 +81,22 @@ describe('reloadThroughLaptop', () => {
         await reloadThroughLaptop(h.deps)
         expect(h.reload).toHaveBeenCalledOnce()
         expect(h.calls.filter((c) => c.startsWith('GET /build-id.txt')).length).toBe(7)
+    })
+
+    it('without the log, reloads when the server serves a new build without going down', async () => {
+        const h = harness({ restart: { status: 202, body: { log: '/pocketrisu-control' } }, up: () => true, build: (round) => round < 4 ? 'build-a' : 'build-b' })
+        await reloadThroughLaptop(h.deps)
+        expect(h.reload).toHaveBeenCalledOnce()
+        expect(h.calls.filter((c) => c.startsWith('GET /build-id.txt')).length).toBe(4)
+    })
+
+    it('reloads after a run that left the server up (the log says it ended)', async () => {
+        const log = (round: number): Reply => round < 3
+            ? { status: 200, body: { text: round === 1 ? '20:09:12 서버는 끄지 않았습니다.\n' : '', next: 30, running: true } }
+            : { status: 200, body: { text: '', next: 30, running: false } }
+        const h = harness({ restart: { status: 202, body: { log: '/pocketrisu-control' } }, log, up: () => true })
+        await reloadThroughLaptop(h.deps)
+        expect(h.reload).toHaveBeenCalledOnce()
     })
 
     it('gives up after 15 minutes', async () => {

@@ -1,9 +1,11 @@
 // The sidebar's reload button on the laptop server. The laptop's remote switch
-// (server/node/laptop-switch.cjs) runs the launcher: stop the server, pull,
-// build if needed, start it again — the same run as the desktop's PocketRisu
-// button. Meanwhile this page shows the laptop's progress lines, and once the
-// server answers again it reloads into whatever the laptop now serves. With
-// no switch (any other install) the button just reloads.
+// (server/node/laptop-switch.cjs) runs the launcher: pull and build with the
+// server left running, and restart it only when its own code changed (since
+// 2026-10-20; before, it stopped for the whole run) — the same run as the
+// desktop's PocketRisu button. Meanwhile this page shows the laptop's progress
+// lines, and once the run is over and the server answers it reloads into
+// whatever the laptop now serves. With no switch (any other install) the
+// button just reloads.
 
 import { forageStorage } from './globalApi.svelte'
 
@@ -50,19 +52,21 @@ async function askForRestart(deps: LaptopRestartDeps): Promise<string | null> {
     }
 }
 
-async function serverAnswers(deps: LaptopRestartDeps): Promise<boolean> {
+/** The build the server serves ('' when it has none), or null when it does not answer. */
+async function servedBuild(deps: LaptopRestartDeps): Promise<string | null> {
     try {
         const res = await deps.fetch('/build-id.txt', { cache: 'no-store' })
-        return res.ok
+        if (!res.ok) return null
+        return (await res.text()).trim()
     } catch {
-        return false
+        return null
     }
 }
 
 /**
  * Follow the launcher run until the server is back. The switch's log says
  * when the run ends; when the page cannot read it, the server going down and
- * answering again marks the end instead.
+ * answering again, or serving another build, marks the end instead.
  */
 export async function watchLaptopRestart(logBase: string, deps: LaptopRestartDeps = defaultDeps()): Promise<void> {
     laptopRestart.phase = 'running'
@@ -72,6 +76,8 @@ export async function watchLaptopRestart(logBase: string, deps: LaptopRestartDep
     let from = 0
     let sawRunning = false
     let sawDown = false
+    let firstBuild: string | null = null
+    let sawNewBuild = false
     while (deps.now() - laptopRestart.startedAt < GIVE_UP_MS) {
         await deps.sleep(POLL_MS)
         let running: boolean | null = null
@@ -91,9 +97,12 @@ export async function watchLaptopRestart(logBase: string, deps: LaptopRestartDep
         } catch {
             // The switch is out of reach from this page; go by the server.
         }
-        const up = await serverAnswers(deps)
+        const build = await servedBuild(deps)
+        const up = build !== null
         if (!up) sawDown = true
-        const ended = running === false ? (sawRunning || from > 0) : running === null && sawDown
+        else if (firstBuild === null) firstBuild = build
+        else if (build !== firstBuild) sawNewBuild = true
+        const ended = running === false ? (sawRunning || from > 0) : running === null && (sawDown || sawNewBuild)
         if (!ended || !up) continue
         if (laptopRestart.warnings.length > 0) {
             laptopRestart.phase = 'warned'
