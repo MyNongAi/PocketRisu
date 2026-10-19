@@ -402,6 +402,7 @@
         onFolderFavorite={toggleFolderFavorite}
         showFolderDelete
         showMenuCancel
+        rowContextMenu
         folderRenameLabel="폴더이름변경하기"
         onSelect={openEditor}
         onItemsChange={applyPlacements}

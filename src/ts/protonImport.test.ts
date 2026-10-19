@@ -13,6 +13,7 @@ const alertError = vi.fn()
 vi.mock('./alert', () => ({
     alertClear: () => {},
     alertWait: () => {},
+    notifyLoading: () => () => {},
     alertError: (m: string) => alertError(m),
     alertInput: (...a: unknown[]) => alertInput(...a),
     notifySuccess: () => {},

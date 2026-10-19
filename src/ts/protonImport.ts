@@ -4,7 +4,7 @@
 // user pastes a link and nothing is ever downloaded by hand. A folder link
 // opens PocketRisu's own folder browser rather than Proton's web UI.
 
-import { alertClear, alertError, alertInput, alertWait, notifySuccess } from './alert'
+import { alertError, alertInput, notifyLoading, notifySuccess } from './alert'
 import { language } from 'src/lang'
 import { runPrefetchedImportBatch, type ImportProgressReporter } from './importProgress'
 import { downloadProtonEntry, inspectProtonShare, isProtonPasswordRequired, isProtonShareUrl, ProtonRequestError, type ProtonInspectResult } from './protonShareClient'
@@ -110,15 +110,15 @@ export async function openProtonShare(url: string, password = '', subject?: stri
     let current = password
     let typed = false
     for (let attempt = 0; attempt <= PROTON_PASSWORD_ATTEMPTS; attempt++) {
+        // Reading the link takes a second or three: a toast, not a modal, so
+        // the screen stays usable (the transfer itself runs in the task dock).
+        const done = notifyLoading(language.protonInspecting)
         try {
-            // Reading the link is a couple of small API calls, so a brief modal
-            // is honest here. The transfer itself must not hold the screen.
-            alertWait(language.protonInspecting)
             const info = await inspectProtonShare(url, current)
-            alertClear()
+            done()
             return { info, password: current }
         } catch (error) {
-            alertClear()
+            done()
             // Once a password was typed, a refusal from the share most likely
             // means that password was wrong; a network error is still just that.
             const askAgain = isProtonPasswordRequired(error) || (typed && error instanceof ProtonRequestError)

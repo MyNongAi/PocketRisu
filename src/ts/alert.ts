@@ -367,6 +367,16 @@ export function notifyInfo(msg: unknown, opts?: NotifyOptions) {
     toast.info(message, opts?.description ? { description: opts.description } : undefined)
 }
 
+/**
+ * A short wait shown as a toast, leaving the screen usable (the user's
+ * request, 2026-10-20: a 1–3 s modal while a share link was read locked the
+ * whole app). Returns the function that takes it away.
+ */
+export function notifyLoading(msg: string): () => void {
+    const id = toast.loading(msg)
+    return () => toast.dismiss(id)
+}
+
 export function notifySuccess(msg: unknown, opts?: Pick<NotifyOptions, 'description'>) {
     // Intentionally not logged (decision 4-2): success feedback has low timeline value.
     clearTransitionalAlert()
