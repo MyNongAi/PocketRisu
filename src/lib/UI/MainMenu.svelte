@@ -11,6 +11,8 @@
     import { parseRealmReference } from "src/ts/realmLink";
     import { alertError, alertInput } from "src/ts/alert";
     import RisuHubIcon from "./Realm/RealmHubIcon.svelte";
+    import RealmTosGate from "./Realm/RealmTosGate.svelte";
+    import { risuTosAccepted } from "src/ts/alert";
     import Title from "./Title.svelte";
     import { updateInfoStore, updatePopupStore } from "src/ts/update";
     import { publicStatsStore } from "src/ts/publicStats";
@@ -98,7 +100,7 @@
           </ShButton>
         </div>
       {/if}
-      {#if $dbTransferSizeStore.overLimit && !$transferSizeWarningDismissed}
+      {#if $dbTransferSizeStore.overLimit && DBState.db.nodeOnlyTransferSizeWarning !== false && !$transferSizeWarningDismissed}
         <div class="mt-4 w-full bg-yellow-900/30 border border-yellow-700/40 rounded-md px-4 py-3 flex items-center justify-between gap-3 flex-wrap text-yellow-300">
           <div class="flex items-start gap-2.5 min-w-0 flex-1">
             <TriangleAlertIcon class="size-4 shrink-0 mt-0.5 text-yellow-400" />
@@ -157,7 +159,9 @@
         aria-hidden={!realmOpen}
         inert={!realmOpen}
       >
-        {#if realmOpen && hubReady}
+        {#if realmOpen && !$risuTosAccepted}
+          <RealmTosGate />
+        {:else if realmOpen && hubReady}
           {#await getRisuHub({
                 search: '',
                 page: 0,
@@ -249,7 +253,11 @@
             <ArrowLeft/>
           </button>
         </div>
-        <Hub />
+        {#if $risuTosAccepted}
+          <Hub />
+        {:else}
+          <RealmTosGate />
+        {/if}
       {/if}
   </div>
 </div>

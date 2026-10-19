@@ -12,7 +12,7 @@ import { fetchPublicStats } from "./publicStats";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, bootBackupPromptStore } from "./stores.svelte";
 import { recordDbTransferSize } from "./transferSize";
 import { loadPlugins } from "./plugins/plugins.svelte";
-import { alertError, alertMd, alertTOS, waitAlert, alertConfirm, alertInput } from "./alert";
+import { alertError, alertMd, waitAlert, alertConfirm, alertInput } from "./alert";
 import { characterURLImport } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
 import { decodeRisuSave, encodeRisuSaveLegacy, releaseDecodeSource } from "./storage/risuSave";
@@ -271,13 +271,6 @@ export async function loadData() {
             // Installs the return triggers (visibility / online) and runs the
             // first pass. Fire-and-forget — never throws, no-op without jobs.
             initModelJobRecovery()
-            if (import.meta.env.VITE_RISU_TOS === 'TRUE') {
-                alertTOS().then((a) => {
-                    if (a === false) {
-                        location.reload()
-                    }
-                })
-            }
         } catch (error) {
             alertError(error)
         }

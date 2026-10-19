@@ -132,7 +132,16 @@ const stmtKvSet    = db.prepare(`INSERT OR REPLACE INTO kv (key, value, updated_
 const stmtKvDel    = db.prepare(`DELETE FROM kv WHERE key = ?`);
 const stmtKvList   = db.prepare(`SELECT key FROM kv`);
 const stmtKvPrefix = db.prepare(`SELECT key FROM kv WHERE key LIKE ? ESCAPE '\\'`);
-const stmtKvPrefixSizesUpdatedAt = db.prepare(`SELECT key, LENGTH(value) as size, updated_at FROM kv WHERE key LIKE ? ESCAPE '\\'`);
+const stmtKvPrefixSizes = db.prepare(`SELECT key, LENGTH(value) as size FROM kv WHERE key LIKE ? ESCAPE '\\'`);
+const stmtKvDelPrefix = db.prepare(`DELETE FROM kv WHERE key LIKE ? ESCAPE '\\'`);
+// Prefix lookups as a key range. LIKE is case-insensitive while the PRIMARY KEY
+// index is BINARY, so SQLite never used the index for the LIKE forms above and
+// every prefix lookup scanned the whole table — tens of seconds on a large save
+// on slow storage (#102). Keys are written with exact case, so the range is
+// also the intended match.
+const stmtKvRange = db.prepare(`SELECT key FROM kv WHERE key >= ? AND key < ?`);
+const stmtKvRangeSizes = db.prepare(`SELECT key, LENGTH(value) as size FROM kv WHERE key >= ? AND key < ?`);
+const stmtKvDelRange = db.prepare(`DELETE FROM kv WHERE key >= ? AND key < ?`);
 const stmtKvUpdatedAt = db.prepare(`SELECT updated_at FROM kv WHERE key = ?`);
 const {
     prefixStats: kvPrefixStats,
@@ -142,10 +151,6 @@ const {
     // Index-backed exact-prefix key list and row existence (save path).
     listKeys: kvListExactPrefix,
     exists: kvExists,
-    // LIKE prefix listing and delete through the key index (plugin storage
-    // and the plugin half of every snapshot use them).
-    listLikeWithSizes,
-    deleteLike,
 } = createKvPrefixQueries(db);
 
 function kvGet(key) {
@@ -192,25 +197,39 @@ function kvCopyValue(srcKey, dstKey) {
     chunkStore.snapshotValue(srcKey, dstKey);
 }
 
+// [prefix, upper) covering exactly the keys that start with `prefix`: the upper
+// bound bumps the last character. Only for a printable-ASCII last character,
+// where bumping it cannot cross a UTF-8 encoding boundary; other prefixes keep
+// the LIKE path. Every prefix the server uses ends in ASCII.
+function prefixRange(prefix) {
+    const last = prefix.charCodeAt(prefix.length - 1);
+    if (!(last >= 0x20 && last <= 0x7e)) return null;
+    return [prefix, prefix.slice(0, -1) + String.fromCharCode(last + 1)];
+}
+
+function likePrefix(prefix) {
+    return `${prefix.replace(/[\\%_]/g, '\\$&')}%`;
+}
+
 function kvDelPrefix(prefix) {
-    deleteLike(prefix);
+    const range = prefixRange(prefix);
+    if (range) stmtKvDelRange.run(...range);
+    else stmtKvDelPrefix.run(likePrefix(prefix));
 }
 
 function kvList(prefix) {
     if (prefix) {
-        const escaped = prefix.replace(/[\\%_]/g, '\\$&');
-        return stmtKvPrefix.all(`${escaped}%`).map(r => r.key);
+        const range = prefixRange(prefix);
+        const rows = range ? stmtKvRange.all(...range) : stmtKvPrefix.all(likePrefix(prefix));
+        return rows.map(r => r.key);
     }
     return stmtKvList.all().map(r => r.key);
 }
 
 function kvListWithSizes(prefix) {
-    return listLikeWithSizes(prefix);
-}
-
-function kvListWithSizesAndUpdatedAt(prefix) {
-    const escaped = prefix.replace(/[\\%_]/g, '\\$&');
-    return stmtKvPrefixSizesUpdatedAt.all(`${escaped}%`).map(r => ({ key: r.key, size: r.size, updated_at: r.updated_at }));
+    const range = prefixRange(prefix);
+    const rows = range ? stmtKvRangeSizes.all(...range) : stmtKvPrefixSizes.all(likePrefix(prefix));
+    return rows.map(r => ({ key: r.key, size: r.size }));
 }
 
 function checkpointWal(mode = 'TRUNCATE') {
@@ -270,7 +289,7 @@ module.exports = {
     // KV
     kvGet, kvSet, kvDel, kvList, kvListExactPrefix, kvExists, kvDelPrefix, kvListWithSizes, kvPrefixStats, kvIterateWithSizes,
     kvStoredSize, kvSummarizePrefixes,
-    kvListWithSizesAndUpdatedAt, kvSize, kvGetUpdatedAt, kvCopyValue,
+    kvSize, kvGetUpdatedAt, kvCopyValue,
     clearEntities,
     checkpointWal,
     gcChunks,

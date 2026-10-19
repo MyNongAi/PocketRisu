@@ -298,7 +298,7 @@ describe('a failed database persist', () => {
     // next edit, and a restart in between lost it.
     it('is retried until the change reaches disk', async () => {
         await stopServer()
-        extraEnv = { NODE_OPTIONS: `--require ${PRELOAD}`, POCKETRISU_PERSIST_RETRY_MS: '1000' }
+        extraEnv = { NODE_OPTIONS: `--require ${JSON.stringify(PRELOAD)}`, POCKETRISU_PERSIST_RETRY_MS: '1000' }
         try {
             await startServer()
             await seedDb({ characters: [char('a', [chat('a1', 'A')])], characterOrder: ['a'] })

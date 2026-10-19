@@ -294,7 +294,7 @@ describe('F1: snapshots carry plugin storage', () => {
 
     test('R4: a failed snapshot does not advance the backup cooldown', async () => {
         const preload = fileURLToPath(new URL('./compat/helpers/fail-snapshot-preload.cjs', import.meta.url))
-        const { srv, client } = await boot({ POCKETRISU_BACKUP_INTERVAL_MS: '1500', NODE_OPTIONS: `--require ${preload}` })
+        const { srv, client } = await boot({ POCKETRISU_BACKUP_INTERVAL_MS: '1500', NODE_OPTIONS: `--require ${JSON.stringify(preload)}` })
         expect((await client.importBackup(backupWith({ a: 'A' }))).ok).toBe(true)
         const count0 = (await snapshots(client)).length
         expect(count0).toBeGreaterThan(0)

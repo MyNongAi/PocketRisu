@@ -48,7 +48,7 @@ if (existsSync(offlineImportLockPath)) {
 }
 
 const { kvGet, kvSet, kvDel, kvList, kvListExactPrefix, kvExists,
-        kvDelPrefix, kvListWithSizes, kvListWithSizesAndUpdatedAt, kvPrefixStats, kvIterateWithSizes, kvStoredSize, kvSummarizePrefixes,
+        kvDelPrefix, kvListWithSizes, kvPrefixStats, kvIterateWithSizes, kvStoredSize, kvSummarizePrefixes,
         kvSize, kvGetUpdatedAt, kvCopyValue, clearEntities, checkpointWal,
         gcChunks, reclaimableChunkBytes, isDbBlobChunked, snapshotFootprints, isChunkedAs, dbBlob, db: sqliteDb } = require('./db.cjs');
 const {
@@ -10660,7 +10660,10 @@ function collectRemoteSweep(characterIds, now) {
     const remoteVictims = [];
     const remoteMetaCreates = [];
     let remotesScanned = 0;
-    const remoteRows = kvListWithSizesAndUpdatedAt('remotes/');
+    // updated_at is stored after the value BLOB, so reading it for every row
+    // walks each cache's overflow pages (#102, upstream 1.15); it is read
+    // only for the candidates below.
+    const remoteRows = kvListWithSizes('remotes/');
     const remoteByKey = new Map(remoteRows.map((it) => [it.key, it]));
     for (const it of remoteRows) {
         if (it.key.endsWith('.meta')) continue;
@@ -10677,7 +10680,7 @@ function collectRemoteSweep(characterIds, now) {
             continue;
         }
         const lastUsed = decodeRemoteMetaLastUsed(kvGet(metaKey));
-        const newestUse = Math.max(Number(it.updated_at || 0), lastUsed ?? 0);
+        const newestUse = Math.max(Number(kvGetUpdatedAt(it.key) || 0), lastUsed ?? 0);
         if (now - newestUse > AUTO_SWEEP_GRACE_MS) {
             remoteVictims.push(it);
             remoteVictims.push(meta);
@@ -10734,7 +10737,10 @@ async function collectPersistedAssetReferences() {
 
 async function computeAssetSweep({ includeAssets, assetGraceMs = 0, includeRemotes = false, checkpointLabel = 'AssetSweep' } = {}) {
     let dbObj;
-    const assets = includeAssets ? kvListWithSizesAndUpdatedAt('assets/') : [];
+    // updated_at is stored after the value BLOB, so reading it walks the whole
+    // value's overflow pages — for every asset that took minutes on a large
+    // library (#102). Only unreferenced candidates need it; it is read below.
+    const assets = includeAssets ? kvListWithSizes('assets/') : [];
     const uncleanable = new Set();
     if (includeAssets) {
         const references = await collectPersistedAssetReferences();
@@ -10765,7 +10771,7 @@ async function computeAssetSweep({ includeAssets, assetGraceMs = 0, includeRemot
     const assetVictims = includeAssets
         ? assets.filter((it) => {
             if (uncleanable.has(statsBasename(it.key))) return false;
-            if (assetGraceMs > 0 && now - Number(it.updated_at || 0) <= assetGraceMs) return false;
+            if (assetGraceMs > 0 && now - Number(kvGetUpdatedAt(it.key) || 0) <= assetGraceMs) return false;
             return true;
         })
         : [];

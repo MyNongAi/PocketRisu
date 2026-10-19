@@ -833,6 +833,8 @@ export const languageEnglish = {
     presetImported: "Preset imported",
     presetDeleted: "Preset deleted",
     presetDeleteConfirm: "Delete this preset?",
+    recoveredPresetName: "Recovered Preset",
+    recoveredPresetNotice: "The selected prompt preset was missing, so the current settings were saved as \"Recovered Preset\".",
     iconRemove: "Remove Icon",
     otherBots: "Other Bots",
     user: "User",
@@ -2181,6 +2183,9 @@ export const languageEnglish = {
     transferSizeWarningBody: "Currently about {{size}}; saving may fail over remote access. Deactivating characters you no longer use reduces the transfer data size.",
     transferSizeOpenCharacterManager: "Manage Characters",
     transferSizeDismiss: "Hide for this session",
+    transferSizeWarningToggle: "Warn on the main screen when over the recommended size",
+    transferSizeWarningToggleDesc:
+        "You can turn this off if your connection has no upload size limit. Anything behind Cloudflare (Quick Tunnel, or your own domain with the proxy on) is capped at 100 MB, so keep it on there.",
 
     // System page
     system: "System",
@@ -2213,8 +2218,8 @@ export const languageEnglish = {
     pluginStorageBackendSaveDesc: "Stored in the save file · travels with your save",
     pluginStorageBackendLocal: "Local",
     pluginStorageBackendLocalDesc: "localStorage based · strings only · device-local",
-    pluginStorageBackendIdb: "Device DB",
-    pluginStorageBackendIdbDesc: "IndexedDB based · JSON · device-local",
+    pluginStorageBackendIdb: "Server Storage",
+    pluginStorageBackendIdbDesc: "Stored on the server · JSON and binary · excluded from save backups",
     pluginStorageSearchKey: "Search key...",
     pluginStorageSearchValue: "Search value...",
     pluginStorageRefresh: "Refresh",
@@ -2225,6 +2230,9 @@ export const languageEnglish = {
     pluginStorageFormatJson: "Format JSON",
     pluginStorageMetaType: "Type",
     pluginStorageMetaSize: "Size",
+    pluginStorageMetaBinarySize: "Binary data size",
+    pluginStorageMetaMime: "MIME type",
+    pluginStorageMetaFileName: "File name",
     pluginStorageMetaChars: "Chars",
     pluginStorageOwner: "Origin",
     pluginStorageOwnerUnknown: "Unknown",
@@ -2829,6 +2837,17 @@ export const languageEnglish = {
     logImageTextScale: "Log image text size",
     logImageHeader: "Bot name and chat title at the top of log images",
     logImageAvatars: "Profile pictures in log images",
+    risuTosTitle: "RisuAI Terms of Service",
+    risuTosDesc: "This feature uses servers operated by RisuAI.\nPocketRisu is an independent project separate from RisuAI, and the terms below are RisuAI's own terms, not PocketRisu's. Declining does not affect the rest of PocketRisu.",
+    risuTosScope: "These terms apply only to:",
+    risuTosScopeRealm: "RisuRealm (browsing, searching, downloading and reporting characters)",
+    risuTosScopeMcp: "MCP server OAuth login (relayed through RisuAI's account server)",
+    risuTosTerms: "RisuAI Terms of Service",
+    risuTosPrivacy: "RisuAI Privacy Policy",
+    risuTosAccept: "Accept",
+    risuTosDecline: "Do not Accept",
+    risuTosGate: "RisuRealm uses servers operated by RisuAI. Accept RisuAI's Terms of Service to use it.",
+    risuTosGateButton: "Review terms",
 } satisfies I18nTranslation;
 
 type I18nTranslationFunction = (...args: any[]) => string;
