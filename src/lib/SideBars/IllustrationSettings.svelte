@@ -10,10 +10,13 @@
     import { PlusIcon } from '@lucide/svelte'
     import { language } from 'src/lang'
     import { DBState, selectedCharID } from 'src/ts/stores.svelte'
-    import { notifyInfo } from 'src/ts/alert'
+    import { notifyError, notifySuccess } from 'src/ts/alert'
     import { illustrationSettings, newPresetContent, type IllustrationBotSettings } from 'src/ts/process/illustration'
     import { presetsFor } from 'src/ts/process/illustrationRun'
-    import { captureModuleRuntimeContext } from 'src/ts/process/modules'
+    import { captureModuleRuntimeContext, getModules } from 'src/ts/process/modules'
+    import { presetContentFromMeta, presetNameFromFile, readImageGenMeta } from 'src/ts/process/imageMeta'
+    import { FileDropSurface, draggedItemsAreImages } from 'src/ts/gui/fileDropSurface.svelte'
+    import type { loreBook } from 'src/ts/storage/database.svelte'
     import ShButton from '../UI/GUI/ShButton.svelte'
     import ShSwitch from '../UI/GUI/ShSwitch.svelte'
     import SelectInput from '../UI/GUI/SelectInput.svelte'
@@ -51,19 +54,61 @@
         ].join(' · ')
     })
 
-    // A "프리셋 X" entry in the bot's lorebook, never active in the main prompt.
-    function newPreset() {
-        if (!char) return
+    // Where a new preset goes: this bot's lorebook, or a module on now (every
+    // bot with that module gets it).
+    let target = $state('bot')
+    let moduleTargets = $derived(char ? getModules(captureModuleRuntimeContext(char, chat)).filter((module) => !!module) : [])
+
+    function freeName(base: string): string {
         const taken = new Set(presets.map((preset) => preset.name))
-        let name = language.illustrationNewPresetName
-        for (let i = 2; taken.has(name); i++) name = `${language.illustrationNewPresetName} ${i}`
-        char.globalLore = [...(char.globalLore ?? []), {
-            key: '', secondkey: '', insertorder: 100, comment: `프리셋 ${name}`,
-            content: newPresetContent(), mode: 'normal', alwaysActive: false, selective: false,
-        }]
-        set('preset', name)
-        notifyInfo(language.illustrationPresetCreated.replace('{name}', `프리셋 ${name}`))
+        let name = base
+        for (let i = 2; taken.has(name); i++) name = `${base} ${i}`
+        return name
     }
+
+    // A "프리셋 X" entry, never active in the main prompt; it becomes the bot's preset.
+    function addPreset(base: string, content: string): void {
+        if (!char) return
+        const name = freeName(base)
+        const entry: loreBook = {
+            key: '', secondkey: '', insertorder: 100, comment: `프리셋 ${name}`,
+            content, mode: 'normal', alwaysActive: false, selective: false,
+        }
+        const module = target === 'bot' ? null : DBState.db.modules.find((m) => m?.id === target)
+        if (module) module.lorebook = [...(module.lorebook ?? []), entry]
+        else char.globalLore = [...(char.globalLore ?? []), entry]
+        set('preset', name)
+        notifySuccess(language.illustrationPresetCreated
+            .replace('{name}', `프리셋 ${name}`)
+            .replace('{where}', module ? module.name : language.illustrationTargetBot))
+    }
+
+    function newPreset() {
+        addPreset(language.illustrationNewPresetName, newPresetContent())
+    }
+
+    // Images dropped (or picked, on a phone): their prompt and settings, whole.
+    let reading = $state(false)
+    let fileInput: HTMLInputElement | undefined = $state()
+    async function takeImages(files: File[]) {
+        reading = true
+        try {
+            for (const file of files.filter((f) => f.type.startsWith('image/'))) {
+                const meta = await readImageGenMeta(file)
+                if (!meta) {
+                    notifyError(`${language.illustrationNoMeta} (${file.name})`)
+                    continue
+                }
+                addPreset(presetNameFromFile(file.name), presetContentFromMeta(meta, file.name))
+            }
+        } catch (error) {
+            notifyError(error)
+        } finally {
+            reading = false
+        }
+    }
+    const imageDrop = new FileDropSurface({ accepts: draggedItemsAreImages, onDrop: takeImages })
+    $effect(() => imageDrop.attachWindowReset())
 </script>
 
 <div class="flex w-full flex-col gap-3 rounded-md border border-darkborderc p-2 text-sm">
@@ -130,7 +175,38 @@
                         <OptionInput value={preset.name}>{preset.name} · {preset.source}</OptionInput>
                     {/each}
                 </SelectInput>
+                <div class="flex items-center gap-2 text-xs">
+                    <span class="shrink-0 text-textcolor2">{language.illustrationTarget}</span>
+                    <SelectInput size="sm" className="grow" value={target} onchange={(e) => { target = e.currentTarget.value }}>
+                        <OptionInput value="bot">{language.illustrationTargetBot}</OptionInput>
+                        {#each moduleTargets as module (module.id)}
+                            <OptionInput value={module.id}>{module.name}</OptionInput>
+                        {/each}
+                    </SelectInput>
+                </div>
                 <ShButton size="sm" variant="outline" className="self-start" onclick={newPreset}><PlusIcon size={14}/> {language.illustrationNewPreset}</ShButton>
+                <!-- NovelAI / WebUI images: drop (or tap to pick) to make a preset of everything they hold. -->
+                <div
+                    role="button"
+                    tabindex="0"
+                    class="flex min-h-16 cursor-pointer items-center justify-center rounded-md border border-dashed px-2 py-3 text-center text-xs {imageDrop.active ? 'border-primary bg-primary/10 text-textcolor' : 'border-darkborderc text-textcolor2 hover:border-textcolor2'}"
+                    ondragenter={imageDrop.over}
+                    ondragover={imageDrop.over}
+                    ondragleave={imageDrop.leave}
+                    ondrop={imageDrop.drop}
+                    onclick={() => fileInput?.click()}
+                    onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput?.click() } }}
+                >
+                    {reading ? language.illustrationReadingImage : language.illustrationFromImageHint}
+                </div>
+                <input
+                    bind:this={fileInput}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    multiple
+                    class="hidden"
+                    onchange={(e) => { void takeImages(Array.from(e.currentTarget.files ?? [])); e.currentTarget.value = '' }}
+                />
             </div>
             <span class="text-xs text-textcolor2">{language.illustrationPresetHint}</span>
             {#if settings.preset && !chosen}
