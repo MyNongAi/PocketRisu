@@ -609,7 +609,7 @@ describe('writeInlayImage', () => {
 
 // These properties run 100 samples with two asynchronous FileReader conversions
 // each. Allow slower Windows timers without reducing the sample coverage.
-const blobPropertyTestTimeout = 15_000
+const blobPropertyTestTimeout = 30_000
 
 describe('set -> get round-trip', () => {
     test('preserves metadata through setInlayAsset -> getInlayAsset', async () => {
