@@ -1740,6 +1740,17 @@
       "regressionTests": [
         "src/ts/gui/closeTogglePanels.test.ts"
       ]
+    },
+    {
+      "id": "SERVER-LOCAL-ONLY",
+      "title": "서버를 이 기기(127.0.0.1)에서만 받게 하는 설정",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "server/node/server.cjs"
+      ],
+      "requiredMarkers": [
+        { "file": "server/node/server.cjs", "contains": "const host = process.env.POCKETRISU_HOST || undefined;" }
+      ]
     }
   ]
 }

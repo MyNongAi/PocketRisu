@@ -12555,6 +12555,11 @@ async function startServer() {
         await migrateInlaysToFilesystem();
         await migrateRemoteBlocksIfNeeded();
         const port = process.env.PORT || 6001;
+        // POCKETRISU_HOST=127.0.0.1 takes connections from this machine only
+        // (the laptop launcher sets it: Tailscale Serve reaches the server on
+        // 127.0.0.1, and the same Wi-Fi no longer can, 2026-10-19). Unset, it
+        // listens on every interface as before.
+        const host = process.env.POCKETRISU_HOST || undefined;
         const httpsOptions = await getHttpsOptions();
         let server;
 
@@ -12562,8 +12567,8 @@ async function startServer() {
             // HTTPS
             server = https.createServer(httpsOptions, app);
             setupProxyStreamWebSocket(server);
-            server.listen(port, () => {
-                console.log("[Server] HTTPS server is running.");
+            server.listen(port, host, () => {
+                console.log("[Server] HTTPS server is running." + (host ? ` (only on ${host})` : ''));
                 console.log(`[Server] https://localhost:${port}/`);
                 schedulePrewarmDatabase();
             });
@@ -12571,8 +12576,8 @@ async function startServer() {
             // HTTP
             server = http.createServer(app);
             setupProxyStreamWebSocket(server);
-            server.listen(port, () => {
-                console.log("[Server] HTTP server is running.");
+            server.listen(port, host, () => {
+                console.log("[Server] HTTP server is running." + (host ? ` (only on ${host})` : ''));
                 console.log(`[Server] http://localhost:${port}/`);
                 schedulePrewarmDatabase();
             });
