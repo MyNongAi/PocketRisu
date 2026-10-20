@@ -12,6 +12,7 @@
     import { isAtTail, revealScrollTop, shouldFollowTail, shouldRevealAddedMessage } from './chatViewport';
     import { chatGenKey, isChatGenerating } from 'src/ts/process/generationState';
     import { rerollPlaceholderPages, rerollPlaceholderShows, rerollPlaceholders, stepRerollPlaceholderSwipe } from 'src/ts/gui/rerollPlaceholder';
+    import { SWIPE_ROW_BUTTONS, buttonRows, rowAt, rowFromBottom } from 'src/ts/gui/swipeAnchor';
     
     const getCurrentChatRoomId = () => {
         const charId = get(selectedCharID);
@@ -531,6 +532,55 @@
         sc.scrollTop = sc.scrollTop + delta
         return true
     }
+    // A swipe arrow (or ↻, an input version arrow) pressed: the row it sits
+    // in stays where it was on screen while the message is redrawn with the
+    // other text and its images load (swipeAnchor.ts; the user's report,
+    // 2026-10-20). Kept to the reader's line instead, a longer swipe pushed
+    // the bottom row off the screen and a shorter one at the tail pulled the
+    // transcript down. It ends at the reader's next input, or after 4 s.
+    type SwipeAnchor = { slot: string, chatId: string | null, fromBottom: number, offsetTop: number, roomId: string | null, until: number }
+    let swipeAnchor: SwipeAnchor | null = null
+
+    function rowTops(container: HTMLElement): number[] {
+        return buttonRows(Array.from(container.querySelectorAll<HTMLElement>(SWIPE_ROW_BUTTONS))
+            .filter((button) => button.getClientRects().length > 0)
+            .map((button) => button.getBoundingClientRect().top))
+    }
+
+    function holdSwipeRow(event: MouseEvent) {
+        const button = (event.target as Element | null)?.closest?.(SWIPE_ROW_BUTTONS)
+        const container = button?.closest<HTMLElement>('.chat-message-container')
+        const sc = getScroller()
+        if (!button || !container || !sc || container.parentElement !== chatBody) return
+        const top = button.getBoundingClientRect().top
+        swipeAnchor = {
+            slot: container.dataset.chatSlot ?? '',
+            chatId: container.dataset.chatId ?? null,
+            fromBottom: rowFromBottom(rowTops(container), top),
+            offsetTop: top - sc.getBoundingClientRect().top,
+            roomId: getCurrentChatRoomId(),
+            until: performance.now() + 4000,
+        }
+    }
+
+    /** Put the pressed row back where it was; false when no press is being kept. */
+    function keepSwipeRow(): boolean {
+        const anchor = swipeAnchor
+        const sc = getScroller()
+        if (!anchor || !sc) return false
+        if (performance.now() > anchor.until || anchor.roomId !== getCurrentChatRoomId()) {
+            swipeAnchor = null
+            return false
+        }
+        const container = (anchor.chatId ? chatBody.querySelector<HTMLElement>(`:scope > [data-chat-id="${CSS.escape(anchor.chatId)}"]`) : null)
+            ?? chatBody.querySelector<HTMLElement>(`:scope > [data-chat-slot="${anchor.slot}"]`)
+        const top = container ? rowAt(rowTops(container), anchor.fromBottom) : null
+        if (top === null) return false
+        const delta = top - sc.getBoundingClientRect().top - anchor.offsetTop
+        if (Math.abs(delta) > 0.5) sc.scrollTop = sc.scrollTop + delta
+        return true
+    }
+
     // Where the reader was at their last scroll. Growth does not scroll, so
     // until they scroll again this still says whether they were at the tail.
     let readerAtTail = true
@@ -616,6 +666,7 @@
         if (!sc) return
         const onReaderInput = () => {
             pinnedToTail = false
+            swipeAnchor = null
             viewportIntent++
         }
         const onScroll = () => {
@@ -644,7 +695,7 @@
             if (follow) {
                 scrollToTail()
             } else {
-                if (pendingTailMove === null) keepReaderAnchor()
+                if (pendingTailMove === null && !keepSwipeRow()) keepReaderAnchor()
                 readerAtTail = isAtTail(sc)
             }
         })
@@ -659,6 +710,8 @@
         const inputEvents = ['wheel', 'touchstart', 'pointerdown', 'keydown'] as const
         sc.addEventListener('scroll', onScroll, { passive: true })
         for (const type of inputEvents) sc.addEventListener(type, onReaderInput, { passive: true })
+        // After the press's pointerdown (reader input) has cleared an older one.
+        chatBody.addEventListener('click', holdSwipeRow, true)
         recordReaderAnchor()
         return () => {
             if (readerAnchorFrame) cancelAnimationFrame(readerAnchorFrame)
@@ -667,6 +720,7 @@
             children.disconnect()
             sc.removeEventListener('scroll', onScroll)
             for (const type of inputEvents) sc.removeEventListener(type, onReaderInput)
+            chatBody.removeEventListener('click', holdSwipeRow, true)
         }
     })
 

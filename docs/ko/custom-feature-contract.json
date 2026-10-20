@@ -135,6 +135,7 @@
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "holdHeight" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "revealNewestMessage" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "function keepReaderAnchor(): boolean" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "!keepSwipeRow()" },
         { "file": "src/styles.css", "contains": "overflow-anchor: none;" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "function readingLine(container: HTMLElement, top: number)" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "autoScroll: DBState.db.autoScrollToNewMessage && generatingHere()" },
@@ -145,7 +146,7 @@
         { "file": "src/ts/gui/innerScrollKeeper.ts", "contains": "export function keepInnerScroll(root: HTMLElement)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "return keepInnerScroll(bodyRoot)" }
       ],
-      "regressionTests": ["src/lib/ChatScreens/chatViewport.test.ts", "src/ts/gui/innerScrollKeeper.test.ts"]
+      "regressionTests": ["src/lib/ChatScreens/chatViewport.test.ts", "src/ts/gui/innerScrollKeeper.test.ts", "src/ts/gui/swipeAnchor.test.ts"]
     },
     {
       "id": "CHAT-CONCURRENT",
