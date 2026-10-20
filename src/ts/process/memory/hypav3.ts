@@ -28,6 +28,7 @@ import type { ModuleRuntimeContext } from "../modules";
 export { createHypaV3Preset, type HypaV3Preset, type HypaV3Settings } from "./hypav3Preset";
 import { type HypaV3Preset, type HypaV3Settings } from "./hypav3Preset";
 import { getActiveHypaV3Preset } from "./memoryPresets";
+import { sendAllowingPrefillRefusal } from "./trailingPrefill";
 
 interface HypaV3Data {
     summaries: Summary[];
@@ -1736,9 +1737,9 @@ export async function summarize(
             subModelUrl = db.customModels?.find(m => m.id === actualModel)?.url ?? '';
         }
 
-        const response = await requestChatData(
+        const send = (messages: OpenAIChat[]) => requestChatData(
             {
-                formated,
+                formated: messages,
                 bias: {},
                 useStreaming: false,
                 noMultiGen: true,
@@ -1750,6 +1751,9 @@ export async function summarize(
             },
             "memory"
         );
+        // A prompt ending in a prefill is refused by newer models; once more
+        // ending on a user turn (trailingPrefill.ts).
+        const response = await sendAllowingPrefillRefusal(formated, send);
 
         if (response.type === "streaming" || response.type === "multiline") {
             throw new Error("Unexpected response type");

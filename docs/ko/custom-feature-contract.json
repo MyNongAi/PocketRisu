@@ -1854,6 +1854,21 @@
         "src/ts/process/illustrationRun.test.ts",
         "src/ts/process/imageMeta.test.ts"
       ]
+    },
+    {
+      "id": "HYPA-PREFILL-RETRY",
+      "title": "장기기억 요약: 프리필 거절 시 사용자 차례로 끝내 한 번 더",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/process/memory/trailingPrefill.ts",
+        "src/ts/process/memory/hypav3.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/memory/hypav3.ts", "contains": "await sendAllowingPrefillRefusal(formated, send)" }
+      ],
+      "regressionTests": [
+        "src/ts/process/memory/trailingPrefill.test.ts"
+      ]
     }
   ]
 }
