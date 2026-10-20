@@ -111,6 +111,61 @@ export function setFolderParent(order: readonly OrderEntry[], folderId: string, 
     return next
 }
 
+/** The folders `folderId` is shown in, innermost first (empty at the top level). */
+export function folderAncestors(order: readonly OrderEntry[], folderId: string): string[] {
+    const parents = folderParents(order)
+    const chain: string[] = []
+    let cursor = parents.get(folderId)
+    while (cursor && !chain.includes(cursor)) {
+        chain.push(cursor)
+        cursor = parents.get(cursor)
+    }
+    return chain
+}
+
+/**
+ * Where the folders shown inside a parent go among the parent's own bots, so
+ * the inside of a folder reads by recency like the top level (the user's
+ * report, 2026-10-21: the folders inside always sat on top, like favorites).
+ * A folder goes after the last member used at least as recently as anything
+ * in it. `slots[i]` holds the folders drawn just before member i, and
+ * `slots[memberRecency.length]` the ones after the last; folders sharing a
+ * slot go newest first, then in the given order.
+ */
+export function interleaveFolderSlots<T>(memberRecency: readonly number[], children: readonly { item: T, recency: number }[]): T[][] {
+    const slots: T[][] = Array.from({ length: memberRecency.length + 1 }, () => [])
+    const placed = children.map((child, order) => {
+        let slot = 0
+        for (let i = 0; i < memberRecency.length; i++) if (memberRecency[i] >= child.recency) slot = i + 1
+        return { child, order, slot }
+    })
+    placed.sort((a, b) => a.slot - b.slot || b.child.recency - a.child.recency || a.order - b.order)
+    for (const { child, slot } of placed) slots[slot].push(child.item)
+    return slots
+}
+
+/**
+ * The recency the rail interleaves by. Opening a bot stamps its
+ * lastInteraction at once, but the list moves only when the bot is left
+ * (promoteDepartedCharacter), so the bot that is open keeps the value it had
+ * before; a folder then does not jump under the finger that opened it.
+ */
+export function railRecencySnapshot(
+    previous: ReadonlyMap<string, number>,
+    characters: Iterable<{ chaId?: string, lastInteraction?: number } | null | undefined>,
+    openId: string | undefined,
+): Map<string, number> {
+    const next = new Map<string, number>()
+    for (const character of characters) {
+        const id = character?.chaId
+        if (!id) continue
+        const kept = id === openId ? previous.get(id) : undefined
+        const stamped = Number(character.lastInteraction ?? 0)
+        next.set(id, kept ?? (Number.isFinite(stamped) ? stamped : 0))
+    }
+    return next
+}
+
 /** Whether some folder is shown inside `folderId`. */
 export function hasChildFolders(order: readonly OrderEntry[], folderId: string): boolean {
     return folderChildren(order).has(folderId)

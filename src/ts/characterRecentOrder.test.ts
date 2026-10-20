@@ -170,3 +170,14 @@ describe('deactivated-character system folders', () => {
             .toEqual(['fav', 'a', system(['s'])])
     })
 })
+
+describe('folders shown inside other folders', () => {
+    it('lifts the parents of a nested folder when one of its bots was used', () => {
+        const outer: folder = { ...makeFolder('outer', ['o']) }
+        const inner: folder = { ...makeFolder('inner', ['i']), nodeOnlyParentFolderId: 'outer' }
+        const order = ['x', 'y', outer, inner]
+        const promoted = promoteRecentlyViewedCharacter(order, 'i')
+        // inner rises, and so does outer, the folder it is drawn in
+        expect(promoted.map((entry) => typeof entry === 'string' ? entry : entry.id)).toEqual(['outer', 'inner', 'x', 'y'])
+    })
+})

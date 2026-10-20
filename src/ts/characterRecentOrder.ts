@@ -1,5 +1,6 @@
 import type { folder } from './storage/database.svelte'
 import { isDeactivatedSystemFolder } from './deactivatedCharacterFolders'
+import { folderAncestors } from './folderNesting'
 
 export type CharacterOrderEntry = string | folder
 export type CharacterFavoriteIds = ReadonlySet<string>
@@ -127,16 +128,39 @@ export function promoteRecentlyViewedCharacter(
         const currentFolderIndex = withUpdatedFolder.findIndex((candidate) => (
             typeof candidate !== 'string' && candidate.id === entry.id
         ))
-        const next = moveToPartitionStart(
+        const moved = moveToPartitionStart(
             withUpdatedFolder,
             currentFolderIndex,
             entryIsFavorite(nextFolder, favoriteIds),
             (candidate) => entryIsFavorite(candidate, favoriteIds),
         )
+        const next = liftFolderAncestors(moved, entry.id, favoriteIds)
         return next === normalized && normalized === order ? order : next
     }
 
     return normalized
+}
+
+// A folder shown inside another (folderNesting.ts) is drawn in that parent, so
+// the parents rise with it; otherwise the top level never showed that a bot
+// in a nested folder was used (2026-10-21).
+function liftFolderAncestors(
+    order: CharacterOrderEntry[],
+    folderId: string,
+    favoriteIds: CharacterFavoriteIds,
+): CharacterOrderEntry[] {
+    let next = order
+    for (const ancestorId of folderAncestors(order, folderId)) {
+        const index = next.findIndex((candidate) => typeof candidate !== 'string' && candidate.id === ancestorId)
+        if (index === -1) continue
+        next = moveToPartitionStart(
+            next,
+            index,
+            entryIsFavorite(next[index], favoriteIds),
+            (candidate) => entryIsFavorite(candidate, favoriteIds),
+        )
+    }
+    return next
 }
 
 /** Moves a folder to the start of its current favorite/regular section. */

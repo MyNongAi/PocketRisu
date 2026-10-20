@@ -24,7 +24,7 @@
     import { DEACTIVATED_FOLDER_PAGE_SIZE, deactivatedCharacterIds, railFolderView, type DeactivatedFolderDays } from "../../ts/deactivatedCharacterFolders";
     import { ArchiveIcon } from "@lucide/svelte";
     import { DBState, folderSettingsTarget, openCharacterManager } from 'src/ts/stores.svelte';
-    import { folderChildren, folderParents, setFolderParent } from 'src/ts/folderNesting';
+    import { folderChildren, folderParents, interleaveFolderSlots, railRecencySnapshot, setFolderParent } from 'src/ts/folderNesting';
     import { tooltipRight } from "src/ts/gui/tooltip";
     import { folderIconComponent } from "../CharacterManager/folderIcons";
     import { syncFavoritesWithFolderMoves } from "src/ts/favoritesFolder";
@@ -75,8 +75,9 @@
     import BaseRoundedButton from "../UI/BaseRoundedButton.svelte";
     import { getCharacterIndexObject, makeAgoText } from "src/ts/util";
     import { v4 } from "uuid";
-    import { onMount } from "svelte";
+    import { onMount, untrack } from "svelte";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
+    import { paneState } from "src/ts/chatPanes.svelte";
     import { alertSelect } from "src/ts/alert";
     import { characterMenuInfo } from "src/ts/gui/sidebarMenuInfo";
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
@@ -229,6 +230,45 @@
       else children.set(parent, [item])
     }
     return children
+  })
+  // Inside an open folder its bots and the folders shown in it mix by recency,
+  // as on the top level (interleaveFolderSlots); the folders used to sit
+  // above every bot. Refreshed when the open bot changes, not when the other
+  // split pane is touched, which moves nothing in the list.
+  let railRecency = $state<Map<string, number>>(new Map())
+  let railRecencyPane: string | undefined
+  $effect(() => {
+    const selected = $selectedCharID
+    const pane = paneState.active
+    untrack(() => {
+      const paneTouched = railRecencyPane !== undefined && railRecencyPane !== pane
+      railRecencyPane = pane
+      if (paneTouched && railRecency.size > 0) return
+      const openId = DBState.db.characters[selected]?.chaId
+      railRecency = railRecencySnapshot(railRecency, [...DBState.db.characters, ...(DBState.db.nodeOnlyArchivedCharacters ?? [])], openId)
+    })
+  })
+  const railMemberRecency = (member: sortTypeEntry) => railRecency.get(member.type === 'normal' ? member.id : member.chaId) ?? 0
+  let railFolderSlots = $derived.by(() => {
+    const recencyOf = (item: sortTypeFolder, seen: Set<string>): number => {
+      seen.add(item.id)
+      let newest = 0
+      for (const member of item.folder) newest = Math.max(newest, railMemberRecency(member))
+      for (const child of railFolderChildren.get(item.id) ?? []) {
+        if (!seen.has(child.id)) newest = Math.max(newest, recencyOf(child, seen))
+      }
+      return newest
+    }
+    const slots = new Map<string, sortTypeFolder[][]>()
+    for (const [parentId, children] of railFolderChildren) {
+      const parent = railFolderById.get(parentId)
+      if (!parent) continue
+      slots.set(parentId, interleaveFolderSlots(
+        parent.folder.map(railMemberRecency),
+        children.map((child) => ({ item: child, recency: recencyOf(child, new Set([parentId])) })),
+      ))
+    }
+    return slots
   })
   // Bots a folder holds, shown on its thumbnail (the user's request, 2026-10-08):
   // its own plus those of the folders shown inside it, i.e. what opening it lists.
@@ -1055,8 +1095,21 @@
   ></div>
 {/snippet}
 
-{#snippet railNestedFolders(parentId: string, split = false)}
-  {#each railFolderChildren.get(parentId) ?? [] as child (child.id)}
+{#snippet railNestedFolders(parentId: string, split = false, slot = 0)}
+  <!-- The folders shown in `parentId` that go just before its member `slot` (railFolderSlots). -->
+  {@const slotFolders = railFolderSlots.get(parentId)?.[slot] ?? []}
+  {#if slotFolders.length > 0}
+    {#if split}
+      {#each slotFolders as child (child.id)}{@render railNestedFolder(child, true)}{/each}
+    {:else}
+      <div class="relative z-10 flex w-full flex-col items-center">
+        {#each slotFolders as child (child.id)}{@render railNestedFolder(child, false)}{/each}
+      </div>
+    {/if}
+  {/if}
+{/snippet}
+
+{#snippet railNestedFolder(child: sortTypeFolder, split: boolean)}
     {@const CustomIcon = folderIconComponent(child.icon)}
     <div class="flex w-full flex-col items-center">
       <div
@@ -1106,28 +1159,29 @@
         {#if split}
           <div class="relative mt-1 flex w-full flex-col items-center rounded-lg border border-selected py-1">
             {@render railNestedDropSpacer(child.id, 0, 'w-full')}
-            {@render railNestedFolders(child.id, true)}
             {#each child.folder as member, memberIndex (member.type === 'normal' ? member.id : member.chaId)}
+              {@render railNestedFolders(child.id, true, memberIndex)}
               {@render railNestedMember(member)}
               {@render railNestedDropSpacer(child.id, (member.folderIndex ?? memberIndex) + 1, 'w-full')}
             {/each}
+            {@render railNestedFolders(child.id, true, child.folder.length)}
           </div>
         {:else}
           <div class="p-1 flex flex-col items-center py-1 mt-1 rounded-lg relative">
             <div class="absolute top-0 left-1 border border-selected w-full h-full rounded-lg z-0 {railFolderTint(child.color)}"></div>
             {@render railNestedDropSpacer(child.id, 0, 'w-14 relative z-10')}
-            <div class="relative z-10 flex w-full flex-col items-center">{@render railNestedFolders(child.id)}</div>
             {#each child.folder as member, memberIndex (member.type === 'normal' ? member.id : member.chaId)}
+              {@render railNestedFolders(child.id, false, memberIndex)}
               {@render railNestedMember(member)}
               {@render railNestedDropSpacer(child.id, (member.folderIndex ?? memberIndex) + 1, 'w-14 relative z-20')}
             {/each}
+            {@render railNestedFolders(child.id, false, child.folder.length)}
           </div>
         {/if}
       {/if}
       <!-- The gap every top-level entry has under it. -->
       <div class="h-4 min-h-4 w-14" aria-hidden="true"></div>
     </div>
-  {/each}
 {/snippet}
 
 {#snippet splitFolderColumn()}
@@ -1216,9 +1270,9 @@
                 try { inserter(drag, { kind: 'folder', folderId: item.char.id, index: 0 }) } finally { clearCurrentDrag() }
               }}
             ></div>
-            {@render railNestedFolders(item.char.id, true)}
             {#each railFolderMembers(item.char) as folderChar, folderIndex}
               {@const sourceFolderIndex = folderChar.folderIndex ?? folderIndex}
+              {@render railNestedFolders(item.char.id, true, folderIndex)}
               <div
                 class="sidebar-folder-character group relative flex items-center px-2"
                 role="listitem"
@@ -1303,6 +1357,7 @@
                 }}
               ></div>
             {/each}
+            {@render railNestedFolders(item.char.id, true, item.char.folder.length)}
             {#if railFolderMembers(item.char).length < item.char.folder.length}
               {@render railFolderMoreButton(item.char)}
             {/if}
@@ -1842,9 +1897,9 @@
               clearCurrentDrag()
             }
           }} ondragenter={preventAll}></div>
-          <div class="relative z-10 flex w-full flex-col items-center">{@render railNestedFolders(char.id)}</div>
           {#each railFolderMembers(char) as char2, ind}
               {@const sourceFolderIndex = char2.folderIndex ?? ind}
+              {@render railNestedFolders(char.id, false, ind)}
               <div class="sidebar-folder-character group relative flex items-center px-2 z-10"
               role="listitem"
               data-drag-kind={char2.type === 'normal' ? 'character' : undefined}
@@ -1945,6 +2000,7 @@
               }
             }} ondragenter={preventAll}></div>
           {/each}
+          {@render railNestedFolders(char.id, false, char.folder.length)}
           {#if railFolderMembers(char).length < char.folder.length}
             {@render railFolderMoreButton(char)}
           {/if}

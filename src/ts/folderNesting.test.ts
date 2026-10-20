@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { folder } from './storage/database.svelte'
 import type { OrderEntry } from './characterOrder'
 import { dissolveSingletonFolders, removeFolderKeepItems } from './characterOrder'
-import { folderChildren, folderParents, hasChildFolders, nestableParents, reparentChildrenOf, setFolderParent } from './folderNesting'
+import { folderAncestors, folderChildren, folderParents, hasChildFolders, interleaveFolderSlots, nestableParents, railRecencySnapshot, reparentChildrenOf, setFolderParent } from './folderNesting'
 
 const f = (id: string, data: string[] = [], parent?: string, extra: Partial<folder> = {}): folder => ({
     id, name: id, color: '', data, ...(parent ? { nodeOnlyParentFolderId: parent } : {}), ...extra,
@@ -79,5 +79,38 @@ describe('characterOrder with nested folders', () => {
 
         const top = reparentChildrenOf([f('P', ['p']), f('K', ['k'], 'P')], 'P')
         expect('nodeOnlyParentFolderId' in (top[1] as folder)).toBe(false)
+    })
+})
+
+describe('folders inside a parent mix with its bots by recency', () => {
+    it('puts a folder after the last bot used at least as recently as anything in it', () => {
+        // members used at 50, 30, 10; folders newest at 40, 60 and never
+        const slots = interleaveFolderSlots([50, 30, 10], [
+            { item: 'K40', recency: 40 },
+            { item: 'K60', recency: 60 },
+            { item: 'K0', recency: 0 },
+        ])
+        expect(slots).toEqual([['K60'], ['K40'], [], ['K0']])
+    })
+
+    it('keeps a bot that was used after the folder above it, wherever it sits', () => {
+        // a deactivated (0) bot first, then a recent one: the folder goes below the recent one
+        expect(interleaveFolderSlots([0, 90], [{ item: 'K', recency: 50 }])).toEqual([[], [], ['K']])
+    })
+
+    it('freezes the open bot at the recency it had before it was opened', () => {
+        const before = railRecencySnapshot(new Map(), [{ chaId: 'a', lastInteraction: 5 }, { chaId: 'b', lastInteraction: 7 }], undefined)
+        // a is opened: its lastInteraction is stamped, the snapshot keeps 5
+        const open = railRecencySnapshot(before, [{ chaId: 'a', lastInteraction: 100 }, { chaId: 'b', lastInteraction: 7 }], 'a')
+        expect(open.get('a')).toBe(5)
+        // leaving a for b: a takes its stamp, b keeps its old value
+        const left = railRecencySnapshot(open, [{ chaId: 'a', lastInteraction: 100 }, { chaId: 'b', lastInteraction: 120 }], 'b')
+        expect([left.get('a'), left.get('b')]).toEqual([100, 7])
+    })
+
+    it('lists the folders a folder is shown in, innermost first', () => {
+        const order: OrderEntry[] = [f('A', ['a']), f('B', ['b'], 'A'), f('C', ['c'], 'B')]
+        expect(folderAncestors(order, 'C')).toEqual(['B', 'A'])
+        expect(folderAncestors(order, 'A')).toEqual([])
     })
 })

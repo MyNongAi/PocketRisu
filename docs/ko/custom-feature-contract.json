@@ -1120,9 +1120,12 @@
         { "file": "src/ts/characterOrder.test.ts", "contains": "hands the last card of a folder shown inside another to that folder" },
         { "file": "src/ts/characterOrder.ts", "contains": "for (const entry of reparentChildrenOf(order, folderId)) {" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "folderSettingsTarget.set(folderId)" },
-        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{@render railNestedFolders(char.id)}" },
-        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{@render railNestedFolders(item.char.id, true)}" },
-        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{#snippet railNestedFolders(parentId: string, split = false)}" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{@render railNestedFolders(char.id, false, ind)}" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{@render railNestedFolders(item.char.id, true, folderIndex)}" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{#snippet railNestedFolders(parentId: string, split = false, slot = 0)}" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "railRecency = railRecencySnapshot(railRecency," },
+        { "file": "src/ts/folderNesting.ts", "contains": "export function interleaveFolderSlots<T>(" },
+        { "file": "src/ts/characterRecentOrder.ts", "contains": "const next = liftFolderAncestors(moved, entry.id, favoriteIds)" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "railFolderParents.has(char.id) ? null : { char, sourceOrder }" },
         { "file": "src/lib/CharacterManager/FolderSettingsDialog.svelte", "contains": "setFolderParent(DBState.db.characterOrder, id, value || null)" },
         { "file": "src/ts/folders.ts", "contains": "export function nestGroups<G extends { folder: PromptPresetFolder | null }>(" },
@@ -1131,6 +1134,7 @@
       ],
       "regressionTests": [
         "src/ts/folderNesting.test.ts",
+        "src/ts/characterRecentOrder.test.ts",
         "src/ts/folders.test.ts",
         "src/ts/characterOrder.test.ts"
       ]
