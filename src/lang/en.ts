@@ -579,6 +579,7 @@ export const languageEnglish = {
     activateCharacterAlreadyActive: "the server already has this character active. Reload the page.",
     activateCharacterRemoveStub: "Remove this character from the list? (Nothing else is deleted.)",
     deactivatedBadge: "Deactivated",
+    deactivatedMenuOpen: "Activate and open",
     exportCharacter: "Export Character",
     characterPackage: "Character Package",
     characterPackageExport: "Export Package",

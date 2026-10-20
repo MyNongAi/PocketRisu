@@ -30,6 +30,8 @@ export interface alertData{
     stackTrace?: string;
     defaultValue?: string
     actions?: AlertAction[]
+    /** 'select' only: a picture above the options (a bot's thumbnail on its menu). */
+    image?: string | Promise<string>
     /** 'input' only: mask the typed text (a password). */
     hideText?: boolean
     /**
@@ -268,8 +270,11 @@ export async function alertLogin(){
     return get(alertStoreImported).msg
 }
 
-/** Options are labels, or `{label, variant}` for one drawn otherwise (a red delete). */
-export async function alertSelect(msg:(string | AlertAction)[], display?:string){
+/**
+ * Options are labels, or `{label, variant}` for one drawn otherwise (a red
+ * delete). `image` is drawn above them once it resolves.
+ */
+export async function alertSelect(msg:(string | AlertAction)[], display?:string, options: { image?: string | Promise<string> } = {}){
     const labels = msg.map((option) => typeof option === 'string' ? option : option.label)
     const message = display !== undefined ? `__DISPLAY__${display}||${labels.join('||')}` : labels.join('||')
     const styled = msg.some((option) => typeof option !== 'string')
@@ -277,6 +282,7 @@ export async function alertSelect(msg:(string | AlertAction)[], display?:string)
         'type': 'select',
         'msg': message,
         ...(styled ? { actions: msg.map((option) => typeof option === 'string' ? { label: option } : option) } : {}),
+        ...(options.image ? { image: options.image } : {}),
     })
 }
 

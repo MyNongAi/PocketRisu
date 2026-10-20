@@ -14,6 +14,8 @@
     onClick?: any;
     bordered?: boolean;
     folderShape?: boolean;
+    /** An open folder: its tab turns yellow (the user's request, 2026-10-21). */
+    folderOpen?: boolean;
     color?: string;
     titleColor?: string;
     favorite?: boolean;
@@ -43,6 +45,7 @@
     onClick = () => {},
     bordered = false,
     folderShape = false,
+    folderOpen = false,
     color = '',
     titleColor,
     favorite = false,
@@ -191,6 +194,7 @@
         style:min-height={size + "px"}
         class:rounded-md={!rounded} class:rounded-full={rounded}
         class:sidebar-folder-shape={folderShape}
+        class:sidebar-folder-open={folderShape && folderOpen}
       ></div>
       {:then resolvedBgImg}
       <div
@@ -213,6 +217,7 @@
         style:background-position={resolvedBgImg ? "center" : undefined}
         class:rounded-md={!rounded} class:rounded-full={rounded}
         class:sidebar-folder-shape={folderShape}
+        class:sidebar-folder-open={folderShape && folderOpen}
       >
       {#if !resolvedBgImg}
         {@render children?.()}
@@ -295,6 +300,12 @@
     background: color-mix(in srgb, var(--risu-theme-bgcolor) 86%, var(--risu-theme-textcolor));
     content: "";
     pointer-events: none;
+  }
+
+  /* An open folder: only the tab on top turns yellow. */
+  .sidebar-folder-open::before {
+    border-color: rgb(161 98 7);
+    background: rgb(250 204 21);
   }
 
   .sidebar-folder-shape::after {

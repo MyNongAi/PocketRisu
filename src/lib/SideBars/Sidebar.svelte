@@ -20,7 +20,7 @@
 
   } from "../../ts/stores.svelte";
     import { setDatabase, folderDisplayMode, type folder, type ArchivedCharacterStub, type FolderDisplayMode } from "../../ts/storage/database.svelte";
-    import { promptActivateCharacter } from "../../ts/characterArchive";
+    import { findArchivedStub, promptActivateCharacter, trashDeactivatedCharacter } from "../../ts/characterArchive";
     import { DEACTIVATED_FOLDER_PAGE_SIZE, deactivatedCharacterIds, railFolderView, type DeactivatedFolderDays } from "../../ts/deactivatedCharacterFolders";
     import { ArchiveIcon } from "@lucide/svelte";
     import { DBState, folderSettingsTarget, openCharacterManager } from 'src/ts/stores.svelte';
@@ -78,7 +78,7 @@
     import { onMount, untrack } from "svelte";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
     import { paneState } from "src/ts/chatPanes.svelte";
-    import { alertSelect } from "src/ts/alert";
+    import { alertConfirm, alertSelect } from "src/ts/alert";
     import { characterMenuInfo } from "src/ts/gui/sidebarMenuInfo";
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
     import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
@@ -628,6 +628,28 @@
     const selected = parseInt(await alertSelect(
       [...actions.map(([label]) => label === language.remove ? { label, variant: 'destructive' as const } : label), language.cancel],
       characterMenuInfo(character, makeAgoText),
+      { image: character.image ? getCharThumbnail(character.image, "plain") : undefined },
+    ))
+    await actions[selected]?.[1]()
+  }
+
+  // A deactivated bot's menu (the user's request, 2026-10-21): open it, or
+  // move it to the trash like any other bot, without activating it first.
+  async function editArchivedSidebarCharacter(chaId: string, e: MouseEvent){
+    e.preventDefault()
+    e.stopPropagation()
+    const stub = findArchivedStub(chaId)
+    if(!stub) return
+    const actions: Array<[string, () => unknown]> = [
+      [language.deactivatedMenuOpen, () => promptActivateCharacter(chaId, { reseter: botSwitchReseter })],
+      [language.remove, async () => {
+        if(await alertConfirm(language.moveToTrashConfirm + (stub.name || 'Unnamed'))) trashDeactivatedCharacter(chaId)
+      }],
+    ]
+    const selected = parseInt(await alertSelect(
+      [...actions.map(([label]) => label === language.remove ? { label, variant: 'destructive' as const } : label), language.cancel],
+      characterMenuInfo(stub, makeAgoText),
+      { image: stub.image ? getCharThumbnail(stub.image, "plain") : undefined },
     ))
     await actions[selected]?.[1]()
   }
@@ -1039,6 +1061,7 @@
             chaId={member.chaId}
             sourceBadge={member.sourceBadge}
             sourceRecorded={member.sourceRecorded}
+            oncontextmenu={(e) => { void editArchivedSidebarCharacter(member.chaId, e) }}
           />
           <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55" class:rounded-md={!IconRounded} class:rounded-full={IconRounded}>
             <ArchiveIcon size={20} class="text-white/90" />
@@ -1130,6 +1153,7 @@
           size="56"
           rounded={IconRounded}
           folderShape
+          folderOpen={openFolders.includes(child.id)}
           name={child.name}
           color={child.color}
           favorite={child.favorite}
@@ -1220,6 +1244,7 @@
             size="56"
             rounded={IconRounded}
             folderShape
+            folderOpen={railFolderOpen(item.char)}
             name={item.char.name}
             color={item.char.color}
             favorite={item.char.favorite}
@@ -1313,6 +1338,7 @@
                         chaId={folderChar.chaId}
                         sourceBadge={folderChar.sourceBadge}
                         sourceRecorded={folderChar.sourceRecorded}
+                        oncontextmenu={(e) => { void editArchivedSidebarCharacter(folderChar.chaId, e) }}
                       />
                       <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55" class:rounded-md={!IconRounded} class:rounded-full={IconRounded}>
                         <ArchiveIcon size={20} class="text-white/90" />
@@ -1445,6 +1471,7 @@
                 chaId={block.char.chaId}
                 sourceBadge={block.char.sourceBadge}
                 sourceRecorded={block.char.sourceRecorded}
+                oncontextmenu={(e) => { void editArchivedSidebarCharacter((block.char as sortTypeArchived).chaId, e) }}
               />
               <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55" class:rounded-md={!IconRounded} class:rounded-full={IconRounded}>
                 <ArchiveIcon size={20} class="text-white/90" />
@@ -1818,6 +1845,7 @@
                 chaId={char.chaId}
                 sourceBadge={char.sourceBadge}
                 sourceRecorded={char.sourceRecorded}
+                oncontextmenu={(e) => { void editArchivedSidebarCharacter(char.chaId, e) }}
               />
               <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55" class:rounded-md={!IconRounded} class:rounded-full={IconRounded}>
                 <ArchiveIcon size={20} class="text-white/90" />
@@ -1826,7 +1854,7 @@
           {:else if char.type === "folder"}
             {#key char.color}
             {#key char.name}
-              <SidebarAvatar src="slot" size="56" rounded={IconRounded} folderShape name={char.name} color={char.color} favorite={char.favorite} moduleLink={char.link ? 'linked' : null} count={railFolderCounts.get(char.id) ?? char.folder.length} backgroundimg={char.display === 'image' && char.img ? () => getCharThumbnail(char.img, "plain") : ""}
+              <SidebarAvatar src="slot" size="56" rounded={IconRounded} folderShape folderOpen={railFolderOpen(char)} name={char.name} color={char.color} favorite={char.favorite} moduleLink={char.link ? 'linked' : null} count={railFolderCounts.get(char.id) ?? char.folder.length} backgroundimg={char.display === 'image' && char.img ? () => getCharThumbnail(char.img, "plain") : ""}
               oncontextmenu={char.system ? undefined : (e) => openSidebarFolderSettings(char.id, e)}
               onClick={() => {
                 if(suppressNextClick) return
@@ -1951,6 +1979,7 @@
                       chaId={char2.chaId}
                       sourceBadge={char2.sourceBadge}
                       sourceRecorded={char2.sourceRecorded}
+                      oncontextmenu={(e) => { void editArchivedSidebarCharacter(char2.chaId, e) }}
                     />
                     <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/55" class:rounded-md={!IconRounded} class:rounded-full={IconRounded}>
                       <ArchiveIcon size={20} class="text-white/90" />

@@ -465,6 +465,9 @@
         { "file": "src/ts/gui/characterCatalogMetrics.ts", "contains": "buildExactCharacterDuplicateCounts" },
         { "file": "src/ts/gui/characterCatalogMetrics.ts", "contains": "buildCharacterSimilarityCounts" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "archived-character-muted" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "async function editArchivedSidebarCharacter(chaId: string, e: MouseEvent){" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{ image: character.image ? getCharThumbnail(character.image, \"plain\") : undefined }," },
+        { "file": "src/lib/Others/AlertComp.svelte", "contains": "{#await $alertStore.image then src}" },
         { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "characterAssetCountLabel" },
         { "file": "src/lib/CharacterManager/CharacterManager.svelte", "contains": "openGridContextMenu" },
         { "file": "src/lib/CharacterManager/CharacterManager.svelte", "contains": "visibleLiveCount" }
@@ -1553,7 +1556,9 @@
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "let railFolderCounts = $derived.by(() => {" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "count={railFolderCounts.get(char.id) ?? char.folder.length}" },
         { "file": "src/lib/SideBars/SidebarAvatar.svelte", "contains": "{#if count !== null && count !== undefined}" },
-        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "rounded-b-md z-30 pb-2" }
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "rounded-b-md z-30 pb-2" },
+        { "file": "src/lib/SideBars/SidebarAvatar.svelte", "contains": "class:sidebar-folder-open={folderShape && folderOpen}" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "folderOpen={railFolderOpen(char)}" }
       ],
       "regressionTests": []
     },

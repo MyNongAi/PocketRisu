@@ -644,6 +644,7 @@ export const languageKorean = {
   activateCharacterAlreadyActive: "서버에서 이 캐릭터가 이미 활성 상태입니다. 페이지를 새로고침하세요.",
   activateCharacterRemoveStub: "이 캐릭터를 목록에서 제거할까요? (다른 데이터는 삭제되지 않습니다)",
   deactivatedBadge: "비활성화",
+  deactivatedMenuOpen: "활성화해서 열기",
   exportCharacter: "캐릭터 엑스포트",
   characterPackage: "캐릭터 패키지",
   characterPackageExport: "패키지 내보내기",

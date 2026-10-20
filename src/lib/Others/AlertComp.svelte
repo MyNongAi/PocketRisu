@@ -782,6 +782,13 @@
         {@const prompt = hasDisplay ? parts[0] : ''}
         {@const options = hasDisplay ? parts.slice(1) : parts}
         <div class="flex flex-col gap-3">
+            {#if $alertStore.image}
+                {#await $alertStore.image then src}
+                    {#if src}
+                        <img {src} alt="" class="mx-auto max-h-40 max-w-full rounded-md object-contain" />
+                    {/if}
+                {/await}
+            {/if}
             {#if prompt}
                 <p class="text-textcolor whitespace-pre-wrap">{prompt}</p>
             {/if}
