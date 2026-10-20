@@ -1281,6 +1281,7 @@ export const languageKorean = {
   splitPaneWords: { left: "왼쪽", right: "오른쪽", top: "위", bottom: "아래" },
   splitPanelToggle: "캐릭창",
   newlyReceived: "새로 받음: 아직 안 열어 봄",
+  newSwipeWaiting: "뒤쪽 페이지에 새 답이 있어요",
   pairFindBot: "연결된 봇 찾기",
   pairFindWhichModule: "어느 모듈로 갈까요?",
   pairFindWhichBot: "어느 봇으로 갈까요?",

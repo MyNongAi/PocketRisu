@@ -11,6 +11,8 @@ export interface SwipeMessage {
     disabled?: unknown
     /** Swipe index of a reply that looked like an error (isErrorLikeReply). */
     nodeOnlyErrorSwipe?: number
+    /** Swipe index of a reply a reroll added while another page stayed shown, until it is seen. */
+    nodeOnlyNewSwipe?: number
 }
 
 // A reply that arrives within 10 s with 100 characters or fewer is usually a
@@ -43,6 +45,36 @@ export function shiftErrorMarkAfterDelete(message: SwipeMessage, removedIndex: n
     if (mark === undefined) return
     if (mark === removedIndex || !Array.isArray(message.swipes)) delete message.nodeOnlyErrorSwipe
     else if (mark > removedIndex) message.nodeOnlyErrorSwipe = mark - 1
+}
+
+// A reroll that finishes while the chat is open keeps the page that was shown
+// (rerollPlaceholder.ts), so the new reply waits on a later page. Its arrow
+// shows a dot until that page is seen (the user's request, 2026-10-21).
+
+/** Mark swipe `index` as added by a reroll and not seen yet (no mark when it is the shown one). */
+export function markNewSwipe(message: SwipeMessage, index: number): void {
+    if (Array.isArray(message.swipes) && index >= 0 && index < message.swipes.length && index !== (message.swipeId ?? 0)) {
+        message.nodeOnlyNewSwipe = index
+    }
+}
+
+/** Seeing the marked page drops the mark. */
+export function seeShownSwipe(message: SwipeMessage): void {
+    if (message.nodeOnlyNewSwipe !== undefined && message.nodeOnlyNewSwipe === (message.swipeId ?? 0)) delete message.nodeOnlyNewSwipe
+}
+
+/** A page a reroll added is waiting unseen. */
+export function hasUnseenSwipe(message: SwipeMessage | null | undefined): boolean {
+    const mark = message?.nodeOnlyNewSwipe
+    return mark !== undefined && Array.isArray(message?.swipes) && mark < message.swipes.length && mark !== (message.swipeId ?? 0)
+}
+
+/** Keep the new-page mark on the same swipe after swipe `removedIndex` was deleted. */
+export function shiftNewMarkAfterDelete(message: SwipeMessage, removedIndex: number): void {
+    const mark = message.nodeOnlyNewSwipe
+    if (mark === undefined) return
+    if (mark === removedIndex || !Array.isArray(message.swipes)) delete message.nodeOnlyNewSwipe
+    else if (mark > removedIndex) message.nodeOnlyNewSwipe = mark - 1
 }
 
 /**

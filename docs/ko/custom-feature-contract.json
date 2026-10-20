@@ -1595,7 +1595,7 @@
       "requiredMarkers": [
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "setRerollPlaceholder({ chatId: activeChat.id, index: cha.length, message: safeStructuredClone(lastMsg), hold: !replacesError, trailing: safeStructuredClone(trailingComments) })" },
         { "file": "src/ts/globalApi.svelte.ts", "contains": "chatForSave(chat, pendingGenerationId, placeholder)" },
-        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (newLastMsg && keptSwipe !== null && onScreen && showSwipe(newLastMsg, keptSwipe)) {" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "markNewSwipe(newLastMsg, newIndex)" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "totalPages: pages.total," },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (placeholderChatId) clearRerollPlaceholder(placeholderChatId)" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (isTarget && !currentChatGenerating) restoreShownSwipeScriptstate(chat, msg)" },
@@ -1603,11 +1603,14 @@
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "if (!hold.rendered) hold.release = holdHeight(b, previousHeight);" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "<div class=\"contents\" inert={placeholder}>" },
         { "file": "src/ts/gui/rerollPlaceholder.ts", "contains": "setRerollPlaceholder({ ...placeholder, showingNew: true })" },
-        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "? newReplyPageState(placeholder)" }
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "? newReplyPageState(placeholder)" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "unseenPage: hasUnseenSwipe(message)," },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "class:new-page-arrow={unseenPage}" }
       ],
       "regressionTests": [
         "src/ts/gui/rerollPlaceholder.test.ts",
-        "src/ts/chatCopySnapshot.test.ts"
+        "src/ts/chatCopySnapshot.test.ts",
+        "src/ts/chatSwipes.test.ts"
       ]
     },
     {

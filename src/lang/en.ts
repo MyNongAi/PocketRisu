@@ -1187,6 +1187,7 @@ export const languageEnglish = {
     splitPaneWords: { left: "left", right: "right", top: "top", bottom: "bottom" },
     splitPanelToggle: "Character panel",
     newlyReceived: "New: not opened yet",
+    newSwipeWaiting: "A new reply is waiting on a later page",
     pairFindBot: "Find its bots",
     pairFindWhichModule: "Which module?",
     pairFindWhichBot: "Which bot?",

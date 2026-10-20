@@ -3,7 +3,7 @@
 
     import Suggestion from './Suggestion.svelte';
     import { copyScriptstateCheckpoint, mergeRerollCheckpoint, removeSwipeCheckpoint, restoreScriptstateBeforeReroll, restoreScriptstateSnapshot, restoreShownSwipeScriptstate, snapshotScriptstate } from 'src/ts/chatScriptstateCheckpoint';
-    import { deleteShownSwipe, dropShownSwipe, findLastReplyIndex, markErrorLikeReply, shiftErrorMarkAfterDelete, showSwipe, shownSwipeIsErrorLike, stepSwipe } from 'src/ts/chatSwipes';
+    import { deleteShownSwipe, dropShownSwipe, findLastReplyIndex, markErrorLikeReply, markNewSwipe, seeShownSwipe, shiftErrorMarkAfterDelete, shiftNewMarkAfterDelete, showSwipe, shownSwipeIsErrorLike, stepSwipe } from 'src/ts/chatSwipes';
     import { previousInputIndex } from 'src/ts/gui/inputEcho';
     import { pressedInput, recordSentRequestInput, type SentInput } from 'src/ts/inputVersions';
     import { mergeAuxLines } from 'src/ts/process/auxLorebook';
@@ -882,8 +882,13 @@ import { isMobile } from 'src/ts/platform'
         // shown (rerollPlaceholder.ts). Away from it, the new reply shows.
         const keptSwipe = placeholderChatId ? heldRerollSwipe(placeholderChatId) : null
         const onScreen = view.characterIndex === attached.characterIndex && view.chatIndex === attached.chatIndex
-        if (newLastMsg && keptSwipe !== null && onScreen && showSwipe(newLastMsg, keptSwipe)) {
-            restoreShownSwipeScriptstate(attached.chat, newLastMsg)
+        if (newLastMsg && keptSwipe !== null && onScreen) {
+            // The new reply waits on its page; its arrow shows a dot until it is seen.
+            const newIndex = newLastMsg.swipeId ?? 0
+            if (showSwipe(newLastMsg, keptSwipe)) {
+                restoreShownSwipeScriptstate(attached.chat, newLastMsg)
+                markNewSwipe(newLastMsg, newIndex)
+            }
         }
         } finally {
             if (placeholderChatId) clearRerollPlaceholder(placeholderChatId)
@@ -913,12 +918,15 @@ import { isMobile } from 'src/ts/platform'
             if (removed) {
                 removeSwipeCheckpoint(msg, removed.removedIndex, removed.previousCount)
                 delete msg.nodeOnlyErrorSwipe
+                shiftNewMarkAfterDelete(msg, removed.removedIndex)
+                seeShownSwipe(msg)
                 if (isTarget) restoreShownSwipeScriptstate(chat, msg)
                 DBState.db.characters[view.characterIndex].reloadKeys += 1
                 return
             }
         }
         if (!stepSwipe(msg, step)) return
+        seeShownSwipe(msg)
         // Swipes can be browsed while a reply is being written (the user's
         // request, 2026-10-09); the chat variables stay as the generation
         // found them then.
@@ -952,6 +960,8 @@ import { isMobile } from 'src/ts/platform'
         if (!removed) return
         removeSwipeCheckpoint(msg, removed.removedIndex, removed.previousCount)
         shiftErrorMarkAfterDelete(msg, removed.removedIndex)
+        shiftNewMarkAfterDelete(msg, removed.removedIndex)
+        seeShownSwipe(msg)
         if (isTarget) restoreShownSwipeScriptstate(chat, msg)
         DBState.db.characters[view.characterIndex].reloadKeys += 1
     }

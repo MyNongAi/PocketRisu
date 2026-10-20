@@ -710,6 +710,30 @@ body {
   display: block;
 }
 
+/* A reroll's new reply waits on a later page: the forward arrow glows with a dot (chatSwipes.ts). */
+.new-page-arrow {
+  color: rgb(52 211 153);
+}
+.new-page-dot {
+  position: absolute;
+  top: -2px;
+  right: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  background: rgb(52 211 153);
+  box-shadow: 0 0 0 2px var(--risu-theme-bgcolor, #282a36);
+  animation: new-page-dot-pulse 1.6s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes new-page-dot-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(0.8); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .new-page-dot { animation: none; }
+}
+
 .x-risu-tool-call {
   @apply border border-darkborderc bg-darkbg text-textcolor rounded-md shadow-xs focus:outline-hidden transition-colors duration-200 px-4 py-2 min-w-0;
 }

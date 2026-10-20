@@ -9,6 +9,10 @@ import {
     findLastReplyIndex,
     findRerollTargetIndex,
     hasBrowsableSwipes,
+    hasUnseenSwipe,
+    markNewSwipe,
+    seeShownSwipe,
+    shiftNewMarkAfterDelete,
     showSwipe,
     stepSwipe,
     swipeCount,
@@ -180,5 +184,38 @@ describe('error-like replies', () => {
         expect(message.nodeOnlyErrorSwipe).toBe(1)
         shiftErrorMarkAfterDelete(message, 1)
         expect(message.nodeOnlyErrorSwipe).toBeUndefined()
+    })
+})
+
+describe('new page a reroll left unseen', () => {
+    it('marks a page other than the shown one and drops the mark once it is shown', () => {
+        const message = { role: 'char', data: 'a', swipes: ['a', 'b', 'c'], swipeId: 0 } as any
+        markNewSwipe(message, 2)
+        expect(hasUnseenSwipe(message)).toBe(true)
+        stepSwipe(message, 1)
+        seeShownSwipe(message)
+        expect(message.nodeOnlyNewSwipe).toBe(2)
+        stepSwipe(message, 1)
+        seeShownSwipe(message)
+        expect(message.nodeOnlyNewSwipe).toBeUndefined()
+        expect(hasUnseenSwipe(message)).toBe(false)
+    })
+
+    it('does not mark the shown page or one out of range', () => {
+        const message = { role: 'char', data: 'b', swipes: ['a', 'b'], swipeId: 1 } as any
+        markNewSwipe(message, 1)
+        markNewSwipe(message, 2)
+        markNewSwipe(message, -1)
+        expect(message.nodeOnlyNewSwipe).toBeUndefined()
+        expect(hasUnseenSwipe(char('x'))).toBe(false)
+        expect(hasUnseenSwipe(null)).toBe(false)
+    })
+
+    it('keeps the mark on the same page when another one is deleted', () => {
+        const message = { role: 'char', data: 'a', swipes: ['a', 'b', 'c'], swipeId: 0, nodeOnlyNewSwipe: 2 } as any
+        shiftNewMarkAfterDelete(message, 1)
+        expect(message.nodeOnlyNewSwipe).toBe(1)
+        shiftNewMarkAfterDelete(message, 1)
+        expect(message.nodeOnlyNewSwipe).toBeUndefined()
     })
 })
