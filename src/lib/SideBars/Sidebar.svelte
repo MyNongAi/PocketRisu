@@ -29,6 +29,7 @@
     import { folderIconComponent } from "../CharacterManager/folderIcons";
     import { syncFavoritesWithFolderMoves } from "src/ts/favoritesFolder";
     import { characterModuleLink as characterModuleLinkState } from "src/ts/gui/pairedModules";
+    import { botHasModules, findModulesOfBot } from "src/ts/gui/pairFinder";
     import BarIcon from "./BarIcon.svelte";
     import SidebarIndicator from "./SidebarIndicator.svelte";
     import {
@@ -580,6 +581,7 @@
       [character.favorite ? '즐겨찾기 해제' : DBState.db.nodeOnlyFavoritesFolder !== false ? '즐겨찾기 (★ 폴더로)' : '즐겨찾기 (맨위로)',
         () => toggleSidebarCharacterFavorite(characterIndex)],
       ...(protonLink ? [[language.protonLinkCopy, () => copyProtonLink(protonLink)] as [string, () => unknown]] : []),
+      ...(botHasModules(character.chaId) ? [[language.pairFindModule, () => findModulesOfBot(character.chaId)] as [string, () => unknown]] : []),
       [language.remove, () => removeChar(character.chaId, character.name)],
     ]
     // The delete is red, as in the other menus.

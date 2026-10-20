@@ -11,6 +11,7 @@ import {
     shouldRootModulesLeadByActivation,
     sortModuleFoldersByActivation,
     sortModulesByActivation,
+    liftModulesToNewest,
 } from './moduleSort'
 
 describe('interleaved module catalog', () => {
@@ -276,5 +277,17 @@ describe('activationHistoryAfterPlacement', () => {
         const next = activationHistoryAfterPlacement(before, after, history)
         expect(next.indexOf('M7')).toBeGreaterThan(next.indexOf('M8'))
         expect(next.filter((id) => id !== 'M7' && id !== 'M8')).toEqual(['M4', 'M3', 'M5', 'M2', 'M1', 'M6'])
+    })
+})
+
+describe('modules on now lead the catalog', () => {
+    it('moves them to the newest end, in their own order, without storing it', () => {
+        const history = ['a', 'b', 'c']
+        expect(liftModulesToNewest(history, [['e']], ['a', 'x'])).toEqual(['e', 'b', 'c', 'x', 'a'])
+        expect(history).toEqual(['a', 'b', 'c'])
+        expect(liftModulesToNewest(history, [], [])).toEqual(['a', 'b', 'c'])
+        const modules = ['a', 'b', 'c', 'd'].map((id) => ({ id, name: id }))
+        const sorted = sortModulesByActivation(modules, '', { activationHistory: liftModulesToNewest(history, [], ['a']) })
+        expect(sorted.map((m) => m.id)).toEqual(['a', 'c', 'b', 'd'])
     })
 })

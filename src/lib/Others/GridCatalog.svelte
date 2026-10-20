@@ -16,6 +16,7 @@
     import { checkCharOrder } from "src/ts/globalApi.svelte";
     import { exportChar } from "src/ts/characterCards";
     import { alertConfirm, alertError, alertSelect, type AlertAction } from "src/ts/alert";
+    import { botHasModules, findModulesOfBot } from "src/ts/gui/pairFinder";
     import { isFolderEntry, moveCharacterToFolder, setHidden } from "src/ts/characterOrder";
     import { syncFavoritesWithFolderMoves } from "src/ts/favoritesFolder";
     import { isDeactivatedSystemFolder } from "src/ts/deactivatedCharacterFolders";
@@ -98,6 +99,7 @@
             add('제목 색변경', () => editCharacterTitleColor(char.chaId))
             add(language.deactivateCharacter, async () => { await archiveCharacter(char.index) })
             add(language.exportCharacter, async () => { await exportChar(char.index) })
+            if(botHasModules(char.chaId)) add(language.pairFindModule, () => { endGrid(); void findModulesOfBot(char.chaId) })
             add(language.moveToTrash, () => removeChar(char.chaId, char.name), 'destructive')
         }
         const selected = Number.parseInt(await alertSelect([...labels, language.cancel]))

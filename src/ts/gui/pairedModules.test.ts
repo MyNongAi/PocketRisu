@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { backfillModulePairs, characterModuleLink, folderBotLinkChange, charactersByPairedModule, forgetModulePair, moduleLinks, recordModulePair } from './pairedModules'
+import { backfillModulePairs, botsOfModule, characterModuleLink, folderBotLinkChange, charactersByPairedModule, forgetModulePair, moduleLinks, modulesOfBot, recordModulePair } from './pairedModules'
 
 describe('charactersByPairedModule', () => {
     test('maps each module to the bots that have it as their own module', () => {
@@ -47,6 +47,19 @@ describe('chain states', () => {
         expect(links.get('sleeping')).toEqual({ state: 'linked', names: ['S'] })
         expect(links.get('deleted')).toEqual({ state: 'broken', names: ['D'] })
         expect(links.has('plain')).toBe(false)
+    })
+
+    test('a bot finds its own modules, and a module its bots (none in the trash)', () => {
+        const modules = [{ id: 'm1', name: 'M1' }, { id: 'm2', name: 'M2', nodeOnlyPairedCharacterIds: ['a', 's', 'd'] }]
+        expect(modulesOfBot({ modules: ['m2', 'gone', 'm1', 'm2'] }, modules).map((m) => m.id)).toEqual(['m2', 'm1'])
+        expect(modulesOfBot(undefined, modules)).toEqual([])
+        const characters = [null, { chaId: 'a', name: 'A', modules: ['m2'] }, { chaId: 't', name: 'T', modules: ['m2'], trashTime: 1 }]
+        const archived = [{ chaId: 's', name: 'S' }, { chaId: 'd', name: 'D', trashedAt: 3 }, { chaId: 'x', name: 'X' }]
+        expect(botsOfModule(modules[1], characters, archived)).toEqual([
+            { chaId: 'a', name: 'A', index: 1, archived: false },
+            { chaId: 's', name: 'S', index: -1, archived: true },
+        ])
+        expect(botsOfModule(modules[0], characters, archived)).toEqual([])
     })
 
     test('pairs are recorded, forgotten on purpose and backfilled from the bots', () => {

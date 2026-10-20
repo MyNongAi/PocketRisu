@@ -68,6 +68,25 @@ export function sortModulesByActivation<T extends SortableModule>(
     })
 }
 
+/**
+ * The recency order with the given modules moved to the newest end, keeping
+ * their own order among them. Display only (never stored): the module
+ * catalog lists the modules on now first, the blue ones (on everywhere) and
+ * the orange ones (on by themselves in the open bot's chats), which were
+ * never activated by hand and sat far down (the user's request, 2026-10-20).
+ */
+export function liftModulesToNewest(
+    history: ReadonlyArray<string> | undefined,
+    fallbackOrders: Array<ReadonlyArray<string> | undefined>,
+    liftedIds: ReadonlyArray<string>,
+): string[] {
+    const order = mergeActivationOrders([...fallbackOrders, history])
+    if (liftedIds.length === 0) return order
+    const rank = new Map(order.map((id, index) => [id, index]))
+    const lifted = [...new Set(liftedIds)].sort((a, b) => (rank.get(a) ?? -1) - (rank.get(b) ?? -1))
+    return mergeActivationOrders([order, lifted])
+}
+
 export function seedModuleActivationHistory(
     history: ReadonlyArray<string> | undefined,
     ...fallbackOrders: Array<ReadonlyArray<string> | undefined>

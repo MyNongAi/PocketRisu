@@ -94,6 +94,48 @@ export function moduleLinks(
     return links
 }
 
+/** The bot's own modules that still exist, in its order (its menu's "연결된 모듈 찾기"). */
+export function modulesOfBot<M extends { id: string }>(
+    character: PairCharacter | null | undefined,
+    modules: readonly (M | null | undefined)[],
+): M[] {
+    const byId = new Map<string, M>()
+    for (const module of modules) if (module?.id) byId.set(module.id, module)
+    return [...new Set(character?.modules ?? [])].map((id) => byId.get(id)).filter((module): module is M => !!module)
+}
+
+export interface PairedBot {
+    chaId: string
+    name: string
+    /** Its place in db.characters, or -1 for a deactivated one. */
+    index: number
+    archived: boolean
+}
+
+/**
+ * Bots that carry the module as their own (a module's menu's "연결된 봇
+ * 찾기"): live ones that list it, then deactivated ones it was paired with.
+ * None in the trash, the same bots that keep its chain green (moduleLinks).
+ */
+export function botsOfModule(
+    module: PairModule | null | undefined,
+    characters: readonly (PairCharacter | null | undefined)[],
+    archived: readonly ({ chaId?: string, name?: string, trashedAt?: number } | null | undefined)[] = [],
+): PairedBot[] {
+    if (!module?.id) return []
+    const bots: PairedBot[] = []
+    characters.forEach((character, index) => {
+        if (!character?.chaId || character.trashTime || !character.modules?.includes(module.id)) return
+        bots.push({ chaId: character.chaId, name: character.name || 'Unnamed', index, archived: false })
+    })
+    const recorded = new Set(module.nodeOnlyPairedCharacterIds ?? [])
+    for (const stub of archived) {
+        if (!stub?.chaId || stub.trashedAt || !recorded.has(stub.chaId) || bots.some((bot) => bot.chaId === stub.chaId)) continue
+        bots.push({ chaId: stub.chaId, name: stub.name || 'Unnamed', index: -1, archived: true })
+    }
+    return bots
+}
+
 /** Notes that the bot carries these modules as its own (pairing). */
 export function recordModulePair(modules: PairModule[], moduleIds: readonly string[], chaId: string | undefined): void {
     if (!chaId) return

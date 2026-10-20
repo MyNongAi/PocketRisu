@@ -7,7 +7,7 @@
     import { v4 } from "uuid";
     import {
         ArchiveIcon, ArchiveRestoreIcon, DownloadIcon, EyeIcon, EyeOffIcon, FolderIcon, FolderPlusIcon,
-        ArrowUpDownIcon, PlusIcon, SearchIcon, SettingsIcon, SquareArrowOutUpRightIcon, TrashIcon, Undo2Icon, XIcon,
+        ArrowUpDownIcon, PackageSearchIcon, PlusIcon, SearchIcon, SettingsIcon, SquareArrowOutUpRightIcon, TrashIcon, Undo2Icon, XIcon,
     } from "@lucide/svelte";
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
     import ShToggle from "src/lib/UI/GUI/ShToggle.svelte";
@@ -29,6 +29,7 @@
     import { activateCharacter, archiveCharacter, archiveCharacters, deleteTrashedCharacter, promptActivateCharacter, restoreTrashedCharacter, trashDeactivatedCharacter, type BulkArchiveOutcome } from "src/ts/characterArchive";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
     import { alertConfirm, alertError, alertInput, alertSelect, notifySuccess, type AlertAction } from "src/ts/alert";
+    import { botHasModules, findModulesOfBot } from "src/ts/gui/pairFinder";
     import { findCharacterIndexbyId } from "src/ts/util";
     import {
         buildManagerEntries, folderNameMatchIds, matchesFilter, matchesSearch, sortEntries,
@@ -416,6 +417,7 @@
         } else {
             add(language.deactivateCharacter, () => deactivate(entry));
             add(language.exportCharacter, () => exportEntry(entry));
+            if (botHasModules(entry.chaId)) add(language.pairFindModule, () => { close(); void findModulesOfBot(entry.chaId) });
         }
         add(language.moveToTrash, () => trash(entry), 'destructive');
         const selected = Number.parseInt(await alertSelect([...labels, language.cancel]));
@@ -443,6 +445,9 @@
     {:else}
         <ShDropdownMenuItem onSelect={() => deactivate(entry)}><ArchiveIcon /><span>{language.deactivateCharacter}</span></ShDropdownMenuItem>
         <ShDropdownMenuItem onSelect={() => exportEntry(entry)}><DownloadIcon /><span>{language.exportCharacter}</span></ShDropdownMenuItem>
+        {#if botHasModules(entry.chaId)}
+            <ShDropdownMenuItem onSelect={() => { close(); void findModulesOfBot(entry.chaId) }}><PackageSearchIcon /><span>{language.pairFindModule}</span></ShDropdownMenuItem>
+        {/if}
         <ShDropdownMenuItem variant="destructive" onSelect={() => trash(entry)}><TrashIcon /><span>{language.moveToTrash}</span></ShDropdownMenuItem>
     {/if}
 {/snippet}

@@ -8,16 +8,17 @@
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
     import ModuleMenu from "src/lib/Setting/Pages/Module/ModuleMenu.svelte";
     import { addModuleToDatabase, exportModule, exportModuleLegacy, hydrateModuleAssets, importModule, importModuleFromProtonDrive, refreshModules, rerenderChatForModules, syncLinkedFolders, type RisuModule } from "src/ts/process/modules";
-    import { Clock3Icon, SquarePen, Globe, Share2Icon, PlusIcon, HardDriveUpload, ListOrderedIcon, PaletteIcon, StarIcon, Waypoints, CloudDownloadIcon, LinkIcon, Link2Icon, UnlinkIcon } from "@lucide/svelte";
+    import { Clock3Icon, SquarePen, Globe, Share2Icon, PlusIcon, HardDriveUpload, ListOrderedIcon, PaletteIcon, StarIcon, Waypoints, CloudDownloadIcon, LinkIcon, Link2Icon, UnlinkIcon, UserSearchIcon } from "@lucide/svelte";
     import { v4 } from "uuid";
     import { tooltip } from "src/ts/gui/tooltip";
     import { alertConfirm, alertError, alertSelect, notifySuccess } from "src/ts/alert";
-    import { onDestroy, tick } from "svelte";
+    import { onDestroy, tick, untrack } from "svelte";
+    import { findBotsOfModule, moduleFindRequest } from "src/ts/gui/pairFinder";
     import { importMCPModule } from "src/ts/process/mcp/mcp";
     import { convertModuleToCharacter } from "src/ts/interchangeability";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
     import { dissolveShrunkenModuleFolders, synchronizeModuleFolderMembership } from "src/ts/process/moduleFolders";
-    import { activationHistoryAfterPlacement, getLatestModuleCatalogPromotion, recordModuleActivation, recordModuleFolderActivation, recordModuleFolderOrder, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
+    import { activationHistoryAfterPlacement, getLatestModuleCatalogPromotion, liftModulesToNewest, recordModuleActivation, recordModuleFolderActivation, recordModuleFolderOrder, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
     import { chooseTitleColor, listTitleColor } from "src/ts/gui/titleColors";
     import { localOriginOf, resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
     import { copyProtonLink, protonLinkOf } from "src/ts/protonSource";
@@ -47,32 +48,50 @@
             ? 'registered'
             : 'recent',
     )
+    // 최근순 lists the modules on now first, newest first: the blue ones (on
+    // everywhere) and the orange ones (on by themselves in the open bot's
+    // chats), which never came up (liftModulesToNewest, display only).
+    let onNowIds = $derived(DBState.db.modules
+        .filter((module) => !!module && (isGlobal(module) || isIntegrated(module) || isBotModule(module)))
+        .map((module) => module.id))
+    let recencyOptions = $derived({
+        activationHistory: liftModulesToNewest(DBState.db.moduleActivationHistory, [DBState.db.enabledModules], onNowIds),
+    })
     let displayModules = $derived(moduleCatalogSort === 'registered'
         ? [...DBState.db.modules]
-        : sortModulesByActivation(DBState.db.modules, '', {
-            fallbackOrders: [DBState.db.enabledModules],
-            activationHistory: DBState.db.moduleActivationHistory,
-        }))
+        : sortModulesByActivation(DBState.db.modules, '', recencyOptions))
     let displayFolders = $derived(moduleCatalogSort === 'registered'
         ? [...(DBState.db.moduleFolders ?? [])]
         : sortModuleFoldersByActivation(
             DBState.db.moduleFolders ?? [],
             DBState.db.modules,
-            {
-                fallbackOrders: [DBState.db.enabledModules],
-                activationHistory: DBState.db.moduleActivationHistory,
-            },
+            recencyOptions,
         ))
     let catalogPromotion = $derived(moduleCatalogSort === 'recent'
         ? getLatestModuleCatalogPromotion(
             DBState.db.modules,
             DBState.db.moduleFolders ?? [],
-            {
-                fallbackOrders: [DBState.db.enabledModules],
-                activationHistory: DBState.db.moduleActivationHistory,
-            },
+            recencyOptions,
         )
         : undefined)
+
+    // A bot's menu "연결된 모듈 찾기" (pairFinder.ts): the list searched to
+    // the module's name, its row marked while that search stays.
+    let foundModuleId = $state('')
+    let foundModuleIndex = $derived(foundModuleId && moduleSearchQuery
+        ? displayModules.findIndex((module) => module.id === foundModuleId)
+        : -1)
+    $effect(() => {
+        const id = $moduleFindRequest
+        if (!id) return
+        untrack(() => {
+            moduleFindRequest.set(null)
+            const module = DBState.db.modules.find((m) => m?.id === id)
+            if (!module) return
+            moduleSearchQuery = module.name
+            foundModuleId = id
+        })
+    })
     let promotedModuleIndex = $derived(catalogPromotion && !catalogPromotion.folderId
         ? displayModules.findIndex((module) => module.id === catalogPromotion?.moduleId)
         : -1)
@@ -396,6 +415,7 @@
         interleaveItems
         promotedItemIndex={promotedModuleIndex}
         promotedFolderId={promotedFolderId}
+        selectedIndex={foundModuleIndex}
         reorderDisabled={moduleCatalogSort !== 'recent'}
         folderTitleColor={folderColor}
         onFolderColor={changeFolderColor}
@@ -494,6 +514,9 @@
                     {#if openBot.modules?.includes(rmodule.id)}<UnlinkIcon /><span>{language.moduleBotUnlink.replace('{}', openBot.name || 'Unnamed')}</span>
                     {:else}<LinkIcon /><span>{language.moduleBotLink.replace('{}', openBot.name || 'Unnamed')}</span>{/if}
                 </ShDropdownMenuItem>
+            {/if}
+            {#if pairedModules.get(rmodule.id)?.state === 'linked'}
+                <ShDropdownMenuItem onSelect={() => findBotsOfModule(rmodule.id)}><UserSearchIcon /><span>{language.pairFindBot}</span></ShDropdownMenuItem>
             {/if}
             {#if protonLinkOf(rmodule)}
                 <!-- The Proton link it was downloaded from, to fetch it again if it breaks. -->
