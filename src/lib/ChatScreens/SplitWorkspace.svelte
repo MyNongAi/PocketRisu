@@ -15,7 +15,7 @@
     import type { Snippet } from 'svelte'
     import { onDestroy, onMount, untrack } from 'svelte'
     import { DynamicGUI, MobileGUI, settingsOpen } from 'src/ts/stores.svelte'
-    import { clampSplitHeight, clampSplitWidth, getSplitWidthBounds, isEmbeddedRisuPane, SPLIT_DIVIDER_PX, splitChatHeight, splitChatOpen, splitChatWidth } from 'src/ts/chatSplitPane'
+    import { clampSplitHeight, clampSplitWidth, dockedSplitChatRoom, dockedSplitWidths, getSplitWidthBounds, isEmbeddedRisuPane, SPLIT_DIVIDER_PX, SPLIT_MAIN_CHAT_MIN_PX, splitChatHeight, splitChatOpen, splitChatWidth, splitDockedRight, type DockedSplitRow } from 'src/ts/chatSplitPane'
     import SecondaryChatPanel from './SecondaryChatPanel.svelte'
     import Sidebar from '../SideBars/Sidebar.svelte'
     import { restorePanesAfterBoot, returnToMainPane, swapPanes } from 'src/ts/paneActivation'
@@ -37,8 +37,7 @@
     // Stacking keeps the lower pane's height within the window.
     $effect(() => {
         if (!column || !paneRoot) return
-        const span = paneRoot.clientHeight
-        untrack(() => splitChatHeight.update((height) => clampSplitHeight(height, span)))
+        untrack(() => splitChatHeight.update((height) => clampSplitHeight(height, columnRoom())))
     })
     onMount(() => {
         const stopSync = startPaneSync()
@@ -48,11 +47,36 @@
     })
     // The two panes and the divider between them (the bot list sits outside it at the ends).
     let paneRoot: HTMLDivElement | null = $state(null)
+    let paneWidth = $state(0)
+    let railWidth = $state(0)
     let stopSplitResize: (() => void) | null = null
 
-    const paneSpan = () => column ? (paneRoot?.clientHeight ?? window.innerHeight) : (paneRoot?.clientWidth ?? window.innerWidth)
-    const clampSize = (size: number) => column ? clampSplitHeight(size, paneSpan()) : clampSplitWidth(size, paneSpan())
+    const mainPanelShown = $derived(docked && splitLayout.panelOpen.main && !$settingsOpen)
+    const sidePanelShown = $derived(docked && splitLayout.panelOpen.side)
+    const dockedRowAt = (span: number): DockedSplitRow => ({ span, rail: rail === 'center' ? railWidth : 0, mainPanel: mainPanelShown, sidePanel: sidePanelShown })
+    // Side by side, the widths are set here, so the main chat keeps its
+    // minimum and the second pane gives way first (dockedSplitWidths).
+    const dockedRow = $derived(docked && !column ? dockedSplitWidths(dockedRowAt(paneWidth || window.innerWidth), $splitChatWidth) : null)
+    // What the toasts and the request dock keep clear of (splitRightInset).
+    $effect(() => {
+        splitDockedRight.set(docked
+            ? { row: !column, rail: rail === 'start' ? 0 : railWidth, sideChat: dockedRow?.sideChat ?? 0, sidePanel: dockedRow?.sidePanel ?? 0 }
+            : null)
+    })
+
+    // The room the two chats share: no divider, and docked, no bot list
+    // between the panes and no open panels. Docked, the wide end leaves the
+    // main chat its minimum.
+    const rowSpan = () => paneRoot?.clientWidth ?? window.innerWidth
+    const rowRoom = (span: number) => docked ? dockedSplitChatRoom(dockedRowAt(span)) : Math.max(0, span - SPLIT_DIVIDER_PX)
+    const columnRoom = () => Math.max(0, (paneRoot?.clientHeight ?? window.innerHeight) - SPLIT_DIVIDER_PX)
+    const mainMinimum = $derived(docked ? SPLIT_MAIN_CHAT_MIN_PX : 0)
+    const widthBounds = $derived(getSplitWidthBounds(rowRoom(paneWidth), mainMinimum))
+    const clampWidth = (width: number) => clampSplitWidth(width, rowRoom(rowSpan()), mainMinimum)
+    const clampSize = (size: number) => column ? clampSplitHeight(size, columnRoom()) : clampWidth(size)
     const setSize = (size: number) => (column ? splitChatHeight : splitChatWidth).set(clampSize(size))
+    // The size on screen: docked side by side, the second chat can be narrower than the width saved.
+    const shownSize = () => column ? $splitChatHeight : (dockedRow?.sideChat ?? $splitChatWidth)
 
     // A touch that stays put this long opens the divider's menu; moving first resizes.
     const LONG_PRESS_MS = 550
@@ -68,7 +92,7 @@
             // A pointer the browser no longer tracks: the window listeners still follow it.
         }
         const start = column ? event.clientY : event.clientX
-        const startSize = column ? $splitChatHeight : $splitChatWidth
+        const startSize = shownSize()
         const touch = event.pointerType === 'touch'
         let resizing = !touch
         let pressTimer = touch ? setTimeout(() => { stop(); void openDividerMenu() }, LONG_PRESS_MS) : null
@@ -96,13 +120,14 @@
         window.addEventListener('pointercancel', stop)
     }
 
+    // Even: the two chats get the same, unless the main chat would go under its minimum.
     function resetSplitSize() {
-        setSize(paneSpan() / 2)
+        setSize((column ? columnRoom() : rowRoom(rowSpan())) / 2)
     }
 
     function handleSplitDividerKeydown(event: KeyboardEvent) {
         const step = event.shiftKey ? 80 : 24
-        const size = column ? $splitChatHeight : $splitChatWidth
+        const size = shownSize()
         const grow = column ? 'ArrowUp' : 'ArrowLeft'
         const shrink = column ? 'ArrowDown' : 'ArrowRight'
         let next: number | undefined
@@ -115,9 +140,25 @@
         setSize(next)
     }
 
+    // One divider menu at a time: a touch long press can bring both the press
+    // timer and the browser's own contextmenu (Chrome on Android, Windows
+    // touch), and a second question replaces the first and comes back after it.
+    let dividerMenuOpen = false
+
     async function openDividerMenu(event?: MouseEvent) {
         event?.preventDefault()
-        if (!docked) return
+        // The contextmenu of a press still held: the press neither opens the menu again nor resizes.
+        stopSplitResize?.()
+        if (!docked || dividerMenuOpen) return
+        dividerMenuOpen = true
+        try {
+            await askDividerMenu()
+        } finally {
+            dividerMenuOpen = false
+        }
+    }
+
+    async function askDividerMenu() {
         const row = splitLayout.orientation === 'row'
         const railChoices: [RailPlace, string][] = row
             ? [['start', language.splitRailStart], ['center', language.splitRailCenter], ['end', language.splitRailEnd]]
@@ -132,12 +173,17 @@
         actions[selected]?.[1]()
     }
 
-    onDestroy(() => stopSplitResize?.())
+    onDestroy(() => {
+        stopSplitResize?.()
+        splitDockedRight.set(null)
+    })
     onMount(() => {
         const clampStoredSizes = () => {
             if (!paneRoot) return
-            splitChatWidth.update((width) => clampSplitWidth(width, paneRoot?.clientWidth ?? window.innerWidth))
-            if (column) splitChatHeight.update((height) => clampSplitHeight(height, paneRoot?.clientHeight ?? window.innerHeight))
+            // Docked, the layout narrows what it shows (dockedSplitWidths), so
+            // the saved width comes back once the window is wide again.
+            if (!docked) splitChatWidth.update(clampWidth)
+            if (column) splitChatHeight.update((height) => clampSplitHeight(height, columnRoom()))
         }
         clampStoredSizes()
         window.addEventListener('resize', clampStoredSizes)
@@ -146,18 +192,24 @@
 </script>
 
 {#snippet botList()}
-    <div class="split-rail flex h-full shrink-0">
+    <div class="split-rail flex h-full shrink-0" bind:clientWidth={railWidth}>
         <Sidebar part="rail" hidden={false} {openLegacyGrid} />
     </div>
 {/snippet}
 
 <div class="flex h-full w-full min-w-0">
     {#if docked && rail === 'start'}{@render botList()}{/if}
-    <div class="flex h-full min-w-0 grow" class:flex-col={column} bind:this={paneRoot}>
+    <div class="flex h-full min-w-0 grow" class:flex-col={column} bind:this={paneRoot} bind:clientWidth={paneWidth}>
         <!-- The main pane: its panel, then the main content (chat or settings).
              Contained while split, so user CSS with position:fixed stays inside it. -->
-        <div class="split-main relative flex min-w-0 min-h-0 grow" class:h-full={!column} class:split-chat-contained={enabled} class:split-main-docked={docked && !column}>
-            {#if docked && splitLayout.panelOpen.main && !$settingsOpen}
+        <div
+            class="split-main relative flex min-w-0 min-h-0 grow"
+            class:h-full={!column}
+            class:split-chat-contained={enabled}
+            class:split-main-docked={!!dockedRow}
+            style:--split-panel={dockedRow ? `${dockedRow.mainPanel}px` : undefined}
+        >
+            {#if mainPanelShown}
                 <Sidebar part="panel" pane="main" hidden={false} {openLegacyGrid} />
             {/if}
             <div class="relative flex h-full min-w-0 grow">
@@ -176,9 +228,9 @@
                 role="slider"
                 aria-label={language.splitDividerLabel}
                 aria-orientation={column ? 'horizontal' : 'vertical'}
-                aria-valuemin={column ? 0 : getSplitWidthBounds(paneRoot?.clientWidth ?? 0).min}
-                aria-valuemax={column ? (paneRoot?.clientHeight ?? 0) : getSplitWidthBounds(paneRoot?.clientWidth ?? 0).max}
-                aria-valuenow={column ? $splitChatHeight : $splitChatWidth}
+                aria-valuemin={column ? 0 : widthBounds.min}
+                aria-valuemax={column ? (paneRoot?.clientHeight ?? 0) : widthBounds.max}
+                aria-valuenow={column ? $splitChatHeight : (dockedRow?.sideChat ?? $splitChatWidth)}
                 title={docked ? language.splitDividerLabel : undefined}
                 tabindex="0"
                 onpointerdown={beginSplitResize}
@@ -194,20 +246,23 @@
                 class:h-full={!column}
                 class:w-full={column}
                 class:shrink-0={column}
+                class:split-side-docked={!!dockedRow}
                 style:height={column ? `${$splitChatHeight}px` : undefined}
+                style:width={dockedRow ? `${dockedRow.sideChat + dockedRow.sidePanel}px` : undefined}
+                style:--split-panel={dockedRow ? `${dockedRow.sidePanel}px` : undefined}
             >
-                {#if docked && splitLayout.panelOpen.side && column}
+                {#if sidePanelShown && column}
                     <Sidebar part="panel" pane="side" hidden={false} {openLegacyGrid} />
                 {/if}
                 <!-- The width the divider sets is the chat's; its panel sits beside it. -->
                 <div
                     class="split-side-chat flex h-full min-w-0"
                     class:grow={column}
-                    style:flex-basis={column ? undefined : `${$splitChatWidth}px`}
+                    style:flex-basis={column ? undefined : `${dockedRow?.sideChat ?? $splitChatWidth}px`}
                 >
                     <SecondaryChatPanel />
                 </div>
-                {#if docked && splitLayout.panelOpen.side && !column}
+                {#if sidePanelShown && !column}
                     <Sidebar part="panel" pane="side" hidden={false} {openLegacyGrid} />
                 {/if}
             </div>
@@ -221,21 +276,38 @@
         touch-action: none;
     }
 
-    /* Side by side, the main pane keeps room for its chat; the second pane
-       gives way first, down to a narrow chat. */
+    /* Docked side by side, the widths come from dockedSplitWidths
+       (chatSplitPane.ts): the second chat and the open panels get theirs,
+       the main chat takes the rest and keeps its minimum. */
     .split-main-docked {
         flex: 1 1 0;
-        min-width: 320px;
     }
 
     .split-side:not(.w-full) {
         flex: 0 1 auto;
     }
 
+    .split-side.split-side-docked {
+        flex: none;
+    }
+
     .split-side-chat:not(.grow) {
         flex-grow: 0;
         flex-shrink: 1;
         min-width: 240px;
+    }
+
+    .split-side-docked > .split-side-chat {
+        flex-shrink: 0;
+        min-width: 0;
+    }
+
+    /* The panels' w-80 narrows on a tight window. */
+    .split-main-docked > :global([data-pane-panel]),
+    .split-side-docked > :global([data-pane-panel]) {
+        flex: none;
+        width: var(--split-panel);
+        min-width: var(--split-panel);
     }
 
     .split-chat-contained {

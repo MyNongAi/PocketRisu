@@ -50,6 +50,10 @@ vi.mock('./lorebook.svelte', () => ({ loadLoreBookV3Prompt: vi.fn() }))
 vi.mock('./memory/hypamemory', () => ({ HypaProcesser: vi.fn() }))
 vi.mock('./request/request', () => ({ requestChatData: vi.fn() }))
 vi.mock('./stableDiff', () => ({ generateAIImage: vi.fn() }))
+vi.mock('../parser/chatVar.svelte', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../parser/chatVar.svelte')>()),
+  getGlobalChatVar: vi.fn(() => '1'),
+}))
 
 let runScripted: typeof import('./scriptings').runScripted
 
@@ -212,4 +216,26 @@ test('tracks a listener registered after initialization', async () => {
   register()
   const after = await runScripted(code, options)
   expect(after.res).toBe('original edited')
+})
+
+test("getGlobalVar reads the toggles of the script's own chat, as CBS getglobalvar does", async () => {
+  const { getGlobalChatVar } = await import('../parser/chatVar.svelte')
+  const chat = { id: 'side-chat', message: [] }
+  const result = await runScripted(
+    `
+      listenEdit('editDisplay', function(id, value)
+        return value .. getGlobalVar(id, 'toggle_hud')
+      end)
+    `,
+    {
+      char: {} as never,
+      chat: chat as never,
+      data: 'hud:',
+      meta: {},
+      mode: 'editDisplay',
+    }
+  )
+
+  expect(result.res).toBe('hud:1')
+  expect(getGlobalChatVar).toHaveBeenCalledWith('toggle_hud', { chat })
 })

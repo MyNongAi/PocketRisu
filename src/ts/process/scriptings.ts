@@ -152,7 +152,9 @@ export async function runScripted(code:string, arg:{
                 }
             })
             declareAPI('getGlobalVar', (id:string, key:string) => {
-                return getGlobalChatVar(key)
+                // The script's own chat, as CBS getglobalvar: a toggle of the
+                // split's other pane reads that pane's values.
+                return getGlobalChatVar(key, { chat: runtimeChat() ?? undefined })
             })
             declareAPI('stopChat', (id:string) => {
                 if(!ScriptingSafeIds.has(id)){

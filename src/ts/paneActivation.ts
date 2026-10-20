@@ -7,7 +7,7 @@ import { get } from 'svelte/store'
 import { botMakerMode, chatDeselected, QuickSettings, selectedCharID } from './stores.svelte'
 import { applyToggleValues, getDatabase, loadTogglesFromChat, snapshotToggleValues, type Chat } from './storage/database.svelte'
 import { ensureChatHydrated } from './storage/chatStorage'
-import { locateChat, paneState, paneToggles, persistPanes, selectedChatIds, type PaneChatIds, type PaneId } from './chatPanes.svelte'
+import { locateChat, paneState, paneToggles, persistPanes, pinnedToggleValues, selectedChatIds, type PaneChatIds, type PaneId } from './chatPanes.svelte'
 import { persistSplitLayout, splitLayout, type PanelTab } from './splitLayout.svelte'
 import { markSeen } from './newMarks.svelte'
 
@@ -36,10 +36,32 @@ function handOver(from: PaneId): void {
 }
 
 /** A chat's toggles when its pane takes the selection: its pin, then what the pane kept. */
-function applyChatToggles(chat: Chat): void {
+function applyChatToggles(chat: Chat, kept: Record<string, string> | undefined): void {
     loadTogglesFromChat(chat)
-    const kept = chat.id ? paneToggles[chat.id] : undefined
-    if (kept && !getDatabase().disableToggleBinding) applyToggleValues({ ...kept })
+    if (kept && !getDatabase().disableToggleBinding) applyToggleValues(kept)
+}
+
+/**
+ * What a pane kept for a chat, taken as the chat takes the selection: from
+ * then on its values are the app's live ones, and a copy left behind was laid
+ * over them again later (a reload's restore).
+ */
+function takeKeptToggles(chatId: string | undefined): Record<string, string> | undefined {
+    const kept = chatId ? paneToggles[chatId] : undefined
+    if (!chatId || !kept) return undefined
+    delete paneToggles[chatId]
+    return { ...kept }
+}
+
+/**
+ * A chat put beside the selection keeps the values it would take the
+ * selection with from now on, so switches in the active pane leave it alone.
+ * Values it already kept stay.
+ */
+function keepTogglesBeside(chat: Chat | undefined, live: Record<string, string>): void {
+    if (!chat?.id || paneToggles[chat.id] || getDatabase().disableToggleBinding) return
+    if (selectedChatIds()?.chatId === chat.id) return
+    paneToggles[chat.id] = pinnedToggleValues(chat, live)
 }
 
 /**
@@ -63,12 +85,13 @@ function selectChat(characterIndex: number, chatIndex: number): void {
     }
     const chat = char.chats?.[chatIndex]
     if (!chat) return
+    const kept = takeKeptToggles(chat.id)
     if (chat._placeholder) {
         void ensureChatHydrated(char.chats, chatIndex, char.chaId).then((hydrated) => {
-            if (hydrated && selectedChatIds()?.chatId === hydrated.id) applyChatToggles(hydrated)
+            if (hydrated && selectedChatIds()?.chatId === hydrated.id) applyChatToggles(hydrated, kept)
         })
     } else {
-        applyChatToggles(chat)
+        applyChatToggles(chat, kept)
     }
 }
 
@@ -110,7 +133,18 @@ export function showInSidePane(ids: PaneChatIds): boolean {
     if (paneState.active === 'side') selectChat(target.characterIndex, target.chatIndex)
     else {
         const char = getDatabase().characters[target.characterIndex]
-        if (char?.chats?.[target.chatIndex]?._placeholder) void ensureChatHydrated(char.chats, target.chatIndex, char.chaId)
+        const chat = char?.chats?.[target.chatIndex]
+        const live = snapshotToggleValues()
+        keepTogglesBeside(chat, live)
+        if (chat?._placeholder) {
+            // A stub carries no pin; the loaded chat's goes under the same values.
+            void ensureChatHydrated(char.chats, target.chatIndex, char.chaId).then((hydrated) => {
+                if (!hydrated?.id || !hydrated.savedToggleValues || !paneToggles[hydrated.id]) return
+                if (paneState.active !== 'main' || paneState.held.side?.chatId !== hydrated.id) return
+                paneToggles[hydrated.id] = pinnedToggleValues(hydrated, live)
+                persistPanes()
+            })
+        }
     }
     persistPanes()
     return true
@@ -135,6 +169,12 @@ export function settlePanesForClosedSplit(): void {
  */
 export function restorePanesAfterBoot(): void {
     if (get(selectedCharID) >= 0) return
-    const target = locateChat(getDatabase().characters ?? [], paneState.held[paneState.active])
-    if (target) selectChat(target.characterIndex, target.chatIndex)
+    const ids = paneState.held[paneState.active]
+    const target = locateChat(getDatabase().characters ?? [], ids)
+    if (!ids || !target) return
+    // The live values loaded with the database are this chat's; anything its
+    // pane still kept for it is older.
+    delete paneToggles[ids.chatId]
+    selectChat(target.characterIndex, target.chatIndex)
+    persistPanes()
 }

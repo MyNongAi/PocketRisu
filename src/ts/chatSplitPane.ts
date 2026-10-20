@@ -75,18 +75,23 @@ export function parseChatRoomDragPayload(value: string): ChatRoomDragPayload | n
     }
 }
 
-export function getSplitWidthBounds(viewportWidth: number): SplitWidthBounds {
+/**
+ * The second chat's width range within `viewportWidth`, the room the two
+ * chats share. `mainMinimum`: what the main chat keeps at the wide end
+ * (SPLIT_MAIN_CHAT_MIN_PX docked); otherwise both keep the narrow end.
+ */
+export function getSplitWidthBounds(viewportWidth: number, mainMinimum = 0): SplitWidthBounds {
     const safeViewportWidth = Math.max(0, viewportWidth)
     const preferredMinimum = Math.min(280, Math.max(160, safeViewportWidth * 0.18))
     const min = Math.min(preferredMinimum, safeViewportWidth / 2)
     return {
         min: Math.round(min),
-        max: Math.round(Math.max(min, safeViewportWidth - min)),
+        max: Math.round(Math.max(min, safeViewportWidth - Math.max(min, mainMinimum))),
     }
 }
 
-export function clampSplitWidth(width: number, viewportWidth: number): number {
-    const bounds = getSplitWidthBounds(viewportWidth)
+export function clampSplitWidth(width: number, viewportWidth: number, mainMinimum = 0): number {
+    const bounds = getSplitWidthBounds(viewportWidth, mainMinimum)
     return Math.round(Math.min(bounds.max, Math.max(bounds.min, width)))
 }
 
@@ -108,14 +113,91 @@ export function clampSplitHeight(height: number, viewportHeight: number): number
 /** Divider width between the two workspaces (SplitWorkspace). */
 export const SPLIT_DIVIDER_PX = 6
 
+/** A pane's character panel in the docked row (Sidebar part="panel", w-80). */
+export const SPLIT_PANEL_PX = 320
+/** How narrow the panels get when the window has no room for them beside two chats. */
+export const SPLIT_PANEL_MIN_PX = 200
+/** What the main chat keeps beside the second pane in the docked row. */
+export const SPLIT_MAIN_CHAT_MIN_PX = 320
+
+/** The docked split side by side (SplitWorkspace). */
+export interface DockedSplitRow {
+    /** Both panes, the divider, and the bot list when it sits between them. */
+    span: number
+    /** The bot list's width when it sits between the panes, else 0. */
+    rail: number
+    mainPanel: boolean
+    sidePanel: boolean
+}
+
+export interface DockedSplitWidths {
+    mainPanel: number
+    mainChat: number
+    sideChat: number
+    sidePanel: number
+}
+
+/** The room the two chats share in the docked row: no divider, no bot list, open panels at full width. */
+export function dockedSplitChatRoom(row: DockedSplitRow): number {
+    const panels = Number(row.mainPanel) + Number(row.sidePanel)
+    return Math.max(0, Math.round(row.span - SPLIT_DIVIDER_PX - row.rail - panels * SPLIT_PANEL_PX))
+}
+
+/**
+ * The docked row's widths with the second chat set to `sideChat`
+ * (splitChatWidth). The main chat takes the rest and keeps
+ * SPLIT_MAIN_CHAT_MIN_PX: the second chat gives way first, down to the
+ * divider's narrow end, then the panels down to SPLIT_PANEL_MIN_PX, then the
+ * second chat again (review, 2026-10-21).
+ */
+export function dockedSplitWidths(row: DockedSplitRow, sideChat: number): DockedSplitWidths {
+    const room = Math.max(0, Math.round(row.span - SPLIT_DIVIDER_PX - row.rail))
+    const panels = Number(row.mainPanel) + Number(row.sidePanel)
+    let side = clampSplitWidth(sideChat, dockedSplitChatRoom(row), SPLIT_MAIN_CHAT_MIN_PX)
+    let panel = SPLIT_PANEL_PX
+    let short = SPLIT_MAIN_CHAT_MIN_PX - (room - side - panels * panel)
+    if (short > 0 && panels > 0) {
+        const give = Math.min(Math.ceil(short / panels), SPLIT_PANEL_PX - SPLIT_PANEL_MIN_PX)
+        panel -= give
+        short -= give * panels
+    }
+    if (short > 0) side = Math.max(0, side - short)
+    return {
+        mainPanel: row.mainPanel ? panel : 0,
+        mainChat: Math.max(0, room - side - panels * panel),
+        sideChat: side,
+        sidePanel: row.sidePanel ? panel : 0,
+    }
+}
+
+/** What sits right of the main chat while the split is docked (SplitWorkspace). */
+export interface DockedSplitRight {
+    /** Side by side; stacked, only the bot list can sit right of the main chat. */
+    row: boolean
+    /** The bot list's width when it sits right of the main chat (between the panes or at the end), else 0. */
+    rail: number
+    sideChat: number
+    sidePanel: number
+}
+
+/** Set by SplitWorkspace while docked; null otherwise. */
+export const splitDockedRight = writable<DockedSplitRight | null>(null)
+
 /**
  * Pixels the right pane (and its divider) covers at the right of the main
  * window, so floating UI of the left workspace (toasts, the request dock)
  * stays inside it instead of landing on the right pane (the user's report,
  * 2026-10-17). `mobileLayout`: MobileGUI, where the split is not shown.
+ * `docked`: the docked layout, where the second pane's panel and the bot
+ * list can sit right of the main chat too, and nothing but the bot list does
+ * when the panes are stacked.
  */
-export function splitRightInset(open: boolean, width: number, mobileLayout: boolean): number {
+export function splitRightInset(open: boolean, width: number, mobileLayout: boolean, docked: DockedSplitRight | null = null): number {
     if (!open || mobileLayout || isEmbeddedRisuPane) return 0
+    if (docked) {
+        const side = docked.row ? SPLIT_DIVIDER_PX + docked.sideChat + docked.sidePanel : 0
+        return Math.max(0, Math.round(docked.rail + side))
+    }
     return Math.max(0, Math.round(width)) + SPLIT_DIVIDER_PX
 }
 

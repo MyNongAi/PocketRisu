@@ -98,10 +98,11 @@ import ShButton from "../UI/GUI/ShButton.svelte";
         if (!currentCharacter) return
         tokenizeField(() => DBState.db.characters[charIndex].firstMessage ?? '', n => tokens.firstMsg = n, firstMsgTok)
     });
+    // The author's note is the pane's chat's: chatPage is whichever pane holds the selection.
     $effect.pre(() => {
-        const chara = DBState.db.characters[charIndex]
-        if (!chara) return
-        tokenizeField(() => chara.chats[chara.chatPage].note ?? '', n => tokens.localNote = n, localNoteTok)
+        const chat = view.chat
+        if (!chat) return
+        tokenizeField(() => chat.note ?? '', n => tokens.localNote = n, localNoteTok)
     });
 
 
@@ -445,7 +446,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
     <TextAreaInput
         margin="both"
         autocomplete="off"
-        bind:value={DBState.db.characters[charIndex].chats[DBState.db.characters[charIndex].chatPage].note}
+        bind:value={DBState.db.characters[charIndex].chats[view.chatIndex].note}
         highlight
         placeholder={getAuthorNoteDefaultText()}
     />
@@ -1387,7 +1388,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
             <Check bind:check={(DBState.db.characters[charIndex] as import('src/ts/storage/database.svelte').character).escapeOutput} name={language.escapeOutput}/>
         </div>
 
-        {#if getActiveHypaV3Preset(DBState.db, DBState.db.characters[charIndex], DBState.db.characters[charIndex]?.chats?.[DBState.db.characters[charIndex]?.chatPage])}
+        {#if getActiveHypaV3Preset(DBState.db, DBState.db.characters[charIndex], view.chat)}
             <Button
                 onclick={() => {
                     $hypaV3ModalOpen = true

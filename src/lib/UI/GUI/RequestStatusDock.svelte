@@ -8,15 +8,15 @@
     import { requestStatuses, clearStatus } from 'src/ts/status/requestStatus'
     import { dockState, minimizedRequests, requestToastDismissed, requestToastShown, unminimizeRequest } from 'src/ts/status/requestStatusDock'
     import { DBState, MobileGUI, selIdState } from 'src/ts/stores.svelte'
-    import { splitChatOpen, splitChatWidth, splitRightInset } from 'src/ts/chatSplitPane'
+    import { splitChatOpen, splitChatWidth, splitDockedRight, splitRightInset } from 'src/ts/chatSplitPane'
     import { openChatById } from 'src/ts/status/requestActions'
     import { language } from 'src/lang'
     import { DownloadIcon } from '@lucide/svelte'
     import { importDockPill, restoreImportDock } from 'src/ts/importDock'
     import RequestStatusToast, { REQUEST_TOAST_CLASS } from './RequestStatusToast.svelte'
 
-    // Inside the left workspace while split (the right pane has its own dock).
-    const inset = $derived(splitRightInset($splitChatOpen, $splitChatWidth, $MobileGUI))
+    // Inside the main chat while split, clear of the right pane (splitRightInset).
+    const inset = $derived(splitRightInset($splitChatOpen, $splitChatWidth, $MobileGUI, $splitDockedRight))
 
     const items = $derived($minimizedRequests
         .map((id) => ({ id, entry: $requestStatuses.get(id) }))

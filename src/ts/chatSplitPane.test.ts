@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { clampSplitWidth, getSecondaryRisuPaneUrl, getSplitWidthBounds, parseChatRoomDragPayload, serializeChatRoomDragPayload } from './chatSplitPane'
+import { clampSplitWidth, dockedSplitChatRoom, dockedSplitWidths, getSecondaryRisuPaneUrl, getSplitWidthBounds, parseChatRoomDragPayload, serializeChatRoomDragPayload } from './chatSplitPane'
 
 describe('clampSplitWidth', () => {
     test('allows either desktop pane to become narrow without collapsing it', () => {
@@ -17,6 +17,51 @@ describe('clampSplitWidth', () => {
     test('caps the minimum on wide screens and remains safe below 320px', () => {
         expect(getSplitWidthBounds(1920)).toEqual({ min: 280, max: 1640 })
         expect(getSplitWidthBounds(300)).toEqual({ min: 150, max: 150 })
+    })
+
+    test('leaves the main chat its minimum at the wide end when given one', () => {
+        expect(getSplitWidthBounds(1194, 320)).toEqual({ min: 215, max: 874 })
+        expect(getSplitWidthBounds(374, 320)).toEqual({ min: 160, max: 160 })
+        expect(clampSplitWidth(Number.MAX_SAFE_INTEGER, 640, 320)).toBe(320)
+    })
+})
+
+describe('docked split widths', () => {
+    // The 80px bot list between the panes (in the span) or at an end (outside it): the same room.
+    const between = (window: number, mainPanel = true, sidePanel = true) => ({ span: window, rail: 80, mainPanel, sidePanel })
+    const atEnd = (window: number, mainPanel = true, sidePanel = true) => ({ span: window - 80, rail: 0, mainPanel, sidePanel })
+    const widths = (mainPanel: number, mainChat: number, sideChat: number, sidePanel: number) => ({ mainPanel, mainChat, sideChat, sidePanel })
+
+    test('the main chat keeps 320px at laptop widths; the second chat gives way, then the panels', () => {
+        for (const row of [between, atEnd]) {
+            expect(dockedSplitWidths(row(1920), 520)).toEqual(widths(320, 674, 520, 320))
+            expect(dockedSplitWidths(row(1366), 520)).toEqual(widths(320, 320, 320, 320))
+            expect(dockedSplitWidths(row(1280), 520)).toEqual(widths(320, 320, 234, 320))
+            // The second chat at the divider's narrow end still leaves 214px.
+            expect(dockedSplitWidths(row(1100), 520)).toEqual(widths(267, 320, 160, 267))
+        }
+    })
+
+    test('the panels stop at 200px, then the second chat narrows again', () => {
+        expect(dockedSplitWidths(atEnd(840), 520)).toEqual(widths(200, 320, 34, 200))
+        // Nothing else left to give.
+        expect(dockedSplitWidths(atEnd(780), 520)).toEqual(widths(200, 294, 0, 200))
+    })
+
+    test('a closed panel leaves its room to the chats', () => {
+        expect(dockedSplitWidths(between(1366, false), 520)).toEqual(widths(0, 440, 520, 320))
+        expect(dockedSplitWidths(between(1100, true, false), 520)).toEqual(widths(320, 320, 374, 0))
+    })
+
+    test('even halves the chats\' room, and the wide end leaves the main chat 320px', () => {
+        for (const row of [between, atEnd]) {
+            const room = dockedSplitChatRoom(row(1920))
+            expect(room).toBe(1194)
+            expect(dockedSplitWidths(row(1920), clampSplitWidth(room / 2, room, 320))).toEqual(widths(320, 597, 597, 320))
+            expect(dockedSplitWidths(row(1920), clampSplitWidth(Number.MAX_SAFE_INTEGER, room, 320))).toEqual(widths(320, 320, 874, 320))
+            const laptop = dockedSplitChatRoom(row(1366))
+            expect(dockedSplitWidths(row(1366), clampSplitWidth(laptop / 2, laptop, 320))).toEqual(widths(320, 320, 320, 320))
+        }
     })
 })
 

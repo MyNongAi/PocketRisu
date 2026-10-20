@@ -8,7 +8,9 @@
 // there; touching it makes it the active one (paneActivation.ts).
 
 import { getContext, setContext, untrack } from 'svelte'
-import { DBState, selIdState } from './stores.svelte'
+import { get } from 'svelte/store'
+import { DBState, MobileGUI, selIdState } from './stores.svelte'
+import { isEmbeddedRisuPane, splitChatOpen } from './chatSplitPane'
 import type { character, Chat } from './storage/database.svelte'
 
 export type PaneId = 'main' | 'side'
@@ -90,6 +92,21 @@ function readToggles(): Record<string, Record<string, string>> {
  */
 export const paneToggles = $state<Record<string, Record<string, string>>>(readToggles())
 
+/**
+ * The toggle values `chat` takes the selection with (loadTogglesFromChat):
+ * `live` under its pin. What a pane beside the selection keeps for a chat it
+ * is given, and shows for one it kept nothing for.
+ */
+export function pinnedToggleValues(chat: Chat, live: Record<string, string>): Record<string, string> {
+    const pin = chat.savedToggleValues
+    if (!pin) return { ...live }
+    const values = { ...live, ...pin }
+    for (const key of chat.savedToggleUnsetKeys ?? []) {
+        if (pin[key] === undefined) delete values[key]
+    }
+    return values
+}
+
 export function persistPanes(): void {
     writeIds(MAIN_KEY, paneState.held.main)
     writeIds(SIDE_KEY, paneState.held.side)
@@ -152,6 +169,33 @@ export const mainPaneView = paneView('main')
 export const sidePaneView = paneView('side')
 
 /**
+ * Whichever pane holds the selection: the main pane without a split. What
+ * the app's own overlays act on (a narrow window's sidebar, the popup
+ * editor), since their clicks act on the selection too.
+ */
+export const selectionPaneView: PaneView = {
+    get pane() {
+        return paneState.active
+    },
+    get active() {
+        return true
+    },
+    get characterIndex() {
+        return selIdState.selId
+    },
+    get character() {
+        return DBState.db?.characters?.[this.characterIndex]
+    },
+    get chatIndex() {
+        return this.character?.chatPage ?? -1
+    },
+    get chat() {
+        const index = this.chatIndex
+        return index >= 0 ? this.character?.chats?.[index] : undefined
+    },
+}
+
+/**
  * Chats shown on screen other than the selected one (the pane that is not
  * active): their edits and replies must be saved and their bodies kept loaded
  * (globalApi save watchers, chatStorage eviction).
@@ -165,6 +209,21 @@ export function chatsShownBesideSelection(splitOpen: boolean): PaneChatIds[] {
     return [ids]
 }
 
+/**
+ * `chatId` is drawn in the pane beside the selection, so it has toggle values
+ * of its own (getGlobalChatVar, Toggles.svelte). Anywhere else (no split on
+ * screen, the selected chat, a chat no pane shows such as one left while its
+ * reply streams) a chat reads the app's live toggles, as before the split.
+ */
+export function shownBesideSelection(chatId: string): boolean {
+    const inactive: PaneId = paneState.active === 'main' ? 'side' : 'main'
+    if (paneState.held[inactive]?.chatId !== chatId) return false
+    const selected = DBState.db?.characters?.[selIdState.selId]
+    if (selected?.chats?.[selected.chatPage]?.id === chatId) return false
+    // SplitWorkspace's `enabled`: the held chats stay saved while it is closed.
+    return get(splitChatOpen) && !isEmbeddedRisuPane && !get(MobileGUI)
+}
+
 const PANE_CONTEXT = Symbol('chat-pane')
 
 /** Set by a ChatScreen for everything drawn inside it. */
@@ -172,9 +231,9 @@ export function setPaneContext(view: PaneView): void {
     setContext(PANE_CONTEXT, view)
 }
 
-/** The pane this component is drawn in; the main pane outside a ChatScreen. */
+/** The pane this component is drawn in; outside any pane, the one holding the selection. */
 export function getPaneView(): PaneView {
-    return getContext<PaneView | undefined>(PANE_CONTEXT) ?? mainPaneView
+    return getContext<PaneView | undefined>(PANE_CONTEXT) ?? selectionPaneView
 }
 
 /**

@@ -1,14 +1,14 @@
 <script lang="ts">
     import { Toaster as SonnerToaster, type ToasterProps } from 'svelte-sonner';
     import { isTouchDevice, MobileGUI } from 'src/ts/stores.svelte';
-    import { splitChatOpen, splitChatWidth, splitRightInset } from 'src/ts/chatSplitPane';
+    import { splitChatOpen, splitChatWidth, splitDockedRight, splitRightInset } from 'src/ts/chatSplitPane';
     import { dockVisible } from 'src/ts/importDock';
 
     let { ...rest }: ToasterProps = $props();
 
-    // With the PC split open, this window's toasts stay at the top right of
-    // its own (left) workspace, clear of the right pane, which shows its own.
-    const inset = $derived(splitRightInset($splitChatOpen, $splitChatWidth, $MobileGUI));
+    // With the PC split open, the toasts stay at the top right of the main
+    // chat, clear of the right pane, its panel and the bot list beside it.
+    const inset = $derived(splitRightInset($splitChatOpen, $splitChatWidth, $MobileGUI, $splitDockedRight));
     const position = $derived<ToasterProps['position']>(inset > 0 || !$isTouchDevice ? 'top-right' : 'top-center');
     // Left of the dock column of folded requests and downloads while it shows
     // (RequestStatusDock: 2.5rem buttons 0.5rem from the edge).

@@ -2,7 +2,7 @@ import { get } from 'svelte/store'
 import { DBState, selectedCharID } from '../stores.svelte'
 import { parseKeyValue } from '../util'
 import type { character, Chat } from '../storage/database.svelte'
-import { paneToggles } from '../chatPanes.svelte'
+import { paneToggles, shownBesideSelection } from '../chatPanes.svelte'
 
 /**
  * Whose variables: a parse that names its character and chat (a chat drawn in
@@ -56,22 +56,21 @@ export function setChatVar(key:string, value:string, scope?: ChatVarScope): bool
 }
 
 /**
- * A toggle read for a chat other than the selected one (the split's other
- * pane, or a reply still being written there) comes from that chat's own
- * values: what its pane kept when it handed the selection over (paneToggles),
- * else its pin. So each pane draws with its own toggles.
+ * A toggle read for the chat drawn in the split's pane beside the selection
+ * (its messages, or a reply still being written there) comes from that
+ * chat's own values: what its pane kept (paneToggles), else its pin. So each
+ * pane draws with its own toggles. Any other chat reads the live values, as
+ * before the split, even one left while its reply streams: a pin is only a
+ * snapshot the user may not have updated.
  */
 export function getGlobalChatVar(key:string, scope?: ChatVarScope): string {
     const chat = scope?.chat
-    if (chat?.id && key.startsWith('toggle_') && !DBState.db.disableToggleBinding) {
-        const selected = DBState.db.characters[get(selectedCharID)]
-        if (chat.id !== selected?.chats?.[selected.chatPage]?.id) {
-            const kept = paneToggles[chat.id]
-            if (kept) return kept[key] ?? 'null'
-            const pin = chat.savedToggleValues
-            if (pin && key in pin) return pin[key] ?? 'null'
-            if (pin && chat.savedToggleUnsetKeys?.includes(key)) return 'null'
-        }
+    if (chat?.id && key.startsWith('toggle_') && !DBState.db.disableToggleBinding && shownBesideSelection(chat.id)) {
+        const kept = paneToggles[chat.id]
+        if (kept) return kept[key] ?? 'null'
+        const pin = chat.savedToggleValues
+        if (pin && key in pin) return pin[key] ?? 'null'
+        if (pin && chat.savedToggleUnsetKeys?.includes(key)) return 'null'
     }
     return DBState.db.globalChatVariables[key] ?? 'null'
 }

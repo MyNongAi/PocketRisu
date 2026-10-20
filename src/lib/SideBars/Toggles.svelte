@@ -1,7 +1,7 @@
 <script lang="ts">
     import { getModuleToggles } from "src/ts/process/modules";
     import { DBState } from "src/ts/stores.svelte";
-    import { getPaneView, paneToggles } from "src/ts/chatPanes.svelte";
+    import { getPaneView, paneToggles, pinnedToggleValues, shownBesideSelection } from "src/ts/chatPanes.svelte";
     import { parseToggleSyntax, type sidebarToggle, type sidebarToggleGroup } from "src/ts/util";
     import { language } from "src/lang";
     import type { PromptItem } from "src/ts/process/prompt";
@@ -30,12 +30,18 @@
 
     // The pane this list belongs to (chatPanes.svelte.ts). Touching it hands it
     // the selection first, so a change always lands in the app's live values;
-    // until then it shows the values its pane kept (paneToggles).
+    // until then it shows what its chat draws with (getGlobalChatVar): the
+    // values its pane kept, else its pin over the live ones in a copy, so a
+    // select writing its first option on mount never changes the stored pin.
     const view = getPaneView()
     let currentChat = $derived(view.chat)
-    let toggleValues = $derived(view.active || !view.chat?.id
-        ? DBState.db.globalChatVariables
-        : (paneToggles[view.chat.id] ?? view.chat.savedToggleValues ?? DBState.db.globalChatVariables))
+    let toggleValues = $derived.by(() => {
+        const chat = view.chat
+        if (view.active || !chat?.id || DBState.db.disableToggleBinding || !shownBesideSelection(chat.id)) {
+            return DBState.db.globalChatVariables
+        }
+        return paneToggles[chat.id] ?? pinnedToggleValues(chat, snapshotToggleValues())
+    })
     // The ⚙ beside the 🎨 switch (IllustrationSettings.svelte).
     let illustrationSettingsOpen = $state(false)
     let isPinned = $derived(!DBState.db.disableToggleBinding && !!currentChat?.savedToggleValues)
