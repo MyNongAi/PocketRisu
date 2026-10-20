@@ -32,17 +32,20 @@ describe('chain states', () => {
             { id: 'orphan', nodeOnlyPairedCharacterIds: ['gone'] },
             { id: 'trashed', nodeOnlyPairedCharacterIds: ['t'] },
             { id: 'sleeping', nodeOnlyPairedCharacterIds: ['s'] },
+            { id: 'deleted', nodeOnlyPairedCharacterIds: ['d'] },
             { id: 'plain' },
         ]
         const characters = [
             { chaId: 'a', name: 'A', modules: ['live'] },
             { chaId: 't', name: 'T', modules: ['trashed'], trashTime: 1 },
         ]
-        const links = moduleLinks(modules, characters, [{ chaId: 's', name: 'S' }])
+        // a bot deleted now is a deactivated stub marked trashedAt
+        const links = moduleLinks(modules, characters, [{ chaId: 's', name: 'S' }, { chaId: 'd', name: 'D', trashedAt: 5 }])
         expect(links.get('live')).toEqual({ state: 'linked', names: ['A'] })
         expect(links.get('orphan')).toEqual({ state: 'broken', names: ['삭제된 봇'] })
         expect(links.get('trashed')).toEqual({ state: 'broken', names: ['T'] })
         expect(links.get('sleeping')).toEqual({ state: 'linked', names: ['S'] })
+        expect(links.get('deleted')).toEqual({ state: 'broken', names: ['D'] })
         expect(links.has('plain')).toBe(false)
     })
 

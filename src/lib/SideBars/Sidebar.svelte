@@ -582,8 +582,9 @@
       ...(protonLink ? [[language.protonLinkCopy, () => copyProtonLink(protonLink)] as [string, () => unknown]] : []),
       [language.remove, () => removeChar(character.chaId, character.name)],
     ]
+    // The delete is red, as in the other menus.
     const selected = parseInt(await alertSelect(
-      [...actions.map(([label]) => label), language.cancel],
+      [...actions.map(([label]) => label === language.remove ? { label, variant: 'destructive' as const } : label), language.cancel],
       characterMenuInfo(character, makeAgoText),
     ))
     await actions[selected]?.[1]()

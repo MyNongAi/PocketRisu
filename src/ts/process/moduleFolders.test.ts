@@ -365,6 +365,31 @@ describe('dissolveShrunkenModuleFolders', () => {
         expect(result.modules[0].folderId).toBe('f')
     })
 
+    it('hands the last module of a folder shown inside another to that folder', () => {
+        const parent = { id: 'p', name: 'P', moduleIds: ['a'] }
+        const child = { id: 'c', name: 'C', moduleIds: ['x', 'y'], nodeOnlyParentFolderId: 'p' }
+        // y dragged out of C: x stays in P, not the top level
+        const result = dissolveShrunkenModuleFolders(
+            [{ id: 'a', name: 'A', folderId: 'p' }, { id: 'x', name: 'X', folderId: 'c' }, { id: 'y', name: 'Y' }],
+            [parent, { ...child, moduleIds: ['x'] }],
+            [parent, child],
+        )
+        expect(result.folders).toEqual([{ ...parent, moduleIds: ['a', 'x'] }])
+        expect(result.modules.map((module) => module.folderId)).toEqual(['p', 'p', undefined])
+    })
+
+    it('keeps a folder other folders are shown in, at any size', () => {
+        const parent = { id: 'p', name: 'P', moduleIds: ['a', 'b'] }
+        const child = { id: 'c', name: 'C', moduleIds: ['x', 'y'], nodeOnlyParentFolderId: 'p' }
+        const result = dissolveShrunkenModuleFolders(
+            [{ id: 'a', name: 'A', folderId: 'p' }, { id: 'b', name: 'B' }, { id: 'x', name: 'X', folderId: 'c' }, { id: 'y', name: 'Y', folderId: 'c' }],
+            [{ ...parent, moduleIds: ['a'] }, child],
+            [parent, child],
+        )
+        expect(result.folders.map((folder) => folder.id)).toEqual(['p', 'c'])
+        expect(result.modules.map((module) => module.folderId)).toEqual(['p', undefined, 'c', 'c'])
+    })
+
     it('removes an emptied one-member folder', () => {
         const result = dissolveShrunkenModuleFolders(
             [{ id: 'a', name: 'A' }],

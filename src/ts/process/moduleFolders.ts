@@ -148,6 +148,11 @@ export function synchronizeModuleFolderMembership<T extends FolderableModule>(
  * one member. A newly created empty folder may receive its first module and
  * remain available for the second drop; existing groups that lose members do
  * not leave redundant one-item shells behind.
+ *
+ * As on the bot list (dissolveSingletonFolders): a folder other folders are
+ * shown in is kept at any size, and a folder shown inside another hands its
+ * last module to that folder. Released to the top level, the module left the
+ * parent folder too (the user's report, 2026-10-20).
  */
 export function dissolveShrunkenModuleFolders<T extends FolderableModule>(
     modules: ReadonlyArray<T>,
@@ -156,10 +161,14 @@ export function dissolveShrunkenModuleFolders<T extends FolderableModule>(
 ): { modules: T[]; folders: ModuleFolder[] } {
     const current = normalizeModuleFolders(folders)
     const previousCounts = new Map(normalizeModuleFolders(previousFolders).map((folder) => [folder.id, folder.moduleIds.length]))
+    const byId = new Map(current.map((folder) => [folder.id, folder]))
+    const parents = new Set(current
+        .map((folder) => folder.nodeOnlyParentFolderId)
+        .filter((id): id is string => !!id && byId.has(id)))
     const dissolveIds = new Set(current
         .filter((folder) => {
             const before = previousCounts.get(folder.id) ?? 0
-            return before > folder.moduleIds.length && folder.moduleIds.length <= 1
+            return !parents.has(folder.id) && before > folder.moduleIds.length && folder.moduleIds.length <= 1
         })
         .map((folder) => folder.id))
 
@@ -167,8 +176,17 @@ export function dissolveShrunkenModuleFolders<T extends FolderableModule>(
         return { modules: [...modules], folders: current }
     }
 
+    // The folder a dissolved folder was shown in (none at the top level).
+    const keptParent = (id: string): string | undefined => {
+        const seen = new Set([id])
+        for(let parent = byId.get(id)?.nodeOnlyParentFolderId; parent && byId.has(parent) && !seen.has(parent); parent = byId.get(parent)?.nodeOnlyParentFolderId){
+            if(!dissolveIds.has(parent)) return parent
+            seen.add(parent)
+        }
+        return undefined
+    }
     const nextModules = modules.map((module) => dissolveIds.has(module.folderId ?? '')
-        ? { ...module, folderId: undefined }
+        ? { ...module, folderId: keptParent(module.folderId!) }
         : module)
     const nextFolders = current.filter((folder) => !dissolveIds.has(folder.id))
     return {

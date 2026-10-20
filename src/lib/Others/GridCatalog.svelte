@@ -15,7 +15,7 @@
     import { makeAgoText, parseMultilangString } from "src/ts/util";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
     import { exportChar } from "src/ts/characterCards";
-    import { alertConfirm, alertError, alertSelect } from "src/ts/alert";
+    import { alertConfirm, alertError, alertSelect, type AlertAction } from "src/ts/alert";
     import { isFolderEntry, moveCharacterToFolder, setHidden } from "src/ts/characterOrder";
     import { syncFavoritesWithFolderMoves } from "src/ts/favoritesFolder";
     import { isDeactivatedSystemFolder } from "src/ts/deactivatedCharacterFolders";
@@ -72,10 +72,10 @@
     async function openGridContextMenu(char:CatalogEntry, event:MouseEvent | KeyboardEvent){
         event.preventDefault()
         event.stopPropagation()
-        const labels:string[] = []
+        const labels:(string | AlertAction)[] = []
         const actions:Array<() => void | Promise<void>> = []
-        const add = (label:string, action:() => void | Promise<void>) => {
-            labels.push(label)
+        const add = (label:string, action:() => void | Promise<void>, variant?:'destructive') => {
+            labels.push(variant ? { label, variant } : label)
             actions.push(action)
         }
 
@@ -92,13 +92,13 @@
             add(language.activateCharacter, () => openChar(char))
             add(language.moveToTrash, async () => {
                 if(await alertConfirm(language.moveToTrashConfirm + char.name)) trashDeactivatedCharacter(char.chaId)
-            })
+            }, 'destructive')
         }
         else{
             add('제목 색변경', () => editCharacterTitleColor(char.chaId))
             add(language.deactivateCharacter, async () => { await archiveCharacter(char.index) })
             add(language.exportCharacter, async () => { await exportChar(char.index) })
-            add(language.moveToTrash, () => removeChar(char.chaId, char.name))
+            add(language.moveToTrash, () => removeChar(char.chaId, char.name), 'destructive')
         }
         const selected = Number.parseInt(await alertSelect([...labels, language.cancel]))
         if(!Number.isInteger(selected) || selected < 0 || selected >= actions.length) return

@@ -54,19 +54,25 @@ export function characterModuleLink(
 /**
  * Each module's chain. Green while a bot that is not in the trash lists it
  * (or a deactivated bot it was paired with still exists); red when it was
- * paired but every such bot is gone (deleted or in the trash).
+ * paired but every such bot is gone (deleted or in the trash). A bot deleted
+ * now is a deactivated stub with trashedAt (characterArchive.ts), so that
+ * stub is gone, not asleep (2026-10-20: it stayed green).
  */
 export function moduleLinks(
     modules: readonly (PairModule | null | undefined)[],
     characters: readonly (PairCharacter | null | undefined)[],
-    archived: readonly ({ chaId?: string, name?: string } | null | undefined)[] = [],
+    archived: readonly ({ chaId?: string, name?: string, trashedAt?: number } | null | undefined)[] = [],
 ): Map<string, ModuleLink> {
     const live = characters.filter((character): character is PairCharacter => !!character && !character.trashTime)
     const linked = charactersByPairedModule(live)
     const nameById = new Map<string, string>()
     for (const character of characters) if (character?.chaId) nameById.set(character.chaId, character.name || 'Unnamed')
     const archivedNames = new Map<string, string>()
-    for (const stub of archived) if (stub?.chaId) archivedNames.set(stub.chaId, stub.name || 'Unnamed')
+    for (const stub of archived) {
+        if (!stub?.chaId) continue
+        if (stub.trashedAt) nameById.set(stub.chaId, stub.name || 'Unnamed')
+        else archivedNames.set(stub.chaId, stub.name || 'Unnamed')
+    }
 
     const links = new Map<string, ModuleLink>()
     for (const module of modules) {

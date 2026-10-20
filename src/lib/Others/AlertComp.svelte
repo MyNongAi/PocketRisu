@@ -788,7 +788,7 @@
             <div class="flex flex-col gap-2">
                 {#each options as label, i}
                     <ShButton
-                        variant="outline"
+                        variant={$alertStore.actions?.[i]?.variant ?? 'outline'}
                         className="w-full justify-start"
                         onclick={() => alertStore.set({ type: 'none', msg: i.toString() })}
                     >

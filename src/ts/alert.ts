@@ -268,11 +268,15 @@ export async function alertLogin(){
     return get(alertStoreImported).msg
 }
 
-export async function alertSelect(msg:string[], display?:string){
-    const message = display !== undefined ? `__DISPLAY__${display}||${msg.join('||')}` : msg.join('||')
+/** Options are labels, or `{label, variant}` for one drawn otherwise (a red delete). */
+export async function alertSelect(msg:(string | AlertAction)[], display?:string){
+    const labels = msg.map((option) => typeof option === 'string' ? option : option.label)
+    const message = display !== undefined ? `__DISPLAY__${display}||${labels.join('||')}` : labels.join('||')
+    const styled = msg.some((option) => typeof option !== 'string')
     return await askQuestion({
         'type': 'select',
-        'msg': message
+        'msg': message,
+        ...(styled ? { actions: msg.map((option) => typeof option === 'string' ? { label: option } : option) } : {}),
     })
 }
 

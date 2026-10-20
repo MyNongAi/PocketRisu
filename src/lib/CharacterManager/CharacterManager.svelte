@@ -28,7 +28,7 @@
     import { exportChar } from "src/ts/characterCards";
     import { activateCharacter, archiveCharacter, archiveCharacters, deleteTrashedCharacter, promptActivateCharacter, restoreTrashedCharacter, trashDeactivatedCharacter, type BulkArchiveOutcome } from "src/ts/characterArchive";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
-    import { alertConfirm, alertError, alertInput, alertSelect, notifySuccess } from "src/ts/alert";
+    import { alertConfirm, alertError, alertInput, alertSelect, notifySuccess, type AlertAction } from "src/ts/alert";
     import { findCharacterIndexbyId } from "src/ts/util";
     import {
         buildManagerEntries, folderNameMatchIds, matchesFilter, matchesSearch, sortEntries,
@@ -396,10 +396,10 @@
     async function openGridContextMenu(entry: ManagerEntry, event: MouseEvent) {
         event.preventDefault();
         event.stopPropagation();
-        const labels: string[] = [];
+        const labels: (string | AlertAction)[] = [];
         const actions: Array<() => void | Promise<void>> = [];
-        const add = (label: string, action: () => void | Promise<void>) => {
-            labels.push(label);
+        const add = (label: string, action: () => void | Promise<void>, variant?: 'destructive') => {
+            labels.push(variant ? { label, variant } : label);
             actions.push(action);
         };
 
@@ -417,7 +417,7 @@
             add(language.deactivateCharacter, () => deactivate(entry));
             add(language.exportCharacter, () => exportEntry(entry));
         }
-        add(language.moveToTrash, () => trash(entry));
+        add(language.moveToTrash, () => trash(entry), 'destructive');
         const selected = Number.parseInt(await alertSelect([...labels, language.cancel]));
         if (!Number.isInteger(selected) || selected < 0 || selected >= actions.length) return;
         await actions[selected]();
