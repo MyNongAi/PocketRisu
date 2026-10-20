@@ -34,14 +34,14 @@ vi.mock('./shared', () => ({
     getAdditionalParameters: () => [],
 }))
 
-const { requestGoogleCloudVertex } = await import('./google')
+const { acceptsTrailingModelTurn, requestGoogleCloudVertex } = await import('./google')
 
 const { CONTINUE_FROM_PREFILL } = await import('../memory/trailingPrefill')
 
-function arg(formated: { role: string, content: string }[]): any {
+function arg(formated: { role: string, content: string }[], model = 'gemini-3-flash-preview'): any {
     return {
         formated,
-        modelInfo: { id: 'gemini-3-flash-preview', internalID: 'gemini-3-flash-preview', format: 'GoogleCloud', flags: [], parameters: [] },
+        modelInfo: { id: model, internalID: model, format: 'GoogleCloud', flags: [], parameters: [] },
         maxTokens: 256,
         mode: 'model',
         useStreaming: false,
@@ -97,5 +97,22 @@ describe('a Gemini request never ends on the model turn', () => {
         const contents = sentContents()
         expect(contents.map((c) => c.role)).toEqual(['user', 'model', 'user'])
         expect(contents[2].parts[0].text).toBe('go on')
+    })
+
+    it('keeps a real prefill for Gemini 2.x, which continues from it (the review, 2026-10-21)', async () => {
+        await requestGoogleCloudVertex(arg([
+            { role: 'user', content: 'go on' },
+            { role: 'assistant', content: 'she reached for the' },
+        ], 'gemini-2.5-pro'))
+        expect(sentContents().map((c) => c.role)).toEqual(['user', 'model'])
+    })
+
+    it('tells which models continue a prefill', () => {
+        for (const id of ['gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-pro-latest', 'models/gemini-2.5-flash', 'gemini-exp-1206', 'gemma-3-27b-it']) {
+            expect(acceptsTrailingModelTurn(id), id).toBe(true)
+        }
+        for (const id of ['gemini-3-pro-preview', 'gemini-3.1-pro', 'gemini-3-flash-preview', 'gemini-flash-latest', undefined]) {
+            expect(acceptsTrailingModelTurn(id), String(id)).toBe(false)
+        }
     })
 })

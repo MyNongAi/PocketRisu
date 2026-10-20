@@ -82,11 +82,14 @@ describe('a held placeholder', () => {
         expect(back.showingNew).toBe(false)
         expect(rerollPlaceholderPages(back)).toEqual({ current: 3, total: 4 })
         expect(heldRerollSwipe('c1')).toBe(2)
+        expect(back.message.data).toBe(old.swipes[2])
         expect(rerollPlaceholderShows([user, { role: 'char', data: 'new' }], back)).toBe(true)
         // and round from the new page forward to the first old one
         setRerollPlaceholder({ ...back, showingNew: true })
         expect(stepRerollPlaceholderSwipe('c1', 1)).toBe(true)
         expect(rerollPlaceholderPages(get(rerollPlaceholders).get('c1')!)).toEqual({ current: 1, total: 4 })
+        // the text follows the page (the review, 2026-10-21: it kept the page left before)
+        expect(get(rerollPlaceholders).get('c1')!.message.data).toBe(old.swipes[0])
     })
 
     it('reaches the new page backwards from the first one, and from a reply without swipes', () => {

@@ -11,7 +11,7 @@
 // chat is open: the new reply is the next page, seen by stepping to it. The
 // copy counts it as one more page; stepping onto that page lets it show.
 import { get, writable } from 'svelte/store'
-import { stepSwipe, swipeCount, type SwipeMessage } from '../chatSwipes'
+import { showSwipe, stepSwipe, swipeCount, type SwipeMessage } from '../chatSwipes'
 
 export type RerollPlaceholder<M extends SwipeMessage = SwipeMessage> = {
     /** The chat being rerolled. */
@@ -68,8 +68,11 @@ export function stepRerollPlaceholderSwipe(chatId: string, step: -1 | 1): boolea
     if (placeholder.hold) {
         const count = Math.max(1, swipeCount(placeholder.message))
         if (placeholder.showingNew) {
-            // Off the new reply's page: back to the old reply's last page, or round to its first.
-            setRerollPlaceholder({ ...placeholder, showingNew: false, message: { ...placeholder.message, swipeId: step === -1 ? count - 1 : 0 } })
+            // Off the new reply's page: back to the old reply's last page, or
+            // round to its first, with that page's text.
+            const message = { ...placeholder.message, swipes: placeholder.message.swipes ? [...placeholder.message.swipes] : undefined }
+            showSwipe(message, step === -1 ? count - 1 : 0)
+            setRerollPlaceholder({ ...placeholder, showingNew: false, message })
             return true
         }
         // Past either end is the new reply's page. The copy stays held: that

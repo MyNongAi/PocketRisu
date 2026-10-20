@@ -294,6 +294,10 @@ $effect.root(() => {
         selIdState.selId = v
 
         if (DBState?.db?.characters?.[selIdState.selId]) {
+            // Any way of opening a bot shows it, so its 🆕 goes (newMarks.svelte.ts):
+            // the rail, a Realm import that goes to the bot, the next/previous-bot
+            // hotkeys (the review, 2026-10-21: those set the selection directly).
+            if (DBState.db.characters[selIdState.selId].nodeOnlyUnseen) delete DBState.db.characters[selIdState.selId].nodeOnlyUnseen
             // "Always toggle on": a chat with no binding of its own follows the
             // global default when that preset asks for it. Explicit bindings
             // (including an explicit 'off') are respected.

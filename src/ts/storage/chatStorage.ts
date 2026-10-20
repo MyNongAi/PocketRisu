@@ -412,9 +412,21 @@ export async function ensureChatHydrated(
             // Yield one frame so loading overlay dismissal paints before heavy DOM work
             await new Promise<void>(r => requestAnimationFrame(() => r()))
 
+            // A rebase may have reordered this same array meanwhile
+            // (applyRebasedDb.ts), and a hidden page holds the frame for
+            // long: find the slot by id again.
+            const slotIndex = chats.findIndex(chat => chat?.id === chatId)
+            if (slotIndex === -1) {
+                console.warn(`[chatStorage] hydrate skipped: chat removed before apply (${key})`)
+                return null
+            }
+            if (!chats[slotIndex]?._placeholder) {
+                return chats[slotIndex]
+            }
+
             // Apply to memory — mark JustApplied to suppress the reactive write-back
             hydrationJustApplied.add(key)
-            chats[currentIndex] = full
+            chats[slotIndex] = full
             recordHydratedChat(chaId, chatId, chats)
 
             // Wait one tick so Svelte reactivity settles before allowing dirty tracking

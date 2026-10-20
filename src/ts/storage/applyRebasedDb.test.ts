@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyMergedDbInPlace, changedPartsFromReport, reconcileInto } from './applyRebasedDb'
+import { applyMergedDbInPlace, reconcileInto } from './applyRebasedDb'
 
 describe('reconcileInto', () => {
     it('keeps every object whose content is the same, and changes only what differs', () => {
@@ -31,7 +31,7 @@ describe('applyMergedDbInPlace', () => {
         const placeholder = { id: 'c2', name: 'Old', _placeholder: true, message: [] }
         const bot = { chaId: 'bot', name: 'Bot', desc: 'same', chats: [loaded, placeholder], chatPage: 0 }
         const other = { chaId: 'other', name: 'Other', chats: [] }
-        return { db: { characters: [bot, other], characterOrder: ['bot', 'other'], language: 'ko', fillByBoot: true } as Record<string, any>, bot, other, loaded, loadedMessages }
+        return { db: { characters: [bot, other], characterOrder: ['bot', 'other'], language: 'ko', removedElsewhere: { on: true }, pluginCustomStorage: { kept: 1 } } as Record<string, any>, bot, other, loaded, loadedMessages }
     }
 
     it('keeps the open chat body and object; only its catalog fields follow the server', () => {
@@ -54,8 +54,14 @@ describe('applyMergedDbInPlace', () => {
         expect(loaded.message).toBe(loadedMessages)
         expect(loaded.name).toBe('Renamed elsewhere')
         expect(bot.chats.map((chat: any) => chat.id)).toEqual(['c1', 'c2', 'c3'])
-        // a default this page filled in at boot stays
-        expect(db.fillByBoot).toBe(true)
+    })
+
+    it("drops a root key removed on another device, so the next save doesn't add it back (the review, 2026-10-21)", () => {
+        const { db } = liveDb()
+        applyMergedDbInPlace(db, { characters: db.characters, characterOrder: ['bot', 'other'], language: 'ko' })
+        expect('removedElsewhere' in db).toBe(false)
+        // never synced through the save's diff, so the server's copy says nothing about it
+        expect(db.pluginCustomStorage).toEqual({ kept: 1 })
     })
 
     it('brings in a character added elsewhere and drops one deactivated elsewhere, in the server order', () => {
@@ -70,38 +76,19 @@ describe('applyMergedDbInPlace', () => {
         expect(db.characterOrder).toEqual(['new', 'bot'])
     })
 
-    it('with a report, looks only at the parts it names', () => {
+    it('takes in every change the server holds, also ones newer than the conflict', () => {
         const { db, bot, other } = liveDb()
         applyMergedDbInPlace(db, {
             characters: [
-                { chaId: 'bot', name: 'Changed but not named', chats: [] },
+                { chaId: 'bot', name: 'Changed later', desc: 'same', chatPage: 0, chats: [...bot.chats, { id: 'c9', name: 'Added later', _placeholder: true, message: [] }] },
                 { chaId: 'other', name: 'Other (renamed)', chats: [] },
             ],
             characterOrder: ['bot', 'other'],
             language: 'en',
-        }, { roots: new Set(['characterOrder']), characters: new Set(['other']) })
-        expect(bot.name).toBe('Bot')
-        expect(bot.chats).toHaveLength(2)
-        expect(other.name).toBe('Other (renamed)')
-        expect(db.language).toBe('ko')
-    })
-})
-
-describe('changedPartsFromReport', () => {
-    const empty = { mismatched: [], onlyLocal: [], onlyRemote: [] }
-    it('names every differing root key and character', () => {
-        const parts = changedPartsFromReport({
-            roots: { mismatched: ['characterOrder'], onlyLocal: [], onlyRemote: ['statics'] },
-            characters: { mismatched: ['a'], onlyLocal: ['b'], onlyRemote: [] },
-            duplicateCharIds: [],
-            serverDuplicateCharIds: [],
         })
-        expect([...parts!.roots!]).toEqual(['characterOrder', 'statics'])
-        expect([...parts!.characters!]).toEqual(['a', 'b'])
-    })
-
-    it('cannot tell with duplicate ids or no report', () => {
-        expect(changedPartsFromReport(null)).toBeNull()
-        expect(changedPartsFromReport({ roots: empty, characters: empty, duplicateCharIds: ['x'], serverDuplicateCharIds: [] })).toBeNull()
+        expect(bot.name).toBe('Changed later')
+        expect(bot.chats.map((chat: any) => chat.id)).toEqual(['c1', 'c2', 'c9'])
+        expect(other.name).toBe('Other (renamed)')
+        expect(db.language).toBe('en')
     })
 })

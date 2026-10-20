@@ -6,7 +6,7 @@ import { chatsShownBesideSelection } from "./chatPanes.svelte";
 import { splitChatOpen } from "./chatSplitPane";
 import streamSaver from 'streamsaver';
 import { setDatabase, normalizeDatabase, type Database, type Chat, defaultSdDataFunc, getDatabase, appVer, nodeOnlyVer, getCurrentCharacter, loadTogglesFromChat } from "./storage/database.svelte";
-import { applyMergedDbInPlace, changedPartsFromReport, type RebaseChangedParts } from "./storage/applyRebasedDb";
+import { applyMergedDbInPlace } from "./storage/applyRebasedDb";
 import { checkRisuUpdate } from "./update";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore, chatHydrationOverlayStore, chatDeselected, moduleTreeRevision } from "./stores.svelte";
 import { recordDbTransferSize } from "./transferSize";
@@ -1373,7 +1373,6 @@ export async function saveDb() {
     async function rebaseTrackedLocalChangesOnLatestServerDb(
         conflictEtag: string | null, db: Database, toSave: toSaveType, syncedArchivedIds: ReadonlySet<string>,
         syncedBaselineDb: Database | null,
-        changedParts: RebaseChangedParts | null = null,
     ) {
         const etagBeforeRebase = forageStorage.getDbEtag()
         forageStorage.setDbEtag(conflictEtag ?? null)
@@ -1436,25 +1435,30 @@ export async function saveDb() {
                     .map((chat) => ({ chaId: character.chaId, chatId: chat.id })),
             ))
             try {
-                applyMergedDbInPlace(db, mergedDb, changedParts ?? undefined)
+                applyMergedDbInPlace(db, mergedDb)
                 rehomeHydratedChats(db.characters ?? [])
+                // selectedCharID is an index into db.characters; the merged
+                // array follows the server's order and may have gained or lost
+                // entries, so re-point it at the same character (or clear it
+                // if gone) before anything redraws: for one flush the old
+                // index would show, and track, another bot (the review,
+                // 2026-10-21).
+                if (selectedChaId && !skippedArchivedCharIds.includes(selectedChaId)) {
+                    const idx = (db.characters ?? []).findIndex((char) => char?.chaId === selectedChaId)
+                    if (idx === -1) {
+                        deselectCharacter()
+                    } else if (idx !== get(selectedCharID)) {
+                        selectedCharID.set(idx)
+                    }
+                } else if (selectedChaId) {
+                    deselectCharacter()
+                }
                 await tick()
             } finally {
                 releaseChats()
             }
             // setDatabase did this too: a language changed on another device applies here.
             if (db.language !== languageBefore) changeLanguage(db.language)
-            // selectedCharID is an index into db.characters; the merged array
-            // follows the server's order and may have gained or lost entries,
-            // so re-point it at the same character (or clear it if gone).
-            if (selectedChaId && !skippedArchivedCharIds.includes(selectedChaId)) {
-                const idx = (db.characters ?? []).findIndex((char) => char?.chaId === selectedChaId)
-                if (idx === -1) {
-                    deselectCharacter()
-                } else if (idx !== get(selectedCharID)) {
-                    selectedCharID.set(idx)
-                }
-            }
             // A send streaming into the old database object addresses it by
             // captured indices; let it re-resolve them against the new one.
             notifyDatabaseRebased()
@@ -1470,9 +1474,6 @@ export async function saveDb() {
                     description: skippedArchivedCharIds.join(', '),
                 })
                 notifyError(language.rebaseSkippedArchived(names))
-                if (selectedChaId && skippedArchivedCharIds.includes(selectedChaId)) {
-                    deselectCharacter()
-                }
             }
 
             if (supportsPatchSync) {
@@ -1809,11 +1810,9 @@ export async function saveDb() {
                 // conflict (every save falling through to a full write)
                 // can be traced from the system log instead of only
                 // "expected≠server" on the server console.
-                let mismatchReport: ReturnType<RisuSavePatcher['describeHashMismatch']> | null = null
                 if (!patchResult.success && patchResult.hashDiagnostics) {
                     try {
                         const report = patcher.describeHashMismatch(patchResult.hashDiagnostics)
-                        mismatchReport = report
                         console.warn('[Save] Patch hash mismatch, diverged keys:', report)
                         addLog({
                             level: 'warning',
@@ -1862,7 +1861,6 @@ export async function saveDb() {
                     console.warn('[Save] Patch conflict with a foreign revision, rebasing tracked local changes on latest server DB...')
                     await rebaseTrackedLocalChangesOnLatestServerDb(
                         patchResult.etag, db, withTrackedCharacters(toSave, attemptedChangedCharIds), syncedArchivedIds, syncedBaselineDb,
-                        changedPartsFromReport(mismatchReport),
                     )
                     await sleep(Math.min(500 * (savetrys + 1), 3000))
                     return 'retry'

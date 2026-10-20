@@ -9,11 +9,9 @@
 
 import { CATALOG_FIELDS } from '../sync/chatCatalogFields'
 
-/** Which parts differ from the server (the save's hash-mismatch report); null: anything may. */
-export interface RebaseChangedParts {
-    roots: ReadonlySet<string> | null
-    characters: ReadonlySet<string> | null
-}
+// Kept out of the save's diff (RisuSavePatcher), so the server's copy says
+// nothing about the live one.
+const UNSYNCED_ROOT_KEYS = new Set(['pluginCustomStorage'])
 
 function isPlainObject(value: unknown): value is Record<string, any> {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
@@ -134,16 +132,20 @@ function reconcileCharacter(target: Record<string, any>, source: Record<string, 
 }
 
 /**
- * Bring the live database to the rebased `merged` one in place. Only the root
- * keys and characters in `changed` are compared (all of them when it does not
- * know); a character missing from `merged` leaves, a new one joins, and the
- * characters keep `merged`'s order. Root keys `merged` lacks stay: they are
- * defaults this page filled in at boot.
+ * Bring the live database to the rebased `merged` one in place (normalized,
+ * so it carries the boot defaults). A root key `merged` lacks was removed on
+ * another device and goes here too, or the next save would add it back. A
+ * character missing from `merged` leaves, a new one joins, and the
+ * characters keep `merged`'s order. Everything is compared: the server may
+ * have moved on since the conflict that started the rebase (the review,
+ * 2026-10-21), and what holds the same content keeps its object anyway.
  */
-export function applyMergedDbInPlace(target: Record<string, any>, merged: Record<string, any>, changed: RebaseChangedParts = { roots: null, characters: null }): void {
+export function applyMergedDbInPlace(target: Record<string, any>, merged: Record<string, any>): void {
+    for (const key of Object.keys(target)) {
+        if (key !== 'characters' && !(key in merged) && !UNSYNCED_ROOT_KEYS.has(key)) delete target[key]
+    }
     for (const key of Object.keys(merged)) {
         if (key === 'characters') continue
-        if (changed.roots && !changed.roots.has(key) && key in target) continue
         const next = reconcileInto(target[key], merged[key])
         if (next !== target[key]) target[key] = next
     }
@@ -160,22 +162,8 @@ export function applyMergedDbInPlace(target: Record<string, any>, merged: Record
     replaceContents(target.characters, mergedCharacters.map((character) => {
         const old = typeof character?.chaId === 'string' ? live.get(character.chaId) : undefined
         if (old === undefined) return character
-        if (changed.characters && !changed.characters.has(character.chaId)) return old
         if (isPlainObject(old) && isPlainObject(character)) reconcileCharacter(old, character)
         else return character
         return old
     }))
-}
-
-/** The parts a save's hash-mismatch report names; null when it cannot tell (duplicate ids, no report). */
-export function changedPartsFromReport(report: {
-    roots: { mismatched: readonly string[], onlyLocal: readonly string[], onlyRemote: readonly string[] }
-    characters: { mismatched: readonly string[], onlyLocal: readonly string[], onlyRemote: readonly string[] }
-    duplicateCharIds: readonly string[]
-    serverDuplicateCharIds: readonly string[]
-} | null | undefined): RebaseChangedParts | null {
-    if (!report || report.duplicateCharIds.length > 0 || report.serverDuplicateCharIds.length > 0) return null
-    const all = (part: { mismatched: readonly string[], onlyLocal: readonly string[], onlyRemote: readonly string[] }) =>
-        new Set([...part.mismatched, ...part.onlyLocal, ...part.onlyRemote])
-    return { roots: all(report.roots), characters: all(report.characters) }
 }

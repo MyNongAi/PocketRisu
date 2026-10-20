@@ -1366,7 +1366,7 @@
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "async function claimChatForSend(chaId: string, chatId: string) {" },
         { "file": "server/node/chat-session-lock.cjs", "contains": "function claim(key, clientId, sessionId = '', { force = false } = {}) {" },
         { "file": "server/node/server.cjs", "contains": "if (!version.ok && force) {" },
-        { "file": "src/ts/globalApi.svelte.ts", "contains": "applyMergedDbInPlace(db, mergedDb, changedParts ?? undefined)" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "applyMergedDbInPlace(db, mergedDb)" },
         { "file": "src/ts/storage/applyRebasedDb.ts", "contains": "export function applyMergedDbInPlace(" }
       ],
       "regressionTests": [
@@ -1907,7 +1907,8 @@
       ],
       "requiredMarkers": [
         { "file": "src/ts/process/memory/hypav3.ts", "contains": "await sendAllowingPrefillRefusal(formated, send)" },
-        { "file": "src/ts/process/request/google.ts", "contains": "reformatedChat.push({ role: 'user', parts: [{ text: CONTINUE_FROM_PREFILL }] })" }
+        { "file": "src/ts/process/request/google.ts", "contains": "reformatedChat.push({ role: 'user', parts: [{ text: CONTINUE_FROM_PREFILL }] })" },
+        { "file": "src/ts/process/request/google.ts", "contains": "!acceptsTrailingModelTurn(arg.modelInfo.internalID ?? arg.modelInfo.id)" }
       ],
       "regressionTests": [
         "src/ts/process/memory/trailingPrefill.test.ts",
@@ -1929,6 +1930,7 @@
         { "file": "src/ts/characterCards.ts", "contains": "char.nodeOnlyUnseen = true" },
         { "file": "src/ts/process/modules.ts", "contains": "if (options.received) module.nodeOnlyUnseen = true" },
         { "file": "src/ts/characters.ts", "contains": "markSeen(selectedCharacter)" },
+        { "file": "src/ts/stores.svelte.ts", "contains": "if (DBState.db.characters[selIdState.selId].nodeOnlyUnseen) delete DBState.db.characters[selIdState.selId].nodeOnlyUnseen" },
         { "file": "src/lib/SideBars/SidebarAvatar.svelte", "contains": "let isNew = $derived(newInside || (!!chaId && newMarks.characters.has(chaId)));" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "{newMarkPrefix(rmodule)}" }
       ],

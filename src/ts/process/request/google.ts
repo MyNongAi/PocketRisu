@@ -57,6 +57,11 @@ function geminiRetryBackoff(failedAttempt: number, signal?: AbortSignal): Promis
     })
 }
 
+/** Models that continue from a request ending on their own turn (a prefill); later Gemini refuse it. */
+export function acceptsTrailingModelTurn(modelId: string | undefined): boolean {
+    return /(?:^|[/])(?:gemini-[12](?:[.-]|$)|gemini-exp|gemma|learnlm)/i.test(modelId ?? '')
+}
+
 export async function requestGoogleCloudVertex(arg:RequestDataArgumentExtended):Promise<requestDataResponse> {
 
     const formated = arg.formated
@@ -303,7 +308,9 @@ export async function requestGoogleCloudVertex(arg:RequestDataArgumentExtended):
     // laptop's request log every such request failed with 400, chat continues,
     // translations and HypaV3 summaries alike (2026-10-21). The model's turn
     // stays, and a user turn after it asks the model to go on from it.
-    if (reformatedChat.at(-1)?.role === 'model') {
+    // Gemini 1.x/2.x and Gemma still continue a real prefill, which Continue
+    // joins straight onto the cut-off reply, so they keep it.
+    if (reformatedChat.at(-1)?.role === 'model' && !acceptsTrailingModelTurn(arg.modelInfo.internalID ?? arg.modelInfo.id)) {
         reformatedChat.push({ role: 'user', parts: [{ text: CONTINUE_FROM_PREFILL }] })
     }
 
