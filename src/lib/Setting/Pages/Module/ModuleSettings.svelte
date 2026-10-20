@@ -1,5 +1,6 @@
 <script lang="ts">
     import { language } from "src/lang";
+    import { markSeen, newMarkPrefix } from "src/ts/newMarks.svelte";
     import SettingPage from "src/lib/UI/GUI/SettingPage.svelte";
 
     import { DBState, selectedCharID } from 'src/ts/stores.svelte';
@@ -175,6 +176,7 @@
         } else {
             DBState.db.enabledModules.push(rmodule.id)
             rememberActivation(rmodule.id)
+            markSeen(rmodule)
         }
         DBState.db.enabledModules = DBState.db.enabledModules
     }
@@ -251,6 +253,8 @@
         const originalIndex = originalModuleIndex(index)
         const rmodule = DBState.db.modules[originalIndex]
         if (!rmodule || rmodule.mcp) return
+        // Looked at: no longer 🆕 (newMarks.svelte.ts).
+        markSeen(rmodule)
         rememberListScroll()
         tempModule = cloneModuleDraft($state.snapshot(rmodule))
         editModuleIndex = originalIndex
@@ -484,7 +488,7 @@
                 <Waypoints size={18} class="shrink-0 text-textcolor2" />
             {/if}
             <div class="flex flex-col min-w-0 grow">
-                <span class="truncate text-textcolor" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(rmodule))}>{#if hasMissingAssets(rmodule)}<span aria-label="에셋 누락" title="에셋 누락">❗</span> {/if}<PairedModuleMark link={pairedModules.get(rmodule.id)} />{rmodule.favorite ? '★ ' : ''}{rmodule.name}</span>
+                <span class="truncate text-textcolor" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(rmodule))}>{#if hasMissingAssets(rmodule)}<span aria-label="에셋 누락" title="에셋 누락">❗</span> {/if}<PairedModuleMark link={pairedModules.get(rmodule.id)} />{newMarkPrefix(rmodule)}{rmodule.favorite ? '★ ' : ''}{rmodule.name}</span>
                 <span class="text-xs text-textcolor2 truncate">
                     <span
                         class:text-sky-300={source.label === '로컬'}

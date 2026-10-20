@@ -1910,6 +1910,28 @@
         "src/ts/process/memory/trailingPrefill.test.ts",
         "src/ts/process/request/geminiTrailingModelTurn.test.ts"
       ]
+    },
+    {
+      "id": "NEW-MARK",
+      "title": "새로 받은 봇·모듈에 🆕 (보면 사라짐)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/newMarks.svelte.ts",
+        "src/ts/characterCards.ts",
+        "src/ts/process/modules.ts",
+        "src/lib/SideBars/SidebarAvatar.svelte",
+        "src/lib/Setting/Pages/Module/ModuleSettings.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/characterCards.ts", "contains": "char.nodeOnlyUnseen = true" },
+        { "file": "src/ts/process/modules.ts", "contains": "if (options.received) module.nodeOnlyUnseen = true" },
+        { "file": "src/ts/characters.ts", "contains": "markSeen(selectedCharacter)" },
+        { "file": "src/lib/SideBars/SidebarAvatar.svelte", "contains": "let isNew = $derived(newInside || (!!chaId && newMarks.characters.has(chaId)));" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "{newMarkPrefix(rmodule)}" }
+      ],
+      "regressionTests": [
+        "src/ts/newMarks.test.ts"
+      ]
     }
   ]
 }

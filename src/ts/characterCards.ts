@@ -33,6 +33,8 @@ function appendImportedCharacter(db: ReturnType<typeof getDatabase>, char: chara
     // When this install first saw the card. Distinct from creation_date, which
     // the card carries from its author and can predate the download by years.
     char.importedAt ??= Date.now()
+    // 🆕 in the bot list until it is opened (newMarks.svelte.ts).
+    char.nodeOnlyUnseen = true
     db.characters.push(char)
     db.characterOrder = promoteNewlyImportedCharacter(
         db.characterOrder ?? [],
@@ -579,7 +581,7 @@ export async function characterURLImport() {
                 return false
             }
         }
-        addModuleToDatabase(importData)
+        addModuleToDatabase(importData, { received: true })
         notifySuccess(language.successImport)
         openSettings(SettingsRoute.Module)
         return
@@ -613,7 +615,7 @@ export async function characterURLImport() {
         const module = new Uint8Array(await data.arrayBuffer())
         const md = await readModule(Buffer.from(module))
         md.id = v4()
-        addModuleToDatabase(md)
+        addModuleToDatabase(md, { received: true })
         notifySuccess(language.successImport)
         openSettings(SettingsRoute.Module)
     }
@@ -666,7 +668,7 @@ export async function characterURLImport() {
         if(name.endsWith('risum')){
             const md = await readModule(Buffer.from(data))
             md.id = v4()
-            addModuleToDatabase(md)
+            addModuleToDatabase(md, { received: true })
             notifySuccess(language.successImport)
             openSettings(SettingsRoute.Module)
             return
@@ -2046,7 +2048,7 @@ export async function downloadRisuHubAsModule(id:string) {
             }
             const { convertCharacterToModule } = await import('./interchangeability')
             const converted = convertCharacterToModule(char)
-            addModuleToDatabase(converted)
+            addModuleToDatabase(converted, { received: true })
             return converted
         })
         notifySuccess(language.successImport)

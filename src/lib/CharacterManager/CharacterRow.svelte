@@ -11,6 +11,7 @@
     import { DBState } from "src/ts/stores.svelte";
     import { language } from "src/lang";
     import type { ManagerEntry } from "src/ts/characterManager";
+    import { NEW_MARK, newMarks } from "src/ts/newMarks.svelte";
     import { listTitleColor } from "src/ts/gui/titleColors";
     import { formatImportedDate } from "src/ts/gui/importedDate";
 
@@ -87,7 +88,7 @@
     </div>
     <div class="flex-1 min-w-0 flex flex-col">
         <div class="flex items-center gap-1.5 min-w-0">
-            <span class="truncate text-sm font-medium" style:color={listTitleColor(entry.titleColor, entry.missingAssetCount > 0)}>{entry.name}</span>
+            <span class="truncate text-sm font-medium" style:color={listTitleColor(entry.titleColor, entry.missingAssetCount > 0)}>{newMarks.characters.has(entry.chaId) ? `${NEW_MARK} ` : ''}{entry.name}</span>
             {#if entry.hidden}
                 <span class="shrink-0 inline-flex items-center gap-0.5 rounded border border-darkborderc px-1 py-0.5 text-[10px] leading-none text-textcolor2" title={language.hiddenFromSidebarHint}>
                     <EyeOffIcon size={10} />{language.hiddenBadge}

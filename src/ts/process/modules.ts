@@ -66,16 +66,25 @@ export interface RisuModule{
      * upstream clients.
      */
     importedAt?: number
+    /** PocketRisu: received and not looked at yet; the module list marks it 🆕 (newMarks.svelte.ts). */
+    nodeOnlyUnseen?: boolean
     /** PocketRisu: the Proton file this module was downloaded from (protonSource.ts). */
     nodeOnlyProtonSource?: import('../protonSource').ProtonSourceRecord
 }
 
-/** Inserts modules and records them as the newest catalog entries. */
-export function addModulesToDatabase(modules: readonly RisuModule[]): void {
+/**
+ * Inserts modules and records them as the newest catalog entries. `received`:
+ * they came from outside (a file, Realm, Proton), so they are marked 🆕 until
+ * looked at; a module made here is not.
+ */
+export function addModulesToDatabase(modules: readonly RisuModule[], options: { received?: boolean } = {}): void {
     if(modules.length === 0) return
     const db = getDatabase()
     const now = Date.now()
-    for (const module of modules) module.importedAt ??= now
+    for (const module of modules) {
+        module.importedAt ??= now
+        if (options.received) module.nodeOnlyUnseen = true
+    }
     db.modules.push(...modules)
     db.moduleActivationHistory = recordNewModules(
         db.moduleActivationHistory,
@@ -124,8 +133,8 @@ export function syncLinkedFolders(db = getDatabase()): boolean {
     return changed
 }
 
-export function addModuleToDatabase(module: RisuModule): void {
-    addModulesToDatabase([module])
+export function addModuleToDatabase(module: RisuModule, options: { received?: boolean } = {}): void {
+    addModulesToDatabase([module], options)
 }
 
 /** Stable module selection owned by one generation target. */
@@ -454,7 +463,7 @@ export async function importModuleFile(
         // Nothing awaits between this check and the insert, so a cancel either
         // stops the import here or the module is registered for the rollback.
         options.importScope?.check()
-        addModuleToDatabase(module)
+        addModuleToDatabase(module, { received: true })
         options.importScope?.registerOwner('module', module.id)
         options.onProgress?.({
             label: language.importProgress.savingModule,

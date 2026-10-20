@@ -2034,6 +2034,8 @@ export interface character{
      * freshly downloaded card can carry from years ago, this is local truth.
      */
     importedAt?:number
+    /** PocketRisu: received and not opened yet; the bot list marks it 🆕 (newMarks.svelte.ts). */
+    nodeOnlyUnseen?: boolean
     /** PocketRisu: the Proton share this card was downloaded from (protonSource.ts). */
     nodeOnlyProtonSource?: import('../protonSource').ProtonSourceRecord
     ccAssets?: Array<{

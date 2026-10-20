@@ -1186,6 +1186,7 @@ export const languageEnglish = {
     splitOpenInPane: (where: string) => `Open in the ${where} pane`,
     splitPaneWords: { left: "left", right: "right", top: "top", bottom: "bottom" },
     splitPanelToggle: "Character panel",
+    newlyReceived: "New: not opened yet",
     pairFindBot: "Find its bots",
     pairFindWhichModule: "Which module?",
     pairFindWhichBot: "Which bot?",

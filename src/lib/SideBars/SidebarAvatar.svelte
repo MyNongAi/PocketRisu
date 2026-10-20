@@ -2,6 +2,8 @@
   import { Link2Icon } from "@lucide/svelte";
   import { onMount } from "svelte";
   import { tooltipRight } from "src/ts/gui/tooltip";
+  import { NEW_MARK, newMarks } from "src/ts/newMarks.svelte";
+  import { language } from "src/lang";
 
   type ResolvedImage = string | null | undefined;
   type DeferredImage = ResolvedImage | Promise<ResolvedImage> | (() => ResolvedImage | Promise<ResolvedImage>);
@@ -16,6 +18,8 @@
     folderShape?: boolean;
     /** An open folder: its tab turns yellow (the user's request, 2026-10-21). */
     folderOpen?: boolean;
+    /** A folder holding a bot received and not opened yet (newMarks.svelte.ts). */
+    newInside?: boolean;
     color?: string;
     titleColor?: string;
     favorite?: boolean;
@@ -46,6 +50,7 @@
     bordered = false,
     folderShape = false,
     folderOpen = false,
+    newInside = false,
     color = '',
     titleColor,
     favorite = false,
@@ -61,6 +66,9 @@
     oncontextmenu,
     chaId
   }: Props = $props();
+
+  // A bot received and not opened yet (newMarks.svelte.ts).
+  let isNew = $derived(newInside || (!!chaId && newMarks.characters.has(chaId)));
 
   function handleContextMenu(e: MouseEvent & {
     currentTarget: EventTarget & HTMLDivElement;
@@ -129,6 +137,10 @@
       tabindex="0"
       data-char-id={chaId}
 >
+  {#if isNew}
+    <!-- Received and not opened yet (newMarks.svelte.ts): the top-left corner, free of the other marks. -->
+    <span class="pointer-events-none absolute -left-1 -top-1 z-20 text-sm leading-none drop-shadow" aria-label={language.newlyReceived} title={language.newlyReceived}>{NEW_MARK}</span>
+  {/if}
   {#if favorite || missingAssets}
     <span class="pointer-events-none absolute -right-1 -top-1 z-20 flex items-start gap-0.5">
       {#if favorite}

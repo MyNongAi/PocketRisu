@@ -81,6 +81,7 @@
     import { getPaneView, paneState, paneView, setPaneContext, type PaneId } from "src/ts/chatPanes.svelte";
     import { activatePane } from "src/ts/paneActivation";
     import { paneWord, setPanePanelOpen, splitLayout, type PanelTab } from "src/ts/splitLayout.svelte";
+    import { newMarkPrefix, newMarks } from "src/ts/newMarks.svelte";
     import { alertConfirm, alertSelect } from "src/ts/alert";
     import { characterMenuInfo } from "src/ts/gui/sidebarMenuInfo";
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
@@ -278,6 +279,14 @@
     }
     return slots
   })
+  // A folder with a bot received and not opened yet inside it (or in a folder
+  // within it) shows 🆕 too, since imports often land in a folder (newMarks.svelte.ts).
+  function railFolderHasNew(item: sortTypeFolder, seen = new Set<string>()): boolean {
+    if (newMarks.characters.size === 0 || seen.has(item.id)) return false
+    seen.add(item.id)
+    if (item.folder.some((member) => member.type === 'normal' && newMarks.characters.has(member.id))) return true
+    return (railFolderChildren.get(item.id) ?? []).some((child) => railFolderHasNew(child, seen))
+  }
   // Bots a folder holds, shown on its thumbnail (the user's request, 2026-10-08):
   // its own plus those of the folders shown inside it, i.e. what opening it lists.
   let railFolderCounts = $derived.by(() => {
@@ -1187,6 +1196,7 @@
           rounded={IconRounded}
           folderShape
           folderOpen={openFolders.includes(child.id)}
+          newInside={railFolderHasNew(child)}
           name={child.name}
           color={child.color}
           favorite={child.favorite}
@@ -1278,6 +1288,7 @@
             rounded={IconRounded}
             folderShape
             folderOpen={railFolderOpen(item.char)}
+            newInside={railFolderHasNew(item.char)}
             name={item.char.name}
             color={item.char.color}
             favorite={item.char.favorite}
@@ -1888,7 +1899,7 @@
           {:else if char.type === "folder"}
             {#key char.color}
             {#key char.name}
-              <SidebarAvatar src="slot" size="56" rounded={IconRounded} folderShape folderOpen={railFolderOpen(char)} name={char.name} color={char.color} favorite={char.favorite} moduleLink={char.link ? 'linked' : null} count={railFolderCounts.get(char.id) ?? char.folder.length} backgroundimg={char.display === 'image' && char.img ? () => getCharThumbnail(char.img, "plain") : ""}
+              <SidebarAvatar src="slot" size="56" rounded={IconRounded} folderShape folderOpen={railFolderOpen(char)} newInside={railFolderHasNew(char)} name={char.name} color={char.color} favorite={char.favorite} moduleLink={char.link ? 'linked' : null} count={railFolderCounts.get(char.id) ?? char.folder.length} backgroundimg={char.display === 'image' && char.img ? () => getCharThumbnail(char.img, "plain") : ""}
               oncontextmenu={char.system ? undefined : (e) => openSidebarFolderSettings(char.id, e)}
               onClick={() => {
                 if(suppressNextClick) return
@@ -2299,7 +2310,7 @@
                 />
               </div>
               <div class="flex-1 min-w-0">
-                <div class="text-sm font-semibold text-textcolor leading-tight truncate" style:color={listTitleColor(DBState.db.characters[rc.index]?.titleColor, Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0)}>{rc.name || "Unnamed"}</div>
+                <div class="text-sm font-semibold text-textcolor leading-tight truncate" style:color={listTitleColor(DBState.db.characters[rc.index]?.titleColor, Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0)}>{newMarkPrefix(DBState.db.characters[rc.index])}{rc.name || "Unnamed"}</div>
                 <div class="text-xs text-textcolor2 leading-tight truncate">{makeAgoText(rc.lastInteraction)}</div>
               </div>
             </button>

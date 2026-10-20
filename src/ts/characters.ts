@@ -1,6 +1,7 @@
 import { get, writable } from "svelte/store";
 import { saveImage, setDatabase, type character, type Chat, defaultSdDataFunc, type loreBook, getDatabase, getCharacterByIndex, setCharacterByIndex, getCurrentChat, loadTogglesFromChat, normalizeChat, newChatModelDefaults } from "./storage/database.svelte";
 import { ensureChatHydrated } from "./storage/chatStorage";
+import { markSeen } from "./newMarks.svelte";
 import { alertAddCharacter, alertConfirm, alertError, alertInput, alertSelect, alertStore, alertWait, notifySuccess, notifyInfo } from "./alert";
 import { archiveCharacter } from "./characterArchive";
 import { chatHydrationOverlayStore, chatDeselected } from "./stores.svelte";
@@ -1052,6 +1053,7 @@ export function changeChar(index: number, arg:{
     reseter();
     chatDeselected.set(false)
     const selectedCharacter = getDatabase().characters[index]
+    markSeen(selectedCharacter)
     if(needsCharacterRuntimeNormalization(selectedCharacter)){
         characterFormatUpdate(index, {
             updateInteraction: true,

@@ -9,6 +9,7 @@ import { applyToggleValues, getDatabase, loadTogglesFromChat, snapshotToggleValu
 import { ensureChatHydrated } from './storage/chatStorage'
 import { locateChat, paneState, paneToggles, persistPanes, selectedChatIds, type PaneChatIds, type PaneId } from './chatPanes.svelte'
 import { persistSplitLayout, splitLayout, type PanelTab } from './splitLayout.svelte'
+import { markSeen } from './newMarks.svelte'
 
 // The character panel's tab lives in app-wide state (botMakerMode, QuickSettings);
 // each pane's panel keeps its own, so it is handed over with the selection.
@@ -52,6 +53,7 @@ function selectChat(characterIndex: number, chatIndex: number): void {
     const char = db.characters[characterIndex]
     if (!char) return
     if (char.chatPage !== chatIndex) char.chatPage = chatIndex
+    markSeen(char)
     chatDeselected.set(false)
     if (get(selectedCharID) !== characterIndex) selectedCharID.set(characterIndex)
     try {
