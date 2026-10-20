@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "upstreamBaseline": "PocketRisu v1.15.0",
+  "upstreamBaseline": "PocketRisu v1.15.1",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-10-17",
+  "updatedAt": "2026-10-21",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
