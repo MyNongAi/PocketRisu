@@ -12,6 +12,7 @@ import { toLogSource } from './logSource'
 import { applyAdditionalParameters, applyParameters, getAdditionalParameters, type LLMParameter } from './shared'
 import { bodyIntercepterStore } from "src/ts/stores.svelte"
 import { applyGeminiPdfInput, geminiPdfLogBody } from './geminiPdfInput'
+import { CONTINUE_FROM_PREFILL } from '../memory/trailingPrefill'
 
 type GeminiFunctionCall = {
     id?: string;
@@ -295,6 +296,15 @@ export async function requestGoogleCloudVertex(arg:RequestDataArgumentExtended):
             // Remove the current chat
             reformatedChat.splice(i, 1)
         }
+    }
+
+    // Gemini 3 and later refuse a request that ends on the model's turn (a
+    // prefill: "Requests ending with a model turn are not supported"). In the
+    // laptop's request log every such request failed with 400, chat continues,
+    // translations and HypaV3 summaries alike (2026-10-21). The model's turn
+    // stays, and a user turn after it asks the model to go on from it.
+    if (reformatedChat.at(-1)?.role === 'model') {
+        reformatedChat.push({ role: 'user', parts: [{ text: CONTINUE_FROM_PREFILL }] })
     }
 
     const uncensoredCatagory = [
