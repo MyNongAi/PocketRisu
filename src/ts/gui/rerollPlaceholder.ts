@@ -22,6 +22,11 @@ export type RerollPlaceholder<M extends SwipeMessage = SwipeMessage> = {
     message: M
     /** Stays until the reroll ends, and the page it shows stays shown after. */
     hold?: boolean
+    /**
+     * A held copy stepped onto the new reply's page (its last): the reply being
+     * written shows there, with ← back to the old pages, and stays shown after.
+     */
+    showingNew?: boolean
     /** Comments and disabled messages after the old reply, out with it. */
     trailing?: M[]
 }
@@ -41,18 +46,19 @@ export function clearRerollPlaceholder(chatId: string): void {
     })
 }
 
-/** The copy's page and page count; a held copy counts the new reply as one more. */
-export function rerollPlaceholderPages(placeholder: Pick<RerollPlaceholder, 'message' | 'hold'>): { current: number, total: number } {
+/** The copy's page and page count; a held copy counts the new reply as one more (its last page). */
+export function rerollPlaceholderPages(placeholder: Pick<RerollPlaceholder, 'message' | 'hold' | 'showingNew'>): { current: number, total: number } {
+    const total = Math.max(1, swipeCount(placeholder.message)) + (placeholder.hold ? 1 : 0)
     return {
-        current: (placeholder.message.swipeId ?? 0) + 1,
-        total: Math.max(1, swipeCount(placeholder.message)) + (placeholder.hold ? 1 : 0),
+        current: placeholder.hold && placeholder.showingNew ? total : (placeholder.message.swipeId ?? 0) + 1,
+        total,
     }
 }
 
-/** The page a held copy shows (to stay shown after the reroll), or null. */
+/** The page a held copy shows (to stay shown after the reroll), or null: none, or the new reply's. */
 export function heldRerollSwipe(chatId: string): number | null {
     const placeholder = get(rerollPlaceholders).get(chatId)
-    return placeholder?.hold ? (placeholder.message.swipeId ?? 0) : null
+    return placeholder?.hold && !placeholder.showingNew ? (placeholder.message.swipeId ?? 0) : null
 }
 
 /** Show the copy's previous (-1) or next (+1) swipe. False when it has none. */
@@ -60,10 +66,19 @@ export function stepRerollPlaceholderSwipe(chatId: string, step: -1 | 1): boolea
     const placeholder = get(rerollPlaceholders).get(chatId)
     if (!placeholder) return false
     if (placeholder.hold) {
-        // Past either end is the new reply's page: let it show.
+        const count = Math.max(1, swipeCount(placeholder.message))
+        if (placeholder.showingNew) {
+            // Off the new reply's page: back to the old reply's last page, or round to its first.
+            setRerollPlaceholder({ ...placeholder, showingNew: false, message: { ...placeholder.message, swipeId: step === -1 ? count - 1 : 0 } })
+            return true
+        }
+        // Past either end is the new reply's page. The copy stays held: that
+        // page shows the reply being written, and ← still comes back (the
+        // user's report, 2026-10-21: stepping there dropped the copy's page,
+        // so it showed the old reply as 1/1 with no arrows until the end).
         const { current, total } = rerollPlaceholderPages(placeholder)
         if ((step === 1 && current === total - 1) || (step === -1 && current === 1)) {
-            setRerollPlaceholder({ ...placeholder, hold: false })
+            setRerollPlaceholder({ ...placeholder, showingNew: true })
             return true
         }
     }
@@ -79,10 +94,10 @@ export function stepRerollPlaceholderSwipe(chatId: string, step: -1 | 1): boolea
  */
 export function rerollPlaceholderShows(
     messages: readonly (SwipeMessage | null | undefined)[],
-    placeholder: Pick<RerollPlaceholder, 'index' | 'hold'> | null | undefined,
+    placeholder: Pick<RerollPlaceholder, 'index' | 'hold' | 'showingNew'> | null | undefined,
 ): boolean {
     if (!placeholder) return false
-    if (placeholder.hold || placeholder.index >= messages.length) return true
+    if ((placeholder.hold && !placeholder.showingNew) || placeholder.index >= messages.length) return true
     const at = messages[placeholder.index]
     return !!at && at.role === 'char' && !at.data
 }

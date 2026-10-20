@@ -12,7 +12,7 @@
     import { getChatAssetRenderWindow } from '../../ts/chatAssetWindow';
     import { isAtTail, revealScrollTop, shouldFollowTail, shouldRevealAddedMessage } from './chatViewport';
     import { chatGenKey, isChatGenerating } from 'src/ts/process/generationState';
-    import { rerollPlaceholderPages, rerollPlaceholderShows, rerollPlaceholders, stepRerollPlaceholderSwipe } from 'src/ts/gui/rerollPlaceholder';
+    import { rerollPlaceholderPages, rerollPlaceholderShows, rerollPlaceholders, stepRerollPlaceholderSwipe, type RerollPlaceholder } from 'src/ts/gui/rerollPlaceholder';
     import { SWIPE_ROW_BUTTONS, buttonRows, rowAt, rowFromBottom } from 'src/ts/gui/swipeAnchor';
     
     // The pane this list draws (chatPanes.svelte.ts). Messages are mounted
@@ -101,6 +101,22 @@
         totalPages: 1,
     };
 
+    // The reply being written while a held reroll copy is on its page
+    // (gui/rerollPlaceholder.ts showingNew): browse-only, ← and → step to the
+    // old pages; reroll and swipe delete wait for the reply to end.
+    const newReplyPageState = (placeholder: RerollPlaceholder<any>) => {
+        const pages = rerollPlaceholderPages(placeholder)
+        return {
+            rerollIcon: 'force' as const,
+            swipeOnly: true,
+            onNextSwipe: () => { stepRerollPlaceholderSwipe(placeholder.chatId, 1) },
+            onDeleteSwipe: () => {},
+            unReroll: () => { stepRerollPlaceholderSwipe(placeholder.chatId, -1) },
+            currentPage: pages.current,
+            totalPages: pages.total,
+        }
+    };
+
     const updateChatBody = () => {
         if(!chatBody){
             return
@@ -164,7 +180,8 @@
         const placeholderIndex = placeholder && rerollPlaceholderShows(messages, placeholder) ? placeholder.index : -1
         if (placeholder && placeholderIndex >= 0) {
             const placeholderChatId = placeholder.chatId
-            const message = placeholder.message as Message
+            // On the new reply's page before it has text: that page, still empty.
+            const message = (placeholder.showingNew ? { ...placeholder.message, data: '' } : placeholder.message) as Message
             const echoIndex = previousInputIndex(messages, Math.min(placeholderIndex, messages.length))
             const echoText = echoIndex >= 0 ? (messages[echoIndex].data ?? '') : ''
             const pages = rerollPlaceholderPages(placeholder)
@@ -227,6 +244,11 @@
             const message = messages[i];
             const messageLargePortrait = message.role === 'user' ? (userIconPortrait ?? false) : ((currentCharacter as character).largePortrait ?? false);
             const isRerollTarget = i === lastRealCharIdx;
+            // The reply being written, on its page of a held reroll copy: the
+            // copy's count, with arrows back to the old pages.
+            const targetState = placeholder?.hold && placeholder.showingNew && i === placeholder.index
+                ? newReplyPageState(placeholder)
+                : rerollTargetState(message, isRerollTarget, i);
             const activeStreamingMessage = i === activeStreamingIndex && message.role === 'char';
             const resolveChatAssets = assetRenderWindow.messageIndices.has(i)
             const hashMessageData = activeStreamingMessage ? '' : message.data;
@@ -272,7 +294,7 @@
                         loadSenderImage: () => getSenderImage(message.role),
                         onReroll: onReroll,
                         unReroll: unReroll,
-                        ...rerollTargetState(message, isRerollTarget, i),
+                        ...targetState,
                         character: simpleChar,
                         largePortrait: messageLargePortrait,
                         messageGenerationInfo: message.generationInfo,
@@ -308,7 +330,7 @@
                 })
                 // A message that stopped being the reroll target must also drop its
                 // swipe-delete control: onDeleteSwipe acts on the current last message.
-                inst?.updateRerollTarget?.(rerollTargetState(message, isRerollTarget, i))
+                inst?.updateRerollTarget?.(targetState)
             }
             nextHash = currentHash;
 

@@ -63,16 +63,36 @@ describe('a held placeholder', () => {
         // within the old pages it browses as before
         expect(stepRerollPlaceholderSwipe('c1', 1)).toBe(true)
         expect(heldRerollSwipe('c1')).toBe(2)
-        // one past the last old page is the new reply
+        // one past the last old page is the new reply: the copy stays held, on its last page
         expect(stepRerollPlaceholderSwipe('c1', 1)).toBe(true)
-        expect(get(rerollPlaceholders).get('c1')?.hold).toBe(false)
+        const onNew = get(rerollPlaceholders).get('c1')!
+        expect(onNew.hold).toBe(true)
+        expect(onNew.showingNew).toBe(true)
+        expect(rerollPlaceholderPages(onNew)).toEqual({ current: 4, total: 4 })
         expect(heldRerollSwipe('c1')).toBeNull()
+        // the new reply shows there: an empty stream start too, as that page
+        expect(rerollPlaceholderShows([user, { role: 'char', data: 'new' }], onNew)).toBe(false)
+        expect(rerollPlaceholderShows([user, { role: 'char', data: '' }], onNew)).toBe(true)
+    })
+
+    it("steps back from the new reply to the old pages (the user's report, 2026-10-21)", () => {
+        setRerollPlaceholder({ chatId: 'c1', index: 1, message: { ...old, swipes: [...old.swipes], swipeId: 2 }, hold: true, showingNew: true })
+        expect(stepRerollPlaceholderSwipe('c1', -1)).toBe(true)
+        const back = get(rerollPlaceholders).get('c1')!
+        expect(back.showingNew).toBe(false)
+        expect(rerollPlaceholderPages(back)).toEqual({ current: 3, total: 4 })
+        expect(heldRerollSwipe('c1')).toBe(2)
+        expect(rerollPlaceholderShows([user, { role: 'char', data: 'new' }], back)).toBe(true)
+        // and round from the new page forward to the first old one
+        setRerollPlaceholder({ ...back, showingNew: true })
+        expect(stepRerollPlaceholderSwipe('c1', 1)).toBe(true)
+        expect(rerollPlaceholderPages(get(rerollPlaceholders).get('c1')!)).toEqual({ current: 1, total: 4 })
     })
 
     it('reaches the new page backwards from the first one, and from a reply without swipes', () => {
         setRerollPlaceholder({ chatId: 'c1', index: 1, message: { ...old, swipeId: 0, data: 'A' }, hold: true })
         expect(stepRerollPlaceholderSwipe('c1', -1)).toBe(true)
-        expect(get(rerollPlaceholders).get('c1')?.hold).toBe(false)
+        expect(get(rerollPlaceholders).get('c1')?.showingNew).toBe(true)
 
         setRerollPlaceholder({ chatId: 'c2', index: 1, message: { role: 'char', data: 'only' }, hold: true })
         expect(rerollPlaceholderPages(get(rerollPlaceholders).get('c2')!)).toEqual({ current: 1, total: 2 })
