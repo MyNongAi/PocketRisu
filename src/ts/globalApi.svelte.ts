@@ -34,7 +34,7 @@ import { getExternalAssetContentUrl, isExternalAssetLocation } from "./storage/e
 import { isNodeServer, supportsPatchSync } from "./platform";
 import { updateAnimationSpeed } from "./gui/animation";
 import { updateColorScheme, updateTextThemeAndCSS } from "./gui/colorscheme";
-import { language } from "src/lang";
+import { changeLanguage, language } from "src/lang";
 import { startObserveDom } from "./observer.svelte";
 import { updateGuisize } from "./gui/guisize";
 import { deepTouch } from "./gui/deepTouch.svelte";
@@ -1429,6 +1429,7 @@ export async function saveDb() {
             // swapping the whole object redrew every screen, so the open chat
             // flickered and jumped on each rebase (applyRebasedDb.ts).
             normalizeDatabase(mergedDb)
+            const languageBefore = db.language
             const releaseChats = suppressChatTracking((db.characters ?? []).flatMap((character) =>
                 (character?.chats ?? [])
                     .filter((chat) => chat?.id && !chat._placeholder)
@@ -1441,6 +1442,8 @@ export async function saveDb() {
             } finally {
                 releaseChats()
             }
+            // setDatabase did this too: a language changed on another device applies here.
+            if (db.language !== languageBefore) changeLanguage(db.language)
             // selectedCharID is an index into db.characters; the merged array
             // follows the server's order and may have gained or lost entries,
             // so re-point it at the same character (or clear it if gone).
