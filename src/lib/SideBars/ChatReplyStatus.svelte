@@ -1,7 +1,7 @@
 <script lang="ts">
     // A chat row's reply status: the composer's spinner (green) while a reply
     // for this chat runs, foreground or on the server, then a check until the
-    // chat is opened again.
+    // chat is opened again. The chat on screen shows its check only briefly.
     import { chatGenKey, generationStates } from 'src/ts/process/generationState'
     import { clearFinishedReply, finishedReplies } from 'src/ts/gui/chatReplyStatus'
 
@@ -14,13 +14,31 @@
     const running = $derived(!!chatId && $generationStates.has(chatGenKey(chatId)))
     const done = $derived(!running && !!chatId && $finishedReplies.has(chatId))
 
-    // Opening the chat clears its check. A chat that was already open when
-    // its reply finished keeps the check until it is left and opened again.
+    // Opening the chat clears its check.
     // svelte-ignore state_referenced_locally
     let wasCurrent = current
     $effect(() => {
         if (current && !wasCurrent) clearFinishedReply(chatId)
         wasCurrent = current
+    })
+
+    // The chat on screen saw its reply arrive: its check goes after a moment,
+    // or once the app is back in front (the user's report, 2026-10-21: it
+    // stayed until the chat was left and opened again).
+    const SEEN_AFTER_MS = 2000
+    $effect(() => {
+        if (!current || !done) return
+        let timer: ReturnType<typeof setTimeout> | undefined
+        const settle = () => {
+            clearTimeout(timer)
+            if (document.visibilityState === 'visible') timer = setTimeout(() => clearFinishedReply(chatId), SEEN_AFTER_MS)
+        }
+        settle()
+        document.addEventListener('visibilitychange', settle)
+        return () => {
+            clearTimeout(timer)
+            document.removeEventListener('visibilitychange', settle)
+        }
     })
 </script>
 

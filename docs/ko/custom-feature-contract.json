@@ -1935,6 +1935,24 @@
       "regressionTests": [
         "src/ts/newMarks.test.ts"
       ]
+    },
+    {
+      "id": "CHAT-REPLY-STATUS",
+      "title": "채팅 목록의 응답 상태 (생성 중 스피너, 끝나면 ✅)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/SideBars/ChatReplyStatus.svelte",
+        "src/ts/gui/chatReplyStatus.ts",
+        "src/lib/SideBars/SideChatList.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/generationState.ts", "contains": "trackFinishedReplies" },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "<ChatReplyStatus chatId={chat.id}" },
+        { "file": "src/lib/SideBars/ChatReplyStatus.svelte", "contains": "if (document.visibilityState === 'visible') timer = setTimeout(() => clearFinishedReply(chatId), SEEN_AFTER_MS)" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/chatReplyStatus.test.ts"
+      ]
     }
   ]
 }
