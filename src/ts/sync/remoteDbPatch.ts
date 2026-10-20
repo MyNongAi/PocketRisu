@@ -13,7 +13,7 @@
 import type { Chat } from '../storage/database.svelte'
 import { chatToStub, stubToPlaceholder } from '../storage/chatStorage'
 
-const CATALOG_FIELDS = ['name', 'lastDate', 'folderId', 'modules'] as const
+import { CATALOG_FIELDS } from './chatCatalogFields'
 
 type CharacterLike = { chaId?: string, chats?: any[] }
 

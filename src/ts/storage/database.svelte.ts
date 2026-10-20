@@ -43,6 +43,16 @@ export function normalizeTheme(theme: string | undefined | null): string {
 
 
 export function setDatabase(data:Database){
+    normalizeDatabase(data)
+    changeLanguage(data.language)
+    setDatabaseLite(data)
+}
+
+/**
+ * Every default and migration setDatabase applies, without making `data` the
+ * live database (a rebase brings it into the live one in place, applyRebasedDb.ts).
+ */
+export function normalizeDatabase(data:Database){
     if(checkNullish(data.characters)){
         data.characters = []
     }
@@ -850,8 +860,6 @@ export function setDatabase(data:Database){
         }
     }
     applyModelPresetDefaults(data)
-    changeLanguage(data.language)
-    setDatabaseLite(data)
 }
 
 export function setDatabaseLite(data:Database){

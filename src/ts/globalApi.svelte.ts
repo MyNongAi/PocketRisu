@@ -5,7 +5,8 @@ import { fromStore, get } from "svelte/store";
 import { chatsShownBesideSelection } from "./chatPanes.svelte";
 import { splitChatOpen } from "./chatSplitPane";
 import streamSaver from 'streamsaver';
-import { setDatabase, type Database, type Chat, defaultSdDataFunc, getDatabase, appVer, nodeOnlyVer, getCurrentCharacter, loadTogglesFromChat } from "./storage/database.svelte";
+import { setDatabase, normalizeDatabase, type Database, type Chat, defaultSdDataFunc, getDatabase, appVer, nodeOnlyVer, getCurrentCharacter, loadTogglesFromChat } from "./storage/database.svelte";
+import { applyMergedDbInPlace, changedPartsFromReport, type RebaseChangedParts } from "./storage/applyRebasedDb";
 import { checkRisuUpdate } from "./update";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore, chatHydrationOverlayStore, chatDeselected, moduleTreeRevision } from "./stores.svelte";
 import { recordDbTransferSize } from "./transferSize";
@@ -1372,6 +1373,7 @@ export async function saveDb() {
     async function rebaseTrackedLocalChangesOnLatestServerDb(
         conflictEtag: string | null, db: Database, toSave: toSaveType, syncedArchivedIds: ReadonlySet<string>,
         syncedBaselineDb: Database | null,
+        changedParts: RebaseChangedParts | null = null,
     ) {
         const etagBeforeRebase = forageStorage.getDbEtag()
         forageStorage.setDbEtag(conflictEtag ?? null)
@@ -1423,12 +1425,27 @@ export async function saveDb() {
                     throw new Error('Rebase deferred: a generation for a character deactivated elsewhere has not ended yet')
                 }
             }
-            setDatabase(mergedDb)
+            // Into the live database in place, not setDatabase(mergedDb):
+            // swapping the whole object redrew every screen, so the open chat
+            // flickered and jumped on each rebase (applyRebasedDb.ts).
+            normalizeDatabase(mergedDb)
+            const releaseChats = suppressChatTracking((db.characters ?? []).flatMap((character) =>
+                (character?.chats ?? [])
+                    .filter((chat) => chat?.id && !chat._placeholder)
+                    .map((chat) => ({ chaId: character.chaId, chatId: chat.id })),
+            ))
+            try {
+                applyMergedDbInPlace(db, mergedDb, changedParts ?? undefined)
+                rehomeHydratedChats(db.characters ?? [])
+                await tick()
+            } finally {
+                releaseChats()
+            }
             // selectedCharID is an index into db.characters; the merged array
             // follows the server's order and may have gained or lost entries,
             // so re-point it at the same character (or clear it if gone).
             if (selectedChaId && !skippedArchivedCharIds.includes(selectedChaId)) {
-                const idx = (mergedDb.characters ?? []).findIndex((char) => char?.chaId === selectedChaId)
+                const idx = (db.characters ?? []).findIndex((char) => char?.chaId === selectedChaId)
                 if (idx === -1) {
                     deselectCharacter()
                 } else if (idx !== get(selectedCharID)) {
@@ -1789,9 +1806,11 @@ export async function saveDb() {
                 // conflict (every save falling through to a full write)
                 // can be traced from the system log instead of only
                 // "expected≠server" on the server console.
+                let mismatchReport: ReturnType<RisuSavePatcher['describeHashMismatch']> | null = null
                 if (!patchResult.success && patchResult.hashDiagnostics) {
                     try {
                         const report = patcher.describeHashMismatch(patchResult.hashDiagnostics)
+                        mismatchReport = report
                         console.warn('[Save] Patch hash mismatch, diverged keys:', report)
                         addLog({
                             level: 'warning',
@@ -1840,6 +1859,7 @@ export async function saveDb() {
                     console.warn('[Save] Patch conflict with a foreign revision, rebasing tracked local changes on latest server DB...')
                     await rebaseTrackedLocalChangesOnLatestServerDb(
                         patchResult.etag, db, withTrackedCharacters(toSave, attemptedChangedCharIds), syncedArchivedIds, syncedBaselineDb,
+                        changedPartsFromReport(mismatchReport),
                     )
                     await sleep(Math.min(500 * (savetrys + 1), 3000))
                     return 'retry'

@@ -1337,7 +1337,8 @@
         "src/ts/storage/nodeStorage.ts",
         "src/lib/ChatScreens/DefaultChatScreen.svelte",
         "server/node/chat-session-lock.cjs",
-        "server/node/server.cjs"
+        "server/node/server.cjs",
+        "src/ts/storage/applyRebasedDb.ts"
       ],
       "requiredMarkers": [
         { "file": "src/ts/globalApi.svelte.ts", "contains": "toSave.chat = toSave.chat.filter((pair) => pair?.[0] !== chaId || pair?.[1] !== chatId)" },
@@ -1348,10 +1349,13 @@
         { "file": "src/ts/storage/nodeStorage.ts", "contains": "if (options.force) headers['x-chat-force'] = '1'" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "async function claimChatForSend(chaId: string, chatId: string) {" },
         { "file": "server/node/chat-session-lock.cjs", "contains": "function claim(key, clientId, sessionId = '', { force = false } = {}) {" },
-        { "file": "server/node/server.cjs", "contains": "if (!version.ok && force) {" }
+        { "file": "server/node/server.cjs", "contains": "if (!version.ok && force) {" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "applyMergedDbInPlace(db, mergedDb, changedParts ?? undefined)" },
+        { "file": "src/ts/storage/applyRebasedDb.ts", "contains": "export function applyMergedDbInPlace(" }
       ],
       "regressionTests": [
-        "server/node/chat-session-lock.test.ts"
+        "server/node/chat-session-lock.test.ts",
+        "src/ts/storage/applyRebasedDb.test.ts"
       ]
     },
     {
