@@ -104,8 +104,9 @@ export type CBSRegisterArg = {
     safeStructuredClone: <T>(obj: T) => T,
     parseArray: (str: string) => unknown[],
     parseDict: (str: string) => {[key: string]: unknown},
-    getChatVar: (key: string) => string,
-    setChatVar: (key: string, value: string) => void,
+    /** scope: the parse's own character and chat (chatVar.svelte.ts), else the selected chat. */
+    getChatVar: (key: string, scope?: import('./parser/chatVar.svelte').ChatVarScope) => string,
+    setChatVar: (key: string, value: string, scope?: import('./parser/chatVar.svelte').ChatVarScope) => void,
     getGlobalChatVar: (key: string) => string,
     calcString: (str: string) => number,
     dateTimeFormat: (format: string, timestamp?: number) => string,
@@ -761,7 +762,7 @@ export function registerCBS(arg:CBSRegisterArg) {
     registerFunction({
         name: 'getvar',
         callback: (str, matcherArg, args, vars) => {
-            return getChatVar(args[0])
+            return getChatVar(args[0], matcherArg)
         },
         alias: [],
         description: 'Gets the value of a persistent chat variable by name. Chat variables are saved with the chat and persist between sessions. Returns empty string if variable doesn\'t exist.\n\nUsage:: {{getvar::variableName}}',
@@ -783,7 +784,7 @@ export function registerCBS(arg:CBSRegisterArg) {
                 return ''
             }
             if(matcherArg.runVar){
-                setChatVar(args[0], (Number(getChatVar(args[0])) + Number(args[1])).toString())
+                setChatVar(args[0], (Number(getChatVar(args[0], matcherArg)) + Number(args[1])).toString(), matcherArg)
                 return ''
             }
             return null
@@ -799,7 +800,7 @@ export function registerCBS(arg:CBSRegisterArg) {
                 return ''
             }
             if(matcherArg.runVar){
-                setChatVar(args[0], args[1])
+                setChatVar(args[0], args[1], matcherArg)
                 return ''
             }
             return null
@@ -815,9 +816,9 @@ export function registerCBS(arg:CBSRegisterArg) {
                 return ''
             }
             if(matcherArg.runVar){
-                const currentValue = getChatVar(args[0])
+                const currentValue = getChatVar(args[0], matcherArg)
                 if(!currentValue || currentValue === 'null'){
-                    setChatVar(args[0], args[1])
+                    setChatVar(args[0], args[1], matcherArg)
                 }
                 return ''
             }

@@ -65,6 +65,7 @@ import { isMobile } from 'src/ts/platform'
     import PluginDefinedIcon from '../Others/PluginDefinedIcon.svelte';
 
     import { isSendKey } from 'src/ts/gui/sendKey';
+    import { getPaneView } from 'src/ts/chatPanes.svelte';
 
     const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then(m => m.default);
 
@@ -96,8 +97,13 @@ import { isMobile } from 'src/ts/platform'
     let isScrollingToMessage = $state(false)
     let showHydrationCancel = $state(false)
     let { openModuleList = $bindable(false), openChatList = $bindable(false), customStyle = '' }: Props = $props();
-    let currentCharacter = $derived(DBState.db.characters[$selectedCharID])
-    let currentChatSlot = $derived(currentCharacter?.chats[currentCharacter.chatPage])
+    // The pane this screen draws (chatPanes.svelte.ts): in the split, each
+    // pane its own chat; the active one is also the app's selection, so the
+    // actions below act on what it shows. Without a split, the selection.
+    const view = getPaneView()
+    let screenRoot: HTMLDivElement | undefined = $state()
+    let currentCharacter = $derived(view.character)
+    let currentChatSlot = $derived(view.chat)
     let currentChatReady = $derived(!!currentChatSlot && !currentChatSlot._placeholder)
     let currentChat = $derived(currentChatReady ? currentChatSlot.message : [])
     let currentChatFmIndex = $derived(currentChatReady ? (currentChatSlot.fmIndex ?? -1) : -1)
@@ -251,23 +257,24 @@ import { isMobile } from 'src/ts/platform'
         }
     }
 
-    async function ensureActiveChatReady(selectedChar = $selectedCharID): Promise<ChatData | null> {
-        const char = DBState.db.characters[selectedChar]
+    async function ensureActiveChatReady(): Promise<ChatData | null> {
+        const char = view.character
+        const chatIndex = view.chatIndex
         if (!char) return null
-        const chat = char.chats[char.chatPage]
+        const chat = char.chats[chatIndex]
         if (!chat) return null
         if (!chat._placeholder) return chat
-        return await ensureCurrentChatReady(char.chats, char.chatPage, char.chaId)
+        return await ensureCurrentChatReady(char.chats, chatIndex, char.chaId)
     }
 
     // The load that failed never applied this chat's saved toggles (the
     // select/change paths do that only on success), so apply them here.
     async function retryChatLoad() {
-        const char = DBState.db.characters[$selectedCharID]
-        const chatId = char?.chats[char.chatPage]?.id
+        const char = DBState.db.characters[view.characterIndex]
+        const chatId = char?.chats[view.chatIndex]?.id
         const hydrated = await ensureActiveChatReady().catch(() => null)
-        const now = DBState.db.characters[$selectedCharID]
-        if (hydrated && now?.chaId === char?.chaId && now?.chats[now.chatPage]?.id === chatId) {
+        const now = DBState.db.characters[view.characterIndex]
+        if (hydrated && view.active && now?.chaId === char?.chaId && now?.chats[view.chatIndex]?.id === chatId) {
             loadTogglesFromChat(hydrated)
         }
     }
@@ -290,7 +297,7 @@ import { isMobile } from 'src/ts/platform'
 
     // Top of currently loaded messages (no force-load of older pages).
     function scrollToLoadedTop() {
-        const container = document.querySelector('.default-chat-screen') as HTMLElement | null
+        const container = (screenRoot ?? null) as HTMLElement | null
         chatsInstance?.releaseViewport?.()
         if (!container) return
         const messages = getLoadedMessages(container)
@@ -300,14 +307,14 @@ import { isMobile } from 'src/ts/platform'
 
     // The request card's ">" on this chat (requestActions.ts) brings its end into view.
     onMount(() => {
-        const toEnd = () => scrollToLoadedBottom()
+        const toEnd = () => { if (view.active) scrollToLoadedBottom() }
         window.addEventListener(SCROLL_CHAT_TO_END_EVENT, toEnd)
         return () => window.removeEventListener(SCROLL_CHAT_TO_END_EVENT, toEnd)
     })
 
     // Literal bottom of the scroll: the latest message's end and the composer.
     function scrollToLoadedBottom() {
-        const container = document.querySelector('.default-chat-screen') as HTMLElement | null
+        const container = (screenRoot ?? null) as HTMLElement | null
         chatsInstance?.releaseViewport?.()
         if (!container) return
         container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' })
@@ -363,7 +370,7 @@ import { isMobile } from 'src/ts/platform'
     }
 
     function navigateMessage(direction: 'prev' | 'next') {
-        const container = document.querySelector('.default-chat-screen') as HTMLElement | null
+        const container = (screenRoot ?? null) as HTMLElement | null
         chatsInstance?.releaseViewport?.()
         if (!container) return
         const messages = Array.from(container.querySelectorAll('[data-chat-index]'))
@@ -417,7 +424,7 @@ import { isMobile } from 'src/ts/platform'
         }
     }
     $effect(() => {
-        if(ScrollToMessageStore.value !== -1){
+        if(view.active && ScrollToMessageStore.value !== -1){
             const index = ScrollToMessageStore.value
             ScrollToMessageStore.value = -1
             scrollToMessage(index)
@@ -440,14 +447,14 @@ import { isMobile } from 'src/ts/platform'
             let element: Element | null = null;
             // Poll for element existence (max 5 seconds)
             for(let i = 0; i < 50; i++){
-                element = document.querySelector(`[data-chat-index="${index}"]`)
+                element = screenRoot?.querySelector(`[data-chat-index="${index}"]`) ?? null
                 if(element) break;
                 await sleep(100)
             }
 
-            const chatContainer = document.querySelector('.default-chat-screen') as HTMLElement | null;
+            const chatContainer = (screenRoot ?? null) as HTMLElement | null;
             const preIndex = Math.max(0, index - 3)
-            const preElement = document.querySelector(`[data-chat-index="${preIndex}"]`)
+            const preElement = screenRoot?.querySelector(`[data-chat-index="${preIndex}"]`)
             // Scroll within the chat container only — raw scrollIntoView climbs to
             // documentElement and, if the root is inflated, shoves the whole page up.
             if(chatContainer && preElement){
@@ -500,8 +507,8 @@ import { isMobile } from 'src/ts/platform'
     }
 
     async function sendMain(continueResponse:boolean) {
-        const selectedCharacter = DBState.db.characters[$selectedCharID]
-        const selectedChatRoom = selectedCharacter?.chats?.[selectedCharacter.chatPage]
+        const selectedCharacter = DBState.db.characters[view.characterIndex]
+        const selectedChatRoom = selectedCharacter?.chats?.[view.chatIndex]
         if(!selectedCharacter || !selectedChatRoom) return
 
         let generationTarget = captureGenerationTarget(selectedCharacter, selectedChatRoom)
@@ -581,7 +588,7 @@ import { isMobile } from 'src/ts/platform'
             })
             if(commandProcessed !== false){
                 const selected = resolveGenerationTarget(DBState.db.characters, generationTarget)
-                if(selected && $selectedCharID === selected.characterIndex && selected.character.chatPage === selected.chatIndex){
+                if(selected && view.characterIndex === selected.characterIndex && view.chatIndex === selected.chatIndex){
                     messageInput = ''
                     messageInputTranslate = ''
                 }
@@ -650,7 +657,7 @@ import { isMobile } from 'src/ts/platform'
         attached.chat.message = cha
         if (chatTitleState(attached.character, attached.chat.id) === 'auto') retitleChatFromLastInput(attached.character.chats, attached.chatIndex)
         generationTarget = captureGenerationTarget(attached.character, attached.chat)
-        if($selectedCharID === attached.characterIndex && attached.character.chatPage === attached.chatIndex){
+        if(view.characterIndex === attached.characterIndex && view.chatIndex === attached.chatIndex){
             messageInput = ''
             messageInputTranslate = ''
             fileInput = []
@@ -659,7 +666,7 @@ import { isMobile } from 'src/ts/platform'
 
         await sleep(10)
         const stillSelected = resolveGenerationTarget(DBState.db.characters, generationTarget)
-        if(stillSelected && $selectedCharID === stillSelected.characterIndex && stillSelected.character.chatPage === stillSelected.chatIndex){
+        if(stillSelected && view.characterIndex === stillSelected.characterIndex && view.chatIndex === stillSelected.chatIndex){
             updateInputSizeAll()
         }
         // sendChat claims generation state synchronously before its first
@@ -715,9 +722,9 @@ import { isMobile } from 'src/ts/platform'
     // to that last message. Surface that as a reroll affordance.
     const willResend = $derived.by(() => {
         if (messageInput !== '' || fileInput.length > 0) return false
-        const cha = DBState.db.characters[$selectedCharID]
+        const cha = DBState.db.characters[view.characterIndex]
         if (!cha) return false
-        const msgs = cha.chats?.[cha.chatPage]?.message
+        const msgs = cha.chats?.[view.chatIndex]?.message
         if (!msgs || msgs.length === 0) return false
         return msgs[msgs.length - 1].role === 'user'
     })
@@ -746,15 +753,15 @@ import { isMobile } from 'src/ts/platform'
     }
 
     function getLastCharMsg() {
-        const char = DBState.db.characters[$selectedCharID]
-        return getLastCharMsgIn(char?.chats?.[char.chatPage])
+        const char = DBState.db.characters[view.characterIndex]
+        return getLastCharMsgIn(char?.chats?.[view.chatIndex])
     }
 
     async function reroll() {
         if(currentChatGenerating) return
         let placeholderChatId: string | null = null
-        const targetCharacter = DBState.db.characters[$selectedCharID]
-        const targetChat = targetCharacter?.chats?.[targetCharacter.chatPage]
+        const targetCharacter = DBState.db.characters[view.characterIndex]
+        const targetChat = targetCharacter?.chats?.[view.chatIndex]
         if(!targetCharacter || !targetChat) return
         let generationTarget = captureGenerationTarget(targetCharacter, targetChat)
         const genKey = chatGenKey(generationTarget.chatId)
@@ -874,7 +881,7 @@ import { isMobile } from 'src/ts/platform'
         // The chat is still open: the page shown while it was rerolled stays
         // shown (rerollPlaceholder.ts). Away from it, the new reply shows.
         const keptSwipe = placeholderChatId ? heldRerollSwipe(placeholderChatId) : null
-        const onScreen = $selectedCharID === attached.characterIndex && attached.character.chatPage === attached.chatIndex
+        const onScreen = view.characterIndex === attached.characterIndex && view.chatIndex === attached.chatIndex
         if (newLastMsg && keptSwipe !== null && onScreen && showSwipe(newLastMsg, keptSwipe)) {
             restoreShownSwipeScriptstate(attached.chat, newLastMsg)
         }
@@ -889,8 +896,8 @@ import { isMobile } from 'src/ts/platform'
     // the newest reply brings back the chat variables its swipe left: later
     // messages have changed them since an older reply was written.
     function swipeContext(index?: number) {
-        const char = DBState.db.characters[$selectedCharID]
-        const chat = char?.chats?.[char.chatPage]
+        const char = DBState.db.characters[view.characterIndex]
+        const chat = char?.chats?.[view.chatIndex]
         const target = getLastCharMsgIn(chat)
         const msg = index === undefined ? target : (chat?.message?.[index] ?? null)
         return { chat, msg, isTarget: !!msg && msg === target }
@@ -907,7 +914,7 @@ import { isMobile } from 'src/ts/platform'
                 removeSwipeCheckpoint(msg, removed.removedIndex, removed.previousCount)
                 delete msg.nodeOnlyErrorSwipe
                 if (isTarget) restoreShownSwipeScriptstate(chat, msg)
-                DBState.db.characters[$selectedCharID].reloadKeys += 1
+                DBState.db.characters[view.characterIndex].reloadKeys += 1
                 return
             }
         }
@@ -916,7 +923,7 @@ import { isMobile } from 'src/ts/platform'
         // request, 2026-10-09); the chat variables stay as the generation
         // found them then.
         if (isTarget && !currentChatGenerating) restoreShownSwipeScriptstate(chat, msg)
-        DBState.db.characters[$selectedCharID].reloadKeys += 1
+        DBState.db.characters[view.characterIndex].reloadKeys += 1
     }
 
     /** After a send: mark its reply when it looks like an error (chatSwipes.ts). */
@@ -946,15 +953,15 @@ import { isMobile } from 'src/ts/platform'
         removeSwipeCheckpoint(msg, removed.removedIndex, removed.previousCount)
         shiftErrorMarkAfterDelete(msg, removed.removedIndex)
         if (isTarget) restoreShownSwipeScriptstate(chat, msg)
-        DBState.db.characters[$selectedCharID].reloadKeys += 1
+        DBState.db.characters[view.characterIndex].reloadKeys += 1
     }
 
     // The abort controller lives in the per-chat generation-state registry so
     // the Stop button aborts the generation of the chat it is shown for (not
     // whatever this screen instance last started). See generationState.ts.
     function currentChatGenKey(){
-        const char = DBState.db.characters[$selectedCharID]
-        return chatGenKey(char?.chats?.[char.chatPage]?.id)
+        const char = DBState.db.characters[view.characterIndex]
+        return chatGenKey(char?.chats?.[view.chatIndex]?.id)
     }
 
     // Stop affordance is per-chat: shown when the CURRENTLY SELECTED chat has
@@ -978,8 +985,8 @@ import { isMobile } from 'src/ts/platform'
 
         let generationTarget = capturedTarget
         if(!generationTarget){
-            const char = DBState.db.characters[$selectedCharID]
-            const chat = char?.chats?.[char.chatPage]
+            const char = DBState.db.characters[view.characterIndex]
+            const chat = char?.chats?.[view.chatIndex]
             if(!char || !chat) return false
             generationTarget = captureGenerationTarget(char, chat)
         }
@@ -1054,14 +1061,14 @@ import { isMobile } from 'src/ts/platform'
             markResumable(chatId)
             return
         }
-        const char = DBState.db.characters[$selectedCharID]
-        const chat = char?.chats?.[char.chatPage]
+        const char = DBState.db.characters[view.characterIndex]
+        const chat = char?.chats?.[view.chatIndex]
         const last = chat?.message?.[chat.message.length - 1]
         if (!last || last.role !== 'user') return        // tail changed — concluded
         if (!await claimPendingSend(chatId)) return      // another client won (or server unreachable)
         if (currentChatGenKey() !== chatId || $generationStates.has(chatId)) return
-        const resumedChar = DBState.db.characters[$selectedCharID]
-        const resumedChat = resumedChar?.chats?.[resumedChar.chatPage]
+        const resumedChar = DBState.db.characters[view.characterIndex]
+        const resumedChat = resumedChar?.chats?.[view.chatIndex]
         if (!resumedChar || !resumedChat || resumedChat.id !== chatId) return
         const claim = await forageStorage.claimChatWriterSession(resumedChar.chaId, resumedChat.id)
         if (claim.ok === false) {
@@ -1087,8 +1094,8 @@ import { isMobile } from 'src/ts/platform'
     // One-shot via takeResumable; the timeout escapes the effect before the
     // send mutates tracked state.
     $effect(() => {
-        const char = DBState.db.characters[$selectedCharID]
-        const chatId = char?.chats?.[char.chatPage]?.id
+        const char = DBState.db.characters[view.characterIndex]
+        const chatId = char?.chats?.[view.chatIndex]?.id
         if (!chatId || !$resumableSends.has(chatId)) return
         if ($generationStates.has(chatGenKey(chatId))) return
         if (!takeResumable(chatId)) return
@@ -1108,7 +1115,7 @@ import { isMobile } from 'src/ts/platform'
     }
 
     let { userIconPortrait, currentUsername, userIcon } = $derived.by(() => {
-        const bindedPersona = DBState?.db?.characters?.[$selectedCharID]?.chats?.[DBState?.db?.characters?.[$selectedCharID]?.chatPage]?.bindedPersona
+        const bindedPersona = view.chat?.bindedPersona
 
         if(bindedPersona){
             const persona = DBState.db.personas.find((p) => p.id === bindedPersona)
@@ -1147,7 +1154,7 @@ import { isMobile } from 'src/ts/platform'
     )
     // Effective persona name for the input placeholder (chat-bound persona overrides the selected one).
     let activePersonaName = $derived.by(() => {
-        const chat = DBState.db.characters[$selectedCharID]?.chats?.[DBState.db.characters[$selectedCharID]?.chatPage]
+        const chat = view.chat
         const bound = chat?.bindedPersona ? DBState.db.personas.find(p => p.id === chat.bindedPersona) : null
         return (bound ?? DBState.db.personas[DBState.db.selectedPersona])?.name || 'User'
     })
@@ -1331,7 +1338,7 @@ import { isMobile } from 'src/ts/platform'
             // Top to bottom as shown. The DOM order is not the reading order: the
             // first message precedes Chats' newest-first list (its own
             // col-reverse box), so the order is read from the layout.
-            const chats = Array.from(document.querySelectorAll('.default-chat-screen .risu-chat'))
+            const chats = Array.from(screenRoot?.querySelectorAll('.risu-chat') ?? [])
                 .map((el) => ({ el, top: el.getBoundingClientRect().top }))
                 .sort((a, b) => a.top - b.top)
                 .map(({ el }) => el)
@@ -1390,7 +1397,7 @@ import { isMobile } from 'src/ts/platform'
 
 
 <div class="w-full h-full relative" style={customStyle}>
-    {#if $chatHydrationOverlayStore.active}
+    {#if view.active && $chatHydrationOverlayStore.active}
         <div class="absolute inset-0 z-[55] flex items-center justify-center bg-bgcolor/45 backdrop-blur-[1px]" aria-live="polite" aria-busy="true">
             <div class="flex items-center gap-2.5 rounded-full border border-darkborderc bg-bgcolor/90 px-4 py-2.5 text-textcolor shadow-lg">
                 <svg class="h-5 w-5 animate-spin text-primary" style="will-change: transform;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
@@ -1493,7 +1500,11 @@ import { isMobile } from 'src/ts/platform'
             Loading...
         </div>
     {/if}
-    {#if $selectedCharID < 0}
+    {#if view.pane === 'side' && !view.chat}
+        <div class="h-full w-full flex items-center justify-center p-6 text-center text-textcolor2">
+            <span>{language.splitPaneEmpty}</span>
+        </div>
+    {:else if view.characterIndex < 0}
         {#if $PlaygroundStore === 0}
             <MainMenu />
         {:else}
@@ -1501,7 +1512,7 @@ import { isMobile } from 'src/ts/platform'
                 <PlaygroundMenu />
             {/await}
         {/if}
-    {:else if $chatDeselected}
+    {:else if view.active && $chatDeselected}
         <div class="h-full w-full flex items-center justify-center text-textcolor2">
             <span>{language.selectChatToView}</span>
         </div>
@@ -1518,7 +1529,7 @@ import { isMobile } from 'src/ts/platform'
                      relied on the pre-redesign container class. Keep it so they can still find/anchor their UI,
                      and it scopes the timer re-flow rules in <style> below. -->
                 <div class="flex flex-wrap items-center gap-1 rounded-3xl border border-darkborderc bg-bgcolor px-2 py-1.5 transition-colors focus-within:border-textcolor plugin-compat-items-stretch">
-                {#if DBState.db.characters[$selectedCharID]?.chaId !== '§playground'}
+                {#if DBState.db.characters[view.characterIndex]?.chaId !== '§playground'}
                     <ShDropdownMenu bind:open={openMenu}>
                         <ShDropdownMenuTrigger>
                             {#snippet child({ props })}
@@ -1530,13 +1541,13 @@ import { isMobile } from 'src/ts/platform'
                             {/snippet}
                         </ShDropdownMenuTrigger>
                         <ShDropdownMenuContent side="top" align="start" class="min-w-48 max-h-[70vh] overflow-y-auto">
-                            {#if DBState.db.characters[$selectedCharID].ttsMode === 'webspeech' || DBState.db.characters[$selectedCharID].ttsMode === 'elevenlab'}
+                            {#if DBState.db.characters[view.characterIndex].ttsMode === 'webspeech' || DBState.db.characters[view.characterIndex].ttsMode === 'elevenlab'}
                                 <ShDropdownMenuItem onSelect={() => stopTTS()}>
                                     <MicOffIcon /><span>{language.ttsStop}</span>
                                 </ShDropdownMenuItem>
                             {/if}
                             <ShDropdownMenuItem
-                                disabled={(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length < 2) || (DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length - 1].role !== 'char')}
+                                disabled={(DBState.db.characters[view.characterIndex].chats[view.chatIndex].message.length < 2) || (DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[DBState.db.characters[view.characterIndex].chats[view.chatIndex].message.length - 1].role !== 'char')}
                                 onSelect={() => sendContinue()}>
                                 <StepForwardIcon /><span>{language.continueResponse}</span>
                             </ShDropdownMenuItem>
@@ -1556,7 +1567,7 @@ import { isMobile } from 'src/ts/platform'
                                     <PluginDefinedIcon ico={menu} /><span>{menu.name}</span>
                                 </ShDropdownMenuItem>
                             {/each}
-                            {#if DBState.db.showMenuHypaMemoryModal && getActiveHypaV3Preset(DBState.db, DBState.db.characters[$selectedCharID], DBState.db.characters[$selectedCharID]?.chats?.[DBState.db.characters[$selectedCharID]?.chatPage])}
+                            {#if DBState.db.showMenuHypaMemoryModal && getActiveHypaV3Preset(DBState.db, DBState.db.characters[view.characterIndex], view.chat)}
                                 <ShDropdownMenuItem onSelect={() => { $hypaV3ModalOpen = true }}>
                                     <BrainIcon /><span>{language.hypaMemoryV3Modal}</span>
                                 </ShDropdownMenuItem>
@@ -1594,7 +1605,7 @@ import { isMobile } from 'src/ts/platform'
                                 <ReplyIcon /><span>{language.autoSuggest}</span>
                             </ShDropdownMenuItem>
                             <ShDropdownMenuItem onSelect={() => {
-                                DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].modules ??= []
+                                DBState.db.characters[view.characterIndex].chats[view.chatIndex].modules ??= []
                                 openModuleList = true
                             }}>
                                 <PackageIcon /><span>{language.modules}</span>
@@ -1611,11 +1622,11 @@ import { isMobile } from 'src/ts/platform'
                     </ShDropdownMenu>
                 {:else}
                     <button type="button" aria-label="Add empty assistant message" onclick={(e) => {
-                        DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.push({
+                        DBState.db.characters[view.characterIndex].chats[view.chatIndex].message.push({
                             role: 'char',
                             data: ''
                         })
-                        DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage] = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+                        DBState.db.characters[view.characterIndex].chats[view.chatIndex] = DBState.db.characters[view.characterIndex].chats[view.chatIndex]
                     }}
                          class="shrink-0 flex justify-center items-center w-9 h-9 rounded-full text-textcolor hover:bg-primary/20 transition-colors cursor-pointer"
                     >
@@ -1727,12 +1738,12 @@ import { isMobile } from 'src/ts/platform'
                 </div>
               </div>
             </div>
-            {#if DBState.db.useAutoTranslateInput && DBState.db.characters[$selectedCharID]?.chaId !== '§playground'}
+            {#if DBState.db.useAutoTranslateInput && DBState.db.characters[view.characterIndex]?.chaId !== '§playground'}
                 <div class="flex items-center mt-2 mb-2">
-                    <label for='messageInputTranslate' class="text-textcolor ml-4">
+                    <label for={`messageInputTranslate-${view.pane}`} class="text-textcolor ml-4">
                         <LanguagesIcon />
                     </label>
-                    <textarea id = 'messageInputTranslate' class="text-textcolor rounded-md p-2 min-w-0 bg-transparent input-text text-xl grow ml-4 mr-2 border-darkbutton resize-none focus:bg-selected overflow-y-hidden overflow-x-hidden max-w-full"
+                    <textarea id={`messageInputTranslate-${view.pane}`} class="text-textcolor rounded-md p-2 min-w-0 bg-transparent input-text text-xl grow ml-4 mr-2 border-darkbutton resize-none focus:bg-selected overflow-y-hidden overflow-x-hidden max-w-full"
                               bind:value={messageInputTranslate}
                               bind:this={inputTranslateEle}
                               onkeydown={(e) => {
@@ -1805,7 +1816,7 @@ import { isMobile } from 'src/ts/platform'
                 </div>
             {/if}
 
-            {#if DBState.db.useAutoSuggestions}
+            {#if DBState.db.useAutoSuggestions && view.active}
                 <Suggestion messageInput={(msg)=>messageInput=(
                     (DBState.db.subModel === "textgen_webui" || DBState.db.subModel === "mancer" || DBState.db.subModel.startsWith('local_')) && DBState.db.autoSuggestClean
                     ? msg.replace(/ +\(.+?\) *$| - [^"'*]*?$/, '')
@@ -1823,7 +1834,7 @@ import { isMobile } from 'src/ts/platform'
              gesture to the viewport; mobile Chrome then collapses its URL bar, the visual viewport
              resizes, and the sticky composer gets misanchored (bar floats up with a gap below).
              PWA/standalone has no URL bar, hence unaffected. -->
-        <div class="h-full w-full flex flex-col overflow-y-auto overscroll-y-contain relative default-chat-screen"
+        <div bind:this={screenRoot} class="h-full w-full flex flex-col overflow-y-auto overscroll-y-contain relative default-chat-screen"
             class:nodeonly-standard={DBState.db.theme === ''}
             class:no-chat-width-wide={DBState.db.theme === '' && DBState.db.nodeOnlyStandardChatWidth === 'wide'}
             class:no-chat-width-full={DBState.db.theme === '' && DBState.db.nodeOnlyStandardChatWidth === 'full'}
@@ -1858,50 +1869,50 @@ import { isMobile } from 'src/ts/platform'
             {:else}
 
             {#if currentChat.length <= loadPages}
-                {#if !DBState.db.characters[$selectedCharID].removedQuotes && DBState.db.characters[$selectedCharID].creatorNotes.length >= 2}
-                    <CreatorQuote quote={DBState.db.characters[$selectedCharID].creatorNotes} onRemove={() => {
-                        const cha = DBState.db.characters[$selectedCharID]
+                {#if !DBState.db.characters[view.characterIndex].removedQuotes && DBState.db.characters[view.characterIndex].creatorNotes.length >= 2}
+                    <CreatorQuote quote={DBState.db.characters[view.characterIndex].creatorNotes} onRemove={() => {
+                        const cha = DBState.db.characters[view.characterIndex]
                         cha.removedQuotes = true
-                        DBState.db.characters[$selectedCharID] = cha
+                        DBState.db.characters[view.characterIndex] = cha
                     }} />
                 {/if}
-                {#if (aiLawApplies() && DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message.length === 0)}
+                {#if (aiLawApplies() && DBState.db.characters[view.characterIndex].chats[view.chatIndex].message.length === 0)}
                     <div class="ml-auto mr-auto mt-4 text-textcolor2 italic max-w-2/3 wrap-break-word text-center">
                         {language.aiGenerationWarning}
                     </div>
                 {/if}
                 <Chat
-                    character={createSimpleCharacter(DBState.db.characters[$selectedCharID])}
-                    name={DBState.db.characters[$selectedCharID].name}
-                    message={getFirstMessageAtIndex(DBState.db.characters[$selectedCharID], currentChatFmIndex)}
+                    character={createSimpleCharacter(DBState.db.characters[view.characterIndex])}
+                    name={DBState.db.characters[view.characterIndex].name}
+                    message={getFirstMessageAtIndex(DBState.db.characters[view.characterIndex], currentChatFmIndex)}
                     role='char'
-                    img={firstMessageInAssetWindow ? getCharImage(DBState.db.characters[$selectedCharID].image, 'css') : ''}
-                    loadSenderImage={() => getCharImage(DBState.db.characters[$selectedCharID].image, 'css')}
+                    img={firstMessageInAssetWindow ? getCharImage(DBState.db.characters[view.characterIndex].image, 'css') : ''}
+                    loadSenderImage={() => getCharImage(DBState.db.characters[view.characterIndex].image, 'css')}
                     resolveChatAssets={resolveFirstMessageAssets}
                     resolveSenderIcon={firstMessageInAssetWindow}
                     allowViewportAssetActivation={currentChatSlot?.firstMessageDisabled !== true && currentChatFmIndex !== BLANK_FIRST_MESSAGE_INDEX}
                     idx={-1}
                     altGreeting={true}
-                    disabled={DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].firstMessageDisabled === true}
-                    largePortrait={DBState.db.characters[$selectedCharID].largePortrait}
+                    disabled={DBState.db.characters[view.characterIndex].chats[view.chatIndex].firstMessageDisabled === true}
+                    largePortrait={DBState.db.characters[view.characterIndex].largePortrait}
                     firstMessage={true}
                     onReroll={() => {
-                        const cha = DBState.db.characters[$selectedCharID]
-                        const chat = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+                        const cha = DBState.db.characters[view.characterIndex]
+                        const chat = DBState.db.characters[view.characterIndex].chats[view.chatIndex]
                         if (chat._placeholder) return
                         chat.fmIndex = nextFirstMessageIndex(chat.fmIndex, cha.alternateGreetings.length)
-                        DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage] = chat
+                        DBState.db.characters[view.characterIndex].chats[view.chatIndex] = chat
                     }}
                     unReroll={() => {
-                        const cha = DBState.db.characters[$selectedCharID]
-                        const chat = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage]
+                        const cha = DBState.db.characters[view.characterIndex]
+                        const chat = DBState.db.characters[view.characterIndex].chats[view.chatIndex]
                         if (chat._placeholder) return
                         chat.fmIndex = previousFirstMessageIndex(chat.fmIndex, cha.alternateGreetings.length)
-                        DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage] = chat
+                        DBState.db.characters[view.characterIndex].chats[view.chatIndex] = chat
                     }}
                     isLastMemory={false}
-                    currentPage={firstMessagePageNumber(DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].fmIndex)}
-                    totalPages={lastFirstMessagePageNumber(DBState.db.characters[$selectedCharID].alternateGreetings.length)}
+                    currentPage={firstMessagePageNumber(DBState.db.characters[view.characterIndex].chats[view.chatIndex].fmIndex)}
+                    totalPages={lastFirstMessagePageNumber(DBState.db.characters[view.characterIndex].alternateGreetings.length)}
 
                 />
             {/if}
@@ -1934,7 +1945,7 @@ import { isMobile } from 'src/ts/platform'
 
             {/if}
 
-            {#if chatPanelStore.length > 0}
+            {#if view.pane === 'main' && chatPanelStore.length > 0}
                 <div class="mx-4 my-2 flex flex-col gap-2">
                     {#each chatPanelStore as panel (panel.id)}
                         <section class={`rounded-md border border-darkborderc bg-darkbg/80 p-3 text-textcolor ${panel.className ?? ''}`} data-plugin-chat-panel={panel.id}>
@@ -1947,14 +1958,14 @@ import { isMobile } from 'src/ts/platform'
             {@render composerCluster()}
         </div>
 
-        {#if btwSideChat.open && currentChatReady && currentCharacter?.chaId !== '§playground'}
+        {#if view.active && btwSideChat.open && currentChatReady && currentCharacter?.chaId !== '§playground'}
             <BtwSidePanel character={currentCharacter} chat={currentChatSlot} onInsert={insertIntoComposer} />
         {/if}
-        <LogCaptureOverlay />
+        {#if view.active}<LogCaptureOverlay />{/if}
     {/if}
 </div>
 
-{#if additionalFloatingActionButtons.length > 0}
+{#if view.pane === 'main' && additionalFloatingActionButtons.length > 0}
     <div class="fixed top-4 right-4 flex flex-col gap-3 z-50">
         {#each additionalFloatingActionButtons as button}
             <button class="bg-primary text-white px-4 py-2 rounded-full shadow-lg flex items-center gap-2 hover:bg-primary/90 transition-colors" onclick={() => {

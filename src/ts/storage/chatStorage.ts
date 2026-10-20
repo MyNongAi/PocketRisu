@@ -148,18 +148,19 @@ export function touchHydratedChat(chaId: string, chatId: string | undefined) {
 }
 
 export async function evictHydratedChatCache(
-    protectedChat?: { chaId?: string, chatId?: string },
+    protectedChats?: { chaId?: string, chatId?: string } | Array<{ chaId?: string, chatId?: string }>,
     maxEntries = MAX_HYDRATED_CHAT_CACHE,
 ): Promise<number> {
-    const protectedKey = protectedChat?.chaId && protectedChat.chatId
-        ? chatKey(protectedChat.chaId, protectedChat.chatId)
-        : null
+    // The open chat, and the one the other split pane shows (chatPanes.svelte.ts).
+    const protectedKeys = new Set((Array.isArray(protectedChats) ? protectedChats : [protectedChats])
+        .filter((chat): chat is { chaId: string, chatId: string } => !!chat?.chaId && !!chat.chatId)
+        .map((chat) => chatKey(chat.chaId, chat.chatId)))
     const entries = [...hydratedChatCache.entries()].sort((a, b) => a[1].access - b[1].access)
     let evicted = 0
     const evictedKeys: string[] = []
     for (const [key, entry] of entries) {
         if (hydratedChatCache.size <= Math.max(0, maxEntries)) break
-        if (key === protectedKey || hydrationInFlight.has(key) || entry.dirty) continue
+        if (protectedKeys.has(key) || hydrationInFlight.has(key) || entry.dirty) continue
         const index = entry.chats.findIndex((chat) => chat?.id === entry.chatId)
         const chat = index >= 0 ? entry.chats[index] : null
         if (!chat || chat._placeholder) {

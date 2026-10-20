@@ -2,7 +2,7 @@
     import { getCustomBackground, getEmotion } from "../../ts/util";
     
     import { DBState } from 'src/ts/stores.svelte';
-    import { CharEmotion, selectedCharID, openModuleListStore } from "../../ts/stores.svelte";
+    import { CharEmotion, openModuleListStore } from "../../ts/stores.svelte";
     import ResizeBox from './ResizeBox.svelte'
     import DefaultChatScreen from "./DefaultChatScreen.svelte";
     import defaultWallpaper from '../../etc/bg.jpg'
@@ -13,6 +13,17 @@
     import ModuleChatMenu from "../Setting/Pages/Module/ModuleChatMenu.svelte";
     import { BackLayerRank, useBackLayer } from 'src/ts/gui/backLayers.svelte';
     import { hideFloatingBotControls } from 'src/ts/gui/floatingBotControls';
+    import { paneView, setPaneContext, type PaneId } from 'src/ts/chatPanes.svelte';
+    import { activatePane } from 'src/ts/paneActivation';
+
+    // Which pane of the split this is (chatPanes.svelte.ts); 'main' without one.
+    let { pane = 'main' }: { pane?: PaneId } = $props()
+    // svelte-ignore state_referenced_locally
+    const view = paneView(pane)
+    setPaneContext(view)
+    // A touch or focus inside makes this pane the selected chat before the
+    // touch's own action runs, so the action acts on what it shows.
+    const takeSelection = () => { activatePane(view.pane) }
     let openChatList = $state(false)
     let openModuleList = $state(false)
     useBackLayer(BackLayerRank.Popup, () => openChatList, () => { openChatList = false })
@@ -46,7 +57,7 @@
 <!-- `isolate` keeps bot HTML/CSS z-index inside the chat layer. The PC
      split's second workspace sits beside the whole left side now
      (SplitWorkspace in App), so settings no longer unmount it. -->
-<div class="grow h-full min-w-0 flex relative" use:hideFloatingBotControls={!!DBState.db.characters[$selectedCharID]?.nodeOnlyHideFloatingButtons}>
+<div class="grow h-full min-w-0 flex relative" data-chat-pane={view.pane} onpointerdowncapture={takeSelection} onfocusincapture={takeSelection} use:hideFloatingBotControls={!!view.character?.nodeOnlyHideFloatingButtons}>
 <section
     class="grow h-full min-w-0 relative"
 >
@@ -54,14 +65,14 @@
     <div class="isolate grow h-full flex justify-center relative" style="{bgImg.length < 4 ? wallPaper : bgImg}">
         <SideBarArrow />
         <BackgroundDom />
-        {#if $selectedCharID >= 0}
-            {#if DBState.db.characters[$selectedCharID].viewScreen !== 'none'}
+        {#if view.characterIndex >= 0}
+            {#if view.character?.viewScreen !== 'none'}
                 <div class="h-full mr-10 flex justify-end halfw" style:width="{42 * (DBState.db.waifuWidth2 / 100)}rem">
                     <TransitionImage classType="waifu" src={getEmotion(DBState.db, $CharEmotion, 'plain')}/>
                 </div>
             {/if}
         {/if}
-        <div class="h-full w-2xl" style:width="{42 * (DBState.db.waifuWidth / 100)}rem" class:halfwp={$selectedCharID >= 0 && DBState.db.characters[$selectedCharID].viewScreen !== 'none'}>
+        <div class="h-full w-2xl" style:width="{42 * (DBState.db.waifuWidth / 100)}rem" class:halfwp={view.characterIndex >= 0 && view.character?.viewScreen !== 'none'}>
             <DefaultChatScreen customStyle={`${externalStyles}backdrop-filter: blur(4px);`} bind:openChatList bind:openModuleList/>
         </div>
     </div>
@@ -70,13 +81,13 @@
         <SideBarArrow />
         <BackgroundDom />
         <div class="w-full absolute z-10 bottom-0 left-0"
-            class:per33={$selectedCharID >= 0 && DBState.db.characters[$selectedCharID].viewScreen !== 'none'}
-            class:h-full={!($selectedCharID >= 0 && DBState.db.characters[$selectedCharID].viewScreen !== 'none')}
+            class:per33={view.characterIndex >= 0 && view.character?.viewScreen !== 'none'}
+            class:h-full={!(view.characterIndex >= 0 && view.character?.viewScreen !== 'none')}
         >
             <DefaultChatScreen customStyle={`${externalStyles}backdrop-filter: blur(4px);`} bind:openChatList bind:openModuleList/>
         </div>
-        {#if $selectedCharID >= 0}
-            {#if DBState.db.characters[$selectedCharID].viewScreen !== 'none'}
+        {#if view.characterIndex >= 0}
+            {#if view.character?.viewScreen !== 'none'}
                 <div class="h-full w-full absolute bottom-0 left-0 max-w-full">
                     <TransitionImage classType="mobile" src={getEmotion(DBState.db, $CharEmotion, 'plain')}/>
                 </div>
@@ -88,8 +99,8 @@
         <SideBarArrow />
         <BackgroundDom />
         <div style={bgImg} class="h-full w-full" class:max-w-6xl={DBState.db.classicMaxWidth}>
-            {#if $selectedCharID >= 0}
-                {#if DBState.db.characters[$selectedCharID].viewScreen !== 'none' && (!(DBState.db.characters[$selectedCharID] as import('src/ts/storage/database.svelte').character).inlayViewScreen)}
+            {#if view.characterIndex >= 0}
+                {#if view.character?.viewScreen !== 'none' && (!view.character?.inlayViewScreen)}
                     <ResizeBox />
                 {/if}
             {/if}

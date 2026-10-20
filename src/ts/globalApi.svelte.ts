@@ -1,7 +1,9 @@
 import { changeFullscreen, checkNullish, sleep } from "./util"
 import { v4 as uuidv4, v4 } from 'uuid';
-import { tick } from "svelte";
-import { get } from "svelte/store";
+import { tick, untrack } from "svelte";
+import { fromStore, get } from "svelte/store";
+import { chatsShownBesideSelection } from "./chatPanes.svelte";
+import { splitChatOpen } from "./chatSplitPane";
 import streamSaver from 'streamsaver';
 import { setDatabase, type Database, type Chat, defaultSdDataFunc, getDatabase, appVer, nodeOnlyVer, getCurrentCharacter, loadTogglesFromChat } from "./storage/database.svelte";
 import { checkRisuUpdate } from "./update";
@@ -1128,6 +1130,73 @@ export async function saveDb() {
             // Same chat, replaced object (hydration excepted) or a new field.
             markActiveChatDirty()
         })
+
+        // Chats besides the open one whose edits must still reach the server:
+        // the one the other split pane shows (chatPanes.svelte.ts) and every
+        // chat a reply is being written into. Only the open chat was watched,
+        // so a reply finishing in a chat the user had left stayed saved only
+        // while that chat was first in the save queue (2026-10-20).
+        const generatingNow = fromStore(generationStates)
+        const splitOpenNow = fromStore(splitChatOpen)
+        const besideWatchers = new Map<string, { stop: () => void, mark: () => void }>()
+        $effect(() => {
+            const wanted = new Map<string, [string, string]>()
+            for (const ids of chatsShownBesideSelection(splitOpenNow.current)) {
+                wanted.set(`${ids.chaId}|${ids.chatId}`, [ids.chaId, ids.chatId])
+            }
+            const generatingChatIds = [...generatingNow.current.keys()]
+            const selectedChar = DBState?.db?.characters?.[selIdState]
+            const selectedKey = `${selectedChar?.chaId ?? ''}|${selectedChar?.chats?.[selectedChar.chatPage]?.id ?? ''}`
+            untrack(() => {
+                for (const chatId of generatingChatIds) {
+                    const owner = (DBState?.db?.characters ?? []).find((c) => c?.chats?.some((chat) => chat?.id === chatId))
+                    if (owner?.chaId) wanted.set(`${owner.chaId}|${chatId}`, [owner.chaId, chatId])
+                }
+                wanted.delete(selectedKey)
+                for (const [key, watcher] of besideWatchers) {
+                    if (wanted.has(key)) continue
+                    watcher.stop()
+                    besideWatchers.delete(key)
+                    // Its last change may have landed in the same flush that
+                    // ended the watch (a reply's final chunk with its end).
+                    watcher.mark()
+                }
+                for (const [key, [chaId, chatId]] of wanted) {
+                    if (!besideWatchers.has(key)) besideWatchers.set(key, watchChatBeside(chaId, chatId))
+                }
+            })
+        })
+        function watchChatBeside(chaId: string, chatId: string) {
+            const findChat = () => (DBState?.db?.characters ?? []).find((c) => c?.chaId === chaId)?.chats?.find((c) => c?.id === chatId)
+            const mark = () => {
+                if (isHydrating(chaId, chatId)) return
+                const chat = untrack(findChat)
+                if (!chat || chat._placeholder) return
+                if (!changeTracker.chat.some(([a, b]) => a === chaId && b === chatId)) changeTracker.chat.push([chaId, chatId])
+                markHydratedChatDirty(chaId, chatId)
+                saveTimeoutExecute()
+            }
+            const stop = $effect.root(() => {
+                let seen: Chat | undefined
+                let seenFields = ''
+                $effect(() => {
+                    const characters = DBState?.db?.characters
+                    const owner = untrack(() => characters?.find((c) => c?.chaId === chaId))
+                    const chat = owner?.chats?.find((c) => c?.id === chatId)
+                    if (!chat || chat._placeholder) return
+                    const fields = (Reflect.ownKeys(chat) as Array<string | symbol>).filter((key): key is string => typeof key === 'string')
+                    for (const key of fields) {
+                        if (key === 'message') watchEntriesDeep(() => chat.message, mark)
+                        else watchDeep(() => (chat as unknown as Record<string, unknown>)[key], mark)
+                    }
+                    const signature = fields.join('\u0000')
+                    if (seen && (seen !== chat || seenFields !== signature)) mark()
+                    seen = chat
+                    seenFields = signature
+                })
+            })
+            return { stop, mark }
+        }
     })
 
     function requeueTrackedChanges(toSave: toSaveType) {
@@ -1834,7 +1903,10 @@ export async function saveDb() {
         const activeIndex = get(selectedCharID)
         const activeCharacter = db.characters[activeIndex]
         const activeChat = activeCharacter?.chats?.[activeCharacter.chatPage]
-        await evictHydratedChatCache({ chaId: activeCharacter?.chaId, chatId: activeChat?.id })
+        await evictHydratedChatCache([
+            { chaId: activeCharacter?.chaId, chatId: activeChat?.id },
+            ...chatsShownBesideSelection(get(splitChatOpen)),
+        ])
 
         if (newEtag) {
             forageStorage.setDbEtag(newEtag)

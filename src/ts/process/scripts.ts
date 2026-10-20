@@ -126,8 +126,12 @@ export async function processScriptFull(
 ){
     let db = getDatabase()
     let emoChanged = false
+    // A simple character stands for the one it was made from (by id: the
+    // selected one, or the bot the split's other pane draws).
     const targetCharacter:character = context?.character
-        ?? (char.type === 'simple' ? getCurrentCharacter() : char as character)
+        ?? (char.type === 'simple'
+            ? (db.characters.find((c) => c?.chaId === char.chaId) ?? getCurrentCharacter())
+            : char as character)
     const targetChat:Chat = context?.chat ?? targetCharacter?.chats?.[targetCharacter.chatPage] ?? getCurrentChat()
     const risuChatParser = (
         text:string,

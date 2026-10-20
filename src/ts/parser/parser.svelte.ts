@@ -1147,6 +1147,12 @@ export interface ParseMarkdownOptions {
      * chat message cannot reach getFileSrc or enqueue an inlay request.
      */
     resolveAssets?: boolean
+    /**
+     * The character and chat being drawn when that is not the selected chat
+     * (the split's other pane, chatPanes.svelte.ts): display regexes, Lua and
+     * triggers then run against them.
+     */
+    context?: import('../process/modules').ModuleRuntimeContext
 }
 
 function parseThoughtsAndTools(data:string){
@@ -1197,7 +1203,7 @@ export async function ParseMarkdown(
     }
 
     if(char){
-        data = (await processScriptFull(char, data, 'editdisplay', chatID, cbsConditions)).data
+        data = (await processScriptFull(char, data, 'editdisplay', chatID, cbsConditions, options.context)).data
     }
 
     if(firstParsed !== data && char && resolveAssets){
@@ -1759,7 +1765,7 @@ function blockStartMatcher(p1:string,matcherArg:matcherArg):{type:blockMatch,typ
                         break
                     }
                     case 'var':{
-                        const variable = getChatVar(condition)
+                        const variable = getChatVar(condition, matcherArg)
                         if(isTruthy(variable)){
                             statement.push('1')
                         }
@@ -1779,7 +1785,7 @@ function blockStartMatcher(p1:string,matcherArg:matcherArg):{type:blockMatch,typ
                         break
                     }
                     case 'vis':{ //vis = variable is
-                        const variable = getChatVar(statement.pop())
+                        const variable = getChatVar(statement.pop(), matcherArg)
                         if(variable === condition){
                             statement.push('1')
                         }
@@ -1789,7 +1795,7 @@ function blockStartMatcher(p1:string,matcherArg:matcherArg):{type:blockMatch,typ
                         break
                     }
                     case 'visnot':{ //visnot = variable is not
-                        const variable = getChatVar(statement.pop())
+                        const variable = getChatVar(statement.pop(), matcherArg)
                         if(variable !== condition){
                             statement.push('1')
                         }

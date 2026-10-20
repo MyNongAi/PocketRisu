@@ -11,10 +11,21 @@
     import { MobileGUI } from 'src/ts/stores.svelte'
     import { clampSplitWidth, getSplitWidthBounds, isEmbeddedRisuPane, SPLIT_DIVIDER_PX, splitChatOpen, splitChatWidth } from 'src/ts/chatSplitPane'
     import SecondaryChatPanel from './SecondaryChatPanel.svelte'
+    import { restorePanesAfterBoot, returnToMainPane } from 'src/ts/paneActivation'
+    import { startPaneSync } from 'src/ts/chatPanes.svelte'
 
     let { children }: { children: Snippet } = $props()
 
     const enabled = $derived($splitChatOpen && !$MobileGUI && !isEmbeddedRisuPane)
+    $effect(() => {
+        if (!enabled) returnToMainPane()
+    })
+    onMount(() => {
+        const stopSync = startPaneSync()
+        // After bootstrap's own restore of the last chat (100 ms after load).
+        const restore = setTimeout(() => { if (enabled) restorePanesAfterBoot() }, 400)
+        return () => { stopSync(); clearTimeout(restore) }
+    })
     let splitRoot: HTMLDivElement | null = $state(null)
     let stopSplitResize: (() => void) | null = null
 

@@ -180,6 +180,8 @@
         "src/lib/ChatScreens/SecondaryChatPanel.svelte",
         "src/lib/ChatScreens/ChatScreen.svelte",
         "src/lib/ChatScreens/SplitWorkspace.svelte",
+        "src/ts/chatPanes.svelte.ts",
+        "src/ts/paneActivation.ts",
         "src/lib/SideBars/SideChatList.svelte",
         "src/lib/SideBars/Sidebar.svelte"
       ],
@@ -190,20 +192,25 @@
         { "file": "src/ts/chatSplitPane.ts", "contains": "getSplitWidthBounds" },
         { "file": "src/ts/dragTypes.ts", "contains": "RISU_CHAT_ROOM_DRAG_TYPE" },
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "serializeChatRoomDragPayload" },
-        { "file": "src/lib/ChatScreens/SecondaryChatPanel.svelte", "contains": "getSecondaryRisuPaneUrl" },
+        { "file": "src/lib/ChatScreens/SecondaryChatPanel.svelte", "contains": "<ChatScreen pane=\"side\" />" },
+        { "file": "src/lib/ChatScreens/SecondaryChatPanel.svelte", "contains": "showInSidePane({ chaId: payload.characterId, chatId: payload.chatId })" },
+        { "file": "src/ts/paneActivation.ts", "contains": "export function activatePane(pane: PaneId): boolean {" },
+        { "file": "src/ts/chatPanes.svelte.ts", "contains": "export function chatsShownBesideSelection(splitOpen: boolean): PaneChatIds[] {" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "chatsShownBesideSelection(splitOpenNow.current)" },
+        { "file": "src/lib/ChatScreens/ChatScreen.svelte", "contains": "onpointerdowncapture={takeSelection} onfocusincapture={takeSelection}" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "const SPLIT_CLOSE_LABEL = '분할 채팅 닫기 (채팅 데이터는 삭제하지 않음)'" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{#if splitShownOpen}<PanelRightCloseIcon />{:else}<Columns2 />{/if}</BarIcon>" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "const splitShownOpen = $derived(isEmbeddedRisuPane || $splitChatOpen)" },
         { "file": "src/ts/chatSplitPane.ts", "contains": "export function pressSplitButton(): void {" },
         { "file": "src/ts/chatSplitPane.ts", "contains": "export function listenForSplitClose(pane: () => Window | null | undefined): () => void {" },
-        { "file": "src/lib/ChatScreens/SecondaryChatPanel.svelte", "contains": "$effect(() => listenForSplitClose(() => frame?.contentWindow))" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "<SecondaryChatPanel />" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "class:split-chat-contained={enabled}" },
         { "file": "src/App.svelte", "contains": "<SplitWorkspace>" }
       ],
       "regressionTests": [
         "src/ts/chatSplitPane.test.ts",
-        "src/ts/chatSplitPaneClose.test.ts"
+        "src/ts/chatSplitPaneClose.test.ts",
+        "src/ts/chatPanes.test.ts"
       ]
     },
     {
@@ -1794,7 +1801,7 @@
         "src/styles.css"
       ],
       "requiredMarkers": [
-        { "file": "src/lib/ChatScreens/ChatScreen.svelte", "contains": "use:hideFloatingBotControls={!!DBState.db.characters[$selectedCharID]?.nodeOnlyHideFloatingButtons}" },
+        { "file": "src/lib/ChatScreens/ChatScreen.svelte", "contains": "use:hideFloatingBotControls={!!view.character?.nodeOnlyHideFloatingButtons}" },
         { "file": "src/lib/ChatScreens/BackgroundDom.svelte", "contains": "data-pr-bot-background" },
         { "file": "src/lib/SideBars/Toggles.svelte", "contains": "<Help key=\"hideFloatingBotButtons\" />" },
         { "file": "src/styles.css", "contains": "[data-pr-float-hidden] {" }

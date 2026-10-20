@@ -7,7 +7,8 @@
     import { MorphedHtml } from "src/ts/gui/morphHtml"
     import { addMetadataToElement, getDistance, ParseMarkdown, postTranslationParse, resolveInlayPlaceholders, trimMarkdown, type CbsConditions, type simpleCharacterArgument } from "../../ts/parser/parser.svelte"
     import { getLLMCache, translateHTML } from "../../ts/translator/translator"
-    import { getModuleAssets, getModules } from "src/ts/process/modules";
+    import { captureModuleRuntimeContext, getModuleAssets, getModules } from "src/ts/process/modules";
+    import { getPaneView } from "src/ts/chatPanes.svelte";
     import { getCurrentCharacter } from "src/ts/storage/database.svelte";
     import { getFileSrc, resolvePrioritizedAssetManifestNames } from "src/ts/globalApi.svelte";
     import { get } from "svelte/store";
@@ -50,6 +51,12 @@
         resolveAssets = true,
         onRendered,
     }: Props =  $props()
+    // Display scripts run against the chat drawn (chatPanes.svelte.ts): in the
+    // split's other pane that is not the selected chat.
+    const view = getPaneView()
+    const paneRenderContext = () => untrack(() => view.active || !view.character || !view.chat
+        ? undefined
+        : captureModuleRuntimeContext(view.character, view.chat))
 
     // svelte-ignore non_reactive_update
     let lastParsed = ''
@@ -133,16 +140,16 @@
         if(DBState.db.translatorType === 'llm' && DBState.db.translateBeforeHTMLFormatting){
             await sleep(100)
             const translatedData = await translateHTML(request.data, false, request.charArg, request.chatID, request.retranslate)
-            const marked = await ParseMarkdown(translatedData, request.charArg, mode, request.chatID, getCbsCondition(), { resolveAssets })
+            const marked = await ParseMarkdown(translatedData, request.charArg, mode, request.chatID, getCbsCondition(), { resolveAssets, context: paneRenderContext() })
             transResult = marked
         }
         else if(!DBState.db.legacyTranslation){
-            const marked = await ParseMarkdown(request.data, request.charArg, 'pretranslate', request.chatID, getCbsCondition(), { resolveAssets })
+            const marked = await ParseMarkdown(request.data, request.charArg, 'pretranslate', request.chatID, getCbsCondition(), { resolveAssets, context: paneRenderContext() })
             const translated = await postTranslationParse(await translateHTML(marked, false, request.charArg, request.chatID, request.retranslate))
             transResult = translated
         }
         else{
-            const marked = await ParseMarkdown(request.data, request.charArg, mode, request.chatID, getCbsCondition(), { resolveAssets })
+            const marked = await ParseMarkdown(request.data, request.charArg, mode, request.chatID, getCbsCondition(), { resolveAssets, context: paneRenderContext() })
             const translated = await translateHTML(marked, false, request.charArg, request.chatID, request.retranslate)
             transResult = translated
         }
@@ -251,8 +258,8 @@
                             const cache = DBState.db.translateBeforeHTMLFormatting
                             ? await getLLMCache(data)
                             : !DBState.db.legacyTranslation
-                            ? await getLLMCache(await ParseMarkdown(data, charArg, 'pretranslate', chatID, getCbsCondition(), { resolveAssets }))
-                            : await getLLMCache(await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), { resolveAssets }))
+                            ? await getLLMCache(await ParseMarkdown(data, charArg, 'pretranslate', chatID, getCbsCondition(), { resolveAssets, context: paneRenderContext() }))
+                            : await getLLMCache(await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), { resolveAssets, context: paneRenderContext() }))
                   
                             translateText = cache !== null
                         }
@@ -302,7 +309,7 @@
                 return transResult
             }
             else{
-                const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), { resolveAssets })
+                const marked = await ParseMarkdown(data, charArg, mode, chatID, getCbsCondition(), { resolveAssets, context: paneRenderContext() })
                 lastParsedQueue = marked
                 lastCharArg = charArg
                 return marked

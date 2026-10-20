@@ -15,7 +15,7 @@
     import { DBState, ReloadChatPointer, CurrentTriggerIdStore, popupStore } from 'src/ts/stores.svelte'
 
     import { capitalize, getUserIcon, getUserName, sleep } from "src/ts/util"
-    import { onDestroy, onMount } from "svelte"
+    import { onDestroy, onMount, untrack } from "svelte"
     import { get, type Unsubscriber } from "svelte/store"
     import { v4 as uuidv4, v4 } from 'uuid'
     import { language } from "../../lang"
@@ -23,8 +23,8 @@
     import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from "../../ts/parser/parser.svelte"
     import { getLLMCache, setLLMCache } from "../../ts/translator/translator"
     import { getCurrentCharacter, getCurrentChat, setCurrentChat, type MessageGenerationInfo, type StreamingDisplayOptimizationMode } from "../../ts/storage/database.svelte"
-    import { selectedCharID } from "../../ts/stores.svelte"
-    import { HideIconStore, ReloadGUIPointer, selIdState } from "../../ts/stores.svelte"
+    import { HideIconStore, ReloadGUIPointer } from "../../ts/stores.svelte"
+    import { getPaneView } from "src/ts/chatPanes.svelte"
     import AutoresizeArea from "../UI/GUI/TextAreaResizable.svelte"
     import { isSendKey } from "src/ts/gui/sendKey"
     import { isMobile } from "src/ts/platform"
@@ -134,6 +134,13 @@
         onBodyRendered,
         placeholder = false,
     }: Props = $props();
+    // The pane this message is drawn in (chatPanes.svelte.ts): its chat, which
+    // in a split is not always the selected one.
+    const view = getPaneView()
+    /** Context for display scripts when this pane is not the selected chat. */
+    const paneRenderContext = () => untrack(() => view.active || !view.character || !view.chat
+        ? undefined
+        : captureModuleRuntimeContext(view.character, view.chat))
 
     let chatRoot:HTMLElement|null = $state(null)
     let viewportAssetVisible = $state(false)
@@ -226,7 +233,7 @@
     }
 
     async function rm(){
-        const messages = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message
+        const messages = DBState.db.characters[view.characterIndex].chats[view.chatIndex].message
         const cascadeCount = messages.length - idx
 
         const actions: AlertAction[] = [
@@ -240,7 +247,7 @@
         }
         const sel = await alertConfirmMulti(language.removeChat, actions)
         if(sel < 0) return
-        let msg = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message
+        let msg = DBState.db.characters[view.characterIndex].chats[view.chatIndex].message
         if(sel === 1){
             msg = msg.slice(0, idx)
             notifySuccess(language.messagesRemoved.replace('{}', cascadeCount.toString()))
@@ -249,20 +256,20 @@
             msg.splice(idx, 1)
             notifySuccess(language.messageRemoved)
         }
-        DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message = msg
+        DBState.db.characters[view.characterIndex].chats[view.chatIndex].message = msg
         retitleCurrentChat()
     }
 
     // The chat's title is always its last input (chatClone.ts): it follows
     // an input that is edited or deleted, as it does one that is sent.
     function retitleCurrentChat() {
-        const chara = DBState.db.characters[selIdState.selId]
+        const chara = DBState.db.characters[view.characterIndex]
         // A title the user typed stays (chatTitleState.ts).
-        if (chara && chatTitleState(chara, chara.chats[chara.chatPage]?.id) === 'auto') retitleChatFromLastInput(chara.chats, chara.chatPage)
+        if (chara && chatTitleState(chara, chara.chats[view.chatIndex]?.id) === 'auto') retitleChatFromLastInput(chara.chats, view.chatIndex)
     }
 
     async function edit(){
-        const msg = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx]
+        const msg = DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx]
         if (msg.role === 'user') recordInputEdit(msg, message)
         else msg.data = message
         if (msg.swipes && msg.swipeId !== undefined) {
@@ -286,8 +293,8 @@
 
     /** The user message echoed under this reply, found again by its key. */
     function echoTarget() {
-        const chara = DBState.db.characters[selIdState.selId]
-        const messages = chara?.chats?.[chara.chatPage]?.message ?? []
+        const chara = DBState.db.characters[view.characterIndex]
+        const messages = chara?.chats?.[view.chatIndex]?.message ?? []
         let index = previousInputIndex
         if (inputEchoKey(messages[index], index) !== previousInputKey) {
             index = messages.findIndex((candidate, i) => inputEchoKey(candidate, i) === previousInputKey)
@@ -306,31 +313,31 @@
     // swipes; the one this reply was requested with is marked.
     let echoMessage = $derived.by(() => {
         if (!showInputEcho) return null
-        const chara = DBState.db.characters[selIdState.selId]
-        const candidate = chara?.chats?.[chara.chatPage]?.message?.[previousInputIndex]
+        const chara = DBState.db.characters[view.characterIndex]
+        const candidate = chara?.chats?.[view.chatIndex]?.message?.[previousInputIndex]
         return candidate?.role === 'user' ? candidate : null
     })
     let echoVersionCount = $derived(echoMessage?.nodeOnlyInputVersions?.length ?? 0)
     let echoVersionIndex = $derived(inputVersionIndex(echoMessage))
     let echoIsRequestInput = $derived.by(() => {
         if (echoVersionCount < 2) return false
-        const chara = DBState.db.characters[selIdState.selId]
-        const reply = chara?.chats?.[chara.chatPage]?.message?.[idx]
+        const chara = DBState.db.characters[view.characterIndex]
+        const reply = chara?.chats?.[view.chatIndex]?.message?.[idx]
         return isRequestInput(reply, echoShown)
     })
 
     // 🎨 in the message menu (illustrationRun.ts).
     let illustrationMessage = $derived.by(() => {
         if (role !== 'char' || idx < 0) return null
-        const chara = DBState.db.characters[selIdState.selId]
-        return chara?.chats?.[chara.chatPage]?.message?.[idx] ?? null
+        const chara = DBState.db.characters[view.characterIndex]
+        return chara?.chats?.[view.chatIndex]?.message?.[idx] ?? null
     })
     let hasIllustrations = $derived(Object.keys(illustrationMessage?.nodeOnlyIllustrations ?? {}).length > 0)
     let illustrationBusy = $derived(!!illustrationMessage?.chatId && $illustratingReplies.has(illustrationMessage.chatId))
 
     function drawIllustrations() {
-        const chara = DBState.db.characters[selIdState.selId]
-        const chat = chara?.chats?.[chara.chatPage]
+        const chara = DBState.db.characters[view.characterIndex]
+        const chat = chara?.chats?.[view.chatIndex]
         const message = chat?.message?.[idx]
         if (!chara || !chat || !message || message.role !== 'char') return
         message.chatId ??= v4()
@@ -342,8 +349,8 @@
     // swipe arrows (the user's request, 2026-10-19).
     let ownInputMessage = $derived.by(() => {
         if (role !== 'user' || idx < 0 || placeholder) return null
-        const chara = DBState.db.characters[selIdState.selId]
-        return chara?.chats?.[chara.chatPage]?.message?.[idx] ?? null
+        const chara = DBState.db.characters[view.characterIndex]
+        return chara?.chats?.[view.chatIndex]?.message?.[idx] ?? null
     })
     let ownVersionCount = $derived(ownInputMessage?.nodeOnlyInputVersions?.length ?? 0)
     let ownVersionIndex = $derived(inputVersionIndex(ownInputMessage))
@@ -446,7 +453,7 @@
         }
 
         message = e.detail.newData
-        const msg = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx]
+        const msg = DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx]
         if (msg.role === 'user') recordInputEdit(msg, e.detail.newData)
         else msg.data = e.detail.newData
         if (msg.swipes && msg.swipeId !== undefined) {
@@ -483,7 +490,7 @@
         try{
             const cbsConditions:CbsConditions = {
                 firstmsg: firstMessage ?? false,
-                chatRole: DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage]?.message?.[idx]?.role ?? null,
+                chatRole: DBState.db.characters[view.characterIndex].chats[view.chatIndex]?.message?.[idx]?.role ?? null,
             }
             return cbsConditions
         }
@@ -500,9 +507,9 @@
             return msgDisplay
         }
         if(!DBState.db.legacyTranslation){
-            return await ParseMarkdown(msgDisplay, character, 'pretranslate', idx, getCbsCondition(), { resolveAssets: effectiveResolveChatAssets })
+            return await ParseMarkdown(msgDisplay, character, 'pretranslate', idx, getCbsCondition(), { resolveAssets: effectiveResolveChatAssets, context: paneRenderContext() })
         }
-        return await ParseMarkdown(msgDisplay, character, 'notrim', idx, getCbsCondition(), { resolveAssets: effectiveResolveChatAssets })
+        return await ParseMarkdown(msgDisplay, character, 'notrim', idx, getCbsCondition(), { resolveAssets: effectiveResolveChatAssets, context: paneRenderContext() })
     }
 
     async function loadTranslationForEdit() {
@@ -532,7 +539,8 @@
     }
 
     function displaya(message:string){
-        msgDisplay = risuChatParser(message, {chara: name, chatID: idx, rmVar: true, visualize: true, cbsConditions: getCbsCondition()})
+        // The chat drawn: its variables, also in the split's other pane.
+        msgDisplay = risuChatParser(message, {chara: name, chat: untrack(() => view.chat), chatID: idx, rmVar: true, visualize: true, cbsConditions: getCbsCondition()})
     }
 
     const setStatusMessage = (message:string, timeout:number = 0)=>{
@@ -658,13 +666,13 @@
     }
 
     let isBookmarked = $derived(
-        DBState.db.characters[selIdState.selId]
-            ?.chats[DBState.db.characters[selIdState.selId].chatPage]
-            ?.bookmarks?.includes(DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx]?.chatId) ?? false
+        DBState.db.characters[view.characterIndex]
+            ?.chats[view.chatIndex]
+            ?.bookmarks?.includes(DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx]?.chatId) ?? false
     );
 
     async function toggleBookmark() {
-        const chat = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage];
+        const chat = DBState.db.characters[view.characterIndex].chats[view.chatIndex];
         
         if(!chat.message[idx]) return;
 
@@ -723,7 +731,7 @@
                     hover:ring-darkbutton hover:ring-3 rounded-md hover:text-textcolor transition-all flex justify-center items-center" 
                     onclick={() => {
                         const currentGenerationInfo = idx >= 0 && !placeholder ? 
-                            DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].message[idx].generationInfo :
+                            DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx].generationInfo :
                             messageGenerationInfo
 
                         alertRequestData({
@@ -938,13 +946,13 @@
                 {@render translationButton()}
                 {#if wide640.current}
                     {@render majorIconButtonsBody(false)}
-                    {#if DBState.db.characters[selIdState.selId] && idx > -1}
+                    {#if DBState.db.characters[view.characterIndex] && idx > -1}
                         <PopupButton>
                             {@render minorIconButtonsBody(true)}
                         </PopupButton>
                     {/if}
                 {:else}
-                    {#if DBState.db.characters[selIdState.selId] && idx > -1}
+                    {#if DBState.db.characters[view.characterIndex] && idx > -1}
                         <PopupButton>
                             {@render majorIconButtonsBody(true)}
                             {@render minorIconButtonsBody(true)}
@@ -956,7 +964,7 @@
                 {#if firstMessage}
                     <button class={"flex items-center shrink-0 transition-colors " + (disabled === true ? 'text-red-500 hover:text-red-400' : 'hover:text-primary')} onclick={async () => {
                         await sleep(1)
-                        const chat = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage]
+                        const chat = DBState.db.characters[view.characterIndex].chats[view.chatIndex]
                         if(chat.firstMessageDisabled){
                             chat.firstMessageDisabled = false
                         } else if(await alertConfirm(language.disableFirstMessageConfirm)){
@@ -1117,7 +1125,7 @@
     </button>    
 {/if}
 {#if idx > -1}
-    {#if DBState.db.characters[selIdState.selId].ttsMode !== 'none' && (DBState.db.characters[selIdState.selId].ttsMode)}
+    {#if DBState.db.characters[view.characterIndex].ttsMode !== 'none' && (DBState.db.characters[view.characterIndex].ttsMode)}
         <button class="flex items-center hover:text-primary transition-colors button-icon-tts" onclick={async () => {
             await sleep(1)
             return sayTTS(null, isOptimizedStreamingMessage ? rawStreamingText : message)
@@ -1248,7 +1256,7 @@
 
 {#snippet minorIconButtonsBody(showNames:boolean)}
     {#if idx > -1}
-    {#if role === 'char' && !placeholder && DBState.db.characters[selIdState.selId]?.nodeOnlyIllustration?.enabled}
+    {#if role === 'char' && !placeholder && DBState.db.characters[view.characterIndex]?.nodeOnlyIllustration?.enabled}
         <!-- 🎨 Draw this reply's illustrations, or draw them again (illustration.ts). -->
         <button class="flex items-center hover:text-primary transition-colors button-icon-illustration" disabled={illustrationBusy} onclick={async () => {
             await sleep(1)
@@ -1297,12 +1305,12 @@
 
     <button class="flex items-center hover:text-primary transition-colors" onclick={async () => {
         await sleep(1)
-        const currentChat = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage]
+        const currentChat = DBState.db.characters[view.characterIndex].chats[view.chatIndex]
 
         if(DBState.db.createFolderOnBranch && !currentChat.folderId){
             const folderId = v4()
-            DBState.db.characters[selIdState.selId].chatFolders ??= []
-            DBState.db.characters[selIdState.selId].chatFolders.unshift({
+            DBState.db.characters[view.characterIndex].chatFolders ??= []
+            DBState.db.characters[view.characterIndex].chatFolders.unshift({
                 id: folderId,
                 name: `Branches of ${currentChat.name}`,
                 folded: false,
@@ -1325,7 +1333,7 @@
             chatId: v4(),
         })
 
-        DBState.db.characters[selIdState.selId].chats.unshift(newChat)
+        DBState.db.characters[view.characterIndex].chats.unshift(newChat)
         changeChatTo(0)
     }}>
         <SplitIcon size={20}/>
@@ -1336,8 +1344,8 @@
 
     <button class="flex items-center hover:text-primary transition-colors" onclick={async () => {
         await sleep(1)
-        const currentMessage = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx]
-        DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].disabled = !currentMessage.disabled
+        const currentMessage = DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx]
+        DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx].disabled = !currentMessage.disabled
     }}>
         <PowerOff size={20}/>
         {#if showNames}
@@ -1347,8 +1355,8 @@
 
     <button class="flex items-center hover:text-primary transition-colors" onclick={async () => {
         await sleep(1)
-        const currentMessage = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx]
-        DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].disabled = currentMessage.disabled === 'allBefore' ? false : 'allBefore'
+        const currentMessage = DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx]
+        DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx].disabled = currentMessage.disabled === 'allBefore' ? false : 'allBefore'
     }}>
         <Scissors size={20}/>
         {#if showNames}
@@ -1360,7 +1368,7 @@
 
 {#snippet senderIcon(options:{rounded?:boolean,styleFix?:string} = {})}
     {#if !blankMessage && !$HideIconStore}
-        {#if DBState.db.characters[selIdState.selId]?.chaId === "§playground"}
+        {#if DBState.db.characters[view.characterIndex]?.chaId === "§playground"}
         <div data-log-avatar class="shadow-lg border-textcolor2 border flex justify-center items-center text-textcolor2" style={options?.styleFix ?? `height:${DBState.db.iconsize * 3.5 / 100}rem;width:${DBState.db.iconsize * 3.5 / 100}rem;min-width:${DBState.db.iconsize * 3.5 / 100}rem`}
             class:rounded-md={options?.rounded} class:rounded-full={options?.rounded}>
                 {#if name === 'assistant'}
@@ -1538,7 +1546,7 @@
 <div class="flex max-w-full justify-center risu-chat"
      bind:this={chatRoot}
      data-chat-index={idx}
-     data-chat-id={DBState.db.characters?.[selIdState.selId]?.chats?.[DBState.db.characters?.[selIdState.selId]?.chatPage]?.message?.[idx]?.chatId ?? ''}
+     data-chat-id={DBState.db.characters?.[view.characterIndex]?.chats?.[view.chatIndex]?.message?.[idx]?.chatId ?? ''}
      data-log-mark={logCaptureMark ?? undefined}
      style={isLastMemory ? `border-top:${DBState.db.memoryLimitThickness}px solid rgba(98, 114, 164, 0.7);` : ''}
      onclickcapture={handleButtonTriggerWithin}>
@@ -1557,11 +1565,11 @@
                     {@render senderIcon({rounded: DBState.db.roundIcons})}
                 <div class="flex min-w-0 flex-1 flex-col">
                 <div class="flex items-center gap-3">
-                    {#if DBState.db.characters[selIdState.selId]?.chaId === "§playground" && DBState.db.characters[selIdState.selId]?.chats?.[DBState.db.characters[selIdState.selId]?.chatPage]?.message?.[idx]}
+                    {#if DBState.db.characters[view.characterIndex]?.chaId === "§playground" && DBState.db.characters[view.characterIndex]?.chats?.[view.chatIndex]?.message?.[idx]}
                         <span class="text-lg sm:text-xl text-textcolor flex items-center min-w-0">
-                            <span>{DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].role === 'char' ? 'Assistant' : 'User'}</span>
+                            <span>{DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx].role === 'char' ? 'Assistant' : 'User'}</span>
                             <button class="ml-2 text-textcolor2 hover:text-textcolor" onclick={() => {
-                                DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].role = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].role === 'char' ? 'user' : 'char'
+                                DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx].role = DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx].role === 'char' ? 'user' : 'char'
                                 ReloadChatPointer.update((v) => {
                                     v[idx] = (v[idx] ?? 0) + 1
                                     return v
@@ -1615,7 +1623,7 @@
 <div class="flex max-w-full justify-center risu-chat"
      bind:this={chatRoot}
      data-chat-index={idx}
-     data-chat-id={DBState.db.characters?.[selIdState.selId]?.chats?.[DBState.db.characters?.[selIdState.selId]?.chatPage]?.message?.[idx]?.chatId ?? ''}
+     data-chat-id={DBState.db.characters?.[view.characterIndex]?.chats?.[view.chatIndex]?.message?.[idx]?.chatId ?? ''}
      data-log-mark={logCaptureMark ?? undefined}
      style={isLastMemory ? `border-top:${DBState.db.memoryLimitThickness}px solid rgba(98, 114, 164, 0.7);` : ''}
      onclickcapture={handleButtonTriggerWithin}>
@@ -1631,7 +1639,7 @@
                     class:rounded-tr-none={role === 'user'}
                 >
                     <p class="text-gray-800">{@render textBox()}</p>
-                    {#if DBState.db.characters?.[selIdState.selId]?.chats?.[DBState.db.characters?.[selIdState.selId]?.chatPage]?.message?.[idx]?.time}
+                    {#if DBState.db.characters?.[view.characterIndex]?.chats?.[view.chatIndex]?.message?.[idx]?.time}
                         <span class="text-xs text-textcolor2 mt-1 block">
                             {new Intl.DateTimeFormat(undefined, {
                                 hour: '2-digit',
@@ -1640,7 +1648,7 @@
                                 month: '2-digit',
                                 day: '2-digit',
                                 hour12: false
-                            }).format(DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].time)}
+                            }).format(DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx].time)}
                         </span>
                     {/if}
                 </div>
@@ -1678,11 +1686,11 @@
             {@render senderIcon({rounded: DBState.db.roundIcons})}
             <span class="flex flex-col ml-4 w-full max-w-full min-w-0 text-black">
                 <div class="flexium items-center chat-width">
-                    {#if DBState.db.characters[selIdState.selId]?.chaId === "§playground" && !blankMessage && DBState.db.characters[selIdState.selId]?.chats?.[DBState.db.characters[selIdState.selId]?.chatPage]?.message?.[idx]}
+                    {#if DBState.db.characters[view.characterIndex]?.chaId === "§playground" && !blankMessage && DBState.db.characters[view.characterIndex]?.chats?.[view.chatIndex]?.message?.[idx]}
                         <span class="chat-width text-xl border-darkborderc flex items-center text-textcolor">
-                            <span>{DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].role === 'char' ? 'Assistant' : 'User'}</span>
+                            <span>{DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx].role === 'char' ? 'Assistant' : 'User'}</span>
                             <button class="ml-2 text-textcolor2 hover:text-textcolor" onclick={() => {
-                                DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].role = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].role === 'char' ? 'user' : 'char'
+                                DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx].role = DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx].role === 'char' ? 'user' : 'char'
                                 ReloadChatPointer.update((v) => {
                                     v[idx] = (v[idx] ?? 0) + 1
                                     return v
@@ -1703,11 +1711,11 @@
             {@render senderIcon({rounded: DBState.db.roundIcons})}
             <span class="flex flex-col ml-4 w-full max-w-full min-w-0 text-black">
                 <div class="flexium items-center chat-width">
-                    {#if DBState.db.characters[selIdState.selId]?.chaId === "§playground" && !blankMessage && DBState.db.characters[selIdState.selId]?.chats?.[DBState.db.characters[selIdState.selId]?.chatPage]?.message?.[idx]}
+                    {#if DBState.db.characters[view.characterIndex]?.chaId === "§playground" && !blankMessage && DBState.db.characters[view.characterIndex]?.chats?.[view.chatIndex]?.message?.[idx]}
                         <span class="chat-width text-xl border-darkborderc flex items-center text-textcolor">
-                            <span>{DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].role === 'char' ? 'Assistant' : 'User'}</span>
+                            <span>{DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx].role === 'char' ? 'Assistant' : 'User'}</span>
                             <button class="ml-2 text-textcolor2 hover:text-textcolor" onclick={() => {
-                                DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].role = DBState.db.characters[selIdState.selId].chats[DBState.db.characters[selIdState.selId].chatPage].message[idx].role === 'char' ? 'user' : 'char'
+                                DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx].role = DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx].role === 'char' ? 'user' : 'char'
                                 ReloadChatPointer.update((v) => {
                                     v[idx] = (v[idx] ?? 0) + 1
                                     return v

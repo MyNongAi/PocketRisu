@@ -2,25 +2,24 @@
     import type { character, Message, StreamingDisplayOptimizationMode } from 'src/ts/storage/database.svelte';
     import { hasBrowsableSwipes } from 'src/ts/chatSwipes';
     import { inputEchoKey, previousInputIndex } from 'src/ts/gui/inputEcho';
-    import { mount, onDestroy, tick, unmount } from 'svelte';
+    import { getAllContexts, mount, onDestroy, tick, unmount } from 'svelte';
+    import { getPaneView } from 'src/ts/chatPanes.svelte';
+    import { get } from 'svelte/store';
     import Chat from './Chat.svelte';
     import { getCharImage } from 'src/ts/characters';
-    import { createSimpleCharacter, DBState, selectedCharID, ReloadChatPointer } from 'src/ts/stores.svelte';
+    import { createSimpleCharacter, DBState, ReloadChatPointer } from 'src/ts/stores.svelte';
     import { chatFoldedStateMessageIndex } from 'src/ts/globalApi.svelte';
-    import { get } from 'svelte/store';
     import { getChatAssetRenderWindow } from '../../ts/chatAssetWindow';
     import { isAtTail, revealScrollTop, shouldFollowTail, shouldRevealAddedMessage } from './chatViewport';
     import { chatGenKey, isChatGenerating } from 'src/ts/process/generationState';
     import { rerollPlaceholderPages, rerollPlaceholderShows, rerollPlaceholders, stepRerollPlaceholderSwipe } from 'src/ts/gui/rerollPlaceholder';
     import { SWIPE_ROW_BUTTONS, buttonRows, rowAt, rowFromBottom } from 'src/ts/gui/swipeAnchor';
     
-    const getCurrentChatRoomId = () => {
-        const charId = get(selectedCharID);
-        if (charId < 0) return null;
-        const char = DBState.db.characters[charId];
-        if (!char) return null;
-        return char.chats?.[char.chatPage]?.id ?? null;
-    };
+    // The pane this list draws (chatPanes.svelte.ts). Messages are mounted
+    // by hand below; they get this component's context so they know it too.
+    const view = getPaneView();
+    const chatContexts = getAllContexts();
+    const getCurrentChatRoomId = () => view.chat?.id ?? null;
 
     let {
         messages,
@@ -122,7 +121,7 @@
         const simpleChar = createSimpleCharacter(currentCharacter);
         let loadStart = messages.length - 1
         let loadEnd = messages.length - loadPages
-        const currentChat = currentCharacter.chats?.[currentCharacter.chatPage]
+        const currentChat = currentCharacter.chats?.[view.chatIndex]
         const configuredPerformanceMode = DBState.db.streamingDisplayOptimizationMode ?? 'off';
         const performanceMode = currentChat?.isStreaming
             ? currentChat.activeStreamingDisplayOptimizationMode ?? configuredPerformanceMode
@@ -150,7 +149,8 @@
             lastRealCharIdx = lastNonDisabledIdx;
         }
 
-        if(chatFoldedStateMessageIndex.index !== -1){
+        // The folded view belongs to the selected chat (the active pane).
+        if(view.active && chatFoldedStateMessageIndex.index !== -1){
             loadStart = chatFoldedStateMessageIndex.index
             loadEnd = Math.max(0, chatFoldedStateMessageIndex.index - loadPages)
         }
@@ -181,6 +181,7 @@
                 const browsable = pages.total > 1
                 const inst = mount(Chat, {
                     target: b,
+                    context: chatContexts,
                     props: {
                         message: message.data,
                         messageKey: '',
@@ -257,6 +258,7 @@
                 const hold = { rendered: false, release: () => {} };
                 const inst = mount(Chat, {
                     target: b,
+                    context: chatContexts,
                     props: {
                         message: message.data,
                         messageKey: inputEchoKey(message, i),
@@ -417,7 +419,7 @@
 
     /** A reply is being written into this chat right now. */
     function generatingHere(): boolean {
-        const chat = currentCharacter?.chats?.[currentCharacter.chatPage]
+        const chat = currentCharacter?.chats?.[view.chatIndex]
         return !!chat?.isStreaming || isChatGenerating(chatGenKey(chat?.id))
     }
     // The message at the top of the view and how far its top sits from the

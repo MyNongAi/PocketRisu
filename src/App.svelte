@@ -74,7 +74,8 @@
     const getMainDropEffect = (e:DragEvent): DataTransfer['dropEffect'] => {
         const types = Array.from(e.dataTransfer?.types ?? [])
         if(types.includes(RISU_CHAT_ROOM_DRAG_TYPE)){
-            return isEmbeddedRisuPane ? 'copy' : 'none'
+            // The split's right pane takes a chat (SecondaryChatPanel).
+            return isEmbeddedRisuPane || (e.target as Element | null)?.closest?.('[data-chat-pane="side"]') ? 'copy' : 'none'
         }
         if(types.includes(RISU_SIDEBAR_DRAG_TYPE)){
             return 'none'

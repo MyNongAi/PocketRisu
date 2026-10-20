@@ -1172,6 +1172,7 @@ export const languageEnglish = {
     moduleAutoForBot: "On by itself in this bot's chats: it is this bot's own module. Clicking turns it on globally, in every chat.",
     moduleBotLink: "Link to the open bot ({})",
     pairFindModule: "Find its modules",
+    splitPaneEmpty: "Tap here, then pick a bot or chat in the sidebar, or drag a chat from the chat list here",
     pairFindBot: "Find its bots",
     pairFindWhichModule: "Which module?",
     pairFindWhichBot: "Which bot?",

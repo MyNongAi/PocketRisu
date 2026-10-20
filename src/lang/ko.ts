@@ -1266,6 +1266,7 @@ export const languageKorean = {
   moduleAutoForBot: "이 봇 전용 모듈이라 이 봇 채팅에서 자동으로 켜져 있어요. 누르면 모든 채팅에서 켜는 글로벌 활성화가 돼요.",
   moduleBotLink: "지금 보는 봇({})에 연결",
   pairFindModule: "연결된 모듈 찾기",
+  splitPaneEmpty: "이 칸을 누른 뒤 사이드바에서 봇이나 채팅을 고르거나, 채팅 목록의 채팅을 여기로 끌어다 놓으세요",
   pairFindBot: "연결된 봇 찾기",
   pairFindWhichModule: "어느 모듈로 갈까요?",
   pairFindWhichBot: "어느 봇으로 갈까요?",
