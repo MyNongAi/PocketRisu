@@ -69,11 +69,38 @@ export const paneState = $state({
     held: { main: readIds(MAIN_KEY), side: readIds(SIDE_KEY) } as Record<PaneId, PaneChatIds | null>,
 })
 
+const TOGGLES_KEY = 'pocketrisu:split-chat:toggles'
+
+function readToggles(): Record<string, Record<string, string>> {
+    try {
+        const value = JSON.parse(localStorage.getItem(TOGGLES_KEY) ?? 'null')
+        return value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+    } catch {
+        return {}
+    }
+}
+
+/**
+ * Each pane's toggle values by chat id (the user's request, 2026-10-21: a
+ * toggle switched in one pane changed the other). Toggles are app-wide state;
+ * the pane that hands the selection over keeps its values here, and gets
+ * them back when touched again; the other pane draws with them meanwhile
+ * (getGlobalChatVar's scope). Kept apart from a chat's own pin
+ * (savedToggleValues), which stays the user's to set.
+ */
+export const paneToggles = $state<Record<string, Record<string, string>>>(readToggles())
+
 export function persistPanes(): void {
     writeIds(MAIN_KEY, paneState.held.main)
     writeIds(SIDE_KEY, paneState.held.side)
+    // Only the chats the panes hold.
+    const held = new Set([paneState.held.main?.chatId, paneState.held.side?.chatId].filter(Boolean))
+    for (const chatId of Object.keys(paneToggles)) {
+        if (!held.has(chatId)) delete paneToggles[chatId]
+    }
     try {
         localStorage.setItem(ACTIVE_KEY, paneState.active)
+        localStorage.setItem(TOGGLES_KEY, JSON.stringify(paneToggles))
     } catch {
         // best effort
     }

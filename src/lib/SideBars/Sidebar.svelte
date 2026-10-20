@@ -3,6 +3,7 @@
     import {
     CharEmotion,
     DynamicGUI,
+    MobileGUI,
     botMakerMode,
     selectedCharID,
     settingsOpen,
@@ -77,7 +78,9 @@
     import { v4 } from "uuid";
     import { onMount, untrack } from "svelte";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
-    import { paneState } from "src/ts/chatPanes.svelte";
+    import { getPaneView, paneState, paneView, setPaneContext, type PaneId } from "src/ts/chatPanes.svelte";
+    import { activatePane } from "src/ts/paneActivation";
+    import { paneWord, setPanePanelOpen, splitLayout, type PanelTab } from "src/ts/splitLayout.svelte";
     import { alertConfirm, alertSelect } from "src/ts/alert";
     import { characterMenuInfo } from "src/ts/gui/sidebarMenuInfo";
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
@@ -107,12 +110,17 @@
     import { scrollWithinContainer } from "../ChatScreens/scrollWithin";
 
   let sideBarMode = $state(0);
-  let hasEditableCharacter = $derived(
-    $selectedCharID >= 0
-      && DBState.db.characters[$selectedCharID]?.chaId !== '§playground'
+  let hasEditableCharacter = $derived.by(() =>
+    view.characterIndex >= 0
+      && view.character?.chaId !== '§playground'
   )
-  let quickSettingsVisible = $derived(
-    QuickSettings.open
+  // The panel's tab: the app's (botMakerMode, QuickSettings) while its pane
+  // holds the selection, the one its pane kept otherwise (paneActivation.ts).
+  let panelTab = $derived.by((): PanelTab => view.active
+    ? (QuickSettings.open ? 'module' : $botMakerMode ? 'character' : 'chat')
+    : splitLayout.tab[view.pane])
+  let quickSettingsVisible = $derived.by(() =>
+    panelTab === 'module'
       && sideBarMode === 0
   )
   let editMode = $state(false);
@@ -378,9 +386,22 @@
   interface Props {
     hidden?: boolean;
     openLegacyGrid?: () => void;
+    /**
+     * The docked split (SplitWorkspace) places the two halves apart: the bot
+     * list ('rail') once, and each pane's character panel ('panel') beside it.
+     */
+    part?: 'all' | 'rail' | 'panel';
+    /** The pane a 'panel' belongs to. */
+    pane?: PaneId;
   }
 
-  let { hidden = false, openLegacyGrid = () => {} }: Props = $props();
+  let { hidden = false, openLegacyGrid = () => {}, part = 'all', pane }: Props = $props();
+  // svelte-ignore state_referenced_locally
+  const view = pane ? paneView(pane) : getPaneView()
+  // svelte-ignore state_referenced_locally
+  if (pane) setPaneContext(view)
+  // Touching a pane's panel hands that pane the selection before the touch acts.
+  const takePaneSelection = () => { if (pane) activatePane(pane) }
 
   onMount(() => {
     initSupport()
@@ -605,6 +626,16 @@
     folderSettingsTarget.set(folderId)
   }
 
+  // In the split: open a bot in either pane (the user's request, 2026-10-21).
+  // The pane takes the selection first, so the bot opens there.
+  function openInPaneActions(open: () => unknown): Array<[string, () => unknown]> {
+    if (!$splitChatOpen || isEmbeddedRisuPane || $MobileGUI) return []
+    return (['main', 'side'] as const).map((target) => [
+      language.splitOpenInPane(paneWord(target)),
+      () => { activatePane(target); return open() },
+    ])
+  }
+
   async function editSidebarCharacter(characterIndex:number, e:MouseEvent){
     e.preventDefault()
     e.stopPropagation()
@@ -613,6 +644,7 @@
     // The Proton link the card was downloaded from, to fetch it again if it breaks.
     const protonLink = protonLinkOf(character)
     const actions: Array<[string, () => unknown]> = [
+      ...openInPaneActions(() => changeChar(characterIndex, { reseter: botSwitchReseter })),
       ['봇 설정 수정', () => {
         changeChar(characterIndex, { reseter })
         botMakerMode.set(true)
@@ -641,6 +673,7 @@
     const stub = findArchivedStub(chaId)
     if(!stub) return
     const actions: Array<[string, () => unknown]> = [
+      ...openInPaneActions(() => promptActivateCharacter(chaId, { reseter: botSwitchReseter })),
       [language.deactivatedMenuOpen, () => promptActivateCharacter(chaId, { reseter: botSwitchReseter })],
       [language.remove, async () => {
         if(await alertConfirm(language.moveToTrashConfirm + (stub.name || 'Unnamed'))) trashDeactivatedCharacter(chaId)
@@ -1519,6 +1552,7 @@
   {/if}
 {/snippet}
 
+{#if part !== 'panel'}
 {#if DBState.db.menuSideBar}
 <div
   class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
@@ -2129,20 +2163,27 @@
   {/if}
 </div>
 {/if}
+{/if}
+{#if part !== 'rail'}
 <div
+  data-pane-panel={pane}
+  onpointerdowncapture={takePaneSelection}
+  onfocusincapture={takePaneSelection}
   class="setting-area h-full max-xs:relative flex-col overflow-x-hidden bg-darkbg py-6 text-textcolor max-h-full"
   class:overflow-y-auto={!quickSettingsVisible}
   class:overflow-y-hidden={quickSettingsVisible}
-  class:risu-sidebar={!$sideBarClosing}
-  class:w-96={$sideBarSize === 0}
-  class:w-110={$sideBarSize === 1}
-  class:w-124={$sideBarSize === 2}
-  class:w-138={$sideBarSize === 3}
-  class:risu-sidebar-close={$sideBarClosing}
-  class:min-w-96={!$DynamicGUI && $sideBarSize === 0}
-  class:min-w-110={!$DynamicGUI && $sideBarSize === 1}
-  class:min-w-124={!$DynamicGUI && $sideBarSize === 2}
-  class:min-w-138={!$DynamicGUI && $sideBarSize === 3}
+  class:risu-sidebar={!$sideBarClosing && !pane}
+  class:w-96={!pane && $sideBarSize === 0}
+  class:w-110={!pane && $sideBarSize === 1}
+  class:w-124={!pane && $sideBarSize === 2}
+  class:w-138={!pane && $sideBarSize === 3}
+  class:risu-sidebar-close={$sideBarClosing && !pane}
+  class:min-w-96={!pane && !$DynamicGUI && $sideBarSize === 0}
+  class:min-w-110={!pane && !$DynamicGUI && $sideBarSize === 1}
+  class:min-w-124={!pane && !$DynamicGUI && $sideBarSize === 2}
+  class:min-w-138={!pane && !$DynamicGUI && $sideBarSize === 3}
+  class:w-80={!!pane}
+  class:min-w-80={!!pane}
   class:px-2={$DynamicGUI}
   class:px-4={!$DynamicGUI}
   class:dynamic-sidebar={$DynamicGUI}
@@ -2161,6 +2202,7 @@
       if($sideBarClosing){
         return
       }
+      if (pane) { setPanePanelOpen(pane, false); return }
       $sideBarClosing = true;
     }}
   >
@@ -2185,22 +2227,22 @@
         type="button"
         onclick={openChatTab}
         class="grow border-r border-r-selected rounded-bl-md"
-        class:text-textcolor2={QuickSettings.open || $botMakerMode || devTool}
-        aria-pressed={!QuickSettings.open && !$botMakerMode && !devTool}
+        class:text-textcolor2={panelTab === 'module' || panelTab === 'character' || devTool}
+        aria-pressed={panelTab === 'chat' && !devTool}
       >{language.Chat}</button>
       <button
         type="button"
         onclick={openCharacterTab}
         class="grow border-r border-r-selected"
-        class:text-textcolor2={QuickSettings.open || !$botMakerMode || devTool}
-        aria-pressed={!QuickSettings.open && $botMakerMode && !devTool}
+        class:text-textcolor2={panelTab !== 'character' || devTool}
+        aria-pressed={panelTab === 'character' && !devTool}
       >{language.character}</button>
       <button
         type="button"
         onclick={openModuleTab}
         class="grow rounded-br-md"
-        class:text-textcolor2={!QuickSettings.open || (hasEditableCharacter && QuickSettings.index !== 2)}
-        aria-pressed={QuickSettings.open && (!hasEditableCharacter || QuickSettings.index === 2)}
+        class:text-textcolor2={panelTab !== 'module' || (hasEditableCharacter && QuickSettings.index !== 2)}
+        aria-pressed={panelTab === 'module' && (!hasEditableCharacter || QuickSettings.index === 2)}
       >{language.module}</button>
       {#if DBState.db.enableDevTools}
         <button
@@ -2210,17 +2252,17 @@
             devTool = true
           }}
           class="border-l border-l-selected rounded-br-md px-1"
-          class:text-textcolor2={!devTool || QuickSettings.open}
+          class:text-textcolor2={!devTool || panelTab === 'module'}
           aria-label="Developer tools"
-          aria-pressed={devTool && !QuickSettings.open}
+          aria-pressed={devTool && panelTab !== 'module'}
         >
           <WrenchIcon size={18} />
         </button>
       {/if}
     </div>
-    {#if QuickSettings.open}
+    {#if panelTab === 'module'}
       <LazyComponent loader={loadQuickSettings} />
-    {:else if $selectedCharID < 0 || $settingsOpen}
+    {:else if view.characterIndex < 0 || ($settingsOpen && !pane)}
       <span class="block text-base font-semibold text-textcolor mt-2">{language.recentChatsTitle}</span>
       {#if DBState.db.nodeOnlyHideRecentChats}
         <!-- list hidden by user preference -->
@@ -2273,21 +2315,22 @@
           {/if}
         </div>
       {/if}
-    {:else if DBState.db.characters[$selectedCharID]?.chaId === '§playground'}
-      <LazyComponent loader={loadSideChatList} props={{ chara: DBState.db.characters[$selectedCharID] }} />
+    {:else if view.character?.chaId === '§playground'}
+      <LazyComponent loader={loadSideChatList} props={{ chara: view.character }} />
     {:else}
       {#if devTool}
         <LazyComponent loader={loadDevTool} />
-      {:else if $botMakerMode}
+      {:else if panelTab === 'character'}
         <LazyComponent loader={loadCharConfig} />
       {:else}
-        <LazyComponent loader={loadSideChatList} props={{ chara: DBState.db.characters[$selectedCharID] }} />
+        <LazyComponent loader={loadSideChatList} props={{ chara: view.character }} />
       {/if}
     {/if}
   {/if}
 </div>
+{/if}
 
-{#if $DynamicGUI}
+{#if part === 'all' && $DynamicGUI}
     <div role="button" tabindex="0" class="grow h-full min-w-12"
       class:max-xs:!min-w-8={!$leftBarCollapsed}
       class:max-xs:!min-w-6={$leftBarCollapsed}

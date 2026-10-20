@@ -1,6 +1,7 @@
 <script lang="ts">
     import { getModuleToggles } from "src/ts/process/modules";
-    import { DBState, selectedCharID } from "src/ts/stores.svelte";
+    import { DBState } from "src/ts/stores.svelte";
+    import { getPaneView, paneToggles } from "src/ts/chatPanes.svelte";
     import { parseToggleSyntax, type sidebarToggle, type sidebarToggleGroup } from "src/ts/util";
     import { language } from "src/lang";
     import type { PromptItem } from "src/ts/process/prompt";
@@ -27,14 +28,21 @@
 
     let { chara = $bindable(), noContainer }: Props = $props();
 
-    let currentChat = $derived(DBState.db.characters[$selectedCharID]?.chats?.[DBState.db.characters[$selectedCharID]?.chatPage])
+    // The pane this list belongs to (chatPanes.svelte.ts). Touching it hands it
+    // the selection first, so a change always lands in the app's live values;
+    // until then it shows the values its pane kept (paneToggles).
+    const view = getPaneView()
+    let currentChat = $derived(view.chat)
+    let toggleValues = $derived(view.active || !view.chat?.id
+        ? DBState.db.globalChatVariables
+        : (paneToggles[view.chat.id] ?? view.chat.savedToggleValues ?? DBState.db.globalChatVariables))
     // The ⚙ beside the 🎨 switch (IllustrationSettings.svelte).
     let illustrationSettingsOpen = $state(false)
     let isPinned = $derived(!DBState.db.disableToggleBinding && !!currentChat?.savedToggleValues)
     let toggleTemplate = $derived.by(() => {
         // Track chat/module changes so the toggle list re-derives on chat switch
-        const _char = DBState.db.characters[$selectedCharID]
-        const _chat = _char?.chats?.[_char?.chatPage]
+        const _char = view.character
+        const _chat = view.chat
         void _chat?.modules
         void _char?.modules
         void DBState.db.enabledModules
@@ -48,7 +56,7 @@
             // re-foldering, a synced patch) then left an open list stale, and
             // a replaced persona module stayed stale even after reopening.
             getModuleToggles(_char && _chat ? { character: _char, chat: _chat } : undefined) + '\n' +
-            ((DBState.db?.characters?.[$selectedCharID] as character)?.customModuleToggle ?? '')
+            ((view.character as character)?.customModuleToggle ?? '')
     })
     // An unset select reads as its first option ('0'); see getToggleUnsetValues.
     let unsetToggleValues = $derived(getToggleUnsetValues(toggleTemplate))
@@ -58,7 +66,9 @@
         if (DBState.db.disableToggleBinding) return 0
         const saved = currentChat?.savedToggleValues
         if (!saved) return 0
-        const current = snapshotToggleValues()
+        const current = view.active
+            ? snapshotToggleValues()
+            : Object.fromEntries(Object.entries(toggleValues).filter(([key, value]) => key.startsWith('toggle_') && value !== undefined))
         const allKeys = new Set([...Object.keys(saved), ...Object.keys(current)])
         let count = 0
         for (const key of allKeys) {
@@ -155,7 +165,7 @@
         const saved = currentChat?.savedToggleValues
         if (!saved) return false
         const fullKey = `toggle_${key}`
-        return normToggle(fullKey, DBState.db.globalChatVariables[fullKey]) !== normToggle(fullKey, saved[fullKey])
+        return normToggle(fullKey, toggleValues[fullKey]) !== normToggle(fullKey, saved[fullKey])
     }
 
 
@@ -204,7 +214,7 @@
         {:else if toggle.type === 'select'}
             <div class="w-full flex gap-2 mt-2 items-center justify-between min-h-10 rounded-md px-1 transition-colors" class:bg-red-900={isToggleDirty(toggle.key)} class:bg-opacity-15={isToggleDirty(toggle.key)}>
                 <span class="min-w-0 break-words">{toggle.value}</span>
-                <SelectInput className="w-32 shrink-0" bind:value={DBState.db.globalChatVariables[`toggle_${toggle.key}`]}>
+                <SelectInput className="w-32 shrink-0" bind:value={toggleValues[`toggle_${toggle.key}`]}>
                     {#each toggle.options as option, i}
                         <OptionInput value={i.toString()}>{option}</OptionInput>
                     {/each}
@@ -213,12 +223,12 @@
         {:else if toggle.type === 'text'}
             <div class="w-full flex gap-2 mt-2 items-center justify-between min-h-10 rounded-md px-1 transition-colors" class:bg-red-900={isToggleDirty(toggle.key)} class:bg-opacity-15={isToggleDirty(toggle.key)}>
                 <span class="min-w-0 break-words">{toggle.value}</span>
-                <TextInput className="w-32 shrink-0" bind:value={DBState.db.globalChatVariables[`toggle_${toggle.key}`]} />
+                <TextInput className="w-32 shrink-0" bind:value={toggleValues[`toggle_${toggle.key}`]} />
             </div>
         {:else if toggle.type === 'textarea'}
             <div class="w-full flex gap-2 mt-2 items-start justify-between min-h-10 rounded-md px-1 transition-colors" class:bg-red-900={isToggleDirty(toggle.key)} class:bg-opacity-15={isToggleDirty(toggle.key)}>
                 <span class="min-w-0 break-words mt-1.5">{toggle.value}</span>
-                <TextAreaInput className="w-32 shrink-0" height='20' bind:value={DBState.db.globalChatVariables[`toggle_${toggle.key}`]} />
+                <TextAreaInput className="w-32 shrink-0" height='20' bind:value={toggleValues[`toggle_${toggle.key}`]} />
             </div>
         {:else if toggle.type === 'caption'}
             <div class="w-full mt-1 text-xs text-textcolor2">
@@ -239,7 +249,7 @@
                 <span class="min-w-0 break-words">{toggle.value}</span>
                 <ShSwitch
                     className="shrink-0"
-                    checked={DBState.db.globalChatVariables[`toggle_${toggle.key}`] === '1'}
+                    checked={toggleValues[`toggle_${toggle.key}`] === '1'}
                     onCheckedChange={(checked) => {
                         const fullKey = `toggle_${toggle.key}`
                         // Turning off a switch the pin holds unset returns it
@@ -331,9 +341,9 @@
         </span>
         <ShSwitch
             className="shrink-0"
-            checked={!!DBState.db.characters[$selectedCharID]?.nodeOnlyHideFloatingButtons}
+            checked={!!view.character?.nodeOnlyHideFloatingButtons}
             onCheckedChange={(checked) => {
-                const char = DBState.db.characters[$selectedCharID]
+                const char = view.character
                 if (!char) return
                 if (checked) char.nodeOnlyHideFloatingButtons = true
                 else delete char.nodeOnlyHideFloatingButtons
@@ -356,9 +366,9 @@
             ><SettingsIcon size={18} /></button>
             <ShSwitch
                 className="shrink-0"
-                checked={!!DBState.db.characters[$selectedCharID]?.nodeOnlyIllustration?.enabled}
+                checked={!!view.character?.nodeOnlyIllustration?.enabled}
                 onCheckedChange={(checked) => {
-                    const char = DBState.db.characters[$selectedCharID]
+                    const char = view.character
                     if (!char) return
                     char.nodeOnlyIllustration = { ...(char.nodeOnlyIllustration ?? {}), enabled: checked }
                 }}

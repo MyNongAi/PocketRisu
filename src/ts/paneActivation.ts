@@ -4,10 +4,42 @@
 // reads the chat that pane shows.
 
 import { get } from 'svelte/store'
-import { chatDeselected, selectedCharID } from './stores.svelte'
-import { getDatabase, loadTogglesFromChat } from './storage/database.svelte'
+import { botMakerMode, chatDeselected, QuickSettings, selectedCharID } from './stores.svelte'
+import { applyToggleValues, getDatabase, loadTogglesFromChat, snapshotToggleValues, type Chat } from './storage/database.svelte'
 import { ensureChatHydrated } from './storage/chatStorage'
-import { locateChat, paneState, persistPanes, selectedChatIds, type PaneChatIds, type PaneId } from './chatPanes.svelte'
+import { locateChat, paneState, paneToggles, persistPanes, selectedChatIds, type PaneChatIds, type PaneId } from './chatPanes.svelte'
+import { persistSplitLayout, splitLayout, type PanelTab } from './splitLayout.svelte'
+
+// The character panel's tab lives in app-wide state (botMakerMode, QuickSettings);
+// each pane's panel keeps its own, so it is handed over with the selection.
+function globalPanelTab(): PanelTab {
+    if (QuickSettings?.open) return 'module'
+    return get(botMakerMode) ? 'character' : 'chat'
+}
+
+function showPanelTab(tab: PanelTab): void {
+    if (QuickSettings) QuickSettings.open = tab === 'module'
+    botMakerMode.set(tab === 'character')
+}
+
+/**
+ * Before the selection leaves a pane: its chat's toggle values stay with the
+ * pane (paneToggles), and its panel's tab. Toggle binding off keeps toggles
+ * app-wide, as the user chose.
+ */
+function handOver(from: PaneId): void {
+    const chatId = selectedChatIds()?.chatId
+    if (chatId && !getDatabase().disableToggleBinding) paneToggles[chatId] = snapshotToggleValues()
+    splitLayout.tab[from] = globalPanelTab()
+    persistSplitLayout()
+}
+
+/** A chat's toggles when its pane takes the selection: its pin, then what the pane kept. */
+function applyChatToggles(chat: Chat): void {
+    loadTogglesFromChat(chat)
+    const kept = chat.id ? paneToggles[chat.id] : undefined
+    if (kept && !getDatabase().disableToggleBinding) applyToggleValues({ ...kept })
+}
 
 /**
  * Select a chat for the active pane. Lighter than changeChar on purpose: no
@@ -31,10 +63,10 @@ function selectChat(characterIndex: number, chatIndex: number): void {
     if (!chat) return
     if (chat._placeholder) {
         void ensureChatHydrated(char.chats, chatIndex, char.chaId).then((hydrated) => {
-            if (hydrated && selectedChatIds()?.chatId === hydrated.id) loadTogglesFromChat(hydrated)
+            if (hydrated && selectedChatIds()?.chatId === hydrated.id) applyChatToggles(hydrated)
         })
     } else {
-        loadTogglesFromChat(chat)
+        applyChatToggles(chat)
     }
 }
 
@@ -45,12 +77,27 @@ function selectChat(characterIndex: number, chatIndex: number): void {
 export function activatePane(pane: PaneId): boolean {
     if (paneState.active === pane) return false
     const target = locateChat(getDatabase().characters ?? [], paneState.held[pane])
+    handOver(paneState.active)
     paneState.held[paneState.active] = selectedChatIds()
     paneState.active = pane
     if (target) selectChat(target.characterIndex, target.chatIndex)
     else selectedCharID.set(-1)
+    showPanelTab(splitLayout.tab[pane])
     persistPanes()
     return true
+}
+
+/** The divider's "swap": the two panes trade chats; the touched pane stays the active one. */
+export function swapPanes(): void {
+    const active = paneState.active
+    handOver(active)
+    paneState.held[active] = selectedChatIds()
+    const { main, side } = paneState.held
+    paneState.held = { main: side, side: main }
+    const target = locateChat(getDatabase().characters ?? [], paneState.held[active])
+    if (target) selectChat(target.characterIndex, target.chatIndex)
+    else selectedCharID.set(-1)
+    persistPanes()
 }
 
 /** Show a chat in the side pane (a chat dropped on it). */

@@ -12,6 +12,7 @@
     import { ensureChatHydrated } from "src/ts/storage/chatStorage";
     import { DBState, ReloadGUIPointer } from 'src/ts/stores.svelte';
     import { selectedCharID, chatDeselected } from "src/ts/stores.svelte";
+    import { getPaneView } from "src/ts/chatPanes.svelte";
 
     import CheckInput from "../UI/GUI/CheckInput.svelte";
     import ChatReplyStatus from "./ChatReplyStatus.svelte";
@@ -73,9 +74,15 @@
         }
     }
 
+    // The pane this list is drawn in (chatPanes.svelte.ts): its open chat is
+    // the one highlighted, even while the other pane holds the selection.
+    const view = getPaneView()
+    const shownChatIndex = $derived(view.chatIndex)
+    const deselectedHere = $derived(view.active && $chatDeselected)
+
     // Private bot/chat memos (MemoDialog); a dot on the button when any is written.
     let memoOpen = $state(false)
-    const hasMemo = $derived(!!(chara?.nodeOnlyMemo?.trim() || chara?.chats?.[chara.chatPage]?.nodeOnlyMemo?.trim()))
+    const hasMemo = $derived(!!(chara?.nodeOnlyMemo?.trim() || chara?.chats?.[shownChatIndex]?.nodeOnlyMemo?.trim()))
     let editMode = $state(false)
 
     // Safety net: chats whose folderId references a deleted folder would
@@ -316,14 +323,14 @@
                         if(!editMode){
                             changeChatTo(chatIdx)
                         }
-                    }} class="risu-chats flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"class:bg-selected={chatIdx === chara.chatPage && !$chatDeselected}>
+                    }} class="risu-chats flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"class:bg-selected={chatIdx === shownChatIndex && !deselectedHere}>
                         {#if editMode}
                             <TextInput deferred bind:value={chat.name} className="grow min-w-0" padding={false} oninput={() => titleTyped(chat)} onchange={(e) => titleCommitted(chat, e.currentTarget.value)}/>
                         {:else}
                             <span class={chatTitleClass(chatTitleState(chara, chat.id))}>{chat.name}</span>
                         {/if}
                         <div class="grow flex justify-end items-center">
-                            <ChatReplyStatus chatId={chat.id} current={chatIdx === chara.chatPage && !$chatDeselected} />
+                            <ChatReplyStatus chatId={chat.id} current={chatIdx === shownChatIndex && !deselectedHere} />
                             <div role="button" tabindex="0" onkeydown={(e) => {
                                 if(e.key === 'Enter'){
                                     e.currentTarget.click()
@@ -415,14 +422,14 @@
                 }
             }}
             class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
-            class:bg-selected={i === chara.chatPage && !$chatDeselected}>
+            class:bg-selected={i === shownChatIndex && !deselectedHere}>
                 {#if editMode}
                     <TextInput deferred bind:value={chara.chats[i].name} className="grow min-w-0" padding={false} oninput={() => titleTyped(chat)} onchange={(e) => titleCommitted(chat, e.currentTarget.value)}/>
                 {:else}
                     <span class={chatTitleClass(chatTitleState(chara, chat.id))}>{chat.name}</span>
                 {/if}
                 <div class="grow flex justify-end items-center">
-                    <ChatReplyStatus chatId={chat.id} current={i === chara.chatPage && !$chatDeselected} />
+                    <ChatReplyStatus chatId={chat.id} current={i === shownChatIndex && !deselectedHere} />
                     <div role="button" tabindex="0" onkeydown={(e) => {
                         if(e.key === 'Enter'){
                             e.currentTarget.click()
@@ -557,7 +564,7 @@
             </button>
         </div>
 
-        {#if DBState.db.characters[$selectedCharID]?.chaId !== '§playground' && !$chatDeselected}
+        {#if view.character?.chaId !== '§playground' && !deselectedHere}
             {#if DBState.db.showModelInSidebar}
                 <ModelBind />
             {/if}

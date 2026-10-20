@@ -247,7 +247,7 @@
     {:else}
         <!-- The PC split's right pane sits beside whatever the left shows,
              chat or settings, so opening settings does not reload it. -->
-        <SplitWorkspace>
+        <SplitWorkspace {openLegacyGrid}>
         {#if $settingsOpen}
         <LazyComponent loader={settingsLoader} />
     {:else if $MobileGUI}
@@ -261,7 +261,10 @@
             <LegacyGridComponent endGrid={() => { legacyGridOpen = false }} />
         {:else}
         {#if (!$DynamicGUI)}
-            {#if $splitChatOpen || isEmbeddedRisuPane}
+            {#if $splitChatOpen && !isEmbeddedRisuPane}
+                <!-- The docked split places the bot list and each pane's
+                     character panel itself (SplitWorkspace). -->
+            {:else if isEmbeddedRisuPane}
                 <div
                     class="split-workspace-sidebar fixed left-0 top-0 z-30 flex h-full"
                     class:pointer-events-none={!$sideBarStore}

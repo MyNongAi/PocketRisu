@@ -1775,7 +1775,7 @@ function blockStartMatcher(p1:string,matcherArg:matcherArg):{type:blockMatch,typ
                         break
                     }
                     case 'toggle':{
-                        const variable = getGlobalChatVar('toggle_' + condition)
+                        const variable = getGlobalChatVar('toggle_' + condition, matcherArg)
                         if(isTruthy(variable)){
                             statement.push('1')
                         }
@@ -1805,7 +1805,7 @@ function blockStartMatcher(p1:string,matcherArg:matcherArg):{type:blockMatch,typ
                         break
                     }
                     case 'tis':{ //tis = toggle is
-                        const variable = getGlobalChatVar('toggle_' + statement.pop())
+                        const variable = getGlobalChatVar('toggle_' + statement.pop(), matcherArg)
                         if(variable === condition){
                             statement.push('1')
                         }
@@ -1815,7 +1815,7 @@ function blockStartMatcher(p1:string,matcherArg:matcherArg):{type:blockMatch,typ
                         break
                     }
                     case 'tisnot':{ //tisnot = toggle is not
-                        const variable = getGlobalChatVar('toggle_' + statement.pop())
+                        const variable = getGlobalChatVar('toggle_' + statement.pop(), matcherArg)
                         if(variable !== condition){
                             statement.push('1')
                         }

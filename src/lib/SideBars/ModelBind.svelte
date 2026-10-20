@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { getPaneView } from "src/ts/chatPanes.svelte";
     import { DBState, selectedCharID } from "src/ts/stores.svelte";
     import { language } from "src/lang";
     import { ChevronDownIcon, SettingsIcon } from "@lucide/svelte";
@@ -9,9 +10,11 @@
     import ShSwitch from "../UI/GUI/ShSwitch.svelte";
     import ShButton from "../UI/GUI/ShButton.svelte";
     import { emptyModelBinding, LEGACY_SLOT, type ModelBindingSet } from "src/ts/preset/types";
+    // The pane this is drawn in (chatPanes.svelte.ts): its chat, not only the selected one.
+    const view = getPaneView()
 
     let currentChat = $derived(
-        DBState.db.characters[$selectedCharID]?.chats?.[DBState.db.characters[$selectedCharID]?.chatPage]
+        view.chat
     );
 
     let auxExpanded = $state(false);

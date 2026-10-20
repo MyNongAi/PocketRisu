@@ -182,8 +182,13 @@
         "src/lib/ChatScreens/SplitWorkspace.svelte",
         "src/ts/chatPanes.svelte.ts",
         "src/ts/paneActivation.ts",
+        "src/ts/splitLayout.svelte.ts",
+        "src/ts/parser/chatVar.svelte.ts",
         "src/lib/SideBars/SideChatList.svelte",
-        "src/lib/SideBars/Sidebar.svelte"
+        "src/lib/SideBars/Sidebar.svelte",
+        "src/lib/SideBars/Toggles.svelte",
+        "src/lib/SideBars/CharConfig.svelte",
+        "src/lib/UI/GUI/SideBarArrow.svelte"
       ],
       "requiredMarkers": [
         { "file": "src/App.svelte", "contains": "split-workspace-sidebar" },
@@ -205,12 +210,23 @@
         { "file": "src/ts/chatSplitPane.ts", "contains": "export function listenForSplitClose(pane: () => Window | null | undefined): () => void {" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "<SecondaryChatPanel />" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "class:split-chat-contained={enabled}" },
-        { "file": "src/App.svelte", "contains": "<SplitWorkspace>" }
+        { "file": "src/App.svelte", "contains": "<SplitWorkspace {openLegacyGrid}>" },
+        { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "<Sidebar part=\"rail\" hidden={false} {openLegacyGrid} />" },
+        { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "<Sidebar part=\"panel\" pane=\"side\" hidden={false} {openLegacyGrid} />" },
+        { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "oncontextmenu={openDividerMenu}" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "...openInPaneActions(() => changeChar(characterIndex, { reseter: botSwitchReseter }))," },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "onpointerdowncapture={takePaneSelection}" },
+        { "file": "src/ts/paneActivation.ts", "contains": "export function swapPanes(): void {" },
+        { "file": "src/ts/chatPanes.svelte.ts", "contains": "export const paneToggles = $state<Record<string, Record<string, string>>>(readToggles())" },
+        { "file": "src/ts/parser/chatVar.svelte.ts", "contains": "const kept = paneToggles[chat.id]" },
+        { "file": "src/lib/SideBars/Toggles.svelte", "contains": "bind:value={toggleValues[`toggle_${toggle.key}`]}" },
+        { "file": "src/lib/UI/GUI/SideBarArrow.svelte", "contains": "onclick={() => togglePanePanel(view.pane)}" }
       ],
       "regressionTests": [
         "src/ts/chatSplitPane.test.ts",
         "src/ts/chatSplitPaneClose.test.ts",
-        "src/ts/chatPanes.test.ts"
+        "src/ts/chatPanes.test.ts",
+        "src/ts/parser/tests/chatVar.svelte.test.ts"
       ]
     },
     {

@@ -2,6 +2,7 @@ import { writable } from 'svelte/store'
 
 const OPEN_KEY = 'pocketrisu:split-chat:open'
 const WIDTH_KEY = 'pocketrisu:split-chat:width'
+const HEIGHT_KEY = 'pocketrisu:split-chat:height'
 const EMBEDDED_PANE_PARAM = 'pocketrisuPane'
 
 export const isEmbeddedRisuPane = typeof window !== 'undefined'
@@ -28,7 +29,10 @@ function readBoolean(key: string, fallback: boolean): boolean {
 function readNumber(key: string, fallback: number): number {
     if (typeof localStorage === 'undefined') return fallback
     try {
-        const value = Number(localStorage.getItem(key))
+        const raw = localStorage.getItem(key)
+        // Never saved: the fallback, not Number(null)'s 0.
+        if (raw === null || raw.trim() === '') return fallback
+        const value = Number(raw)
         return Number.isFinite(value) ? value : fallback
     } catch {
         return fallback
@@ -88,9 +92,18 @@ export function clampSplitWidth(width: number, viewportWidth: number): number {
 
 export const splitChatOpen = writable(readBoolean(OPEN_KEY, false))
 export const splitChatWidth = writable(readNumber(WIDTH_KEY, 520))
+/** The lower pane's height when the panes are stacked (splitLayout.svelte.ts orientation 'column'). */
+export const splitChatHeight = writable(readNumber(HEIGHT_KEY, 360))
 
 splitChatOpen.subscribe((value) => persist(OPEN_KEY, String(value)))
 splitChatWidth.subscribe((value) => persist(WIDTH_KEY, String(Math.round(value))))
+splitChatHeight.subscribe((value) => persist(HEIGHT_KEY, String(Math.round(value))))
+
+/** The lower pane's height within `viewportHeight`, each pane keeping at least 160px. */
+export function clampSplitHeight(height: number, viewportHeight: number): number {
+    const min = Math.min(160, Math.max(0, viewportHeight) / 2)
+    return Math.round(Math.min(Math.max(min, viewportHeight - min), Math.max(min, height)))
+}
 
 /** Divider width between the two workspaces (SplitWorkspace). */
 export const SPLIT_DIVIDER_PX = 6

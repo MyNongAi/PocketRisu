@@ -107,7 +107,8 @@ export type CBSRegisterArg = {
     /** scope: the parse's own character and chat (chatVar.svelte.ts), else the selected chat. */
     getChatVar: (key: string, scope?: import('./parser/chatVar.svelte').ChatVarScope) => string,
     setChatVar: (key: string, value: string, scope?: import('./parser/chatVar.svelte').ChatVarScope) => void,
-    getGlobalChatVar: (key: string) => string,
+    /** scope: a toggle of a chat other than the selected one reads that chat's own value (chatVar.svelte.ts). */
+    getGlobalChatVar: (key: string, scope?: import('./parser/chatVar.svelte').ChatVarScope) => string,
     calcString: (str: string) => number,
     dateTimeFormat: (format: string, timestamp?: number) => string,
     getModules: () => RisuModule[],
@@ -831,7 +832,7 @@ export function registerCBS(arg:CBSRegisterArg) {
     registerFunction({
         name: 'getglobalvar',
         callback: (str, matcherArg, args, vars) => {
-            return getGlobalChatVar(args[0])
+            return getGlobalChatVar(args[0], matcherArg)
         },
         alias: [],
         description: 'Gets the value of a global chat variable by name. Global variables are shared across all chats and characters. Returns empty string if variable doesn\'t exist.\n\nUsage:: {{getglobalvar::variableName}}',

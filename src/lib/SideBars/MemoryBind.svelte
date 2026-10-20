@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { getPaneView } from "src/ts/chatPanes.svelte";
     import { DBState, selectedCharID, openMemoryPresetList, memoryPresetSelectCallback } from "src/ts/stores.svelte";
     import { language } from "src/lang";
     import { BrainIcon } from "@lucide/svelte";
@@ -6,9 +7,11 @@
     import ShButton from "../UI/GUI/ShButton.svelte";
     import Help from "../Others/Help.svelte";
     import { MEMORY_PRESET_DEFAULT, MEMORY_PRESET_OFF, getMemoryBinding, getMemoryPreset, setChatMemoryPreset } from "src/ts/process/memory/memoryPresets";
+    // The pane this is drawn in (chatPanes.svelte.ts): its chat, not only the selected one.
+    const view = getPaneView()
 
-    let char = $derived(DBState.db.characters[$selectedCharID])
-    let chat = $derived(char?.chats?.[char?.chatPage])
+    let char = $derived(view.character)
+    let chat = $derived(view.chat)
     // Highlighted only when this chat picked something itself; chats on the
     // default (or legacy chats with no value) read as unbound, like the other bindings.
     let active = $derived(chat?.memoryPresetId !== undefined && chat.memoryPresetId !== MEMORY_PRESET_DEFAULT)

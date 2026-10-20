@@ -132,3 +132,25 @@ test('returns "null" for undefined variables', () => {
     })
   )
 })
+
+test("a toggle of a chat in the split's other pane reads that chat's own value", async () => {
+  const { paneToggles } = await import('../../chatPanes.svelte')
+  DBState.db.globalChatVariables.toggle_panesw = '1'
+  const selected = DBState.db.characters[0].chats[0] as any
+  selected.id = 'selected-chat'
+  const other = { id: 'other-chat', message: [] } as any
+  paneToggles['other-chat'] = { toggle_panesw: '0' }
+  expect(getGlobalChatVar('toggle_panesw', { chat: other })).toBe('0')
+  // the selected chat reads the app's live value
+  expect(getGlobalChatVar('toggle_panesw', { chat: selected })).toBe('1')
+  // without values its pane kept: its pin, else the app's
+  delete paneToggles['other-chat']
+  other.savedToggleValues = { toggle_panesw: '2' }
+  expect(getGlobalChatVar('toggle_panesw', { chat: other })).toBe('2')
+  delete other.savedToggleValues
+  expect(getGlobalChatVar('toggle_panesw', { chat: other })).toBe('1')
+  // other variables stay global
+  DBState.db.globalChatVariables.plain = 'x'
+  paneToggles['other-chat'] = { plain: 'y' }
+  expect(getGlobalChatVar('plain', { chat: other })).toBe('x')
+})

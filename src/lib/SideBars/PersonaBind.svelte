@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { getPaneView } from "src/ts/chatPanes.svelte";
     import { DBState, selectedCharID } from "src/ts/stores.svelte";
     import { language } from "src/lang";
     import { getCurrentChat } from "src/ts/storage/database.svelte";
@@ -9,8 +10,10 @@
     import ShButton from "../UI/GUI/ShButton.svelte";
     import { markPersonaApplied } from "src/ts/persona";
     import { requestImmediateSave } from "src/ts/globalApi.svelte";
+    // The pane this is drawn in (chatPanes.svelte.ts): its chat, not only the selected one.
+    const view = getPaneView()
 
-    let currentChat = $derived(DBState.db.characters[$selectedCharID]?.chats?.[DBState.db.characters[$selectedCharID]?.chatPage])
+    let currentChat = $derived(view.chat)
 
     let boundPersona = $derived.by(() => {
         const id = currentChat?.bindedPersona
