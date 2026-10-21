@@ -23,6 +23,7 @@
     import PopupList from './lib/UI/PopupList.svelte';
     import LoadingOverlay from './lib/Others/LoadingOverlay.svelte';
     import Toaster from './lib/UI/GUI/Toaster.svelte';
+    import PaneToasters from './lib/UI/GUI/PaneToasters.svelte';
     import RequestStatusToaster from './lib/UI/GUI/RequestStatusToaster.svelte';
     import RequestStatusDock from './lib/UI/GUI/RequestStatusDock.svelte';
     import ImportProgressToaster from './lib/UI/GUI/ImportProgressToaster.svelte';
@@ -364,6 +365,7 @@
         <LazyComponent overlay loader={protonBrowserLoader} />
     {/if}
     <Toaster />
+    <PaneToasters />
     <RequestStatusToaster />
     <RequestStatusDock />
     <ImportProgressToaster />

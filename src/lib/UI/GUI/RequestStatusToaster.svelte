@@ -17,6 +17,7 @@
     import RequestStatusToast, { REQUEST_TOAST_CLASS } from './RequestStatusToast.svelte'
     import { dismissRequestToast, keepsDoneButton, minimizedRequests, requestToastDismissed, requestToastShown, staysOpenUnseen, unminimizeRequest } from 'src/ts/status/requestStatusDock'
     import { DBState, selIdState } from 'src/ts/stores.svelte'
+    import { paneToasterFor } from 'src/ts/status/requestToastPane'
 
     function currentChatId(): string | null {
         const character = DBState.db.characters?.[selIdState.selId]
@@ -61,6 +62,8 @@
                 requestToastShown(id)
                 toast.custom(RequestStatusToast, {
                     id: toastId(id),
+                    // Over the pane of its chat while split (requestToastPane.ts).
+                    toasterId: paneToasterFor(entry.chatId),
                     class: REQUEST_TOAST_CLASS,
                     duration: Number.POSITIVE_INFINITY,
                     componentProps: { id },

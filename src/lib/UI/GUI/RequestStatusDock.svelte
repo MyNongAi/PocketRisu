@@ -5,18 +5,16 @@
     // opens the chat it was written in. A failure shows briefly and leaves
     // with its toast (RequestStatusToaster clears it).
     import { toast } from 'svelte-sonner'
+    import { get } from 'svelte/store'
     import { requestStatuses, clearStatus } from 'src/ts/status/requestStatus'
     import { dockState, minimizedRequests, requestToastDismissed, requestToastShown, unminimizeRequest } from 'src/ts/status/requestStatusDock'
     import { DBState, MobileGUI, selIdState } from 'src/ts/stores.svelte'
-    import { splitChatOpen, splitChatWidth, splitDockedRight, splitRightInset } from 'src/ts/chatSplitPane'
+    import { paneToasterFor } from 'src/ts/status/requestToastPane'
     import { openChatById } from 'src/ts/status/requestActions'
     import { language } from 'src/lang'
     import { DownloadIcon } from '@lucide/svelte'
     import { importDockPill, restoreImportDock } from 'src/ts/importDock'
     import RequestStatusToast, { REQUEST_TOAST_CLASS } from './RequestStatusToast.svelte'
-
-    // Inside the main chat while split, clear of the right pane (splitRightInset).
-    const inset = $derived(splitRightInset($splitChatOpen, $splitChatWidth, $MobileGUI, $splitDockedRight))
 
     const items = $derived($minimizedRequests
         .map((id) => ({ id, entry: $requestStatuses.get(id) }))
@@ -45,6 +43,8 @@
         requestToastShown(id)
         toast.custom(RequestStatusToast, {
             id: `req:${id}`,
+            // Over the pane of its chat while split (requestToastPane.ts).
+            toasterId: paneToasterFor(get(requestStatuses).get(id)?.chatId),
             class: REQUEST_TOAST_CLASS,
             duration: Number.POSITIVE_INFINITY,
             componentProps: { id },
@@ -63,7 +63,7 @@
 </script>
 
 {#if items.length > 0 || $importDockPill.count > 0}
-    <div class="request-dock" style:right={`calc(0.5rem + ${inset}px)`} role="group" aria-label={rs()?.dockLabel ?? 'Folded requests'}>
+    <div class="request-dock" role="group" aria-label={rs()?.dockLabel ?? 'Folded requests'}>
         {#if $importDockPill.count > 0}
             <!-- Folded downloads (ImportProgressToaster): a tap shows their cards again. -->
             <button type="button" class="request-dock-button request-dock-import" class:request-dock-failed={$importDockPill.failed} title={language.importProgressShow} aria-label={`${language.importProgressShow} (${$importDockPill.count})`} onclick={restoreImportDock}>

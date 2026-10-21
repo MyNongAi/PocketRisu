@@ -32,27 +32,3 @@ describe('closing the split from its right pane', () => {
         expect(get(splitChatOpen)).toBe(false)
     })
 })
-
-describe('splitRightInset', () => {
-    it('is the right pane plus its divider while split, else 0', async () => {
-        const { splitRightInset, SPLIT_DIVIDER_PX } = await import('./chatSplitPane')
-        expect(splitRightInset(true, 520, false)).toBe(520 + SPLIT_DIVIDER_PX)
-        expect(splitRightInset(false, 520, false)).toBe(0)
-        expect(splitRightInset(true, 520, true)).toBe(0)
-    })
-
-    it('docked side by side, is everything right of the main chat', async () => {
-        const { splitRightInset } = await import('./chatSplitPane')
-        // The bot list between the panes or at the end, the second panel open.
-        expect(splitRightInset(true, 520, false, { row: true, rail: 80, sideChat: 320, sidePanel: 320 })).toBe(6 + 80 + 320 + 320)
-        // The bot list at the start, the second panel closed: the laid-out chat, not the saved width.
-        expect(splitRightInset(true, 520, false, { row: true, rail: 0, sideChat: 400, sidePanel: 0 })).toBe(6 + 400)
-        expect(splitRightInset(true, 520, true, { row: true, rail: 80, sideChat: 320, sidePanel: 320 })).toBe(0)
-    })
-
-    it('stacked, is only the bot list at the end', async () => {
-        const { splitRightInset } = await import('./chatSplitPane')
-        expect(splitRightInset(true, 520, false, { row: false, rail: 0, sideChat: 0, sidePanel: 0 })).toBe(0)
-        expect(splitRightInset(true, 520, false, { row: false, rail: 80, sideChat: 0, sidePanel: 0 })).toBe(80)
-    })
-})

@@ -181,37 +181,6 @@ export function dockedSplitWidths(row: DockedSplitRow, sideChat: number): Docked
     }
 }
 
-/** What sits right of the main chat while the split is docked (SplitWorkspace). */
-export interface DockedSplitRight {
-    /** Side by side; stacked, only the bot list can sit right of the main chat. */
-    row: boolean
-    /** The bot list's width when it sits right of the main chat (between the panes or at the end), else 0. */
-    rail: number
-    sideChat: number
-    sidePanel: number
-}
-
-/** Set by SplitWorkspace while docked; null otherwise. */
-export const splitDockedRight = writable<DockedSplitRight | null>(null)
-
-/**
- * Pixels the right pane (and its divider) covers at the right of the main
- * window, so floating UI of the left workspace (toasts, the request dock)
- * stays inside it instead of landing on the right pane (the user's report,
- * 2026-10-17). `mobileLayout`: MobileGUI, where the split is not shown.
- * `docked`: the docked layout, where the second pane's panel and the bot
- * list can sit right of the main chat too, and nothing but the bot list does
- * when the panes are stacked.
- */
-export function splitRightInset(open: boolean, width: number, mobileLayout: boolean, docked: DockedSplitRight | null = null): number {
-    if (!open || mobileLayout || isEmbeddedRisuPane) return 0
-    if (docked) {
-        const side = docked.row ? SPLIT_DIVIDER_PX + docked.sideChat + docked.sidePanel : 0
-        return Math.max(0, Math.round(docked.rail + side))
-    }
-    return Math.max(0, Math.round(width)) + SPLIT_DIVIDER_PX
-}
-
 export function toggleSplitChat() {
     splitChatOpen.update((value) => !value)
 }

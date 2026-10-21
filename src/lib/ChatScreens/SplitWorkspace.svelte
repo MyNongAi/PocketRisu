@@ -15,7 +15,7 @@
     import type { Snippet } from 'svelte'
     import { onDestroy, onMount, untrack } from 'svelte'
     import { DynamicGUI, MobileGUI, settingsOpen } from 'src/ts/stores.svelte'
-    import { clampSplitHeight, clampSplitWidth, dockedSplitChatRoom, dockedSplitWidths, getSplitWidthBounds, isEmbeddedRisuPane, looseSplitSideWidth, NARROW_SPLIT_PX, SPLIT_DIVIDER_PX, SPLIT_MAIN_CHAT_MIN_PX, splitChatHeight, splitChatOpen, splitChatWidth, splitDockedRight, type DockedSplitRow } from 'src/ts/chatSplitPane'
+    import { clampSplitHeight, clampSplitWidth, dockedSplitChatRoom, dockedSplitWidths, getSplitWidthBounds, isEmbeddedRisuPane, looseSplitSideWidth, NARROW_SPLIT_PX, SPLIT_DIVIDER_PX, SPLIT_MAIN_CHAT_MIN_PX, splitChatHeight, splitChatOpen, splitChatWidth, type DockedSplitRow } from 'src/ts/chatSplitPane'
     import SecondaryChatPanel from './SecondaryChatPanel.svelte'
     import Sidebar from '../SideBars/Sidebar.svelte'
     import { restorePanesAfterBoot, returnToMainPane, swapPanes } from 'src/ts/paneActivation'
@@ -89,13 +89,6 @@
         const spare = paneOverlayOpen.main ? Math.max(0, main - mainOverlay) : main
         return Math.max(looseSide, Math.min(26 * rem, looseSide + SPLIT_DIVIDER_PX + spare))
     })
-    // What the toasts and the request dock keep clear of (splitRightInset).
-    $effect(() => {
-        splitDockedRight.set(docked
-            ? { row: !column, rail: rail === 'start' || !railShown ? 0 : railWidth, sideChat: dockedRow?.sideChat ?? 0, sidePanel: dockedRow?.sidePanel ?? 0 }
-            : narrowStack ? { row: false, rail: 0, sideChat: 0, sidePanel: 0 } : null)
-    })
-
     // The room the two chats share: no divider, and docked, no bot list
     // between the panes and no open panels. Docked, the wide end leaves the
     // main chat its minimum.
@@ -214,7 +207,6 @@
 
     onDestroy(() => {
         stopSplitResize?.()
-        splitDockedRight.set(null)
     })
     onMount(() => {
         const clampStoredSizes = () => {
