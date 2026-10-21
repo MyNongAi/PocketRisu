@@ -10757,7 +10757,7 @@ async function collectPersistedAssetReferences() {
     const raw = kvGet(DB_BLOB_KEY);
     if (!raw) return { error: 'No database blob' };
     const dbObj = await decodeRisuSave(raw);
-    if (!dbObj || !Array.isArray(dbObj.characters)) return { error: 'Database decode failed' };
+    if (!dbObj || !Array.isArray(dbObj.characters)) return { error: 'Database decode failed', dbObj };
 
     const uncleanable = new Set(buildUncleanableSet(dbObj));
     try {
@@ -10773,6 +10773,20 @@ async function collectPersistedAssetReferences() {
     return { dbObj, uncleanable };
 }
 
+// A new install keeps the client's boot placeholder `{}` on disk until the
+// first change is saved, so the database has no character list yet. That is
+// not a bad decode, but it is only safe to treat as "nothing to do" while no
+// row the sweep could delete exists: with any present, a missing character
+// list still means we cannot tell what is referenced, so the sweep refuses.
+function isNewSaveWithNothingToSweep(dbObj, { includeAssets, includeRemotes, assets }) {
+    if (!dbObj || typeof dbObj !== 'object' || Array.isArray(dbObj) || 'characters' in dbObj) return false;
+    if (includeAssets && assets.length > 0) return false;
+    if (includeRemotes && kvList('remotes/').length > 0) return false;
+    return true;
+}
+
+const EMPTY_ASSET_SWEEP = Object.freeze({ ok: true, deleted: 0, assetsDeleted: 0, remotesDeleted: 0, bytes: 0, scanned: 0 });
+
 async function computeAssetSweep({ includeAssets, assetGraceMs = 0, includeRemotes = false, checkpointLabel = 'AssetSweep' } = {}) {
     let dbObj;
     // updated_at is stored after the value BLOB, so reading it walks the whole
@@ -10782,6 +10796,7 @@ async function computeAssetSweep({ includeAssets, assetGraceMs = 0, includeRemot
     const uncleanable = new Set();
     if (includeAssets) {
         const references = await collectPersistedAssetReferences();
+        if (isNewSaveWithNothingToSweep(references.dbObj, { includeAssets, includeRemotes, assets })) return { ...EMPTY_ASSET_SWEEP };
         if (references.error) return { error: references.error };
         dbObj = references.dbObj;
         for (const bn of references.uncleanable) uncleanable.add(bn);
@@ -10802,6 +10817,7 @@ async function computeAssetSweep({ includeAssets, assetGraceMs = 0, includeRemot
         // save those ran inside the storage queue and held up saves at boot.
         if (!(await loadDbCacheIfMissing())) return { error: 'No database blob' };
         dbObj = dbCache[DB_HEX_KEY];
+        if (isNewSaveWithNothingToSweep(dbObj, { includeAssets, includeRemotes, assets })) return { ...EMPTY_ASSET_SWEEP };
         if (!dbObj || !Array.isArray(dbObj.characters)) return { error: 'Database decode failed' };
     }
 
