@@ -204,6 +204,8 @@
         { "file": "src/lib/UI/GUI/RequestStatusToaster.svelte", "contains": "toasterId: paneToasterFor(entry.chatId)," },
         { "file": "src/lib/UI/GUI/PaneToasters.svelte", "contains": "mobileOffset={mobileOffsetOf(box, $dockVisible)}" },
         { "file": "src/App.svelte", "contains": "<PaneToasters />" },
+        { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "{ label, row: 'columns', variant: sidebarCatalog.split === split ? 'primary' : 'outline' }," },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "const splitCatalogMode = $derived(sidebarCatalog.split)" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "looseSplitSideWidth(paneWidth || window.innerWidth, $splitChatWidth)" },
         { "file": "src/ts/process/infunctions.ts", "contains": "const v = getGlobalChatVar(p1, scope)" },
         { "file": "src/App.svelte", "contains": "split-workspace-sidebar" },

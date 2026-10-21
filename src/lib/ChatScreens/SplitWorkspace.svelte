@@ -22,6 +22,7 @@
     import { startPaneSync } from 'src/ts/chatPanes.svelte'
     import { paneOverlayOpen, railPlace, setPaneOverlayOpen, setSplitLayout, splitLayout, type RailPlace } from 'src/ts/splitLayout.svelte'
     import { alertSelect, type AlertAction } from 'src/ts/alert'
+    import { setSidebarCatalogSplit, sidebarCatalog } from 'src/ts/gui/sidebarCatalogLayout.svelte'
     import { language } from 'src/lang'
 
     let { children, openLegacyGrid = () => {} }: { children: Snippet, openLegacyGrid?: () => void } = $props()
@@ -185,6 +186,7 @@
 
     // Choices of one kind on one line (the user's request, 2026-10-22): where
     // the bot list goes, the current place marked; putting it away; the panes.
+    // Even widths are a double-click on the divider (no menu item, as asked).
     async function askDividerMenu() {
         const row = splitLayout.orientation === 'row'
         const hidden = splitLayout.railHidden
@@ -196,10 +198,14 @@
                 { label, row: 'rail', variant: !hidden && place === rail ? 'primary' : 'outline' },
                 () => setSplitLayout({ railAt: place, railHidden: false }),
             ]),
+            // One column or two (the user's request, 2026-10-22), as in the bot list's + menu.
+            ...([[false, language.splitRailOneColumn], [true, language.splitRailTwoColumns]] as const).map(([split, label]): [AlertAction, () => void] => [
+                { label, row: 'columns', variant: sidebarCatalog.split === split ? 'primary' : 'outline' },
+                () => { setSidebarCatalogSplit(split); setSplitLayout({ railHidden: false }) },
+            ]),
             [{ label: hidden ? language.splitRailShow : language.splitRailHide }, () => setSplitLayout({ railHidden: !hidden })],
             [{ label: row ? language.splitSwapRow : language.splitSwapColumn, row: 'panes' }, () => swapPanes()],
             [{ label: row ? language.splitToColumn : language.splitToRow, row: 'panes' }, () => setSplitLayout({ orientation: row ? 'column' : 'row' })],
-            [{ label: language.splitEven, row: 'panes' }, resetSplitSize],
         ]
         const selected = parseInt(await alertSelect([...actions.map(([action]) => action), language.cancel]))
         actions[selected]?.[1]()

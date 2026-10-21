@@ -83,6 +83,7 @@
     import { paneWord, setPaneOverlayOpen, setPanePanelOpen, splitLayout, type PanelTab } from "src/ts/splitLayout.svelte";
     import { newMarkPrefix, newMarks } from "src/ts/newMarks.svelte";
     import { alertConfirm, alertSelect, type AlertAction } from "src/ts/alert";
+    import { setSidebarCatalogSplit, sidebarCatalog } from "src/ts/gui/sidebarCatalogLayout.svelte";
     import { characterMenuInfo } from "src/ts/gui/sidebarMenuInfo";
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
     import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
@@ -313,10 +314,8 @@
   function keepCatalogSearchFocus(event: Event) {
     if (catalogSearchInput && document.activeElement === catalogSearchInput) event.preventDefault()
   }
-  const splitCatalogStorageKey = 'pocketrisu-sidebar-catalog-split-v1'
-  let splitCatalogMode = $state(
-    typeof localStorage !== 'undefined' && localStorage.getItem(splitCatalogStorageKey) === 'split'
-  )
+  // One column or two: shared with the split divider's menu (sidebarCatalogLayout).
+  const splitCatalogMode = $derived(sidebarCatalog.split)
   type splitCatalogCharacter = {
     type: 'character'
     char: sortTypeEntry
@@ -590,8 +589,7 @@
   }
 
   function setSplitCatalogMode(enabled:boolean){
-    splitCatalogMode = enabled
-    localStorage.setItem(splitCatalogStorageKey, splitCatalogMode ? 'split' : 'normal')
+    setSidebarCatalogSplit(enabled)
   }
 
   // Module ids that exist, for the chain mark on bots with a module of their
