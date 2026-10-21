@@ -2336,6 +2336,38 @@ export class NodeStorage{
         return Array.isArray(decoded?.characters) ? decoded.characters : []
     }
 
+    /**
+     * Store modules nothing uses (module-cold-store.cjs). The server takes
+     * their bodies out itself; `published` is that change, for this page to
+     * land like another device's patch (null when nothing was stored).
+     */
+    async storeColdModules(ids: string[]): Promise<{ results: ColdModuleResult[]; published: ServerDbPatch | null }> {
+        const da = await this.authFetch('/api/modules/cold', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ ids }),
+        })
+        const body = await da.json().catch(() => ({})) as { results?: ColdModuleResult[]; published?: ServerDbPatch | null; error?: string }
+        if (da.status < 200 || da.status >= 300 || !Array.isArray(body?.results)) {
+            throw new Error(body?.error ?? `module store error: ${da.status}`)
+        }
+        return { results: body.results, published: body.published ?? null }
+    }
+
+    /** Bodies of stored modules by their rows; `missing` when a row is gone. */
+    async readColdModuleBodies(refs: { id: string; archivedAt: number }[]): Promise<ColdModuleBody[]> {
+        const da = await this.authFetch('/api/modules/cold-bodies', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ refs }),
+        })
+        const body = await da.json().catch(() => ({})) as { bodies?: ColdModuleBody[]; error?: string }
+        if (da.status < 200 || da.status >= 300 || !Array.isArray(body?.bodies)) {
+            throw new Error(body?.error ?? `module body error: ${da.status}`)
+        }
+        return body.bodies
+    }
+
     // ── Save-folder migration ─────────────────────────────────────────────────
 
     async scanSaveFolder(folderPath?: string): Promise<{count: number, totalSize: number, hasDatabase: boolean}> {
@@ -2449,6 +2481,24 @@ async function digestPassword(message:string) {
         throw new Error(`Password hashing failed (${res.status})`)
     }
     return await res.text()
+}
+
+/** One module's outcome in /api/modules/cold. */
+export type ColdModuleResult =
+    | { id: string; ok: true; marker: { archivedAt: number; bytes: number } }
+    | { id: string; ok: false; code: string; error?: string }
+
+export type ColdModuleBody =
+    | { id: string; archivedAt: number; body: Record<string, unknown> }
+    | { id: string; archivedAt: number; missing: true }
+
+/** A change the server made to the database itself, published as a db-patch. */
+export interface ServerDbPatch {
+    prevHash: string
+    nextHash: string
+    etag: string
+    prevEtag?: string
+    ops: any[]
 }
 
 /** Failure reported by the character archive endpoints; `code` is the server's error code. */

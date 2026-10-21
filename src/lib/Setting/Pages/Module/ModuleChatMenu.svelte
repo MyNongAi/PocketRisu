@@ -24,6 +24,7 @@
     import PairedModuleMark from "src/lib/UI/GUI/PairedModuleMark.svelte";
     import { forgetModulePair, moduleLinks, recordModulePair } from "src/ts/gui/pairedModules";
     import { syncLinkedFolders } from "src/ts/process/modules";
+    import { isColdModule, wakeModules } from "src/ts/process/moduleCold.svelte";
     interface Props {
         close?: any;
         alertMode?: boolean;
@@ -126,6 +127,8 @@
             DBState.db.moduleFolders ?? [], DBState.db.modules, moduleId,
             { activationHistory: DBState.db.moduleActivationHistory },
         )
+        // Turned on here: a stored module brings its body back (moduleCold.svelte.ts).
+        void wakeModules([moduleId])
     }
 
     function toggleChatScope(moduleId: string) {
@@ -264,7 +267,7 @@
                         {#if rmodule.mcp}
                             <Waypoints size={18} class="shrink-0 text-textcolor2" />
                         {/if}
-                        <span class="min-w-0 grow truncate {!alertMode && isGlobal ? 'text-textcolor2' : ''}" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(i))}>{#if hasMissingAssets(i)}<span aria-label="에셋 누락" title="에셋 누락">❗</span> {/if}<PairedModuleMark link={pairedModules.get(rmodule.id)} />{rmodule.favorite ? '★ ' : ''}{rmodule.name}</span>
+                        <span class="min-w-0 grow truncate {!alertMode && isGlobal ? 'text-textcolor2' : ''}" class:stored-module-muted={isColdModule(rmodule)} title={isColdModule(rmodule) ? language.moduleColdBadge : undefined} style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(i))}>{#if hasMissingAssets(i)}<span aria-label="에셋 누락" title="에셋 누락">❗</span> {/if}<PairedModuleMark link={pairedModules.get(rmodule.id)} />{rmodule.favorite ? '★ ' : ''}{rmodule.name}</span>
                         {#if alertMode}
                             <button class="text-textcolor2 cursor-pointer hover:text-success transition-colors shrink-0" onclick={(e) => {
                                 e.stopPropagation()
@@ -303,6 +306,10 @@
 </div>
 
 <style>
+    /* A stored module (moduleCold.svelte.ts), dimmed as in the catalog. */
+    .stored-module-muted {
+        opacity: 0.6;
+    }
     .break-any{
         word-break: normal;
         overflow-wrap: anywhere;

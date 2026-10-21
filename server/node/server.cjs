@@ -98,6 +98,14 @@ const { decodeRisuSave, encodeRisuSaveLegacyBuffer, calculateHash, normalizeJSON
 const { computeChatEtag } = require('./chat-content-etag.cjs');
 const { createPendingChatPayloads } = require('./pending-chat-payloads.cjs');
 const pendingChatPayloads = createPendingChatPayloads({ kvGet, kvSet, kvDel, kvList: kvListExactPrefix, kvExists });
+const { COLD_PREFIX, createModuleColdStore, findDanglingColdModules, patchTouchesModules } = require('./module-cold-store.cjs');
+const moduleColdStore = createModuleColdStore({
+    kvGet, kvSet, kvDel, kvSize, kvList: kvListExactPrefix,
+    encode: (value) => encodeRisuSaveLegacyBuffer(value),
+    decode: decodeRisuSave,
+    normalize: normalizeJSON,
+    hash: calculateHash,
+});
 const { createChatBodyStore, chatToStub, mergeChatStubWithFullChat, deepFreeze, StoredChatBytes } = require('./chat-body-store.cjs');
 const { createDbPersister, isPersistMode } = require('./db-persister.cjs');
 const {
@@ -7835,6 +7843,8 @@ async function buildSettingsOnlyPlan({ includeModuleAssets = true } = {}) {
     // variant runs chat-id and cold-storage migrations and can persist. Both
     // concern data we are about to drop anyway.
     const trimmed = stripToSettingsOnly(await decodeRisuSave(raw));
+    // The modules ship, so stored ones go out whole.
+    await moduleColdStore.inlineColdModules(trimmed);
 
     const withModules = buildUncleanableSet(trimmed);
     const withoutModules = buildUncleanableSet(trimmed, { includeModuleAssets: false });
@@ -7954,7 +7964,8 @@ async function buildFullExportDbValue() {
     // must fail the export below instead of shipping the raw stub list
     // (which importers would silently drop).
     const hasArchive = kvList(ARCHIVE_META_PREFIX).length > 0 || kvList(ARCHIVE_PREFIX).length > 0
-        || (dbCache[DB_HEX_KEY] ? archivedStubsOf(dbCache[DB_HEX_KEY]).length > 0 : false);
+        || (dbCache[DB_HEX_KEY] ? archivedStubsOf(dbCache[DB_HEX_KEY]).length > 0 : false)
+        || kvListExactPrefix(COLD_PREFIX).length > 0;
     if (!hasPluginRows && !hasArchive) return raw;
     const dbObj = await decodeRisuSave(raw);
     if (hasPluginRows) {
@@ -7975,6 +7986,8 @@ async function buildFullExportDbValue() {
     // nothing about the archive. Throws when a payload is missing rather than
     // shipping a backup that would import as a lost character.
     await inlineArchivedCharacters(dbObj);
+    // Stored modules go out whole for the same reason.
+    await moduleColdStore.inlineColdModules(dbObj);
     // The caller streams this into the export after further awaits; the
     // bytes are owned, so encodes in between cannot overwrite them.
     return encodeRisuSaveLegacyBuffer(dbObj);
@@ -9926,6 +9939,14 @@ function listOrphanArchiveRows(dbObj) {
         if (parsed && (referenced.has(parsed.rowId) || parsed.archivedAt > youngestOrphan)) continue;
         metas.push(key);
     }
+    // Stored-module rows no module names any more (put back, deleted, or
+    // replaced by a backup import), with the same grace. A database without
+    // a module list vouches for none of them, so none are orphans then.
+    if (Array.isArray(dbObj?.modules)) {
+        const cold = moduleColdStore.listOrphanRows(dbObj, ARCHIVE_ORPHAN_GRACE_MS);
+        payloads.push(...cold.rows);
+        bytes += cold.bytes;
+    }
     return { payloads, metas, bytes };
 }
 
@@ -10021,6 +10042,13 @@ function patchTouchesCharacterLists(patch) {
 // write). `patch` null means "assume the lists were touched".
 function findArchiveConflicts(prev, next, patch) {
     if (!next || typeof next !== 'object') return null;
+    // A stored module names the row that holds its body; only
+    // /api/modules/cold writes one, so a new marker without its row is a
+    // writer's mistake that would export the module empty.
+    if (patchTouchesModules(patch)) {
+        const dangling = findDanglingColdModules(prev, next, moduleColdStore.hasRow);
+        if (dangling.length > 0) return `stored module ${dangling[0]} has no stored body`;
+    }
     if (!patchTouchesCharacterLists(patch)) return null;
     const archived = new Set(archivedStubsOf(next).map((s) => s.chaId));
     const nextChars = Array.isArray(next.characters) ? next.characters : [];
@@ -10517,6 +10545,83 @@ app.delete('/api/characters/:chaId/archive', async (req, res, next) => {
     } catch (err) { next(err); }
 });
 
+// ── Stored modules (module-cold-store.cjs) ──────────────────────────────────
+
+// `ops` on the live database, as if a page had sent them: the copy, hash,
+// etag and persist of /api/patch, without its guards (the caller built the
+// ops from this same copy). Caller holds the mutable storage queue. Returns
+// the db-patch the other pages land.
+function applyServerDatabaseOps(ops, source) {
+    const current = dbCache[DB_HEX_KEY];
+    const prevHash = databasePatchHashCache.hash(current).toString(16);
+    const prevEtag = dbEtag;
+    const next = applyPatchCopyOnWrite(current, ops).newDocument;
+    const nextHash = databasePatchHashCache.update(current, next, ops);
+    if (TEST_FREEZE_CACHE) auditPatchedHashForTests(source, next, nextHash);
+    dbCache[DB_HEX_KEY] = next;
+    dbEtag = dbEtagFor(next);
+    scheduleDatabasePersist(source);
+    return { prevHash, nextHash: nextHash.toString(16), etag: dbEtag, prevEtag, ops };
+}
+
+const MODULE_COLD_BATCH_MAX = 100;
+
+// Store modules nothing uses: the rows are written, then the bodies leave the
+// database in the same queue step. The asking page lands the returned
+// db-patch (its own stream skips it: same origin); the others get it live.
+app.post('/api/modules/cold', rejectDuringExclusiveStorage, async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    if (!checkActiveSession(req, res)) return;
+    const ids = req.body?.ids;
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > MODULE_COLD_BATCH_MAX
+        || ids.some((id) => typeof id !== 'string') || new Set(ids).size !== ids.length) {
+        return res.status(400).json({ error: `ids must be 1-${MODULE_COLD_BATCH_MAX} distinct module ids`, code: 'MODULE_COLD_BAD_BATCH' });
+    }
+    try {
+        const outcome = await queueMutableStorageOperation(async () => {
+            const db = await ensureDatabaseCache();
+            const { ops, results } = await moduleColdStore.planCold(db, ids);
+            const published = ops.length > 0 ? applyServerDatabaseOps(ops, 'module-cold') : null;
+            return { results, published };
+        });
+        const stored = outcome.results.filter((r) => r.ok).length;
+        if (stored > 0) logger.info(`[ModuleCold] stored ${stored} of ${ids.length} module(s)`);
+        res.json({ ok: true, results: outcome.results, published: outcome.published });
+        if (outcome.published) {
+            try {
+                syncHub.publish({ type: 'db-patch', origin: chatClientId(req), ...outcome.published });
+            } catch (publishError) {
+                logger.warn('[Sync] Failed to publish module-cold db-patch:', publishError?.message ?? publishError);
+            }
+        }
+    } catch (err) { next(err); }
+});
+
+// Bodies of stored modules, to show, edit, turn on or back up. Rows never
+// change once written, so this reads them without the queue.
+const MODULE_COLD_READ_MAX = 200;
+app.post('/api/modules/cold-bodies', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    const refs = req.body?.refs;
+    if (!Array.isArray(refs) || refs.length === 0 || refs.length > MODULE_COLD_READ_MAX
+        || refs.some((r) => typeof r?.id !== 'string' || !Number.isInteger(r?.archivedAt))) {
+        return res.status(400).json({ error: `refs must be 1-${MODULE_COLD_READ_MAX} { id, archivedAt }`, code: 'MODULE_COLD_BAD_REFS' });
+    }
+    try {
+        const bodies = [];
+        for (const { id, archivedAt } of refs) {
+            let body = null;
+            try {
+                body = await moduleColdStore.readBody(id, archivedAt);
+            } catch (error) {
+                logger.warn(`[ModuleCold] unreadable row ${id}@${archivedAt}: ${error?.message || error}`);
+            }
+            bodies.push(body ? { id, archivedAt, body } : { id, archivedAt, missing: true });
+        }
+        res.json({ bodies });
+    } catch (err) { next(err); }
+});
+
 // ── Storage dashboard endpoints ──────────────────────────────────────────────
 
 const DB_BLOB_KEY = 'database/database.bin';
@@ -10524,7 +10629,7 @@ const DB_BACKUP_PREFIX = 'database/dbbackup-';
 // createBackupAndRotate names snapshots `${DB_BACKUP_PREFIX}${digits}.bin`;
 // the digits double as the plugin-storage snapshot id.
 const DB_BACKUP_KEY_RE = /^database\/dbbackup-(\d+)\.bin$/;
-const ASSET_PREFIXES = ['assets/', 'remotes/', 'inlay/', 'inlay_thumb/', 'inlay_meta/', 'inlay_info/', 'coldstorage/', 'archive/', 'archive-meta/'];
+const ASSET_PREFIXES = ['assets/', 'remotes/', 'inlay/', 'inlay_thumb/', 'inlay_meta/', 'inlay_info/', 'coldstorage/', 'archive/', 'archive-meta/', COLD_PREFIX];
 // The summary endpoint runs during bootstrap as well as on the dashboard.  An
 // exact orphan scan has to visit every asset key, so beyond this count it is an
 // explicitly requested maintenance task rather than hidden startup work.  Zero

@@ -32,6 +32,7 @@ import {
     type AssetManifestDescriptor,
     type AssetManifestOperation,
     type AssetManifestTuple,
+    type ServerDbPatch,
 } from "./storage/nodeStorage";
 import { getExternalAssetContentUrl, isExternalAssetLocation } from "./storage/externalAssets";
 import { isNodeServer, supportsPatchSync } from "./platform";
@@ -505,6 +506,17 @@ let trackCharacterForSaveImpl: (chaId: string) => void = () => {}
 let patchSyncBaseline: PatchBaselineSnapshot | null = null
 let activeSavePatcher: RisuSavePatcher | null = null
 
+/**
+ * Whether this page holds `module` otherwise than the server does (an
+ * unsaved edit, or a boot-time normalization such as updateLorebooks that
+ * nothing tracked). True when there is no patch baseline to compare with.
+ */
+export function moduleDiffersFromSaved(module: { id?: string }): boolean {
+    const saved = typeof module?.id === 'string' ? activeSavePatcher?.baselineModuleJson(module.id) : undefined
+    if (saved === undefined) return true
+    return JSON.stringify(normalizeJSON($state.snapshot(module))) !== saved
+}
+
 // Surfaces server-side persist failures (Stage 1 visibility — see issues.md).
 // The same failure is re-attached on every patch response until cleared, so we
 // dedupe by timestamp to fire one toast per distinct failure event.
@@ -642,6 +654,19 @@ export function trackCharacterForSave(chaId: string) {
  */
 export function setPatchSyncBaseline(data: Database | null) {
     patchSyncBaseline = data ? new PatchBaselineSnapshot(data) : null
+}
+
+// A change the server made to the database at this page's request (stored
+// modules, moduleCold.svelte.ts): the page's own stream skips it as its own,
+// so it lands here like another device's patch. Set once saveDb's sync runs.
+let landServerPatch: ((patch: ServerDbPatch) => void) | null = null
+export function landServerDbPatch(patch: ServerDbPatch): boolean {
+    if (!landServerPatch) return false
+    landServerPatch(patch)
+    return true
+}
+export function canLandServerDbPatch(): boolean {
+    return landServerPatch !== null && activeSavePatcher !== null
 }
 
 export async function saveDb() {
@@ -2465,6 +2490,7 @@ export async function saveDb() {
         dbPatchQueue.push({ ...event, receivedAt: Date.now() })
         startRemoteWorker()
     }
+    landServerPatch = (patch) => enqueueDbPatch({ type: 'db-patch', seq: 0, origin: '', ...patch })
 
     function enqueueChat(event: ChatEvent) {
         // Only the newest body matters. While another device streams a reply

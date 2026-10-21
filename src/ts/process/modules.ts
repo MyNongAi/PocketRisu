@@ -23,6 +23,7 @@ import { adaptLegacyProgress, runExportTask, runImportBatch, runImportTask, type
 import type { CharxDestination } from "../charxPreflight"
 import { planLargeCharxImport } from "../largeCharxImport"
 import { ImportCancelledError, isImportCancelled, runImportTransaction, type ImportWriteScope } from "../importTransaction"
+import { requestModuleWake, wholeModule } from "./moduleCold.svelte"
 
 export interface MCPModule{
     url: string
@@ -73,6 +74,13 @@ export interface RisuModule{
     nodeOnlyUnseen?: boolean
     /** PocketRisu: the Proton file this module was downloaded from (protonSource.ts). */
     nodeOnlyProtonSource?: import('../protonSource').ProtonSourceRecord
+    /**
+     * PocketRisu: stored — nothing used it, so its body (lorebook, regex,
+     * triggers, …) waits on the server in the row this names
+     * (moduleCold.svelte.ts). Ignored by upstream clients, which only ever
+     * get the module whole (exports put the body back).
+     */
+    nodeOnlyColdModule?: import('./moduleCold.svelte').ColdModuleMarker
 }
 
 /**
@@ -159,6 +167,8 @@ export interface ModuleRuntimeContext {
 }
 
 export async function hydrateModuleAssets(module: RisuModule): Promise<RisuModule> {
+    // A stored module goes out with its body (moduleCold.svelte.ts).
+    module = await wholeModule(module)
     if (Array.isArray(module.assets) || !module.assetManifest) return module
     const hydrated = safeStructuredClone(module)
     hydrated.assets = await loadAssetManifestItems(module.assetManifest) as [string, string, string][]
@@ -708,6 +718,7 @@ export function getModules(context?:ModuleRuntimeContext){
     // persona-embedded modules may share the conventional `$embedded` id, and
     // a cache keyed only by ids would leak the previously selected persona.
     if(!context && lastModules === idsJoined){
+        requestModuleWake(lastModuleData)
         return lastModuleData
     }
 
@@ -716,6 +727,9 @@ export function getModules(context?:ModuleRuntimeContext){
         && !modules.some((module) => module === persona.embeddedModule)){
         modules.push(persona.embeddedModule)
     }
+    // A stored module in use (just turned on, or used by a bot that came
+    // back) has no body here yet: fetch it, then the modules refresh.
+    requestModuleWake(modules)
     if(!context){
         lastModules = idsJoined
         lastModuleData = modules

@@ -502,6 +502,46 @@
       ]
     },
     {
+      "id": "MODULE-COLD",
+      "title": "안 쓰는 모듈 본문 보관",
+      "criticality": "performance",
+      "ownerFiles": [
+        "server/node/module-cold-store.cjs",
+        "server/node/server.cjs",
+        "src/ts/process/moduleCold.svelte.ts",
+        "src/ts/process/modules.ts",
+        "src/ts/process/index.svelte.ts",
+        "src/ts/globalApi.svelte.ts",
+        "src/ts/storage/nodeStorage.ts",
+        "src/ts/drive/backuplocal.ts",
+        "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
+        "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "server/node/module-cold-store.cjs", "contains": "const COLD_BODY_FIELDS = Object.freeze(['lorebook', 'regex', 'trigger', 'cjs', 'backgroundEmbedding', 'customModuleToggle']);" },
+        { "file": "server/node/module-cold-store.cjs", "contains": "function referencedModuleNames(db) {" },
+        { "file": "server/node/server.cjs", "contains": "app.post('/api/modules/cold', rejectDuringExclusiveStorage, async (req, res, next) => {" },
+        { "file": "server/node/server.cjs", "contains": "await moduleColdStore.inlineColdModules(dbObj);" },
+        { "file": "server/node/server.cjs", "contains": "await moduleColdStore.inlineColdModules(trimmed);" },
+        { "file": "server/node/server.cjs", "contains": "const dangling = findDanglingColdModules(prev, next, moduleColdStore.hasRow);" },
+        { "file": "src/ts/process/modules.ts", "contains": "requestModuleWake(modules)" },
+        { "file": "src/ts/process/modules.ts", "contains": "module = await wholeModule(module)" },
+        { "file": "src/ts/process/index.svelte.ts", "contains": "if (!await wakeModules(storedModules.map((module) => module.id))) {" },
+        { "file": "src/ts/process/moduleCold.svelte.ts", "contains": "if (index >= 0 && moduleDiffersFromSaved(DBState.db.modules[index])) {" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "landServerPatch = (patch) => enqueueDbPatch({ type: 'db-patch', seq: 0, origin: '', ...patch })" },
+        { "file": "src/ts/drive/backuplocal.ts", "contains": "dbCopy.modules = await wholeModules(dbCopy.modules)" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "draft = await wholeModule(draft)" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "{language.moduleColdEditorNote}" },
+        { "file": "src/ts/setting/accessibilitySettingsData.ts", "contains": "id: 'acc.nodeOnlyColdModules'," }
+      ],
+      "regressionTests": [
+        "server/node/module-cold-store.test.ts",
+        "test/compat/module-cold.test.ts",
+        "src/ts/process/moduleCold.test.ts",
+        "src/ts/sync/remoteDbPatch.coldModule.test.ts"
+      ]
+    },
+    {
       "id": "CATALOG-DEACTIVATED-FOLDERS",
       "title": "비활성 캐릭터 기간별 폴더와 비활성 폴더 구역",
       "criticality": "core-ux",

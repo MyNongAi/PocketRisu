@@ -34,6 +34,7 @@ import { hypaMemoryV3 } from "./memory/hypav3";
 import { getActiveHypaV3Preset } from "./memory/memoryPresets"
 import { resolveModelPresetContextBudget } from "./request/contextBudget"
 import { captureModuleRuntimeContext, getModuleAssets, getModuleLorebooks, getModules, getModuleToggles, getModuleTriggers, type ModuleRuntimeContext } from "./modules";
+import { isColdModule, wakeModules } from "./moduleCold.svelte";
 import { hydrateAssetListsForCbs, serializeForCbsScan } from "../parser/assetListHydration";
 import { forageStorage, readImage, resolvePrioritizedAssetManifestNames } from "../globalApi.svelte";
 import { pluginV2 } from "../plugins/plugins.svelte";
@@ -382,6 +383,17 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     currentChar = initialTarget.character
     currentChat = initialTarget.chat
     moduleContext ??= captureModuleRuntimeContext(currentChar, currentChat)
+    // A stored module this send uses has its body on the server
+    // (moduleCold.svelte.ts): bring it back before anything reads it.
+    const storedModules = (moduleContext.modules ?? []).filter(isColdModule)
+    if (storedModules.length > 0) {
+        if (!await wakeModules(storedModules.map((module) => module.id))) {
+            alertError(language.moduleColdLoadFailed + storedModules.map((module) => module.name || module.id).join(', '))
+            endGeneration(genKey, { generationId })
+            return false
+        }
+        moduleContext = captureModuleRuntimeContext(currentChar, currentChat)
+    }
 
     // Resumable-send tombstone (pendingSends.ts): registered BEFORE the
     // pipeline so a tab death anywhere in it (translate → memory → request)

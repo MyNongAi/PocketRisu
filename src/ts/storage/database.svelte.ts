@@ -1745,6 +1745,8 @@ export interface Database{
     nodeOnlyAutoDeactivateAfterDays?:number
     /** Last completed automatic cold-character sweep. */
     nodeOnlyAutoDeactivateLastRun?:number
+    /** Store the bodies of modules nothing uses on the server (moduleCold.svelte.ts). Undefined means on. */
+    nodeOnlyColdModules?:boolean
     // Hide deactivated characters from the character lists (the storage
     // dashboard still lists them).
     nodeOnlyHideArchivedCharacters?:boolean

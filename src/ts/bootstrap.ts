@@ -1,5 +1,6 @@
 import { migrateLegacyTrash } from "./characterArchive";
 import { scheduleAutoDeactivation } from "./characterAutoArchive";
+import { scheduleColdModuleSweep } from "./process/moduleCold.svelte";
 import { scheduleDeactivatedFolderRefresh } from "./deactivatedFolderRefresh";
 import { changeFullscreen, checkNullish } from "./util"
 import { installDynamicViewportHeight } from "./viewportHeight"
@@ -594,6 +595,8 @@ async function checkNewFormat(): Promise<void> {
         setTimeout(() => { void migrateLegacyTrash() }, 5000);
     }
     scheduleAutoDeactivation();
+    // Modules nothing uses leave the browser a minute after boot.
+    scheduleColdModuleSweep();
     scheduleDeactivatedFolderRefresh();
 
     // One-pass cleanup of composer drafts whose chat no longer exists (deleted

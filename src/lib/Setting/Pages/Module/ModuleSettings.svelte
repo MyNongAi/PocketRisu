@@ -24,6 +24,7 @@
     import { localOriginOf, resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
     import { copyProtonLink, protonLinkOf } from "src/ts/protonSource";
     import { cloneModuleDraft } from "src/ts/process/moduleDraft";
+    import { isColdModule, keepModuleWhole, wakeModules, wholeModule } from "src/ts/process/moduleCold.svelte";
     import type { PromptPresetFolder } from "src/ts/storage/database.svelte";
     import { importDroppedFiles } from "src/ts/dropImport";
     import { FileDropSurface } from "src/ts/gui/fileDropSurface.svelte";
@@ -40,6 +41,10 @@
     onMount(() => { syncLinkedFolders() })
     let editModuleIndex = $state(-1)
     let converting = $state(false)
+    // The module in the editor is a stored one (moduleCold.svelte.ts): its
+    // body was fetched to show; saving puts it back in the database.
+    let editingStored = $state(false)
+    let openingModule = $state(false)
     // FolderedList is unmounted while the module editor is open. Keep the
     // query here so returning to the catalog restores the same filtered view.
     let moduleSearchQuery = $state('')
@@ -179,6 +184,7 @@
             DBState.db.enabledModules.push(rmodule.id)
             rememberActivation(rmodule.id)
             markSeen(rmodule)
+            void wakeModules([rmodule.id])
         }
         DBState.db.enabledModules = DBState.db.enabledModules
     }
@@ -200,6 +206,7 @@
             character.modules = [...current, rmodule.id]
             recordModulePair(DBState.db.modules, [rmodule.id], character.chaId)
             rememberActivation(rmodule.id)
+            void wakeModules([rmodule.id])
             notifySuccess(language.moduleBotLinked.replace('{}', character.name || 'Unnamed'))
         }
         syncLinkedFolders()
@@ -228,6 +235,7 @@
         }
         recordModulePair(DBState.db.modules, change.linked, character.chaId)
         for (const id of change.linked) rememberActivation(id)
+        void wakeModules(change.linked)
         notifySuccess(language.moduleFolderBotLinked.replace('{}', name).replace('{n}', String(change.linked.length)))
     }
 
@@ -244,6 +252,7 @@
             rememberActivation(id)
         }
         DBState.db.enabledModules = [...new Set(DBState.db.enabledModules)]
+        void wakeModules(ids)
     }
 
     function originalModuleIndex(displayIndex: number) {
@@ -251,15 +260,34 @@
         return id ? DBState.db.modules.findIndex((module) => module.id === id) : -1
     }
 
-    function openEditor(index: number) {
+    async function openEditor(index: number) {
+        if (openingModule) return
         const originalIndex = originalModuleIndex(index)
         const rmodule = DBState.db.modules[originalIndex]
         if (!rmodule || rmodule.mcp) return
         // Looked at: no longer 🆕 (newMarks.svelte.ts).
         markSeen(rmodule)
         rememberListScroll()
-        tempModule = cloneModuleDraft($state.snapshot(rmodule))
-        editModuleIndex = originalIndex
+        // Being worked on: the sweep leaves it whole until the next boot.
+        keepModuleWhole(rmodule.id)
+        const stored = isColdModule(rmodule)
+        let draft: RisuModule = $state.snapshot(rmodule) as RisuModule
+        if (stored) {
+            // Shown, not brought back: turning it on or saving does that.
+            openingModule = true
+            try {
+                draft = await wholeModule(draft)
+            } catch (error) {
+                alertError(language.moduleColdLoadFailed + (error instanceof Error ? error.message : String(error)))
+                return
+            } finally {
+                openingModule = false
+            }
+        }
+        tempModule = cloneModuleDraft(draft)
+        editingStored = stored
+        editModuleIndex = DBState.db.modules.findIndex((module) => module.id === rmodule.id)
+        if (editModuleIndex < 0) return
         mode = 2
     }
 
@@ -495,7 +523,7 @@
             {#if rmodule.mcp}
                 <Waypoints size={18} class="shrink-0 text-textcolor2" />
             {/if}
-            <div class="flex flex-col min-w-0 grow">
+            <div class="flex flex-col min-w-0 grow" class:stored-module-muted={isColdModule(rmodule)} title={isColdModule(rmodule) ? language.moduleColdTitle : undefined}>
                 <span class="truncate text-textcolor" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(rmodule))}>{#if hasMissingAssets(rmodule)}<span aria-label="에셋 누락" title="에셋 누락">❗</span> {/if}<PairedModuleMark link={pairedModules.get(rmodule.id)} />{newMarkPrefix(rmodule)}{rmodule.favorite ? '★ ' : ''}{rmodule.name}</span>
                 <span class="text-xs text-textcolor2 truncate">
                     <span
@@ -506,7 +534,7 @@
                         class:border-dashed={!source.recorded}
                         title={source.recorded ? `기록된 출처: ${source.label}` : '출처 기록 없음 · 기존 웹리스 기준'}
                     >[{source.label}]</span>
-                    · 에셋 {moduleAssetCount(rmodule)}개 · {rmodule.description || 'No description provided'}
+                    · 에셋 {moduleAssetCount(rmodule)}개{#if isColdModule(rmodule)} · {language.moduleColdBadge}{/if} · {rmodule.description || 'No description provided'}
                 </span>
             </div>
             <button class="no-sort shrink-0 p-1 cursor-pointer {isGlobal(rmodule) ? 'text-blue-500' : isIntegrated(rmodule) || isBotModule(rmodule) ? 'text-amber-500 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
@@ -554,6 +582,9 @@
     </SettingPage>
 {:else if mode === 2}
     <SettingPage title={language.editModule}>
+    {#if editingStored}
+        <div class="mb-3 rounded-md border border-darkborderc bg-darkbg/40 px-3 py-2 text-sm text-textcolor2">{language.moduleColdEditorNote}</div>
+    {/if}
     <ModuleMenu bind:currentModule={tempModule}/>
         <ShButton variant="primary" className="mt-6 w-full" onclick={async () => {
             DBState.db.modules[editModuleIndex] = cloneModuleDraft($state.snapshot(tempModule))
@@ -582,3 +613,10 @@
     </SettingPage>
 {/if}
 </div>
+
+<style>
+    /* A stored module (moduleCold.svelte.ts), dimmed like a deactivated bot. */
+    .stored-module-muted {
+        opacity: 0.6;
+    }
+</style>

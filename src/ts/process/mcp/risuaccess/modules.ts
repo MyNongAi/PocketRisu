@@ -4,6 +4,7 @@ import { DBState } from 'src/ts/stores.svelte'
 import { pickHashRand } from 'src/ts/util'
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
 import { recordModuleActivation, recordModuleFolderActivation, seedModuleActivationHistory } from '../../moduleSort'
+import { wakeModules } from '../../moduleCold.svelte'
 
 const moduleNotFound = (id: string): RPCToolCallContent[] => [
   {
@@ -304,6 +305,11 @@ export class ModuleHandler extends MCPToolHandler {
   }
 
   async handle(toolName: string, args: Record<string, any>): Promise<RPCToolCallContent[] | null> {
+    // A tool working on one module needs its body: a stored one comes back
+    // first (moduleCold.svelte.ts).
+    if (typeof args?.id === 'string' && toolName.startsWith('risu-') && toolName.includes('-module-')) {
+      await wakeModules([args.id])
+    }
     switch (toolName) {
       case 'risu-list-modules':
         return await this.listModules(args.count, args.offset)

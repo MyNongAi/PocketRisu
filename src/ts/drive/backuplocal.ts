@@ -4,6 +4,7 @@ import { LocalWriter, forageStorage, loadAssetManifestItems } from "../globalApi
 import { encodeRisuSaveLegacy } from "../storage/risuSave";
 import { getDatabase, type Chat } from "../storage/database.svelte";
 import { fetchChatFromServer } from "../storage/chatStorage";
+import { wholeModules } from "../process/moduleCold.svelte";
 import * as pluginStorageStore from "../plugins/pluginStorageStore";
 import { language } from "src/lang";
 
@@ -228,6 +229,8 @@ export async function SavePartialLocalBackup(){
     // Reassemble full chats from server for placeholders (runtime lazy load)
     alertWait(`Saving partial local backup... (Assembling chat data)`)
     const dbCopy = structuredClone({ ...db, account: undefined })
+    // Stored modules (moduleCold.svelte.ts) go into the backup whole.
+    if (Array.isArray(dbCopy.modules)) dbCopy.modules = await wholeModules(dbCopy.modules)
     for (const module of dbCopy.modules ?? []) {
         if (!module?.assetManifest) continue
         module.assets = await loadAssetManifestItems(module.assetManifest) as [string, string, string][]

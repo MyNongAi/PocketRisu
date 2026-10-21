@@ -6,6 +6,7 @@
 
 import type { SettingItem } from './types';
 import { scheduleAutoDeactivation } from '../characterAutoArchive';
+import { scheduleColdModuleSweep } from '../process/moduleCold.svelte';
 import { normalizeAutoDeactivateDays } from '../characterAutoArchivePolicy';
 import { isDeactivatedGroupingEnabled } from '../deactivatedCharacterFolders';
 import { checkCharOrder } from '../globalApi.svelte';
@@ -333,6 +334,20 @@ export const accessibilitySettingsItems: SettingItem[] = [
         onChange: () => scheduleAutoDeactivation({ delayMs: 1000, force: true }),
         options: { min: 0, max: 3650 },
         keywords: ['automatic', 'deactivate', 'archive', 'unused', 'days', 'character', 'performance'],
+    },
+    {
+        id: 'acc.nodeOnlyColdModules',
+        type: 'check',
+        labelKey: 'coldModules',
+        helpKey: 'coldModules',
+        // Undefined means on.
+        getValue: (db) => db.nodeOnlyColdModules !== false,
+        setValue: (db, value) => {
+            db.nodeOnlyColdModules = !!value;
+        },
+        condition: () => isNodeServer,
+        onChange: () => scheduleColdModuleSweep(1000),
+        keywords: ['module', 'store', 'unused', 'memory', 'performance', '모듈', '보관'],
     },
     {
         id: 'acc.nodeOnlyRestoreLastChat',
