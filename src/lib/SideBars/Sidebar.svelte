@@ -80,7 +80,7 @@
     import { checkCharOrder } from "src/ts/globalApi.svelte";
     import { getPaneView, paneState, paneView, setPaneContext, type PaneId } from "src/ts/chatPanes.svelte";
     import { activatePane } from "src/ts/paneActivation";
-    import { paneWord, setPanePanelOpen, splitLayout, type PanelTab } from "src/ts/splitLayout.svelte";
+    import { paneWord, setPaneOverlayOpen, setPanePanelOpen, splitLayout, type PanelTab } from "src/ts/splitLayout.svelte";
     import { newMarkPrefix, newMarks } from "src/ts/newMarks.svelte";
     import { alertConfirm, alertSelect } from "src/ts/alert";
     import { characterMenuInfo } from "src/ts/gui/sidebarMenuInfo";
@@ -402,15 +402,27 @@
     part?: 'all' | 'rail' | 'panel';
     /** The pane a 'panel' belongs to. */
     pane?: PaneId;
+    /**
+     * A narrow window's split: the whole sidebar of `pane`, laid over that
+     * pane's chat (SplitWorkspace), closed from itself.
+     */
+    overlay?: boolean;
   }
 
-  let { hidden = false, openLegacyGrid = () => {}, part = 'all', pane }: Props = $props();
+  let { hidden = false, openLegacyGrid = () => {}, part = 'all', pane, overlay = false }: Props = $props();
   // svelte-ignore state_referenced_locally
   const view = pane ? paneView(pane) : getPaneView()
   // svelte-ignore state_referenced_locally
   if (pane) setPaneContext(view)
   // Touching a pane's panel hands that pane the selection before the touch acts.
   const takePaneSelection = () => { if (pane) activatePane(pane) }
+  // A pane's panel closes on its own; the app's sidebar slides shut.
+  const closePane = (): boolean => {
+    if (!pane) return false
+    if (overlay) setPaneOverlayOpen(pane, false)
+    else setPanePanelOpen(pane, false)
+    return true
+  }
 
   onMount(() => {
     initSupport()
@@ -1568,10 +1580,11 @@
 {#if part !== 'panel'}
 {#if DBState.db.menuSideBar}
 <div
+  onpointerdowncapture={takePaneSelection}
   class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
   class:editMode
-  class:risu-sub-sidebar={$sideBarClosing}
-  class:risu-sub-sidebar-close={$sideBarClosing}
+  class:risu-sub-sidebar={$sideBarClosing && !pane}
+  class:risu-sub-sidebar-close={$sideBarClosing && !pane}
   class:hidden={hidden}
   class:flex={!hidden}
 >
@@ -2195,8 +2208,9 @@
   class:min-w-110={!pane && !$DynamicGUI && $sideBarSize === 1}
   class:min-w-124={!pane && !$DynamicGUI && $sideBarSize === 2}
   class:min-w-138={!pane && !$DynamicGUI && $sideBarSize === 3}
-  class:w-80={!!pane}
-  class:min-w-80={!!pane}
+  class:w-80={!!pane && !overlay}
+  class:min-w-80={!!pane && !overlay}
+  class:pane-overlay-panel={overlay}
   class:px-2={$DynamicGUI}
   class:px-4={!$DynamicGUI}
   class:dynamic-sidebar={$DynamicGUI}
@@ -2215,7 +2229,7 @@
       if($sideBarClosing){
         return
       }
-      if (pane) { setPanePanelOpen(pane, false); return }
+      if (closePane()) return
       $sideBarClosing = true;
     }}
   >
@@ -2348,6 +2362,7 @@
       class:max-xs:!min-w-8={!$leftBarCollapsed}
       class:max-xs:!min-w-6={$leftBarCollapsed}
       class:hidden={hidden} onclick={() => {
+      if (closePane()) return
       if($sideBarClosing){
         return
       }
@@ -2358,8 +2373,8 @@
             e.currentTarget.click()
         }
       }}
-      class:sidebar-dark-animation={!$sideBarClosing}
-      class:sidebar-dark-close-animation={$sideBarClosing}>
+      class:sidebar-dark-animation={!$sideBarClosing || !!pane}
+      class:sidebar-dark-close-animation={$sideBarClosing && !pane}>
       {#if isEmbeddedRisuPane || $splitChatOpen}
         <!-- Narrow panes of a split (the right one always; both on a phone
              such as an unfolded Fold) overlay their sidebar on the chat;
@@ -2369,6 +2384,7 @@
           class="mt-3 h-12 w-12 border-r border-b border-t border-transparent rounded-r-md bg-darkbg hover:border-neutral-200 transition-colors flex items-center justify-center text-textcolor"
           onclick={(event) => {
             event.stopPropagation()
+            if (closePane()) return
             if (!$sideBarClosing) $sideBarClosing = true
           }}><ArrowLeft /></button>
       {/if}
@@ -2379,6 +2395,14 @@
 <style>
   .editMode {
     min-width: 6rem;
+  }
+  /* Over a narrow pane: as wide as the app's sidebar when the pane has room,
+     else what is left beside the bot list (5rem) and the strip that
+     closes it (3rem). */
+  .pane-overlay-panel {
+    width: min(24rem, calc(100% - 8rem));
+    min-width: 0;
+    flex-shrink: 0;
   }
   @keyframes sidebar-transition {
     from {

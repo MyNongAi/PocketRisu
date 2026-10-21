@@ -20,15 +20,24 @@
     import Sidebar from '../SideBars/Sidebar.svelte'
     import { restorePanesAfterBoot, returnToMainPane, swapPanes } from 'src/ts/paneActivation'
     import { startPaneSync } from 'src/ts/chatPanes.svelte'
-    import { railPlace, setSplitLayout, splitLayout, type RailPlace } from 'src/ts/splitLayout.svelte'
+    import { paneOverlayOpen, railPlace, setPaneOverlayOpen, setSplitLayout, splitLayout, type RailPlace } from 'src/ts/splitLayout.svelte'
     import { alertSelect } from 'src/ts/alert'
     import { language } from 'src/lang'
 
     let { children, openLegacyGrid = () => {} }: { children: Snippet, openLegacyGrid?: () => void } = $props()
 
     const enabled = $derived($splitChatOpen && !$MobileGUI && !isEmbeddedRisuPane)
-    // The docked layout; a narrow (DynamicGUI) window keeps the sidebar as an overlay (App).
+    // The docked layout. A narrow (DynamicGUI) window lays each pane's
+    // sidebar over that pane's chat instead (paneOverlayOpen), so both panes
+    // can show their own at once (the user's request, 2026-10-21).
     const docked = $derived(enabled && !$DynamicGUI)
+    const mainOverlayShown = $derived(enabled && !docked && paneOverlayOpen.main && !$settingsOpen)
+    const sideOverlayShown = $derived(enabled && !docked && paneOverlayOpen.side)
+    // Leaving the narrow layout (or the split) closes them; they are not kept.
+    $effect(() => {
+        if (enabled && !docked) return
+        untrack(() => { setPaneOverlayOpen('main', false); setPaneOverlayOpen('side', false) })
+    })
     // The two panes and the divider between them (the bot list sits outside it at the ends).
     let paneRoot: HTMLDivElement | null = $state(null)
     let paneWidth = $state(0)
@@ -65,6 +74,19 @@
     // keeping their minimum (its chat alone held 240px, and its box shrank
     // below that, so the page ran past the screen; 2026-10-21).
     const looseSide = $derived(enabled && !docked && !column ? looseSplitSideWidth(paneWidth || window.innerWidth, $splitChatWidth) : null)
+    // Side by side in a narrow window, the second pane's own window would
+    // leave its panel under 200px at the pane's narrowest (320px): it reaches
+    // over the divider up to the app sidebar's width (26rem), but leaves the
+    // main pane's open window its closing strip (Sidebar: bot list 5rem,
+    // panel up to 24rem, strip 3rem). Null: just the pane (stacked).
+    const sideOverlayWidth = $derived.by(() => {
+        if (looseSide === null) return null
+        const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+        const main = (paneWidth || window.innerWidth) - SPLIT_DIVIDER_PX - looseSide
+        const mainOverlay = 5 * rem + Math.min(24 * rem, main - 8 * rem) + 3 * rem
+        const spare = paneOverlayOpen.main ? Math.max(0, main - mainOverlay) : main
+        return Math.max(looseSide, Math.min(26 * rem, looseSide + SPLIT_DIVIDER_PX + spare))
+    })
     // What the toasts and the request dock keep clear of (splitRightInset).
     $effect(() => {
         splitDockedRight.set(docked
@@ -223,6 +245,11 @@
             <div class="relative flex h-full min-w-0 grow">
                 {@render children()}
             </div>
+            {#if mainOverlayShown}
+                <div class="split-pane-overlay absolute inset-0 z-30 flex overflow-hidden">
+                    <Sidebar pane="main" overlay hidden={false} {openLegacyGrid} />
+                </div>
+            {/if}
         </div>
         {#if enabled}
             <div
@@ -250,7 +277,7 @@
             <!-- The second pane: its chat, and its panel at the outer edge
                  (the left one when stacked, like the main pane's). -->
             <div
-                class="split-side flex min-w-0 min-h-0"
+                class="split-side relative flex min-w-0 min-h-0"
                 class:h-full={!column}
                 class:w-full={column}
                 class:shrink-0={column}
@@ -273,6 +300,14 @@
                 </div>
                 {#if sidePanelShown && !column}
                     <Sidebar part="panel" pane="side" hidden={false} {openLegacyGrid} />
+                {/if}
+                {#if sideOverlayShown}
+                    <div
+                        class="split-pane-overlay absolute inset-y-0 right-0 z-30 flex overflow-hidden"
+                        style:width={sideOverlayWidth === null ? '100%' : `${sideOverlayWidth}px`}
+                    >
+                        <Sidebar pane="side" overlay hidden={false} {openLegacyGrid} />
+                    </div>
                 {/if}
             </div>
         {/if}

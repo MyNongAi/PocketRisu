@@ -75,6 +75,15 @@ export function setPanePanelOpen(pane: PaneId, open: boolean): void {
     persistSplitLayout()
 }
 
+// A narrow window (DynamicGUI) has no room to dock the panels: each pane's
+// character window covers its own chat while open, both at once if wanted
+// (the user's request, 2026-10-21). Open only on request, never kept.
+export const paneOverlayOpen = $state<Record<PaneId, boolean>>({ main: false, side: false })
+
+export function setPaneOverlayOpen(pane: PaneId, open: boolean): void {
+    paneOverlayOpen[pane] = open
+}
+
 /** The words for the two panes in menus: left/right side by side, top/bottom stacked. */
 export function paneWord(pane: PaneId): string {
     const words = language.splitPaneWords
