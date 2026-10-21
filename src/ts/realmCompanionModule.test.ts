@@ -7,6 +7,9 @@ vi.mock('src/lang', () => ({
         realmCompanionModuleTask: 'task',
         realmCompanionModulePaired: (n: number) => `paired ${n}`,
         realmCompanionModuleFailed: 'failed',
+        botNotesModuleTask: 'notes',
+        botNotesModuleFailed: 'notes failed',
+        botNotesModulePaired: (n: number) => `notes paired ${n}`,
         importProgress: { importing: 'importing' },
     },
 }))
@@ -37,6 +40,7 @@ vi.mock('./process/modules', () => ({ importModuleFile: (...a: unknown[]) => imp
 
 const {
     findProtonShareLinks, isCompanionModuleFile, pairModulesWithCharacter, importRealmCompanionModules,
+    openBotNotesProtonLink, protonShareLinkOf,
 } = await import('./realmCompanionModule')
 
 const LINK = 'https://drive.proton.me/urls/ABC123#keyPart_-9'
@@ -190,5 +194,52 @@ describe('a folder share', () => {
         await importRealmCompanionModules('c1', [LINK])
         expect(db.characters[0].modules).toEqual([])
         expect(notifySuccess).not.toHaveBeenCalled()
+    })
+})
+
+describe('a Proton link clicked in the creator notes', () => {
+    beforeEach(() => {
+        db.modules = []
+        db.characters = [{ chaId: 'c1', modules: [] }]
+        vi.clearAllMocks()
+    })
+
+    test('opens the browser even for a plain module file and pairs what is imported', async () => {
+        const share = { kind: 'file', name: 'assets.risum', entries: [{ size: 10 }], trail: [] }
+        inspectProtonShare.mockResolvedValue(share)
+        importProtonShare.mockImplementation(async (_l: string, _p: string, _s: unknown, origin: string, onModule: (m: unknown) => void) => {
+            expect(origin).toBe('module')
+            const m = { id: 'n1' }
+            db.modules.push(m)
+            onModule(m)
+        })
+        await openBotNotesProtonLink('c1', LINK)
+        expect(importProtonShare).toHaveBeenCalledTimes(1)
+        expect(importProtonShare.mock.calls[0][5].browse).toBe(true)
+        expect(importProtonShare.mock.calls[0][5].taskName('assets.risum')).toBe('notes · assets.risum')
+        expect(downloadProtonEntry).not.toHaveBeenCalled()
+        expect(db.characters[0].modules).toEqual(['n1'])
+        expect(db.modules[0].nodeOnlyProtonShare).toBe(LINK)
+        expect(notifySuccess).toHaveBeenCalledWith('notes paired 1')
+    })
+
+    test('closing the browser pairs nothing; a failure is reported, not thrown', async () => {
+        inspectProtonShare.mockResolvedValue({ kind: 'folder', name: 'pack', entries: [], trail: [] })
+        importProtonShare.mockResolvedValue(undefined)
+        await openBotNotesProtonLink('c1', LINK)
+        expect(db.characters[0].modules).toEqual([])
+        expect(notifySuccess).not.toHaveBeenCalled()
+
+        inspectProtonShare.mockRejectedValue(new Error('offline'))
+        await expect(openBotNotesProtonLink('c1', LINK)).resolves.toBeUndefined()
+        expect(notifyError).toHaveBeenCalledWith('notes failed: offline')
+    })
+
+    test('reads the share an anchor points at', () => {
+        const anchor = (href: string | null) => ({ getAttribute: (name: string) => (name === 'href' ? href : null) }) as unknown as Element
+        expect(protonShareLinkOf(anchor(LINK))).toBe(LINK)
+        expect(protonShareLinkOf(anchor('https://example.com/x'))).toBeNull()
+        expect(protonShareLinkOf(anchor(null))).toBeNull()
+        expect(protonShareLinkOf(null)).toBeNull()
     })
 })

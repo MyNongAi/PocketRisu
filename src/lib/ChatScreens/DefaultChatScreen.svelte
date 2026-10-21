@@ -1945,7 +1945,7 @@ import { isMobile } from 'src/ts/platform'
 
             {#if currentChat.length <= loadPages}
                 {#if !DBState.db.characters[view.characterIndex].removedQuotes && DBState.db.characters[view.characterIndex].creatorNotes.length >= 2}
-                    <CreatorQuote quote={DBState.db.characters[view.characterIndex].creatorNotes} onRemove={() => {
+                    <CreatorQuote quote={DBState.db.characters[view.characterIndex].creatorNotes} chaId={DBState.db.characters[view.characterIndex].chaId} onRemove={() => {
                         const cha = DBState.db.characters[view.characterIndex]
                         cha.removedQuotes = true
                         DBState.db.characters[view.characterIndex] = cha

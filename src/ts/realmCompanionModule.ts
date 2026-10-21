@@ -8,6 +8,8 @@
 // modules picked there are paired.
 // A module already downloaded from the same link is paired again instead of
 // being downloaded twice.
+// The same pairing runs for a Proton link clicked in a bot's creator notes
+// (openBotNotesProtonLink), always through the browser.
 import { recordModulePair } from './gui/pairedModules'
 import { language } from 'src/lang'
 import { notifyError, notifySuccess } from './alert'
@@ -65,12 +67,21 @@ export function pairModulesWithCharacter(character: { modules?: string[] }, modu
     return added.length
 }
 
-// One progress card per module file, named for the Realm companion it is
-// (the user's request, 2026-10-22: a "렐름 전용 모듈" card stood idle beside
-// the file's own card for the whole import).
-const companionTaskName = (fileName: string) => `${language.realmCompanionModuleTask} · ${fileName}`
+// One progress card per module file, named for what it came for (the user's
+// request, 2026-10-22: a "렐름 전용 모듈" card stood idle beside the file's
+// own card for the whole import).
+const taskNameFor = (label: string) => (fileName: string) => `${label} · ${fileName}`
 
-async function downloadShareModules(link: string): Promise<RisuModule[]> {
+type ShareDownload = {
+    /** Open the browser for a plain module file too (a link the user clicked). */
+    browse?: boolean
+    /** What the cards and the password prompt call it. */
+    label?: string
+}
+
+async function downloadShareModules(link: string, options: ShareDownload = {}): Promise<RisuModule[]> {
+    const label = options.label ?? language.realmCompanionModuleTask
+    const companionTaskName = taskNameFor(label)
     let password = ''
     let share: ProtonInspectResult
     try {
@@ -79,7 +90,7 @@ async function downloadShareModules(link: string): Promise<RisuModule[]> {
         if (!isProtonPasswordRequired(error)) throw error
         // The owner put a password on the link: ask for it; cancel skips this link.
         const { openProtonShare } = await import('./protonImport')
-        const opened = await openProtonShare(link, '', `${language.realmCompanionModuleTask}\n${link}`)
+        const opened = await openProtonShare(link, '', `${label}\n${link}`)
         if (!opened) return []
         share = opened.info
         password = opened.password
@@ -89,7 +100,7 @@ async function downloadShareModules(link: string): Promise<RisuModule[]> {
         module.nodeOnlyProtonShare = link
         modules.push(module)
     }
-    if (share.kind === 'folder' || !isCompanionModuleFile(share.name)) {
+    if (options.browse || share.kind === 'folder' || !isCompanionModuleFile(share.name)) {
         // A folder, or a file that is not plainly a module, opens the same
         // browser a pasted folder link does; what the user picks imports as
         // modules, and those modules are paired.
@@ -129,8 +140,13 @@ async function importCompanionModules(
         }
         moduleIds.push(...(await downloadShareModules(link)).map((module) => module.id))
     }
+    return { moduleIds, paired: pairWithBots(moduleIds, pairWith()) }
+}
+
+/** Pairs `moduleIds` with `characters`; returns how many pairings were added. */
+function pairWithBots(moduleIds: readonly string[], characters: readonly { chaId?: string, modules?: string[] }[]): number {
     let paired = 0
-    for (const character of pairWith()) {
+    for (const character of characters) {
         paired += pairModulesWithCharacter(character, moduleIds)
         recordModulePair(getDatabase().modules, moduleIds, character.chaId)
     }
@@ -138,11 +154,11 @@ async function importCompanionModules(
         syncLinkedFolders()
         rerenderChatForModules()
     }
-    return { moduleIds, paired }
+    return paired
 }
 
-function reportFailure(error: unknown) {
-    notifyError(`${language.realmCompanionModuleFailed}: ${error instanceof Error ? error.message : String(error)}`)
+function reportFailure(error: unknown, label = language.realmCompanionModuleFailed) {
+    notifyError(`${label}: ${error instanceof Error ? error.message : String(error)}`)
 }
 
 /**
@@ -162,4 +178,27 @@ export async function importRealmCompanionModules(chaId: string, texts: readonly
         // The user cancelled a large module from its progress card.
         if (!isImportCancelled(error)) reportFailure(error)
     }
+}
+
+/**
+ * A Proton share link clicked in a bot's creator notes (the user's request,
+ * 2026-10-22): the share opens in the Proton browser, a single file too, and
+ * what the user imports there comes in as modules paired with the bot.
+ * Failures are reported, never thrown.
+ */
+export async function openBotNotesProtonLink(chaId: string, link: string): Promise<void> {
+    try {
+        const modules = await downloadShareModules(link, { browse: true, label: language.botNotesModuleTask })
+        // Look the character up after the import: the list may have changed.
+        const paired = pairWithBots(modules.map((module) => module.id), getDatabase().characters.filter((c) => c?.chaId === chaId))
+        if (paired > 0) notifySuccess(language.botNotesModulePaired(paired))
+    } catch (error) {
+        if (!isImportCancelled(error)) reportFailure(error, language.botNotesModuleFailed)
+    }
+}
+
+/** The Proton share an anchor in rendered notes points at, or null. */
+export function protonShareLinkOf(anchor: Element | null): string | null {
+    const href = anchor?.getAttribute('href')
+    return href ? findProtonShareLinks(href)[0] ?? null : null
 }
