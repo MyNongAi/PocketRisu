@@ -142,3 +142,77 @@ describe('saveChatContent when another device changed the chat', () => {
         expect(fetchMock).toHaveBeenCalledTimes(3)
     })
 })
+
+describe('a conflicting chat save merged by message id', () => {
+    beforeEach(() => {
+        vi.restoreAllMocks()
+        vi.spyOn(console, 'warn').mockImplementation(() => {})
+    })
+
+    const server = { id: CHAT, message: [msg('user', 'a', '1'), msg('char', 'b', '2'), msg('user', 'typed on phone', '9')] }
+    const conflictThenSave = () => vi.fn()
+        .mockResolvedValueOnce(jsonResponse(409, { error: 'Chat changed on another device', currentEtag: 'etag-server' }))
+        .mockResolvedValueOnce(chatBody('etag-server'))
+        .mockResolvedValueOnce(jsonResponse(200, { etag: 'etag-next' }))
+
+    test("keeps both devices' new messages in one chat instead of a copy", async () => {
+        vi.mocked(risuSave.decodeRisuSave).mockResolvedValueOnce(server as any)
+        const fetchMock = conflictThenSave()
+        const storage = setUpStorage(fetchMock)
+        // What this device loaded at etag-loaded: the first two messages.
+        storage.rememberChatBase(CHA, CHAT, LOCAL.message.slice(0, 2))
+        const preserveServerCopy = vi.fn(async () => {})
+        const applyMerged = vi.fn((_merged: any[], _sent: any[]) => true)
+
+        await storage.saveChatContent(CHA, 0, CHAT, LOCAL, 'update', { preserveServerCopy, applyMerged })
+
+        expect(preserveServerCopy).not.toHaveBeenCalled()
+        const merged = applyMerged.mock.calls[0][0] as any[]
+        expect(merged.map((m) => m.chatId)).toEqual(['1', '2', '9', '3'])
+        expect(vi.mocked(risuSave.encodeRisuSaveLegacy).mock.calls.at(-1)?.[0]).toMatchObject({ id: CHAT, message: merged })
+        expect(posts(fetchMock)).toEqual([
+            { ifMatch: 'etag-loaded', ifNoneMatch: null },
+            { ifMatch: 'etag-server', ifNoneMatch: null },
+        ])
+    })
+
+    test('waits while the chat on screen cannot take the merge', async () => {
+        vi.mocked(risuSave.decodeRisuSave).mockResolvedValueOnce(server as any)
+        const fetchMock = conflictThenSave()
+        const storage = setUpStorage(fetchMock)
+        storage.rememberChatBase(CHA, CHAT, LOCAL.message.slice(0, 2))
+
+        await expect(storage.saveChatContent(CHA, 0, CHAT, LOCAL, 'update', { applyMerged: () => false }))
+            .rejects.toMatchObject({ code: 'CHAT_BUSY' })
+        expect(posts(fetchMock)).toHaveLength(1)
+    })
+
+    test('keeps the server copy as before when both changed the same message', async () => {
+        vi.mocked(risuSave.decodeRisuSave).mockResolvedValueOnce({ id: CHAT, message: [msg('user', 'a', '1'), msg('char', 'theirs', '2')] } as any)
+        const fetchMock = conflictThenSave()
+        const storage = setUpStorage(fetchMock)
+        storage.rememberChatBase(CHA, CHAT, LOCAL.message.slice(0, 2))
+        const preserveServerCopy = vi.fn(async () => {})
+        const applyMerged = vi.fn(() => true)
+
+        await storage.saveChatContent(CHA, 0, CHAT, { id: CHAT, message: [msg('user', 'a', '1'), msg('char', 'mine', '2')] }, 'update', { preserveServerCopy, applyMerged })
+
+        expect(applyMerged).not.toHaveBeenCalled()
+        expect(preserveServerCopy).toHaveBeenCalledOnce()
+    })
+
+    test('a base from another version of the chat is not trusted', async () => {
+        vi.mocked(risuSave.decodeRisuSave).mockResolvedValueOnce(server as any)
+        const fetchMock = conflictThenSave()
+        const storage = setUpStorage(fetchMock)
+        storage.rememberChatBase(CHA, CHAT, LOCAL.message.slice(0, 2))
+        ;(storage as any).chatEtags.set((storage as any).chatEtagKey(CHA, CHAT), 'etag-other')
+        const preserveServerCopy = vi.fn(async () => {})
+        const applyMerged = vi.fn(() => true)
+
+        await storage.saveChatContent(CHA, 0, CHAT, LOCAL, 'update', { preserveServerCopy, applyMerged })
+
+        expect(applyMerged).not.toHaveBeenCalled()
+        expect(preserveServerCopy).toHaveBeenCalledOnce()
+    })
+})

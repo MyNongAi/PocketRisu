@@ -22,6 +22,8 @@ import { messageFingerprints, prefixFingerprint } from './chatFingerprint'
 export interface ChatDeltaTransport {
     fetchChatContentDelta(chaId: string, chatIndex: number, chatId: string, base: { count: number, fp: string } | null): Promise<{ chat: any, deltaBase: number | null } | null>
     saveChatContentDelta(chaId: string, chatIndex: number, chatId: string, chat: any, base: { count: number, fp: string } | null): Promise<'ok' | 'base-mismatch'>
+    /** The whole message list the server now holds, where a delta left only part of it in sight (chatMerge.ts). */
+    rememberChatBase?(chaId: string, chatId: string, messages: readonly any[]): void
 }
 
 export interface ChatCopyStore {
@@ -70,6 +72,7 @@ export function createChatDeltaSync(transport: ChatDeltaTransport, copies: ChatC
             fingerprints = messageFingerprints(full.message ?? [])
         }
         serverFingerprints.set(key, fingerprints)
+        transport.rememberChatBase?.(chaId, chatId, full.message ?? [])
 
         if ((full.message?.length ?? 0) >= CACHE_MIN_MESSAGES) {
             // Clone now, while `full` is still a plain object (it becomes
@@ -127,6 +130,7 @@ export function createChatDeltaSync(transport: ChatDeltaTransport, copies: ChatC
             })
             if (outcome === 'ok') {
                 serverFingerprints.set(key, fingerprints)
+                transport.rememberChatBase?.(chaId, chatId, messages)
                 return
             }
             // The server holds something else (another device, a server-side

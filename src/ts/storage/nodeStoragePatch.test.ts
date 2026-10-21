@@ -18,6 +18,7 @@ function storageReturning(status: number, body: any) {
     const storage = Object.create(NodeStorage.prototype) as InstanceType<typeof NodeStorage>
     ;(storage as any)._lastDbEtag = null
     ;(storage as any).chatEtags = new Map()
+    ;(storage as any).chatBases = new Map()
     ;(storage as any).chatLeaseHeartbeats = new Map()
     ;(storage as any).chatOperations = new Map()
     ;(storage as any).authFetch = vi.fn(async () => new Response(JSON.stringify(body), {

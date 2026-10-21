@@ -297,6 +297,7 @@ const chatSaveOptions = new WeakMap<Chat, ChatSaveOptions>()
 const chatDeltaSync = createChatDeltaSync({
     fetchChatContentDelta: (chaId, chatIndex, chatId, base) => forageStorage.realStorage.fetchChatContentDelta(chaId, chatIndex, chatId, base),
     saveChatContentDelta: (chaId, chatIndex, chatId, chat, base) => forageStorage.realStorage.saveChatContentDelta(chaId, chatIndex, chatId, chat, base, 'update', chatSaveOptions.get(chat) ?? {}),
+    rememberChatBase: (chaId, chatId, messages) => forageStorage.realStorage?.rememberChatBase?.(chaId, chatId, messages),
 }, indexedDbChatCopies)
 
 export async function saveChatToServer(

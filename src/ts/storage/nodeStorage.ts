@@ -12,6 +12,7 @@ import { normalizeChat } from "./database.svelte"
 import type { PatchServerTimings } from "./saveMetrics"
 import type { ChatSaveIntent } from './chatSaveIntent'
 import { chatHoldsAllMessages } from './chatConflict'
+import { mergeChatMessages, messageBase, type MessageBaseEntry } from './chatMerge'
 import { BootAuthError, BootFallback, loadDatabaseViaBoot } from './bootPayload'
 import { BootCacheController, browserBootCacheEnv } from './bootPayloadCache'
 import { addBuildIdHeader, readStaleBuildRefusal, readStaleBuildRefusalXhr, reportStaleBuild, setXhrBuildIdHeader, StaleBuildError } from './buildFence'
@@ -38,6 +39,13 @@ export interface ChatSaveOptions {
      * lacks; without it such a save is refused as before.
      */
     preserveServerCopy?: (serverChat: any) => Promise<void>
+    /**
+     * A conflicting save merged by message id (chatMerge.ts): bring the
+     * chat on screen to `merged` (it was `sent` when the save began).
+     * False when it cannot take it now (a reply is being written into it);
+     * the save is then retried later instead of writing the merge.
+     */
+    applyMerged?: (merged: any[], sent: any[]) => boolean
 }
 
 const AUTH_FETCH_TRANSIENT_MAX_RETRIES = 3
@@ -447,6 +455,23 @@ export type AssetManifestOperation =
 
 export class NodeStorage{
     private chatEtags = new Map<string, string>()
+    // Each chat's messages as this page last synced them, at which ETag: the
+    // base a conflicting save merges against (chatMerge.ts).
+    private chatBases = new Map<string, { etag: string | undefined, entries: MessageBaseEntry[] }>()
+
+    /** Remember `messages` as what the server holds for a chat at its current ETag. */
+    rememberChatBase(chaId: string, chatId: string, messages: readonly any[] | undefined): void {
+        const key = this.chatEtagKey(chaId, chatId)
+        const entries = messageBase(messages)
+        if (entries) this.chatBases.set(key, { etag: this.chatEtags.get(key), entries })
+        else this.chatBases.delete(key)
+    }
+
+    // An ETag renewed for the same body (a chat session claim) keeps its base.
+    private carryChatBase(key: string, previousEtag: string | undefined, nextEtag: string | undefined): void {
+        const base = this.chatBases.get(key)
+        if (base && base.etag === previousEtag) base.etag = nextEtag
+    }
     private chatLeaseHeartbeats = new Map<string, ReturnType<typeof setInterval>>()
     private chatOperations = new Map<string, Promise<unknown>>()
 
@@ -572,8 +597,10 @@ export class NodeStorage{
             if (da.status < 200 || da.status >= 300) throw new Error(`refreshChatFromServer error: ${da.status}`)
             const etag = da.headers.get('x-chat-etag') || da.headers.get('etag')
             const chat = normalizeChat(await decodeRisuSave(new Uint8Array(await da.arrayBuffer())))
+            const sent = chat.message
             if (!await apply(chat)) return 'skipped'
             if (etag) this.chatEtags.set(key, etag)
+            this.rememberChatBase(chaId, chatId, sent)
             return 'applied'
         })
     }
@@ -1205,6 +1232,7 @@ export class NodeStorage{
             if ('etag' in data && !data.repairMissingPayload && this.chatEtags.get(key) === baselineEtag) {
                 if (data.etag) this.chatEtags.set(key, data.etag)
                 else this.chatEtags.delete(key)
+                this.carryChatBase(key, baselineEtag, data.etag || undefined)
             }
 
             const previous = this.chatLeaseHeartbeats.get(key)
@@ -1230,6 +1258,7 @@ export class NodeStorage{
                         && this.chatEtags.get(key) === currentEtag) {
                         if (data.etag) this.chatEtags.set(key, data.etag)
                         else this.chatEtags.delete(key)
+                        this.carryChatBase(key, currentEtag, data.etag || undefined)
                     }
                 }).catch((error) => {
                     // A tab on an outdated build holds no lease worth renewing.
@@ -1992,6 +2021,7 @@ export class NodeStorage{
         const buffer = new Uint8Array(await da.arrayBuffer())
         const chat = normalizeChat(await decodeRisuSave(buffer))
         if (etag) this.chatEtags.set(this.chatEtagKey(chaId, chatId), etag)
+        this.rememberChatBase(chaId, chatId, chat.message)
         return chat
     }
 
@@ -2095,10 +2125,11 @@ export class NodeStorage{
         return this.runChatOperation(this.chatEtagKey(chaId, chatId), async () => {
             try {
                 await this.saveEncodedChatContent(chaId, chatIndex, chatId, encoded, intent)
+                this.rememberChatBase(chaId, chatId, snapshot.message)
             } catch (error) {
                 // A chat generating elsewhere frees up shortly; retry later.
                 if (!(error instanceof ConflictError) || error.code === 'CHAT_BUSY') throw error
-                await this.saveOverConflict(chaId, chatIndex, chatId, encoded, snapshot, error, options)
+                await this.saveOverConflict(chaId, chatIndex, chatId, chat, encoded, snapshot, error, options)
             }
         })
     }
@@ -2114,11 +2145,17 @@ export class NodeStorage{
         chaId: string,
         chatIndex: number,
         chatId: string,
+        chat: any,
         encoded: ReturnType<typeof encodeRisuSaveLegacy>,
         local: { message: any[] },
         conflict: ConflictError,
         options: ChatSaveOptions,
     ): Promise<void> {
+        // The messages this save started from, if known at the ETag it was
+        // checked against; fetching the server copy below replaces them.
+        const key = this.chatEtagKey(chaId, chatId)
+        const known = this.chatBases.get(key)
+        const base = known && known.etag === this.chatEtags.get(key) ? known.entries : null
         let current: any
         try {
             current = await this.fetchChatContent(chaId, chatIndex, chatId)
@@ -2134,6 +2171,19 @@ export class NodeStorage{
             return
         }
         if (!chatHoldsAllMessages(local, current)) {
+            // Both sides' messages, merged by id, instead of a copy of the
+            // server's (chatMerge.ts). The chat on screen takes the merge
+            // first, so a later save carries the other device's messages too.
+            const merged = base && options.applyMerged ? mergeChatMessages(base, local.message, current.message ?? []) : null
+            if (merged) {
+                if (!options.applyMerged!(merged, local.message)) {
+                    throw new ConflictError('A reply is being written into this chat; merging once it ends', '', 'CHAT_BUSY')
+                }
+                console.warn(`[Save] chat ${chaId}/${chatId} changed on another device; merged both by message id`)
+                await this.saveEncodedChatContent(chaId, chatIndex, chatId, encodeRisuSaveLegacy({ ...chat, message: merged }), 'update')
+                this.rememberChatBase(chaId, chatId, merged)
+                return
+            }
             if (!options.preserveServerCopy) throw conflict
             await options.preserveServerCopy(current)
         }
@@ -2141,6 +2191,7 @@ export class NodeStorage{
         // fetchChatContent cached the server's ETag, so this is still a
         // conditional write: a third write in between conflicts again.
         await this.saveEncodedChatContent(chaId, chatIndex, chatId, encoded, 'update')
+        this.rememberChatBase(chaId, chatId, local.message)
     }
 
     private async saveEncodedChatContent(

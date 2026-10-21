@@ -1982,6 +1982,28 @@
         "src/ts/sync/remoteActivity.test.ts",
         "server/node/sync-hub.test.ts"
       ]
+    },
+    {
+      "id": "CHAT-MERGE-BY-ID",
+      "title": "다른 기기와 엇갈린 채팅을 메시지 ID로 합치기 (사본 대신)",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "src/ts/storage/chatMerge.ts",
+        "src/ts/storage/nodeStorage.ts",
+        "src/ts/storage/chatDeltaSync.ts",
+        "src/ts/globalApi.svelte.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/storage/chatMerge.ts", "contains": "export function mergeChatMessages<" },
+        { "file": "src/ts/storage/nodeStorage.ts", "contains": "const merged = base && options.applyMerged ? mergeChatMessages(base, local.message, current.message ?? []) : null" },
+        { "file": "src/ts/storage/nodeStorage.ts", "contains": "this.rememberChatBase(chaId, chatId, chat.message)" },
+        { "file": "src/ts/storage/chatDeltaSync.ts", "contains": "transport.rememberChatBase?.(chaId, chatId, full.message ?? [])" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "applyMerged: (merged, sent) => applyMergedChat(char, chatId, merged, sent)," }
+      ],
+      "regressionTests": [
+        "src/ts/storage/chatMerge.test.ts",
+        "src/ts/storage/nodeStorage.chatConflict.test.ts"
+      ]
     }
   ]
 }

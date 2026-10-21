@@ -5,8 +5,9 @@ import { fromStore, get } from "svelte/store";
 import { chatsShownBesideSelection } from "./chatPanes.svelte";
 import { splitChatOpen } from "./chatSplitPane";
 import streamSaver from 'streamsaver';
-import { setDatabase, normalizeDatabase, type Database, type Chat, defaultSdDataFunc, getDatabase, appVer, nodeOnlyVer, getCurrentCharacter, loadTogglesFromChat } from "./storage/database.svelte";
+import { setDatabase, normalizeDatabase, type Database, type Chat, type Message, defaultSdDataFunc, getDatabase, appVer, nodeOnlyVer, getCurrentCharacter, loadTogglesFromChat } from "./storage/database.svelte";
 import { applyMergedDbInPlace } from "./storage/applyRebasedDb";
+import { mergeChatMessages, messageBase } from "./storage/chatMerge";
 import { receivePresence, startPresencePublisher, type PresenceEvent as RemotePresenceEvent } from "./sync/remoteActivity";
 import { checkRisuUpdate } from "./update";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore, chatHydrationOverlayStore, chatDeselected, moduleTreeRevision } from "./stores.svelte";
@@ -1536,6 +1537,7 @@ export async function saveDb() {
                 const pendingGenerationId = placeholder ? get(generationStates).get(chatGenKey(chatId))?.generationId : undefined
                 await saveChatToServer(chaId, chatIndex, chatId, chatForSave(chat, pendingGenerationId, placeholder), intent, {
                     preserveServerCopy: (serverChat) => keepServerChatCopy(char, serverChat),
+                    applyMerged: (merged, sent) => applyMergedChat(char, chatId, merged, sent),
                 })
                 // The body endpoint has now acknowledged this identity even if
                 // the following catalog PATCH needs to rebase/retry. A second
@@ -1957,6 +1959,25 @@ export async function saveDb() {
     // every save cycle). One copy per chat per page every 10 minutes.
     const CONFLICT_COPY_QUIET_MS = 10 * 60 * 1000
     const recentConflictCopies = new Map<string, number>()
+
+    /**
+     * A save merged this chat with another device's copy by message id
+     * (chatMerge.ts): the chat on screen takes the merge, keeping whatever was
+     * added here since the save began. Not while a reply is being written
+     * into it, whose pipeline holds message indices: the save waits instead.
+     */
+    function applyMergedChat(char: { chaId: string, chats: Chat[] }, chatId: string, merged: Message[], sent: Message[]): boolean {
+        if (get(generationStates).has(chatGenKey(chatId)) || get(rerollPlaceholders).has(chatId)) return false
+        const live = (char.chats ?? []).find((chat) => chat?.id === chatId)
+        if (!live || live._placeholder || !Array.isArray(live.message)) return true
+        const sentBase = messageBase(sent)
+        const next = sentBase ? mergeChatMessages(sentBase, live.message, merged) : null
+        if (!next) return false
+        if (next.length !== live.message.length || next.some((message, index) => message !== live.message[index])) {
+            live.message.splice(0, live.message.length, ...next)
+        }
+        return true
+    }
 
     async function keepServerChatCopy(char: { chaId: string, chats: Chat[] }, serverChat: Chat) {
         const key = `${char.chaId}|${serverChat.id}`
