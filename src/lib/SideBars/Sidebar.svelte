@@ -21,7 +21,7 @@
 
   } from "../../ts/stores.svelte";
     import { setDatabase, folderDisplayMode, type folder, type ArchivedCharacterStub, type FolderDisplayMode } from "../../ts/storage/database.svelte";
-    import { findArchivedStub, promptActivateCharacter, trashDeactivatedCharacter } from "../../ts/characterArchive";
+    import { archiveCharacter, findArchivedStub, promptActivateCharacter, trashDeactivatedCharacter } from "../../ts/characterArchive";
     import { DEACTIVATED_FOLDER_PAGE_SIZE, deactivatedCharacterIds, railFolderView, type DeactivatedFolderDays } from "../../ts/deactivatedCharacterFolders";
     import { ArchiveIcon } from "@lucide/svelte";
     import { DBState, folderSettingsTarget, openCharacterManager } from 'src/ts/stores.svelte';
@@ -663,6 +663,8 @@
         () => toggleSidebarCharacterFavorite(characterIndex)],
       ...(protonLink ? [[language.protonLinkCopy, () => copyProtonLink(protonLink)] as [string, () => unknown]] : []),
       ...(botHasModules(character.chaId) ? [[language.pairFindModule, () => findModulesOfBot(character.chaId)] as [string, () => unknown]] : []),
+      // Turned off and on from the same menu, whatever its state (the user's request, 2026-10-21).
+      [language.deactivateCharacter, () => archiveCharacter(characterIndex)],
       [language.remove, () => removeChar(character.chaId, character.name)],
     ]
     // The delete is red, as in the other menus.

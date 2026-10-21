@@ -485,6 +485,7 @@
         { "file": "src/ts/gui/characterCatalogMetrics.ts", "contains": "buildCharacterSimilarityCounts" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "archived-character-muted" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "async function editArchivedSidebarCharacter(chaId: string, e: MouseEvent){" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "[language.deactivateCharacter, () => archiveCharacter(characterIndex)]," },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{ image: character.image ? getCharThumbnail(character.image, \"plain\") : undefined }," },
         { "file": "src/lib/Others/AlertComp.svelte", "contains": "{#await $alertStore.image then src}" },
         { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "characterAssetCountLabel" },
