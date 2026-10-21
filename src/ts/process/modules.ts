@@ -17,6 +17,7 @@ import { collectModuleRuntimeIds, collectModuleRuntimeUi } from "./moduleRuntime
 import { recordModuleFolderActivation, recordNewModules } from "./moduleSort"
 import { organizeImportedModuleSimilarity } from "./similarityFolders"
 import { gatherLinkedModules, linkedModuleIds } from "./linkedModuleFolder"
+import { gatherPresetModules, recordPresetLinks } from "./presetModuleFolder"
 import { botsWithOwnModules, gatherLinkedBots } from "../linkedBotFolder"
 import { adaptLegacyProgress, runExportTask, runImportBatch, runImportTask, type ImportProgressReporter } from "../importProgress"
 import type { CharxDestination } from "../charxPreflight"
@@ -60,6 +61,8 @@ export interface RisuModule{
     nodeOnlyProtonShare?: string
     /** Bots this module was paired with (character.modules), for the red chain once they are gone (gui/pairedModules.ts). */
     nodeOnlyPairedCharacterIds?: string[]
+    /** Prompt presets that turned this module on (presetModuleFolder.ts); a module whose presets are all gone shows in [프롬] › 프롬 없음. */
+    nodeOnlyPresetLinks?: string[]
     /**
      * PocketRisu: when this install added the module (imported or made here),
      * like a character's importedAt; its source badge reads 포켓. Ignored by
@@ -114,11 +117,18 @@ export function rerenderChatForModules(): void {
 /**
  * The [링크] folders, after a module link changed or on load: modules bots
  * carry as their own in the module catalog's (linkedModuleFolder.ts), and the
- * bots that carry them in the bot list's (linkedBotFolder.ts). True when
- * either changed.
+ * bots that carry them in the bot list's (linkedBotFolder.ts). Before them the
+ * [프롬] folder of modules prompt presets turn on (presetModuleFolder.ts), so
+ * one a bot carries is left loose for [링크]. True when any changed.
  */
 export function syncLinkedFolders(db = getDatabase()): boolean {
-    let changed = false
+    let changed = recordPresetLinks(db.modules, db.botPresets)
+    const presetGathered = gatherPresetModules(db.modules, db.moduleFolders ?? [], db.botPresets, linkedModuleIds(db.characters), v4)
+    if (presetGathered) {
+        db.modules = presetGathered.modules
+        db.moduleFolders = presetGathered.folders
+        changed = true
+    }
     const gathered = gatherLinkedModules(db.modules, db.moduleFolders ?? [], linkedModuleIds(db.characters), v4)
     if (gathered) {
         db.modules = gathered.modules

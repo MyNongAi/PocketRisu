@@ -1192,6 +1192,8 @@ export const languageEnglish = {
     remoteDevice: "Other device",
     loreSearchPlaceholder: "Search lorebook (name, keys, content)",
     loreSearchEmpty: "No matching entries",
+    presetModuleFolder: "Modules a prompt preset turns on",
+    presetModuleOrphans: "Modules whose prompt presets are gone",
     pairFindBot: "Find its bots",
     pairFindWhichModule: "Which module?",
     pairFindWhichBot: "Which bot?",

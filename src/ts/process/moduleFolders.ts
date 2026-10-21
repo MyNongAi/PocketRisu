@@ -14,6 +14,10 @@ export interface ModuleFolder {
     nodeOnlyLinkFolder?: boolean
     /** Shown inside this folder (display-only nesting, as on the bot list). */
     nodeOnlyParentFolderId?: string
+    /** The [프롬] folder, a preset's folder in it, or its 프롬 없음 folder (presetModuleFolder.ts). */
+    nodeOnlyPresetFolder?: 'root' | 'preset' | 'orphans'
+    /** The prompt preset a 'preset' folder holds the modules of. */
+    nodeOnlyPresetName?: string
 }
 
 export interface FolderableModule {

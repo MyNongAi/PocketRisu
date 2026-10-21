@@ -1286,6 +1286,8 @@ export const languageKorean = {
   remoteDevice: "다른 기기",
   loreSearchPlaceholder: "로어북 검색 (이름·키워드·내용)",
   loreSearchEmpty: "찾는 항목이 없어요",
+  presetModuleFolder: "프롬이 켜는 모듈",
+  presetModuleOrphans: "프롬이 사라진 모듈",
   pairFindBot: "연결된 봇 찾기",
   pairFindWhichModule: "어느 모듈로 갈까요?",
   pairFindWhichBot: "어느 봇으로 갈까요?",

@@ -1144,6 +1144,9 @@ export interface PromptPresetFolder {
     nodeOnlyParentFolderId?: string
     /** The [링크] folder of linked modules (linkedModuleFolder.ts); the UI draws a green chain. */
     nodeOnlyLinkFolder?: boolean
+    /** The [프롬] folder, a preset's folder in it, or its 프롬 없음 folder (presetModuleFolder.ts). */
+    nodeOnlyPresetFolder?: 'root' | 'preset' | 'orphans'
+    nodeOnlyPresetName?: string
 }
 
 export interface Database{

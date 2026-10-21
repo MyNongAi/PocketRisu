@@ -2033,6 +2033,25 @@
       "regressionTests": [
         "src/ts/gui/loreBookSearch.test.ts"
       ]
+    },
+    {
+      "id": "PRESET-MODULE-FOLDER",
+      "title": "프롬이 켜는 모듈을 [프롬] 폴더로 · 프롬 없는 고아 모듈 표시",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/process/presetModuleFolder.ts",
+        "src/ts/process/modules.ts",
+        "src/lib/Setting/Pages/Module/ModuleSettings.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/modules.ts", "contains": "let changed = recordPresetLinks(db.modules, db.botPresets)" },
+        { "file": "src/ts/process/modules.ts", "contains": "const presetGathered = gatherPresetModules(db.modules, db.moduleFolders ?? [], db.botPresets, linkedModuleIds(db.characters), v4)" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "{:else if folder.nodeOnlyPresetFolder === 'orphans'}" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "onMount(() => { syncLinkedFolders() })" }
+      ],
+      "regressionTests": [
+        "src/ts/process/presetModuleFolder.test.ts"
+      ]
     }
   ]
 }

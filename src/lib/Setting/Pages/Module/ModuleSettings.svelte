@@ -13,7 +13,7 @@
     import { v4 } from "uuid";
     import { tooltip } from "src/ts/gui/tooltip";
     import { alertConfirm, alertError, alertSelect, notifySuccess } from "src/ts/alert";
-    import { onDestroy, tick, untrack } from "svelte";
+    import { onDestroy, onMount, tick, untrack } from "svelte";
     import { findBotsOfModule, moduleFindRequest } from "src/ts/gui/pairFinder";
     import { importMCPModule } from "src/ts/process/mcp/mcp";
     import { convertModuleToCharacter } from "src/ts/interchangeability";
@@ -36,6 +36,8 @@
         id: v4(),
     })
     let mode = $state(0)
+    // Prompt presets edited since: their modules move into or out of [프롬] (presetModuleFolder.ts).
+    onMount(() => { syncLinkedFolders() })
     let editModuleIndex = $state(-1)
     let converting = $state(false)
     // FolderedList is unmounted while the module editor is open. Keep the
@@ -457,6 +459,12 @@
             {#if folder.nodeOnlyLinkFolder}
                 <!-- The [링크] folder (linkedModuleFolder.ts): the green chain its modules carry, on the folder. -->
                 <span class="no-sort inline-flex shrink-0 text-emerald-500" role="img" aria-label="봇에 연결된 모듈 폴더" title="봇에 연결된 모듈 폴더"><Link2Icon size={14} strokeWidth={2.5} /></span>
+            {:else if folder.nodeOnlyPresetFolder === 'orphans'}
+                <!-- [프롬] › 프롬 없음 (presetModuleFolder.ts): modules whose prompt presets are all gone. -->
+                <span class="no-sort inline-flex shrink-0 text-red-500" role="img" aria-label={language.presetModuleOrphans} title={language.presetModuleOrphans}><UnlinkIcon size={14} strokeWidth={2.5} /></span>
+            {:else if folder.nodeOnlyPresetFolder}
+                <!-- [프롬] and a preset's folder: orange, as the modules a preset turns on are drawn. -->
+                <span class="no-sort inline-flex shrink-0 text-amber-500" role="img" aria-label={language.presetModuleFolder} title={language.presetModuleFolder}><Link2Icon size={14} strokeWidth={2.5} /></span>
             {/if}
             {#if indexes.some((index) => hasMissingAssets(displayModules[index]))}
                 <span class="no-sort shrink-0" aria-label="에셋 누락" title="에셋 누락">❗</span>
