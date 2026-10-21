@@ -1726,8 +1726,16 @@ export class NodeStorage{
             throw error
         }
         if (!da.ok) throw new Error(`asset manifest edit error: ${da.status}`)
+        // The database revision the edit made (headers, so the descriptor
+        // JSON, which goes into the database, stays as it was).
+        const etag = da.headers.get('x-db-etag')
+        const hash = da.headers.get('x-db-hash')
+        this.lastManifestDb = etag && hash ? { etag, hash } : null
         return await da.json()
     }
+
+    /** The database ETag and hash the last asset manifest edit left on the server. */
+    lastManifestDb: { etag: string, hash: string } | null = null
 
     /** Hands the backup export to the browser's own download manager. */
     async downloadBackupExport(opts?: ExportBackupOptions): Promise<void> {

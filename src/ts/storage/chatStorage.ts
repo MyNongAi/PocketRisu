@@ -181,6 +181,12 @@ export async function evictHydratedChatCache(
     return evicted
 }
 
+/** Whether a loaded chat holds edits not saved yet; 'unknown' for one the cache does not track. */
+export function hydratedChatState(chaId: string, chatId: string): 'dirty' | 'clean' | 'unknown' {
+    const entry = hydratedChatCache.get(chatKey(chaId, chatId))
+    return entry ? (entry.dirty ? 'dirty' : 'clean') : 'unknown'
+}
+
 /** A hydrated chat with edits this page has not saved yet. */
 export function isHydratedChatDirty(chaId: string, chatId: string): boolean {
     return hydratedChatCache.get(chatKey(chaId, chatId))?.dirty === true
@@ -423,6 +429,15 @@ export async function ensureChatHydrated(
             }
             if (!chats[slotIndex]?._placeholder) {
                 return chats[slotIndex]
+            }
+
+            // The catalog fields are the placeholder's, as in replaceChatBody: a
+            // rename landed from another device during the fetch must not be
+            // put back by the body's older copy.
+            const slot = chats[slotIndex] as Chat
+            for (const field of CATALOG_FIELDS) {
+                if (field in slot) (full as any)[field] = (slot as any)[field]
+                else delete (full as any)[field]
             }
 
             // Apply to memory — mark JustApplied to suppress the reactive write-back

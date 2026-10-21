@@ -7277,6 +7277,8 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
                 });
                 return;
             }
+            // The revision this patch builds on, for the other devices' check (db-patch prevEtag).
+            const prevEtag = decodedKey === 'database/database.bin' ? dbEtag : undefined;
 
             // Ordering with the plugin kv ops (old clients): the DB patch is
             // cloned/applied/validated FIRST and the kv ops are written only
@@ -7513,6 +7515,7 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
                         prevHash: expectedHash,
                         nextHash: databasePatchHashCache.hash(dbCache[filePath]).toString(16),
                         etag: dbEtag,
+                        prevEtag,
                         ops: patch,
                     });
                 } catch (publishError) {
@@ -7602,12 +7605,16 @@ app.patch('/api/asset-manifests/owner/:kind/:ownerId', async (req, res, next) =>
     if (!await checkAuth(req, res)) return;
     if (!checkActiveSession(req, res)) return;
     try {
-        const descriptor = await queueStorageOperation(async () => {
+        const { enriched: descriptor, published } = await queueStorageOperation(async () => {
             const currentDb = await ensureDatabaseCache();
             // Validate that the owner exists in the canonical cache before the
             // SQLite live pointer advances. This keeps a malformed request from
             // creating a manifest revision the database cannot reference.
             const location = locateAssetManifestOwner(currentDb, req.params.kind, req.params.ownerId);
+            // Other devices land this edit like any patch (db-patch below), so
+            // they need the revision it builds on.
+            const prevHash = location && location.index >= 0 ? databasePatchHashCache.hash(currentDb).toString(16) : '';
+            const prevEtag = dbEtag;
             if (!location || location.index < 0) {
                 const error = new Error(`Asset manifest owner not found: ${req.params.kind}/${req.params.ownerId}`);
                 error.code = 'MANIFEST_VALIDATION';
@@ -7644,9 +7651,28 @@ app.patch('/api/asset-manifests/owner/:kind/:ownerId', async (req, res, next) =>
             // inline asset list over this manifest revision.
             dbEtag = dbEtagFor(nextDatabase);
             scheduleDatabasePersist('asset-manifest');
-            return enriched;
+            // The same change as ops on the previous database: the descriptor
+            // added in place (add works whether the key existed or not), or
+            // for a persona whose embedded module is missing, that module.
+            const path = `/${collectionKey}/${location.index}`;
+            const previousOwner = currentDb[collectionKey]?.[location.index];
+            const embedded = previousOwner?.embeddedModule;
+            const ops = !location.nested
+                ? [{ op: 'add', path: `${path}/${location.descriptorKey}`, value: enriched }]
+                : embedded && typeof embedded === 'object' && !Array.isArray(embedded)
+                    ? [{ op: 'add', path: `${path}/embeddedModule/${location.descriptorKey}`, value: enriched }]
+                    : [{ op: 'add', path: `${path}/embeddedModule`, value: nextDatabase[collectionKey][location.index].embeddedModule }];
+            return { enriched, published: { prevHash, nextHash: nextHash.toString(16), etag: dbEtag, prevEtag, ops } };
         });
+        // The page that made the edit adopts the new revision from these.
+        res.setHeader('x-db-etag', published.etag);
+        res.setHeader('x-db-hash', published.nextHash);
         res.json({ ...descriptor, ownerKind: req.params.kind, ownerId: req.params.ownerId });
+        try {
+            syncHub.publish({ type: 'db-patch', origin: chatClientId(req), ...published });
+        } catch (publishError) {
+            logger.warn('[Sync] Failed to publish asset-manifest db-patch:', publishError?.message ?? publishError);
+        }
     } catch (error) {
         if (error?.code === 'MANIFEST_CONFLICT') {
             return res.status(409).json({

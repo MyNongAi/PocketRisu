@@ -167,3 +167,41 @@ export function applyMergedDbInPlace(target: Record<string, any>, merged: Record
         return old
     }))
 }
+
+/**
+ * Another device's patch, landed in place (sync/remoteDbPatch.ts): only what
+ * it changed is written. Unlike applyMergedDbInPlace this never deletes a
+ * root key it was not told to, since `roots` holds the changed keys only.
+ * `characters` is the whole merged order; entries that are the live objects
+ * stay as they are, and a changed one is brought over in place with its
+ * loaded chats kept (reconcileCharacter).
+ */
+export function applyRemoteChangesInPlace(target: Record<string, any>, change: {
+    roots: Record<string, any>
+    deleteRoots: readonly string[]
+    characters: any[] | null
+}): void {
+    for (const key of Object.keys(change.roots)) {
+        const next = reconcileInto(target[key], change.roots[key])
+        if (next !== target[key]) target[key] = next
+    }
+    for (const key of change.deleteRoots) delete target[key]
+    if (!change.characters) return
+    if (!Array.isArray(target.characters)) {
+        target.characters = change.characters
+        return
+    }
+    const live = new Map<string, any>()
+    for (const character of target.characters) {
+        if (typeof character?.chaId === 'string') live.set(character.chaId, character)
+    }
+    replaceContents(target.characters, change.characters.map((character) => {
+        const old = typeof character?.chaId === 'string' ? live.get(character.chaId) : undefined
+        if (old === undefined || old === character) return character
+        if (isPlainObject(old) && isPlainObject(character)) {
+            reconcileCharacter(old, character)
+            return old
+        }
+        return character
+    }))
+}

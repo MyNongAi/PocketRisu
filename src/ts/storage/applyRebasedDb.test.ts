@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyMergedDbInPlace, reconcileInto } from './applyRebasedDb'
+import { applyMergedDbInPlace, applyRemoteChangesInPlace, reconcileInto } from './applyRebasedDb'
 
 describe('reconcileInto', () => {
     it('keeps every object whose content is the same, and changes only what differs', () => {
@@ -90,5 +90,43 @@ describe('applyMergedDbInPlace', () => {
         expect(bot.chats.map((chat: any) => chat.id)).toEqual(['c1', 'c2', 'c9'])
         expect(other.name).toBe('Other (renamed)')
         expect(db.language).toBe('en')
+    })
+})
+
+describe('applyRemoteChangesInPlace', () => {
+    it('writes only the changed root keys and characters, keeping every other object', () => {
+        const loadedMessages = [{ role: 'user', data: 'hi' }]
+        const loaded = { id: 'c1', name: 'Chat', message: loadedMessages }
+        const bot = { chaId: 'bot', name: 'Bot', chats: [loaded], chatPage: 0 }
+        const other = { chaId: 'other', name: 'Other', chats: [] }
+        const persona = { name: 'P' }
+        const db: Record<string, any> = { characters: [bot, other], temperature: 70, persona, gone: 1, keptUnmentioned: { x: 1 } }
+        applyRemoteChangesInPlace(db, {
+            roots: { temperature: 80 },
+            deleteRoots: ['gone'],
+            characters: [{ ...bot, name: 'Bot renamed', chats: [{ id: 'c1', name: 'Renamed elsewhere', _placeholder: true, message: [] }] }, other],
+        })
+        expect(db.temperature).toBe(80)
+        expect('gone' in db).toBe(false)
+        expect(db.persona).toBe(persona)
+        expect(db.keptUnmentioned).toEqual({ x: 1 })
+        expect(db.characters[0]).toBe(bot)
+        expect(bot.name).toBe('Bot renamed')
+        expect(bot.chats[0]).toBe(loaded)
+        expect(loaded.message).toBe(loadedMessages)
+        expect(loaded.name).toBe('Renamed elsewhere')
+        expect(db.characters[1]).toBe(other)
+    })
+
+    it('takes a new order and new characters, and leaves characters alone when none are given', () => {
+        const a = { chaId: 'a', chats: [] }
+        const b = { chaId: 'b', chats: [] }
+        const db: Record<string, any> = { characters: [a, b] }
+        const added = { chaId: 'new', chats: [] }
+        applyRemoteChangesInPlace(db, { roots: {}, deleteRoots: [], characters: [b, added, a] })
+        expect(db.characters.map((c: any) => c.chaId)).toEqual(['b', 'new', 'a'])
+        expect(db.characters[0]).toBe(b)
+        applyRemoteChangesInPlace(db, { roots: {}, deleteRoots: [], characters: null })
+        expect(db.characters.map((c: any) => c.chaId)).toEqual(['b', 'new', 'a'])
     })
 })

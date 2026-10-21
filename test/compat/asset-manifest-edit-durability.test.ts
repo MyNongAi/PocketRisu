@@ -83,3 +83,38 @@ test('manifest validation failures return 400 without advancing the live revisio
     const live = await (await client.fetch('/api/asset-manifests/owner/module/m1')).json()
     expect(live.id).toBe(desc.id)
 })
+
+test('another page can land a manifest edit from the live feed: the published ops reach the new hash', async () => {
+    const before = await readDb()
+    const desc = before.modules[0].assetManifest
+    const controller = new AbortController()
+    const stream = await client.fetch('/api/sync/events', { signal: controller.signal, headers: { accept: 'text/event-stream' } })
+    const reader = stream.body!.getReader()
+    const decoder = new TextDecoder()
+    let buffered = ''
+    const nextDbPatch = async () => {
+        for (;;) {
+            const frame = /event: db-patch\ndata: (.+)\n\n/.exec(buffered)
+            if (frame) return JSON.parse(frame[1])
+            const { value, done } = await reader.read()
+            if (done) throw new Error('stream ended')
+            buffered += decoder.decode(value, { stream: true })
+        }
+    }
+    const edit = await client.fetch('/api/asset-manifests/owner/module/m1', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ expectedManifestId: desc.id, operations: [{ type: 'append', item: ['c.png', 'assets/c', 'png'] }] }),
+    })
+    expect(edit.status).toBe(200)
+    const event = await nextDbPatch()
+    controller.abort()
+
+    expect(event.prevHash).toBe(utils.calculateHash(before).toString(16))
+    expect(edit.headers.get('x-db-hash')).toBe(event.nextHash)
+    expect(edit.headers.get('x-db-etag')).toBe(event.etag)
+    // The ops on the database before the edit give the server's new revision.
+    const { applyPatch } = await import('fast-json-patch')
+    const landed = applyPatch(structuredClone(before), event.ops, true, false).newDocument
+    expect(utils.calculateHash(utils.normalizeJSON(landed)).toString(16)).toBe(event.nextHash)
+})

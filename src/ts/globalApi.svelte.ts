@@ -189,7 +189,11 @@ export async function editAssetManifest(
             manifest.id,
             operations,
         )
-        activeSavePatcher?.updateAssetManifestBaseline(manifest.ownerKind, manifest.ownerId, descriptor)
+        const updated = activeSavePatcher?.updateAssetManifestBaseline(manifest.ownerKind, manifest.ownerId, descriptor)
+        // The baseline now is the server's new revision: take its ETag, so the
+        // next save is not checked against the one before the edit.
+        const revision = forageStorage.realStorage?.lastManifestDb
+        if (updated && revision && activeSavePatcher?.hash() === revision.hash) forageStorage.setDbEtag(revision.etag)
         return descriptor
     } catch (error) {
         if (!(error instanceof ConflictError)) throw error

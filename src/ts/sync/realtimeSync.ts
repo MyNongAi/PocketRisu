@@ -14,13 +14,18 @@ export interface DbPatchEvent {
     prevHash: string
     nextHash: string
     ops: any[]
+    /** The database ETag after this write, and before it (server.cjs). */
+    etag?: string
+    prevEtag?: string
+    /** The server instance that numbered it (hello), so a landed seq can be told apart after a restart. */
+    instanceId?: string
 }
 
 export interface DbStaleEvent {
     type: 'db-stale'
     seq: number
     origin: string
-    reason: string
+    reason: 'full-write' | 'archive' | 'activate' | 'too-large' | (string & {})
 }
 
 export interface ChatEvent {
@@ -122,7 +127,7 @@ export function startRealtimeSync(handlers: RealtimeHandlers, deps: RealtimeDeps
         lastSeq = payload.seq
         if (payload.origin && payload.origin === deps.clientId) return
         try {
-            if (event === 'db-patch') handlers.onDbPatch?.(payload)
+            if (event === 'db-patch') handlers.onDbPatch?.({ ...payload, instanceId: instanceId ?? undefined })
             else if (event === 'db-stale') handlers.onDbStale?.(payload)
             else if (event === 'chat') handlers.onChat?.(payload)
         } catch (error) {
