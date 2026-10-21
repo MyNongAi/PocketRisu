@@ -48,7 +48,7 @@ vi.mock('./modules', () => ({
 vi.mock('./files/inlays', () => ({ getInlayAsset: vi.fn(), writeInlayImage: vi.fn() }))
 vi.mock('./lorebook.svelte', () => ({ loadLoreBookV3Prompt: vi.fn() }))
 vi.mock('./memory/hypamemory', () => ({ HypaProcesser: vi.fn() }))
-vi.mock('./request/request', () => ({ requestChatData: vi.fn() }))
+vi.mock('./request/request', () => ({ requestChatData: vi.fn(async () => ({ type: 'success', result: 'ok' })) }))
 vi.mock('./stableDiff', () => ({ generateAIImage: vi.fn() }))
 vi.mock('../parser/chatVar.svelte', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../parser/chatVar.svelte')>()),
@@ -238,4 +238,23 @@ test("getGlobalVar reads the toggles of the script's own chat, as CBS getglobalv
 
   expect(result.res).toBe('hud:1')
   expect(getGlobalChatVar).toHaveBeenCalledWith('toggle_hud', { chat })
+})
+
+test('passes API results to Lua as plain tables without JS constructors', async () => {
+  const result = await runScripted(
+    `
+      onStart = async(function(id)
+        local response = simpleLLM(id, "prompt"):await()
+        return { type = type(response), hasConstructor = response.constructor ~= nil }
+      end)
+    `,
+    {
+      char: { type: 'character' } as never,
+      chat: { message: [] } as never,
+      lowLevelAccess: true,
+      mode: 'start',
+    }
+  )
+
+  expect(result.res).toEqual({ type: 'table', hasConstructor: false })
 })

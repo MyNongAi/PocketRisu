@@ -4,7 +4,8 @@
 
 ## 기준
 
-- 상류 기준: 공식 PocketRisu v1.15.1 (2026-10-21 병합)
+- 상류 기준: 공식 PocketRisu v1.15.2 (2026-10-21 병합)
+- v1.15.2 병합 메모: 원작 변경은 Lua 엔진을 `enableProxy: false`로 만드는 것(simpleLLM·similarity 결과가 Lua에 일반 테이블로 감)과 버전 번호뿐입니다. `scriptings.test.ts` 충돌은 우리 `getGlobalVar` 채팅 범위 테스트와 원작 테스트를 둘 다 남겨 풀었습니다.
 - v1.15.1 병합 메모: 원작 핫픽스는 vite 8.3.4 올리기(Termux ARMv8.0 빌드)뿐입니다. `pnpm-lock.yaml` 충돌은 우리 잠금 파일에 새 `package.json`으로 `pnpm install --lockfile-only`를 돌려 풀었고, 바뀐 것은 vite와 그 하위 패키지뿐이며 버전은 원작 잠금 파일과 같습니다.
 - v1.14.0 병합 메모: 원작의 모델 바인딩 개편(칸마다 모델 프리셋 또는 레거시 모델, 채팅별 "모델 모드" 선택과 설정의 모델 모드 고정·새 채팅 모델 모드 제거)을 그대로 받았습니다. 개조판의 요청 시점 경로 고정(`captureChatModelRoute`)과 일반 모델 목록에서 고른 프리셋(`modelpreset:::`)은 새 레거시 칸에도 적용됩니다(`classicOrPicked`; 바인딩 칸 선택창 안의 레거시 목록에는 프리셋 탭을 숨김). 원작의 활성화 직후 채팅 유실 수정(`pendingActivations`)은 개조판 채팅 저장소에 맞춰 `chat-body-store.cjs`의 `heldActivations`로 옮겼습니다.
 - 개조 브랜치: `feature/external-assets`
