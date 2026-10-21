@@ -1284,6 +1284,8 @@ export const languageKorean = {
   newSwipeWaiting: "뒤쪽 페이지에 새 답이 있어요",
   remoteReplyRunning: "다른 기기에서 이 채팅의 답을 쓰는 중이에요",
   remoteDevice: "다른 기기",
+  loreSearchPlaceholder: "로어북 검색 (이름·키워드·내용)",
+  loreSearchEmpty: "찾는 항목이 없어요",
   pairFindBot: "연결된 봇 찾기",
   pairFindWhichModule: "어느 모듈로 갈까요?",
   pairFindWhichBot: "어느 봇으로 갈까요?",

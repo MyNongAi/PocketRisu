@@ -9,6 +9,8 @@
     import { v4 } from "uuid";
     import { notifyError } from "src/ts/alert";
     import { buildCharacterLoreComparisonStatuses, type LoreComparisonStatus } from "src/ts/gui/loreBookComparison";
+    import { loreBookMatches, loreSearchNeedle } from "src/ts/gui/loreBookSearch";
+    import { language } from "src/lang";
 
     let reinitializeSortable = false;
 
@@ -18,9 +20,22 @@
         externalLoreBooks?: loreBook[];
         showFolder?: string
         comparisonStatuses?: ReadonlyMap<loreBook, LoreComparisonStatus>;
+        /** The search box's text (loreBookSearch.ts): the matching entries of every folder, in one list. */
+        query?: string;
     }
 
-    let { globalMode = false, submenu = 0, externalLoreBooks = null, showFolder = '', comparisonStatuses }: Props = $props();
+    let { globalMode = false, submenu = 0, externalLoreBooks = null, showFolder = '', comparisonStatuses, query = '' }: Props = $props();
+    const needle = $derived(loreSearchNeedle(query))
+    // Searching lists the matches flat, at the top only; folders' own lists stay empty.
+    function shown(book: loreBook): boolean {
+        if (!needle) return (!showFolder && !book.folder) || (showFolder === book.folder)
+        return !showFolder && loreBookMatches(book, needle)
+    }
+    // A filtered list is not reordered: its places do not map back to the whole list.
+    $effect(() => {
+        const searching = !!needle
+        try { stb?.option('disabled', searching) } catch { /* not created yet */ }
+    })
     let resolvedComparisonStatuses = $derived.by(() => {
         if (comparisonStatuses) return comparisonStatuses
         if (globalMode || submenu !== 0 || externalLoreBooks) return new Map<loreBook, LoreComparisonStatus>()
@@ -120,6 +135,7 @@
     const createStb = () => {
         stb = Sortable.create(ele, {
             ...sortableOptions,
+            disabled: !!needle,
             group: 'lorebook',        // Enable cross-container drag
             swapThreshold: 0.9,      // More sensitive drag response
             preventOnFilter: false, // Allow click events on filtered elements
@@ -366,13 +382,13 @@
                  The script-side globalMode logic (counts, drag write-back) already
                  targets this array; this branch was left empty and showed nothing. -->
             {@const globalLore = DBState.db.loreBook[DBState.db.loreBookPage].data}
-            {@const visibleItems = globalLore.filter(book => (!showFolder && !book.folder) || (showFolder === book.folder))}
+            {@const visibleItems = globalLore.filter(book => shown(book))}
             {@const lastVisibleItem = visibleItems[visibleItems.length - 1]}
             {#if globalLore.length === 0}
                 <span class="text-textcolor2">No Lorebook</span>
             {:else}
                 {#each globalLore as book, i}
-                    {#if (!showFolder && !book.folder) || (showFolder === book.folder)}
+                    {#if shown(book)}
                         <LoreBookData idgroup={idgroup} bind:value={DBState.db.loreBook[DBState.db.loreBookPage].data[i]} idx={i}
                         isOpen={openedRefs.has(book)}
                         openFolders={openFolders()}
@@ -410,15 +426,18 @@
                         <div data-risu-idx={i} data-risu-idgroup={idgroup} style="display: none;"></div>
                     {/if}
                 {/each}
+                {#if needle && visibleItems.length === 0}
+                    <span class="text-textcolor2">{language.loreSearchEmpty}</span>
+                {/if}
             {/if}
         {:else if externalLoreBooks}
-            {@const visibleItems = externalLoreBooks.filter(book => (!showFolder && !book.folder) || (showFolder === book.folder))}
+            {@const visibleItems = externalLoreBooks.filter(book => shown(book))}
             {@const lastVisibleItem = visibleItems[visibleItems.length - 1]}
             {#if externalLoreBooks.length === 0}
                 <span class="text-textcolor2">No Lorebook</span>
             {:else}
                 {#each externalLoreBooks as book, i}
-                    {#if (!showFolder && !book.folder) || (showFolder === book.folder)}
+                    {#if shown(book)}
                         <LoreBookData idgroup={idgroup} bind:value={externalLoreBooks[i]} idx={i} 
                         isOpen={openedRefs.has(book)}
                         openFolders={openFolders()}
@@ -466,15 +485,18 @@
                         <div data-risu-idx={i} data-risu-idgroup={idgroup} style="display: none;"></div>
                     {/if}
                 {/each}
+                {#if needle && visibleItems.length === 0}
+                    <span class="text-textcolor2">{language.loreSearchEmpty}</span>
+                {/if}
             {/if}
         {:else if submenu === 0}
-            {@const visibleItems = DBState.db.characters[$selectedCharID].globalLore.filter(book => (!showFolder && !book.folder) || (showFolder === book.folder))}
+            {@const visibleItems = DBState.db.characters[$selectedCharID].globalLore.filter(book => shown(book))}
             {@const lastVisibleItem = visibleItems[visibleItems.length - 1]}
             {#if DBState.db.characters[$selectedCharID].globalLore.length === 0}
                 <span class="text-textcolor2">No Lorebook</span>
             {:else}
                 {#each DBState.db.characters[$selectedCharID].globalLore as book, i}
-                    {#if (!showFolder && !book.folder) || (showFolder === book.folder)}
+                    {#if shown(book)}
                         <LoreBookData idgroup={idgroup} bind:value={DBState.db.characters[$selectedCharID].globalLore[i]} idx={i} 
                         isOpen={openedRefs.has(book)}
                         openFolders={openFolders()}
@@ -521,15 +543,18 @@
                         <div data-risu-idx={i} data-risu-idgroup={idgroup} style="display: none;"></div>
                     {/if}
                 {/each}
+                {#if needle && visibleItems.length === 0}
+                    <span class="text-textcolor2">{language.loreSearchEmpty}</span>
+                {/if}
             {/if}
         {:else if submenu === 1}
-            {@const visibleItems = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].localLore.filter(book => (!showFolder && !book.folder) || (showFolder === book.folder))}
+            {@const visibleItems = DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].localLore.filter(book => shown(book))}
             {@const lastVisibleItem = visibleItems[visibleItems.length - 1]}
             {#if DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].localLore.length === 0}
                 <span class="text-textcolor2">No Lorebook</span>
             {:else}
                 {#each DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].localLore as book, i}
-                    {#if (!showFolder && !book.folder) || (showFolder === book.folder)}
+                    {#if shown(book)}
                         <LoreBookData idgroup={idgroup} bind:value={DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].localLore[i]} idx={i} 
                         isOpen={openedRefs.has(book)}
                         openFolders={openFolders()}
@@ -576,6 +601,9 @@
                         <div data-risu-idx={i} data-risu-idgroup={idgroup} style="display: none;"></div>
                     {/if}
                 {/each}
+                {#if needle && visibleItems.length === 0}
+                    <span class="text-textcolor2">{language.loreSearchEmpty}</span>
+                {/if}
             {/if}
         {/if}
     </div>

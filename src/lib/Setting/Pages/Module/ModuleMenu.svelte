@@ -28,6 +28,8 @@
   import { v4 } from "uuid";
 
     let submenu = $state(0)
+    // The lorebook tab's search box (loreBookSearch.ts).
+    let loreQuery = $state('')
     interface Props {
         currentModule: RisuModule;
     }
@@ -327,7 +329,8 @@
     </div>
 {/if}
 {#if submenu === 1 && (Array.isArray(currentModule.lorebook))}
-    <LoreBookList externalLoreBooks={currentModule.lorebook} comparisonStatuses={loreComparisonStatuses} />
+    <TextInput className="mb-3" size="sm" fullwidth placeholder={language.loreSearchPlaceholder} bind:value={loreQuery} />
+    <LoreBookList externalLoreBooks={currentModule.lorebook} comparisonStatuses={loreComparisonStatuses} query={loreQuery} />
     <div class="mt-2 flex gap-1">
         <ShButton variant="ghost" size="icon-sm" aria-label="Add" onclick={() => {addLorebook()}}><PlusIcon /></ShButton>
         <ShButton variant="ghost" size="icon-sm" aria-label="Export" onclick={() => {exportLoreBook()}}><DownloadIcon /></ShButton>

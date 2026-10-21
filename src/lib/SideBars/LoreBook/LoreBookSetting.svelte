@@ -9,8 +9,11 @@
     import LoreBookList from "./LoreBookList.svelte";
     import Help from "src/lib/Others/Help.svelte";
     import { selectedCharID } from "src/ts/stores.svelte";
+    import TextInput from "../../UI/GUI/TextInput.svelte";
 
     let submenu = $state(0)
+    // The search box where the "applies to every chat" note stood (the user's request, 2026-10-21).
+    let loreQuery = $state('')
     interface Props {
         globalMode?: boolean;
     }
@@ -72,10 +75,8 @@
     </div>
 {/if}
 {#if submenu !== 2}
-    {#if !globalMode}
-        <span class="text-textcolor2 mt-2 mb-6 text-sm">{submenu === 0 ? language.globalLoreInfo : language.localLoreInfo}</span>
-    {/if}
-    <LoreBookList globalMode={globalMode} submenu={submenu} />
+    <TextInput className="mt-2 mb-4" size="sm" fullwidth placeholder={language.loreSearchPlaceholder} bind:value={loreQuery} />
+    <LoreBookList globalMode={globalMode} submenu={submenu} query={loreQuery} />
 {:else}
     {#if DBState.db.characters[$selectedCharID].loreSettings}
         <div class="flex items-center mt-4">

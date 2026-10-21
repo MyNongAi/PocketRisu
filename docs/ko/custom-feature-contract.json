@@ -2013,6 +2013,26 @@
         "src/ts/storage/chatMerge.test.ts",
         "src/ts/storage/nodeStorage.chatConflict.test.ts"
       ]
+    },
+    {
+      "id": "LOREBOOK-SEARCH",
+      "title": "로어북 검색창 (봇·채팅·모듈)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/loreBookSearch.ts",
+        "src/lib/SideBars/LoreBook/LoreBookList.svelte",
+        "src/lib/SideBars/LoreBook/LoreBookSetting.svelte",
+        "src/lib/Setting/Pages/Module/ModuleMenu.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/SideBars/LoreBook/LoreBookSetting.svelte", "contains": "<LoreBookList globalMode={globalMode} submenu={submenu} query={loreQuery} />" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleMenu.svelte", "contains": "query={loreQuery} />" },
+        { "file": "src/lib/SideBars/LoreBook/LoreBookList.svelte", "contains": "return !showFolder && loreBookMatches(book, needle)" },
+        { "file": "src/lib/SideBars/LoreBook/LoreBookList.svelte", "contains": "stb?.option('disabled', searching)" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/loreBookSearch.test.ts"
+      ]
     }
   ]
 }

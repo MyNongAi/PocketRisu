@@ -1190,6 +1190,8 @@ export const languageEnglish = {
     newSwipeWaiting: "A new reply is waiting on a later page",
     remoteReplyRunning: "Another device is writing a reply in this chat",
     remoteDevice: "Other device",
+    loreSearchPlaceholder: "Search lorebook (name, keys, content)",
+    loreSearchEmpty: "No matching entries",
     pairFindBot: "Find its bots",
     pairFindWhichModule: "Which module?",
     pairFindWhichBot: "Which bot?",
