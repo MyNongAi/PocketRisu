@@ -191,6 +191,9 @@
         "src/lib/UI/GUI/SideBarArrow.svelte"
       ],
       "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "const narrowStack = $derived(enabled && !docked && paneWidth > 0 && paneWidth < NARROW_SPLIT_PX)" },
+        { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "looseSplitSideWidth(paneWidth || window.innerWidth, $splitChatWidth)" },
+        { "file": "src/ts/process/infunctions.ts", "contains": "const v = getGlobalChatVar(p1, scope)" },
         { "file": "src/App.svelte", "contains": "split-workspace-sidebar" },
         { "file": "src/App.svelte", "contains": "aria-label=\"사이드바 닫기\"" },
         { "file": "src/ts/chatSplitPane.ts", "contains": "toggleSplitChat" },

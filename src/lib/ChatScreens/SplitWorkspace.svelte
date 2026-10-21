@@ -15,7 +15,7 @@
     import type { Snippet } from 'svelte'
     import { onDestroy, onMount, untrack } from 'svelte'
     import { DynamicGUI, MobileGUI, settingsOpen } from 'src/ts/stores.svelte'
-    import { clampSplitHeight, clampSplitWidth, dockedSplitChatRoom, dockedSplitWidths, getSplitWidthBounds, isEmbeddedRisuPane, SPLIT_DIVIDER_PX, SPLIT_MAIN_CHAT_MIN_PX, splitChatHeight, splitChatOpen, splitChatWidth, splitDockedRight, type DockedSplitRow } from 'src/ts/chatSplitPane'
+    import { clampSplitHeight, clampSplitWidth, dockedSplitChatRoom, dockedSplitWidths, getSplitWidthBounds, isEmbeddedRisuPane, looseSplitSideWidth, NARROW_SPLIT_PX, SPLIT_DIVIDER_PX, SPLIT_MAIN_CHAT_MIN_PX, splitChatHeight, splitChatOpen, splitChatWidth, splitDockedRight, type DockedSplitRow } from 'src/ts/chatSplitPane'
     import SecondaryChatPanel from './SecondaryChatPanel.svelte'
     import Sidebar from '../SideBars/Sidebar.svelte'
     import { restorePanesAfterBoot, returnToMainPane, swapPanes } from 'src/ts/paneActivation'
@@ -29,7 +29,14 @@
     const enabled = $derived($splitChatOpen && !$MobileGUI && !isEmbeddedRisuPane)
     // The docked layout; a narrow (DynamicGUI) window keeps the sidebar as an overlay (App).
     const docked = $derived(enabled && !$DynamicGUI)
-    const column = $derived(docked && splitLayout.orientation === 'column')
+    // The two panes and the divider between them (the bot list sits outside it at the ends).
+    let paneRoot: HTMLDivElement | null = $state(null)
+    let paneWidth = $state(0)
+    // A window too narrow for two chats side by side (a folded phone with the
+    // mobile layout off) stacks them, as the docked split's "위아래로" does
+    // (the page ran 150px past the screen at 375px, 2026-10-21).
+    const narrowStack = $derived(enabled && !docked && paneWidth > 0 && paneWidth < NARROW_SPLIT_PX)
+    const column = $derived((docked && splitLayout.orientation === 'column') || narrowStack)
     const rail = $derived(railPlace())
     $effect(() => {
         if (!enabled) returnToMainPane()
@@ -45,9 +52,6 @@
         const restore = setTimeout(() => { if (enabled) restorePanesAfterBoot() }, 400)
         return () => { stopSync(); clearTimeout(restore) }
     })
-    // The two panes and the divider between them (the bot list sits outside it at the ends).
-    let paneRoot: HTMLDivElement | null = $state(null)
-    let paneWidth = $state(0)
     let railWidth = $state(0)
     let stopSplitResize: (() => void) | null = null
 
@@ -57,11 +61,15 @@
     // Side by side, the widths are set here, so the main chat keeps its
     // minimum and the second pane gives way first (dockedSplitWidths).
     const dockedRow = $derived(docked && !column ? dockedSplitWidths(dockedRowAt(paneWidth || window.innerWidth), $splitChatWidth) : null)
+    // A narrow window side by side: the second pane's own width, both chats
+    // keeping their minimum (its chat alone held 240px, and its box shrank
+    // below that, so the page ran past the screen; 2026-10-21).
+    const looseSide = $derived(enabled && !docked && !column ? looseSplitSideWidth(paneWidth || window.innerWidth, $splitChatWidth) : null)
     // What the toasts and the request dock keep clear of (splitRightInset).
     $effect(() => {
         splitDockedRight.set(docked
             ? { row: !column, rail: rail === 'start' ? 0 : railWidth, sideChat: dockedRow?.sideChat ?? 0, sidePanel: dockedRow?.sidePanel ?? 0 }
-            : null)
+            : narrowStack ? { row: false, rail: 0, sideChat: 0, sidePanel: 0 } : null)
     })
 
     // The room the two chats share: no divider, and docked, no bot list
@@ -70,13 +78,13 @@
     const rowSpan = () => paneRoot?.clientWidth ?? window.innerWidth
     const rowRoom = (span: number) => docked ? dockedSplitChatRoom(dockedRowAt(span)) : Math.max(0, span - SPLIT_DIVIDER_PX)
     const columnRoom = () => Math.max(0, (paneRoot?.clientHeight ?? window.innerHeight) - SPLIT_DIVIDER_PX)
-    const mainMinimum = $derived(docked ? SPLIT_MAIN_CHAT_MIN_PX : 0)
+    const mainMinimum = SPLIT_MAIN_CHAT_MIN_PX
     const widthBounds = $derived(getSplitWidthBounds(rowRoom(paneWidth), mainMinimum))
     const clampWidth = (width: number) => clampSplitWidth(width, rowRoom(rowSpan()), mainMinimum)
     const clampSize = (size: number) => column ? clampSplitHeight(size, columnRoom()) : clampWidth(size)
     const setSize = (size: number) => (column ? splitChatHeight : splitChatWidth).set(clampSize(size))
     // The size on screen: docked side by side, the second chat can be narrower than the width saved.
-    const shownSize = () => column ? $splitChatHeight : (dockedRow?.sideChat ?? $splitChatWidth)
+    const shownSize = () => column ? $splitChatHeight : (dockedRow?.sideChat ?? looseSide ?? $splitChatWidth)
 
     // A touch that stays put this long opens the divider's menu; moving first resizes.
     const LONG_PRESS_MS = 550
@@ -230,7 +238,7 @@
                 aria-orientation={column ? 'horizontal' : 'vertical'}
                 aria-valuemin={column ? 0 : widthBounds.min}
                 aria-valuemax={column ? (paneRoot?.clientHeight ?? 0) : widthBounds.max}
-                aria-valuenow={column ? $splitChatHeight : (dockedRow?.sideChat ?? $splitChatWidth)}
+                aria-valuenow={column ? $splitChatHeight : (dockedRow?.sideChat ?? looseSide ?? $splitChatWidth)}
                 title={docked ? language.splitDividerLabel : undefined}
                 tabindex="0"
                 onpointerdown={beginSplitResize}
@@ -246,9 +254,10 @@
                 class:h-full={!column}
                 class:w-full={column}
                 class:shrink-0={column}
+                class:split-side-fixed={looseSide !== null}
                 class:split-side-docked={!!dockedRow}
                 style:height={column ? `${$splitChatHeight}px` : undefined}
-                style:width={dockedRow ? `${dockedRow.sideChat + dockedRow.sidePanel}px` : undefined}
+                style:width={dockedRow ? `${dockedRow.sideChat + dockedRow.sidePanel}px` : looseSide !== null ? `${looseSide}px` : undefined}
                 style:--split-panel={dockedRow ? `${dockedRow.sidePanel}px` : undefined}
             >
                 {#if sidePanelShown && column}
@@ -258,7 +267,7 @@
                 <div
                     class="split-side-chat flex h-full min-w-0"
                     class:grow={column}
-                    style:flex-basis={column ? undefined : `${dockedRow?.sideChat ?? $splitChatWidth}px`}
+                    style:flex-basis={column ? undefined : `${dockedRow?.sideChat ?? looseSide ?? $splitChatWidth}px`}
                 >
                     <SecondaryChatPanel />
                 </div>
@@ -287,7 +296,8 @@
         flex: 0 1 auto;
     }
 
-    .split-side.split-side-docked {
+    .split-side.split-side-docked,
+    .split-side.split-side-fixed {
         flex: none;
     }
 

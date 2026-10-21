@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { clampSplitWidth, dockedSplitChatRoom, dockedSplitWidths, getSecondaryRisuPaneUrl, getSplitWidthBounds, parseChatRoomDragPayload, serializeChatRoomDragPayload } from './chatSplitPane'
+import { clampSplitWidth, dockedSplitChatRoom, dockedSplitWidths, getSecondaryRisuPaneUrl, getSplitWidthBounds, parseChatRoomDragPayload, serializeChatRoomDragPayload, looseSplitSideWidth, NARROW_SPLIT_PX } from './chatSplitPane'
 
 describe('clampSplitWidth', () => {
     test('allows either desktop pane to become narrow without collapsing it', () => {
@@ -80,5 +80,16 @@ describe('chat room split-pane drag payload', () => {
         expect(parseChatRoomDragPayload(serializeChatRoomDragPayload(payload))).toEqual(payload)
         expect(parseChatRoomDragPayload('{"characterId":"character-a"}')).toBeNull()
         expect(parseChatRoomDragPayload('not-json')).toBeNull()
+    })
+})
+
+describe('a narrow window side by side', () => {
+    test('keeps both chats at 320px and stacks below that', () => {
+        expect(NARROW_SPLIT_PX).toBe(646)
+        // a folded-out phone: the saved width, within both minimums
+        expect(looseSplitSideWidth(880, 280)).toBe(320)
+        expect(looseSplitSideWidth(880, 400)).toBe(400)
+        expect(looseSplitSideWidth(880, 700)).toBe(554)
+        expect(looseSplitSideWidth(646, 500)).toBe(320)
     })
 })

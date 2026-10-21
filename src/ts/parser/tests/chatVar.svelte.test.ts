@@ -170,6 +170,26 @@ test("a toggle of a chat in the split's other pane reads that chat's own value",
   }
 })
 
+test("a calc expression reads the toggles of the chat it is parsed for", async () => {
+  const { paneState, paneToggles } = await import('../../chatPanes.svelte')
+  const { splitChatOpen } = await import('../../chatSplitPane')
+  const { calcString } = await import('../../process/infunctions')
+  splitChatOpen.set(true)
+  paneState.active = 'main'
+  paneState.held = { main: null, side: { chaId: 'x', chatId: 'calc-chat' } }
+  try {
+    DBState.db.globalChatVariables.toggle_calc = '1'
+    const other = { id: 'calc-chat', message: [] } as any
+    paneToggles['calc-chat'] = { toggle_calc: '5' }
+    expect(calcString('@toggle_calc + 1', { chat: other })).toBe(6)
+    expect(calcString('@toggle_calc + 1')).toBe(2)
+  } finally {
+    splitChatOpen.set(false)
+    paneState.held = { main: null, side: null }
+    for (const key of Object.keys(paneToggles)) delete paneToggles[key]
+  }
+})
+
 test('a chat no pane shows beside the selection reads the live toggles, pinned or not', async () => {
   const { paneState, paneToggles } = await import('../../chatPanes.svelte')
   const { splitChatOpen } = await import('../../chatSplitPane')

@@ -1564,7 +1564,7 @@ function matcher (p1:string,matcherArg:matcherArg,vars:{[key:string]:string}|nul
     try {
         if(p1.startsWith('? ')){
             const substring = p1.substring(2)
-            return calcString(substring).toString()
+            return calcString(substring, matcherArg).toString()
         }
         const colonIndex = p1.indexOf(':')
         let splited: string[]

@@ -109,7 +109,8 @@ export type CBSRegisterArg = {
     setChatVar: (key: string, value: string, scope?: import('./parser/chatVar.svelte').ChatVarScope) => void,
     /** scope: a toggle of a chat other than the selected one reads that chat's own value (chatVar.svelte.ts). */
     getGlobalChatVar: (key: string, scope?: import('./parser/chatVar.svelte').ChatVarScope) => string,
-    calcString: (str: string) => number,
+    /** scope: $var and @toggle read the parse's own chat, as getChatVar does. */
+    calcString: (str: string, scope?: import('./parser/chatVar.svelte').ChatVarScope) => number,
     dateTimeFormat: (format: string, timestamp?: number) => string,
     getModules: () => RisuModule[],
     getModuleLorebooks: () => loreBook[],
@@ -772,7 +773,7 @@ export function registerCBS(arg:CBSRegisterArg) {
     registerFunction({
         name: 'calc',
         callback: (str, matcherArg, args, vars) => {
-            return calcString(args[0]).toString()
+            return calcString(args[0], matcherArg).toString()
         },
         alias: [],
         description: 'Evaluates a mathematical expression and returns the result as a string. Supports basic arithmetic operations (+, -, *, /, parentheses).\n\nUsage:: {{calc::2+2*3}}',

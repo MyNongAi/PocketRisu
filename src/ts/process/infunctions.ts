@@ -1,4 +1,4 @@
-import { getChatVar, getGlobalChatVar } from '../parser/chatVar.svelte';
+import { getChatVar, getGlobalChatVar, type ChatVarScope } from '../parser/chatVar.svelte';
 
 function toRPN(expression:string) {
     let outputQueue = '';
@@ -112,16 +112,18 @@ function calculateRPN(expression:string) {
     return stack.pop()
 }
 
-function executeRPNCalculation(text:string) {
+// `scope`: the chat a parse is for (chatVar.svelte.ts), so $var and @toggle
+// read that chat, as {{getvar}} and {{getglobalvar}} beside them do.
+function executeRPNCalculation(text:string, scope?: ChatVarScope) {
     text = text.replace(/\$([a-zA-Z0-9_]+)/g, (_, p1) => {
-        const v = getChatVar(p1)
+        const v = getChatVar(p1, scope)
         const parsed = parseFloat(v)
         if(isNaN(parsed)){
             return "0"
         }
         return parsed.toString()
     }).replace(/\@([a-zA-Z0-9_]+)/g, (_, p1) => {
-        const v = getGlobalChatVar(p1)
+        const v = getGlobalChatVar(p1, scope)
         const parsed = parseFloat(v)
         if(isNaN(parsed)){
             return "0"
@@ -140,7 +142,7 @@ function executeRPNCalculation(text:string) {
     return evaluated
 }
 
-export function calcString(text:string) {
+export function calcString(text:string, scope?: ChatVarScope) {
     let depthText:string[] = ['']
 
     for(let i = 0; i < text.length; i++) {
@@ -148,7 +150,7 @@ export function calcString(text:string) {
             depthText.push('')
         }
         else if(text[i] === ')' && depthText.length > 1) {
-            let result = executeRPNCalculation(depthText.pop())
+            let result = executeRPNCalculation(depthText.pop(), scope)
             depthText[depthText.length - 1] += result
         }
         else {
@@ -156,5 +158,5 @@ export function calcString(text:string) {
         }
     }
 
-    return executeRPNCalculation(depthText.join(''))
+    return executeRPNCalculation(depthText.join(''), scope)
 }

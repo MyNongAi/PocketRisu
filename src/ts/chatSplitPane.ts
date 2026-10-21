@@ -119,6 +119,17 @@ export const SPLIT_PANEL_PX = 320
 export const SPLIT_PANEL_MIN_PX = 200
 /** What the main chat keeps beside the second pane in the docked row. */
 export const SPLIT_MAIN_CHAT_MIN_PX = 320
+/** Narrower than this, a split outside the docked layout stacks its two chats (both keep SPLIT_MAIN_CHAT_MIN_PX side by side). */
+export const NARROW_SPLIT_PX = SPLIT_MAIN_CHAT_MIN_PX * 2 + SPLIT_DIVIDER_PX
+
+/**
+ * The second chat's width side by side outside the docked layout: the saved
+ * width, with both chats keeping SPLIT_MAIN_CHAT_MIN_PX of `span`.
+ */
+export function looseSplitSideWidth(span: number, saved: number): number {
+    const max = Math.max(SPLIT_MAIN_CHAT_MIN_PX, span - SPLIT_DIVIDER_PX - SPLIT_MAIN_CHAT_MIN_PX)
+    return Math.round(Math.min(max, Math.max(SPLIT_MAIN_CHAT_MIN_PX, saved)))
+}
 
 /** The docked split side by side (SplitWorkspace). */
 export interface DockedSplitRow {
