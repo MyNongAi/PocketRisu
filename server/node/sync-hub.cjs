@@ -129,6 +129,13 @@ function createSyncHub(options = {}) {
                 if (entry.seq > sinceSeq) send(client, entry.frame);
             }
         }
+        // What other devices are doing right now (a reply being written), so
+        // a page that connects mid-reply shows it too.
+        const now = Date.now();
+        for (const [key, entry] of presence) {
+            if (entry.expiresAt <= now) presence.delete(key);
+            else send(client, entry.frame);
+        }
 
         if (client.closed) return client;
         clients.add(client);
@@ -138,9 +145,35 @@ function createSyncHub(options = {}) {
         return client;
     }
 
+    // Presence: what a device is doing now (writing a reply, typing a
+    // message), not a change to keep. No sequence number and no replay
+    // buffer; a reconnecting page only gets the states still live. A state
+    // that is not renewed lapses, so a device that vanished mid-reply stops
+    // showing as busy.
+    const presence = new Map(); // key -> { expiresAt, frame }
+
+    /**
+     * Pass `payload` to every page as a 'presence' event. `keep` holds it for
+     * pages that connect later, until `ttlMs` passes or the same `key` sends
+     * `state: 'end'`.
+     */
+    function announce(payload, { key, keep = false, ttlMs = 15_000 } = {}) {
+        if (!payload || typeof payload.kind !== 'string') return null;
+        const event = { ...payload, at: Date.now() };
+        const frame = `event: presence\ndata: ${JSON.stringify(event)}\n\n`;
+        if (Buffer.byteLength(frame) > config.maxEventBytes) return null;
+        if (key) {
+            if (keep && payload.state !== 'end') presence.set(key, { expiresAt: event.at + ttlMs, frame });
+            else presence.delete(key);
+        }
+        for (const client of clients) send(client, frame);
+        return event;
+    }
+
     return {
         instanceId,
         publish,
+        announce,
         subscribe,
         get seq() { return seq; },
         get clientCount() { return clients.size; },

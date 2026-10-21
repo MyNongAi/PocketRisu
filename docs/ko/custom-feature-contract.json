@@ -1779,7 +1779,7 @@
         { "file": "src/lib/UI/GUI/RequestStatusToaster.svelte", "contains": "onDismiss: () => requestToastDismissed(id)," },
         { "file": "src/lib/UI/GUI/RequestStatusToaster.svelte", "contains": "if (!get(minimizedRequests).includes(id) && staysOpenUnseen(entry, currentChatId())) {" },
         { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "onclick={goToChat}><ChevronRightIcon size={14} /></button>" },
-        { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "if (entry && !isTerminalPhase(entry.phase)) stopRequestReply(id, entry.chatId)" },
+        { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "if (entry && !entry.remote && !isTerminalPhase(entry.phase)) stopRequestReply(id, entry.chatId)" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "window.addEventListener(SCROLL_CHAT_TO_END_EVENT, toEnd)" }
       ],
       "regressionTests": [
@@ -1954,6 +1954,33 @@
       ],
       "regressionTests": [
         "src/ts/gui/chatReplyStatus.test.ts"
+      ]
+    },
+    {
+      "id": "REMOTE-ACTIVITY",
+      "title": "다른 기기의 생성 중 표시 · 입력창 실시간 동기화",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/sync/remoteActivity.ts",
+        "server/node/sync-hub.cjs",
+        "src/ts/sync/realtimeSync.ts",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/lib/SideBars/ChatReplyStatus.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "server/node/sync-hub.cjs", "contains": "function announce(payload, { key, keep = false, ttlMs = 15_000 } = {})" },
+        { "file": "server/node/server.cjs", "contains": "app.post('/api/sync/presence'" },
+        { "file": "src/ts/sync/realtimeSync.ts", "contains": "if (event === 'presence') {" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "onPresence: (event) => receivePresence(event as RemotePresenceEvent)," },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "startPresencePublisher((body) => syncStorage.postPresence(body), {" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "{:else if remoteBusy}" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "publishDraft(chatId, m)" },
+        { "file": "src/lib/SideBars/ChatReplyStatus.svelte", "contains": "$remoteGenerations.has(chatId)" },
+        { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "!entry.remote && !isTerminalPhase(entry.phase)) stopRequestReply(id, entry.chatId)" }
+      ],
+      "regressionTests": [
+        "src/ts/sync/remoteActivity.test.ts",
+        "server/node/sync-hub.test.ts"
       ]
     }
   ]

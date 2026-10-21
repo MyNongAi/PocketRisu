@@ -7,6 +7,7 @@ import { splitChatOpen } from "./chatSplitPane";
 import streamSaver from 'streamsaver';
 import { setDatabase, normalizeDatabase, type Database, type Chat, defaultSdDataFunc, getDatabase, appVer, nodeOnlyVer, getCurrentCharacter, loadTogglesFromChat } from "./storage/database.svelte";
 import { applyMergedDbInPlace } from "./storage/applyRebasedDb";
+import { receivePresence, startPresencePublisher, type PresenceEvent as RemotePresenceEvent } from "./sync/remoteActivity";
 import { checkRisuUpdate } from "./update";
 import { MobileGUI, botMakerMode, selectedCharID, loadedStore, DBState, LoadingStatusState, selIdState, ReloadGUIPointer, bodyIntercepterStore, chatHydrationOverlayStore, chatDeselected, moduleTreeRevision } from "./stores.svelte";
 import { recordDbTransferSize } from "./transferSize";
@@ -41,7 +42,8 @@ import { deepTouch } from "./gui/deepTouch.svelte";
 import { updateLorebooks, deselectCharacter } from "./characters";
 import { applyCharacterOrderCheck, type CharacterOrderCheckOptions } from "./characterOrderCheck";
 import { mergeServerDbWithTrackedLocalChanges, withTrackedCharacters, hasAmbiguousCharacterIds } from "./storage/rebaseMerge";
-import { generationStates, chatGenKey, notifyDatabaseRebased, abortGeneration, doingChat as liveGenerationRunning } from "./process/generationState";
+import { generationStates, chatGenKey, notifyDatabaseRebased, abortGeneration, doingChat as liveGenerationRunning, wasGenerationAborted } from "./process/generationState";
+import { requestStatuses } from "./status/requestStatus";
 import { rerollPlaceholders } from "./gui/rerollPlaceholder";
 import { chatForSave } from "./chatCopySnapshot";
 import { onStaleBuild, setStaleBuildSaveState, watchServerBuild } from "./storage/buildFence";
@@ -2263,6 +2265,8 @@ export async function saveDb() {
                 }
             },
             onChat: enqueueRemote,
+            // Another device writing a reply or typing (remoteActivity.ts).
+            onPresence: (event) => receivePresence(event as RemotePresenceEvent),
             // Events were lost. Re-check the chat on screen; the database
             // catches up through the save path.
             onResync: () => {
@@ -2281,6 +2285,25 @@ export async function saveDb() {
             if (document.visibilityState === 'visible') connection.wake()
         })
         window.addEventListener('online', () => connection.wake())
+        // And the replies this page writes, for the other devices.
+        if (syncStorage.postPresence) {
+            startPresencePublisher((body) => syncStorage.postPresence(body), {
+                running: generationStates,
+                statuses: requestStatuses,
+                // A reply without a request card (the classic path) is measured in the chat.
+                replyChars: (chatId) => {
+                    const chaId = get(generationStates).get(chatId)?.context?.characterId
+                    const characters = getDatabase()?.characters ?? []
+                    const owner = characters.find((char) => char?.chaId === chaId)
+                        ?? characters.find((char) => char?.chats?.some((chat) => chat?.id === chatId))
+                    const last = owner?.chats?.find((chat) => chat?.id === chatId)?.message?.at(-1)
+                    return last?.role === 'char' ? String(last.data ?? '').length : 0
+                },
+                aborted: (chatId) => wasGenerationAborted(chatGenKey(chatId)),
+            }, {
+                statusCards: () => getDatabase()?.showRequestStatus !== false,
+            })
+        }
     }
 
     // A save attempt started after the caller's changes, and it succeeded.

@@ -1282,6 +1282,8 @@ export const languageKorean = {
   splitPanelToggle: "캐릭창",
   newlyReceived: "새로 받음: 아직 안 열어 봄",
   newSwipeWaiting: "뒤쪽 페이지에 새 답이 있어요",
+  remoteReplyRunning: "다른 기기에서 이 채팅의 답을 쓰는 중이에요",
+  remoteDevice: "다른 기기",
   pairFindBot: "연결된 봇 찾기",
   pairFindWhichModule: "어느 모듈로 갈까요?",
   pairFindWhichBot: "어느 봇으로 갈까요?",

@@ -117,4 +117,37 @@ describe('sync hub', () => {
         expect(hub.clientCount).toBe(0)
         expect(slow.ended).toBe(true)
     })
+
+    it('passes presence on without a sequence, and keeps a live one for pages that connect later', () => {
+        const hub = createSyncHub({ heartbeatMs: 60_000 })
+        const early = new FakeResponse()
+        hub.subscribe(early)
+        hub.announce({ kind: 'generation', origin: 'phone', chatId: 'x', state: 'progress' }, { key: 'phone|generation|x', keep: true })
+        hub.announce({ kind: 'draft', origin: 'phone', chatId: 'x', text: 'hi' }, { key: 'phone|draft|x' })
+        expect(early.events().map((e) => e.name)).toEqual(['hello', 'presence', 'presence'])
+        expect(early.events()[1].data).toMatchObject({ kind: 'generation', origin: 'phone', chatId: 'x' })
+        expect(early.events()[1].data.seq).toBeUndefined()
+        expect(hub.seq).toBe(0)
+
+        // a page that connects mid-reply gets the reply's state, not the draft
+        const late = new FakeResponse()
+        hub.subscribe(late, { since: 0, instance: hub.instanceId })
+        expect(late.events().map((e) => [e.name, e.data.kind])).toEqual([['hello', undefined], ['presence', 'generation']])
+
+        // once it ends, nobody new hears of it
+        hub.announce({ kind: 'generation', origin: 'phone', chatId: 'x', state: 'end' }, { key: 'phone|generation|x', keep: true })
+        const after = new FakeResponse()
+        hub.subscribe(after)
+        expect(after.events().map((e) => e.name)).toEqual(['hello'])
+        hub.closeAll()
+    })
+
+    it('lets a presence lapse when it is not renewed', () => {
+        const hub = createSyncHub({ heartbeatMs: 60_000 })
+        hub.announce({ kind: 'generation', origin: 'phone', chatId: 'x' }, { key: 'k', keep: true, ttlMs: -1 })
+        const late = new FakeResponse()
+        hub.subscribe(late)
+        expect(late.events().map((e) => e.name)).toEqual(['hello'])
+        hub.closeAll()
+    })
 })

@@ -52,6 +52,7 @@ import { isMobile } from 'src/ts/platform'
     import { getInlayAsset } from 'src/ts/process/files/inlays';
     import { quickMenu } from 'src/ts/hotkey';
     import { loadChatDraft, scheduleSaveChatDraft, flushChatDraft, removeChatDraft } from 'src/ts/storage/chatDraft';
+    import { onRemoteDraft, publishDraft, remoteGenerations } from 'src/ts/sync/remoteActivity';
     import { registerUnsavedText } from 'src/ts/storage/buildFence';
     import { getChatAssetRenderWindow } from 'src/ts/chatAssetWindow';
     import { chatWriterClaimMessage } from 'src/ts/storage/nodeStorage';
@@ -137,6 +138,10 @@ import { isMobile } from 'src/ts/platform'
     let draftChaId = $derived(currentCharacter?.chaId ?? '')
     let draftChatId = $derived(currentChatSlot?.id ?? '')
     let draftLoading = $state(false)
+    // The composer's text as it came from elsewhere (the stored draft, or
+    // another device typing): it is not passed on to the other devices again.
+    let draftEcho = ''
+    let lastTypedAt = 0
 
     function persistDraftNow() {
         flushChatDraft(draftChaId, draftChatId, { m: messageInput, t: messageInputTranslate })
@@ -159,6 +164,7 @@ import { isMobile } from 'src/ts/platform'
                     messageInput = draft.m
                     messageInputTranslate = draft.t
                 }
+                draftEcho = messageInput
                 draftLoading = false
             })
             // Resize the textarea to fit the cleared/loaded text (height is
@@ -184,7 +190,23 @@ import { isMobile } from 'src/ts/platform'
         const t = messageInputTranslate
         if (!chaId || !chatId || draftLoading) return
         scheduleSaveChatDraft(chaId, chatId, { m, t })
+        // Other devices with this chat open show the same text as it is typed
+        // (the user's request, 2026-10-21; remoteActivity.ts).
+        if (m !== draftEcho) {
+            draftEcho = m
+            publishDraft(chatId, m)
+        }
     })
+
+    // Text typed for this chat on another device comes in, unless this one
+    // is being typed in right now.
+    $effect(() => onRemoteDraft((chatId, text) => {
+        if (chatId !== draftChatId || draftLoading || text === messageInput) return
+        if (document.activeElement === inputEle && Date.now() - lastTypedAt < 2000) return
+        draftEcho = text
+        messageInput = text
+        void tick().then(() => updateInputSizeAll())
+    }))
 
     // Unsent input is work only this screen holds. When the tab turns out to
     // run an outdated build it is not reloaded away but shown on the
@@ -510,6 +532,7 @@ import { isMobile } from 'src/ts/platform'
         const selectedCharacter = DBState.db.characters[view.characterIndex]
         const selectedChatRoom = selectedCharacter?.chats?.[view.chatIndex]
         if(!selectedCharacter || !selectedChatRoom) return
+        if(remoteBusy) { notifyInfo(language.remoteReplyRunning); return }
 
         let generationTarget = captureGenerationTarget(selectedCharacter, selectedChatRoom)
         const genKey = chatGenKey(generationTarget.chatId)
@@ -759,6 +782,7 @@ import { isMobile } from 'src/ts/platform'
 
     async function reroll() {
         if(currentChatGenerating) return
+        if(remoteBusy) { notifyInfo(language.remoteReplyRunning); return }
         let placeholderChatId: string | null = null
         const targetCharacter = DBState.db.characters[view.characterIndex]
         const targetChat = targetCharacter?.chats?.[view.chatIndex]
@@ -982,6 +1006,10 @@ import { isMobile } from 'src/ts/platform'
     let currentChatGenerating = $derived($generationStates.has(currentChatGenKey()))
     let currentChatAuxGenerating = $derived($auxiliaryGenerating.has(currentChatGenKey()))
     let currentChatProcessStage = $derived($generationStates.get(currentChatGenKey())?.stage ?? 0)
+    // Another device is writing a reply in this chat (remoteActivity.ts): the
+    // composer shows it busy, and sending waits, or both devices would write
+    // into the same chat and one of them would end up a copy.
+    let remoteBusy = $derived(!currentChatGenerating && !!draftChatId && $remoteGenerations.has(draftChatId))
 
     async function sendChatMain(
         continued:boolean = false,
@@ -1711,7 +1739,7 @@ import { isMobile } from 'src/ts/platform'
                             }
                         }
                     }}
-                          oninput={()=>{updateInputTransateMessage(false)}}
+                          oninput={()=>{lastTypedAt = Date.now(); updateInputTransateMessage(false)}}
                           onblur={persistDraftNow}
                           style:height={inputHeight}
                 ></textarea>
@@ -1731,6 +1759,15 @@ import { isMobile } from 'src/ts/platform'
                             class="order-2 shrink-0 flex justify-center items-center w-9 h-9 rounded-full text-textcolor hover:bg-primary/20 transition-colors" onclick={abortChat}
                     >
                         <div class="loadmove chat-process-stage-{currentChatProcessStage}"></div>
+                    </button>
+                {:else if remoteBusy}
+                    <button
+                            aria-label={language.remoteReplyRunning}
+                            title={language.remoteReplyRunning}
+                            class="order-2 shrink-0 flex justify-center items-center w-9 h-9 rounded-full text-textcolor hover:bg-primary/20 transition-colors button-remote-busy"
+                            onclick={() => notifyInfo(language.remoteReplyRunning)}
+                    >
+                        <div class="loadmove chat-process-stage-1"></div>
                     </button>
                 {:else}
                     <button

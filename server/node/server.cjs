@@ -9147,6 +9147,44 @@ app.get('/api/sync/events', async (req, res) => {
     syncHub.subscribe(res, { since: Number.isInteger(since) && since >= 0 ? since : undefined, instance });
 });
 
+// What a device is doing in a chat right now, passed to the other devices
+// (src/ts/sync/remoteActivity.svelte.ts): a reply being written, so they show
+// it as busy instead of an idle chat that suddenly gains a reply (the user's
+// report, 2026-10-21), and the message being typed. Nothing is stored.
+const PRESENCE_PHASES = new Set(['connecting', 'thinking', 'responding', 'retrying', 'stalled', 'background']);
+const PRESENCE_MAX_DRAFT = 64 * 1024;
+app.post('/api/sync/presence', async (req, res) => {
+    if (!await checkAuth(req, res)) { return; }
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const origin = chatClientId(req);
+    const chatId = typeof body.chatId === 'string' ? body.chatId.slice(0, 200) : '';
+    const count = (value) => Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
+    if (!chatId) { res.status(400).send({ error: 'chatId is required' }); return; }
+    if (body.kind === 'generation') {
+        const end = body.state === 'end';
+        syncHub.announce({
+            kind: 'generation',
+            origin,
+            chatId,
+            state: end ? 'end' : 'progress',
+            outcome: end && ['done', 'failed', 'aborted'].includes(body.outcome) ? body.outcome : undefined,
+            phase: PRESENCE_PHASES.has(body.phase) ? body.phase : 'connecting',
+            label: typeof body.label === 'string' ? body.label.slice(0, 200) : '',
+            startedAt: count(body.startedAt),
+            thinkingTokens: count(body.thinkingTokens),
+            responseTokens: count(body.responseTokens),
+            chars: count(body.chars),
+        }, { key: `${origin}|generation|${chatId}`, keep: true });
+    } else if (body.kind === 'draft') {
+        if (typeof body.text !== 'string' || body.text.length > PRESENCE_MAX_DRAFT) { res.status(400).send({ error: 'text' }); return; }
+        syncHub.announce({ kind: 'draft', origin, chatId, text: body.text }, { key: `${origin}|draft|${chatId}` });
+    } else {
+        res.status(400).send({ error: 'kind' });
+        return;
+    }
+    res.send({ ok: true });
+});
+
 app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, async (req, res, next) => {
     if (!await checkAuth(req, res)) { return; }
     try {

@@ -1188,6 +1188,8 @@ export const languageEnglish = {
     splitPanelToggle: "Character panel",
     newlyReceived: "New: not opened yet",
     newSwipeWaiting: "A new reply is waiting on a later page",
+    remoteReplyRunning: "Another device is writing a reply in this chat",
+    remoteDevice: "Other device",
     pairFindBot: "Find its bots",
     pairFindWhichModule: "Which module?",
     pairFindWhichBot: "Which bot?",

@@ -32,10 +32,19 @@ export interface ChatEvent {
     etag: string
 }
 
+/** What another device is doing now (sync-hub.cjs presence): no sequence, never replayed. */
+export interface PresenceEvent {
+    kind: string
+    origin?: string
+    chatId?: string
+    [field: string]: unknown
+}
+
 export interface RealtimeHandlers {
     onDbPatch?: (event: DbPatchEvent) => void
     onDbStale?: (event: DbStaleEvent) => void
     onChat?: (event: ChatEvent) => void
+    onPresence?: (event: PresenceEvent) => void
     /** The server restarted or this page slept past its buffer: events were lost. */
     onResync?: () => void
 }
@@ -98,6 +107,15 @@ export function startRealtimeSync(handlers: RealtimeHandlers, deps: RealtimeDeps
             // this point is already in the state the page loaded.
             if (!sameServer || payload.resync) lastSeq = payload.seq
             if (lost) handlers.onResync?.()
+            return
+        }
+        if (event === 'presence') {
+            if (payload?.origin === deps.clientId) return
+            try {
+                handlers.onPresence?.(payload)
+            } catch (error) {
+                console.warn('[RealtimeSync] presence handler failed:', error)
+            }
             return
         }
         if (typeof payload?.seq !== 'number' || payload.seq <= lastSeq) return

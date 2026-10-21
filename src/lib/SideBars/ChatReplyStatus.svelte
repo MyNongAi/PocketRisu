@@ -1,9 +1,10 @@
 <script lang="ts">
     // A chat row's reply status: the composer's spinner (green) while a reply
-    // for this chat runs, foreground or on the server, then a check until the
-    // chat is opened again. The chat on screen shows its check only briefly.
+    // for this chat runs, foreground, on the server or on another device, then
+    // a check until the chat is opened again. The chat on screen shows its check only briefly.
     import { chatGenKey, generationStates } from 'src/ts/process/generationState'
     import { clearFinishedReply, finishedReplies } from 'src/ts/gui/chatReplyStatus'
+    import { remoteGenerations } from 'src/ts/sync/remoteActivity'
 
     interface Props {
         chatId: string | undefined
@@ -11,7 +12,7 @@
     }
     let { chatId, current }: Props = $props()
 
-    const running = $derived(!!chatId && $generationStates.has(chatGenKey(chatId)))
+    const running = $derived(!!chatId && ($generationStates.has(chatGenKey(chatId)) || $remoteGenerations.has(chatId)))
     const done = $derived(!running && !!chatId && $finishedReplies.has(chatId))
 
     // Opening the chat clears its check.

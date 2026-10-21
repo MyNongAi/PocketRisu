@@ -530,6 +530,15 @@ export class NodeStorage{
         })
     }
 
+    /** Tell other devices what this page is doing now (sync/remoteActivity.ts). */
+    async postPresence(body: Record<string, unknown>): Promise<void> {
+        await this.authFetch('/api/sync/presence', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+        })
+    }
+
     /** This page's identity on writes; events it caused carry it as `origin`. */
     getChatClientId(): string {
         return NodeStorage.chatClientId

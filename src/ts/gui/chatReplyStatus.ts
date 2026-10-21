@@ -26,6 +26,17 @@ export function trackFinishedReplies(running: Readable<Map<string, unknown>>, ig
     })
 }
 
+/** A reply finished elsewhere (another device, sync/remoteActivity.ts). */
+export function markFinishedReply(chatId: string | undefined): void {
+    if (!chatId) return
+    finishedReplies.update((marks) => {
+        if (marks.has(chatId)) return marks
+        const next = new Set(marks)
+        next.add(chatId)
+        return next
+    })
+}
+
 export function clearFinishedReply(chatId: string | undefined): void {
     if (!chatId) return
     finishedReplies.update((marks) => {

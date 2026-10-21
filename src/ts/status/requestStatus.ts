@@ -51,6 +51,8 @@ export interface RequestStatusEntry {
     retryAttempt?: number
     badges: StatusBadge[]
     error?: string
+    /** Written on another device (sync/remoteActivity.ts): counts come from there, and it cannot be stopped here. */
+    remote?: boolean
     // Accumulated raw text per kind. The render tick tokenizes these with the
     // injected tokenizer (native, language-accurate) — NOT a char/N estimate —
     // once per tick instead of per chunk, so cost stays O(text) per tick rather
@@ -178,6 +180,7 @@ export interface StartStatusInit {
     chatId?: string
     phase?: RequestPhase
     now: number
+    remote?: boolean
 }
 
 export function startStatus(id: string, init: StartStatusInit): void {
@@ -199,6 +202,7 @@ export function startStatus(id: string, init: StartStatusInit): void {
             responseText: '',
             textDirty: false,
             tokenSamples: [{ at: init.now, tokens: 0 }],
+            remote: init.remote,
         })
         return next
     })
@@ -245,6 +249,27 @@ export function appendText(
             textDirty: true,
             lastChunkAt: now,
             tokenSamples: trimSamples([...e.tokenSamples, { at: now, tokens: estTotal }], now),
+        }
+    })
+}
+
+// A reply written on another device: its phase and counts as that device
+// reported them (sync/remoteActivity.ts). The samples keep tok/s moving.
+export function setRemoteProgress(
+    id: string,
+    progress: { phase: RequestPhase, thinkingTokens: number, responseTokens: number },
+    now: number,
+): void {
+    update(id, (e) => {
+        if (isTerminalPhase(e.phase)) return e
+        const tokens = progress.thinkingTokens + progress.responseTokens
+        return {
+            ...e,
+            phase: progress.phase,
+            thinkingTokens: progress.thinkingTokens,
+            responseTokens: progress.responseTokens,
+            lastChunkAt: now,
+            tokenSamples: trimSamples([...e.tokenSamples, { at: now, tokens }], now),
         }
     })
 }

@@ -119,14 +119,15 @@
         const character = DBState.db.characters?.[selIdState.selId]
         return character?.chats?.[character.chatPage]?.id === entry.chatId
     })
-    const closeLabel = $derived(entry && !isTerminalPhase(entry.phase) && entry.chatId ? (rs?.stopAndClose ?? 'Stop and close') : (rs?.close ?? 'Close'))
+    // A reply written on another device cannot be stopped from here.
+    const closeLabel = $derived(entry && !entry.remote && !isTerminalPhase(entry.phase) && entry.chatId ? (rs?.stopAndClose ?? 'Stop and close') : (rs?.close ?? 'Close'))
 
     function goToChat(): void {
         openChatById(entry?.chatId)
     }
 
     function close(): void {
-        if (entry && !isTerminalPhase(entry.phase)) stopRequestReply(id, entry.chatId)
+        if (entry && !entry.remote && !isTerminalPhase(entry.phase)) stopRequestReply(id, entry.chatId)
         unminimizeRequest(id)
         dismissRequestToast(id)
     }
