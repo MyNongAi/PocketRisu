@@ -1,5 +1,6 @@
 <script lang="ts">
     import { alertGenerationInfoStore } from "../../ts/alert";
+    import { alertSelectLines } from "src/ts/gui/alertSelectLines";
     
     import { DBState } from 'src/ts/stores.svelte';
     import { getCharImage } from '../../ts/characters';
@@ -793,14 +794,29 @@
                 <p class="text-textcolor whitespace-pre-wrap">{prompt}</p>
             {/if}
             <div class="flex flex-col gap-2">
-                {#each options as label, i}
-                    <ShButton
-                        variant={$alertStore.actions?.[i]?.variant ?? 'outline'}
-                        className="w-full justify-start"
-                        onclick={() => alertStore.set({ type: 'none', msg: i.toString() })}
-                    >
-                        {label}
-                    </ShButton>
+                {#each alertSelectLines(options.length, $alertStore.actions) as line (line[0])}
+                    {#if line.length > 1}
+                        <!-- Choices of one kind side by side (AlertAction.row). -->
+                        <div class="grid gap-2" style:grid-template-columns={`repeat(${line.length}, minmax(0, 1fr))`}>
+                            {#each line as i (i)}
+                                <ShButton
+                                    variant={$alertStore.actions?.[i]?.variant ?? 'outline'}
+                                    className="h-auto min-h-9 w-full justify-center whitespace-normal px-2 py-1.5 text-center"
+                                    onclick={() => alertStore.set({ type: 'none', msg: i.toString() })}
+                                >
+                                    {options[i]}
+                                </ShButton>
+                            {/each}
+                        </div>
+                    {:else}
+                        <ShButton
+                            variant={$alertStore.actions?.[line[0]]?.variant ?? 'outline'}
+                            className="w-full justify-start"
+                            onclick={() => alertStore.set({ type: 'none', msg: line[0].toString() })}
+                        >
+                            {options[line[0]]}
+                        </ShButton>
+                    {/if}
                 {/each}
             </div>
         </div>

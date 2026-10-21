@@ -16,6 +16,8 @@ import { formatErrorCopyText, localizeErrorMessage } from "./errorPresentation"
 export interface AlertAction {
     label: string
     variant?: ShButtonVariant
+    /** alertSelect: neighbours with the same row share one line, side by side. */
+    row?: string
 }
 
 export interface alertData{

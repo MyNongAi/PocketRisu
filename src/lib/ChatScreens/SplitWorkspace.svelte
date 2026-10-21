@@ -21,7 +21,7 @@
     import { restorePanesAfterBoot, returnToMainPane, swapPanes } from 'src/ts/paneActivation'
     import { startPaneSync } from 'src/ts/chatPanes.svelte'
     import { paneOverlayOpen, railPlace, setPaneOverlayOpen, setSplitLayout, splitLayout, type RailPlace } from 'src/ts/splitLayout.svelte'
-    import { alertSelect } from 'src/ts/alert'
+    import { alertSelect, type AlertAction } from 'src/ts/alert'
     import { language } from 'src/lang'
 
     let { children, openLegacyGrid = () => {} }: { children: Snippet, openLegacyGrid?: () => void } = $props()
@@ -47,6 +47,8 @@
     const narrowStack = $derived(enabled && !docked && paneWidth > 0 && paneWidth < NARROW_SPLIT_PX)
     const column = $derived((docked && splitLayout.orientation === 'column') || narrowStack)
     const rail = $derived(railPlace())
+    // The bot list can be put away for room (the divider's menu).
+    const railShown = $derived(!splitLayout.railHidden)
     $effect(() => {
         if (!enabled) returnToMainPane()
     })
@@ -66,7 +68,7 @@
 
     const mainPanelShown = $derived(docked && splitLayout.panelOpen.main && !$settingsOpen)
     const sidePanelShown = $derived(docked && splitLayout.panelOpen.side)
-    const dockedRowAt = (span: number): DockedSplitRow => ({ span, rail: rail === 'center' ? railWidth : 0, mainPanel: mainPanelShown, sidePanel: sidePanelShown })
+    const dockedRowAt = (span: number): DockedSplitRow => ({ span, rail: railShown && rail === 'center' ? railWidth : 0, mainPanel: mainPanelShown, sidePanel: sidePanelShown })
     // Side by side, the widths are set here, so the main chat keeps its
     // minimum and the second pane gives way first (dockedSplitWidths).
     const dockedRow = $derived(docked && !column ? dockedSplitWidths(dockedRowAt(paneWidth || window.innerWidth), $splitChatWidth) : null)
@@ -90,7 +92,7 @@
     // What the toasts and the request dock keep clear of (splitRightInset).
     $effect(() => {
         splitDockedRight.set(docked
-            ? { row: !column, rail: rail === 'start' ? 0 : railWidth, sideChat: dockedRow?.sideChat ?? 0, sidePanel: dockedRow?.sidePanel ?? 0 }
+            ? { row: !column, rail: rail === 'start' || !railShown ? 0 : railWidth, sideChat: dockedRow?.sideChat ?? 0, sidePanel: dockedRow?.sidePanel ?? 0 }
             : narrowStack ? { row: false, rail: 0, sideChat: 0, sidePanel: 0 } : null)
     })
 
@@ -188,18 +190,25 @@
         }
     }
 
+    // Choices of one kind on one line (the user's request, 2026-10-22): where
+    // the bot list goes, the current place marked; putting it away; the panes.
     async function askDividerMenu() {
         const row = splitLayout.orientation === 'row'
+        const hidden = splitLayout.railHidden
         const railChoices: [RailPlace, string][] = row
             ? [['start', language.splitRailStart], ['center', language.splitRailCenter], ['end', language.splitRailEnd]]
             : [['start', language.splitRailStart], ['end', language.splitRailEnd]]
-        const actions: [string, () => void][] = [
-            [row ? language.splitSwapRow : language.splitSwapColumn, () => swapPanes()],
-            [row ? language.splitToColumn : language.splitToRow, () => setSplitLayout({ orientation: row ? 'column' : 'row' })],
-            ...railChoices.filter(([place]) => place !== rail).map(([place, label]) => [label, () => setSplitLayout({ railAt: place })] as [string, () => void]),
-            [language.splitEven, resetSplitSize],
+        const actions: [AlertAction, () => void][] = [
+            ...railChoices.map(([place, label]): [AlertAction, () => void] => [
+                { label, row: 'rail', variant: !hidden && place === rail ? 'primary' : 'outline' },
+                () => setSplitLayout({ railAt: place, railHidden: false }),
+            ]),
+            [{ label: hidden ? language.splitRailShow : language.splitRailHide }, () => setSplitLayout({ railHidden: !hidden })],
+            [{ label: row ? language.splitSwapRow : language.splitSwapColumn, row: 'panes' }, () => swapPanes()],
+            [{ label: row ? language.splitToColumn : language.splitToRow, row: 'panes' }, () => setSplitLayout({ orientation: row ? 'column' : 'row' })],
+            [{ label: language.splitEven, row: 'panes' }, resetSplitSize],
         ]
-        const selected = parseInt(await alertSelect([...actions.map(([label]) => label), language.cancel]))
+        const selected = parseInt(await alertSelect([...actions.map(([action]) => action), language.cancel]))
         actions[selected]?.[1]()
     }
 
@@ -228,7 +237,7 @@
 {/snippet}
 
 <div class="flex h-full w-full min-w-0">
-    {#if docked && rail === 'start'}{@render botList()}{/if}
+    {#if docked && railShown && rail === 'start'}{@render botList()}{/if}
     <div class="flex h-full min-w-0 grow" class:flex-col={column} bind:this={paneRoot} bind:clientWidth={paneWidth}>
         <!-- The main pane: its panel, then the main content (chat or settings).
              Contained while split, so user CSS with position:fixed stays inside it. -->
@@ -273,7 +282,7 @@
                 onkeydown={handleSplitDividerKeydown}
                 oncontextmenu={openDividerMenu}
             ></div>
-            {#if docked && rail === 'center'}{@render botList()}{/if}
+            {#if docked && railShown && rail === 'center'}{@render botList()}{/if}
             <!-- The second pane: its chat, and its panel at the outer edge
                  (the left one when stacked, like the main pane's). -->
             <div
@@ -312,7 +321,7 @@
             </div>
         {/if}
     </div>
-    {#if docked && rail === 'end'}{@render botList()}{/if}
+    {#if docked && railShown && rail === 'end'}{@render botList()}{/if}
 </div>
 
 <style>

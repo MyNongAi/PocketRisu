@@ -16,6 +16,8 @@ const KEY = 'pocketrisu:split-layout'
 interface SplitLayoutState {
     orientation: SplitOrientation
     railAt: RailPlace
+    /** The bot list put away, for more room (the divider's menu brings it back). */
+    railHidden: boolean
     panelOpen: Record<PaneId, boolean>
     /** The tab each pane's panel shows while the other pane holds the selection. */
     tab: Record<PaneId, PanelTab>
@@ -25,6 +27,7 @@ function read(): SplitLayoutState {
     const fallback: SplitLayoutState = {
         orientation: 'row',
         railAt: 'center',
+        railHidden: false,
         panelOpen: { main: true, side: true },
         tab: { main: 'chat', side: 'chat' },
     }
@@ -35,6 +38,7 @@ function read(): SplitLayoutState {
         return {
             orientation: saved.orientation === 'column' ? 'column' : 'row',
             railAt: saved.railAt === 'start' || saved.railAt === 'end' ? saved.railAt : 'center',
+            railHidden: saved.railHidden === true,
             panelOpen: { main: saved.panelOpen?.main !== false, side: saved.panelOpen?.side !== false },
             tab: { main: tab(saved.tab?.main), side: tab(saved.tab?.side) },
         }
@@ -58,9 +62,10 @@ export function railPlace(): RailPlace {
     return splitLayout.orientation === 'column' && splitLayout.railAt === 'center' ? 'start' : splitLayout.railAt
 }
 
-export function setSplitLayout(change: Partial<Pick<SplitLayoutState, 'orientation' | 'railAt'>>): void {
+export function setSplitLayout(change: Partial<Pick<SplitLayoutState, 'orientation' | 'railAt' | 'railHidden'>>): void {
     if (change.orientation) splitLayout.orientation = change.orientation
     if (change.railAt) splitLayout.railAt = change.railAt
+    if (change.railHidden !== undefined) splitLayout.railHidden = change.railHidden
     persistSplitLayout()
 }
 

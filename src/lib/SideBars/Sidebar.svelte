@@ -82,7 +82,7 @@
     import { activatePane } from "src/ts/paneActivation";
     import { paneWord, setPaneOverlayOpen, setPanePanelOpen, splitLayout, type PanelTab } from "src/ts/splitLayout.svelte";
     import { newMarkPrefix, newMarks } from "src/ts/newMarks.svelte";
-    import { alertConfirm, alertSelect } from "src/ts/alert";
+    import { alertConfirm, alertSelect, type AlertAction } from "src/ts/alert";
     import { characterMenuInfo } from "src/ts/gui/sidebarMenuInfo";
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
     import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
@@ -647,14 +647,27 @@
     folderSettingsTarget.set(folderId)
   }
 
-  // In the split: open a bot in either pane (the user's request, 2026-10-21).
-  // The pane takes the selection first, so the bot opens there.
-  function openInPaneActions(open: () => unknown): Array<[string, () => unknown]> {
+  // In the split: open a bot in either pane (the user's request, 2026-10-21),
+  // the two side by side on one line (2026-10-22). The pane takes the
+  // selection first, so the bot opens there.
+  const PANE_ROW = 'open-in-pane'
+  function openInPaneActions(open: () => unknown): Array<[string, () => unknown, string?]> {
     if (!$splitChatOpen || isEmbeddedRisuPane || $MobileGUI) return []
     return (['main', 'side'] as const).map((target) => [
       language.splitOpenInPane(paneWord(target)),
       () => { activatePane(target); return open() },
+      PANE_ROW,
     ])
+  }
+
+  // A bot menu's lines for alertSelect: the delete red, the panes on one line.
+  function botMenuOptions(actions: Array<[string, () => unknown, string?]>): (string | AlertAction)[] {
+    return [
+      ...actions.map(([label, , row]) => label === language.remove
+        ? { label, variant: 'destructive' as const }
+        : row ? { label, row } : label),
+      language.cancel,
+    ]
   }
 
   async function editSidebarCharacter(characterIndex:number, e:MouseEvent){
@@ -664,7 +677,7 @@
     if(!character) return
     // The Proton link the card was downloaded from, to fetch it again if it breaks.
     const protonLink = protonLinkOf(character)
-    const actions: Array<[string, () => unknown]> = [
+    const actions: Array<[string, () => unknown, string?]> = [
       ...openInPaneActions(() => changeChar(characterIndex, { reseter: botSwitchReseter })),
       ['봇 설정 수정', () => {
         changeChar(characterIndex, { reseter })
@@ -681,7 +694,7 @@
     ]
     // The delete is red, as in the other menus.
     const selected = parseInt(await alertSelect(
-      [...actions.map(([label]) => label === language.remove ? { label, variant: 'destructive' as const } : label), language.cancel],
+      botMenuOptions(actions),
       characterMenuInfo(character, makeAgoText),
       { image: character.image ? getCharThumbnail(character.image, "plain") : undefined },
     ))
@@ -695,7 +708,7 @@
     e.stopPropagation()
     const stub = findArchivedStub(chaId)
     if(!stub) return
-    const actions: Array<[string, () => unknown]> = [
+    const actions: Array<[string, () => unknown, string?]> = [
       ...openInPaneActions(() => promptActivateCharacter(chaId, { reseter: botSwitchReseter })),
       [language.deactivatedMenuOpen, () => promptActivateCharacter(chaId, { reseter: botSwitchReseter })],
       [language.remove, async () => {
@@ -703,7 +716,7 @@
       }],
     ]
     const selected = parseInt(await alertSelect(
-      [...actions.map(([label]) => label === language.remove ? { label, variant: 'destructive' as const } : label), language.cancel],
+      botMenuOptions(actions),
       characterMenuInfo(stub, makeAgoText),
       { image: stub.image ? getCharThumbnail(stub.image, "plain") : undefined },
     ))
