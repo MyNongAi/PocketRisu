@@ -543,10 +543,12 @@
         { "file": "src/ts/drive/backuplocal.ts", "contains": "dbCopy.modules = await wholeModules(dbCopy.modules)" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "draft = await wholeModule(draft)" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "{language.moduleColdEditorNote}" },
-        { "file": "src/ts/setting/accessibilitySettingsData.ts", "contains": "id: 'acc.nodeOnlyColdModules'," }
+        { "file": "src/ts/setting/accessibilitySettingsData.ts", "contains": "id: 'acc.nodeOnlyColdModules'," },
+        { "file": "src/ts/process/moduleChangeTracker.svelte.ts", "contains": "const report = (change: ModuleTreeChange) => untrack(() => onChange(change))" }
       ],
       "regressionTests": [
         "server/node/module-cold-store.test.ts",
+        "src/ts/process/moduleChangeTracker.loop.svelte.test.ts",
         "test/compat/module-cold.test.ts",
         "src/ts/process/moduleCold.test.ts",
         "src/ts/sync/remoteDbPatch.coldModule.test.ts"

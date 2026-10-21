@@ -1,3 +1,4 @@
+import { untrack } from 'svelte'
 import { deepTouch } from '../gui/deepTouch.svelte'
 
 export type ModuleTreeChange =
@@ -60,11 +61,20 @@ export function mergeTrackedModuleChanges<T extends { id?: unknown }>(
  * that has the same stable id is reported as precise content replacement.
  *
  * This must be called from an active effect root (saveDb already owns one).
+ *
+ * `onChange` runs untracked: what it reads is not a dependency of these
+ * effects. The save loop's callback reads and bumps a shared revision; read
+ * tracked, every module effect that had reported depended on it, so a patch
+ * changing modules in place (another device's, or the server storing unused
+ * ones) set them waking each other until Svelte gave up
+ * (effect_update_depth_exceeded, 2026-10-22), and that page saved nothing
+ * more until reloaded.
  */
 export function trackModuleTreeChanges(
     readModules: () => any[] | null | undefined,
     onChange: (change: ModuleTreeChange) => void,
 ): void {
+    const report = (change: ModuleTreeChange) => untrack(() => onChange(change))
     let didInitStructure = false
     let previousModules: any[] = []
     let previousIds: Array<string | null> = []
@@ -87,14 +97,14 @@ export function trackModuleTreeChanges(
                 && ids.length === previousIds.length
                 && ids.every((id, index) => id === previousIds[index])
             if (!sameIdOrder) {
-                onChange({ kind: 'structure' })
+                report({ kind: 'structure' })
             } else {
                 // Replacing one slot with an edited draft is content-only when
                 // its stable id stays at the same index. Preserve that precise
                 // dirty id so save patching does not fall back to all modules.
                 for (let i = 0; i < modules.length; i++) {
                     if (modules[i] !== previousModules[i]) {
-                        onChange({ kind: 'content', moduleId: ids[i], replaced: true })
+                        report({ kind: 'content', moduleId: ids[i], replaced: true })
                     }
                 }
             }
@@ -120,7 +130,7 @@ export function trackModuleTreeChanges(
                     : null
                 const routingChanged = namespace !== previousNamespace
                 previousNamespace = namespace
-                onChange({
+                report({
                     kind: 'content',
                     moduleId,
                     ...(routingChanged ? { routingChanged: true } : {}),
