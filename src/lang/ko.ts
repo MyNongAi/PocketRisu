@@ -3050,6 +3050,19 @@ export const languageKorean = {
   gridHideNames: "이름 숨기기",
   moveToTrash: "휴지통으로 보내기",
   moveToTrashConfirm: "휴지통으로 보낼까요? 캐릭터는 비활성화되어 서버에 보관되며, 휴지통에서 언제든 복원할 수 있습니다: ",
+  removeWithModules: "연결된 모듈과 같이 삭제",
+  removeWithModulesConfirm: (name: string, only: string[], shared: string[]) => {
+    const list = (names: string[]) => [...names.slice(0, 6).map((n) => `• ${n}`), ...(names.length > 6 ? [`• … +${names.length - 6}`] : [])].join('\n')
+    if (only.length === 0) {
+      return `'${name}'을(를) 휴지통으로 옮길까요?\n연결된 모듈은 모두 다른 곳에서도 써서 지우지 않아요.\n${list(shared)}`
+    }
+    let text = `'${name}'을(를) 휴지통으로 옮기고, 이 봇만 쓰는 모듈 ${only.length}개를 지울까요?\n${list(only)}\n\n봇은 휴지통에서 되살릴 수 있지만, 모듈은 휴지통이 없어 지우면 되돌릴 수 없어요.`
+    if (shared.length > 0) text += `\n\n다른 곳에서도 쓰는 모듈 ${shared.length}개는 남겨요.\n${list(shared)}`
+    return text
+  },
+  removeWithModulesDone: (name: string, count: number) => count > 0
+    ? `'${name}'을(를) 휴지통으로 옮기고 모듈 ${count}개를 지웠어요`
+    : `'${name}'을(를) 휴지통으로 옮겼어요`,
   trashCharacterDone: "휴지통으로 보냈습니다.",
   deleteCharacterFailed: "영구 삭제에 실패했습니다: ",
   folderDisplayMode: "표시 방식",

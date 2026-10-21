@@ -2819,6 +2819,19 @@ export const languageEnglish = {
     gridHideNames: "Hide names",
     moveToTrash: "Move to trash",
     moveToTrashConfirm: "Move to the trash? The character is deactivated and kept on the server; restore it from the trash at any time: ",
+    removeWithModules: "Delete with its linked modules",
+    removeWithModulesConfirm: (name: string, only: string[], shared: string[]) => {
+        const list = (names: string[]) => [...names.slice(0, 6).map((n) => `• ${n}`), ...(names.length > 6 ? [`• … +${names.length - 6}`] : [])].join('\n')
+        if (only.length === 0) {
+            return `Move '${name}' to the trash?\nIts linked modules are all used elsewhere too, so none is deleted.\n${list(shared)}`
+        }
+        let text = `Move '${name}' to the trash and delete the ${only.length} module(s) only it uses?\n${list(only)}\n\nThe bot can be restored from the trash; modules have no trash and cannot be brought back.`
+        if (shared.length > 0) text += `\n\n${shared.length} module(s) used elsewhere too stay.\n${list(shared)}`
+        return text
+    },
+    removeWithModulesDone: (name: string, count: number) => count > 0
+        ? `Moved '${name}' to the trash and deleted ${count} module(s)`
+        : `Moved '${name}' to the trash`,
     trashCharacterDone: "Moved to the trash.",
     deleteCharacterFailed: "Permanent deletion failed: ",
     folderDisplayMode: "Display",

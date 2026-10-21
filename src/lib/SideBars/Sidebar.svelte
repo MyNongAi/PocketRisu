@@ -84,6 +84,7 @@
     import { newMarkPrefix, newMarks } from "src/ts/newMarks.svelte";
     import { alertConfirm, alertSelect, type AlertAction } from "src/ts/alert";
     import { setSidebarCatalogSplit, sidebarCatalog } from "src/ts/gui/sidebarCatalogLayout.svelte";
+    import { removeBotWithModules } from "src/ts/gui/botModuleRemoval";
     import { characterMenuInfo } from "src/ts/gui/sidebarMenuInfo";
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
     import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
@@ -658,10 +659,10 @@
     ])
   }
 
-  // A bot menu's lines for alertSelect: the delete red, the panes on one line.
+  // A bot menu's lines for alertSelect: the deletes red, the panes on one line.
   function botMenuOptions(actions: Array<[string, () => unknown, string?]>): (string | AlertAction)[] {
     return [
-      ...actions.map(([label, , row]) => label === language.remove
+      ...actions.map(([label, , row]) => label === language.remove || label === language.removeWithModules
         ? { label, variant: 'destructive' as const }
         : row ? { label, row } : label),
       language.cancel,
@@ -689,6 +690,8 @@
       // Turned off and on from the same menu, whatever its state (the user's request, 2026-10-21).
       [language.deactivateCharacter, () => archiveCharacter(characterIndex)],
       [language.remove, () => removeChar(character.chaId, character.name)],
+      // With the modules only it uses (gui/botModuleRemoval.ts; the user's request, 2026-10-22).
+      ...(botHasModules(character.chaId) ? [[language.removeWithModules, () => removeBotWithModules(character.chaId)] as [string, () => unknown]] : []),
     ]
     // The delete is red, as in the other menus.
     const selected = parseInt(await alertSelect(

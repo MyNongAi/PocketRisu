@@ -24,6 +24,7 @@
     import { localOriginOf, resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
     import { copyProtonLink, protonLinkOf } from "src/ts/protonSource";
     import { cloneModuleDraft } from "src/ts/process/moduleDraft";
+    import { removeModulesFromDatabase } from "src/ts/process/moduleRemoval";
     import { isColdModule, keepModuleWhole, wakeModules, wholeModule } from "src/ts/process/moduleCold.svelte";
     import type { PromptPresetFolder } from "src/ts/storage/database.svelte";
     import { importDroppedFiles } from "src/ts/dropImport";
@@ -302,27 +303,9 @@
     async function removeModule(index: number) {
         const rmodule = displayModules[index]
         if (!rmodule) return
-        const previousFolders = synchronizeModuleFolderMembership(
-            DBState.db.modules,
-            DBState.db.moduleFolders,
-            { importLegacyWhenFolderIdsEmpty: false },
-        )
         const d = await alertConfirm(`${language.removeConfirm}` + rmodule.name)
         if (!d) return
-        if (isGlobal(rmodule)) {
-            DBState.db.enabledModules.splice(DBState.db.enabledModules.indexOf(rmodule.id), 1)
-            DBState.db.enabledModules = DBState.db.enabledModules
-        }
-        DBState.db.modules = DBState.db.modules.filter((module) => module.id !== rmodule.id)
-        DBState.db.moduleActivationHistory = DBState.db.moduleActivationHistory?.filter((id) => id !== rmodule.id) ?? []
-        const synchronized = synchronizeModuleFolderMembership(
-            DBState.db.modules,
-            DBState.db.moduleFolders,
-            { importLegacyWhenFolderIdsEmpty: false },
-        )
-        const dissolved = dissolveShrunkenModuleFolders(DBState.db.modules, synchronized, previousFolders)
-        DBState.db.modules = dissolved.modules
-        DBState.db.moduleFolders = dissolved.folders
+        removeModulesFromDatabase(new Set([rmodule.id]))
         notifySuccess(language.moduleDeleted)
     }
 
