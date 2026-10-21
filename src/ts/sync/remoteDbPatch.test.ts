@@ -7,9 +7,9 @@ vi.mock('../storage/database.svelte', async () => {
     return { isChatStub, createBotPresetTemplate: () => ({}), getDatabase: () => ({}) }
 })
 
-const { RisuSavePatcher } = await import('../storage/risuSave')
+const { RisuSavePatcher, characterWithStubs, findDangerousChatOps, normalizeJSON } = await import('../storage/risuSave')
 const { convertStubsToPlaceholders } = await import('../storage/chatStorage')
-const { landRemoteDbPatch, characterIndexesWithChatOps } = await import('./remoteDbPatch')
+const { landRemoteDbPatch } = await import('./remoteDbPatch')
 
 const ALL = { character: [], chat: [], root: true, botPreset: true, modules: true, moduleIds: null, plugins: false, pluginCustomStorage: false }
 
@@ -62,14 +62,45 @@ async function phoneEdit(edit: (db: any) => void) {
     return { ops: patch, prevHash: expectedHash, nextHash: draft.hash() }
 }
 
-const land = (patcher: any, db: any, event: any) => landRemoteDbPatch({
-    patcher,
-    db,
-    event,
-    probeToSave: structuredClone(ALL),
-    nextToSave: () => structuredClone(ALL),
-    mutate: async (write) => write(),
-})
+/** A page with nothing busy and no split; records what the landing did to it. */
+function testPage(selected: string | null = null) {
+    const calls: string[] = []
+    return {
+        calls,
+        page: {
+            selectedChaId: () => selected,
+            splitPaneChats: () => [],
+            isChatBusy: () => false,
+            isCharacterGenerating: () => false,
+            suppressChatTracking: () => () => { calls.push('release') },
+            deselect: () => { calls.push('deselect') },
+            repointSelected: () => {},
+            notifyDatabaseRebased: () => { calls.push('rebased') },
+            rehome: () => {},
+        },
+    }
+}
+
+/** Land on a page; the result carries the advanced baseline when applied. */
+async function land(patcher: any, db: any, event: any) {
+    let adopted: any = null
+    const { page } = testPage()
+    const result = await landRemoteDbPatch({
+        patcher,
+        db,
+        event,
+        page,
+        holds: new Map(),
+        clone: (value) => structuredClone(value),
+        normalize: normalizeJSON,
+        characterWithStubs,
+        findDangerousChatOps,
+        toPlaceholders: convertStubsToPlaceholders,
+        writeSection: async (run) => { const out = run(); out.release?.(); return out.result },
+        commit: (next) => { adopted = next },
+    })
+    return { ...result, patcher: adopted }
+}
 
 describe('landing a remote database patch', () => {
     it('keeps a loaded conversation intact when a chat is inserted in front of it', async () => {
@@ -79,7 +110,6 @@ describe('landing a remote database patch', () => {
         // The patcher shifts slots rather than inserting: this is the case
         // that would relabel a loaded body if the ops hit it directly.
         expect(event.ops.some((op: any) => op.path === '/characters/0/chats/0/id')).toBe(true)
-        expect(characterIndexesWithChatOps(event.ops)).toEqual(new Set([0]))
 
         const db = livePage()
         const body = db.characters[0].chats[0]
@@ -149,15 +179,29 @@ describe('landing a remote database patch', () => {
         expect(db.characters[0].chats[0]._placeholder).toBe(true)
     })
 
-    it('touches nothing while this page has unsaved database edits', async () => {
+    it("lands beside this page's unsaved edits to other entries, and the next save sends only those", async () => {
         const event = await phoneEdit((db) => { db.username = 'phone' })
         const db = livePage()
         db.personaPrompt = 'typed here, not saved yet'
+
+        const result = await land(await pagePatcher(), db, event)
+
+        expect(result.status).toBe('applied')
+        expect(db.username).toBe('phone')
+        expect(db.personaPrompt).toBe('typed here, not saved yet')
+        const next = await result.patcher.fork().set(db, structuredClone(ALL))
+        expect(next.patch).toEqual([{ op: 'replace', path: '/personaPrompt', value: 'typed here, not saved yet' }])
+    })
+
+    it('refuses, touching nothing, when both changed the same entry differently', async () => {
+        const event = await phoneEdit((db) => { db.username = 'phone' })
+        const db = livePage()
+        db.username = 'laptop'
         const before = JSON.stringify(db)
 
         const result = await land(await pagePatcher(), db, event)
 
-        expect(result.status).toBe('local-changes')
+        expect(result).toMatchObject({ status: 'conflict', reasons: ['root:username'] })
         expect(JSON.stringify(db)).toBe(before)
     })
 

@@ -1284,6 +1284,8 @@ export const languageKorean = {
   newSwipeWaiting: "뒤쪽 페이지에 새 답이 있어요",
   remoteReplyRunning: "다른 기기에서 이 채팅의 답을 쓰는 중이에요",
   remoteDevice: "다른 기기",
+  remoteOpenChatRemoved: "다른 기기에서 지금 열린 채팅을 지웠어요",
+  remoteSelectedCharacterRemoved: "다른 기기에서 지금 열린 캐릭터를 지웠어요",
   loreSearchPlaceholder: "로어북 검색 (이름·키워드·내용)",
   loreSearchEmpty: "찾는 항목이 없어요",
   presetModuleFolder: "프롬이 켜는 모듈",

@@ -1190,6 +1190,8 @@ export const languageEnglish = {
     newSwipeWaiting: "A new reply is waiting on a later page",
     remoteReplyRunning: "Another device is writing a reply in this chat",
     remoteDevice: "Other device",
+    remoteOpenChatRemoved: "Another device deleted the chat open here",
+    remoteSelectedCharacterRemoved: "Another device deleted the character open here",
     loreSearchPlaceholder: "Search lorebook (name, keys, content)",
     loreSearchEmpty: "No matching entries",
     presetModuleFolder: "Modules a prompt preset turns on",

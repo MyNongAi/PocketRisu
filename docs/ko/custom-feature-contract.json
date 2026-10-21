@@ -2016,6 +2016,44 @@
       ]
     },
     {
+      "id": "SYNC-LIVE-THREE-WAY",
+      "title": "다른 기기의 DB 변경을 내 편집 옆에 바로 반영 (3방향 병합)",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "src/ts/sync/copyOnWritePatch.ts",
+        "src/ts/sync/threeWayRules.ts",
+        "src/ts/sync/remoteLanding.ts",
+        "src/ts/sync/remoteDbPatch.ts",
+        "src/ts/sync/remoteQueue.ts",
+        "src/ts/storage/applyRebasedDb.ts",
+        "src/ts/storage/risuSave.ts",
+        "src/ts/globalApi.svelte.ts",
+        "server/node/server.cjs"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/sync/copyOnWritePatch.ts", "contains": "export function applyOpsCopyOnWrite(" },
+        { "file": "src/ts/sync/remoteLanding.ts", "contains": "export function planLanding(args: PlanLandingArgs): WritePlan | LandingRefused {" },
+        { "file": "src/ts/sync/remoteDbPatch.ts", "contains": "export async function landRemoteDbPatch<P extends PatchBaseline<P>>(args: {" },
+        { "file": "src/ts/sync/remoteQueue.ts", "contains": "export async function catchUp<D extends ChainEvent>(args: {" },
+        { "file": "src/ts/storage/applyRebasedDb.ts", "contains": "export function applyRemoteChangesInPlace(" },
+        { "file": "src/ts/storage/risuSave.ts", "contains": "baselineShared?: boolean" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "const patchData = await patchDraft.set(db, safeStructuredClone(toSave), { chatPageHolds })" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "land: async (event) => (await applyRemoteDbPatch(event)).status," },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "if (selected && (plan.removedOpenChat || selected.chats?.[selected.chatPage]?._placeholder)) changeChatTo(selected.chatPage)" },
+        { "file": "server/node/server.cjs", "contains": "const prevEtag = decodedKey === 'database/database.bin' ? dbEtag : undefined;" }
+      ],
+      "regressionTests": [
+        "src/ts/sync/copyOnWritePatch.test.ts",
+        "src/ts/sync/threeWayRules.test.ts",
+        "src/ts/sync/remoteLanding.test.ts",
+        "src/ts/sync/remoteDbPatch.test.ts",
+        "src/ts/sync/remoteQueue.test.ts",
+        "src/ts/storage/risuSavePatcher.test.ts",
+        "src/ts/storage/applyRebasedDb.test.ts",
+        "test/compat/asset-manifest-edit-durability.test.ts"
+      ]
+    },
+    {
       "id": "LOREBOOK-SEARCH",
       "title": "로어북 검색창 (봇·채팅·모듈)",
       "criticality": "core-ux",

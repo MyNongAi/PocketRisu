@@ -1,152 +1,131 @@
 // Landing another device's database patch in this page's live state (the
 // orchestration is in saveDb, which owns the patch baseline).
 //
-// Database patches describe chats as catalog stubs; the bodies live elsewhere.
-// The server applies them to stubs, and this page must too: the patcher diffs
-// chat arrays slot by slot, so inserting a chat at the front arrives as "slot
-// 0's id becomes a3, slot 1's becomes a1, ...". Applied to a live array that
-// holds loaded bodies, that would relabel one conversation as another. So the
-// chat arrays a patch touches are turned into stubs first, the ops land on
-// stubs exactly as on the server, and then every stub gets its body back by
-// id (or becomes a placeholder the UI can load).
+// The patch is applied to the baseline B, never to live: copyOnWritePatch.ts
+// gives the server's new state S, sharing every subtree the patch did not
+// touch. remoteLanding.ts then merges three ways (B, S and live, which may
+// hold unsaved edits) and either refuses or plans the writes; the plan lands
+// in one synchronous step with the baseline advanced to S in the same step.
+// So a page with edits of its own takes the other device's change at once,
+// and the save that follows sends only its own edits. Anything that cannot
+// be merged is refused untouched, and the save's rebase still catches up.
 
-import type { Chat } from '../storage/database.svelte'
-import { chatToStub, stubToPlaceholder } from '../storage/chatStorage'
-
-import { CATALOG_FIELDS } from './chatCatalogFields'
-
-type CharacterLike = { chaId?: string, chats?: any[] }
-
-const bodyKey = (chaId: string, chatId: string) => `${chaId}\u0000${chatId}`
-
-/** Loaded chat bodies by character and chat id, taken before a patch lands. */
-export function collectLiveChatBodies(characters: readonly CharacterLike[]): Map<string, Chat> {
-    const bodies = new Map<string, Chat>()
-    for (const character of characters) {
-        if (!character?.chaId || !Array.isArray(character.chats)) continue
-        for (const chat of character.chats) {
-            if (!chat?.id || chat._placeholder || chat._stub) continue
-            bodies.set(bodyKey(character.chaId, chat.id), chat)
-        }
-    }
-    return bodies
-}
-
-/** Characters whose chat arrays the ops address below the character itself. */
-export function characterIndexesWithChatOps(ops: readonly { path?: string, from?: string }[]): Set<number> {
-    const indexes = new Set<number>()
-    for (const op of ops) {
-        for (const path of [op?.path, op?.from]) {
-            const match = typeof path === 'string' ? /^\/characters\/(\d+)\/chats(?:\/|$)/.exec(path) : null
-            if (match) indexes.add(Number(match[1]))
-        }
-    }
-    return indexes
-}
-
-/** Replace the chats of these characters with their catalog stubs, in place. */
-export function stubChatsForPatch(characters: readonly CharacterLike[], indexes: Iterable<number>): void {
-    for (const index of indexes) {
-        const chats = characters[index]?.chats
-        if (!Array.isArray(chats)) continue
-        for (let i = 0; i < chats.length; i++) {
-            if (chats[i] && chats[i]._stub !== true) chats[i] = chatToStub(chats[i])
-        }
-    }
-}
-
-/**
- * Turn the stubs left in the live chat arrays into renderable chats, in
- * place. A chat whose body was loaded gets that body back with the catalog
- * fields from its stub; the rest become placeholders.
- */
-export function settleChatsAfterRemotePatch(characters: readonly CharacterLike[], bodies: ReadonlyMap<string, Chat>): number {
-    let settled = 0
-    for (const character of characters) {
-        if (!character?.chaId || !Array.isArray(character.chats)) continue
-        const chats = character.chats
-        for (let index = 0; index < chats.length; index++) {
-            const stub = chats[index]
-            if (!stub || stub._stub !== true || Array.isArray(stub.message)) continue
-            const body = bodies.get(bodyKey(character.chaId, stub.id))
-            if (body) {
-                for (const field of CATALOG_FIELDS) {
-                    if (field in stub) (body as any)[field] = stub[field]
-                    else delete (body as any)[field]
-                }
-                chats[index] = body
-            } else {
-                chats[index] = stubToPlaceholder(stub)
-            }
-            settled++
-        }
-    }
-    return settled
-}
-
-/** Which save-tracker blocks a patch touches, so the baseline rescans them. */
-export function blocksTouchedByOps(ops: readonly { path?: string }[]): { botPreset: boolean, modules: boolean } {
-    let botPreset = false
-    let modules = false
-    for (const op of ops) {
-        const path = typeof op?.path === 'string' ? op.path : ''
-        if (path === '/botPresets' || path.startsWith('/botPresets/')) botPreset = true
-        if (path === '/modules' || path.startsWith('/modules/')) modules = true
-    }
-    return { botPreset, modules }
-}
+import type { PatcherSetOptions, toSaveType } from '../storage/risuSave'
+import { applyRemoteChangesInPlace } from '../storage/applyRebasedDb'
+import { applyOpsCopyOnWrite, checkRemoteOps, RemoteOpRejected } from './copyOnWritePatch'
+import { localChangeSet, planLanding, remoteChangeSet, type ChatRef, type LandingPageView, type WritePlan } from './remoteLanding'
 
 /** The slice of RisuSavePatcher this needs (kept structural to avoid an import cycle). */
 export interface PatchBaseline<Self> {
     hash(): string
     fork(): Self
-    set(data: any, toSave: any): Promise<{ patch: any[], expectedHash: string }>
+    baselineDb(): any
+    baselineRootKeyJson(key: string): string | undefined
+    baselineCharacterJson(chaId: string): string | undefined
+    baselineModuleJson(id: string): string | undefined
+    set(data: any, toSave: toSaveType, opts?: PatcherSetOptions): Promise<{ patch: any[], expectedHash: string }>
 }
 
-export type LandResult<P> =
-    | { status: 'applied', patcher: P }
-    /** This page is not at the patch's starting point (behind, or already past it). */
+export type LandResult =
+    | { status: 'applied', plan: WritePlan }
+    /** The baseline already holds this patch. */
+    | { status: 'already' }
+    /** This page is not at the patch's starting point (it missed one). */
     | { status: 'not-at-base' }
-    /** This page has database edits it has not saved; its next save rebases. */
-    | { status: 'local-changes' }
-    /** Applied, but the baseline did not reach the server's hash. */
+    /** The baseline moved while the landing was prepared (an asset manifest edit); try again. */
+    | { status: 'busy', reason: string }
+    /** Not a patch this app writes, or it does not apply to the baseline. */
+    | { status: 'invalid', reason: string }
+    /** Applied to the baseline, it misses the server's hash. */
     | { status: 'diverged' }
+    /** Both sides changed the same thing, or this page is using what the patch removes. */
+    | { status: 'conflict', reasons: string[] }
+    /** The write threw half way; the baseline was not advanced. */
+    | { status: 'write-failed' }
+
+/** What the landing needs from the page, all synchronous. */
+export interface LandingPage extends LandingPageView {
+    /** Pause dirty tracking for these chats while their catalog entries are rewritten; returns the release. */
+    suppressChatTracking(chats: readonly ChatRef[]): () => void
+    deselect(): void
+    /** Point the selection at this character again after the order changed. */
+    repointSelected(chaId: string | null | undefined): void
+    /** A send in progress addresses characters by index: let it find them again. */
+    notifyDatabaseRebased(): void
+    /** Loaded chats moved between slots: their cache entries follow. */
+    rehome(characters: any[]): void
+}
 
 /**
- * Land another device's database patch in `db` (the live state) and return
- * the baseline advanced to the server's new revision.
- *
- * The ops address array slots by index, so they are exact only when this
- * page matches the baseline they were computed against: that is checked by
- * hash first and by a dry-run diff second, and nothing is touched unless
- * both hold. `mutate` wraps the in-place write so the caller can pause its
- * change tracking around it.
+ * Land `event` on `db` (the live state). `writeSection` runs the synchronous
+ * write it is given, waits for the screen to settle and then releases what
+ * the write paused; `commit` adopts the advanced baseline inside the write.
  */
 export async function landRemoteDbPatch<P extends PatchBaseline<P>>(args: {
     patcher: P
     db: any
     event: { ops: any[], prevHash: string, nextHash: string }
-    probeToSave: any
-    nextToSave: (touched: { botPreset: boolean, modules: boolean }) => any
-    mutate: (write: () => void) => Promise<void>
-}): Promise<LandResult<P>> {
-    const { patcher, db, event } = args
+    page: LandingPage
+    holds: ReadonlyMap<string, string>
+    clone: <T>(value: T) => T
+    normalize: (value: unknown) => any
+    characterWithStubs: (char: any) => any
+    findDangerousChatOps: (ops: any[]) => readonly unknown[]
+    toPlaceholders: (chats: any[]) => any[]
+    writeSection: (run: () => { result: LandResult, release?: () => void }) => Promise<LandResult>
+    commit: (next: P, plan: WritePlan) => void
+}): Promise<LandResult> {
+    const { patcher, db, event, page, holds } = args
+    const { applyOperation } = await import('fast-json-patch')
+    if (patcher.hash() === event.nextHash) return { status: 'already' }
     if (patcher.hash() !== event.prevHash) return { status: 'not-at-base' }
 
-    const probe = patcher.fork()
-    const local = await probe.set(db, args.probeToSave)
-    if (local.patch.length > 0) return { status: 'local-changes' }
+    const B = patcher.baselineDb()
+    let S: any
+    try {
+        // Our own copy: the op values become part of S.
+        const ops = structuredClone(event.ops)
+        checkRemoteOps(ops, args.findDangerousChatOps)
+        S = applyOpsCopyOnWrite(B, ops, applyOperation)
+    } catch (error) {
+        if (error instanceof RemoteOpRejected) return { status: 'invalid', reason: error.reason }
+        throw error
+    }
+    const R = remoteChangeSet(B, S)
+    if (R.ambiguous === true) return { status: 'conflict', reasons: [`ambiguous:${R.reason}`] }
 
-    const { applyPatch } = await import('fast-json-patch')
-    const bodies = collectLiveChatBodies(db.characters ?? [])
-    await args.mutate(() => {
-        stubChatsForPatch(db.characters ?? [], characterIndexesWithChatOps(event.ops))
-        applyPatch(db, event.ops, false, true)
-        settleChatsAfterRemotePatch(db.characters ?? [], bodies)
-    })
-
+    // The baseline after the patch: S itself, diffed against B (cheap, it shares what did not change).
     const next = patcher.fork()
-    await next.set(db, args.nextToSave(blocksTouchedByOps(event.ops)))
+    await next.set(S, {
+        character: [],
+        chat: [],
+        root: true,
+        botPreset: R.botPresets,
+        modules: !!R.modules,
+        moduleIds: R.modules?.structure ? null : [...(R.modules?.changed ?? [])],
+        plugins: false,
+        pluginCustomStorage: false,
+    }, { baselineShared: true })
     if (next.hash() !== event.nextHash) return { status: 'diverged' }
-    return { status: 'applied', patcher: next }
+
+    return args.writeSection(() => {
+        if (patcher.hash() !== event.prevHash) return { result: { status: 'busy', reason: 'baseline-moved' } }
+        const L = localChangeSet({ B, live: db, R, patcher, normalize: args.normalize, characterWithStubs: args.characterWithStubs, holds })
+        const plan = planLanding({ B, S, R, L, live: db, page, holds, clone: args.clone, toPlaceholders: args.toPlaceholders })
+        if (plan.ok === false) return { result: { status: 'conflict', reasons: plan.conflicts } }
+        const selectedBefore = page.selectedChaId()
+        const release = page.suppressChatTracking(plan.suppress)
+        try {
+            applyRemoteChangesInPlace(db, plan)
+            page.rehome(db.characters ?? [])
+            if (plan.deselect) page.deselect()
+            else page.repointSelected(selectedBefore)
+            if (plan.structural) page.notifyDatabaseRebased()
+            args.commit(next, plan)
+        } catch (error) {
+            console.warn('[RealtimeSync] a remote change failed half way:', error)
+            return { result: { status: 'write-failed' }, release }
+        }
+        return { result: { status: 'applied', plan }, release }
+    })
 }

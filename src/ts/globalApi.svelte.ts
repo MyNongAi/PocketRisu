@@ -19,10 +19,11 @@ import { alertConfirm, alertConfirmMulti, alertError, alertMd, alertSelect, aler
 import { hasher } from "./parser/parser.svelte";
 import { characterURLImport, hubURL } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
-import { decodeRisuSave, encodeRisuSaveLegacy, findDangerousChatOps, normalizeJSON, PatchBaselineSnapshot, RisuSaveEncoder, RisuSavePatcher, type toSaveType } from "./storage/risuSave";
-import { isHydrating, saveChatToServer, ensureChatHydrated, chatToStub, classifyChat, convertStubsToPlaceholders, evictHydratedChatCache, markHydratedChatDirty, markHydratedChatPersisted, hasDirtyHydratedChats, isHydratedChatDirty, rehomeHydratedChats, replaceChatBody, suppressChatTracking } from "./storage/chatStorage";
-import { startRealtimeSync, type ChatEvent, type DbPatchEvent } from "./sync/realtimeSync";
-import { landRemoteDbPatch } from "./sync/remoteDbPatch";
+import { characterWithStubs, decodeRisuSave, encodeRisuSaveLegacy, findDangerousChatOps, normalizeJSON, PatchBaselineSnapshot, RisuSaveEncoder, RisuSavePatcher, type toSaveType } from "./storage/risuSave";
+import { isHydrating, saveChatToServer, ensureChatHydrated, chatToStub, classifyChat, convertStubsToPlaceholders, evictHydratedChatCache, markHydratedChatDirty, markHydratedChatPersisted, hasDirtyHydratedChats, hydratedChatState, isHydratedChatDirty, rehomeHydratedChats, replaceChatBody, suppressChatTracking } from "./storage/chatStorage";
+import { startRealtimeSync, type ChatEvent, type DbPatchEvent, type RealtimeConnection } from "./sync/realtimeSync";
+import { landRemoteDbPatch, type LandingPage, type LandResult } from "./sync/remoteDbPatch";
+import { alreadyLanded, catchUp, queueNewestChat, type FeedCursor } from "./sync/remoteQueue";
 import { AutoStorage } from "./storage/autoStorage";
 import {
     ConflictError,
@@ -818,6 +819,44 @@ export async function saveDb() {
     }
 
     let patcher = new RisuSavePatcher()
+    // Landing other devices' patches (sync/remoteDbPatch.ts): chats this page
+    // keeps open while the server points a character elsewhere, where the
+    // baseline stands in the server's feed, and whether that chain is known
+    // to be broken (a patch refused or missed), so a save catches up.
+    const chatPageHolds = new Map<string, string>()
+    let baselineCursor: FeedCursor | null = forageStorage.realStorage?.syncCursor ?? null
+    let chainBroken = false
+    let catchUpRequested = false
+    let lastCatchUpAt = 0
+    // The realtime worker holds the save slot; a save asked for meanwhile runs after it.
+    let remoteHoldsSlot = false
+    let saveRequestedWhileRemoteHeld = false
+    let realtimeConnection: RealtimeConnection | null = null
+    const dbPatchQueue: (DbPatchEvent & { receivedAt?: number })[] = []
+    const chatQueue: ChatEvent[] = []
+    const landingStats: Record<string, number> = {}
+    const countLanding = (kind: string) => { landingStats[kind] = (landingStats[kind] ?? 0) + 1 }
+    const requestCatchUp = (reason: string) => {
+        catchUpRequested = true
+        countLanding(`catchUp:${reason}`)
+    }
+    // A baseline seeded again: the holds start over, and from a server read
+    // the chain does too, at the feed position of that read.
+    const baselineReseeded = (fromServerRead: boolean) => {
+        chatPageHolds.clear()
+        chainBroken = false
+        if (fromServerRead) baselineCursor = forageStorage.realStorage?.syncCursor ?? null
+    }
+    // Holds that no longer hold: the character is gone, it shows another
+    // chat now, or the server opened the held one too.
+    const pruneChatPageHolds = (db: Database) => {
+        const baseline = patcher.baselineDb()?.characters ?? []
+        for (const [chaId, chatId] of chatPageHolds) {
+            const live = db.characters?.find((character) => character?.chaId === chaId)
+            const synced = baseline.find((character: any) => character?.chaId === chaId)
+            if (!live || live.chats?.[live.chatPage]?.id !== chatId || synced?.chats?.[synced.chatPage]?.id === chatId) chatPageHolds.delete(chaId)
+        }
+    }
     let seededFromBootBaseline = false
     if (supportsPatchSync) {
         seededFromBootBaseline = patchSyncBaseline !== null
@@ -1337,6 +1376,7 @@ export async function saveDb() {
                 return
             }
             await patcher.init(await decodeRisuSave(serverBytes))
+            baselineReseeded(true)
             // Stamped only on success: a transient failure must retry on
             // the next full write, while a divergence the re-seed cannot
             // cure is capped to one download per interval.
@@ -1426,6 +1466,7 @@ export async function saveDb() {
                         patcher = new RisuSavePatcher()
                         await patcher.init(syncedBaselineDb)
                         activeSavePatcher = patcher
+                        chatPageHolds.clear()
                     }
                     requeueTrackedChanges(toSave)
                     throw new Error('Rebase deferred: a generation for a character deactivated elsewhere has not ended yet')
@@ -1490,6 +1531,7 @@ export async function saveDb() {
                 patcher = new RisuSavePatcher()
                 await patcher.init(latestDb)
                 activeSavePatcher = patcher
+                baselineReseeded(true)
             }
         }
         requeueTrackedChanges(toSave)
@@ -1503,7 +1545,7 @@ export async function saveDb() {
             forceFullWrite?: boolean
             skipBroadcast?: boolean
         }
-    ): Promise<'saved' | 'retry' | 'noop'> {
+    ): Promise<'saved' | 'retry' | 'caught-up' | 'noop'> {
         if (gotChannel) {
             // Data is saved in another tab.
             await sleep(1000)
@@ -1613,7 +1655,7 @@ export async function saveDb() {
             syncedBaselineDb = patcher.baselineDb()
             const patchDraft = patcher.fork()
             lap()
-            const patchData = await patchDraft.set(db, safeStructuredClone(toSave))
+            const patchData = await patchDraft.set(db, safeStructuredClone(toSave), { chatPageHolds })
             timing.patchSetMs = lap()
             attemptedChangedCharIds = patchDraft.changedCharacterIdsOfLastSet()
             attemptedIdsAmbiguous = hasAmbiguousCharacterIds(db.characters ?? [])
@@ -1794,6 +1836,7 @@ export async function saveDb() {
                     // activeSavePatcher; left on the replaced patcher they
                     // would edit a stale baseline and cost a 409 rebase.
                     activeSavePatcher = patcher
+                    pruneChatPageHolds(db)
                     if (patchResult.etag) {
                         newEtag = patchResult.etag
                         forageStorage.setDbEtag(patchResult.etag)
@@ -1850,6 +1893,33 @@ export async function saveDb() {
                         // instead of cycling.
                         throw new SaveRejectedError(patchResult.conflictError ?? 'Save rejected: deactivated-character state is inconsistent')
                     }
+                }
+                // Another device wrote first and its patches are queued (or
+                // arriving): land them, then retry this save as a patch on
+                // top, instead of downloading the database to rebase.
+                const serverHash = patchResult.hashDiagnostics?.serverHash
+                if (!patchResult.success && patchResult.conflictCode === 'HASH_MISMATCH' && patchResult.etag
+                    && patchResult.etag !== syncedEtag && !attemptedIdsAmbiguous && typeof serverHash === 'string') {
+                    const caughtUp = await catchUp({
+                        target: serverHash,
+                        queue: dbPatchQueue,
+                        hash: () => patcher.hash(),
+                        cursor: () => baselineCursor,
+                        land: async (event) => (await applyRemoteDbPatch(event)).status,
+                        usable: () => !!realtimeConnection?.connected && !chainBroken,
+                        deadlineMs: 1500,
+                        sleep,
+                    })
+                    if (caughtUp) {
+                        countLanding('caughtUp')
+                        requeueTrackedChanges(toSave)
+                        changed = true
+                        return 'caught-up'
+                    }
+                    // Landings may have advanced the patcher: the rebase below compares against it.
+                    syncedBaselineDb = patcher.baselineDb()
+                    syncedArchivedIds = patcher.baselineArchivedCharacterIds()
+                    countLanding('rebased')
                 }
                 if (!patchResult.success && patchResult.etag && patchResult.etag !== syncedEtag && attemptedIdsAmbiguous) {
                     // Rebase attributes edits by chaId; with a missing or
@@ -1920,6 +1990,8 @@ export async function saveDb() {
             if (supportsPatchSync) {
                 const decodedDb = await decodeRisuSave(dbData)
                 await patcher.init(decodedDb)
+                // A full write publishes db-stale; the chain starts over from it.
+                baselineReseeded(false)
                 await resyncBaselineAfterFullWrite()
             }
         }
@@ -2002,8 +2074,11 @@ export async function saveDb() {
     async function triggerSave(options?: {
         forceFullWrite?: boolean
         skipBroadcast?: boolean
+        /** Save even with nothing tracked: an empty patch meets the server's hash (requestCatchUp). */
+        catchUp?: boolean
     }) {
         if (saveInFlight) {
+            if (remoteHoldsSlot) saveRequestedWhileRemoteHeld = true
             return saveInFlight
         }
         // Handed off: leave the tracker as it is. Taking and requeueing it
@@ -2013,7 +2088,7 @@ export async function saveDb() {
         }
 
         const toSave = takeTrackedChanges()
-        if (!hasTrackedChanges(toSave) && !options?.forceFullWrite) {
+        if (!hasTrackedChanges(toSave) && !options?.forceFullWrite && !options?.catchUp) {
             return
         }
         const editSeqAtStart = editSeq
@@ -2036,6 +2111,16 @@ export async function saveDb() {
                     savetrys = 0
                     lastSaveFailureNotice = { message: '', at: 0 }
                     consecutiveRetries = 0
+                    consecutiveCaughtUp = 0
+                    // Saved at the server's hash: nothing is missing any more.
+                    chainBroken = false
+                    catchUpRequested = false
+                } else if (result === 'caught-up') {
+                    // Landed what the server had, then retried at once; only a
+                    // run of these that never settles counts as retrying.
+                    recordSample('retry')
+                    consecutiveCaughtUp += 1
+                    if (consecutiveCaughtUp > 10) consecutiveRetries += 1
                 } else if (result === 'retry') {
                     // A rebase requeued the changes; a conflict that never
                     // settles must surface instead of re-downloading forever.
@@ -2110,88 +2195,128 @@ export async function saveDb() {
     }
 
     // ── Live changes from other devices ─────────────────────────────────
-    // The server streams every accepted write (sync/realtimeSync.ts). This
-    // worker lands them in the live state while holding the save slot, so a
-    // save and a remote change never interleave. Anything it cannot apply
-    // exactly is left alone: the next save then meets the usual conflict and
-    // rebase, which is how this page caught up before the stream existed.
-    type RemoteEvent = DbPatchEvent | ChatEvent
-    const remoteQueue: RemoteEvent[] = []
+    // The server streams every accepted write (sync/realtimeSync.ts). Database
+    // patches land by three-way merge (sync/remoteDbPatch.ts) while this page
+    // holds the save slot, so a save and a landing never interleave; a page
+    // with edits of its own still takes them. A patch that cannot land breaks
+    // the chain: a catch-up save then meets the server's newer hash and
+    // either lands what is queued (catchUp) or rebases, as before the stream.
+    // Chat bodies are refreshed one chat at a time, newest event only.
     let remoteWorker: Promise<void> | null = null
-    // Give up on a backlog that has been blocked this long (e.g. a chat kept
-    // dirty by continuous typing); the save path's conflict handling remains.
-    const REMOTE_WAIT_LIMIT_MS = 120_000
+    // Give up on chat refreshes blocked this long behind a generation; the
+    // chat's own save conflict handling remains.
+    const REMOTE_CHAT_WAIT_LIMIT_MS = 120_000
+    // A backlog this long, or this old, cannot be landed in time: drop it and
+    // catch up through a save instead.
+    const DB_PATCH_QUEUE_LIMIT = 500
+    const DB_PATCH_QUEUE_MAX_AGE_MS = 10 * 60_000
 
     const chatSavePending = (chaId: string, chatId: string) =>
         changeTracker.chat.some((pair) => pair?.[0] === chaId && pair?.[1] === chatId)
 
-    function fullScanToSave(touched?: { botPreset: boolean, modules: boolean }): toSaveType {
-        return {
-            character: [],
-            chat: [],
-            root: true,
-            botPreset: touched ? touched.botPreset : changeTracker.botPreset,
-            modules: touched ? touched.modules : changeTracker.modules,
-            moduleIds: touched ? null : (changeTracker.moduleIds === null ? null : [...(changeTracker.moduleIds ?? [])]),
-            plugins: false,
-            pluginCustomStorage: false,
-        }
+    // What a landing may touch on this page (remoteLanding.ts asks).
+    const characterById = (chaId: string) => getDatabase().characters?.find((character) => character?.chaId === chaId)
+    const landingPage: LandingPage = {
+        selectedChaId: () => getDatabase().characters?.[get(selectedCharID)]?.chaId ?? null,
+        splitPaneChats: () => chatsShownBesideSelection(get(splitChatOpen)),
+        isChatBusy: (chaId, chatId) => {
+            if (get(generationStates).has(chatGenKey(chatId)) || get(rerollPlaceholders).has(chatId)) return true
+            const chat = characterById(chaId)?.chats?.find((candidate) => candidate?.id === chatId)
+            if (!chat) return false
+            if (chat._placeholder) return isHydrating(chaId, chatId)
+            // A loaded body the cache does not know counts as busy.
+            return chat.isStreaming === true || hydratedChatState(chaId, chatId) !== 'clean' || chatSavePending(chaId, chatId)
+        },
+        isCharacterGenerating: (chaId) => generatingCharacters(getDatabase()).has(chaId),
+        suppressChatTracking: (chats) => suppressChatTracking([...chats]),
+        deselect: () => deselectCharacter(),
+        repointSelected: (chaId) => {
+            if (!chaId) return
+            const index = (getDatabase().characters ?? []).findIndex((character) => character?.chaId === chaId)
+            if (index >= 0 && index !== get(selectedCharID)) selectedCharID.set(index)
+        },
+        notifyDatabaseRebased: () => notifyDatabaseRebased(),
+        rehome: (characters) => rehomeHydratedChats(characters),
     }
 
-    async function applyRemoteDbPatch(event: DbPatchEvent) {
-        if (!supportsPatchSync) return
+    async function applyRemoteDbPatch(event: DbPatchEvent): Promise<LandResult> {
+        if (!supportsPatchSync) return { status: 'invalid', reason: 'no-patch-sync' }
+        if (alreadyLanded(event, baselineCursor)) {
+            countLanding('already')
+            return { status: 'already' }
+        }
+        // Log only for now: the server publishes the revision each patch built on.
+        const etagNow = forageStorage.getDbEtag()
+        if (event.prevEtag && etagNow && event.prevEtag !== etagNow) countLanding('etagMismatch')
         const db = getDatabase()
         const result = await landRemoteDbPatch({
             patcher,
             db,
             event,
-            probeToSave: fullScanToSave(),
-            nextToSave: (touched) => fullScanToSave(touched),
-            mutate: async (write) => {
-                // Loaded bodies are put back under their new catalog entries;
-                // pause dirty tracking for them while the write settles.
-                const release = suppressChatTracking((db.characters ?? []).flatMap((character) =>
-                    (character?.chats ?? [])
-                        .filter((chat) => chat?.id && !chat._placeholder)
-                        .map((chat) => ({ chaId: character.chaId, chatId: chat.id })),
-                ))
-                // selectedCharID is an array index. A patch that inserts,
-                // removes or reorders characters must not move the screen.
-                const selectedChaId = db.characters?.[get(selectedCharID)]?.chaId
+            page: landingPage,
+            holds: chatPageHolds,
+            clone: safeStructuredClone,
+            normalize: normalizeJSON,
+            characterWithStubs,
+            findDangerousChatOps,
+            toPlaceholders: convertStubsToPlaceholders,
+            writeSection: async (run) => {
+                const out = run()
                 try {
-                    write()
-                    rehomeHydratedChats(db.characters ?? [])
-                    if (selectedChaId) {
-                        const nextIndex = (db.characters ?? []).findIndex((character) => character?.chaId === selectedChaId)
-                        if (nextIndex !== get(selectedCharID)) selectedCharID.set(nextIndex)
-                    }
                     await tick()
                 } finally {
-                    release()
+                    out.release?.()
+                }
+                return out.result
+            },
+            commit: (next, plan) => {
+                patcher = next
+                activeSavePatcher = next
+                if (typeof event.etag === 'string') forageStorage.setDbEtag(event.etag)
+                if (event.instanceId) baselineCursor = { instanceId: event.instanceId, seq: event.seq }
+                chainBroken = false
+                for (const [chaId, chatId] of plan.holdUpdates) {
+                    if (chatId === null) chatPageHolds.delete(chaId)
+                    else chatPageHolds.set(chaId, chatId)
                 }
             },
         })
 
-        if (result.status !== 'applied') {
-            // Nothing is lost: the next save meets the server's newer hash and
-            // takes the usual rebase path. Nudge it when the live state moved.
-            if (result.status !== 'not-at-base') changed = true
-            console.info(`[RealtimeSync] remote database change not applied (${result.status}); the next save catches up`)
-            return
-        }
-        patcher = result.patcher
-        activeSavePatcher = patcher
-
-        // Every chat in the catalog now has a body on the server (a device
-        // saves the body before listing it), so saves here update, not create.
-        for (const character of db.characters ?? []) {
-            if (!character?.chaId) continue
-            const known = knownChatIdsByCharacter.get(character.chaId) ?? new Set<string>()
-            for (const chat of character.chats ?? []) {
-                if (chat?.id) known.add(chat.id)
+        if (result.status === 'applied') {
+            countLanding('applied')
+            const plan = result.plan
+            // Every chat in the catalog has a body on the server (a device
+            // saves the body before listing it), so saves here update, not create.
+            for (const [chaId, chatIds] of plan.knownChats) {
+                const known = knownChatIdsByCharacter.get(chaId) ?? new Set<string>()
+                for (const chatId of chatIds) known.add(chatId)
+                knownChatIdsByCharacter.set(chaId, known)
             }
-            knownChatIdsByCharacter.set(character.chaId, known)
+            for (const chaId of plan.removedCharacters) knownChatIdsByCharacter.delete(chaId)
+            if (plan.languageChanged) changeLanguage(db.language)
+            if (plan.removedOpenChat) notifyInfo(language.remoteOpenChatRemoved)
+            if (plan.deselect) notifyInfo(language.remoteSelectedCharacterRemoved)
+            // The page shows another chat now (its own was removed elsewhere),
+            // or one not loaded here: open it as a switch does, loading its body.
+            const selected = plan.deselect ? null : db.characters?.[get(selectedCharID)]
+            if (selected && (plan.removedOpenChat || selected.chats?.[selected.chatPage]?._placeholder)) changeChatTo(selected.chatPage)
+            return result
         }
+        if (result.status === 'already' || result.status === 'busy') {
+            if (result.status === 'already') countLanding('already')
+            return result
+        }
+        countLanding(result.status)
+        chainBroken = true
+        requestCatchUp(result.status)
+        const reasons = result.status === 'conflict' ? result.reasons.join(',') : result.status === 'invalid' ? result.reason : ''
+        addLog({
+            level: 'warning',
+            source: 'save',
+            message: `[RealtimeSync] a change from another device did not land (${result.status}); a save catches up`,
+            description: reasons || undefined,
+        })
+        return result
     }
 
     async function applyRemoteChat(event: ChatEvent) {
@@ -2222,83 +2347,140 @@ export async function saveDb() {
         })
     }
 
-    async function runRemoteWorker() {
-        const { doingChat } = await import("./process/index.svelte")
-        let blockedSince = 0
-        while (remoteQueue.length > 0) {
-            if (gotChannel) {
-                remoteQueue.length = 0
-                return
-            }
-            const event = remoteQueue[0]
-            const busy = !!saveInFlight || get(doingChat)
-                || (event.type === 'db-patch' && (hasDirtyHydratedChats() || changeTracker.chat.length > 0))
-            if (busy) {
-                blockedSince ||= Date.now()
-                if (Date.now() - blockedSince > REMOTE_WAIT_LIMIT_MS) {
-                    console.info(`[RealtimeSync] dropped ${remoteQueue.length} change(s) that stayed blocked; the next save catches up`)
-                    remoteQueue.length = 0
-                    return
-                }
-                if (saveInFlight) await saveInFlight.catch(() => {})
-                else await sleep(500)
-                continue
-            }
-            blockedSince = 0
-            remoteQueue.shift()
-
-            let release!: () => void
-            saveInFlight = new Promise<void>((resolve) => { release = resolve })
-            try {
-                if (event.type === 'db-patch') await applyRemoteDbPatch(event)
-                else await applyRemoteChat(event)
-            } catch (error) {
-                console.warn('[RealtimeSync] could not apply a remote change:', error)
-            } finally {
-                saveInFlight = null
-                release()
-                if (hasTrackedChanges(changeTracker)) changed = true
+    /** Run `task` holding the save slot, as a save does. */
+    async function holdingSaveSlot<T>(task: () => Promise<T>): Promise<T> {
+        let release!: () => void
+        saveInFlight = new Promise<void>((resolve) => { release = resolve })
+        remoteHoldsSlot = true
+        try {
+            return await task()
+        } finally {
+            remoteHoldsSlot = false
+            saveInFlight = null
+            release()
+            if (saveRequestedWhileRemoteHeld) {
+                saveRequestedWhileRemoteHeld = false
+                changed = true
             }
         }
     }
 
-    function enqueueRemote(event: RemoteEvent) {
+    async function runRemoteWorker() {
+        const { doingChat } = await import("./process/index.svelte")
+        let chatBlockedSince = 0
+        while (dbPatchQueue.length > 0 || chatQueue.length > 0) {
+            if (gotChannel) {
+                dbPatchQueue.length = 0
+                chatQueue.length = 0
+                return
+            }
+            if (saveInFlight) {
+                await saveInFlight.catch(() => {})
+                continue
+            }
+            if (dbPatchQueue.length > 0) {
+                const head = dbPatchQueue[0]
+                if (dbPatchQueue.length > DB_PATCH_QUEUE_LIMIT || Date.now() - (head.receivedAt ?? Date.now()) > DB_PATCH_QUEUE_MAX_AGE_MS) {
+                    console.info(`[RealtimeSync] dropped ${dbPatchQueue.length} queued change(s); a save catches up`)
+                    dbPatchQueue.length = 0
+                    chainBroken = true
+                    requestCatchUp('queue-overflow')
+                    continue
+                }
+                let result: LandResult | null = null
+                try {
+                    result = await holdingSaveSlot(() => applyRemoteDbPatch(head))
+                } catch (error) {
+                    console.warn('[RealtimeSync] could not apply a remote change:', error)
+                    chainBroken = true
+                    requestCatchUp('error')
+                }
+                if (result?.status === 'busy') {
+                    await sleep(50)
+                    continue
+                }
+                const at = dbPatchQueue.indexOf(head)
+                if (at >= 0) dbPatchQueue.splice(at, 1)
+                continue
+            }
+            // Chat refreshes wait for a reply being written here.
+            if (get(doingChat)) {
+                chatBlockedSince ||= Date.now()
+                if (Date.now() - chatBlockedSince > REMOTE_CHAT_WAIT_LIMIT_MS) {
+                    console.info(`[RealtimeSync] dropped ${chatQueue.length} chat refresh(es) that stayed blocked`)
+                    chatQueue.length = 0
+                    continue
+                }
+                await sleep(500)
+                continue
+            }
+            chatBlockedSince = 0
+            const event = chatQueue.shift()!
+            try {
+                await holdingSaveSlot(() => applyRemoteChat(event))
+            } catch (error) {
+                console.warn('[RealtimeSync] could not refresh a chat from another device:', error)
+            }
+        }
+    }
+
+    function startRemoteWorker() {
+        remoteWorker ??= runRemoteWorker().finally(() => { remoteWorker = null })
+    }
+
+    function enqueueDbPatch(event: DbPatchEvent) {
+        dbPatchQueue.push({ ...event, receivedAt: Date.now() })
+        startRemoteWorker()
+    }
+
+    function enqueueChat(event: ChatEvent) {
         // Only the newest body matters. While another device streams a reply
         // it saves the chat every second or so; without this each save would
         // cost a full download of the conversation here.
-        if (event.type === 'chat') {
-            for (let i = remoteQueue.length - 1; i >= 0; i--) {
-                const queued = remoteQueue[i]
-                if (queued.type === 'chat' && queued.chaId === event.chaId && queued.chatId === event.chatId) {
-                    remoteQueue.splice(i, 1)
-                }
-            }
-        }
-        remoteQueue.push(event)
-        remoteWorker ??= runRemoteWorker().finally(() => { remoteWorker = null })
+        queueNewestChat(chatQueue, event)
+        startRemoteWorker()
     }
+
+    // How the landings went, counts and kinds only, every ten minutes and
+    // when the page is hidden.
+    const logLandingStats = () => {
+        const entries = Object.entries(landingStats).filter(([, count]) => count > 0)
+        if (entries.length === 0) return
+        addLog({ level: 'info', source: 'save', message: `[RealtimeSync] ${entries.map(([kind, count]) => `${kind}=${count}`).join(' ')}` })
+        for (const [kind] of entries) landingStats[kind] = 0
+    }
+    setInterval(logLandingStats, 10 * 60_000)
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') logLandingStats()
+    })
 
     const syncStorage = forageStorage.realStorage
     if (supportsPatchSync && syncStorage?.openSyncStream) {
         const connection = startRealtimeSync({
-            onDbPatch: enqueueRemote,
-            // Unreplayable (full write, archive, too large): drop queued
-            // patches, which can no longer line up with the baseline.
-            onDbStale: () => {
-                for (let i = remoteQueue.length - 1; i >= 0; i--) {
-                    if (remoteQueue[i].type === 'db-patch') remoteQueue.splice(i, 1)
-                }
+            onDbPatch: enqueueDbPatch,
+            onDbStale: (event) => {
+                // Archive and activate never change the database root; the
+                // archiving page's own patch arrives as a db-patch.
+                if (event.reason === 'archive' || event.reason === 'activate') return
+                // Unreplayable (full write, too large): what is queued can no
+                // longer line up with the baseline.
+                dbPatchQueue.length = 0
+                chainBroken = true
+                requestCatchUp(`stale:${event.reason}`)
             },
-            onChat: enqueueRemote,
+            onChat: enqueueChat,
             // Another device writing a reply or typing (remoteActivity.ts).
             onPresence: (event) => receivePresence(event as RemotePresenceEvent),
-            // Events were lost. Re-check the chat on screen; the database
-            // catches up through the save path.
+            // Events were lost. Catch the database up through a save, and
+            // re-check the chat on screen.
             onResync: () => {
+                chainBroken = true
+                baselineCursor = null
+                requestCatchUp('resync')
                 const character = getDatabase()?.characters?.[get(selectedCharID)]
                 const chat = character?.chats?.[character?.chatPage ?? 0]
                 if (character?.chaId && chat?.id && !chat._placeholder) {
-                    enqueueRemote({ type: 'chat', seq: 0, origin: '', chaId: character.chaId, chatId: chat.id, etag: '' })
+                    enqueueChat({ type: 'chat', seq: 0, origin: '', chaId: character.chaId, chatId: chat.id, etag: '' })
                 }
             },
         }, {
@@ -2306,6 +2488,7 @@ export async function saveDb() {
             clientId: syncStorage.getChatClientId(),
             initialCursor: syncStorage.syncCursor,
         })
+        realtimeConnection = connection
         document.addEventListener('visibilitychange', () => {
             if (document.visibilityState === 'visible') connection.wake()
         })
@@ -2366,15 +2549,25 @@ export async function saveDb() {
     })
 
     let consecutiveRetries = 0
+    let consecutiveCaughtUp = 0
 
     const MAX_CONSECUTIVE_SAVE_RETRIES = 5
     while (true) {
-        if (!changed || Date.now() < saveRetryAt) {
+        // A broken chain catches up through a save even with nothing to save,
+        // at most every five seconds.
+        const catchUpDue = catchUpRequested && Date.now() - lastCatchUpAt >= 5000
+        if ((!changed && !catchUpDue) || Date.now() < saveRetryAt) {
             await sleep(200)
             continue
         }
-        changed = false
-        await triggerSave()
+        if (changed) {
+            changed = false
+            await triggerSave()
+        } else {
+            catchUpRequested = false
+            lastCatchUpAt = Date.now()
+            await triggerSave({ catchUp: true })
+        }
         await sleep(100)
     }
 }
