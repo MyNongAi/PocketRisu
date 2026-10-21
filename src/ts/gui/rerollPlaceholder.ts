@@ -8,8 +8,9 @@
 //
 // A held copy (the user's request, 2026-10-19) stays for the whole reroll,
 // and the reply shown when reroll was pressed stays shown after it, while the
-// chat is open: the new reply is the next page, seen by stepping to it. The
-// copy counts it as one more page; stepping onto that page lets it show.
+// chat is open: the new reply is the next page, seen by stepping to it. Once
+// it has text the copy counts it as one more page (before, the arrows' count
+// stays as it was); stepping onto that page lets it show.
 import { get, writable } from 'svelte/store'
 import { showSwipe, stepSwipe, swipeCount, type SwipeMessage } from '../chatSwipes'
 
@@ -46,11 +47,16 @@ export function clearRerollPlaceholder(chatId: string): void {
     })
 }
 
-/** The copy's page and page count; a held copy counts the new reply as one more (its last page). */
-export function rerollPlaceholderPages(placeholder: Pick<RerollPlaceholder, 'message' | 'hold' | 'showingNew'>): { current: number, total: number } {
-    const total = Math.max(1, swipeCount(placeholder.message)) + (placeholder.hold ? 1 : 0)
+/**
+ * The copy's page and page count. A held copy counts the new reply as one
+ * more (its last page) once that reply has text (`newHasText`): before any
+ * output the count stays what it was (the user's request, 2026-10-22).
+ */
+export function rerollPlaceholderPages(placeholder: Pick<RerollPlaceholder, 'message' | 'hold' | 'showingNew'>, newHasText: boolean): { current: number, total: number } {
+    const withNew = !!placeholder.hold && newHasText
+    const total = Math.max(1, swipeCount(placeholder.message)) + (withNew ? 1 : 0)
     return {
-        current: placeholder.hold && placeholder.showingNew ? total : (placeholder.message.swipeId ?? 0) + 1,
+        current: withNew && placeholder.showingNew ? total : (placeholder.message.swipeId ?? 0) + 1,
         total,
     }
 }
@@ -61,11 +67,14 @@ export function heldRerollSwipe(chatId: string): number | null {
     return placeholder?.hold && !placeholder.showingNew ? (placeholder.message.swipeId ?? 0) : null
 }
 
-/** Show the copy's previous (-1) or next (+1) swipe. False when it has none. */
-export function stepRerollPlaceholderSwipe(chatId: string, step: -1 | 1): boolean {
+/**
+ * Show the copy's previous (-1) or next (+1) swipe. False when it has none.
+ * The new reply's page is there only once it has text (`newHasText`).
+ */
+export function stepRerollPlaceholderSwipe(chatId: string, step: -1 | 1, newHasText: boolean): boolean {
     const placeholder = get(rerollPlaceholders).get(chatId)
     if (!placeholder) return false
-    if (placeholder.hold) {
+    if (placeholder.hold && newHasText) {
         const count = Math.max(1, swipeCount(placeholder.message))
         if (placeholder.showingNew) {
             // Off the new reply's page: back to the old reply's last page, or
@@ -79,7 +88,7 @@ export function stepRerollPlaceholderSwipe(chatId: string, step: -1 | 1): boolea
         // page shows the reply being written, and ← still comes back (the
         // user's report, 2026-10-21: stepping there dropped the copy's page,
         // so it showed the old reply as 1/1 with no arrows until the end).
-        const { current, total } = rerollPlaceholderPages(placeholder)
+        const { current, total } = rerollPlaceholderPages(placeholder, true)
         if ((step === 1 && current === total - 1) || (step === -1 && current === 1)) {
             setRerollPlaceholder({ ...placeholder, showingNew: true })
             return true

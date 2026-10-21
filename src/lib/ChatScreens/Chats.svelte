@@ -107,14 +107,21 @@
     // The reply being written while a held reroll copy is on its page
     // (gui/rerollPlaceholder.ts showingNew): browse-only, ← and → step to the
     // old pages; reroll and swipe delete wait for the reply to end.
+    // The new reply of a reroll is a page of its own only once it has text
+    // (the user's request, 2026-10-22): read when drawn and when an arrow is
+    // pressed, as the reply streams in between.
+    const newReplyHasText = (placeholder: RerollPlaceholder<any>) => {
+        const at = currentCharacter?.chats?.[view.chatIndex]?.message?.[placeholder.index]
+        return !!at && at.role === 'char' && !!at.data
+    };
     const newReplyPageState = (placeholder: RerollPlaceholder<any>) => {
-        const pages = rerollPlaceholderPages(placeholder)
+        const pages = rerollPlaceholderPages(placeholder, newReplyHasText(placeholder))
         return {
             rerollIcon: 'force' as const,
             swipeOnly: true,
-            onNextSwipe: () => { stepRerollPlaceholderSwipe(placeholder.chatId, 1) },
+            onNextSwipe: () => { stepRerollPlaceholderSwipe(placeholder.chatId, 1, newReplyHasText(placeholder)) },
             onDeleteSwipe: () => {},
-            unReroll: () => { stepRerollPlaceholderSwipe(placeholder.chatId, -1) },
+            unReroll: () => { stepRerollPlaceholderSwipe(placeholder.chatId, -1, newReplyHasText(placeholder)) },
             currentPage: pages.current,
             totalPages: pages.total,
             unseenPage: false,
@@ -188,7 +195,7 @@
             const message = (placeholder.showingNew ? { ...placeholder.message, data: '' } : placeholder.message) as Message
             const echoIndex = previousInputIndex(messages, Math.min(placeholderIndex, messages.length))
             const echoText = echoIndex >= 0 ? (messages[echoIndex].data ?? '') : ''
-            const pages = rerollPlaceholderPages(placeholder)
+            const pages = rerollPlaceholderPages(placeholder, newReplyHasText(placeholder))
             const currentHash = hashCode(['reroll-placeholder', placeholderChatId, placeholderIndex, pages.current, pages.total, echoText, message.data].join('\u0000'))
             currentHashes.add(currentHash)
             if (!hashes.has(currentHash)) {
@@ -217,8 +224,8 @@
                         onReroll: () => {},
                         rerollIcon: browsable ? 'force' : false,
                         swipeOnly: true,
-                        onNextSwipe: () => { stepRerollPlaceholderSwipe(placeholderChatId, 1) },
-                        unReroll: () => { stepRerollPlaceholderSwipe(placeholderChatId, -1) },
+                        onNextSwipe: () => { stepRerollPlaceholderSwipe(placeholderChatId, 1, newReplyHasText(placeholder)) },
+                        unReroll: () => { stepRerollPlaceholderSwipe(placeholderChatId, -1, newReplyHasText(placeholder)) },
                         onDeleteSwipe: () => {},
                         currentPage: pages.current,
                         totalPages: pages.total,

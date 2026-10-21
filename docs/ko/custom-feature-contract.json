@@ -1660,6 +1660,8 @@
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "if (!hold.rendered) hold.release = holdHeight(b, previousHeight);" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "<div class=\"contents\" inert={placeholder}>" },
         { "file": "src/ts/gui/rerollPlaceholder.ts", "contains": "setRerollPlaceholder({ ...placeholder, showingNew: true })" },
+        { "file": "src/ts/gui/rerollPlaceholder.ts", "contains": "const withNew = !!placeholder.hold && newHasText" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "const pages = rerollPlaceholderPages(placeholder, newReplyHasText(placeholder))" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "? newReplyPageState(placeholder)" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "unseenPage: hasUnseenSwipe(message)," },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "class:new-page-arrow={unseenPage}" }
