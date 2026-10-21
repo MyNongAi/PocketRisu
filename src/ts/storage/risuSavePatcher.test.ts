@@ -1667,3 +1667,48 @@ describe('baselineArchivedCharacterIds', () => {
         expect(bare.baselineArchivedCharacterIds().size).toBe(0)
     })
 })
+
+describe('RisuSavePatcher — landing another page\'s patch (sync/remoteDbPatch.ts)', () => {
+    const char = (chaId: string, extra: any = {}) => ({ chaId, name: chaId, chats: [{ id: `${chaId}-1` }, { id: `${chaId}-2` }], chatPage: 0, ...extra })
+
+    test('baselineShared skips entries that are the baseline objects, with the same patch and hash', async () => {
+        const initial = { characters: [char('x'), char('y')], botPresets: [], modules: [makeMod('a'), makeMod('b')], temperature: 70, persona: { p: 1 } }
+        const patcher = new RisuSavePatcher()
+        await patcher.init(initial)
+        const base = patcher.baselineDb()
+        // a copy-on-write view: only temperature, module b and character y are new objects
+        const shared = { ...base, temperature: 80, modules: [base.modules[0], { ...base.modules[1], description: 'new' }], characters: [base.characters[0], { ...base.characters[1], name: 'Y2' }] }
+        const plain = structuredClone(shared)
+        const toSave = { ...emptyToSave(), root: true, modules: true, moduleIds: ['b'] }
+        const a = patcher.fork()
+        const b = patcher.fork()
+        const withSharing = await a.set(shared, toSave, { baselineShared: true })
+        const withoutSharing = await b.set(plain, toSave)
+        expect(withSharing.patch).toEqual(withoutSharing.patch)
+        expect(a.hash()).toBe(b.hash())
+    })
+
+    test('a held chat page is never sent: the server\'s open chat goes out instead', async () => {
+        const patcher = new RisuSavePatcher()
+        await patcher.init({ characters: [char('x')], botPresets: [], modules: [] })
+        const before = patcher.hash()
+        const live = { characters: [char('x', { chatPage: 1 })], botPresets: [], modules: [] }
+        const held = patcher.fork()
+        const result = await held.set(live, { ...emptyToSave(), character: ['x'] }, { chatPageHolds: new Map([['x', 'x-2']]) })
+        expect(result.patch).toEqual([])
+        expect(held.hash()).toBe(before)
+        // without the hold it is an ordinary change
+        const plain = patcher.fork()
+        const sent = await plain.set(live, { ...emptyToSave(), character: ['x'] })
+        expect(sent.patch).toEqual([{ op: 'replace', path: '/characters/0/chatPage', value: 1 }])
+    })
+
+    test('reads the baseline JSON of a root key, a character and a module', async () => {
+        const patcher = new RisuSavePatcher()
+        await patcher.init({ characters: [char('x')], botPresets: [], modules: [makeMod('a')], temperature: 70 })
+        expect(patcher.baselineRootKeyJson('temperature')).toBe('70')
+        expect(JSON.parse(patcher.baselineCharacterJson('x')!)).toMatchObject({ chaId: 'x' })
+        expect(JSON.parse(patcher.baselineModuleJson('a')!)).toMatchObject({ id: 'a' })
+        expect(patcher.baselineModuleJson('missing')).toBeUndefined()
+    })
+})

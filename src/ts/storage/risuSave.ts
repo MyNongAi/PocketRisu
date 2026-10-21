@@ -1205,6 +1205,21 @@ export class PatchBaselineSnapshot {
     }
 }
 
+/** A character as the save sees it: chats as catalog stubs (the bodies live server-side). */
+export function characterWithStubs(char: any) {
+    if (!char) return char
+    return { ...char, chats: (char.chats || []).map((c: any) => chatToStub(c)) }
+}
+
+export interface PatcherSetOptions {
+    /** `data` is a copy-on-write apply of a server patch on THIS baseline
+     *  (sync/copyOnWritePatch.ts): an entry that is the very baseline object
+     *  is unchanged. Never pass for live data. */
+    baselineShared?: boolean
+    /** chaId -> chat id this page keeps open while the server's catalog points chatPage elsewhere. */
+    chatPageHolds?: ReadonlyMap<string, string>
+}
+
 export class RisuSavePatcher {
     private lastSyncedDb: any;
     private hashBlocks: { [key: string]: number } = {};
@@ -1299,6 +1314,20 @@ export class RisuSavePatcher {
     /** chaIds whose body changed against the baseline in the last set(). */
     changedCharacterIdsOfLastSet(): string[] {
         return [...this.lastChangedCharacterIds]
+    }
+
+    // The baseline's JSON per entry, for a cheap "unchanged here" check
+    // against the live database (sync/remoteLanding.ts). Read-only.
+    baselineRootKeyJson(key: string): string | undefined {
+        return this.lastRootKeyJsons.get(key)
+    }
+
+    baselineCharacterJson(chaId: string): string | undefined {
+        return this.lastCharJsons.get(chaId)
+    }
+
+    baselineModuleJson(id: string): string | undefined {
+        return this.lastModuleJsons.get(id)
     }
 
     /**
@@ -1407,7 +1436,7 @@ export class RisuSavePatcher {
         for (let i = 0; i < this.lastSyncedDb.characters.length; i++) {
             const character = this.lastSyncedDb.characters[i];
             // Hash with stubs only (matching set()) so hashes stay in sync
-            const withStubs = { ...character, chats: (character.chats || []).map((c: any) => chatToStub(c)) };
+            const withStubs = characterWithStubs(character);
             this.hashBlocks[character.chaId] = calculateHash(withStubs);
             this.lastSyncedDb.characters[i] = withStubs;
         }
@@ -1507,7 +1536,7 @@ export class RisuSavePatcher {
         return true
     }
 
-    async set(data: any, toSave: toSaveType): Promise<{ patch: any[]; expectedHash: string }> {
+    async set(data: any, toSave: toSaveType, opts: PatcherSetOptions = {}): Promise<{ patch: any[]; expectedHash: string }> {
         const { compare } = await import('fast-json-patch')
         const expectedHash: string = this.hash();
         const patch: any[] = []
@@ -1557,6 +1586,13 @@ export class RisuSavePatcher {
             // hasOwn, not `in`: membership must match the baseline's OWN keys
             // (`in` would treat inherited names like 'toString' as present).
             const hadKey = Object.hasOwn(lastRoot, key)
+            // A server patch applied on this very baseline shares every
+            // entry it did not touch: the same object is the same data.
+            if (opts.baselineShared && hadKey && curRoot[key] === lastRoot[key]) {
+                removedRootKeys.delete(key)
+                nextRoot[key] = lastRoot[key]
+                continue
+            }
             let curKeyJson: string | undefined
             try { curKeyJson = JSON.stringify(curRoot[key]) } catch { curKeyJson = undefined }
             // Fast skip: raw JSON equals the normalized baseline ⇒ present and
@@ -1681,6 +1717,7 @@ export class RisuSavePatcher {
                     if (hintedModuleIds && !hintedModuleIds.has(id)) {
                         continue
                     }
+                    if (opts.baselineShared && curModulesArr[i] === lastModulesArr[i] && this.moduleItemHashes.has(id)) continue
                     let curModJson: string | null = null
                     try { curModJson = JSON.stringify(curModulesArr[i]) } catch { curModJson = null }
                     if (curModJson !== null && curModJson === this.lastModuleJsons.get(id) && this.moduleItemHashes.has(id)) {
@@ -1747,7 +1784,7 @@ export class RisuSavePatcher {
                         aligned.push(retained[nextRetained++])
                         continue
                     }
-                    const normChar = normalizeJSON(withStubs(curCharacters[i]))
+                    const normChar = normalizeJSON(characterWithStubs(curCharacters[i]))
                     patch.push({ op: 'add', path: `/characters/${i}`, value: normChar })
                     this.hashBlocks[id] = calculateHash(normChar)
                     this.lastCharJsons.set(id, JSON.stringify(normChar))
@@ -1760,15 +1797,24 @@ export class RisuSavePatcher {
             }
         }
 
-        // Replace chats with stubs for patch diff — full chat data lives server-side
-        function withStubs(char: any) {
-            if (!char) return char
-            return { ...char, chats: (char.chats || []).map((c: any) => chatToStub(c)) }
+        // A chat this page keeps open while the server's catalog points the
+        // character elsewhere (opts.chatPageHolds) is never sent as its
+        // chatPage: the server's open chat goes out instead, re-pointed by id
+        // within this page's list, so the patch and the hash stay the server's.
+        const holdView = (cur: any, last: any) => {
+            const held = cur?.chaId ? opts.chatPageHolds?.get(cur.chaId) : undefined
+            if (held === undefined || !last || !Array.isArray(cur.chats)) return cur
+            if (cur.chats[cur.chatPage]?.id !== held) return cur
+            const serverOpenId = last.chats?.[last.chatPage]?.id
+            const at = serverOpenId === undefined ? -1 : cur.chats.findIndex((c: any) => c?.id === serverOpenId)
+            const page = at >= 0 ? at : Math.max(0, Math.min(last.chatPage ?? 0, cur.chats.length - 1))
+            return page === cur.chatPage ? cur : { ...cur, chatPage: page }
         }
 
         if (structuralChange) {
             // Structural change → replace entire characters array (safe for deletions/additions)
-            const normChars = normalizeJSON(curCharacters.map(withStubs))
+            const lastById = new Map(lastCharacters.filter((c: any) => c?.chaId).map((c: any) => [c.chaId, c]))
+            const normChars = normalizeJSON(curCharacters.map((c: any) => characterWithStubs(holdView(c, lastById.get(c?.chaId)))))
             patch.push({ op: 'replace', path: '/characters', value: normChars })
             // Update all character hashes
             const previousCharHashes = new Map<string, number>()
@@ -1796,20 +1842,21 @@ export class RisuSavePatcher {
             // Same structure → per-character field-level diff (efficient)
             for (let i = 0; i < curCharacters.length; i++) {
                 const lastChar = alignedLastCharacters[i]
-                const curChar = curCharacters[i]
+                const curChar = holdView(curCharacters[i], lastChar)
                 const curCharId = curChar?.chaId
                 const trackedBySave = toSave.character.includes(curCharId ?? '')
+                if (opts.baselineShared && !trackedBySave && curChar === lastChar && curCharId && this.lastCharJsons.has(curCharId)) continue
 
                 // Cheap pre-check: identical JSON ⇒ identical data ⇒ stored
                 // hash, baseline and (empty) diff are all still valid — skip
                 // the normalize + protocol hash + compare entirely.
                 let curJson: string | null = null
-                try { curJson = JSON.stringify(withStubs(curChar)) } catch { curJson = null }
+                try { curJson = JSON.stringify(characterWithStubs(curChar)) } catch { curJson = null }
                 if (!trackedBySave && curCharId && curJson !== null && curJson === this.lastCharJsons.get(curCharId)) {
                     continue
                 }
 
-                const normChar = normalizeJSON(withStubs(curChar))
+                const normChar = normalizeJSON(characterWithStubs(curChar))
                 const curCharHash = curCharId ? calculateHash(normChar) : undefined
                 const changedByHash = !!(curCharId && curCharHash !== this.hashBlocks[curCharId])
 
