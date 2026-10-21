@@ -1259,6 +1259,7 @@
         "src/lib/ChatScreens/Chat.svelte"
       ],
       "requiredMarkers": [
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "onchange={(e) => titleCommitted(chat, e.currentTarget.value)} onkeydown={finishTitleEdit}/>" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "retitleChatFromLastInput(attached.character.chats, attached.chatIndex)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "function retitleCurrentChat()" },
         { "file": "src/ts/chatTitleState.ts", "contains": "export function ageManualChatTitle(holder: ChatTitleHolder, chatId: string | undefined): void {" },
@@ -1624,7 +1625,11 @@
         "src/ts/process/index.svelte.ts"
       ],
       "requiredMarkers": [
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (target && stepInputVersion(target, step)) retitleCurrentChat()" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (!target || !stepInputVersion(target, step)) return" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "requestPairing?.showSwipeRequestedWith(idx, target.data)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "class:text-primary={ownIsRequestInput}" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "followRequestedInput(chat, msg)" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const page = swipeRequestedWith(msg, input)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (target && recordInputEdit(target, echoText)) retitleCurrentChat()" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "onclick={copyInputEcho}" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "onclick={() => stepOwnVersion(-1)}" },
@@ -1950,7 +1955,8 @@
       "requiredMarkers": [
         { "file": "src/ts/process/generationState.ts", "contains": "trackFinishedReplies" },
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "<ChatReplyStatus chatId={chat.id}" },
-        { "file": "src/lib/SideBars/ChatReplyStatus.svelte", "contains": "if (document.visibilityState === 'visible') timer = setTimeout(() => clearFinishedReply(chatId), SEEN_AFTER_MS)" }
+        { "file": "src/lib/SideBars/ChatReplyStatus.svelte", "contains": "if (document.visibilityState === 'visible') timer = setTimeout(() => clearFinishedReply(chatId), SEEN_AFTER_MS)" },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "unseen={chatIdx === shownChatIndex && newReplyUnseen(chat)}" }
       ],
       "regressionTests": [
         "src/ts/gui/chatReplyStatus.test.ts"

@@ -28,8 +28,9 @@
     import AutoresizeArea from "../UI/GUI/TextAreaResizable.svelte"
     import { isSendKey } from "src/ts/gui/sendKey"
     import { isMobile } from "src/ts/platform"
-    import { inputEchoDraft, inputEchoKey } from "src/ts/gui/inputEcho"
+    import { inputEchoDraft, inputEchoKey, nextReplyIndex } from "src/ts/gui/inputEcho"
     import { inputVersionIndex, isRequestInput, recordInputEdit, stepInputVersion } from "src/ts/inputVersions"
+    import { getRequestPairing } from "src/ts/gui/requestPairing"
     import { isLogCapturePickingHere, isLogCaptureStart, logCaptureMarkFor, markLogCapture } from "src/ts/gui/logCaptureState.svelte"
     import { keepInnerScroll } from "src/ts/gui/innerScrollKeeper"
     import { closeTogglePanels, looksLikeCloseControl } from "src/ts/gui/closeTogglePanels"
@@ -359,17 +360,37 @@
     })
     let ownVersionCount = $derived(ownInputMessage?.nodeOnlyInputVersions?.length ?? 0)
     let ownVersionIndex = $derived(inputVersionIndex(ownInputMessage))
+    // The reply this input is answered by, and whether its shown swipe was
+    // requested with the version shown here: marked as under the reply.
+    let ownReplyIndex = $derived.by(() => {
+        if (!ownInputMessage) return -1
+        const messages = DBState.db.characters[view.characterIndex]?.chats?.[view.chatIndex]?.message ?? []
+        return nextReplyIndex(messages, idx)
+    })
+    let ownIsRequestInput = $derived.by(() => {
+        if (ownVersionCount < 2 || ownReplyIndex < 0) return false
+        const reply = DBState.db.characters[view.characterIndex]?.chats?.[view.chatIndex]?.message?.[ownReplyIndex]
+        return isRequestInput(reply, ownInputMessage?.data)
+    })
+
+    // Turning the input's version brings its reply to the swipe requested
+    // with it (inputVersions.ts; the user's request, 2026-10-21).
+    const requestPairing = getRequestPairing()
 
     function stepOwnVersion(step: -1 | 1) {
         if (editMode) return
         const target = ownInputMessage
-        if (target && stepInputVersion(target, step)) retitleCurrentChat()
+        if (!target || !stepInputVersion(target, step)) return
+        retitleCurrentChat()
+        if (ownReplyIndex >= 0) requestPairing?.showSwipeRequestedWith(ownReplyIndex, target.data)
     }
 
     function stepEchoVersion(step: -1 | 1) {
         if (echoEditing) return
         const target = echoTarget()
-        if (target && stepInputVersion(target, step)) retitleCurrentChat()
+        if (!target || !stepInputVersion(target, step)) return
+        retitleCurrentChat()
+        requestPairing?.showSwipeRequestedWith(idx, target.data)
     }
 
     async function copyInputEcho() {
@@ -987,7 +1008,7 @@
                         <button class="flex items-center shrink-0 hover:text-primary transition-colors button-icon-input-version" title={language.inputEchoPrevious} aria-label={language.inputEchoPrevious} onclick={() => stepOwnVersion(-1)}>
                             <ArrowLeft size={22}/>
                         </button>
-                        <span class="flex items-center text-xs text-textcolor2 tabular-nums">{ownVersionIndex + 1}/{ownVersionCount}</span>
+                        <span class="flex items-center text-xs text-textcolor2 tabular-nums" class:text-primary={ownIsRequestInput} title={ownIsRequestInput ? language.inputEchoRequested : undefined}>{ownVersionIndex + 1}/{ownVersionCount}{#if ownIsRequestInput}<span class="ml-0.5 rounded bg-selected px-1">{language.inputEchoRequestedShort}</span>{/if}</span>
                         <button class="flex items-center shrink-0 hover:text-primary transition-colors button-icon-input-version" title={language.inputEchoNext} aria-label={language.inputEchoNext} onclick={() => stepOwnVersion(1)}>
                             <ArrowRight size={22}/>
                         </button>

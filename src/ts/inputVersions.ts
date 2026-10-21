@@ -143,3 +143,30 @@ export function isRequestInput(reply: RequestMarkedReply | null | undefined, inp
     const mark = reply.nodeOnlyRequestInputs?.[textHash(reply.data)]
     return !!mark && mark === textHash(input)
 }
+
+// A reply's swipes and its input's versions go in pairs: each swipe was
+// requested with one version. Turning either set of arrows shows the other
+// half of the pair (the user's request, 2026-10-21).
+
+/** The version of `input` the shown reply was requested with, or null (unmarked, or no longer a version). */
+export function requestedInputVersion(reply: RequestMarkedReply | null | undefined, input: VersionedInput | null | undefined): string | null {
+    const mark = reply?.nodeOnlyRequestInputs?.[textHash(reply.data)]
+    if (!mark || !input) return null
+    const versions = input.nodeOnlyInputVersions?.length ? input.nodeOnlyInputVersions : [input.data]
+    for (let i = versions.length - 1; i >= 0; i--) {
+        if (textHash(versions[i]) === mark) return versions[i]
+    }
+    return null
+}
+
+/** The newest of `reply`'s swipes requested with `input`, or -1. */
+export function swipeRequestedWith(reply: (RequestMarkedReply & { swipeId?: number }) | null | undefined, input: string): number {
+    const marks = reply?.nodeOnlyRequestInputs
+    if (!reply || !marks) return -1
+    const wanted = textHash(input)
+    const pages = reply.swipes?.length ? reply.swipes : [reply.data]
+    for (let i = pages.length - 1; i >= 0; i--) {
+        if (marks[textHash(i === (reply.swipeId ?? 0) ? reply.data : pages[i])] === wanted) return i
+    }
+    return -1
+}

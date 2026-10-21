@@ -9,8 +9,10 @@
     interface Props {
         chatId: string | undefined
         current: boolean
+        /** A reroll's new reply waits on a later page here (the arrow's dot, chatSwipes.ts). */
+        unseen?: boolean
     }
-    let { chatId, current }: Props = $props()
+    let { chatId, current, unseen = false }: Props = $props()
 
     const running = $derived(!!chatId && ($generationStates.has(chatGenKey(chatId)) || $remoteGenerations.has(chatId)))
     const done = $derived(!running && !!chatId && $finishedReplies.has(chatId))
@@ -25,10 +27,22 @@
 
     // The chat on screen saw its reply arrive: its check goes after a moment,
     // or once the app is back in front (the user's report, 2026-10-21: it
-    // stayed until the chat was left and opened again).
+    // stayed until the chat was left and opened again). A reroll whose new
+    // reply waits on a later page keeps it until that page is turned to, and
+    // then it goes at once (the user's request, the same day).
     const SEEN_AFTER_MS = 2000
+    let waitedForPage = false
     $effect(() => {
         if (!current || !done) return
+        if (unseen) {
+            waitedForPage = true
+            return
+        }
+        if (waitedForPage) {
+            waitedForPage = false
+            clearFinishedReply(chatId)
+            return
+        }
         let timer: ReturnType<typeof setTimeout> | undefined
         const settle = () => {
             clearTimeout(timer)

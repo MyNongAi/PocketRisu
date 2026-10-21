@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inputEchoKey, previousInputIndex } from './inputEcho'
+import { inputEchoKey, nextReplyIndex, previousInputIndex } from './inputEcho'
 
 describe('previousInputIndex', () => {
     const user = { role: 'user' }
@@ -29,5 +29,14 @@ describe('inputEchoKey', () => {
         expect(inputEchoKey({ chatId: 'm-1' }, 3)).toBe('id:m-1')
         expect(inputEchoKey({}, 3)).toBe('index:3')
         expect(inputEchoKey(undefined, 0)).toBe('index:0')
+    })
+})
+
+describe('nextReplyIndex', () => {
+    it('finds the reply an input is answered by, past comments', () => {
+        const messages = [{ role: 'user' }, { role: 'char', isComment: true }, { role: 'char' }, { role: 'user' }, { role: 'user' }]
+        expect(nextReplyIndex(messages, 0)).toBe(2)
+        expect(nextReplyIndex(messages, 3)).toBe(-1)
+        expect(nextReplyIndex(messages, 4)).toBe(-1)
     })
 })

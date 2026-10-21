@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inputVersionIndex, isRequestInput, pressedInput, recordInputEdit, recordRequestInput, recordSentRequestInput, rekeyRequestMark, requestInputText, stepInputVersion, textHash } from './inputVersions'
+import { inputVersionIndex, isRequestInput, pressedInput, recordInputEdit, recordRequestInput, recordSentRequestInput, rekeyRequestMark, requestedInputVersion, requestInputText, stepInputVersion, swipeRequestedWith, textHash } from './inputVersions'
 
 describe('input versions', () => {
     it('keeps the sent input and each saved edit, in order', () => {
@@ -123,5 +123,34 @@ describe('input versions', () => {
         reply.data = tagged
         expect(isRequestInput(reply, 'input a')).toBe(true)
         expect(Object.keys(reply.nodeOnlyRequestInputs)).toEqual([textHash(tagged)])
+    })
+})
+
+describe('a reply and its input as pairs', () => {
+    // Swipe 1 was requested with "v1", swipe 2 with "v2"; swipe 3 has no mark.
+    const reply = () => {
+        const r = { data: 'second', swipes: ['first', 'second', 'third'], swipeId: 1 } as any
+        const marks = { [textHash('first')]: textHash('v1'), [textHash('second')]: textHash('v2') }
+        r.nodeOnlyRequestInputs = marks
+        return r
+    }
+    const input = { data: 'v1', nodeOnlyInputVersions: ['v1', 'v2'] }
+
+    it('finds the input version a shown swipe was requested with', () => {
+        expect(requestedInputVersion(reply(), input)).toBe('v2')
+        const r = reply()
+        r.data = 'first'
+        expect(requestedInputVersion(r, input)).toBe('v1')
+        r.data = 'third'
+        expect(requestedInputVersion(r, input)).toBeNull()
+        // a version since removed from the list is not brought back
+        expect(requestedInputVersion(reply(), { data: 'v1', nodeOnlyInputVersions: ['v1', 'v3'] })).toBeNull()
+    })
+
+    it('finds the newest swipe requested with an input version', () => {
+        expect(swipeRequestedWith(reply(), 'v1')).toBe(0)
+        expect(swipeRequestedWith(reply(), 'v2')).toBe(1)
+        expect(swipeRequestedWith(reply(), 'v3')).toBe(-1)
+        expect(swipeRequestedWith({ data: 'x' }, 'v1')).toBe(-1)
     })
 })

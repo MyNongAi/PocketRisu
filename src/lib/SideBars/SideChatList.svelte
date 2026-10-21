@@ -24,6 +24,7 @@
     import { get } from "svelte/store";
     import { chatGenKey, generationStates } from "src/ts/process/generationState";
     import { rerollPlaceholders } from "src/ts/gui/rerollPlaceholder";
+    import { findRerollTargetIndex, hasUnseenSwipe } from "src/ts/chatSwipes";
     import { messagesWithoutPendingReply } from "src/ts/chatCopySnapshot";
     import { findCharacterbyId, sleep, sortableOptions } from "src/ts/util";
 
@@ -64,6 +65,19 @@
     // clearing it hands the title back to the last input.
     function titleTyped(chat: Chat) {
         markChatTitleManual(chara, chat.id)
+    }
+    // Enter ends the editing, as the pencil does, with the title saved (the
+    // user's request, 2026-10-21). An Enter that ends an IME composition is not one.
+    function finishTitleEdit(event: KeyboardEvent) {
+        if (event.key !== 'Enter' || event.isComposing) return
+        event.preventDefault()
+        ;(event.currentTarget as HTMLInputElement).blur()
+        editMode = false
+    }
+    // The newest reply has a page a reroll added that was not looked at yet.
+    function newReplyUnseen(chat: Chat): boolean {
+        const messages = chat.message ?? []
+        return hasUnseenSwipe(messages[findRerollTargetIndex(messages)])
     }
     function titleCommitted(chat: Chat, value: string) {
         if (value.trim()) return
@@ -257,7 +271,7 @@
                     class:bg-pink-900={folder.color === 'pink'}
                 >
                     {#if editMode}
-                        <TextInput bind:value={chara.chatFolders[i].name} className="grow min-w-0" padding={false}/>
+                        <TextInput bind:value={chara.chatFolders[i].name} className="grow min-w-0" padding={false} onkeydown={finishTitleEdit}/>
                     {:else}
                         <span>{folder.name}</span>
                     {/if}
@@ -325,12 +339,12 @@
                         }
                     }} class="risu-chats flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"class:bg-selected={chatIdx === shownChatIndex && !deselectedHere}>
                         {#if editMode}
-                            <TextInput deferred bind:value={chat.name} className="grow min-w-0" padding={false} oninput={() => titleTyped(chat)} onchange={(e) => titleCommitted(chat, e.currentTarget.value)}/>
+                            <TextInput deferred bind:value={chat.name} className="grow min-w-0" padding={false} oninput={() => titleTyped(chat)} onchange={(e) => titleCommitted(chat, e.currentTarget.value)} onkeydown={finishTitleEdit}/>
                         {:else}
                             <span class={chatTitleClass(chatTitleState(chara, chat.id))}>{chat.name}</span>
                         {/if}
                         <div class="grow flex justify-end items-center">
-                            <ChatReplyStatus chatId={chat.id} current={chatIdx === shownChatIndex && !deselectedHere} />
+                            <ChatReplyStatus chatId={chat.id} current={chatIdx === shownChatIndex && !deselectedHere} unseen={chatIdx === shownChatIndex && newReplyUnseen(chat)} />
                             <div role="button" tabindex="0" onkeydown={(e) => {
                                 if(e.key === 'Enter'){
                                     e.currentTarget.click()
@@ -424,12 +438,12 @@
             class="flex items-center text-textcolor border-solid border-0 border-darkborderc p-2 cursor-pointer rounded-md"
             class:bg-selected={i === shownChatIndex && !deselectedHere}>
                 {#if editMode}
-                    <TextInput deferred bind:value={chara.chats[i].name} className="grow min-w-0" padding={false} oninput={() => titleTyped(chat)} onchange={(e) => titleCommitted(chat, e.currentTarget.value)}/>
+                    <TextInput deferred bind:value={chara.chats[i].name} className="grow min-w-0" padding={false} oninput={() => titleTyped(chat)} onchange={(e) => titleCommitted(chat, e.currentTarget.value)} onkeydown={finishTitleEdit}/>
                 {:else}
                     <span class={chatTitleClass(chatTitleState(chara, chat.id))}>{chat.name}</span>
                 {/if}
                 <div class="grow flex justify-end items-center">
-                    <ChatReplyStatus chatId={chat.id} current={i === shownChatIndex && !deselectedHere} />
+                    <ChatReplyStatus chatId={chat.id} current={i === shownChatIndex && !deselectedHere} unseen={i === shownChatIndex && newReplyUnseen(chat)} />
                     <div role="button" tabindex="0" onkeydown={(e) => {
                         if(e.key === 'Enter'){
                             e.currentTarget.click()

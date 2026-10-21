@@ -31,3 +31,13 @@ export function previousInputIndex(messages: readonly (EchoMessage | undefined)[
     }
     return -1
 }
+
+/** The reply that answers the user message at `index`: the next message that is not a comment, if it is the character's. */
+export function nextReplyIndex(messages: readonly (EchoMessage | undefined)[], index: number): number {
+    for (let i = index + 1; i < messages.length; i++) {
+        const message = messages[i]
+        if (!message || message.isComment) continue
+        return message.role === 'char' ? i : -1
+    }
+    return -1
+}
