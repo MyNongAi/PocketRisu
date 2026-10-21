@@ -16,7 +16,8 @@ vi.mock('./alert', () => ({
     notifySuccess: (m: string) => notifySuccess(m),
     notifyError: (m: string) => notifyError(m),
 }))
-vi.mock('./importProgress', () => ({ runImportTask: (_name: string, fn: (report: () => void) => unknown) => fn(() => {}) }))
+const taskNames: string[] = []
+vi.mock('./importProgress', () => ({ runImportTask: (name: string, fn: (report: () => void) => unknown) => { taskNames.push(name); return fn(() => {}) } }))
 const inspectProtonShare = vi.fn()
 const downloadProtonEntry = vi.fn()
 vi.mock('./protonShareClient', () => ({
@@ -77,7 +78,10 @@ describe('importRealmCompanionModules', () => {
         inspectProtonShare.mockResolvedValue({ kind: 'file', name: 'assets.risum', entries: [], trail: [] })
         downloadProtonEntry.mockResolvedValue({ name: 'assets.risum', data: new Uint8Array([1]) })
         importModuleFile.mockImplementation(async () => { const m = { id: 'm1', name: 'assets' }; db.modules.push(m); return m })
+        taskNames.length = 0
         await importRealmCompanionModules('c1', [`desc ${LINK}`, undefined])
+        // One card, the file's (the user's request, 2026-10-22: no idle outer card beside it).
+        expect(taskNames).toEqual(['task · assets.risum'])
         expect(downloadProtonEntry).toHaveBeenCalledTimes(1)
         expect(db.modules[0].nodeOnlyProtonShare).toBe(LINK)
         expect(db.characters[0].modules).toEqual(['m1'])
@@ -107,7 +111,7 @@ describe('importRealmCompanionModules', () => {
         inspectProtonShare.mockResolvedValue(share)
         importProtonShare.mockResolvedValue(undefined)
         await importRealmCompanionModules('c1', [LINK])
-        expect(importProtonShare).toHaveBeenCalledWith(LINK, '', share, 'module', expect.any(Function), { browse: true })
+        expect(importProtonShare).toHaveBeenCalledWith(LINK, '', share, 'module', expect.any(Function), { browse: true, taskName: expect.any(Function) })
         expect(downloadProtonEntry).not.toHaveBeenCalled()
         expect(db.characters[0].modules).toEqual([])
         expect(notifySuccess).not.toHaveBeenCalled()
@@ -168,9 +172,13 @@ describe('a folder share', () => {
             db.modules.push(m)
             onModule(m)
         })
+        taskNames.length = 0
         await importRealmCompanionModules('c1', [LINK])
         expect(importProtonShare).toHaveBeenCalledTimes(1)
         expect(importProtonShare.mock.calls[0][2]).toBe(share)
+        // The browser's own per-file cards only, named for the Realm module.
+        expect(taskNames).toEqual([])
+        expect(importProtonShare.mock.calls[0][5].taskName('a.risum')).toBe('task · a.risum')
         expect(downloadProtonEntry).not.toHaveBeenCalled()
         expect(db.modules[0].nodeOnlyProtonShare).toBe(LINK)
         expect(db.characters[0].modules).toEqual(['picked'])

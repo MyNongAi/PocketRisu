@@ -1124,6 +1124,7 @@
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "findModulesOfBot(character.chaId)" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "moduleLink={characterModuleLink(" },
         { "file": "src/ts/realmCompanionModule.ts", "contains": "recordModulePair(getDatabase().modules, moduleIds, character.chaId)" },
+        { "file": "src/ts/realmCompanionModule.ts", "contains": "await importProtonShare(link, password, share, 'module', keep, { browse: true, taskName: companionTaskName })" },
         { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "forgetModulePair(DBState.db.modules, moduleId, character.chaId)" },
         { "file": "src/ts/storage/database.svelte.ts", "contains": "backfillModulePairs(data.modules, data.characters)" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "[language.removeWithModules, () => removeBotWithModules(character.chaId)]" },

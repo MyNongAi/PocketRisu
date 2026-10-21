@@ -65,7 +65,12 @@ export function pairModulesWithCharacter(character: { modules?: string[] }, modu
     return added.length
 }
 
-async function downloadShareModules(link: string, report: ImportProgressReporter): Promise<RisuModule[]> {
+// One progress card per module file, named for the Realm companion it is
+// (the user's request, 2026-10-22: a "렐름 전용 모듈" card stood idle beside
+// the file's own card for the whole import).
+const companionTaskName = (fileName: string) => `${language.realmCompanionModuleTask} · ${fileName}`
+
+async function downloadShareModules(link: string): Promise<RisuModule[]> {
     let password = ''
     let share: ProtonInspectResult
     try {
@@ -89,12 +94,14 @@ async function downloadShareModules(link: string, report: ImportProgressReporter
         // browser a pasted folder link does; what the user picks imports as
         // modules, and those modules are paired.
         const { importProtonShare } = await import('./protonImport')
-        await importProtonShare(link, password, share, 'module', keep, { browse: true })
+        await importProtonShare(link, password, share, 'module', keep, { browse: true, taskName: companionTaskName })
         return modules
     }
-    // A plain module file downloads and imports by itself.
-    const file = await downloadProtonEntry(link, password, { path: [], expectedSize: share.entries[0]?.size ?? null }, report)
-    const module = await importModuleFile(file, { suppressSuccess: true, onProgress: report })
+    // A plain module file downloads and imports by itself, on its own card.
+    const module = await runImportTask(companionTaskName(share.name), async (report: ImportProgressReporter) => {
+        const file = await downloadProtonEntry(link, password, { path: [], expectedSize: share.entries[0]?.size ?? null }, report)
+        return importModuleFile(file, { suppressSuccess: true, onProgress: report })
+    })
     if (module) {
         // The browser path records this itself (importProtonShare).
         module.nodeOnlyProtonSource ??= { link, file: share.name, at: Date.now() }
@@ -107,34 +114,31 @@ async function downloadShareModules(link: string, report: ImportProgressReporter
  * Imports the modules behind `links` (reusing ones already downloaded from the
  * same share) and pairs them with the characters `pairWith(chaIds)` returns,
  * looked up after the downloads. Returns the module ids, and how many pairings
- * were added. Runs as its own background import task.
+ * were added. Each module file shows its own import card.
  */
 async function importCompanionModules(
     links: readonly string[],
     pairWith: () => readonly { chaId?: string, modules?: string[] }[],
 ): Promise<{ moduleIds: string[], paired: number }> {
-    return runImportTask(language.realmCompanionModuleTask, async (report) => {
-        const moduleIds: string[] = []
-        for (const link of links) {
-            const existing = getDatabase().modules.filter((module) => module.nodeOnlyProtonShare === link)
-            if (existing.length > 0) {
-                moduleIds.push(...existing.map((module) => module.id))
-                continue
-            }
-            report({ label: language.importProgress.importing, progress: null })
-            moduleIds.push(...(await downloadShareModules(link, report)).map((module) => module.id))
+    const moduleIds: string[] = []
+    for (const link of links) {
+        const existing = getDatabase().modules.filter((module) => module.nodeOnlyProtonShare === link)
+        if (existing.length > 0) {
+            moduleIds.push(...existing.map((module) => module.id))
+            continue
         }
-        let paired = 0
-        for (const character of pairWith()) {
-            paired += pairModulesWithCharacter(character, moduleIds)
-            recordModulePair(getDatabase().modules, moduleIds, character.chaId)
-        }
-        if (paired > 0) {
-            syncLinkedFolders()
-            rerenderChatForModules()
-        }
-        return { moduleIds, paired }
-    })
+        moduleIds.push(...(await downloadShareModules(link)).map((module) => module.id))
+    }
+    let paired = 0
+    for (const character of pairWith()) {
+        paired += pairModulesWithCharacter(character, moduleIds)
+        recordModulePair(getDatabase().modules, moduleIds, character.chaId)
+    }
+    if (paired > 0) {
+        syncLinkedFolders()
+        rerenderChatForModules()
+    }
+    return { moduleIds, paired }
 }
 
 function reportFailure(error: unknown) {

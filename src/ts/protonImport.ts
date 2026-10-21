@@ -171,7 +171,7 @@ export async function importProtonShare(
     info: ProtonInspectResult,
     origin: ImportOrigin,
     onModule?: (module: RisuModule) => void,
-    options: { browse?: boolean } = {},
+    options: { browse?: boolean, taskName?: (fileName: string) => string } = {},
 ): Promise<void> {
     // A folder always opens the browser, even with a single file in it, so the
     // user sees what is inside (subfolders included) before anything imports.
@@ -196,7 +196,8 @@ export async function importProtonShare(
     // whole file per download); the imports stay one at a time, in order.
     const skipped: string[] = []
     const result = await runPrefetchedImportBatch(
-        chosen.map((pick) => ({ name: pick.entry.name, pick })),
+        // `taskName`: the card title for a file (the Realm companion's names it).
+        chosen.map((pick) => ({ name: options.taskName ? options.taskName(pick.entry.name) : pick.entry.name, pick })),
         (item, report) => downloadProtonEntry(url, password, {
             linkId: info.kind === 'folder' ? item.pick.entry.linkId : undefined,
             path: item.pick.path,
