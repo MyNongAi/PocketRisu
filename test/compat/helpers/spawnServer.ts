@@ -61,43 +61,58 @@ export async function spawnServer(opts: SpawnServerOptions = {}): Promise<Server
   await writeFile(path.join(tempDir, 'save', '__password'), TEST_PASSWORD, 'utf-8')
   if (opts.seedSave) await opts.seedSave(path.join(tempDir, 'save'))
 
-  const port = await getFreePort()
-
-  const child: ChildProcess = spawn(
-    process.execPath,
-    [SERVER_SCRIPT],
-    {
-      cwd: tempDir,
-      env: { ...process.env, PORT: String(port), NODE_ENV: 'test', ...opts.env },
-      stdio: ['ignore', 'pipe', 'pipe'],
-    },
-  )
-
+  let port = 0
+  let child!: ChildProcess
   // Collect stderr for diagnostics on failure, stdout for tests that read logs
   let stderrBuf = ''
-  child.stderr?.on('data', (chunk: Buffer) => { stderrBuf += chunk.toString() })
   let stdoutBuf = ''
-  child.stdout?.on('data', (chunk: Buffer) => { stdoutBuf += chunk.toString() })
+  // On a loaded machine (the full suite runs files in parallel) the server can
+  // take more than a few seconds to start, and the free port can be taken
+  // between getFreePort and the listen: wait longer, and take a new port once
+  // when it was (whole files failed for either, 2026-10-22).
+  for (let attempt = 1; ; attempt++) {
+    port = await getFreePort()
+    stderrBuf = ''
+    stdoutBuf = ''
+    const started: ChildProcess = spawn(
+      process.execPath,
+      [SERVER_SCRIPT],
+      {
+        cwd: tempDir,
+        env: { ...process.env, PORT: String(port), NODE_ENV: 'test', ...opts.env },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    )
+    started.stderr?.on('data', (chunk: Buffer) => { stderrBuf += chunk.toString() })
+    started.stdout?.on('data', (chunk: Buffer) => { stdoutBuf += chunk.toString() })
 
-  // Wait for the server to print its "running" message
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error(`Server did not start within 10 s.\nstderr: ${stderrBuf}`))
-    }, 10_000)
+    try {
+      // Wait for the server to print its "running" message
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error(`Server did not start within 30 s.\nstderr: ${stderrBuf}`))
+        }, 30_000)
 
-    child.stdout?.on('data', (chunk: Buffer) => {
-      if (chunk.toString().includes('[Server]') && chunk.toString().includes('server is running')) {
-        clearTimeout(timeout)
-        resolve()
-      }
-    })
+        started.stdout?.on('data', () => {
+          if (stdoutBuf.includes('[Server]') && stdoutBuf.includes('server is running')) {
+            clearTimeout(timeout)
+            resolve()
+          }
+        })
 
-    child.on('error', (err) => { clearTimeout(timeout); reject(err) })
-    child.on('exit', (code) => {
-      clearTimeout(timeout)
-      reject(new Error(`Server exited early with code ${code}.\nstderr: ${stderrBuf}`))
-    })
-  })
+        started.on('error', (err) => { clearTimeout(timeout); reject(err) })
+        started.on('exit', (code) => {
+          clearTimeout(timeout)
+          reject(new Error(`Server exited early with code ${code}.\nstderr: ${stderrBuf}`))
+        })
+      })
+      child = started
+      break
+    } catch (error) {
+      if (started.exitCode === null) started.kill('SIGKILL')
+      if (attempt >= 2 || !/EADDRINUSE/.test(stderrBuf)) throw error
+    }
+  }
 
   // Track exit state via event listener (set up once, before any cleanup call)
   let exited = child.exitCode !== null
