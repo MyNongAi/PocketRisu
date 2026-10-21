@@ -153,3 +153,238 @@ export function clampPage(i: unknown, len: number): number {
     if (typeof i !== 'number' || !Number.isFinite(i)) return 0
     return Math.min(Math.max(0, Math.trunc(i)), last)
 }
+
+// ── Phase 2: the rebase fallback (storage/rebaseMerge.ts) ─────────────────
+// Unlike the landing, the rebase cannot refuse: a value both sides changed
+// takes this page's (today's rule) and the caller logs the kind.
+
+const sameSequence = (a: readonly string[], b: readonly string[]) =>
+    a.length === b.length && a.every((id, i) => id === b[i])
+
+/**
+ * `primary`, with each id only `secondary` has inserted right after the
+ * nearest id before it in `secondary` that is already placed (at the front
+ * when there is none).
+ */
+export function weaveIds(primary: readonly string[], secondary: readonly string[]): string[] {
+    const out = [...primary]
+    const placed = new Set(out)
+    let at = -1
+    for (const id of secondary) {
+        if (placed.has(id)) {
+            at = out.indexOf(id)
+            continue
+        }
+        out.splice(at + 1, 0, id)
+        placed.add(id)
+        at += 1
+    }
+    return out
+}
+
+/**
+ * The order of two edits of the id list `b`: the side that reordered the ids
+ * all three lists keep sets it, and the other side's additions are woven in.
+ * Null when both reordered them, differently.
+ */
+export function mergeIdSequence(b: readonly string[], l: readonly string[], r: readonly string[]): string[] | null {
+    const inL = new Set(l)
+    const inR = new Set(r)
+    const kept = new Set(b.filter((id) => inL.has(id) && inR.has(id)))
+    const order = (list: readonly string[]) => list.filter((id) => kept.has(id))
+    const bKept = order(b), lKept = order(l), rKept = order(r)
+    const localMoved = !sameSequence(lKept, bKept)
+    const remoteMoved = !sameSequence(rKept, bKept)
+    if (localMoved && remoteMoved && !sameSequence(lKept, rKept)) return null
+    return localMoved ? weaveIds(l, r) : weaveIds(r, l)
+}
+
+// The catalog fields a chat stub carries besides its id (chatToStub,
+// storage/chatStorage.ts).
+const CHAT_CATALOG_FIELDS = ['name', 'lastDate', 'folderId', 'modules'] as const
+
+const sameField = (x: any, y: any, field: string) => {
+    const inX = x !== null && typeof x === 'object' && Object.hasOwn(x, field)
+    const inY = y !== null && typeof y === 'object' && Object.hasOwn(y, field)
+    return inX === inY && (!inX || jsonDeepEqual(x[field], y[field]))
+}
+
+export interface ChatCatalogArgs {
+    /** The baseline's chat stubs. */
+    b: readonly any[]
+    /** This page's chats (bodies or placeholders), the caller's own copies: entries are reused. */
+    l: readonly any[]
+    /** The server's chat stubs, the caller's own copies. */
+    r: readonly any[]
+    /** Generating, being written, unsaved or shown in a pane here. */
+    isBusy: (chatId: string) => boolean
+    /** A local chat in the baseline's form (normalized stub). */
+    stubView: (chat: any) => any
+    normalize: (value: unknown) => any
+    /** A server stub as a runtime chat (a placeholder). */
+    toPlaceholder: (stub: any) => any
+}
+
+/**
+ * A character's chat list merged three ways: a chat stays unless one side
+ * removed it and the other left it alone, either side's new chats are kept,
+ * and catalog fields changed on both sides take this page's value (lastDate
+ * the later one). Null when a list has a chat without a unique id; the
+ * caller then keeps today's whole-character overlay.
+ */
+export function mergeChatCatalog(args: ChatCatalogArgs): { chats: any[], conflicts: string[] } | null {
+    const bIds = itemIds(args.b), lIds = itemIds(args.l), rIds = itemIds(args.r)
+    if (!bIds || !lIds || !rIds) return null
+    const conflicts: string[] = []
+    const bById = new Map(args.b.map((chat) => [chat.id as string, chat]))
+    const lById = new Map(args.l.map((chat) => [chat.id as string, chat]))
+    const rById = new Map(args.r.map((chat) => [chat.id as string, chat]))
+    const views = new Map<string, any>()
+    const localView = (id: string) => {
+        if (!views.has(id)) views.set(id, args.stubView(lById.get(id)))
+        return views.get(id)
+    }
+    const serverView = (id: string) => args.normalize(rById.get(id))
+    const loaded = (chat: any) => chat?._placeholder !== true
+
+    const keep = new Set<string>()
+    for (const id of bIds) {
+        const inL = lById.has(id), inR = rById.has(id)
+        if (inL && inR) keep.add(id)
+        else if (inL) {
+            // Removed on the server: dropped unless changed or in use here,
+            // and then kept only with a body to save again.
+            if (args.isBusy(id) || !jsonDeepEqual(localView(id), bById.get(id))) {
+                if (loaded(lById.get(id))) keep.add(id)
+                conflicts.push('chat-removed-edited')
+            }
+        } else if (inR && !jsonDeepEqual(serverView(id), bById.get(id))) {
+            // Removed here, changed on the server: its body is still there.
+            keep.add(id)
+            conflicts.push('chat-edited-removed')
+        }
+    }
+    for (const id of lIds) if (!bById.has(id)) keep.add(id)
+    for (const id of rIds) if (!bById.has(id)) keep.add(id)
+
+    let order = mergeIdSequence(bIds, lIds, rIds)
+    if (!order) {
+        conflicts.push('chat-order')
+        order = weaveIds(lIds, rIds)
+    }
+
+    const chats: any[] = []
+    for (const id of order) {
+        if (!keep.has(id)) continue
+        const mine = lById.get(id)
+        const theirs = rById.get(id)
+        if (mine === undefined) {
+            chats.push(args.toPlaceholder(theirs))
+            continue
+        }
+        if (theirs !== undefined) {
+            const base = bById.get(id)
+            const lv = localView(id)
+            const rv = serverView(id)
+            for (const field of CHAT_CATALOG_FIELDS) {
+                if (sameField(lv, rv, field)) continue
+                if (sameField(lv, base, field)) {
+                    // Unchanged here: the server's value.
+                    if (Object.hasOwn(theirs, field)) mine[field] = theirs[field]
+                    else delete mine[field]
+                } else if (!sameField(rv, base, field)) {
+                    if (field === 'lastDate') {
+                        const later = maxNumber(mine[field], theirs[field])
+                        if (later !== CONFLICT) { mine[field] = later; continue }
+                    }
+                    conflicts.push(`chat-field:${field}`)
+                }
+            }
+        }
+        chats.push(mine)
+    }
+    return { chats, conflicts }
+}
+
+export interface CharacterMergeArgs {
+    /** The baseline's character (stub chats, normalized). */
+    base: any
+    /** This page's character, the caller's own copy. */
+    local: any
+    /** `local` in the baseline's form (normalized, chats as stubs). */
+    localView: any
+    /** The server's character, the caller's own copy. */
+    server: any
+    /** The character is selected here: it keeps the chat it shows. */
+    selected: boolean
+    /** The chat this page holds open while the server points elsewhere. */
+    hold: string | undefined
+    isChatBusy: (chatId: string) => boolean
+    chatStubView: (chat: any) => any
+    normalize: (value: unknown) => any
+    toPlaceholder: (stub: any) => any
+}
+
+/**
+ * A character merged field by field: a field only one side changed takes
+ * that side's value, lastInteraction the later one, and one both changed
+ * this page's (the caller logs the kind). Chats go through mergeChatCatalog
+ * and chatPage follows the open chat by id. Null when the chats cannot be
+ * merged by id.
+ */
+export function mergeCharacter3(args: CharacterMergeArgs): {
+    character: any
+    conflicts: string[]
+    /** Hold this chat open (the server's chatPage points elsewhere); null for no hold. */
+    hold: string | null
+    /** The selected character's open chat is gone: the page shows a neighbour. */
+    removedOpenChat: boolean
+} | null {
+    const { base, local, localView, server } = args
+    const catalog = mergeChatCatalog({
+        b: Array.isArray(base?.chats) ? base.chats : [],
+        l: Array.isArray(local?.chats) ? local.chats : [],
+        r: Array.isArray(server?.chats) ? server.chats : [],
+        isBusy: args.isChatBusy,
+        stubView: args.chatStubView,
+        normalize: args.normalize,
+        toPlaceholder: args.toPlaceholder,
+    })
+    if (!catalog) return null
+    const conflicts = [...catalog.conflicts]
+    const out: Record<string, any> = {}
+    const keys = new Set([...Object.keys(base ?? {}), ...Object.keys(localView ?? {}), ...Object.keys(server ?? {})])
+    for (const key of keys) {
+        if (key === 'chats' || key === 'chatPage') continue
+        // A plain assignment of this key would set the prototype instead.
+        if (key === '__proto__') { conflicts.push('char-field:__proto__'); continue }
+        const serverView = Object.hasOwn(server, key) ? { [key]: args.normalize(server[key]) } : {}
+        let fromLocal: boolean
+        if (sameField(localView, base, key)) fromLocal = false
+        else if (sameField(serverView, base, key) || sameField(localView, serverView, key)) fromLocal = true
+        else {
+            if (key === 'lastInteraction') {
+                const later = maxNumber(local[key], server[key])
+                if (later !== CONFLICT) { out[key] = later; continue }
+            }
+            conflicts.push(`char-field:${key}`)
+            fromLocal = true
+        }
+        const source = fromLocal ? local : server
+        if (Object.hasOwn(source, key) && source[key] !== undefined) out[key] = source[key]
+    }
+    out.chats = catalog.chats
+
+    const idHere = openChatId(local)
+    const idServer = openChatId(server)
+    const moved = idHere !== openChatId(base) && args.hold !== idHere
+    const keepLocal = args.selected || moved
+    const wanted = keepLocal ? idHere : idServer
+    let chatPage = wanted === undefined ? -1 : out.chats.findIndex((chat: any) => chat?.id === wanted)
+    const removedOpenChat = args.selected && wanted !== undefined && chatPage < 0
+    if (chatPage < 0) chatPage = clampPage(keepLocal ? local.chatPage : server.chatPage, out.chats.length)
+    out.chatPage = chatPage
+    const openId = out.chats[chatPage]?.id
+    const hold = keepLocal && !moved && typeof openId === 'string' && openId !== idServer ? openId : null
+    return { character: out, conflicts, hold, removedOpenChat }
+}

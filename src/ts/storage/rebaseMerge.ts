@@ -1,5 +1,21 @@
 import type { Database } from './database.svelte'
 import type { toSaveType } from './risuSave'
+import { CONFLICT, INDEX_ROOT_KEYS, jsonDeepEqual, mergeCharacter3, mergeCounters, resolveIndexKey } from '../sync/threeWayRules'
+
+/** Phase 2 of the rebase: what a field-by-field character merge needs from the page. */
+export interface RebaseMergeOptions {
+    /** A character in the baseline's form: chats as stubs, normalized. */
+    stubView: (character: any) => any
+    /** A chat in the baseline's form (normalized stub). */
+    chatStubView: (chat: any) => any
+    /** Generating, being written, unsaved or shown in a pane on this page. */
+    isChatBusy: (chaId: string, chatId: string) => boolean
+    selectedChaId: string | null | undefined
+    /** chaId -> chat this page holds open while the server points elsewhere. */
+    holds: ReadonlyMap<string, string>
+    /** A value both sides changed, settled as this page's: kind names only. */
+    onConflict: (kind: string) => void
+}
 
 /**
  * Merge the server's latest database with the changes this client still
@@ -21,6 +37,13 @@ import type { toSaveType } from './risuSave'
  * Characters that come from the server carry `_stub` chats (the client view);
  * runtime code only understands placeholders, so `convertChats` (the boot
  * conversion) is applied to every character not overlaid from local.
+ *
+ * With `options` and a baseline (phase 2), a tracked character is merged
+ * field by field instead of overlaid whole (threeWayRules.mergeCharacter3):
+ * a field only the server changed keeps the server's value, and the chat
+ * list is merged by id, so another device's new chats are not dropped from
+ * the catalog. `statics` keeps both devices' counts and index keys follow
+ * the element they named. Whatever both sides changed takes the local value.
  */
 export function mergeServerDbWithTrackedLocalChanges(
     latestDb: Database,
@@ -31,9 +54,18 @@ export function mergeServerDbWithTrackedLocalChanges(
     baselineArchivedIds: ReadonlySet<string> = new Set(),
     baselineDb: Database | null = null,
     normalizeValue: (value: any) => any = (value) => value,
-): { mergedDb: Database; skippedArchivedCharIds: string[] } {
+    options?: RebaseMergeOptions,
+): {
+    mergedDb: Database
+    skippedArchivedCharIds: string[]
+    /** chaId -> chat to hold open after the rebase (phase 2). */
+    holds: Map<string, string>
+    /** The selected character's open chat was removed elsewhere (phase 2). */
+    removedOpenChat: boolean
+} {
     const mergedDb = clone(latestDb)
     const localDb = clone(localDbSource)
+    const conflict = (kind: string) => options?.onConflict(kind)
 
     // Root keys (settings, personas, characterOrder, ...): with a baseline —
     // the view this client last synced against — only the keys this client
@@ -67,6 +99,33 @@ export function mergeServerDbWithTrackedLocalChanges(
     if (toSave.botPreset) {
         mergedDb.botPresets = clone(localDb.botPresets)
         mergedDb.botPresetsId = localDb.botPresetsId
+    }
+
+    if (options && baselineDb) {
+        // Counters both devices bump: keep both counts, not this page's alone.
+        if (localRootWins('statics')) {
+            const counted = mergeCounters((baselineDb as any).statics, normalizeValue((localDb as any).statics), normalizeValue((latestDb as any).statics))
+            if (counted === CONFLICT) conflict('root:statics')
+            else (mergedDb as any).statics = counted
+        }
+        // An index into a root list names the element either side chose, in
+        // the list that won; on failure it is this page's index (today's rule).
+        for (const { key, list } of INDEX_ROOT_KEYS) {
+            const listFromRemote = list === 'botPresets' ? !toSave.botPreset : !localRootWins(list)
+            const indexFromLocal = key === 'botPresetsId' ? toSave.botPreset : localRootWins(key)
+            if (!indexFromLocal && listFromRemote) continue
+            const lList = normalizeValue((localDb as any)[list])
+            const rList = normalizeValue((latestDb as any)[list])
+            const lIdx = (localDb as any)[key]
+            const rIdx = (latestDb as any)[key]
+            if (lIdx === rIdx && jsonDeepEqual(lList, rList)) continue
+            const index = resolveIndexKey({
+                bList: (baselineDb as any)[list], bIdx: (baselineDb as any)[key],
+                lList, lIdx, rList, rIdx, listFromRemote,
+            })
+            if (index === CONFLICT) conflict(`root:${key}`)
+            ;(mergedDb as any)[key] = index === CONFLICT ? lIdx : index
+        }
     }
     if (toSave.modules) {
         mergedDb.modules = clone(localDb.modules)
@@ -119,6 +178,15 @@ export function mergeServerDbWithTrackedLocalChanges(
     const mergedCharacters = Array.isArray(mergedDb.characters) ? mergedDb.characters : []
     const skippedArchivedCharIds: string[] = []
     const overlaidFromLocal = new Set<any>()
+    const holds = new Map<string, string>()
+    let removedOpenChat = false
+    // Phase 2 keys everything by chaId: with a missing or repeated one, keep
+    // the whole-character overlay.
+    const baselineCharacters: any[] = Array.isArray(baselineDb?.characters) ? baselineDb!.characters : []
+    const fieldMerge = !!options && !!baselineDb
+        && !hasAmbiguousCharacterIds(localCharacters)
+        && !hasAmbiguousCharacterIds(mergedCharacters)
+        && !hasAmbiguousCharacterIds(baselineCharacters)
 
     for (const charId of trackedCharIds) {
         const localChar = localCharacters.find((char) => char?.chaId === charId)
@@ -126,6 +194,29 @@ export function mergeServerDbWithTrackedLocalChanges(
         if (localChar && archivedOnServer.has(charId)) {
             skippedArchivedCharIds.push(charId)
             continue
+        }
+        const baseChar = fieldMerge && mergedIndex >= 0 && localChar ? baselineCharacters.find((char) => char?.chaId === charId) : undefined
+        if (baseChar && options) {
+            const merged = mergeCharacter3({
+                base: baseChar,
+                local: localChar,
+                localView: options.stubView(localChar),
+                server: mergedCharacters[mergedIndex],
+                selected: charId === options.selectedChaId,
+                hold: options.holds.get(charId),
+                isChatBusy: (chatId) => options.isChatBusy(charId, chatId),
+                chatStubView: options.chatStubView,
+                normalize: normalizeValue,
+                toPlaceholder: (stub) => convertChats([stub])[0],
+            })
+            if (merged) {
+                for (const kind of merged.conflicts) conflict(kind)
+                if (merged.hold) holds.set(charId, merged.hold)
+                if (merged.removedOpenChat) removedOpenChat = true
+                overlaidFromLocal.add(merged.character)
+                mergedCharacters[mergedIndex] = merged.character
+                continue
+            }
         }
         if (localChar) {
             const clonedLocalChar = clone(localChar)
@@ -146,7 +237,7 @@ export function mergeServerDbWithTrackedLocalChanges(
         character.chats = convertChats(character.chats)
     }
     mergedDb.characters = mergedCharacters
-    return { mergedDb, skippedArchivedCharIds }
+    return { mergedDb, skippedArchivedCharIds, holds, removedOpenChat }
 }
 
 /**

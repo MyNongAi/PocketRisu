@@ -2026,12 +2026,17 @@
         "src/ts/sync/remoteDbPatch.ts",
         "src/ts/sync/remoteQueue.ts",
         "src/ts/storage/applyRebasedDb.ts",
+        "src/ts/storage/rebaseMerge.ts",
         "src/ts/storage/risuSave.ts",
         "src/ts/globalApi.svelte.ts",
         "server/node/server.cjs"
       ],
       "requiredMarkers": [
         { "file": "src/ts/sync/copyOnWritePatch.ts", "contains": "export function applyOpsCopyOnWrite(" },
+        { "file": "src/ts/sync/threeWayRules.ts", "contains": "export function mergeChatCatalog(args: ChatCatalogArgs): { chats: any[], conflicts: string[] } | null {" },
+        { "file": "src/ts/sync/threeWayRules.ts", "contains": "export function mergeCharacter3(args: CharacterMergeArgs): {" },
+        { "file": "src/ts/storage/rebaseMerge.ts", "contains": "export interface RebaseMergeOptions {" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "for (const [chaId, chatId] of mergedHolds) chatPageHolds.set(chaId, chatId)" },
         { "file": "src/ts/sync/remoteLanding.ts", "contains": "export function planLanding(args: PlanLandingArgs): WritePlan | LandingRefused {" },
         { "file": "src/ts/sync/remoteDbPatch.ts", "contains": "export async function landRemoteDbPatch<P extends PatchBaseline<P>>(args: {" },
         { "file": "src/ts/sync/remoteQueue.ts", "contains": "export async function catchUp<D extends ChainEvent>(args: {" },
@@ -2045,6 +2050,8 @@
       "regressionTests": [
         "src/ts/sync/copyOnWritePatch.test.ts",
         "src/ts/sync/threeWayRules.test.ts",
+        "src/ts/sync/threeWayRules.phase2.test.ts",
+        "src/ts/storage/rebaseMerge.test.ts",
         "src/ts/sync/remoteLanding.test.ts",
         "src/ts/sync/remoteDbPatch.test.ts",
         "src/ts/sync/remoteQueue.test.ts",

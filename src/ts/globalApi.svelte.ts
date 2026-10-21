@@ -1434,9 +1434,29 @@ export async function saveDb() {
             )
             const generating = generatingCharacters(db)
             toSave = withTrackedCharacters(toSave, [...generating.keys()])
-            const { mergedDb, skippedArchivedCharIds } = mergeServerDbWithTrackedLocalChanges(
+            // Field by field against the baseline (phase 2): what only the
+            // server changed stays, another device's new chats included.
+            const rebaseConflicts = new Set<string>()
+            const { mergedDb, skippedArchivedCharIds, holds: mergedHolds, removedOpenChat } = mergeServerDbWithTrackedLocalChanges(
                 latestDb, db, toSave, safeStructuredClone, convertStubsToPlaceholders, syncedArchivedIds, syncedBaselineDb, normalizeJSON,
+                {
+                    stubView: (character) => normalizeJSON(characterWithStubs(character)),
+                    chatStubView: (chat) => normalizeJSON(chatToStub(chat)),
+                    isChatBusy: (chaId, chatId) => chatInUseHere(chaId, chatId, false)
+                        || chatsShownBesideSelection(get(splitChatOpen)).some((shown) => shown.chaId === chaId && shown.chatId === chatId),
+                    selectedChaId,
+                    holds: chatPageHolds,
+                    onConflict: (kind) => rebaseConflicts.add(kind),
+                },
             )
+            if (rebaseConflicts.size > 0) {
+                addLog({
+                    level: 'warning',
+                    source: 'save',
+                    message: '[Save] Rebase kept this page\'s value where both devices changed the same thing',
+                    description: [...rebaseConflicts].join(','),
+                })
+            }
             // A character deactivated elsewhere while a generation streams into
             // it has no slot in the merged DB. The send pipeline addresses its
             // target by index into DBState.db, so end those generations first
@@ -1510,6 +1530,13 @@ export async function saveDb() {
             // A send streaming into the old database object addresses it by
             // captured indices; let it re-resolve them against the new one.
             notifyDatabaseRebased()
+            // The open chat was removed elsewhere, or the one shown now is not
+            // loaded here: open it as a switch does, loading its body.
+            const shown = getCurrentCharacter()
+            if (selectedChaId && shown?.chaId === selectedChaId && (removedOpenChat || shown.chats?.[shown.chatPage]?._placeholder)) {
+                if (removedOpenChat) notifyInfo(language.remoteOpenChatRemoved)
+                changeChatTo(shown.chatPage)
+            }
             if (skippedArchivedCharIds.length > 0) {
                 // Deactivated on another device while this one still held
                 // edits for them; the edits were dropped (see rebaseMerge).
@@ -1532,6 +1559,8 @@ export async function saveDb() {
                 await patcher.init(latestDb)
                 activeSavePatcher = patcher
                 baselineReseeded(true)
+                // Chats kept open here while the server's chatPage points elsewhere.
+                for (const [chaId, chatId] of mergedHolds) chatPageHolds.set(chaId, chatId)
             }
         }
         requeueTrackedChanges(toSave)
@@ -2211,22 +2240,26 @@ export async function saveDb() {
     const DB_PATCH_QUEUE_LIMIT = 500
     const DB_PATCH_QUEUE_MAX_AGE_MS = 10 * 60_000
 
-    const chatSavePending = (chaId: string, chatId: string) =>
-        changeTracker.chat.some((pair) => pair?.[0] === chaId && pair?.[1] === chatId)
+    // Function declarations: the rebase (above) asks these too.
+    function chatSavePending(chaId: string, chatId: string) {
+        return changeTracker.chat.some((pair) => pair?.[0] === chaId && pair?.[1] === chatId)
+    }
+    // A chat a reply is being written into, or with edits not saved yet;
+    // with `queued`, also one waiting in the save tracker.
+    function chatInUseHere(chaId: string, chatId: string, queued: boolean): boolean {
+        if (get(generationStates).has(chatGenKey(chatId)) || get(rerollPlaceholders).has(chatId)) return true
+        const chat = getDatabase().characters?.find((character) => character?.chaId === chaId)?.chats?.find((candidate) => candidate?.id === chatId)
+        if (!chat) return false
+        if (chat._placeholder) return isHydrating(chaId, chatId)
+        // A loaded body the cache does not know counts as busy.
+        return chat.isStreaming === true || hydratedChatState(chaId, chatId) !== 'clean' || (queued && chatSavePending(chaId, chatId))
+    }
 
     // What a landing may touch on this page (remoteLanding.ts asks).
-    const characterById = (chaId: string) => getDatabase().characters?.find((character) => character?.chaId === chaId)
     const landingPage: LandingPage = {
         selectedChaId: () => getDatabase().characters?.[get(selectedCharID)]?.chaId ?? null,
         splitPaneChats: () => chatsShownBesideSelection(get(splitChatOpen)),
-        isChatBusy: (chaId, chatId) => {
-            if (get(generationStates).has(chatGenKey(chatId)) || get(rerollPlaceholders).has(chatId)) return true
-            const chat = characterById(chaId)?.chats?.find((candidate) => candidate?.id === chatId)
-            if (!chat) return false
-            if (chat._placeholder) return isHydrating(chaId, chatId)
-            // A loaded body the cache does not know counts as busy.
-            return chat.isStreaming === true || hydratedChatState(chaId, chatId) !== 'clean' || chatSavePending(chaId, chatId)
-        },
+        isChatBusy: (chaId, chatId) => chatInUseHere(chaId, chatId, true),
         isCharacterGenerating: (chaId) => generatingCharacters(getDatabase()).has(chaId),
         suppressChatTracking: (chats) => suppressChatTracking([...chats]),
         deselect: () => deselectCharacter(),

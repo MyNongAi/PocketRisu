@@ -169,3 +169,83 @@ describe('mergeServerDbWithTrackedLocalChanges — deactivated-character list', 
         expect(server.nodeOnlyArchivedCharacters).toHaveLength(2)
     })
 })
+
+describe('mergeServerDbWithTrackedLocalChanges — field by field (phase 2)', () => {
+    const stubOf = (chat: any) => ({ id: chat.id, name: chat.name ?? '', _stub: true })
+    const body = (id: string, over: Record<string, any> = {}) => ({ id, name: id, message: [{ role: 'user', data: id }], ...over })
+    const toPlaceholders = (chats: any[]) => chats.map((chat) => chat?._stub ? { id: chat.id, name: chat.name, message: [], _placeholder: true } : chat)
+    const view = (character: any) => ({ ...character, chats: character.chats.map(stubOf) })
+    function run(server: any, local: any, baseline: any, tracked: string[], over: Partial<{ selectedChaId: string, holds: Map<string, string> }> = {}) {
+        const conflicts: string[] = []
+        const out = mergeServerDbWithTrackedLocalChanges(server, local, toSave({ character: tracked }) as any, clone, toPlaceholders, new Set(), baseline, (value) => value, {
+            stubView: view,
+            chatStubView: stubOf,
+            isChatBusy: () => false,
+            selectedChaId: over.selectedChaId ?? null,
+            holds: over.holds ?? new Map(),
+            onConflict: (kind) => conflicts.push(kind),
+        })
+        return { ...out, conflicts }
+    }
+
+    test("another device's new chat survives a rebase of a tracked character", () => {
+        const baseline = { characters: [{ chaId: 'a', desc: 'old', chatPage: 0, chats: [stubOf(body('c1'))] }] } as any
+        const server = { characters: [{ chaId: 'a', desc: 'old', chatPage: 0, chats: [stubOf(body('n')), stubOf(body('c1'))] }] } as any
+        const local = { characters: [{ chaId: 'a', desc: 'mine', chatPage: 0, chats: [body('c1')] }] } as any
+        const { mergedDb, conflicts, holds } = run(server, local, baseline, ['a'], { selectedChaId: 'a' })
+        const merged = mergedDb.characters[0]
+        expect(merged.desc).toBe('mine')
+        expect(merged.chats.map((chat: any) => chat.id)).toEqual(['n', 'c1'])
+        expect(merged.chats[0]._placeholder).toBe(true)
+        expect(merged.chats[1].message).toHaveLength(1)
+        // Still on c1, now at index 1; the server's chatPage names n, so c1 is held.
+        expect(merged.chatPage).toBe(1)
+        expect(holds.get('a')).toBe('c1')
+        expect(conflicts).toEqual([])
+        // Without the options it is today's whole overlay: n is dropped.
+        const today = mergeServerDbWithTrackedLocalChanges(server, local, toSave({ character: ['a'] }) as any, clone, toPlaceholders, new Set(), baseline)
+        expect(today.mergedDb.characters[0].chats.map((chat: any) => chat.id)).toEqual(['c1'])
+    })
+
+    test("a tracked character this page did not change takes the server's version", () => {
+        const baseline = { characters: [{ chaId: 'a', desc: 'old', chatPage: 0, chats: [] }] } as any
+        const server = { characters: [{ chaId: 'a', desc: 'theirs', chatPage: 0, chats: [] }] } as any
+        const local = { characters: [{ chaId: 'a', desc: 'old', chatPage: 0, chats: [] }] } as any
+        expect(run(server, local, baseline, ['a']).mergedDb.characters[0].desc).toBe('theirs')
+    })
+
+    test('a field both changed keeps the local value and is reported by kind', () => {
+        const baseline = { characters: [{ chaId: 'a', desc: 'old', chatPage: 0, chats: [] }] } as any
+        const server = { characters: [{ chaId: 'a', desc: 'theirs', chatPage: 0, chats: [] }] } as any
+        const local = { characters: [{ chaId: 'a', desc: 'mine', chatPage: 0, chats: [] }] } as any
+        const { mergedDb, conflicts } = run(server, local, baseline, ['a'])
+        expect(mergedDb.characters[0].desc).toBe('mine')
+        expect(conflicts).toEqual(['char-field:desc'])
+    })
+
+    test('statics keep both counts, and an index key follows the element it named', () => {
+        const personas = [{ id: 'p1' }, { id: 'p2' }]
+        const baseline = { statics: { messages: 10 }, personas, selectedPersona: 1, characters: [] } as any
+        // Here: two more messages and persona p2 still selected. There: three
+        // more messages and a persona added in front.
+        const local = { statics: { messages: 12 }, personas, selectedPersona: 1, characters: [] } as any
+        const server = { statics: { messages: 13 }, personas: [{ id: 'p0' }, ...personas], selectedPersona: 2, characters: [] } as any
+        const { mergedDb } = run(server, local, baseline, [])
+        expect((mergedDb as any).statics).toEqual({ messages: 15 })
+        expect((mergedDb as any).personas.map((p: any) => p.id)).toEqual(['p0', 'p1', 'p2'])
+        expect((mergedDb as any).selectedPersona).toBe(2)
+
+        // This page picked p1 while the server added p0: still p1.
+        const picked = run(server, { ...local, selectedPersona: 0 }, baseline, []).mergedDb as any
+        expect(picked.selectedPersona).toBe(1)
+    })
+
+    test('ambiguous character ids keep the whole overlay', () => {
+        const baseline = { characters: [{ chaId: 'a', chats: [] }, { chaId: 'a', chats: [] }] } as any
+        const server = { characters: [{ chaId: 'a', desc: 'theirs', chats: [stubOf(body('n'))] }] } as any
+        const local = { characters: [{ chaId: 'a', desc: 'mine', chats: [] }] } as any
+        const { mergedDb } = run(server, local, baseline, ['a'])
+        expect(mergedDb.characters[0].chats).toEqual([])
+        expect(mergedDb.characters[0].desc).toBe('mine')
+    })
+})
