@@ -5,6 +5,8 @@ vi.mock('./globalApi.svelte', () => ({ checkCharOrder: () => checkCharOrder() })
 // The settings list pulls these in; only the grouping item is under test.
 vi.mock('./characterAutoArchive', () => ({ scheduleAutoDeactivation: vi.fn() }))
 vi.mock('./storage/database.svelte', () => ({ getCurrentChat: vi.fn(), getDatabase: vi.fn(), loadTogglesFromChat: vi.fn() }))
+// The stores' module $effect can fire mid-test and read the (mocked, empty) database.
+vi.mock('./process/modules', async (importOriginal) => ({ ...(await importOriginal<typeof import('./process/modules')>()), moduleUpdate: () => {} }))
 vi.mock('./platform', () => ({ isNodeServer: true }))
 
 const { scheduleDeactivatedFolderRefresh } = await import('./deactivatedFolderRefresh')
