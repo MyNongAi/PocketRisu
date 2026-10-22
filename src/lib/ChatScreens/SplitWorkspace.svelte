@@ -128,7 +128,7 @@
         const startSize = shownSize()
         const touch = event.pointerType === 'touch'
         let resizing = !touch
-        let pressTimer = touch ? setTimeout(() => { stop(); void openDividerMenu() }, LONG_PRESS_MS) : null
+        let pressTimer = touch ? setTimeout(() => { stop(); swallowReleaseClick(); void openDividerMenu() }, LONG_PRESS_MS) : null
 
         const move = (moveEvent: PointerEvent) => {
             const delta = (column ? moveEvent.clientY : moveEvent.clientX) - start
@@ -151,6 +151,26 @@
         window.addEventListener('pointermove', move)
         window.addEventListener('pointerup', stop)
         window.addEventListener('pointercancel', stop)
+    }
+
+    // The menu a long press opens comes up under the finger still on the
+    // screen: lifting it clicked whatever item was there, and the menu closed
+    // at once (the user's report, 2026-10-22: holding the divider showed no
+    // menu on the phone). The click of that release is dropped.
+    function swallowReleaseClick() {
+        const swallow = (event: Event) => {
+            event.preventDefault()
+            event.stopImmediatePropagation()
+        }
+        const release = () => {
+            window.removeEventListener('pointerup', release, true)
+            window.removeEventListener('pointercancel', release, true)
+            // The click follows the pointerup in the same input event.
+            setTimeout(() => window.removeEventListener('click', swallow, true), 0)
+        }
+        window.addEventListener('click', swallow, true)
+        window.addEventListener('pointerup', release, true)
+        window.addEventListener('pointercancel', release, true)
     }
 
     // Even: the two chats get the same, unless the main chat would go under its minimum.
@@ -182,7 +202,7 @@
         event?.preventDefault()
         // The contextmenu of a press still held: the press neither opens the menu again nor resizes.
         stopSplitResize?.()
-        if (!docked || dividerMenuOpen) return
+        if (!enabled || dividerMenuOpen) return
         dividerMenuOpen = true
         try {
             await askDividerMenu()
@@ -195,25 +215,32 @@
     // the bot list goes, the current place marked; putting it away; the panes.
     // Even widths are a double-click on the divider (no menu item, as asked).
     async function askDividerMenu() {
-        const row = splitLayout.orientation === 'row'
+        const row = !column
         const hidden = splitLayout.railHidden
         const railChoices: [RailPlace, string][] = row
             ? [['start', language.splitRailStart], ['center', language.splitRailCenter], ['end', language.splitRailEnd]]
             : [['start', language.splitRailStart], ['end', language.splitRailEnd]]
-        const actions: [AlertAction, () => void][] = [
+        // One column or two (the user's request, 2026-10-22), as in the bot list's + menu.
+        const columns = ([[false, language.splitRailOneColumn], [true, language.splitRailTwoColumns]] as const).map(([split, label]): [AlertAction, () => void] => [
+            { label, row: 'columns', variant: sidebarCatalog.split === split ? 'primary' : 'outline' },
+            () => { setSidebarCatalogSplit(split); if (docked) setSplitLayout({ railHidden: false }) },
+        ])
+        const swap: [AlertAction, () => void] = [{ label: row ? language.splitSwapRow : language.splitSwapColumn, row: 'panes' }, () => swapPanes()]
+        // A narrow window (a phone or fold with the mobile layout off) has no
+        // bot list beside the panes and lays them out by its width: only the
+        // panes' own bot lists and the swap apply. The menu was for the
+        // docked split only, so holding the divider there showed nothing
+        // (the user's report, 2026-10-22).
+        const actions: [AlertAction, () => void][] = docked ? [
             ...railChoices.map(([place, label]): [AlertAction, () => void] => [
                 { label, row: 'rail', variant: !hidden && place === rail ? 'primary' : 'outline' },
                 () => setSplitLayout({ railAt: place, railHidden: false }),
             ]),
-            // One column or two (the user's request, 2026-10-22), as in the bot list's + menu.
-            ...([[false, language.splitRailOneColumn], [true, language.splitRailTwoColumns]] as const).map(([split, label]): [AlertAction, () => void] => [
-                { label, row: 'columns', variant: sidebarCatalog.split === split ? 'primary' : 'outline' },
-                () => { setSidebarCatalogSplit(split); setSplitLayout({ railHidden: false }) },
-            ]),
+            ...columns,
             [{ label: hidden ? language.splitRailShow : language.splitRailHide }, () => setSplitLayout({ railHidden: !hidden })],
-            [{ label: row ? language.splitSwapRow : language.splitSwapColumn, row: 'panes' }, () => swapPanes()],
+            swap,
             [{ label: row ? language.splitToColumn : language.splitToRow, row: 'panes' }, () => setSplitLayout({ orientation: row ? 'column' : 'row' })],
-        ]
+        ] : [...columns, swap]
         const selected = parseInt(await alertSelect([...actions.map(([action]) => action), language.cancel]))
         actions[selected]?.[1]()
     }
