@@ -1778,7 +1778,17 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 
     // The selected character/chat may have changed while awaiting the model.
     // Re-resolve by the captured identity before the first response write.
-    const responseTarget = resolveGenerationTarget(DBState.db.characters, generationTarget)
+    let responseTarget = resolveGenerationTarget(DBState.db.characters, generationTarget)
+    // A chat folded back to its stub meanwhile (chatStorage's eviction guard
+    // should keep it loaded) loads again first: a reply written into the
+    // placeholder is never saved.
+    if (responseTarget?.chat._placeholder) {
+        console.warn('[Send] the chat was unloaded while the model answered; loading it again')
+        const { ensureChatHydrated } = await import('../storage/chatStorage')
+        await ensureChatHydrated(responseTarget.character.chats, responseTarget.chatIndex, responseTarget.character.chaId).catch(() => null)
+        responseTarget = resolveGenerationTarget(DBState.db.characters, generationTarget)
+        if (responseTarget?.chat._placeholder) responseTarget = null
+    }
     if (!responseTarget) {
         if (realChatId) clearPendingSend(realChatId)
         return false

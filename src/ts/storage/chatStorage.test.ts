@@ -36,6 +36,8 @@ const {
     hydratedChatCacheSize,
     markHydratedChatDirty,
     markHydratedChatPersisted,
+    hydratedChatDirtySeq,
+    setHydratedChatEvictionGuard,
     evictHydratedChatCache,
     resetHydratedChatCache,
     replaceChatBody,
@@ -50,6 +52,7 @@ type ChatStub = any
 
 beforeEach(() => {
     resetHydratedChatCache()
+    setHydratedChatEvictionGuard(() => false)
     mocks.fetchChatContent.mockReset()
     mocks.fetchChatContent.mockImplementation(async (chaId: string, _index: number, chatId: string) => ({
         message: [{ role: 'char', data: `${chaId}/${chatId}` }],
@@ -288,6 +291,50 @@ describe('bounded hydrated-chat LRU', () => {
         markHydratedChatPersisted('dirty-char', 'dirty-chat')
         await evictHydratedChatCache(undefined, 0)
         expect(dirtyChats[0]._placeholder).toBe(true)
+    })
+
+    // The open chat kept its first-load stamp, so a few bot hovers folded it
+    // back, and a reply not yet streaming went into the placeholder.
+    test('keeps chats the page is using loaded however many others load', async () => {
+        const openChats = [stubToPlaceholder({ id: 'open-chat', name: 'open', _stub: true })]
+        await ensureChatHydrated(openChats, 0, 'open-char')
+        setHydratedChatEvictionGuard((chaId, chatId) => chaId === 'open-char' && chatId === 'open-chat')
+
+        for (let i = 0; i < 14; i++) {
+            const chats = [stubToPlaceholder({ id: `hover-${i}`, name: `${i}`, _stub: true })]
+            await ensureChatHydrated(chats, 0, `hover-char-${i}`)
+        }
+        expect(openChats[0]._placeholder).not.toBe(true)
+        expect(hydratedChatCacheSize()).toBe(12)
+
+        setHydratedChatEvictionGuard(() => false)
+        await evictHydratedChatCache(undefined, 0)
+        expect(openChats[0]._placeholder).toBe(true)
+    })
+
+    test('a guard that throws keeps the chat', async () => {
+        const chats = [stubToPlaceholder({ id: 'chat', name: 'c', _stub: true })]
+        await ensureChatHydrated(chats, 0, 'char')
+        setHydratedChatEvictionGuard(() => { throw new Error('guard') })
+        await evictHydratedChatCache(undefined, 0)
+        expect(chats[0]._placeholder).not.toBe(true)
+    })
+
+    test('an edit made while the save uploads keeps the chat dirty', async () => {
+        const chats = [stubToPlaceholder({ id: 'chat', name: 'c', _stub: true })]
+        await ensureChatHydrated(chats, 0, 'char')
+        markHydratedChatDirty('char', 'chat')
+        const sent = hydratedChatDirtySeq('char', 'chat')
+        markHydratedChatDirty('char', 'chat')
+        markHydratedChatPersisted('char', 'chat', sent)
+        expect(isHydratedChatDirty('char', 'chat')).toBe(true)
+        await evictHydratedChatCache(undefined, 0)
+        expect(chats[0]._placeholder).not.toBe(true)
+
+        markHydratedChatPersisted('char', 'chat', hydratedChatDirtySeq('char', 'chat'))
+        expect(isHydratedChatDirty('char', 'chat')).toBe(false)
+        await evictHydratedChatCache(undefined, 0)
+        expect(chats[0]._placeholder).toBe(true)
     })
 })
 

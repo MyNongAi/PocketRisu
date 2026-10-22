@@ -20,7 +20,7 @@ import { hasher } from "./parser/parser.svelte";
 import { characterURLImport, hubURL } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
 import { characterWithStubs, decodeRisuSave, encodeRisuSaveLegacy, findDangerousChatOps, normalizeJSON, PatchBaselineSnapshot, RisuSaveEncoder, RisuSavePatcher, type toSaveType } from "./storage/risuSave";
-import { isHydrating, saveChatToServer, ensureChatHydrated, chatToStub, classifyChat, convertStubsToPlaceholders, evictHydratedChatCache, markHydratedChatDirty, markHydratedChatPersisted, hasDirtyHydratedChats, hydratedChatState, isHydratedChatDirty, rehomeHydratedChats, replaceChatBody, suppressChatTracking } from "./storage/chatStorage";
+import { isHydrating, saveChatToServer, ensureChatHydrated, chatToStub, classifyChat, convertStubsToPlaceholders, evictHydratedChatCache, markHydratedChatDirty, markHydratedChatPersisted, hydratedChatDirtySeq, setHydratedChatEvictionGuard, hasDirtyHydratedChats, hydratedChatState, isHydratedChatDirty, rehomeHydratedChats, replaceChatBody, suppressChatTracking } from "./storage/chatStorage";
 import { startRealtimeSync, type ChatEvent, type DbPatchEvent, type RealtimeConnection } from "./sync/realtimeSync";
 import { landRemoteDbPatch, type LandingPage, type LandResult } from "./sync/remoteDbPatch";
 import { alreadyLanded, catchUp, queueNewestChat, type FeedCursor } from "./sync/remoteQueue";
@@ -1635,6 +1635,8 @@ export async function saveDb() {
                 // (chatCopySnapshot.ts), never the chat without it.
                 const placeholder = get(rerollPlaceholders).get(chatId)
                 const pendingGenerationId = placeholder ? get(generationStates).get(chatGenKey(chatId))?.generationId : undefined
+                // An edit landing while the body uploads keeps the chat dirty.
+                const sentSeq = hydratedChatDirtySeq(chaId, chatId)
                 await saveChatToServer(chaId, chatIndex, chatId, chatForSave(chat, pendingGenerationId, placeholder), intent, {
                     preserveServerCopy: (serverChat) => keepServerChatCopy(char, serverChat),
                     applyMerged: (merged, sent) => applyMergedChat(char, chatId, merged, sent),
@@ -1645,7 +1647,7 @@ export async function saveDb() {
                 const knownChatIds = knownChatIdsByCharacter.get(chaId) ?? new Set<string>()
                 knownChatIds.add(chatId)
                 knownChatIdsByCharacter.set(chaId, knownChatIds)
-                markHydratedChatPersisted(chaId, chatId)
+                markHydratedChatPersisted(chaId, chatId, sentSeq)
                 // Saved: a rebase of the catalog below must not queue it
                 // again. Re-saving an already saved chat kept two pages
                 // overwriting each other's copy on every save cycle, each
@@ -2296,6 +2298,15 @@ export async function saveDb() {
         notifyDatabaseRebased: () => notifyDatabaseRebased(),
         rehome: (characters) => rehomeHydratedChats(characters),
     }
+
+    // Never fold a chat this page is using back to a placeholder: the one on
+    // screen in either pane, or one a reply is on its way into.
+    setHydratedChatEvictionGuard((chaId, chatId) => {
+        if (chatInUseHere(chaId, chatId, true)) return true
+        const selected = getDatabase().characters?.[get(selectedCharID)]
+        if (selected?.chaId === chaId && selected.chats?.[selected.chatPage]?.id === chatId) return true
+        return chatsShownBesideSelection(get(splitChatOpen)).some((ids) => ids.chaId === chaId && ids.chatId === chatId)
+    })
 
     async function applyRemoteDbPatch(event: DbPatchEvent): Promise<LandResult> {
         if (!supportsPatchSync) return { status: 'invalid', reason: 'no-patch-sync' }

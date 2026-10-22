@@ -119,7 +119,28 @@ const hydratedChatCache = new Map<string, {
     chats: Chat[]
     access: number
     dirty: boolean
+    /** Counts edits, so a save clears only the edits it sent. */
+    dirtySeq: number
 }>()
+
+// Chats this page is using besides the one just loaded: on screen in either
+// split pane, or with a reply on its way (globalApi.svelte.ts sets it). The
+// LRU stamp moves only when a chat loads, so the open chat was folded back
+// after a few bot hovers, and a reply that had not started streaming went
+// into the placeholder and was never saved (2026-10-22 split review).
+let evictionGuard: (chaId: string, chatId: string) => boolean = () => false
+
+export function setHydratedChatEvictionGuard(guard: (chaId: string, chatId: string) => boolean) {
+    evictionGuard = guard
+}
+
+function inUse(chaId: string, chatId: string): boolean {
+    try {
+        return evictionGuard(chaId, chatId)
+    } catch {
+        return true
+    }
+}
 
 function recordHydratedChat(chaId: string, chatId: string, chats: Chat[]) {
     hydratedChatCache.set(chatKey(chaId, chatId), {
@@ -128,17 +149,27 @@ function recordHydratedChat(chaId: string, chatId: string, chats: Chat[]) {
         chats,
         access: ++hydrationAccessSerial,
         dirty: false,
+        dirtySeq: 0,
     })
 }
 
 export function markHydratedChatDirty(chaId: string, chatId: string) {
     const entry = hydratedChatCache.get(chatKey(chaId, chatId))
-    if (entry) entry.dirty = true
+    if (!entry) return
+    entry.dirty = true
+    entry.dirtySeq++
 }
 
-export function markHydratedChatPersisted(chaId: string, chatId: string) {
+/** Edits counted so far; pass it to markHydratedChatPersisted for what a save sent. */
+export function hydratedChatDirtySeq(chaId: string, chatId: string): number {
+    return hydratedChatCache.get(chatKey(chaId, chatId))?.dirtySeq ?? 0
+}
+
+/** With `sentSeq`, an edit made while the save was uploading keeps the chat dirty. */
+export function markHydratedChatPersisted(chaId: string, chatId: string, sentSeq?: number) {
     const entry = hydratedChatCache.get(chatKey(chaId, chatId))
-    if (entry) entry.dirty = false
+    if (!entry) return
+    if (sentSeq === undefined || entry.dirtySeq === sentSeq) entry.dirty = false
 }
 
 export function touchHydratedChat(chaId: string, chatId: string | undefined) {
@@ -160,7 +191,7 @@ export async function evictHydratedChatCache(
     const evictedKeys: string[] = []
     for (const [key, entry] of entries) {
         if (hydratedChatCache.size <= Math.max(0, maxEntries)) break
-        if (protectedKeys.has(key) || hydrationInFlight.has(key) || entry.dirty) continue
+        if (protectedKeys.has(key) || hydrationInFlight.has(key) || entry.dirty || inUse(entry.chaId, entry.chatId)) continue
         const index = entry.chats.findIndex((chat) => chat?.id === entry.chatId)
         const chat = index >= 0 ? entry.chats[index] : null
         if (!chat || chat._placeholder) {
