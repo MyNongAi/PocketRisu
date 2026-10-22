@@ -216,3 +216,15 @@ test('a chat no pane shows beside the selection reads the live toggles, pinned o
     for (const key of Object.keys(paneToggles)) delete paneToggles[key]
   }
 })
+
+test('reading a variable writes nothing to the chat', () => {
+  // A chat without scriptstate (a boot stub, a new chat), read from a
+  // $derived or an {#await} block: a write there throws state_unsafe_mutation.
+  const chat = new Proxy({ id: 'stub', message: [] } as any, {
+    set() { throw new Error('getChatVar wrote to the chat') },
+  })
+  const chara = { chats: [chat], chatPage: 0, defaultVariables: 'hp=1' } as any
+  expect(getChatVar('hp', { chara })).toBe('1')
+  expect(getChatVar('missing', { chara })).toBe('null')
+  expect('scriptstate' in chat).toBe(false)
+})

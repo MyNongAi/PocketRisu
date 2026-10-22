@@ -194,6 +194,7 @@
         "src/lib/UI/GUI/SideBarArrow.svelte"
       ],
       "requiredMarkers": [
+        { "file": "src/ts/parser/chatVar.svelte.ts", "contains": "const state = chat.scriptstate?.['$' + key]" },
         { "file": "src/lib/SideBars/PromptBind.svelte", "contains": "if (!view.active) return" },
         { "file": "src/ts/globalApi.svelte.ts", "contains": "followChatFold(chatFoldedState, chatFoldedStateMessageIndex, () => DBState?.db?.characters?.[selIdState?.selId])" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (besideLoadAsked === key || get(chatLoadFailures).has(key)) return" },

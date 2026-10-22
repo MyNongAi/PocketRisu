@@ -19,7 +19,7 @@
     {#if view.characterIndex > -1}
         {#key $ReloadGUIPointer}
             <div class="absolute top-0 left-0 w-full h-full" data-pr-bot-background>
-                {#await ParseMarkdown(risuChatParser((backgroundHTML || '') + '\n' + (moduleBackground || ''), {chara:currentChar}), currentChar, 'back') then md} 
+                {#await ParseMarkdown(risuChatParser((backgroundHTML || '') + '\n' + (moduleBackground || ''), {chara:currentChar, chat:view.chat}), currentChar, 'back') then md} 
                     {@html md}
                 {/await}
             </div>

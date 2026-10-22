@@ -26,8 +26,10 @@ export function getChatVar(key:string, scope?: ChatVarScope): string {
     if(!char || !chat){
         return 'null'
     }
-    chat.scriptstate ??= {}
-    const state = (chat.scriptstate['$' + key])
+    // A read writes nothing: {{getvar}} runs inside $derived and {#await}
+    // blocks (BackgroundDom, PopupEditor), where creating scriptstate threw
+    // state_unsafe_mutation for a chat without one (a stub, a new chat).
+    const state = chat.scriptstate?.['$' + key]
     if(state === undefined || state === null){
         const defaultVariables = parseKeyValue(char.defaultVariables).concat(parseKeyValue(DBState.db.templateDefaultVariables))
         const findResult = defaultVariables.find((f) => {
