@@ -102,6 +102,18 @@ describe('writing a trigger result back', () => {
         expect(char.chats[0]).toBe(result)
     })
 
+    it("writes nothing when the result is another chat's object", () => {
+        const a = chat('a')
+        const b = chat('b')
+        const charA = character('A', [a])
+        const charB = character('B', [b])
+        const owner = captureGenerationTarget(charA, a)
+        // A later Lua trigger ran on the chat selected meanwhile and returned it.
+        expect(writeBackToTarget([charA, charB], owner, b)).toBeNull()
+        expect(charA.chats[0]).toBe(a)
+        expect(charB.chats[0]).toBe(b)
+    })
+
     it('writes nothing when the chat is gone or unloaded', () => {
         const a = chat('a')
         const char = character('A', [a])

@@ -50,6 +50,8 @@ export function writeBackToTarget(
     next: Chat,
     normalize: (chat: Chat) => Chat = (chat) => chat,
 ): ResolvedGenerationTarget | null {
+    // Only that chat's own result: another chat's object here would take its place.
+    if (identity.chatId ? next?.id !== identity.chatId : next !== identity.chatRef && next?.id) return null
     const target = resolveGenerationTarget(characters, identity)
     if (!target || target.chat._placeholder) return null
     target.character.chats[target.chatIndex] = normalize(next)

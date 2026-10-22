@@ -688,7 +688,7 @@
                     triggerId: triggerId || undefined,
                 }) :
             btnEvent ?
-                await runLuaButtonTrigger(currentChar, btnEvent) :
+                await runLuaButtonTrigger(currentChar, btnEvent, ownerChat ?? undefined) :
             null
 
         if(triggerResult) {

@@ -318,3 +318,28 @@ describe("chat variables follow the script's chat", () => {
     expect(selected.scriptstate.$mood).toBe('w-sel')
   })
 })
+
+// A button's Lua runs on the button's chat, every trigger of it, even when
+// the selection has moved by the time a later trigger starts.
+test('every Lua trigger of a button runs on the chat it was given', async () => {
+  const database = await import('../storage/database.svelte')
+  const { runLuaButtonTrigger } = await import('./scriptings')
+  const owner = { id: 'owner', message: [] }
+  const elsewhere = { id: 'elsewhere', message: [] }
+  vi.mocked(database.getCurrentChat).mockReturnValue(elsewhere as never)
+  const lua = (code: string) => ({ comment: '', type: 'manual', conditions: [], effect: [{ type: 'triggerlua', code }] })
+  const char = {
+    type: 'character',
+    chaId: 'c',
+    chats: [owner],
+    chatPage: 0,
+    triggerscript: [lua('function onButtonClick(id, data) end'), lua('function onButtonClick(id, data) end')],
+  }
+  try {
+    const result = await runLuaButtonTrigger(char as never, 'press', owner as never)
+    expect(result?.chat).toBe(owner)
+  } finally {
+    vi.mocked(database.getCurrentChat).mockReset()
+    vi.mocked(database.getCurrentChat).mockImplementation(() => ({ message: [] }) as never)
+  }
+})

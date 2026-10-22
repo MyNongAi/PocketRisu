@@ -194,6 +194,7 @@
         "src/lib/UI/GUI/SideBarArrow.svelte"
       ],
       "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "await runLuaButtonTrigger(currentChar, btnEvent, ownerChat ?? undefined)" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "const column = $derived((enabled && splitLayout.orientation === 'column') || narrowStack)" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "onclick={() => { hideDividerTools(); splitChatOpen.set(false) }}" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "setTimeout(() => { stop(); swallowReleaseClick(); void openDividerMenu() }, LONG_PRESS_MS)" },

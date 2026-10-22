@@ -1499,7 +1499,10 @@ export async function runLuaEditTrigger<T extends string|OpenAIChat[]>(
     }
 }
 
-export async function runLuaButtonTrigger(char:character|simpleCharacterArgument, data:string):Promise<any>{
+// `chat`: the chat the button is in. Each Lua trigger used to take the chat
+// selected when it started, so a later one could run on (and return) the chat
+// the user had moved to meanwhile.
+export async function runLuaButtonTrigger(char:character|simpleCharacterArgument, data:string, chat?:Chat):Promise<any>{
     let runResult
     try {
         const triggers = char.triggerscript.map<triggerscript>((v) => ({
@@ -1511,6 +1514,7 @@ export async function runLuaButtonTrigger(char:character|simpleCharacterArgument
             if(trigger?.effect?.[0]?.type === 'triggerlua'){
                 runResult = await runScripted(trigger.effect[0].code, {
                     char: char,
+                    chat: chat,
                     lowLevelAccess: trigger.lowLevelAccess,
                     mode: 'onButtonClick',
                     data: data,
