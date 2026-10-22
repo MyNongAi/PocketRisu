@@ -247,3 +247,81 @@ describe('the two panes of the split', () => {
         expect(selectionPaneView.chat?.id).toBe('a1')
     })
 })
+
+// Touching a pane whose chat is still a stub: its kept toggle values were
+// taken at once and the previous chat's live values stored under it.
+describe('toggle values of a pane whose chat is still loading', () => {
+    let stub: any
+    let deferred: { resolve: (value: unknown) => void, reject: (error: unknown) => void, promise: Promise<unknown> }
+    const loaded = { id: 'b1', message: [] }
+
+    beforeEach(() => {
+        localStorage.clear()
+        db.characters[0].chatPage = 0
+        selectedCharID.set(0)
+        splitChatOpen.set(true)
+        for (const key of Object.keys(paneToggles)) delete paneToggles[key]
+        for (const key of Object.keys(toggles)) delete toggles[key]
+        stub = db.characters[1].chats[0]
+        db.characters[1].chats[0] = { id: 'b1', message: [], _placeholder: true } as any
+        paneState.active = 'main'
+        paneState.held = { main: { chaId: 'a', chatId: 'a1' }, side: { chaId: 'b', chatId: 'b1' } }
+        paneToggles.b1 = { toggle_sw: '1' }
+        toggles.toggle_sw = '0'
+        let resolve!: (value: unknown) => void
+        let reject!: (error: unknown) => void
+        const promise = new Promise<unknown>((res, rej) => { resolve = res; reject = rej })
+        deferred = { resolve, reject, promise }
+        vi.mocked(ensureChatHydrated).mockImplementationOnce(() => deferred.promise as any)
+    })
+
+    const done = () => { db.characters[1].chats[0] = stub }
+
+    it('touched and left before it loads, it keeps its own values', async () => {
+        try {
+            activatePane('side')
+            expect(JSON.parse(localStorage.getItem('pocketrisu:split-chat:toggles') ?? '{}').b1).toEqual({ toggle_sw: '1' })
+            activatePane('main')
+            expect(paneToggles.b1).toEqual({ toggle_sw: '1' })
+            expect(toggles.toggle_sw).toBe('0')
+            db.characters[1].chats[0] = loaded as any
+            deferred.resolve(loaded)
+            await Promise.resolve()
+            await Promise.resolve()
+            expect(toggles.toggle_sw).toBe('0')
+            vi.mocked(ensureChatHydrated).mockImplementationOnce(async () => loaded as any)
+            activatePane('side')
+            expect(toggles.toggle_sw).toBe('1')
+        } finally {
+            done()
+        }
+    })
+
+    it('loaded while selected, it gets its kept values once', async () => {
+        try {
+            activatePane('side')
+            db.characters[1].chats[0] = loaded as any
+            deferred.resolve(loaded)
+            await vi.waitFor(() => expect(toggles.toggle_sw).toBe('1'))
+            expect(paneToggles.b1).toBeUndefined()
+            activatePane('main')
+            expect(paneToggles.b1).toEqual({ toggle_sw: '1' })
+        } finally {
+            done()
+        }
+    })
+
+    it('a failed load keeps what the pane kept', async () => {
+        try {
+            activatePane('side')
+            deferred.reject(new Error('net'))
+            await Promise.resolve()
+            await Promise.resolve()
+            expect(paneToggles.b1).toEqual({ toggle_sw: '1' })
+            activatePane('main')
+            expect(paneToggles.b1).toEqual({ toggle_sw: '1' })
+        } finally {
+            done()
+        }
+    })
+})

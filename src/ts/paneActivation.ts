@@ -29,8 +29,13 @@ function showPanelTab(tab: PanelTab): void {
  * app-wide, as the user chose.
  */
 function handOver(from: PaneId): void {
-    const chatId = selectedChatIds()?.chatId
-    if (chatId && !getDatabase().disableToggleBinding) paneToggles[chatId] = snapshotToggleValues()
+    const db = getDatabase()
+    const ids = selectedChatIds()
+    const at = locateChat(db.characters ?? [], ids)
+    const chat = at ? db.characters[at.characterIndex]?.chats?.[at.chatIndex] : undefined
+    // Still loading: the live values are the previous chat's, and what its
+    // pane kept for it stays until it is applied.
+    if (ids && chat && !chat._placeholder && !db.disableToggleBinding) paneToggles[ids.chatId] = snapshotToggleValues()
     splitLayout.tab[from] = globalPanelTab()
     persistSplitLayout()
 }
@@ -70,6 +75,9 @@ function keepTogglesBeside(chat: Chat | undefined, live: Record<string, string>)
  * stamp, which would shuffle the list and the auto-deactivation clock each
  * time the user moves between panes.
  */
+// The latest selectChat: a load that ends after another selection applies nothing.
+let selectSerial = 0
+
 function selectChat(characterIndex: number, chatIndex: number): void {
     const db = getDatabase()
     const char = db.characters[characterIndex]
@@ -85,13 +93,18 @@ function selectChat(characterIndex: number, chatIndex: number): void {
     }
     const chat = char.chats?.[chatIndex]
     if (!chat) return
-    const kept = takeKeptToggles(chat.id)
+    const serial = ++selectSerial
     if (chat._placeholder) {
+        // What the pane kept is taken only as it is applied: a touch back
+        // before the chat loads, or a failed load, keeps it (2026-10-22 split
+        // review: the previous chat's values were stored under this one).
         void ensureChatHydrated(char.chats, chatIndex, char.chaId).then((hydrated) => {
-            if (hydrated && selectedChatIds()?.chatId === hydrated.id) applyChatToggles(hydrated, kept)
-        })
+            if (!hydrated || serial !== selectSerial || selectedChatIds()?.chatId !== hydrated.id) return
+            applyChatToggles(hydrated, takeKeptToggles(hydrated.id))
+            persistPanes()
+        }).catch(() => { /* the pane shows the load failure and its retry */ })
     } else {
-        applyChatToggles(chat, kept)
+        applyChatToggles(chat, takeKeptToggles(chat.id))
     }
 }
 
@@ -143,7 +156,7 @@ export function showInSidePane(ids: PaneChatIds): boolean {
                 if (paneState.active !== 'main' || paneState.held.side?.chatId !== hydrated.id) return
                 paneToggles[hydrated.id] = pinnedToggleValues(hydrated, live)
                 persistPanes()
-            })
+            }).catch(() => { /* the pane shows the load failure and its retry */ })
         }
     }
     persistPanes()

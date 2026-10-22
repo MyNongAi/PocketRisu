@@ -194,6 +194,7 @@
         "src/lib/UI/GUI/SideBarArrow.svelte"
       ],
       "requiredMarkers": [
+        { "file": "src/ts/paneActivation.ts", "contains": "if (!hydrated || serial !== selectSerial || selectedChatIds()?.chatId !== hydrated.id) return" },
         { "file": "src/ts/hotkey.ts", "contains": "let ele = queryInActivePane<HTMLElement>(query)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "const written = writeBackToTarget(DBState.db.characters, owner, triggerResult.chat, normalizeChat)" },
         { "file": "src/ts/process/scriptings.ts", "contains": "const getVar = arg.getVar ?? ((key: string) => getChatVar(key, varScope))" },
