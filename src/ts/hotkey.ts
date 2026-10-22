@@ -11,6 +11,7 @@ import { endAllGenerations } from "./process/generationState"
 import { RISU_SIDEBAR_DRAG_TYPE } from "./dragTypes"
 import { openSettings, SettingsRoute, SystemTab } from "./routing"
 import { deselectCharacter } from "./characters"
+import { queryInActivePane } from "./gui/paneQuery"
 
 export function initHotkey(){
     document.addEventListener('keydown', async (ev) => {
@@ -345,8 +346,9 @@ export function hotkeyMatches(hotkey: typeof DBState.db.hotkeys[number], ev: Key
     return true
 }
 
+// In the split, the pane holding the selection (gui/paneQuery.ts).
 function clickQuery(query:string){
-    let ele = document.querySelector(query) as HTMLElement
+    let ele = queryInActivePane<HTMLElement>(query)
     console.log(ele)
     if(ele){
         ele.click()
@@ -354,7 +356,7 @@ function clickQuery(query:string){
 }
 
 function focusQuery(query:string){
-    let ele = document.querySelector(query) as HTMLElement
+    let ele = queryInActivePane<HTMLElement>(query)
     if(ele){
         ele.focus()
     }
