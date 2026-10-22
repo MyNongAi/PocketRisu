@@ -4174,7 +4174,7 @@ export let chatFoldedStateMessageIndex = $state({
 
 $effect.root(() => {
     // chatFold.svelte.ts: these threw when the selection moved to another bot.
-    followChatFold(chatFoldedState, chatFoldedStateMessageIndex, () => DBState.db.characters[selIdState.selId])
+    followChatFold(chatFoldedState, chatFoldedStateMessageIndex, () => DBState?.db?.characters?.[selIdState?.selId])
 })
 
 export function foldChatToMessage(targetMessageIdOrIndex: string | number) {

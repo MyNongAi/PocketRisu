@@ -38,8 +38,9 @@ export function followChatFold(
         if (data && !foldedChatOf(data, selectedCharacter())) fold.data = null
     })
     $effect(() => {
+        // Without a fold, nothing else is read (the database may not be set yet).
         const data = fold.data
-        const chat = foldedChatOf(data, selectedCharacter())
+        const chat = data ? foldedChatOf(data, selectedCharacter()) : null
         if (!data || !chat) {
             index.index = -1
             return
