@@ -4,7 +4,7 @@
     import { ArrowLeft, ArrowLeftRightIcon, ArrowRight, BookmarkIcon, BotIcon, CopyIcon, PowerOff, GitBranch, HamburgerIcon, LanguagesIcon, MenuIcon, PencilIcon, RefreshCcwIcon, SplitIcon, TrashIcon, UserIcon, Volume2Icon, Scissors, EyeOff, PaletteIcon } from "@lucide/svelte"
     import { illustrateReply, illustratingReplies, removeIllustrations } from "src/ts/process/illustrationRun"
     import { captureModuleRuntimeContext } from "src/ts/process/modules"
-    import { aiLawApplies, changeChatTo, foldChatToMessage, getFileSrc, createChatCopyName } from "src/ts/globalApi.svelte"
+    import { aiLawApplies, changeChatTo, foldChatToMessage, getFileSrc, createChatCopyName, trackChatForSave } from "src/ts/globalApi.svelte"
     import { ColorSchemeTypeStore } from "src/ts/gui/colorscheme"
     import { MediaQuery } from "svelte/reactivity"
     import { getModelInfo } from "src/ts/model/modellist"
@@ -22,7 +22,8 @@
     import { alertConfirm, alertConfirmMulti, alertInput, alertRequestData, notifyError, notifyInfo, notifySuccess, type AlertAction } from "../../ts/alert"
     import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from "../../ts/parser/parser.svelte"
     import { getLLMCache, setLLMCache } from "../../ts/translator/translator"
-    import { getCurrentCharacter, getCurrentChat, setCurrentChat, type MessageGenerationInfo, type StreamingDisplayOptimizationMode } from "../../ts/storage/database.svelte"
+    import { getCurrentCharacter, getCurrentChat, normalizeChat, setCurrentChat, type MessageGenerationInfo, type StreamingDisplayOptimizationMode } from "../../ts/storage/database.svelte"
+    import { writeBackToTarget, type GenerationTargetIdentity } from "src/ts/process/generationTarget"
     import { HideIconStore, ReloadGUIPointer } from "../../ts/stores.svelte"
     import { getPaneView } from "src/ts/chatPanes.svelte"
     import AutoresizeArea from "../UI/GUI/TextAreaResizable.svelte"
@@ -648,6 +649,12 @@
         if(!currentChar){
             return
         }
+        // The chat this button belongs to: the trigger can await a model or a
+        // question, and the user can touch the other pane meanwhile.
+        const ownerChat = getCurrentChat()
+        const owner: GenerationTargetIdentity | null = ownerChat
+            ? { characterRef: currentChar, chatRef: ownerChat, characterId: currentChar.chaId, chatId: ownerChat.id }
+            : null
 
         const target = event.target as HTMLElement
         const origin = target.closest('[risu-trigger], [risu-btn]')
@@ -677,7 +684,13 @@
             null
 
         if(triggerResult) {
-            setCurrentChat(triggerResult.chat)
+            if (!owner) setCurrentChat(triggerResult.chat)
+            else {
+                const written = writeBackToTarget(DBState.db.characters, owner, triggerResult.chat, normalizeChat)
+                // Left meanwhile: no watcher follows it any more.
+                const selectedId = getCurrentChat()?.id
+                if (written && written.chat.id && written.chat.id !== selectedId) trackChatForSave(written.character.chaId, written.chat.id)
+            }
             ReloadChatPointer.update((v) => {
                 v[idx] = (v[idx] ?? 0) + 1
                 return v

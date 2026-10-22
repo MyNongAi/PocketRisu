@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Chat, character } from '../storage/database.svelte'
-import { captureGenerationTarget, resolveGenerationTarget } from './generationTarget'
+import { captureGenerationTarget, resolveGenerationTarget, writeBackToTarget } from './generationTarget'
 
 const chat = (id: string): Chat => ({ id, name: id, message: [] } as Chat)
 const character = (chaId: string, chats: Chat[]): character => ({ chaId, chats } as character)
@@ -64,5 +64,53 @@ describe('generation target identity', () => {
         expect(firstTarget.chatId).not.toBe(secondTarget.chatId)
         expect(first.id).toBe(firstTarget.chatId)
         expect(second.id).toBe(secondTarget.chatId)
+    })
+})
+
+// A button trigger's resulting chat (Chat.svelte handleButtonTriggerWithin).
+describe('writing a trigger result back', () => {
+    it("lands in the button's chat after the selection moved to another bot", () => {
+        const a = chat('a')
+        const b = chat('b')
+        const charA = character('A', [a])
+        const charB = character('B', [b])
+        const owner = captureGenerationTarget(charA, a)
+        const result = { ...a, message: [{ role: 'char', data: 'from-trigger' }] } as Chat
+        const written = writeBackToTarget([charA, charB], owner, result)
+        expect(written?.character).toBe(charA)
+        expect(charA.chats[0].message).toMatchObject([{ data: 'from-trigger' }])
+        expect(charB.chats[0]).toBe(b)
+    })
+
+    it('puts a live chat a Lua button returns back in its one slot', () => {
+        const a = chat('a')
+        const b = chat('b')
+        const char = character('A', [a, b])
+        const owner = captureGenerationTarget(char, a)
+        writeBackToTarget([char], owner, a)
+        expect(char.chats).toEqual([a, b])
+    })
+
+    it('follows a chat replaced by a same-id object meanwhile', () => {
+        const a = chat('a')
+        const char = character('A', [a])
+        const owner = captureGenerationTarget(char, a)
+        const replaced = chat('a')
+        char.chats[0] = replaced
+        const result = chat('a')
+        expect(writeBackToTarget([char], owner, result)?.chat).toBe(result)
+        expect(char.chats[0]).toBe(result)
+    })
+
+    it('writes nothing when the chat is gone or unloaded', () => {
+        const a = chat('a')
+        const char = character('A', [a])
+        const owner = captureGenerationTarget(char, a)
+        char.chats[0] = { ...chat('a'), _placeholder: true } as Chat
+        expect(writeBackToTarget([char], owner, chat('a'))).toBeNull()
+        expect(char.chats[0]._placeholder).toBe(true)
+        char.chats.splice(0, 1)
+        expect(writeBackToTarget([char], owner, chat('a'))).toBeNull()
+        expect(char.chats).toEqual([])
     })
 })

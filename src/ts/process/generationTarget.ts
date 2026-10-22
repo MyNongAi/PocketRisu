@@ -39,6 +39,24 @@ function uniqueIndex<T>(items: readonly T[], predicate: (item: T) => boolean): n
 }
 
 /**
+ * Puts `next` (a trigger's resulting chat) in place of the chat `identity`
+ * names, wherever that chat is now. Null, writing nothing, when it is gone or
+ * only a placeholder: a button's result was written into whichever chat was
+ * selected when its trigger ended (the split's other pane, 2026-10-22).
+ */
+export function writeBackToTarget(
+    characters: readonly character[],
+    identity: GenerationTargetIdentity,
+    next: Chat,
+    normalize: (chat: Chat) => Chat = (chat) => chat,
+): ResolvedGenerationTarget | null {
+    const target = resolveGenerationTarget(characters, identity)
+    if (!target || target.chat._placeholder) return null
+    target.character.chats[target.chatIndex] = normalize(next)
+    return { ...target, chat: target.character.chats[target.chatIndex] }
+}
+
+/**
  * Re-find an in-flight request target after UI selection, sorting, or object
  * replacement. Ambiguous/missing identities deliberately fail closed so a
  * response can never be written into whichever chat happens to be selected.

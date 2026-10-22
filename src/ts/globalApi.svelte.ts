@@ -504,6 +504,7 @@ let requestImmediateSaveImpl: ((options?: {
 let unsavedWorkImpl: () => boolean = () => false
 let flushSavesImpl: () => Promise<boolean> = async () => false
 let trackCharacterForSaveImpl: (chaId: string) => void = () => {}
+let trackChatForSaveImpl: (chaId: string, chatId: string) => void = () => {}
 let patchSyncBaseline: PatchBaselineSnapshot | null = null
 let activeSavePatcher: RisuSavePatcher | null = null
 
@@ -644,6 +645,11 @@ export function flushSaves(): Promise<boolean> {
 /** Include this character in the next save even if nothing tracked it. */
 export function trackCharacterForSave(chaId: string) {
     trackCharacterForSaveImpl(chaId)
+}
+
+/** Save a chat changed while no watcher follows it (neither on screen nor generating). */
+export function trackChatForSave(chaId: string, chatId: string) {
+    trackChatForSaveImpl(chaId, chatId)
 }
 
 /**
@@ -1239,6 +1245,12 @@ export async function saveDb() {
                 }
             })
         })
+        trackChatForSaveImpl = (chaId, chatId) => {
+            if (!chaId || !chatId || isHydrating(chaId, chatId)) return
+            if (!changeTracker.chat.some(([a, b]) => a === chaId && b === chatId)) changeTracker.chat.push([chaId, chatId])
+            markHydratedChatDirty(chaId, chatId)
+            saveTimeoutExecute()
+        }
         function watchChatBeside(chaId: string, chatId: string) {
             const findChat = () => (DBState?.db?.characters ?? []).find((c) => c?.chaId === chaId)?.chats?.find((c) => c?.id === chatId)
             const mark = () => {
