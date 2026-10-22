@@ -24,7 +24,7 @@
     import { getCharacterAssetCount } from "src/ts/gui/characterAssetCount";
     import { localOriginOf, resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
-    import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
+    import { isRealmAssetRecoveryAvailable, isRedListTitle, listTitleColor } from "src/ts/gui/titleColors";
     import VirtualGrid from "../UI/Virtual/VirtualGrid.svelte";
     import VirtualList from "../UI/Virtual/VirtualList.svelte";
     import { buildCharacterSimilarityCounts, buildExactCharacterDuplicateCounts } from "src/ts/gui/characterCatalogMetrics";
@@ -134,6 +134,24 @@
         }
     }
 
+    // PocketRisu: empties only the red-titled ones, whatever the search shows (the user's request, 2026-10-23).
+    async function emptyRedTrash(){
+        const targets = formatChars('', DBState.db, true).filter((char) => isRedListTitle(char.titleColor, char.missingAssetCount > 0))
+        if(targets.length === 0) return
+        if(!await alertConfirm(language.emptyRedTrashConfirm(targets.length))) return
+        for(const char of targets){
+            if(!char.archived){
+                await removeChar(char.chaId, char.name, 'permanentForce')
+                continue
+            }
+            try {
+                await deleteTrashedCharacter(char.chaId)
+            } catch (error) {
+                alertError(language.deleteCharacterFailed + (error instanceof Error ? error.message : String(error)))
+            }
+        }
+    }
+
     function matchesSearch(name:string, value:string){
         return matchesCatalogText(name, value)
     }
@@ -187,6 +205,7 @@
 
     const characters = $derived(formatChars(search, DBState.db))
     const trashedCharacters = $derived(formatChars(search, DBState.db, true))
+    const redTrashCount = $derived(formatChars('', DBState.db, true).filter((char) => isRedListTitle(char.titleColor, char.missingAssetCount > 0)).length)
     const similarityCounts = $derived(buildCharacterSimilarityCounts(
         DBState.db.characterOrder,
         new Set([
@@ -317,6 +336,11 @@
             </VirtualList>
         {:else if selected === 2}
             <span class="mb-2 shrink-0 text-sm text-textcolor2">{language.trashDesc}</span>
+            {#if redTrashCount > 0}
+                <div class="mb-2 flex shrink-0 justify-end">
+                    <Button styled="danger" size="sm" onclick={emptyRedTrash}>{language.emptyRedTrash(redTrashCount)}</Button>
+                </div>
+            {/if}
             <!-- Card: p-2 + the 56px thumbnail = 72px; +m-1 = 80. The title line carries
                  the actions and a stats line sits under it, so the card has no empty
                  bottom (it was a fixed 118px holding a title and one button row). -->

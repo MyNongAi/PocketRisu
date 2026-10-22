@@ -3184,6 +3184,8 @@ export const languageKorean = {
   folderModeName: "이름",
   folderImageHint: "이미지를 선택하면 아이콘 자리에 표시됩니다.",
   emptyTrashConfirm: (n: number) => `휴지통의 캐릭터 ${n}개를 영구 삭제할까요? 되돌릴 수 없습니다.`,
+  emptyRedTrash: (n: number) => `빨간 제목만 비우기 (${n})`,
+  emptyRedTrashConfirm: (n: number) => `휴지통에서 제목이 빨간 캐릭터 ${n}개를 영구 삭제할까요? 되돌릴 수 없습니다.`,
 
   showRequestStatus: "요청 상태 표시",
   requestStatus: {

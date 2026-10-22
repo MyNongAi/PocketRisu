@@ -2934,6 +2934,8 @@ export const languageEnglish = {
     folderModeName: "Name",
     folderImageHint: "The chosen image fills the folder slot.",
     emptyTrashConfirm: (n: number) => `Permanently delete the ${n} characters in the trash? This cannot be undone.`,
+    emptyRedTrash: (n: number) => `Empty red titles only (${n})`,
+    emptyRedTrashConfirm: (n: number) => `Permanently delete the ${n} red-titled characters in the trash? This cannot be undone.`,
     moveInsteadOfCopyOnCMPConvert: "Move Instead of Copy on CMP Convert",
 
     showRequestStatus: "Show request status",

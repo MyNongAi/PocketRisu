@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { chooseTitleColor, isRealmAssetRecoveryAvailable, listTitleColor, normalizeTitleColor, TITLE_COLOR_OPTIONS } from './titleColors'
+import { chooseTitleColor, isRealmAssetRecoveryAvailable, isRedListTitle, listTitleColor, normalizeTitleColor, TITLE_COLOR_OPTIONS } from './titleColors'
 
 const prompts = vi.hoisted(() => ({ select: vi.fn(), input: vi.fn() }))
 vi.mock('../alert', () => ({ alertSelect: prompts.select, alertInput: prompts.input }))
@@ -18,6 +18,14 @@ describe('title colors', () => {
         expect(listTitleColor('#4ade80', false)).toBe('#4ade80')
         expect(listTitleColor('', false)).toBeUndefined()
     })
+    it('calls a title red when it shows red: its own red colour, or missing assets without a colour', () => {
+        expect(isRedListTitle('#F87171')).toBe(true)
+        expect(isRedListTitle(undefined, true)).toBe(true)
+        expect(isRedListTitle('#4ade80', true)).toBe(false)
+        expect(isRedListTitle(undefined, false)).toBe(false)
+        expect(isRedListTitle('#fb923c')).toBe(false)
+    })
+
     it('uses valid colors for every non-default palette entry', () => {
         for (const option of TITLE_COLOR_OPTIONS.slice(1)) {
             expect(normalizeTitleColor(option.value)).toBe(option.value)

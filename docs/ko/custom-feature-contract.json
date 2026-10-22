@@ -1679,16 +1679,21 @@
     },
     {
       "id": "LEGACY-GRID-TRASH",
-      "title": "구버전 그리드 휴지통 탭에 비활성화 휴지통 봇 표시",
+      "title": "구버전 그리드 휴지통 탭에 비활성화 휴지통 봇 표시, 빨간 제목만 비우기",
       "criticality": "core-ux",
       "ownerFiles": [
-        "src/lib/Others/GridCatalog.svelte"
+        "src/lib/Others/GridCatalog.svelte",
+        "src/lib/CharacterManager/CharacterManager.svelte",
+        "src/ts/gui/titleColors.ts"
       ],
       "requiredMarkers": [
         { "file": "src/lib/Others/GridCatalog.svelte", "contains": "!!stub.trashedAt !== trash" },
-        { "file": "src/lib/Others/GridCatalog.svelte", "contains": "function restoreTrashEntry(" }
+        { "file": "src/lib/Others/GridCatalog.svelte", "contains": "function restoreTrashEntry(" },
+        { "file": "src/lib/Others/GridCatalog.svelte", "contains": "async function emptyRedTrash(" },
+        { "file": "src/lib/CharacterManager/CharacterManager.svelte", "contains": "async function emptyRedTrash(" },
+        { "file": "src/ts/gui/titleColors.ts", "contains": "export function isRedListTitle(" }
       ],
-      "regressionTests": []
+      "regressionTests": ["src/ts/gui/titleColors.test.ts"]
     },
     {
       "id": "BOT-LINK-FOLDER",

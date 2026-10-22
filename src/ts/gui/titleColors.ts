@@ -11,6 +11,12 @@ export function listTitleColor(value: unknown, missing = false): string | undefi
     return normalizeTitleColor(value) ?? (missing ? '#f87171' : undefined)
 }
 
+/** PocketRisu: the title shows red, by its own colour or by missing assets
+ *  without one (the trash's "red titles only" empty, 2026-10-23). */
+export function isRedListTitle(value: unknown, missing = false): boolean {
+    return listTitleColor(value, missing) === '#f87171'
+}
+
 /** True only for an explicit Realm id or a conclusive plugin lookup. */
 export function isRealmAssetRecoveryAvailable(value: unknown): boolean {
     if (!value || typeof value !== 'object') return false

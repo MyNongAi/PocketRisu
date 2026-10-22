@@ -47,7 +47,7 @@
     } from "src/ts/deactivatedCharacterFolders";
     import { language } from "src/lang";
     import { buildCharacterSimilarityCounts, buildExactCharacterDuplicateCounts } from "src/ts/gui/characterCatalogMetrics";
-    import { listTitleColor } from "src/ts/gui/titleColors";
+    import { isRedListTitle, listTitleColor } from "src/ts/gui/titleColors";
 
     interface Props {
         inline?: boolean;
@@ -79,6 +79,7 @@
     ));
     let allTrashEntries = $derived([...entries.values()].filter((e) => e.trashed));
     let trashEntries = $derived(allTrashEntries.filter((e) => matchesSearch(e.name, search)));
+    let redTrashEntries = $derived(allTrashEntries.filter((e) => isRedListTitle(e.titleColor, e.missingAssetCount > 0)));
     // A folder whose name matches the search shows all of its characters (the filter still applies).
     let folderMatchIds = $derived(folderNameMatchIds(DBState.db.characterOrder, search));
     let visible = $derived((e: ManagerEntry) => (matchesSearch(e.name, search) || folderMatchIds.has(e.chaId)) && matchesFilter(e, filter));
@@ -269,14 +270,26 @@
         await deleteArchivedRows(entry);
     }
 
-    async function emptyTrash() {
-        const targets = [...entries.values()].filter((e) => e.trashed);
-        if (targets.length === 0) return;
-        if (!await alertConfirm(language.emptyTrashConfirm(targets.length))) return;
+    async function deleteTrashEntries(targets: ManagerEntry[]) {
         for (const e of targets) {
             if (e.archived) await deleteArchivedRows(e);
             else await removeChar(e.chaId, e.name, 'permanentForce');
         }
+    }
+
+    async function emptyTrash() {
+        const targets = [...entries.values()].filter((e) => e.trashed);
+        if (targets.length === 0) return;
+        if (!await alertConfirm(language.emptyTrashConfirm(targets.length))) return;
+        await deleteTrashEntries(targets);
+    }
+
+    // PocketRisu: only the red-titled ones, whatever the search shows (the user's request, 2026-10-23).
+    async function emptyRedTrash() {
+        const targets = redTrashEntries;
+        if (targets.length === 0) return;
+        if (!await alertConfirm(language.emptyRedTrashConfirm(targets.length))) return;
+        await deleteTrashEntries(targets);
     }
 
     async function newFolder() {
@@ -706,6 +719,7 @@
                 <div class="grow"></div>
             {/if}
             <span class="shrink-0 text-xs text-textcolor2">{language.storageShowingOf(trashEntries.length, allTrashEntries.length)}</span>
+            <ShButton size="sm" variant="destructive" disabled={redTrashEntries.length === 0} onclick={emptyRedTrash}><TrashIcon />{language.emptyRedTrash(redTrashEntries.length)}</ShButton>
             <ShButton size="sm" variant="destructive" disabled={trashEntries.length === 0} onclick={emptyTrash}><TrashIcon />{language.emptyTrash}</ShButton>
         </div>
         <div class="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
