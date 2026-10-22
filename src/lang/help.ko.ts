@@ -316,7 +316,7 @@ export const helpKo = {
         "moduleRegexList": "모듈에 첨부된 정규식 스크립트 목록입니다. 자세한 형식은 글로벌 정규식 스크립트 도움말을 참고하세요.",
         "moduleAdditionalAssets": "모듈에 포함되는 추가 에셋입니다. 모듈의 배경 HTML, 정규식, 트리거, 프롬프트 등에서 참조할 수 있습니다.",
         "personaName": "현재 페르소나 이름. 채팅의 `{{user}}` 변수에 들어가며, 캐릭터가 사용자를 부르는 이름이 됩니다.",
-        "personaNote": "페르소나에 대한 메모/식별자. (Advanced → personaNote 토글 켜진 경우에만 노출). 같은 이름으로 여러 페르소나를 운용할 때 구분용.",
+        "personaNote": "페르소나에 대한 메모/식별자. 같은 이름으로 여러 페르소나를 운용할 때 구분용.",
         "personaDescription": "페르소나 정보. 캐릭터에게 보내는 system 프롬프트에 포함되어 모델이 사용자 캐릭터를 인식합니다. 예: \"<user>는 20세 여성이며 평소 차분한 말투를 씁니다.\"",
         "personaLargePortrait": "Waifulike 등 일부 테마에서 페르소나 아이콘 대신 큰 초상화를 표시합니다. 풀바디 일러스트를 보여주고 싶을 때.",
         "openRouterFallback": "선택한 모델이 일시적으로 사용 불가일 때 OpenRouter가 자동으로 호환 모델로 라우팅합니다. 안정성 향상. 끄면 그대로 에러를 반환합니다.",

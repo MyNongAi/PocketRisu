@@ -697,6 +697,7 @@ export function normalizeDatabase(data:Database){
     data.showDeprecatedTriggerV2 ??= false
     data.returnCSSError ??= true
     data.realmDirectOpen ??= false
+    data.blockedRealmCreators ??= []
     data.checkCorruption ??= false
     data.toggleConfirmRecommendedPreset ??= false
     data.useExperimentalGoogleTranslator ??= false
@@ -878,12 +879,7 @@ export function getDatabase(options:getDatabaseOptions = {}):Database{
 }
 
 export function getCurrentCharacter(options:getDatabaseOptions = {}):character{
-    const db = getDatabase(options)
-    if(!db.characters){
-        db.characters = []
-    }
-    const char = db.characters?.[get(selectedCharID)]
-    return char
+    return getCharacterByIndex(get(selectedCharID), options)
 }
 
 export function setCurrentCharacter(char:character){
@@ -894,12 +890,12 @@ export function setCurrentCharacter(char:character){
 }
 
 export function getCharacterByIndex(index:number,options:getDatabaseOptions = {}):character{
-    const db = getDatabase(options)
-    if(!db.characters){
-        db.characters = []
+    if(!DBState.db.characters){
+        DBState.db.characters = []
     }
-    const char = db.characters?.[index]
-    return char
+    const char = DBState.db.characters[index]
+    // snapshot only the requested character instead of the whole database
+    return options.snapshot ? $state.snapshot(char) as character : char
 }
 
 export function setCharacterByIndex(index:number,char:character){
@@ -1130,6 +1126,11 @@ export interface RisuPersona {
     nodeOnlyBlank?: boolean
 }
 
+export type BlockedRealmCreator = {
+    id: string
+    name: string
+}
+
 /** User-defined group for organizing list items (personas, presets, ...). */
 export interface PromptPresetFolder {
     id: string
@@ -1341,7 +1342,6 @@ export interface Database{
     personas:RisuPersona[]
     /** User-defined groups for organizing personas. */
     personaFolders?:PromptPresetFolder[]
-    personaNote:boolean
     assetWidth:number
     animationSpeed:number
     botSettingAtStart:false
@@ -1349,6 +1349,7 @@ export interface Database{
     hideRealm:boolean
     /** Set when the user closes the legacy-notice banners on the chat bot settings page. */
     hideBotSettingsLegacyNotice?:boolean
+    blockedRealmCreators:BlockedRealmCreator[]
     colorScheme:ColorScheme
     colorSchemeName:string
     promptTemplate?:PromptItem[]
@@ -2050,6 +2051,7 @@ export interface character{
         ext: string
     }>
     defaultVariables?:string
+    onboarding?:CharacterOnboarding
     lowLevelAccess?:boolean
     hideChatIcon?:boolean
     lastInteraction?:number
@@ -2092,10 +2094,9 @@ export function purgeUnsupportedGroupChats(db: Database): number {
                 }
                 continue
             }
-            const data = entry.data.filter((id) => validIds.has(id))
-            if (data.length > 0) {
-                nextOrder.push({ ...entry, data })
-            }
+            // Empty folders are kept, as in checkCharOrder: the character
+            // manager creates a folder first and fills it afterwards.
+            nextOrder.push({ ...entry, data: entry.data.filter((id) => validIds.has(id)) })
         }
         db.characterOrder = nextOrder
     }
@@ -2522,6 +2523,38 @@ export type { ChatStub } from './chatStub'
 export { isChatStub } from './chatStub'
 
 export type ChatOrStub = Chat | import('./chatStub').ChatStub
+
+export interface OnboardingOption{
+    label:string
+    value:string
+}
+
+export interface OnboardingQuestion{
+    id:string
+    title:string
+    description?:string
+    type:'single'|'multiple'|'text'
+    varName:string
+    required?:boolean
+    options:OnboardingOption[]
+    placeholder?:string
+}
+
+/**
+ * A creator-defined set of choices shown before a chat starts (upstream card
+ * spec, `extensions.risuai.onboarding`). PocketRisu keeps the data through
+ * card import/export but does not show it yet.
+ */
+export interface CharacterOnboarding{
+    enabled:boolean
+    mode:'form'|'html'
+    title?:string
+    description?:string
+    questions:OnboardingQuestion[]
+    html?:string
+    /** Also shows a floating button on the chat screen that opens the onboarding. */
+    floatingButton?:boolean
+}
 
 export interface ChatFolder{
     id:string

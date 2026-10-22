@@ -51,6 +51,9 @@ function createSessionLock(opts = {}) {
 
     let active = null; // { id, lastWriteAt } | null
     const boots = new Map(); // sessionId -> boot timestamp (insertion-ordered)
+    // When revokeAll last ran: a page booted before it is refused even where
+    // a stale one is otherwise saved, since its whole copy is the old data.
+    let revokedAt = null;
 
     function register(id) {
         if (typeof id !== 'string' || id === '') return;
@@ -81,6 +84,9 @@ function createSessionLock(opts = {}) {
             return { ok: true };
         }
         const boot = boots.get(id);
+        if (revokedAt !== null && !(boot > revokedAt)) {
+            return { ok: false, revoked: true };
+        }
         const fresh = boot !== undefined && boot > active.lastWriteAt;
         if (!fresh && !allowStale) {
             return { ok: false };
@@ -92,6 +98,15 @@ function createSessionLock(opts = {}) {
         // Automatic write: apply it, but the lock stays where the user
         // actually is.
         return { ok: true, passive: true };
+    }
+
+    // After all data was replaced (RisuAI account import): every page loaded
+    // before now holds the old data, so all of them become stale, the lock
+    // holder included. A page loaded afterwards takes the lock with its first
+    // user action.
+    function revokeAll() {
+        active = { id: null, lastWriteAt: now() };
+        revokedAt = active.lastWriteAt;
     }
 
     function activeId() {
@@ -118,7 +133,7 @@ function createSessionLock(opts = {}) {
         return 'stale';
     }
 
-    return { register, checkWrite, peek, activeId };
+    return { register, checkWrite, peek, revokeAll, activeId };
 }
 
 module.exports = { createSessionLock };

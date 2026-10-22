@@ -4,11 +4,12 @@
     import { ArrowLeft, ArrowLeftRightIcon, ArrowRight, BookmarkIcon, BotIcon, CopyIcon, PowerOff, GitBranch, HamburgerIcon, LanguagesIcon, MenuIcon, PencilIcon, RefreshCcwIcon, SplitIcon, TrashIcon, UserIcon, Volume2Icon, Scissors, EyeOff, PaletteIcon } from "@lucide/svelte"
     import { illustrateReply, illustratingReplies, removeIllustrations } from "src/ts/process/illustrationRun"
     import { captureModuleRuntimeContext } from "src/ts/process/modules"
-    import { aiLawApplies, changeChatTo, foldChatToMessage, getFileSrc, createChatCopyName, trackChatForSave } from "src/ts/globalApi.svelte"
+    import { aiLawApplies, changeChatTo, foldChatToMessage, getFileSrc, createChatCopyName } from "src/ts/globalApi.svelte"
     import { ColorSchemeTypeStore } from "src/ts/gui/colorscheme"
     import { MediaQuery } from "svelte/reactivity"
     import { getModelInfo } from "src/ts/model/modellist"
-    import { runLuaButtonTrigger } from 'src/ts/process/scriptings'
+    import { runLuaInteractionTrigger } from 'src/ts/process/scriptings'
+    import { getTriggerOrigin, setTriggerOriginChat } from 'src/ts/process/triggerOrigin'
     import { risuChatParser } from "src/ts/process/scripts"
     import { runTrigger } from 'src/ts/process/triggers'
     import { sayTTS } from "src/ts/process/tts"
@@ -22,8 +23,7 @@
     import { alertConfirm, alertConfirmMulti, alertInput, alertRequestData, notifyError, notifyInfo, notifySuccess, type AlertAction } from "../../ts/alert"
     import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from "../../ts/parser/parser.svelte"
     import { getLLMCache, setLLMCache } from "../../ts/translator/translator"
-    import { getCurrentCharacter, getCurrentChat, normalizeChat, setCurrentChat, type MessageGenerationInfo, type StreamingDisplayOptimizationMode } from "../../ts/storage/database.svelte"
-    import { writeBackToTarget, type GenerationTargetIdentity } from "src/ts/process/generationTarget"
+    import { getCurrentCharacter, getCurrentChat, type MessageGenerationInfo, type StreamingDisplayOptimizationMode } from "../../ts/storage/database.svelte"
     import { messageIndexAfterConfirm } from "src/ts/gui/afterConfirm"
     import { HideIconStore, ReloadGUIPointer } from "../../ts/stores.svelte"
     import { getPaneView } from "src/ts/chatPanes.svelte"
@@ -657,13 +657,6 @@
         if(!currentChar){
             return
         }
-        // The chat this button belongs to: the trigger can await a model or a
-        // question, and the user can touch the other pane meanwhile.
-        const ownerChat = getCurrentChat()
-        const owner: GenerationTargetIdentity | null = ownerChat
-            ? { characterRef: currentChar, chatRef: ownerChat, characterId: currentChar.chaId, chatId: ownerChat.id }
-            : null
-
         const target = event.target as HTMLElement
         const origin = target.closest('[risu-trigger], [risu-btn]')
         if (!origin) {
@@ -673,6 +666,7 @@
         const triggerName = origin.getAttribute('risu-trigger')
         const triggerId = origin.getAttribute('risu-id')
         const btnEvent = origin.getAttribute('risu-btn')
+        const triggerOrigin = getTriggerOrigin(currentChar)
 
         // A ✕ that runs a trigger closes the panel a ticked box shows, as a
         // re-created message did before bodies changed in place (closeTogglePanels.ts).
@@ -683,22 +677,15 @@
         const triggerResult =
             triggerName ?
                 await runTrigger(currentChar, 'manual', {
-                    chat: getCurrentChat(),
+                    chat: triggerOrigin.chat,
                     manualName: triggerName,
                     triggerId: triggerId || undefined,
                 }) :
             btnEvent ?
-                await runLuaButtonTrigger(currentChar, btnEvent, ownerChat ?? undefined) :
+                await runLuaInteractionTrigger('button', currentChar, btnEvent, undefined, triggerOrigin.chat) :
             null
 
-        if(triggerResult) {
-            if (!owner) setCurrentChat(triggerResult.chat)
-            else {
-                const written = writeBackToTarget(DBState.db.characters, owner, triggerResult.chat, normalizeChat)
-                // Left meanwhile: no watcher follows it any more.
-                const selectedId = getCurrentChat()?.id
-                if (written && written.chat.id && written.chat.id !== selectedId) trackChatForSave(written.character.chaId, written.chat.id)
-            }
+        if(triggerResult && setTriggerOriginChat(triggerOrigin, triggerResult.chat)) {
             ReloadChatPointer.update((v) => {
                 v[idx] = (v[idx] ?? 0) + 1
                 return v
@@ -709,6 +696,51 @@
             setTimeout(() => {
                 CurrentTriggerIdStore.set(null)
             }, 100) // Small delay to allow display mode to complete
+        }
+    }
+
+    async function handleFormTriggerWithin(event: SubmitEvent) {
+        const target = event.target as HTMLFormElement
+        const submitter = event.submitter as HTMLButtonElement | HTMLInputElement | null
+        const method = submitter?.hasAttribute('formmethod') ? submitter.formMethod : target.method
+        // Regardless of attribute presence, prevent undesirable site exits via form submission.
+        // method="dialog" only closes its <dialog> and never leaves the page, so it goes through.
+        if (method !== 'dialog') {
+            event.preventDefault()
+        }
+
+        const currentChar = getCurrentCharacter()
+        if (!currentChar) {
+            return
+        }
+
+        const formEvent = target.getAttribute('risu-form')
+
+        if (!formEvent) {
+            return
+        }
+
+        const data: Record<string, FormDataEntryValue | FormDataEntryValue[]> = Object.create(null)
+        for (const [key, value] of new FormData(target, event.submitter)) {
+            if (Object.hasOwn(data, key)) {
+                if (Array.isArray(data[key])) {
+                    data[key].push(value)
+                } else {
+                    data[key] = [data[key], value]
+                }
+            } else {
+                data[key] = value
+            }
+        }
+
+        const triggerOrigin = getTriggerOrigin(currentChar)
+        const triggerResult = await runLuaInteractionTrigger('form', currentChar, formEvent, { data }, triggerOrigin.chat)
+
+        if(triggerResult && setTriggerOriginChat(triggerOrigin, triggerResult.chat)) {
+            ReloadChatPointer.update((v) => {
+                v[idx] = (v[idx] ?? 0) + 1
+                return v
+            })
         }
     }
 
@@ -1598,7 +1630,8 @@
      data-chat-id={DBState.db.characters?.[view.characterIndex]?.chats?.[view.chatIndex]?.message?.[idx]?.chatId ?? ''}
      data-log-mark={logCaptureMark ?? undefined}
      style={isLastMemory ? `border-top:${DBState.db.memoryLimitThickness}px solid rgba(98, 114, 164, 0.7);` : ''}
-     onclickcapture={handleButtonTriggerWithin}>
+     onclickcapture={handleButtonTriggerWithin}
+     onsubmitcapture={handleFormTriggerWithin}>
     <div class="text-textcolor grow max-w-full sm:px-4 py-4">
         {#if !blankMessage}
             {@const nodeOnlyWidthClass =
@@ -1675,7 +1708,8 @@
      data-chat-id={DBState.db.characters?.[view.characterIndex]?.chats?.[view.chatIndex]?.message?.[idx]?.chatId ?? ''}
      data-log-mark={logCaptureMark ?? undefined}
      style={isLastMemory ? `border-top:${DBState.db.memoryLimitThickness}px solid rgba(98, 114, 164, 0.7);` : ''}
-     onclickcapture={handleButtonTriggerWithin}>
+     onclickcapture={handleButtonTriggerWithin}
+     onsubmitcapture={handleFormTriggerWithin}>
     <div class="text-textcolor mt-1 ml-4 mr-4 mb-1 p-2 bg-transparent grow border-t-gray-900 border-opacity/30 border-transparent flexium items-start max-w-full" >
         {#if DBState.db.theme === 'mobilechat' && !blankMessage}
             <div class={role === 'user' ? "flex items-start w-full justify-end" : "flex items-start"}>

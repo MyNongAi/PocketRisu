@@ -32,7 +32,7 @@
     import { botHasModules, findModulesOfBot } from "src/ts/gui/pairFinder";
     import { findCharacterIndexbyId } from "src/ts/util";
     import {
-        buildManagerEntries, folderNameMatchIds, matchesFilter, matchesSearch, sortEntries,
+        buildGridSections, buildManagerEntries, folderNameMatchIds, matchesFilter, matchesSearch, sortEntries,
         type ManagerEntry, type ManagerFilter, type ManagerSort,
     } from "src/ts/characterManager";
     import {
@@ -40,7 +40,8 @@
         moveTopLevelEntry, rebuildOrder, removeFolderKeepItems, setHidden, type OrderLayoutItem,
     } from "src/ts/characterOrder";
     import { syncFavoritesWithFolderMoves } from 'src/ts/favoritesFolder';
-    import type { folder } from "src/ts/storage/database.svelte";
+    import { folderDisplayMode, type folder } from "src/ts/storage/database.svelte";
+    import { FOLDER_COLOR_CLASS, folderIconComponent } from "./folderIcons";
     import {
         canMoveOrderEntry, deactivatedCharacterIds, isDeactivatedGroupingEnabled, isDeactivatedSystemFolder,
     } from "src/ts/deactivatedCharacterFolders";
@@ -84,21 +85,17 @@
     let visibleLiveCount = $derived(liveEntries.filter(visible).length);
     let baseFlatList = $derived(sortEntries(liveEntries.filter(visible), sort));
     let flatList = $derived(sortReversed ? [...baseFlatList].reverse() : baseFlatList);
-    // Grid tab: 'order' follows the rail sequence flattened (folders inlined); other sorts reuse flatList.
-    let gridList = $derived.by(() => {
-        if (sort !== 'order') return flatList;
-        const out: ManagerEntry[] = [];
-        const seen = new Set<string>();
-        const push = (id: string) => {
-            const e = entries.get(id);
-            if (e && !e.trashed && !seen.has(id) && visible(e)) { seen.add(id); out.push(e); }
-        };
-        for (const entry of DBState.db.characterOrder) {
-            if (isFolderEntry(entry)) entry.data.forEach(push);
-            else push(entry);
-        }
-        return sortReversed ? out.reverse() : out;
-    });
+    // Grid tab: 'order' shows the rail as folder sections (empty folders only
+    // while nothing narrows the view, so a new folder shows up right away);
+    // other sorts have no sections and reuse flatList. Reversed, the rail
+    // runs backwards: the folders, and the characters in each.
+    let gridOrder = $derived(sortReversed
+        ? DBState.db.characterOrder.map((entry) => isFolderEntry(entry) ? { ...entry, data: [...entry.data].reverse() } : entry).reverse()
+        : DBState.db.characterOrder);
+    let gridSections = $derived(sort === 'order'
+        ? buildGridSections(gridOrder, entries, visible, search.length === 0 && filter === 'all')
+        : []);
+    let gridList = $derived(sort === 'order' ? gridSections.flatMap((s) => s.items) : flatList);
     let dragDisabled = $derived(search.length > 0 || filter !== 'all' || selectMode || sortReversed);
     let activeChaId = $derived(DBState.db.characters[$selectedCharID]?.chaId);
     // Move targets: the idle-age folders are filled automatically. (A
@@ -127,6 +124,7 @@
     }
 
     const incremental = createIncrementalList({ pageSize: 60 });
+    let gridShown = $derived(incremental.slice(gridList).length);
 
     function duplicateCount(chaId: string): number | null {
         return duplicateCounts === null ? null : (duplicateCounts.get(chaId) ?? 0);
@@ -466,6 +464,65 @@
     <ShDropdownMenuItem variant="destructive" onSelect={() => deleteFolder(f)}><TrashIcon /><span>{language.remove}</span></ShDropdownMenuItem>
 {/snippet}
 
+{#snippet gridTiles(items: ManagerEntry[])}
+    <div class="grid {gridCompact ? 'gap-1.5 grid-cols-[repeat(auto-fill,minmax(3.5rem,1fr))]' : 'gap-3 grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))]'}">
+        {#each items as entry (entry.chaId)}
+            {@const entryDuplicateCount = duplicateCount(entry.chaId)}
+            {@const entrySimilarityCount = similarityCounts.get(entry.chaId) ?? 0}
+            <button
+                type="button"
+                class="flex flex-col items-center gap-1 rounded-md text-textcolor transition-colors {gridCompact ? 'p-0.5' : 'p-1.5'} {activeChaId === entry.chaId ? 'bg-selected' : 'risu-interactive-surface'}"
+                class:opacity-60={entry.archived}
+                title={`${entry.name} · 출처 ${entry.sourceBadge}${entry.missingAssetCount > 0 ? ` · 에셋 ${entry.missingAssetCount}개 누락` : ''}`}
+                onclick={() => open(entry)}
+                oncontextmenu={(event) => { void openGridContextMenu(entry, event) }}
+            >
+                <div class="relative" class:grayscale={entry.archived}>
+                    {#await getCharImage(entry.image, 'plain')}
+                        <div class="{gridCompact ? 'h-14 w-14' : 'h-16 w-16'} bg-skin-border" class:rounded-md={!DBState.db.roundIcons} class:rounded-full={DBState.db.roundIcons}></div>
+                    {:then src}
+                        <img src={src || '/none.webp'} alt="" class="{gridCompact ? 'h-14 w-14' : 'h-16 w-16'} object-cover object-top bg-skin-border" class:rounded-md={!DBState.db.roundIcons} class:rounded-full={DBState.db.roundIcons} />
+                    {/await}
+                    {#if entry.archived}
+                        <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/50" class:rounded-md={!DBState.db.roundIcons} class:rounded-full={DBState.db.roundIcons}>
+                            <ArchiveIcon size={18} class="text-white/90" />
+                        </div>
+                    {:else if entry.hidden}
+                        <div class="pointer-events-none absolute -right-1 -bottom-1 rounded-full bg-darkbg border border-darkborderc p-0.5 text-textcolor2">
+                            <EyeOffIcon size={11} />
+                        </div>
+                    {/if}
+                    <span
+                        class="pointer-events-none absolute -bottom-1 -left-1 z-10 rounded border border-darkborderc bg-darkbg/95 px-0.5 text-[8px] font-semibold leading-tight"
+                        class:text-sky-300={entry.sourceBadge === '로컬'}
+                        class:text-violet-300={entry.sourceBadge === '웹'}
+                        class:text-emerald-300={entry.sourceBadge === '모바일'}
+                        class:text-amber-300={entry.sourceBadge === '포켓'}
+                        class:border-dashed={!entry.sourceRecorded}
+                        title={entry.sourceRecorded ? `기록된 출처: ${entry.sourceBadge}` : '출처 기록 없음 · 기존 웹리스 기준'}
+                    >[{entry.sourceBadge}]</span>
+                    {#if entry.missingAssetCount > 0}
+                        {#if entry.realmRecoveryAvailable}
+                            <span class="pointer-events-none absolute -right-1 -top-1 z-10 rounded-full bg-darkbg px-1 text-sm font-black leading-none text-emerald-400 drop-shadow" title={`에셋 ${entry.missingAssetCount}개 누락 · Realm 복구 가능`}>!</span>
+                        {:else}
+                            <span class="pointer-events-none absolute -right-1 -top-1 z-10 text-sm leading-none drop-shadow" title={`에셋 ${entry.missingAssetCount}개 누락 · 확인된 Realm 복구 원본 없음`}>❗</span>
+                        {/if}
+                    {/if}
+                </div>
+                {#if !gridCompact}
+                    <span class="w-full text-center text-xs leading-tight line-clamp-2 break-all" style:color={listTitleColor(entry.titleColor, entry.missingAssetCount > 0)}>{entry.name}</span>
+                    <span class="w-full truncate text-center text-[9px] leading-tight text-textcolor2">
+                        {language.characterAssetCountLabel(entry.assetCount)}
+                        {#if entry.missingAssetCount > 0}<span class="text-red-400"> · 누락 {entry.missingAssetCount.toLocaleString()}개</span>{/if}
+                        {#if entrySimilarityCount > 0}<span title="이름 유사도 90% 이상 후보"> · {language.characterSimilarityCountLabel(entrySimilarityCount)}</span>{/if}
+                        {#if entryDuplicateCount !== null && entryDuplicateCount > 0} · {language.characterDuplicateCountLabel(entryDuplicateCount)}{/if}
+                    </span>
+                {/if}
+            </button>
+        {/each}
+    </div>
+{/snippet}
+
 {#snippet body()}
     <div class="flex items-center gap-2 px-4 pt-4 pb-2 text-textcolor">
         <h2 class="m-0 text-base font-semibold grow truncate">{language.characterManager}</h2>
@@ -550,65 +607,41 @@
 
         {#if tab === 2}
         <div class="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
-            {#if gridList.length === 0}
+            {#if gridList.length === 0 && gridSections.length === 0}
                 <div class="py-8 text-center text-sm text-textcolor2">{language.noCharactersFound}</div>
             {:else}
-                <div class="grid {gridCompact ? 'gap-1.5 grid-cols-[repeat(auto-fill,minmax(3.5rem,1fr))]' : 'gap-3 grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))]'}">
-                    {#each incremental.slice(gridList) as entry (entry.chaId)}
-                        {@const entryDuplicateCount = duplicateCount(entry.chaId)}
-                        {@const entrySimilarityCount = similarityCounts.get(entry.chaId) ?? 0}
-                        <button
-                            type="button"
-                            class="flex flex-col items-center gap-1 rounded-md text-textcolor transition-colors {gridCompact ? 'p-0.5' : 'p-1.5'} {activeChaId === entry.chaId ? 'bg-selected' : 'risu-interactive-surface'}"
-                            class:opacity-60={entry.archived}
-                            title={`${entry.name} · 출처 ${entry.sourceBadge}${entry.missingAssetCount > 0 ? ` · 에셋 ${entry.missingAssetCount}개 누락` : ''}`}
-                            onclick={() => open(entry)}
-                            oncontextmenu={(event) => { void openGridContextMenu(entry, event) }}
-                        >
-                            <div class="relative" class:grayscale={entry.archived}>
-                                {#await getCharImage(entry.image, 'plain')}
-                                    <div class="{gridCompact ? 'h-14 w-14' : 'h-16 w-16'} bg-skin-border" class:rounded-md={!DBState.db.roundIcons} class:rounded-full={DBState.db.roundIcons}></div>
-                                {:then src}
-                                    <img src={src || '/none.webp'} alt="" class="{gridCompact ? 'h-14 w-14' : 'h-16 w-16'} object-cover object-top bg-skin-border" class:rounded-md={!DBState.db.roundIcons} class:rounded-full={DBState.db.roundIcons} />
-                                {/await}
-                                {#if entry.archived}
-                                    <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/50" class:rounded-md={!DBState.db.roundIcons} class:rounded-full={DBState.db.roundIcons}>
-                                        <ArchiveIcon size={18} class="text-white/90" />
-                                    </div>
-                                {:else if entry.hidden}
-                                    <div class="pointer-events-none absolute -right-1 -bottom-1 rounded-full bg-darkbg border border-darkborderc p-0.5 text-textcolor2">
-                                        <EyeOffIcon size={11} />
-                                    </div>
+                {#if sort === 'order'}
+                    <div class="flex flex-col gap-3">
+                        {#each gridSections as section (section.key)}
+                            {#if section.items.length === 0 ? section.start <= gridShown : section.start < gridShown}
+                                {@const shown = section.items.slice(0, gridShown - section.start)}
+                                {#if section.folder}
+                                    {@const f = section.folder}
+                                    {@const FolderGlyph = (folderDisplayMode(f) === 'icon' ? folderIconComponent(f.nodeOnlyIcon) : undefined) ?? FolderIcon}
+                                    <section class="rounded-md border border-darkborderc">
+                                        <div class="flex items-center gap-2 px-2 py-2 text-textcolor">
+                                            <span class="shrink-0 h-4 w-4 rounded-sm border border-darkborderc {FOLDER_COLOR_CLASS[f.color] ?? 'bg-bgcolor'}"></span>
+                                            <FolderGlyph size={16} class="shrink-0 text-textcolor2"/>
+                                            <span class="truncate grow text-sm font-medium">{f.name}</span>
+                                            <span class="text-xs text-textcolor2">{section.items.length}{section.items.length !== f.data.length ? ` / ${f.data.length}` : ''}</span>
+                                        </div>
+                                        <div class="px-2 pb-2">
+                                            {#if section.items.length === 0}
+                                                <div class="text-xs text-textcolor2 text-center py-1">{language.none}</div>
+                                            {:else}
+                                                {@render gridTiles(shown)}
+                                            {/if}
+                                        </div>
+                                    </section>
+                                {:else}
+                                    {@render gridTiles(shown)}
                                 {/if}
-                                <span
-                                    class="pointer-events-none absolute -bottom-1 -left-1 z-10 rounded border border-darkborderc bg-darkbg/95 px-0.5 text-[8px] font-semibold leading-tight"
-                                    class:text-sky-300={entry.sourceBadge === '로컬'}
-                                    class:text-violet-300={entry.sourceBadge === '웹'}
-                                    class:text-emerald-300={entry.sourceBadge === '모바일'}
-                                    class:text-amber-300={entry.sourceBadge === '포켓'}
-                                    class:border-dashed={!entry.sourceRecorded}
-                                    title={entry.sourceRecorded ? `기록된 출처: ${entry.sourceBadge}` : '출처 기록 없음 · 기존 웹리스 기준'}
-                                >[{entry.sourceBadge}]</span>
-                                {#if entry.missingAssetCount > 0}
-                                    {#if entry.realmRecoveryAvailable}
-                                        <span class="pointer-events-none absolute -right-1 -top-1 z-10 rounded-full bg-darkbg px-1 text-sm font-black leading-none text-emerald-400 drop-shadow" title={`에셋 ${entry.missingAssetCount}개 누락 · Realm 복구 가능`}>!</span>
-                                    {:else}
-                                        <span class="pointer-events-none absolute -right-1 -top-1 z-10 text-sm leading-none drop-shadow" title={`에셋 ${entry.missingAssetCount}개 누락 · 확인된 Realm 복구 원본 없음`}>❗</span>
-                                    {/if}
-                                {/if}
-                            </div>
-                            {#if !gridCompact}
-                                <span class="w-full text-center text-xs leading-tight line-clamp-2 break-all" style:color={listTitleColor(entry.titleColor, entry.missingAssetCount > 0)}>{entry.name}</span>
-                                <span class="w-full truncate text-center text-[9px] leading-tight text-textcolor2">
-                                    {language.characterAssetCountLabel(entry.assetCount)}
-                                    {#if entry.missingAssetCount > 0}<span class="text-red-400"> · 누락 {entry.missingAssetCount.toLocaleString()}개</span>{/if}
-                                    {#if entrySimilarityCount > 0}<span title="이름 유사도 90% 이상 후보"> · {language.characterSimilarityCountLabel(entrySimilarityCount)}</span>{/if}
-                                    {#if entryDuplicateCount !== null && entryDuplicateCount > 0} · {language.characterDuplicateCountLabel(entryDuplicateCount)}{/if}
-                                </span>
                             {/if}
-                        </button>
-                    {/each}
-                </div>
+                        {/each}
+                    </div>
+                {:else}
+                    {@render gridTiles(incremental.slice(gridList))}
+                {/if}
                 {#if incremental.hasMore(gridList.length)}
                     <div class="h-1" use:incremental.observeSentinel={gridList.length}></div>
                 {/if}

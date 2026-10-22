@@ -74,8 +74,8 @@ export async function stableDiff(currentChar:character,prompt:string){
     return await generateAIImage(genPrompt, currentChar, neg, '')
 }
 
-/** PocketRisu (illustration.ts): a size, and characters drawn apart (NovelAI V4+). */
-export interface AIImageOptions {
+/** PocketRisu (illustration.ts): a size, and characters drawn apart (NovelAI V4+); Lua sets the orientation. */
+export interface AIImageOptions extends ImageGenerationOptions {
     width?: number
     height?: number
     characters?: { positive: string, negative: string }[]
@@ -161,8 +161,9 @@ export async function generateAIImage(genPrompt:string, currentChar:character, n
         }
         const naiCharCaptions = naiV4Up ? naiCharacters.map((c) => ({ char_caption: naiEmphasis(c.positive), centers: [{ x: 0.5, y: 0.5 }] })) : []
         const naiCharNegatives = naiV4Up ? naiCharacters.map((c) => ({ char_caption: naiEmphasis(c.negative ?? ''), centers: [{ x: 0.5, y: 0.5 }] })) : []
-        const naiWidth = options.width ?? db.NAIImgConfig.width
-        const naiHeight = options.height ?? db.NAIImgConfig.height
+        const { width: naiWidth, height: naiHeight } = applyImageOrientation(
+            options.width ?? db.NAIImgConfig.width, options.height ?? db.NAIImgConfig.height, options.orientation,
+        )
         const naiOwn = options.nai ?? {}
 
         let reqlist:any = {}
@@ -998,4 +999,34 @@ export async function generateAIImage(genPrompt:string, currentChar:character, n
         }
     }
     return ''
+}
+
+export type ImageOrientation = 'landscape' | 'portrait'
+
+export interface ImageGenerationOptions {
+    orientation?: ImageOrientation
+}
+
+/**
+ * Places the longer edge on the width for landscape and on the height for portrait.
+ */
+export function applyImageOrientation(width: number, height: number, orientation?: ImageOrientation) {
+    if (!orientation) {
+        return { height, width }
+    }
+
+    const longerEdge = Math.max(height, width)
+    const shorterEdge = Math.min(height, width)
+
+    if (orientation === 'landscape') {
+        return {
+            height: shorterEdge,
+            width: longerEdge,
+        }
+    }
+
+    return {
+        height: longerEdge,
+        width: shorterEdge,
+    }
 }

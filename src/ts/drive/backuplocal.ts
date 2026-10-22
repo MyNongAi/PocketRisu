@@ -345,8 +345,12 @@ export function LoadLocalBackup(){
                 alertError(`Warning: ${result.externalAssets.missingManifest} external asset mapping(s) are missing.${unavailable}${providers} External images may remain unavailable after reload.`)
                 await waitAlert()
             }
-            if (result.coldStorageFailed && result.coldStorageFailed > 0) {
-                alertError(`Warning: ${result.coldStorageFailed} character(s) could not be restored from cold storage. The imported save may be incomplete. The app will now reload.`)
+            const coldStorageWarnings = [
+                result.coldStorageFailed ? `${result.coldStorageFailed} character(s)` : '',
+                result.pluginStorageColdFailed ? `${result.pluginStorageColdFailed} plugin storage item(s)` : '',
+            ].filter(Boolean)
+            if (coldStorageWarnings.length > 0) {
+                alertError(`Warning: ${coldStorageWarnings.join(' and ')} could not be restored from cold storage. The imported save may be incomplete. The app will now reload.`)
                 await waitAlert()
             } else {
                 alertStore.set({

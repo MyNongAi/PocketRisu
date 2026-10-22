@@ -44,6 +44,12 @@ export interface RebaseMergeOptions {
  * list is merged by id, so another device's new chats are not dropped from
  * the catalog. `statics` keeps both devices' counts and index keys follow
  * the element they named. Whatever both sides changed takes the local value.
+ *
+ * `pendingChats` are chats still waiting in the tracker, not part of the save
+ * that hit the conflict (a trigger result written to a chat that is not on
+ * screen). Only their own body comes from local; the rest of a character
+ * that is not otherwise tracked keeps the server's copy, which may carry
+ * another device's edits.
  */
 export function mergeServerDbWithTrackedLocalChanges(
     latestDb: Database,
@@ -54,6 +60,7 @@ export function mergeServerDbWithTrackedLocalChanges(
     baselineArchivedIds: ReadonlySet<string> = new Set(),
     baselineDb: Database | null = null,
     normalizeValue: (value: any) => any = (value) => value,
+    pendingChats: readonly (readonly [string, string])[] = [],
     options?: RebaseMergeOptions,
 ): {
     mergedDb: Database
@@ -235,6 +242,33 @@ export function mergeServerDbWithTrackedLocalChanges(
     for (const character of mergedCharacters) {
         if (!character || overlaidFromLocal.has(character) || !Array.isArray(character.chats)) continue
         character.chats = convertChats(character.chats)
+    }
+    for (const [charId, chatId] of pendingChats) {
+        // A tracked character was overlaid whole, its chats included.
+        if (!charId || !chatId || trackedCharIds.has(charId)) continue
+        const localChar = localCharacters.find((char) => char?.chaId === charId)
+        const localChat = localChar?.chats?.find((chat: any) => chat?.id === chatId)
+        if (!localChat || localChat._placeholder) continue
+        if (archivedOnServer.has(charId)) {
+            if (!skippedArchivedCharIds.includes(charId)) skippedArchivedCharIds.push(charId)
+            continue
+        }
+        const mergedChar = mergedCharacters.find((char) => char?.chaId === charId)
+        if (!mergedChar) {
+            // Not on the server (yet): keep the whole local character, as
+            // for a tracked one.
+            const clonedLocalChar = clone(localChar)
+            overlaidFromLocal.add(clonedLocalChar)
+            mergedCharacters.push(clonedLocalChar)
+            continue
+        }
+        if (overlaidFromLocal.has(mergedChar)) continue
+        if (!Array.isArray(mergedChar.chats)) mergedChar.chats = []
+        const index = mergedChar.chats.findIndex((chat: any) => chat?.id === chatId)
+        // Missing on the server (new here, or deleted on another device):
+        // appended rather than dropped, so the local body is not lost.
+        if (index >= 0) mergedChar.chats[index] = clone(localChat)
+        else mergedChar.chats.push(clone(localChat))
     }
     mergedDb.characters = mergedCharacters
     return { mergedDb, skippedArchivedCharIds, holds, removedOpenChat }

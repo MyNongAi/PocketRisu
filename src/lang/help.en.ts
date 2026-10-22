@@ -660,7 +660,7 @@ export const helpEn = {
         personaName:
             "Name of the current persona. This fills the `{{user}}` variable in chats and is the name the character uses to address you.",
         personaNote:
-            "A memo / identifier for this persona (only shown when Advanced → personaNote is enabled). Useful for distinguishing multiple personas that share the same display name.",
+            "A memo / identifier for this persona. Useful for distinguishing multiple personas that share the same display name.",
         personaDescription:
             "Persona information. Embedded into the system prompt sent to the model so it recognizes who the user is. Example: \"<user> is a 20 year old woman who normally speaks calmly.\"",
         personaLargePortrait:

@@ -26,13 +26,18 @@ export function getChatVar(key:string, scope?: ChatVarScope): string {
     if(!char || !chat){
         return 'null'
     }
+    return getChatVarOf(chat, key, char.defaultVariables)
+}
+
+/** getChatVar for a given chat instead of the open one. */
+export function getChatVarOf(chat:Chat, key:string, defaultVariables?:string): string {
     // A read writes nothing: {{getvar}} runs inside $derived and {#await}
     // blocks (BackgroundDom, PopupEditor), where creating scriptstate threw
     // state_unsafe_mutation for a chat without one (a stub, a new chat).
     const state = chat.scriptstate?.['$' + key]
     if(state === undefined || state === null){
-        const defaultVariables = parseKeyValue(char.defaultVariables).concat(parseKeyValue(DBState.db.templateDefaultVariables))
-        const findResult = defaultVariables.find((f) => {
+        const defaults = parseKeyValue(defaultVariables).concat(parseKeyValue(DBState.db.templateDefaultVariables))
+        const findResult = defaults.find((f) => {
             return f[0] === key
         })
         if(findResult){
@@ -46,6 +51,11 @@ export function getChatVar(key:string, scope?: ChatVarScope): string {
 export function setChatVar(key:string, value:string, scope?: ChatVarScope): boolean {
     const { chat } = scopedChat(scope)
     if(!chat) return false
+    return setChatVarOf(chat, key, value)
+}
+
+/** setChatVar for a given chat instead of the open one. */
+export function setChatVarOf(chat:Chat, key:string, value:string): boolean {
     chat.scriptstate ??= {}
 
     const stateKey = '$' + key

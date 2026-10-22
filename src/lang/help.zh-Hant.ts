@@ -625,7 +625,7 @@ export const helpZhHant = {
         "personaName":
             "目前使用者人設的名稱。對話中的 `{{user}}` 變數會填入此名稱，也是角色用來稱呼您的名稱",
         "personaNote":
-            "此使用者人設的備註／識別文字（只有啟用「進階 → personaNote」時顯示）。可用來區分顯示名稱相同的多個人設",
+            "此使用者人設的備註／識別文字。可用來區分顯示名稱相同的多個人設",
         "personaDescription":
             "使用者人設資訊。會嵌入送給模型的系統提示詞，讓模型了解使用者是誰。例如：「<user> 是一名 20 歲女性，平常說話冷靜。」",
         "personaLargePortrait":

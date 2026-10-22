@@ -423,12 +423,10 @@
                 <SettingFieldLabel label={language.name} helpKey="personaName" />
                 <ShInput className="mt-1" placeholder="User" bind:value={DBState.db.username}/>
             </div>
-            {#if DBState.db.personaNote}
-                <div class="flex flex-col gap-1">
-                    <SettingFieldLabel label={language.note} helpKey="personaNote" />
-                    <ShInput className="mt-1" bind:value={DBState.db.userNote} placeholder={`Put a unique identifier for this persona here.\nExample: [Alternate Hunters persona]`} />
-                </div>
-            {/if}
+            <div class="flex flex-col gap-1">
+                <SettingFieldLabel label={language.note} helpKey="personaNote" />
+                <ShInput className="mt-1" bind:value={DBState.db.userNote} placeholder={language.personaNotePlaceholder} />
+            </div>
         </div>
         </div>
         <div class="flex flex-col min-w-0 gap-4">

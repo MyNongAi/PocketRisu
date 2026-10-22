@@ -16,7 +16,7 @@ import { recordDbTransferSize } from "./transferSize";
 import { newSaveTiming, recordSaveSample, type SaveOutcome, type SaveTiming } from "./storage/saveMetrics";
 import { finishBootReport } from "./storage/bootReport";
 import { loadPlugins } from "./plugins/plugins.svelte";
-import { alertConfirm, alertConfirmMulti, alertError, alertMd, alertSelect, alertTOS, waitAlert, notifySuccess, notifyError, notifyInfo } from "./alert";
+import { alertConfirm, alertConfirmMulti, alertError, alertMd, alertNormalWait, alertSelect, alertTOS, waitAlert, notifySuccess, notifyError, notifyInfo } from "./alert";
 import { hasher } from "./parser/parser.svelte";
 import { characterURLImport, hubURL } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
@@ -647,7 +647,11 @@ export function trackCharacterForSave(chaId: string) {
     trackCharacterForSaveImpl(chaId)
 }
 
-/** Save a chat changed while no watcher follows it (neither on screen nor generating). */
+/**
+ * Include this chat's body in the next save. Only the chat on screen is
+ * tracked automatically, so a write to any other chat needs this; a failed
+ * save keeps it queued like any other change.
+ */
 export function trackChatForSave(chaId: string, chatId: string) {
     trackChatForSaveImpl(chaId, chatId)
 }
@@ -711,13 +715,19 @@ export async function saveDb() {
     // only after the user chose it, with the unsaved edits downloadable
     // first. Cancel keeps the tab open with saving paused.
     let handoffDialogOpen = false
-    async function resolveSessionHandoff() {
+    async function resolveSessionHandoff(reason: string | null = null) {
         if (handoffDialogOpen) return
         handoffDialogOpen = true
         try {
             // A save cut off by the handoff fails and stays unsaved.
             if (saveInFlight) await saveInFlight.catch(() => {})
             if (editSeq <= savedEditSeq) {
+                // An account import elsewhere blocks every write: say so first.
+                if (reason === 'ACCOUNT_IMPORT_ACTIVE') {
+                    await alertNormalWait(language.risuAccountImportActive)
+                    location.reload()
+                    return
+                }
                 setTimeout(reloadWhenIdle, 250)
                 return
             }
@@ -786,10 +796,10 @@ export async function saveDb() {
         if (changeTracker.plugins) out.plugins = db.plugins
         return JSON.stringify(out, null, 2)
     }
-    const handOffSession = () => {
+    const handOffSession = (event?: Event) => {
         if (gotChannel) return
         gotChannel = true
-        void resolveSessionHandoff()
+        void resolveSessionHandoff((event as CustomEvent<{ code?: string | null }> | undefined)?.detail?.code ?? null)
     }
     // Same-browser handoff for legacy stores only: Node mode never broadcasts
     // saves (see persistTrackedChanges), since database/chat ETags and per-chat
@@ -810,9 +820,13 @@ export async function saveDb() {
     // the leave-site guard can hold that reload off indefinitely — on
     // 2026-09-24 that silently dropped 40 minutes of chat. Legacy stores keep
     // the handoff.
-    window.addEventListener('risu-session-deactivated', () => {
-        if (supportsPatchSync) return
-        handOffSession()
+    window.addEventListener('risu-session-deactivated', (event) => {
+        // A RisuAI account import elsewhere refuses every write until it
+        // ends, and every page loaded before it afterwards (its copy is the
+        // old data), so those stop this page as on legacy stores.
+        const code = (event as CustomEvent<{ code?: string | null }>).detail?.code ?? null
+        if (supportsPatchSync && code !== 'ACCOUNT_IMPORT_ACTIVE' && code !== 'ACCOUNT_IMPORT_REPLACED') return
+        handOffSession(event)
     })
     // The server now serves a newer client build (storage/buildFence.ts), so
     // this page's code is outdated: saving stops here as it does for a
@@ -1247,6 +1261,9 @@ export async function saveDb() {
         })
         trackChatForSaveImpl = (chaId, chatId) => {
             if (!chaId || !chatId || isHydrating(chaId, chatId)) return
+            // Counted as an unsaved edit even when the chat is already queued, so
+            // a writer handoff offers to keep it instead of reloading it away.
+            editSeq++
             if (!changeTracker.chat.some(([a, b]) => a === chaId && b === chatId)) changeTracker.chat.push([chaId, chatId])
             markHydratedChatDirty(chaId, chatId)
             saveTimeoutExecute()
@@ -1464,46 +1481,46 @@ export async function saveDb() {
         const latestData = await forageStorage.getItem('database/database.bin') as unknown as Uint8Array
         if (latestData && latestData.length > 0) {
             const latestDb = await decodeRisuSave(latestData) as Database
-            const selectedChaId = getCurrentCharacter()?.chaId
             const localNames = new Map<string, string>(
                 (Array.isArray(db.characters) ? db.characters : [])
                     .filter((char) => char?.chaId)
                     .map((char) => [char.chaId, char.name || char.chaId] as [string, string]),
             )
-            const generating = generatingCharacters(db)
-            toSave = withTrackedCharacters(toSave, [...generating.keys()])
-            // Field by field against the baseline (phase 2): what only the
-            // server changed stays, another device's new chats included.
+            // Merges the live DB and tracker as they are at the call. Changes
+            // still waiting in the tracker (queued after this save took its
+            // batch) are kept too: queued characters whole, queued chats on
+            // their own. Field by field against the baseline (phase 2): what
+            // only the server changed stays, another device's new chats
+            // included.
             const rebaseConflicts = new Set<string>()
-            const { mergedDb, skippedArchivedCharIds, holds: mergedHolds, removedOpenChat } = mergeServerDbWithTrackedLocalChanges(
-                latestDb, db, toSave, safeStructuredClone, convertStubsToPlaceholders, syncedArchivedIds, syncedBaselineDb, normalizeJSON,
-                {
-                    stubView: (character) => normalizeJSON(characterWithStubs(character)),
-                    chatStubView: (chat) => normalizeJSON(chatToStub(chat)),
-                    isChatBusy: (chaId, chatId) => chatInUseHere(chaId, chatId, false)
-                        || chatsShownBesideSelection(get(splitChatOpen)).some((shown) => shown.chaId === chaId && shown.chatId === chatId),
-                    selectedChaId,
-                    holds: chatPageHolds,
-                    onConflict: (kind) => rebaseConflicts.add(kind),
-                },
-            )
-            if (rebaseConflicts.size > 0) {
-                addLog({
-                    level: 'warning',
-                    source: 'save',
-                    message: '[Save] Rebase kept this page\'s value where both devices changed the same thing',
-                    description: [...rebaseConflicts].join(','),
-                })
+            const mergeLatest = () => {
+                const generating = generatingCharacters(db)
+                toSave = withTrackedCharacters(toSave, [...generating.keys(), ...changeTracker.character])
+                rebaseConflicts.clear()
+                const merged = mergeServerDbWithTrackedLocalChanges(
+                    latestDb, db, toSave, safeStructuredClone, convertStubsToPlaceholders, syncedArchivedIds, syncedBaselineDb, normalizeJSON,
+                    changeTracker.chat,
+                    {
+                        stubView: (character) => normalizeJSON(characterWithStubs(character)),
+                        chatStubView: (chat) => normalizeJSON(chatToStub(chat)),
+                        isChatBusy: (chaId, chatId) => chatInUseHere(chaId, chatId, false)
+                            || chatsShownBesideSelection(get(splitChatOpen)).some((shown) => shown.chaId === chaId && shown.chatId === chatId),
+                        selectedChaId: getCurrentCharacter()?.chaId,
+                        holds: chatPageHolds,
+                        onConflict: (kind) => rebaseConflicts.add(kind),
+                    },
+                )
+                return { ...merged, generatingSkippedKeys: merged.skippedArchivedCharIds.flatMap((chaId) => generating.get(chaId) ?? []) }
             }
+            let merged = mergeLatest()
             // A character deactivated elsewhere while a generation streams into
             // it has no slot in the merged DB. The send pipeline addresses its
             // target by index into DBState.db, so end those generations first
             // and only then swap the database: every write they still make
             // lands in the old object, which is discarded whole.
-            const generatingSkippedKeys = skippedArchivedCharIds.flatMap((chaId) => generating.get(chaId) ?? [])
-            if (generatingSkippedKeys.length > 0) {
-                console.warn('[Save] Aborting generations for characters deactivated elsewhere before rebase:', skippedArchivedCharIds)
-                if (!await abortGenerationsAndWait(generatingSkippedKeys, 5000)) {
+            while (merged.generatingSkippedKeys.length > 0) {
+                console.warn('[Save] Aborting generations for characters deactivated elsewhere before rebase:', merged.skippedArchivedCharIds)
+                if (!await abortGenerationsAndWait(merged.generatingSkippedKeys, 5000)) {
                     // Swapping now would let the still-running send write
                     // through its stale indices into the new database. Give
                     // up on this attempt instead: the changes are requeued by
@@ -1529,6 +1546,20 @@ export async function saveDb() {
                     requeueTrackedChanges(toSave)
                     throw new Error('Rebase deferred: a generation for a character deactivated elsewhere has not ended yet')
                 }
+                // Edits made while waiting (a trigger result, a chat switch)
+                // are in the live DB and tracker but not in that merge. Merge
+                // again; nothing awaits between the last merge and the swap.
+                merged = mergeLatest()
+            }
+            const { mergedDb, skippedArchivedCharIds, holds: mergedHolds, removedOpenChat } = merged
+            const selectedChaId = getCurrentCharacter()?.chaId
+            if (rebaseConflicts.size > 0) {
+                addLog({
+                    level: 'warning',
+                    source: 'save',
+                    message: '[Save] Rebase kept this page\'s value where both devices changed the same thing',
+                    description: [...rebaseConflicts].join(','),
+                })
             }
             // Into the live database in place, not setDatabase(mergedDb):
             // swapping the whole object redrew every screen, so the open chat

@@ -54,6 +54,13 @@ const AUTH_FETCH_TRANSIENT_JITTER_MIN = 0.5
 const AUTH_FETCH_TRANSIENT_JITTER_MAX = 1.5
 const AUTH_FETCH_TRANSIENT_STATUS = new Set([502, 503, 504])
 const FIRST_BYTE_TIMEOUT_MS = 30_000
+const RISU_ACCOUNT_REQUEST_TIMEOUT_MS = 30_000
+// Every storage call waits for the shared authentication (test_auth,
+// password hashing, login, token refresh, session cookie), so one of those
+// requests that never answers (dropped phone link) would hold up the whole
+// app, boot included. Each is cut off after this long, headers and body;
+// only the password prompt waits for the user without a limit.
+const AUTH_REQUEST_TIMEOUT_MS = 30_000
 
 export type StorageFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
@@ -67,6 +74,25 @@ export interface AuthFetchRetryOptions {
 }
 
 const defaultStorageFetch: StorageFetch = (input, init) => fetch(input, init)
+
+/** fetch, then read the response, both within AUTH_REQUEST_TIMEOUT_MS. */
+async function authRequest<T>(input: string, init: RequestInit, read: (response: Response) => Promise<T>): Promise<T> {
+    const controller = new AbortController()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    // Raced as well as aborted, like risuAccountRequest.
+    const timeout = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+            controller.abort()
+            reject(new DOMException(`No answer within ${AUTH_REQUEST_TIMEOUT_MS}ms: ${input}`, 'TimeoutError'))
+        }, AUTH_REQUEST_TIMEOUT_MS)
+    })
+    timeout.catch(() => {})
+    try {
+        return await Promise.race([fetch(input, { ...init, signal: controller.signal }).then(read), timeout])
+    } finally {
+        clearTimeout(timer)
+    }
+}
 const defaultAuthFetchRetryOptions: AuthFetchRetryOptions = {
     maxRetries: AUTH_FETCH_TRANSIENT_MAX_RETRIES,
     baseDelayMs: AUTH_FETCH_TRANSIENT_BASE_DELAY_MS,
@@ -423,7 +449,64 @@ export interface BackupImportResult {
     ok: boolean
     assetsRestored: number
     coldStorageFailed?: number
+    pluginStorageColdFailed?: number
     externalAssets?: ExternalAssetRestoreHealth
+}
+
+/** Server-side RisuAI account import (server/node/risu-account-import.cjs). */
+export type RisuAccountImportState =
+    'idle' | 'preparing' | 'ready' | 'downloading' | 'paused' | 'needs-login' | 'downloaded' | 'applying'
+
+export interface RisuAccountImportSummary {
+    accountId: string
+    characters: number
+    chats: number
+    assets: number
+    assetsStaged: number
+    cold: number
+    coldStaged: number
+    skipped: number
+    unresolvedRemotes: number
+    /** Blocks of the account database that could not be read (left out). */
+    damaged: number
+    damagedNames: string[]
+    estimatedSeconds: number
+}
+
+export interface RisuAccountImportStep {
+    done: number
+    total: number
+    bytes?: number
+}
+
+export interface RisuAccountImportStatus {
+    state: RisuAccountImportState
+    /** Set from the user's confirmation until the import is applied or cancelled; the app shows only the import screen. */
+    blocking: boolean
+    error: { message: string, code: string | null } | null
+    accountId: string | null
+    summary: RisuAccountImportSummary | null
+    /** The account check (database, remote characters). */
+    progress: { phase: 'database' | 'remotes', done: number, total: number | null, bytes: number } | null
+    phase: 'cold' | 'assets' | 'apply' | null
+    /** apply counts bytes. */
+    steps: { cold: RisuAccountImportStep, assets: RisuAccountImportStep, apply: RisuAccountImportStep | null } | null
+    remainingSeconds: number | null
+    missingCount: number
+    missing: { kind: 'asset' | 'cold', key: string, status: number, reason: 'not-found' | 'unreadable' }[]
+    result: { missing: number, assetsRestored?: number, coldStorageFailed?: number, pluginStorageColdFailed?: number } | null
+    /** Files already downloaded by a started import the server lost its plan for (after a restart). */
+    staged: { files: number, total: number | null } | null
+}
+
+export class RisuAccountImportError extends Error {
+    code: string | null
+    status: number
+    constructor(message: string, code: string | null, status: number) {
+        super(message)
+        this.code = code
+        this.status = status
+    }
 }
 
 export type AssetManifestTuple = [string, string] | [string, string, string]
@@ -620,7 +703,7 @@ export class NodeStorage{
 
     private async _doInitSession() {
         try {
-            const res = await fetch('/api/session', {
+            const ok = await authRequest('/api/session', {
                 method: 'POST',
                 headers: {
                     'risu-auth': await this.createAuth(),
@@ -628,13 +711,13 @@ export class NodeStorage{
                     // Logged by the server: why this page opened (bootReason.ts).
                     'x-boot-reason': bootReason(),
                 },
-            })
-            if (res.ok) {
+            }, async (res) => res.ok)
+            if (ok) {
                 NodeStorage.sessionInitialized = true
             }
             // Non-ok (400/401/500): will retry on next checkAuth() call.
         } catch {
-            // Network error: will retry on next checkAuth() call.
+            // Network error or no answer in time: will retry on next checkAuth() call.
         } finally {
             NodeStorage.sessionPending = null
         }
@@ -648,12 +731,11 @@ export class NodeStorage{
     }
 
     private async _doRefreshToken(): Promise<string> {
-        const res = await fetch('/api/token/refresh', {
+        const data = await authRequest('/api/token/refresh', {
             method: 'POST',
             headers: { 'risu-auth': this.cachedJwt?.token ?? '' }
-        })
-        if (res.ok) {
-            const data = await res.json()
+        }, async (res) => res.ok ? await res.json() : null)
+        if (data) {
             this.cachedJwt = { token: data.token, expiresAt: Date.now() + 5 * 60 * 1000 }
             return data.token
         }
@@ -661,32 +743,28 @@ export class NodeStorage{
     }
 
     private async loginWithPassword(password: string) {
-        const response = await fetch('/api/login', {
+        const { status, data } = await authRequest('/api/login', {
             method: "POST",
             body: JSON.stringify({ password }),
             headers: {
                 'content-type': 'application/json'
             }
-        })
+        }, async (response) => ({
+            status: response.status,
+            // A success must carry JSON; an error body is optional.
+            data: response.ok ? await response.json() : await response.json().catch(() => null),
+        }))
 
-        if(response.status === 429){
+        if(status === 429){
             notifyError(`Too many attempts. Please wait and try again later.`)
             await waitAlert()
             throw new Error('Too many login attempts')
         }
 
-        if(response.status < 200 || response.status >= 300){
-            let message = 'Node login failed'
-            try {
-                const data = await response.json()
-                message = data.error ?? message
-            } catch {
-                // noop
-            }
-            throw new Error(message)
+        if(status < 200 || status >= 300){
+            throw new Error(data?.error ?? 'Node login failed')
         }
 
-        const data = await response.json()
         if (data.token) {
             this.cachedJwt = { token: data.token, expiresAt: Date.now() + 5 * 60 * 1000 }
         }
@@ -839,7 +917,12 @@ export class NodeStorage{
         }
 
         if (response.status === 423) {
-            window.dispatchEvent(new CustomEvent('risu-session-deactivated'))
+            // ACCOUNT_IMPORT_ACTIVE: a RisuAI account import blocks every write.
+            let code: string | null = null
+            try {
+                code = (await response.clone().json())?.code ?? null
+            } catch { /* no JSON body */ }
+            window.dispatchEvent(new CustomEvent('risu-session-deactivated', { detail: { code } }))
         }
 
         if(retry && await this.shouldRetryAuth(response)){
@@ -1119,15 +1202,15 @@ export class NodeStorage{
     private async runAuthCheck(){
 
         if(!this.authChecked){
-            const data = await (await fetch('/api/test_auth',{
+            const data = await authRequest('/api/test_auth',{
                 headers: {
                     'risu-auth': this.cachedJwt?.token ?? ''
                 }
-            })).json()
+            }, (res) => res.json())
 
             if(data.status === 'unset'){
                 const input = await digestPassword(await alertInput(language.setNodePassword))
-                const response = await fetch('/api/set_password',{
+                const status = await authRequest('/api/set_password',{
                     method: "POST",
                     body:JSON.stringify({
                         password: input 
@@ -1135,9 +1218,9 @@ export class NodeStorage{
                     headers: {
                         'content-type': 'application/json'
                     }
-                })
+                }, async (res) => res.status)
 
-                if(response.status < 200 || response.status >= 300){
+                if(status < 200 || status >= 300){
                     throw new Error('Failed to set node password')
                 }
 
@@ -2017,6 +2100,76 @@ export class NodeStorage{
         await this.startCookieDownload(`/api/backup/server/download/${encodeURIComponent(filename)}`)
     }
 
+    // ── RisuAI account import ───────────────────────────────────────────────
+
+    private async risuAccountRequest<T>(urlPath: string, init: RequestInit = {}): Promise<T> {
+        // At boot this is the first request, and the login prompt it may
+        // show must not count against the time limit below. Later checks
+        // (session init) stay inside it.
+        if (!this.authChecked) await this.checkAuth()
+        // These calls answer at once (the work runs in the background). One
+        // whose answer, headers or body, is not complete in time is dropped,
+        // so the next status poll still runs on a dropped phone link. Raced
+        // as well as aborted: the auth pre-flight fetches do not carry the
+        // signal.
+        const controller = new AbortController()
+        let timer: ReturnType<typeof setTimeout> | undefined
+        const timeout = new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => {
+                controller.abort()
+                reject(new DOMException(`No complete answer within ${RISU_ACCOUNT_REQUEST_TIMEOUT_MS}ms`, 'AbortError'))
+            }, RISU_ACCOUNT_REQUEST_TIMEOUT_MS)
+        })
+        timeout.catch(() => {})
+        try {
+            const da = await Promise.race([this.authFetch(urlPath, { ...init, signal: controller.signal }), timeout])
+            const ok = da.status >= 200 && da.status < 300
+            // A success body that is cut off must fail, not read as an empty
+            // answer; only an error answer may lack a JSON body.
+            const body = await Promise.race([ok ? da.json() : da.json().catch(() => ({})), timeout])
+            if (!ok) {
+                throw new RisuAccountImportError(body.error || `RisuAI account import error: ${da.status}`, body.code ?? null, da.status)
+            }
+            return body as T
+        } finally {
+            clearTimeout(timer)
+        }
+    }
+
+    private postRisuAccount<T>(action: string, body: unknown = {}): Promise<T> {
+        return this.risuAccountRequest<T>(`/api/risu-account/${action}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
+        })
+    }
+
+    getRisuAccountImportConfig(): Promise<{ loginUrl: string, loginOrigin: string }> {
+        return this.risuAccountRequest('/api/risu-account/config')
+    }
+
+    getRisuAccountImportStatus(): Promise<RisuAccountImportStatus> {
+        return this.risuAccountRequest('/api/risu-account/status')
+    }
+
+    /** Starts reading the account database; poll the status for the summary. */
+    async prepareRisuAccountImport(token: string, id: string): Promise<void> {
+        await this.postRisuAccount('prepare', { token, id })
+    }
+
+    async startRisuAccountDownload(): Promise<void> {
+        await this.postRisuAccount('download')
+    }
+
+    async cancelRisuAccountImport(): Promise<void> {
+        await this.postRisuAccount('cancel')
+    }
+
+    /** Applies a download that has missing items; poll the status for the outcome. */
+    async applyRisuAccountImport(): Promise<void> {
+        await this.postRisuAccount('apply')
+    }
+
     // ── Chat content (runtime lazy load) ────────────────────────────────────
 
     async fetchChatContent(chaId: string, chatIndex: number, chatId: string): Promise<any | null> {
@@ -2468,7 +2621,7 @@ export class NodeStorage{
 }
 
 async function digestPassword(message:string) {
-    const res = await fetch('/api/crypto', {
+    return await authRequest('/api/crypto', {
         body: JSON.stringify({
             data: message
         }),
@@ -2476,11 +2629,12 @@ async function digestPassword(message:string) {
             'content-type': 'application/json'
         },
         method: "POST"
+    }, async (res) => {
+        if(res.status < 200 || res.status >= 300){
+            throw new Error(`Password hashing failed (${res.status})`)
+        }
+        return await res.text()
     })
-    if(res.status < 200 || res.status >= 300){
-        throw new Error(`Password hashing failed (${res.status})`)
-    }
-    return await res.text()
 }
 
 /** One module's outcome in /api/modules/cold. */

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "upstreamBaseline": "PocketRisu v1.15.2",
+  "upstreamBaseline": "PocketRisu v1.16.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-10-21",
+  "updatedAt": "2026-10-22",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
@@ -195,7 +195,7 @@
       ],
       "requiredMarkers": [
         { "file": "src/ts/paneActivation.ts", "contains": "export function applySelectedChatToggles(chat: Chat): void {" },
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "await runLuaButtonTrigger(currentChar, btnEvent, ownerChat ?? undefined)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "await runLuaInteractionTrigger('button', currentChar, btnEvent, undefined, triggerOrigin.chat)" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "const column = $derived((enabled && splitLayout.orientation === 'column') || narrowStack)" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "onclick={() => { hideDividerTools(); splitChatOpen.set(false) }}" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "setTimeout(() => { stop(); swallowReleaseClick(); void openDividerMenu() }, LONG_PRESS_MS)" },
@@ -204,7 +204,7 @@
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "width: min(24rem, calc(100% - var(--pane-overlay-rail, 5rem) - 3rem));" },
         { "file": "src/ts/paneActivation.ts", "contains": "if (!hydrated || serial !== selectSerial || selectedChatIds()?.chatId !== hydrated.id) return" },
         { "file": "src/ts/hotkey.ts", "contains": "let ele = queryInActivePane<HTMLElement>(query)" },
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "const written = writeBackToTarget(DBState.db.characters, owner, triggerResult.chat, normalizeChat)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if(triggerResult && setTriggerOriginChat(triggerOrigin, triggerResult.chat)) {" },
         { "file": "src/ts/process/scriptings.ts", "contains": "const getVar = arg.getVar ?? ((key: string) => getChatVar(key, varScope))" },
         { "file": "src/ts/parser/chatVar.svelte.ts", "contains": "const state = chat.scriptstate?.['$' + key]" },
         { "file": "src/lib/SideBars/PromptBind.svelte", "contains": "if (!view.active) return" },
