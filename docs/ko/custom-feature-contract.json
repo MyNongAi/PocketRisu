@@ -196,6 +196,10 @@
         "src/lib/UI/GUI/SideBarArrow.svelte"
       ],
       "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "class:flex-row-reverse={splitLayout.panelEdge.side === 'end'}" },
+        { "file": "src/ts/splitLayout.svelte.ts", "contains": "slideShut('panel', pane, () => setPanePanelOpen(pane, false))" },
+        { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "const railShown = $derived(!splitLayout.railHidden && (railFollows.length === 0 || railFollows.some((pane) => splitLayout.panelOpen[pane])))" },
+        { "file": "src/ts/splitLayout.svelte.ts", "contains": "export function railPanes(place: RailPlace, orientation: SplitOrientation): PaneId[] {" },
         { "file": "src/ts/paneActivation.ts", "contains": "export function applySelectedChatToggles(chat: Chat): void {" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "await runLuaInteractionTrigger('button', currentChar, btnEvent, undefined, triggerOrigin.chat)" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "const column = $derived((enabled && splitLayout.orientation === 'column') || narrowStack)" },
@@ -250,7 +254,7 @@
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "class:split-chat-contained={enabled}" },
         { "file": "src/App.svelte", "contains": "<SplitWorkspace {openLegacyGrid}>" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "<Sidebar part=\"rail\" hidden={false} {openLegacyGrid} />" },
-        { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "<Sidebar part=\"panel\" pane=\"side\" hidden={false} {openLegacyGrid} />" },
+        { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "<Sidebar part=\"panel\" {pane} hidden={false} {openLegacyGrid} />" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "oncontextmenu={openDividerMenu}" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "...openInPaneActions(atNow((index) => changeChar(index, { reseter: botSwitchReseter })))," },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "onpointerdowncapture={takePaneSelection}" },
@@ -261,6 +265,7 @@
         { "file": "src/lib/UI/GUI/SideBarArrow.svelte", "contains": "onclick={() => togglePanePanel(view.pane)}" }
       ],
       "regressionTests": [
+        "src/ts/splitLayout.svelte.test.ts",
         "src/ts/gui/paneQuery.test.ts",
         "src/ts/process/scriptings.test.ts",
         "src/lib/SideBars/PromptBind.panes.test.ts",

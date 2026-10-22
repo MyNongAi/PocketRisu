@@ -23,7 +23,8 @@
     import Sidebar from '../SideBars/Sidebar.svelte'
     import { restorePanesAfterBoot, returnToMainPane, swapPanes } from 'src/ts/paneActivation'
     import { startPaneSync } from 'src/ts/chatPanes.svelte'
-    import { paneOverlayOpen, railPlace, setPaneOverlayOpen, setSplitLayout, splitLayout, type RailPlace } from 'src/ts/splitLayout.svelte'
+    import { paneClosing, paneOverlayOpen, railPanes, railPlace, setPaneOverlayOpen, setPanePanelOpen, setPanelEdge, setSplitLayout, splitLayout, type RailPlace } from 'src/ts/splitLayout.svelte'
+    import type { PaneId } from 'src/ts/chatPanes.svelte'
     import { alertSelect, type AlertAction } from 'src/ts/alert'
     import { setSidebarCatalogSplit, sidebarCatalog } from 'src/ts/gui/sidebarCatalogLayout.svelte'
     import { language } from 'src/lang'
@@ -53,8 +54,16 @@
     // chosen orientation too (the divider's buttons; 2026-10-22).
     const column = $derived((enabled && splitLayout.orientation === 'column') || narrowStack)
     const rail = $derived(railPlace())
-    // The bot list can be put away for room (the divider's menu).
-    const railShown = $derived(!splitLayout.railHidden)
+    // The bot list can be put away for room (the divider's menu), and at an
+    // end it goes with the panel of the pane beside it (railPanes): closing
+    // that panel puts it away too, opening it brings it back. Between the
+    // panes it stays (the user's request, 2026-10-22).
+    const railFollows = $derived(railPanes(rail, splitLayout.orientation))
+    const railShown = $derived(!splitLayout.railHidden && (railFollows.length === 0 || railFollows.some((pane) => splitLayout.panelOpen[pane])))
+    // It slides out with them.
+    const railClosing = $derived(railFollows.length > 0 && railFollows.every((pane) => !splitLayout.panelOpen[pane] || paneClosing.panel[pane]))
+    // A narrow window's overlay: its bot list's width, for the slide.
+    const overlayRail = $derived(`${paneOverlayRailRem(sidebarCatalog.split, !!DBState.db.menuSideBar)}rem`)
     $effect(() => {
         if (!enabled) returnToMainPane()
     })
@@ -296,8 +305,22 @@
         const flip: [AlertAction, () => void] = [{ label: row ? language.splitToColumn : language.splitToRow, row: 'panes' }, () => flipOrientation()]
         const columns = ([[false, language.splitRailOneColumn], [true, language.splitRailTwoColumns]] as const).map(([split, label]): [AlertAction, () => void] => [
             { label, row: 'columns', variant: sidebarCatalog.split === split ? 'primary' : 'outline' },
-            () => { setSidebarCatalogSplit(split); if (docked) setSplitLayout({ railHidden: false }) },
+            () => { setSidebarCatalogSplit(split); if (docked) showRail({}) },
         ])
+        // Which edge of its pane each pane's panel comes out of, a line per
+        // pane (the user's request, 2026-10-22).
+        const words = language.splitPaneWords
+        const edges = (['main', 'side'] as const).flatMap((pane) => (['start', 'end'] as const).map((edge): [AlertAction, () => void] => [
+            {
+                label: language.splitPanelEdge(
+                    row ? (pane === 'main' ? words.left : words.right) : (pane === 'main' ? words.top : words.bottom),
+                    edge === 'start' ? words.left : words.right,
+                ),
+                row: `edge-${pane}`,
+                variant: splitLayout.panelEdge[pane] === edge ? 'primary' : 'outline',
+            },
+            () => setPanelEdge(pane, edge),
+        ]))
         const swap: [AlertAction, () => void] = [{ label: row ? language.splitSwapRow : language.splitSwapColumn, row: 'panes' }, () => swapPanes()]
         // A narrow window (a phone or fold with the mobile layout off) has no
         // bot list beside the panes: the panes' own bot lists, the swap and,
@@ -307,15 +330,24 @@
         const actions: [AlertAction, () => void][] = docked ? [
             ...railChoices.map(([place, label]): [AlertAction, () => void] => [
                 { label, row: 'rail', variant: !hidden && place === rail ? 'primary' : 'outline' },
-                () => setSplitLayout({ railAt: place, railHidden: false }),
+                () => showRail({ railAt: place }),
             ]),
             ...columns,
-            [{ label: hidden ? language.splitRailShow : language.splitRailHide }, () => setSplitLayout({ railHidden: !hidden })],
+            [{ label: hidden ? language.splitRailShow : language.splitRailHide }, () => hidden ? showRail({}) : setSplitLayout({ railHidden: true })],
+            ...edges,
             swap,
             flip,
-        ] : [...columns, swap, ...(narrowStack ? [] : [flip])]
+        ] : [...columns, ...edges, swap, ...(narrowStack ? [] : [flip])]
         const selected = parseInt(await alertSelect([...actions.map(([action]) => action), language.cancel]))
         actions[selected]?.[1]()
+    }
+
+    // Putting the bot list somewhere shows it: with the panels it goes with
+    // all closed (railPanes), the first of them opens too.
+    function showRail(change: { railAt?: RailPlace }) {
+        setSplitLayout({ ...change, railHidden: false })
+        const panes = railPanes(railPlace(), splitLayout.orientation)
+        if (panes.length > 0 && !panes.some((pane) => splitLayout.panelOpen[pane])) setPanePanelOpen(panes[0], true)
     }
 
     onDestroy(() => {
@@ -338,8 +370,29 @@
 </script>
 
 {#snippet botList()}
-    <div class="split-rail flex h-full shrink-0" bind:clientWidth={railWidth}>
-        <Sidebar part="rail" hidden={false} {openLegacyGrid} />
+    <div class="split-rail flex h-full shrink-0" class:pane-slide={railFollows.length > 0} bind:clientWidth={railWidth}>
+        <div
+            class="flex h-full"
+            class:pane-slide-inner={railFollows.length > 0}
+            class:pane-slide-from-end={rail === 'end'}
+            class:pane-slide-closing={railClosing}
+        >
+            <Sidebar part="rail" hidden={false} {openLegacyGrid} />
+        </div>
+    </div>
+{/snippet}
+
+<!-- A docked pane's panel at its edge (splitLayout.panelEdge), sliding in
+     and out within its own box. -->
+{#snippet panelSlot(pane: PaneId)}
+    <div class="pane-slide pane-panel-slot flex h-full shrink-0">
+        <div
+            class="pane-slide-inner flex h-full"
+            class:pane-slide-from-end={splitLayout.panelEdge[pane] === 'end'}
+            class:pane-slide-closing={paneClosing.panel[pane]}
+        >
+            <Sidebar part="panel" {pane} hidden={false} {openLegacyGrid} />
+        </div>
     </div>
 {/snippet}
 
@@ -355,14 +408,19 @@
             class:split-main-docked={!!dockedRow}
             style:--split-panel={dockedRow ? `${dockedRow.mainPanel}px` : undefined}
         >
-            {#if mainPanelShown}
-                <Sidebar part="panel" pane="main" hidden={false} {openLegacyGrid} />
-            {/if}
+            {#if mainPanelShown && splitLayout.panelEdge.main === 'start'}{@render panelSlot('main')}{/if}
             <div class="relative flex h-full min-w-0 grow">
                 {@render children()}
             </div>
+            {#if mainPanelShown && splitLayout.panelEdge.main === 'end'}{@render panelSlot('main')}{/if}
             {#if mainOverlayShown}
-                <div class="split-pane-overlay absolute inset-0 z-30 flex overflow-hidden">
+                <div
+                    class="split-pane-overlay absolute inset-0 z-30 flex overflow-hidden"
+                    class:flex-row-reverse={splitLayout.panelEdge.main === 'end'}
+                    class:pane-slide-from-end={splitLayout.panelEdge.main === 'end'}
+                    class:pane-slide-closing={paneClosing.overlay.main}
+                    style:--pane-overlay-rail={overlayRail}
+                >
                     <Sidebar pane="main" overlay hidden={false} {openLegacyGrid} />
                 </div>
             {/if}
@@ -390,8 +448,8 @@
                 oncontextmenu={openDividerMenu}
             ></div>
             {#if docked && railShown && rail === 'center'}{@render botList()}{/if}
-            <!-- The second pane: its chat, and its panel at the outer edge
-                 (the left one when stacked, like the main pane's). -->
+            <!-- The second pane: its chat, and its panel at the edge set for
+                 it (splitLayout.panelEdge; the outer one unless changed). -->
             <div
                 class="split-side relative flex min-w-0 min-h-0"
                 class:h-full={!column}
@@ -403,9 +461,7 @@
                 style:width={dockedRow ? `${dockedRow.sideChat + dockedRow.sidePanel}px` : looseSide !== null ? `${looseSide}px` : undefined}
                 style:--split-panel={dockedRow ? `${dockedRow.sidePanel}px` : undefined}
             >
-                {#if sidePanelShown && column}
-                    <Sidebar part="panel" pane="side" hidden={false} {openLegacyGrid} />
-                {/if}
+                {#if sidePanelShown && splitLayout.panelEdge.side === 'start'}{@render panelSlot('side')}{/if}
                 <!-- The width the divider sets is the chat's; its panel sits beside it. -->
                 <div
                     class="split-side-chat flex h-full min-w-0"
@@ -414,13 +470,15 @@
                 >
                     <SecondaryChatPanel />
                 </div>
-                {#if sidePanelShown && !column}
-                    <Sidebar part="panel" pane="side" hidden={false} {openLegacyGrid} />
-                {/if}
+                {#if sidePanelShown && splitLayout.panelEdge.side === 'end'}{@render panelSlot('side')}{/if}
                 {#if sideOverlayShown}
                     <div
                         class="split-pane-overlay absolute inset-y-0 right-0 z-30 flex overflow-hidden"
+                        class:flex-row-reverse={splitLayout.panelEdge.side === 'end'}
+                        class:pane-slide-from-end={splitLayout.panelEdge.side === 'end'}
+                        class:pane-slide-closing={paneClosing.overlay.side}
                         style:width={sideOverlayWidth === null ? '100%' : `${sideOverlayWidth}px`}
+                        style:--pane-overlay-rail={overlayRail}
                     >
                         <Sidebar pane="side" overlay hidden={false} {openLegacyGrid} />
                     </div>
@@ -526,11 +584,91 @@
     }
 
     /* The panels' w-80 narrows on a tight window. */
-    .split-main-docked > :global([data-pane-panel]),
-    .split-side-docked > :global([data-pane-panel]) {
+    .split-main-docked > .pane-panel-slot,
+    .split-side-docked > .pane-panel-slot {
         flex: none;
         width: var(--split-panel);
         min-width: var(--split-panel);
+    }
+
+    .split-main-docked > .pane-panel-slot > .pane-slide-inner,
+    .split-side-docked > .pane-panel-slot > .pane-slide-inner {
+        width: 100%;
+    }
+
+    .split-main-docked > .pane-panel-slot :global([data-pane-panel]),
+    .split-side-docked > .pane-panel-slot :global([data-pane-panel]) {
+        width: 100%;
+        min-width: 0;
+    }
+
+    /* Sliding in and out, at the app's animation speed (paneClosing in
+       splitLayout.svelte.ts closes when the slide out ends): a docked panel
+       or the bot list moves within its own box; a narrow window's overlay
+       moves its bot list and panel together, by their width, while its
+       dimmed strip fades. */
+    .pane-slide {
+        overflow: clip;
+    }
+
+    .pane-slide-inner {
+        --pane-slide-from: -100%;
+        animation: pr-pane-slide-in var(--risu-animation-speed) ease-out;
+    }
+
+    .pane-slide-inner.pane-slide-from-end {
+        --pane-slide-from: 100%;
+    }
+
+    .pane-slide-inner.pane-slide-closing {
+        animation: pr-pane-slide-out var(--risu-animation-speed) ease-in forwards;
+    }
+
+    .split-pane-overlay {
+        container-type: inline-size;
+        /* Sidebar's .pane-overlay-panel: the bot list, then a panel of
+           min(24rem, the rest less the 3rem strip). */
+        --pane-slide-from: calc(-1 * (var(--pane-overlay-rail, 5rem) + min(24rem, 100cqw - var(--pane-overlay-rail, 5rem) - 3rem)));
+    }
+
+    .split-pane-overlay.pane-slide-from-end {
+        --pane-slide-from: calc(var(--pane-overlay-rail, 5rem) + min(24rem, 100cqw - var(--pane-overlay-rail, 5rem) - 3rem));
+    }
+
+    .split-pane-overlay > :global(*) {
+        animation: pr-pane-slide-in var(--risu-animation-speed) ease-out;
+    }
+
+    .split-pane-overlay > :global([data-pane-overlay-strip]) {
+        animation-name: pr-pane-fade-in;
+    }
+
+    .split-pane-overlay.pane-slide-closing > :global(*) {
+        animation: pr-pane-slide-out var(--risu-animation-speed) ease-in forwards;
+    }
+
+    .split-pane-overlay.pane-slide-closing > :global([data-pane-overlay-strip]) {
+        animation-name: pr-pane-fade-out;
+    }
+
+    @keyframes -global-pr-pane-slide-in {
+        from { transform: translateX(var(--pane-slide-from)); }
+        to { transform: none; }
+    }
+
+    @keyframes -global-pr-pane-slide-out {
+        from { transform: none; }
+        to { transform: translateX(var(--pane-slide-from)); }
+    }
+
+    @keyframes -global-pr-pane-fade-in {
+        from { opacity: 0; }
+        to { opacity: 1; }
+    }
+
+    @keyframes -global-pr-pane-fade-out {
+        from { opacity: 1; }
+        to { opacity: 0; }
     }
 
     .split-chat-contained {

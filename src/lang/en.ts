@@ -1198,6 +1198,7 @@ export const languageEnglish = {
     splitOpenInPane: (where: string) => `Open in the ${where} pane`,
     splitPaneWords: { left: "left", right: "right", top: "top", bottom: "bottom" },
     splitPanelToggle: "Character panel",
+    splitPanelEdge: (pane: string, side: string) => `${pane} pane's panel: ${side}`,
     newlyReceived: "New: not opened yet",
     newSwipeWaiting: "A new reply is waiting on a later page",
     remoteReplyRunning: "Another device is writing a reply in this chat",

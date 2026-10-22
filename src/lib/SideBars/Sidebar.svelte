@@ -80,7 +80,7 @@
     import { checkCharOrder } from "src/ts/globalApi.svelte";
     import { getPaneView, paneState, paneView, setPaneContext, type PaneId } from "src/ts/chatPanes.svelte";
     import { activatePane } from "src/ts/paneActivation";
-    import { paneWord, setPaneOverlayOpen, setPanePanelOpen, splitLayout, type PanelTab } from "src/ts/splitLayout.svelte";
+    import { closePaneOverlay, closePanePanel, paneWord, splitLayout, type PanelTab } from "src/ts/splitLayout.svelte";
     import { newMarkPrefix, newMarks } from "src/ts/newMarks.svelte";
     import { alertConfirm, alertSelect, type AlertAction } from "src/ts/alert";
     import { setSidebarCatalogSplit, sidebarCatalog } from "src/ts/gui/sidebarCatalogLayout.svelte";
@@ -416,13 +416,16 @@
   if (pane) setPaneContext(view)
   // Touching a pane's panel hands that pane the selection before the touch acts.
   const takePaneSelection = () => { if (pane) activatePane(pane) }
-  // A pane's panel closes on its own; the app's sidebar slides shut.
+  // A pane's panel slides shut on its own (splitLayout.svelte.ts), as the app's sidebar does.
   const closePane = (): boolean => {
     if (!pane) return false
-    if (overlay) setPaneOverlayOpen(pane, false)
-    else setPanePanelOpen(pane, false)
+    if (overlay) closePaneOverlay(pane)
+    else closePanePanel(pane)
     return true
   }
+  // A pane's overlay coming out of its right edge lies mirrored: the strip
+  // that closes it is on the left, its button beside the panel.
+  const overlayFromEnd = $derived(overlay && !!pane && splitLayout.panelEdge[pane] === 'end')
 
   onMount(() => {
     initSupport()
@@ -2386,6 +2389,7 @@
 
 {#if part === 'all' && $DynamicGUI}
     <div role="button" tabindex="0" class="grow h-full min-w-12"
+      data-pane-overlay-strip={overlay ? '' : undefined}
       class:max-xs:!min-w-8={!$leftBarCollapsed}
       class:max-xs:!min-w-6={$leftBarCollapsed}
       class:hidden={hidden} onclick={() => {
@@ -2408,12 +2412,17 @@
              they get the same ← close button as a docked sidebar (the
              user's request, 2026-10-17). -->
         <button type="button" aria-label={language.close ?? 'Close'} title={language.close ?? 'Close'}
-          class="mt-3 h-12 w-12 border-r border-b border-t border-transparent rounded-r-md bg-darkbg hover:border-neutral-200 transition-colors flex items-center justify-center text-textcolor"
+          class="mt-3 h-12 w-12 border-b border-t border-transparent bg-darkbg hover:border-neutral-200 transition-colors flex items-center justify-center text-textcolor"
+          class:border-r={!overlayFromEnd}
+          class:rounded-r-md={!overlayFromEnd}
+          class:border-l={overlayFromEnd}
+          class:rounded-l-md={overlayFromEnd}
+          class:ml-auto={overlayFromEnd}
           onclick={(event) => {
             event.stopPropagation()
             if (closePane()) return
             if (!$sideBarClosing) $sideBarClosing = true
-          }}><ArrowLeft /></button>
+          }}>{#if overlayFromEnd}<ArrowRight />{:else}<ArrowLeft />{/if}</button>
       {/if}
     </div>
 

@@ -1289,6 +1289,7 @@ export const languageKorean = {
   splitRailTwoColumns: "봇 목록 2열",
   splitRailHide: "봇 목록 숨기기",
   splitRailShow: "봇 목록 보이기",
+  splitPanelEdge: (pane: string, side: string) => `${pane} 칸 사이드탭 ${side}`,
   splitOpenInPane: (where: string) => `${where} 칸에서 열기`,
   splitPaneWords: { left: "왼쪽", right: "오른쪽", top: "위", bottom: "아래" },
   splitPanelToggle: "캐릭창",
