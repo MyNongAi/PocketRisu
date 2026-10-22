@@ -11,6 +11,9 @@
     let backgroundHTML = $derived(view.character?.backgroundHTML)
     let currentChar:character = $derived(view.character)
     let moduleBackground = $derived(view.active ? $moduleBackgroundEmbedding : '')
+    // The pane beside the selection parses with its own chat ({{getvar}}).
+    // The selected pane passes none, as before: reading the chat there rebuilt
+    // the background each time a send replaced the chat object.
 
 </script>
 
@@ -19,7 +22,7 @@
     {#if view.characterIndex > -1}
         {#key $ReloadGUIPointer}
             <div class="absolute top-0 left-0 w-full h-full" data-pr-bot-background>
-                {#await ParseMarkdown(risuChatParser((backgroundHTML || '') + '\n' + (moduleBackground || ''), {chara:currentChar, chat:view.chat}), currentChar, 'back') then md} 
+                {#await ParseMarkdown(risuChatParser((backgroundHTML || '') + '\n' + (moduleBackground || ''), {chara:currentChar, chat:view.active ? undefined : view.chat}), currentChar, 'back') then md} 
                     {@html md}
                 {/await}
             </div>
