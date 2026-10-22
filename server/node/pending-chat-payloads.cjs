@@ -46,6 +46,13 @@ function createPendingChatPayloads({ kvGet, kvSet, kvDel, kvList, kvExists = (ke
             }
             return out;
         },
+        // A chat the catalog listed and then dropped before any persist (a
+        // new chat deleted again): its body must not come back with the
+        // next reload. PocketRisu 1.16.0 forgets such a post the same way.
+        discard(chaId, chatId) {
+            const key = keyFor(chaId, chatId);
+            if (kvExists(key)) kvDel(key);
+        },
         retireCommitted(database) {
             for (const { key, chaId, chatId } of entries()) {
                 const chat = database?.characters?.find(c => c?.chaId === chaId)?.chats?.find(c => c?.id === chatId);

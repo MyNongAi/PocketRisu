@@ -102,6 +102,8 @@
         "server/node/chat-body-store.cjs"
       ],
       "requiredMarkers": [
+        { "file": "server/node/pending-chat-payloads.cjs", "contains": "discard(chaId, chatId) {" },
+        { "file": "server/node/server.cjs", "contains": "discardDroppedPendingChats(dbCache[filePath], next);" },
         { "file": "src/ts/storage/chatStorage.ts", "contains": "ensureChatHydrated" },
         { "file": "src/ts/storage/chatStorage.ts", "contains": "evictHydratedChatCache" },
         { "file": "src/ts/storage/chatStorage.ts", "contains": "entry.dirty || inUse(entry.chaId, entry.chatId)) continue" },

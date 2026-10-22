@@ -814,6 +814,23 @@ async function loadDbCacheIfMissing({ createBackup = false } = {}) {
     return true;
 }
 
+// A journaled body (pendingChatPayloads) waits for a persisted catalog that
+// lists its chat. A chat the catalog listed and a later patch dropped again
+// before that persist was deleted: its journal row goes, so the next persist
+// prunes the body instead of every reload bringing it back.
+function isChatListedIn(dbObj, chaId, chatId) {
+    const char = Array.isArray(dbObj?.characters) ? dbObj.characters.find((c) => c?.chaId === chaId) : null;
+    return Array.isArray(char?.chats) && char.chats.some((chat) => chat?.id === chatId);
+}
+
+function discardDroppedPendingChats(before, after) {
+    for (const [chaId, chatId] of pendingChatPayloads.pairs()) {
+        if (isChatListedIn(before, chaId, chatId) && !isChatListedIn(after, chaId, chatId)) {
+            pendingChatPayloads.discard(chaId, chatId);
+        }
+    }
+}
+
 function invalidateDbCache() {
     delete dbCache[DB_HEX_KEY];
     chatBodyStore.reset();
@@ -7156,6 +7173,7 @@ app.post('/api/write', rejectDuringExclusiveStorage, async (req, res, next) => {
                     // by cold-decoding the blob (stripped + normalized, and
                     // the patch hash cache is already keyed on it above).
                     // Dropping it cost one full decode after every full write.
+                    discardDroppedPendingChats(dbCache[DB_HEX_KEY], persistedView);
                     dbCache[DB_HEX_KEY] = persistedView;
                     if (saveTimers[DB_HEX_KEY]) {
                         clearTimeout(saveTimers[DB_HEX_KEY]);
@@ -7520,6 +7538,7 @@ app.post('/api/patch', rejectDuringExclusiveStorage, async (req, res, next) => {
             if (decodedKey === 'database/database.bin') {
                 const nextHash = databasePatchHashCache.update(dbCache[filePath], next, patch);
                 if (auditPatch) auditPatchedHashForTests('patch', next, nextHash);
+                discardDroppedPendingChats(dbCache[filePath], next);
             }
             dbCache[filePath] = next;
             // DB patch is in; now the kv half (see ordering note above).
@@ -10821,6 +10840,7 @@ function applyServerDatabaseOps(ops, source) {
     const next = applyPatchCopyOnWrite(current, ops).newDocument;
     const nextHash = databasePatchHashCache.update(current, next, ops);
     if (TEST_FREEZE_CACHE) auditPatchedHashForTests(source, next, nextHash);
+    discardDroppedPendingChats(current, next);
     dbCache[DB_HEX_KEY] = next;
     dbEtag = dbEtagFor(next);
     scheduleDatabasePersist(source);
