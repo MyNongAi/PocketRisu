@@ -60,15 +60,21 @@
                     getRealmInfo(original)
                 }}>Forked</button>
             {/if}
-            <div class="flex justify-start gap-4 mt-4">
+            <!-- PocketRisu: on a phone the picture sits above the description,
+                 and the description column may shrink, so a long link wraps
+                 instead of pushing the text past the screen's edge (and the
+                 picture to half its width). -->
+            <div class="flex flex-col sm:flex-row justify-start gap-4 mt-4">
                 {#if DBState.db.hideAllImages}
-                    <div class="h-36 w-36 rounded-md bg-darkbutton flex items-center justify-center text-textcolor2">
+                    <div class="h-36 w-36 shrink-0 rounded-md bg-darkbutton flex items-center justify-center text-textcolor2">
                         <span class="text-4xl">?</span>
                     </div>
                 {:else}
-                    <img class="h-36 w-36 rounded-md object-top object-cover" alt={openedData.name} src={`${hubURL}/resource/` + openedData.img}>
+                    <img class="h-36 w-36 shrink-0 rounded-md object-top object-cover" alt={openedData.name} src={`${hubURL}/resource/` + openedData.img}>
                 {/if}
-                <MultiLangDisplay value={openedData.desc} markdown={true} />
+                <div class="min-w-0 flex-1">
+                    <MultiLangDisplay value={openedData.desc} markdown={true} />
+                </div>
             </div>
             <RealmLicense license={openedData.license}/>
 
