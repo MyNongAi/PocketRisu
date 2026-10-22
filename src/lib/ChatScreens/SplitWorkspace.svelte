@@ -11,8 +11,11 @@
     // each pane with its own character panel, opened and closed by its arrow;
     // side by side or stacked; the divider resizes, and its menu (right-click,
     // or a long press) swaps the panes, stacks or unstacks them, moves the bot
-    // list and evens the sizes (splitLayout.svelte.ts).
+    // list and evens the sizes (splitLayout.svelte.ts). A tap on it shows a
+    // row of buttons, as a Galaxy Fold's split does: stack or unstack, swap,
+    // close the split.
     import type { Snippet } from 'svelte'
+    import { ArrowLeftRightIcon, ArrowUpDownIcon, Columns2Icon, Rows2Icon, XIcon } from '@lucide/svelte'
     import { onDestroy, onMount, untrack } from 'svelte'
     import { DBState, DynamicGUI, MobileGUI, settingsOpen } from 'src/ts/stores.svelte'
     import { clampSplitHeight, clampSplitWidth, dockedSplitChatRoom, dockedSplitWidths, getSplitWidthBounds, isEmbeddedRisuPane, looseSplitSideWidth, NARROW_SPLIT_PX, paneOverlayFootprint, paneOverlayRailRem, SPLIT_DIVIDER_PX, SPLIT_MAIN_CHAT_MIN_PX, splitChatHeight, splitChatOpen, splitChatWidth, type DockedSplitRow } from 'src/ts/chatSplitPane'
@@ -46,7 +49,9 @@
     // mobile layout off) stacks them, as the docked split's "위아래로" does
     // (the page ran 150px past the screen at 375px, 2026-10-21).
     const narrowStack = $derived(enabled && !docked && paneWidth > 0 && paneWidth < NARROW_SPLIT_PX)
-    const column = $derived((docked && splitLayout.orientation === 'column') || narrowStack)
+    // A narrow window wide enough for two chats side by side follows the
+    // chosen orientation too (the divider's buttons; 2026-10-22).
+    const column = $derived((enabled && splitLayout.orientation === 'column') || narrowStack)
     const rail = $derived(railPlace())
     // The bot list can be put away for room (the divider's menu).
     const railShown = $derived(!splitLayout.railHidden)
@@ -128,10 +133,13 @@
         const startSize = shownSize()
         const touch = event.pointerType === 'touch'
         let resizing = !touch
+        // Whether it moved: one that did not is a tap, which shows the buttons.
+        let moved = false
         let pressTimer = touch ? setTimeout(() => { stop(); swallowReleaseClick(); void openDividerMenu() }, LONG_PRESS_MS) : null
 
         const move = (moveEvent: PointerEvent) => {
             const delta = (column ? moveEvent.clientY : moveEvent.clientX) - start
+            if (Math.abs(delta) >= MOVE_SLOP_PX) moved = true
             if (!resizing) {
                 if (Math.abs(delta) < MOVE_SLOP_PX) return
                 resizing = true
@@ -142,15 +150,64 @@
         const stop = () => {
             if (pressTimer) { clearTimeout(pressTimer); pressTimer = null }
             window.removeEventListener('pointermove', move)
-            window.removeEventListener('pointerup', stop)
+            window.removeEventListener('pointerup', up)
             window.removeEventListener('pointercancel', stop)
             stopSplitResize = null
+        }
+        const up = (upEvent: PointerEvent) => {
+            stop()
+            if (moved) return
+            // The buttons come up under the finger: the click a touch sends
+            // after lifting would press the one there.
+            swallowTapClick()
+            showDividerTools(upEvent.clientX, upEvent.clientY)
         }
         stopSplitResize?.()
         stopSplitResize = stop
         window.addEventListener('pointermove', move)
-        window.addEventListener('pointerup', stop)
+        window.addEventListener('pointerup', up)
         window.addEventListener('pointercancel', stop)
+    }
+
+    // The buttons a tap on the divider shows, centred where it was tapped.
+    let dividerTools = $state<{ x: number, y: number } | null>(null)
+    let dividerToolsEl: HTMLDivElement | null = $state(null)
+    const TOOLS_HALF_WIDTH = 84
+    const TOOLS_HALF_HEIGHT = 28
+
+    function showDividerTools(x: number, y: number) {
+        dividerTools = {
+            x: Math.min(Math.max(x, TOOLS_HALF_WIDTH + 4), window.innerWidth - TOOLS_HALF_WIDTH - 4),
+            y: Math.min(Math.max(y, TOOLS_HALF_HEIGHT + 4), window.innerHeight - TOOLS_HALF_HEIGHT - 4),
+        }
+    }
+
+    function hideDividerTools() {
+        dividerTools = null
+    }
+
+    // Closed by a touch anywhere else, Escape, or the split closing.
+    $effect(() => {
+        if (!dividerTools) return
+        const outside = (event: PointerEvent) => {
+            if (!dividerToolsEl?.contains(event.target as Node)) hideDividerTools()
+        }
+        const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') hideDividerTools() }
+        window.addEventListener('pointerdown', outside, true)
+        window.addEventListener('keydown', escape)
+        return () => {
+            window.removeEventListener('pointerdown', outside, true)
+            window.removeEventListener('keydown', escape)
+        }
+    })
+    $effect(() => {
+        if (!enabled) untrack(hideDividerTools)
+    })
+
+    // Side by side and stacked trade places; a window too narrow for two
+    // chats side by side stays stacked.
+    function flipOrientation() {
+        setSplitLayout({ orientation: column ? 'row' : 'column' })
     }
 
     // The menu a long press opens comes up under the finger still on the
@@ -171,6 +228,21 @@
         window.addEventListener('click', swallow, true)
         window.addEventListener('pointerup', release, true)
         window.addEventListener('pointercancel', release, true)
+    }
+
+    // The click that follows a tap's pointerup, if one comes soon.
+    function swallowTapClick() {
+        const swallow = (event: Event) => {
+            event.preventDefault()
+            event.stopImmediatePropagation()
+            done()
+        }
+        const done = () => {
+            clearTimeout(timer)
+            window.removeEventListener('click', swallow, true)
+        }
+        const timer = setTimeout(done, 400)
+        window.addEventListener('click', swallow, true)
     }
 
     // Even: the two chats get the same, unless the main chat would go under its minimum.
@@ -221,16 +293,17 @@
             ? [['start', language.splitRailStart], ['center', language.splitRailCenter], ['end', language.splitRailEnd]]
             : [['start', language.splitRailStart], ['end', language.splitRailEnd]]
         // One column or two (the user's request, 2026-10-22), as in the bot list's + menu.
+        const flip: [AlertAction, () => void] = [{ label: row ? language.splitToColumn : language.splitToRow, row: 'panes' }, () => flipOrientation()]
         const columns = ([[false, language.splitRailOneColumn], [true, language.splitRailTwoColumns]] as const).map(([split, label]): [AlertAction, () => void] => [
             { label, row: 'columns', variant: sidebarCatalog.split === split ? 'primary' : 'outline' },
             () => { setSidebarCatalogSplit(split); if (docked) setSplitLayout({ railHidden: false }) },
         ])
         const swap: [AlertAction, () => void] = [{ label: row ? language.splitSwapRow : language.splitSwapColumn, row: 'panes' }, () => swapPanes()]
         // A narrow window (a phone or fold with the mobile layout off) has no
-        // bot list beside the panes and lays them out by its width: only the
-        // panes' own bot lists and the swap apply. The menu was for the
-        // docked split only, so holding the divider there showed nothing
-        // (the user's report, 2026-10-22).
+        // bot list beside the panes: the panes' own bot lists, the swap and,
+        // when the window has room for both side by side, the orientation
+        // apply. The menu was for the docked split only, so holding the
+        // divider there showed nothing (the user's report, 2026-10-22).
         const actions: [AlertAction, () => void][] = docked ? [
             ...railChoices.map(([place, label]): [AlertAction, () => void] => [
                 { label, row: 'rail', variant: !hidden && place === rail ? 'primary' : 'outline' },
@@ -239,8 +312,8 @@
             ...columns,
             [{ label: hidden ? language.splitRailShow : language.splitRailHide }, () => setSplitLayout({ railHidden: !hidden })],
             swap,
-            [{ label: row ? language.splitToColumn : language.splitToRow, row: 'panes' }, () => setSplitLayout({ orientation: row ? 'column' : 'row' })],
-        ] : [...columns, swap]
+            flip,
+        ] : [...columns, swap, ...(narrowStack ? [] : [flip])]
         const selected = parseInt(await alertSelect([...actions.map(([action]) => action), language.cancel]))
         actions[selected]?.[1]()
     }
@@ -312,7 +385,7 @@
                 title={docked ? language.splitDividerLabel : undefined}
                 tabindex="0"
                 onpointerdown={beginSplitResize}
-                ondblclick={resetSplitSize}
+                ondblclick={() => { hideDividerTools(); resetSplitSize() }}
                 onkeydown={handleSplitDividerKeydown}
                 oncontextmenu={openDividerMenu}
             ></div>
@@ -358,9 +431,71 @@
     {#if docked && railShown && rail === 'end'}{@render botList()}{/if}
 </div>
 
+{#if enabled && dividerTools}
+    <div
+        bind:this={dividerToolsEl}
+        class="split-divider-tools fixed z-50 flex items-center gap-1 rounded-full border border-darkborderc bg-darkbg px-2 py-1 shadow-lg"
+        style:left={`${dividerTools.x}px`}
+        style:top={`${dividerTools.y}px`}
+        role="toolbar"
+        aria-label={language.splitDividerLabel}
+    >
+        <button
+            type="button"
+            class="split-divider-tool"
+            disabled={narrowStack}
+            title={column ? language.splitToRow : language.splitToColumn}
+            aria-label={column ? language.splitToRow : language.splitToColumn}
+            onclick={() => { hideDividerTools(); flipOrientation() }}
+        >
+            {#if column}<Columns2Icon size={22} />{:else}<Rows2Icon size={22} />{/if}
+        </button>
+        <button
+            type="button"
+            class="split-divider-tool"
+            title={column ? language.splitSwapColumn : language.splitSwapRow}
+            aria-label={column ? language.splitSwapColumn : language.splitSwapRow}
+            onclick={() => { hideDividerTools(); swapPanes() }}
+        >
+            {#if column}<ArrowUpDownIcon size={22} />{:else}<ArrowLeftRightIcon size={22} />{/if}
+        </button>
+        <button
+            type="button"
+            class="split-divider-tool"
+            title={language.splitClose}
+            aria-label={language.splitClose}
+            onclick={() => { hideDividerTools(); splitChatOpen.set(false) }}
+        >
+            <XIcon size={22} />
+        </button>
+    </div>
+{/if}
+
 <style>
     .split-chat-divider {
         touch-action: none;
+    }
+
+    .split-divider-tools {
+        transform: translate(-50%, -50%);
+    }
+
+    .split-divider-tool {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 2.75rem;
+        height: 2.75rem;
+        border-radius: 9999px;
+        color: var(--risu-theme-textcolor);
+    }
+
+    .split-divider-tool:hover:not(:disabled) {
+        background: var(--risu-theme-selected);
+    }
+
+    .split-divider-tool:disabled {
+        opacity: 0.35;
     }
 
     /* Docked side by side, the widths come from dockedSplitWidths

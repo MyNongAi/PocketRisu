@@ -36,7 +36,7 @@
 </script>
 
 <aside
-    class="side-chat-pane relative flex h-full min-h-0 min-w-0 border-l border-darkborderc bg-bgcolor"
+    class="side-chat-pane relative flex grow h-full min-h-0 min-w-0 border-l border-darkborderc bg-bgcolor"
     aria-label="Secondary chat"
     ondragentercapture={over}
     ondragovercapture={over}
