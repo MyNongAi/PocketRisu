@@ -36,6 +36,7 @@ const {
     chatDraftKey,
     scheduleSaveChatDraft,
     copyChatDraft,
+    composerDraft,
 } = await import('./chatDraft')
 
 beforeEach(() => {
@@ -136,5 +137,69 @@ describe('copyChatDraft', () => {
         removeChatDraft('cp3', 'src')
         copyChatDraft('cp3', 'src', 'copy')
         expect(await loadChatDraft('cp3', 'copy')).toBeNull()
+    })
+})
+
+// The same chat open in both split panes: two composers, one draft.
+describe('composerDraft', () => {
+    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+    test('the other pane’s empty composer does not delete what this one typed', async () => {
+        const a = composerDraft()
+        const b = composerDraft()
+        a.loaded(null)
+        b.loaded(null)
+        a.edited('cd1', 'c', { m: 'hello', t: '' })
+        a.flush('cd1', 'c', { m: 'hello', t: '' })
+        b.flush('cd1', 'c', { m: '', t: '' })
+        expect(await loadChatDraft('cd1', 'c')).toEqual({ m: 'hello', t: '' })
+    })
+
+    test('older text in the other pane does not roll back newer text', async () => {
+        flushChatDraft('cd2', 'c', { m: 'abc', t: '' })
+        const a = composerDraft()
+        const b = composerDraft()
+        a.loaded(await loadChatDraft('cd2', 'c'))
+        b.loaded(await loadChatDraft('cd2', 'c'))
+        a.edited('cd2', 'c', { m: 'abcdef', t: '' })
+        a.flush('cd2', 'c', { m: 'abcdef', t: '' })
+        b.flush('cd2', 'c', { m: 'abc', t: '' })
+        expect(await loadChatDraft('cd2', 'c')).toEqual({ m: 'abcdef', t: '' })
+    })
+
+    test('a sent draft is not brought back by the other pane', async () => {
+        flushChatDraft('cd3', 'c', { m: 'to send', t: '' })
+        const b = composerDraft()
+        b.loaded(await loadChatDraft('cd3', 'c'))
+        removeChatDraft('cd3', 'c')
+        b.flush('cd3', 'c', { m: 'to send', t: '' })
+        expect(await loadChatDraft('cd3', 'c')).toBeNull()
+    })
+
+    test('leaving a chat before its draft loaded keeps the draft', async () => {
+        flushChatDraft('cd4', 'c', { m: 'long text', t: '' })
+        const c = composerDraft()
+        c.loaded(null)
+        c.flush('cd4', 'c', { m: '', t: '' })
+        expect(await loadChatDraft('cd4', 'c')).toEqual({ m: 'long text', t: '' })
+    })
+
+    test('typing back to the loaded text is still saved', async () => {
+        flushChatDraft('cd5', 'c', { m: 'abc', t: '' })
+        const c = composerDraft()
+        c.loaded(await loadChatDraft('cd5', 'c'))
+        c.edited('cd5', 'c', { m: 'abcx', t: '' })
+        c.flush('cd5', 'c', { m: 'abcx', t: '' })
+        c.edited('cd5', 'c', { m: 'abc', t: '' })
+        c.flush('cd5', 'c', { m: 'abc', t: '' })
+        expect(await loadChatDraft('cd5', 'c')).toEqual({ m: 'abc', t: '' })
+    })
+
+    test('typing in one chat no longer cancels another chat’s pending save', async () => {
+        scheduleSaveChatDraft('cd6', 'one', { m: 'one', t: '' })
+        scheduleSaveChatDraft('cd6', 'two', { m: 'two', t: '' })
+        await wait(900)
+        expect(await loadChatDraft('cd6', 'one')).toEqual({ m: 'one', t: '' })
+        expect(await loadChatDraft('cd6', 'two')).toEqual({ m: 'two', t: '' })
     })
 })

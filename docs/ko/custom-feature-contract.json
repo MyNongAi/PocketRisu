@@ -1368,6 +1368,8 @@
         "src/lib/SideBars/SideChatList.svelte"
       ],
       "requiredMarkers": [
+        { "file": "src/ts/storage/chatDraft.ts", "contains": "export function composerDraft() {" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "composer.flush(draftChaId, draftChatId, { m: messageInput, t: messageInputTranslate })" },
         { "file": "src/ts/storage/chatDraft.ts", "contains": "export function copyChatDraft(chaId: string, fromChatId: string, toChatId: string): void" },
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "copyChatDraft((chara as character).chaId, chara.chats[chatIdx].id, newChat.id)" },
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "copyChatDraft((chara as character).chaId, chara.chats[i].id, newChat.id)" }

@@ -81,18 +81,19 @@ async function persistRemove(key: string): Promise<void> {
     maybeSaved.delete(key)
 }
 
-let saveTimer: ReturnType<typeof setTimeout> | null = null
+// One debounce per chat: with the split's two composers, typing in one
+// cancelled the other's pending save.
+const saveTimers = new Map<string, ReturnType<typeof setTimeout>>()
 
 // The latest text handed in per key this session (typing, flush), so
 // copyChatDraft can take what is in the input right now: the debounced save
 // of the last keystrokes may not have run yet.
 const latest = new Map<string, ChatDraft>()
 
-function cancelPending() {
-    if (saveTimer) {
-        clearTimeout(saveTimer)
-        saveTimer = null
-    }
+function cancelPending(key: string) {
+    const timer = saveTimers.get(key)
+    if (timer) clearTimeout(timer)
+    saveTimers.delete(key)
 }
 
 /**
@@ -128,18 +129,18 @@ export function scheduleSaveChatDraft(chaId: string, chatId: string, draft: Chat
     if (!chaId || !chatId) return
     const key = chatDraftKey(chaId, chatId)
     latest.set(key, { ...draft })
-    cancelPending()
-    saveTimer = setTimeout(() => {
-        saveTimer = null
+    cancelPending(key)
+    saveTimers.set(key, setTimeout(() => {
+        saveTimers.delete(key)
         enqueue(() => persistSave(key, draft))
-    }, DEBOUNCE_MS)
+    }, DEBOUNCE_MS))
 }
 
 /** Immediate save (blur / chat switch / unmount / page hide). Cancels any pending debounce. */
 export function flushChatDraft(chaId: string, chatId: string, draft: ChatDraft): void {
     if (!chaId || !chatId) return
     latest.set(chatDraftKey(chaId, chatId), { ...draft })
-    cancelPending()
+    cancelPending(chatDraftKey(chaId, chatId))
     enqueue(() => persistSave(chatDraftKey(chaId, chatId), draft))
 }
 
@@ -147,8 +148,43 @@ export function flushChatDraft(chaId: string, chatId: string, draft: ChatDraft):
 export function removeChatDraft(chaId: string, chatId: string): void {
     if (!chaId || !chatId) return
     latest.delete(chatDraftKey(chaId, chatId))
-    cancelPending()
+    cancelPending(chatDraftKey(chaId, chatId))
     enqueue(() => persistRemove(chatDraftKey(chaId, chatId)))
+}
+
+/**
+ * One composer's side of its chat's draft: it saves only text changed in it.
+ * The same chat can be open in both split panes, and each composer flushed
+ * what it showed on blur and page hide: the other pane's empty or older text
+ * deleted or rolled back the draft typed in this one, and brought back a sent
+ * one (2026-10-22 split review). Leaving a chat before its draft loaded also
+ * flushed the cleared input and deleted it. Plain closure state, never
+ * $state: the composer's effects read and call it.
+ */
+export function composerDraft() {
+    let base: ChatDraft = { m: '', t: '' }
+    let touched = false
+    const unchanged = (draft: ChatDraft) => !touched && draft.m === base.m && draft.t === base.t
+    return {
+        /** The text the composer now shows came from elsewhere (the stored draft, another device), or nothing yet. */
+        loaded(draft: ChatDraft | null) {
+            base = draft ? { m: draft.m, t: draft.t } : { m: '', t: '' }
+            touched = false
+        },
+        /** Typing: a debounced save, once the text differs from what was loaded. */
+        edited(chaId: string, chatId: string, draft: ChatDraft) {
+            if (unchanged(draft)) return
+            touched = true
+            scheduleSaveChatDraft(chaId, chatId, draft)
+        },
+        /** Blur, leave, page hide: saved now, unless this composer changed nothing. */
+        flush(chaId: string, chatId: string, draft: ChatDraft) {
+            if (unchanged(draft)) return
+            flushChatDraft(chaId, chatId, draft)
+            base = { m: draft.m, t: draft.t }
+            touched = false
+        },
+    }
 }
 
 /**

@@ -53,7 +53,7 @@ import { isMobile } from 'src/ts/platform'
     import { postChatFile } from 'src/ts/process/files/multisend';
     import { getInlayAsset } from 'src/ts/process/files/inlays';
     import { quickMenu } from 'src/ts/hotkey';
-    import { loadChatDraft, scheduleSaveChatDraft, flushChatDraft, removeChatDraft } from 'src/ts/storage/chatDraft';
+    import { composerDraft, loadChatDraft, removeChatDraft } from 'src/ts/storage/chatDraft';
     import { onRemoteDraft, publishDraft, remoteGenerations } from 'src/ts/sync/remoteActivity';
     import { registerUnsavedText } from 'src/ts/storage/buildFence';
     import { getChatAssetRenderWindow } from 'src/ts/chatAssetWindow';
@@ -144,9 +144,11 @@ import { isMobile } from 'src/ts/platform'
     // another device typing): it is not passed on to the other devices again.
     let draftEcho = ''
     let lastTypedAt = 0
+    // Saves only what was typed here: the same chat can be in the other pane.
+    const composer = composerDraft()
 
     function persistDraftNow() {
-        flushChatDraft(draftChaId, draftChatId, { m: messageInput, t: messageInputTranslate })
+        composer.flush(draftChaId, draftChatId, { m: messageInput, t: messageInputTranslate })
     }
 
     // Load on chat enter (keyed by id, so no wait for hydration); flush the
@@ -156,11 +158,14 @@ import { isMobile } from 'src/ts/platform'
         const chatId = draftChatId
         if (!chaId || !chatId) return
         untrack(() => { messageInput = ''; messageInputTranslate = ''; draftLoading = true })
+        composer.loaded(null)
         let active = true
         ;(async () => {
             const draft = await loadChatDraft(chaId, chatId)
             if (!active) return
             untrack(() => {
+                // Text typed during the load counts as changed here.
+                composer.loaded(draft)
                 // Don't clobber text the user began typing during the load.
                 if (draft && messageInput === '' && messageInputTranslate === '') {
                     messageInput = draft.m
@@ -176,7 +181,7 @@ import { isMobile } from 'src/ts/platform'
         })()
         return () => {
             active = false
-            flushChatDraft(chaId, chatId, {
+            composer.flush(chaId, chatId, {
                 m: untrack(() => messageInput),
                 t: untrack(() => messageInputTranslate),
             })
@@ -191,7 +196,7 @@ import { isMobile } from 'src/ts/platform'
         const m = messageInput
         const t = messageInputTranslate
         if (!chaId || !chatId || draftLoading) return
-        scheduleSaveChatDraft(chaId, chatId, { m, t })
+        composer.edited(chaId, chatId, { m, t })
         // Other devices with this chat open show the same text as it is typed
         // (the user's request, 2026-10-21; remoteActivity.ts).
         if (m !== draftEcho) {
@@ -206,6 +211,8 @@ import { isMobile } from 'src/ts/platform'
         if (chatId !== draftChatId || draftLoading || text === messageInput) return
         if (document.activeElement === inputEle && Date.now() - lastTypedAt < 2000) return
         draftEcho = text
+        // The other device saved it already.
+        composer.loaded({ m: text, t: messageInputTranslate })
         messageInput = text
         void tick().then(() => updateInputSizeAll())
     }))
