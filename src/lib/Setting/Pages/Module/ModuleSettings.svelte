@@ -206,11 +206,12 @@
         } else {
             character.modules = [...current, rmodule.id]
             recordModulePair(DBState.db.modules, [rmodule.id], character.chaId)
-            rememberActivation(rmodule.id)
             void wakeModules([rmodule.id])
             notifySuccess(language.moduleBotLinked.replace('{}', character.name || 'Unnamed'))
         }
+        // Gathered first, so 최근순 lifts the folder the module ends up in.
         syncLinkedFolders()
+        if (character.modules.includes(rmodule.id)) rememberActivation(rmodule.id)
         rerenderChatForModules()
     }
 

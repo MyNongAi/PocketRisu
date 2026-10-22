@@ -12,6 +12,10 @@ export interface ModuleFolder {
     }
     /** The [링크] folder of modules bots carry as their own (linkedModuleFolder.ts). */
     nodeOnlyLinkFolder?: boolean
+    /** 'manual': the [링크2] folder, modules linked by hand (linkedModuleFolder.ts). */
+    nodeOnlyLinkKind?: 'manual'
+    /** Explicit visual order (moduleSort.ts). */
+    sortOrder?: number
     /** Shown inside this folder (display-only nesting, as on the bot list). */
     nodeOnlyParentFolderId?: string
     /** The [프롬] folder, a preset's folder in it, or its 프롬 없음 folder (presetModuleFolder.ts). */

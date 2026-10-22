@@ -156,9 +156,10 @@
         else {
             character.modules.push(moduleId)
             recordModulePair(DBState.db.modules, [moduleId], character.chaId)
-            rememberActivation(moduleId)
         }
+        // Gathered first, so 최근순 lifts the folder the module ends up in.
         syncLinkedFolders()
+        if (character.modules.includes(moduleId)) rememberActivation(moduleId)
         $ReloadGUIPointer += 1
     }
 
