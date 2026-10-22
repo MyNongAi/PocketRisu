@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { untrack } from "svelte";
     import { getPaneView } from "src/ts/chatPanes.svelte";
     import { DBState, selectedCharID, openPresetList, presetSelectCallback } from "src/ts/stores.svelte";
     import { language } from "src/lang";
@@ -33,9 +34,16 @@
     // to a valid preset, flip the global active preset so the rest of the
     // codebase — which only reads db.botPresetsId — automatically uses the
     // bound one. No-op when no binding or when already active.
+    // db.botPresetsId is the selected chat's (sending reads it), so only the
+    // pane holding the selection applies its chat's binding: two panes bound
+    // to different presets flipped it until effect_update_depth_exceeded, and
+    // the pane beside it snapped the selected chat's preset back (2026-10-22
+    // split review). The switch itself reads and writes much more: untracked.
     $effect(() => {
-        if (boundPresetIndex >= 0 && DBState.db.botPresetsId !== boundPresetIndex) {
-            changeToPreset(boundPresetIndex)
+        if (!view.active) return
+        const index = boundPresetIndex
+        if (index >= 0 && DBState.db.botPresetsId !== index) {
+            untrack(() => changeToPreset(index))
         }
     })
 
