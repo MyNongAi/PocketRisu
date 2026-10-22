@@ -194,6 +194,7 @@
         "src/lib/UI/GUI/SideBarArrow.svelte"
       ],
       "requiredMarkers": [
+        { "file": "src/ts/process/scriptings.ts", "contains": "const getVar = arg.getVar ?? ((key: string) => getChatVar(key, varScope))" },
         { "file": "src/ts/parser/chatVar.svelte.ts", "contains": "const state = chat.scriptstate?.['$' + key]" },
         { "file": "src/lib/SideBars/PromptBind.svelte", "contains": "if (!view.active) return" },
         { "file": "src/ts/globalApi.svelte.ts", "contains": "followChatFold(chatFoldedState, chatFoldedStateMessageIndex, () => DBState?.db?.characters?.[selIdState?.selId])" },
@@ -247,6 +248,7 @@
         { "file": "src/lib/UI/GUI/SideBarArrow.svelte", "contains": "onclick={() => togglePanePanel(view.pane)}" }
       ],
       "regressionTests": [
+        "src/ts/process/scriptings.test.ts",
         "src/lib/SideBars/PromptBind.panes.test.ts",
         "src/ts/chatFold.svelte.test.ts",
         "src/ts/chatSplitPane.test.ts",

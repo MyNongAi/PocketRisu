@@ -75,12 +75,19 @@ export async function runScripted(code:string, arg:{
     const type: 'lua'|'py' = arg.type ?? 'lua'
     const char = arg.char ?? arg.moduleContext?.character ?? getCurrentCharacter()
     const data = arg.data ?? ''
-    const setVar = arg.setVar ?? setChatVar
-    const getVar = arg.getVar ?? getChatVar
     const meta = arg.meta ?? {}
     const mode = arg.mode ?? 'manual'
 
     let chat = arg.chat ?? arg.moduleContext?.chat ?? getCurrentChat()
+    // Variables follow the script's own chat, as runTrigger's Lua does: the
+    // selected one read and wrote the other split pane's variables (display
+    // Lua there, a send after a pane switch; 2026-10-22 split review). The
+    // live chat is found by id, since a send can hold a clone of it.
+    const varOwner = char && char.type !== 'simple' ? char as character : arg.moduleContext?.character
+    const varChat = (chat?.id ? varOwner?.chats?.find((candidate) => candidate?.id === chat.id) : undefined) ?? chat
+    const varScope = { chara: varOwner, chat: varChat }
+    const setVar = arg.setVar ?? ((key: string, value: string) => setChatVar(key, value, varScope))
+    const getVar = arg.getVar ?? ((key: string) => getChatVar(key, varScope))
     let stopSending = false
     let lowLevelAccess = arg.lowLevelAccess ?? false
 

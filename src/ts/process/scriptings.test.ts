@@ -2,7 +2,7 @@
 
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { beforeAll, expect, test, vi } from 'vitest'
+import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 
 vi.mock('../parser/parser.svelte', () => ({
   hasher: vi.fn(),
@@ -257,4 +257,64 @@ test('passes API results to Lua as plain tables without JS constructors', async 
   )
 
   expect(result.res).toEqual({ type: 'table', hasConstructor: false })
+})
+
+// Chat variables belong to the script's chat, not the selected one: display
+// Lua of the split's other pane, or a send after a pane switch, read and
+// wrote the selected chat's variables.
+describe("chat variables follow the script's chat", () => {
+  const code = `
+    function onStart(id)
+      local mood = getChatVar(id, 'mood')
+      setChatVar(id, 'mood', 'w-' .. mood)
+    end
+  `
+  let selected: any
+  beforeEach(async () => {
+    const { DBState } = await import('../stores.svelte')
+    selected = { id: 'selected', message: [], scriptstate: { $mood: 'sel' } }
+    ;(DBState as any).db = {
+      characters: [{ chaId: 'S', type: 'character', chatPage: 0, chats: [selected], defaultVariables: '' }],
+      templateDefaultVariables: '',
+    }
+  })
+
+  test('the chat a send runs for', async () => {
+    const sendChat = { id: 'send', message: [], scriptstate: { $mood: 'send' } }
+    const char = { chaId: 'B', type: 'character', chatPage: 0, chats: [sendChat], defaultVariables: '' }
+    await runScripted(code, { char: char as never, chat: sendChat as never, mode: 'start' })
+    expect(sendChat.scriptstate.$mood).toBe('w-send')
+    expect(selected.scriptstate.$mood).toBe('sel')
+  })
+
+  test('the live chat when the send holds a copy of it', async () => {
+    const live = { id: 'send', message: [], scriptstate: { $mood: 'live' } as Record<string, string> }
+    const copy = { id: 'send', message: [], scriptstate: { $mood: 'live' } as Record<string, string> }
+    const char = { chaId: 'B', type: 'character', chatPage: 0, chats: [live], defaultVariables: '' }
+    await runScripted(code, { char: char as never, chat: copy as never, mode: 'start' })
+    expect(live.scriptstate.$mood).toBe('w-live')
+    expect(copy.scriptstate.$mood).toBe('live')
+  })
+
+  test('the pane chat a display script is given with its module context', async () => {
+    const paneChat = { id: 'pane', message: [], scriptstate: { $mood: 'pane' } }
+    const paneChar = { chaId: 'P', type: 'character', chatPage: 0, chats: [paneChat], defaultVariables: '' }
+    await runScripted(code, {
+      char: { type: 'simple' } as never,
+      moduleContext: { character: paneChar, chat: paneChat } as never,
+      mode: 'start',
+    })
+    expect(paneChat.scriptstate.$mood).toBe('w-pane')
+    expect(selected.scriptstate.$mood).toBe('sel')
+  })
+
+  test('the selected chat when nothing else is given', async () => {
+    const database = await import('../storage/database.svelte')
+    const { DBState } = await import('../stores.svelte')
+    const selectedCharacter = (DBState as any).db.characters[0]
+    vi.mocked(database.getCurrentCharacter).mockReturnValueOnce(selectedCharacter)
+    vi.mocked(database.getCurrentChat).mockReturnValueOnce(selected)
+    await runScripted(code, { mode: 'start' })
+    expect(selected.scriptstate.$mood).toBe('w-sel')
+  })
 })
