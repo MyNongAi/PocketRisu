@@ -194,6 +194,7 @@
         "src/lib/UI/GUI/SideBarArrow.svelte"
       ],
       "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/ChatScreen.svelte", "contains": "if ($openModuleListStore && view.active) {" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": ": looseSplitSideWidth(rowSpan(), width)" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "width: min(24rem, calc(100% - var(--pane-overlay-rail, 5rem) - 3rem));" },
         { "file": "src/ts/paneActivation.ts", "contains": "if (!hydrated || serial !== selectSerial || selectedChatIds()?.chatId !== hydrated.id) return" },

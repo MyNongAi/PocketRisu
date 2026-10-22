@@ -1,4 +1,5 @@
 <script lang="ts">
+    import { untrack } from 'svelte';
     import { getCustomBackground, getEmotion } from "../../ts/util";
     
     import { DBState } from 'src/ts/stores.svelte';
@@ -15,6 +16,7 @@
     import { hideFloatingBotControls } from 'src/ts/gui/floatingBotControls';
     import { paneView, setPaneContext, type PaneId } from 'src/ts/chatPanes.svelte';
     import { activatePane } from 'src/ts/paneActivation';
+    import { setPaneOverlayOpen } from 'src/ts/splitLayout.svelte';
 
     // Which pane of the split this is (chatPanes.svelte.ts); 'main' without one.
     let { pane = 'main' }: { pane?: PaneId } = $props()
@@ -29,11 +31,21 @@
     useBackLayer(BackLayerRank.Popup, () => openChatList, () => { openChatList = false })
     useBackLayer(BackLayerRank.Popup, () => openModuleList && !openChatList, () => { openModuleList = false })
 
+    // The module menu edits the selected chat, so the pane holding the
+    // selection opens it: both panes took the request, the main one first,
+    // and the side pane's button opened it over the left chat (2026-10-22
+    // split review). A narrow split's own overlay over the pane is closed so
+    // the menu shows.
     $effect(() => {
-        if ($openModuleListStore) {
+        if ($openModuleListStore && view.active) {
             openModuleList = true
             openModuleListStore.set(false)
+            untrack(() => setPaneOverlayOpen(view.pane, false))
         }
+    })
+    // Left open, it would go on editing whatever the other pane then selects.
+    $effect(() => {
+        if (!view.active) untrack(() => { openModuleList = false })
     })
 
     const wallPaper = `background: url(${defaultWallpaper})`
