@@ -98,8 +98,14 @@
     const rowRoom = (span: number) => docked ? dockedSplitChatRoom(dockedRowAt(span)) : Math.max(0, span - SPLIT_DIVIDER_PX)
     const columnRoom = () => Math.max(0, (paneRoot?.clientHeight ?? window.innerHeight) - SPLIT_DIVIDER_PX)
     const mainMinimum = SPLIT_MAIN_CHAT_MIN_PX
-    const widthBounds = $derived(getSplitWidthBounds(rowRoom(paneWidth), mainMinimum))
-    const clampWidth = (width: number) => clampSplitWidth(width, rowRoom(rowSpan()), mainMinimum)
+    // Side by side in a narrow window both chats keep their minimum
+    // (looseSplitSideWidth): a drag saves what is shown, and the bounds say so.
+    const widthBounds = $derived(docked
+        ? getSplitWidthBounds(rowRoom(paneWidth), mainMinimum)
+        : { min: SPLIT_MAIN_CHAT_MIN_PX, max: looseSplitSideWidth(paneWidth || window.innerWidth, Number.MAX_SAFE_INTEGER) })
+    const clampWidth = (width: number) => docked
+        ? clampSplitWidth(width, rowRoom(rowSpan()), mainMinimum)
+        : looseSplitSideWidth(rowSpan(), width)
     const clampSize = (size: number) => column ? clampSplitHeight(size, columnRoom()) : clampWidth(size)
     const setSize = (size: number) => (column ? splitChatHeight : splitChatWidth).set(clampSize(size))
     // The size on screen: docked side by side, the second chat can be narrower than the width saved.
@@ -218,9 +224,11 @@
     onMount(() => {
         const clampStoredSizes = () => {
             if (!paneRoot) return
-            // Docked, the layout narrows what it shows (dockedSplitWidths), so
-            // the saved width comes back once the window is wide again.
-            if (!docked) splitChatWidth.update(clampWidth)
+            // The saved width is never clamped to the window: both layouts
+            // narrow what they show (dockedSplitWidths, looseSplitSideWidth),
+            // so it comes back once the window is wide again. Clamping it
+            // whenever the split was closed or the window narrow shrank it for
+            // good (520 to 374 at 700px; 2026-10-22 split review).
             if (column) splitChatHeight.update((height) => clampSplitHeight(height, columnRoom()))
         }
         clampStoredSizes()
