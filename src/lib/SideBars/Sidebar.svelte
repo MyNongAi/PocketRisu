@@ -51,7 +51,7 @@
     ArrowRight,
     ArrowLeft,
   } from "@lucide/svelte";
-    import { isEmbeddedRisuPane, pressSplitButton, splitChatOpen } from 'src/ts/chatSplitPane';
+    import { isEmbeddedRisuPane, paneOverlayRailRem, pressSplitButton, splitChatOpen } from 'src/ts/chatSplitPane';
     // The split's open button closes it again (the user's request, 2026-10-17;
     // the pane's own X in its top-right corner is gone).
     const SPLIT_OPEN_LABEL = '분할 채팅 열기'
@@ -1602,6 +1602,7 @@
 {#if DBState.db.menuSideBar}
 <div
   onpointerdowncapture={takePaneSelection}
+  onfocusincapture={takePaneSelection}
   class="h-full w-20 min-w-20 flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
   class:editMode
   class:risu-sub-sidebar={$sideBarClosing && !pane}
@@ -1669,7 +1670,11 @@
 </button>
 </div>
 {:else}
+<!-- A pane's overlay (narrow split) lies outside its chat screen: touching
+     its bot list hands that pane the selection, so a bot opens there. -->
 <div
+  onpointerdowncapture={takePaneSelection}
+  onfocusincapture={takePaneSelection}
   class="h-full flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
   class:w-40={splitCatalogMode}
   class:min-w-40={splitCatalogMode}
@@ -1677,8 +1682,8 @@
   class:min-w-20={!splitCatalogMode}
   class:max-xs:hidden={$leftBarCollapsed}
   class:editMode
-  class:risu-sub-sidebar={$sideBarClosing}
-  class:risu-sub-sidebar-close={$sideBarClosing}
+  class:risu-sub-sidebar={$sideBarClosing && !pane}
+  class:risu-sub-sidebar-close={$sideBarClosing && !pane}
   class:hidden={hidden}
   class:flex={!hidden}
 >
@@ -2232,6 +2237,7 @@
   class:w-80={!!pane && !overlay}
   class:min-w-80={!!pane && !overlay}
   class:pane-overlay-panel={overlay}
+  style:--pane-overlay-rail={overlay ? `${paneOverlayRailRem(splitCatalogMode, !!DBState.db.menuSideBar)}rem` : undefined}
   class:px-2={$DynamicGUI}
   class:px-4={!$DynamicGUI}
   class:dynamic-sidebar={$DynamicGUI}
@@ -2418,12 +2424,12 @@
     min-width: 6rem;
   }
   /* Over a narrow pane: as wide as the app's sidebar when the pane has room,
-     else what is left beside the bot list (5rem) and the strip that
-     closes it (3rem). */
+     else what is left beside the bot list (5rem, two columns 10rem) and the
+     strip that closes it (3rem); it gives way before the strip does. */
   .pane-overlay-panel {
-    width: min(24rem, calc(100% - 8rem));
+    width: min(24rem, calc(100% - var(--pane-overlay-rail, 5rem) - 3rem));
     min-width: 0;
-    flex-shrink: 0;
+    flex-shrink: 1;
   }
   @keyframes sidebar-transition {
     from {

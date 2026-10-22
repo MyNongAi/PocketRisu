@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { clampSplitWidth, dockedSplitChatRoom, dockedSplitWidths, getSecondaryRisuPaneUrl, getSplitWidthBounds, parseChatRoomDragPayload, serializeChatRoomDragPayload, looseSplitSideWidth, NARROW_SPLIT_PX } from './chatSplitPane'
+import { clampSplitWidth, dockedSplitChatRoom, dockedSplitWidths, getSecondaryRisuPaneUrl, getSplitWidthBounds, parseChatRoomDragPayload, serializeChatRoomDragPayload, looseSplitSideWidth, NARROW_SPLIT_PX, paneOverlayFootprint, paneOverlayRailRem } from './chatSplitPane'
 
 describe('clampSplitWidth', () => {
     test('allows either desktop pane to become narrow without collapsing it', () => {
@@ -91,5 +91,34 @@ describe('a narrow window side by side', () => {
         expect(looseSplitSideWidth(880, 400)).toBe(400)
         expect(looseSplitSideWidth(880, 700)).toBe(554)
         expect(looseSplitSideWidth(646, 500)).toBe(320)
+    })
+})
+
+// A pane's overlay in a narrow split: bot list, panel, and the strip that closes it.
+describe('paneOverlayFootprint', () => {
+    test('one column fits as before', () => {
+        // 498px pane: 80 + 370 + 48
+        expect(paneOverlayFootprint(498, paneOverlayRailRem(false, false), 16)).toBe(498)
+    })
+    test('two columns leave the closing strip in the pane', () => {
+        const rail = paneOverlayRailRem(true, false)
+        expect(rail).toBe(10)
+        // 498px pane: 160 + 290 + 48 (the panel used to stay 370 and push the strip out)
+        expect(paneOverlayFootprint(498, rail, 16)).toBe(498)
+        expect(paneOverlayFootprint(1200, rail, 16)).toBe(160 + 384 + 48)
+    })
+    test('the menu sidebar rail is always one column', () => {
+        expect(paneOverlayRailRem(true, true)).toBe(5)
+    })
+    test('a pane too narrow for any panel keeps the list and the strip', () => {
+        expect(paneOverlayFootprint(150, 10, 16)).toBe(160 + 48)
+    })
+})
+
+// Side by side in a narrow window: what a drag can save is what is shown.
+describe('looseSplitSideWidth bounds', () => {
+    test('both chats keep their minimum', () => {
+        expect(looseSplitSideWidth(800, 0)).toBe(320)
+        expect(looseSplitSideWidth(800, Number.MAX_SAFE_INTEGER)).toBe(800 - 6 - 320)
     })
 })

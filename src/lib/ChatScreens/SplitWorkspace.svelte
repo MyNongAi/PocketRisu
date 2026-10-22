@@ -14,8 +14,8 @@
     // list and evens the sizes (splitLayout.svelte.ts).
     import type { Snippet } from 'svelte'
     import { onDestroy, onMount, untrack } from 'svelte'
-    import { DynamicGUI, MobileGUI, settingsOpen } from 'src/ts/stores.svelte'
-    import { clampSplitHeight, clampSplitWidth, dockedSplitChatRoom, dockedSplitWidths, getSplitWidthBounds, isEmbeddedRisuPane, looseSplitSideWidth, NARROW_SPLIT_PX, SPLIT_DIVIDER_PX, SPLIT_MAIN_CHAT_MIN_PX, splitChatHeight, splitChatOpen, splitChatWidth, type DockedSplitRow } from 'src/ts/chatSplitPane'
+    import { DBState, DynamicGUI, MobileGUI, settingsOpen } from 'src/ts/stores.svelte'
+    import { clampSplitHeight, clampSplitWidth, dockedSplitChatRoom, dockedSplitWidths, getSplitWidthBounds, isEmbeddedRisuPane, looseSplitSideWidth, NARROW_SPLIT_PX, paneOverlayFootprint, paneOverlayRailRem, SPLIT_DIVIDER_PX, SPLIT_MAIN_CHAT_MIN_PX, splitChatHeight, splitChatOpen, splitChatWidth, type DockedSplitRow } from 'src/ts/chatSplitPane'
     import SecondaryChatPanel from './SecondaryChatPanel.svelte'
     import Sidebar from '../SideBars/Sidebar.svelte'
     import { restorePanesAfterBoot, returnToMainPane, swapPanes } from 'src/ts/paneActivation'
@@ -80,13 +80,14 @@
     // Side by side in a narrow window, the second pane's own window would
     // leave its panel under 200px at the pane's narrowest (320px): it reaches
     // over the divider up to the app sidebar's width (26rem), but leaves the
-    // main pane's open window its closing strip (Sidebar: bot list 5rem,
-    // panel up to 24rem, strip 3rem). Null: just the pane (stacked).
+    // main pane's open window its closing strip (Sidebar: bot list 5rem or
+    // two columns' 10rem, panel up to 24rem, strip 3rem). Null: just the pane
+    // (stacked).
     const sideOverlayWidth = $derived.by(() => {
         if (looseSide === null) return null
         const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
         const main = (paneWidth || window.innerWidth) - SPLIT_DIVIDER_PX - looseSide
-        const mainOverlay = 5 * rem + Math.min(24 * rem, main - 8 * rem) + 3 * rem
+        const mainOverlay = paneOverlayFootprint(main, paneOverlayRailRem(sidebarCatalog.split, !!DBState.db.menuSideBar), rem)
         const spare = paneOverlayOpen.main ? Math.max(0, main - mainOverlay) : main
         return Math.max(looseSide, Math.min(26 * rem, looseSide + SPLIT_DIVIDER_PX + spare))
     })

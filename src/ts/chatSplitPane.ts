@@ -131,6 +131,25 @@ export function looseSplitSideWidth(span: number, saved: number): number {
     return Math.round(Math.min(max, Math.max(SPLIT_MAIN_CHAT_MIN_PX, saved)))
 }
 
+/**
+ * The bot list's width in a pane's overlay (Sidebar), in rem: two columns are
+ * 10rem; the menu sidebar's rail is always 5rem.
+ */
+export function paneOverlayRailRem(twoColumns: boolean, menuSideBar: boolean): number {
+    return twoColumns && !menuSideBar ? 10 : 5
+}
+
+/**
+ * What a pane's open overlay takes of a pane `width` px wide: the bot list,
+ * the panel (up to 24rem, else what is left) and the 3rem strip that closes
+ * it. The panel assumed a 5rem list, so with two columns the row overflowed
+ * and the strip was cut off (2026-10-22 split review).
+ */
+export function paneOverlayFootprint(width: number, railRem: number, rem: number): number {
+    const panel = Math.max(0, Math.min(24 * rem, width - (railRem + 3) * rem))
+    return railRem * rem + panel + 3 * rem
+}
+
 /** The docked split side by side (SplitWorkspace). */
 export interface DockedSplitRow {
     /** Both panes, the divider, and the bot list when it sits between them. */
