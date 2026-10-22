@@ -10,14 +10,20 @@ vi.mock('src/lang', () => ({
         botNotesModuleTask: 'notes',
         botNotesModuleFailed: 'notes failed',
         botNotesModulePaired: (n: number) => `notes paired ${n}`,
+        realmModuleLinkN: (n: number) => `link ${n}`,
+        realmModulePickLink: 'which link',
+        realmModuleImported: (n: number) => `imported ${n}`,
+        cancel: 'cancel',
         importProgress: { importing: 'importing' },
     },
 }))
 const notifySuccess = vi.fn()
 const notifyError = vi.fn()
+const alertSelect = vi.fn()
 vi.mock('./alert', () => ({
     notifySuccess: (m: string) => notifySuccess(m),
     notifyError: (m: string) => notifyError(m),
+    alertSelect: (...a: unknown[]) => alertSelect(...a),
 }))
 const taskNames: string[] = []
 vi.mock('./importProgress', () => ({ runImportTask: (name: string, fn: (report: () => void) => unknown) => { taskNames.push(name); return fn(() => {}) } }))
@@ -40,7 +46,7 @@ vi.mock('./process/modules', () => ({ importModuleFile: (...a: unknown[]) => imp
 
 const {
     findProtonShareLinks, isCompanionModuleFile, pairModulesWithCharacter, importRealmCompanionModules,
-    openBotNotesProtonLink, protonShareLinkOf,
+    openBotNotesProtonLink, protonShareLinkOf, protonLinkChoices, importRealmDescriptionModules,
 } = await import('./realmCompanionModule')
 
 const LINK = 'https://drive.proton.me/urls/ABC123#keyPart_-9'
@@ -241,5 +247,77 @@ describe('a Proton link clicked in the creator notes', () => {
         expect(protonShareLinkOf(anchor('https://example.com/x'))).toBeNull()
         expect(protonShareLinkOf(anchor(null))).toBeNull()
         expect(protonShareLinkOf(null)).toBeNull()
+    })
+})
+
+const share = (id: string) => `https://drive.proton.me/urls/${id}#k${id}`
+
+describe('the Realm window module button', () => {
+    beforeEach(() => {
+        db.modules = []
+        db.characters = [{ chaId: 'c1', modules: [] }]
+        vi.clearAllMocks()
+        inspectProtonShare.mockResolvedValue({ kind: 'folder', name: 'pack', entries: [], trail: [] })
+        importProtonShare.mockImplementation(async (_l: string, _p: string, _s: unknown, _o: string, onModule: (m: unknown) => void) => {
+            const m = { id: `m${db.modules.length + 1}` }
+            db.modules.push(m)
+            onModule(m)
+        })
+    })
+
+    test('names each link by the words on its line, every link counted', () => {
+        const text = [
+            '# 다운로드',
+            `에셋 모듈: ${share('A1')}`,
+            `[이미지팩](${share('B2')})`,
+            share('C3'),
+            `**배경 모듈** → ${share('D4')}`,
+            `같은 줄 ${share('E5')} ${share('F6')}`,
+        ].join('\n')
+        expect(protonLinkChoices(text)).toEqual([
+            { link: share('A1'), label: '에셋 모듈' },
+            { link: share('B2'), label: '이미지팩' },
+            { link: share('C3'), label: 'link 3' },
+            { link: share('D4'), label: '배경 모듈' },
+            { link: share('E5'), label: '같은 줄' },
+            { link: share('F6'), label: '같은 줄 (2)' },
+        ])
+    })
+
+    test('a link alone on its line takes the words on the line above it', () => {
+        const text = ['추가 에셋 모듈:', share('A1'), '', 'BGM 플러그인:', '', share('B2')].join('\n')
+        expect(protonLinkChoices(text).map((choice) => choice.label)).toEqual(['추가 에셋 모듈', 'BGM 플러그인'])
+    })
+
+    test('one link opens the browser at once and pairs with the bots downloaded from this card', async () => {
+        await importRealmDescriptionModules(`모듈 ${share('A1')}`, () => db.characters)
+        expect(alertSelect).not.toHaveBeenCalled()
+        expect(importProtonShare.mock.calls[0][0]).toBe(share('A1'))
+        expect(importProtonShare.mock.calls[0][5].browse).toBe(true)
+        expect(db.characters[0].modules).toEqual(['m1'])
+        expect(notifySuccess).toHaveBeenCalledWith('notes paired 1')
+    })
+
+    test('with several links the picked one opens; cancel opens none', async () => {
+        const text = `a ${share('A1')}\nb ${share('B2')}`
+        alertSelect.mockResolvedValueOnce('1')
+        await importRealmDescriptionModules(text, () => db.characters)
+        expect(alertSelect.mock.calls[0][0]).toEqual(['a', 'b', 'cancel'])
+        expect(importProtonShare.mock.calls[0][0]).toBe(share('B2'))
+
+        importProtonShare.mockClear()
+        alertSelect.mockResolvedValueOnce('2')
+        await importRealmDescriptionModules(text, () => db.characters)
+        expect(importProtonShare).not.toHaveBeenCalled()
+    })
+
+    test('without a downloaded bot the modules just come in; no link does nothing', async () => {
+        await importRealmDescriptionModules(share('A1'), () => [])
+        expect(notifySuccess).toHaveBeenCalledWith('imported 1')
+
+        vi.clearAllMocks()
+        await importRealmDescriptionModules('no links here', () => db.characters)
+        expect(inspectProtonShare).not.toHaveBeenCalled()
+        expect(notifySuccess).not.toHaveBeenCalled()
     })
 })

@@ -12,7 +12,7 @@
 // (openBotNotesProtonLink), always through the browser.
 import { recordModulePair } from './gui/pairedModules'
 import { language } from 'src/lang'
-import { notifyError, notifySuccess } from './alert'
+import { alertSelect, notifyError, notifySuccess } from './alert'
 import { runImportTask, type ImportProgressReporter } from './importProgress'
 import { isImportCancelled } from './importTransaction'
 import { importModuleFile, rerenderChatForModules, syncLinkedFolders, type RisuModule } from './process/modules'
@@ -194,6 +194,81 @@ export async function openBotNotesProtonLink(chaId: string, link: string): Promi
         if (paired > 0) notifySuccess(language.botNotesModulePaired(paired))
     } catch (error) {
         if (!isImportCancelled(error)) reportFailure(error, language.botNotesModuleFailed)
+    }
+}
+
+/** A line of a description as a picker label: its words, without links or markdown marks. */
+function linkLineLabel(line: string): string {
+    return line
+        .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/https?:\/\/\S+/gi, ' ')
+        .replace(/[*_`#>|~]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/[\s:：\-–—→=]+$/, '')
+        .trim()
+        .slice(0, 60)
+}
+
+/** The words naming the link on line `at`: that line's, or the line above it when the link stands alone. */
+function linkLabelAt(lines: readonly string[], at: number): string {
+    if (at < 0) return ''
+    const own = linkLineLabel(lines[at])
+    if (own) return own
+    for (let i = at - 1; i >= 0; i--) {
+        if (!lines[i].trim()) continue
+        return /https?:\/\//i.test(lines[i]) ? '' : linkLineLabel(lines[i])
+    }
+    return ''
+}
+
+/**
+ * Every Proton share link in `text`, each named for a picker by the words on
+ * its line ("에셋 모듈: <link>" is "에셋 모듈"), or on the line above when it
+ * stands alone, else by its number. Unlike the automatic download there is no
+ * cap: the user picks.
+ */
+export function protonLinkChoices(text: string): { link: string, label: string }[] {
+    const lines = text.split(/\r?\n/)
+    const seen = new Map<string, number>()
+    return findProtonShareLinks(text).map((link, index) => {
+        const path = new URL(link).pathname
+        const label = linkLabelAt(lines, lines.findIndex((line) => line.includes(path))) || language.realmModuleLinkN(index + 1)
+        const count = (seen.get(label) ?? 0) + 1
+        seen.set(label, count)
+        return { link, label: count > 1 ? `${label} (${count})` : label }
+    })
+}
+
+/**
+ * The Realm window's module button (the user's request, 2026-10-22): the
+ * modules behind a Proton link in a Realm description, without downloading
+ * the bot, for a bot downloaded before, an automatic download that failed, or
+ * a description with more links than it takes. With several links the user
+ * picks one first. The share opens in the Proton browser, a single file too;
+ * what is imported pairs with `pairWith()` (the bots already downloaded from
+ * this Realm card), looked up afterwards. Failures are reported, never thrown.
+ */
+export async function importRealmDescriptionModules(
+    description: string,
+    pairWith: () => readonly { chaId?: string, modules?: string[] }[],
+): Promise<void> {
+    const choices = protonLinkChoices(description)
+    if (choices.length === 0) return
+    let link = choices[0].link
+    if (choices.length > 1) {
+        const selected = Number.parseInt(await alertSelect([...choices.map((choice) => choice.label), language.cancel], language.realmModulePickLink))
+        if (!Number.isInteger(selected) || selected < 0 || selected >= choices.length) return
+        link = choices[selected].link
+    }
+    try {
+        const modules = await downloadShareModules(link, { browse: true })
+        if (modules.length === 0) return
+        const paired = pairWithBots(modules.map((module) => module.id), pairWith())
+        notifySuccess(paired > 0 ? language.botNotesModulePaired(paired) : language.realmModuleImported(modules.length))
+    } catch (error) {
+        if (!isImportCancelled(error)) reportFailure(error)
     }
 }
 

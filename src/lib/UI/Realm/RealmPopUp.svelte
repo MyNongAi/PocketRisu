@@ -1,8 +1,9 @@
 <script lang="ts">
-    import { BanIcon, BookIcon, FlagIcon, ImageIcon, PaperclipIcon, SmileIcon, TrashIcon } from "@lucide/svelte";
+    import { BanIcon, BookIcon, FlagIcon, ImageIcon, PackageIcon, PaperclipIcon, SmileIcon, TrashIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import { alertConfirm, alertInput, alertNormal, notifyInfo } from "src/ts/alert";
-    import { hubURL, type hubType, downloadRisuHub, getRealmInfo } from "src/ts/characterCards";
+    import { hubURL, type hubType, downloadRisuHub, getCharacterRealmId, getRealmInfo } from "src/ts/characterCards";
+    import { findProtonShareLinks, importRealmDescriptionModules } from "src/ts/realmCompanionModule";
     
     import { DBState } from 'src/ts/stores.svelte';
     import RealmLicense from "./RealmLicense.svelte";
@@ -18,6 +19,22 @@
     }
 
     let { openedData = $bindable(), onBlock = () => {} }: Props = $props();
+
+    // PocketRisu: the module behind a Proton link in the description, without
+    // the bot (the user's request, 2026-10-22). The window stays open.
+    let hasModuleLink = $derived(findProtonShareLinks(openedData?.desc ?? '').length > 0)
+    let moduleBusy = $state(false)
+
+    async function importModule() {
+        const realmId = openedData.id
+        moduleBusy = true
+        try {
+            await importRealmDescriptionModules(openedData.desc ?? '', () =>
+                DBState.db.characters.filter((character) => getCharacterRealmId(character) === realmId))
+        } finally {
+            moduleBusy = false
+        }
+    }
 
 </script>
 
@@ -152,6 +169,15 @@
             })}>
                 <PaperclipIcon />
             </button>
+            {#if hasModuleLink}
+                <button class="shrink-0 flex items-center gap-1 border border-selected hover:ring-3 p-2 font-bold rounded-md disabled:opacity-50" disabled={moduleBusy} use:tooltip={language.realmModuleImportDesc} onclick={(e) => {
+                    e.stopPropagation()
+                    void importModule()
+                }}>
+                    <PackageIcon size={18} />
+                    <span>{language.realmModuleImport}</span>
+                </button>
+            {/if}
             <button class="bg-selected hover:ring-3 grow p-2 font-bold rounded-md mr-2" onclick={() => {
                 downloadRisuHub(openedData.id, { creator: openedData.creator })
                 openedData = null
