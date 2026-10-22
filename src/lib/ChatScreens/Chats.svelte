@@ -8,7 +8,8 @@
     import Chat from './Chat.svelte';
     import { getCharImage } from 'src/ts/characters';
     import { createSimpleCharacter, DBState, ReloadChatPointer } from 'src/ts/stores.svelte';
-    import { chatFoldedStateMessageIndex } from 'src/ts/globalApi.svelte';
+    import { chatFoldedState, chatFoldedStateMessageIndex } from 'src/ts/globalApi.svelte';
+    import { foldStartFor } from 'src/ts/chatFold.svelte';
     import { getChatAssetRenderWindow } from '../../ts/chatAssetWindow';
     import { isAtTail, revealScrollTop, shouldFollowTail, shouldRevealAddedMessage } from './chatViewport';
     import { chatGenKey, isChatGenerating } from 'src/ts/process/generationState';
@@ -176,10 +177,13 @@
             lastRealCharIdx = lastNonDisabledIdx;
         }
 
-        // The folded view belongs to the selected chat (the active pane).
-        if(view.active && chatFoldedStateMessageIndex.index !== -1){
-            loadStart = chatFoldedStateMessageIndex.index
-            loadEnd = Math.max(0, chatFoldedStateMessageIndex.index - loadPages)
+        // The folded view belongs to the selected chat (the active pane), and
+        // only to the chat it was made for: a stale index past a shorter
+        // chat's end threw below.
+        const foldStart = view.active ? foldStartFor(chatFoldedStateMessageIndex.index, chatFoldedState.data, currentChat?.id, messages.length) : -1
+        if(foldStart !== -1){
+            loadStart = foldStart
+            loadEnd = Math.max(0, foldStart - loadPages)
         }
 
 
@@ -253,6 +257,7 @@
             if(i < 0) break; // Prevent out of bounds
             if(i === placeholderIndex) continue; // the empty stream start the old reply stands in for
             const message = messages[i];
+            if(!message) continue;
             const messageLargePortrait = message.role === 'user' ? (userIconPortrait ?? false) : ((currentCharacter as character).largePortrait ?? false);
             const isRerollTarget = i === lastRealCharIdx;
             // The reply being written, on its page of a held reroll copy: the

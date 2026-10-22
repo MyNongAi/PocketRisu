@@ -3,6 +3,7 @@ import { v4 as uuidv4, v4 } from 'uuid';
 import { tick, untrack } from "svelte";
 import { fromStore, get } from "svelte/store";
 import { chatsShownBesideSelection } from "./chatPanes.svelte";
+import { followChatFold } from "./chatFold.svelte";
 import { splitChatOpen } from "./chatSplitPane";
 import streamSaver from 'streamsaver';
 import { setDatabase, normalizeDatabase, type Database, type Chat, type Message, defaultSdDataFunc, getDatabase, appVer, nodeOnlyVer, getCurrentCharacter, loadTogglesFromChat } from "./storage/database.svelte";
@@ -4172,37 +4173,8 @@ export let chatFoldedStateMessageIndex = $state({
 })
 
 $effect.root(() => {
-    $effect(() => {
-        if(!chatFoldedState.data){
-            return
-        }
-        const char = DBState.db.characters[selIdState.selId]
-        const chat = char.chats[char.chatPage]
-        if(chatFoldedState.data.targetCharacterId !== char.chaId){
-            chatFoldedState.data = null
-        }
-        if(chatFoldedState.data.targetChatId !== chat.id){
-            chatFoldedState.data = null
-        }
-    })
-
-    $effect(() => {
-        if(chatFoldedState.data === null){
-            chatFoldedStateMessageIndex.index = -1
-            return
-        }
-        const char = DBState.db.characters[selIdState.selId]
-        const chat = char.chats[char.chatPage]
-        const messageIndex = chat.message.findIndex((v) => {
-            return chatFoldedState.data?.targetMessageId === v.chatId
-        })
-        if(messageIndex === -1){
-            console.warn('Target message for folding id' + chatFoldedState.data?.targetMessageId + ' not found')
-            chatFoldedStateMessageIndex.index = -1
-            return
-        }
-        chatFoldedStateMessageIndex.index = messageIndex
-    })
+    // chatFold.svelte.ts: these threw when the selection moved to another bot.
+    followChatFold(chatFoldedState, chatFoldedStateMessageIndex, () => DBState.db.characters[selIdState.selId])
 })
 
 export function foldChatToMessage(targetMessageIdOrIndex: string | number) {

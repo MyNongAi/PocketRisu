@@ -2030,7 +2030,8 @@ import { isMobile } from 'src/ts/platform'
                 bind:hasNewUnreadMessage={showNewMessageButton}
             />
 
-            {#if chatFoldedStateMessageIndex.index !== -1}
+            <!-- The fold is the selected chat's: not in the pane beside it. -->
+            {#if view.active && chatFoldedStateMessageIndex.index !== -1}
                 <button class="w-full flex justify-center max-w-full p-4">
                     <Button className="max-w-xl w-full" onclick={() => {
                         loadPages += chatFoldedStateMessageIndex.index + 1
