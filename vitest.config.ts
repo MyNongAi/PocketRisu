@@ -22,9 +22,10 @@ export default defineConfig({
       'node_modules/**',
       'test/compat/**',
       'server/node/**',
-      // This utility deliberately uses Node's built-in test runner so it can
-      // be copied and verified without installing the web app toolchain.
-      'tools/risu-migration-exporter/**/*.test.cjs',
+      // The tools deliberately use Node's built-in test runner so they can
+      // be copied and verified without installing the web app toolchain
+      // (`node --test tools/*.test.cjs`); vitest finds no suite in them.
+      'tools/**/*.test.cjs',
       'tools/**/*.test.mjs',
     ],
   },
