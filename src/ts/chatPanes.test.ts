@@ -18,7 +18,16 @@ const applied: Record<string, string>[] = []
 const MobileGUI = writable(false)
 
 vi.mock('./stores.svelte', () => ({ DBState: { db }, selIdState, selectedCharID, chatDeselected: writable(false), botMakerMode, QuickSettings, MobileGUI }))
+const presetSwitches: number[] = []
 vi.mock('./storage/database.svelte', () => ({
+    // The switch ends by laying the selected chat's pin over the live values, as the real one does.
+    changeToPreset: (id: number) => {
+        presetSwitches.push(id)
+        ;(db as any).botPresetsId = id
+        const char: any = db.characters[selIdState.selId]
+        const pin = char?.chats?.[char.chatPage]?.savedToggleValues
+        if (pin) Object.assign(toggles, pin)
+    },
     getDatabase: () => db,
     loadTogglesFromChat: (...args: unknown[]) => loadTogglesFromChat(...args),
     snapshotToggleValues: () => ({ ...toggles }),
@@ -31,7 +40,7 @@ vi.mock('./storage/database.svelte', () => ({
 vi.mock('./storage/chatStorage', () => ({ ensureChatHydrated: vi.fn(async (): Promise<unknown> => null) }))
 
 const { chatsShownBesideSelection, locateChat, mainPaneView, paneState, paneToggles, selectionPaneView, shownBesideSelection, sidePaneView } = await import('./chatPanes.svelte')
-const { activatePane, restorePanesAfterBoot, returnToMainPane, showInSidePane, swapPanes } = await import('./paneActivation')
+const { activatePane, applySelectedChatToggles, restorePanesAfterBoot, returnToMainPane, showInSidePane, swapPanes } = await import('./paneActivation')
 const { splitLayout } = await import('./splitLayout.svelte')
 const { splitChatOpen } = await import('./chatSplitPane')
 const { ensureChatHydrated } = await import('./storage/chatStorage')
@@ -322,6 +331,67 @@ describe('toggle values of a pane whose chat is still loading', () => {
             expect(paneToggles.b1).toEqual({ toggle_sw: '1' })
         } finally {
             done()
+        }
+    })
+})
+
+// Review of the toggle hand-over change.
+describe('toggle values around loads and preset bindings', () => {
+    beforeEach(() => {
+        localStorage.clear()
+        db.characters[0].chatPage = 0
+        selectedCharID.set(0)
+        splitChatOpen.set(true)
+        for (const key of Object.keys(paneToggles)) delete paneToggles[key]
+        for (const key of Object.keys(toggles)) delete toggles[key]
+        presetSwitches.length = 0
+        paneState.active = 'main'
+        paneState.held = { main: { chaId: 'a', chatId: 'a1' }, side: { chaId: 'b', chatId: 'b1' } }
+    })
+
+    it("after a reload, the stub's own live values are kept when another pane is touched before it loads", () => {
+        const stub = db.characters[0].chats[0]
+        db.characters[0].chats[0] = { id: 'a1', message: [], _placeholder: true } as any
+        vi.mocked(ensureChatHydrated).mockImplementationOnce(() => new Promise(() => {}) as any)
+        try {
+            selectedCharID.set(-1)
+            toggles.toggle_x = 'A'
+            restorePanesAfterBoot()
+            activatePane('side')
+            expect(paneToggles.a1).toEqual({ toggle_x: 'A' })
+        } finally {
+            db.characters[0].chats[0] = stub
+        }
+    })
+
+    it('a chat loaded by a retry gets what its pane kept', () => {
+        paneToggles.b1 = { toggle_x: '1' }
+        toggles.toggle_x = '0'
+        selectedCharID.set(1)
+        paneState.active = 'side'
+        applySelectedChatToggles(db.characters[1].chats[0] as any)
+        expect(toggles.toggle_x).toBe('1')
+        expect(paneToggles.b1).toBeUndefined()
+    })
+
+    it("a bound preset is switched before the pane's kept values, which then stay", () => {
+        const b1: any = db.characters[1].chats[0]
+        ;(db as any).showPresetInSidebar = true
+        ;(db as any).botPresets = [{ id: 'p0' }, { id: 'p1' }, { id: 'p2' }]
+        ;(db as any).botPresetsId = 1
+        b1.bindedBotPreset = 'p2'
+        b1.savedToggleValues = { toggle_x: '1' }
+        paneToggles.b1 = { toggle_x: '0' }
+        try {
+            activatePane('side')
+            expect(presetSwitches).toEqual([2])
+            expect(toggles.toggle_x).toBe('0')
+        } finally {
+            delete b1.bindedBotPreset
+            delete b1.savedToggleValues
+            delete (db as any).showPresetInSidebar
+            delete (db as any).botPresets
+            delete (db as any).botPresetsId
         }
     })
 })

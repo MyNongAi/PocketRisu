@@ -203,3 +203,35 @@ describe('composerDraft', () => {
         expect(await loadChatDraft('cd6', 'two')).toEqual({ m: 'two', t: '' })
     })
 })
+
+// Review of the composer change: what a copy takes, and another device's text.
+describe('composerDraft with text from elsewhere', () => {
+    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+    // Written straight to the store, as another device's save lands.
+    const otherDeviceSaves = (chaId: string, chatId: string, m: string) =>
+        mockStore.set(chatDraftKey(chaId, chatId), new TextEncoder().encode(JSON.stringify({ m, t: '' })))
+
+    test('a copy takes the text the composer loaded, not older text typed here before', async () => {
+        flushChatDraft('ce1', 'a', { m: 'xyz', t: '' })
+        await loadChatDraft('ce1', 'a')
+        // Another device changed the draft meanwhile; the chat is opened again.
+        otherDeviceSaves('ce1', 'a', 'phone text')
+        const c = composerDraft()
+        c.loaded({ m: 'phone text', t: '' }, { chaId: 'ce1', chatId: 'a' })
+        copyChatDraft('ce1', 'a', 'copy')
+        expect(await loadChatDraft('ce1', 'copy')).toEqual({ m: 'phone text', t: '' })
+    })
+
+    test("another device's newer text drops a save still pending here", async () => {
+        const c = composerDraft()
+        c.loaded(null, { chaId: 'ce2', chatId: 'a' })
+        c.edited('ce2', 'a', { m: 'abc', t: '' })
+        // The other device saved its text; it arrives before this save ran.
+        otherDeviceSaves('ce2', 'a', 'xyz')
+        c.loaded({ m: 'xyz', t: '' }, { chaId: 'ce2', chatId: 'a', newer: true })
+        await wait(900)
+        await loadChatDraft('ce2', 'other') // the write queue has run
+        const stored = mockStore.get(chatDraftKey('ce2', 'a'))
+        expect(stored && JSON.parse(new TextDecoder().decode(stored))).toEqual({ m: 'xyz', t: '' })
+    })
+})

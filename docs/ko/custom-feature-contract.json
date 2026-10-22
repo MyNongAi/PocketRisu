@@ -194,6 +194,7 @@
         "src/lib/UI/GUI/SideBarArrow.svelte"
       ],
       "requiredMarkers": [
+        { "file": "src/ts/paneActivation.ts", "contains": "export function applySelectedChatToggles(chat: Chat): void {" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "await runLuaButtonTrigger(currentChar, btnEvent, ownerChat ?? undefined)" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "const column = $derived((enabled && splitLayout.orientation === 'column') || narrowStack)" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "onclick={() => { hideDividerTools(); splitChatOpen.set(false) }}" },
@@ -1376,6 +1377,7 @@
         "src/lib/SideBars/SideChatList.svelte"
       ],
       "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "composer.loaded({ m: text, t: messageInputTranslate }, { chaId: draftChaId, chatId: draftChatId, newer: true })" },
         { "file": "src/ts/storage/chatDraft.ts", "contains": "export function composerDraft() {" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "composer.flush(draftChaId, draftChatId, { m: messageInput, t: messageInputTranslate })" },
         { "file": "src/ts/storage/chatDraft.ts", "contains": "export function copyChatDraft(chaId: string, fromChatId: string, toChatId: string): void" },

@@ -5,7 +5,7 @@
 
 import { get } from 'svelte/store'
 import { botMakerMode, chatDeselected, QuickSettings, selectedCharID } from './stores.svelte'
-import { applyToggleValues, getDatabase, loadTogglesFromChat, snapshotToggleValues, type Chat } from './storage/database.svelte'
+import { applyToggleValues, changeToPreset, getDatabase, loadTogglesFromChat, snapshotToggleValues, type Chat } from './storage/database.svelte'
 import { ensureChatHydrated } from './storage/chatStorage'
 import { locateChat, paneState, paneToggles, persistPanes, pinnedToggleValues, selectedChatIds, type PaneChatIds, type PaneId } from './chatPanes.svelte'
 import { persistSplitLayout, splitLayout, type PanelTab } from './splitLayout.svelte'
@@ -33,9 +33,11 @@ function handOver(from: PaneId): void {
     const ids = selectedChatIds()
     const at = locateChat(db.characters ?? [], ids)
     const chat = at ? db.characters[at.characterIndex]?.chats?.[at.chatIndex] : undefined
-    // Still loading: the live values are the previous chat's, and what its
-    // pane kept for it stays until it is applied.
-    if (ids && chat && !chat._placeholder && !db.disableToggleBinding) paneToggles[ids.chatId] = snapshotToggleValues()
+    // Still loading after a pane switch: the live values are the previous
+    // chat's, and what its pane kept for it stays until it is applied. (After
+    // a reload they are this chat's own, and are kept as before.)
+    const borrowed = !!chat?._placeholder && borrowedLiveFor === ids?.chatId
+    if (ids && chat && !borrowed && !db.disableToggleBinding) paneToggles[ids.chatId] = snapshotToggleValues()
     splitLayout.tab[from] = globalPanelTab()
     persistSplitLayout()
 }
@@ -77,8 +79,31 @@ function keepTogglesBeside(chat: Chat | undefined, live: Record<string, string>)
  */
 // The latest selectChat: a load that ends after another selection applies nothing.
 let selectSerial = 0
+// A chat a pane switch selected while still a stub: until its own values are
+// applied, the live toggles are the previous chat's.
+let borrowedLiveFor: string | null = null
 
-function selectChat(characterIndex: number, chatIndex: number): void {
+/**
+ * The selected chat's binding to a prompt preset, applied before its toggles:
+ * the switch lays the chat's pin over the live values (changeToPreset), which
+ * covered what its pane had kept when PromptBind applied it afterwards.
+ */
+function applyBoundPreset(chat: Chat): void {
+    const db = getDatabase()
+    if (!db.showPresetInSidebar || !chat.bindedBotPreset) return
+    const index = db.botPresets?.findIndex((preset) => preset.id === chat.bindedBotPreset) ?? -1
+    if (index >= 0 && db.botPresetsId !== index) changeToPreset(index)
+}
+
+/** A loaded selected chat's toggles: its pin, then what its pane kept for it. */
+export function applySelectedChatToggles(chat: Chat): void {
+    if (borrowedLiveFor === chat.id) borrowedLiveFor = null
+    applyBoundPreset(chat)
+    applyChatToggles(chat, takeKeptToggles(chat.id))
+    persistPanes()
+}
+
+function selectChat(characterIndex: number, chatIndex: number, ownLiveValues = false): void {
     const db = getDatabase()
     const char = db.characters[characterIndex]
     if (!char) return
@@ -98,12 +123,14 @@ function selectChat(characterIndex: number, chatIndex: number): void {
         // What the pane kept is taken only as it is applied: a touch back
         // before the chat loads, or a failed load, keeps it (2026-10-22 split
         // review: the previous chat's values were stored under this one).
+        borrowedLiveFor = ownLiveValues ? null : chat.id ?? null
         void ensureChatHydrated(char.chats, chatIndex, char.chaId).then((hydrated) => {
             if (!hydrated || serial !== selectSerial || selectedChatIds()?.chatId !== hydrated.id) return
-            applyChatToggles(hydrated, takeKeptToggles(hydrated.id))
-            persistPanes()
+            applySelectedChatToggles(hydrated)
         }).catch(() => { /* the pane shows the load failure and its retry */ })
     } else {
+        borrowedLiveFor = null
+        applyBoundPreset(chat)
         applyChatToggles(chat, takeKeptToggles(chat.id))
     }
 }
@@ -188,6 +215,6 @@ export function restorePanesAfterBoot(): void {
     // The live values loaded with the database are this chat's; anything its
     // pane still kept for it is older.
     delete paneToggles[ids.chatId]
-    selectChat(target.characterIndex, target.chatIndex)
+    selectChat(target.characterIndex, target.chatIndex, true)
     persistPanes()
 }

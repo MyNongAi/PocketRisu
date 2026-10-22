@@ -166,10 +166,22 @@ export function composerDraft() {
     let touched = false
     const unchanged = (draft: ChatDraft) => !touched && draft.m === base.m && draft.t === base.t
     return {
-        /** The text the composer now shows came from elsewhere (the stored draft, another device), or nothing yet. */
-        loaded(draft: ChatDraft | null) {
+        /**
+         * The text the composer now shows came from elsewhere (the stored
+         * draft, another device), or nothing yet. With `at`, it is that
+         * chat's latest text for a copy (copyChatDraft), unless a save typed
+         * here is still pending; `newer` (another device's text) also drops
+         * that save, which would land after it.
+         */
+        loaded(draft: ChatDraft | null, at?: { chaId: string, chatId: string, newer?: boolean }) {
             base = draft ? { m: draft.m, t: draft.t } : { m: '', t: '' }
             touched = false
+            if (!at?.chaId || !at.chatId) return
+            const key = chatDraftKey(at.chaId, at.chatId)
+            if (at.newer) cancelPending(key)
+            else if (saveTimers.has(key)) return
+            if (draft) latest.set(key, { m: draft.m, t: draft.t })
+            else latest.delete(key)
         },
         /** Typing: a debounced save, once the text differs from what was loaded. */
         edited(chaId: string, chatId: string, draft: ChatDraft) {

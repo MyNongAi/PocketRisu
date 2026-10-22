@@ -20,7 +20,8 @@
     import { SCROLL_CHAT_TO_END_EVENT } from 'src/ts/status/requestActions';
     import Chat from "./Chat.svelte";
     import { getAdditionalChatLoadPages, getInitialChatLoadPages } from 'src/ts/chatLoadPages';
-    import { type Chat as ChatData, type Message, loadTogglesFromChat } from "../../ts/storage/database.svelte";
+    import { type Chat as ChatData, type Message } from "../../ts/storage/database.svelte";
+    import { applySelectedChatToggles } from "src/ts/paneActivation";
     import { DBState } from 'src/ts/stores.svelte';
     import { getCharImage } from "../../ts/characters";
     import { sendChat } from "../../ts/process/index.svelte";
@@ -165,7 +166,7 @@ import { isMobile } from 'src/ts/platform'
             if (!active) return
             untrack(() => {
                 // Text typed during the load counts as changed here.
-                composer.loaded(draft)
+                composer.loaded(draft, { chaId, chatId })
                 // Don't clobber text the user began typing during the load.
                 if (draft && messageInput === '' && messageInputTranslate === '') {
                     messageInput = draft.m
@@ -211,8 +212,8 @@ import { isMobile } from 'src/ts/platform'
         if (chatId !== draftChatId || draftLoading || text === messageInput) return
         if (document.activeElement === inputEle && Date.now() - lastTypedAt < 2000) return
         draftEcho = text
-        // The other device saved it already.
-        composer.loaded({ m: text, t: messageInputTranslate })
+        // The other device saved it already; a save typed here before it would land after it.
+        composer.loaded({ m: text, t: messageInputTranslate }, { chaId: draftChaId, chatId: draftChatId, newer: true })
         messageInput = text
         void tick().then(() => updateInputSizeAll())
     }))
@@ -306,7 +307,8 @@ import { isMobile } from 'src/ts/platform'
         const hydrated = await ensureActiveChatReady().catch(() => null)
         const now = DBState.db.characters[view.characterIndex]
         if (hydrated && view.active && now?.chaId === char?.chaId && now?.chats[view.chatIndex]?.id === chatId) {
-            loadTogglesFromChat(hydrated)
+            // Its pin, then what its pane kept (the split; without one, the pin).
+            applySelectedChatToggles(hydrated)
         }
     }
 
