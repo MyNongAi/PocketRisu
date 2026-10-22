@@ -1335,6 +1335,29 @@
       ]
     },
     {
+      "id": "REALM-BOT-HIDE",
+      "title": "렐름 봇 하나씩 숨기기 (제작자 차단 대신)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/realmBlocking.ts",
+        "src/ts/characterCards.ts",
+        "src/lib/UI/Realm/RealmPopUp.svelte",
+        "src/lib/UI/Realm/RealmMain.svelte",
+        "src/lib/UI/Realm/RealmBlockedCreators.svelte",
+        "src/ts/storage/database.svelte.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/realmBlocking.ts", "contains": "export function filterBlockedRealmBots<T extends { id?: string }>(cards: T[], blockedCards: BlockedRealmCard[]): T[] {" },
+        { "file": "src/ts/characterCards.ts", "contains": "DBState.db.nodeOnlyBlockedRealmCards ?? []," },
+        { "file": "src/ts/characterCards.ts", "contains": "// PocketRisu: blocking only hides a bot from the Realm list" },
+        { "file": "src/lib/UI/Realm/RealmPopUp.svelte", "contains": "DBState.db.nodeOnlyBlockedRealmCards = addBlockedRealmCard(" },
+        { "file": "src/lib/UI/Realm/RealmBlockedCreators.svelte", "contains": "{#each DBState.db.nodeOnlyBlockedRealmCards ?? [] as card (card.id)}" }
+      ],
+      "regressionTests": [
+        "src/ts/realmBlocking.test.ts"
+      ]
+    },
+    {
       "id": "CREATOR-FOLDERS",
       "title": "같은 제작자 봇을 [제작자] 폴더로 모으기 · 제작자 이름으로 검색",
       "criticality": "core-ux",

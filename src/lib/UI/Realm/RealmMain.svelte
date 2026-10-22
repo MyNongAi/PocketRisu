@@ -198,8 +198,8 @@
 {/if}
 
 {#if openedData}
-    <RealmPopUp bind:openedData={openedData} onBlock={(creatorId) => {
-        charas = charas.filter((card) => card.creator !== creatorId)
+    <RealmPopUp bind:openedData={openedData} onBlock={(cardId) => {
+        charas = charas.filter((card) => card.id !== cardId)
     }} />
 {/if}
 
@@ -229,7 +229,7 @@
                 e.stopPropagation()
                 menuOpen = false
                 blockedCreatorsOpen = true
-            }}>{language.manageBlockedRealmCreators}</button>
+            }}>{language.manageBlockedRealmBots}</button>
             <button class="w-full hover:bg-selected p-4" onclick={(async (e) => {
                 e.stopPropagation()
                 menuOpen = false

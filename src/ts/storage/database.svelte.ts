@@ -698,6 +698,7 @@ export function normalizeDatabase(data:Database){
     data.returnCSSError ??= true
     data.realmDirectOpen ??= false
     data.blockedRealmCreators ??= []
+    data.nodeOnlyBlockedRealmCards ??= []
     data.checkCorruption ??= false
     data.toggleConfirmRecommendedPreset ??= false
     data.useExperimentalGoogleTranslator ??= false
@@ -1131,6 +1132,12 @@ export type BlockedRealmCreator = {
     name: string
 }
 
+/** PocketRisu: one RisuRealm bot the user blocked (realmBlocking.ts). */
+export type BlockedRealmCard = {
+    id: string
+    name: string
+}
+
 /** User-defined group for organizing list items (personas, presets, ...). */
 export interface PromptPresetFolder {
     id: string
@@ -1350,6 +1357,8 @@ export interface Database{
     /** Set when the user closes the legacy-notice banners on the chat bot settings page. */
     hideBotSettingsLegacyNotice?:boolean
     blockedRealmCreators:BlockedRealmCreator[]
+    /** PocketRisu: RisuRealm bots blocked one by one, instead of whole creators (the user's request, 2026-10-22). */
+    nodeOnlyBlockedRealmCards?:BlockedRealmCard[]
     colorScheme:ColorScheme
     colorSchemeName:string
     promptTemplate?:PromptItem[]

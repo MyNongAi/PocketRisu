@@ -1,4 +1,4 @@
-import type { BlockedRealmCreator } from "./storage/database.svelte"
+import type { BlockedRealmCard, BlockedRealmCreator } from "./storage/database.svelte"
 
 type RealmCreatorData = {
     creator?: string
@@ -31,4 +31,28 @@ export function filterBlockedRealmCards<T extends RealmCreatorData>(
     blockedCreators: BlockedRealmCreator[],
 ): T[] {
     return cards.filter((card) => !isRealmCreatorBlocked(blockedCreators, card.creator))
+}
+
+// PocketRisu: blocking one bot rather than all of a creator's (the user's
+// request, 2026-10-22). A blocked bot is only hidden from the Realm list,
+// from the user's own list; nothing is asked of Realm, and a download of it
+// (a link, its id) still works.
+export function isRealmCardBlocked(blockedCards: BlockedRealmCard[], id?: string): boolean {
+    return !!id && blockedCards.some((card) => card.id === id)
+}
+
+export function addBlockedRealmCard(blockedCards: BlockedRealmCard[], card: BlockedRealmCard): BlockedRealmCard[] {
+    if (!card.id || isRealmCardBlocked(blockedCards, card.id)) {
+        return blockedCards
+    }
+
+    return [...blockedCards, card]
+}
+
+export function removeBlockedRealmCard(blockedCards: BlockedRealmCard[], id: string): BlockedRealmCard[] {
+    return blockedCards.filter((card) => card.id !== id)
+}
+
+export function filterBlockedRealmBots<T extends { id?: string }>(cards: T[], blockedCards: BlockedRealmCard[]): T[] {
+    return cards.filter((card) => !isRealmCardBlocked(blockedCards, card.id))
 }

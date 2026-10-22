@@ -9,11 +9,12 @@
     import MultiLangDisplay from "../GUI/MultiLangDisplay.svelte";
     import { tooltip } from "src/ts/gui/tooltip";
     import Portal from "../GUI/Portal.svelte";
-    import { addBlockedRealmCreator } from "src/ts/realmBlocking";
+    import { addBlockedRealmCard } from "src/ts/realmBlocking";
 
     interface Props {
         openedData: hubType;
-        onBlock?: (creatorId: string) => void;
+        /** PocketRisu: the id of the bot just blocked (blocking is per bot). */
+        onBlock?: (cardId: string) => void;
     }
 
     let { openedData = $bindable(), onBlock = () => {} }: Props = $props();
@@ -85,25 +86,26 @@
         </div>
 
         <div class="flex flex-row-reverse gap-2">
-            {#if openedData.creator && (DBState.db.account?.token?.split('-') ?? [])[1] !== openedData.creator}
-                <button class="text-textcolor2 hover:text-red-500" use:tooltip={language.blockRealmCreator} onclick={async (e) => {
+            <!-- PocketRisu: blocks this bot only, not all of its creator's
+                 (the user's request, 2026-10-22). -->
+            {#if openedData.id && (DBState.db.account?.token?.split('-') ?? [])[1] !== openedData.creator}
+                <button class="text-textcolor2 hover:text-red-500" use:tooltip={language.blockRealmBot} onclick={async (e) => {
                     e.stopPropagation()
-                    const creatorId = openedData.creator
-                    if(!creatorId){
+                    const cardId = openedData.id
+                    if(!cardId){
                         return
                     }
-                    const creatorName = openedData.authorname ?? openedData.creatorName ?? creatorId
-                    const conf = await alertConfirm(language.blockRealmCreatorConfirm.replace('{{creator}}', creatorName))
+                    const conf = await alertConfirm(language.blockRealmBotConfirm.replace('{{name}}', openedData.name || cardId))
                     if(!conf){
                         return
                     }
-                    DBState.db.blockedRealmCreators = addBlockedRealmCreator(
-                        DBState.db.blockedRealmCreators,
-                        { id: creatorId, name: creatorName },
+                    DBState.db.nodeOnlyBlockedRealmCards = addBlockedRealmCard(
+                        DBState.db.nodeOnlyBlockedRealmCards ?? [],
+                        { id: cardId, name: openedData.name || cardId },
                     )
-                    onBlock(creatorId)
+                    onBlock(cardId)
                     openedData = null
-                    alertNormal(language.realmCreatorBlockedSuccess)
+                    alertNormal(language.realmBotBlockedSuccess)
                 }}>
                     <BanIcon />
                 </button>

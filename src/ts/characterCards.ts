@@ -23,7 +23,7 @@ import { planLargeCharxImport } from "./largeCharxImport"
 import { ImportCancelledError, isImportCancelled, runImportTransaction, type ImportWriteScope } from "./importTransaction"
 import { organizeImportedCharacterSimilarity } from "./process/similarityFolders"
 import { creatorsOf, placeImportedByCreator } from "./creatorFolders"
-import { filterBlockedRealmCards, isRealmCreatorBlocked } from "./realmBlocking"
+import { filterBlockedRealmBots, filterBlockedRealmCards, isRealmCreatorBlocked } from "./realmBlocking"
 import { normalizeOnboarding } from "./onboarding"
 
 
@@ -1892,7 +1892,10 @@ export async function getRisuHub(arg:{
         if(!Array.isArray(jso)){
             hubAdditionalHTML = jso.additionalHTML || hubAdditionalHTML
         }
-        return filterBlockedRealmCards(cards, DBState.db.blockedRealmCreators ?? [])
+        return filterBlockedRealmBots(
+            filterBlockedRealmCards(cards, DBState.db.blockedRealmCreators ?? []),
+            DBState.db.nodeOnlyBlockedRealmCards ?? [],
+        )
     } catch (error) {
         return[]
     }
@@ -2114,23 +2117,15 @@ export async function downloadRisuHub(id:string, arg:{
     creator?: string
 } = {}) {
     try {
-        // RisuAI's terms come first: the creator lookup below already calls
-        // the RisuAI server.
         if(!arg.forceRedirect && !(await alertTOS())){
             return
         }
 
-        let creator = arg.creator
-        if(!creator){
-            try {
-                const realmInfo = await fetchRealmInfo(id)
-                creator = realmInfo.creator
-            } catch (error) {
-                alertError(error)
-                return
-            }
-        }
-        if(!canAccessRealmCreator(creator)){
+        // PocketRisu: blocking only hides a bot from the Realm list
+        // (realmBlocking.ts) and never stops a download. Upstream asked Realm
+        // for the creator of every download without one, and a failed lookup
+        // stopped the download even with nobody blocked (2026-10-22).
+        if(!canAccessRealmCreator(arg.creator)){
             return
         }
 
