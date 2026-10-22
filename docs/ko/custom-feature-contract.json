@@ -194,6 +194,7 @@
         "src/lib/UI/GUI/SideBarArrow.svelte"
       ],
       "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (besideLoadAsked === key || get(chatLoadFailures).has(key)) return" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "const narrowStack = $derived(enabled && !docked && paneWidth > 0 && paneWidth < NARROW_SPLIT_PX)" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "<Sidebar pane=\"side\" overlay hidden={false} {openLegacyGrid} />" },
         { "file": "src/lib/UI/GUI/SideBarArrow.svelte", "contains": "onclick={() => setPaneOverlayOpen(view.pane, true)}" },

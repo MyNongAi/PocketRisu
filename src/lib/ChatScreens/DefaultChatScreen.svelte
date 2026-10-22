@@ -16,6 +16,7 @@
     import ShDropdownMenuItem from 'src/lib/UI/GUI/ShDropdownMenuItem.svelte';
     import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, chatDeselected, chatHydrationOverlayStore, chatPanelStore } from "../../ts/stores.svelte";
     import { onMount, tick, untrack } from 'svelte';
+    import { get } from 'svelte/store';
     import { SCROLL_CHAT_TO_END_EVENT } from 'src/ts/status/requestActions';
     import Chat from "./Chat.svelte";
     import { getAdditionalChatLoadPages, getInitialChatLoadPages } from 'src/ts/chatLoadPages';
@@ -301,6 +302,28 @@ import { isMobile } from 'src/ts/platform'
             loadTogglesFromChat(hydrated)
         }
     }
+
+    // The pane beside the selection loads its own chat when it is still a
+    // stub: after a reload, or the split opened again. Only the selected
+    // chat was loaded, so this pane said "loading" until touched (2026-10-22
+    // split review). A failure shows the retry instead of trying again; the
+    // load runs outside the effect (it writes chatLoadFailures).
+    let besideLoadAsked = ''
+    $effect(() => {
+        if (view.active) return
+        const char = view.character
+        const slot = char?.chats?.[view.chatIndex]
+        if (!char || !slot?._placeholder) {
+            besideLoadAsked = ''
+            return
+        }
+        const key = `${char.chaId}/${slot.id}`
+        untrack(() => {
+            if (besideLoadAsked === key || get(chatLoadFailures).has(key)) return
+            besideLoadAsked = key
+            setTimeout(() => { void ensureActiveChatReady().catch(() => null) })
+        })
+    })
 
     function scrollToBottom() {
         chatsInstance?.scrollToLatestMessage();
