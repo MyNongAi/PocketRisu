@@ -674,21 +674,28 @@
     e.stopPropagation()
     const character = DBState.db.characters[characterIndex]
     if(!character) return
+    // The menu stays open while the list can change (a bot deactivated in the
+    // background, a tucked-away question): act on this bot wherever it is now.
+    const chaId = character.chaId
+    const atNow = (act: (index: number) => unknown) => () => {
+      const index = DBState.db.characters.findIndex((candidate) => candidate?.chaId === chaId)
+      return index < 0 ? undefined : act(index)
+    }
     // The Proton link the card was downloaded from, to fetch it again if it breaks.
     const protonLink = protonLinkOf(character)
     const actions: Array<[string, () => unknown, string?]> = [
-      ...openInPaneActions(() => changeChar(characterIndex, { reseter: botSwitchReseter })),
-      ['봇 설정 수정', () => {
-        changeChar(characterIndex, { reseter })
+      ...openInPaneActions(atNow((index) => changeChar(index, { reseter: botSwitchReseter }))),
+      ['봇 설정 수정', atNow((index) => {
+        changeChar(index, { reseter })
         botMakerMode.set(true)
-      }],
+      })],
       ['제목 색변경', () => editCharacterTitleColor(character.chaId)],
       [character.favorite ? '즐겨찾기 해제' : DBState.db.nodeOnlyFavoritesFolder !== false ? '즐겨찾기 (★ 폴더로)' : '즐겨찾기 (맨위로)',
-        () => toggleSidebarCharacterFavorite(characterIndex)],
+        atNow((index) => toggleSidebarCharacterFavorite(index))],
       ...(protonLink ? [[language.protonLinkCopy, () => copyProtonLink(protonLink)] as [string, () => unknown]] : []),
       ...(botHasModules(character.chaId) ? [[language.pairFindModule, () => findModulesOfBot(character.chaId)] as [string, () => unknown]] : []),
       // Turned off and on from the same menu, whatever its state (the user's request, 2026-10-21).
-      [language.deactivateCharacter, () => archiveCharacter(characterIndex)],
+      [language.deactivateCharacter, atNow((index) => archiveCharacter(index))],
       [language.remove, () => removeChar(character.chaId, character.name)],
       // With the modules only it uses (gui/botModuleRemoval.ts; the user's request, 2026-10-22).
       ...(botHasModules(character.chaId) ? [[language.removeWithModules, () => removeBotWithModules(character.chaId)] as [string, () => unknown]] : []),

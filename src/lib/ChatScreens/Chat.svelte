@@ -24,6 +24,7 @@
     import { getLLMCache, setLLMCache } from "../../ts/translator/translator"
     import { getCurrentCharacter, getCurrentChat, normalizeChat, setCurrentChat, type MessageGenerationInfo, type StreamingDisplayOptimizationMode } from "../../ts/storage/database.svelte"
     import { writeBackToTarget, type GenerationTargetIdentity } from "src/ts/process/generationTarget"
+    import { messageIndexAfterConfirm } from "src/ts/gui/afterConfirm"
     import { HideIconStore, ReloadGUIPointer } from "../../ts/stores.svelte"
     import { getPaneView } from "src/ts/chatPanes.svelte"
     import AutoresizeArea from "../UI/GUI/TextAreaResizable.svelte"
@@ -240,8 +241,10 @@
     }
 
     async function rm(){
-        const messages = DBState.db.characters[view.characterIndex].chats[view.chatIndex].message
-        const cascadeCount = messages.length - idx
+        const chat = view.chat
+        const target = chat?.message?.[idx]
+        if(!chat || !target) return
+        const cascadeCount = chat.message.length - idx
 
         const actions: AlertAction[] = [
             { label: language.removeMessageOnly, variant: 'destructive' },
@@ -254,16 +257,21 @@
         }
         const sel = await alertConfirmMulti(language.removeChat, actions)
         if(sel < 0) return
-        let msg = DBState.db.characters[view.characterIndex].chats[view.chatIndex].message
+        // The question can stay open while messages or the pane's chat change.
+        const now = view.chat
+        const at = messageIndexAfterConfirm(now, chat, target)
+        if(!now || at < 0) return
+        let msg = now.message
         if(sel === 1){
-            msg = msg.slice(0, idx)
-            notifySuccess(language.messagesRemoved.replace('{}', cascadeCount.toString()))
+            const count = msg.length - at
+            msg = msg.slice(0, at)
+            notifySuccess(language.messagesRemoved.replace('{}', count.toString()))
         }
         else{
-            msg.splice(idx, 1)
+            msg.splice(at, 1)
             notifySuccess(language.messageRemoved)
         }
-        DBState.db.characters[view.characterIndex].chats[view.chatIndex].message = msg
+        now.message = msg
         retitleCurrentChat()
     }
 

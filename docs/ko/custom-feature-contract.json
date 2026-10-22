@@ -240,7 +240,7 @@
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "<Sidebar part=\"rail\" hidden={false} {openLegacyGrid} />" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "<Sidebar part=\"panel\" pane=\"side\" hidden={false} {openLegacyGrid} />" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "oncontextmenu={openDividerMenu}" },
-        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "...openInPaneActions(() => changeChar(characterIndex, { reseter: botSwitchReseter }))," },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "...openInPaneActions(atNow((index) => changeChar(index, { reseter: botSwitchReseter })))," },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "onpointerdowncapture={takePaneSelection}" },
         { "file": "src/ts/paneActivation.ts", "contains": "export function swapPanes(): void {" },
         { "file": "src/ts/chatPanes.svelte.ts", "contains": "export const paneToggles = $state<Record<string, Record<string, string>>>(readToggles())" },
@@ -511,7 +511,7 @@
         { "file": "src/ts/gui/characterCatalogMetrics.ts", "contains": "buildCharacterSimilarityCounts" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "archived-character-muted" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "async function editArchivedSidebarCharacter(chaId: string, e: MouseEvent){" },
-        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "[language.deactivateCharacter, () => archiveCharacter(characterIndex)]," },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "[language.deactivateCharacter, atNow((index) => archiveCharacter(index))]," },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{ image: character.image ? getCharThumbnail(character.image, \"plain\") : undefined }," },
         { "file": "src/lib/Others/AlertComp.svelte", "contains": "{#await $alertStore.image then src}" },
         { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "characterAssetCountLabel" },
@@ -1165,6 +1165,8 @@
         "src/ts/gui/mobileBackNavigation.svelte.ts"
       ],
       "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "const at = messageIndexAfterConfirm(now, chat, target)" },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "const at = d && owner === chara ? chatIndexAfterConfirm(owner.chats, target) : -1" },
         { "file": "src/ts/alert.ts", "contains": "async function askQuestion(request: alertData): Promise<string>" },
         { "file": "src/ts/alert.ts", "contains": "get(alertStoreImported).type !== 'wait' && !get(alertMinimizedStore)" },
         { "file": "src/lib/Others/AlertComp.svelte", "contains": "const tuckQuestionAway = () => alertMinimizedStore.set(true)" },
@@ -1175,6 +1177,8 @@
         { "file": "src/ts/gui/mobileBackNavigation.svelte.ts", "contains": "alert.current.type !== 'none' && !alertMinimized.current" }
       ],
       "regressionTests": [
+        "src/ts/gui/afterConfirm.test.ts",
+        "src/lib/SideBars/SideChatList.delete.test.ts",
         "src/ts/alertQuestion.test.ts",
         "src/ts/gui/mobileBackNavigation.svelte.test.ts"
       ]

@@ -35,6 +35,7 @@
     import PromptBind from "./PromptBind.svelte";
     import ModelBind from "./ModelBind.svelte";
     import { changeChatTo, createChatCopyName, requestImmediateSave } from "src/ts/globalApi.svelte";
+    import { chatIndexAfterConfirm } from "src/ts/gui/afterConfirm";
     import { chatCopyNameFromLastInput, reissueMessageIds } from "src/ts/chatClone";
     import { copyChatDraft } from "src/ts/storage/chatDraft";
     import MemoryBind from "./MemoryBind.svelte";
@@ -351,9 +352,12 @@
                                 }
                             }} class="text-textcolor2 hover:text-primary mr-1 cursor-pointer" onclick={async (e) => {
                                 e.stopPropagation()
-                                const confirmed = await alertConfirm(`${language.copyChatConfirm}${chat.name}`)
-                                if(!confirmed) return
-                                const chatIdx = chara.chats.indexOf(chat)
+                                const owner = chara
+                                const target = chat
+                                const confirmed = await alertConfirm(`${language.copyChatConfirm}${target.name}`)
+                                if(!confirmed || owner !== chara) return
+                                // The row's `chat` is read again by position after the question.
+                                const chatIdx = chatIndexAfterConfirm(chara.chats, target)
                                 if(chatIdx < 0) return
                                 if(chara.chats[chatIdx]?._placeholder){
                                     await ensureChatHydrated(chara.chats, chatIdx, (chara as character).chaId)
@@ -406,13 +410,17 @@
                                     notifyError(language.errors.onlyOneChat)
                                     return
                                 }
-                                const d = await alertConfirm(`${language.removeConfirm}${chat.name}`)
-                                if(d){
+                                const owner = chara
+                                const target = chat
+                                const d = await alertConfirm(`${language.removeConfirm}${target.name}`)
+                                // The list (or the pane's bot) can change while the question is open.
+                                const at = d && owner === chara ? chatIndexAfterConfirm(owner.chats, target) : -1
+                                if(at >= 0 && owner.chats.length > 1){
                                     changeChatTo(0)
                                     $ReloadGUIPointer += 1
-                                    let chats = chara.chats
-                                    chats.splice(chara.chats.indexOf(chat), 1)
-                                    chara.chats = chats
+                                    let chats = owner.chats
+                                    chats.splice(at, 1)
+                                    owner.chats = chats
                                     void requestImmediateSave()
                                 }
                             }}>
@@ -450,10 +458,12 @@
                         }
                     }} class="text-textcolor2 hover:text-primary mr-1 cursor-pointer" onclick={async (e) => {
                         e.stopPropagation()
-                        const confirmed = await alertConfirm(`${language.copyChatConfirm}${chat.name}`)
-                        if(!confirmed) return
-                        // The list may have changed while waiting.
-                        const i = chara.chats.indexOf(chat)
+                        const owner = chara
+                        const target = chat
+                        const confirmed = await alertConfirm(`${language.copyChatConfirm}${target.name}`)
+                        if(!confirmed || owner !== chara) return
+                        // The list may have changed while waiting (the row's `chat` is read again by position).
+                        const i = chatIndexAfterConfirm(chara.chats, target)
                         if(i < 0) return
                         if(chara.chats[i]?._placeholder){
                             await ensureChatHydrated(chara.chats, i, (chara as character).chaId)
@@ -506,13 +516,17 @@
                             notifyError(language.errors.onlyOneChat)
                             return
                         }
-                        const d = await alertConfirm(`${language.removeConfirm}${chat.name}`)
-                        if(d){
+                        const owner = chara
+                        const target = chat
+                        const d = await alertConfirm(`${language.removeConfirm}${target.name}`)
+                        // The list (or the pane's bot) can change while the question is open.
+                        const at = d && owner === chara ? chatIndexAfterConfirm(owner.chats, target) : -1
+                        if(at >= 0 && owner.chats.length > 1){
                             changeChatTo(0)
                             $ReloadGUIPointer += 1
-                            let chats = chara.chats
-                            chats.splice(i, 1)
-                            chara.chats = chats
+                            let chats = owner.chats
+                            chats.splice(at, 1)
+                            owner.chats = chats
                             void requestImmediateSave()
                         }
                     }}>
