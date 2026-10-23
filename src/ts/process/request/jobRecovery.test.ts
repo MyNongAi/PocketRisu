@@ -95,6 +95,8 @@ interface ServerBehavior {
     jobStates?: Record<string, any[]>
     /** make GET /api/model-jobs/:id reject (status endpoint unreachable) */
     jobStatusUnreachable?: boolean
+    /** runs while a job's journal is being fetched */
+    onJournal?: (jobId: string) => void
 }
 
 function setupServer(behavior: ServerBehavior) {
@@ -121,6 +123,7 @@ function setupServer(behavior: ServerBehavior) {
         const streamMatch = url.match(/^\/api\/model-jobs\/([^/]+)\/stream$/)
         if (streamMatch) {
             const id = streamMatch[1]
+            behavior.onJournal?.(id)
             const status = behavior.streamStatus?.[id] ?? 200
             if (status !== 200) return new Response('down', { status })
             return new Response(sseStream(behavior.journals?.[id] ?? ''), {
@@ -625,6 +628,136 @@ describe('recovered replies run the output pipeline', () => {
         expect(chat.message[0].data).toBe('Hello')
         expect(mocks.saveChatToServer).toHaveBeenCalledTimes(1)
         expect(claims()).toEqual(['/api/model-jobs/job-1/claim'])
+    })
+})
+
+// --- two finished jobs for one chat -----------------------------------------
+//
+// Field bug 2026-10-23: a page reloaded while two jobs of one chat had finished
+// unclaimed. Recovery inserted both replies, yet the chat then held only the
+// second. Each recovery wrote into the chat object it had resolved earlier,
+// while the slot can get a new object meanwhile: a chat event puts a fresh copy
+// of the saved body there (replaceChatBody), an evicted chat is hydrated again,
+// or the output trigger puts in its own copy of the chat.
+
+const SSE_FIRST = 'data: {"choices":[{"delta":{"content":"first reply"}}]}\n\ndata: [DONE]\n\n'
+const SSE_SECOND = 'data: {"choices":[{"delta":{"content":"second reply"}}]}\n\ndata: [DONE]\n\n'
+
+describe('two finished jobs for one chat', () => {
+    // The chat is a placeholder whose body is on the server, as at boot.
+    // Hydration puts a fresh copy into the slot; a save becomes the server body.
+    function bootChat() {
+        let serverBody: any = { id: 'chat-1', name: 'chat one', message: [{ role: 'user', data: 'hi', chatId: 'u1' }] }
+        const char = makeChar({ id: 'chat-1', name: 'chat one', _placeholder: true, message: [] })
+        mocks.db.characters = [char]
+        const serverCopy = () => JSON.parse(JSON.stringify(serverBody))
+        const slot = () => char.chats.findIndex((c: any) => c?.id === 'chat-1')
+        mocks.ensureChatHydrated.mockImplementation(async (chats: any[], index: number) => {
+            if (!chats[index]?._placeholder) return chats[index]
+            chats[index] = serverCopy()
+            return chats[index]
+        })
+        mocks.saveChatToServer.mockImplementation((async (_cha: string, _idx: number, _id: string, chat: any) => {
+            serverBody = JSON.parse(JSON.stringify(chat))
+        }) as any)
+        return {
+            char,
+            live: () => char.chats[slot()],
+            saved: () => serverBody,
+            // A chat event landing: replaceChatBody swaps in the server's body.
+            landChatEvent: () => { char.chats[slot()] = serverCopy() },
+        }
+    }
+    const replies = (chat: any) => chat.message.filter((m: any) => m.role === 'char').map((m: any) => m.data)
+    const job1 = () => makeJob({ id: 'job-1', generationId: 'gen-1' }) as any
+    const job2 = () => makeJob({ id: 'job-2', generationId: 'gen-2' }) as any
+    const journals = { 'job-1': SSE_FIRST, 'job-2': SSE_SECOND }
+
+    test('one after the other at boot: both replies stay, in order, in the chat and the saved body', async () => {
+        const { recovery } = await loadModules()
+        const chat = bootChat()
+        let landed = false
+        const { claims } = setupServer({
+            unclaimed: [job1(), job2()],
+            journals,
+            // One chat event lands while the first journal is read.
+            onJournal: () => { if (!landed) { landed = true; chat.landChatEvent() } },
+        })
+
+        await recovery.recoverModelJobs()
+
+        expect(replies(chat.live())).toEqual(['first reply', 'second reply'])
+        expect(replies(chat.saved())).toEqual(['first reply', 'second reply'])
+        expect(claims()).toEqual(['/api/model-jobs/job-1/claim', '/api/model-jobs/job-2/claim'])
+    })
+
+    test('concurrently (a discovery pass and a finished poll): both replies stay, in order', async () => {
+        const { recovery } = await loadModules()
+        const chat = bootChat()
+        let landed = false
+        const { claims } = setupServer({
+            journals,
+            onJournal: () => { if (!landed) { landed = true; chat.landChatEvent() } },
+        })
+
+        await Promise.all([recovery.recoverTerminalJob(job1()), recovery.recoverTerminalJob(job2())])
+
+        expect(replies(chat.live())).toEqual(['first reply', 'second reply'])
+        expect(replies(chat.saved())).toEqual(['first reply', 'second reply'])
+        expect(claims()).toEqual(['/api/model-jobs/job-1/claim', '/api/model-jobs/job-2/claim'])
+    })
+
+    test('concurrently, with an output trigger that puts its own copy of the chat in the slot', async () => {
+        const { recovery } = await loadModules()
+        const chat = bootChat()
+        // Like postProcessRecoveredMessage: the trigger runs on a copy taken
+        // when it starts and puts that copy in the slot when it ends. The
+        // first reply's trigger takes longer.
+        recovery.setRecoveredOutputPipeline(vi.fn(async (target: any, messageId: string) => {
+            const copy = JSON.parse(JSON.stringify(target.chat))
+            await new Promise((resolve) => setTimeout(resolve, messageId === 'gen-1' ? 30 : 0))
+            const message = copy.message.find((m: any) => m.chatId === messageId)
+            message.generationInfo = { ...message.generationInfo, postProcessed: true }
+            target.char.chats[target.char.chats.findIndex((c: any) => c?.id === copy.id)] = copy
+            return copy
+        }))
+        setupServer({ journals })
+
+        await Promise.all([recovery.recoverTerminalJob(job1()), recovery.recoverTerminalJob(job2())])
+
+        expect(replies(chat.live())).toEqual(['first reply', 'second reply'])
+        expect(replies(chat.saved())).toEqual(['first reply', 'second reply'])
+    })
+
+    test('a chat swapped while the output pipeline runs still gets the reply before the save', async () => {
+        const { recovery } = await loadModules()
+        const chat = bootChat()
+        recovery.setRecoveredOutputPipeline(vi.fn(async (target: any, messageId: string) => {
+            const message = target.chat.message.find((m: any) => m.chatId === messageId)
+            message.data = `[processed] ${message.data}`
+            message.generationInfo = { ...message.generationInfo, postProcessed: true }
+            chat.landChatEvent()
+            return target.chat
+        }))
+        const { claims } = setupServer({ journals })
+
+        await recovery.recoverTerminalJob(job1())
+
+        expect(replies(chat.live())).toEqual(['[processed] first reply'])
+        expect(replies(chat.saved())).toEqual(['[processed] first reply'])
+        expect(claims()).toEqual(['/api/model-jobs/job-1/claim'])
+    })
+
+    test('a failing recovery does not hold up the next one for the same chat', async () => {
+        const { recovery } = await loadModules()
+        const chat = bootChat()
+        const { claims } = setupServer({ journals, streamStatus: { 'job-1': 503 } })
+
+        const results = await Promise.allSettled([recovery.recoverTerminalJob(job1()), recovery.recoverTerminalJob(job2())])
+
+        expect(results.map((r) => r.status)).toEqual(['rejected', 'fulfilled'])
+        expect(replies(chat.live())).toEqual(['second reply'])
+        expect(claims()).toEqual(['/api/model-jobs/job-2/claim'])
     })
 })
 

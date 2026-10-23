@@ -167,4 +167,58 @@ describe('recovery against a real $state proxy (field-bug pin)', () => {
         expect(mocks.saved[0].chat.message).toHaveLength(2)
         obs.stop()
     })
+
+    test('two replies for one chat both reach the reactive chat and the saved body (2026-10-23)', async () => {
+        mocks.db = makeStateProxy({
+            characters: [{
+                chaId: 'cha-1', name: 'Rina', chatPage: 0, reloadKeys: 0,
+                chats: [{ id: 'chat-1', _placeholder: true, message: [] as any[] }],
+            }],
+        })
+        // The server's body is the last save, and a chat event puts a fresh
+        // copy of it into the slot while the first journal is read.
+        const serverCopy = () => JSON.parse(JSON.stringify(mocks.saved.at(-1)?.chat
+            ?? { id: 'chat-1', message: [{ role: 'user', data: 'hi', chatId: 'u1' }] }))
+        mocks.hydrate = (chats: any[], index: number) => {
+            const full = serverCopy()
+            chats[index] = full
+            return Promise.resolve(full)
+        }
+        let swapped = false
+        vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+            const url = String(input)
+            const stream = url.match(/\/model-jobs\/([^/]+)\/stream$/)
+            if (stream) {
+                if (!swapped) {
+                    swapped = true
+                    mocks.db.characters[0].chats[0] = serverCopy()
+                }
+                const text = stream[1] === 'job-1' ? 'first reply' : 'second reply'
+                return new Response(sseStream(`data: {"choices":[{"delta":{"content":"${text}"}}]}\n\ndata: [DONE]\n\n`), {
+                    status: 200,
+                    headers: { 'content-type': 'text/event-stream', 'x-model-job-upstream-status': '200' },
+                })
+            }
+            if (url.endsWith('/claim') && init?.method === 'POST') {
+                return new Response('{"success":true}', { status: 200 })
+            }
+            throw new Error(`unexpected fetch: ${init?.method ?? 'GET'} ${url}`)
+        }))
+        const recovery = await loadRecovery()
+
+        const texts = () => (mocks.db.characters[0]?.chats?.[0]?.message ?? []).map((m: any) => m.data)
+        const obs = observeReactive(() => texts().join('|'))
+        flushSync()
+
+        await Promise.all([
+            recovery.recoverTerminalJob(JOB),
+            recovery.recoverTerminalJob({ ...JOB, id: 'job-2', generationId: 'gen-2' }),
+        ])
+        flushSync()
+
+        expect(texts()).toEqual(['hi', 'first reply', 'second reply'])
+        expect(obs.current).toBe('hi|first reply|second reply')
+        expect(mocks.saved.at(-1).chat.message.map((m: any) => m.data)).toEqual(['hi', 'first reply', 'second reply'])
+        obs.stop()
+    })
 })

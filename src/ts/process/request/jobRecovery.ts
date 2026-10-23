@@ -227,6 +227,20 @@ function bumpReload(loc: LocatedChat): void {
     loc.char.reloadKeys = (loc.char.reloadKeys ?? 0) + 1
 }
 
+// The job's message in a chat, or -1. Secondary match on the message-level
+// chatId (the live push stamps it with the generationId and it is never
+// rewritten): a continue restamps generationInfo to the NEW generation, which
+// would otherwise orphan an unclaimed job of the ORIGINAL one and insert its
+// full response as a duplicate message. `messageId` also matches the message
+// recovery itself inserted.
+function jobMessageIndex(chat: Chat, job: ModelJobRecord, messageId?: string): number {
+    const generationId = job.generationId
+    if (!generationId && !messageId) return -1
+    return chat.message.findIndex((m) => (generationId
+        && (m?.generationInfo?.generationId === generationId || m?.chatId === generationId))
+        || (messageId !== undefined && m?.chatId === messageId))
+}
+
 // Does this chat need saving after the slot-in?
 //
 // Save when this pass wrote something — and ALSO when a message for this job
@@ -254,10 +268,22 @@ function needsSave(mutated: boolean, existingIdx: number): boolean {
 // then leaves the job UNCLAIMED so the next discovery retries the whole
 // slot-in, which is idempotent (generationId match → fill, and a fill no
 // longer than the current text is a no-op).
-async function persistRecoveredChat(loc: LocatedChat, job: ModelJobRecord): Promise<boolean> {
+//
+// The chat is looked up again by id first: the output pipeline awaits, and
+// meanwhile a chat event, an eviction or the output trigger can put another
+// object in the slot. A `reply` that object lacks is carried over, so the save
+// never sends the chat without it (the next discovery would insert it anyway).
+async function persistRecoveredChat(job: ModelJobRecord, reply?: Message): Promise<boolean> {
     try {
+        const loc = await locateChat(job.chatId)
+        if (!loc) throw new Error('chat vanished before save')
         const chaId = loc.char.chaId
         if (!chaId) throw new Error('character has no chaId')
+        if (reply && (job.generationId || reply.chatId) && jobMessageIndex(loc.chat, job, reply.chatId) === -1) {
+            loc.chat.message.push(reply)
+            bumpReload(loc)
+            diag(`recover ${job.id.slice(0, 8)}: chat swapped during slot-in -> reply carried over`)
+        }
         // Re-resolve the index instead of caching it: hydration and preceding
         // slot-ins can reorder the chats array between locate and save.
         const index = loc.char.chats.findIndex((c) => c?.id === job.chatId)
@@ -480,10 +506,33 @@ function fillPartialMessage(loc: LocatedChat, index: number, text: string): bool
     return true
 }
 
+// Slot-ins for one chat run one at a time, in call order. A discovery pass and
+// a reattached job's poll can finish together, and two slot-ins at once each
+// wrote into the chat object they had looked up: with the output trigger or a
+// chat event putting a new object in the slot, whichever saved last decided
+// what the chat held (field bug 2026-10-23: two replies recovered on one
+// reload, only the second left in the chat). A failed slot-in does not hold up
+// the next one.
+const chatSlotInTails = new Map<string, Promise<void>>()
+
+function oneSlotInPerChat(chatId: string, task: () => Promise<void>): Promise<void> {
+    const run = (chatSlotInTails.get(chatId) ?? Promise.resolve()).then(task)
+    const tail = run.catch(() => {})
+    chatSlotInTails.set(chatId, tail)
+    void tail.then(() => {
+        if (chatSlotInTails.get(chatId) === tail) chatSlotInTails.delete(chatId)
+    })
+    return run
+}
+
 // Slot one terminal job into its chat. Idempotent (design §4 safety rule 2):
 // an existing message with this generationId is never duplicated — it is either
 // left alone or filled in from the journal (see fillPartialMessage).
 export async function recoverTerminalJob(job: ModelJobRecord): Promise<void> {
+    return oneSlotInPerChat(job.chatId, () => slotInTerminalJob(job))
+}
+
+async function slotInTerminalJob(job: ModelJobRecord): Promise<void> {
     // A LIVE send still owns this chat: the job finished server-side while the
     // tab was frozen and its stream is still replaying/reattaching (discovery
     // fires on tab-return mid-send). The live path fills the message, runs the
@@ -495,7 +544,7 @@ export async function recoverTerminalJob(job: ModelJobRecord): Promise<void> {
         diag(`recover ${job.id.slice(0, 8)}: live send owns chat -> skipped`)
         return
     }
-    const loc = await locateChat(job.chatId)
+    let loc = await locateChat(job.chatId)
     if (!loc) {
         // Chat was deleted while the job ran — nothing to slot into.
         console.warn('[ModelJobRecovery] chat missing for job', job.id, '- claiming without slot-in')
@@ -503,21 +552,13 @@ export async function recoverTerminalJob(job: ModelJobRecord): Promise<void> {
         await claimJob(job.id)
         return
     }
-    // Secondary match on the message-level chatId (the live push stamps it
-    // with the generationId and it is never rewritten): a continue restamps
-    // generationInfo to the NEW generation, which would otherwise orphan an
-    // unclaimed job of the ORIGINAL one and insert its full response as a
-    // duplicate message.
-    const existingIdx = job.generationId
-        ? loc.chat.message.findIndex((m) => m?.generationInfo?.generationId === job.generationId
-            || m?.chatId === job.generationId)
-        : -1
     if (job.status === 'failed') {
+        const existingIdx = jobMessageIndex(loc.chat, job)
         // With the live message already in the chat the user saw this failure as
         // it happened; an error block on top would only duplicate it.
         diag(`recover ${job.id.slice(0, 8)}: failed job, existingIdx=${existingIdx}`)
         const mutated = existingIdx === -1 && insertJobError(loc, job, job.error ?? 'Model request failed')
-        if (needsSave(mutated, existingIdx) && !(await persistRecoveredChat(loc, job))) return
+        if (needsSave(mutated, existingIdx) && !(await persistRecoveredChat(job))) return
         await claimJob(job.id)
         return
     }
@@ -528,13 +569,26 @@ export async function recoverTerminalJob(job: ModelJobRecord): Promise<void> {
     // design — the server never persists it, since it carries the provider
     // credential — so the entry holds the response and the outcome only.
     recordJobRecoveryLog(job, result)
+    // The journal read awaited the network, and the slot may hold another
+    // object by now (a chat event's fresh body, an eviction and re-hydration).
+    // Look the chat up again so the write lands in the one that is there.
+    const located = await locateChat(job.chatId)
+    if (!located) {
+        diag(`recover ${job.id.slice(0, 8)}: chat gone after journal read -> claim only`, `chatId=${job.chatId}`)
+        await claimJob(job.id)
+        return
+    }
+    loc = located
+    const existingIdx = jobMessageIndex(loc.chat, job)
     let mutated = false
+    let reply: Message | undefined
     if (result.ok === true) {
         if (existingIdx === -1) {
             const messageId = insertRecoveredMessage(loc, job, result.text, result.usage)
             mutated = true
             diag(`recover ${job.id.slice(0, 8)}: inserted len=${result.text.length}`)
             await runRecoveredPipeline(loc, job, messageId)
+            reply = loc.chat.message[jobMessageIndex(loc.chat, job, messageId)]
         } else {
             const before = loc.chat.message[existingIdx]?.data?.length ?? 0
             const metadataChanged = mergeRecoveredGenerationInfo(loc.chat.message[existingIdx], job, result.usage)
@@ -554,13 +608,15 @@ export async function recoverTerminalJob(job: ModelJobRecord): Promise<void> {
             diag(`recover ${job.id.slice(0, 8)}: fill idx=${existingIdx} before=${before} decoded=${result.text.length} after=${after} fresh=${fresh}`)
             // A live page that died mid-reply never reached its own
             // post-processing; the filled text gets it here.
-            if (textChanged) await runRecoveredPipeline(loc, job, loc.chat.message[existingIdx]?.chatId)
+            const messageId = loc.chat.message[existingIdx]?.chatId
+            if (textChanged) await runRecoveredPipeline(loc, job, messageId)
+            if (mutated) reply = loc.chat.message[jobMessageIndex(loc.chat, job, messageId)]
         }
     } else {
         diag(`recover ${job.id.slice(0, 8)}: journal decode failed, existingIdx=${existingIdx}`, result.error)
         if (existingIdx === -1) mutated = insertJobError(loc, job, result.error)
     }
-    if (needsSave(mutated, existingIdx) && !(await persistRecoveredChat(loc, job))) return
+    if (needsSave(mutated, existingIdx) && !(await persistRecoveredChat(job, reply))) return
     await claimJob(job.id)
 }
 

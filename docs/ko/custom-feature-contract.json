@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.16.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-10-22",
+  "updatedAt": "2026-10-23",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
@@ -2270,6 +2270,27 @@
       ],
       "regressionTests": [
         "src/ts/process/presetModuleFolder.test.ts"
+      ]
+    },
+    {
+      "id": "JOB-RECOVERY-SLOT-IN",
+      "title": "서버에서 끝난 답 넣기: 출력 후처리 · 채팅마다 하나씩",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "src/ts/process/request/jobRecovery.ts",
+        "src/ts/process/request/recoveryPostProcess.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/request/jobRecovery.ts", "contains": "return oneSlotInPerChat(job.chatId, () => slotInTerminalJob(job))" },
+        { "file": "src/ts/process/request/jobRecovery.ts", "contains": "const located = await locateChat(job.chatId)" },
+        { "file": "src/ts/process/request/jobRecovery.ts", "contains": "if (reply && (job.generationId || reply.chatId) && jobMessageIndex(loc.chat, job, reply.chatId) === -1) {" },
+        { "file": "src/ts/process/request/jobRecovery.ts", "contains": ".then((module) => setRecoveredOutputPipeline(module.postProcessRecoveredMessage as RecoveredOutputPipeline))" },
+        { "file": "src/ts/process/request/recoveryPostProcess.ts", "contains": "export async function postProcessRecoveredMessage(target: RecoveryTarget, messageId: string): Promise<Chat>" }
+      ],
+      "regressionTests": [
+        "src/ts/process/request/jobRecovery.test.ts",
+        "src/ts/process/request/jobRecoveryProxy.test.ts",
+        "src/ts/process/request/recoveryPostProcess.test.ts"
       ]
     }
   ]
