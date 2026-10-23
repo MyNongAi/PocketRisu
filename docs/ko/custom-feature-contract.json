@@ -645,6 +645,8 @@
       ],
       "requiredMarkers": [
         { "file": "src/App.svelte", "contains": "legacyGridOpen" },
+        { "file": "src/lib/CharacterManager/CharacterManager.svelte", "contains": "function onGridDrop(" },
+        { "file": "src/ts/characterManager.ts", "contains": "export function gridDropTarget(" },
         { "file": "src/App.svelte", "contains": "import('./lib/Others/GridCatalog.svelte')" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "openLegacyGrid" },
         { "file": "src/lib/Mobile/MobileCharacters.svelte", "contains": "SquareMousePointer" },

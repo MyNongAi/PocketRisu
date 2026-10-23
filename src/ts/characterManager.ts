@@ -10,6 +10,7 @@ import { isRealmAssetRecoveryAvailable } from './gui/titleColors'
 import { localOriginOf, resolveCharacterSourceBadge, type CharacterSourceBadge } from './gui/characterSourceBadge'
 import { isDeactivatedSystemFolder } from './deactivatedCharacterFolders'
 import { isFolderEntry, type OrderEntry } from './characterOrder'
+import type { SidebarInsertTarget } from '../lib/SideBars/sidebarDrag'
 
 export interface ManagerEntry {
     chaId: string
@@ -140,6 +141,33 @@ export interface GridSection {
     items: ManagerEntry[]
     /** Offset of the first item in the flattened grid, so a paging window can cut across sections. */
     start: number
+}
+
+/**
+ * Where a thumbnail dropped in the grid goes in the rail order: before the
+ * tile it now sits in front of (`nextId`), else after the one before it
+ * (`prevId`), in `folderId` or at the top level. Placing by neighbour, not
+ * by position, leaves the characters the grid does not draw (trashed, a page
+ * not yet shown) where they are. Null when a neighbour is not where the grid
+ * showed it.
+ */
+export function gridDropTarget(
+    order: readonly OrderEntry[],
+    folderId: string | undefined,
+    prevId?: string,
+    nextId?: string,
+): SidebarInsertTarget | null {
+    if (folderId !== undefined) {
+        const target = order.find((entry): entry is folder => isFolderEntry(entry) && entry.id === folderId)
+        if (!target) return null
+        if (nextId) return target.data.includes(nextId) ? { kind: 'folder', folderId, index: target.data.indexOf(nextId) } : null
+        if (prevId) return target.data.includes(prevId) ? { kind: 'folder', folderId, index: target.data.indexOf(prevId) + 1 } : null
+        return { kind: 'folder', folderId, index: target.data.length }
+    }
+    const at = (id: string) => order.findIndex((entry) => entry === id)
+    if (nextId) return at(nextId) >= 0 ? { kind: 'root', index: at(nextId) } : null
+    if (prevId) return at(prevId) >= 0 ? { kind: 'root', index: at(prevId) + 1 } : null
+    return null
 }
 
 /**

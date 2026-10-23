@@ -32,13 +32,16 @@
     import { botHasModules, findModulesOfBot } from "src/ts/gui/pairFinder";
     import { findCharacterIndexbyId } from "src/ts/util";
     import {
-        buildGridSections, buildManagerEntries, folderNameMatchIds, matchesFilter, matchesSearch, sortEntries,
+        buildGridSections, buildManagerEntries, folderNameMatchIds, gridDropTarget, matchesFilter, matchesSearch, sortEntries,
         type ManagerEntry, type ManagerFilter, type ManagerSort,
     } from "src/ts/characterManager";
     import {
-        createFolder, findPlacement, isFolderEntry, moveCharacterInFolder, moveCharacterToFolder,
+        createFolder, isFolderEntry, moveCharacterToFolder,
         moveTopLevelEntry, rebuildOrder, removeFolderKeepItems, setHidden, type OrderLayoutItem,
     } from "src/ts/characterOrder";
+    import ShSortableList from "src/lib/UI/GUI/ShSortableList.svelte";
+    import { moveSidebarItem } from "src/lib/SideBars/sidebarDrag";
+    import type { SortableEvent } from "sortablejs";
     import { syncFavoritesWithFolderMoves } from 'src/ts/favoritesFolder';
     import { folderDisplayMode, type folder } from "src/ts/storage/database.svelte";
     import { FOLDER_COLOR_CLASS, folderIconComponent } from "./folderIcons";
@@ -98,6 +101,7 @@
         : []);
     let gridList = $derived(sort === 'order' ? gridSections.flatMap((s) => s.items) : flatList);
     let dragDisabled = $derived(search.length > 0 || filter !== 'all' || selectMode || sortReversed);
+    let gridClass = $derived(`grid ${gridCompact ? 'gap-1.5 grid-cols-[repeat(auto-fill,minmax(3.5rem,1fr))]' : 'gap-3 grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))]'}`);
     let activeChaId = $derived(DBState.db.characters[$selectedCharID]?.chaId);
     // Move targets: the idle-age folders are filled automatically. (A
     // deactivated character may still move into a regular folder; it stays.)
@@ -203,12 +207,29 @@
         commitOrder(next);
     }
 
-    function moveEntry(entry: ManagerEntry, delta: -1 | 1) {
-        const placement = findPlacement(DBState.db.characterOrder, entry.chaId);
-        if (!placement) return;
-        commitOrder(placement.folderId
-            ? moveCharacterInFolder(DBState.db.characterOrder, placement.folderId, entry.chaId, delta)
-            : moveTopLevelEntry(DBState.db.characterOrder, entry.chaId, delta));
+    // Grid tab, sidebar order: a thumbnail dragged to another place, in its
+    // section, another folder's or a run of loose ones (the user's request,
+    // 2026-10-23; it replaced the menus' 위로/아래로). Sortable has moved the
+    // tile already; its neighbours there say where it goes in the rail.
+    function onGridDrop(_keys: string[], event: SortableEvent) {
+        const id = event.item.getAttribute('data-sortable-key');
+        const containerKey = (event.to as HTMLElement).dataset.sortableContainerKey ?? '';
+        const neighbour = (step: 'previousElementSibling' | 'nextElementSibling') => {
+            for (let el = event.item[step]; el; el = el[step]) {
+                const key = el.getAttribute('data-sortable-key');
+                if (key) return key;
+            }
+            return undefined;
+        };
+        const target = gridDropTarget(
+            DBState.db.characterOrder,
+            containerKey.startsWith('folder:') ? containerKey.slice('folder:'.length) : undefined,
+            neighbour('previousElementSibling'),
+            neighbour('nextElementSibling'),
+        );
+        if (!id || !target) return;
+        const next = moveSidebarItem(DBState.db.characterOrder, { kind: 'character', id }, target);
+        if (next) commitOrder(next);
     }
 
     async function deactivate(entry: ManagerEntry) {
@@ -419,10 +440,6 @@
         add(entry.hidden ? language.showInSidebar : language.hideFromSidebar,
             () => setHiddenFor([entry.chaId], !entry.hidden));
         add(language.folderMoveTo, () => moveToFolderPrompt([entry.chaId]));
-        if (sort === 'order' && !sortReversed) {
-            if (canMove(entry.chaId, -1)) add(language.moveUp, () => moveEntry(entry, -1));
-            if (canMove(entry.chaId, 1)) add(language.moveDown, () => moveEntry(entry, 1));
-        }
         if (entry.archived) {
             add(language.activateCharacter, () => activate(entry));
         } else {
@@ -445,10 +462,6 @@
         <ShDropdownMenuItem onSelect={() => setHiddenFor([entry.chaId], true)}><EyeOffIcon /><span>{language.hideFromSidebar}</span></ShDropdownMenuItem>
     {/if}
     <ShDropdownMenuItem onSelect={() => moveToFolderPrompt([entry.chaId])}><FolderIcon /><span>{language.folderMoveTo}</span></ShDropdownMenuItem>
-    {#if sort === 'order' && !sortReversed}
-        {#if canMove(entry.chaId, -1)}<ShDropdownMenuItem onSelect={() => moveEntry(entry, -1)}><span>{language.moveUp}</span></ShDropdownMenuItem>{/if}
-        {#if canMove(entry.chaId, 1)}<ShDropdownMenuItem onSelect={() => moveEntry(entry, 1)}><span>{language.moveDown}</span></ShDropdownMenuItem>{/if}
-    {/if}
     <ShDropdownMenuSeparator />
     {#if entry.archived}
         <ShDropdownMenuItem onSelect={() => activate(entry)}><ArchiveRestoreIcon /><span>{language.activateCharacter}</span></ShDropdownMenuItem>
@@ -477,14 +490,35 @@
     <ShDropdownMenuItem variant="destructive" onSelect={() => deleteFolder(f)}><TrashIcon /><span>{language.remove}</span></ShDropdownMenuItem>
 {/snippet}
 
+<!-- A section of the sidebar-order grid takes and gives thumbnails by drag;
+     the idle-age folders are filled by checkCharOrder, never by hand. -->
+{#snippet gridSection(items: ManagerEntry[], containerKey: string, fixed: boolean)}
+    <!-- An empty folder keeps some height to be dropped into. -->
+    <ShSortableList
+        className={items.length > 0 ? gridClass : `${gridClass} min-h-12`}
+        {containerKey}
+        disabled={dragDisabled || fixed}
+        options={{ group: 'character-manager-grid' }}
+        onReorder={onGridDrop}
+    >
+        {@render gridTileItems(items)}
+    </ShSortableList>
+{/snippet}
+
 {#snippet gridTiles(items: ManagerEntry[])}
-    <div class="grid {gridCompact ? 'gap-1.5 grid-cols-[repeat(auto-fill,minmax(3.5rem,1fr))]' : 'gap-3 grid-cols-[repeat(auto-fill,minmax(5.5rem,1fr))]'}">
+    <div class={gridClass}>
+        {@render gridTileItems(items)}
+    </div>
+{/snippet}
+
+{#snippet gridTileItems(items: ManagerEntry[])}
         {#each items as entry (entry.chaId)}
             {@const entryDuplicateCount = duplicateCount(entry.chaId)}
             {@const entrySimilarityCount = similarityCounts.get(entry.chaId) ?? 0}
+            <div class="flex" data-sortable-key={entry.chaId}>
             <button
                 type="button"
-                class="flex flex-col items-center gap-1 rounded-md text-textcolor transition-colors {gridCompact ? 'p-0.5' : 'p-1.5'} {activeChaId === entry.chaId ? 'bg-selected' : 'risu-interactive-surface'}"
+                class="flex w-full flex-col items-center gap-1 rounded-md text-textcolor transition-colors {gridCompact ? 'p-0.5' : 'p-1.5'} {activeChaId === entry.chaId ? 'bg-selected' : 'risu-interactive-surface'}"
                 class:opacity-60={entry.archived}
                 title={`${entry.name} · 출처 ${entry.sourceBadge}${entry.missingAssetCount > 0 ? ` · 에셋 ${entry.missingAssetCount}개 누락` : ''}`}
                 onclick={() => open(entry)}
@@ -532,8 +566,8 @@
                     </span>
                 {/if}
             </button>
+            </div>
         {/each}
-    </div>
 {/snippet}
 
 {#snippet body()}
@@ -639,15 +673,14 @@
                                             <span class="text-xs text-textcolor2">{section.items.length}{section.items.length !== f.data.length ? ` / ${f.data.length}` : ''}</span>
                                         </div>
                                         <div class="px-2 pb-2">
+                                            {@render gridSection(shown, section.key, isDeactivatedSystemFolder(f))}
                                             {#if section.items.length === 0}
                                                 <div class="text-xs text-textcolor2 text-center py-1">{language.none}</div>
-                                            {:else}
-                                                {@render gridTiles(shown)}
                                             {/if}
                                         </div>
                                     </section>
                                 {:else}
-                                    {@render gridTiles(shown)}
+                                    {@render gridSection(shown, section.key, false)}
                                 {/if}
                             {/if}
                         {/each}

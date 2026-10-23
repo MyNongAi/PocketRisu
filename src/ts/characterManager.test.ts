@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { buildGridSections, buildManagerEntries, folderNameMatchIds, type ManagerEntry } from './characterManager'
+import { buildGridSections, buildManagerEntries, folderNameMatchIds, gridDropTarget, type ManagerEntry } from './characterManager'
+import { moveSidebarItem } from '../lib/SideBars/sidebarDrag'
 import type { OrderEntry } from './characterOrder'
 import { DEACTIVATED_FOLDER_IDS } from './deactivatedCharacterFolders'
 import type { Database, folder } from './storage/database.svelte'
@@ -195,5 +196,43 @@ describe('buildGridSections', () => {
         const entries = entryMap(entry('a'), entry('b'), entry('c'), entry('d'))
         const keys = buildGridSections(order, entries, all, true).map((s) => s.key)
         expect(new Set(keys).size).toBe(keys.length)
+    })
+})
+
+describe('gridDropTarget', () => {
+    const order = (): OrderEntry[] => [
+        'a', 'b',
+        { id: 'f1', name: 'One', color: '', data: ['c', 'trashed', 'd'] },
+        'e',
+        { id: 'f2', name: 'Empty', color: '', data: [] },
+    ]
+    const drop = (id: string, folderId: string | undefined, prev?: string, next?: string) => {
+        const target = gridDropTarget(order(), folderId, prev, next)
+        return target && moveSidebarItem(order(), { kind: 'character', id }, target)
+    }
+    const flat = (next: ReturnType<typeof drop>) => next?.map((entry) => typeof entry === 'string' ? entry : `${entry.id}[${entry.data.join(',')}]`)
+
+    it('places a thumbnail before the one it now sits in front of, in its section', () => {
+        expect(flat(drop('b', undefined, undefined, 'a'))).toEqual(['b', 'a', 'f1[c,trashed,d]', 'e', 'f2[]'])
+        expect(flat(drop('d', 'f1', undefined, 'c'))).toEqual(['a', 'b', 'f1[d,c,trashed]', 'e', 'f2[]'])
+    })
+
+    it('places one at the end of a section after the last tile, leaving undrawn ones where they are', () => {
+        expect(flat(drop('c', 'f1', 'd', undefined))).toEqual(['a', 'b', 'f1[trashed,d,c]', 'e', 'f2[]'])
+        expect(flat(drop('a', undefined, 'b', undefined))).toEqual(['b', 'a', 'f1[c,trashed,d]', 'e', 'f2[]'])
+    })
+
+    it('moves between folders and the loose runs', () => {
+        expect(flat(drop('a', 'f1', 'c', 'd'))).toEqual(['b', 'f1[c,trashed,a,d]', 'e', 'f2[]'])
+        expect(flat(drop('d', undefined, undefined, 'e'))).toEqual(['a', 'b', 'f1[c,trashed]', 'd', 'e', 'f2[]'])
+        // A folder left with one card dissolves, as on the rail (dissolveSingletonFolders).
+        expect(flat(drop('e', 'f2'))).toEqual(['a', 'b', 'f1[c,trashed,d]', 'e'])
+    })
+
+    it('refuses a drop whose neighbour is not where the grid showed it', () => {
+        expect(gridDropTarget(order(), 'f1', undefined, 'a')).toBeNull()
+        expect(gridDropTarget(order(), undefined, 'c')).toBeNull()
+        expect(gridDropTarget(order(), 'missing')).toBeNull()
+        expect(gridDropTarget(order(), undefined)).toBeNull()
     })
 })
