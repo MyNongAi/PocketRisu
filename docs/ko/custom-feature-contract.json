@@ -2008,6 +2008,22 @@
       ]
     },
     {
+      "id": "MUSIC-AUTOPLAY-PLUGIN",
+      "title": "답변의 곡 표시를 재생하는 배포용 플러그인",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "plugins/music-autoplay/music-autoplay.js",
+        "plugins/music-autoplay/README.ko.md"
+      ],
+      "requiredMarkers": [
+        { "file": "plugins/music-autoplay/music-autoplay.js", "contains": "//@api 3.0" },
+        { "file": "plugins/music-autoplay/music-autoplay.js", "contains": "await risuai.addRisuScriptHandler('display'" },
+        { "file": "plugins/music-autoplay/music-autoplay.js", "contains": "async function stopOtherPlayers(keepMark)" },
+        { "file": "plugins/music-autoplay/music-autoplay.js", "contains": "async function spotifyPlay(query)" }
+      ],
+      "regressionTests": []
+    },
+    {
       "id": "AUX-MODEL-LOREBOOK",
       "title": "로어북을 보조모델로 (🌙): 답이 끝나면 보조모델이 에셋 태그를 넣음",
       "criticality": "core-ux",
