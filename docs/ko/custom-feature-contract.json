@@ -1503,10 +1503,19 @@
         "src/lib/ChatScreens/DefaultChatScreen.svelte",
         "server/node/chat-session-lock.cjs",
         "server/node/server.cjs",
-        "src/ts/storage/applyRebasedDb.ts"
+        "src/ts/storage/applyRebasedDb.ts",
+        "src/ts/storage/chatDeltaSync.ts",
+        "src/ts/storage/chatSaveIntent.ts",
+        "src/ts/storage/chatStorage.ts"
       ],
       "requiredMarkers": [
         { "file": "src/ts/globalApi.svelte.ts", "contains": "toSave.chat = toSave.chat.filter((pair) => pair?.[0] !== chaId || pair?.[1] !== chatId)" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "if (chatUnchangedSinceSave(chaId, chatId, chat)) {" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "(chatSavePending(event.chaId, event.chatId) && !chatUnchangedSinceSave(event.chaId, event.chatId, current))" },
+        { "file": "src/ts/storage/chatSaveIntent.ts", "contains": "export function chatNeedsUpload(" },
+        { "file": "src/ts/storage/chatDeltaSync.ts", "contains": "function savedBodyMatches(chaId: string, chatId: string, chat: Chat): boolean {" },
+        { "file": "src/ts/storage/chatStorage.ts", "contains": "chatDeltaSync.rememberServerBody(chaId, chatId, full)" },
+        { "file": "src/ts/storage/chatStorage.ts", "contains": "{ copiedFields: CATALOG_FIELDS }" },
         { "file": "src/ts/globalApi.svelte.ts", "contains": "if (last !== undefined && Date.now() - last < CONFLICT_COPY_QUIET_MS) throw new ChatYieldError(serverChat)" },
         { "file": "src/ts/globalApi.svelte.ts", "contains": "if (error instanceof ChatBusyDeferral) {" },
         { "file": "src/ts/globalApi.svelte.ts", "contains": "saveRetryAt = Date.now() + Math.min(2000 * over, 30000)" },
@@ -1520,7 +1529,9 @@
       ],
       "regressionTests": [
         "server/node/chat-session-lock.test.ts",
-        "src/ts/storage/applyRebasedDb.test.ts"
+        "src/ts/storage/applyRebasedDb.test.ts",
+        "src/ts/storage/chatDeltaSync.test.ts",
+        "src/ts/storage/chatSaveIntent.test.ts"
       ]
     },
     {

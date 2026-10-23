@@ -254,6 +254,8 @@ export async function replaceChatBody(chats: Chat[], chaId: string, chatId: stri
     const key = chatKey(chaId, chatId)
     hydrationJustApplied.add(key)
     chats[index] = full
+    // The server holds this already: the next save need not send it back.
+    chatDeltaSync.rememberServerBody(chaId, chatId, full)
     const entry = hydratedChatCache.get(key)
     if (entry) {
         entry.chats = chats
@@ -335,7 +337,7 @@ const chatDeltaSync = createChatDeltaSync({
     fetchChatContentDelta: (chaId, chatIndex, chatId, base) => forageStorage.realStorage.fetchChatContentDelta(chaId, chatIndex, chatId, base),
     saveChatContentDelta: (chaId, chatIndex, chatId, chat, base) => forageStorage.realStorage.saveChatContentDelta(chaId, chatIndex, chatId, chat, base, 'update', chatSaveOptions.get(chat) ?? {}),
     rememberChatBase: (chaId, chatId, messages) => forageStorage.realStorage?.rememberChatBase?.(chaId, chatId, messages),
-}, indexedDbChatCopies)
+}, indexedDbChatCopies, { copiedFields: CATALOG_FIELDS })
 
 export async function saveChatToServer(
     chaId: string,
@@ -356,6 +358,11 @@ export async function saveChatToServer(
     } finally {
         if (chatSaveOptions.get(chat) === options) chatSaveOptions.delete(chat)
     }
+}
+
+/** This chat holds exactly what this page last saved of it or took from the server (chatDeltaSync.savedBodyMatches). */
+export function isChatSavedAsIs(chaId: string, chatId: string, chat: Chat): boolean {
+    return chatDeltaSync.savedBodyMatches(chaId, chatId, chat)
 }
 
 // ── Hydration ───────────────────────────────────────────────────────────────

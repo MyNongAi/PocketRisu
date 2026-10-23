@@ -21,7 +21,7 @@ import { hasher } from "./parser/parser.svelte";
 import { characterURLImport, hubURL } from "./characterCards";
 import { defaultJailbreak, defaultMainPrompt, oldJailbreak, oldMainPrompt } from "./storage/defaultPrompts";
 import { characterWithStubs, decodeRisuSave, encodeRisuSaveLegacy, findDangerousChatOps, normalizeJSON, PatchBaselineSnapshot, RisuSaveEncoder, RisuSavePatcher, type toSaveType } from "./storage/risuSave";
-import { isHydrating, saveChatToServer, ensureChatHydrated, chatToStub, classifyChat, convertStubsToPlaceholders, evictHydratedChatCache, markHydratedChatDirty, markHydratedChatPersisted, hydratedChatDirtySeq, setHydratedChatEvictionGuard, hasDirtyHydratedChats, hydratedChatState, isHydratedChatDirty, rehomeHydratedChats, replaceChatBody, suppressChatTracking } from "./storage/chatStorage";
+import { isHydrating, saveChatToServer, ensureChatHydrated, chatToStub, classifyChat, convertStubsToPlaceholders, evictHydratedChatCache, markHydratedChatDirty, markHydratedChatPersisted, hydratedChatDirtySeq, setHydratedChatEvictionGuard, hasDirtyHydratedChats, hydratedChatState, isChatSavedAsIs, isHydratedChatDirty, rehomeHydratedChats, replaceChatBody, suppressChatTracking } from "./storage/chatStorage";
 import { startRealtimeSync, type ChatEvent, type DbPatchEvent, type RealtimeConnection } from "./sync/realtimeSync";
 import { landRemoteDbPatch, type LandingPage, type LandResult } from "./sync/remoteDbPatch";
 import { alreadyLanded, catchUp, queueNewestChat, type FeedCursor } from "./sync/remoteQueue";
@@ -73,7 +73,7 @@ export class SaveRejectedError extends Error {
 import { initMobileGesture } from "./hotkey";
 import { moduleUpdate, refreshModules } from "./process/modules";
 import { trackModuleTreeChanges } from "./process/moduleChangeTracker.svelte";
-import { classifyChatSaveIntent, retainConfirmedChats } from './storage/chatSaveIntent'
+import { chatNeedsUpload, classifyChatSaveIntent, retainConfirmedChats } from './storage/chatSaveIntent'
 import { isLocalNetworkUrl } from "./network/localNetwork";
 import { decodeProxyJobWsChunk, formatProxyStreamErrorMessage, parseProxyJobWsEvent } from "./network/proxyJobWs";
 import { getInlineImageMimeType } from "./media/imageMime";
@@ -1356,6 +1356,16 @@ export async function saveDb() {
         return chatsToPersist
     }
 
+    // Already on the server as it is (chatNeedsUpload).
+    function chatUnchangedSinceSave(chaId: string, chatId: string, chat: Chat): boolean {
+        return !chatNeedsUpload({
+            confirmed: knownChatIdsByCharacter.get(chaId)?.has(chatId) === true,
+            busy: chat.isStreaming === true || get(generationStates).has(chatGenKey(chatId)) || get(rerollPlaceholders).has(chatId),
+            state: hydratedChatState(chaId, chatId),
+            savedAsIs: () => isChatSavedAsIs(chaId, chatId, chat),
+        })
+    }
+
     function updateKnownChatsAfterSuccessfulSave(db: Database, toSave: toSaveType) {
         for (const chaId of toSave.character) {
             const char = db.characters.find(c => c?.chaId === chaId)
@@ -1673,6 +1683,15 @@ export async function saveDb() {
             const chat = char.chats[chatIndex]
             // Skip placeholders — they have no real data to save
             if (!chat || chat._placeholder) continue
+            // The chat last opened stays in the tracker after every save
+            // (takeTrackedChanges), also once the user has left it, so every
+            // later save sent it again unchanged (2026-10-21). It stays
+            // tracked: a write that reaches it unmarked (an illustration
+            // finishing, a plugin) changes it and goes out with the next save.
+            if (chatUnchangedSinceSave(chaId, chatId, chat)) {
+                toSave.chat = toSave.chat.filter((pair) => pair?.[0] !== chaId || pair?.[1] !== chatId)
+                continue
+            }
             try {
                 const intent = classifyChatSaveIntent(knownChatIdsByCharacter, chaId, chatId)
                 // Mid-reroll the old reply is out of the chat: save it in place
@@ -2447,11 +2466,14 @@ export async function saveDb() {
 
         // Edited here as well: both devices changed it, so let the save path's
         // conflict report it rather than pick a winner silently.
+        // Queued for saving counts too, except as the chat last opened left
+        // in the tracker unchanged since it was saved (takeTrackedChanges):
+        // that one held another device's newer copy off this page for good.
         const edited = () => {
             const current = chats.find((chat) => chat?.id === event.chatId)
             return !current || current._placeholder || current.isStreaming
                 || isHydratedChatDirty(event.chaId, event.chatId)
-                || chatSavePending(event.chaId, event.chatId)
+                || (chatSavePending(event.chaId, event.chatId) && !chatUnchangedSinceSave(event.chaId, event.chatId, current))
         }
         if (edited()) return
         await storage.refreshChatFromServer(event.chaId, index, event.chatId, async (full) => {

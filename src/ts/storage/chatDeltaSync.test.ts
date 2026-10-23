@@ -201,3 +201,119 @@ describe('chat delta sync — save ordering', () => {
         await slow
     })
 })
+
+// The save loop leaves out a tracked chat the server already holds as it is
+// (globalApi persistTrackedChanges): the chat last opened stays tracked after
+// every save, and was sent again on every later save (2026-10-21).
+describe('chat delta sync — what the server already holds', () => {
+    async function saved(n = 60) {
+        const server = fakeServer(chatOf(n))
+        const sync = createChatDeltaSync(server.transport, memoryCopies())
+        const chat = structuredClone(await sync.fetchChat('char', 0, 'chat'))!
+        chat.message.push(msg(n))
+        await sync.saveChat('char', 0, 'chat', chat)
+        return { server, sync, chat }
+    }
+
+    test('a chat matches once the server acknowledged its save, never before', async () => {
+        const server = fakeServer(chatOf(3))
+        const sync = createChatDeltaSync(server.transport, memoryCopies())
+        const chat = structuredClone(await sync.fetchChat('char', 0, 'chat'))!
+        // Loaded but never saved from this page: nothing to go by.
+        expect(sync.savedBodyMatches('char', 'chat', chat)).toBe(false)
+
+        let release!: () => void
+        const gate = new Promise<void>((r) => { release = r })
+        const real = server.transport.saveChatContentDelta
+        server.transport.saveChatContentDelta = vi.fn(async (...args: Parameters<typeof real>) => {
+            await gate
+            return real(...args)
+        })
+        chat.message.push(msg(3))
+        const pending = sync.saveChat('char', 0, 'chat', chat)
+        expect(sync.savedBodyMatches('char', 'chat', chat)).toBe(false)
+        release()
+        await pending
+        expect(sync.savedBodyMatches('char', 'chat', chat)).toBe(true)
+        expect(sync.savedBodyMatches('char', 'chat', structuredClone(chat))).toBe(true)
+    })
+
+    test('any change, in a message or in any other field, makes it differ', async () => {
+        const { sync, chat } = await saved()
+        const changed = (edit: (copy: any) => void) => {
+            const copy = structuredClone(chat)
+            edit(copy)
+            return !sync.savedBodyMatches('char', 'chat', copy)
+        }
+        expect(changed((c) => { c.message[5].data = 'edited' })).toBe(true)
+        expect(changed((c) => { c.message[60].data += '!' })).toBe(true)
+        expect(changed((c) => { c.message.push(msg(61)) })).toBe(true)
+        expect(changed((c) => { c.message.splice(10, 1) })).toBe(true)
+        expect(changed((c) => { c.message[3].swipes = ['a', 'b'] })).toBe(true)
+        // Written into a message without a chat edit (an illustration).
+        expect(changed((c) => { c.message[60].nodeOnlyIllustrations = [{ id: 'img' }] })).toBe(true)
+        expect(changed((c) => { c.note = 'author note' })).toBe(true)
+        expect(changed((c) => { c.hypaV3Data = { summaries: [{ text: 'summary' }] } })).toBe(true)
+        expect(changed((c) => { c.scriptstate = { hp: 1 } })).toBe(true)
+        expect(changed((c) => { c.localLore = [{ key: 'k', content: 'c' }] })).toBe(true)
+        expect(changed(() => {})).toBe(false)
+    })
+
+    test('a failed save forgets the earlier match', async () => {
+        const { server, sync, chat } = await saved()
+        server.transport.saveChatContentDelta = vi.fn(async () => { throw new Error('network') })
+        const edited = { ...structuredClone(chat), note: 'edited' }
+        await expect(sync.saveChat('char', 0, 'chat', edited)).rejects.toThrow('network')
+        // Even back to the content saved before: the failed request may or
+        // may not have reached the server, so it goes out again.
+        expect(sync.savedBodyMatches('char', 'chat', chat)).toBe(false)
+        expect(sync.savedBodyMatches('char', 'chat', edited)).toBe(false)
+    })
+
+    test("after a full save over another device's copy, the chat as sent matches", async () => {
+        const { server, sync, chat } = await saved()
+        server.stored = { ...server.stored, message: server.stored.message.map((m: any, i: number) => (i === 0 ? msg(0, 'other device') : m)) }
+        chat.message.push(msg(61))
+        await sync.saveChat('char', 0, 'chat', chat)
+        expect((server.transport.saveChatContentDelta as any).mock.calls.at(-1)[4]).toBeNull()
+        expect(server.stored).toEqual(chat)
+        expect(sync.savedBodyMatches('char', 'chat', chat)).toBe(true)
+    })
+
+    test('a later save decides, and other chats keep their own record', async () => {
+        const { sync, chat } = await saved()
+        const other = chatOf(2, { id: 'other' })
+        await sync.saveChat('char', 1, 'other', other)
+        const newer = { ...structuredClone(chat), note: 'newer' }
+        await sync.saveChat('char', 0, 'chat', newer)
+        expect(sync.savedBodyMatches('char', 'chat', chat)).toBe(false)
+        expect(sync.savedBodyMatches('char', 'chat', newer)).toBe(true)
+        expect(sync.savedBodyMatches('char', 'other', other)).toBe(true)
+        expect(sync.savedBodyMatches('other-char', 'chat', newer)).toBe(false)
+    })
+
+    test('copied catalog fields alone do not make it differ; anything else still does', async () => {
+        const server = fakeServer(chatOf(5, { lastDate: 1 }))
+        const sync = createChatDeltaSync(server.transport, memoryCopies(), { copiedFields: ['name', 'lastDate', 'folderId', 'modules'] })
+        const chat = structuredClone(await sync.fetchChat('char', 0, 'chat'))!
+        chat.message.push(msg(5))
+        await sync.saveChat('char', 0, 'chat', chat)
+        // Renamed on another device: the catalog patch lands after the body.
+        const renamed = { ...structuredClone(chat), name: 'Renamed', lastDate: 2, folderId: 'f', modules: ['m'] }
+        expect(sync.savedBodyMatches('char', 'chat', renamed)).toBe(true)
+        expect(sync.savedBodyMatches('char', 'chat', { ...renamed, note: 'and a note' })).toBe(false)
+        // Without the option every field counts.
+        const strict = createChatDeltaSync(fakeServer(chatOf(5)).transport, memoryCopies())
+        strict.rememberServerBody('char', 'chat', chat)
+        expect(strict.savedBodyMatches('char', 'chat', renamed)).toBe(false)
+    })
+
+    test("the server's copy taken in place of this one matches without a save", async () => {
+        const { sync, chat } = await saved()
+        const theirs = { ...structuredClone(chat), message: [...chat.message, msg(61, 'from another device')] }
+        expect(sync.savedBodyMatches('char', 'chat', theirs)).toBe(false)
+        sync.rememberServerBody('char', 'chat', theirs)
+        expect(sync.savedBodyMatches('char', 'chat', theirs)).toBe(true)
+        expect(sync.savedBodyMatches('char', 'chat', chat)).toBe(false)
+    })
+})

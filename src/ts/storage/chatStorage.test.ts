@@ -45,6 +45,7 @@ const {
     suppressChatTracking,
     isHydrating,
     isHydratedChatDirty,
+    isChatSavedAsIs,
     chatLoadFailures,
 } = await import('./chatStorage')
 type Chat = any
@@ -397,6 +398,14 @@ describe('bodies another device saved', () => {
         expect(chats[0]).toMatchObject({ name: 'Catalog name', lastDate: 5, folderId: 'f', isStreaming: false })
         expect(isHydratedChatDirty('c', 'x')).toBe(false)
         expect(hydratedChatCacheSize()).toBe(1)
+        // The server holds it already: a save leaves it out until it changes.
+        expect(isChatSavedAsIs('c', 'x', chats[0])).toBe(true)
+        // A rename landing afterwards is a catalog change, not a body change.
+        chats[0].name = 'Renamed elsewhere'
+        chats[0].lastDate = 12
+        expect(isChatSavedAsIs('c', 'x', chats[0])).toBe(true)
+        chats[0].message.push({ role: 'user', data: 'typed here' })
+        expect(isChatSavedAsIs('c', 'x', chats[0])).toBe(false)
     })
 
     test('replaceChatBody leaves placeholders alone; they load the newest body when opened', async () => {

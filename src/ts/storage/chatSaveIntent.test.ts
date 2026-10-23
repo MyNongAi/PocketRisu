@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { classifyChatSaveIntent, retainConfirmedChats } from './chatSaveIntent'
+import { chatNeedsUpload, classifyChatSaveIntent, retainConfirmedChats } from './chatSaveIntent'
 
 describe('chat save intent', () => {
     it('classifies a chat absent from the confirmed catalog as create', () => {
@@ -46,5 +46,37 @@ describe('retaining confirmed chats across a catalog save', () => {
 
     it('stays empty when nothing was confirmed yet', () => {
         expect([...retainConfirmedChats(undefined, ['a', 'b'])]).toEqual([])
+    })
+})
+
+// The save loop's rule for a tracked chat (globalApi persistTrackedChanges).
+describe('chat needs upload', () => {
+    const facts = (over: Partial<Parameters<typeof chatNeedsUpload>[0]> = {}): Parameters<typeof chatNeedsUpload>[0] => ({
+        confirmed: true,
+        busy: false,
+        state: 'clean',
+        savedAsIs: () => true,
+        ...over,
+    })
+
+    it('leaves out a confirmed, idle chat the server already holds as it is', () => {
+        expect(chatNeedsUpload(facts())).toBe(false)
+        // Not tracked by the hydration cache (made or loaded at boot here):
+        // no marks to go by, so the content alone decides.
+        expect(chatNeedsUpload(facts({ state: 'unknown' }))).toBe(false)
+    })
+
+    it('sends a chat whose content differs from what the server holds', () => {
+        expect(chatNeedsUpload(facts({ savedAsIs: () => false }))).toBe(true)
+        expect(chatNeedsUpload(facts({ state: 'unknown', savedAsIs: () => false }))).toBe(true)
+    })
+
+    it('sends anything in doubt without comparing the content', () => {
+        let compared = 0
+        const savedAsIs = () => { compared++; return true }
+        expect(chatNeedsUpload(facts({ confirmed: false, savedAsIs }))).toBe(true)
+        expect(chatNeedsUpload(facts({ busy: true, savedAsIs }))).toBe(true)
+        expect(chatNeedsUpload(facts({ state: 'dirty', savedAsIs }))).toBe(true)
+        expect(compared).toBe(0)
     })
 })

@@ -1,5 +1,5 @@
 import type { Chat } from './database.svelte'
-import { messageFingerprints, prefixFingerprint } from './chatFingerprint'
+import { canon, hash64, messageFingerprints, prefixFingerprint } from './chatFingerprint'
 
 // Chat delta sync — transfer only what changed for long chats.
 //
@@ -43,8 +43,35 @@ function isUsableCopy(chat: any): chat is Chat {
     return !!chat && typeof chat === 'object' && Array.isArray(chat.message) && chat.message.length > 0 && !chat._placeholder
 }
 
-export function createChatDeltaSync(transport: ChatDeltaTransport, copies: ChatCopyStore) {
+/**
+ * A whole chat body as one hash: the messages by fingerprint, every other
+ * field as it is except `copied` ones. A save passes the fingerprints it
+ * computes anyway, so only the fields besides the messages cost extra.
+ */
+export function chatBodySignature(
+    chat: Chat,
+    fingerprints: readonly string[] = messageFingerprints(chat.message ?? []),
+    copied: readonly string[] = [],
+): string {
+    const { message: _message, ...rest } = chat as Chat & Record<string, unknown>
+    for (const field of copied) delete rest[field]
+    return hash64(`${fingerprints.length}|${fingerprints.join('')}|${canon(rest)}`)
+}
+
+export function createChatDeltaSync(transport: ChatDeltaTransport, copies: ChatCopyStore, options: {
+    /**
+     * Fields a body holds only as copies, which the server replaces with its
+     * own (chatStorage CATALOG_FIELDS): a change to them alone is no reason
+     * to send the body again.
+     */
+    copiedFields?: readonly string[]
+} = {}) {
+    const bodySignature = (chat: Chat, fingerprints?: readonly string[]) => chatBodySignature(chat, fingerprints, options.copiedFields)
     const serverFingerprints = new Map<string, string[]>()
+    // Each chat as the server holds it, as far as this page knows
+    // (chatBodySignature): what it last saved, once the server acknowledged
+    // that save, or the server's copy it took (rememberServerBody).
+    const savedBodies = new Map<string, string>()
 
     async function fetchChat(chaId: string, chatIndex: number, chatId: string): Promise<Chat | null> {
         const key = chatCopyKey(chaId, chatId)
@@ -116,6 +143,9 @@ export function createChatDeltaSync(transport: ChatDeltaTransport, copies: ChatC
         // below, so they describe the same chat content even if it keeps
         // changing (streaming) while the request is in flight.
         const fingerprints = messageFingerprints(messages)
+        const body = bodySignature(chat, fingerprints)
+        // Until this save is acknowledged the server may hold either copy.
+        savedBodies.delete(key)
         const known = serverFingerprints.get(key)
         let shared = 0
         if (known) {
@@ -130,6 +160,7 @@ export function createChatDeltaSync(transport: ChatDeltaTransport, copies: ChatC
             })
             if (outcome === 'ok') {
                 serverFingerprints.set(key, fingerprints)
+                savedBodies.set(key, body)
                 transport.rememberChatBase?.(chaId, chatId, messages)
                 return
             }
@@ -138,9 +169,28 @@ export function createChatDeltaSync(transport: ChatDeltaTransport, copies: ChatC
         }
         await transport.saveChatContentDelta(chaId, chatIndex, chatId, chat, null)
         serverFingerprints.set(key, fingerprints)
+        // The full save encodes the chat after the await above, so it may
+        // hold more than `body`; the chat then no longer matches, and the
+        // next save sends it again rather than skip it.
+        savedBodies.set(key, body)
     }
 
-    return { fetchChat, saveChat }
+    /**
+     * Whether `chat` is, field for field, what this page last saved of it or
+     * took from the server. Sending it again would only repeat that, or
+     * overwrite what another device saved since.
+     */
+    function savedBodyMatches(chaId: string, chatId: string, chat: Chat): boolean {
+        const saved = savedBodies.get(chatCopyKey(chaId, chatId))
+        return saved !== undefined && saved === bodySignature(chat)
+    }
+
+    /** This page now holds the server's copy of the chat as it is. */
+    function rememberServerBody(chaId: string, chatId: string, chat: Chat): void {
+        savedBodies.set(chatCopyKey(chaId, chatId), bodySignature(chat))
+    }
+
+    return { fetchChat, saveChat, savedBodyMatches, rememberServerBody }
 }
 
 // ── IndexedDB copy store ────────────────────────────────────────────────────

@@ -19,6 +19,24 @@ export function classifyChatSaveIntent(
 }
 
 /**
+ * Whether a tracked chat must be sent, or the server already holds it as it
+ * is. Anything in doubt is sent: a chat never confirmed, one a reply or a
+ * reroll is still writing into, one with an edit marked since its save.
+ * Otherwise the content decides (`savedAsIs`, chatDeltaSync.savedBodyMatches),
+ * also for a chat the hydration cache does not track ('unknown'): its edits
+ * are never marked.
+ */
+export function chatNeedsUpload(facts: {
+    confirmed: boolean
+    busy: boolean
+    state: 'dirty' | 'clean' | 'unknown'
+    savedAsIs: () => boolean
+}): boolean {
+    if (!facts.confirmed || facts.busy || facts.state === 'dirty') return true
+    return !facts.savedAsIs()
+}
+
+/**
  * Narrow a character's confirmed-chat set to the chats that still exist
  * locally, after a catalog save.
  *
