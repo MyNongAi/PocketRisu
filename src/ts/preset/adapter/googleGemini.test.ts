@@ -1168,3 +1168,29 @@ describe('context caching wiring', () => {
         expect(result.usage).toEqual({ promptTokens: 10, completionTokens: 2, totalTokens: 12, cachedTokens: 7 })
     })
 })
+
+describe('a request ending on the model turn (prefill)', () => {
+    const prefilled: AdapterChatMessage[] = [
+        { role: 'system', content: 'Summarize.' },
+        { role: 'user', content: 'The chat.' },
+        { role: 'assistant', content: 'Understood. # Response' },
+    ]
+    const reply = () => jsonResponse({ candidates: [{ content: { parts: [{ text: 'ok' }], role: 'model' }, finishReason: 'STOP' }] })
+
+    test('Gemini 3 and later get a user turn after it, the model turn kept', async () => {
+        const { fetchImpl, calls } = captureFetch(reply)
+        await sendGoogleChatRequest(makePreset({ userValues: { modelId: 'gemini-3.7-flash' } }), { messages: prefilled, fetchImpl }, { apiKey: 'k' })
+        expect(calls[0].url).toContain('/gemini-3.7-flash:')
+        expect(calls[0].body.contents).toEqual([
+            { role: 'user', parts: [{ text: 'The chat.' }] },
+            { role: 'model', parts: [{ text: 'Understood. # Response' }] },
+            { role: 'user', parts: [{ text: 'Continue from the end of your previous message.' }] },
+        ])
+    })
+
+    test('Gemini 2.x still continues the prefill as it is', async () => {
+        const { fetchImpl, calls } = captureFetch(reply)
+        await sendGoogleChatRequest(makePreset({ userValues: { modelId: 'gemini-2.5-flash' } }), { messages: prefilled, fetchImpl }, { apiKey: 'k' })
+        expect((calls[0].body.contents as { role: string }[]).map((c) => c.role)).toEqual(['user', 'model'])
+    })
+})

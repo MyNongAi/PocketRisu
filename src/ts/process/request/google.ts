@@ -12,7 +12,8 @@ import { toLogSource } from './logSource'
 import { applyAdditionalParameters, applyParameters, getAdditionalParameters, type LLMParameter } from './shared'
 import { bodyIntercepterStore } from "src/ts/stores.svelte"
 import { applyGeminiPdfInput, geminiPdfLogBody } from './geminiPdfInput'
-import { CONTINUE_FROM_PREFILL } from '../memory/trailingPrefill'
+import { acceptsTrailingModelTurn, CONTINUE_FROM_PREFILL } from '../memory/trailingPrefill'
+export { acceptsTrailingModelTurn }
 
 type GeminiFunctionCall = {
     id?: string;
@@ -57,10 +58,6 @@ function geminiRetryBackoff(failedAttempt: number, signal?: AbortSignal): Promis
     })
 }
 
-/** Models that continue from a request ending on their own turn (a prefill); later Gemini refuse it. */
-export function acceptsTrailingModelTurn(modelId: string | undefined): boolean {
-    return /(?:^|[/])(?:gemini-[12](?:[.-]|$)|gemini-exp|gemma|learnlm)/i.test(modelId ?? '')
-}
 
 export async function requestGoogleCloudVertex(arg:RequestDataArgumentExtended):Promise<requestDataResponse> {
 

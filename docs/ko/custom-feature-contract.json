@@ -2082,16 +2082,19 @@
       "ownerFiles": [
         "src/ts/process/memory/trailingPrefill.ts",
         "src/ts/process/memory/hypav3.ts",
-        "src/ts/process/request/google.ts"
+        "src/ts/process/request/google.ts",
+        "src/ts/preset/adapter/googleGemini.ts"
       ],
       "requiredMarkers": [
         { "file": "src/ts/process/memory/hypav3.ts", "contains": "await sendAllowingPrefillRefusal(formated, send)" },
+        { "file": "src/ts/preset/adapter/googleGemini.ts", "contains": "contents.at(-1)?.role === 'model' && !acceptsTrailingModelTurn(modelId)" },
         { "file": "src/ts/process/request/google.ts", "contains": "reformatedChat.push({ role: 'user', parts: [{ text: CONTINUE_FROM_PREFILL }] })" },
         { "file": "src/ts/process/request/google.ts", "contains": "!acceptsTrailingModelTurn(arg.modelInfo.internalID ?? arg.modelInfo.id)" }
       ],
       "regressionTests": [
         "src/ts/process/memory/trailingPrefill.test.ts",
-        "src/ts/process/request/geminiTrailingModelTurn.test.ts"
+        "src/ts/process/request/geminiTrailingModelTurn.test.ts",
+        "src/ts/preset/adapter/googleGemini.test.ts"
       ]
     },
     {

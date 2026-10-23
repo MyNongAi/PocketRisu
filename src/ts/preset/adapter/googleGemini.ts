@@ -21,6 +21,7 @@ import type {
     AdapterUsage,
 } from './types'
 import { resolveWireModelId } from './wireInvariants'
+import { acceptsTrailingModelTurn, CONTINUE_FROM_PREFILL } from '../../process/memory/trailingPrefill'
 
 interface GeminiPart {
     text?: string
@@ -223,6 +224,16 @@ async function prepareGeminiBody(
 
     const { system, chat, systemCachePoint } = collectSystemAndChat(options.messages)
     const { contents, cacheBoundary } = toGeminiContents(chat)
+    // Gemini 3 and later refuse a request that ends on the model's turn ("Requests
+    // ending with a model turn are not supported"), as the legacy Vertex path
+    // already handles (google.ts). A model preset sent every HypaV3 summary that
+    // way, and each was refused once before memory/trailingPrefill.ts resent it
+    // (the laptop's request log, 2026-10-23). The model's turn stays, and a user
+    // turn after it asks the model to go on from it. The cache boundary counts
+    // contents before this turn, so it is unchanged.
+    if (contents.at(-1)?.role === 'model' && !acceptsTrailingModelTurn(modelId)) {
+        contents.push({ role: 'user', parts: [{ text: CONTINUE_FROM_PREFILL }] })
+    }
     // A cachePoint carried only by system messages (cache prompt card /
     // automaticCachePoint landing on the system role) used to be dropped when
     // collectSystemAndChat hoisted those messages into systemInstruction,

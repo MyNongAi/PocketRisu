@@ -15,6 +15,11 @@ export function refusesTrailingAssistant(error: unknown): boolean {
 
 export const CONTINUE_FROM_PREFILL = 'Continue from the end of your previous message.'
 
+/** Models that continue from a request ending on their own turn (a prefill); later Gemini refuse it. */
+export function acceptsTrailingModelTurn(modelId: string | undefined): boolean {
+    return /(?:^|[/])(?:gemini-[12](?:[.-]|$)|gemini-exp|gemma|learnlm)/i.test(modelId ?? '')
+}
+
 /** The same messages ending on a user turn; null when they already do not end on the assistant. */
 export function endingOnUserTurn<T extends { role: string, content: string }>(messages: readonly T[]): T[] | null {
     if (messages.at(-1)?.role !== 'assistant') return null
