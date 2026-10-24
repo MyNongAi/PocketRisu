@@ -259,8 +259,8 @@ function objectPositionFraction(token: string, axis: 'x' | 'y'): number {
     return axis === 'x' ? 0.5 : 0.5
 }
 
-export function coverImagePlacement(sourceWidth: number, sourceHeight: number, boxWidth: number, boxHeight: number, objectPosition: string): { x: number; y: number; width: number; height: number } {
-    const scale = Math.max(boxWidth / sourceWidth, boxHeight / sourceHeight)
+export function coverImagePlacement(sourceWidth: number, sourceHeight: number, boxWidth: number, boxHeight: number, objectPosition: string, fit: 'cover' | 'contain' = 'cover'): { x: number; y: number; width: number; height: number } {
+    const scale = (fit === 'cover' ? Math.max : Math.min)(boxWidth / sourceWidth, boxHeight / sourceHeight)
     const width = sourceWidth * scale
     const height = sourceHeight * scale
     const tokens = objectPosition.trim().toLowerCase().split(/\s+/)
@@ -301,6 +301,33 @@ async function rasterizeCoverImage(url: string, width: number, height: number, p
     const placement = coverImagePlacement(image.naturalWidth, image.naturalHeight, width, height, position)
     context.drawImage(image, placement.x, placement.y, placement.width, placement.height)
     return encodeClipboardCanvas(canvas)
+}
+
+async function rasterizeBackgroundPicture(url: string, width: number, height: number, fit: 'cover' | 'contain', position: string): Promise<string> {
+    const image = await loadClipboardImage(url)
+    const [canvas, context] = clipboardCanvas(width, height)
+    const placement = coverImagePlacement(image.naturalWidth, image.naturalHeight, width, height, position, fit)
+    context.drawImage(image, placement.x, placement.y, placement.width, placement.height)
+    return encodeClipboardCanvas(canvas)
+}
+
+// A board like Arca drops CSS background images when a post is saved, while
+// it keeps an <img> and uploads it on paste. A reply's scene pictures drawn
+// as the cover background of an empty box were gone from the post, the
+// portrait (an <img>) was not (the user's Arca test, 2026-10-24). Such a box
+// goes out as an <img> of the picture as it is shown: one url() layer, sized
+// cover (or contain without repeat), on a box with no text or children.
+const BACKGROUND_STYLE_PROPERTIES = [
+    'background-image', 'background-size', 'background-position', 'background-repeat', 'background-clip',
+] as const
+
+export function backgroundPictureOf(source: Element, computed: CSSStyleDeclaration, hasText: boolean, hasPseudo: boolean): { url: string; fit: 'cover' | 'contain'; position: string } | null {
+    if (hasText || hasPseudo || Array.from(source.children).some(child => child.tagName !== 'BR')) return null
+    const urls = extractCssUrls(computed.backgroundImage)
+    if (urls.length !== 1 || !/^\s*url\([^)]*\)\s*$/i.test(computed.backgroundImage)) return null
+    const size = computed.backgroundSize.trim()
+    if (size !== 'cover' && !(size === 'contain' && computed.backgroundRepeat.trim() === 'no-repeat')) return null
+    return { url: urls[0], fit: size, position: computed.backgroundPosition || 'center' }
 }
 
 async function rasterizeSvg(svg: SVGSVGElement, width: number, height: number): Promise<string> {
@@ -420,6 +447,7 @@ export async function buildPortableChatFragment(
         getPseudoStyle?: (element: Element, pseudo: '::before' | '::after') => CSSStyleDeclaration
         rasterizeSvg?: (svg: SVGSVGElement, width: number, height: number) => Promise<string>
         rasterizeCover?: (url: string, width: number, height: number, position: string) => Promise<string>
+        rasterizeBackground?: (url: string, width: number, height: number, fit: 'cover' | 'contain', position: string) => Promise<string>
         shrinkImage?: (dataUrl: string, boxWidth: number, boxHeight: number) => Promise<string>
     } = {},
 ): Promise<string> {
@@ -472,12 +500,6 @@ export async function buildPortableChatFragment(
         const flattened = portableStyle(computed)
         if (flattened) clone.setAttribute('style', flattened)
 
-        const background = computed.backgroundImage
-        if (background && background !== 'none') {
-            const box = source.getBoundingClientRect()
-            assetTasks.push(async () => { clone.style.backgroundImage = await inlineCssUrls(background, (url) => toShownDataUrl(url, box.width, box.height)) })
-        }
-
         let hasPseudo = false
         if (source instanceof HTMLElement && !/^(IMG|INPUT|BR|HR|META|LINK|SCRIPT|STYLE|VIDEO|CANVAS)$/.test(source.tagName)) {
             for (const pseudo of ['::before', '::after'] as const) {
@@ -501,6 +523,41 @@ export async function buildPortableChatFragment(
         }
         if (source instanceof HTMLElement && clone instanceof HTMLElement) {
             preservePortableLayout(source, clone, computed, !!textContentFlags.get(source), hasPseudo)
+        }
+
+        const background = computed.backgroundImage
+        if (background && background !== 'none') {
+            const box = source.getBoundingClientRect()
+            const picture = clone !== cloneRoot && clone instanceof HTMLElement && box.width > 0 && box.height > 0
+                ? backgroundPictureOf(source, computed, !!textContentFlags.get(source), hasPseudo)
+                : null
+            assetTasks.push(async () => {
+                if (picture) {
+                    try {
+                        const embedded = await toDataUrl(picture.url)
+                        if (!/^data:image\/(?:gif|svg\+xml)/i.test(embedded) && !isAnimatedImageDataUrl(embedded)) {
+                            const image = clone.ownerDocument.createElement('img')
+                            image.src = await (options.rasterizeBackground ?? rasterizeBackgroundPicture)(embedded, box.width, box.height, picture.fit, picture.position)
+                            image.setAttribute('style', clone.getAttribute('style') ?? '')
+                            for (const property of BACKGROUND_STYLE_PROPERTIES) image.style.removeProperty(property)
+                            image.style.width = `${box.width}px`
+                            image.style.maxWidth = '100%'
+                            image.style.setProperty('height', 'auto', 'important')
+                            image.style.setProperty('aspect-ratio', `${box.width} / ${box.height}`, 'important')
+                            // The box's overflow: visible would let the picture spill past its rounded corners.
+                            image.style.overflow = 'hidden'
+                            // A centered box's auto margins resolve to the old chat width's pixels.
+                            if (computed.marginLeft === computed.marginRight && parseFloat(computed.marginLeft) > 0) {
+                                image.style.marginLeft = 'auto'
+                                image.style.marginRight = 'auto'
+                            }
+                            clone.replaceWith(image)
+                            return
+                        }
+                    } catch { /* falls back to the background below */ }
+                }
+                clone.style.backgroundImage = await inlineCssUrls(background, (url) => toShownDataUrl(url, box.width, box.height))
+            })
         }
 
         if (source instanceof HTMLDetailsElement && clone instanceof HTMLDetailsElement) {

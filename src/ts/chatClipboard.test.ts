@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { buildPortableChatFragment, chatClipboardErrorMessage, boardSafeTags, clipboardImageSize, clipboardSizeLabel, isAnimatedImageDataUrl, shrinkClipboardImage, hexColors, replaceFormControls, coverImagePlacement, decodeClipboardCssContent, extractCssUrls, fetchClipboardDataUrl, inlineCssUrls, writeChatClipboard } from './chatClipboard'
+import { backgroundPictureOf, buildPortableChatFragment, chatClipboardErrorMessage, boardSafeTags, clipboardImageSize, clipboardSizeLabel, isAnimatedImageDataUrl, shrinkClipboardImage, hexColors, replaceFormControls, coverImagePlacement, decodeClipboardCssContent, extractCssUrls, fetchClipboardDataUrl, inlineCssUrls, writeChatClipboard } from './chatClipboard'
 
 afterEach(() => {
     vi.restoreAllMocks()
@@ -279,6 +279,49 @@ describe('clipboard image size (board post limits)', () => {
         const copy = new DOMParser().parseFromString(await buildPortableChatFragment(root, { shrinkImage, fetchFn }), 'text/html')
         expect(copy.querySelector('img')!.getAttribute('src')).toBe('data:image/webp;base64,PORTRAIT-80x80')
         expect(copy.querySelector('div div, section div')!.getAttribute('style')).toContain('data:image/webp;base64,FRAME-300x120')
+    })
+
+    it('turns an empty box drawn with a cover background into an <img>, which a board keeps', async () => {
+        const root = document.createElement('section')
+        root.innerHTML = '<p>before</p><div class="scene" style="display:block;width:336px;height:210px;border-radius:20px;background-image:url(/scene.png);background-size:cover;background-position:50% 10%"></div><div style="background-image:url(/frame.png);background-size:cover">text</div>'
+        document.body.append(root)
+        const [scene, frame] = Array.from(root.querySelectorAll('div'))
+        vi.spyOn(scene, 'getBoundingClientRect').mockReturnValue({ width: 336, height: 210 } as DOMRect)
+        vi.spyOn(frame, 'getBoundingClientRect').mockReturnValue({ width: 300, height: 120 } as DOMRect)
+        const fetchFn = vi.fn(async () => new Response(new Blob(['png'], { type: 'image/png' })))
+        const rasterizeBackground = vi.fn(async () => 'data:image/webp;base64,SCENE')
+        const shrinkImage = vi.fn(async () => 'data:image/webp;base64,FRAME')
+        const copy = new DOMParser().parseFromString(await buildPortableChatFragment(root, { fetchFn, rasterizeBackground, shrinkImage }), 'text/html')
+        expect(rasterizeBackground).toHaveBeenCalledWith(expect.stringMatching(/^data:image\/png;base64,/), 336, 210, 'cover', '50% 10%')
+        const images = copy.querySelectorAll('img')
+        expect(images).toHaveLength(1)
+        expect(images[0].getAttribute('src')).toBe('data:image/webp;base64,SCENE')
+        expect(images[0].style.backgroundImage).toBe('')
+        expect(images[0].style.borderRadius).toBe('20px')
+        expect(images[0].style.width).toBe('336px')
+        expect(images[0].style.maxWidth).toBe('100%')
+        expect(images[0].style.height).toBe('auto')
+        expect(images[0].style.overflow).toBe('hidden')
+        expect(images[0].hasAttribute('class')).toBe(false)
+        // A box with text over its background keeps the background.
+        const textBox = Array.from(copy.querySelectorAll('div')).find((element) => element.textContent === 'text')!
+        expect(textBox.getAttribute('style')).toContain('data:image/webp;base64,FRAME')
+        expect(root.querySelector('.scene')).not.toBeNull()
+    })
+
+    it('leaves a background that is not one picture fitted to the box', () => {
+        const box = document.createElement('div')
+        const style = (backgroundImage: string, backgroundSize: string, backgroundRepeat = 'repeat') => ({ backgroundImage, backgroundSize, backgroundRepeat, backgroundPosition: 'center' }) as CSSStyleDeclaration
+        expect(backgroundPictureOf(box, style('url(a.png)', 'cover'), false, false)).toEqual({ url: 'a.png', fit: 'cover', position: 'center' })
+        expect(backgroundPictureOf(box, style('url(a.png)', 'contain', 'no-repeat'), false, false)?.fit).toBe('contain')
+        expect(backgroundPictureOf(box, style('url(a.png)', 'contain'), false, false)).toBeNull()
+        expect(backgroundPictureOf(box, style('url(a.png)', 'auto'), false, false)).toBeNull()
+        expect(backgroundPictureOf(box, style('url(a.png), url(b.png)', 'cover'), false, false)).toBeNull()
+        expect(backgroundPictureOf(box, style('linear-gradient(red, blue), url(a.png)', 'cover'), false, false)).toBeNull()
+        expect(backgroundPictureOf(box, style('url(a.png)', 'cover'), true, false)).toBeNull()
+        expect(backgroundPictureOf(box, style('url(a.png)', 'cover'), false, true)).toBeNull()
+        box.append(document.createElement('span'))
+        expect(backgroundPictureOf(box, style('url(a.png)', 'cover'), false, false)).toBeNull()
     })
 
     it('labels the copy size', () => {
