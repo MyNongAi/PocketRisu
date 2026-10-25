@@ -28,17 +28,20 @@ vi.mock('./alert', () => ({
 const taskNames: string[] = []
 vi.mock('./importProgress', () => ({ runImportTask: (name: string, fn: (report: () => void) => unknown) => { taskNames.push(name); return fn(() => {}) } }))
 const inspectProtonShare = vi.fn()
-const downloadProtonEntry = vi.fn()
 vi.mock('./protonShareClient', () => ({
     inspectProtonShare: (...a: unknown[]) => inspectProtonShare(...a),
-    downloadProtonEntry: (...a: unknown[]) => downloadProtonEntry(...a),
     isProtonPasswordRequired: (error: any) => error?.status === 401,
 }))
 const openProtonShare = vi.fn()
 const importProtonShare = vi.fn()
+const fetchProtonFile = vi.fn()
+// The download and the staged import around the module importer (protonImport.ts).
+const importProtonFile = vi.fn((_file: unknown, _report: unknown, run: (scope?: unknown) => unknown) => run('scope'))
 vi.mock('./protonImport', () => ({
     openProtonShare: (...a: unknown[]) => openProtonShare(...a),
     importProtonShare: (...a: unknown[]) => importProtonShare(...a),
+    fetchProtonFile: (...a: unknown[]) => fetchProtonFile(...a),
+    importProtonFile: (...a: [unknown, unknown, (scope?: unknown) => unknown]) => importProtonFile(...a),
 }))
 const importModuleFile = vi.fn()
 const rerenderChatForModules = vi.fn()
@@ -86,13 +89,15 @@ describe('importRealmCompanionModules', () => {
 
     test('downloads the linked module, marks its source and pairs it with the character', async () => {
         inspectProtonShare.mockResolvedValue({ kind: 'file', name: 'assets.risum', entries: [], trail: [] })
-        downloadProtonEntry.mockResolvedValue({ name: 'assets.risum', data: new Uint8Array([1]) })
+        fetchProtonFile.mockResolvedValue({ name: 'assets.risum', data: new Uint8Array([1]) })
         importModuleFile.mockImplementation(async () => { const m = { id: 'm1', name: 'assets' }; db.modules.push(m); return m })
         taskNames.length = 0
         await importRealmCompanionModules('c1', [`desc ${LINK}`, undefined])
         // One card, the file's (the user's request, 2026-10-22: no idle outer card beside it).
         expect(taskNames).toEqual(['task · assets.risum'])
-        expect(downloadProtonEntry).toHaveBeenCalledTimes(1)
+        expect(fetchProtonFile).toHaveBeenCalledTimes(1)
+        // The module importer runs inside the staged import (its transaction scope).
+        expect(importModuleFile.mock.calls[0][1]).toMatchObject({ importScope: 'scope' })
         expect(db.modules[0].nodeOnlyProtonShare).toBe(LINK)
         expect(db.characters[0].modules).toEqual(['m1'])
         expect(notifySuccess).toHaveBeenCalledWith('paired 1')
@@ -122,7 +127,7 @@ describe('importRealmCompanionModules', () => {
         importProtonShare.mockResolvedValue(undefined)
         await importRealmCompanionModules('c1', [LINK])
         expect(importProtonShare).toHaveBeenCalledWith(LINK, '', share, 'module', expect.any(Function), { browse: true, taskName: expect.any(Function) })
-        expect(downloadProtonEntry).not.toHaveBeenCalled()
+        expect(fetchProtonFile).not.toHaveBeenCalled()
         expect(db.characters[0].modules).toEqual([])
         expect(notifySuccess).not.toHaveBeenCalled()
     })
@@ -142,11 +147,11 @@ describe('importRealmCompanionModules', () => {
     test('a password-protected link asks for the password and downloads with it', async () => {
         inspectProtonShare.mockRejectedValue(Object.assign(new Error('This link needs the password its owner set'), { status: 401 }))
         openProtonShare.mockResolvedValue({ info: { kind: 'file', name: 'assets.risum', entries: [], trail: [] }, password: 'pw' })
-        downloadProtonEntry.mockResolvedValue({ name: 'assets.risum', data: new Uint8Array([1]) })
+        fetchProtonFile.mockResolvedValue({ name: 'assets.risum', data: new Uint8Array([1]) })
         importModuleFile.mockImplementation(async () => { const m = { id: 'm2', name: 'assets' }; db.modules.push(m); return m })
         await importRealmCompanionModules('c1', [LINK])
         expect(openProtonShare).toHaveBeenCalledWith(LINK, '', expect.stringContaining(LINK))
-        expect(downloadProtonEntry.mock.calls[0][1]).toBe('pw')
+        expect(fetchProtonFile.mock.calls[0][1]).toBe('pw')
         expect(db.characters[0].modules).toEqual(['m2'])
     })
 
@@ -154,7 +159,7 @@ describe('importRealmCompanionModules', () => {
         inspectProtonShare.mockRejectedValue(Object.assign(new Error('needs password'), { status: 401 }))
         openProtonShare.mockResolvedValue(null)
         await importRealmCompanionModules('c1', [LINK])
-        expect(downloadProtonEntry).not.toHaveBeenCalled()
+        expect(fetchProtonFile).not.toHaveBeenCalled()
         expect(notifyError).not.toHaveBeenCalled()
         expect(db.characters[0].modules).toEqual([])
     })
@@ -189,7 +194,7 @@ describe('a folder share', () => {
         // The browser's own per-file cards only, named for the Realm module.
         expect(taskNames).toEqual([])
         expect(importProtonShare.mock.calls[0][5].taskName('a.risum')).toBe('task · a.risum')
-        expect(downloadProtonEntry).not.toHaveBeenCalled()
+        expect(fetchProtonFile).not.toHaveBeenCalled()
         expect(db.modules[0].nodeOnlyProtonShare).toBe(LINK)
         expect(db.characters[0].modules).toEqual(['picked'])
     })
@@ -223,7 +228,7 @@ describe('a Proton link clicked in the creator notes', () => {
         expect(importProtonShare).toHaveBeenCalledTimes(1)
         expect(importProtonShare.mock.calls[0][5].browse).toBe(true)
         expect(importProtonShare.mock.calls[0][5].taskName('assets.risum')).toBe('notes · assets.risum')
-        expect(downloadProtonEntry).not.toHaveBeenCalled()
+        expect(fetchProtonFile).not.toHaveBeenCalled()
         expect(db.characters[0].modules).toEqual(['n1'])
         expect(db.modules[0].nodeOnlyProtonShare).toBe(LINK)
         expect(notifySuccess).toHaveBeenCalledWith('notes paired 1')

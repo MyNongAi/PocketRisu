@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest'
 import {
     ImportCancelledError,
     ImportTransaction,
+    closeImportJournal,
     describeImportRollback,
     isImportCancelled,
+    openImportJournal,
     removeImportedOwners,
     rollbackSummaryOf,
     runImportTransaction,
@@ -169,5 +171,38 @@ describe('removing imported owners', () => {
         expect(db.characterOrder).toEqual(['old', { id: 'folder', data: ['other'] }])
         expect(db.modules).toEqual([{ id: 'kept-module' }])
         expect(db.enabledModules).toEqual(['kept-module'])
+    })
+})
+
+describe('a journal opened ahead of its import (a staged Proton download)', () => {
+    it('continues on that journal: no second begin, the same id, then a commit', async () => {
+        const { deps: d, events } = deps()
+        const opened = await openImportJournal(d)
+        expect(opened.journaled).toBe(true)
+        let seenId = ''
+        await runImportTransaction(undefined, async (transaction) => { seenId = transaction.id }, d, opened)
+        expect(seenId).toBe(opened.id)
+        expect(events).toEqual(['begin', 'commit'])
+    })
+
+    it('a failure rolls back the assets the server stored under it', async () => {
+        const { deps: d, events } = deps()
+        const opened = await openImportJournal(d)
+        await expect(runImportTransaction(undefined, async () => { throw new Error('not a card') }, d, opened)).rejects.toThrow('not a card')
+        expect(events).toEqual(['begin', 'remove-owners:0', 'rollback-assets'])
+        expect(d.rollbackAssets).toHaveBeenCalledWith(opened.id)
+    })
+
+    it('an unused journal closes with a commit, or a rollback when its writes must go', async () => {
+        const { deps: d, events } = deps()
+        await closeImportJournal(await openImportJournal(d), false, d)
+        await closeImportJournal(await openImportJournal(d), true, d)
+        expect(events).toEqual(['begin', 'commit', 'begin', 'rollback-assets'])
+        // A server that could not open one has nothing to close.
+        const { deps: none, events: noEvents } = deps({ begin: vi.fn(async () => { throw new Error('offline') }) })
+        const untracked = await openImportJournal(none)
+        expect(untracked.journaled).toBe(false)
+        await closeImportJournal(untracked, true, none)
+        expect(noEvents).toEqual([])
     })
 })

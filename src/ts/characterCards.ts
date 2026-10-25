@@ -196,7 +196,9 @@ export async function importCharacterProcess<T extends boolean = false>(f:Charac
         }
         if((da.char_name || da.name) && (da.char_persona || da.description) && (da.char_greeting || da.first_mes)){
             let db = getDatabase()
-            appendImportedCharacter(db, convertOffSpecCards(da))
+            const offSpec = convertOffSpecCards(da)
+            appendImportedCharacter(db, offSpec)
+            f.importScope?.registerOwner('character', offSpec.chaId)
             setDatabaseLite(db)
             notifyCharacterImported(f.suppressSuccess)
             return
@@ -375,7 +377,7 @@ export async function importCharacterProcess<T extends boolean = false>(f:Charac
             }
 
 
-            const assetId = await saveAsset(assetData)
+            const assetId = await saveAsset(assetData, '', '', f.importScope)
             assets[assetIndex] = assetId
         }
     }
@@ -434,7 +436,7 @@ export async function importCharacterProcess<T extends boolean = false>(f:Charac
                     try {
                         const decrypted = await decryptBuffer(encrypted, password)         
                         const charaData:CharacterCardV2Risu = JSON.parse(Buffer.from(decrypted).toString('utf-8'))
-                        if(await importCharacterCardSpec(charaData, img, "normal", assets, null, false, progress, f.suppressSuccess)){
+                        if(await importCharacterCardSpec(charaData, img, "normal", assets, null, false, progress, f.suppressSuccess, f.importScope)){
                             let db = getDatabase()
                             return db.characters.length - 1
                         }
@@ -451,7 +453,7 @@ export async function importCharacterProcess<T extends boolean = false>(f:Charac
                 const decrypted = await decryptBuffer(encrypted, 'RISU_NONE')
                 try {
                     const charaData:CharacterCardV2Risu = JSON.parse(Buffer.from(decrypted).toString('utf-8'))
-                    if(await importCharacterCardSpec(charaData, img, "normal", assets, null, false, progress, f.suppressSuccess)){
+                    if(await importCharacterCardSpec(charaData, img, "normal", assets, null, false, progress, f.suppressSuccess, f.importScope)){
                         let db = getDatabase()
                         return db.characters.length - 1
                     }   
@@ -471,8 +473,10 @@ export async function importCharacterProcess<T extends boolean = false>(f:Charac
 
     if(parsed.spec !== 'chara_card_v2' && parsed.spec !== 'chara_card_v3'){
         const charaData:OldTavernChar = JSON.parse(Buffer.from(readedChara, 'base64').toString('utf-8'))
-        const imgp = await saveAsset(img)
-        appendImportedCharacter(db, convertOffSpecCards(charaData, imgp))
+        const imgp = await saveAsset(img, '', '', f.importScope)
+        const offSpec = convertOffSpecCards(charaData, imgp)
+        appendImportedCharacter(db, offSpec)
+        f.importScope?.registerOwner('character', offSpec.chaId)
         setDatabaseLite(db)
         notifyCharacterImported(f.suppressSuccess)
         return db.characters.length - 1
@@ -486,6 +490,7 @@ export async function importCharacterProcess<T extends boolean = false>(f:Charac
         f.returnCharacter,
         progress,
         f.suppressSuccess,
+        f.importScope,
     )
     if(f.returnCharacter){
         return (imported || null) as any

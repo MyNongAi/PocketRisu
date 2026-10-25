@@ -62,10 +62,11 @@ export function rollbackSummaryOf(error: unknown): ImportRollbackSummary | undef
 }
 
 export class ImportTransaction implements ImportWriteScope {
-    readonly id = v4()
     readonly owners: ImportOwner[] = []
     cancelled = false
     private readonly pending = new Set<Promise<unknown>>()
+
+    constructor(readonly id: string = v4()) {}
 
     check(): void {
         if (this.cancelled) throw new ImportCancelledError()
@@ -179,23 +180,60 @@ async function rollback(
 }
 
 /**
+ * A server journal opened ahead of the import that will use it: a staged
+ * Proton download (protonImport.ts) tags the server's own asset writes with
+ * its id, and the import then runs as that transaction.
+ */
+export interface OpenedImportJournal {
+    id: string
+    journaled: boolean
+}
+
+export async function openImportJournal(deps?: ImportTransactionDeps): Promise<OpenedImportJournal> {
+    const resolved = deps ?? await loadDefaultDeps()
+    const id = v4()
+    try {
+        return { id, journaled: await resolved.begin(id) }
+    } catch (error) {
+        console.warn('[Import] server journal unavailable; a cancel cannot remove assets', error)
+        return { id, journaled: false }
+    }
+}
+
+/** Closes a journal no import ran in; `undo` takes back what was written under it. */
+export async function closeImportJournal(journal: OpenedImportJournal, undo: boolean, deps?: ImportTransactionDeps): Promise<void> {
+    if (!journal.journaled) return
+    const resolved = deps ?? await loadDefaultDeps()
+    try {
+        if (undo) await resolved.rollbackAssets(journal.id)
+        else await resolved.commit(journal.id)
+    } catch (error) {
+        console.warn('[Import] closing the server journal failed; assets stay in place', error)
+    }
+}
+
+/**
  * Runs `work` as a cancellable transaction. The task card offers a cancel
  * action while it runs. A cancel, or a failure, rolls back and rethrows: a
  * cancel as ImportCancelledError carrying the summary, a failure as itself
- * (rollbackSummaryOf finds the summary).
+ * (rollbackSummaryOf finds the summary). `opened` continues a journal from
+ * openImportJournal instead of opening a new one.
  */
 export async function runImportTransaction<T>(
     report: ImportProgressReporter | undefined,
     work: (transaction: ImportTransaction) => Promise<T>,
     deps?: ImportTransactionDeps,
+    opened?: OpenedImportJournal,
 ): Promise<T> {
     const resolved = deps ?? await loadDefaultDeps()
-    const transaction = new ImportTransaction()
-    let journaled = false
-    try {
-        journaled = await resolved.begin(transaction.id)
-    } catch (error) {
-        console.warn('[Import] server journal unavailable; a cancel cannot remove assets', error)
+    const transaction = new ImportTransaction(opened?.id)
+    let journaled = opened?.journaled ?? false
+    if (!opened) {
+        try {
+            journaled = await resolved.begin(transaction.id)
+        } catch (error) {
+            console.warn('[Import] server journal unavailable; a cancel cannot remove assets', error)
+        }
     }
     report?.cancellable?.(() => transaction.cancel())
     try {

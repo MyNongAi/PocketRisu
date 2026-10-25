@@ -235,6 +235,29 @@ describe('import progress queue', () => {
             resolvers.forEach((resolve) => resolve())
             expect(await run).toEqual({ completed: 2, failed: 0, total: 2 })
         })
+
+        it('what a dropped task fetched goes to onDropped, not to the importer', async () => {
+            // A staged Proton download stored assets on the server: dropping
+            // the card must take them back (protonImport.ts).
+            const { fetchItem, settle } = controlledFetches()
+            const imported: string[] = []
+            const dropped: unknown[] = []
+            const run = runPrefetchedImportBatch(
+                ['a', 'b'].map((name) => ({ name })),
+                fetchItem,
+                async (item) => { imported.push(item.name) },
+                limits(1000),
+                (fetched) => { dropped.push(fetched) },
+            )
+            await tick()
+            dropQueuedImportTask([...get(importTasks).keys()][1])
+            await settle('b')
+            expect(dropped).toEqual([])
+            await settle('a')
+            await run
+            expect(imported).toEqual(['a'])
+            expect(dropped).toEqual(['data:b'])
+        })
     })
 
     it('keeps the remote import error on its background task and rethrows it', async () => {

@@ -1316,6 +1316,7 @@ export const languageEnglish = {
     stealthChecking: "Checking metadata...",
     protonInspecting: "Reading the Proton link...",
     protonDownloading: "Downloading",
+    protonStaging: "The server is downloading and unpacking it",
     protonImportAll: "Import all",
     protonBrowserTitle: "Proton folder",
     protonBrowserSelectAll: "Select all in this folder",

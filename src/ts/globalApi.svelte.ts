@@ -51,6 +51,7 @@ import { requestStatuses } from "./status/requestStatus";
 import { rerollPlaceholders } from "./gui/rerollPlaceholder";
 import { chatForSave } from "./chatCopySnapshot";
 import { onStaleBuild, setStaleBuildSaveState, watchServerBuild } from "./storage/buildFence";
+import { stagedAssetRef } from "./stagedAssets";
 
 /** A save the server will keep refusing in this state (or one that keeps
  *  conflicting after repeated rebases). Not transient: retrying re-downloads
@@ -442,6 +443,11 @@ export async function readImage(data: string) {
  */
 export async function saveAsset(data: Uint8Array, customId: string = '', fileName: string = '', importScope?: ImportWriteScope) {
     importScope?.check()
+    // PocketRisu: an asset the server already stored for this import (stagedAssets.ts).
+    const staged = customId === '' ? stagedAssetRef(data) : undefined
+    if (staged) {
+        return staged
+    }
     let id = ''
     if (customId !== '') {
         id = customId

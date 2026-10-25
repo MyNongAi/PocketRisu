@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "upstreamBaseline": "PocketRisu v1.16.0",
+  "upstreamBaseline": "PocketRisu v1.16.1",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-10-23",
+  "updatedAt": "2026-10-25",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
@@ -1374,6 +1374,40 @@
         { "file": "src/lib/UI/Realm/RealmPopUp.svelte", "contains": "<div class=\"min-w-0 flex-1\">" }
       ],
       "regressionTests": []
+    },
+    {
+      "id": "PROTON-STAGED-IMPORT",
+      "title": "프로톤 봇·모듈 가져오기에 폰 데이터를 쓰지 않기 (서버가 풀어서 저장)",
+      "criticality": "cost",
+      "ownerFiles": [
+        "server/node/import-staging.cjs",
+        "server/node/server.cjs",
+        "src/ts/stagedAssets.ts",
+        "src/ts/globalApi.svelte.ts",
+        "src/ts/protonShareClient.ts",
+        "src/ts/protonImport.ts",
+        "src/ts/importTransaction.ts",
+        "src/ts/importProgress.ts",
+        "src/ts/realmCompanionModule.ts",
+        "src/ts/characterCards.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "server/node/server.cjs", "contains": "app.post('/api/import/proton/stage', async (req, res, next) => {" },
+        { "file": "server/node/server.cjs", "contains": "writeAsset: (key, data) => writeStagedAsset(key, data, importId)," },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "const staged = customId === '' ? stagedAssetRef(data) : undefined" },
+        { "file": "src/ts/protonImport.ts", "contains": "return runImportTransaction(report, (scope) => withStagedAssets(staged.nonce, () => run(scope)), undefined, staged.journal)" },
+        { "file": "src/ts/protonImport.ts", "contains": "(item, report) => fetchProtonFile(url, password, {" },
+        { "file": "src/ts/protonImport.ts", "contains": "(file) => { void discardProtonFile(file) }," },
+        { "file": "src/ts/realmCompanionModule.ts", "contains": "const file = await fetchProtonFile(link, password, { path: [], expectedSize: share.entries[0]?.size ?? null }, report)" },
+        { "file": "src/ts/characterCards.ts", "contains": "f.importScope?.registerOwner('character', offSpec.chaId)" }
+      ],
+      "regressionTests": [
+        "server/node/import-staging.test.ts",
+        "src/ts/stagedAssets.test.ts",
+        "src/ts/process/stagedImport.test.ts",
+        "src/ts/protonImport.test.ts",
+        "src/ts/importTransaction.test.ts"
+      ]
     },
     {
       "id": "CREATOR-FOLDERS",

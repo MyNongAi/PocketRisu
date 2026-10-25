@@ -292,12 +292,15 @@ export interface PrefetchLimits<T> {
  * imports stay one at a time in list order, so database and asset writes
  * stay ordered. A fetched item holds its bytes until its import ends; the
  * next fetch starts only while the held total stays within `maxBytes`.
+ * `onDropped` gets what was fetched for an item the user dropped from the
+ * queue, once its fetch is done.
  */
 export async function runPrefetchedImportBatch<T extends { name: string }, F>(
     items: readonly T[],
     fetchItem: (item: T, report: ImportProgressReporter) => Promise<F>,
     importItem: (item: T, fetched: F, report: ImportProgressReporter) => Promise<void>,
     limits: PrefetchLimits<T>,
+    onDropped?: (fetched: F) => void,
 ): Promise<ImportBatchResult> {
     const entries = items.map((item) => ({
         item,
@@ -349,6 +352,7 @@ export async function runPrefetchedImportBatch<T extends { name: string }, F>(
         if (wasDropped(entry.id)) {
             // Its fetch may still be running; it no longer holds room.
             release(entry)
+            if (onDropped) entry.fetched!.then(onDropped).catch(() => {})
             continue
         }
         startImportTask(entry.id)

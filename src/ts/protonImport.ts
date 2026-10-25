@@ -7,7 +7,9 @@
 import { alertError, alertInput, notifyLoading, notifySuccess } from './alert'
 import { language } from 'src/lang'
 import { runPrefetchedImportBatch, type ImportProgressReporter } from './importProgress'
-import { downloadProtonEntry, inspectProtonShare, isProtonPasswordRequired, isProtonShareUrl, ProtonRequestError, type ProtonInspectResult } from './protonShareClient'
+import { inspectProtonShare, isProtonPasswordRequired, isProtonShareUrl, ProtonRequestError, stageProtonEntry, type ProtonInspectResult } from './protonShareClient'
+import { closeImportJournal, openImportJournal, runImportTransaction, type ImportWriteScope, type OpenedImportJournal } from './importTransaction'
+import { withStagedAssets } from './stagedAssets'
 import { openProtonBrowser, type ProtonPick } from './protonBrowser.svelte'
 import { classifySharedImport, type ImportOrigin, type SharedImportKind } from './shareTargetRouting'
 import { importCharacterProcess } from './characterCards'
@@ -24,6 +26,61 @@ const PROTON_PARALLEL_DOWNLOADS = 3
 const PROTON_PREFETCH_BYTES = 256 * 1024 * 1024
 const PROTON_UNKNOWN_SIZE_BYTES = 64 * 1024 * 1024
 
+/** A share file ready to import; `staged` when the server unpacked it (stageProtonEntry). */
+export interface ProtonFile {
+    name: string
+    data: Uint8Array
+    staged?: { nonce: string, journal: OpenedImportJournal }
+}
+
+/**
+ * Fetches one share file for import. The server unpacks a bot or module file
+ * and stores its assets itself, under a journal opened here (server/node/
+ * import-staging.cjs), so only the card data reaches this page — a phone on
+ * mobile data no longer pays for the pictures twice (the user's request,
+ * 2026-10-25). Anything else comes whole, as before.
+ */
+export async function fetchProtonFile(
+    url: string,
+    password: string,
+    target: { linkId?: string; path?: readonly string[]; expectedSize?: number | null },
+    report: ImportProgressReporter,
+): Promise<ProtonFile> {
+    const journal = await openImportJournal()
+    try {
+        const entry = await stageProtonEntry(url, password, target, report, journal.journaled ? journal.id : undefined)
+        if (entry.stagedNonce) return { name: entry.name, data: entry.data, staged: { nonce: entry.stagedNonce, journal } }
+        // Sent whole: whatever the server stored first, this import stores too.
+        await closeImportJournal(journal, false)
+        return { name: entry.name, data: entry.data }
+    } catch (error) {
+        // The server may have stored part of the file before it failed.
+        await closeImportJournal(journal, true)
+        throw error
+    }
+}
+
+/** A fetched file that will not be imported: takes back what the server stored for it. */
+export async function discardProtonFile(file: ProtonFile): Promise<void> {
+    if (file.staged) await closeImportJournal(file.staged.journal, true)
+}
+
+/**
+ * Imports a fetched file with `run`. A staged one runs as a cancellable
+ * transaction on the journal its download opened, with its stubs accepted by
+ * saveAsset (stagedAssets.ts): a failure or cancel takes the bot or module
+ * back out and deletes the assets only it brought.
+ */
+export async function importProtonFile<T>(
+    file: ProtonFile,
+    report: ImportProgressReporter,
+    run: (importScope?: ImportWriteScope) => Promise<T>,
+): Promise<T> {
+    const staged = file.staged
+    if (!staged) return run()
+    return runImportTransaction(report, (scope) => withStagedAssets(staged.nonce, () => run(scope)), undefined, staged.journal)
+}
+
 /**
  * Route one decrypted file to whichever importer matches its extension.
  *
@@ -32,17 +89,17 @@ const PROTON_UNKNOWN_SIZE_BYTES = 64 * 1024 * 1024
  * is supplied, which would put a modal back over a background task.
  */
 async function importByKind(
-    name: string,
-    data: Uint8Array,
+    file: ProtonFile,
     report: ImportProgressReporter,
     origin: ImportOrigin,
     onModule?: (module: RisuModule) => void,
     source?: ProtonSourceRecord,
 ): Promise<SharedImportKind | null> {
-    if (!source) return importByKindOnly(name, data, report, origin, onModule)
+    const run = (importScope?: ImportWriteScope) => importByKindOnly(file.name, file.data, report, origin, onModule, importScope)
+    if (!source) return importProtonFile(file, report, run)
     // What this file adds keeps the link it came from (protonSource.ts).
     const before = snapshotImportedIds(getDatabase())
-    const kind = await importByKindOnly(name, data, report, origin, onModule)
+    const kind = await importProtonFile(file, report, run)
     const stamped = stampProtonSource(getDatabase(), before, source)
     for (const chaId of stamped.characters) trackCharacterForSave(chaId)
     return kind
@@ -54,11 +111,12 @@ async function importByKindOnly(
     report: ImportProgressReporter,
     origin: ImportOrigin,
     onModule?: (module: RisuModule) => void,
+    importScope?: ImportWriteScope,
 ): Promise<SharedImportKind | null> {
     const kind = classifySharedImport(name, '', origin)
     switch (kind) {
         case 'module': {
-            const module = await importModuleFile({ name, data }, { suppressSuccess: true, onProgress: report })
+            const module = await importModuleFile({ name, data }, { suppressSuccess: true, onProgress: report, importScope })
             if (module) onModule?.(module)
             return kind
         }
@@ -74,7 +132,7 @@ async function importByKindOnly(
             return kind
         }
         case 'character':
-            await importCharacterProcess({ name, data, suppressSuccess: true, onProgress: report })
+            await importCharacterProcess({ name, data, suppressSuccess: true, onProgress: report, importScope })
             return kind
         default:
             return null
@@ -198,14 +256,14 @@ export async function importProtonShare(
     const result = await runPrefetchedImportBatch(
         // `taskName`: the card title for a file (the Realm companion's names it).
         chosen.map((pick) => ({ name: options.taskName ? options.taskName(pick.entry.name) : pick.entry.name, pick })),
-        (item, report) => downloadProtonEntry(url, password, {
+        (item, report) => fetchProtonFile(url, password, {
             linkId: info.kind === 'folder' ? item.pick.entry.linkId : undefined,
             path: item.pick.path,
             expectedSize: item.pick.entry.size,
         }, report),
         async (item, file, report) => {
             report({ label: `${language.protonImporting} ${file.name}`, progress: 85 })
-            const kind = await importByKind(file.name, file.data, report, origin, onModule, {
+            const kind = await importByKind(file, report, origin, onModule, {
                 link: url,
                 file: item.pick.entry.name,
                 ...(info.kind === 'folder' ? { linkId: item.pick.entry.linkId, path: item.pick.path } : {}),
@@ -222,6 +280,9 @@ export async function importProtonShare(
             sizeOf: (item) => item.pick.entry.size,
             unknownSizeBytes: PROTON_UNKNOWN_SIZE_BYTES,
         },
+        // A card the user took off the queue after its download: the
+        // server's copies of its assets go too.
+        (file) => { void discardProtonFile(file) },
     )
 
     if (result.completed > 0) {

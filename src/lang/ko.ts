@@ -1422,6 +1422,7 @@ export const languageKorean = {
   stealthChecking: "메타데이터 확인 중...",
   protonInspecting: "프로톤 링크 확인 중...",
   protonDownloading: "받는 중",
+  protonStaging: "서버가 받아서 푸는 중",
   protonImportAll: "전부 임포트",
   protonBrowserTitle: "프로톤 폴더",
   protonBrowserSelectAll: "이 폴더 전체 선택",

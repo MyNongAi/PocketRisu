@@ -16,7 +16,7 @@ import { alertSelect, notifyError, notifySuccess } from './alert'
 import { runImportTask, type ImportProgressReporter } from './importProgress'
 import { isImportCancelled } from './importTransaction'
 import { importModuleFile, rerenderChatForModules, syncLinkedFolders, type RisuModule } from './process/modules'
-import { downloadProtonEntry, inspectProtonShare, isProtonPasswordRequired, type ProtonInspectResult } from './protonShareClient'
+import { inspectProtonShare, isProtonPasswordRequired, type ProtonInspectResult } from './protonShareClient'
 import { getDatabase } from './storage/database.svelte'
 
 const PROTON_HOSTS = new Set(['drive.proton.me', 'drive.proton.ch'])
@@ -108,10 +108,13 @@ async function downloadShareModules(link: string, options: ShareDownload = {}): 
         await importProtonShare(link, password, share, 'module', keep, { browse: true, taskName: companionTaskName })
         return modules
     }
-    // A plain module file downloads and imports by itself, on its own card.
+    // A plain module file downloads and imports by itself, on its own card
+    // (unpacked on the server, so its assets never pass through this page).
+    const { fetchProtonFile, importProtonFile } = await import('./protonImport')
     const module = await runImportTask(companionTaskName(share.name), async (report: ImportProgressReporter) => {
-        const file = await downloadProtonEntry(link, password, { path: [], expectedSize: share.entries[0]?.size ?? null }, report)
-        return importModuleFile(file, { suppressSuccess: true, onProgress: report })
+        const file = await fetchProtonFile(link, password, { path: [], expectedSize: share.entries[0]?.size ?? null }, report)
+        return importProtonFile(file, report, (importScope) =>
+            importModuleFile(file, { suppressSuccess: true, onProgress: report, importScope }))
     })
     if (module) {
         // The browser path records this itself (importProtonShare).

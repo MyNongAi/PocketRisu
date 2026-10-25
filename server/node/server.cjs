@@ -89,6 +89,7 @@ const { createImportAssetJournal, isImportId } = require('./import-asset-journal
 // Which asset objects each cancellable client import created, so a cancel
 // deletes exactly those and nothing another writer relies on.
 const importAssetJournal = createImportAssetJournal();
+const { StagingStopped, newStagingNonce, stageImportFile } = require('./import-staging.cjs');
 const { diagnoseAssetReferences } = require('./asset-doctor.cjs');
 const { createExternalAssetMigrationJournal } = require('./external-asset-migration-journal.cjs');
 const { verifyStagedMigration } = require('./external-asset-staged-verifier.cjs');
@@ -8423,6 +8424,111 @@ app.post('/api/import/proton/download', async (req, res, next) => {
         // Bot archives are already compressed, so re-compressing only costs CPU
         // and drops content-length — which the client needs for its progress
         // bar on a transfer that runs to tens of megabytes.
+        res.setHeader('content-encoding', 'identity');
+        res.setHeader('content-length', String(body.length));
+        res.end(body);
+    } catch (error) {
+        if (error?.name === 'ProtonShareError') {
+            logger.warn('[Proton] download failed:', error.message);
+            return res.status(protonErrorStatus(error)).json({ error: error.message });
+        }
+        next(error);
+    }
+});
+
+// One asset of a staged import, stored where the browser's saveAsset would
+// have put it: the external store when it is on (as /api/external-assets/write),
+// else, or when that write fails, the internal KV (as /api/write). Returns
+// what saveAsset would have returned. Journaled under the client's import id,
+// so a cancelled or failed import takes back what only it created.
+async function writeStagedAsset(key, binary, importId) {
+    const runtime = await getExternalAssetRuntime();
+    if (runtime.config.enabled) {
+        try {
+            const { contentType } = resolveAssetPayload(key, binary);
+            const uri = makeExternalAssetUri(runtime.config.activeProvider, sha256Hex(binary));
+            const written = await importAssetJournal.withKeyLock(uri, async () => {
+                const result = await runtime.service.writeDirect({
+                    providerId: runtime.config.activeProvider,
+                    data: binary,
+                    mimeType: contentType,
+                    assetName: path.basename(key),
+                });
+                importAssetJournal.recordWrite(result.uri, importId, result.created === true);
+                return result;
+            });
+            return written.uri;
+        } catch (error) {
+            logger.warn('[ImportStaging] external write failed; storing internally:', error?.message ?? error);
+        }
+    }
+    await queueMutableStorageOperation(async () => {
+        const created = importId ? !kvExists(key) : false;
+        kvSet(key, binary);
+        importAssetJournal.recordWrite(key, importId, created);
+    });
+    return key;
+}
+
+// The download above, unpacked here (import-staging.cjs): the browser gets
+// the file with every asset already stored and replaced by a stub, so a phone
+// on mobile data receives the card, not the pictures. A file this cannot
+// unpack, or storage that is locked, comes whole, exactly as from /download.
+// The x-proton-staged header carries the stubs' nonce.
+app.post('/api/import/proton/stage', async (req, res, next) => {
+    if (!await checkAuth(req, res)) { return; }
+    // Nothing may write while an account import replaces the data.
+    if (risuAccountImport.isBlocking()) {
+        return res.status(423).json({ error: 'A RisuAI account import is in progress', code: 'ACCOUNT_IMPORT_ACTIVE' });
+    }
+    const folderPath = readProtonPath(req.body?.path);
+    if (!folderPath) return res.status(400).json({ error: 'Invalid folder path' });
+    const importId = readImportIdHeader(req, res);
+    if (importId === false) return;
+    try {
+        const { downloadProtonShare } = await loadProtonShare();
+        const file = await downloadProtonShare(String(req.body?.url ?? ''), {
+            linkId: req.body?.linkId ? String(req.body.linkId) : undefined,
+            path: folderPath,
+            customPassword: String(req.body?.password ?? ''),
+        });
+        const safeName = path.basename(String(file.name)).replace(/[\r\n"\\]/g, '_');
+        const body = Buffer.from(file.bytes.buffer, file.bytes.byteOffset, file.bytes.byteLength);
+        res.setHeader('x-proton-filename', encodeURIComponent(safeName));
+        res.setHeader('x-proton-original-size', String(body.length));
+
+        // The browser gave up (closed the page or its connection): stop storing.
+        let gone = false;
+        res.on('close', () => { if (!res.writableFinished) gone = true; });
+        let staged = null;
+        if (!exclusiveStorageReason && !externalAssetMigrationInProgress) {
+            const nonce = newStagingNonce();
+            try {
+                staged = await stageImportFile(safeName, body, {
+                    nonce,
+                    writeAsset: (key, data) => writeStagedAsset(key, data, importId),
+                    stopped: () => gone,
+                });
+                if (staged) staged.nonce = nonce;
+            } catch (error) {
+                if (error instanceof StagingStopped) return;
+                // The whole file still imports; what was stored is what that
+                // import stores too (the same content, the same objects).
+                logger.warn(`[ImportStaging] ${safeName} sent whole:`, error?.message ?? error);
+                staged = null;
+            }
+        }
+        if (gone) return;
+        res.setHeader('content-type', 'application/octet-stream');
+        if (staged) {
+            logger.info(`[ImportStaging] ${safeName}:${staged.assets} assets (${staged.assetBytes} bytes) stored, ${staged.data.length} bytes sent`);
+            // Card text compresses well; this response may be gzipped.
+            res.setHeader('x-proton-staged', staged.nonce);
+            res.setHeader('x-proton-staged-assets', String(staged.assets));
+            return res.end(staged.data);
+        }
+        // An archive: as from /download (no gzip, a content-length to read).
+        res.locals.skipCompression = true;
         res.setHeader('content-encoding', 'identity');
         res.setHeader('content-length', String(body.length));
         res.end(body);

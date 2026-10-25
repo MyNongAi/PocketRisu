@@ -5,6 +5,7 @@
 import { language } from 'src/lang'
 import { forageStorage } from './globalApi.svelte'
 import type { ImportProgressReporter } from './importProgress'
+import { isStagingNonce } from './stagedAssets'
 
 export interface ProtonEntry {
     name: string
@@ -130,18 +131,71 @@ export async function downloadProtonEntry(
     })
     if (!response.ok) throw await readError(response)
 
-    const header = response.headers.get('x-proton-filename')
-    const name = header ? decodeURIComponent(header) : 'proton-download'
+    const name = fileNameOf(response)
     // Fall back to the size the listing reported (Proton quotes the encrypted
     // length, a fraction of a percent above the plaintext) so the bar still
     // moves if the response ends up chunked.
     const declared = Number(response.headers.get('content-length'))
     const expected = target.expectedSize ?? 0
     const total = Number.isFinite(declared) && declared > 0 ? declared : (expected > 0 ? expected : 0)
+    return { name, data: await readProtonBody(response, name, total, report) }
+}
 
+/** A share file from /stage: unpacked on the server (stagedNonce set), or whole. */
+export interface ProtonFetchedEntry {
+    name: string
+    data: Uint8Array
+    /** The server stored the file's assets and `data` carries stubs of them (stagedAssets.ts). */
+    stagedNonce?: string
+}
+
+/**
+ * downloadProtonEntry, except that the server unpacks a bot or module file
+ * first and stores its assets itself (server/node/import-staging.cjs), so only
+ * the card data comes down: a phone on mobile data no longer receives the
+ * pictures and sends them back up. A file the server cannot unpack comes
+ * whole. `importId` journals the server's writes so a cancel can undo them.
+ */
+export async function stageProtonEntry(
+    url: string,
+    password: string,
+    target: { linkId?: string; path?: readonly string[]; expectedSize?: number | null },
+    report: ImportProgressReporter,
+    importId?: string,
+): Promise<ProtonFetchedEntry> {
+    // The server holds the response until it has the file and stored its
+    // assets: most of the wait, with nothing to measure from here.
+    report({ label: language.protonStaging, progress: null })
+    const headers = await authHeaders()
+    if (importId) headers['x-import-id'] = importId
+    const response = await fetch('/api/import/proton/stage', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ url, password, linkId: target.linkId, path: target.path ?? [] }),
+    })
+    if (!response.ok) throw await readError(response)
+
+    const name = fileNameOf(response)
+    const nonce = response.headers.get('x-proton-staged')
+    const staged = isStagingNonce(nonce)
+    const declared = Number(response.headers.get('content-length'))
+    // A staged reply may be gzipped (no length) and is small; a whole file
+    // falls back to the listed size as in downloadProtonEntry.
+    const expected = staged ? 0 : (target.expectedSize ?? 0)
+    const total = Number.isFinite(declared) && declared > 0 ? declared : (expected > 0 ? expected : 0)
+    const data = await readProtonBody(response, name, total, report)
+    return staged ? { name, data, stagedNonce: nonce } : { name, data }
+}
+
+function fileNameOf(response: Response): string {
+    const header = response.headers.get('x-proton-filename')
+    return header ? decodeURIComponent(header) : 'proton-download'
+}
+
+async function readProtonBody(response: Response, name: string, total: number, report: ImportProgressReporter): Promise<Uint8Array> {
     // Without a body reader there is nothing to measure — take it in one go.
     if (!response.body) {
-        return { name, data: new Uint8Array(await response.arrayBuffer()) }
+        return new Uint8Array(await response.arrayBuffer())
     }
 
     const reader = response.body.getReader()
@@ -167,5 +221,5 @@ export async function downloadProtonEntry(
         data.set(chunk, offset)
         offset += chunk.length
     }
-    return { name, data }
+    return data
 }
