@@ -108,4 +108,8 @@
     .error { margin-top: 6px; overflow: hidden; color: var(--risu-theme-draculared); text-overflow: ellipsis; white-space: nowrap; font-size: .75rem; }
     .detail { margin-top: 6px; color: var(--risu-theme-textcolor2); font-size: .75rem; line-height: 1.35; overflow-wrap: anywhere; }
     @keyframes import-slide { from { left: -45%; } to { left: 105%; } }
+    /* A phone's card is as wide as its text (Toaster.svelte); the bar follows. */
+    @media (max-width: 600px) {
+        .import-card { min-width: 0; }
+    }
 </style>

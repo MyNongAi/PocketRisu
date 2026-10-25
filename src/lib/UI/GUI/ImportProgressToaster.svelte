@@ -30,6 +30,8 @@
         minimized.delete(id)
         toast.custom(ImportProgressToast, {
             id: toastId(id),
+            // Sized to its text on a phone (Toaster.svelte).
+            class: 'import-toast',
             duration: Number.POSITIVE_INFINITY,
             componentProps: { id, onMinimize: () => minimize(id), onClose: () => closeCard(id) },
             onDismiss: () => {

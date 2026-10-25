@@ -56,12 +56,13 @@
         font-weight: 500;
     }
     /* Phones: sonner stretches every card across the screen below 600px; a
-       message card is as wide as its text instead, centred between the side
-       offsets (the user's request, 2026-10-25). The toaster list starts at the
-       left offset and is the screen's width, hence the right inset. Request
-       and download cards (toast.custom, data-styled false) keep their width. */
+       message card and an import/export progress card are as wide as their
+       text instead, centred between the side offsets (the user's requests,
+       2026-10-25). The toaster list starts at the left offset and is the
+       screen's width, hence the right inset. Request cards size themselves
+       (RequestStatusToast). */
     @media (max-width: 600px) {
-        :global([data-sonner-toaster] [data-sonner-toast][data-styled='true']) {
+        :global([data-sonner-toaster] [data-sonner-toast]:is([data-styled='true'], .import-toast)) {
             right: calc(var(--mobile-offset-left) + var(--mobile-offset-right));
             width: fit-content;
             max-width: calc(100% - var(--mobile-offset-left) - var(--mobile-offset-right));
