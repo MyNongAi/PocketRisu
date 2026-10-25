@@ -55,17 +55,25 @@
     :global(.risu-toast-title) {
         font-weight: 500;
     }
-    /* Phones: sonner stretches every card across the screen below 600px; a
-       message card and an import/export progress card are as wide as their
-       text instead, centred between the side offsets (the user's requests,
-       2026-10-25). The toaster list starts at the left offset and is the
-       screen's width, hence the right inset. Request cards size themselves
-       (RequestStatusToast). */
+    /* Phones (the user's requests, 2026-10-25). Sonner stretches every card
+       across the screen below 600px, over the bot-list button in the top left
+       corner (48px wide). Every card keeps --risu-toast-side clear on both
+       sides instead, so it stays centred; a message card and an import/export
+       progress card are as wide as their text within that, and request cards
+       size themselves (RequestStatusToast). The toaster list starts at the
+       left offset and is the screen's width, hence the uneven insets. */
     @media (max-width: 600px) {
-        :global([data-sonner-toaster] [data-sonner-toast]:is([data-styled='true'], .import-toast)) {
-            right: calc(var(--mobile-offset-left) + var(--mobile-offset-right));
+        :global([data-sonner-toaster][data-y-position]) {
+            --risu-toast-side: 56px;
+        }
+        :global([data-sonner-toaster][data-y-position] [data-sonner-toast]) {
+            left: calc(var(--risu-toast-side) - var(--mobile-offset-left));
+            right: calc(var(--risu-toast-side) + var(--mobile-offset-left));
+            width: auto;
+        }
+        :global([data-sonner-toaster][data-y-position] [data-sonner-toast]:is([data-styled='true'], .import-toast)) {
             width: fit-content;
-            max-width: calc(100% - var(--mobile-offset-left) - var(--mobile-offset-right));
+            max-width: calc(100% - 2 * var(--risu-toast-side));
             margin-inline: auto;
         }
     }
