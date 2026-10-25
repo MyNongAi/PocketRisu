@@ -2,8 +2,23 @@ import { describe, expect, it } from 'vitest'
 import {
     buildCharacterSimilarityCounts,
     buildExactCharacterDuplicateCounts,
+    countCatalogCharacters,
     exactCharacterDefinitionFingerprint,
 } from './characterCatalogMetrics'
+
+describe('countCatalogCharacters', () => {
+    const live = [{ chaId: 'a', name: 'Alice' }, { chaId: 'b', name: 'Bob' }, { chaId: 't', name: 'Trashed', trashTime: 1 }, null]
+    const archived = [{ chaId: 'c', name: 'Carol' }, { chaId: 'd', name: 'Dave', trashedAt: 2 }, { name: 'no id' }]
+
+    it('counts live bots, then live and deactivated together, leaving the trash out', () => {
+        expect(countCatalogCharacters(live, archived)).toEqual({ active: 2, all: 3 })
+        expect(countCatalogCharacters([], [])).toEqual({ active: 0, all: 0 })
+    })
+
+    it('a search narrows both numbers', () => {
+        expect(countCatalogCharacters(live, archived, (name) => /o/i.test(name))).toEqual({ active: 1, all: 2 })
+    })
+})
 
 function card(id: string, extra: Record<string, unknown> = {}) {
     return {

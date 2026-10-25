@@ -5,6 +5,29 @@ type CatalogCharacter = object & {
     trashTime?: number
 }
 
+type NamedCharacter = { chaId?: string, name?: string, trashTime?: number, trashedAt?: number } | null | undefined
+
+/**
+ * The old catalog's count, "active / all" (the user's request, 2026-10-25):
+ * live bots, then those plus the deactivated ones, whether the deactivated
+ * are shown or hidden. The trash counts in neither; a search narrows both.
+ */
+export function countCatalogCharacters(
+    characters: readonly NamedCharacter[],
+    archived: readonly NamedCharacter[],
+    matches: (name: string) => boolean = () => true,
+): { active: number, all: number } {
+    let active = 0
+    for (const character of characters) {
+        if (character && !character.trashTime && matches(character.name ?? '')) active++
+    }
+    let deactivated = 0
+    for (const stub of archived) {
+        if (stub?.chaId && !stub.trashedAt && matches(stub.name ?? '')) deactivated++
+    }
+    return { active, all: active + deactivated }
+}
+
 type ArchivedMetricStub = {
     chaId?: string
     trashedAt?: number

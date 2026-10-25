@@ -949,6 +949,7 @@ export const languageKorean = {
   inputNodePassword:
     "비밀번호를 입력해주세요. 기억이 안나신다면, save/__password를 지우고 서버를 재시작해주세요.",
   simple: "간단",
+  catalogCountTitle: "활성 / 비활성 포함 전체",
   advanced: "고급",
   askReRollAutoSuggestions: "자동 제안 다시 뽑기",
   creatingSuggestions: "응답 제안 작성 중...",

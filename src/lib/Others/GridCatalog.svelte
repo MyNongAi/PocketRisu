@@ -27,7 +27,7 @@
     import { isRealmAssetRecoveryAvailable, isRedListTitle, listTitleColor } from "src/ts/gui/titleColors";
     import VirtualGrid from "../UI/Virtual/VirtualGrid.svelte";
     import VirtualList from "../UI/Virtual/VirtualList.svelte";
-    import { buildCharacterSimilarityCounts, buildExactCharacterDuplicateCounts } from "src/ts/gui/characterCatalogMetrics";
+    import { buildCharacterSimilarityCounts, buildExactCharacterDuplicateCounts, countCatalogCharacters } from "src/ts/gui/characterCatalogMetrics";
     import { formatImportedDate } from "src/ts/gui/importedDate";
     import { characterRings } from "src/ts/gui/characterRings.svelte";
 
@@ -205,6 +205,11 @@
     function immediatePrefetch(index:number){ if(index >= 0) void prefetchCharacterChat(index) }
 
     const characters = $derived(formatChars(search, DBState.db))
+    const catalogCount = $derived(countCatalogCharacters(
+        DBState.db.characters,
+        DBState.db.nodeOnlyArchivedCharacters ?? [],
+        (name) => matchesSearch(name, search),
+    ))
     const trashedCharacters = $derived(formatChars(search, DBState.db, true))
     const redTrashCount = $derived(formatChars('', DBState.db, true).filter((char) => isRedListTitle(char.titleColor, char.missingAssetCount > 0)).length)
     const similarityCounts = $derived(buildCharacterSimilarityCounts(
@@ -240,7 +245,7 @@
                 <Button styled={selected === 0 ? 'primary' : 'outlined'} size="sm" onclick={() => selected = 0}>{language.grid}</Button>
                 <Button styled={selected === 1 ? 'primary' : 'outlined'} size="sm" onclick={() => selected = 1}>{language.list}</Button>
                 <Button styled={selected === 2 ? 'primary' : 'outlined'} size="sm" onclick={() => selected = 2}>{language.trash}</Button>
-                <div class="grow"></div><span class="text-sm text-textcolor2">{characters.length} {language.character}</span>
+                <div class="grow"></div><span class="text-sm text-textcolor2" title={language.catalogCountTitle}>{catalogCount.active.toLocaleString()} / {catalogCount.all.toLocaleString()} {language.character}</span>
             </div>
         </div>
         {#if selected === 0}

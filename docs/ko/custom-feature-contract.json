@@ -1728,6 +1728,22 @@
       ]
     },
     {
+      "id": "LEGACY-GRID-COUNT",
+      "title": "구형 그리드 개수: 활성 / 비활성 포함 전체",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/characterCatalogMetrics.ts",
+        "src/lib/Others/GridCatalog.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/gui/characterCatalogMetrics.ts", "contains": "export function countCatalogCharacters(" },
+        { "file": "src/lib/Others/GridCatalog.svelte", "contains": "{catalogCount.active.toLocaleString()} / {catalogCount.all.toLocaleString()} {language.character}" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/characterCatalogMetrics.test.ts"
+      ]
+    },
+    {
       "id": "LEGACY-GRID-TRASH",
       "title": "구버전 그리드 휴지통 탭에 비활성화 휴지통 봇 표시, 빨간 제목만 비우기",
       "criticality": "core-ux",
