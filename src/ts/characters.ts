@@ -869,22 +869,31 @@ export async function removeChar(identifier:string|number,name:string, type:'nor
 export async function addCharacter(arg:{
     reseter?:()=>any,
     setCatalogLayout?:(mode:'single'|'split')=>void,
+    /**
+     * Called from a screen that stays behind the menu (the character manager,
+     * the user's request, 2026-10-25): the screen is left as it is, and
+     * onLeave runs only once the menu goes somewhere else (Realm, or a bot was
+     * added and opens). Cancelling, or an import that added nothing, stays.
+     */
+    stay?:{ onLeave:()=>void },
 } = {}){
-    MobileGUIStack.set(100)
+    if(!arg.stay) MobileGUIStack.set(100)
     const reseter = arg.reseter ?? (() => {})
     const r = await alertAddCharacter()
     if(r === 'sidebarLayoutSingle' || r === 'sidebarLayoutSplit'){
         arg.setCatalogLayout?.(r === 'sidebarLayoutSplit' ? 'split' : 'single')
-        MobileGUIStack.set(1)
+        if(!arg.stay) MobileGUIStack.set(1)
         return
     }
     if(r === 'importFromRealm'){
+        arg.stay?.onLeave()
         deselectCharacter()
         OpenRealmStore.set(true)
         MobileGUIStack.set(0)
         return
     }
     reseter();
+    const countBefore = getDatabase().characters.length
     switch(r){
         case 'createfromScratch':
             createNewCharacter()
@@ -902,14 +911,18 @@ export async function addCharacter(arg:{
             // Modules, as from the module page: nothing to select afterwards.
             const { importModuleFromProtonDrive } = await import('./process/modules')
             await importModuleFromProtonDrive()
-            MobileGUIStack.set(1)
+            if(!arg.stay) MobileGUIStack.set(1)
             return
         }
         default:
-            MobileGUIStack.set(1)
+            if(!arg.stay) MobileGUIStack.set(1)
             return
     }
     let db = getDatabase()
+    if(arg.stay){
+        if(db.characters.length === countBefore) return
+        arg.stay.onLeave()
+    }
     if(db.characters[db.characters.length-1]){
         changeChar(db.characters.length-1)
     }

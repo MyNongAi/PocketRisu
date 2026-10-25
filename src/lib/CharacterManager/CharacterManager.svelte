@@ -329,9 +329,10 @@
         commitOrder(rebuildOrder(DBState.db.characterOrder, layout));
     }
 
+    // The add menu opens over the manager, which stays unless the menu takes
+    // the user elsewhere (the user's request, 2026-10-25).
     async function addNew() {
-        close();
-        await addCharacter();
+        await addCharacter({ stay: { onLeave: close } });
     }
 
     function openListSettings() {

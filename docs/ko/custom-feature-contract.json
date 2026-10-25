@@ -2193,6 +2193,20 @@
       ]
     },
     {
+      "id": "MANAGER-ADD-STAYS",
+      "title": "신형 캐릭터 관리의 + 버튼: 추가 메뉴만 뜨고 관리 창은 그대로",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/characters.ts",
+        "src/lib/CharacterManager/CharacterManager.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/characters.ts", "contains": "stay?:{ onLeave:()=>void }," },
+        { "file": "src/ts/characters.ts", "contains": "if(db.characters.length === countBefore) return" },
+        { "file": "src/lib/CharacterManager/CharacterManager.svelte", "contains": "await addCharacter({ stay: { onLeave: close } });" }
+      ]
+    },
+    {
       "id": "CHAT-REPLY-STATUS",
       "title": "채팅 목록의 응답 상태 (생성 중 스피너, 끝나면 ✅)",
       "criticality": "core-ux",
