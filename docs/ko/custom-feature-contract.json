@@ -2168,6 +2168,31 @@
       ]
     },
     {
+      "id": "BOT-LIST-RINGS",
+      "title": "봇 목록 테두리: 보고 있는 봇은 노랑, 답이 온 봇은 초록",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/characterRings.svelte.ts",
+        "src/lib/SideBars/CharacterRingMark.svelte",
+        "src/lib/SideBars/SidebarAvatar.svelte",
+        "src/lib/SideBars/BarIcon.svelte",
+        "src/lib/CharacterManager/CharacterRow.svelte",
+        "src/lib/CharacterManager/CharacterManager.svelte",
+        "src/lib/Others/GridCatalog.svelte",
+        "src/lib/Mobile/MobileCharacters.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/gui/characterRings.svelte.ts", "contains": "replied = $derived(charactersHoldingChats(this.#marks.current, DBState.db?.characters ?? []))" },
+        { "file": "src/lib/SideBars/SidebarAvatar.svelte", "contains": "<CharacterRingMark {chaId} {rounded} />" },
+        { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "<CharacterRingMark chaId={entry.chaId} rounded={DBState.db.roundIcons} thin />" },
+        { "file": "src/lib/Others/GridCatalog.svelte", "contains": "ring={characterRings.of(char.chaId)}" },
+        { "file": "src/lib/Mobile/MobileCharacters.svelte", "contains": "ring={characterRings.of(char.chaId)}" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/characterRings.svelte.test.ts"
+      ]
+    },
+    {
       "id": "CHAT-REPLY-STATUS",
       "title": "채팅 목록의 응답 상태 (생성 중 스피너, 끝나면 ✅)",
       "criticality": "core-ux",

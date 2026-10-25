@@ -13,6 +13,7 @@
     import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
     import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
     import VirtualList from "../UI/Virtual/VirtualList.svelte";
+    import { characterRings } from "src/ts/gui/characterRings.svelte";
 
     interface Props {
         search: string;
@@ -105,6 +106,7 @@
                     onPrefetchImmediate={() => immediatePrefetch(char.i)}
                     onClick={() => void open(char)}
                     additionalStyle={() => getCharThumbnail(char.image, 'css')}
+                    ring={characterRings.of(char.chaId)}
                 />
                 <span
                     class="pointer-events-none absolute bottom-1 left-1 z-10 rounded border border-darkborderc bg-darkbg/95 px-0.5 text-[8px] font-semibold leading-tight"

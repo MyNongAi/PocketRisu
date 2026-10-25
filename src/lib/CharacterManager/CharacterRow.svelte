@@ -14,6 +14,7 @@
     import { NEW_MARK, newMarks } from "src/ts/newMarks.svelte";
     import { listTitleColor } from "src/ts/gui/titleColors";
     import { formatImportedDate } from "src/ts/gui/importedDate";
+    import CharacterRingMark from "src/lib/SideBars/CharacterRingMark.svelte";
 
     interface Props {
         entry: ManagerEntry;
@@ -64,6 +65,7 @@
         {:then src}
             <img src={src || '/none.webp'} alt="" class="h-10 w-10 object-cover object-top bg-skin-border" class:rounded-md={!DBState.db.roundIcons} class:rounded-full={DBState.db.roundIcons} />
         {/await}
+        <CharacterRingMark chaId={entry.chaId} rounded={DBState.db.roundIcons} thin />
         {#if entry.archived}
             <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/50" class:rounded-md={!DBState.db.roundIcons} class:rounded-full={DBState.db.roundIcons}>
                 <ArchiveIcon size={16} class="text-white/90" />

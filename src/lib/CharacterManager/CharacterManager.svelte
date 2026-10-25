@@ -18,6 +18,7 @@
     import ShDropdownMenuItem from "src/lib/UI/GUI/ShDropdownMenuItem.svelte";
     import ShDropdownMenuSeparator from "src/lib/UI/GUI/ShDropdownMenuSeparator.svelte";
     import CharacterRow from "./CharacterRow.svelte";
+    import CharacterRingMark from "../SideBars/CharacterRingMark.svelte";
     import CharacterOrderList from "./CharacterOrderList.svelte";
     import { createIncrementalList } from "src/lib/UI/incrementalList.svelte";
     import {
@@ -530,6 +531,7 @@
                     {:then src}
                         <img src={src || '/none.webp'} alt="" class="{gridCompact ? 'h-14 w-14' : 'h-16 w-16'} object-cover object-top bg-skin-border" class:rounded-md={!DBState.db.roundIcons} class:rounded-full={DBState.db.roundIcons} />
                     {/await}
+                    <CharacterRingMark chaId={entry.chaId} rounded={DBState.db.roundIcons} />
                     {#if entry.archived}
                         <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/50" class:rounded-md={!DBState.db.roundIcons} class:rounded-full={DBState.db.roundIcons}>
                             <ArchiveIcon size={18} class="text-white/90" />

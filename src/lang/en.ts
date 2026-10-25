@@ -1206,6 +1206,8 @@ export const languageEnglish = {
     splitPanelToggle: "Character panel",
     splitPanelEdge: (pane: string, side: string) => `${pane} pane's panel: ${side}`,
     newlyReceived: "New: not opened yet",
+    currentCharacterRing: "The bot on screen",
+    replyArrivedRing: "A reply came in",
     newSwipeWaiting: "A new reply is waiting on a later page",
     remoteReplyRunning: "Another device is writing a reply in this chat",
     remoteDevice: "Other device",

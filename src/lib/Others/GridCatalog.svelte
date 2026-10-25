@@ -29,6 +29,7 @@
     import VirtualList from "../UI/Virtual/VirtualList.svelte";
     import { buildCharacterSimilarityCounts, buildExactCharacterDuplicateCounts } from "src/ts/gui/characterCatalogMetrics";
     import { formatImportedDate } from "src/ts/gui/importedDate";
+    import { characterRings } from "src/ts/gui/characterRings.svelte";
 
     interface Props { endGrid?: () => void }
     let { endGrid = () => {} }: Props = $props();
@@ -264,6 +265,7 @@
                                 onPrefetchImmediate={() => immediatePrefetch(char.index)}
                                 onClick={() => void openChar(char)}
                                 additionalStyle={() => getCharThumbnail(char.image, 'css')}
+                                ring={characterRings.of(char.chaId)}
                             />
                         {:else}
                             <BarIcon
@@ -272,6 +274,7 @@
                                 onPrefetchImmediate={() => immediatePrefetch(char.index)}
                                 onClick={() => void openChar(char)}
                                 additionalStyle={char.index === $selectedCharID ? 'background:var(--risu-theme-selected)' : ''}
+                                ring={characterRings.of(char.chaId)}
                             ><User/></BarIcon>
                         {/if}
                         <span class="pointer-events-none absolute -bottom-1 left-0 rounded border border-darkborderc bg-darkbg/95 px-0.5 text-[8px]">[{char.sourceBadge}]</span>
@@ -294,6 +297,7 @@
                                 onPrefetchImmediate={() => immediatePrefetch(char.index)}
                                 onClick={() => void openChar(char)}
                                 additionalStyle={() => getCharThumbnail(char.image, 'css')}
+                                ring={characterRings.of(char.chaId)}
                             />
                             <span
                                 class="pointer-events-none absolute -bottom-1 -left-1 z-10 rounded border border-darkborderc bg-darkbg/95 px-0.5 text-[8px] font-semibold leading-tight"

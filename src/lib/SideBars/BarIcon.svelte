@@ -15,6 +15,8 @@
     ariaLabel?: string;
     title?: string;
     pressed?: boolean;
+    /** A bot's border in the catalog: yellow on screen, green with a reply in (characterRings.svelte.ts). */
+    ring?: 'current' | 'replied' | null;
     children?: import('svelte').Snippet;
   }
 
@@ -27,8 +29,13 @@
     ariaLabel,
     title,
     pressed,
+    ring = null,
     children,
   }: Props = $props();
+  let ringClass = $derived(
+    ring === 'current' ? 'outline-3 -outline-offset-3 outline-yellow-400' :
+    ring === 'replied' ? 'outline-3 -outline-offset-3 outline-emerald-400' : ''
+  );
   let observerTarget: HTMLButtonElement = $state();
   let shouldResolve = $state(false);
   let resolvedStyle = $derived.by(() => {
@@ -59,9 +66,9 @@
 </script>
 
 {#await resolvedStyle}
-  <button bind:this={observerTarget} onclick={onClick} onpointerenter={onPrefetch} onpointerleave={onPrefetchCancel} onpointerdown={onPrefetchImmediate} onfocus={onPrefetch} onblur={onPrefetchCancel} class="ico" aria-label={ariaLabel} {title} aria-pressed={pressed}>{@render children?.()}</button>
+  <button bind:this={observerTarget} onclick={onClick} onpointerenter={onPrefetch} onpointerleave={onPrefetchCancel} onpointerdown={onPrefetchImmediate} onfocus={onPrefetch} onblur={onPrefetchCancel} class="ico {ringClass}" data-ring={ring ?? undefined} aria-label={ariaLabel} {title} aria-pressed={pressed}>{@render children?.()}</button>
 {:then as}
-  <button bind:this={observerTarget} onclick={onClick} onpointerenter={onPrefetch} onpointerleave={onPrefetchCancel} onpointerdown={onPrefetchImmediate} onfocus={onPrefetch} onblur={onPrefetchCancel} class="ico" style={as} aria-label={ariaLabel} {title} aria-pressed={pressed}>{@render children?.()}</button>
+  <button bind:this={observerTarget} onclick={onClick} onpointerenter={onPrefetch} onpointerleave={onPrefetchCancel} onpointerdown={onPrefetchImmediate} onfocus={onPrefetch} onblur={onPrefetchCancel} class="ico {ringClass}" data-ring={ring ?? undefined} style={as} aria-label={ariaLabel} {title} aria-pressed={pressed}>{@render children?.()}</button>
 {/await}
 
 <style>
