@@ -35,7 +35,7 @@ function appendImportedCharacter(db: ReturnType<typeof getDatabase>, char: chara
     // When this install first saw the card. Distinct from creation_date, which
     // the card carries from its author and can predate the download by years.
     char.importedAt ??= Date.now()
-    // 🆕 in the bot list until it is opened (newMarks.svelte.ts).
+    // NEW in the bot list until it is opened (newMarks.svelte.ts).
     char.nodeOnlyUnseen = true
     db.characters.push(char)
     db.characterOrder = promoteNewlyImportedCharacter(

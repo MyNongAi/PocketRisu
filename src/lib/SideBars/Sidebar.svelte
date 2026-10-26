@@ -81,7 +81,8 @@
     import { getPaneView, paneState, paneView, setPaneContext, type PaneId } from "src/ts/chatPanes.svelte";
     import { activatePane } from "src/ts/paneActivation";
     import { closePaneOverlay, closePanePanel, paneWord, splitLayout, type PanelTab } from "src/ts/splitLayout.svelte";
-    import { newMarkPrefix, newMarks } from "src/ts/newMarks.svelte";
+    import { hasNewMark, newMarks } from "src/ts/newMarks.svelte";
+    import NewMark from "src/lib/UI/NewMark.svelte";
     import { alertConfirm, alertSelect, type AlertAction } from "src/ts/alert";
     import { setSidebarCatalogSplit, sidebarCatalog } from "src/ts/gui/sidebarCatalogLayout.svelte";
     import { removeBotWithModules } from "src/ts/gui/botModuleRemoval";
@@ -282,7 +283,7 @@
     return slots
   })
   // A folder with a bot received and not opened yet inside it (or in a folder
-  // within it) shows 🆕 too, since imports often land in a folder (newMarks.svelte.ts).
+  // within it) shows NEW too, since imports often land in a folder (newMarks.svelte.ts).
   function railFolderHasNew(item: sortTypeFolder, seen = new Set<string>()): boolean {
     if (newMarks.characters.size === 0 || seen.has(item.id)) return false
     seen.add(item.id)
@@ -2356,7 +2357,7 @@
                 />
               </div>
               <div class="flex-1 min-w-0">
-                <div class="text-sm font-semibold text-textcolor leading-tight truncate" style:color={listTitleColor(DBState.db.characters[rc.index]?.titleColor, Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0)}>{newMarkPrefix(DBState.db.characters[rc.index])}{rc.name || "Unnamed"}</div>
+                <div class="text-sm font-semibold text-textcolor leading-tight truncate" style:color={listTitleColor(DBState.db.characters[rc.index]?.titleColor, Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0)}>{#if hasNewMark(DBState.db.characters[rc.index])}<NewMark class="mr-1" />{/if}{rc.name || "Unnamed"}</div>
                 <div class="text-xs text-textcolor2 leading-tight truncate">{makeAgoText(rc.lastInteraction)}</div>
               </div>
             </button>

@@ -2,7 +2,8 @@
   import { Link2Icon } from "@lucide/svelte";
   import { onMount } from "svelte";
   import { tooltipRight } from "src/ts/gui/tooltip";
-  import { NEW_MARK, newMarks } from "src/ts/newMarks.svelte";
+  import { newMarks } from "src/ts/newMarks.svelte";
+  import NewMark from "src/lib/UI/NewMark.svelte";
   import CharacterRingMark from "./CharacterRingMark.svelte";
   import { language } from "src/lang";
 
@@ -141,7 +142,7 @@
   <CharacterRingMark {chaId} {rounded} />
   {#if isNew}
     <!-- Received and not opened yet (newMarks.svelte.ts): the top-left corner, free of the other marks. -->
-    <span class="pointer-events-none absolute -left-1 -top-1 z-20 text-sm leading-none drop-shadow" aria-label={language.newlyReceived} title={language.newlyReceived}>{NEW_MARK}</span>
+    <NewMark class="pointer-events-none absolute -left-1 -top-1 z-20 shadow" />
   {/if}
   {#if favorite || missingAssets}
     <span class="pointer-events-none absolute -right-1 -top-1 z-20 flex items-start gap-0.5">

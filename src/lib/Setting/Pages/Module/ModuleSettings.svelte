@@ -1,6 +1,7 @@
 <script lang="ts">
     import { language } from "src/lang";
-    import { markSeen, newMarkPrefix } from "src/ts/newMarks.svelte";
+    import { hasNewMark, markSeen } from "src/ts/newMarks.svelte";
+    import NewMark from "src/lib/UI/NewMark.svelte";
     import SettingPage from "src/lib/UI/GUI/SettingPage.svelte";
 
     import { DBState, selectedCharID } from 'src/ts/stores.svelte';
@@ -19,7 +20,7 @@
     import { convertModuleToCharacter } from "src/ts/interchangeability";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
     import { dissolveShrunkenModuleFolders, synchronizeModuleFolderMembership } from "src/ts/process/moduleFolders";
-    import { activationHistoryAfterPlacement, getLatestModuleCatalogPromotion, liftModulesToNewest, recordModuleActivation, recordModuleFolderActivation, recordModuleFolderOrder, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
+    import { activationHistoryAfterPlacement, activationHistoryFromDisplay, getLatestModuleCatalogPromotion, liftModulesToNewest, unpinModuleFavoritesOnce, recordModuleActivation, recordModuleFolderActivation, recordModuleFolderOrder, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
     import { chooseTitleColor, listTitleColor } from "src/ts/gui/titleColors";
     import { localOriginOf, resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
     import { copyProtonLink, protonLinkOf } from "src/ts/protonSource";
@@ -40,6 +41,7 @@
     let mode = $state(0)
     // Prompt presets edited since: their modules move into or out of [프롬] (presetModuleFolder.ts).
     onMount(() => { syncLinkedFolders() })
+    onMount(() => { unpinModuleFavoritesOnce(DBState.db) })
     let editModuleIndex = $state(-1)
     let converting = $state(false)
     // The module in the editor is a stored one (moduleCold.svelte.ts): its
@@ -63,8 +65,20 @@
     let onNowIds = $derived(DBState.db.modules
         .filter((module) => !!module && (isGlobal(module) || isIntegrated(module) || isBotModule(module)))
         .map((module) => module.id))
+    // Once a drag placed them (applyPlacements), the modules on now stay
+    // where the user put them instead of being lifted, until they go off
+    // (the user's request, 2026-10-26: "유저 이동을 최우선").
+    let settledOnNow = $derived(new Set(DBState.db.nodeOnlyModuleOrderSettled ?? []))
     let recencyOptions = $derived({
-        activationHistory: liftModulesToNewest(DBState.db.moduleActivationHistory, [DBState.db.enabledModules], onNowIds),
+        activationHistory: liftModulesToNewest(DBState.db.moduleActivationHistory, [DBState.db.enabledModules], onNowIds.filter((id) => !settledOnNow.has(id))),
+    })
+    // A module that went off is lifted again the next time it comes on.
+    $effect(() => {
+        const settled = DBState.db.nodeOnlyModuleOrderSettled
+        if (!settled?.length) return
+        const on = new Set(onNowIds)
+        const kept = settled.filter((id) => on.has(id))
+        if (kept.length !== settled.length) untrack(() => { DBState.db.nodeOnlyModuleOrderSettled = kept })
     })
     let displayModules = $derived(moduleCatalogSort === 'registered'
         ? [...DBState.db.modules]
@@ -267,7 +281,7 @@
         const originalIndex = originalModuleIndex(index)
         const rmodule = DBState.db.modules[originalIndex]
         if (!rmodule || rmodule.mcp) return
-        // Looked at: no longer 🆕 (newMarks.svelte.ts).
+        // Looked at: no longer NEW (newMarks.svelte.ts).
         markSeen(rmodule)
         rememberListScroll()
         // Being worked on: the sweep leaves it whole until the next boot.
@@ -314,7 +328,7 @@
      * Persists only small catalog overlays. The upstream module array keeps its
      * physical order; visual recency lives in moduleActivationHistory.
      */
-    function applyPlacements(placements: FolderedItemPlacement[]) {
+    function applyPlacements(placements: FolderedItemPlacement[], fromDrop = false) {
         if (placements.length !== displayModules.length) return
         const currentFolders = displayFolders
         const folderById = new Map(placements.map(({ index, folderId }) => [displayModules[index]?.id, folderId]))
@@ -343,12 +357,24 @@
         if (moduleCatalogSort === 'registered') {
             return
         }
-        DBState.db.moduleActivationHistory = activationHistoryAfterPlacement(
-            placedBefore,
-            placedAfter,
-            DBState.db.moduleActivationHistory ?? [],
-            [DBState.db.enabledModules],
-        )
+        if (fromDrop) {
+            // What the drop left on screen is the order from now on: a dragged
+            // module or folder stays where it was put, above a favorite or a
+            // module on now too (activationHistoryFromDisplay).
+            DBState.db.moduleActivationHistory = activationHistoryFromDisplay(
+                placedAfter.map((item) => item.id),
+                DBState.db.moduleActivationHistory,
+                [DBState.db.enabledModules],
+            )
+            DBState.db.nodeOnlyModuleOrderSettled = [...onNowIds]
+        } else {
+            DBState.db.moduleActivationHistory = activationHistoryAfterPlacement(
+                placedBefore,
+                placedAfter,
+                DBState.db.moduleActivationHistory ?? [],
+                [DBState.db.enabledModules],
+            )
+        }
         DBState.db.moduleFolders = recordModuleFolderOrder(DBState.db.moduleFolders)
     }
 
@@ -378,6 +404,22 @@
         if (!folder.favorite) {
             const index = changed.findIndex((item) => item.id === folder.id)
             changed.unshift(...changed.splice(index, 1))
+            // 최근순 places a folder by its newest item: favoriting lifts its
+            // items (and those of the folders in it) to the top once.
+            const inside = new Set([folder.id])
+            for (let grew = true; grew;) {
+                grew = false
+                for (const item of changed) {
+                    if (!inside.has(item.id) && item.nodeOnlyParentFolderId && inside.has(item.nodeOnlyParentFolderId)) {
+                        inside.add(item.id)
+                        grew = true
+                    }
+                }
+            }
+            const members = DBState.db.modules
+                .filter((module) => (module.folderId && inside.has(module.folderId)) || changed.some((item) => inside.has(item.id) && item.moduleIds?.includes(module.id)))
+                .map((module) => module.id)
+            DBState.db.moduleActivationHistory = liftModulesToNewest(DBState.db.moduleActivationHistory, [DBState.db.enabledModules], members)
         }
         applyFolders(changed)
     }
@@ -508,7 +550,7 @@
                 <Waypoints size={18} class="shrink-0 text-textcolor2" />
             {/if}
             <div class="flex flex-col min-w-0 grow" class:stored-module-muted={isColdModule(rmodule)} title={isColdModule(rmodule) ? language.moduleColdTitle : undefined}>
-                <span class="truncate text-textcolor" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(rmodule))}>{#if hasMissingAssets(rmodule)}<span aria-label="에셋 누락" title="에셋 누락">❗</span> {/if}<PairedModuleMark link={pairedModules.get(rmodule.id)} />{newMarkPrefix(rmodule)}{rmodule.favorite ? '★ ' : ''}{rmodule.name}</span>
+                <span class="truncate text-textcolor" style:color={listTitleColor(rmodule.titleColor, hasMissingAssets(rmodule))}>{#if hasMissingAssets(rmodule)}<span aria-label="에셋 누락" title="에셋 누락">❗</span> {/if}<PairedModuleMark link={pairedModules.get(rmodule.id)} />{#if hasNewMark(rmodule)}<NewMark class="mr-1" />{/if}{rmodule.favorite ? '★ ' : ''}{rmodule.name}</span>
                 <span class="text-xs text-textcolor2 truncate">
                     <span
                         class:text-sky-300={source.label === '로컬'}
@@ -547,7 +589,7 @@
                 <ShDropdownMenuItem onSelect={() => copyProtonLink(protonLinkOf(rmodule))}><LinkIcon /><span>{language.protonLinkCopy}</span></ShDropdownMenuItem>
             {/if}
             <ShDropdownMenuItem onSelect={() => changeModuleColor(rmodule)}><PaletteIcon /><span>색변경</span></ShDropdownMenuItem>
-            <ShDropdownMenuItem onSelect={() => { rmodule.favorite = !rmodule.favorite }}><StarIcon /><span>{rmodule.favorite ? '즐겨찾기 해제' : '즐겨찾기 (맨위로)'}</span></ShDropdownMenuItem>
+            <ShDropdownMenuItem onSelect={() => { rmodule.favorite = !rmodule.favorite; if (rmodule.favorite) rememberActivation(rmodule.id) }}><StarIcon /><span>{rmodule.favorite ? '즐겨찾기 해제' : '즐겨찾기 (맨위로)'}</span></ShDropdownMenuItem>
         {/snippet}
     </FolderedList>
     {#if DBState.db.modules.length === 0}

@@ -75,7 +75,8 @@
         showMenuCancel?: boolean;
         folderRenameLabel?: string;
         onSelect: (index: number) => void;
-        onItemsChange: (placements: FolderedItemPlacement[]) => void;
+        /** `fromDrop`: the placements are the rows as a drop left them on screen, top to bottom. */
+        onItemsChange: (placements: FolderedItemPlacement[], fromDrop?: boolean) => void;
         onFoldersChange: (folders: PromptPresetFolder[]) => void;
         /** Optional per-item menu actions. Rendered only when provided. */
         onDuplicate?: (index: number) => void;
@@ -191,6 +192,13 @@
         seen.add(id);
         return (childGroupsByParent.get(id) ?? []).some((child) => groupHasMatches(child, seen));
     }
+    /** The items in the folders shown inside `group`, at any depth (they place it in the interleaved list). */
+    function nestedIndexesOf(group: (typeof filteredGroups)[number], seen = new Set<string>()): number[] {
+        const id = group.folder?.id;
+        if (!id || seen.has(id)) return [];
+        seen.add(id);
+        return (childGroupsByParent.get(id) ?? []).flatMap((child) => [...child.indexes, ...nestedIndexesOf(child, seen)]);
+    }
     /** Items in a folder and in the folders inside it, at any depth. */
     function groupItemCount(group: (typeof filteredGroups)[number], seen = new Set<string>()): number {
         const id = group.folder?.id;
@@ -206,7 +214,7 @@
     const remainingRootIndexes = $derived(rootIndexes.filter((index) => index !== promotedRootIndex));
     const remainingFolderGroups = $derived(displayGroups.filter((group) => group.folder?.id !== promotedFolderGroup?.folder?.id && !!group.folder));
     const interleavedBlocks = $derived(interleaveItems
-        ? interleaveModuleCatalogGroups(displayGroups, promotedRootIndex, promotedFolderId)
+        ? interleaveModuleCatalogGroups(displayGroups.map((group) => group.folder ? { ...group, nestedIndexes: nestedIndexesOf(group) } : group), promotedRootIndex, promotedFolderId)
         : []);
     const displayItemCount = $derived(filteredGroups.reduce((count, group) => count + group.indexes.length, 0));
 
@@ -250,15 +258,19 @@
     }
 
     function onItemDrop(_orderedKeys: string[], _event: SortableEvent) {
-        onItemsChange(placementsFromDom());
+        onItemsChange(placementsFromDom(), true);
     }
 
     function onFolderDrop(orderedIds: string[]) {
+        // In the interleaved list a folder is placed among single items too:
+        // read where it landed before the folder change re-renders the list.
+        const placed = interleaveItems ? placementsFromDom() : null;
         const byId = new Map(folders.map(folder => [folder.id, folder]));
         const ordered = orderedIds.map(id => byId.get(id)).filter((folder): folder is PromptPresetFolder => !!folder);
         // Folders shown inside another are not in the dragged list: keep them.
         const rest = folders.filter(folder => !orderedIds.includes(folder.id));
         onFoldersChange([...ordered, ...rest]);
+        if (placed) onItemsChange(placed, true);
     }
 
     async function createFolder() {

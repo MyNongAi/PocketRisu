@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
     activationHistoryAfterPlacement,
+    activationHistoryFromDisplay,
+    liftFavoritesOnce,
+    unpinModuleFavoritesOnce,
     getLatestModuleCatalogPromotion,
     interleaveModuleCatalogGroups,
     recordModuleActivation,
@@ -27,6 +30,21 @@ describe('interleaved module catalog', () => {
             { kind: 'folder', folderId: 'first' },
             { kind: 'folder', folderId: 'second' },
             { kind: 'root', indexes: [4] },
+        ])
+    })
+
+    it('places a favorite folder like any other, and a folder of folders by the items in them', () => {
+        expect(interleaveModuleCatalogGroups([
+            { folder: { id: 'fav', favorite: true }, indexes: [3] },
+            { folder: { id: 'prom' }, indexes: [], nestedIndexes: [1] },
+            { folder: { id: 'empty' }, indexes: [] },
+            { folder: null, indexes: [0, 2] },
+        ])).toEqual([
+            { kind: 'folder', folderId: 'empty' },
+            { kind: 'root', indexes: [0] },
+            { kind: 'folder', folderId: 'prom' },
+            { kind: 'root', indexes: [2] },
+            { kind: 'folder', folderId: 'fav' },
         ])
     })
 
@@ -152,11 +170,13 @@ describe('sortModulesByActivation', () => {
         expect(sorted.map((folder) => folder.id)).toEqual(['second', 'first'])
     })
 
-    it('keeps favorites above recent modules without changing source order', () => {
+    it('no longer holds favorites above recent modules (a drag moves them)', () => {
         const source = modules.map((module) => ({ ...module, favorite: module.id === 'bravo' }))
         const sorted = sortModulesByActivation(source, '', { activationHistory: ['alpha', 'charlie'] })
-        expect(sorted.map((module) => module.id)).toEqual(['bravo', 'charlie', 'alpha', 'delta'])
+        expect(sorted.map((module) => module.id)).toEqual(['charlie', 'alpha', 'bravo', 'delta'])
         expect(source.map((module) => module.id)).toEqual(modules.map((module) => module.id))
+        const folders = [{ id: 'old', moduleIds: ['alpha'], favorite: true }, { id: 'new', moduleIds: ['charlie'] }]
+        expect(sortModuleFoldersByActivation(folders, modules, { activationHistory: ['alpha', 'charlie'] }).map((folder) => folder.id)).toEqual(['new', 'old'])
     })
 
     it('preserves manual folder order across rerenders despite old activation history', () => {
@@ -277,6 +297,37 @@ describe('activationHistoryAfterPlacement', () => {
         const next = activationHistoryAfterPlacement(before, after, history)
         expect(next.indexOf('M7')).toBeGreaterThan(next.indexOf('M8'))
         expect(next.filter((id) => id !== 'M7' && id !== 'M8')).toEqual(['M4', 'M3', 'M5', 'M2', 'M1', 'M6'])
+    })
+})
+
+describe('a drop keeps what it left on screen', () => {
+    it('makes the shown order the recency, the rest staying below in their order', () => {
+        const history = ['x', 'a', 'b', 'c']
+        const next = activationHistoryFromDisplay(['c', 'a', 'b'], history, [['e']])
+        expect(next).toEqual(['e', 'x', 'b', 'a', 'c'])
+        expect(sortModulesByActivation(['a', 'b', 'c'].map((id) => ({ id, name: id })), '', { activationHistory: next }).map((m) => m.id)).toEqual(['c', 'a', 'b'])
+    })
+})
+
+describe('favorites lifted once when they stopped holding the top', () => {
+    it('lifts favorite modules and the items of favorite folders, in their own order', () => {
+        const source = [
+            { id: 'a', name: 'a' }, { id: 'b', name: 'b', favorite: true },
+            { id: 'c', name: 'c', folderId: 'sub' }, { id: 'd', name: 'd', folderId: 'f' }, { id: 'e', name: 'e' },
+        ]
+        const folders = [{ id: 'f', favorite: true, moduleIds: ['d'] }, { id: 'sub', nodeOnlyParentFolderId: 'f', moduleIds: ['c'] }]
+        expect(liftFavoritesOnce(source, folders, ['c', 'b', 'd', 'a', 'e'])).toEqual(['a', 'e', 'c', 'b', 'd'])
+        expect(liftFavoritesOnce([{ id: 'a', name: 'a' }], [], ['a'])).toBeNull()
+    })
+
+    it('runs once per database', () => {
+        const db = { modules: [{ id: 'a', name: 'a', favorite: true }, { id: 'b', name: 'b' }], moduleActivationHistory: ['a', 'b'], enabledModules: [] as string[] } as Parameters<typeof unpinModuleFavoritesOnce>[0]
+        unpinModuleFavoritesOnce(db)
+        expect(db.moduleActivationHistory).toEqual(['b', 'a'])
+        expect(db.nodeOnlyModuleFavoritesUnpinned).toBe(true)
+        db.moduleActivationHistory = ['a', 'b']
+        unpinModuleFavoritesOnce(db)
+        expect(db.moduleActivationHistory).toEqual(['a', 'b'])
     })
 })
 

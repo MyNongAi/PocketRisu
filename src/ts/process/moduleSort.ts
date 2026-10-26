@@ -50,8 +50,9 @@ export function sortModulesByActivation<T extends SortableModule>(
         if(normalizedSearch === '') return true
         return module.name.toLocaleLowerCase().includes(normalizedSearch)
     }).sort((a, b) => {
-        const favoriteOrder = Number(!!b.favorite) - Number(!!a.favorite)
-        if (favoriteOrder) return favoriteOrder
+        // A favorite no longer holds the top: it goes there once when it is
+        // favorited, and a drag moves it like any other (the user's request,
+        // 2026-10-26: "유저 이동을 최우선").
         const aRank = recencyRank.get(a.id)
         const bRank = recencyRank.get(b.id)
 
@@ -115,6 +116,8 @@ export interface ModuleCatalogPromotion {
 export interface ModuleCatalogDisplayGroup {
     folder: { id: string; favorite?: boolean } | null
     indexes: ReadonlyArray<number>
+    /** Items in the folders shown inside this one: they place it too. */
+    nestedIndexes?: ReadonlyArray<number>
 }
 
 export type ModuleCatalogDisplayBlock =
@@ -133,7 +136,9 @@ export function interleaveModuleCatalogGroups(
     const rootIndexes = new Set(root?.indexes ?? [])
     const folderByIndex = new Map<number, string>()
     for (const group of folders) {
-        for (const index of group.indexes) folderByIndex.set(index, group.folder!.id)
+        for (const index of [...group.indexes, ...group.nestedIndexes ?? []]) {
+            if (!rootIndexes.has(index) && !folderByIndex.has(index)) folderByIndex.set(index, group.folder!.id)
+        }
     }
     const emittedFolders = new Set<string>()
     const emittedRoot = new Set<number>()
@@ -154,9 +159,10 @@ export function interleaveModuleCatalogGroups(
     if (rootIndexes.has(promotedRootIndex)) emitRoot(promotedRootIndex)
     else if (promotedFolderId && folders.some((group) => group.folder?.id === promotedFolderId)) emitFolder(promotedFolderId)
 
-    // Explicit favorites and newly made empty folders keep their special rank.
-    for (const group of folders) if (group.folder?.favorite) emitFolder(group.folder.id)
-    for (const group of folders) if (group.indexes.length === 0) emitFolder(group.folder!.id)
+    // A newly made empty folder shows at the top. A folder holding only
+    // folders (as [프롬] does) is placed by the newest item in them, and a
+    // favorite one like any other.
+    for (const group of folders) if (group.indexes.length === 0 && !group.nestedIndexes?.length) emitFolder(group.folder!.id)
 
     const orderedIndexes = [...rootIndexes, ...folderByIndex.keys()].sort((a, b) => a - b)
     for (const index of orderedIndexes) {
@@ -257,8 +263,6 @@ export function sortModuleFoldersByActivation<T extends SortableModuleFolder>(
             const aOrder = Number.isFinite(a.folder.sortOrder) ? a.folder.sortOrder! : undefined
             const bOrder = Number.isFinite(b.folder.sortOrder) ? b.folder.sortOrder! : undefined
             if (hasExplicitOrder) return (aOrder ?? Infinity) - (bOrder ?? Infinity) || a.index - b.index
-            const favoriteOrder = Number(!!b.folder.favorite) - Number(!!a.folder.favorite)
-            if (favoriteOrder) return favoriteOrder
             return b.rank - a.rank || a.index - b.index
         })
         .map(({ folder }) => folder)
@@ -311,12 +315,77 @@ export function activationHistoryAfterPlacement(
     return order
 }
 
+/**
+ * The activation history after a drag in 최근순: the catalog as the drop left
+ * it on screen (`shownNewestFirst`, every row top to bottom, folders and
+ * the folders in them included) becomes the recency, so the next render
+ * shows exactly that and the dragged module or folder stays where it was
+ * put (the user's request, 2026-10-26). Ids not shown keep their place
+ * below. Only for a drop: a menu edit has no screen order to read (see
+ * activationHistoryAfterPlacement).
+ */
+export function activationHistoryFromDisplay(
+    shownNewestFirst: ReadonlyArray<string>,
+    history: ReadonlyArray<string> | undefined,
+    fallbackOrders: Array<ReadonlyArray<string> | undefined> = [],
+): string[] {
+    const shown = new Set(shownNewestFirst)
+    const rest = mergeActivationOrders([...fallbackOrders, history]).filter((id) => !shown.has(id))
+    return [...rest, ...[...shown].reverse()]
+}
+
+/**
+ * Favorites used to hold the top of 최근순. Once, when that stopped, they are
+ * lifted to the top of the recency (in their own order) so the catalog looks
+ * as it did; from then on a drag moves them. Members of favorite folders,
+ * and of the folders shown in them, go up with their folder. Returns the
+ * history to store, or null when there is nothing to lift.
+ */
+export function liftFavoritesOnce(
+    modules: ReadonlyArray<SortableModule>,
+    folders: ReadonlyArray<SortableModuleFolder & { nodeOnlyParentFolderId?: string }>,
+    history: ReadonlyArray<string> | undefined,
+    fallbackOrders: Array<ReadonlyArray<string> | undefined> = [],
+): string[] | null {
+    const favoriteFolders = new Set(folders.filter((folder) => folder.favorite).map((folder) => folder.id))
+    let grew = true
+    while (grew) {
+        grew = false
+        for (const folder of folders) {
+            if (!favoriteFolders.has(folder.id) && folder.nodeOnlyParentFolderId && favoriteFolders.has(folder.nodeOnlyParentFolderId)) {
+                favoriteFolders.add(folder.id)
+                grew = true
+            }
+        }
+    }
+    const lifted = modules.filter((module) => module.favorite
+        || (!!module.folderId && favoriteFolders.has(module.folderId))
+        || folders.some((folder) => favoriteFolders.has(folder.id) && folder.moduleIds?.includes(module.id)))
+        .map((module) => module.id)
+    if (lifted.length === 0) return null
+    return liftModulesToNewest(history, fallbackOrders, lifted)
+}
+
+/** liftFavoritesOnce on the database, the first time either module list opens. */
+export function unpinModuleFavoritesOnce(db: {
+    modules: ReadonlyArray<SortableModule>
+    moduleFolders?: ReadonlyArray<SortableModuleFolder & { nodeOnlyParentFolderId?: string }>
+    moduleActivationHistory?: string[]
+    enabledModules?: ReadonlyArray<string>
+    nodeOnlyModuleFavoritesUnpinned?: boolean
+}): void {
+    if (db.nodeOnlyModuleFavoritesUnpinned) return
+    const lifted = liftFavoritesOnce(db.modules ?? [], db.moduleFolders ?? [], db.moduleActivationHistory, [db.enabledModules])
+    if (lifted) db.moduleActivationHistory = lifted
+    db.nodeOnlyModuleFavoritesUnpinned = true
+}
+
 /** Store a menu/drag order in the small folder overlay, not in db.modules. */
 export function recordModuleFolderOrder<T extends SortableModuleFolder>(folders: ReadonlyArray<T>): T[] {
     return folders.map((folder, sortOrder) => ({ ...folder, sortOrder }))
 }
 
-/** A new activation supersedes manual order for that folder only. Pinned folders stay first. */
+/** A new activation supersedes manual order for that folder only. */
 export function recordModuleFolderActivation<T extends SortableModuleFolder>(
     folders: ReadonlyArray<T>,
     modules: ReadonlyArray<SortableModule>,

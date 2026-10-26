@@ -372,7 +372,14 @@
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "liftModulesToNewest(" },
         { "file": "src/lib/Setting/Pages/Module/ModuleMenu.svelte", "contains": "assetManifestPager('top')" },
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "emptyInsertThreshold: 32" },
-        { "file": "src/lib/UI/FolderedList.svelte", "contains": "showItemCount" }
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "showItemCount" },
+        { "file": "src/ts/process/moduleSort.ts", "contains": "export function activationHistoryFromDisplay(" },
+        { "file": "src/ts/process/moduleSort.ts", "contains": "export function unpinModuleFavoritesOnce(" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "DBState.db.nodeOnlyModuleOrderSettled = [...onNowIds]" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "unpinModuleFavoritesOnce(DBState.db)" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "unpinModuleFavoritesOnce(DBState.db)" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "if (placed) onItemsChange(placed, true);" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "nestedIndexes: nestedIndexesOf(group)" }
       ],
       "regressionTests": [
         "src/ts/process/moduleFolders.test.ts",
@@ -2200,14 +2207,15 @@
     },
     {
       "id": "NEW-MARK",
-      "title": "새로 받은 봇·모듈에 🆕 (보면 사라짐)",
+      "title": "새로 받은 봇·모듈에 NEW 배지 (보면 사라짐)",
       "criticality": "core-ux",
       "ownerFiles": [
         "src/ts/newMarks.svelte.ts",
         "src/ts/characterCards.ts",
         "src/ts/process/modules.ts",
         "src/lib/SideBars/SidebarAvatar.svelte",
-        "src/lib/Setting/Pages/Module/ModuleSettings.svelte"
+        "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
+        "src/lib/UI/NewMark.svelte"
       ],
       "requiredMarkers": [
         { "file": "src/ts/characterCards.ts", "contains": "char.nodeOnlyUnseen = true" },
@@ -2215,7 +2223,8 @@
         { "file": "src/ts/characters.ts", "contains": "markSeen(selectedCharacter)" },
         { "file": "src/ts/stores.svelte.ts", "contains": "if (DBState.db.characters[selIdState.selId].nodeOnlyUnseen) delete DBState.db.characters[selIdState.selId].nodeOnlyUnseen" },
         { "file": "src/lib/SideBars/SidebarAvatar.svelte", "contains": "let isNew = $derived(newInside || (!!chaId && newMarks.characters.has(chaId)));" },
-        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "{newMarkPrefix(rmodule)}" }
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "{#if hasNewMark(rmodule)}<NewMark class=\"mr-1\" />{/if}" },
+        { "file": "src/lib/UI/NewMark.svelte", "contains": "bg-rose-500" }
       ],
       "regressionTests": [
         "src/ts/newMarks.test.ts"

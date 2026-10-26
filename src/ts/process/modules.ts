@@ -70,7 +70,7 @@ export interface RisuModule{
      * upstream clients.
      */
     importedAt?: number
-    /** PocketRisu: received and not looked at yet; the module list marks it 🆕 (newMarks.svelte.ts). */
+    /** PocketRisu: received and not looked at yet; the module list marks it NEW (newMarks.svelte.ts). */
     nodeOnlyUnseen?: boolean
     /** PocketRisu: the Proton file this module was downloaded from (protonSource.ts). */
     nodeOnlyProtonSource?: import('../protonSource').ProtonSourceRecord
@@ -85,7 +85,7 @@ export interface RisuModule{
 
 /**
  * Inserts modules and records them as the newest catalog entries. `received`:
- * they came from outside (a file, Realm, Proton), so they are marked 🆕 until
+ * they came from outside (a file, Realm, Proton), so they are marked NEW until
  * looked at; a module made here is not.
  */
 export function addModulesToDatabase(modules: readonly RisuModule[], options: { received?: boolean } = {}): void {

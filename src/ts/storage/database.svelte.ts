@@ -1419,6 +1419,10 @@ export interface Database{
     moduleFolders?: PromptPresetFolder[]
     enabledModules: string[]
     moduleActivationHistory?: string[]
+    /** One-shot marker: favorite modules and module folders stopped holding the top of 최근순 and were lifted there once (moduleSort.ts). */
+    nodeOnlyModuleFavoritesUnpinned?: boolean
+    /** Modules on now that 최근순 shows where a drag put them, not lifted to the top, until they go off (ModuleSettings.svelte). */
+    nodeOnlyModuleOrderSettled?: string[]
     /** One-shot migration marker for grouping pre-existing high-similarity names. */
     similarityFolderMigrationVersion?: number
     /** One-shot marker: the bots already here were grouped into creator folders (creatorFolders.ts). */
@@ -2051,7 +2055,7 @@ export interface character{
      * freshly downloaded card can carry from years ago, this is local truth.
      */
     importedAt?:number
-    /** PocketRisu: received and not opened yet; the bot list marks it 🆕 (newMarks.svelte.ts). */
+    /** PocketRisu: received and not opened yet; the bot list marks it NEW (newMarks.svelte.ts). */
     nodeOnlyUnseen?: boolean
     /** PocketRisu: the Proton share this card was downloaded from (protonSource.ts). */
     nodeOnlyProtonSource?: import('../protonSource').ProtonSourceRecord
