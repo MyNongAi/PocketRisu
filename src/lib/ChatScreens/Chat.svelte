@@ -87,6 +87,8 @@
         totalPages?: number;
         /** A page a reroll added is waiting unseen: a dot on the forward arrow (chatSwipes.ts). */
         unseenPage?: boolean;
+        /** That page's reply is 300 characters or fewer: the arrow is red. */
+        unseenPageShort?: boolean;
         isComment?: boolean;
         disabled?: boolean | 'allBefore';
         isOptimizedStreamingMessage?: boolean;
@@ -129,6 +131,7 @@
         currentPage = 1,
         totalPages = 1,
         unseenPage = false,
+        unseenPageShort = false,
         isComment = false,
         disabled = false,
         isOptimizedStreamingMessage = false,
@@ -229,6 +232,7 @@
         currentPage: number
         totalPages: number
         unseenPage?: boolean
+        unseenPageShort?: boolean
     }){
         rerollIcon = state.rerollIcon
         swipeOnly = state.swipeOnly
@@ -238,6 +242,7 @@
         currentPage = state.currentPage
         totalPages = state.totalPages
         unseenPage = state.unseenPage ?? false
+        unseenPageShort = state.unseenPageShort ?? false
     }
 
     async function rm(){
@@ -1292,7 +1297,7 @@
             {#if !DBState.db.hideMessagePageCount}
                 <span class="flex items-center text-xs text-textcolor2 shrink overflow-hidden whitespace-nowrap min-w-0" class:force-show={rerollIcon === 'force'}>{currentPage}/{totalPages}</span>
             {/if}
-            <button class="relative flex items-center shrink-0 hover:text-primary transition-colors button-icon-swipe-next" class:force-show={rerollIcon === 'force'} class:new-page-arrow={unseenPage} title={unseenPage ? language.newSwipeWaiting : undefined} onclick={async () => {
+            <button class="relative flex items-center shrink-0 hover:text-primary transition-colors button-icon-swipe-next" class:force-show={rerollIcon === 'force'} class:new-page-arrow={unseenPage} class:new-page-short={unseenPage && unseenPageShort} title={unseenPage ? (unseenPageShort ? language.shortSwipeWaiting : language.newSwipeWaiting) : undefined} onclick={async () => {
                 await sleep(1)
                 onNextSwipe()
             }}>
@@ -1314,7 +1319,7 @@
             {#if !DBState.db.hideMessagePageCount}
                 <span class="flex items-center text-xs text-textcolor2 shrink overflow-hidden whitespace-nowrap min-w-0" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'}>{currentPage}/{totalPages}</span>
             {/if}
-            <button class="relative flex items-center shrink-0 hover:text-primary transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'} class:new-page-arrow={unseenPage} title={unseenPage ? language.newSwipeWaiting : undefined} onclick={async () => {
+            <button class="relative flex items-center shrink-0 hover:text-primary transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'} class:new-page-arrow={unseenPage} class:new-page-short={unseenPage && unseenPageShort} title={unseenPage ? (unseenPageShort ? language.shortSwipeWaiting : language.newSwipeWaiting) : undefined} onclick={async () => {
                 await sleep(1)
                 if (totalPages <= 1) {
                     if (!DBState.db.confirmReroll || await alertConfirm(language.noSwipesRerollConfirm)) onReroll()

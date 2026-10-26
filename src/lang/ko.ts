@@ -1304,6 +1304,7 @@ export const languageKorean = {
   currentCharacterRing: "지금 보고 있는 봇",
   replyArrivedRing: "응답 도착",
   newSwipeWaiting: "뒤쪽 페이지에 새 답이 있어요",
+  shortSwipeWaiting: "뒤쪽 페이지에 짧은 새 답(300자 이하)이 있어요",
   remoteReplyRunning: "다른 기기에서 이 채팅의 답을 쓰는 중이에요",
   remoteDevice: "다른 기기",
   remoteOpenChatRemoved: "다른 기기에서 지금 열린 채팅을 지웠어요",

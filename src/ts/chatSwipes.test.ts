@@ -14,8 +14,10 @@ import {
     seeShownSwipe,
     shiftNewMarkAfterDelete,
     showSwipe,
+    SHORT_NEW_REPLY_CHARS,
     stepSwipe,
     swipeCount,
+    unseenSwipeIsShort,
     wrapSwipeIndex,
     type SwipeMessage,
 } from './chatSwipes'
@@ -217,5 +219,23 @@ describe('new page a reroll left unseen', () => {
         expect(message.nodeOnlyNewSwipe).toBe(1)
         shiftNewMarkAfterDelete(message, 1)
         expect(message.nodeOnlyNewSwipe).toBeUndefined()
+    })
+
+    it('calls a waiting reply of 300 characters or fewer short, spaces around it aside', () => {
+        const atLimit = 'x'.repeat(SHORT_NEW_REPLY_CHARS)
+        const message = { role: 'char', data: 'a', swipes: ['a', `  ${atLimit}\n`], swipeId: 0, nodeOnlyNewSwipe: 1 } as any
+        expect(unseenSwipeIsShort(message)).toBe(true)
+        message.swipes[1] = atLimit + 'x'
+        expect(unseenSwipeIsShort(message)).toBe(false)
+    })
+
+    it('calls nothing short once the page is seen or without a waiting page', () => {
+        const message = { role: 'char', data: 'a', swipes: ['a', 'b'], swipeId: 0, nodeOnlyNewSwipe: 1 } as any
+        expect(unseenSwipeIsShort(message)).toBe(true)
+        stepSwipe(message, 1)
+        seeShownSwipe(message)
+        expect(unseenSwipeIsShort(message)).toBe(false)
+        expect(unseenSwipeIsShort(char('x'))).toBe(false)
+        expect(unseenSwipeIsShort(null)).toBe(false)
     })
 })

@@ -69,6 +69,16 @@ export function hasUnseenSwipe(message: SwipeMessage | null | undefined): boolea
     return mark !== undefined && Array.isArray(message?.swipes) && mark < message.swipes.length && mark !== (message.swipeId ?? 0)
 }
 
+// A waiting reply of 300 characters or fewer is likely cut short or an error:
+// its arrow is red instead of green (the user's request, 2026-10-26).
+export const SHORT_NEW_REPLY_CHARS = 300
+
+/** The page a reroll added is waiting unseen and holds a short reply. */
+export function unseenSwipeIsShort(message: SwipeMessage | null | undefined): boolean {
+    if (!message || !hasUnseenSwipe(message)) return false
+    return (message.swipes?.[message.nodeOnlyNewSwipe ?? -1] ?? '').trim().length <= SHORT_NEW_REPLY_CHARS
+}
+
 /** Keep the new-page mark on the same swipe after swipe `removedIndex` was deleted. */
 export function shiftNewMarkAfterDelete(message: SwipeMessage, removedIndex: number): void {
     const mark = message.nodeOnlyNewSwipe

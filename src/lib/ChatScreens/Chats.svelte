@@ -1,6 +1,6 @@
 <script lang="ts">
     import type { character, Message, StreamingDisplayOptimizationMode } from 'src/ts/storage/database.svelte';
-    import { hasBrowsableSwipes, hasUnseenSwipe } from 'src/ts/chatSwipes';
+    import { hasBrowsableSwipes, hasUnseenSwipe, unseenSwipeIsShort } from 'src/ts/chatSwipes';
     import { inputEchoKey, previousInputIndex } from 'src/ts/gui/inputEcho';
     import { getAllContexts, mount, onDestroy, tick, unmount } from 'svelte';
     import { getPaneView } from 'src/ts/chatPanes.svelte';
@@ -65,6 +65,7 @@
             currentPage: number
             totalPages: number
             unseenPage?: boolean
+            unseenPageShort?: boolean
         }) => void
     }
     let mountInstances: Map<number, ChatInstance> = new Map();
@@ -94,6 +95,7 @@
         currentPage: (message.swipeId ?? 0) + 1,
         totalPages: message.swipes?.length ?? 1,
         unseenPage: hasUnseenSwipe(message),
+        unseenPageShort: unseenSwipeIsShort(message),
     } : {
         rerollIcon: false as const,
         swipeOnly: false,
@@ -103,6 +105,7 @@
         currentPage: 1,
         totalPages: 1,
         unseenPage: false,
+        unseenPageShort: false,
     };
 
     // The reply being written while a held reroll copy is on its page
@@ -126,6 +129,7 @@
             currentPage: pages.current,
             totalPages: pages.total,
             unseenPage: false,
+            unseenPageShort: false,
         }
     };
 

@@ -1210,6 +1210,7 @@ export const languageEnglish = {
     currentCharacterRing: "The bot on screen",
     replyArrivedRing: "A reply came in",
     newSwipeWaiting: "A new reply is waiting on a later page",
+    shortSwipeWaiting: "A short new reply (300 characters or fewer) is waiting on a later page",
     remoteReplyRunning: "Another device is writing a reply in this chat",
     remoteDevice: "Other device",
     remoteOpenChatRemoved: "Another device deleted the chat open here",

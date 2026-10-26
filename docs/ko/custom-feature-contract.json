@@ -1825,7 +1825,9 @@
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "const pages = rerollPlaceholderPages(placeholder, newReplyHasText(placeholder))" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "? newReplyPageState(placeholder)" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "unseenPage: hasUnseenSwipe(message)," },
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "class:new-page-arrow={unseenPage}" }
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "class:new-page-arrow={unseenPage}" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "unseenPageShort: unseenSwipeIsShort(message)," },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "class:new-page-short={unseenPage && unseenPageShort}" }
       ],
       "regressionTests": [
         "src/ts/gui/rerollPlaceholder.test.ts",
