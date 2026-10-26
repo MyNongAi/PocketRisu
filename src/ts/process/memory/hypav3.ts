@@ -95,6 +95,8 @@ export interface HypaV3RequestContext {
     currentChat: Chat;
     routeSnapshot?: RequestModelRouteSnapshot;
     moduleContext?: ModuleRuntimeContext;
+    /** The send's stop: a summary did not hear it, so a stopped send kept summarizing. */
+    abortSignal?: AbortSignal;
 }
 
 const logPrefix = "[HypaV3]";
@@ -123,13 +125,15 @@ export async function hypaMemoryV3(
     tokenizer: ChatTokenizer,
     routeSnapshot?: RequestModelRouteSnapshot,
     moduleContext?: ModuleRuntimeContext,
+    abortSignal?: AbortSignal,
 ): Promise<HypaV3Result> {
-    const settings = getCurrentHypaV3Preset().settings;
+    const settings = getCurrentHypaV3Preset(char, room).settings;
     const requestContext: HypaV3RequestContext = {
         currentChar: char,
         currentChat: room,
         routeSnapshot,
         moduleContext,
+        abortSignal,
     };
 
     try {
@@ -192,7 +196,7 @@ async function hypaMemoryV3MainExp(
     requestContext: HypaV3RequestContext
 ): Promise<HypaV3Result> {
     const db = getDatabase();
-    const settings = getCurrentHypaV3Preset().settings;
+    const settings = getCurrentHypaV3Preset(char, room).settings;
 
     // Validate settings
     if (settings.recentMemoryRatio + settings.similarMemoryRatio > 1) {
@@ -973,7 +977,7 @@ async function hypaMemoryV3Main(
     requestContext: HypaV3RequestContext
 ): Promise<HypaV3Result> {
     const db = getDatabase();
-    const settings = getCurrentHypaV3Preset().settings;
+    const settings = getCurrentHypaV3Preset(char, room).settings;
 
     // Validate settings
     if (settings.recentMemoryRatio + settings.similarMemoryRatio > 1) {
@@ -1697,7 +1701,7 @@ export async function summarize(
     requestContext?: HypaV3RequestContext,
 ): Promise<string> {
     const db = getDatabase();
-    const settings = getCurrentHypaV3Preset().settings;
+    const settings = getCurrentHypaV3Preset(requestContext?.currentChar, requestContext?.currentChat).settings;
 
     const strMessages = oaiMessages
         .map((chat) => `${chat.role}: ${sanitizeSummaryContent(chat.content)}`)
@@ -1753,7 +1757,8 @@ export async function summarize(
                 routeSnapshot: requestContext?.routeSnapshot,
                 moduleContext: requestContext?.moduleContext,
             },
-            "memory"
+            "memory",
+            requestContext?.abortSignal
         );
         // A prompt ending in a prefill is refused by newer models; once more
         // ending on a user turn (trailingPrefill.ts).
@@ -1812,10 +1817,16 @@ export async function summarize(
     return result;
 }
 
-export function getCurrentHypaV3Preset(): HypaV3Preset {
+/**
+ * The HypaV3 preset of the chat a request is for, else of the chat on screen.
+ * A send asked the screen: moving to a chat with memory off while a long
+ * summary ran failed its next part "Preset not found" (the user's log,
+ * 2026-10-26).
+ */
+export function getCurrentHypaV3Preset(char?: character, chat?: Chat): HypaV3Preset {
     const db = getDatabase();
-    const char = getCurrentCharacter();
-    const preset = getActiveHypaV3Preset(db, char, char?.chats?.[char.chatPage]);
+    const holder = char ?? getCurrentCharacter();
+    const preset = getActiveHypaV3Preset(db, holder, chat ?? holder?.chats?.[holder.chatPage]);
 
     if (!preset) {
         throw new Error("Preset not found. Please select a valid preset.");

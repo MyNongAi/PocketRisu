@@ -38,6 +38,7 @@ import { resolveWireModelId } from "src/ts/preset/adapter/wireInvariants";
 import { pumpPresetStream } from "./presetStreamPump";
 import { makeJobFetch, ModelJobBusyError, ModelJobConnectionLostError } from "./jobFetch";
 import { withGeminiPdfInput } from "./geminiPdfInput";
+import { refusesTrailingAssistant } from "../memory/trailingPrefill";
 import { toLogSource, toRequestKind } from "./logSource";
 import { resolveChatModelBinding, classicModelIdFor, buildModelPresetCredential, applyPromptPresetParams, presetSupportsVision, type RequestModelRouteSnapshot } from "./modelPresetBinding";
 import { modelPresetIdOf } from "src/ts/preset/pickerId";
@@ -306,7 +307,11 @@ export async function requestChatData(arg:requestDataArgument, model:ModelModeEx
             }
             
             trys += 1
-            if(trys > db.requestRetrys){
+            // A refused trailing prefill is refused the same way every time:
+            // the retries sent one summary 31 times (requestRetrys 30, the
+            // user's log 2026-10-26). The caller resends it ending on a user
+            // turn (memory/trailingPrefill.ts).
+            if(trys > db.requestRetrys || refusesTrailingAssistant(da.result)){
                 const isPluginModel = da.model === 'custom' || da.model?.startsWith('pluginmodel:::')
                 if(fallbackIndex === fallBackModels.length-1 || isPluginModel){
                     return da

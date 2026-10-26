@@ -1272,6 +1272,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             tokenizer,
             memoryRouteSnapshot,
             getRuntimeModuleContext(),
+            abortSignal,
         )
         if(sp.error){
             // Save new summary
@@ -1279,6 +1280,11 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                 currentChat.hypaV3Data = sp.memory
             }
             console.log(sp)
+            // Stopped while summarizing: the summaries made so far are kept, no error.
+            if(abortSignal.aborted){
+                if (realChatId) clearPendingSend(realChatId)
+                return false
+            }
             throwError(sp.error + "\n\nMax context source: " + maxContextSource)
             if (realChatId) clearPendingSend(realChatId)
             return false
