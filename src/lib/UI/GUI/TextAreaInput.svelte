@@ -36,9 +36,39 @@
         hideAutoComplete()
     }}
 >
+    {#if findOpen}
+        <div class="shrink-0 flex items-center gap-0.5 px-1.5 py-1 border-b border-darkborderc text-textcolor2" data-field-find>
+            <SearchIcon size={14} class="shrink-0 ml-1" />
+            <input
+                bind:this={findInput}
+                bind:value={findQuery}
+                class="min-w-0 flex-1 bg-transparent px-1.5 py-0.5 text-sm text-textcolor outline-hidden"
+                placeholder={language.findInField}
+                aria-label={language.findInField}
+                onkeydown={(e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault()
+                        stepFind(e.shiftKey ? -1 : 1)
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        closeFind()
+                    }
+                }}
+            />
+            <span class="shrink-0 px-1 text-xs tabular-nums" aria-live="polite">{findCount}</span>
+            <button type="button" class="p-1 rounded hover:text-textcolor transition-colors disabled:opacity-40" title={language.findPrevMatch} aria-label={language.findPrevMatch} disabled={matches.length === 0} onclick={() => stepFind(-1)}><ChevronUpIcon size={16} /></button>
+            <button type="button" class="p-1 rounded hover:text-textcolor transition-colors disabled:opacity-40" title={language.findNextMatch} aria-label={language.findNextMatch} disabled={matches.length === 0} onclick={() => stepFind(1)}><ChevronDownIcon size={16} /></button>
+            <button type="button" class="p-1 rounded hover:text-textcolor transition-colors" title={language.close} aria-label={language.close} onclick={closeFind}><XIcon size={16} /></button>
+        </div>
+    {/if}
     <div class="relative flex-1 min-h-0 w-full">
     {#if !highlight || $disableHighlight}
+        {#if matches.length > 0}
+            <TextareaMarks bind:this={marks} textarea={textareaDom} text={draft} {matches} current={findOpen ? findIndex : -1} {padding} />
+        {/if}
         <textarea
+            bind:this={textareaDom}
             class="w-full h-full bg-transparent focus-within:outline-hidden resize-none absolute top-0 left-0 z-50 overflow-y-auto"
             class:px-4={padding}
             class:py-2={padding}
@@ -159,6 +189,11 @@
     </div>
     {#if showActionBar}
         <div class="shrink-0 flex items-center justify-end gap-0.5 py-1 border-t border-darkborderc text-textcolor2 {resizable ? 'pl-1.5 pr-8' : 'px-1.5'}">
+            {#if findable}
+                <button type="button" class="p-1 rounded hover:text-textcolor transition-colors" class:text-textcolor={findOpen} title={language.findInField} aria-label={language.findInField} aria-pressed={findOpen} onclick={toggleFind}>
+                    <SearchIcon size={16} />
+                </button>
+            {/if}
             <button type="button" class="p-1 rounded hover:text-textcolor transition-colors" title={language.copy} aria-label={language.copy} onclick={copyValue}>
                 {#if copied}
                     <CheckIcon size={16} class="text-green-500" />
@@ -190,12 +225,14 @@
     import { textAreaSize, textAreaTextSize } from 'src/ts/gui/guisize'
     import { highlighter, getNewHighlightId, removeHighlight, AllCBS } from 'src/ts/gui/highlight'
     import { sleep } from 'src/ts/util';
-    import { onDestroy, onMount } from 'svelte';
+    import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { DBState, disableHighlight, popUpEditorStore } from 'src/ts/stores.svelte';
   import { isMobile } from 'src/ts/platform'
     import { hotkeyMatches } from 'src/ts/hotkey';
-    import { Maximize2, CopyIcon, CheckIcon, RefreshCwIcon } from '@lucide/svelte'
+    import { Maximize2, CopyIcon, CheckIcon, RefreshCwIcon, SearchIcon, ChevronUpIcon, ChevronDownIcon, XIcon } from '@lucide/svelte'
     import ResizeCorner from './ResizeCorner.svelte'
+    import TextareaMarks from './TextareaMarks.svelte'
+    import { findTextMatches, MAX_TEXT_MATCHES, stepMatch } from 'src/ts/gui/textMatches'
     import { alertConfirm } from 'src/ts/alert'
     import { isSecureContext } from 'src/ts/secureContext'
     import { language } from 'src/lang'
@@ -221,6 +258,10 @@
          * field to, per key on this device; without one it lasts while shown.
          */
         resizeKey?: string;
+        /** Marks this text wherever it occurs (the lorebook search). */
+        searchText?: string;
+        /** A find button in the action bar opens a find bar for this field. */
+        findable?: boolean;
     }
 
     let {
@@ -240,12 +281,15 @@
         onchange = () => {},
         popupLanguage = 'markdown',
         actionBar = undefined,
-        resizeKey = undefined
+        resizeKey = undefined,
+        searchText = '',
+        findable = false
     }: Props = $props();
 
     // Every field gets the corner triangle (the user's request, 2026-10-26)
     // except one that fills its container.
     const resizable = $derived(height !== 'full')
+
     // `actionBar` prop overrides per-field; otherwise follow the accessibility toggle.
     const showActionBar = $derived(actionBar ?? DBState.db.showInputActionBar ?? true)
     let copied = $state(false)
@@ -303,6 +347,63 @@
         value = next
         onInput()
     }
+
+    // Search marks (the user's request, 2026-10-26): the find bar's text, or
+    // else the text a list searches for (searchText), marked in the field.
+    let textareaDom = $state<HTMLTextAreaElement>()
+    let marks = $state<TextareaMarks>()
+    let findInput = $state<HTMLInputElement>()
+    let findOpen = $state(false)
+    let findQuery = $state('')
+    let findIndex = $state(-1)
+    const markedText = $derived(findOpen && findQuery.trim() ? findQuery : searchText)
+    const matches = $derived(findTextMatches(draft, markedText))
+    const findCount = $derived(matches.length === 0
+        ? (findQuery.trim() ? '0' : '')
+        : `${findIndex + 1}/${matches.length}${matches.length >= MAX_TEXT_MATCHES ? '+' : ''}`)
+
+    async function reveal(index: number) {
+        await tick()
+        marks?.reveal(index)
+    }
+    async function toggleFind() {
+        if (findOpen) {
+            closeFind()
+            return
+        }
+        findOpen = true
+        await tick()
+        findInput?.focus()
+        findInput?.select()
+    }
+    function closeFind() {
+        findOpen = false
+        findIndex = -1
+    }
+    function stepFind(step: 1 | -1) {
+        findIndex = stepMatch(findIndex, matches.length, step)
+        if (findIndex >= 0) void reveal(findIndex)
+    }
+    // A new find text starts at its first match.
+    $effect(() => {
+        if (!findOpen) return
+        findQuery
+        const count = untrack(() => matches.length)
+        findIndex = count > 0 ? 0 : -1
+        if (count > 0) void reveal(0)
+    })
+    // Editing the text keeps the find bar's place within the new matches.
+    $effect(() => {
+        const count = matches.length
+        if (untrack(() => findIndex) >= count) findIndex = count - 1
+    })
+    // The list's search shows its first match unless the field is being typed in.
+    $effect(() => {
+        const text = searchText
+        if (!text || untrack(() => findOpen)) return
+        if (untrack(() => matches.length) > 0 && document.activeElement !== textareaDom) void reveal(0)
+    })
+
     const commitOnHide = () => {
         if (document.visibilityState === 'hidden') commitDraft()
     }

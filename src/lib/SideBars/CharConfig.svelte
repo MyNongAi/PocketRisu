@@ -436,7 +436,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
         <span class="text-textcolor">{language.characterName}</span>
         <ShInput className="mt-2 mb-4" autocomplete="off" placeholder={language.characterName} bind:value={DBState.db.characters[charIndex].name} />
         <span class="text-textcolor">{language.description} <Help key="charDesc"/></span>
-        <TextAreaInput highlight margin="both" autocomplete="off" bind:value={(DBState.db.characters[charIndex] as character).desc}></TextAreaInput>
+        <TextAreaInput highlight findable margin="both" autocomplete="off" bind:value={(DBState.db.characters[charIndex] as character).desc}></TextAreaInput>
         <span class="text-textcolor2 mb-6 text-sm">{tokens.desc} {language.tokens}</span>
         <span class="text-textcolor">{language.firstMessage} <Help key="charFirstMessage"/></span>
         <TextAreaInput highlight margin="both" autocomplete="off" bind:value={DBState.db.characters[charIndex].firstMessage}></TextAreaInput>
@@ -1278,7 +1278,7 @@ import ShButton from "../UI/GUI/ShButton.svelte";
         <TextAreaInput highlight margin="both" autocomplete="off" bind:value={DBState.db.characters[charIndex].systemPrompt}></TextAreaInput>
 
         <span class="text-textcolor">{language.replaceGlobalNote} <Help key="replaceGlobalNote"/></span>
-        <TextAreaInput highlight margin="both" autocomplete="off" bind:value={DBState.db.characters[charIndex].replaceGlobalNote}></TextAreaInput>
+        <TextAreaInput highlight findable margin="both" autocomplete="off" bind:value={DBState.db.characters[charIndex].replaceGlobalNote}></TextAreaInput>
 
         <span class="text-textcolor mt-2">{language.additionalText} <Help key="additionalText" /></span>
         <TextAreaInput highlight margin="both" autocomplete="off" bind:value={DBState.db.characters[charIndex].additionalText}></TextAreaInput>

@@ -389,7 +389,7 @@
             {:else}
                 {#each globalLore as book, i}
                     {#if shown(book)}
-                        <LoreBookData idgroup={idgroup} bind:value={DBState.db.loreBook[DBState.db.loreBookPage].data[i]} idx={i}
+                        <LoreBookData idgroup={idgroup} searchText={needle} bind:value={DBState.db.loreBook[DBState.db.loreBookPage].data[i]} idx={i}
                         isOpen={openedRefs.has(book)}
                         openFolders={openFolders()}
                         isLastInContainer={book === lastVisibleItem}
@@ -438,7 +438,7 @@
             {:else}
                 {#each externalLoreBooks as book, i}
                     {#if shown(book)}
-                        <LoreBookData idgroup={idgroup} bind:value={externalLoreBooks[i]} idx={i} 
+                        <LoreBookData idgroup={idgroup} searchText={needle} bind:value={externalLoreBooks[i]} idx={i} 
                         isOpen={openedRefs.has(book)}
                         openFolders={openFolders()}
                         isLastInContainer={book === lastVisibleItem}
@@ -497,7 +497,7 @@
             {:else}
                 {#each DBState.db.characters[$selectedCharID].globalLore as book, i}
                     {#if shown(book)}
-                        <LoreBookData idgroup={idgroup} bind:value={DBState.db.characters[$selectedCharID].globalLore[i]} idx={i} 
+                        <LoreBookData idgroup={idgroup} searchText={needle} bind:value={DBState.db.characters[$selectedCharID].globalLore[i]} idx={i} 
                         isOpen={openedRefs.has(book)}
                         openFolders={openFolders()}
                         isLastInContainer={book === lastVisibleItem}
@@ -555,7 +555,7 @@
             {:else}
                 {#each DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].localLore as book, i}
                     {#if shown(book)}
-                        <LoreBookData idgroup={idgroup} bind:value={DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].localLore[i]} idx={i} 
+                        <LoreBookData idgroup={idgroup} searchText={needle} bind:value={DBState.db.characters[$selectedCharID].chats[DBState.db.characters[$selectedCharID].chatPage].localLore[i]} idx={i} 
                         isOpen={openedRefs.has(book)}
                         openFolders={openFolders()}
                         isLastInContainer={book === lastVisibleItem}

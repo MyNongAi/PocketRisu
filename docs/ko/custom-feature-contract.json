@@ -1892,6 +1892,31 @@
       ]
     },
     {
+      "id": "FIELD-SEARCH-MARKS",
+      "title": "글 칸 안 검색어 표시(로어북 검색)와 칸 찾기(설명·글로벌노트 덮어쓰기·로어북 내용)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/UI/GUI/TextareaMarks.svelte",
+        "src/ts/gui/textMatches.ts",
+        "src/lib/UI/GUI/TextAreaInput.svelte",
+        "src/lib/SideBars/LoreBook/LoreBookData.svelte",
+        "src/lib/SideBars/LoreBook/LoreBookList.svelte",
+        "src/lib/SideBars/CharConfig.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/UI/GUI/TextareaMarks.svelte", "contains": "style:overflow-y={scrolls ? 'scroll' : 'hidden'}" },
+        { "file": "src/lib/UI/GUI/TextAreaInput.svelte", "contains": "const matches = $derived(findTextMatches(draft, markedText))" },
+        { "file": "src/lib/UI/GUI/TextAreaInput.svelte", "contains": "data-field-find" },
+        { "file": "src/lib/SideBars/LoreBook/LoreBookList.svelte", "contains": "<LoreBookData idgroup={idgroup} searchText={needle} " },
+        { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "resizeKey=\"lorebook\" {searchText} findable />" },
+        { "file": "src/lib/SideBars/CharConfig.svelte", "contains": "<TextAreaInput highlight findable margin=\"both\" autocomplete=\"off\" bind:value={(DBState.db.characters[charIndex] as character).desc}>" },
+        { "file": "src/lib/SideBars/CharConfig.svelte", "contains": "<TextAreaInput highlight findable margin=\"both\" autocomplete=\"off\" bind:value={DBState.db.characters[charIndex].replaceGlobalNote}>" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/textMatches.test.ts"
+      ]
+    },
+    {
       "id": "POPUP-EDITOR-PLAIN",
       "title": "팝업 에디터 일반 입력(터치 선택) 전환",
       "criticality": "core-ux",

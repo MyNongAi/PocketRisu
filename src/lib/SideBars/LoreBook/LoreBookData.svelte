@@ -16,6 +16,7 @@
     import { DBState } from "src/ts/stores.svelte";
     import LoreBookList from "./LoreBookList.svelte";
     import type { LoreComparisonStatus } from "src/ts/gui/loreBookComparison";
+    import { findTextMatches, splitAtMatches } from "src/ts/gui/textMatches";
 
     interface Props {
         value: loreBook;
@@ -30,6 +31,8 @@
         isLastInContainer?: boolean;
         comparisonStatus?: LoreComparisonStatus;
         comparisonStatuses?: ReadonlyMap<loreBook, LoreComparisonStatus>;
+        /** The list's search text (loreBookSearch.ts), marked in the entry. */
+        searchText?: string;
     }
 
     let {
@@ -45,7 +48,13 @@
         isLastInContainer = false,
         comparisonStatus,
         comparisonStatuses,
+        searchText = '',
     }: Props = $props();
+    // The search text is marked where it was found (the user's request,
+    // 2026-10-26): in the title, around a name or key field that holds it,
+    // and inside the content (TextAreaInput searchText).
+    const searchHit = (text: string | undefined) =>
+        searchText && findTextMatches(text, searchText, 1).length > 0 ? ' ring-2 ring-yellow-400/60' : ''
     // Where this entry goes (auxLorebook.ts), and the right-click choices.
     let role = $derived<LoreRole>(loreRole(value))
     const roleChoices: { role: LoreRole, label: string }[] = [
@@ -162,7 +171,7 @@
             {#if value.mode === 'folder'}
                 <span class={loreComparisonClass} title={loreComparisonTitle}>{value.comment.length === 0 ? "Unnamed Folder" : value.comment}</span>
             {:else}
-                <span class={loreComparisonClass} title={loreComparisonTitle}>{value.comment.length === 0 ? value.key.length === 0 ? "Unnamed Lore" : value.key : value.comment}</span>
+                <span class={loreComparisonClass} title={loreComparisonTitle}>{@render marked(value.comment.length === 0 ? value.key.length === 0 ? "Unnamed Lore" : value.key : value.comment)}</span>
             {/if}
         </button>
         <!-- Right-click (a long press on touch) picks where the entry goes:
@@ -290,16 +299,16 @@
         {:else}
         <div class="border-0 outline-hidden w-full mt-2 flex flex-col mb-2">
             <span class="text-textcolor mt-6">{language.name} <Help key="loreName"/></span>
-            <TextInput deferred bind:value={value.comment} className={loreComparisonClass}/>
+            <TextInput deferred bind:value={value.comment} className={loreComparisonClass + searchHit(value.comment)}/>
             {#if !value.alwaysActive}
                 <span class="text-textcolor mt-6">{language.activationKeys} <Help key="loreActivationKey"/></span>
                 <span class="text-xs text-textcolor2">{language.activationKeysInfo}</span>
-                <TextInput deferred bind:value={value.key}/>
+                <TextInput deferred bind:value={value.key} className={searchHit(value.key)}/>
 
                 {#if value.selective}
                     <span class="text-textcolor mt-6">{language.SecondaryKeys}</span>
                     <span class="text-xs text-textcolor2">{language.activationKeysInfo}</span>
-                    <TextInput deferred bind:value={value.secondkey}/>
+                    <TextInput deferred bind:value={value.secondkey} className={searchHit(value.secondkey)}/>
                 {/if}
             {/if}
             {#if !(value.activationPercent === undefined || value.activationPercent === null)}
@@ -316,7 +325,7 @@
             <span class="text-textcolor mt-4">{language.insertOrder} <Help key="loreorder"/></span>
             <NumberInput bind:value={value.insertorder} min={0} max={1000}/>
             <span class="text-textcolor mt-4 mb-2">{language.prompt}</span>
-            <TextAreaInput highlight autocomplete="off" bind:value={value.content} className={loreComparisonClass} resizeKey="lorebook" />
+            <TextAreaInput highlight autocomplete="off" bind:value={value.content} className={loreComparisonClass} resizeKey="lorebook" {searchText} findable />
             <span class="text-textcolor2 mt-2 mb-2 text-sm">{tokens} {language.tokens}</span>
             <div class="flex items-center mt-4">
                 <Check bind:check={value.alwaysActive} name={language.alwaysActive}/>
@@ -353,7 +362,14 @@
 
 
 
+{#snippet marked(text: string)}{#each splitAtMatches(text, findTextMatches(text, searchText)) as segment, i (i)}{#if segment.mark >= 0}<mark class="lore-search-mark">{segment.text}</mark>{:else}{segment.text}{/if}{/each}{/snippet}
+
 <style>
+    .lore-search-mark {
+        color: inherit;
+        background: rgb(250 204 21 / 0.4);
+        border-radius: 2px;
+    }
     .valuer:hover{
         color: rgba(16, 185, 129, 1);
         cursor: pointer;
