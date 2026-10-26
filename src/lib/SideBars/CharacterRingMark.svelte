@@ -3,6 +3,7 @@
   // on screen, green round one whose reply came in. Placed inside the
   // thumbnail's own positioned box, over the image and under the marks.
   import { characterRings } from "src/ts/gui/characterRings.svelte";
+  import { getPaneView } from "src/ts/chatPanes.svelte";
   import { language } from "src/lang";
 
   interface Props {
@@ -14,7 +15,13 @@
 
   let { chaId, rounded, thin = false }: Props = $props();
 
-  let ring = $derived(characterRings.of(chaId));
+  // A split pane's own sidebar marks the bot that pane shows, not the one the
+  // last touched pane holds (the user's report, 2026-10-26); elsewhere this
+  // is the selection, as before.
+  const view = getPaneView();
+  let ring = $derived(!chaId ? null
+    : chaId === view.character?.chaId ? 'current'
+    : characterRings.replied.has(chaId) ? 'replied' : null);
   let label = $derived(ring === 'current' ? language.currentCharacterRing : language.replyArrivedRing);
 </script>
 

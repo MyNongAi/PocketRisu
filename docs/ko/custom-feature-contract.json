@@ -2253,6 +2253,8 @@
       "requiredMarkers": [
         { "file": "src/ts/gui/characterRings.svelte.ts", "contains": "replied = $derived(charactersHoldingChats(this.#marks.current, DBState.db?.characters ?? []))" },
         { "file": "src/lib/SideBars/SidebarAvatar.svelte", "contains": "<CharacterRingMark {chaId} {rounded} />" },
+        { "file": "src/lib/SideBars/CharacterRingMark.svelte", "contains": ": chaId === view.character?.chaId ? 'current'" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "const shownCharIndex = $derived(pane ? view.characterIndex : $selectedCharID)" },
         { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "<CharacterRingMark chaId={entry.chaId} rounded={DBState.db.roundIcons} thin />" },
         { "file": "src/lib/Others/GridCatalog.svelte", "contains": "ring={characterRings.of(char.chaId)}" },
         { "file": "src/lib/Mobile/MobileCharacters.svelte", "contains": "ring={characterRings.of(char.chaId)}" }

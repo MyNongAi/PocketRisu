@@ -415,6 +415,10 @@
   const view = pane ? paneView(pane) : getPaneView()
   // svelte-ignore state_referenced_locally
   if (pane) setPaneContext(view)
+  // The bot this sidebar's pane shows: a split pane's own sidebar marks its
+  // pane's bot, not the selection the last touched pane holds (the user's
+  // report, 2026-10-26).
+  const shownCharIndex = $derived(pane ? view.characterIndex : $selectedCharID)
   // Touching a pane's panel hands that pane the selection before the touch acts.
   const takePaneSelection = () => { if (pane) activatePane(pane) }
   // A pane's panel slides shut on its own (splitLayout.svelte.ts), as the app's sidebar does.
@@ -1113,7 +1117,7 @@
     ondragend={!isTouchDevice && member.type === 'normal' ? clearCurrentDrag : undefined}
     ontouchstart={touchDragEnabled && member.type === 'normal' ? (e) => onTouchDragStart({ kind: 'character', id: member.id }, e) : undefined}
   >
-    <SidebarIndicator isActive={member.type === 'normal' && $selectedCharID === member.index && sideBarMode !== 1}/>
+    <SidebarIndicator isActive={member.type === 'normal' && shownCharIndex === member.index && sideBarMode !== 1}/>
     <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
     <div
       role="button"
@@ -1392,7 +1396,7 @@
                 ondragover={!isTouchDevice && folderChar.type === 'normal' ? avatarDragOver : undefined}
                 ontouchstart={touchDragEnabled && folderChar.type === 'normal' ? (e) => onTouchDragStart({ kind: 'character', id: folderChar.id }, e) : undefined}
               >
-                <SidebarIndicator isActive={folderChar.type === 'normal' && $selectedCharID === folderChar.index && sideBarMode !== 1}/>
+                <SidebarIndicator isActive={folderChar.type === 'normal' && shownCharIndex === folderChar.index && sideBarMode !== 1}/>
                 <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
                 <div
                   role="button"
@@ -1525,7 +1529,7 @@
         ondrop={!isTouchDevice && block.drag ? (e) => avatarDrop(block.drag!, e) : undefined}
         ontouchstart={touchDragEnabled && block.drag ? (e) => onTouchDragStart(block.drag!, e) : undefined}
       >
-        <SidebarIndicator isActive={block.char.type === 'normal' && $selectedCharID === block.char.index && sideBarMode !== 1}/>
+        <SidebarIndicator isActive={block.char.type === 'normal' && shownCharIndex === block.char.index && sideBarMode !== 1}/>
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div
           role="button"
@@ -1880,7 +1884,7 @@
         ontouchstart={touchDragEnabled && railDraggable(char) ? (e) => {onTouchDragStart(sidebarDragItem(char), e)} : undefined}
       >
         <SidebarIndicator
-          isActive={char.type === 'normal' && $selectedCharID === char.index && sideBarMode !== 1}
+          isActive={char.type === 'normal' && shownCharIndex === char.index && sideBarMode !== 1}
         />
         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
         <div
@@ -2031,7 +2035,7 @@
               ontouchstart={touchDragEnabled && char2.type === 'normal' ? (e) => {onTouchDragStart({kind:'character', id:char2.id}, e)} : undefined}
             >
               <SidebarIndicator
-                isActive={char2.type === 'normal' && $selectedCharID === char2.index && sideBarMode !== 1}
+                isActive={char2.type === 'normal' && shownCharIndex === char2.index && sideBarMode !== 1}
               />
               <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
               <div
