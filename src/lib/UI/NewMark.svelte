@@ -8,4 +8,4 @@
     let { class: className = '' }: { class?: string } = $props();
 </script>
 
-<span class="inline-block shrink-0 select-none rounded bg-rose-500 px-[3px] align-middle text-[9px] font-bold leading-[13px] text-white {className}" aria-label={language.newlyReceived} title={language.newlyReceived}>NEW</span>
+<span class="inline-block shrink-0 select-none rounded bg-yellow-400 px-[3px] align-middle text-[9px] font-bold leading-[13px] text-black {className}" aria-label={language.newlyReceived} title={language.newlyReceived}>NEW</span>

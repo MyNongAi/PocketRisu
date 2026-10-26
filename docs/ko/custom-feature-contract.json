@@ -1959,7 +1959,7 @@
       "requiredMarkers": [
         { "file": "src/ts/chatClipboard.ts", "contains": "export async function shrinkClipboardImage(" },
         { "file": "src/ts/chatClipboard.ts", "contains": "clone.src = await toShownDataUrl(imageUrl, imageBox?.width ?? 0, imageBox?.height ?? 0)" },
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "shrinkClipboardImage(await fetchClipboardDataUrl(iconImage), 80, 80)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "rasterizeCoverImage(embedded, 80, 80, 'center').catch(() => shrinkClipboardImage(embedded, 80, 80))" },
         { "file": "src/ts/gui/logCaptureState.svelte.ts", "contains": "new ClipboardItem({ 'image/png': fitForCopy(image.blob) })" },
         { "file": "src/ts/chatClipboard.ts", "contains": "export function backgroundPictureOf(" },
         { "file": "src/ts/chatClipboard.ts", "contains": "(options.rasterizeBackground ?? rasterizeBackgroundPicture)" },
@@ -2226,7 +2226,7 @@
         { "file": "src/ts/stores.svelte.ts", "contains": "if (DBState.db.characters[selIdState.selId].nodeOnlyUnseen) delete DBState.db.characters[selIdState.selId].nodeOnlyUnseen" },
         { "file": "src/lib/SideBars/SidebarAvatar.svelte", "contains": "let isNew = $derived(newInside || (!!chaId && newMarks.characters.has(chaId)));" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "{#if hasNewMark(rmodule)}<NewMark class=\"mr-1\" />{/if}" },
-        { "file": "src/lib/UI/NewMark.svelte", "contains": "bg-rose-500" }
+        { "file": "src/lib/UI/NewMark.svelte", "contains": "bg-yellow-400" }
       ],
       "regressionTests": [
         "src/ts/newMarks.test.ts"
