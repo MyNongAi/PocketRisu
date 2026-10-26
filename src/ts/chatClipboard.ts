@@ -578,7 +578,16 @@ export async function buildPortableChatFragment(
         // Capture the URL before a concurrent viewport update can release it.
         const imageUrl = source instanceof HTMLImageElement ? source.currentSrc || source.getAttribute('src') : null
         const imageBox = source instanceof HTMLImageElement ? source.getBoundingClientRect() : null
+        // An asset name no module has (an empty src) or a picture that failed
+        // to load: nothing in the chat, and on a board a broken link back to
+        // this app.
+        const brokenImage = source instanceof HTMLImageElement && source.complete && source.naturalWidth === 0 && source.naturalHeight === 0
+            && !/\.svg(?:[?#]|$)|^data:image\/svg/i.test(imageUrl ?? '')
         assetTasks.push(async () => {
+            if (brokenImage) {
+                clone.remove()
+                return
+            }
             if (imageUrl && clone instanceof HTMLImageElement) {
                 try {
                     const embedded = await toDataUrl(imageUrl)
@@ -674,6 +683,103 @@ export function boardSafeTags(root: Element): void {
         if (style) replacement.setAttribute('style', style)
         replacement.append(...Array.from(element.childNodes))
         element.replaceWith(replacement)
+    }
+}
+
+// Arca keeps an inline declaration only when its property is on a list:
+// flex-direction, flex-wrap, justify-content, align-items, align-content,
+// align-self, order and gap stay, but the shorthands the CSSOM writes them
+// as (flex-flow, place-content, place-items, place-self) are dropped whole
+// (probed on a post, 2026-10-27). A column of assets then pasted as one row
+// that does not wrap, and the pictures ran over each other (the user's
+// report). So the copy carries the longhands.
+const BOARD_PLACE_LONGHANDS: Record<string, readonly [string, string]> = {
+    'place-content': ['align-content', 'justify-content'],
+    'place-items': ['align-items', 'justify-items'],
+    'place-self': ['align-self', 'justify-self'],
+}
+
+/** The longhands of a flex or alignment shorthand a board drops, or null for any other property. */
+export function boardLonghands(property: string, value: string): Array<[string, string]> | null {
+    const important = /!important\s*$/i.test(value) ? ' !important' : ''
+    const tokens = value.replace(/\s*!important\s*$/i, '').trim().split(/\s+/).filter(Boolean)
+    if (tokens.length === 0) return null
+    const wide = tokens.length === 1 && /^(inherit|initial|unset|revert|revert-layer)$/i.test(tokens[0]) ? tokens[0] : ''
+    if (property === 'flex-flow') {
+        const direction = wide || tokens.find((token) => /^(row|row-reverse|column|column-reverse)$/i.test(token)) || 'row'
+        const wrap = wide || tokens.find((token) => /^(nowrap|wrap|wrap-reverse)$/i.test(token)) || 'nowrap'
+        return [['flex-direction', direction + important], ['flex-wrap', wrap + important]]
+    }
+    const pair = BOARD_PLACE_LONGHANDS[property]
+    if (!pair) return null
+    // A keyword prefix belongs to its value: "safe center", "first baseline".
+    const values: string[] = []
+    for (let index = 0; index < tokens.length; index++) {
+        const prefixed = /^(safe|unsafe|first|last|legacy)$/i.test(tokens[index]) && index + 1 < tokens.length
+        values.push(prefixed ? `${tokens[index]} ${tokens[++index]}` : tokens[index])
+    }
+    return [[pair[0], values[0] + important], [pair[1], (values[1] ?? values[0]) + important]]
+}
+
+/** Declarations of a style attribute, split on the semicolons outside url(), quotes and brackets. */
+function styleDeclarations(text: string): string[] {
+    const declarations: string[] = []
+    let depth = 0
+    let quote = ''
+    let start = 0
+    for (let index = 0; index < text.length; index++) {
+        const char = text[index]
+        if (quote) {
+            if (char === quote && text[index - 1] !== '\\') quote = ''
+        } else if (char === '"' || char === "'") {
+            quote = char
+        } else if (char === '(') {
+            depth++
+        } else if (char === ')') {
+            depth = Math.max(0, depth - 1)
+        } else if (char === ';' && depth === 0) {
+            declarations.push(text.slice(start, index))
+            start = index + 1
+        }
+    }
+    declarations.push(text.slice(start))
+    return declarations.map((declaration) => declaration.trim()).filter(Boolean)
+}
+
+/**
+ * Rewrites, inside `root`, each style attribute in the declarations a board
+ * keeps: the flex and alignment shorthands as their longhands, and
+ * text-align start/end as left/right (Arca drops "start", and the element
+ * then took its parent's center). Run it last: any later write through
+ * element.style folds the longhands back into shorthands.
+ */
+export function boardSafeStyles(root: Element): void {
+    for (const element of [root, ...Array.from(root.querySelectorAll('[style]'))]) {
+        const text = element.getAttribute('style')
+        if (!text) continue
+        let changed = false
+        const declarations: string[] = []
+        for (const declaration of styleDeclarations(text)) {
+            const colon = declaration.indexOf(':')
+            const property = colon > 0 ? declaration.slice(0, colon).trim().toLowerCase() : ''
+            const value = declaration.slice(colon + 1).trim()
+            const longhands = boardLonghands(property, value)
+            if (longhands) {
+                changed = true
+                for (const [longhand, longhandValue] of longhands) declarations.push(`${longhand}:${longhandValue}`)
+                continue
+            }
+            if (property === 'text-align') {
+                const mapped = value.replace(/^(start|end)\b/i, (side) => side.toLowerCase() === 'start' ? 'left' : 'right')
+                if (mapped !== value) {
+                    changed = true
+                    declarations.push(`text-align:${mapped}`)
+                    continue
+                }
+            }
+            declarations.push(declaration)
+        }
+        if (changed) element.setAttribute('style', declarations.join(';'))
     }
 }
 

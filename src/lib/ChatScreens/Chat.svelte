@@ -40,7 +40,7 @@
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
     import { getChatAssetRenderWindow, normalizeExternalAssetRecentOutputs, shouldResolveChatAssets } from '../../ts/chatAssetWindow';
-    import { boardSafeTags, buildPortableChatFragment, chatClipboardErrorMessage, clipboardSizeLabel, embedParsedChatAssets, fetchClipboardDataUrl, hexColors, rasterizeCoverImage, replaceFormControls, shrinkClipboardImage, writeChatClipboard } from '../../ts/chatClipboard';
+    import { boardSafeStyles, boardSafeTags, buildPortableChatFragment, chatClipboardErrorMessage, clipboardSizeLabel, embedParsedChatAssets, fetchClipboardDataUrl, hexColors, rasterizeCoverImage, replaceFormControls, shrinkClipboardImage, writeChatClipboard } from '../../ts/chatClipboard';
 
     // Reactive breakpoint: a raw window.innerWidth read here is evaluated once
     // at mount and never follows a resize (#79).
@@ -1187,6 +1187,8 @@
                 })
                 // Tags a board would unwrap (a <mark> quote) go out as span/div.
                 if(!hasLiveBody) boardSafeTags(doc.body)
+                // Last write to the body's styles: the longhands a board keeps.
+                boardSafeStyles(doc.body)
 
                 let finalIconDataUrl = ''
                 

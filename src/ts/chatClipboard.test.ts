@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { backgroundPictureOf, buildPortableChatFragment, chatClipboardErrorMessage, boardSafeTags, clipboardImageSize, clipboardSizeLabel, isAnimatedImageDataUrl, shrinkClipboardImage, hexColors, replaceFormControls, coverImagePlacement, decodeClipboardCssContent, extractCssUrls, fetchClipboardDataUrl, inlineCssUrls, writeChatClipboard } from './chatClipboard'
+import { backgroundPictureOf, boardLonghands, boardSafeStyles, buildPortableChatFragment, chatClipboardErrorMessage, boardSafeTags, clipboardImageSize, clipboardSizeLabel, isAnimatedImageDataUrl, shrinkClipboardImage, hexColors, replaceFormControls, coverImagePlacement, decodeClipboardCssContent, extractCssUrls, fetchClipboardDataUrl, inlineCssUrls, writeChatClipboard } from './chatClipboard'
 
 afterEach(() => {
     vi.restoreAllMocks()
@@ -330,5 +330,48 @@ describe('clipboard image size (board post limits)', () => {
         expect(clipboardSizeLabel(500)).toBe('1KB')
         expect(clipboardSizeLabel(300 * 1024)).toBe('300KB')
         expect(clipboardSizeLabel(12.34 * 1024 * 1024)).toBe('12.3MB')
+    })
+})
+
+describe('boardSafeStyles', () => {
+    // Arca keeps flex-direction, flex-wrap, justify-content, align-items and
+    // text-align left/center, but drops flex-flow, place-* and text-align start
+    // (probed on a post, 2026-10-27): a column of assets pasted as one row.
+    it('writes the flex and alignment shorthands a board drops as their longhands', () => {
+        const root = document.createElement('div')
+        root.innerHTML = '<div style="display:flex;flex-flow:column wrap;place-items:center;place-content:normal space-between;background-image:url(&quot;data:image/png;base64,AA==&quot;);gap:4px">'
+            + '<p style="text-align:start;color:#fff">a</p><span style="place-self:safe center !important">b</span><i style="color:red">c</i></div>'
+        boardSafeStyles(root)
+        expect(root.firstElementChild!.getAttribute('style')).toBe('display:flex;flex-direction:column;flex-wrap:wrap;align-items:center;justify-items:center;align-content:normal;justify-content:space-between;background-image:url("data:image/png;base64,AA==");gap:4px')
+        expect(root.querySelector('p')!.getAttribute('style')).toBe('text-align:left;color:#fff')
+        expect(root.querySelector('span')!.getAttribute('style')).toBe('align-self:safe center !important;justify-self:safe center !important')
+        expect(root.querySelector('i')!.getAttribute('style')).toBe('color:red')
+    })
+
+    it('fills the longhand a shorthand leaves out with its initial value', () => {
+        expect(boardLonghands('flex-flow', 'wrap')).toEqual([['flex-direction', 'row'], ['flex-wrap', 'wrap']])
+        expect(boardLonghands('flex-flow', 'column')).toEqual([['flex-direction', 'column'], ['flex-wrap', 'nowrap']])
+        expect(boardLonghands('place-items', 'center')).toEqual([['align-items', 'center'], ['justify-items', 'center']])
+        expect(boardLonghands('flex-direction', 'column')).toBeNull()
+    })
+})
+
+describe('broken images in a copy', () => {
+    it('leaves out a picture that failed to load or has no source', async () => {
+        const root = document.createElement('section')
+        root.innerHTML = '<p>a</p><img src="/assets/missing.png"><img src=""><img src="/assets/ok.png">'
+        document.body.append(root)
+        const [missing, empty, ok] = Array.from(root.querySelectorAll('img'))
+        for (const [image, width] of [[missing, 0], [empty, 0], [ok, 120]] as const) {
+            Object.defineProperty(image, 'complete', { value: true })
+            Object.defineProperty(image, 'naturalWidth', { value: width })
+            Object.defineProperty(image, 'naturalHeight', { value: width })
+        }
+        const fetchFn = vi.fn(async () => new Response(new Blob(['png'], { type: 'image/png' })))
+        const shrinkImage = vi.fn(async () => 'data:image/webp;base64,OK')
+        const copy = new DOMParser().parseFromString(await buildPortableChatFragment(root, { fetchFn, shrinkImage }), 'text/html')
+        const images = copy.querySelectorAll('img')
+        expect(images).toHaveLength(1)
+        expect(images[0].getAttribute('src')).toBe('data:image/webp;base64,OK')
     })
 })

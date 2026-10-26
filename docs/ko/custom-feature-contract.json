@@ -1971,7 +1971,11 @@
         { "file": "src/ts/chatClipboard.ts", "contains": "export function backgroundPictureOf(" },
         { "file": "src/ts/chatClipboard.ts", "contains": "(options.rasterizeBackground ?? rasterizeBackgroundPicture)" },
         { "file": "src/ts/chatClipboard.ts", "contains": "if (imageBox && imageBox.width > 0) clone.style.maxWidth = boardMaxWidth(imageBox.width)" },
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "max-width: min(100%, 80px); border-radius: 50%;" }
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "max-width: min(100%, 80px); border-radius: 50%;" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "export function boardLonghands(property: string, value: string)" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "export function boardSafeStyles(root: Element): void {" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "const brokenImage = source instanceof HTMLImageElement && source.complete && source.naturalWidth === 0" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "boardSafeStyles(doc.body)" }
       ],
       "regressionTests": [
         "src/ts/chatClipboard.test.ts",
