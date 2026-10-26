@@ -16,7 +16,7 @@
     import { DBState, ReloadChatPointer, CurrentTriggerIdStore, popupStore } from 'src/ts/stores.svelte'
 
     import { capitalize, getUserIcon, getUserName, sleep } from "src/ts/util"
-    import { onDestroy, onMount, untrack } from "svelte"
+    import { onDestroy, onMount, tick, untrack } from "svelte"
     import { get, type Unsubscriber } from "svelte/store"
     import { v4 as uuidv4, v4 } from 'uuid'
     import { language } from "../../lang"
@@ -30,7 +30,7 @@
     import AutoresizeArea from "../UI/GUI/TextAreaResizable.svelte"
     import { isSendKey } from "src/ts/gui/sendKey"
     import { isMobile } from "src/ts/platform"
-    import { inputEchoDraft, inputEchoKey, nextReplyIndex } from "src/ts/gui/inputEcho"
+    import { inputEchoDraft, inputEchoKey, inputEditRequest, nextReplyIndex } from "src/ts/gui/inputEcho"
     import { inputVersionIndex, isRequestInput, recordInputEdit, stepInputVersion } from "src/ts/inputVersions"
     import { getRequestPairing } from "src/ts/gui/requestPairing"
     import { isLogCapturePickingHere, isLogCaptureStart, logCaptureMarkFor, markLogCapture } from "src/ts/gui/logCaptureState.svelte"
@@ -92,6 +92,8 @@
         isComment?: boolean;
         disabled?: boolean | 'allBefore';
         isOptimizedStreamingMessage?: boolean;
+        /** The reply being written right now, whatever the display optimization: no editing until it ends. */
+        isStreamingMessage?: boolean;
         streamingOptimizationMode?: StreamingDisplayOptimizationMode;
         rawStreamingText?: string;
         resolveChatAssets?: boolean;
@@ -135,6 +137,7 @@
         isComment = false,
         disabled = false,
         isOptimizedStreamingMessage = false,
+        isStreamingMessage = false,
         streamingOptimizationMode = 'off',
         rawStreamingText = message,
         resolveChatAssets,
@@ -212,10 +215,12 @@
 
     export function updateStreamingDisplay(state: {
         isOptimizedStreamingMessage: boolean
+        isStreamingMessage?: boolean
         streamingOptimizationMode: StreamingDisplayOptimizationMode
         rawStreamingText: string
     }){
         isOptimizedStreamingMessage = state.isOptimizedStreamingMessage
+        isStreamingMessage = state.isStreamingMessage ?? false
         streamingOptimizationMode = state.streamingOptimizationMode
         rawStreamingText = state.rawStreamingText
     }
@@ -418,6 +423,16 @@
 
     function toggleInputEchoEdit() {
         if (!echoEditing) {
+            // This reply is redrawn while it is written (every chunk with the
+            // display optimization off, once at the end otherwise), which
+            // closed the edit at once: the original message above opens its
+            // own edit instead (the user's report, 2026-10-26).
+            if (replyInProgress) {
+                const key = previousInputKey
+                inputEditRequest.set(key)
+                setTimeout(() => inputEditRequest.update((current) => current === key ? null : current), 1000)
+                return
+            }
             echoText = echoShown ?? ''
             echoEditing = true
             return
@@ -450,6 +465,17 @@
         if (originalEditControlDisabled) return
         editMode = true
     }
+
+    // The copy under a reply being written hands its edit to this message.
+    $effect(() => {
+        const key = $inputEditRequest
+        if (!key || role !== 'user' || key !== messageKey) return
+        untrack(() => {
+            inputEditRequest.set(null)
+            if (!editMode) startOriginalEdit()
+            void tick().then(() => chatRoot?.scrollIntoView({ block: 'nearest' }))
+        })
+    })
 
     // The chat input's send key (Enter by default on a PC) finishes the edit,
     // like pressing the pencil again; the other combinations insert a newline.
@@ -606,6 +632,9 @@
         : language.logCapture.menuStart
     )
     let displayMessage = $derived(isOptimizedStreamingMessage ? rawStreamingText : message)
+    // A reply being written (streamed as is or optimized) cannot be edited
+    // yet: its edit controls wait for the end (the user's report, 2026-10-26).
+    let replyInProgress = $derived(isOptimizedStreamingMessage || isStreamingMessage)
     let renderRawStreaming = $derived(isOptimizedStreamingMessage && streamingOptimizationMode === 'strong')
 
     function updateDisplayedMessage(){
@@ -909,7 +938,7 @@
             class:prose-invert={$ColorSchemeTypeStore === 'dark'}
             bind:this={bodyRoot}
             onclick={() => {
-            if(DBState.db.clickToEdit && idx > -1 && !isOptimizedStreamingMessage && !placeholder){
+            if(DBState.db.clickToEdit && idx > -1 && !replyInProgress && !placeholder){
                 startOriginalEdit()
             }
         }}
@@ -943,7 +972,7 @@
                     resolveAssets={effectiveResolveChatAssets} />
             {/key}
         </span>
-        {#if idx >= 0 && !placeholder && !editMode && !editTranslationMode && !isOptimizedStreamingMessage && partialEditEnabled && (DBState.db.enableBlockPartialEdit || DBState.db.enableDragPartialEdit)}
+        {#if idx >= 0 && !placeholder && !editMode && !editTranslationMode && !replyInProgress && partialEditEnabled && (DBState.db.enableBlockPartialEdit || DBState.db.enableDragPartialEdit)}
             <PartialEditController
                 messageData={message}
                 chatIndex={idx}
@@ -1255,7 +1284,7 @@
             {/if}
         </button>
     {/if}
-    {#if idx > -1 && !isOptimizedStreamingMessage}
+    {#if idx > -1 && !replyInProgress}
         <button
             class={"flex items-center transition-colors button-icon-edit " + (editMode ? 'text-blue-400 hover:text-primary' : originalEditControlDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:text-primary')}
             disabled={originalEditControlDisabled}

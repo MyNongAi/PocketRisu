@@ -53,6 +53,7 @@
     type ChatInstance = {
         updateStreamingDisplay?: (state: {
             isOptimizedStreamingMessage: boolean
+            isStreamingMessage?: boolean
             streamingOptimizationMode: StreamingDisplayOptimizationMode
             rawStreamingText: string
         }) => void
@@ -161,6 +162,7 @@
         const activeStreamingIndex = performanceMode !== 'off' && currentChat?.isStreaming
             ? messages.length - 1
             : -1
+        const streamingReplyIndex = currentChat?.isStreaming ? messages.length - 1 : -1
         const assetRenderWindow = getChatAssetRenderWindow(
             messages,
             DBState.db.externalAssetRecentOutputs,
@@ -270,6 +272,8 @@
                 ? newReplyPageState(placeholder)
                 : rerollTargetState(message, isRerollTarget, i);
             const activeStreamingMessage = i === activeStreamingIndex && message.role === 'char';
+            // The reply being written, whatever the display optimization.
+            const streamingMessage = i === streamingReplyIndex && message.role === 'char';
             const resolveChatAssets = assetRenderWindow.messageIndices.has(i)
             const hashMessageData = activeStreamingMessage ? '' : message.data;
             // The input a reply answers is echoed under it; a changed input remounts the reply.
@@ -323,6 +327,7 @@
                         isComment: message.isComment ?? false,
                         disabled: message.disabled ?? false,
                         isOptimizedStreamingMessage: activeStreamingMessage,
+                        isStreamingMessage: streamingMessage,
                         streamingOptimizationMode: performanceMode,
                         rawStreamingText: message.data,
                         resolveChatAssets,
@@ -345,6 +350,7 @@
                 const inst = mountInstances.get(currentHash)
                 inst?.updateStreamingDisplay?.({
                     isOptimizedStreamingMessage: activeStreamingMessage,
+                    isStreamingMessage: streamingMessage,
                     streamingOptimizationMode: performanceMode,
                     rawStreamingText: message.data,
                 })

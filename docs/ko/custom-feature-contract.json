@@ -1866,6 +1866,10 @@
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "onRequestInput: (chatId, text) => requestInputs.set(genKey, { chatId, text })" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (lastMsg.nodeOnlyRequestInputs) newLastMsg.nodeOnlyRequestInputs = { ...lastMsg.nodeOnlyRequestInputs }" },
         { "file": "src/ts/process/index.svelte.ts", "contains": "if(msg.role === 'user') arg.onRequestInput?.(msg.chatId, sentData)" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "const streamingReplyIndex = currentChat?.isStreaming ? messages.length - 1 : -1" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "let replyInProgress = $derived(isOptimizedStreamingMessage || isStreamingMessage)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "inputEditRequest.set(key)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "{#if idx > -1 && !replyInProgress}" },
         { "file": "src/ts/process/index.svelte.ts", "contains": "requestInputText(msg, arg.requestInput)" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const capturedRequestInput = pressedInput(selectedChatRoom.message)" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const requestInput = pressedInput(targetChat.message)" }

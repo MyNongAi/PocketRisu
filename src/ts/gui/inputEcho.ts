@@ -11,6 +11,14 @@ export type InputEchoDraft = {
 
 export const inputEchoDraft = writable<InputEchoDraft | null>(null)
 
+/**
+ * The user message whose own edit should open (its key): the copy under a
+ * reply that is still being written hands its edit to the original, because
+ * that reply is redrawn while it streams and the redraw closed the edit (the
+ * user's report, 2026-10-26).
+ */
+export const inputEditRequest = writable<string | null>(null)
+
 type EchoMessage = { role?: string, isComment?: boolean, chatId?: string }
 
 /** A message's identity for the draft: its chat id, else its index. */
