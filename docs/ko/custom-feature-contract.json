@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.16.1",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-10-25",
+  "updatedAt": "2026-10-27",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
@@ -2172,6 +2172,8 @@
       "ownerFiles": [
         "src/ts/process/illustration.ts",
         "src/ts/process/illustrationRun.ts",
+        "src/ts/process/illustrationModule.ts",
+        "src/ts/process/naiOptions.ts",
         "src/ts/process/stableDiff.ts",
         "src/lib/SideBars/IllustrationSettings.svelte",
         "src/lib/SideBars/Toggles.svelte",
@@ -2184,11 +2186,22 @@
         { "file": "src/ts/process/stableDiff.ts", "contains": "char_captions: naiCharCaptions" },
         { "file": "src/lib/SideBars/Toggles.svelte", "contains": "<Help key=\"illustration\" />" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "button-icon-illustration" },
-        { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "<Help key=\"loreIllustration\" name={language.loreIllustration}/>" }
+        { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "<Help key=\"loreIllustration\" name={language.loreIllustration}/>" },
+        { "file": "src/ts/process/illustrationModule.ts", "contains": "export function restoreIllustrationPresetsOnce(db: IllustrationModuleDb, make: IllustrationModuleMake): number {" },
+        { "file": "src/ts/process/illustrationRun.ts", "contains": "...(own ? [{ label: own.name, entries: own.lorebook }] : [])," },
+        { "file": "src/ts/process/illustrationRun.ts", "contains": "const own = illustrationModuleBesides(getModules(arg.moduleContext).filter(Boolean))" },
+        { "file": "src/ts/process/moduleCold.svelte.ts", "contains": "module.mcp || module.nodeOnlyIllustrationModule" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "onMount(() => { restoreIllustrationPresets() })" },
+        { "file": "src/lib/SideBars/IllustrationSettings.svelte", "contains": "|| writableIllustrationModule()" },
+        { "file": "src/lib/SideBars/IllustrationSettings.svelte", "contains": "bind:value={DBState.db.NAIImgConfig.steps}" },
+        { "file": "src/lib/SideBars/IllustrationSettings.svelte", "contains": "data-illustration-nai" }
       ],
       "regressionTests": [
         "src/ts/process/illustration.test.ts",
         "src/ts/process/illustrationRun.test.ts",
+        "src/ts/process/illustrationModule.test.ts",
+        "src/ts/process/naiOptions.test.ts",
+        "src/ts/process/moduleCold.test.ts",
         "src/ts/process/imageMeta.test.ts"
       ]
     },

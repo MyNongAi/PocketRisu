@@ -1423,6 +1423,10 @@ export interface Database{
     nodeOnlyModuleFavoritesUnpinned?: boolean
     /** Modules on now that 최근순 shows where a drag put them, not lifted to the top, until they go off (ModuleSettings.svelte). */
     nodeOnlyModuleOrderSettled?: string[]
+    /** The app-wide illustration presets of 2026-10-19/20, no longer used; restored into the 🎨 module once (illustrationModule.ts). */
+    nodeOnlyIllustrationPresets?: import('../process/illustrationModule').LegacyIllustrationPreset[]
+    /** One-shot marker: nodeOnlyIllustrationPresets went into the 🎨 illustration module. */
+    nodeOnlyIllustrationPresetsRestored?: boolean
     /** One-shot migration marker for grouping pre-existing high-similarity names. */
     similarityFolderMigrationVersion?: number
     /** One-shot marker: the bots already here were grouped into creator folders (creatorFolders.ts). */

@@ -102,7 +102,8 @@ export function coldCandidateIds(db: ReferenceSource & { modules?: readonly Risu
     for (const module of db.modules ?? []) {
         const id = module?.id
         if (typeof id !== 'string' || !id || id.includes('/') || keep.has(id)) continue
-        if (isColdModule(module) || module.mcp) continue
+        // The 🎨 module is read while off: its presets are listed for every bot.
+        if (isColdModule(module) || module.mcp || module.nodeOnlyIllustrationModule) continue
         if (names.has(id) || (module.namespace && names.has(module.namespace))) continue
         if (bodyChars(module) < MIN_BODY_CHARS) continue
         out.push(id)

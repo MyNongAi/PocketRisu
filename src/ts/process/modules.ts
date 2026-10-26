@@ -81,6 +81,8 @@ export interface RisuModule{
      * get the module whole (exports put the body back).
      */
     nodeOnlyColdModule?: import('./moduleCold.svelte').ColdModuleMarker
+    /** PocketRisu: the 🎨 illustration module, whose "프리셋 X" entries every bot can pick (illustrationModule.ts). Never stored cold. */
+    nodeOnlyIllustrationModule?: boolean
 }
 
 /**

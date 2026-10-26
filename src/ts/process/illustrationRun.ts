@@ -8,13 +8,15 @@ import { DBState } from '../stores.svelte'
 import { risuChatParser } from '../parser/parser.svelte'
 import { notifyError, notifyInfo } from '../alert'
 import { language } from '../../lang'
-import { getModuleLorebooks, getModules, type ModuleRuntimeContext } from './modules'
+import { getModuleLorebooks, getModules, type ModuleRuntimeContext, type RisuModule } from './modules'
 import { requestChatData } from './request/request'
 import { collectStreamingText } from './request/shared'
 import { generateAIImage } from './stableDiff'
 import { writeInlayImage } from './files/inlays'
 import { auxEntryText, markedLorebookEntries, rememberAuxLines, splitReplyForTags, withoutAuxLines } from './auxLorebook'
 import { rekeyRequestMark } from '../inputVersions'
+import { v4 } from 'uuid'
+import { ensureIllustrationModule, illustrationModuleOf, restoreIllustrationPresetsOnce } from './illustrationModule'
 import {
     buildScenePrompt,
     composeImagePrompt,
@@ -54,12 +56,35 @@ function findReply(chaId: string, chatId: string, messageId: string): { characte
     return { character: char as character, chat, message: chat.message[index], index }
 }
 
-/** The style presets a bot can use: its own lorebook, the chat's, then each module's on. */
+function illustrationModuleMake() {
+    return { id: v4, name: language.illustrationModuleName, description: language.illustrationModuleDescription, now: Date.now() }
+}
+
+/** The old app-wide presets into the 🎨 module, the first time anything needs them. */
+export function restoreIllustrationPresets(): void {
+    restoreIllustrationPresetsOnce(DBState.db, illustrationModuleMake())
+}
+
+/** The 🎨 module to write a preset into, made when there is none. */
+export function writableIllustrationModule(): RisuModule {
+    return ensureIllustrationModule(DBState.db, illustrationModuleMake())
+}
+
+/** The 🎨 module when it is not on for this bot (so not among `modules` already). */
+function illustrationModuleBesides(modules: readonly RisuModule[]): RisuModule | undefined {
+    const own = illustrationModuleOf(DBState.db)
+    return own && !modules.some((module) => module.id === own.id) ? own : undefined
+}
+
+/** The style presets a bot can use: its own lorebook, the chat's, each module's on, then the 🎨 module's, on or off. */
 export function presetsFor(character: character, chat: Chat | null | undefined, moduleContext?: ModuleRuntimeContext) {
+    const modules = getModules(moduleContext).filter(Boolean)
+    const own = illustrationModuleBesides(modules)
     return lorebookPresets([
         { label: '봇', entries: character.globalLore },
         { label: '채팅', entries: chat?.localLore },
-        ...getModules(moduleContext).filter(Boolean).map((module) => ({ label: module.name, entries: module.lorebook })),
+        ...modules.map((module) => ({ label: module.name, entries: module.lorebook })),
+        ...(own ? [{ label: own.name, entries: own.lorebook }] : []),
     ])
 }
 
@@ -109,7 +134,10 @@ export async function illustrateReply(arg: {
     try {
         const { character, chat, message } = found
         const parse = (text: string) => risuChatParser(text ?? '', { chara: character }).trim()
-        const rules = markedLorebookEntries([character.globalLore, chat.localLore, getModuleLorebooks(arg.moduleContext)], 'illustration')
+        restoreIllustrationPresets()
+        // The 🎨 module's own 🎨 entries (art rules for every bot) go too, on or off.
+        const own = illustrationModuleBesides(getModules(arg.moduleContext).filter(Boolean))
+        const rules = markedLorebookEntries([character.globalLore, chat.localLore, getModuleLorebooks(arg.moduleContext), own?.lorebook], 'illustration')
             .map((entry) => parse(auxEntryText(entry.content)))
             .filter(Boolean)
         const original = message.data ?? ''

@@ -21,6 +21,7 @@
     import { onDestroy, onMount, untrack } from "svelte";
     import { getLatestModuleCatalogPromotion, interleaveModuleCatalogGroups, recordModuleActivation, recordModuleFolderActivation, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation, unpinModuleFavoritesOnce } from "src/ts/process/moduleSort";
     import { listTitleColor } from "src/ts/gui/titleColors";
+    import { restoreIllustrationPresets } from "src/ts/process/illustrationRun";
     import PairedModuleMark from "src/lib/UI/GUI/PairedModuleMark.svelte";
     import { forgetModulePair, moduleLinks, recordModulePair } from "src/ts/gui/pairedModules";
     import { syncLinkedFolders } from "src/ts/process/modules";
@@ -193,6 +194,7 @@
 
     onMount(() => {
         unpinModuleFavoritesOnce(DBState.db)
+        restoreIllustrationPresets()
         const frame = requestAnimationFrame(() => {
             if (!alertMode && listEl) listEl.scrollTop = rememberedModuleMenuScrollTop
             listEl?.focus({ preventScroll: true })

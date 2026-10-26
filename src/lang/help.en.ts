@@ -283,7 +283,8 @@ export const helpEn = {
         illustration:
             "Draws NovelAI illustrations into this bot's replies. After a reply, the auxiliary model picks the scenes and writes scene and character tags; with the chosen style preset they are drawn by the image generation in the settings and put after their lines.\n\n" +
             "- Per bot; ⚙ sets when to draw (after every reply / only from the message menu), how many, where (picked / top / middle / bottom), the ratio, max characters, NSFW, the style and extra directions.\n" +
-            "- Style presets are \"프리셋 X\" lorebook entries (Lightboard's formats): a bot's for that bot, a module's for every bot with it on. A [NAI] section (steps, scale, sampler, …) draws that preset with those values.\n" +
+            "- Style presets are \"프리셋 X\" lorebook entries (Lightboard's formats): the 🎨 illustration module's (top of the module list) for every bot, on or off; a bot's for that bot; another module's for every bot with it on. ⚙'s new preset and presets from images go into the 🎨 module (or a module on, if you pick one). A [NAI] section (steps, scale, sampler, …) draws that preset with those values.\n" +
+            "- The NovelAI values under ⚙ are those of Settings › Other bots › Image generation: a change on either side shows on the other. Values the chosen preset's [NAI] section sets show apart, in yellow.\n" +
             "- Pictures are drawn in the background after the reply: you can go on meanwhile.\n" +
             "- 🎨 in the message menu (☰) draws a reply again.\n" +
             "- Lorebook entries marked 🎨 (character looks, art rules) go with the request, never to the main model.\n" +

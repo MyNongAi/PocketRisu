@@ -26,6 +26,7 @@
     import { copyProtonLink, protonLinkOf } from "src/ts/protonSource";
     import { cloneModuleDraft } from "src/ts/process/moduleDraft";
     import { removeModulesFromDatabase } from "src/ts/process/moduleRemoval";
+    import { restoreIllustrationPresets } from "src/ts/process/illustrationRun";
     import { isColdModule, keepModuleWhole, wakeModules, wholeModule } from "src/ts/process/moduleCold.svelte";
     import type { PromptPresetFolder } from "src/ts/storage/database.svelte";
     import { importDroppedFiles } from "src/ts/dropImport";
@@ -42,6 +43,8 @@
     // Prompt presets edited since: their modules move into or out of [프롬] (presetModuleFolder.ts).
     onMount(() => { syncLinkedFolders() })
     onMount(() => { unpinModuleFavoritesOnce(DBState.db) })
+    // The 🎨 module and the old app-wide illustration presets in it (illustrationModule.ts).
+    onMount(() => { restoreIllustrationPresets() })
     let editModuleIndex = $state(-1)
     let converting = $state(false)
     // The module in the editor is a stored one (moduleCold.svelte.ts): its

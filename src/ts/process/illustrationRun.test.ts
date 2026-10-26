@@ -15,10 +15,10 @@ vi.mock('./request/shared', () => ({ collectStreamingText: vi.fn() }))
 vi.mock('./stableDiff', () => ({ generateAIImage }))
 vi.mock('./files/inlays', () => ({ writeInlayImage }))
 vi.mock('../alert', () => ({ notifyError, notifyInfo }))
-vi.mock('../../lang', () => ({ language: { illustrationFailed: 'failed', illustrationNothing: 'nothing', illustrationNoImageProvider: 'no provider' } }))
+vi.mock('../../lang', () => ({ language: { illustrationFailed: 'failed', illustrationNothing: 'nothing', illustrationNoImageProvider: 'no provider', illustrationModuleName: '🎨 삽화', illustrationModuleDescription: 'presets' } }))
 vi.stubGlobal('Image', class { src = '' })
 
-const { illustrateReply, removeIllustrations, startAutoIllustration } = await import('./illustrationRun')
+const { illustrateReply, presetsFor, removeIllustrations, startAutoIllustration } = await import('./illustrationRun')
 
 const scene = (line: number) => ({ line, camera: 'cowboy shot', scene: '1girl', characters: [{ name: 'Maah', positive: 'silver hair', negative: '' }] })
 
@@ -38,6 +38,49 @@ beforeEach(() => {
     writeInlayImage.mockReset()
     notifyError.mockReset()
     notifyInfo.mockReset()
+})
+
+describe('the 🎨 module in a run', () => {
+    const artModule = () => ({
+        id: 'art', name: '🎨 삽화', description: '', nodeOnlyIllustrationModule: true,
+        lorebook: [
+            { comment: '프리셋 P', content: '[Positive]\nmodule P\n[Negative]\n' },
+            { comment: '프리셋 Q', content: '[Positive]\nq-style, {prompt}\n[Negative]\nbad' },
+            { comment: 'light', content: 'Always soft light', nodeOnlyIllustration: true },
+        ],
+    })
+
+    it('lists its presets while it is off, after the bot\'s own, and sends its 🎨 entries', async () => {
+        const { character, chat } = setup({ enabled: true, preset: 'Q' })
+        db.value.modules = [artModule()]
+        expect(presetsFor(character, chat).map((p) => [p.name, p.source, p.positive])).toEqual([
+            ['P', '봇', 'artist:a, {prompt}'],
+            ['Q', '🎨 삽화', 'q-style, {prompt}'],
+        ])
+        requestChatData.mockResolvedValue({ type: 'success', result: JSON.stringify([scene(1)]) })
+        generateAIImage.mockResolvedValue('data:image/png;base64,AAA')
+        writeInlayImage.mockResolvedValue('inlay-1')
+        expect(await run()).toBe(1)
+        expect(requestChatData.mock.calls[0][0].formated[1].content).toContain('Always soft light')
+        expect(generateAIImage.mock.calls[0].slice(0, 3)).toEqual(['q-style, cowboy shot, 1girl', character, 'bad'])
+    })
+
+    it('restores the old app-wide presets into it before the first drawing', async () => {
+        setup({ enabled: true, preset: 'Old' })
+        Object.assign(db.value, {
+            modules: [], enabledModules: [], moduleActivationHistory: [],
+            nodeOnlyIllustrationPresets: [{ id: 'o1', name: 'Old', positive: 'old-style', negative: 'old-neg' }],
+        })
+        requestChatData.mockResolvedValue({ type: 'success', result: JSON.stringify([scene(1)]) })
+        generateAIImage.mockResolvedValue('data:image/png;base64,AAA')
+        writeInlayImage.mockResolvedValue('inlay-1')
+        expect(await run()).toBe(1)
+        expect(generateAIImage.mock.calls[0].slice(2, 3)).toEqual(['old-neg'])
+        expect(generateAIImage.mock.calls[0][0]).toBe('cowboy shot, 1girl, old-style')
+        expect(db.value.modules).toHaveLength(1)
+        expect(db.value.modules[0]).toMatchObject({ name: '🎨 삽화', nodeOnlyIllustrationModule: true })
+        expect(db.value.nodeOnlyIllustrationPresetsRestored).toBe(true)
+    })
 })
 
 describe('drawing the illustrations of a reply', () => {

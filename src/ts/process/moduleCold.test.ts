@@ -64,6 +64,8 @@ describe('stored modules', () => {
             { id: 'mcp', name: 'mcp', mcp: { url: 'x' }, lorebook: big('f') },
             { id: 'stored', name: 'stored', nodeOnlyColdModule: marker(3) },
             { id: 'kept', name: 'kept', lorebook: big('g') },
+            // The 🎨 module: its presets are read for every bot while it is off.
+            { id: 'art', name: 'art', nodeOnlyIllustrationModule: true, lorebook: big('h') },
         ]
         expect(cold.coldCandidateIds(db, new Set(['kept']))).toEqual(['free'])
     })
