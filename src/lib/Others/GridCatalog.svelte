@@ -27,7 +27,7 @@
     import { isRealmAssetRecoveryAvailable, isRedListTitle, listTitleColor } from "src/ts/gui/titleColors";
     import VirtualGrid from "../UI/Virtual/VirtualGrid.svelte";
     import VirtualList from "../UI/Virtual/VirtualList.svelte";
-    import { buildCharacterSimilarityCounts, buildExactCharacterDuplicateCounts, countCatalogCharacters } from "src/ts/gui/characterCatalogMetrics";
+    import { buildCharacterNameSimilarityCounts, buildExactCharacterDuplicateCounts, countCatalogCharacters } from "src/ts/gui/characterCatalogMetrics";
     import { formatImportedDate } from "src/ts/gui/importedDate";
     import { characterRings } from "src/ts/gui/characterRings.svelte";
 
@@ -212,13 +212,7 @@
     ))
     const trashedCharacters = $derived(formatChars(search, DBState.db, true))
     const redTrashCount = $derived(formatChars('', DBState.db, true).filter((char) => isRedListTitle(char.titleColor, char.missingAssetCount > 0)).length)
-    const similarityCounts = $derived(buildCharacterSimilarityCounts(
-        DBState.db.characterOrder,
-        new Set([
-            ...DBState.db.characters.filter((character) => !character.trashTime).map((character) => character.chaId),
-            ...(DBState.db.nodeOnlyArchivedCharacters ?? []).filter((stub) => !stub.trashedAt).map((stub) => stub.chaId),
-        ].filter((id): id is string => typeof id === 'string' && !!id)),
-    ))
+    const similarityCounts = $derived(buildCharacterNameSimilarityCounts(DBState.db.characters, DBState.db.nodeOnlyArchivedCharacters ?? []))
 
     onMount(() => {
         const generation = ++duplicateScanGeneration

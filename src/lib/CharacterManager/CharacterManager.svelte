@@ -50,7 +50,7 @@
         canMoveOrderEntry, deactivatedCharacterIds, isDeactivatedGroupingEnabled, isDeactivatedSystemFolder,
     } from "src/ts/deactivatedCharacterFolders";
     import { language } from "src/lang";
-    import { buildCharacterSimilarityCounts, buildExactCharacterDuplicateCounts } from "src/ts/gui/characterCatalogMetrics";
+    import { buildCharacterNameSimilarityCounts, buildExactCharacterDuplicateCounts } from "src/ts/gui/characterCatalogMetrics";
     import { isRedListTitle, listTitleColor } from "src/ts/gui/titleColors";
 
     interface Props {
@@ -77,10 +77,7 @@
     let search = $derived(externalSearch ?? searchLocal);
     let entries = $derived(buildManagerEntries(DBState.db));
     let liveEntries = $derived([...entries.values()].filter((e) => !e.trashed));
-    let similarityCounts = $derived(buildCharacterSimilarityCounts(
-        DBState.db.characterOrder,
-        new Set(liveEntries.map((entry) => entry.chaId)),
-    ));
+    let similarityCounts = $derived(buildCharacterNameSimilarityCounts(DBState.db.characters, DBState.db.nodeOnlyArchivedCharacters ?? []));
     let allTrashEntries = $derived([...entries.values()].filter((e) => e.trashed));
     let trashEntries = $derived(allTrashEntries.filter((e) => matchesSearch(e.name, search)));
     let redTrashEntries = $derived(allTrashEntries.filter((e) => isRedListTitle(e.titleColor, e.missingAssetCount > 0)));

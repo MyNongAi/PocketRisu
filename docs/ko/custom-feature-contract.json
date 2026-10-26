@@ -533,7 +533,7 @@
         { "file": "src/ts/characterArchive.ts", "contains": "autoDeactivatedAt" },
         { "file": "src/ts/characterArchive.ts", "contains": "Trashed stubs are excluded from duplicate counts" },
         { "file": "src/ts/gui/characterCatalogMetrics.ts", "contains": "buildExactCharacterDuplicateCounts" },
-        { "file": "src/ts/gui/characterCatalogMetrics.ts", "contains": "buildCharacterSimilarityCounts" },
+        { "file": "src/ts/gui/characterCatalogMetrics.ts", "contains": "for (const group of findHighSimilarityNameGroups(bots)) {" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "archived-character-muted" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "async function editArchivedSidebarCharacter(chaId: string, e: MouseEvent){" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "[language.deactivateCharacter, atNow((index) => archiveCharacter(index))]," },

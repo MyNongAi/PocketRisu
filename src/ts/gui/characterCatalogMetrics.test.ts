@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-    buildCharacterSimilarityCounts,
+    buildCharacterNameSimilarityCounts,
     buildExactCharacterDuplicateCounts,
     countCatalogCharacters,
     exactCharacterDefinitionFingerprint,
@@ -72,17 +72,42 @@ describe('character catalog exact duplicate metrics', () => {
 })
 
 describe('character catalog similarity metrics', () => {
-    it('counts other eligible members of generated similarity folders', () => {
-        const counts = buildCharacterSimilarityCounts([{
-            data: ['a', 'b', 'trash', 'b'],
-            duplicateCandidate: { kind: 'character' },
-        }, {
-            data: ['ordinary-a', 'ordinary-b'],
-        }], new Set(['a', 'b']))
+    it('counts the other bots with a name 90% or more alike, deactivated ones included', () => {
+        const counts = buildCharacterNameSimilarityCounts([
+            { chaId: 'a', name: 'Nahida Card' },
+            { chaId: 'b', name: 'nahida-card' },
+            { chaId: 'c', name: 'Furina' },
+        ], [
+            { chaId: 'd', name: 'Nahida  Card!' },
+        ])
+        expect(counts.get('a')).toBe(2)
+        expect(counts.get('b')).toBe(2)
+        expect(counts.get('d')).toBe(2)
+        expect(counts.has('c')).toBe(false)
+    })
 
-        expect(counts.get('a')).toBe(1)
-        expect(counts.get('b')).toBe(1)
-        expect(counts.has('trash')).toBe(false)
-        expect(counts.has('ordinary-a')).toBe(false)
+    it('leaves the trash and nameless bots out', () => {
+        const counts = buildCharacterNameSimilarityCounts([
+            { chaId: 'a', name: 'Mary Sisters' },
+            { chaId: 't', name: 'Mary Sisters', trashTime: 1 },
+            { chaId: 'x', name: '' },
+            { chaId: 'y', name: '' },
+        ], [
+            { chaId: 's', name: 'Mary Sisters', trashedAt: 2 },
+        ])
+        expect(counts.size).toBe(0)
+    })
+
+    it('does not look at folders: a bot out of its candidate folder keeps the count', () => {
+        const bots = [{ chaId: 'a', name: 'Mary Sisters' }, { chaId: 'b', name: 'Mary  Sisters' }]
+        expect(buildCharacterNameSimilarityCounts(bots).get('b')).toBe(1)
+    })
+
+    it('gives the same map back while the names stay the same', () => {
+        const first = buildCharacterNameSimilarityCounts([{ chaId: 'a', name: 'Same Name' }, { chaId: 'b', name: 'Same Name' }])
+        expect(buildCharacterNameSimilarityCounts([{ chaId: 'a', name: 'Same Name' }, { chaId: 'b', name: 'Same Name' }])).toBe(first)
+        const renamed = buildCharacterNameSimilarityCounts([{ chaId: 'a', name: 'Same Name' }, { chaId: 'b', name: 'Other Thing' }])
+        expect(renamed).not.toBe(first)
+        expect(renamed.size).toBe(0)
     })
 })

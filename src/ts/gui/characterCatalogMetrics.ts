@@ -1,4 +1,5 @@
 import { sha256HexPortable } from '../cryptoFallback'
+import { findHighSimilarityNameGroups } from '../sourceCollectionDuplicates'
 
 type CatalogCharacter = object & {
     chaId?: string
@@ -32,13 +33,6 @@ type ArchivedMetricStub = {
     chaId?: string
     trashedAt?: number
     exactDefinitionFingerprint?: string
-}
-
-type SimilarityOrderEntry = string | {
-    data?: unknown
-    duplicateCandidate?: {
-        kind?: unknown
-    }
 }
 
 // Keep this in lockstep with tools/quarantine-exact-character-duplicates.cjs.
@@ -138,26 +132,37 @@ export async function buildExactCharacterDuplicateCounts(
     return counts
 }
 
+type SimilarityCatalogEntry = { chaId?: string, name?: unknown, trashTime?: number, trashedAt?: number } | null | undefined
+
+let similarityCache: { key: string, counts: Map<string, number> } | null = null
+
 /**
- * Returns the number of *other* visible candidates grouped with each character
- * by the existing [유사 후보] folder migration. This deliberately consumes the
- * stored grouping instead of re-running the O(n²) name comparison whenever a
- * catalog renders.
+ * "유사 N": how many other bots have a name 90% or more alike, live and
+ * deactivated together, the trash left out (findHighSimilarityNameGroups,
+ * which the [유사 후보] folders are made with). Judged on the names, not on
+ * the folders, so a bot taken out of its candidate folder keeps the mark
+ * (the user's request, 2026-10-26). The last result is reused while the
+ * names stay the same.
  */
-export function buildCharacterSimilarityCounts(
-    order: readonly SimilarityOrderEntry[],
-    eligibleIds?: ReadonlySet<string>,
+export function buildCharacterNameSimilarityCounts(
+    characters: readonly SimilarityCatalogEntry[],
+    archived: readonly SimilarityCatalogEntry[] = [],
 ): Map<string, number> {
-    const counts = new Map<string, number>()
-    for (const entry of order) {
-        if (typeof entry === 'string' || entry?.duplicateCandidate?.kind !== 'character') continue
-        if (!Array.isArray(entry.data)) continue
-        const ids = [...new Set(entry.data.filter((id): id is string => (
-            typeof id === 'string' && !!id && (!eligibleIds || eligibleIds.has(id))
-        )))]
-        if (ids.length < 2) continue
-        const otherCandidates = ids.length - 1
-        for (const id of ids) counts.set(id, Math.max(counts.get(id) ?? 0, otherCandidates))
+    const bots: Array<{ chaId: string, name: unknown }> = []
+    for (const character of characters) {
+        if (character?.chaId && !character.chaId.startsWith('§') && !character.trashTime) bots.push({ chaId: character.chaId, name: character.name })
     }
+    for (const stub of archived) {
+        if (stub?.chaId && !stub.trashedAt) bots.push({ chaId: stub.chaId, name: stub.name })
+    }
+    const key = bots.map((bot) => `${bot.chaId}\u0001${typeof bot.name === 'string' ? bot.name : ''}`).join('\u0002')
+    if (similarityCache?.key === key) return similarityCache.counts
+    const counts = new Map<string, number>()
+    for (const group of findHighSimilarityNameGroups(bots)) {
+        const ids = new Set(group.members.map((bot) => bot.chaId))
+        if (ids.size < 2) continue
+        for (const id of ids) counts.set(id, Math.max(counts.get(id) ?? 0, ids.size - 1))
+    }
+    similarityCache = { key, counts }
     return counts
 }

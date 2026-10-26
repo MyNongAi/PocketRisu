@@ -13,6 +13,30 @@ export function normalizeDuplicateName(value: unknown): string {
         .replace(/[\p{P}\p{S}\s_]+/gu, '')
 }
 
+// Shorter names only match when equal (duplicateNameSimilarity).
+const SHORT_NAME_LENGTH = 5
+
+/** The edit distance of `a` and `b`, or `limit + 1` once it is surely above `limit`. */
+function editDistanceWithin(a: string, b: string, limit: number): number {
+    let previous = Array.from({ length: b.length + 1 }, (_, index) => index)
+    for (let row = 1; row <= a.length; row++) {
+        const current = [row]
+        let best = row
+        for (let column = 1; column <= b.length; column++) {
+            const value = Math.min(
+                current[column - 1] + 1,
+                previous[column] + 1,
+                previous[column - 1] + (a[row - 1] === b[column - 1] ? 0 : 1),
+            )
+            current[column] = value
+            if (value < best) best = value
+        }
+        if (best > limit) return limit + 1
+        previous = current
+    }
+    return previous[b.length]
+}
+
 export function duplicateNameSimilarity(left: unknown, right: unknown): number {
     const a = normalizeDuplicateName(left)
     const b = normalizeDuplicateName(right)
@@ -22,7 +46,7 @@ export function duplicateNameSimilarity(left: unknown, right: unknown): number {
     const longest = Math.max(a.length, b.length)
     // Short names produce dangerous false positives (e.g. two unrelated
     // two-letter Korean names), so only exact normalized matches qualify.
-    if (longest < 5 || Math.abs(a.length - b.length) / longest > 0.1) return 0
+    if (longest < SHORT_NAME_LENGTH || Math.abs(a.length - b.length) / longest > 0.1) return 0
 
     let previous = Array.from({ length: b.length + 1 }, (_, index) => index)
     for (let row = 1; row <= a.length; row++) {
@@ -68,13 +92,39 @@ export function findHighSimilarityNameGroups<T extends { name?: unknown }>(
         else parent[leftRoot] = rightRoot
     }
 
-    for (let left = 0; left < valid.length; left++) {
-        for (let right = left + 1; right < valid.length; right++) {
-            const longest = Math.max(valid[left].normalized.length, valid[right].normalized.length)
-            if (Math.abs(valid[left].normalized.length - valid[right].normalized.length) / longest > 0.1) continue
-            if (duplicateNameSimilarity(valid[left].normalized, valid[right].normalized) >= threshold) {
-                union(left, right)
-            }
+    // Equal names join through a map instead of a pass over every pair, and
+    // only distinct names of near lengths are compared, with an edit distance
+    // that stops once it is past the threshold. The bot catalogs compute this
+    // as they render, for 1,000+ bots (the user's request, 2026-10-26); the
+    // groups are the same as comparing every pair.
+    const firstWithName = new Map<string, number>()
+    const distinct: number[] = []
+    valid.forEach((entry, index) => {
+        const first = firstWithName.get(entry.normalized)
+        if (first === undefined) {
+            firstWithName.set(entry.normalized, index)
+            distinct.push(index)
+        } else {
+            union(first, index)
+        }
+    })
+    // A name can be one edit off only from 1 / (1 - threshold) characters (10
+    // at 0.9), and its partner is at most a tenth shorter: shorter names only
+    // ever match when equal, which the map above did.
+    const fuzzyFrom = Math.max(SHORT_NAME_LENGTH, Math.ceil(Math.ceil(1 / (1 - threshold) - 1e-9) * 0.9 - 1e-9))
+    const byLength = distinct
+        .filter((index) => valid[index].normalized.length >= fuzzyFrom)
+        .sort((left, right) => valid[left].normalized.length - valid[right].normalized.length)
+    for (let i = 0; i < byLength.length; i++) {
+        const shorter = valid[byLength[i]].normalized
+        for (let j = i + 1; j < byLength.length; j++) {
+            const longer = valid[byLength[j]].normalized
+            if ((longer.length - shorter.length) / longer.length > 0.1) break
+            // The most edits the threshold allows (none below 10 characters at 0.9).
+            const limit = Math.floor((1 - threshold) * longer.length + 1e-9)
+            if (limit < 1) continue
+            const distance = editDistanceWithin(shorter, longer, limit)
+            if (distance <= limit && 1 - distance / longer.length >= threshold) union(byLength[i], byLength[j])
         }
     }
 
