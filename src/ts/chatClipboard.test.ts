@@ -278,6 +278,8 @@ describe('clipboard image size (board post limits)', () => {
         const fetchFn = vi.fn(async () => new Response(new Blob(['frame'], { type: 'image/png' })))
         const copy = new DOMParser().parseFromString(await buildPortableChatFragment(root, { shrinkImage, fetchFn }), 'text/html')
         expect(copy.querySelector('img')!.getAttribute('src')).toBe('data:image/webp;base64,PORTRAIT-80x80')
+        // A board shows a pasted image at its pixel width (twice the shown size): no wider than shown.
+        expect(copy.querySelector('img')!.style.maxWidth).toBe('min(100%, 80px)')
         expect(copy.querySelector('div div, section div')!.getAttribute('style')).toContain('data:image/webp;base64,FRAME-300x120')
     })
 
@@ -299,7 +301,7 @@ describe('clipboard image size (board post limits)', () => {
         expect(images[0].style.backgroundImage).toBe('')
         expect(images[0].style.borderRadius).toBe('20px')
         expect(images[0].style.width).toBe('336px')
-        expect(images[0].style.maxWidth).toBe('100%')
+        expect(images[0].style.maxWidth).toBe('min(100%, 336px)')
         expect(images[0].style.height).toBe('auto')
         expect(images[0].style.overflow).toBe('hidden')
         expect(images[0].hasAttribute('class')).toBe(false)

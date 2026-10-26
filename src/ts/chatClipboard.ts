@@ -77,6 +77,17 @@ export const CLIPBOARD_IMAGE_MAX_EDGE = 1600
 const CLIPBOARD_IMAGE_DENSITY = 2
 const CLIPBOARD_WEBP_QUALITY = 0.85
 
+/**
+ * The max-width an image of a copy carries: no wider than it was shown.
+ * Arca drops a pasted image's width (style and attribute) and shows it at
+ * its pixel width, twice the shown size here, but keeps max-width, min()
+ * included (tested on a post, 2026-10-26). The user wants a log to look as
+ * it does in the app.
+ */
+export function boardMaxWidth(shownWidth: number): string {
+    return `min(100%, ${Math.round(shownWidth)}px)`
+}
+
 /** Pixel size an image of `naturalWidth`×`naturalHeight` goes into a copy at, shown in a box of `boxWidth`×`boxHeight` CSS px (unknown: only the edge cap). */
 export function clipboardImageSize(naturalWidth: number, naturalHeight: number, boxWidth = 0, boxHeight = 0): { width: number; height: number } {
     let scale = 1
@@ -295,7 +306,7 @@ function clipboardCanvas(width: number, height: number): [HTMLCanvasElement, Can
     return [canvas, context]
 }
 
-async function rasterizeCoverImage(url: string, width: number, height: number, position: string): Promise<string> {
+export async function rasterizeCoverImage(url: string, width: number, height: number, position: string): Promise<string> {
     const image = await loadClipboardImage(url)
     const [canvas, context] = clipboardCanvas(width, height)
     const placement = coverImagePlacement(image.naturalWidth, image.naturalHeight, width, height, position)
@@ -541,7 +552,7 @@ export async function buildPortableChatFragment(
                             image.setAttribute('style', clone.getAttribute('style') ?? '')
                             for (const property of BACKGROUND_STYLE_PROPERTIES) image.style.removeProperty(property)
                             image.style.width = `${box.width}px`
-                            image.style.maxWidth = '100%'
+                            image.style.maxWidth = boardMaxWidth(box.width)
                             image.style.setProperty('height', 'auto', 'important')
                             image.style.setProperty('aspect-ratio', `${box.width} / ${box.height}`, 'important')
                             // The box's overflow: visible would let the picture spill past its rounded corners.
@@ -584,6 +595,7 @@ export async function buildPortableChatFragment(
                         clone.src = await toShownDataUrl(imageUrl, imageBox?.width ?? 0, imageBox?.height ?? 0)
                     }
                 } catch { clone.src = imageUrl }
+                if (imageBox && imageBox.width > 0) clone.style.maxWidth = boardMaxWidth(imageBox.width)
                 clone.removeAttribute('srcset')
                 clone.removeAttribute('loading')
             } else {
@@ -609,7 +621,7 @@ export async function buildPortableChatFragment(
             image.style.cssText = clone.getAttribute('style') ?? ''
             image.style.width = `${box.width}px`
             image.style.height = `${box.height}px`
-            image.style.maxWidth = '100%'
+            image.style.maxWidth = boardMaxWidth(box.width)
             clone.replaceWith(image)
         } catch { /* preserve SVG markup if the browser cannot rasterize it */ }
     }

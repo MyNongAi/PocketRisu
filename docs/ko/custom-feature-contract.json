@@ -1962,7 +1962,9 @@
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "shrinkClipboardImage(await fetchClipboardDataUrl(iconImage), 80, 80)" },
         { "file": "src/ts/gui/logCaptureState.svelte.ts", "contains": "new ClipboardItem({ 'image/png': fitForCopy(image.blob) })" },
         { "file": "src/ts/chatClipboard.ts", "contains": "export function backgroundPictureOf(" },
-        { "file": "src/ts/chatClipboard.ts", "contains": "(options.rasterizeBackground ?? rasterizeBackgroundPicture)" }
+        { "file": "src/ts/chatClipboard.ts", "contains": "(options.rasterizeBackground ?? rasterizeBackgroundPicture)" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "if (imageBox && imageBox.width > 0) clone.style.maxWidth = boardMaxWidth(imageBox.width)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "max-width: min(100%, 80px); border-radius: 50%;" }
       ],
       "regressionTests": [
         "src/ts/chatClipboard.test.ts",

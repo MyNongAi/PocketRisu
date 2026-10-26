@@ -40,7 +40,7 @@
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
     import { getChatAssetRenderWindow, normalizeExternalAssetRecentOutputs, shouldResolveChatAssets } from '../../ts/chatAssetWindow';
-    import { boardSafeTags, buildPortableChatFragment, chatClipboardErrorMessage, clipboardSizeLabel, embedParsedChatAssets, fetchClipboardDataUrl, hexColors, replaceFormControls, shrinkClipboardImage, writeChatClipboard } from '../../ts/chatClipboard';
+    import { boardSafeTags, buildPortableChatFragment, chatClipboardErrorMessage, clipboardSizeLabel, embedParsedChatAssets, fetchClipboardDataUrl, hexColors, rasterizeCoverImage, replaceFormControls, shrinkClipboardImage, writeChatClipboard } from '../../ts/chatClipboard';
 
     // Reactive breakpoint: a raw window.innerWidth read here is evaluated once
     // at mount and never follows a resize (#79).
@@ -1165,7 +1165,12 @@
                     if (iconPath) {
                         const iconImage = await getFileSrc(iconPath)
                         // Drawn at 80 px: the full portrait made the copy megabytes larger.
-                        if (iconImage) finalIconDataUrl = await shrinkClipboardImage(await fetchClipboardDataUrl(iconImage), 80, 80)
+                        // Cropped square as shown, since a board drops the width and object-fit
+                        // and drew it as a tall oval at twice the size (Arca, 2026-10-26).
+                        if (iconImage) {
+                            const embedded = await fetchClipboardDataUrl(iconImage)
+                            finalIconDataUrl = await rasterizeCoverImage(embedded, 80, 80, 'center').catch(() => shrinkClipboardImage(embedded, 80, 80))
+                        }
                     }
                 } catch (error) {
                     console.error('Icon error:', error)
@@ -1174,7 +1179,7 @@
                 const html = `<div style="font-family: 'Segoe UI', Roboto, Arial, sans-serif; color: ${root.getPropertyValue('--risu-theme-textcolor')}; line-height: 1.6; max-width: 600px; margin: 1rem auto; background: ${root.getPropertyValue('--risu-theme-bgcolor')}; border-radius: 12px; box-shadow: 0px 4px 12px rgba(0,0,0,0.15); overflow: hidden;">
 <div style="padding: 20px;">
 <div style="display: flex; flex-direction: column; align-items: center; margin-bottom: 1rem; text-align: center;">
-    ${finalIconDataUrl ? `<img style="width: 80px; height: 80px; border-radius: 50%; border: 3px solid ${root.getPropertyValue('--risu-theme-darkborderc')}; margin-bottom: 0.75rem; object-fit: cover;" src="${finalIconDataUrl}" alt="profile">` : ''}
+    ${finalIconDataUrl ? `<img style="width: 80px; height: 80px; max-width: min(100%, 80px); border-radius: 50%; border: 3px solid ${root.getPropertyValue('--risu-theme-darkborderc')}; margin-bottom: 0.75rem; object-fit: cover;" src="${finalIconDataUrl}" alt="profile">` : ''}
     <h3 style="color: ${root.getPropertyValue('--risu-theme-textcolor')}; font-weight: 600; font-size: 1.5rem; margin: 0 0 0.5rem 0;">${escapeHtml(displayName)}</h3>
     ${!isUserMessage ? `<span style="display: inline-block; border-radius: 16px; font-size: 0.8rem; padding: 0.25rem 0.75rem; background: ${root.getPropertyValue('--risu-theme-darkbg')}; color: ${root.getPropertyValue('--risu-theme-textcolor')}; border: 1px solid ${root.getPropertyValue('--risu-theme-darkborderc')};">${escapeHtml(modelInfo)}</span>` : ''}
 </div>
