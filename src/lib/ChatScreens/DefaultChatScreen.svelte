@@ -1122,7 +1122,10 @@ import { isMobile } from 'src/ts/platform'
             })
         } catch (error) {
             console.error(error)
-            alertError(error)
+            // Stop rejects a request still waiting with an AbortError ("signal
+            // is aborted without reason"), shown as an unknown error (the
+            // user's report, 2026-10-26). It is the user's own stop.
+            if (!abortController.signal.aborted) alertError(error)
         }
         // Owner-scoped: after a forced release (stopGeneration) this send may
         // conclude long after a newer send took the chat; leave that one alone.
