@@ -142,6 +142,7 @@
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "function keepReaderAnchor(): boolean" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "!keepSwipeRow()" },
         { "file": "src/styles.css", "contains": "overflow-anchor: none;" },
+        { "file": "src/styles.css", "contains": "let the whole chat pan sideways" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "function readingLine(container: HTMLElement, top: number)" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "autoScroll: DBState.db.autoScrollToNewMessage && generatingHere()" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "unsubscribers.push(ReloadChatPointer.subscribe((pointers) => {" },

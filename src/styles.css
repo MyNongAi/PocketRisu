@@ -484,6 +484,13 @@ body {
   .default-chat-screen {
     scrollbar-width: none;
   }
+  /* A message wider than the phone (a bot's HTML panel whose padding sits
+     outside its 100% width, a wide table) let the whole chat pan sideways
+     into blank space while scrolling down (the user's report, 2026-10-26).
+     Code blocks scroll on their own. */
+  .default-chat-screen {
+    overflow-x: hidden;
+  }
 }
 
 /* The chat keeps the reader's place itself (Chats.svelte reader anchor, as
