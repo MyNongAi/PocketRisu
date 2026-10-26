@@ -5,6 +5,7 @@
     // spread on the element first; its own attributes after them win.
     // z-[45]: above a base-tier dialog (z-40), under the alert it may open (z-50).
     import { ContextMenu } from 'bits-ui';
+    import Sortable from 'sortablejs';
     import type { Snippet } from 'svelte';
     import { cn } from 'src/lib/utils';
 
@@ -33,6 +34,27 @@
         pressTimer = 0
     }
 
+    // On touch, the same long press lifts a row of a list that drags
+    // (ShSortableList): Sortable picks the row up after 300ms and a move drags
+    // it, but this menu opened under the finger at 500-700ms and stopped the
+    // drag (the user's report, 2026-10-26: modules would not move on the
+    // phone). On such a row the menu waits until the finger lets go without
+    // having moved; a move drags.
+    let touchHold = false
+    let touchMoved = false
+    let touchAt = 0
+
+    function dragsOnTouch(event: PointerEvent): boolean {
+        const target = event.target instanceof Element ? event.target : null
+        const list = (event.currentTarget as HTMLElement).closest<HTMLElement>('[data-risu-sortable-list]')
+        const sortable = list ? Sortable.get(list) : undefined
+        if (!target || !sortable || sortable.option('disabled')) return false
+        const filter = sortable.option('filter')
+        if (typeof filter === 'string' && filter && target.closest(filter)) return false
+        const handle = sortable.option('handle')
+        return !handle || !!target.closest(handle)
+    }
+
     type Handler = ((event: any) => void) | undefined
     const call = (handler: unknown, event: Event) => { if (typeof handler === 'function') (handler as Handler)!(event) }
 
@@ -40,9 +62,18 @@
         return {
             ...props,
             onpointerdown: (event: PointerEvent) => {
-                call(props.onpointerdown, event)
                 swallowClick = false
                 cancelPress()
+                touchHold = event.pointerType === 'touch' && !disabled && dragsOnTouch(event)
+                if (touchHold) {
+                    // bits-ui's own long-press timer stays off.
+                    touchMoved = false
+                    touchAt = event.timeStamp
+                    pressX = event.clientX
+                    pressY = event.clientY
+                    return
+                }
+                call(props.onpointerdown, event)
                 if (disabled || event.pointerType !== 'mouse' || event.button !== 0) return
                 const target = event.currentTarget as HTMLElement
                 pressX = event.clientX
@@ -55,9 +86,29 @@
             },
             onpointermove: (event: PointerEvent) => {
                 call(props.onpointermove, event)
-                if (pressTimer && Math.hypot(event.clientX - pressX, event.clientY - pressY) > MOVE_TOLERANCE) cancelPress()
+                const moved = Math.hypot(event.clientX - pressX, event.clientY - pressY) > MOVE_TOLERANCE
+                if (touchHold && moved) touchMoved = true
+                if (pressTimer && moved) cancelPress()
             },
-            onpointerup: (event: PointerEvent) => { call(props.onpointerup, event); cancelPress() },
+            onpointerup: (event: PointerEvent) => {
+                call(props.onpointerup, event)
+                cancelPress()
+                if (!touchHold) return
+                touchHold = false
+                if (touchMoved || event.timeStamp - touchAt < LONG_PRESS_MS) return
+                const target = event.currentTarget as HTMLElement
+                swallowClick = true
+                target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: event.clientX, clientY: event.clientY }))
+            },
+            onpointercancel: (event: PointerEvent) => { call(props.onpointercancel, event); touchHold = false },
+            oncontextmenu: (event: MouseEvent) => {
+                // The phone's own long press (Android) while the row may be dragged.
+                if (touchHold) {
+                    event.preventDefault()
+                    return
+                }
+                call(props.oncontextmenu, event)
+            },
             onpointerleave: (event: PointerEvent) => { call(props.onpointerleave, event); cancelPress() },
             onclickcapture: (event: MouseEvent) => {
                 call(props.onclickcapture, event)

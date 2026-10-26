@@ -349,10 +349,12 @@
         "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
         "src/lib/Setting/Pages/Module/ModuleMenu.svelte",
         "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte",
-        "src/lib/UI/FolderedList.svelte"
+        "src/lib/UI/FolderedList.svelte",
+        "src/lib/UI/GUI/ShContextMenu.svelte"
       ],
       "requiredMarkers": [
         { "file": "src/ts/process/moduleFolders.ts", "contains": "moveModuleFolderByDrop" },
+        { "file": "src/lib/UI/GUI/ShContextMenu.svelte", "contains": "touchHold = event.pointerType === 'touch' && !disabled && dragsOnTouch(event)" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "recordModuleFolderActivation" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "sortModulesByActivation" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "getLatestModuleCatalogPromotion" },
