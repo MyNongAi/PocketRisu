@@ -1869,15 +1869,26 @@
     },
     {
       "id": "TEXTAREA-RESIZE-GRIP",
-      "title": "로어북 내용 칸 모서리 손잡이로 높이 조절",
+      "title": "글 칸 오른쪽 아래 직삼각형으로 높이 조절",
       "criticality": "core-ux",
       "ownerFiles": [
+        "src/lib/UI/GUI/ResizeCorner.svelte",
+        "src/ts/gui/fieldHeight.ts",
         "src/lib/UI/GUI/TextAreaInput.svelte",
-        "src/lib/SideBars/LoreBook/LoreBookData.svelte"
+        "src/lib/SideBars/LoreBook/LoreBookData.svelte",
+        "src/lib/SideBars/MemoDialog.svelte",
+        "src/lib/Setting/listedPersona.svelte"
       ],
       "requiredMarkers": [
         { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "resizeKey=\"lorebook\"" },
-        { "file": "src/lib/UI/GUI/TextAreaInput.svelte", "contains": "onpointerdown={startResize}" }
+        { "file": "src/lib/UI/GUI/ResizeCorner.svelte", "contains": "onpointerdown={start}" },
+        { "file": "src/lib/UI/GUI/ResizeCorner.svelte", "contains": "field.style.flexShrink = height ? '0' : ''" },
+        { "file": "src/lib/UI/GUI/TextAreaInput.svelte", "contains": "<ResizeCorner target={highlightDom ?? null} storageKey={resizeKey} class=\"z-60\" />" },
+        { "file": "src/lib/SideBars/MemoDialog.svelte", "contains": "<ResizeCorner />" },
+        { "file": "src/lib/Setting/listedPersona.svelte", "contains": "<ResizeCorner />" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/fieldHeight.test.ts"
       ]
     },
     {

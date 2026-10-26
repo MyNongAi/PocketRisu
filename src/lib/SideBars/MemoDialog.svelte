@@ -8,6 +8,7 @@
     import type { character } from 'src/ts/storage/database.svelte'
     import { language } from 'src/lang'
     import { BackLayerRank, useBackLayer } from 'src/ts/gui/backLayers.svelte'
+    import ResizeCorner from 'src/lib/UI/GUI/ResizeCorner.svelte'
 
     let { chara = $bindable(), close }: { chara: character, close: () => void } = $props()
 
@@ -46,26 +47,28 @@
             </div>
         </div>
         <div class="flex min-h-0 flex-col gap-4 overflow-y-auto p-4">
-            <label class="flex flex-col gap-1">
+            <label class="relative flex flex-col gap-1">
                 <span class="text-sm text-textcolor">{language.memoBot.replace('{}', chara.name || 'Unnamed')}</span>
                 <textarea
-                    class="risu-field-border min-h-28 resize-y rounded-md bg-transparent px-3 py-2 text-sm text-textcolor outline-none"
+                    class="risu-field-border min-h-28 resize-none rounded-md bg-transparent px-3 py-2 text-sm text-textcolor outline-none"
                     rows="5"
                     placeholder={language.memoBotPlaceholder}
                     value={chara.nodeOnlyMemo ?? ''}
                     oninput={(e) => { chara.nodeOnlyMemo = e.currentTarget.value }}
                 ></textarea>
+                <ResizeCorner />
             </label>
             {#if chat && !chat._placeholder}
-                <label class="flex flex-col gap-1">
+                <label class="relative flex flex-col gap-1">
                     <span class="text-sm text-textcolor">{language.memoChat.replace('{}', chat.name || '')}</span>
                     <textarea
-                        class="risu-field-border min-h-28 resize-y rounded-md bg-transparent px-3 py-2 text-sm text-textcolor outline-none"
+                        class="risu-field-border min-h-28 resize-none rounded-md bg-transparent px-3 py-2 text-sm text-textcolor outline-none"
                         rows="5"
                         placeholder={language.memoChatPlaceholder}
                         value={chat.nodeOnlyMemo ?? ''}
                         oninput={(e) => { chat.nodeOnlyMemo = e.currentTarget.value }}
                     ></textarea>
+                    <ResizeCorner />
                 </label>
             {/if}
             <p class="text-xs text-textcolor2">{language.memoPrivateNote}</p>

@@ -11,6 +11,7 @@
     import LazyAssetPreview from "src/lib/Others/LazyAssetPreview.svelte";
     import ShContextMenu from "src/lib/UI/GUI/ShContextMenu.svelte";
     import ShDropdownMenuItem from "src/lib/UI/GUI/ShDropdownMenuItem.svelte";
+    import ResizeCorner from "src/lib/UI/GUI/ResizeCorner.svelte";
 
     interface Props {
         close?: () => void;
@@ -230,9 +231,10 @@
                         </label>
                     </div>
                 </div>
-                <label class="mt-3 flex flex-col gap-1">
+                <label class="relative mt-3 flex flex-col gap-1">
                     <span class="text-xs text-textcolor2">{language.description}</span>
-                    <textarea class="risu-field-border min-h-48 resize-y rounded-md bg-transparent px-3 py-2 text-sm text-textcolor outline-none" rows="10" placeholder={`Put the description of this persona here.\nExample: [<user> is a 20 year old girl.]`} value={editPersona.personaPrompt} oninput={(e) => editText({ personaPrompt: e.currentTarget.value })}></textarea>
+                    <textarea class="risu-field-border min-h-48 resize-none rounded-md bg-transparent px-3 py-2 text-sm text-textcolor outline-none" rows="10" placeholder={`Put the description of this persona here.\nExample: [<user> is a 20 year old girl.]`} value={editPersona.personaPrompt} oninput={(e) => editText({ personaPrompt: e.currentTarget.value })}></textarea>
+                    <ResizeCorner />
                 </label>
                 <p class="mt-2 text-xs text-textcolor2">{editingDefault
                     ? (editPersona.nodeOnlyBlank ? language.personaBindEditDefaultBlank : language.personaBindEditDefault)

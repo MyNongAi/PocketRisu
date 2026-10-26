@@ -32,7 +32,6 @@
     class:min-h-72={height === 'default' && $textAreaSize === 4}
     class:min-h-80={height === 'default' && $textAreaSize === 5}
     bind:this={highlightDom}
-    style:height={customHeight ? `${customHeight}px` : undefined}
     onfocusout={() => {
         hideAutoComplete()
     }}
@@ -159,7 +158,7 @@
 {/if}
     </div>
     {#if showActionBar}
-        <div class="shrink-0 flex items-center justify-end gap-0.5 px-1.5 py-1 border-t border-darkborderc text-textcolor2">
+        <div class="shrink-0 flex items-center justify-end gap-0.5 py-1 border-t border-darkborderc text-textcolor2 {resizable ? 'pl-1.5 pr-8' : 'px-1.5'}">
             <button type="button" class="p-1 rounded hover:text-textcolor transition-colors" title={language.copy} aria-label={language.copy} onclick={copyValue}>
                 {#if copied}
                     <CheckIcon size={16} class="text-green-500" />
@@ -173,10 +172,7 @@
             <button type="button" class="p-1 rounded hover:text-textcolor transition-colors" title={language.hotkeyDesc.popupEditor} aria-label={language.hotkeyDesc.popupEditor} onclick={openPopupEditor}>
                 <Maximize2 size={16} />
             </button>
-            {#if resizeKey}{@render resizeGrip('ml-1')}{/if}
         </div>
-    {:else if resizeKey}
-        <div class="absolute bottom-0.5 right-0.5 z-60">{@render resizeGrip('')}</div>
     {/if}
     <div class="hidden absolute z-100 bg-bgcolor border border-darkborderc p-2 flex-col" bind:this={autoCompleteDom}>
         {#each autocompleteContents as content, i}
@@ -185,18 +181,10 @@
             }}>{content}</button>
         {/each}
     </div>
+    {#if resizable}
+        <ResizeCorner target={highlightDom ?? null} storageKey={resizeKey} class="z-60" />
+    {/if}
 </div>
-{#snippet resizeGrip(extraClass: string)}
-    <div
-        role="separator"
-        aria-orientation="horizontal"
-        aria-label={language.textAreaResize}
-        title={language.textAreaResize}
-        class="flex cursor-ns-resize touch-none select-none items-center justify-center rounded p-1 text-textcolor2 hover:text-textcolor {extraClass}"
-        onpointerdown={startResize}
-        ondblclick={resetHeight}
-    ><GripHorizontalIcon size={16} /></div>
-{/snippet}
 
 <script lang="ts">
     import { textAreaSize, textAreaTextSize } from 'src/ts/gui/guisize'
@@ -206,7 +194,8 @@
   import { DBState, disableHighlight, popUpEditorStore } from 'src/ts/stores.svelte';
   import { isMobile } from 'src/ts/platform'
     import { hotkeyMatches } from 'src/ts/hotkey';
-    import { Maximize2, CopyIcon, CheckIcon, RefreshCwIcon, GripHorizontalIcon } from '@lucide/svelte'
+    import { Maximize2, CopyIcon, CheckIcon, RefreshCwIcon } from '@lucide/svelte'
+    import ResizeCorner from './ResizeCorner.svelte'
     import { alertConfirm } from 'src/ts/alert'
     import { isSecureContext } from 'src/ts/secureContext'
     import { language } from 'src/lang'
@@ -228,9 +217,8 @@
         popupLanguage?: string;
         actionBar?: boolean;
         /**
-         * Shows a corner grip that drags the field taller (pointer events, so
-         * touch works too, unlike CSS resize). The height is remembered per
-         * key; a double tap on the grip goes back to the default.
+         * Remembers the height the corner triangle (ResizeCorner) dragged the
+         * field to, per key on this device; without one it lasts while shown.
          */
         resizeKey?: string;
     }
@@ -255,56 +243,9 @@
         resizeKey = undefined
     }: Props = $props();
 
-    // ── Corner resize (resizeKey) ──────────────────────────────────────────
-    const RESIZE_STORAGE_PREFIX = 'pocketrisu:textarea-height:'
-    function readStoredHeight(key: string | undefined): number | null {
-        if (!key) return null
-        try {
-            const value = Number(localStorage.getItem(RESIZE_STORAGE_PREFIX + key))
-            return Number.isFinite(value) && value >= 80 ? value : null
-        } catch {
-            return null
-        }
-    }
-    // svelte-ignore state_referenced_locally
-    let customHeight = $state<number | null>(readStoredHeight(resizeKey))
-    function storeHeight(height: number | null) {
-        if (!resizeKey) return
-        try {
-            if (height) localStorage.setItem(RESIZE_STORAGE_PREFIX + resizeKey, String(height))
-            else localStorage.removeItem(RESIZE_STORAGE_PREFIX + resizeKey)
-        } catch {
-            // remembered for this page only
-        }
-    }
-    function startResize(event: PointerEvent) {
-        if (!highlightDom) return
-        event.preventDefault()
-        const startY = event.clientY
-        const startHeight = highlightDom.getBoundingClientRect().height
-        // Never below the field's own minimum (its default height): a drag that
-        // ends there goes back to the default.
-        const minHeight = parseFloat(getComputedStyle(highlightDom).minHeight) || 80
-        const grip = event.currentTarget as HTMLElement
-        grip.setPointerCapture?.(event.pointerId)
-        const move = (moveEvent: PointerEvent) => {
-            const next = Math.round(startHeight + moveEvent.clientY - startY)
-            customHeight = next <= minHeight ? null : next
-        }
-        const stop = () => {
-            window.removeEventListener('pointermove', move)
-            window.removeEventListener('pointerup', stop)
-            window.removeEventListener('pointercancel', stop)
-            storeHeight(customHeight)
-        }
-        window.addEventListener('pointermove', move)
-        window.addEventListener('pointerup', stop)
-        window.addEventListener('pointercancel', stop)
-    }
-    function resetHeight() {
-        customHeight = null
-        storeHeight(null)
-    }
+    // Every field gets the corner triangle (the user's request, 2026-10-26)
+    // except one that fills its container.
+    const resizable = $derived(height !== 'full')
     // `actionBar` prop overrides per-field; otherwise follow the accessibility toggle.
     const showActionBar = $derived(actionBar ?? DBState.db.showInputActionBar ?? true)
     let copied = $state(false)
