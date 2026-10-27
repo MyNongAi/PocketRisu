@@ -39,7 +39,7 @@
     import ChatBody from './ChatBody.svelte'
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
-    import { getChatAssetRenderWindow, normalizeExternalAssetRecentOutputs, shouldResolveChatAssets } from '../../ts/chatAssetWindow';
+    import { getChatAssetRenderWindow, normalizeExternalAssetRecentOutputs, shouldResolveChatAssets, watchAssetViewport } from '../../ts/chatAssetWindow';
     import { boardSafeStyles, boardSafeTags, buildPortableChatFragment, chatClipboardErrorMessage, clipboardSizeLabel, embedParsedChatAssets, fetchClipboardDataUrl, hexColors, rasterizeCoverImage, replaceFormControls, shrinkClipboardImage, writeChatClipboard } from '../../ts/chatClipboard';
 
     // Reactive breakpoint: a raw window.innerWidth read here is evaluated once
@@ -190,11 +190,7 @@
             return
         }
 
-        const observer = new IntersectionObserver((entries) => {
-            viewportAssetVisible = entries.some((entry) => entry.isIntersecting)
-        }, { rootMargin: '320px 0px' })
-        observer.observe(root)
-        return () => observer.disconnect()
+        return watchAssetViewport(root, (visible) => { viewportAssetVisible = visible })
     })
 
     $effect(() => {

@@ -77,6 +77,9 @@
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "return hexColors(html)" },
         { "file": "src/ts/chatClipboard.ts", "contains": "replaceFormControls(cloneRoot)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "viewportAssetVisible" },
+        { "file": "src/ts/chatAssetWindow.ts", "contains": "export function watchAssetViewport(element: Element, onChange: (visible: boolean) => void): () => void" },
+        { "file": "src/ts/chatAssetWindow.ts", "contains": "rootMargin: VIEWPORT_ASSET_COOL_MARGIN" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "return watchAssetViewport(root, (visible) => { viewportAssetVisible = visible })" },
         { "file": "src/lib/UI/TwoClickDeleteButton.svelte", "contains": "aria-pressed={armed}" },
         { "file": "src/lib/SideBars/CharConfig.svelte", "contains": "<TwoClickDeleteButton" },
         { "file": "src/lib/Setting/Pages/Module/ModuleMenu.svelte", "contains": "<TwoClickDeleteButton" }
@@ -194,9 +197,16 @@
         "src/lib/SideBars/Sidebar.svelte",
         "src/lib/SideBars/Toggles.svelte",
         "src/lib/SideBars/CharConfig.svelte",
-        "src/lib/UI/GUI/SideBarArrow.svelte"
+        "src/lib/UI/GUI/SideBarArrow.svelte",
+        "src/ts/gui/paneFormScope.ts"
       ],
       "requiredMarkers": [
+        { "file": "src/ts/gui/paneFormScope.ts", "contains": "export function keepLabelInPane(event: MouseEvent, pane: Element): void" },
+        { "file": "src/ts/gui/paneFormScope.ts", "contains": "radio.setAttribute('form', formId)" },
+        { "file": "src/ts/gui/morphHtml.ts", "contains": "prepare?.(next)" },
+        { "file": "src/lib/ChatScreens/ChatBody.svelte", "contains": "(nodes) => scopePaneRadios(nodes, root)" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "<form id={paneFormId} hidden onsubmit={(e) => e.preventDefault()}></form>" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const onClick = (event: MouseEvent) => keepLabelInPane(event, pane)" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "class:flex-row-reverse={splitLayout.panelEdge.side === 'end'}" },
         { "file": "src/ts/splitLayout.svelte.ts", "contains": "slideShut('panel', pane, () => setPanePanelOpen(pane, false))" },
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "const railShown = $derived(!splitLayout.railHidden && (railFollows.length === 0 || railFollows.some((pane) => splitLayout.panelOpen[pane])))" },
@@ -267,6 +277,7 @@
       ],
       "regressionTests": [
         "src/ts/splitLayout.svelte.test.ts",
+        "src/ts/gui/paneFormScope.test.ts",
         "src/ts/gui/paneQuery.test.ts",
         "src/ts/process/scriptings.test.ts",
         "src/lib/SideBars/PromptBind.panes.test.ts",

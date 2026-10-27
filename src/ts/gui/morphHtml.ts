@@ -150,14 +150,16 @@ export class MorphedHtml {
     private source: Node[] = []
     private html: string | null = null
 
-    /** Show `html` at the end of `root`; returns whether the DOM changed. */
-    render(root: Node, html: string): boolean {
+    /** Show `html` at the end of `root`; returns whether the DOM changed.
+     *  `prepare` adjusts the parsed nodes before any of them is drawn. */
+    render(root: Node, html: string, prepare?: (nodes: readonly Node[]) => void): boolean {
         if (root !== this.root) {
             this.clear()
             this.root = root
         }
         if (html === this.html) return false
         const next = parse(html)
+        prepare?.(next)
         if (this.html === null) {
             this.live = next.map(fresh)
             for (const node of this.live) root.appendChild(node)

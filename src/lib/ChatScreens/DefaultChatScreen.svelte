@@ -70,6 +70,7 @@ import { isMobile } from 'src/ts/platform'
 
     import { isSendKey } from 'src/ts/gui/sendKey';
     import { getPaneView } from 'src/ts/chatPanes.svelte';
+    import { keepLabelInPane, newPaneFormId } from 'src/ts/gui/paneFormScope';
 
     const loadPlaygroundMenu = () => import('../Playground/PlaygroundMenu.svelte').then(m => m.default);
 
@@ -106,6 +107,16 @@ import { isMobile } from 'src/ts/platform'
     // actions below act on what it shows. Without a split, the selection.
     const view = getPaneView()
     let screenRoot: HTMLDivElement | undefined = $state()
+    // A card's CSS panel pressed here acts on this pane's copy, not on the
+    // other pane's one with the same id or radio name (paneFormScope.ts).
+    const paneFormId = newPaneFormId()
+    $effect(() => {
+        const pane = screenRoot
+        if (!pane) return
+        const onClick = (event: MouseEvent) => keepLabelInPane(event, pane)
+        pane.addEventListener('click', onClick, true)
+        return () => pane.removeEventListener('click', onClick, true)
+    })
     let currentCharacter = $derived(view.character)
     let currentChatSlot = $derived(view.chat)
     let currentChatReady = $derived(!!currentChatSlot && !currentChatSlot._placeholder)
@@ -1946,7 +1957,10 @@ import { isMobile } from 'src/ts/platform'
              gesture to the viewport; mobile Chrome then collapses its URL bar, the visual viewport
              resizes, and the sticky composer gets misanchored (bar floats up with a gap below).
              PWA/standalone has no URL bar, hence unaffected. -->
+        <!-- This pane's message radios are one group among themselves only (paneFormScope.ts). -->
+        <form id={paneFormId} hidden onsubmit={(e) => e.preventDefault()}></form>
         <div bind:this={screenRoot} class="h-full w-full flex flex-col overflow-y-auto overscroll-y-contain relative default-chat-screen"
+            data-pane-form={paneFormId}
             class:nodeonly-standard={DBState.db.theme === ''}
             class:no-chat-width-wide={DBState.db.theme === '' && DBState.db.nodeOnlyStandardChatWidth === 'wide'}
             class:no-chat-width-full={DBState.db.theme === '' && DBState.db.nodeOnlyStandardChatWidth === 'full'}

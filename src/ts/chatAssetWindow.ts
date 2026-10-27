@@ -36,6 +36,40 @@ export function shouldResolveChatAssets(
         || viewportVisible
 }
 
+/** A cold message warms once it is this close to the view... */
+export const VIEWPORT_ASSET_WARM_MARGIN = '320px 0px'
+/** ...and cools only once it is this far past it. */
+export const VIEWPORT_ASSET_COOL_MARGIN = '200% 0px'
+
+/**
+ * Reports `true` when `element` comes near the chat view and `false` once it
+ * is well past it. Warming or cooling redraws the message at another height
+ * (asset names become images, or the other way round); with one edge for
+ * both, a message ending just inside the view's top shrank out of the view,
+ * cooled, grew back in and warmed again, every frame, and the transcript
+ * under it shook up and down (the user's report, 2026-10-27).
+ *
+ * The chat scroller is the observers' root, so the margins reach past the
+ * view: with the page as root, the scroller clipped them and a message
+ * warmed only when it was already on screen.
+ */
+export function watchAssetViewport(element: Element, onChange: (visible: boolean) => void): () => void {
+    const root = element.closest('.default-chat-screen')
+    const warm = new IntersectionObserver((entries) => {
+        if (entries[entries.length - 1]?.isIntersecting) onChange(true)
+    }, { root, rootMargin: VIEWPORT_ASSET_WARM_MARGIN })
+    const cool = new IntersectionObserver((entries) => {
+        const latest = entries[entries.length - 1]
+        if (latest && !latest.isIntersecting) onChange(false)
+    }, { root, rootMargin: VIEWPORT_ASSET_COOL_MARGIN })
+    warm.observe(element)
+    cool.observe(element)
+    return () => {
+        warm.disconnect()
+        cool.disconnect()
+    }
+}
+
 function isActualCharacterOutput(message: ChatAssetWindowMessage | undefined): boolean {
     return message?.role === 'char' && !message.isComment && !message.disabled
 }

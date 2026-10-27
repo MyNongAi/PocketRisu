@@ -5,6 +5,7 @@
     import { alertError } from "../../ts/alert"
     import { onDestroy, tick, untrack } from 'svelte'
     import { MorphedHtml } from "src/ts/gui/morphHtml"
+    import { scopePaneRadios } from "src/ts/gui/paneFormScope"
     import { addMetadataToElement, getDistance, ParseMarkdown, postTranslationParse, resolveInlayPlaceholders, trimMarkdown, type CbsConditions, type simpleCharacterArgument } from "../../ts/parser/parser.svelte"
     import { getLLMCache, translateHTML } from "../../ts/translator/translator"
     import { captureModuleRuntimeContext, getModuleAssets, getModules } from "src/ts/process/modules";
@@ -524,7 +525,7 @@
     let markParsingResult = $derived.by(() => markParsing(msgDisplay, character, idx, renderRevision))
 
     const renderParsed = (root: HTMLElement, parsed: string, shortName: string) => {
-        rendered.render(root, untrack(() => addMetadataToElement(trimMarkdown(parsed), shortName)))
+        rendered.render(root, untrack(() => addMetadataToElement(trimMarkdown(parsed), shortName)), (nodes) => scopePaneRadios(nodes, root))
     }
 
     // Declared before the effect below so the new HTML is in place before its
