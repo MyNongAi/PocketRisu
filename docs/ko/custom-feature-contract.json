@@ -1149,6 +1149,7 @@
       "criticality": "core-ux",
       "ownerFiles": [
         "src/ts/gui/pairedModules.ts",
+        "src/ts/gui/pairFinder.ts",
         "src/ts/gui/botModuleRemoval.ts",
         "src/ts/process/moduleRemoval.ts",
         "src/lib/ChatScreens/CreatorQuote.svelte",
@@ -1166,6 +1167,8 @@
         { "file": "src/ts/gui/pairedModules.ts", "contains": "if (stub.trashedAt) nameById.set" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "findBotsOfModule(rmodule.id)" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "findModulesOfBot(character.chaId)" },
+        { "file": "src/ts/gui/pairFinder.ts", "contains": "for (const find of panelFinders) if (find(module.id)) return" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "if (!id || sidePanelList()) return" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "moduleLink={characterModuleLink(" },
         { "file": "src/ts/realmCompanionModule.ts", "contains": "recordModulePair(getDatabase().modules, moduleIds, character.chaId)" },
         { "file": "src/ts/realmCompanionModule.ts", "contains": "await importProtonShare(link, password, share, 'module', keep, { browse: true, taskName: companionTaskName })" },

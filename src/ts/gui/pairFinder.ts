@@ -15,6 +15,16 @@ import { botsOfModule, modulesOfBot } from './pairedModules'
 /** The module the module page should find (it takes and clears this). */
 export const moduleFindRequest = writable<string | null>(null)
 
+// The module list of the sidebar's module tab, when it is on screen, finds
+// the module in place instead of the module page (the user's request,
+// 2026-10-27). Each such list registers here and says whether it took it.
+const panelFinders = new Set<(moduleId: string) => boolean>()
+
+export function addModulePanelFinder(find: (moduleId: string) => boolean): () => void {
+    panelFinders.add(find)
+    return () => { panelFinders.delete(find) }
+}
+
 async function pick<T>(items: T[], label: (item: T) => string, prompt: string): Promise<T | null> {
     if (items.length <= 1) return items[0] ?? null
     const selected = Number.parseInt(await alertSelect([...items.map(label), language.cancel], prompt))
@@ -31,6 +41,7 @@ export async function findModulesOfBot(chaId: string): Promise<void> {
     const character = DBState.db.characters.find((c) => c?.chaId === chaId)
     const module = await pick(modulesOfBot(character, DBState.db.modules), (m) => m.name || 'Unnamed', language.pairFindWhichModule)
     if (!module) return
+    for (const find of panelFinders) if (find(module.id)) return
     moduleFindRequest.set(module.id)
     openSettings(SettingsRoute.Module)
 }

@@ -15,7 +15,7 @@
     import { tooltip } from "src/ts/gui/tooltip";
     import { alertConfirm, alertError, alertSelect, notifySuccess } from "src/ts/alert";
     import { onDestroy, onMount, tick, untrack } from "svelte";
-    import { findBotsOfModule, moduleFindRequest } from "src/ts/gui/pairFinder";
+    import { addModulePanelFinder, findBotsOfModule, moduleFindRequest } from "src/ts/gui/pairFinder";
     import { importMCPModule } from "src/ts/process/mcp/mcp";
     import { convertModuleToCharacter } from "src/ts/interchangeability";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
@@ -107,17 +107,34 @@
     let foundModuleIndex = $derived(foundModuleId && moduleSearchQuery
         ? displayModules.findIndex((module) => module.id === foundModuleId)
         : -1)
+    function showFoundModule(id: string) {
+        const module = DBState.db.modules.find((m) => m?.id === id)
+        if (!module) return
+        moduleSearchQuery = module.name
+        foundModuleId = id
+    }
+    // The sidebar's module tab mounts this list too (QuickSettingsGUI). It
+    // stays mounted while the sidebar is closed, so it leaves the page's
+    // request alone, and takes a find itself only while it is on screen and
+    // showing the list (an open editor keeps its unsaved draft).
+    const sidePanelList = () => modulePageRoot?.closest<HTMLElement>('.rs-setting-cont-5') ?? null
     $effect(() => {
         const id = $moduleFindRequest
-        if (!id) return
+        if (!id || sidePanelList()) return
         untrack(() => {
             moduleFindRequest.set(null)
-            const module = DBState.db.modules.find((m) => m?.id === id)
-            if (!module) return
-            moduleSearchQuery = module.name
-            foundModuleId = id
+            showFoundModule(id)
         })
     })
+    onMount(() => addModulePanelFinder((id) => {
+        const list = sidePanelList()
+        if (!list || mode !== 0) return false
+        const rect = list.getBoundingClientRect()
+        if (rect.width === 0 || rect.right <= 0 || rect.left >= window.innerWidth) return false
+        showFoundModule(id)
+        list.scrollTop = 0
+        return true
+    }))
     let promotedModuleIndex = $derived(catalogPromotion && !catalogPromotion.folderId
         ? displayModules.findIndex((module) => module.id === catalogPromotion?.moduleId)
         : -1)
