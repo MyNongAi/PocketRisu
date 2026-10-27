@@ -397,11 +397,11 @@
     hidden?: boolean;
     openLegacyGrid?: () => void;
     /**
-     * The docked split (SplitWorkspace) places the two halves apart: the bot
-     * list ('rail') once, and each pane's character panel ('panel') beside it.
+     * The docked split (SplitWorkspace) places the two halves itself: the
+     * open pane's character panel ('panel') with its bot list ('rail') beside it.
      */
     part?: 'all' | 'rail' | 'panel';
-    /** The pane a 'panel' belongs to. */
+    /** The pane a 'panel' or a docked split's 'rail' belongs to. */
     pane?: PaneId;
     /**
      * A narrow window's split: the whole sidebar of `pane`, laid over that

@@ -6,12 +6,13 @@
     // content keeps the same parent whether or not the split is open, so
     // toggling the split does not remount the chat either.
     //
-    // Docked (a desktop-sized window, the user's request 2026-10-21): one bot
-    // list for both panes, at the start, between the panes or at the end;
-    // each pane with its own character panel, opened and closed by its arrow;
+    // Docked (a desktop-sized window, the user's request 2026-10-21): each
+    // pane with its own character panel, opened and closed by its arrow, one
+    // at a time, the bot list coming out with it on its outer side
+    // (2026-10-27: the list says which pane a bot opens in, and there is one);
     // side by side or stacked; the divider resizes, and its menu (right-click,
-    // or a long press) swaps the panes, stacks or unstacks them, moves the bot
-    // list and evens the sizes (splitLayout.svelte.ts). A tap on it shows a
+    // or a long press) swaps the panes, stacks or unstacks them and sets the
+    // list's columns and the panels' edges (splitLayout.svelte.ts). A tap on it shows a
     // row of buttons, as a Galaxy Fold's split does: stack or unstack, swap,
     // close the split.
     import type { Snippet } from 'svelte'
@@ -23,7 +24,7 @@
     import Sidebar from '../SideBars/Sidebar.svelte'
     import { restorePanesAfterBoot, returnToMainPane, swapPanes } from 'src/ts/paneActivation'
     import { startPaneSync } from 'src/ts/chatPanes.svelte'
-    import { paneClosing, paneOverlayOpen, railPanes, railPlace, setPaneOverlayOpen, setPanePanelOpen, setPanelEdge, setSplitLayout, splitLayout, type RailPlace } from 'src/ts/splitLayout.svelte'
+    import { paneClosing, paneOverlayOpen, setPaneOverlayOpen, setPanelEdge, setSplitLayout, splitLayout } from 'src/ts/splitLayout.svelte'
     import type { PaneId } from 'src/ts/chatPanes.svelte'
     import { alertSelect, type AlertAction } from 'src/ts/alert'
     import { setSidebarCatalogSplit, sidebarCatalog } from 'src/ts/gui/sidebarCatalogLayout.svelte'
@@ -32,9 +33,8 @@
     let { children, openLegacyGrid = () => {} }: { children: Snippet, openLegacyGrid?: () => void } = $props()
 
     const enabled = $derived($splitChatOpen && !$MobileGUI && !isEmbeddedRisuPane)
-    // The docked layout. A narrow (DynamicGUI) window lays each pane's
-    // sidebar over that pane's chat instead (paneOverlayOpen), so both panes
-    // can show their own at once (the user's request, 2026-10-21).
+    // The docked layout. A narrow (DynamicGUI) window lays a pane's sidebar
+    // over that pane's chat instead (paneOverlayOpen), one at a time.
     const docked = $derived(enabled && !$DynamicGUI)
     const mainOverlayShown = $derived(enabled && !docked && paneOverlayOpen.main && !$settingsOpen)
     const sideOverlayShown = $derived(enabled && !docked && paneOverlayOpen.side)
@@ -53,17 +53,9 @@
     // A narrow window wide enough for two chats side by side follows the
     // chosen orientation too (the divider's buttons; 2026-10-22).
     const column = $derived((enabled && splitLayout.orientation === 'column') || narrowStack)
-    const rail = $derived(railPlace())
-    // The bot list can be put away for room (the divider's menu), and at an
-    // end it goes with the panel of the pane beside it (railPanes): closing
-    // that panel puts it away too, opening it brings it back. Between the
-    // panes it stays (the user's request, 2026-10-22).
-    const railFollows = $derived(railPanes(rail, splitLayout.orientation))
-    const railShown = $derived(!splitLayout.railHidden && (railFollows.length === 0 || railFollows.some((pane) => splitLayout.panelOpen[pane])))
-    // It slides out with them.
-    const railClosing = $derived(railFollows.length > 0 && railFollows.every((pane) => !splitLayout.panelOpen[pane] || paneClosing.panel[pane]))
-    // A narrow window's overlay: its bot list's width, for the slide.
-    const overlayRail = $derived(`${paneOverlayRailRem(sidebarCatalog.split, !!DBState.db.menuSideBar)}rem`)
+    // The bot list's width, in an open docked panel or a narrow window's overlay.
+    const railRem = $derived(paneOverlayRailRem(sidebarCatalog.split, !!DBState.db.menuSideBar))
+    const overlayRail = $derived(`${railRem}rem`)
     $effect(() => {
         if (!enabled) returnToMainPane()
     })
@@ -78,12 +70,14 @@
         const restore = setTimeout(() => { if (enabled) restorePanesAfterBoot() }, 400)
         return () => { stopSync(); clearTimeout(restore) }
     })
-    let railWidth = $state(0)
     let stopSplitResize: (() => void) | null = null
 
     const mainPanelShown = $derived(docked && splitLayout.panelOpen.main && !$settingsOpen)
     const sidePanelShown = $derived(docked && splitLayout.panelOpen.side)
-    const dockedRowAt = (span: number): DockedSplitRow => ({ span, rail: railShown && rail === 'center' ? railWidth : 0, mainPanel: mainPanelShown, sidePanel: sidePanelShown })
+    const rootRem = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+    // The bot list beside the open panel, in px.
+    const railPx = $derived(mainPanelShown || sidePanelShown ? railRem * rootRem() : 0)
+    const dockedRowAt = (span: number): DockedSplitRow => ({ span, rail: railPx, mainPanel: mainPanelShown, sidePanel: sidePanelShown })
     // Side by side, the widths are set here, so the main chat keeps its
     // minimum and the second pane gives way first (dockedSplitWidths).
     const dockedRow = $derived(docked && !column ? dockedSplitWidths(dockedRowAt(paneWidth || window.innerWidth), $splitChatWidth) : null)
@@ -99,14 +93,14 @@
     // (stacked).
     const sideOverlayWidth = $derived.by(() => {
         if (looseSide === null) return null
-        const rem = parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
+        const rem = rootRem()
         const main = (paneWidth || window.innerWidth) - SPLIT_DIVIDER_PX - looseSide
         const mainOverlay = paneOverlayFootprint(main, paneOverlayRailRem(sidebarCatalog.split, !!DBState.db.menuSideBar), rem)
         const spare = paneOverlayOpen.main ? Math.max(0, main - mainOverlay) : main
         return Math.max(looseSide, Math.min(26 * rem, looseSide + SPLIT_DIVIDER_PX + spare))
     })
-    // The room the two chats share: no divider, and docked, no bot list
-    // between the panes and no open panels. Docked, the wide end leaves the
+    // The room the two chats share: no divider, and docked, no open panel
+    // and its bot list. Docked, the wide end leaves the
     // main chat its minimum.
     const rowSpan = () => paneRoot?.clientWidth ?? window.innerWidth
     const rowRoom = (span: number) => docked ? dockedSplitChatRoom(dockedRowAt(span)) : Math.max(0, span - SPLIT_DIVIDER_PX)
@@ -292,20 +286,17 @@
         }
     }
 
-    // Choices of one kind on one line (the user's request, 2026-10-22): where
-    // the bot list goes, the current place marked; putting it away; the panes.
+    // Choices of one kind on one line (the user's request, 2026-10-22).
     // Even widths are a double-click on the divider (no menu item, as asked).
+    // The bot list has no place of its own any more: it comes out with the
+    // open panel (2026-10-27).
     async function askDividerMenu() {
         const row = !column
-        const hidden = splitLayout.railHidden
-        const railChoices: [RailPlace, string][] = row
-            ? [['start', language.splitRailStart], ['center', language.splitRailCenter], ['end', language.splitRailEnd]]
-            : [['start', language.splitRailStart], ['end', language.splitRailEnd]]
         // One column or two (the user's request, 2026-10-22), as in the bot list's + menu.
         const flip: [AlertAction, () => void] = [{ label: row ? language.splitToColumn : language.splitToRow, row: 'panes' }, () => flipOrientation()]
         const columns = ([[false, language.splitRailOneColumn], [true, language.splitRailTwoColumns]] as const).map(([split, label]): [AlertAction, () => void] => [
             { label, row: 'columns', variant: sidebarCatalog.split === split ? 'primary' : 'outline' },
-            () => { setSidebarCatalogSplit(split); if (docked) showRail({}) },
+            () => setSidebarCatalogSplit(split),
         ])
         // Which edge of its pane each pane's panel comes out of, a line per
         // pane (the user's request, 2026-10-22).
@@ -322,32 +313,13 @@
             () => setPanelEdge(pane, edge),
         ]))
         const swap: [AlertAction, () => void] = [{ label: row ? language.splitSwapRow : language.splitSwapColumn, row: 'panes' }, () => swapPanes()]
-        // A narrow window (a phone or fold with the mobile layout off) has no
-        // bot list beside the panes: the panes' own bot lists, the swap and,
-        // when the window has room for both side by side, the orientation
-        // apply. The menu was for the docked split only, so holding the
-        // divider there showed nothing (the user's report, 2026-10-22).
-        const actions: [AlertAction, () => void][] = docked ? [
-            ...railChoices.map(([place, label]): [AlertAction, () => void] => [
-                { label, row: 'rail', variant: !hidden && place === rail ? 'primary' : 'outline' },
-                () => showRail({ railAt: place }),
-            ]),
-            ...columns,
-            [{ label: hidden ? language.splitRailShow : language.splitRailHide }, () => hidden ? showRail({}) : setSplitLayout({ railHidden: true })],
-            ...edges,
-            swap,
-            flip,
-        ] : [...columns, ...edges, swap, ...(narrowStack ? [] : [flip])]
+        // A narrow window (a phone or fold with the mobile layout off): the
+        // orientation only when it has room for both side by side. The menu
+        // was for the docked split only, so holding the divider there showed
+        // nothing (the user's report, 2026-10-22).
+        const actions: [AlertAction, () => void][] = [...columns, ...edges, swap, ...(docked || !narrowStack ? [flip] : [])]
         const selected = parseInt(await alertSelect([...actions.map(([action]) => action), language.cancel]))
         actions[selected]?.[1]()
-    }
-
-    // Putting the bot list somewhere shows it: with the panels it goes with
-    // all closed (railPanes), the first of them opens too.
-    function showRail(change: { railAt?: RailPlace }) {
-        setSplitLayout({ ...change, railHidden: false })
-        const panes = railPanes(railPlace(), splitLayout.orientation)
-        if (panes.length > 0 && !panes.some((pane) => splitLayout.panelOpen[pane])) setPanePanelOpen(panes[0], true)
     }
 
     onDestroy(() => {
@@ -369,35 +341,26 @@
     })
 </script>
 
-{#snippet botList()}
-    <div class="split-rail flex h-full shrink-0" class:pane-slide={railFollows.length > 0} bind:clientWidth={railWidth}>
-        <div
-            class="flex h-full"
-            class:pane-slide-inner={railFollows.length > 0}
-            class:pane-slide-from-end={rail === 'end'}
-            class:pane-slide-closing={railClosing}
-        >
-            <Sidebar part="rail" hidden={false} {openLegacyGrid} />
-        </div>
-    </div>
-{/snippet}
-
-<!-- A docked pane's panel at its edge (splitLayout.panelEdge), sliding in
-     and out within its own box. -->
+<!-- A docked pane's open panel at its edge (splitLayout.panelEdge), with the
+     bot list on its outer side, sliding in and out together within their
+     own box. The list belongs to the pane: a bot picked there opens in it. -->
 {#snippet panelSlot(pane: PaneId)}
     <div class="pane-slide pane-panel-slot flex h-full shrink-0">
         <div
             class="pane-slide-inner flex h-full"
+            class:flex-row-reverse={splitLayout.panelEdge[pane] === 'end'}
             class:pane-slide-from-end={splitLayout.panelEdge[pane] === 'end'}
             class:pane-slide-closing={paneClosing.panel[pane]}
         >
+            <div class="split-rail flex h-full shrink-0">
+                <Sidebar part="rail" {pane} hidden={false} {openLegacyGrid} />
+            </div>
             <Sidebar part="panel" {pane} hidden={false} {openLegacyGrid} />
         </div>
     </div>
 {/snippet}
 
 <div class="flex h-full w-full min-w-0">
-    {#if docked && railShown && rail === 'start'}{@render botList()}{/if}
     <div class="flex h-full min-w-0 grow" class:flex-col={column} bind:this={paneRoot} bind:clientWidth={paneWidth}>
         <!-- The main pane: its panel, then the main content (chat or settings).
              Contained while split, so user CSS with position:fixed stays inside it. -->
@@ -447,7 +410,6 @@
                 onkeydown={handleSplitDividerKeydown}
                 oncontextmenu={openDividerMenu}
             ></div>
-            {#if docked && railShown && rail === 'center'}{@render botList()}{/if}
             <!-- The second pane: its chat, and its panel at the edge set for
                  it (splitLayout.panelEdge; the outer one unless changed). -->
             <div
@@ -458,7 +420,7 @@
                 class:split-side-fixed={looseSide !== null}
                 class:split-side-docked={!!dockedRow}
                 style:height={column ? `${$splitChatHeight}px` : undefined}
-                style:width={dockedRow ? `${dockedRow.sideChat + dockedRow.sidePanel}px` : looseSide !== null ? `${looseSide}px` : undefined}
+                style:width={dockedRow ? `${dockedRow.sideChat + dockedRow.sidePanel + (sidePanelShown ? railPx : 0)}px` : looseSide !== null ? `${looseSide}px` : undefined}
                 style:--split-panel={dockedRow ? `${dockedRow.sidePanel}px` : undefined}
             >
                 {#if sidePanelShown && splitLayout.panelEdge.side === 'start'}{@render panelSlot('side')}{/if}
@@ -486,7 +448,6 @@
             </div>
         {/if}
     </div>
-    {#if docked && railShown && rail === 'end'}{@render botList()}{/if}
 </div>
 
 {#if enabled && dividerTools}
@@ -583,28 +544,21 @@
         min-width: 0;
     }
 
-    /* The panels' w-80 narrows on a tight window. */
+    /* The panels' w-80 narrows on a tight window; the bot list beside it keeps its width. */
     .split-main-docked > .pane-panel-slot,
     .split-side-docked > .pane-panel-slot {
         flex: none;
-        width: var(--split-panel);
-        min-width: var(--split-panel);
-    }
-
-    .split-main-docked > .pane-panel-slot > .pane-slide-inner,
-    .split-side-docked > .pane-panel-slot > .pane-slide-inner {
-        width: 100%;
     }
 
     .split-main-docked > .pane-panel-slot :global([data-pane-panel]),
     .split-side-docked > .pane-panel-slot :global([data-pane-panel]) {
-        width: 100%;
-        min-width: 0;
+        width: var(--split-panel);
+        min-width: var(--split-panel);
     }
 
     /* Sliding in and out, at the app's animation speed (paneClosing in
        splitLayout.svelte.ts closes when the slide out ends): a docked panel
-       or the bot list moves within its own box; a narrow window's overlay
+       and its bot list move within their own box; a narrow window's overlay
        moves its bot list and panel together, by their width, while its
        dimmed strip fades. */
     .pane-slide {

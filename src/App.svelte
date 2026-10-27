@@ -308,6 +308,10 @@
             {:else}
                 <Sidebar hidden={!$sideBarStore} {openLegacyGrid} />
             {/if}
+        {:else if $splitChatOpen && !isEmbeddedRisuPane}
+            <!-- A narrow split opens a pane's own sidebar over that pane
+                 (SplitWorkspace); the app's, kept hidden beside it, was a
+                 second bot list nobody opened (2026-10-27). -->
         {:else}
             <div class="top-0 w-full h-full left-0 z-30 flex flex-row items-center" class:fixed={$sideBarStore} class:hidden={!$sideBarStore} >
                 <!-- svelte-ignore a11y_click_events_have_key_events -->

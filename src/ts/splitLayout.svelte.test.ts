@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
-// The split's layout state: where each pane's panel comes out, which panels
-// the bot list goes with, and the slide before a panel closes (the user's
-// requests, 2026-10-22).
+// The split's layout state: where each pane's panel comes out, one panel
+// open at a time with the bot list (2026-10-27), and the slide before a
+// panel closes (the user's requests, 2026-10-22).
 const KEY = 'pocketrisu:split-layout'
 
 async function load(saved?: unknown) {
@@ -33,14 +33,29 @@ describe('panel edges', () => {
     })
 })
 
-describe('the bot list goes with the panel beside it', () => {
-    test('at an end, the pane beside it; stacked, both; between the panes, none', async () => {
-        const { railPanes } = await load()
-        expect(railPanes('start', 'row')).toEqual(['main'])
-        expect(railPanes('end', 'row')).toEqual(['side'])
-        expect(railPanes('center', 'row')).toEqual([])
-        expect(railPanes('start', 'column')).toEqual(['main', 'side'])
-        expect(railPanes('end', 'column')).toEqual(['main', 'side'])
+describe('one panel at a time', () => {
+    test("the main pane's is open at first; opening the other closes it", async () => {
+        const layout = await load()
+        expect(layout.splitLayout.panelOpen).toEqual({ main: true, side: false })
+        layout.setPanePanelOpen('side', true)
+        expect(layout.splitLayout.panelOpen).toEqual({ main: false, side: true })
+        layout.togglePanePanel('main')
+        expect(layout.splitLayout.panelOpen).toEqual({ main: true, side: false })
+        expect(JSON.parse(localStorage.getItem(KEY)!).panelOpen).toEqual({ main: true, side: false })
+    })
+
+    test('both open in a layout saved before keeps the main one', async () => {
+        const both = await load({ panelOpen: { main: true, side: true }, railAt: 'end', railHidden: true })
+        expect(both.splitLayout.panelOpen).toEqual({ main: true, side: false })
+        const side = await load({ panelOpen: { main: false, side: true } })
+        expect(side.splitLayout.panelOpen).toEqual({ main: false, side: true })
+    })
+
+    test("a narrow window's overlays too", async () => {
+        const layout = await load()
+        layout.setPaneOverlayOpen('main', true)
+        layout.setPaneOverlayOpen('side', true)
+        expect(layout.paneOverlayOpen).toEqual({ main: false, side: true })
     })
 })
 
@@ -56,6 +71,7 @@ describe('closing slides first', () => {
     test('a panel stays open while it slides out, then closes', async () => {
         document.documentElement.style.setProperty('--risu-animation-speed', '0.2s')
         const layout = await load()
+        layout.setPanePanelOpen('side', true)
         layout.closePanePanel('side')
         expect(layout.paneClosing.panel.side).toBe(true)
         expect(layout.splitLayout.panelOpen.side).toBe(true)

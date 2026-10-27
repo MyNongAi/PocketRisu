@@ -1,14 +1,20 @@
-// How the PC split is laid out (the user's request, 2026-10-21): one bot
-// list shared by both panes, placed at the start, between the panes or at
-// the end; each pane with its own character panel (chat list, character,
-// modules) that opens and closes on its own; side by side or one above the
-// other. Kept per browser, like the split itself (chatSplitPane.ts).
+// How the PC split is laid out (the user's request, 2026-10-21): each pane
+// with its own character panel (chat list, character, modules); side by side
+// or one above the other. Kept per browser, like the split itself
+// (chatSplitPane.ts).
+//
+// One panel is open at a time, and the bot list comes out with it, beside
+// it (the user's request, 2026-10-27): a bot picked there opens in that
+// pane, so the list says which pane it is for, and there is never more than
+// one list. A narrow window's overlays (below) do the same. Until then the
+// list stood on its own at the start, between the panes or at the end, the
+// panels could both be open, and a narrow window could hold two lists over
+// the panes and the app's hidden sidebar: three on a phone.
 
 import type { PaneId } from './chatPanes.svelte'
 import { language } from '../lang'
 
 export type SplitOrientation = 'row' | 'column'
-export type RailPlace = 'start' | 'center' | 'end'
 export type PanelTab = 'chat' | 'character' | 'module'
 export type PanelEdge = 'start' | 'end'
 
@@ -16,9 +22,7 @@ const KEY = 'pocketrisu:split-layout'
 
 interface SplitLayoutState {
     orientation: SplitOrientation
-    railAt: RailPlace
-    /** The bot list put away, for more room (the divider's menu brings it back). */
-    railHidden: boolean
+    /** At most one is true. */
     panelOpen: Record<PaneId, boolean>
     /** The tab each pane's panel shows while the other pane holds the selection. */
     tab: Record<PaneId, PanelTab>
@@ -33,9 +37,7 @@ interface SplitLayoutState {
 function read(): SplitLayoutState {
     const fallback: SplitLayoutState = {
         orientation: 'row',
-        railAt: 'center',
-        railHidden: false,
-        panelOpen: { main: true, side: true },
+        panelOpen: { main: true, side: false },
         tab: { main: 'chat', side: 'chat' },
         panelEdge: { main: 'start', side: 'end' },
     }
@@ -46,9 +48,10 @@ function read(): SplitLayoutState {
         const edge = (value: unknown, fallback: PanelEdge): PanelEdge => value === 'start' || value === 'end' ? value : fallback
         return {
             orientation: saved.orientation === 'column' ? 'column' : 'row',
-            railAt: saved.railAt === 'start' || saved.railAt === 'end' ? saved.railAt : 'center',
-            railHidden: saved.railHidden === true,
-            panelOpen: { main: saved.panelOpen?.main !== false, side: saved.panelOpen?.side !== false },
+            // Both open before 2026-10-27: the main pane's stays.
+            panelOpen: saved.panelOpen?.main !== false
+                ? { main: true, side: false }
+                : { main: false, side: saved.panelOpen?.side !== false },
             tab: { main: tab(saved.tab?.main), side: tab(saved.tab?.side) },
             panelEdge: { main: edge(saved.panelEdge?.main, 'start'), side: edge(saved.panelEdge?.side, 'end') },
         }
@@ -67,29 +70,12 @@ export function persistSplitLayout(): void {
     }
 }
 
-/** Where the bot list goes: between the panes only when they sit side by side. */
-export function railPlace(): RailPlace {
-    return splitLayout.orientation === 'column' && splitLayout.railAt === 'center' ? 'start' : splitLayout.railAt
-}
-
-export function setSplitLayout(change: Partial<Pick<SplitLayoutState, 'orientation' | 'railAt' | 'railHidden'>>): void {
+export function setSplitLayout(change: Partial<Pick<SplitLayoutState, 'orientation'>>): void {
     if (change.orientation) splitLayout.orientation = change.orientation
-    if (change.railAt) splitLayout.railAt = change.railAt
-    if (change.railHidden !== undefined) splitLayout.railHidden = change.railHidden
     persistSplitLayout()
 }
 
-/**
- * The panes whose panels a bot list at `place` goes with: at an end, the
- * pane beside it (both when stacked, as it runs beside both); between the
- * panes, none. Closing those panels puts the list away too, and opening one
- * brings it back (the user's request, 2026-10-22).
- */
-export function railPanes(place: RailPlace, orientation: SplitOrientation): PaneId[] {
-    if (place === 'center') return []
-    if (orientation === 'column') return ['main', 'side']
-    return [place === 'start' ? 'main' : 'side']
-}
+const otherPane = (pane: PaneId): PaneId => pane === 'main' ? 'side' : 'main'
 
 export function setPanelEdge(pane: PaneId, edge: PanelEdge): void {
     if (splitLayout.panelEdge[pane] === edge) return
@@ -153,22 +139,34 @@ export function closePanePanel(pane: PaneId): void {
     slideShut('panel', pane, () => setPanePanelOpen(pane, false))
 }
 
-/** At once, without the slide. */
+/** At once, without the slide. Opening one closes the other pane's. */
 export function setPanePanelOpen(pane: PaneId, open: boolean): void {
     cancelSlide('panel', pane)
-    if (splitLayout.panelOpen[pane] === open) return
+    if (open) {
+        cancelSlide('panel', otherPane(pane))
+        splitLayout.panelOpen[otherPane(pane)] = false
+    }
+    if (splitLayout.panelOpen[pane] === open) {
+        persistSplitLayout()
+        return
+    }
     splitLayout.panelOpen[pane] = open
     persistSplitLayout()
 }
 
-// A narrow window (DynamicGUI) has no room to dock the panels: each pane's
-// character window covers its own chat while open, both at once if wanted
-// (the user's request, 2026-10-21). Open only on request, never kept.
+// A narrow window (DynamicGUI) has no room to dock the panels: a pane's
+// character window, with the bot list, covers its own chat while open (the
+// user's request, 2026-10-21). One at a time, as the docked panels. Open
+// only on request, never kept.
 export const paneOverlayOpen = $state<Record<PaneId, boolean>>({ main: false, side: false })
 
-/** At once, without the slide. */
+/** At once, without the slide. Opening one closes the other pane's. */
 export function setPaneOverlayOpen(pane: PaneId, open: boolean): void {
     cancelSlide('overlay', pane)
+    if (open) {
+        cancelSlide('overlay', otherPane(pane))
+        paneOverlayOpen[otherPane(pane)] = false
+    }
     paneOverlayOpen[pane] = open
 }
 
