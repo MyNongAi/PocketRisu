@@ -28,6 +28,15 @@ describe('modulesOnNow', () => {
         expect(modulesOnNow(db(), 1)).toEqual(['global', 'chat', 'bot', 'preset'])
         expect(modulesOnNow({ ...db(), moduleIntergration: '' }, 0)).toEqual(['global'])
     })
+
+    it('counts the 🎨 module while the bot draws illustrations', () => {
+        const state = db()
+        state.modules = [...state.modules, { id: 'art', name: 'art', nodeOnlyIllustrationModule: true }]
+        expect(modulesOnNow(state, 1)).not.toContain('art')
+        state.characters = [state.characters[0], { ...state.characters[1]!, nodeOnlyIllustration: { enabled: true } }]
+        expect(modulesOnNow(state, 1)).toContain('art')
+        expect(modulesTurnedOn(modulesOnNow(db(), 1), modulesOnNow(state, 1))).toEqual(['art'])
+    })
 })
 
 describe('modulesTurnedOn', () => {

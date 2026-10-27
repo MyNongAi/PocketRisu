@@ -374,6 +374,8 @@
         { "file": "src/ts/process/moduleOnWatch.svelte.ts", "contains": "export function startModuleOnWatch(): () => void" },
         { "file": "src/ts/process/moduleOnWatch.svelte.ts", "contains": "const now = modulesOnNow(db, selIdState.selId)" },
         { "file": "src/App.svelte", "contains": "return startModuleOnWatch()" },
+        { "file": "src/ts/process/moduleOnWatch.svelte.ts", "contains": "const illustration = character?.nodeOnlyIllustration?.enabled" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "|| isIllustrationOn(rmodule) ? 'text-amber-500 hover:text-primary'" },
         { "file": "src/lib/UI/GUI/ShContextMenu.svelte", "contains": "touchHold = event.pointerType === 'touch' && !disabled && dragsOnTouch(event)" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "recordModuleFolderActivation" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "sortModulesByActivation" },

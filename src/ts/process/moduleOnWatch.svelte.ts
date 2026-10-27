@@ -2,23 +2,24 @@
 // that (rememberActivation), but a module also comes on by itself: the open
 // bot's own modules and the prompt preset's (moduleIntergration) are drawn
 // orange as soon as another bot or preset is picked, and a chat's own
-// modules as soon as that chat is opened. Those stayed where they were; the
-// user's rule (2026-10-27): "주황이든 파랑이든 활성화되면 최상단".
+// modules as soon as that chat is opened, and the 🎨 module while the bot's
+// illustration toggle is on. Those stayed where they were; the user's rule
+// (2026-10-27): "주황이든 파랑이든 활성화되면 최상단".
 
 import { untrack } from 'svelte'
 import { DBState, selIdState } from '../stores.svelte'
 import { recordModuleActivation, recordModuleFolderActivation, seedModuleActivationHistory, type SortableModule, type SortableModuleFolder } from './moduleSort'
 
 export interface ModuleOnDb {
-    modules: ReadonlyArray<SortableModule & { namespace?: string }>
+    modules: ReadonlyArray<SortableModule & { namespace?: string, nodeOnlyIllustrationModule?: boolean }>
     moduleFolders?: SortableModuleFolder[]
     enabledModules: ReadonlyArray<string>
     moduleIntergration?: string
     moduleActivationHistory?: string[]
-    characters: ReadonlyArray<{ modules?: ReadonlyArray<string>, chats?: ReadonlyArray<{ modules?: ReadonlyArray<string> } | undefined>, chatPage?: number } | undefined>
+    characters: ReadonlyArray<{ modules?: ReadonlyArray<string>, chats?: ReadonlyArray<{ modules?: ReadonlyArray<string> } | undefined>, chatPage?: number, nodeOnlyIllustration?: { enabled?: boolean } } | undefined>
 }
 
-/** Every module on for the open chat: everywhere (blue), in this chat, the bot's own or the preset's (orange). */
+/** Every module on for the open chat: everywhere (blue), in this chat, the bot's own, the preset's or 🎨 while the bot draws illustrations (orange). */
 export function modulesOnNow(db: ModuleOnDb, characterIndex: number): string[] {
     const character = db.characters[characterIndex]
     const chat = character?.chats?.[character.chatPage ?? 0]
@@ -26,7 +27,10 @@ export function modulesOnNow(db: ModuleOnDb, characterIndex: number): string[] {
     const integrated = namespaces.length === 0 ? [] : db.modules
         .filter((module) => !!module?.namespace && namespaces.includes(module.namespace))
         .map((module) => module.id)
-    return [...new Set([...db.enabledModules, ...(chat?.modules ?? []), ...(character?.modules ?? []), ...integrated])]
+    const illustration = character?.nodeOnlyIllustration?.enabled
+        ? db.modules.filter((module) => !!module?.nodeOnlyIllustrationModule).map((module) => module.id)
+        : []
+    return [...new Set([...db.enabledModules, ...(chat?.modules ?? []), ...(character?.modules ?? []), ...integrated, ...illustration])]
 }
 
 /** The ids in `next` that `previous` did not have. */

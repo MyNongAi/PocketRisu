@@ -143,6 +143,13 @@
         return !!DBState.db.characters[$selectedCharID]?.modules?.includes(rmodule.id)
     }
 
+    // The 🎨 module while the open bot's illustration toggle (사이드바 삽화 토글)
+    // is on: in use, drawn orange like the bot's own (the user's request,
+    // 2026-10-27); moduleOnWatch lifts it when the toggle comes on.
+    function isIllustrationOn(rmodule: RisuModule) {
+        return !!rmodule.nodeOnlyIllustrationModule && !!DBState.db.characters[$selectedCharID]?.nodeOnlyIllustration?.enabled
+    }
+
     function isIntegrated(rmodule: RisuModule) {
         return !!rmodule.namespace
             && !!DBState.db.moduleIntergration?.split(',').map((s) => s.trim()).includes(rmodule.namespace)
@@ -571,8 +578,8 @@
                     · 에셋 {moduleAssetCount(rmodule)}개{#if isColdModule(rmodule)} · {language.moduleColdBadge}{/if} · {rmodule.description || 'No description provided'}
                 </span>
             </div>
-            <button class="no-sort shrink-0 p-1 cursor-pointer {isGlobal(rmodule) ? 'text-blue-500' : isIntegrated(rmodule) || isBotModule(rmodule) ? 'text-amber-500 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
-                use:tooltip={!isGlobal(rmodule) && isBotModule(rmodule) ? language.moduleAutoForBot : language.enableGlobal}
+            <button class="no-sort shrink-0 p-1 cursor-pointer {isGlobal(rmodule) ? 'text-blue-500' : isIntegrated(rmodule) || isBotModule(rmodule) || isIllustrationOn(rmodule) ? 'text-amber-500 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
+                use:tooltip={isGlobal(rmodule) ? language.enableGlobal : isBotModule(rmodule) ? language.moduleAutoForBot : isIllustrationOn(rmodule) ? language.moduleAutoForIllustration : language.enableGlobal}
                 onclick={(e) => { e.stopPropagation(); toggleGlobal(rmodule) }}>
                 <Globe size={18}/>
             </button>
