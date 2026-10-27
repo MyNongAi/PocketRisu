@@ -7,6 +7,7 @@ import { loadData } from "./ts/bootstrap";
 import { initHotkey } from "./ts/hotkey";
 import { initScrollbarAutoHide } from "./ts/gui/scrollbarAutoHide";
 import { initMobileBackNavigation } from "./ts/gui/mobileBackNavigation.svelte";
+import { initSortableTouchHold } from "./ts/gui/sortableTouchHold";
 import { preLoadCheck } from "./preload";
 import { mount } from "svelte";
 import { toast } from "svelte-sonner";
@@ -27,6 +28,7 @@ window.addEventListener('vite:preloadError', (event) => {
 });
 
 preLoadCheck()
+initSortableTouchHold()
 let app = mount(App, {
     target: document.getElementById("app"),
 });

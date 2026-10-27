@@ -367,6 +367,7 @@
         "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte",
         "src/lib/UI/FolderedList.svelte",
         "src/lib/UI/GUI/ShContextMenu.svelte",
+        "src/ts/gui/sortableTouchHold.ts",
         "src/ts/process/moduleOnWatch.svelte.ts"
       ],
       "requiredMarkers": [
@@ -377,6 +378,9 @@
         { "file": "src/ts/process/moduleOnWatch.svelte.ts", "contains": "const illustration = character?.nodeOnlyIllustration?.enabled" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "|| isIllustrationOn(rmodule) ? 'text-amber-500 hover:text-primary'" },
         { "file": "src/lib/UI/GUI/ShContextMenu.svelte", "contains": "touchHold = event.pointerType === 'touch' && !disabled && dragsOnTouch(event)" },
+        { "file": "src/ts/gui/sortableTouchHold.ts", "contains": "sortable.options.touchStartThreshold = touchHoldThreshold(window.devicePixelRatio)" },
+        { "file": "src/ts/gui/sortableTouchHold.ts", "contains": "sortable._onDrop()" },
+        { "file": "src/main.ts", "contains": "initSortableTouchHold()" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "recordModuleFolderActivation" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "sortModulesByActivation" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "getLatestModuleCatalogPromotion" },
@@ -410,6 +414,7 @@
       ],
       "regressionTests": [
         "src/ts/process/moduleOnWatch.test.ts",
+        "src/ts/gui/sortableTouchHold.test.ts",
         "src/ts/process/moduleFolders.test.ts",
         "src/ts/process/moduleSort.test.ts",
         "src/ts/process/moduleDraft.test.ts",
