@@ -62,30 +62,18 @@
             ? 'registered'
             : 'recent',
     )
-    // 최근순 lists the modules on now first, newest first: the blue ones (on
-    // everywhere) and the orange ones (on by themselves in the open bot's
-    // chats), which never came up (liftModulesToNewest, display only).
-    let onNowIds = $derived(DBState.db.modules
-        .filter((module) => !!module && (isGlobal(module) || isIntegrated(module) || isBotModule(module)))
-        .map((module) => module.id))
-    // Once a drag placed them (applyPlacements), the modules on now stay
-    // where the user put them instead of being lifted, until they go off
-    // (the user's request, 2026-10-26: "유저 이동을 최우선").
-    let settledOnNow = $derived(new Set(DBState.db.nodeOnlyModuleOrderSettled ?? []))
+    // 최근순 follows the activations and the drags only. The modules on now
+    // ([링크]·[프롬], 🎨, the blue and orange ones) were lifted above the rest;
+    // only favorites hold the top now (the user's rule, 2026-10-27: "즐찾만
+    // 고정"; interleaveModuleCatalogGroups).
     let recencyOptions = $derived({
-        activationHistory: liftModulesToNewest(DBState.db.moduleActivationHistory, [DBState.db.enabledModules], onNowIds.filter((id) => !settledOnNow.has(id))),
-    })
-    // A module that went off is lifted again the next time it comes on.
-    $effect(() => {
-        const settled = DBState.db.nodeOnlyModuleOrderSettled
-        if (!settled?.length) return
-        const on = new Set(onNowIds)
-        const kept = settled.filter((id) => on.has(id))
-        if (kept.length !== settled.length) untrack(() => { DBState.db.nodeOnlyModuleOrderSettled = kept })
+        fallbackOrders: [DBState.db.enabledModules],
+        activationHistory: DBState.db.moduleActivationHistory,
     })
     let displayModules = $derived(moduleCatalogSort === 'registered'
         ? [...DBState.db.modules]
         : sortModulesByActivation(DBState.db.modules, '', recencyOptions))
+    let favoriteModuleIndexes = $derived(new Set(displayModules.flatMap((module, index) => module?.favorite ? [index] : [])))
     let displayFolders = $derived(moduleCatalogSort === 'registered'
         ? [...(DBState.db.moduleFolders ?? [])]
         : sortModuleFoldersByActivation(
@@ -379,14 +367,13 @@
         }
         if (fromDrop) {
             // What the drop left on screen is the order from now on: a dragged
-            // module or folder stays where it was put, above a favorite or a
-            // module on now too (activationHistoryFromDisplay).
+            // module or folder stays where it was put, a module on now too;
+            // only the favorites stay above (activationHistoryFromDisplay).
             DBState.db.moduleActivationHistory = activationHistoryFromDisplay(
                 placedAfter.map((item) => item.id),
                 DBState.db.moduleActivationHistory,
                 [DBState.db.enabledModules],
             )
-            DBState.db.nodeOnlyModuleOrderSettled = [...onNowIds]
         } else {
             DBState.db.moduleActivationHistory = activationHistoryAfterPlacement(
                 placedBefore,
@@ -495,6 +482,7 @@
         interleaveItems
         promotedItemIndex={promotedModuleIndex}
         promotedFolderId={promotedFolderId}
+        favoriteItemIndexes={favoriteModuleIndexes}
         selectedIndex={foundModuleIndex}
         reorderDisabled={moduleCatalogSort !== 'recent'}
         folderTitleColor={folderColor}

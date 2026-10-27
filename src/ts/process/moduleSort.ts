@@ -50,9 +50,8 @@ export function sortModulesByActivation<T extends SortableModule>(
         if(normalizedSearch === '') return true
         return module.name.toLocaleLowerCase().includes(normalizedSearch)
     }).sort((a, b) => {
-        // A favorite no longer holds the top: it goes there once when it is
-        // favorited, and a drag moves it like any other (the user's request,
-        // 2026-10-26: "유저 이동을 최우선").
+        // Recency only: favorites hold the top in the catalog's blocks
+        // (interleaveModuleCatalogGroups), so a drag among them stays.
         const aRank = recencyRank.get(a.id)
         const bRank = recencyRank.get(b.id)
 
@@ -71,10 +70,9 @@ export function sortModulesByActivation<T extends SortableModule>(
 
 /**
  * The recency order with the given modules moved to the newest end, keeping
- * their own order among them. Display only (never stored): the module
- * catalog lists the modules on now first, the blue ones (on everywhere) and
- * the orange ones (on by themselves in the open bot's chats), which were
- * never activated by hand and sat far down (the user's request, 2026-10-20).
+ * their own order among them: a folder's modules when it is favorited, the
+ * favorites once (liftFavoritesOnce). Modules on now are no longer lifted
+ * on screen (the user's rule, 2026-10-27: only favorites hold the top).
  */
 export function liftModulesToNewest(
     history: ReadonlyArray<string> | undefined,
@@ -130,6 +128,7 @@ export function interleaveModuleCatalogGroups(
     groups: ReadonlyArray<ModuleCatalogDisplayGroup>,
     promotedRootIndex = -1,
     promotedFolderId = '',
+    favoriteRootIndexes: ReadonlySet<number> = new Set(),
 ): ModuleCatalogDisplayBlock[] {
     const folders = groups.filter((group) => !!group.folder)
     const root = groups.find((group) => !group.folder)
@@ -156,15 +155,28 @@ export function interleaveModuleCatalogGroups(
         else result.push({ kind: 'root', indexes: [index] })
     }
 
+    const orderedIndexes = [...rootIndexes, ...folderByIndex.keys()].sort((a, b) => a - b)
+    // Only favorites hold the top (the user's rule, 2026-10-27: "즐찾만
+    // 고정"): ★ modules outside folders and ★ folders, among themselves in
+    // the order of their items, so a drag between them stays. Modules on
+    // now, [링크]·[프롬] and 🎨 follow the order like any other.
+    const favoriteFolderIds = new Set(folders.filter((group) => group.folder?.favorite).map((group) => group.folder!.id))
+    for (const index of orderedIndexes) {
+        if (rootIndexes.has(index)) {
+            if (favoriteRootIndexes.has(index)) emitRoot(index)
+        } else if (favoriteFolderIds.has(folderByIndex.get(index)!)) {
+            emitFolder(folderByIndex.get(index)!)
+        }
+    }
+    for (const id of favoriteFolderIds) emitFolder(id)
+
     if (rootIndexes.has(promotedRootIndex)) emitRoot(promotedRootIndex)
     else if (promotedFolderId && folders.some((group) => group.folder?.id === promotedFolderId)) emitFolder(promotedFolderId)
 
-    // A newly made empty folder shows at the top. A folder holding only
-    // folders (as [프롬] does) is placed by the newest item in them, and a
-    // favorite one like any other.
+    // A newly made empty folder shows under the favorites. A folder holding
+    // only folders (as [프롬] does) is placed by the newest item in them.
     for (const group of folders) if (group.indexes.length === 0 && !group.nestedIndexes?.length) emitFolder(group.folder!.id)
 
-    const orderedIndexes = [...rootIndexes, ...folderByIndex.keys()].sort((a, b) => a - b)
     for (const index of orderedIndexes) {
         if (rootIndexes.has(index)) emitRoot(index)
         else emitFolder(folderByIndex.get(index)!)

@@ -81,7 +81,9 @@
         const promotedIndex = catalogPromotion && !catalogPromotion.folderId
             ? sortedModules.findIndex((module) => module.id === catalogPromotion.moduleId)
             : -1
-        const order = interleaveModuleCatalogGroups(grouped, promotedIndex, catalogPromotion?.folderId)
+        // Only favorites hold the top, as in the module page.
+        const favorites = new Set(sortedModules.flatMap((module, index) => module?.favorite ? [index] : []))
+        const order = interleaveModuleCatalogGroups(grouped, promotedIndex, catalogPromotion?.folderId, favorites)
         const result: ModuleMenuGroup[] = []
         for (const block of order) {
             if (block.kind === 'root') {

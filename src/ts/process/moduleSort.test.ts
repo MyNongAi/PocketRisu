@@ -33,18 +33,34 @@ describe('interleaved module catalog', () => {
         ])
     })
 
-    it('places a favorite folder like any other, and a folder of folders by the items in them', () => {
+    it('holds a favorite folder at the top, and places a folder of folders by the items in them', () => {
         expect(interleaveModuleCatalogGroups([
             { folder: { id: 'fav', favorite: true }, indexes: [3] },
             { folder: { id: 'prom' }, indexes: [], nestedIndexes: [1] },
             { folder: { id: 'empty' }, indexes: [] },
             { folder: null, indexes: [0, 2] },
         ])).toEqual([
+            { kind: 'folder', folderId: 'fav' },
             { kind: 'folder', folderId: 'empty' },
             { kind: 'root', indexes: [0] },
             { kind: 'folder', folderId: 'prom' },
             { kind: 'root', indexes: [2] },
-            { kind: 'folder', folderId: 'fav' },
+        ])
+    })
+
+    // The user's rule, 2026-10-27: "즐찾만 고정". Modules on now, [링크]·[프롬]
+    // and 🎨 are placed by recency like the rest.
+    it('holds only favorites above the newest entry, favorite modules and folders in their own order', () => {
+        expect(interleaveModuleCatalogGroups([
+            { folder: { id: 'favFolder', favorite: true }, indexes: [4] },
+            { folder: { id: 'plain' }, indexes: [1] },
+            { folder: null, indexes: [0, 2, 3, 5] },
+        ], 0, '', new Set([3, 5]))).toEqual([
+            { kind: 'root', indexes: [3] },
+            { kind: 'folder', folderId: 'favFolder' },
+            { kind: 'root', indexes: [5, 0] },
+            { kind: 'folder', folderId: 'plain' },
+            { kind: 'root', indexes: [2] },
         ])
     })
 
@@ -170,7 +186,7 @@ describe('sortModulesByActivation', () => {
         expect(sorted.map((folder) => folder.id)).toEqual(['second', 'first'])
     })
 
-    it('no longer holds favorites above recent modules (a drag moves them)', () => {
+    it('sorts by recency only: the catalog blocks hold the favorites at the top', () => {
         const source = modules.map((module) => ({ ...module, favorite: module.id === 'bravo' }))
         const sorted = sortModulesByActivation(source, '', { activationHistory: ['alpha', 'charlie'] })
         expect(sorted.map((module) => module.id)).toEqual(['charlie', 'alpha', 'bravo', 'delta'])

@@ -66,6 +66,8 @@
          *  the same kind as a block. These are display-only indexes/IDs. */
         promotedItemIndex?: number;
         promotedFolderId?: string;
+        /** Items outside folders that hold the top with the favorite folders (interleaveItems). */
+        favoriteItemIndexes?: ReadonlySet<number>;
         /** Disable drag reordering while the parent is showing a derived sort. */
         reorderDisabled?: boolean;
         folderTitleColor?: (folder: PromptPresetFolder, indexes: number[]) => string | undefined;
@@ -120,6 +122,7 @@
         interleaveItems = false,
         promotedItemIndex = -1,
         promotedFolderId = '',
+        favoriteItemIndexes = new Set<number>(),
         reorderDisabled = false,
         folderTitleColor = () => undefined,
         onFolderColor,
@@ -214,7 +217,7 @@
     const remainingRootIndexes = $derived(rootIndexes.filter((index) => index !== promotedRootIndex));
     const remainingFolderGroups = $derived(displayGroups.filter((group) => group.folder?.id !== promotedFolderGroup?.folder?.id && !!group.folder));
     const interleavedBlocks = $derived(interleaveItems
-        ? interleaveModuleCatalogGroups(displayGroups.map((group) => group.folder ? { ...group, nestedIndexes: nestedIndexesOf(group) } : group), promotedRootIndex, promotedFolderId)
+        ? interleaveModuleCatalogGroups(displayGroups.map((group) => group.folder ? { ...group, nestedIndexes: nestedIndexesOf(group) } : group), promotedRootIndex, promotedFolderId, favoriteItemIndexes)
         : []);
     const displayItemCount = $derived(filteredGroups.reduce((count, group) => count + group.indexes.length, 0));
 
