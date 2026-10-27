@@ -245,19 +245,18 @@
   })
   // Inside an open folder its bots and the folders shown in it mix by recency,
   // as on the top level (interleaveFolderSlots); the folders used to sit
-  // above every bot. Refreshed when the open bot changes, not when the other
+  // above every bot. Refreshed when a bot is opened, not when the other
   // split pane is touched, which moves nothing in the list.
   let railRecency = $state<Map<string, number>>(new Map())
   let railRecencyPane: string | undefined
   $effect(() => {
-    const selected = $selectedCharID
+    void $selectedCharID
     const pane = paneState.active
     untrack(() => {
       const paneTouched = railRecencyPane !== undefined && railRecencyPane !== pane
       railRecencyPane = pane
       if (paneTouched && railRecency.size > 0) return
-      const openId = DBState.db.characters[selected]?.chaId
-      railRecency = railRecencySnapshot(railRecency, [...DBState.db.characters, ...(DBState.db.nodeOnlyArchivedCharacters ?? [])], openId)
+      railRecency = railRecencySnapshot([...DBState.db.characters, ...(DBState.db.nodeOnlyArchivedCharacters ?? [])])
     })
   })
   const railMemberRecency = (member: sortTypeEntry) => railRecency.get(member.type === 'normal' ? member.id : member.chaId) ?? 0

@@ -99,13 +99,10 @@ describe('folders inside a parent mix with its bots by recency', () => {
     })
 
     it('freezes the open bot at the recency it had before it was opened', () => {
-        const before = railRecencySnapshot(new Map(), [{ chaId: 'a', lastInteraction: 5 }, { chaId: 'b', lastInteraction: 7 }], undefined)
-        // a is opened: its lastInteraction is stamped, the snapshot keeps 5
-        const open = railRecencySnapshot(before, [{ chaId: 'a', lastInteraction: 100 }, { chaId: 'b', lastInteraction: 7 }], 'a')
-        expect(open.get('a')).toBe(5)
-        // leaving a for b: a takes its stamp, b keeps its old value
-        const left = railRecencySnapshot(open, [{ chaId: 'a', lastInteraction: 100 }, { chaId: 'b', lastInteraction: 120 }], 'b')
-        expect([left.get('a'), left.get('b')]).toEqual([100, 7])
+        // a is opened: its stamp counts at once
+        const open = railRecencySnapshot([{ chaId: 'a', lastInteraction: 100 }, { chaId: 'b', lastInteraction: 7 }, null, { lastInteraction: 3 }])
+        expect([...open]).toEqual([['a', 100], ['b', 7]])
+        expect(railRecencySnapshot([{ chaId: 'c', lastInteraction: Number.NaN }, { chaId: 'd' }]).get('c')).toBe(0)
     })
 
     it('lists the folders a folder is shown in, innermost first', () => {

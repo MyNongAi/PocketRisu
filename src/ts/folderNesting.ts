@@ -145,23 +145,19 @@ export function interleaveFolderSlots<T>(memberRecency: readonly number[], child
 }
 
 /**
- * The recency the rail interleaves by. Opening a bot stamps its
- * lastInteraction at once, but the list moves only when the bot is left
- * (promoteDepartedCharacter), so the bot that is open keeps the value it had
- * before; a folder then does not jump under the finger that opened it.
+ * The recency the rail interleaves by: each bot's lastInteraction, which
+ * opening it stamps. The list moves as a bot is opened (2026-10-28; before,
+ * only once it was left, and the open bot kept the value it had before).
  */
 export function railRecencySnapshot(
-    previous: ReadonlyMap<string, number>,
     characters: Iterable<{ chaId?: string, lastInteraction?: number } | null | undefined>,
-    openId: string | undefined,
 ): Map<string, number> {
     const next = new Map<string, number>()
     for (const character of characters) {
         const id = character?.chaId
         if (!id) continue
-        const kept = id === openId ? previous.get(id) : undefined
         const stamped = Number(character.lastInteraction ?? 0)
-        next.set(id, kept ?? (Number.isFinite(stamped) ? stamped : 0))
+        next.set(id, Number.isFinite(stamped) ? stamped : 0)
     }
     return next
 }

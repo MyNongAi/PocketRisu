@@ -73,7 +73,7 @@ function keepTogglesBeside(chat: Chat | undefined, live: Record<string, string>)
 
 /**
  * Select a chat for the active pane. Lighter than changeChar on purpose: no
- * bot-list reorder (recordCurrentCharacterDeparture) and no lastInteraction
+ * bot-list reorder (changeChar lifts the bot it opens) and no lastInteraction
  * stamp, which would shuffle the list and the auto-deactivation clock each
  * time the user moves between panes.
  */

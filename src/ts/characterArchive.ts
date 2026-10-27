@@ -373,11 +373,10 @@ export async function activateCharacter(chaId: string): Promise<number> {
     // by the legacy-trash migration may still carry the old flag).
     delete restored.trashTime
     db.characters.push(restored)
-    // Opening a normal character records recency when it is left. Reactivation
-    // is the one exception: its restored card (or containing folder) must be
-    // visible immediately instead of remaining buried in the archived slot.
-    // A card in an idle-age folder first moves to the top level; one inside a
-    // regular folder stays there and the whole folder rises with it.
+    // Its restored card (or containing folder) must be visible immediately
+    // instead of remaining buried in the archived slot. A card in an idle-age
+    // folder first moves to the top level; one inside a regular folder stays
+    // there and the whole folder rises with it.
     const favoriteIds = new Set(
         db.characters
             .filter((candidate) => candidate?.favorite && !candidate.trashTime)

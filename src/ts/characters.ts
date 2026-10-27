@@ -19,7 +19,7 @@ import { importCharacterPackage } from "./characterPackage";
 import { forageStorage } from "./globalApi.svelte";
 import { isNodeServer } from "./platform";
 import { PngChunk } from "./pngChunk";
-import { promoteDepartedCharacter } from "./characterRecentOrder";
+import { promoteDepartedCharacter, promoteRecentlyViewedCharacter } from "./characterRecentOrder";
 import { BoundedObjectUrlCache, createDeduplicatedImageLoader } from "./storage/boundedObjectUrlCache";
 import { getFirstMessageAtIndex } from "./firstMessage";
 import { needsCharacterRuntimeNormalization } from "./characterRuntime";
@@ -799,6 +799,10 @@ export function createBlankChar():character{
 }
 
 
+function favoriteCharacterIds(db: ReturnType<typeof getDatabase>): Set<string> {
+    return new Set(db.characters.filter((character) => character.favorite).map((character) => character.chaId))
+}
+
 export function recordCurrentCharacterDeparture(nextCharacterId?: string) {
     const db = getDatabase()
     const currentIndex = get(selectedCharID)
@@ -807,8 +811,19 @@ export function recordCurrentCharacterDeparture(nextCharacterId?: string) {
         db.characterOrder,
         departedCharacterId,
         nextCharacterId,
-        new Set(db.characters.filter((character) => character.favorite).map((character) => character.chaId)),
+        favoriteCharacterIds(db),
     )
+    if (promotedOrder !== db.characterOrder) db.characterOrder = promotedOrder
+}
+
+// The bot list puts a bot on top as it is opened (the user's request,
+// 2026-10-28: "클릭하면 바로 위"); it used to move only once the bot was left.
+// Leaving still lifts it, for a bot the other split pane took the selection
+// back to (paneActivation.ts moves nothing).
+function recordCharacterOpened(characterId: string | undefined) {
+    if (!characterId) return
+    const db = getDatabase()
+    const promotedOrder = promoteRecentlyViewedCharacter(db.characterOrder, characterId, favoriteCharacterIds(db))
     if (promotedOrder !== db.characterOrder) db.characterOrder = promotedOrder
 }
 
@@ -1076,6 +1091,7 @@ export function changeChar(index: number, arg:{
         // lorebook and chat on an already-normalized card.
         selectedCharacter.lastInteraction = Date.now()
     }
+    recordCharacterOpened(nextCharacterId)
     const db = getDatabase()
     selectedCharID.set(index);
 
