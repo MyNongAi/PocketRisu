@@ -11,7 +11,7 @@
     // Chat module picker. Grouped by folder; folder management lives in
     // Settings → Modules. Each row has two scope buttons: chat scope and
     // character scope. Globally enabled modules show a globe instead.
-    import { ChevronDownIcon, ChevronRightIcon, CircleCheckIcon, FolderIcon, GlobeIcon, MessageSquareIcon, SearchIcon, SettingsIcon, UserRoundIcon, Waypoints, XIcon } from "@lucide/svelte";
+    import { ChevronDownIcon, ChevronRightIcon, CircleCheckIcon, FolderIcon, GlobeIcon, Link2Icon, MessageSquareIcon, SearchIcon, SettingsIcon, Waypoints, XIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import { groupByFolder, type FolderGroup } from "src/ts/folders";
 
@@ -293,10 +293,11 @@
                                 onclick={(e) => { e.stopPropagation(); toggleChatScope(rmodule.id) }}>
                                 <MessageSquareIcon size={18}/>
                             </button>
+                            <!-- A chain, as on a bot's own module (PairedModuleMark), not a person (the user's request, 2026-10-27). -->
                             <button class="shrink-0 cursor-pointer p-1 rounded-sm {inCharacter ? 'text-violet-500 bg-violet-500/15' : 'text-textcolor2 hover:text-violet-400'}"
                                 title={language.moduleScopeCharacter} aria-label={language.moduleScopeCharacter} aria-pressed={inCharacter}
                                 onclick={(e) => { e.stopPropagation(); toggleCharacterScope(rmodule.id) }}>
-                                <UserRoundIcon size={18}/>
+                                <Link2Icon size={18}/>
                             </button>
                         {/if}
                     </div>

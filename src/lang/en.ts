@@ -1242,7 +1242,7 @@ export const languageEnglish = {
     moduleFolderBotUnlink: "Unlink every module in this folder from the open bot ({})",
     moduleFolderBotLinked: "Linked {n} modules of this folder to {}.",
     moduleFolderBotUnlinked: "Unlinked {n} modules of this folder from {}.",
-    chatModulesInfo: "Enable or disable modules for this chat or for this character. The speech bubble button is the chat scope, the person button is the character scope. A module with a globe is enabled globally and applies to every chat; change that in Settings > Modules.",
+    chatModulesInfo: "Enable or disable modules for this chat or for this character. The speech bubble button is the chat scope, the link button is the character scope. A module with a globe is enabled globally and applies to every chat; change that in Settings > Modules.",
     moduleScopeChat: "Use in this chat",
     moduleScopeCharacter: "Use for this character",
     moduleScopeGlobal: "Enabled globally. Change in Settings > Modules",

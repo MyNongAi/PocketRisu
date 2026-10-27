@@ -881,7 +881,7 @@ export const languageSpanish = {
     "maxContextCapExceeded": "Tu valor supera el límite del perfil del modelo, así que solo se usan {} tokens. Activa \"Ignorar límite del modelo\" abajo para usarlo tal cual.",
     "maxContextIgnoreCap": "Ignorar límite del modelo",
     "maxContextIgnoreCapHelp": "Actívalo cuando el límite de contexto del perfil sea incorrecto. Se usa el valor de arriba tal cual; superar el límite real produce un error del servicio. Sin efecto si el valor está vacío.",
-    "chatModulesInfo": "Activa o desactiva módulos para este chat o para este personaje. El botón de bocadillo es el chat, el botón de persona es el personaje. Un módulo con un globo está activado globalmente y se aplica a todos los chats; cámbialo en Ajustes > Módulos.",
+    "chatModulesInfo": "Activa o desactiva módulos para este chat o para este personaje. El botón de bocadillo es el chat, el botón de enlace es el personaje. Un módulo con un globo está activado globalmente y se aplica a todos los chats; cámbialo en Ajustes > Módulos.",
     "moduleScopeChat": "Usar en este chat",
     "moduleScopeCharacter": "Usar para este personaje",
     "moduleScopeGlobal": "Activado globalmente. Cámbialo en Ajustes > Módulos",

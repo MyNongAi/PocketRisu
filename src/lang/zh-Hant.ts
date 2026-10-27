@@ -1050,7 +1050,7 @@ export const languageChineseTraditional = {
     "download": "下載",
     "edit": "編輯",
     "enableGlobal": "全域啟用",
-    "chatModulesInfo": "可為目前對話或目前角色啟用／停用模組。對話泡泡按鈕代表目前對話範圍，人物按鈕代表目前角色範圍；帶有地球圖示的模組已全域啟用，會套用至所有對話，可至「設定 → 模組」變更",
+    "chatModulesInfo": "可為目前對話或目前角色啟用／停用模組。對話泡泡按鈕代表目前對話範圍，連結按鈕代表目前角色範圍；帶有地球圖示的模組已全域啟用，會套用至所有對話，可至「設定 → 模組」變更",
     "moduleScopeChat": "套用至此對話",
     "moduleScopeCharacter": "套用至此角色",
     "moduleScopeGlobal": "已全域啟用。請至「設定 > 模組」變更",
