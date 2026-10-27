@@ -562,6 +562,8 @@ export const languageKorean = {
   globalNote: "글로벌 노트",
   autoSuggest: "자동 제안",
   tokens: "토큰",
+  loreCharCount: "({}자 / {}자)",
+  loreCharCountTitle: "공백 미포함 / 공백 포함",
   maxContextSize: "최대 컨텍스트 크기",
   maxResponseSize: "최대 응답 크기",
   temperature: "온도",

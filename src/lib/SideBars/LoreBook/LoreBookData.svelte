@@ -17,6 +17,7 @@
     import LoreBookList from "./LoreBookList.svelte";
     import type { LoreComparisonStatus } from "src/ts/gui/loreBookComparison";
     import { findTextMatches, splitAtMatches } from "src/ts/gui/textMatches";
+    import { countChars } from "src/ts/gui/charCount";
 
     interface Props {
         value: loreBook;
@@ -91,6 +92,8 @@
         }, 400)
         return () => { if (tokenTimer) clearTimeout(tokenTimer) }
     })
+    // Live, unlike the tokens: counting is cheap, and it is read only while open.
+    let chars = $derived(countChars(value.content))
 
     function isLocallyActivated(book: loreBook){
         return book.id ? getCurrentChat()?.localLore.some(e => e.id === book.id) : false
@@ -326,7 +329,7 @@
             <NumberInput bind:value={value.insertorder} min={0} max={1000}/>
             <span class="text-textcolor mt-4 mb-2">{language.prompt}</span>
             <TextAreaInput highlight autocomplete="off" bind:value={value.content} className={loreComparisonClass} resizeKey="lorebook" {searchText} findable />
-            <span class="text-textcolor2 mt-2 mb-2 text-sm">{tokens} {language.tokens}</span>
+            <span class="text-textcolor2 mt-2 mb-2 text-sm">{tokens} {language.tokens} <span class="whitespace-nowrap" title={language.loreCharCountTitle}>{language.loreCharCount.replace('{}', String(chars.noSpace)).replace('{}', String(chars.withSpace))}</span></span>
             <div class="flex items-center mt-4">
                 <Check bind:check={value.alwaysActive} name={language.alwaysActive}/>
             </div>

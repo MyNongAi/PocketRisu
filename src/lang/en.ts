@@ -489,6 +489,8 @@ export const languageEnglish = {
     globalNote: "Global Note",
     autoSuggest: "Auto Suggest",
     tokens: "Tokens",
+    loreCharCount: "({} / {} chars)",
+    loreCharCountTitle: "Without spaces / with spaces",
     maxContextSize: "Max Context Size",
     maxResponseSize: "Max Response Size",
     temperature: "Temperature",

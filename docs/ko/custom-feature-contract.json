@@ -2456,6 +2456,23 @@
       ]
     },
     {
+      "id": "LOREBOOK-CHAR-COUNT",
+      "title": "로어북 항목 글자 수 (공백 미포함 / 공백 포함)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/charCount.ts",
+        "src/lib/SideBars/LoreBook/LoreBookData.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "let chars = $derived(countChars(value.content))" },
+        { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "{language.loreCharCount.replace('{}', String(chars.noSpace)).replace('{}', String(chars.withSpace))}" },
+        { "file": "src/lang/ko.ts", "contains": "loreCharCount: \"({}자 / {}자)\"" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/charCount.test.ts"
+      ]
+    },
+    {
       "id": "PRESET-MODULE-FOLDER",
       "title": "프롬이 켜는 모듈을 [프롬] 폴더로 · 프롬 없는 고아 모듈 표시",
       "criticality": "core-ux",
