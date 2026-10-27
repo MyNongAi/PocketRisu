@@ -34,6 +34,13 @@
     import { isEmbeddedRisuPane, parseChatRoomDragPayload, splitChatOpen } from './ts/chatSplitPane';
     import { changeChatTo } from './ts/globalApi.svelte';
     import { BackLayerRank, useBackLayer } from './ts/gui/backLayers.svelte';
+    import { startModuleOnWatch } from './ts/process/moduleOnWatch.svelte';
+
+    // A module that comes on by itself (another bot, chat or preset) is lifted in 최근순 too.
+    $effect(() => {
+        if (!$loadedStore) return
+        return startModuleOnWatch()
+    })
 
     let aprilFools = $state(new Date().getMonth() === 3 && new Date().getDate() === 1)
     let aprilFoolsPage = $state(0)

@@ -351,16 +351,18 @@
         const imgs = bodyRoot.querySelectorAll('img:not([src^="data:"]):not([src^="http:"]):not([src^="https:"]):not([src^="blob:"]):not([src^="file:"]):not([src^="tauri:"]):not([src^="/"]):not([noimage])') as NodeListOf<HTMLImageElement>
         
         if (imgs.length > 0) {
+            // In the pane beside the selection: that pane's bot and modules.
+            const context = paneRenderContext()
             const currentCharacter = typeof character === 'object' && character?.type === 'simple'
                 ? character
-                : getCurrentCharacter()
+                : context?.character ?? getCurrentCharacter()
             if(!currentCharacter) return
             const styl = currentCharacter.prebuiltAssetStyle ?? 'contain'
             const moduleAssets = currentCharacter.type === 'simple'
                 ? (currentCharacter.moduleAssets ?? [])
-                : getModuleAssets()
+                : getModuleAssets(context)
             const assets = moduleAssets.concat(currentCharacter.additionalAssets ?? [])
-            const moduleManifests = currentCharacter.type === 'simple' ? [] : getModules()
+            const moduleManifests = currentCharacter.type === 'simple' ? [] : getModules(context)
                 .map((module) => module?.assetManifest)
                 .filter((manifest) => !!manifest)
             const normalizedAssets = assets.map((asset) => {

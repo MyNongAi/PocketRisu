@@ -1,5 +1,5 @@
 import { loadAssetManifestItems } from '../globalApi.svelte'
-import { getModules } from '../process/modules'
+import { getModules, type ModuleRuntimeContext } from '../process/modules'
 import { getCachedFullAssetManifest } from '../storage/assetManifestCache'
 import type { AssetManifestDescriptor } from '../storage/nodeStorage'
 
@@ -32,9 +32,10 @@ export function mentionsAssetListCbs(texts: readonly (string | null | undefined)
 export async function hydrateAssetListsForCbs(
     char: { additionalAssetManifest?: AssetManifestDescriptor } | null | undefined,
     texts: readonly (string | null | undefined)[],
+    context?: ModuleRuntimeContext,
 ): Promise<void> {
     if (!mentionsAssetListCbs(texts)) return
-    const manifests = getModules()
+    const manifests = getModules(context)
         .map((module) => module?.assetManifest)
         .filter((manifest): manifest is AssetManifestDescriptor => !!manifest)
     if (char?.additionalAssetManifest) manifests.push(char.additionalAssetManifest)

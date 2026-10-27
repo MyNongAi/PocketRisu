@@ -14,7 +14,7 @@ import { calcString } from '../process/infunctions';
 import { findCharacterbyId, getPersonaPrompt, getUserIcon, getUserName, pickHashRand, replaceAsync} from '../util';
 
 import { getInlayInfosBatch } from '../process/files/inlays';
-import { getModuleAssets, getModuleLorebooks, getModules, type RisuModule } from '../process/modules';
+import { getModuleAssets, getModuleLorebooks, getModules, type ModuleRuntimeContext, type RisuModule } from '../process/modules';
 import hljs from 'highlight.js/lib/core'
 import 'highlight.js/styles/atom-one-dark.min.css'
 import { language } from 'src/lang';
@@ -498,8 +498,8 @@ const simpleAssetCaches = new WeakMap<object, {
 // simple character that took no module assets, so a just-downloaded asset
 // module showed no images until a reload turned its list into a manifest.
 // The key changes when such a module arrives, leaves or changes size.
-function inlineModuleAssetKey(): string {
-    return getModules()
+function inlineModuleAssetKey(context?: ModuleRuntimeContext): string {
+    return getModules(context)
         .map((module) => module?.assets?.length ? `${module.id}:${module.assets.length}` : '')
         .filter(Boolean)
         .join('|')
@@ -553,14 +553,18 @@ $effect.root(() => {
 const imageCBS = ['img', 'image', 'emotion', 'asset', 'bg', 'raw', 'path']
 const videoExtensions = ['mp4', 'webm', 'avi', 'm4p', 'm4v']
 
-async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|character, mode:'normal'|'back', arg:{ch:number}){
+async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|character, mode:'normal'|'back', arg:{ch:number}, context?:ModuleRuntimeContext){
     const assetWidthString = (DBState.db.assetWidth && DBState.db.assetWidth !== -1 || DBState.db.assetWidth === 0) ? `max-width:${DBState.db.assetWidth}rem;` : ''
 
     // Both the full-character path and the chat-render path (simple objects from
     // createSimpleCharacter) carry chaId + asset lists, so both enforce cache
     // ownership; group members and selection races rebuild instead of reusing
     // the previous character's assets.
-    if ((char.type === 'character' || char.type === 'simple') && (!assetsCache || !emoAssetsCache || assetsCacheCharacterId !== char.chaId)) {
+    // A chat drawn beside the selection (`context`, a split pane) has modules
+    // of its own: its assets come from them, never through the selection's
+    // cache (the other pane showed no module images, the user's report,
+    // 2026-10-27).
+    if (!context && (char.type === 'character' || char.type === 'simple') && (!assetsCache || !emoAssetsCache || assetsCacheCharacterId !== char.chaId)) {
         resetAssetsCache(char.additionalAssets ?? [], char.emotionImages ?? [], getModuleAssets(), char.chaId)
     }
 
@@ -568,15 +572,16 @@ async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|c
     let emoPaths = emoAssetsCache ?? {}
     let fuzzyIndex = fuzzyAssetCache
     let fuzzyCount = fuzzyAssetCount
-    if (char.type === 'simple') {
-        const moduleKey = char.moduleAssets ? '' : inlineModuleAssetKey()
+    if (char.type === 'simple' || context) {
+        const ownModuleAssets = char.type === 'simple' ? char.moduleAssets : undefined
+        const moduleKey = ownModuleAssets ? '' : inlineModuleAssetKey(context)
         let cache = simpleAssetCaches.get(char)
         if (!cache || cache.moduleKey !== moduleKey) {
             const assets: AssetPaths = {}
             const emotions: AssetPaths = {}
             const fuzzy: FuzzyAssetIndex = new Map()
             getAssetSrc(char.additionalAssets ?? [], assets, fuzzy)
-            getAssetSrc(char.moduleAssets ?? (moduleKey ? getModuleAssets() : []), assets)
+            getAssetSrc(ownModuleAssets ?? (moduleKey ? getModuleAssets(context) : []), assets)
             getEmoSrc(char.emotionImages ?? [], emotions)
             cache = {
                 assets,
@@ -593,7 +598,7 @@ async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|c
         fuzzyCount = cache.fuzzyCount
     }
 
-    const moduleManifests = getModules()
+    const moduleManifests = getModules(context)
         .map((module) => module?.assetManifest)
         .filter((manifest) => !!manifest)
     if (moduleManifests.length > 0 || char.additionalAssetManifest) {
@@ -1195,10 +1200,10 @@ export async function ParseMarkdown(
         // CBS list functions are synchronous. Only when a prompt explicitly
         // asks for a complete asset list do we hydrate the corresponding full
         // manifests into the bounded compatibility cache.
-        await hydrateAssetListsForCbs(char, [data])
+        await hydrateAssetListsForCbs(char, [data], options.context)
         data = await parseAdditionalAssets(data, char, additionalAssetMode, {
             ch: chatID
-        })
+        }, options.context)
         firstParsed = data
     }
 
@@ -1209,7 +1214,7 @@ export async function ParseMarkdown(
     if(firstParsed !== data && char && resolveAssets){
         data = await parseAdditionalAssets(data, char, additionalAssetMode, {
             ch: chatID
-        })
+        }, options.context)
     }
 
     data = data ?? ''

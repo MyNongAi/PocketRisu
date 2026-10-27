@@ -202,6 +202,10 @@
       ],
       "requiredMarkers": [
         { "file": "src/ts/gui/paneFormScope.ts", "contains": "export function keepLabelInPane(event: MouseEvent, pane: Element): void" },
+        { "file": "src/ts/parser/parser.svelte.ts", "contains": "if (!context && (char.type === 'character' || char.type === 'simple') && (!assetsCache" },
+        { "file": "src/ts/parser/parser.svelte.ts", "contains": "const moduleManifests = getModules(context)" },
+        { "file": "src/ts/parser/assetListHydration.ts", "contains": "const manifests = getModules(context)" },
+        { "file": "src/lib/ChatScreens/ChatBody.svelte", "contains": ": getModuleAssets(context)" },
         { "file": "src/ts/gui/paneFormScope.ts", "contains": "radio.setAttribute('form', formId)" },
         { "file": "src/ts/gui/morphHtml.ts", "contains": "prepare?.(next)" },
         { "file": "src/lib/ChatScreens/ChatBody.svelte", "contains": "(nodes) => scopePaneRadios(nodes, root)" },
@@ -278,6 +282,7 @@
       "regressionTests": [
         "src/ts/splitLayout.svelte.test.ts",
         "src/ts/gui/paneFormScope.test.ts",
+        "src/ts/parser/tests/assetListHydration.test.ts",
         "src/ts/gui/paneQuery.test.ts",
         "src/ts/process/scriptings.test.ts",
         "src/lib/SideBars/PromptBind.panes.test.ts",
@@ -361,10 +366,14 @@
         "src/lib/Setting/Pages/Module/ModuleMenu.svelte",
         "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte",
         "src/lib/UI/FolderedList.svelte",
-        "src/lib/UI/GUI/ShContextMenu.svelte"
+        "src/lib/UI/GUI/ShContextMenu.svelte",
+        "src/ts/process/moduleOnWatch.svelte.ts"
       ],
       "requiredMarkers": [
         { "file": "src/ts/process/moduleFolders.ts", "contains": "moveModuleFolderByDrop" },
+        { "file": "src/ts/process/moduleOnWatch.svelte.ts", "contains": "export function startModuleOnWatch(): () => void" },
+        { "file": "src/ts/process/moduleOnWatch.svelte.ts", "contains": "const now = modulesOnNow(db, selIdState.selId)" },
+        { "file": "src/App.svelte", "contains": "return startModuleOnWatch()" },
         { "file": "src/lib/UI/GUI/ShContextMenu.svelte", "contains": "touchHold = event.pointerType === 'touch' && !disabled && dragsOnTouch(event)" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "recordModuleFolderActivation" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "sortModulesByActivation" },
@@ -398,6 +407,7 @@
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "nestedIndexes: nestedIndexesOf(group)" }
       ],
       "regressionTests": [
+        "src/ts/process/moduleOnWatch.test.ts",
         "src/ts/process/moduleFolders.test.ts",
         "src/ts/process/moduleSort.test.ts",
         "src/ts/process/moduleDraft.test.ts",

@@ -6,7 +6,7 @@ vi.mock('../../globalApi.svelte', () => ({
     loadAssetManifestItems: (...args: any[]) => loadAssetManifestItems(...args),
 }))
 vi.mock('../../process/modules', () => ({
-    getModules: () => getModules(),
+    getModules: (...args: any[]) => getModules(...args),
 }))
 
 const cacheMod = await import('../../storage/assetManifestCache')
@@ -55,6 +55,12 @@ describe('mentionsAssetListCbs', () => {
 })
 
 describe('hydrateAssetListsForCbs', () => {
+    test('reads the modules of the chat it renders for (a split pane beside the selection)', async () => {
+        const context = { modules: [] } as any
+        await hydrateAssetListsForCbs(null, ['{{module_assetlist::TEST}}'], context)
+        expect(getModules).toHaveBeenCalledWith(context)
+    })
+
     test('loads module and character manifests when a list token is present', async () => {
         await hydrateAssetListsForCbs({ additionalAssetManifest: charManifest }, ['{{module_assetlist::TEST}}'])
         expect(loadAssetManifestItems).toHaveBeenCalledTimes(2)
