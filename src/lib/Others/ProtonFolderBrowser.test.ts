@@ -139,6 +139,27 @@ describe('ProtonFolderBrowser', () => {
         expect(await picked).toBeNull()
     })
 
+    // A stray tap beside the window used to cancel and drop the picks
+    // (the user's report, 2026-10-28).
+    it('stays open with its picks when the backdrop is tapped', async () => {
+        const picked = openProtonBrowser('https://drive.proton.me/urls/T#P', '', ROOT)
+        const target = document.createElement('div')
+        document.body.appendChild(target)
+        mounted.push(mount(ProtonFolderBrowser, { target }))
+        await settle()
+
+        checkboxFor(target, 'card 2.png').click()
+        await settle()
+        ;(target.querySelector('[data-proton-backdrop]') as HTMLElement).click()
+        await settle()
+
+        expect(protonBrowserState.open).toBe(true)
+        expect(checkboxFor(target, 'card 2.png').checked).toBe(true)
+
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+        expect(await picked).toBeNull()
+    })
+
     it('shows the server error with a retry', async () => {
         client.inspectProtonShare.mockRejectedValueOnce(new Error('That folder is not inside this share'))
         void openProtonBrowser('https://drive.proton.me/urls/T#P', '', ROOT)

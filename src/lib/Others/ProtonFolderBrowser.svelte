@@ -127,10 +127,13 @@
 
 <svelte:window onkeydown={onKeydown} />
 
+<!-- A tap on the dark backdrop does nothing: it used to cancel and drop
+     every file picked so far (the user's report, 2026-10-28). ✕, the cancel
+     button and Escape still close it. -->
 <div
     class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3"
     role="presentation"
-    onclick={(event) => { if (event.target === event.currentTarget) finish(false) }}
+    data-proton-backdrop
 >
     <div
         class="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-darkborderc bg-bgcolor text-textcolor shadow-xl"
