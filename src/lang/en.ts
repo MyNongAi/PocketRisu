@@ -2955,7 +2955,7 @@ export const languageEnglish = {
     gridHideNames: "Hide names",
     moveToTrash: "Move to trash",
     moveToTrashConfirm: "Move to the trash? The character is deactivated and kept on the server; restore it from the trash at any time: ",
-    removeWithModules: "Delete with its linked modules",
+    removeWithModules: "Delete with modules",
     removeWithModulesConfirm: (name: string, only: string[], shared: string[]) => {
         const list = (names: string[]) => [...names.slice(0, 6).map((n) => `• ${n}`), ...(names.length > 6 ? [`• … +${names.length - 6}`] : [])].join('\n')
         if (only.length === 0) {

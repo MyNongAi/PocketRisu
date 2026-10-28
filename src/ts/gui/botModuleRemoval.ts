@@ -1,4 +1,4 @@
-// A bot's menu "연결된 모듈과 같이 삭제" (the user's request, 2026-10-22):
+// A bot's menu "모듈과 같이 삭제" (the user's request, 2026-10-22):
 // the bot goes to the trash as with "삭제", and the modules linked to it
 // (character.modules, the green chain) go with it, but only those nothing
 // else uses. Modules have no trash, so a module another bot, the global

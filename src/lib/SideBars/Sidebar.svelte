@@ -657,6 +657,7 @@
   // the two side by side on one line (2026-10-22). The pane takes the
   // selection first, so the bot opens there.
   const PANE_ROW = 'open-in-pane'
+  const DELETE_ROW = 'delete'
   function openInPaneActions(open: () => unknown): Array<[string, () => unknown, string?]> {
     if (!$splitChatOpen || isEmbeddedRisuPane || $MobileGUI) return []
     return (['main', 'side'] as const).map((target) => [
@@ -670,7 +671,7 @@
   function botMenuOptions(actions: Array<[string, () => unknown, string?]>): (string | AlertAction)[] {
     return [
       ...actions.map(([label, , row]) => label === language.remove || label === language.removeWithModules
-        ? { label, variant: 'destructive' as const }
+        ? { label, variant: 'destructive' as const, row }
         : row ? { label, row } : label),
       language.cancel,
     ]
@@ -690,6 +691,10 @@
     }
     // The Proton link the card was downloaded from, to fetch it again if it breaks.
     const protonLink = protonLinkOf(character)
+    // A bot with linked modules: its two deletes halve one line (the user's
+    // request, 2026-10-28) instead of stacking.
+    const hasModules = botHasModules(character.chaId)
+    const deleteRow = hasModules ? DELETE_ROW : undefined
     const actions: Array<[string, () => unknown, string?]> = [
       ...openInPaneActions(atNow((index) => changeChar(index, { reseter: botSwitchReseter }))),
       ['봇 설정 수정', atNow((index) => {
@@ -700,12 +705,12 @@
       [character.favorite ? '즐겨찾기 해제' : DBState.db.nodeOnlyFavoritesFolder !== false ? '즐겨찾기 (★ 폴더로)' : '즐겨찾기 (맨위로)',
         atNow((index) => toggleSidebarCharacterFavorite(index))],
       ...(protonLink ? [[language.protonLinkCopy, () => copyProtonLink(protonLink)] as [string, () => unknown]] : []),
-      ...(botHasModules(character.chaId) ? [[language.pairFindModule, () => findModulesOfBot(character.chaId)] as [string, () => unknown]] : []),
+      ...(hasModules ? [[language.pairFindModule, () => findModulesOfBot(character.chaId)] as [string, () => unknown]] : []),
       // Turned off and on from the same menu, whatever its state (the user's request, 2026-10-21).
       [language.deactivateCharacter, atNow((index) => archiveCharacter(index))],
-      [language.remove, () => removeChar(character.chaId, character.name)],
+      [language.remove, () => removeChar(character.chaId, character.name), deleteRow],
       // With the modules only it uses (gui/botModuleRemoval.ts; the user's request, 2026-10-22).
-      ...(botHasModules(character.chaId) ? [[language.removeWithModules, () => removeBotWithModules(character.chaId)] as [string, () => unknown]] : []),
+      ...(hasModules ? [[language.removeWithModules, () => removeBotWithModules(character.chaId), deleteRow] as [string, () => unknown, string?]] : []),
     ]
     // The delete is red, as in the other menus.
     const selected = parseInt(await alertSelect(

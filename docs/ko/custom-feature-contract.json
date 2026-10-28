@@ -1215,7 +1215,7 @@
         { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "forgetModulePair(DBState.db.modules, moduleId, character.chaId)" },
         { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "<Link2Icon size={18}/>" },
         { "file": "src/ts/storage/database.svelte.ts", "contains": "backfillModulePairs(data.modules, data.characters)" },
-        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "[language.removeWithModules, () => removeBotWithModules(character.chaId)]" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "[language.removeWithModules, () => removeBotWithModules(character.chaId), deleteRow]" },
         { "file": "src/ts/gui/botModuleRemoval.ts", "contains": "|| (module.nodeOnlyPairedCharacterIds ?? []).some((id) => otherBots.has(id))" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "removeModulesFromDatabase(new Set([rmodule.id]))" }
       ],
