@@ -2311,9 +2311,11 @@
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "onMount(() => { restoreIllustrationPresets() })" },
         { "file": "src/lib/SideBars/IllustrationSettings.svelte", "contains": "|| writableIllustrationModule()" },
         { "file": "src/lib/SideBars/IllustrationSettings.svelte", "contains": "bind:value={DBState.db.NAIImgConfig.steps}" },
-        { "file": "src/lib/SideBars/IllustrationSettings.svelte", "contains": "data-illustration-nai" }
+        { "file": "src/lib/SideBars/IllustrationSettings.svelte", "contains": "data-illustration-nai" },
+        { "file": "src/lib/SideBars/IllustrationSettings.svelte", "contains": "<ShAccordion bind:open={naiOpen} trigger={naiTitle}" }
       ],
       "regressionTests": [
+        "src/lib/SideBars/IllustrationSettings.test.ts",
         "src/ts/process/illustration.test.ts",
         "src/ts/process/illustrationRun.test.ts",
         "src/ts/process/illustrationModule.test.ts",

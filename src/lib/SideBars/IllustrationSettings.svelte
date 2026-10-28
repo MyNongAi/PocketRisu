@@ -1,3 +1,9 @@
+<script lang="ts" module>
+    // The NovelAI box starts folded and stays as it was left for the session
+    // (the user's request, 2026-10-28).
+    let naiOpen = $state(false)
+</script>
+
 <script lang="ts">
     // A bot's illustration settings (illustration.ts), unfolded under the 🎨
     // switch by its ⚙ (inline: in a dialog the select lists opened beside it
@@ -17,12 +23,13 @@
     import { illustrationSettings, newPresetContent, ratioSize, type IllustrationBotSettings } from 'src/ts/process/illustration'
     import { presetsFor, restoreIllustrationPresets, writableIllustrationModule } from 'src/ts/process/illustrationRun'
     import { illustrationModuleOf, presetLorebookEntry } from 'src/ts/process/illustrationModule'
-    import { NAI_MODELS, NAI_NOISE_SCHEDULES, naiSamplers, naiSwitches } from 'src/ts/process/naiOptions'
+    import { NAI_MODELS, NAI_NOISE_SCHEDULES, naiModelShort, naiSamplers, naiSwitches } from 'src/ts/process/naiOptions'
     import { captureModuleRuntimeContext, getModules } from 'src/ts/process/modules'
     import { presetContentFromMeta, presetNameFromFile, readImageGenMeta } from 'src/ts/process/imageMeta'
     import { FileDropSurface, draggedItemsAreImages } from 'src/ts/gui/fileDropSurface.svelte'
     import ShButton from '../UI/GUI/ShButton.svelte'
     import ShSwitch from '../UI/GUI/ShSwitch.svelte'
+    import ShAccordion from '../UI/GUI/ShAccordion.svelte'
     import SelectInput from '../UI/GUI/SelectInput.svelte'
     import OptionInput from '../UI/GUI/OptionInput.svelte'
     import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
@@ -53,6 +60,12 @@
     let presetNai = $derived(chosen?.nai ?? {})
     let switches = $derived(naiSwitches(DBState.db.NAIImgModel, DBState.db.NAIImgConfig?.sampler))
     let size = $derived(ratioSize(settings.ratio))
+    // Shown under the folded title: what a drawing would use now, preset values first.
+    let naiSummary = $derived([
+        naiModelShort(DBState.db.NAIImgModel),
+        `${language.illustrationNaiSteps} ${presetNai.steps ?? DBState.db.NAIImgConfig?.steps}`,
+        `CFG ${presetNai.scale ?? DBState.db.NAIImgConfig?.scale}`,
+    ].join(' · '))
     const presetValue = (value: unknown) => language.illustrationNaiPresetValue.replace('{value}', typeof value === 'boolean' ? (value ? 'ON' : 'OFF') : String(value))
 
     // Where a new preset goes: the 🎨 module (every bot can pick it), or a
@@ -217,12 +230,19 @@
 
         {#if DBState.db.sdProvider === 'novelai' && DBState.db.NAIImgConfig}
             <!-- The settings page's NovelAI fields themselves; a value the chosen preset replaces is marked. -->
-            <div class="flex flex-col gap-1.5 rounded-md border border-darkborderc px-2 py-2 text-xs" data-illustration-nai>
-                <span class="font-semibold text-textcolor">{language.illustrationNai}</span>
-                <!-- The label, and the value the chosen preset draws with instead (the field it replaces dims). -->
-                {#snippet label(text: string, override: unknown)}
-                    <span class="min-w-0 text-textcolor2">{text}{#if override !== undefined}<span class="ml-1 text-yellow-500">· {presetValue(override)}</span>{/if}</span>
-                {/snippet}
+            {#snippet naiTitle()}
+                <span class="flex min-w-0 flex-col leading-tight">
+                    <span class="text-sm font-semibold text-textcolor">{language.illustrationNai}</span>
+                    {#if !naiOpen}<span class="truncate text-xs font-normal text-textcolor2" data-illustration-nai-summary>{naiSummary}</span>{/if}
+                </span>
+            {/snippet}
+            <!-- The label, and the value the chosen preset draws with instead (the field it replaces dims).
+                 Kept outside the accordion: a snippet inside a component becomes its prop. -->
+            {#snippet label(text: string, override: unknown)}
+                <span class="min-w-0 text-textcolor2">{text}{#if override !== undefined}<span class="ml-1 text-yellow-500">· {presetValue(override)}</span>{/if}</span>
+            {/snippet}
+            <div data-illustration-nai>
+            <ShAccordion bind:open={naiOpen} trigger={naiTitle} class="w-full" bodyClass="flex flex-col gap-1.5 text-xs">
                 <div class="flex flex-col gap-1">
                     {@render label(language.illustrationNaiModel, undefined)}
                     <SelectInput size="sm" bind:value={DBState.db.NAIImgModel}>
@@ -314,6 +334,7 @@
                     <span class="text-right text-textcolor2">{size.width}×{size.height} · {language.illustrationNaiSizeHint}</span>
                 </div>
                 <span class="text-textcolor2">{language.illustrationNaiLinked}</span>
+            </ShAccordion>
             </div>
         {/if}
 

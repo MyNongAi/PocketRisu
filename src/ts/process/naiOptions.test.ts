@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { NAI_MODELS, NAI_NOISE_SCHEDULES, naiSamplers, naiSwitches } from './naiOptions'
+import { NAI_MODELS, NAI_NOISE_SCHEDULES, naiModelShort, naiSamplers, naiSwitches } from './naiOptions'
 
 // The 🎨 panel offers what Settings › Other bots › Image generation offers.
 const page = readFileSync(resolve(process.cwd(), 'src/lib/Setting/Pages/OtherBotSettings.svelte'), 'utf8')
@@ -31,5 +31,13 @@ describe('the NovelAI choices of the 🎨 panel', () => {
         expect(naiSwitches('nai-diffusion-3', 'ddim_v3')).toMatchObject({ smea: false, dyn: false })
         expect(naiSwitches('nai-diffusion-4-full', 'k_euler')).toEqual({ smea: false, dyn: false, variety: true, decrisp: false, legacyUc: true })
         expect(naiSwitches('nai-diffusion-5-full', 'k_euler')).toEqual({ smea: false, dyn: false, variety: false, decrisp: false, legacyUc: false })
+    })
+
+    // The folded title has room for about 30 characters at phone width (2026-10-28).
+    it('shorten model names for the folded title', () => {
+        expect(NAI_MODELS.map(naiModelShort)).toEqual([
+            'V5 full', 'V5 curated', 'V4.5 full', 'V4.5 curated', 'V4 full',
+            'V4 curated preview', 'V3', 'furry 3', 'V2',
+        ])
     })
 })

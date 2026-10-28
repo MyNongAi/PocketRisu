@@ -67,3 +67,12 @@ export function naiSwitches(model: string | undefined, sampler: string | undefin
         legacyUc: m === 'nai-diffusion-4-full' || m === 'nai-diffusion-4-curated-preview',
     }
 }
+
+/** A model name short enough for the folded 🎨 NovelAI title: 'nai-diffusion-4-5-full' → 'V4.5 full'. */
+export function naiModelShort(model: string | undefined): string {
+    return (model ?? '')
+        .replace(/^nai-diffusion-/, '')
+        .replace(/^(\d+)-(\d+)(?=-|$)/, 'V$1.$2')
+        .replace(/^(\d+)(?=-|$)/, 'V$1')
+        .replaceAll('-', ' ')
+}
