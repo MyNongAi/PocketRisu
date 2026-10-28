@@ -22,7 +22,7 @@
     import { get, type Unsubscriber } from "svelte/store"
     import { v4 as uuidv4, v4 } from 'uuid'
     import { language } from "../../lang"
-    import { alertConfirm, alertConfirmMulti, alertInput, alertRequestData, notifyError, notifyInfo, notifySuccess, type AlertAction } from "../../ts/alert"
+    import { alertConfirm, alertConfirmMulti, alertInput, alertRequestData, notifyError, notifyInfo, notifySuccess, notifyWarning, type AlertAction } from "../../ts/alert"
     import { ParseMarkdown, type CbsConditions, type simpleCharacterArgument } from "../../ts/parser/parser.svelte"
     import { getLLMCache, setLLMCache } from "../../ts/translator/translator"
     import { getCurrentCharacter, getCurrentChat, type MessageGenerationInfo, type StreamingDisplayOptimizationMode } from "../../ts/storage/database.svelte"
@@ -42,7 +42,7 @@
     import PopupButton from "../UI/PopupButton.svelte";
     import PartialEditController from './PartialEditController.svelte';
     import { getChatAssetRenderWindow, normalizeExternalAssetRecentOutputs, shouldResolveChatAssets, watchAssetViewport } from '../../ts/chatAssetWindow';
-    import { boardSafeStyles, boardSafeTags, buildPortableChatFragment, chatClipboardErrorMessage, clipboardSizeLabel, embedParsedChatAssets, fetchClipboardDataUrl, hexColors, rasterizeCoverImage, replaceFormControls, shrinkClipboardImage, writeChatClipboard } from '../../ts/chatClipboard';
+    import { BOARD_POST_SAFE_BYTES, boardPostBytes, boardSafeStyles, boardSafeTags, buildPortableChatFragment, chatClipboardErrorMessage, clipboardSizeLabel, embedParsedChatAssets, fetchClipboardDataUrl, hexColors, rasterizeCoverImage, replaceFormControls, shrinkClipboardImage, writeChatClipboard } from '../../ts/chatClipboard';
 
     // Reactive breakpoint: a raw window.innerWidth read here is evaluated once
     // at mount and never follows a resize (#79).
@@ -1242,10 +1242,13 @@
                 return hexColors(html)
             })()
             await writeChatClipboard(copyText, htmlPromise)
-            // How large the copy is: a board refuses a post past its limit
-            // (Arca's "413 request entity too large").
-            const copiedLabel = `${language.copied} (${clipboardSizeLabel(new Blob([await htmlPromise]).size)})`
-            notifyInfo(copiedLabel)
+            // How large the post will be: a board refuses a post past its limit
+            // (Arca's "413 request entity too large"); pictures count as the
+            // address the board gives them (boardPostBytes).
+            const postBytes = boardPostBytes(await htmlPromise)
+            const copiedLabel = `${language.copied} (${clipboardSizeLabel(postBytes)})`
+            if (postBytes > BOARD_POST_SAFE_BYTES) notifyWarning(`${copiedLabel} · ${language.copiedOverBoardLimit}`)
+            else notifyInfo(copiedLabel)
             setStatusMessage(copiedLabel, 3000)
         } catch (error) {
             setStatusMessage('')

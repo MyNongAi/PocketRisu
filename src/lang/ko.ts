@@ -962,6 +962,7 @@ export const languageKorean = {
   tags: "태그",
   backgroundHTML: "백그라운드 임베딩",
   copied: "복사됨",
+  copiedOverBoardLimit: "아카 본문 한도를 넘을 수 있어요. 나눠서 복사하세요",
   useChatCopy: "채팅 메시지 복사 사용",
   useChatSticker: "채팅 스티커 사용",
   useAdditionalAssetsPreview: "추가 에셋 미리보기 사용",

@@ -2018,7 +2018,11 @@
         { "file": "src/ts/chatClipboard.ts", "contains": "export function boardLonghands(property: string, value: string)" },
         { "file": "src/ts/chatClipboard.ts", "contains": "export function boardSafeStyles(root: Element): void {" },
         { "file": "src/ts/chatClipboard.ts", "contains": "const brokenImage = source instanceof HTMLImageElement && source.complete && source.naturalWidth === 0" },
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "boardSafeStyles(doc.body)" }
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "boardSafeStyles(doc.body)" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "const flattened = portableStyle(computed, parent, defaultStyles.of(source))" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "if (index > 0 && !shownInCopy(source, computed)) {" },
+        { "file": "src/ts/chatClipboard.ts", "contains": "export const BOARD_POST_SAFE_BYTES = 450 * 1024" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (postBytes > BOARD_POST_SAFE_BYTES) notifyWarning(`${copiedLabel} · ${language.copiedOverBoardLimit}`)" }
       ],
       "regressionTests": [
         "src/ts/chatClipboard.test.ts",

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { backgroundPictureOf, boardLonghands, boardSafeStyles, buildPortableChatFragment, chatClipboardErrorMessage, boardSafeTags, clipboardImageSize, clipboardSizeLabel, isAnimatedImageDataUrl, shrinkClipboardImage, hexColors, replaceFormControls, coverImagePlacement, decodeClipboardCssContent, extractCssUrls, fetchClipboardDataUrl, inlineCssUrls, writeChatClipboard } from './chatClipboard'
+import { BOARD_POST_SAFE_BYTES, backgroundPictureOf, boardLonghands, boardPostBytes, boardSafeStyles, buildPortableChatFragment, portableStyle, chatClipboardErrorMessage, boardSafeTags, clipboardImageSize, clipboardSizeLabel, isAnimatedImageDataUrl, shrinkClipboardImage, hexColors, replaceFormControls, coverImagePlacement, decodeClipboardCssContent, extractCssUrls, fetchClipboardDataUrl, inlineCssUrls, writeChatClipboard } from './chatClipboard'
 
 afterEach(() => {
     vi.restoreAllMocks()
@@ -29,7 +29,7 @@ describe('portable chat clipboard assets', () => {
         expect(result.startsWith('data:image/gif;base64,')).toBe(true)
     })
 
-    it('keeps the rendered frame and the current collapsed details state', async () => {
+    it('keeps the rendered frame and a closed details as its summary alone', async () => {
         const root = document.createElement('section')
         root.style.border = '2px solid rgb(1, 2, 3)'
         root.innerHTML = '<details><summary>asset</summary><img alt="asset" src="data:image/png;base64,AA=="></details>'
@@ -45,7 +45,9 @@ describe('portable chat clipboard assets', () => {
         expect(frame.tagName).toBe('DIV')
         expect(frame.style.borderTopWidth).toBe('2px')
         expect(frame.style.borderTopColor).toBe('rgb(1, 2, 3)')
-        expect(html).toContain('data:image/png;base64,AA==')
+        // what a closed details hides stays out, as on screen (2026-10-28)
+        expect(html).toContain('asset</summary>')
+        expect(html).not.toContain('data:image/png;base64,AA==')
         root.remove()
     })
 })
@@ -373,5 +375,114 @@ describe('broken images in a copy', () => {
         const images = copy.querySelectorAll('img')
         expect(images).toHaveLength(1)
         expect(images[0].getAttribute('src')).toBe('data:image/webp;base64,OK')
+    })
+})
+
+describe('only what the reply shows is copied', () => {
+    // A bot's button panels (the checkbox trick: a panel shown only while its
+    // box is checked), a closed <details>, and a 도감 book with its floating
+    // launcher fixed to the screen.
+    const markup = '<p>본문 첫 줄</p>'
+        + '<input type="checkbox" id="stat" style="display:none"><label for="stat">상태창</label>'
+        + '<div class="panel" style="display:none"><p>닫힌 패널 내용</p></div>'
+        + '<details><summary>상세 보기</summary><p>닫힌 상세 내용</p>남은 글</details>'
+        + '<div style="position:fixed;right:8px;bottom:80px"><button>📖 도감 열기</button></div>'
+        + '<div style="position:fixed;top:40px;left:40px;display:block"><p>물고기 도감 팝업</p></div>'
+        + '<div style="visibility:hidden"><span>안 보이는 칸</span></div>'
+        + '<div style="visibility:hidden"><span style="visibility:visible">보이는 안쪽 칸</span></div>'
+        + '<p>본문 끝 줄</p>'
+
+    it('leaves out closed panels, closed details, fixed launchers and popups, and invisible boxes', async () => {
+        const root = document.createElement('div')
+        root.innerHTML = markup
+        document.body.append(root)
+        const html = await buildPortableChatFragment(root, { getDefaultStyle: () => null })
+        for (const shown of ['본문 첫 줄', '상태창', '상세 보기', '보이는 안쪽 칸', '본문 끝 줄']) expect(html).toContain(shown)
+        for (const left of ['닫힌 패널 내용', '닫힌 상세 내용', '남은 글', '도감 열기', '물고기 도감 팝업', '안 보이는 칸']) expect(html).not.toContain(left)
+    })
+
+    it('keeps a panel and details the user opened', async () => {
+        const root = document.createElement('div')
+        root.innerHTML = markup.replace('class="panel" style="display:none"', 'class="panel" style="display:block"').replace('<details>', '<details open>')
+        document.body.append(root)
+        const html = await buildPortableChatFragment(root, { getDefaultStyle: () => null })
+        for (const shown of ['닫힌 패널 내용', '닫힌 상세 내용', '남은 글']) expect(html).toContain(shown)
+        expect(html).not.toContain('물고기 도감 팝업')
+    })
+})
+
+// A computed style as the browser gives it: every property has a value.
+function computedStyle(values: Record<string, string>, important: string[] = []): CSSStyleDeclaration {
+    return {
+        getPropertyValue: (property: string) => values[property] ?? '',
+        getPropertyPriority: (property: string) => important.includes(property) ? 'important' : '',
+    } as unknown as CSSStyleDeclaration
+}
+
+describe('portable styles (post size)', () => {
+    // A paragraph inside a reply: everything as its parent or the default,
+    // except what the bot's CSS set (color, a border radius).
+    const base: Record<string, string> = {
+        display: 'block', visibility: 'visible', 'box-sizing': 'border-box', position: 'static',
+        top: 'auto', right: 'auto', bottom: 'auto', left: 'auto', 'z-index': 'auto',
+        width: '343px', 'min-width': '0px', 'max-width': 'none', height: '48px', 'min-height': '0px', 'max-height': 'none', 'aspect-ratio': 'auto',
+        'margin-top': '16px', 'margin-right': '0px', 'margin-bottom': '16px', 'margin-left': '0px',
+        'padding-top': '0px', 'padding-right': '0px', 'padding-bottom': '0px', 'padding-left': '0px',
+        overflow: 'visible', 'overflow-x': 'visible', 'overflow-y': 'visible',
+        color: 'rgb(230, 230, 230)', 'background-color': 'rgba(0, 0, 0, 0)', 'background-image': 'none', 'background-size': 'auto',
+        'background-position': '0% 0%', 'background-repeat': 'repeat', 'background-clip': 'border-box',
+        'border-top': '0px none rgb(230, 230, 230)', 'border-right': '0px none rgb(230, 230, 230)',
+        'border-bottom': '0px none rgb(230, 230, 230)', 'border-left': '0px none rgb(230, 230, 230)',
+        'border-radius': '0px', 'border-collapse': 'separate', 'border-spacing': '0px 0px', 'table-layout': 'auto', 'box-shadow': 'none', outline: 'rgb(230, 230, 230) none 0px',
+        'font-family': 'Pretendard, sans-serif', 'font-size': '16px', 'font-style': 'normal', 'font-weight': '400', 'line-height': '25.6px',
+        'letter-spacing': 'normal', 'text-align': 'start', 'text-decoration': 'none solid rgb(230, 230, 230)', 'text-shadow': 'none',
+        'white-space': 'normal', 'word-break': 'normal', 'overflow-wrap': 'break-word',
+        'object-fit': 'fill', 'object-position': '50% 50%', opacity: '1', filter: 'none', 'clip-path': 'none',
+        flex: '0 1 auto', 'flex-basis': 'auto', 'flex-direction': 'row', 'flex-grow': '0', 'flex-shrink': '1',
+        'flex-wrap': 'nowrap', 'align-content': 'normal', 'align-items': 'normal', 'align-self': 'auto',
+        'justify-content': 'normal', 'justify-items': 'normal', 'justify-self': 'auto', gap: 'normal',
+        'grid-template-columns': 'none', 'grid-template-rows': 'none', 'grid-column': 'auto', 'grid-row': 'auto',
+        transform: 'none', 'transform-origin': '171.5px 24px', 'transform-style': 'flat', perspective: 'none', 'perspective-origin': '171.5px 24px', 'backface-visibility': 'visible', 'vertical-align': 'baseline',
+        fill: 'rgb(0, 0, 0)', 'fill-rule': 'nonzero', stroke: 'none', 'stroke-width': '1px', 'stroke-linecap': 'butt', 'stroke-linejoin': 'miter',
+        'stop-color': 'rgb(0, 0, 0)', 'stop-opacity': '1', 'flood-color': 'rgb(0, 0, 0)', 'flood-opacity': '1',
+    }
+    const parent = computedStyle(base)
+    // The tag's default in a blank page: black text, no margins of its own here.
+    const defaults = computedStyle({ ...base, color: 'rgb(0, 0, 0)', 'border-top': '0px none rgb(0, 0, 0)', 'border-right': '0px none rgb(0, 0, 0)', 'border-bottom': '0px none rgb(0, 0, 0)', 'border-left': '0px none rgb(0, 0, 0)', outline: 'rgb(0, 0, 0) none 0px', 'text-decoration': 'none solid rgb(0, 0, 0)', width: 'auto', height: 'auto', 'transform-origin': '50% 50%', 'perspective-origin': '50% 50%' })
+    const paragraph = computedStyle({ ...base, 'border-radius': '8px' })
+
+    it('writes what differs, the always-written few, and leaves out the rest', () => {
+        const style = portableStyle(paragraph, parent, defaults)
+        expect(style).toContain('display:block')
+        expect(style).toContain('margin-top:16px')
+        expect(style).toContain('color:rgb(230, 230, 230)')
+        expect(style).toContain('border-radius:8px')
+        // inherited and the same as the parent
+        expect(style).not.toContain('font-family')
+        expect(style).not.toContain('white-space')
+        // the default for the tag, though the undrawn border names another color
+        expect(style).not.toContain('border-top')
+        expect(style).not.toContain('outline')
+        expect(style).not.toContain('text-decoration')
+        expect(style).not.toContain('flex-direction')
+        // the copied root writes inherited values in full
+        expect(portableStyle(paragraph, null, defaults)).toContain('font-family:Pretendard, sans-serif')
+        // an !important rule always goes out
+        expect(portableStyle(computedStyle({ ...base, 'flex-direction': 'row' }, ['flex-direction']), parent, defaults)).toContain('flex-direction:row !important')
+    })
+
+    it('makes a long reply a fraction of the size', () => {
+        const paragraphs = 300
+        const before = portableStyle(paragraph).length * paragraphs
+        const after = portableStyle(paragraph, parent, defaults).length * paragraphs
+        expect(before).toBeGreaterThan(500 * 1024)
+        expect(after).toBeLessThan(before / 5)
+    })
+
+    it('counts a pasted picture as the address a board gives it', () => {
+        const picture = `<img src="data:image/webp;base64,${'A'.repeat(200_000)}">`
+        expect(boardPostBytes(picture)).toBeLessThan(200)
+        expect(boardPostBytes('<p>가</p>')).toBe(new Blob(['<p>가</p>']).size)
+        expect(BOARD_POST_SAFE_BYTES).toBeLessThan(512 * 1024)
     })
 })

@@ -884,6 +884,7 @@ export const languageEnglish = {
     tags: "Tags",
     backgroundHTML: "Background Embedding",
     copied: "Copied",
+    copiedOverBoardLimit: "This may be over a board's post limit. Copy it in parts",
     useChatCopy: "Use Chat Message Copy",
     useChatSticker: "Use Chat Sticker",
     useAdditionalAssetsPreview: "Use Additional Assets Preview",

@@ -22,6 +22,28 @@ const PORTABLE_STYLE_PROPERTIES = [
     'stop-color', 'stop-opacity', 'flood-color', 'flood-opacity',
 ] as const
 
+// Writing every property above on every element made a copy about 2 KB of
+// style per element, so a long reply ran to megabytes and a board refused the
+// post ("request entity too large", the user's report, 2026-10-28). Now a
+// property goes out only where it changes something:
+// - those a child takes from its parent (CSS inheritance) only where they
+//   differ from the parent's value (the copied root writes them all);
+// - the rest only where they differ from the browser's default for the tag;
+// - ALWAYS_STYLE_PROPERTIES on every element, since a board's own stylesheet
+//   (Arca's editor view sets paragraph margins, size and line height) would
+//   otherwise take their place.
+const INHERITED_STYLE_PROPERTIES = new Set<string>([
+    'visibility', 'color', 'font-family', 'font-size', 'font-style', 'font-weight', 'line-height',
+    'letter-spacing', 'text-align', 'text-shadow', 'white-space', 'word-break', 'overflow-wrap',
+    'border-collapse', 'border-spacing',
+    'fill', 'fill-rule', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
+])
+const ALWAYS_STYLE_PROPERTIES = new Set<string>([
+    'display', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
+    'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+    'color', 'font-size', 'line-height', 'font-weight', 'text-align',
+])
+
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 
 /** Call directly in the click handler, before awaiting downloads. ClipboardItem
@@ -147,6 +169,23 @@ export async function shrinkClipboardImage(dataUrl: string, boxWidth = 0, boxHei
 }
 
 /** A copy's size for the "copied" notice: KB under 1 MB, else MB with one decimal. */
+/**
+ * The post budget a copy is held to, and how much of it counts. Arca refuses
+ * a post past its request limit with "request entity too large": measured
+ * 2026-10-28 on a private channel with synthetic text, 512 KB of editor HTML
+ * posted and 768 KB, 1 MB and 4 MB did not. A pasted data-URI <img> is
+ * uploaded and replaced by an Arca address (about 150 bytes), and a CSS
+ * background data URI is dropped at posting, so their bytes do not count.
+ */
+export const BOARD_POST_SAFE_BYTES = 450 * 1024
+const BOARD_IMAGE_URL_BYTES = 150
+
+/** Bytes of `html` that count toward a board's post size (images as their board address). */
+export function boardPostBytes(html: string): number {
+    const counted = html.replace(/data:[a-z]+\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+/gi, 'x'.repeat(BOARD_IMAGE_URL_BYTES))
+    return new Blob([counted]).size
+}
+
 export function clipboardSizeLabel(bytes: number): string {
     return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))}KB` : `${(bytes / 1024 / 1024).toFixed(1)}MB`
 }
@@ -187,14 +226,105 @@ export async function inlineCssUrls(
     return output
 }
 
-function portableStyle(style: CSSStyleDeclaration): string {
+/**
+ * Whether two computed values draw the same. A border, outline or text
+ * decoration that is not drawn (style none, or zero width as the app's
+ * stylesheet leaves every border) still names a style and a color, which
+ * differ from the browser default.
+ */
+function sameStyleValue(property: string, value: string, baseline: string): boolean {
+    if (value === baseline) return true
+    if (!/^(border-(top|right|bottom|left)|outline|text-decoration)$/.test(property)) return false
+    const undrawn = (text: string) => /\bnone\b/.test(text) || /(^|\s)0px(\s|$)/.test(text)
+    return undrawn(value) && undrawn(baseline)
+}
+
+/**
+ * The style an element carries into the copy. `parent` is its parent's
+ * computed style (null for the copied root) and `defaults` the browser's
+ * default for its tag; without them every property goes out (pseudo-elements).
+ */
+export function portableStyle(style: CSSStyleDeclaration, parent?: CSSStyleDeclaration | null, defaults?: CSSStyleDeclaration | null): string {
     const result: string[] = []
     for (const property of PORTABLE_STYLE_PROPERTIES) {
         const value = style.getPropertyValue(property)
         if (!value) continue
-        result.push(`${property}:${value}${style.getPropertyPriority(property) ? ' !important' : ''}`)
+        const important = style.getPropertyPriority(property)
+        if (!important && !ALWAYS_STYLE_PROPERTIES.has(property)) {
+            const baseline = INHERITED_STYLE_PROPERTIES.has(property) ? parent : defaults
+            if (baseline && sameStyleValue(property, value, baseline.getPropertyValue(property))) continue
+            // An origin is the element's own box in pixels and only matters
+            // with a transform or perspective to apply it to.
+            if (baseline && property === 'transform-origin' && style.getPropertyValue('transform') === 'none') continue
+            if (baseline && property === 'perspective-origin' && style.getPropertyValue('perspective') === 'none') continue
+            // Box sizing does nothing to a run of text.
+            if (baseline && property === 'box-sizing' && style.getPropertyValue('display') === 'inline') continue
+        }
+        result.push(`${property}:${value}${important ? ' !important' : ''}`)
     }
     return result.join(';')
+}
+
+/**
+ * Whether an element shows in the reply: displayed, not fixed to the screen,
+ * and visible (a hidden box with something visible inside still counts).
+ */
+function shownInCopy(element: Element, computed: CSSStyleDeclaration): boolean {
+    if (computed.display === 'none' || computed.position === 'fixed') return false
+    if (computed.visibility === 'hidden' || computed.visibility === 'collapse') {
+        return Array.from(element.querySelectorAll('*')).some((inner) => getComputedStyle(inner).visibility === 'visible')
+    }
+    return true
+}
+
+/**
+ * The browser's own style for each tag, read in a blank frame so the app's
+ * stylesheets (which reset margins, borders and box sizing) do not count as
+ * defaults. Null where no frame can be made; then nothing is left out.
+ */
+function createDefaultStyles(doc: Document): { of: (element: Element) => CSSStyleDeclaration | null, dispose: () => void } {
+    const none = { of: () => null, dispose: () => {} }
+    const body = doc.body ?? doc.documentElement
+    if (!body) return none
+    let frame: HTMLIFrameElement
+    try {
+        frame = doc.createElement('iframe')
+        frame.setAttribute('aria-hidden', 'true')
+        frame.tabIndex = -1
+        frame.style.cssText = 'position:absolute;left:-10000px;top:0;width:600px;height:200px;border:0;visibility:hidden;pointer-events:none'
+        body.appendChild(frame)
+    } catch {
+        return none
+    }
+    const blank = frame.contentDocument
+    const view = frame.contentWindow
+    if (!blank || !view || !blank.body) {
+        frame.remove()
+        return none
+    }
+    const byTag = new Map<string, CSSStyleDeclaration | null>()
+    return {
+        of(element) {
+            const key = `${element.namespaceURI ?? ''} ${element.localName}`
+            if (byTag.has(key)) return byTag.get(key) ?? null
+            let style: CSSStyleDeclaration | null = null
+            try {
+                const probe = element.namespaceURI ? blank.createElementNS(element.namespaceURI, element.localName) : blank.createElement(element.localName)
+                const host = element.namespaceURI === 'http://www.w3.org/2000/svg' && element.localName !== 'svg'
+                    ? blank.body.appendChild(blank.createElementNS('http://www.w3.org/2000/svg', 'svg'))
+                    : blank.body
+                host.appendChild(probe)
+                style = view.getComputedStyle(probe)
+                // An empty answer (no layout here) would leave everything out.
+                if (!style.getPropertyValue('display')) style = null
+            } catch {
+                style = null
+            }
+            byTag.set(key, style)
+            return style
+        },
+        dispose() { frame.remove() },
+    }
 }
 
 function preservePortableLayout(source: HTMLElement, clone: HTMLElement, computed: CSSStyleDeclaration, hasText: boolean, hasPseudo: boolean): void {
@@ -218,7 +348,9 @@ function preservePortableLayout(source: HTMLElement, clone: HTMLElement, compute
     // getComputedStyle resolves auto heights/widths to the CURRENT pixel box.
     // Freezing those pixels makes details opening overlap following paragraphs,
     // and forces short labels to wrap letter-by-letter in a narrower editor.
-    if (!isMedia && !isOutOfFlow && !mediaFrame && !positionedCanvas) {
+    // A run of text (display: inline) takes no size of its own and wraps as
+    // its block does, so it needs none of this (and the copy stays smaller).
+    if (!isMedia && !isOutOfFlow && !mediaFrame && !positionedCanvas && computed.display !== 'inline') {
         clone.style.height = 'auto'
         if (hasText || source instanceof HTMLDetailsElement) {
             clone.style.width = 'auto'
@@ -460,6 +592,8 @@ export async function buildPortableChatFragment(
         rasterizeCover?: (url: string, width: number, height: number, position: string) => Promise<string>
         rasterizeBackground?: (url: string, width: number, height: number, fit: 'cover' | 'contain', position: string) => Promise<string>
         shrinkImage?: (dataUrl: string, boxWidth: number, boxHeight: number) => Promise<string>
+        /** The browser's default style for an element's tag (createDefaultStyles). */
+        getDefaultStyle?: (element: Element) => CSSStyleDeclaration | null
     } = {},
 ): Promise<string> {
     const cloneRoot = sourceRoot.cloneNode(true) as HTMLElement
@@ -502,13 +636,49 @@ export async function buildPortableChatFragment(
     }
     // Snapshot all styles in one synchronous pass. Awaiting an image midway
     // used to capture different hover/layout states within the same message.
+    const defaultStyles = options.getDefaultStyle ? { of: options.getDefaultStyle, dispose: () => {} } : createDefaultStyles(sourceRoot.ownerDocument)
+    const computedOf = new Map<Element, CSSStyleDeclaration>()
+    const styleOf = (element: Element) => {
+        let style = computedOf.get(element)
+        if (!style) {
+            style = getComputedStyle(element)
+            computedOf.set(element, style)
+        }
+        return style
+    }
+    // Only what the reply shows goes into the copy (the user's report,
+    // 2026-10-28): a bot's closed button panels and its fixed 도감 popup and
+    // launcher came into the log broken, since a board drops display:none and
+    // position. Left out: what is not displayed or not visible, the body of a
+    // closed <details> or a content-visibility: hidden box, and anything fixed
+    // to the screen (floating launchers and overlays, open or not, are not
+    // part of the reply).
+    const hidden = new Set<Element>()
+    const hiddenClones: Element[] = []
     for (let index = 0; index < Math.min(sources.length, clones.length); index++) {
         const source = sources[index]
         const clone = clones[index]
         if (!(source instanceof HTMLElement || source instanceof SVGElement) || !(clone instanceof HTMLElement || clone instanceof SVGElement)) continue
 
-        const computed = getComputedStyle(source)
-        const flattened = portableStyle(computed)
+        if (index > 0 && (hidden.has(source) || (!!source.parentElement && hidden.has(source.parentElement)))) {
+            hidden.add(source)
+            hiddenClones.push(clone)
+            continue
+        }
+        const computed = styleOf(source)
+        if (index > 0 && !shownInCopy(source, computed)) {
+            hidden.add(source)
+            hiddenClones.push(clone)
+            continue
+        }
+        const closedDetails = source instanceof HTMLDetailsElement && !source.open
+        if (closedDetails || computed.getPropertyValue('content-visibility') === 'hidden') {
+            const summary = closedDetails ? source.querySelector(':scope > summary') : null
+            for (const child of Array.from(source.children)) if (child !== summary) hidden.add(child)
+            for (const node of Array.from(clone.childNodes)) if (node.nodeType === Node.TEXT_NODE) node.remove()
+        }
+        const parent = index > 0 && source.parentElement ? styleOf(source.parentElement) : null
+        const flattened = portableStyle(computed, parent, defaultStyles.of(source))
         if (flattened) clone.setAttribute('style', flattened)
 
         let hasPseudo = false
@@ -612,6 +782,9 @@ export async function buildPortableChatFragment(
             }
         })
     }
+    // Every style is read; the default probes are no longer needed.
+    defaultStyles.dispose()
+    for (const clone of hiddenClones) clone.remove()
 
     for (const task of assetTasks) await task()
     // Rich status widgets often draw their icons as inline SVG. Third-party
