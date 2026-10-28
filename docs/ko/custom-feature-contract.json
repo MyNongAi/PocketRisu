@@ -2314,8 +2314,7 @@
       "ownerFiles": [
         "modules/scene-fold/scene-fold.lua",
         "modules/scene-fold/build.mjs",
-        "modules/scene-fold/README.ko.md",
-        "modules/scene-fold/dist/scene-fold-0.1.0.risum"
+        "modules/scene-fold/README.ko.md"
       ],
       "requiredMarkers": [
         { "file": "modules/scene-fold/scene-fold.lua", "contains": "listenEdit('editRequest', function(tid, request, meta)" },
