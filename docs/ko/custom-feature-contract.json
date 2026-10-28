@@ -2056,6 +2056,39 @@
       ]
     },
     {
+      "id": "ASSET-STEALTH-STATUS",
+      "title": "추가에셋 네모 액자 색: NAI 스텔스 / PNG 텍스트·EXIF / 없음",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/media/stealthMetadata.ts",
+        "src/ts/media/stealthStatusStore.svelte.ts",
+        "src/lib/UI/StealthStatusIcon.svelte"
+      ],
+      "requiredMarkers": [
+        {
+          "file": "src/ts/media/stealthMetadata.ts",
+          "contains": "export type StealthStatus = 'present' | 'pngText' | 'exif' | 'absent' | 'unsupported' | 'error'"
+        },
+        {
+          "file": "src/ts/media/stealthMetadata.ts",
+          "contains": "return findTextMetadata(new Uint8Array(await blob.arrayBuffer())) ?? 'absent'"
+        },
+        {
+          "file": "src/lib/UI/StealthStatusIcon.svelte",
+          "contains": "class:text-yellow-500={hasTextMetadataOnly(status)}"
+        },
+        {
+          "file": "src/lib/SideBars/CharConfig.svelte",
+          "contains": "class:text-yellow-500={hasTextMetadataOnly(stealth)}"
+        }
+      ],
+      "regressionTests": [
+        "src/ts/media/stealthMetadata.test.ts",
+        "src/lib/UI/StealthStatusIcon.test.ts",
+        "src/ts/media/stealthStatusStore.svelte.test.ts"
+      ]
+    },
+    {
       "id": "MODULE-FOLDER-DEPTH",
       "title": "모듈 폴더 속 폴더 여러 단계",
       "criticality": "core-ux",

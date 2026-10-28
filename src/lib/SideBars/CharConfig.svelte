@@ -19,7 +19,7 @@
     import { exportChar, hydrateCharacterAssets } from "src/ts/characterCards";
     import { getElevenTTSVoices, getWebSpeechTTSVoices, getVOICEVOXVoices, oaiVoices, getNovelAIVoices } from "src/ts/process/tts";
     import { appendAssetManifestItems, editAssetManifest, forageStorage, loadAssetManifestItems, recoverAssetManifestConflict } from "src/ts/globalApi.svelte";
-    import { getStealthStatus, requestStealthStatus } from "src/ts/media/stealthStatusStore.svelte";
+    import { getStealthStatus, hasTextMetadataOnly, requestStealthStatus, stealthStatusTitle } from "src/ts/media/stealthStatusStore.svelte";
 import { openAssetViewer, hasImageAssets } from "src/ts/assetViewer.svelte";
     import LazyAssetPreview from "src/lib/Others/LazyAssetPreview.svelte";
     import TextInput from "../UI/GUI/TextInput.svelte";
@@ -746,12 +746,9 @@ import ShButton from "../UI/GUI/ShButton.svelte";
                                             class="hover:text-primary"
                                             class:text-textcolor2={DBState.db.characters[charIndex].prebuiltAssetExclude?.includes?.(assets[1])}
                                             class:text-green-500={stealth === 'present'}
+                                            class:text-yellow-500={hasTextMetadataOnly(stealth)}
                                             class:text-red-500={stealth === 'absent'}
-                                            title={stealth === 'present' ? language.stealthPresent
-                                                : stealth === 'absent' ? language.stealthAbsent
-                                                : stealth === 'unsupported' ? language.stealthUnsupported
-                                                : stealth === 'error' ? language.stealthUnknown
-                                                : language.stealthChecking}
+                                            title={stealthStatusTitle(stealth)}
                                             onclick={() => {
                                             DBState.db.characters[charIndex].prebuiltAssetExclude ??= []
                                             if(DBState.db.characters[charIndex].prebuiltAssetExclude.includes(assets[1])){

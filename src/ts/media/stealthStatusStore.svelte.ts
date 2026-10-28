@@ -5,6 +5,7 @@
 // tens of thousands of assets and the list is virtualised.
 
 import { SvelteMap } from 'svelte/reactivity'
+import { language } from 'src/lang'
 import { getFileSrc } from '../globalApi.svelte'
 import { canCarryStealth, detectStealthMetadata, type StealthStatus } from './stealthMetadata'
 
@@ -38,6 +39,24 @@ function pump(): void {
 
 export function getStealthStatus(path: string): StealthStatus | undefined {
     return statuses.get(path)
+}
+
+/** Yellow: no stealth copy, but the prompt is still in PNG text or EXIF. */
+export function hasTextMetadataOnly(status: StealthStatus | undefined): boolean {
+    return status === 'pngText' || status === 'exif'
+}
+
+/** The icon's tooltip, saying where the data was found. */
+export function stealthStatusTitle(status: StealthStatus | undefined): string {
+    switch (status) {
+        case 'present': return language.stealthPresent
+        case 'pngText': return language.stealthPngText
+        case 'exif': return language.stealthExif
+        case 'absent': return language.stealthAbsent
+        case 'unsupported': return language.stealthUnsupported
+        case 'error': return language.stealthUnknown
+        default: return language.stealthChecking
+    }
 }
 
 function remember(path: string, status: StealthStatus): void {

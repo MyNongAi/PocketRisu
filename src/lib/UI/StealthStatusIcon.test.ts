@@ -87,6 +87,18 @@ describe('StealthStatusIcon', () => {
         expect(icon.classList.contains('text-red-500')).toBe(true)
     })
 
+    it('turns yellow and says where when only the EXIF holds the prompt', async () => {
+        mocks.detectStealthMetadata.mockResolvedValueOnce('exif')
+        const icon = await render('assets/exif.webp', 'webp')
+        TestIntersectionObserver.latest!.enter()
+        await settle()
+
+        expect(icon.dataset.stealth).toBe('exif')
+        expect(icon.classList.contains('text-yellow-500')).toBe(true)
+        expect(icon.classList.contains('text-red-500')).toBe(false)
+        expect(icon.getAttribute('title')).toContain('EXIF')
+    })
+
     it('keeps the normal colour for files that cannot carry it', async () => {
         const icon = await render('assets/voice.mp3', 'mp3')
         TestIntersectionObserver.latest!.enter()
