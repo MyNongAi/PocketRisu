@@ -145,6 +145,9 @@ export async function generateAIImage(genPrompt:string, currentChar:character, n
         }
     }
     if(db.sdProvider === 'novelai'){
+        // A style preset's own values, its model too (illustrations, 2026-10-28).
+        const naiOwn = options.nai ?? {}
+        const naiModel = naiOwn.model ?? db.NAIImgModel
         const naiEmphasis = (text:string) => text
             .replaceAll('\\(', "♧")
             .replaceAll('\\)', "♤")
@@ -154,7 +157,7 @@ export async function generateAIImage(genPrompt:string, currentChar:character, n
             .replaceAll('♤',')')
         genPrompt = naiEmphasis(genPrompt)
         // Characters apart (V4 and later); an older model gets them in the prompt.
-        const naiV4Up = /nai-diffusion-(4|5)/.test(db.NAIImgModel ?? '')
+        const naiV4Up = /nai-diffusion-(4|5)/.test(naiModel ?? '')
         const naiCharacters = (options.characters ?? []).filter((c) => c.positive?.trim())
         if (!naiV4Up && naiCharacters.length > 0) {
             genPrompt = [genPrompt, ...naiCharacters.map((c) => naiEmphasis(c.positive))].join(', ')
@@ -164,20 +167,19 @@ export async function generateAIImage(genPrompt:string, currentChar:character, n
         const { width: naiWidth, height: naiHeight } = applyImageOrientation(
             options.width ?? db.NAIImgConfig.width, options.height ?? db.NAIImgConfig.height, options.orientation,
         )
-        const naiOwn = options.nai ?? {}
 
         let reqlist:any = {}
 
         const commonReq = {
             body: {
                 "input": genPrompt,
-                "model": db.NAIImgModel,
+                "model": naiModel,
                 "parameters": {
                     "params_version": 3,
                     "add_original_image": true,
                     "cfg_rescale": naiOwn.cfg_rescale ?? db.NAIImgConfig.cfg_rescale,
                     "controlnet_strength": 1,
-                    "dynamic_thresholding": db.NAIImgModel.includes('nai-diffusion-3') || db.NAIImgModel.includes('nai-diffusion-furry-3') || db.NAIImgModel.includes('nai-diffusion-2') ? db.NAIImgConfig.decrisp : false,
+                    "dynamic_thresholding": naiModel.includes('nai-diffusion-3') || naiModel.includes('nai-diffusion-furry-3') || naiModel.includes('nai-diffusion-2') ? db.NAIImgConfig.decrisp : false,
                     "n_samples": 1,
                     "width": naiWidth,
                     "height": naiHeight,
@@ -185,8 +187,8 @@ export async function generateAIImage(genPrompt:string, currentChar:character, n
                     "steps": naiOwn.steps ?? db.NAIImgConfig.steps,
                     "scale": naiOwn.scale ?? db.NAIImgConfig.scale,
                     "negative_prompt": neg,
-                    "sm": db.NAIImgModel.includes('nai-diffusion-3') || db.NAIImgModel.includes('nai-diffusion-furry-3') || db.NAIImgModel.includes('nai-diffusion-2') ? (naiOwn.sm ?? db.NAIImgConfig.sm) : undefined,
-                    "sm_dyn": db.NAIImgModel.includes('nai-diffusion-3') || db.NAIImgModel.includes('nai-diffusion-furry-3') ? (naiOwn.sm_dyn ?? db.NAIImgConfig.sm_dyn) : undefined,
+                    "sm": naiModel.includes('nai-diffusion-3') || naiModel.includes('nai-diffusion-furry-3') || naiModel.includes('nai-diffusion-2') ? (naiOwn.sm ?? db.NAIImgConfig.sm) : undefined,
+                    "sm_dyn": naiModel.includes('nai-diffusion-3') || naiModel.includes('nai-diffusion-furry-3') ? (naiOwn.sm_dyn ?? db.NAIImgConfig.sm_dyn) : undefined,
                     "noise_schedule": naiOwn.noise_schedule ?? db.NAIImgConfig.noise_schedule,
                     "normalize_reference_strength_multiple":true,
                     "ucPreset": 3,
@@ -240,11 +242,11 @@ export async function generateAIImage(genPrompt:string, currentChar:character, n
 
         // Add Variety+ option 
         if(naiOwn.variety ?? db.NAIImgConfig.variety_plus) {
-            if(db.NAIImgModel.includes('nai-diffusion-4-full') || db.NAIImgModel.includes('nai-diffusion-4-curated')
-            || db.NAIImgModel.includes('nai-diffusion-3') || db.NAIImgModel.includes('nai-diffusion-furry-3')) {
+            if(naiModel.includes('nai-diffusion-4-full') || naiModel.includes('nai-diffusion-4-curated')
+            || naiModel.includes('nai-diffusion-3') || naiModel.includes('nai-diffusion-furry-3')) {
                 commonReq.body.parameters.skip_cfg_above_sigma = Math.sqrt(naiWidth * naiHeight) * 0.01889;
             }
-            if(db.NAIImgModel.includes('nai-diffusion-4-5-full') || db.NAIImgModel.includes('nai-diffusion-4-5-curated')) {
+            if(naiModel.includes('nai-diffusion-4-5-full') || naiModel.includes('nai-diffusion-4-5-curated')) {
                 commonReq.body.parameters.skip_cfg_above_sigma = Math.sqrt(naiWidth * naiHeight) * 0.05766;
             }
         }
@@ -252,15 +254,15 @@ export async function generateAIImage(genPrompt:string, currentChar:character, n
         // Add vibe reference_image_multiple if exists.
         // V5 models do not support Vibe Transfer — never attach encodings
         // saved from V4/V4.5 use (the stored vibe_data itself is kept).
-        const naiV5Model = db.NAIImgModel === 'nai-diffusion-5-full' || db.NAIImgModel === 'nai-diffusion-5-curated'
+        const naiV5Model = naiModel === 'nai-diffusion-5-full' || naiModel === 'nai-diffusion-5-curated'
         if(!naiV5Model && db.NAIImgConfig.reference_mode === 'vibe' && db.NAIImgConfig.vibe_data) {
             const vibeData = db.NAIImgConfig.vibe_data;
             // Determine which model to use based on vibe_model_selection or fallback to current model
             const modelKey = db.NAIImgConfig.vibe_model_selection || 
-                            (db.NAIImgModel.includes('nai-diffusion-4-full') ? 'v4full' : 
-                             db.NAIImgModel.includes('nai-diffusion-4-curated') ? 'v4curated' : 
-                             db.NAIImgModel.includes('nai-diffusion-4-5-full') ? 'v4-5full' :
-                             db.NAIImgModel.includes('nai-diffusion-4-5-curated') ? 'v4-5curated' : null);
+                            (naiModel.includes('nai-diffusion-4-full') ? 'v4full' : 
+                             naiModel.includes('nai-diffusion-4-curated') ? 'v4curated' : 
+                             naiModel.includes('nai-diffusion-4-5-full') ? 'v4-5full' :
+                             naiModel.includes('nai-diffusion-4-5-curated') ? 'v4-5curated' : null);
 
             if(modelKey && vibeData.encodings && vibeData.encodings[modelKey]) {
                 // Initialize arrays if they don't exist
@@ -293,7 +295,7 @@ export async function generateAIImage(genPrompt:string, currentChar:character, n
         }
 
         if(db.NAIImgConfig.reference_mode === 'character' &&
-            (db.NAIImgModel.includes('nai-diffusion-4-5-full') || db.NAIImgModel.includes('nai-diffusion-4-5-curated'))
+            (naiModel.includes('nai-diffusion-4-5-full') || naiModel.includes('nai-diffusion-4-5-curated'))
         ) {
             let base64img = ''
             if(!db.NAIImgConfig.character_image || db.NAIImgConfig.character_image === ''){

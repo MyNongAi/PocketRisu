@@ -69,6 +69,52 @@ describe('the NovelAI box in the 🎨 settings', () => {
         expect(summary()).toBeNull()
     })
 
+    // The user's request (2026-10-28): with a preset picked, the fields change
+    // that preset's NAI entry (the model too); without one, the settings.
+    it('writes into the picked preset\'s NAI entry, and into the settings without one', async () => {
+        const char = DBState.db.characters[0]
+        char.globalLore = [
+            { key: 'F', mode: 'folder', comment: '프리셋 수채화', content: '', insertorder: 100, alwaysActive: false, secondkey: '', selective: false },
+            { key: '', folder: 'F', mode: 'normal', comment: 'Positive', content: '{prompt}, watercolor', insertorder: 100, alwaysActive: false, secondkey: '', selective: false },
+            { key: '', folder: 'F', mode: 'normal', comment: 'NAI', content: '# hint\nsteps: 20', insertorder: 100, alwaysActive: false, secondkey: '', selective: false },
+        ]
+        char.nodeOnlyIllustration = { enabled: true, preset: '수채화' }
+        const { box, trigger } = await mountSettings()
+        if (trigger.getAttribute('aria-expanded') === 'false') trigger.click()
+        await settle()
+
+        expect(box.querySelector('[data-nai-saves-to]')?.textContent).toContain('수채화')
+        const numbers = [...box.querySelectorAll('input[type=number]')] as HTMLInputElement[]
+        expect(numbers[0].value).toBe('20')
+        expect(numbers[1].value).toBe('5')
+        numbers[1].value = '6.5'
+        numbers[1].dispatchEvent(new Event('change', { bubbles: true }))
+        const model = [...box.querySelectorAll('select')].find((s) => s.querySelector('option[value="nai-diffusion-3"]'))!
+        model.value = 'nai-diffusion-3'
+        model.dispatchEvent(new Event('change', { bubbles: true }))
+        await settle()
+
+        const nai = () => DBState.db.characters[0].globalLore.find((e) => e.comment === 'NAI')!.content
+        expect(nai()).toBe('# hint\nsteps: 20\nscale: 6.5\nmodel: nai-diffusion-3')
+        expect(DBState.db.NAIImgConfig.scale).toBe(5)
+        expect(DBState.db.NAIImgModel).toBe('nai-diffusion-4-5-full')
+        expect(box.querySelectorAll('[data-nai-from-preset]').length).toBe(3)
+
+        // The API key is the settings' own, hidden like a password.
+        const key = box.querySelector('input[type=password]') as HTMLInputElement
+        expect(key).toBeTruthy()
+
+        DBState.db.characters[0].nodeOnlyIllustration = { enabled: true }
+        await settle()
+        expect(box.querySelector('[data-nai-saves-to]')).toBeNull()
+        const steps = box.querySelector('input[type=number]') as HTMLInputElement
+        steps.value = '33'
+        steps.dispatchEvent(new Event('change', { bubbles: true }))
+        await settle()
+        expect(DBState.db.NAIImgConfig.steps).toBe(33)
+        expect(nai()).toBe('# hint\nsteps: 20\nscale: 6.5\nmodel: nai-diffusion-3')
+    })
+
     it('stays as it was left when the sidebar opens it again', async () => {
         const first = await mountSettings()
         if (first.trigger.getAttribute('aria-expanded') === 'false') first.trigger.click()

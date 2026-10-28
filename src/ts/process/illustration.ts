@@ -11,6 +11,10 @@
 // module's for every bot with the module on. Lightboard's formats read as
 // they are ([Positive]/[Negative], or [Author]/[Quality]/[Negative]), and an
 // optional [NAI] section changes NovelAI's own settings for that preset.
+// Since 2026-10-28 (the user's choice) a preset is a lorebook folder named
+// "프리셋 X" holding one entry per section (Positive, Negative, NAI); the
+// one-entry form still reads. [NAI] may name the model too.
+import { naiModelFrom } from './naiOptions'
 
 export type IllustrationTrigger = 'auto' | 'button'
 export type IllustrationCount = '0-1' | '1' | '1-2' | '1-3'
@@ -43,6 +47,18 @@ export interface NaiParams {
     sm_dyn?: boolean
     variety?: boolean
     seed?: number
+    /** A model of NAI_MODELS, drawn with instead of the settings' one (2026-10-28). */
+    model?: string
+}
+
+/** The lorebook a preset came from. */
+export type PresetTarget = { kind: 'bot' } | { kind: 'chat' } | { kind: 'module', id: string }
+
+/** Where a preset lives, to write its [NAI] back: a folder (by key) or one entry (by index). */
+export interface PresetPlace {
+    target: PresetTarget
+    folder?: string
+    index?: number
 }
 
 export interface IllustrationPreset {
@@ -52,6 +68,14 @@ export interface IllustrationPreset {
     nai?: NaiParams
     /** Where it was found: 봇, 채팅, or the module's name. */
     source?: string
+    place?: PresetPlace
+}
+
+/** A preset's three entries, as written into a folder. */
+export interface PresetSections {
+    positive: string
+    negative: string
+    nai: string
 }
 
 export interface IllustrationCharacter {
@@ -258,6 +282,49 @@ const NAI_KEYS: Record<string, keyof NaiParams> = {
     sm_dyn: 'sm_dyn', dyn: 'sm_dyn',
     variety: 'variety', 'variety+': 'variety', variety_plus: 'variety',
     seed: 'seed', 시드: 'seed',
+    model: 'model', 모델: 'model',
+}
+
+/** The name each value is written under. */
+const NAI_LINE_NAMES: Record<keyof NaiParams, string> = {
+    steps: 'steps', scale: 'scale', sampler: 'sampler', cfg_rescale: 'cfg_rescale',
+    noise_schedule: 'noise_schedule', sm: 'smea', sm_dyn: 'dyn', variety: 'variety',
+    seed: 'seed', model: 'model',
+}
+
+/** The value a [NAI] line sets, commented out ("# steps: 28") or not. */
+function naiLineKey(line: string, commented: boolean): keyof NaiParams | undefined {
+    const body = commented ? line.replace(/^\s*#\s*/, '') : line.replace(/#.*$/, '')
+    const match = /^\s*([^:=#]+?)\s*[:=]/.exec(body)
+    return match ? NAI_KEYS[match[1].trim().toLowerCase()] : undefined
+}
+
+/**
+ * The [NAI] text with one value set (undefined: taken out). Other lines and
+ * comments stay; a commented template line ("# steps: 28") becomes the value.
+ */
+export function setNaiLine<K extends keyof NaiParams>(text: string, key: K, value: NaiParams[K] | undefined): string {
+    const next = value === undefined ? null : `${NAI_LINE_NAMES[key]}: ${value}`
+    const out: string[] = []
+    let placed = false
+    for (const line of (text ?? '').split('\n')) {
+        if (!/^\s*#/.test(line) && naiLineKey(line, false) === key) {
+            if (next && !placed) out.push(next)
+            placed = true
+            continue
+        }
+        out.push(line)
+    }
+    if (next && !placed) {
+        const template = out.findIndex((line) => /^\s*#/.test(line) && naiLineKey(line, true) === key)
+        if (template >= 0) {
+            out[template] = next
+        } else {
+            while (out.length > 0 && !out[out.length - 1].trim()) out.pop()
+            out.push(next)
+        }
+    }
+    return out.join('\n')
 }
 
 /** "key: value" (or key=value) lines of a [NAI] section; # starts a comment. */
@@ -272,6 +339,9 @@ export function parseNaiParams(text: string): NaiParams | undefined {
         if (!key) continue
         if (key === 'sampler' || key === 'noise_schedule') {
             params[key] = value
+        } else if (key === 'model') {
+            const model = naiModelFrom(value)
+            if (model) params.model = model
         } else if (key === 'sm' || key === 'sm_dyn' || key === 'variety') {
             params[key] = /^(true|on|yes|1|켜기|켬)$/i.test(value)
         } else {
@@ -303,39 +373,99 @@ export function parsePresetEntry(name: string, content: string): IllustrationPre
 /** @deprecated name kept for the Lightboard format; see parsePresetEntry. */
 export const parseLightboardPreset = parsePresetEntry
 
+/** The [NAI] (or [Settings]) text of a one-entry preset. */
+export function presetNaiText(content: string): string {
+    const sections = presetSections(content ?? '')
+    return sections.nai ?? sections.settings ?? ''
+}
+
+/** A one-entry preset with its [NAI] section replaced, or added at the end. */
+export function withPresetNai(content: string, nai: string): string {
+    const text = content ?? ''
+    const marks = [...text.matchAll(/\[(Positive|Negative|Author|Quality|NAI|Settings)\]/gi)]
+    const at = marks.findIndex((mark) => /^(nai|settings)$/i.test(mark[1]))
+    if (at < 0) return `${text.replace(/\s+$/, '')}\n\n[NAI]\n${nai}`
+    const start = (marks[at].index ?? 0) + marks[at][0].length
+    const end = at + 1 < marks.length ? (marks[at + 1].index ?? text.length) : text.length
+    return `${text.slice(0, start)}\n${nai}${end < text.length ? '\n\n' : ''}${text.slice(end)}`
+}
+
+export interface PresetLorebookEntry {
+    comment?: string
+    content?: string
+    mode?: string
+    key?: string
+    folder?: string
+}
+
+/** A "프리셋 X" folder's entries named for sections (Positive, Negative, NAI…), as one preset text. */
+export function presetFolderContent(folderKey: string, entries: readonly (PresetLorebookEntry | null | undefined)[]): string {
+    return entries
+        .filter((entry) => !!entry && entry.folder === folderKey && entry.mode !== 'folder'
+            && PRESET_SECTIONS.includes((entry.comment ?? '').trim().toLowerCase()))
+        .map((entry) => `[${entry!.comment!.trim()}]\n${entry!.content ?? ''}`)
+        .join('\n\n')
+}
+
 /**
  * The presets in the given lorebooks, the first of each name winning (a bot's
- * own over a module's).
+ * own over a module's): "프리셋 X" folders and one-entry presets.
  */
-export function lorebookPresets(sources: readonly { label: string, entries: readonly { comment?: string, content?: string }[] | null | undefined }[]): IllustrationPreset[] {
+export function lorebookPresets(sources: readonly { label: string, entries: readonly (PresetLorebookEntry | null | undefined)[] | null | undefined, target?: PresetTarget }[]): IllustrationPreset[] {
     const found = new Map<string, IllustrationPreset>()
     for (const source of sources) {
-        for (const entry of source.entries ?? []) {
-            const preset = parsePresetEntry(entry?.comment ?? '', entry?.content ?? '')
-            if (!preset || found.has(preset.name)) continue
-            found.set(preset.name, { ...preset, source: source.label })
-        }
+        const entries = source.entries ?? []
+        entries.forEach((entry, index) => {
+            if (!entry) return
+            const folder = entry.mode === 'folder' ? entry.key : undefined
+            const preset = folder
+                ? parsePresetEntry(entry.comment ?? '', presetFolderContent(folder, entries))
+                : parsePresetEntry(entry.comment ?? '', entry.content ?? '')
+            if (!preset || found.has(preset.name)) return
+            const place = source.target ? { target: source.target, ...(folder ? { folder } : { index }) } : undefined
+            found.set(preset.name, { ...preset, source: source.label, ...(place ? { place } : {}) })
+        })
     }
     return [...found.values()]
 }
 
-/** A new preset entry for a bot's lorebook. */
-export function newPresetContent(): string {
-    return [
-        '[Positive]',
-        '{prompt}, best quality, amazing quality, very aesthetic',
-        '',
-        '[Negative]',
-        'lowres, bad anatomy, bad hands, text, watermark',
-        '',
-        '[NAI]',
-        '# 비워 두면 설정 › 기타 봇 › 이미지 생성 값을 씁니다. 바꿀 것만 # 를 지우고 적으세요.',
-        '# steps: 28',
-        '# scale: 5',
-        '# sampler: k_euler_ancestral',
-        '# cfg_rescale: 0',
-        '# noise_schedule: karras',
-    ].join('\n')
+/** The first lines of a new NAI entry. */
+export const PRESET_NAI_HINT = '# 비워 두면 설정 › 기타 봇 › 이미지 생성 값을 씁니다. 사이드탭 🎨 ⚙의 NovelAI 칸에서 이 프리셋을 고르고 바꾸면 여기에 적힙니다.'
+
+/** A new preset's entries. */
+export function newPresetSections(): PresetSections {
+    return {
+        positive: '{prompt}, best quality, amazing quality, very aesthetic',
+        negative: 'lowres, bad anatomy, bad hands, text, watermark',
+        nai: [
+            PRESET_NAI_HINT,
+            '# model: nai-diffusion-4-5-full',
+            '# steps: 28',
+            '# scale: 5',
+            '# sampler: k_euler_ancestral',
+            '# cfg_rescale: 0',
+            '# noise_schedule: karras',
+        ].join('\n'),
+    }
+}
+
+/**
+ * A one-entry preset's content as folder entries (2026-10-28): [Author] and
+ * [Quality] become one Positive with {prompt} between them; text before the
+ * first section (notes) goes to NAI as comments.
+ */
+export function presetSectionsOf(content: string): PresetSections | null {
+    const preset = parsePresetEntry('프리셋 _', content)
+    if (!preset) return null
+    const firstMark = (content ?? '').search(/\[(Positive|Negative|Author|Quality|NAI|Settings)\]/i)
+    const notes = (firstMark > 0 ? content.slice(0, firstMark) : '').split('\n')
+        .map((line) => line.trim()).filter(Boolean)
+        .map((line) => (line.startsWith('#') ? line : `# ${line}`))
+    return {
+        positive: preset.positive,
+        negative: preset.negative,
+        nai: [...notes, presetNaiText(content)].filter(Boolean).join('\n'),
+    }
 }
 
 /** The line shown while a picture is drawn. */

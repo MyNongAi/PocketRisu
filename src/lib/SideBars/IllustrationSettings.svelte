@@ -12,7 +12,8 @@
     // the 🎨 module's for every bot, on or off (illustrationModule.ts,
     // 2026-10-26); "new preset" and a dropped image write into the 🎨 module.
     // The NovelAI values are the settings page's own fields, bound here too
-    // (the user's request, 2026-10-26: one set, changed from either place).
+    // (the user's request, 2026-10-26: one set, changed from either place),
+    // or the picked preset's [NAI] (2026-10-28), with the API key.
     // (Selects sit in plain divs: a <label> around ShSelect sent its clicks to
     // the hidden native select, which closed the list at once.)
     import { onMount, untrack } from 'svelte'
@@ -20,12 +21,15 @@
     import { language } from 'src/lang'
     import { DBState, selectedCharID } from 'src/ts/stores.svelte'
     import { notifyError, notifySuccess } from 'src/ts/alert'
-    import { illustrationSettings, newPresetContent, ratioSize, type IllustrationBotSettings } from 'src/ts/process/illustration'
-    import { presetsFor, restoreIllustrationPresets, writableIllustrationModule } from 'src/ts/process/illustrationRun'
-    import { illustrationModuleOf, presetLorebookEntry } from 'src/ts/process/illustrationModule'
+    import {
+        illustrationSettings, newPresetSections, ratioSize,
+        type IllustrationBotSettings, type NaiParams, type PresetSections,
+    } from 'src/ts/process/illustration'
+    import { newPresetFolder, presetsFor, restoreIllustrationPresets, setPresetNai, writableIllustrationModule } from 'src/ts/process/illustrationRun'
+    import { illustrationModuleOf } from 'src/ts/process/illustrationModule'
     import { NAI_MODELS, NAI_NOISE_SCHEDULES, naiModelShort, naiSamplers, naiSwitches } from 'src/ts/process/naiOptions'
     import { captureModuleRuntimeContext, getModules } from 'src/ts/process/modules'
-    import { presetContentFromMeta, presetNameFromFile, readImageGenMeta } from 'src/ts/process/imageMeta'
+    import { presetNameFromFile, presetSectionsFromMeta, readImageGenMeta } from 'src/ts/process/imageMeta'
     import { FileDropSurface, draggedItemsAreImages } from 'src/ts/gui/fileDropSurface.svelte'
     import ShButton from '../UI/GUI/ShButton.svelte'
     import ShSwitch from '../UI/GUI/ShSwitch.svelte'
@@ -34,6 +38,7 @@
     import OptionInput from '../UI/GUI/OptionInput.svelte'
     import TextAreaInput from '../UI/GUI/TextAreaInput.svelte'
     import NumberInput from '../UI/GUI/NumberInput.svelte'
+    import TextInput from '../UI/GUI/TextInput.svelte'
 
 
     let char = $derived(DBState.db.characters[$selectedCharID])
@@ -56,15 +61,50 @@
 
     onMount(() => { restoreIllustrationPresets() })
 
-    // NovelAI: what the chosen preset's [NAI] section sets instead, shown by the field it replaces.
+    // NovelAI: with a preset picked, the fields show and change its [NAI]; a
+    // value it does not set shows the settings' one, and changing it writes it
+    // into the preset (the user's request, 2026-10-28). Without one, the
+    // settings page's own values.
     let presetNai = $derived(chosen?.nai ?? {})
-    let switches = $derived(naiSwitches(DBState.db.NAIImgModel, DBState.db.NAIImgConfig?.sampler))
+    let naiModel = $derived(presetNai.model ?? DBState.db.NAIImgModel)
+    let naiSampler = $derived(presetNai.sampler ?? DBState.db.NAIImgConfig?.sampler)
+    let naiSchedule = $derived(presetNai.noise_schedule ?? DBState.db.NAIImgConfig?.noise_schedule)
+    let switches = $derived(naiSwitches(naiModel, naiSampler))
     let size = $derived(ratioSize(settings.ratio))
+
+    type NaiField = 'model' | 'sampler' | 'noise_schedule' | 'steps' | 'scale' | 'cfg_rescale' | 'sm' | 'sm_dyn' | 'variety'
+    const CONFIG_KEYS = {
+        sampler: 'sampler', noise_schedule: 'noise_schedule', steps: 'steps', scale: 'scale',
+        cfg_rescale: 'cfg_rescale', sm: 'sm', sm_dyn: 'sm_dyn', variety: 'variety_plus',
+    } as const
+    function naiValue(key: Exclude<NaiField, 'model'>) {
+        return presetNai[key] ?? DBState.db.NAIImgConfig?.[CONFIG_KEYS[key]]
+    }
+    function setNai<K extends NaiField>(key: K, value: NaiParams[K]) {
+        if (chosen?.place && char) {
+            if (!setPresetNai(chosen, char, chat, key, value)) notifyError(language.illustrationPresetMissing)
+            return
+        }
+        if (key === 'model') DBState.db.NAIImgModel = value as string
+        else (DBState.db.NAIImgConfig as unknown as Record<string, unknown>)[CONFIG_KEYS[key as Exclude<NaiField, 'model'>]] = value
+    }
+
+    const NUMBER_FIELDS = [
+        { key: 'steps', label: 'illustrationNaiSteps', max: 2048 },
+        { key: 'scale', label: 'illustrationNaiScale', max: 2048 },
+        { key: 'cfg_rescale', label: 'illustrationNaiRescale', max: 1 },
+    ] as const
+    const SWITCH_FIELDS = [
+        { key: 'sm', text: 'SMEA', shown: 'smea' },
+        { key: 'sm_dyn', text: 'DYN', shown: 'dyn' },
+        { key: 'variety', text: 'Variety+', shown: 'variety' },
+    ] as const
+
     // Shown under the folded title: what a drawing would use now, preset values first.
     let naiSummary = $derived([
-        naiModelShort(DBState.db.NAIImgModel),
-        `${language.illustrationNaiSteps} ${presetNai.steps ?? DBState.db.NAIImgConfig?.steps}`,
-        `CFG ${presetNai.scale ?? DBState.db.NAIImgConfig?.scale}`,
+        naiModelShort(naiModel),
+        `${language.illustrationNaiSteps} ${naiValue('steps')}`,
+        `CFG ${naiValue('scale')}`,
     ].join(' · '))
     const presetValue = (value: unknown) => language.illustrationNaiPresetValue.replace('{value}', typeof value === 'boolean' ? (value ? 'ON' : 'OFF') : String(value))
 
@@ -81,12 +121,12 @@
         return name
     }
 
-    // A "프리셋 X" entry, never active in the main prompt; it becomes the bot's preset.
-    function addPreset(base: string, content: string): void {
+    // A "프리셋 X" folder (Positive, Negative, NAI), never active in the main prompt; it becomes the bot's preset.
+    function addPreset(base: string, sections: PresetSections): void {
         if (!char) return
         const name = freeName(base)
         const module = (target !== 'illustration' && DBState.db.modules.find((m) => m?.id === target)) || writableIllustrationModule()
-        module.lorebook = [...(module.lorebook ?? []), presetLorebookEntry(name, content)]
+        module.lorebook = [...(module.lorebook ?? []), ...newPresetFolder(name, sections)]
         set('preset', name)
         notifySuccess(language.illustrationPresetCreated
             .replace('{name}', `프리셋 ${name}`)
@@ -94,7 +134,7 @@
     }
 
     function newPreset() {
-        addPreset(language.illustrationNewPresetName, newPresetContent())
+        addPreset(language.illustrationNewPresetName, newPresetSections())
     }
 
     // Images dropped (or picked, on a phone): their prompt and settings, whole.
@@ -109,7 +149,7 @@
                     notifyError(`${language.illustrationNoMeta} (${file.name})`)
                     continue
                 }
-                addPreset(presetNameFromFile(file.name), presetContentFromMeta(meta, file.name))
+                addPreset(presetNameFromFile(file.name), presetSectionsFromMeta(meta, file.name))
             }
         } catch (error) {
             notifyError(error)
@@ -229,99 +269,79 @@
         </div>
 
         {#if DBState.db.sdProvider === 'novelai' && DBState.db.NAIImgConfig}
-            <!-- The settings page's NovelAI fields themselves; a value the chosen preset replaces is marked. -->
+            <!-- The settings page's NovelAI fields, or the picked preset's [NAI] (a value it sets is marked). -->
             {#snippet naiTitle()}
                 <span class="flex min-w-0 flex-col leading-tight">
                     <span class="text-sm font-semibold text-textcolor">{language.illustrationNai}</span>
                     {#if !naiOpen}<span class="truncate text-xs font-normal text-textcolor2" data-illustration-nai-summary>{naiSummary}</span>{/if}
                 </span>
             {/snippet}
-            <!-- The label, and the value the chosen preset draws with instead (the field it replaces dims).
+            <!-- The label, marked when the picked preset sets the value.
                  Kept outside the accordion: a snippet inside a component becomes its prop. -->
-            {#snippet label(text: string, override: unknown)}
-                <span class="min-w-0 text-textcolor2">{text}{#if override !== undefined}<span class="ml-1 text-yellow-500">· {presetValue(override)}</span>{/if}</span>
+            {#snippet label(text: string, fromPreset: boolean)}
+                <span class="min-w-0 text-textcolor2">{text}{#if fromPreset}<span class="ml-1 text-yellow-500" data-nai-from-preset>· {language.illustrationNaiFromPreset}</span>{/if}</span>
             {/snippet}
             <div data-illustration-nai>
             <ShAccordion bind:open={naiOpen} trigger={naiTitle} class="w-full" bodyClass="flex flex-col gap-1.5 text-xs">
+                {#if chosen?.place}
+                    <span class="text-yellow-500" data-nai-saves-to>{language.illustrationNaiSavesTo.replace('{name}', chosen.name)}</span>
+                {/if}
                 <div class="flex flex-col gap-1">
-                    {@render label(language.illustrationNaiModel, undefined)}
-                    <SelectInput size="sm" bind:value={DBState.db.NAIImgModel}>
+                    {@render label(language.illustrationNaiApiKey, false)}
+                    <TextInput size="sm" hideText deferred placeholder="pst-..." bind:value={DBState.db.NAIApiKey} />
+                </div>
+                <div class="flex flex-col gap-1">
+                    {@render label(language.illustrationNaiModel, presetNai.model !== undefined)}
+                    <SelectInput size="sm" value={naiModel} onchange={(e) => setNai('model', e.currentTarget.value)}>
                         {#each NAI_MODELS as model (model)}
                             <OptionInput value={model}>{model}</OptionInput>
                         {/each}
                     </SelectInput>
                 </div>
                 <div class="flex flex-col gap-1">
-                    {@render label(language.illustrationNaiSampler, presetNai.sampler)}
-                    <div class:opacity-50={presetNai.sampler !== undefined}>
-                        <SelectInput size="sm" bind:value={DBState.db.NAIImgConfig.sampler}>
-                            {#each naiSamplers(DBState.db.NAIImgModel) as sampler (sampler.value)}
-                                <OptionInput value={sampler.value}>{sampler.label}</OptionInput>
-                            {/each}
-                        </SelectInput>
-                    </div>
+                    {@render label(language.illustrationNaiSampler, presetNai.sampler !== undefined)}
+                    <SelectInput size="sm" value={naiSampler} onchange={(e) => setNai('sampler', e.currentTarget.value)}>
+                        {#each naiSamplers(naiModel) as sampler (sampler.value)}
+                            <OptionInput value={sampler.value}>{sampler.label}</OptionInput>
+                        {/each}
+                    </SelectInput>
                 </div>
                 <div class="flex flex-col gap-1">
-                    {@render label(language.illustrationNaiSchedule, presetNai.noise_schedule)}
-                    <div class:opacity-50={presetNai.noise_schedule !== undefined}>
-                        <SelectInput size="sm" bind:value={DBState.db.NAIImgConfig.noise_schedule}>
-                            {#each NAI_NOISE_SCHEDULES as schedule (schedule)}
-                                <OptionInput value={schedule}>{schedule}</OptionInput>
-                            {/each}
-                        </SelectInput>
-                    </div>
+                    {@render label(language.illustrationNaiSchedule, presetNai.noise_schedule !== undefined)}
+                    <SelectInput size="sm" value={naiSchedule} onchange={(e) => setNai('noise_schedule', e.currentTarget.value)}>
+                        {#each NAI_NOISE_SCHEDULES as schedule (schedule)}
+                            <OptionInput value={schedule}>{schedule}</OptionInput>
+                        {/each}
+                    </SelectInput>
                 </div>
-                <div class="flex items-center justify-between gap-2">
-                    {@render label(language.illustrationNaiSteps, presetNai.steps)}
-                    <div class="shrink-0" class:opacity-50={presetNai.steps !== undefined}>
-                        <NumberInput size="sm" padding className="w-20" min={0} max={2048} bind:value={DBState.db.NAIImgConfig.steps} />
-                    </div>
-                </div>
-                <div class="flex items-center justify-between gap-2">
-                    {@render label(language.illustrationNaiScale, presetNai.scale)}
-                    <div class="shrink-0" class:opacity-50={presetNai.scale !== undefined}>
-                        <NumberInput size="sm" padding className="w-20" min={0} max={2048} bind:value={DBState.db.NAIImgConfig.scale} />
-                    </div>
-                </div>
-                <div class="flex items-center justify-between gap-2">
-                    {@render label(language.illustrationNaiRescale, presetNai.cfg_rescale)}
-                    <div class="shrink-0" class:opacity-50={presetNai.cfg_rescale !== undefined}>
-                        <NumberInput size="sm" padding className="w-20" min={0} max={1} bind:value={DBState.db.NAIImgConfig.cfg_rescale} />
-                    </div>
-                </div>
-                {#if switches.smea}
-                    <div class="flex min-h-8 items-center justify-between gap-2">
-                        {@render label('SMEA', presetNai.sm)}
-                        <div class="shrink-0" class:opacity-50={presetNai.sm !== undefined}>
-                            <ShSwitch checked={!!DBState.db.NAIImgConfig.sm} onCheckedChange={(v) => DBState.db.NAIImgConfig.sm = v} />
+                {#each NUMBER_FIELDS as field (field.key)}
+                    <div class="flex items-center justify-between gap-2">
+                        {@render label(language[field.label], presetNai[field.key] !== undefined)}
+                        <div class="shrink-0">
+                            <NumberInput size="sm" padding className="w-20" min={0} max={field.max} value={Number(naiValue(field.key))}
+                                onChange={(e) => { const n = Number(e.currentTarget.value); if (Number.isFinite(n)) setNai(field.key, n) }} />
                         </div>
                     </div>
-                {/if}
-                {#if switches.dyn}
-                    <div class="flex min-h-8 items-center justify-between gap-2">
-                        {@render label('DYN', presetNai.sm_dyn)}
-                        <div class="shrink-0" class:opacity-50={presetNai.sm_dyn !== undefined}>
-                            <ShSwitch checked={!!DBState.db.NAIImgConfig.sm_dyn} onCheckedChange={(v) => DBState.db.NAIImgConfig.sm_dyn = v} />
+                {/each}
+                {#each SWITCH_FIELDS as field (field.key)}
+                    {#if switches[field.shown]}
+                        <div class="flex min-h-8 items-center justify-between gap-2">
+                            {@render label(field.text, presetNai[field.key] !== undefined)}
+                            <div class="shrink-0">
+                                <ShSwitch checked={!!naiValue(field.key)} onCheckedChange={(v) => setNai(field.key, v)} />
+                            </div>
                         </div>
-                    </div>
-                {/if}
-                {#if switches.variety}
-                    <div class="flex min-h-8 items-center justify-between gap-2">
-                        {@render label('Variety+', presetNai.variety)}
-                        <div class="shrink-0" class:opacity-50={presetNai.variety !== undefined}>
-                            <ShSwitch checked={!!DBState.db.NAIImgConfig.variety_plus} onCheckedChange={(v) => DBState.db.NAIImgConfig.variety_plus = v} />
-                        </div>
-                    </div>
-                {/if}
+                    {/if}
+                {/each}
                 {#if switches.decrisp}
                     <div class="flex min-h-8 items-center justify-between gap-2">
-                        {@render label('Decrisp', undefined)}
+                        {@render label('Decrisp', false)}
                         <ShSwitch checked={!!DBState.db.NAIImgConfig.decrisp} onCheckedChange={(v) => DBState.db.NAIImgConfig.decrisp = v} />
                     </div>
                 {/if}
                 {#if switches.legacyUc}
                     <div class="flex min-h-8 items-center justify-between gap-2">
-                        {@render label('Legacy UC', undefined)}
+                        {@render label('Legacy UC', false)}
                         <ShSwitch checked={!!DBState.db.NAIImgConfig.legacy_uc} onCheckedChange={(v) => DBState.db.NAIImgConfig.legacy_uc = v} />
                     </div>
                 {/if}
@@ -333,7 +353,7 @@
                     <span class="text-textcolor2">{language.illustrationNaiSize}</span>
                     <span class="text-right text-textcolor2">{size.width}×{size.height} · {language.illustrationNaiSizeHint}</span>
                 </div>
-                <span class="text-textcolor2">{language.illustrationNaiLinked}</span>
+                <span class="text-textcolor2">{chosen?.place ? language.illustrationNaiPresetLinked : language.illustrationNaiLinked}</span>
             </ShAccordion>
             </div>
         {/if}

@@ -76,3 +76,27 @@ export function naiModelShort(model: string | undefined): string {
         .replace(/^(\d+)(?=-|$)/, 'V$1')
         .replaceAll('-', ' ')
 }
+
+/** A model a preset's `model:` line names: an id from NAI_MODELS or its short name ("V4.5 full"); else undefined. */
+export function naiModelFrom(value: string | undefined): string | undefined {
+    const wanted = (value ?? '').trim().toLowerCase()
+    if (!wanted) return undefined
+    return NAI_MODELS.find((model) => model === wanted || naiModelShort(model).toLowerCase() === wanted)
+}
+
+/**
+ * The model an image's Source text names ("NovelAI Diffusion V4.5 …"). Sure
+ * only when Full or Curated is written there; a bare version is a guess at
+ * Full (the user's question, 2026-10-28, whether NovelAI's own import sets
+ * the model).
+ */
+export function naiModelFromSource(source: string | undefined): { model: string, sure: boolean } | undefined {
+    const match = /NovelAI Diffusion V(\d+)(?:\.(\d+))?/i.exec(source ?? '')
+    if (!match) return undefined
+    const version = match[2] ? `${match[1]}-${match[2]}` : match[1]
+    const curated = /curated/i.test(source ?? ''), full = /full/i.test(source ?? '')
+    const model = curated
+        ? NAI_MODELS.find((m) => m.startsWith(`nai-diffusion-${version}-curated`))
+        : NAI_MODELS.find((m) => m === `nai-diffusion-${version}-full`)
+    return model ? { model, sure: curated || full } : undefined
+}

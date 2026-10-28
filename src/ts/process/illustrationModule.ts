@@ -7,7 +7,7 @@
 // it once. Found by its marker, so renaming it is fine.
 import type { loreBook } from '../storage/database.svelte'
 import type { RisuModule } from './modules'
-import { parsePresetEntry } from './illustration'
+import { lorebookPresets, parsePresetEntry, presetFolderContent, presetSectionsOf, PRESET_NAI_HINT, type PresetSections } from './illustration'
 import { recordModuleActivation, seedModuleActivationHistory } from './moduleSort'
 
 /** An entry of the old app-wide preset list. */
@@ -24,6 +24,7 @@ export interface IllustrationModuleDb {
     moduleActivationHistory?: string[]
     nodeOnlyIllustrationPresets?: LegacyIllustrationPreset[]
     nodeOnlyIllustrationPresetsRestored?: boolean
+    nodeOnlyIllustrationPresetsFoldered?: boolean
 }
 
 /** How a missing module is made: its id, the name and description to show, and when. */
@@ -46,9 +47,36 @@ export function presetLorebookEntry(name: string, content: string): loreBook {
     }
 }
 
-/** An old app-wide preset in the lorebook format; {prompt} stays where it was (none: the scene goes first). */
-export function legacyPresetContent(preset: LegacyIllustrationPreset): string {
-    return ['[Positive]', (preset.positive ?? '').trim(), '', '[Negative]', (preset.negative ?? '').trim()].join('\n')
+/** A lorebook folder key as the lorebook's own "new folder" makes it. */
+export function presetFolderKey(id: string): string {
+    return 'folder:' + id
+}
+
+/**
+ * A "프리셋 X" folder (the user's choice, 2026-10-28): the folder, then its
+ * Positive, Negative and NAI entries, none ever active in the main prompt.
+ */
+export function presetLorebookFolder(name: string, sections: PresetSections, folderKey: string): loreBook[] {
+    const inside = (comment: string, content: string): loreBook => ({
+        key: '', secondkey: '', insertorder: 100, comment, content,
+        mode: 'normal', alwaysActive: false, selective: false, folder: folderKey,
+    })
+    return [
+        { key: folderKey, secondkey: '', insertorder: 100, comment: `프리셋 ${name}`, content: '', mode: 'folder', alwaysActive: false, selective: false },
+        inside('Positive', sections.positive),
+        inside('Negative', sections.negative),
+        inside('NAI', sections.nai),
+    ]
+}
+
+/** An old app-wide preset as a folder's entries; {prompt} stays where it was (none: the scene goes first). */
+export function legacyPresetSections(preset: LegacyIllustrationPreset): PresetSections {
+    return { positive: (preset.positive ?? '').trim(), negative: (preset.negative ?? '').trim(), nai: PRESET_NAI_HINT }
+}
+
+/** The preset names a lorebook already has, folders and one-entry presets alike. */
+function presetNames(lorebook: readonly loreBook[] | undefined): Set<string> {
+    return new Set(lorebookPresets([{ label: '', entries: lorebook }]).map((preset) => preset.name))
 }
 
 function liftToNewest(db: IllustrationModuleDb, id: string): void {
@@ -93,18 +121,55 @@ export function restoreIllustrationPresetsOnce(db: IllustrationModuleDb, make: I
         return 0
     }
     const module = ensureIllustrationModule(db, make)
-    const taken = new Set((module.lorebook ?? [])
-        .map((entry) => parsePresetEntry(entry?.comment ?? '', entry?.content ?? '')?.name)
-        .filter(Boolean))
+    const taken = presetNames(module.lorebook)
     const added: loreBook[] = []
+    let count = 0
     for (const preset of legacy) {
         const name = preset.name!.trim()
         if (taken.has(name)) continue
         taken.add(name)
-        added.push(presetLorebookEntry(name, legacyPresetContent(preset)))
+        added.push(...presetLorebookFolder(name, legacyPresetSections(preset), presetFolderKey(make.id())))
+        count++
     }
     if (added.length > 0) module.lorebook = [...(module.lorebook ?? []), ...added]
     liftToNewest(db, module.id)
     db.nodeOnlyIllustrationPresetsRestored = true
-    return added.length
+    return count
+}
+
+/**
+ * Once per save (the user's choice, 2026-10-28): each one-entry "프리셋 X" of
+ * the 🎨 module becomes a folder (Positive, Negative, NAI) where it stood.
+ * The old entry stays, renamed so it is no longer read as a preset. Returns
+ * how many were made.
+ */
+export function folderIllustrationPresetsOnce(db: IllustrationModuleDb, make: IllustrationModuleMake): number {
+    if (db.nodeOnlyIllustrationPresetsFoldered) return 0
+    const module = illustrationModuleOf(db)
+    if (!module) {
+        db.nodeOnlyIllustrationPresetsFoldered = true
+        return 0
+    }
+    const lorebook = module.lorebook ?? []
+    const folderNames = new Set(lorebook
+        .filter((entry) => entry?.mode === 'folder')
+        .map((entry) => parsePresetEntry(entry.comment ?? '', presetFolderContent(entry.key, lorebook))?.name)
+        .filter(Boolean))
+    const next: loreBook[] = []
+    let made = 0
+    for (const entry of lorebook) {
+        const preset = entry && entry.mode !== 'folder' ? parsePresetEntry(entry.comment ?? '', entry.content ?? '') : null
+        const sections = preset ? presetSectionsOf(entry.content ?? '') : null
+        if (!preset || !sections || folderNames.has(preset.name)) {
+            next.push(entry)
+            continue
+        }
+        folderNames.add(preset.name)
+        next.push(...presetLorebookFolder(preset.name, sections, presetFolderKey(make.id())))
+        next.push({ ...entry, comment: `(폴더로 옮김) ${entry.comment}` })
+        made++
+    }
+    if (made > 0) module.lorebook = next
+    db.nodeOnlyIllustrationPresetsFoldered = true
+    return made
 }

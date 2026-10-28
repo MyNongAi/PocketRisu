@@ -1,7 +1,8 @@
 // What an AI image says about how it was made (the user's request,
 // 2026-10-20): drop a NovelAI image on the illustration settings and its
-// prompt, negative prompt and settings become a "프리셋 X" lorebook entry,
-// taken whole for the user to trim (illustration.ts reads it back).
+// prompt, negative prompt and settings become a "프리셋 X" lorebook folder
+// (Positive, Negative, NAI entries since 2026-10-28), taken whole for the user
+// to trim (illustration.ts reads it back).
 //
 // Where the data lives:
 // - PNG text chunks: NovelAI writes Description (the prompt) and Comment (a
@@ -12,7 +13,8 @@
 //   then a JSON with the same keys as the text chunks.
 // - EXIF (JPEG, WebP): UserComment or ImageDescription.
 import { gunzipSync, strFromU8, unzlibSync } from 'fflate'
-import type { NaiParams } from './illustration'
+import type { NaiParams, PresetSections } from './illustration'
+import { naiModelFromSource } from './naiOptions'
 
 export interface ImageGenMeta {
     source: 'novelai' | 'webui'
@@ -307,22 +309,25 @@ export function metaFromTexts(texts: Record<string, string>): ImageGenMeta | nul
 }
 
 /**
- * A "프리셋 X" entry's content from an image: everything it said, for the user
- * to trim to the style. Notes go above the first section (not read back).
+ * A "프리셋 X" folder's entries from an image: everything it said, for the
+ * user to trim to the style. Notes are comments of the NAI entry (2026-10-28,
+ * one entry per section); the model comes from Source when it says which.
  */
-export function presetContentFromMeta(meta: ImageGenMeta, label: string): string {
+export function presetSectionsFromMeta(meta: ImageGenMeta, label: string): PresetSections {
     const lines: string[] = [
         `# 이미지에서 가져온 프리셋: ${label}${meta.model ? ` (${meta.model})` : ''}`,
-        '# 긍정 프롬프트 칸에는 그 그림의 프롬프트가 전부 들어 있어요. 장면 태그는 지우고 그림체(작가·품질 태그)만 남기세요.',
+        '# Positive 항목에는 그 그림의 프롬프트가 전부 들어 있어요. 장면 태그는 지우고 그림체(작가·품질 태그)만 남기세요.',
         '# {prompt} 를 넣으면 장면 태그가 그 자리에, 없으면 맨 앞에 붙습니다.',
     ]
     meta.characters.forEach((c, i) => {
         lines.push(`# 인물 ${i + 1} (참고): ${c.positive}${c.negative ? ` / 부정: ${c.negative}` : ''}`)
     })
     if (meta.size) lines.push(`# 원래 크기: ${meta.size.width}×${meta.size.height} (크기는 삽화 설정의 비율을 따릅니다)`)
-    lines.push('', '[Positive]', meta.prompt, '', '[Negative]', meta.negative, '', '[NAI]')
     const p = meta.params
     if (meta.source === 'webui') lines.push('# Stable Diffusion WebUI 값이라 NovelAI 이름과 다를 수 있어요(샘플러 등).')
+    const model = meta.source === 'novelai' ? naiModelFromSource(meta.model) : undefined
+    if (model?.sure) lines.push(`model: ${model.model}`)
+    else if (model) lines.push(`# model: ${model.model}   (Source에 Full/Curated 표시가 없어 Full로 짐작했어요. 맞으면 # 를 지우세요)`)
     if (p.steps !== undefined) lines.push(`steps: ${p.steps}`)
     if (p.scale !== undefined) lines.push(`scale: ${p.scale}`)
     if (p.sampler) lines.push(`${meta.source === 'webui' ? '# ' : ''}sampler: ${p.sampler}`)
@@ -332,7 +337,7 @@ export function presetContentFromMeta(meta: ImageGenMeta, label: string): string
     if (p.sm_dyn !== undefined) lines.push(`dyn: ${p.sm_dyn}`)
     if (p.variety) lines.push('variety: true')
     if (p.seed !== undefined) lines.push(`# seed: ${p.seed}   (# 를 지우면 매번 같은 시드로 그립니다)`)
-    return lines.join('\n')
+    return { positive: meta.prompt, negative: meta.negative, nai: lines.join('\n') }
 }
 
 /** A preset name from a file name: its base, trimmed. */

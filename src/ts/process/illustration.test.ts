@@ -10,9 +10,13 @@ import {
     parsePresetEntry,
     parseScenes,
     placeScenes,
+    presetNaiText,
+    presetSectionsOf,
     ratioSize,
     replaceReplyLine,
     replaceReplyText,
+    setNaiLine,
+    withPresetNai,
 } from './illustration'
 
 describe('illustration settings', () => {
@@ -127,6 +131,61 @@ describe('the image prompt', () => {
             { label: 'Lightboard', entries: [{ comment: '프리셋 도트', content: '[Positive]\nmodule' }, { comment: '프리셋 블아', content: '[Positive]\nba' }, { comment: 'lb-xnai.lb', content: 'x' }] },
         ])
         expect(presets.map((p) => [p.name, p.source, p.positive])).toEqual([['도트', '봇', 'bot'], ['블아', 'Lightboard', 'ba']])
+    })
+})
+
+// The user's choice (2026-10-28): a preset is a lorebook folder with one entry
+// per section; the sidebar writes NovelAI values (the model too) into its NAI.
+describe('preset folders and their NAI', () => {
+    const folder = [
+        { key: 'F', mode: 'folder', comment: '프리셋 수채화' },
+        { folder: 'F', comment: 'Positive', content: '{prompt}, watercolor' },
+        { folder: 'F', comment: 'Negative', content: 'lowres' },
+        { folder: 'F', comment: 'NAI', content: '# from an image\nmodel: V4.5 curated\nsteps: 28' },
+        { folder: 'F', comment: 'notes', content: '[Positive] not this' },
+        { comment: 'story', content: 'x' },
+    ]
+
+    it('reads a "프리셋 X" folder by its section entries, and says where it lives', () => {
+        expect(lorebookPresets([{ label: '봇', entries: folder, target: { kind: 'bot' } }])).toEqual([{
+            name: '수채화', positive: '{prompt}, watercolor', negative: 'lowres',
+            nai: { model: 'nai-diffusion-4-5-curated', steps: 28 }, source: '봇',
+            place: { target: { kind: 'bot' }, folder: 'F' },
+        }])
+        const single = lorebookPresets([{ label: 'm', entries: [{ comment: 'story' }, { comment: '프리셋 One', content: '[Positive]\nx' }], target: { kind: 'module', id: 'm1' } }])
+        expect(single[0].place).toEqual({ target: { kind: 'module', id: 'm1' }, index: 1 })
+    })
+
+    it('takes a model only from the NovelAI list, by id or short name', () => {
+        expect(parseNaiParams('model: nai-diffusion-3')).toEqual({ model: 'nai-diffusion-3' })
+        expect(parseNaiParams('모델: V5 full')).toEqual({ model: 'nai-diffusion-5-full' })
+        expect(parseNaiParams('model: sdxl')).toBeUndefined()
+    })
+
+    it('sets one value, keeping comments and the other lines', () => {
+        const text = '# hint\n# steps: 28\nscale: 5\nsampler: k_euler'
+        expect(setNaiLine(text, 'steps', 40)).toBe('# hint\nsteps: 40\nscale: 5\nsampler: k_euler')
+        expect(setNaiLine(text, 'scale', 6.5)).toBe('# hint\n# steps: 28\nscale: 6.5\nsampler: k_euler')
+        expect(setNaiLine(text, 'model', 'nai-diffusion-4-5-full')).toBe(`${text}\nmodel: nai-diffusion-4-5-full`)
+        expect(setNaiLine('smea: off\nsteps: 1\nSMEA = on', 'sm', true)).toBe('smea: true\nsteps: 1')
+        expect(setNaiLine(text, 'sampler', undefined)).toBe('# hint\n# steps: 28\nscale: 5')
+        expect(setNaiLine('', 'variety', false)).toBe('variety: false')
+        expect(parseNaiParams(setNaiLine(text, 'sm_dyn', true))).toEqual({ scale: 5, sampler: 'k_euler', sm_dyn: true })
+    })
+
+    it('rewrites the [NAI] section of a one-entry preset, or adds one', () => {
+        const content = '[Positive]\na\n[NAI]\nsteps: 1\n[Negative]\nb'
+        expect(presetNaiText(content)).toBe('steps: 1')
+        const next = withPresetNai(content, 'steps: 2')
+        expect(parsePresetEntry('프리셋 x', next)).toEqual({ name: 'x', positive: 'a', negative: 'b', nai: { steps: 2 } })
+        expect(withPresetNai('[Positive]\na\n', 'scale: 3')).toBe('[Positive]\na\n\n[NAI]\nscale: 3')
+    })
+
+    it('splits a one-entry preset into the folder entries', () => {
+        expect(presetSectionsOf('# from x.png\n[Author] artist:b\n[Quality] best\n[Negative] bad\n[NAI]\nsteps: 3')).toEqual({
+            positive: 'artist:b, {prompt}, best', negative: 'bad', nai: '# from x.png\nsteps: 3',
+        })
+        expect(presetSectionsOf('no sections')).toBeNull()
     })
 })
 

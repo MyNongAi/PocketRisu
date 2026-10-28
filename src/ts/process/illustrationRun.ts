@@ -3,7 +3,7 @@
 // first a "drawing…" line, then the picture; a reply edited, deleted or
 // rerolled in between simply loses the lines it no longer has.
 import { get, writable } from 'svelte/store'
-import type { Chat, Message, character } from '../storage/database.svelte'
+import type { Chat, Message, character, loreBook } from '../storage/database.svelte'
 import { DBState } from '../stores.svelte'
 import { risuChatParser } from '../parser/parser.svelte'
 import { notifyError, notifyInfo } from '../alert'
@@ -16,7 +16,10 @@ import { writeInlayImage } from './files/inlays'
 import { auxEntryText, markedLorebookEntries, rememberAuxLines, splitReplyForTags, withoutAuxLines } from './auxLorebook'
 import { rekeyRequestMark } from '../inputVersions'
 import { v4 } from 'uuid'
-import { ensureIllustrationModule, illustrationModuleOf, restoreIllustrationPresetsOnce } from './illustrationModule'
+import {
+    ensureIllustrationModule, folderIllustrationPresetsOnce, illustrationModuleOf, presetFolderKey,
+    presetLorebookFolder, restoreIllustrationPresetsOnce,
+} from './illustrationModule'
 import {
     buildScenePrompt,
     composeImagePrompt,
@@ -26,11 +29,20 @@ import {
     inlayLine,
     insertSceneLines,
     lorebookPresets,
+    parsePresetEntry,
     parseScenes,
     placeScenes,
+    PRESET_NAI_HINT,
+    presetNaiText,
     ratioSize,
     replaceReplyLine,
     replaceReplyText,
+    setNaiLine,
+    withPresetNai,
+    type IllustrationPreset,
+    type NaiParams,
+    type PresetPlace,
+    type PresetSections,
 } from './illustration'
 
 const CONTEXT_MESSAGES = 2
@@ -60,14 +72,67 @@ function illustrationModuleMake() {
     return { id: v4, name: language.illustrationModuleName, description: language.illustrationModuleDescription, now: Date.now() }
 }
 
-/** The old app-wide presets into the 🎨 module, the first time anything needs them. */
+/**
+ * The old app-wide presets into the 🎨 module, and its one-entry presets
+ * into folders, the first time anything needs them.
+ */
 export function restoreIllustrationPresets(): void {
     restoreIllustrationPresetsOnce(DBState.db, illustrationModuleMake())
+    folderIllustrationPresetsOnce(DBState.db, illustrationModuleMake())
 }
 
 /** The 🎨 module to write a preset into, made when there is none. */
 export function writableIllustrationModule(): RisuModule {
     return ensureIllustrationModule(DBState.db, illustrationModuleMake())
+}
+
+/** A new "프리셋 X" folder's entries, its key made here. */
+export function newPresetFolder(name: string, sections: PresetSections): loreBook[] {
+    return presetLorebookFolder(name, sections, presetFolderKey(v4()))
+}
+
+/** The lorebook a preset was read from, and how to put a changed one back. */
+function presetLorebook(place: PresetPlace, character: character, chat: Chat | null | undefined): { entries: loreBook[], write: (next: loreBook[]) => void } | null {
+    if (place.target.kind === 'bot') return { entries: character.globalLore ?? [], write: (next) => { character.globalLore = next } }
+    if (place.target.kind === 'chat') return chat ? { entries: chat.localLore ?? [], write: (next) => { chat.localLore = next } } : null
+    const id = place.target.id
+    const module = DBState.db.modules.find((m) => m?.id === id)
+    return module ? { entries: module.lorebook ?? [], write: (next) => { module.lorebook = next } } : null
+}
+
+/**
+ * One NovelAI value into a preset's [NAI]: the sidebar's NovelAI fields while
+ * a preset is picked (the user's request, 2026-10-28). A folder gets an NAI
+ * entry when it has none; undefined takes the value out. False when the
+ * preset could not be found where it was read.
+ */
+export function setPresetNai<K extends keyof NaiParams>(
+    preset: IllustrationPreset, character: character, chat: Chat | null | undefined, key: K, value: NaiParams[K] | undefined,
+): boolean {
+    const place = preset.place
+    const book = place ? presetLorebook(place, character, chat) : null
+    if (!place || !book) return false
+    const entries = book.entries
+    if (place.folder !== undefined) {
+        const nai = entries.find((e) => e?.folder === place.folder && e.mode !== 'folder' && /^(nai|settings)$/i.test((e.comment ?? '').trim()))
+        if (nai) {
+            book.write(entries.map((e) => (e === nai ? { ...e, content: setNaiLine(e.content ?? '', key, value) } : e)))
+            return true
+        }
+        if (!entries.some((e) => e?.mode === 'folder' && e.key === place.folder)) return false
+        const last = entries.reduce((at, e, i) => (e?.key === place.folder || e?.folder === place.folder ? i : at), -1)
+        const added: loreBook = {
+            key: '', secondkey: '', insertorder: 100, comment: 'NAI', content: setNaiLine(PRESET_NAI_HINT, key, value),
+            mode: 'normal', alwaysActive: false, selective: false, folder: place.folder,
+        }
+        book.write([...entries.slice(0, last + 1), added, ...entries.slice(last + 1)])
+        return true
+    }
+    const entry = place.index !== undefined ? entries[place.index] : undefined
+    if (!entry || parsePresetEntry(entry.comment ?? '', entry.content ?? '')?.name !== preset.name) return false
+    const content = withPresetNai(entry.content ?? '', setNaiLine(presetNaiText(entry.content ?? ''), key, value))
+    book.write(entries.map((e) => (e === entry ? { ...entry, content } : e)))
+    return true
 }
 
 /** The 🎨 module when it is not on for this bot (so not among `modules` already). */
@@ -81,10 +146,10 @@ export function presetsFor(character: character, chat: Chat | null | undefined, 
     const modules = getModules(moduleContext).filter(Boolean)
     const own = illustrationModuleBesides(modules)
     return lorebookPresets([
-        { label: '봇', entries: character.globalLore },
-        { label: '채팅', entries: chat?.localLore },
-        ...modules.map((module) => ({ label: module.name, entries: module.lorebook })),
-        ...(own ? [{ label: own.name, entries: own.lorebook }] : []),
+        { label: '봇', entries: character.globalLore, target: { kind: 'bot' } },
+        { label: '채팅', entries: chat?.localLore, target: { kind: 'chat' } },
+        ...modules.map((module) => ({ label: module.name, entries: module.lorebook, target: { kind: 'module', id: module.id } as const })),
+        ...(own ? [{ label: own.name, entries: own.lorebook, target: { kind: 'module', id: own.id } as const }] : []),
     ])
 }
 

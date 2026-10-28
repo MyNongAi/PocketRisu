@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { gzipSync, strToU8, zlibSync } from 'fflate'
-import { isPng, metaFromTexts, parseWebuiParameters, presetContentFromMeta, presetNameFromFile, readExifText, readPngText, readStealthInfo } from './imageMeta'
-import { parsePresetEntry } from './illustration'
+import { isPng, metaFromTexts, parseWebuiParameters, presetNameFromFile, presetSectionsFromMeta, readExifText, readPngText, readStealthInfo } from './imageMeta'
+import { lorebookPresets } from './illustration'
+import { presetLorebookFolder } from './illustrationModule'
+
+/** The preset a folder made from these sections reads back as. */
+const readBack = (name: string, sections: ReturnType<typeof presetSectionsFromMeta>) =>
+    lorebookPresets([{ label: 'm', entries: presetLorebookFolder(name, sections, 'F') }])[0]
 
 const enc = new TextEncoder()
 const u32be = (n: number) => [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255]
@@ -97,21 +102,32 @@ describe('reading how an image was made', () => {
 describe('a preset from an image', () => {
     it('keeps everything for the user to trim, and reads back as a preset with its NovelAI values', () => {
         const meta = metaFromTexts({ Comment: JSON.stringify(naiComment), Source: 'NovelAI Diffusion V4.5' })!
-        const content = presetContentFromMeta(meta, 'sample.png')
-        expect(content).toContain('# 인물 1 (참고): girl, red eyes / 부정: hat')
-        expect(content).toContain('# seed: 123456')
-        const preset = parsePresetEntry(`프리셋 ${presetNameFromFile('sample.png')}`, content)!
-        expect(preset).toEqual({
+        const sections = presetSectionsFromMeta(meta, 'sample.png')
+        expect(sections.nai).toContain('# 인물 1 (참고): girl, red eyes / 부정: hat')
+        expect(sections.nai).toContain('# seed: 123456')
+        // "V4.5" alone does not say Full or Curated: the guess stays commented.
+        expect(sections.nai).toContain('# model: nai-diffusion-4-5-full')
+        expect(readBack(presetNameFromFile('sample.png'), sections)).toEqual({
             name: 'sample',
             positive: '1girl, silver hair, artist:kat, best quality',
             negative: 'lowres, bad hands',
             nai: { steps: 28, scale: 5.5, sampler: 'k_euler_ancestral', cfg_rescale: 0.2, noise_schedule: 'karras', sm: false, sm_dyn: false, variety: true },
+            source: 'm',
         })
+    })
+
+    it('takes the model when Source says which', () => {
+        const curated = metaFromTexts({ Comment: JSON.stringify(naiComment), Source: 'NovelAI Diffusion V4.5 Curated 1A2B3C4D' })!
+        expect(readBack('c', presetSectionsFromMeta(curated, 'c.png')).nai?.model).toBe('nai-diffusion-4-5-curated')
+        const full = metaFromTexts({ Comment: JSON.stringify(naiComment), Source: 'NovelAI Diffusion V5 Full' })!
+        expect(readBack('f', presetSectionsFromMeta(full, 'f.png')).nai?.model).toBe('nai-diffusion-5-full')
+        const older = metaFromTexts({ Comment: JSON.stringify(naiComment), Source: 'Stable Diffusion XL C1E1DE52' })!
+        expect(presetSectionsFromMeta(older, 'o.png').nai).not.toContain('model:')
     })
 
     it('leaves WebUI sampler names commented (NovelAI names differ)', () => {
         const meta = parseWebuiParameters('a cat\nSteps: 20, Sampler: Euler a, CFG scale: 7')!
-        const preset = parsePresetEntry('프리셋 웹', presetContentFromMeta(meta, 'x.png'))!
+        const preset = readBack('웹', presetSectionsFromMeta(meta, 'x.png'))
         expect(preset.nai).toEqual({ steps: 20, scale: 7 })
         expect(presetNameFromFile('my style.final.webp')).toBe('my style.final')
     })

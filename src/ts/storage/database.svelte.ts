@@ -1427,6 +1427,8 @@ export interface Database{
     nodeOnlyIllustrationPresets?: import('../process/illustrationModule').LegacyIllustrationPreset[]
     /** One-shot marker: nodeOnlyIllustrationPresets went into the 🎨 illustration module. */
     nodeOnlyIllustrationPresetsRestored?: boolean
+    /** The 🎨 module's one-entry presets were made folders (2026-10-28). */
+    nodeOnlyIllustrationPresetsFoldered?: boolean
     /** One-shot migration marker for grouping pre-existing high-similarity names. */
     similarityFolderMigrationVersion?: number
     /** One-shot marker: the bots already here were grouped into creator folders (creatorFolders.ts). */
