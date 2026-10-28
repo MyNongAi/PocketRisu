@@ -1,7 +1,6 @@
 <script lang="ts">
     import { XIcon, LinkIcon, SunIcon, MoonIcon, PaletteIcon, CheckIcon, BookCopyIcon, FolderIcon, FolderOpen, PlusIcon } from "@lucide/svelte";
-    import { loreRole, setLoreRole, type LoreRole } from "src/ts/process/auxLorebook";
-    import { LIGHTBOARD_EXTRA_TITLE } from "src/ts/process/illustration";
+    import { isAutoIllustration, loreRole, setLoreRole, type LoreRole } from "src/ts/process/auxLorebook";
     import ShContextMenu from "../../UI/GUI/ShContextMenu.svelte";
     import ShDropdownMenuItem from "../../UI/GUI/ShDropdownMenuItem.svelte";
     import { v4 } from "uuid";
@@ -59,9 +58,9 @@
         searchText && findTextMatches(text, searchText, 1).length > 0 ? ' ring-2 ring-yellow-400/60' : ''
     // Where this entry goes (auxLorebook.ts), and the right-click choices.
     let role = $derived<LoreRole>(loreRole(value))
-    // Goes to illustrations on its own, by Lightboard's title: orange, like a
-    // module on by itself; a 🎨 the user set stays pink (2026-10-28).
-    let autoIllustration = $derived(role === 'main' && value.mode !== 'folder' && (value.comment ?? '').trim() === LIGHTBOARD_EXTRA_TITLE)
+    // Illustration-only by Lightboard's title: the 🎨 in orange, like a module
+    // on by itself; a 🎨 the user set stays pink (2026-10-28).
+    let autoIllustration = $derived(isAutoIllustration(value))
     const roleChoices: { role: LoreRole, label: string }[] = [
         { role: 'main', label: language.loreRoleMain },
         { role: 'asset', label: language.loreRoleAsset },
@@ -181,11 +180,6 @@
                 <span class={loreComparisonClass} title={loreComparisonTitle}>{@render marked(value.comment.length === 0 ? value.key.length === 0 ? "Unnamed Lore" : value.key : value.comment)}</span>
             {/if}
         </button>
-        {#if autoIllustration}
-            <span class="mr-1 shrink-0 text-orange-400" title={language.loreAutoIllustration} aria-label={language.loreAutoIllustration} data-lore-auto-illustration>
-                <PaletteIcon size={16} />
-            </span>
-        {/if}
         <!-- Right-click (a long press on touch) picks where the entry goes:
              the main model, 🌙 asset tagging or 🎨 illustrations
              (auxLorebook.ts); a click on 🌙/🎨 brings it back to the main one. -->
@@ -214,9 +208,13 @@
             class:text-textcolor2={!value.alwaysActive && role === 'main'}
             class:text-textcolor={value.alwaysActive && role === 'main'}
             class:text-emerald-400={role === 'asset'}
-            class:text-pink-400={role === 'illustration'}
-            title={role === 'asset' ? language.loreAuxModelIcon : role === 'illustration' ? language.loreRoleIllustrationIcon : language.loreRoleMenu}
+            class:text-pink-400={role === 'illustration' && !autoIllustration}
+            class:text-orange-400={autoIllustration}
+            data-lore-auto-illustration={autoIllustration ? '' : undefined}
+            title={autoIllustration ? language.loreAutoIllustration : role === 'asset' ? language.loreAuxModelIcon : role === 'illustration' ? language.loreRoleIllustrationIcon : language.loreRoleMenu}
             onclick={async () => {
+                // By its title it stays for illustrations; the menu can still pick 🌙 or a pink 🎨.
+                if(autoIllustration) return
                 if(role !== 'main'){
                     setLoreRole(value, externalLoreBooks ?? [], 'main')
                     return

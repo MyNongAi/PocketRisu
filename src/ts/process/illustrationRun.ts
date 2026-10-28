@@ -29,7 +29,6 @@ import {
     illustrationSettings,
     inlayLine,
     insertSceneLines,
-    LIGHTBOARD_EXTRA_TITLE,
     lorebookPresets,
     parsePresetEntry,
     parseScenes,
@@ -238,15 +237,10 @@ export async function illustrateReply(arg: {
         // The 🎨 module's own 🎨 entries (art rules for every bot) go too, on or off.
         const own = illustrationModuleBesides(getModules(arg.moduleContext).filter(Boolean))
         const books = [character.globalLore, chat.localLore, getModuleLorebooks(arg.moduleContext)]
-        // Lightboard's illustration lorebook: entries titled "lb-xnai.lb.extra"
-        // go every time, keys or not, as Lightboard sends them; bots made for it
-        // keep their characters' looks there (the user's note, 2026-10-28).
-        const marked = [
-            ...markedLorebookEntries([...books, own?.lorebook], 'illustration'),
-            ...books.flatMap((book) => book ?? []).filter((entry) => !!entry && entry.mode !== 'folder'
-                && (entry.comment ?? '').trim() === LIGHTBOARD_EXTRA_TITLE && loreRole(entry) === 'main'),
-        ]
-        const rules = [...new Set(marked.map((entry) => parse(auxEntryText(entry.content))).filter(Boolean))]
+        // 🎨 entries, Lightboard's "lb-xnai.lb.extra" ones among them (by title,
+        // auxLorebook.ts): bots made for it keep their characters' looks there.
+        const rules = [...new Set(markedLorebookEntries([...books, own?.lorebook], 'illustration')
+            .map((entry) => parse(auxEntryText(entry.content))).filter(Boolean))]
         const original = message.data ?? ''
         const { head, lines } = splitReplyForTags(original)
         if (!lines.some((line) => line.trim())) return 0

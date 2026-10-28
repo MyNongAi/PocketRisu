@@ -288,7 +288,7 @@ export const helpEn = {
             "- Like Lightboard's illustrations, the auxiliary model gets the bot, the persona, the lorebook entries on for this chat (as the main model gets them), the author's note and the last 5 messages, so a side character's looks in the lorebook go along.\n" +
             "- Pictures are drawn in the background after the reply: you can go on meanwhile.\n" +
             "- 🎨 in the message menu (☰) draws a reply again.\n" +
-            "- Lorebook entries marked 🎨 (rules only pictures need: art rules, look tags) always go with the request, never to the main model. Entries titled 'lb-xnai.lb.extra' (Lightboard's illustration lorebook) always go too, unmarked.\n" +
+            "- Lorebook entries marked 🎨 (rules only pictures need: art rules, look tags) always go with the request, never to the main model. Entries titled 'lb-xnai.lb.extra' (Lightboard's illustration-only lorebook) count as illustration-only unmarked (an orange 🎨): never to the main model, always with the request.\n" +
             "- Uses Settings › Other bots › Image generation. NovelAI may cost Anlas per picture (free on Opus up to 1024×1024 and 28 steps).",
         loreIllustration:
             "Sends this entry only with illustration requests (🎨), never to the main model. For what only pictures need: character looks, art rules.\n\n" +

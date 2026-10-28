@@ -1129,7 +1129,7 @@ export const languageKorean = {
   loreRoleAsset: "에셋 (보조모델)",
   loreRoleIllustration: "삽화용",
   loreRoleIllustrationIcon: "삽화 요청에만 보냄 (우클릭·길게 눌러 바꾸기)",
-  loreAutoIllustration: "제목이 lb-xnai.lb.extra(라이트보드 삽화용)라 삽화 요청에 자동으로 들어가요. 메인 모델에는 원래 설정대로 가요.",
+  loreAutoIllustration: "제목이 lb-xnai.lb.extra(라이트보드 삽화 전용)라 자동으로 삽화 요청에만 들어가요. 메인 모델에는 안 가요.",
   illustrationToggle: "🎨 삽화",
   illustrationSettings: "삽화 설정",
   illustrationTrigger: "그리는 때",

@@ -26,9 +26,22 @@ export interface AuxMarkedEntry {
  */
 export type LoreRole = 'main' | 'asset' | 'illustration'
 
+/** The title Lightboard's illustrations read on every request (its "lb-xnai.lb.extra" lorebook). */
+export const LIGHTBOARD_EXTRA_TITLE = 'lb-xnai.lb.extra'
+
+/**
+ * An entry for illustrations by its title alone: a creator wrote it for
+ * Lightboard's illustrations, so it never goes to the main model either (the
+ * user's call, 2026-10-28). A 🌙 or 🎨 the user set wins.
+ */
+export function isAutoIllustration(entry: AuxMarkedEntry): boolean {
+    return !entry.nodeOnlyAuxModel && !entry.nodeOnlyIllustration && entry.mode !== 'folder'
+        && (entry.comment ?? '').trim() === LIGHTBOARD_EXTRA_TITLE
+}
+
 export function loreRole(entry: AuxMarkedEntry): LoreRole {
     if (entry.nodeOnlyAuxModel) return 'asset'
-    if (entry.nodeOnlyIllustration) return 'illustration'
+    if (entry.nodeOnlyIllustration || isAutoIllustration(entry)) return 'illustration'
     return 'main'
 }
 

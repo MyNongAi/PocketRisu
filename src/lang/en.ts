@@ -1040,7 +1040,7 @@ export const languageEnglish = {
     loreRoleAsset: "Assets (auxiliary model)",
     loreRoleIllustration: "Illustrations",
     loreRoleIllustrationIcon: "Sent only with illustration requests (right-click or hold to change)",
-    loreAutoIllustration: "Titled lb-xnai.lb.extra (Lightboard's illustration lorebook), so it goes with illustration requests on its own. The main model gets it as set.",
+    loreAutoIllustration: "Titled lb-xnai.lb.extra (Lightboard's illustration-only lorebook), so it goes only with illustration requests, on its own. The main model never gets it.",
     illustrationToggle: "🎨 Illustrations",
     illustrationSettings: "Illustration settings",
     illustrationTrigger: "When to draw",

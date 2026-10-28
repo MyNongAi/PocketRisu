@@ -1,6 +1,7 @@
 import { get } from "svelte/store";
 import {selectedCharID} from '../stores.svelte'
 import { type Chat, type character, type Message, type loreBook } from "../storage/database.svelte";
+import { loreRole } from "./auxLorebook";
 import { DBState } from '../stores.svelte';
 import { tokenize } from "../tokenizer";
 import { risuChatParser } from "../parser/parser.svelte";
@@ -309,9 +310,10 @@ export async function loadLoreBookV3Prompt(context?: ModuleRuntimeContext){
             if(!fullLore[i].alwaysActive && !fullLore[i].key){
                 continue
             }
-            // Marked for the auxiliary model (🌙) or illustrations (🎨): never
-            // in the main prompt (auxLorebook.ts).
-            if(fullLore[i].nodeOnlyAuxModel || fullLore[i].nodeOnlyIllustration){
+            // Marked for the auxiliary model (🌙) or illustrations (🎨, or by
+            // Lightboard's illustration title): never in the main prompt
+            // (auxLorebook.ts).
+            if(loreRole(fullLore[i]) !== 'main'){
                 continue
             }
             let activated = true

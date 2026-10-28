@@ -5,6 +5,7 @@ import {
     auxLorebookEntries,
     buildAuxTagPrompt,
     insertAuxTags,
+    isAutoIllustration,
     loreRole,
     markedLorebookEntries,
     mergeAuxLines,
@@ -39,6 +40,20 @@ describe('marked entries', () => {
         expect(markedLorebookEntries([[entry, art]], 'asset')).toEqual([entry])
         setLoreRole(entry, [], 'main')
         expect('nodeOnlyAuxModel' in entry || 'nodeOnlyIllustration' in entry).toBe(false)
+    })
+
+    // Lightboard's illustration lorebook is for illustrations by its title alone
+    // (the user's call, 2026-10-28); a 🌙 or 🎨 the user set still wins.
+    it('takes an entry titled "lb-xnai.lb.extra" for illustrations', () => {
+        const looks = { comment: ' lb-xnai.lb.extra ', content: 'Mira: red hair', alwaysActive: true } as any
+        expect([loreRole(looks), isAutoIllustration(looks)]).toEqual(['illustration', true])
+        expect(markedLorebookEntries([[looks]], 'illustration')).toEqual([looks])
+        setLoreRole(looks, [], 'illustration')
+        expect([loreRole(looks), isAutoIllustration(looks)]).toEqual(['illustration', false])
+        setLoreRole(looks, [], 'asset')
+        expect(loreRole(looks)).toBe('asset')
+        expect(loreRole({ comment: 'lb-xnai.lb.extra', mode: 'folder', content: '' })).toBe('main')
+        expect(loreRole({ comment: '[x] lb-xnai.lb.extra', content: 'x' })).toBe('main')
     })
 
     it('reads an entry without its decorator lines', () => {

@@ -2293,7 +2293,7 @@
         "src/lib/ChatScreens/DefaultChatScreen.svelte"
       ],
       "requiredMarkers": [
-        { "file": "src/ts/process/lorebook.svelte.ts", "contains": "if(fullLore[i].nodeOnlyAuxModel || fullLore[i].nodeOnlyIllustration){" },
+        { "file": "src/ts/process/lorebook.svelte.ts", "contains": "if(loreRole(fullLore[i]) !== 'main'){" },
         { "file": "src/ts/process/index.svelte.ts", "contains": "await tagReplyByAuxLorebook({" },
         { "file": "src/ts/process/index.svelte.ts", "contains": "withoutAuxLines(msg.data, msg.nodeOnlyAuxLines)" },
         { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "<ShDropdownMenuItem onSelect={() => setLoreRole(value, externalLoreBooks ?? [], choice.role)}>" },
@@ -2322,7 +2322,7 @@
       ],
       "requiredMarkers": [
         { "file": "src/ts/process/index.svelte.ts", "contains": "startAutoIllustration({ character: currentChar, chat: currentChat, moduleContext: getRuntimeModuleContext() })" },
-        { "file": "src/ts/process/lorebook.svelte.ts", "contains": "if(fullLore[i].nodeOnlyAuxModel || fullLore[i].nodeOnlyIllustration){" },
+        { "file": "src/ts/process/lorebook.svelte.ts", "contains": "if(loreRole(fullLore[i]) !== 'main'){" },
         { "file": "src/ts/process/stableDiff.ts", "contains": "char_captions: naiCharCaptions" },
         { "file": "src/lib/SideBars/Toggles.svelte", "contains": "<Help key=\"illustration\" />" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "button-icon-illustration" },
@@ -2344,7 +2344,7 @@
         { "file": "src/ts/process/illustrationRun.ts", "contains": "const lore = (settings.lore === 'all'" },
         { "file": "src/lib/SideBars/IllustrationSettings.svelte", "contains": "data-illustration-lore" },
         { "file": "src/lib/SideBars/IllustrationSettings.svelte", "contains": "data-illustration-common-note" },
-        { "file": "src/ts/process/illustration.ts", "contains": "export const LIGHTBOARD_EXTRA_TITLE = 'lb-xnai.lb.extra'" },
+        { "file": "src/ts/process/auxLorebook.ts", "contains": "if (entry.nodeOnlyIllustration || isAutoIllustration(entry)) return 'illustration'" },
         { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "data-lore-auto-illustration" },
         { "file": "src/ts/process/illustrationRun.ts", "contains": "commonNote: parse(DBState.db.nodeOnlyIllustrationNote ?? '')," },
         { "file": "src/ts/process/illustration.ts", "contains": "...(lore.length ? ['# Lorebook (world and character information)'" }
