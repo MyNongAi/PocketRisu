@@ -264,6 +264,7 @@ export async function illustrateReply(arg: {
                 maxCharacters: settings.maxCharacters,
                 nsfw: settings.nsfw,
                 direction: settings.direction,
+                commonNote: parse(DBState.db.nodeOnlyIllustrationNote ?? ''),
             }),
             bias: {},
             useStreaming: false,

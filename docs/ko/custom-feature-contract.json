@@ -2341,6 +2341,8 @@
         { "file": "src/ts/process/stableDiff.ts", "contains": "const naiModel = naiOwn.model ?? db.NAIImgModel" },
         { "file": "src/ts/process/illustrationRun.ts", "contains": "const lore = settings.lore === 'all'" },
         { "file": "src/lib/SideBars/IllustrationSettings.svelte", "contains": "data-illustration-lore" },
+        { "file": "src/lib/SideBars/IllustrationSettings.svelte", "contains": "data-illustration-common-note" },
+        { "file": "src/ts/process/illustrationRun.ts", "contains": "commonNote: parse(DBState.db.nodeOnlyIllustrationNote ?? '')," },
         { "file": "src/ts/process/illustration.ts", "contains": "...(lore.length ? ['# Lorebook (world and character information)'" }
       ],
       "regressionTests": [

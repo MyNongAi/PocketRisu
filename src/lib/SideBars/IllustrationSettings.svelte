@@ -59,6 +59,15 @@
         set('direction', text)
     })
 
+    // The note every bot's illustrations carry; kept off the database until it holds something.
+    let commonNote = $state(untrack(() => DBState.db.nodeOnlyIllustrationNote ?? ''))
+    $effect(() => {
+        const text = commonNote
+        if ((DBState.db.nodeOnlyIllustrationNote ?? '') === text) return
+        if (text) DBState.db.nodeOnlyIllustrationNote = text
+        else delete DBState.db.nodeOnlyIllustrationNote
+    })
+
     onMount(() => { restoreIllustrationPresets() })
 
     // NovelAI: with a preset picked, the fields show and change its [NAI]; a
@@ -374,6 +383,11 @@
             </div>
         {/if}
 
+        <!-- The illustration author's notes: every bot's, then this bot's (the user's choice, 2026-10-28). -->
+        <div class="flex flex-col gap-1" data-illustration-common-note>
+            <span>{language.illustrationCommonNote}</span>
+            <TextAreaInput bind:value={commonNote} size="sm" placeholder={language.illustrationCommonNoteHint} />
+        </div>
         <div class="flex flex-col gap-1">
             <span>{language.illustrationDirection}</span>
             <TextAreaInput bind:value={direction} size="sm" placeholder={language.illustrationDirectionHint} />

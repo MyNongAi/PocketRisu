@@ -204,4 +204,16 @@ describe('what lorebook and how many messages go along', () => {
         expect(prompt()).toContain('# Lorebook (world and character information)\nThe world\n')
         expect(prompt()).not.toContain('Rin: black hair')
     })
+
+    // The illustration author's notes (2026-10-28): every bot's, then this bot's;
+    // the chat's own author's note never.
+    it('carries the common illustration note before the bot\'s own', async () => {
+        const { chat } = setup({ enabled: true, direction: 'faces first' })
+        db.value.nodeOnlyIllustrationNote = 'soft colors'
+        chat.note = 'the chat note'
+        requestChatData.mockResolvedValue({ type: 'success', result: '[]' })
+        await run()
+        expect(prompt()).toContain('# Directions\nsoft colors\n\nfaces first\n')
+        expect(prompt()).not.toContain('the chat note')
+    })
 })

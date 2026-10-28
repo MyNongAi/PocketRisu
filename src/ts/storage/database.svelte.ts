@@ -1429,6 +1429,8 @@ export interface Database{
     nodeOnlyIllustrationPresetsRestored?: boolean
     /** The 🎨 module's one-entry presets were made folders (2026-10-28). */
     nodeOnlyIllustrationPresetsFoldered?: boolean
+    /** The illustration author's note every bot's scene request carries (2026-10-28). */
+    nodeOnlyIllustrationNote?: string
     /** One-shot migration marker for grouping pre-existing high-similarity names. */
     similarityFolderMigrationVersion?: number
     /** One-shot marker: the bots already here were grouped into creator folders (creatorFolders.ts). */

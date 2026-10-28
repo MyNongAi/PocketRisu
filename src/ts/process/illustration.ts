@@ -244,6 +244,8 @@ export function buildScenePrompt(arg: {
     maxCharacters?: number
     nsfw?: boolean
     direction?: string
+    /** The illustration author's note for every bot, before the bot's own. */
+    commonNote?: string
 }): { role: 'system' | 'user', content: string }[] {
     const { min, max } = countRange(arg.count)
     const howMany = min === max ? `exactly ${max}` : `${min} to ${max}`
@@ -269,6 +271,8 @@ export function buildScenePrompt(arg: {
         .map((message) => `${message.name}: ${clip(message.text, MAX_CONTEXT_CHARS)}`)
         .join('\n\n---\n\n')
     const lore = fitLore(arg.lore ?? [], MAX_LORE_CHARS)
+    // The common illustration author's note, then the bot's own (the user's choice, 2026-10-28).
+    const directions = [arg.commonNote, arg.direction].map((note) => note?.trim() ?? '').filter(Boolean).join('\n\n')
     const user = [
         '# Characters',
         `## ${arg.character.name}`,
@@ -277,7 +281,7 @@ export function buildScenePrompt(arg: {
         '',
         ...(lore.length ? ['# Lorebook (world and character information)', lore.join('\n\n---\n\n'), ''] : []),
         ...(arg.rules.length ? ['# Rules', arg.rules.join('\n\n---\n\n'), ''] : []),
-        ...(arg.direction?.trim() ? ['# Directions', arg.direction.trim(), ''] : []),
+        ...(directions ? ['# Directions', directions, ''] : []),
         ...(context ? ['# Earlier in the chat (context only)', context, ''] : []),
         `# Reply of ${arg.character.name} (numbered lines)`,
         arg.lines.map((line, index) => `[${index + 1}] ${line}`).join('\n'),

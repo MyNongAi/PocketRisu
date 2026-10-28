@@ -65,6 +65,9 @@ describe('the scene request and answer', () => {
         expect(system.content).toContain('non-explicit')
         expect(user.content).toContain('# Directions\nshow the sea')
         expect(buildScenePrompt({ ...base, nsfw: true })[0].content).toContain('tagged explicitly')
+        // The note for every bot goes first, then the bot's own (2026-10-28).
+        expect(buildScenePrompt({ ...base, commonNote: ' soft colors ', direction: 'show the sea' })[1].content).toContain('# Directions\nsoft colors\n\nshow the sea\n')
+        expect(buildScenePrompt({ ...base, commonNote: 'soft colors' })[1].content).toContain('# Directions\nsoft colors\n')
     })
 
     // The lorebook entries the reply names (2026-10-28), before the 🎨 rules.
