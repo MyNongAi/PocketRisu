@@ -3321,4 +3321,5 @@ export const languageKorean = {
   risuTosDecline: "동의하지 않음",
   risuTosGate: "RisuRealm은 RisuAI가 운영하는 서버를 사용합니다. 이용하려면 RisuAI 이용약관에 동의해야 합니다.",
   risuTosGateButton: "약관 확인",
+  moduleLayoutImported: "모듈 {{modules}}개, 폴더 {{folders}}개를 옮겼습니다 (새 폴더 {{created}}개, 건너뜀 {{skipped}}개)",
 } satisfies DeepPartial<typeof import("./en").languageEnglish>;

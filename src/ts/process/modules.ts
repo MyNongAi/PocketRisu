@@ -18,6 +18,7 @@ import { recordModuleFolderActivation, recordNewModules } from "./moduleSort"
 import { organizeImportedModuleSimilarity } from "./similarityFolders"
 import { gatherLinkedModules, linkedModuleIds } from "./linkedModuleFolder"
 import { gatherPresetModules, recordPresetLinks } from "./presetModuleFolder"
+import { applyModuleLayout, isModuleLayoutFile } from "./moduleLayoutImport"
 import { botsWithOwnModules, gatherLinkedBots } from "../linkedBotFolder"
 import { adaptLegacyProgress, runExportTask, runImportBatch, runImportTask, type ImportProgressReporter } from "../importProgress"
 import type { CharxDestination } from "../charxPreflight"
@@ -533,6 +534,21 @@ export async function importModuleFile(
     }
 
     const importData = JSON.parse(Buffer.from(bytes).toString())
+    // PocketRisu: a file of folder places for the modules already here
+    // (moduleLayoutImport.ts); it adds no module.
+    if(isModuleLayoutFile(importData)){
+        options.importScope?.check()
+        const db = getDatabase()
+        const placed = applyModuleLayout(db.modules, db.moduleFolders ?? [], importData, v4)
+        db.modules = placed.modules
+        db.moduleFolders = placed.folders
+        notifySuccess(language.moduleLayoutImported
+            .replace('{{modules}}', String(placed.movedModules))
+            .replace('{{folders}}', String(placed.movedFolders))
+            .replace('{{created}}', String(placed.createdFolders))
+            .replace('{{skipped}}', String(placed.skipped)))
+        return undefined
+    }
     if(importData.type === 'risuModule'){
         if((!importData.name) || (!importData.id)){
             throw new Error(language.errors.noData)

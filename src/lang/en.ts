@@ -3073,6 +3073,7 @@ export const languageEnglish = {
     risuTosDecline: "Do not Accept",
     risuTosGate: "RisuRealm uses servers operated by RisuAI. Accept RisuAI's Terms of Service to use it.",
     risuTosGateButton: "Review terms",
+    moduleLayoutImported: "Moved {{modules}} modules and {{folders}} folders ({{created}} new folders, {{skipped}} skipped)",
 } satisfies I18nTranslation;
 
 type I18nTranslationFunction = (...args: any[]) => string;
