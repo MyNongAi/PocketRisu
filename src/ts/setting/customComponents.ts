@@ -32,6 +32,7 @@ import PromptEditorSection from 'src/lib/Setting/Pages/PromptPreset/PromptEditor
 import PromptTemplateBlock from 'src/lib/Setting/Pages/PromptPreset/PromptTemplateBlock.svelte';
 import PromptToolsBlock from 'src/lib/Setting/Pages/PromptPreset/PromptToolsBlock.svelte';
 import PromptRegexBlock from 'src/lib/Setting/Pages/PromptPreset/PromptRegexBlock.svelte';
+import PromptModuleIntegrationBlock from 'src/lib/Setting/Pages/PromptPreset/PromptModuleIntegrationBlock.svelte';
 import ModelRegistryRefresh from 'src/lib/Setting/Pages/Model/ModelRegistryRefresh.svelte';
 import ModuleModelBindingList from 'src/lib/Setting/Pages/Model/ModuleModelBindingList.svelte';
 import ExternalAssetSettings from 'src/lib/Setting/Pages/Advanced/ExternalAssetSettings.svelte';
@@ -58,6 +59,7 @@ export const customComponents: Record<string, Component<any>> = {
     'PromptTemplateBlock': PromptTemplateBlock,
     'PromptToolsBlock': PromptToolsBlock,
     'PromptRegexBlock': PromptRegexBlock,
+    'PromptModuleIntegrationBlock': PromptModuleIntegrationBlock,
     'ModelRegistryRefresh': ModelRegistryRefresh,
     'ModuleModelBindingList': ModuleModelBindingList,
     'ExternalAssetSettings': ExternalAssetSettings,

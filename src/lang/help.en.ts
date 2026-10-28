@@ -160,7 +160,11 @@ export const helpEn = {
         namespace:
             "Namespace is a unique identifier for the module. it is used to prevent conflicts between modules, and for interaction of presets, other modules and etc. if you are not sure what to put, leave it blank.",
         moduleIntergration:
-            "You can enable modules by putting the module namespace in the module intergartion sections. if you want to enable multiple modules, you can seperate them by comma. for example, `module1,module2,module3`. this is for advanced users, who wants to vary the use of modules by presets.",
+            "You can enable modules by putting the module namespace in the module intergartion sections. if you want to enable multiple modules, you can seperate them by comma. for example, `module1,module2,module3`. this is for advanced users, who wants to vary the use of modules by presets.\n\n" +
+            "- Choosing this preset turns the listed modules on. Links that came inside a preset file show here too.\n" +
+            "- The tags below show what each name turns on. A red one names no installed module, so it turns nothing on; remove it with ✕.\n" +
+            "- 'Add an installed module' lists modules that have a namespace, set in the module editor.\n" +
+            "- It does not download modules; it only turns installed ones on.",
         customCSS: "Custom CSS for styling.",
         betaMobileGUI: "If enabled, it will use beta mobile GUI on small (less than 800px) screens. requires refresh.",
         enableScrollToActiveChar: "If enabled, pressing the hotkey or holding Ctrl while dragging a character will scroll to the currently active character. Folders will be opened automatically if closed.",

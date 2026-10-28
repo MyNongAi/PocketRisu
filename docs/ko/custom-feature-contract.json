@@ -2671,6 +2671,24 @@
       ]
     },
     {
+      "id": "PRESET-MODULE-INTEGRATION-FIELD",
+      "title": "프롬프트 프리셋 '모듈 통합'에 켜지는 모듈 보이기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/process/moduleIntegration.ts",
+        "src/lib/Setting/Pages/PromptPreset/PromptModuleIntegrationBlock.svelte",
+        "src/ts/setting/promptPresetSettingsData.svelte.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/setting/promptPresetSettingsData.svelte.ts", "contains": "componentId: 'PromptModuleIntegrationBlock'," },
+        { "file": "src/lib/Setting/Pages/PromptPreset/PromptModuleIntegrationBlock.svelte", "contains": "let links = $derived(resolveIntegration(DBState.db.moduleIntergration, DBState.db.modules ?? []))" },
+        { "file": "src/ts/process/moduleIntegration.ts", "contains": "export function resolveIntegration(" }
+      ],
+      "regressionTests": [
+        "src/ts/process/moduleIntegration.test.ts"
+      ]
+    },
+    {
       "id": "JOB-RECOVERY-SLOT-IN",
       "title": "서버에서 끝난 답 넣기: 출력 후처리 · 채팅마다 하나씩",
       "criticality": "data-safety",

@@ -124,9 +124,10 @@ export const promptPresetAdvancedItems: SettingItem[] = [
             styled: true,
             children: [
                 {
+                    // The field plus what each name turns on (PromptModuleIntegrationBlock).
                     id: 'promptPreset.advanced.moduleIntegration.value',
-                    type: 'textarea',
-                    bindKey: 'moduleIntergration',
+                    type: 'custom',
+                    componentId: 'PromptModuleIntegrationBlock',
                 },
             ],
         },
