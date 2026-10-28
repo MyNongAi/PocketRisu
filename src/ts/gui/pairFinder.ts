@@ -9,7 +9,7 @@ import { alertSelect } from '../alert'
 import { promptActivateCharacter } from '../characterArchive'
 import { changeChar } from '../characters'
 import { openSettings, SettingsRoute } from '../routing'
-import { DBState, settingsOpen } from '../stores.svelte'
+import { DBState, QuickSettings, settingsOpen, sideBarStore } from '../stores.svelte'
 import { botsOfModule, modulesOfBot } from './pairedModules'
 
 /** The module the module page should find (it takes and clears this). */
@@ -18,6 +18,8 @@ export const moduleFindRequest = writable<string | null>(null)
 // The module list of the sidebar's module tab, when it is on screen, finds
 // the module in place instead of the module page (the user's request,
 // 2026-10-27). Each such list registers here and says whether it took it.
+// Since 2026-10-28 any bot menu finds it there whatever is open: the sidebar
+// opens on its module tab first (the user's request).
 const panelFinders = new Set<(moduleId: string) => boolean>()
 
 export function addModulePanelFinder(find: (moduleId: string) => boolean): () => void {
@@ -37,11 +39,35 @@ export function botHasModules(chaId: string | undefined): boolean {
     return modulesOfBot(character, DBState.db.modules).length > 0
 }
 
+const SIDEBAR_WAIT_MS = 3000
+const SIDEBAR_POLL_MS = 50
+
+function openSidebarModuleTab() {
+    settingsOpen.set(false)
+    sideBarStore.set(true)
+    QuickSettings.open = true
+    QuickSettings.index = 2
+}
+
+/** The sidebar's module list takes the find, opened on its tab when it is not on screen (it mounts on the tab's first opening). */
+export async function findInSidebar(moduleId: string, wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))): Promise<boolean> {
+    const take = () => [...panelFinders].some((find) => find(moduleId))
+    if (take()) return true
+    openSidebarModuleTab()
+    for (let waited = 0; waited < SIDEBAR_WAIT_MS; waited += SIDEBAR_POLL_MS) {
+        await wait(SIDEBAR_POLL_MS)
+        if (take()) return true
+    }
+    return false
+}
+
 export async function findModulesOfBot(chaId: string): Promise<void> {
     const character = DBState.db.characters.find((c) => c?.chaId === chaId)
     const module = await pick(modulesOfBot(character, DBState.db.modules), (m) => m.name || 'Unnamed', language.pairFindWhichModule)
     if (!module) return
-    for (const find of panelFinders) if (find(module.id)) return
+    if (await findInSidebar(module.id)) return
+    // The sidebar's list declines while it shows a module's editor (its
+    // unsaved draft stays): the module page then.
     moduleFindRequest.set(module.id)
     openSettings(SettingsRoute.Module)
 }

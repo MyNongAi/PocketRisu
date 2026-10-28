@@ -1203,7 +1203,8 @@
         { "file": "src/ts/gui/pairedModules.ts", "contains": "if (stub.trashedAt) nameById.set" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "findBotsOfModule(rmodule.id)" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "findModulesOfBot(character.chaId)" },
-        { "file": "src/ts/gui/pairFinder.ts", "contains": "for (const find of panelFinders) if (find(module.id)) return" },
+        { "file": "src/ts/gui/pairFinder.ts", "contains": "if (await findInSidebar(module.id)) return" },
+        { "file": "src/ts/gui/pairFinder.ts", "contains": "QuickSettings.open = true" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "if (!id || sidePanelList()) return" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "moduleLink={characterModuleLink(" },
         { "file": "src/ts/realmCompanionModule.ts", "contains": "recordModulePair(getDatabase().modules, moduleIds, character.chaId)" },
@@ -1221,7 +1222,8 @@
       ],
       "regressionTests": [
         "src/ts/gui/pairedModules.test.ts",
-        "src/ts/gui/botModuleRemoval.test.ts"
+        "src/ts/gui/botModuleRemoval.test.ts",
+        "src/ts/gui/pairFinder.test.ts"
       ]
     },
     {
