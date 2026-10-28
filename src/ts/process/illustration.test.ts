@@ -15,6 +15,7 @@ import {
     ratioSize,
     replaceReplyLine,
     replaceReplyText,
+    sceneLoreEntries,
     setNaiLine,
     withPresetNai,
 } from './illustration'
@@ -65,18 +66,37 @@ describe('the scene request and answer', () => {
         expect(buildScenePrompt({ ...base, nsfw: true })[0].content).toContain('tagged explicitly')
     })
 
-    // Like Lightboard's illustrations (2026-10-28): the lorebook entries on now
-    // and the author's note, before the 🎨 rules.
-    it('carries the lorebook entries on now and the author\'s note', () => {
+    // The lorebook entries the reply names (2026-10-28), before the 🎨 rules.
+    it('carries the lorebook entries the reply names', () => {
         const base = { lines: ['a'], rules: ['soft light'], context: [], character: { name: 'M', description: '' }, user: { name: 'U', description: '' }, count: '1' as const }
-        const user = buildScenePrompt({ ...base, lore: ['Rin: black hair', ' ', 'The castle'], authorsNote: 'Rainy night.' })[1].content
-        expect(user).toContain('# Lorebook (world and character information)\nRin: black hair\n\n---\n\nThe castle\n\n# Author\'s note\nRainy night.\n\n# Rules\nsoft light')
+        const user = buildScenePrompt({ ...base, lore: ['Rin: black hair', ' ', 'The castle'] })[1].content
+        expect(user).toContain('# Lorebook (world and character information)\nRin: black hair\n\n---\n\nThe castle\n\n# Rules\nsoft light')
         // Whole entries only, up to the cap; the rest are left out.
         const big = 'x'.repeat(20000)
         const capped = buildScenePrompt({ ...base, lore: [big, big, 'small'] })[1].content
         expect(capped.split(big).length - 1).toBe(1)
         expect(capped).not.toContain('small')
         expect(buildScenePrompt(base)[1].content).not.toContain('# Lorebook')
+    })
+
+    // Like the lorebook's own matching, but only over the reply being drawn.
+    it('finds the entries whose keys the reply names', () => {
+        const entries = [
+            { key: 'rin, 린', content: 'Rin' },
+            { key: 'castle', content: 'castle', mode: 'normal' },
+            { key: '', content: 'keyless' },
+            { key: 'rin', mode: 'folder', content: 'folder' },
+            { key: 'mira', secondkey: 'sword', selective: true, content: 'Mira armed' },
+            { key: 'mira', secondkey: 'bow', selective: true, content: 'Mira archer' },
+            { key: '/\\bkai\\b/i', useRegex: true, content: 'Kai' },
+            { key: '/[/', useRegex: true, content: 'broken' },
+            null,
+        ]
+        const reply = '린 smiles at MIRA, who draws her Sword. Kai{{// not kai}} waits.'
+        expect(sceneLoreEntries(entries, reply).map((e) => e.content)).toEqual(['Rin', 'Mira armed', 'Kai'])
+        // Whole words only when the bot asks for it.
+        expect(sceneLoreEntries([{ key: 'rin', content: 'Rin' }], 'Rina waves', true)).toEqual([])
+        expect(sceneLoreEntries([{ key: 'rin', content: 'Rin' }], 'Rina waves')).toHaveLength(1)
     })
 
     it('puts every picture at a fixed place when asked', () => {

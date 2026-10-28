@@ -2338,7 +2338,7 @@
         { "file": "src/ts/process/illustrationModule.ts", "contains": "export function folderIllustrationPresetsOnce(db: IllustrationModuleDb, make: IllustrationModuleMake): number {" },
         { "file": "src/ts/process/illustrationRun.ts", "contains": "folderIllustrationPresetsOnce(DBState.db, illustrationModuleMake())" },
         { "file": "src/ts/process/stableDiff.ts", "contains": "const naiModel = naiOwn.model ?? db.NAIImgModel" },
-        { "file": "src/ts/process/illustrationRun.ts", "contains": "return (await loadLoreBookV3Prompt(context)).actives.map((book) => parse(book.prompt)).filter(Boolean)" },
+        { "file": "src/ts/process/illustrationRun.ts", "contains": "const lore = sceneLore(character, chat, arg.moduleContext, lines.join(" },
         { "file": "src/ts/process/illustration.ts", "contains": "...(lore.length ? ['# Lorebook (world and character information)'" }
       ],
       "regressionTests": [

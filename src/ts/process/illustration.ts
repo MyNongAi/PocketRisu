@@ -150,6 +150,51 @@ function clip(text: string, max: number): string {
     return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max)}…`
 }
 
+/** A lorebook entry as the scene matcher reads it. */
+export interface SceneLoreEntry {
+    key?: string
+    secondkey?: string
+    selective?: boolean
+    useRegex?: boolean
+    mode?: string
+}
+
+/** Whether one of the comma separated keys is in the text, as the lorebook matches. */
+function keyIn(keys: string | undefined, text: string, regex: boolean, fullWord: boolean): boolean {
+    const list = (keys ?? '').split(',').map((key) => key.trim()).filter(Boolean)
+    if (regex) {
+        return list.some((key) => {
+            const parsed = key.match(/^\/([\s\S]*)\/([dgimsuvy]*)$/)
+            if (!parsed) return false
+            try {
+                return new RegExp(parsed[1], parsed[2].replace('g', '')).test(text)
+            } catch {
+                return false
+            }
+        })
+    }
+    const lower = text.toLocaleLowerCase().replace(/\{\{\/\/(.+?)\}\}/g, '').replace(/\{\{comment:(.+?)\}\}/g, '')
+    const words = fullWord ? lower.split(' ') : null
+    return list.some((key) => (words ? words.includes(key.toLocaleLowerCase()) : lower.includes(key.toLocaleLowerCase())))
+}
+
+/**
+ * The lorebook entries the reply itself names (the user's choice,
+ * 2026-10-28, over Lightboard's every active entry as too costly): a key of
+ * the entry is in the reply, and a selective entry's second key too. Folders
+ * and keyless entries never match; always-on entries only by their keys.
+ */
+export function sceneLoreEntries<E extends SceneLoreEntry>(
+    entries: readonly (E | null | undefined)[], reply: string, fullWordMatching = false,
+): E[] {
+    return entries.filter((entry): entry is E => {
+        if (!entry || entry.mode === 'folder') return false
+        const regex = !!entry.useRegex
+        if (!keyIn(entry.key, reply, regex, fullWordMatching)) return false
+        return !(entry.selective && entry.secondkey?.trim()) || keyIn(entry.secondkey, reply, regex, fullWordMatching)
+    })
+}
+
 /** Lorebook texts in order, as many whole ones as fit in `max` characters. */
 function fitLore(texts: readonly string[], max: number): string[] {
     const kept: string[] = []
@@ -165,17 +210,16 @@ function fitLore(texts: readonly string[], max: number): string[] {
 }
 
 /**
- * The request to the auxiliary model that picks the scenes. Like Lightboard's
- * illustrations (the user's request, 2026-10-28) it carries the bot and the
- * persona, the lorebook entries on for this chat, the author's note and the
- * last messages, with the 🎨 entries as rules.
+ * The request to the auxiliary model that picks the scenes: the bot and the
+ * persona, the lorebook entries the reply names (2026-10-28: a side
+ * character's looks without a 🎨 mark), the last messages, and the 🎨
+ * entries as rules.
  */
 export function buildScenePrompt(arg: {
     lines: readonly string[]
     rules: readonly string[]
-    /** The lorebook entries on for this chat, as the main model gets them. */
+    /** The lorebook entries the reply names (sceneLoreEntries). */
     lore?: readonly string[]
-    authorsNote?: string
     context: readonly { name: string, text: string }[]
     character: { name: string, description: string }
     user: { name: string, description: string }
@@ -216,7 +260,6 @@ export function buildScenePrompt(arg: {
         ...(arg.user.description.trim() ? [`## ${arg.user.name} (the user)`, clip(arg.user.description, MAX_INFO_CHARS)] : []),
         '',
         ...(lore.length ? ['# Lorebook (world and character information)', lore.join('\n\n---\n\n'), ''] : []),
-        ...(arg.authorsNote?.trim() ? ['# Author\'s note', clip(arg.authorsNote, MAX_INFO_CHARS), ''] : []),
         ...(arg.rules.length ? ['# Rules', arg.rules.join('\n\n---\n\n'), ''] : []),
         ...(arg.direction?.trim() ? ['# Directions', arg.direction.trim(), ''] : []),
         ...(context ? ['# Earlier in the chat (context only)', context, ''] : []),
