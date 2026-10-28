@@ -2345,13 +2345,46 @@
         "src/lib/SideBars/Toggles.svelte"
       ],
       "requiredMarkers": [
-        { "file": "src/ts/process/request/request.ts", "contains": "const supportsTools = presetSendsTools(preset, arg.currentChat ?? getCurrentChat(), mode)" },
-        { "file": "src/ts/process/mcp/toolGate.ts", "contains": "const on = preset.toolUse === true || (mode === 'model' && chat?.nodeOnlyToolUse === true)" },
+        { "file": "src/ts/process/request/request.ts", "contains": "const supportsTools = presetSendsTools(preset, arg.currentChat ?? getCurrentChat(), mode, hasRisuAccessTools(arg.tools))" },
+        { "file": "src/ts/process/mcp/toolGate.ts", "contains": "const on = preset.toolUse === true || (mode === 'model' && (chat?.nodeOnlyToolUse === true || editMode))" },
         { "file": "src/ts/process/index.svelte.ts", "contains": "if (!arg.preview && !arg.previewPrompt) warnBlockedTools(currentChat, moduleContext)" },
         { "file": "src/lib/SideBars/Toggles.svelte", "contains": "<McpToolNotice character={view.character} chat={view.chat} />" }
       ],
       "regressionTests": [
         "src/ts/process/mcp/toolGate.test.ts"
+      ]
+    },
+    {
+      "id": "BOT-EDIT-MODE",
+      "title": "봇 편집 모드 (Risu Access MCP, 자동/수동, 같은 폴더 백업)",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "src/ts/process/mcp/editMode.ts",
+        "src/ts/process/mcp/editSession.ts",
+        "src/ts/process/mcp/editBackup.ts",
+        "src/ts/process/mcp/risuaccess/writeAccess.ts",
+        "src/ts/process/mcp/risuaccess/characters.ts",
+        "src/ts/process/mcp/risuaccess/modules.ts",
+        "src/ts/process/mcp/mcp.ts",
+        "src/lib/SideBars/EditModeToggle.svelte",
+        "src/lib/SideBars/Toggles.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/mcp/editMode.ts", "contains": "return getModuleMcps(captureModuleRuntimeContext(char, chat)).includes(RISU_ACCESS_URL)" },
+        { "file": "src/ts/process/mcp/risuaccess/writeAccess.ts", "contains": "const allowed = chat?.nodeOnlyEditSession?.approval === 'auto'" },
+        { "file": "src/ts/process/mcp/risuaccess/writeAccess.ts", "contains": "if (target.kind === 'character') backupCharacterOnce(session, target.value)" },
+        { "file": "src/ts/process/mcp/editBackup.ts", "contains": "DBState.db.characterOrder = placeBackup(DBState.db.characterOrder ?? [], original.chaId, backup.chaId)" },
+        { "file": "src/ts/process/mcp/editBackup.ts", "contains": "await removeChar(old.chaId, (old as character).name, 'normal', { skipConfirm: true })" },
+        { "file": "src/ts/process/mcp/risuaccess/characters.ts", "contains": "return mcpWriteAccess(tool, action, char ? { kind: 'character', value: char } : undefined)" },
+        { "file": "src/ts/process/mcp/risuaccess/modules.ts", "contains": "return mcpWriteAccess(tool, action, module ? { kind: 'module', value: module } : undefined)" },
+        { "file": "src/lib/SideBars/Toggles.svelte", "contains": "<EditModeToggle character={view.character} chat={view.chat} />" }
+      ],
+      "regressionTests": [
+        "src/ts/process/mcp/editMode.test.ts",
+        "src/ts/process/mcp/editSession.test.ts",
+        "src/ts/process/mcp/editBackup.test.ts",
+        "src/ts/process/mcp/risuaccess/writeAccess.test.ts",
+        "src/ts/process/mcp/risuaccess/tests/modules.test.ts"
       ]
     },
     {

@@ -1,7 +1,7 @@
 import { getDatabase } from "src/ts/storage/database.svelte";
 import { MCPClient, type JsonRPC, type MCPTool, type RPCToolCallContent } from "./mcplib";
 import { DBState } from "src/ts/stores.svelte";
-import { addModuleToDatabase, getModuleMcps, type ModuleRuntimeContext } from "../modules";
+import { addModuleToDatabase, getModuleMcps, type ModuleRuntimeContext, type RisuModule } from "../modules";
 import { alertInput, notifySuccess, notifyError } from "src/ts/alert";
 import { v4 } from "uuid";
 import type { MCPClientLike } from "./internalmcp";
@@ -221,28 +221,33 @@ export async function importMCPModule(){
             notifyError('MCP module not found or invalid URL');
             return;
         }
-        addModuleToDatabase({
-            name: meta.serverInfo.name,
-            description: "MCP from " + x,
-            mcp: {
-                url: x
-            },
-            id: v4(),
-            lorebook: [{
-                comment: "MCP Info",
-                content: `@@mcp\n\n<MCP Info>Name:${meta.serverInfo.name}\nVersion:${meta.serverInfo.version}\nInst:${meta.instructions ?? 'None'}</MCP Info>`,
-                key: '',
-                alwaysActive: true,
-                secondkey: "",
-                insertorder: 0,
-                mode: "normal",
-                selective: false
-            }]
-        })
+        addModuleToDatabase(mcpModuleOf(x, meta))
         notifySuccess(`MCP module imported successfully!\nName: ${meta.serverInfo.name}`);
 
     } catch (error) {
         notifyError(error)
+    }
+}
+
+/** The module an MCP server comes in as (the import above; the bot edit mode, editMode.ts). */
+export function mcpModuleOf(url: string, meta: Awaited<ReturnType<typeof getMCPMeta>>[string]): RisuModule {
+    return {
+        name: meta.serverInfo.name,
+        description: "MCP from " + url,
+        mcp: {
+            url
+        },
+        id: v4(),
+        lorebook: [{
+            comment: "MCP Info",
+            content: `@@mcp\n\n<MCP Info>Name:${meta.serverInfo.name}\nVersion:${meta.serverInfo.version}\nInst:${meta.instructions ?? 'None'}</MCP Info>`,
+            key: '',
+            alwaysActive: true,
+            secondkey: "",
+            insertorder: 0,
+            mode: "normal",
+            selective: false
+        }]
     }
 }
 

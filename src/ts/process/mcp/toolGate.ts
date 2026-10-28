@@ -3,8 +3,9 @@
 // tool-capable adapter (request.ts); the classic path always does. With an
 // MCP module on and the switch off, the model was told about tools it could
 // not call and answered that it could not edit (the user's report,
-// 2026-10-28). A chat can turn tools on for its own main requests without
-// touching the preset (the user's choice, 2026-10-28).
+// 2026-10-28). A chat turns tools on for its own main requests without
+// touching the preset (the user's choice, 2026-10-28): by its own switch, or
+// by having the Risu Access module on, which is the bot edit mode (editMode.ts).
 import { TOOL_CAPABLE_ADAPTER_KINDS, type ModelPreset } from 'src/ts/preset/types'
 import type { Chat } from 'src/ts/storage/database.svelte'
 import { language } from 'src/lang'
@@ -12,6 +13,9 @@ import { notifyInfo } from '../../alert'
 import type { ModelModeExtended } from '../request/shared'
 import { resolveChatModelBinding } from '../request/modelPresetBinding'
 import { getModuleMcps, type ModuleRuntimeContext } from '../modules'
+
+/** The built-in Risu Access MCP: on for a chat, it is the bot edit mode. */
+export const RISU_ACCESS_URL = 'internal:risuai'
 
 type ToolPreset = Pick<ModelPreset, 'toolUse' | 'profileSnapshot'>
 
@@ -21,10 +25,24 @@ export function presetToolsCapable(preset: ToolPreset): boolean {
         && (preset.profileSnapshot.capabilities?.includes('tools') ?? false)
 }
 
-/** Tools go with this request: the preset's switch, or the chat's for its main requests. */
-export function presetSendsTools(preset: ToolPreset, chat: Pick<Chat, 'nodeOnlyToolUse'> | null | undefined, mode: ModelModeExtended): boolean {
-    const on = preset.toolUse === true || (mode === 'model' && chat?.nodeOnlyToolUse === true)
+/**
+ * Tools go with this request: the preset's switch, or for a chat's main
+ * requests its own switch or the edit mode (`editMode`: the Risu Access
+ * module is on for it).
+ */
+export function presetSendsTools(
+    preset: ToolPreset,
+    chat: Pick<Chat, 'nodeOnlyToolUse'> | null | undefined,
+    mode: ModelModeExtended,
+    editMode = false,
+): boolean {
+    const on = preset.toolUse === true || (mode === 'model' && (chat?.nodeOnlyToolUse === true || editMode))
     return on && presetToolsCapable(preset)
+}
+
+/** The request's tools come from the Risu Access MCP, among others (getMCPTools marks each with its server). */
+export function hasRisuAccessTools(tools: readonly unknown[] | null | undefined): boolean {
+    return (tools ?? []).some((tool) => !!tool && typeof tool === 'object' && (tool as { mcpURL?: unknown }).mcpURL === RISU_ACCESS_URL)
 }
 
 /**
@@ -34,12 +52,12 @@ export function presetSendsTools(preset: ToolPreset, chat: Pick<Chat, 'nodeOnlyT
  */
 export type ToolBlock = 'off' | 'unsupported' | null
 
-export function chatToolBlock(chat: Chat | null | undefined): ToolBlock {
+export function chatToolBlock(chat: Chat | null | undefined, editMode = false): ToolBlock {
     if (!chat) return null
     const binding = resolveChatModelBinding(chat, 'model')
     if (binding.kind !== 'modelPreset') return null
     if (!presetToolsCapable(binding.preset)) return 'unsupported'
-    return presetSendsTools(binding.preset, chat, 'model') ? null : 'off'
+    return presetSendsTools(binding.preset, chat, 'model', editMode) ? null : 'off'
 }
 
 /** What to say for a block (the sidebar and the send notice). */
@@ -52,8 +70,9 @@ const warnedChats = new Set<string>()
 /** A send with an MCP module on and no tools: said once per chat while the app is open. */
 export function warnBlockedTools(chat: Chat | null | undefined, moduleContext: ModuleRuntimeContext): void {
     if (!chat?.id || warnedChats.has(chat.id)) return
-    if (getModuleMcps(moduleContext).length === 0) return
-    const block = chatToolBlock(chat)
+    const mcps = getModuleMcps(moduleContext)
+    if (mcps.length === 0) return
+    const block = chatToolBlock(chat, mcps.includes(RISU_ACCESS_URL))
     if (!block) return
     warnedChats.add(chat.id)
     notifyInfo(`${toolBlockText(block)} ${language.mcpToolsWhereToTurnOn}`)

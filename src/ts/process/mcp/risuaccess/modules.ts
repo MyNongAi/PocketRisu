@@ -1,10 +1,9 @@
-import { language } from 'src/lang'
-import { alertConfirm } from 'src/ts/alert'
 import { DBState } from 'src/ts/stores.svelte'
 import { pickHashRand } from 'src/ts/util'
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
 import { recordModuleActivation, recordModuleFolderActivation, seedModuleActivationHistory } from '../../moduleSort'
 import { wakeModules } from '../../moduleCold.svelte'
+import { mcpWriteAccess } from './writeAccess'
 
 const moduleNotFound = (id: string): RPCToolCallContent[] => [
   {
@@ -14,8 +13,9 @@ const moduleNotFound = (id: string): RPCToolCallContent[] => [
 ]
 
 export class ModuleHandler extends MCPToolHandler {
-  private promptAccess(tool: string, action: string) {
-    return alertConfirm(language.mcpAccessPrompt.replace('{{tool}}', tool).replace('{{action}}', action))
+  // Asks, or not in the bot edit mode's auto, and copies the module first there (writeAccess.ts).
+  private promptAccess(tool: string, action: string, module?: { id: string }) {
+    return mcpWriteAccess(tool, action, module ? { kind: 'module', value: module } : undefined)
   }
 
   getTools(): MCPTool[] {
@@ -428,7 +428,7 @@ export class ModuleHandler extends MCPToolHandler {
       ]
     }
 
-    if (!(await this.promptAccess('risu-set-module-info', `modify module (${module.name}) information`))) {
+    if (!(await this.promptAccess('risu-set-module-info', `modify module (${module.name}) information`, module))) {
       return [
         {
           type: 'text',
@@ -562,7 +562,7 @@ export class ModuleHandler extends MCPToolHandler {
       return moduleNotFound(id)
     }
 
-    if (!(await this.promptAccess('risu-set-module-lorebook', `add/modify module (${module.name}) lorebook (${name})`))) {
+    if (!(await this.promptAccess('risu-set-module-lorebook', `add/modify module (${module.name}) lorebook (${name})`, module))) {
       return [
         {
           type: 'text',
@@ -632,7 +632,7 @@ export class ModuleHandler extends MCPToolHandler {
       return moduleNotFound(id)
     }
 
-    if (!(await this.promptAccess('risu-delete-module-lorebook', `delete module (${module.name}) lorebook (${name})`))) {
+    if (!(await this.promptAccess('risu-delete-module-lorebook', `delete module (${module.name}) lorebook (${name})`, module))) {
       return [
         {
           type: 'text',
@@ -710,7 +710,7 @@ export class ModuleHandler extends MCPToolHandler {
       return moduleNotFound(id)
     }
 
-    if (!(await this.promptAccess('risu-set-module-regex-script', `add/modify module (${module.name}) regex script (${name})`))) {
+    if (!(await this.promptAccess('risu-set-module-regex-script', `add/modify module (${module.name}) regex script (${name})`, module))) {
       return [
         {
           type: 'text',
@@ -769,7 +769,7 @@ export class ModuleHandler extends MCPToolHandler {
       return moduleNotFound(id)
     }
 
-    if (!(await this.promptAccess('risu-delete-module-regex-script', `delete module (${module.name}) regex script (${name})`))) {
+    if (!(await this.promptAccess('risu-delete-module-regex-script', `delete module (${module.name}) regex script (${name})`, module))) {
       return [
         {
           type: 'text',
@@ -836,7 +836,7 @@ export class ModuleHandler extends MCPToolHandler {
       return moduleNotFound(id)
     }
 
-    if (!(await this.promptAccess('risu-set-module-lua-script', `modify module (${module.name}) lua script`))) {
+    if (!(await this.promptAccess('risu-set-module-lua-script', `modify module (${module.name}) lua script`, module))) {
       return [
         {
           type: 'text',

@@ -11,7 +11,7 @@ import { v4 as uuidv4 } from "uuid";
 import { simplifySchema, sleep } from "../../util";
 import type { OpenAIChat } from "../index.svelte";
 import { getTools, callTool, encodeToolCall, decodeToolCall } from "../mcp/mcp";
-import { presetSendsTools } from "../mcp/toolGate";
+import { hasRisuAccessTools, presetSendsTools } from "../mcp/toolGate";
 import type { MCPTool, RPCToolCallContent } from "../mcp/mcplib";
 import { NovelAIBadWordIds, stringlizeNAIChat } from "../models/nai";
 import { OobaParams } from "../prompt";
@@ -786,10 +786,10 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
     //     than the streaming convention (no `!caps` shortcut) so it matches the
     //     editor toggle's visibility — a capability-less custom profile (e.g.
     //     after a profile swap that kept toolUse) can never activate tools.
-    // A chat can turn guard 1 on for its own main requests (toolGate.ts,
-    // the sidebar's switch and the bot edit mode).
+    // A chat can turn guard 1 on for its own main requests (toolGate.ts):
+    // the sidebar's switch, or the Risu Access module on (the bot edit mode).
     const caps = preset.profileSnapshot.capabilities
-    const supportsTools = presetSendsTools(preset, arg.currentChat ?? getCurrentChat(), mode)
+    const supportsTools = presetSendsTools(preset, arg.currentChat ?? getCurrentChat(), mode, hasRisuAccessTools(arg.tools))
     const tools = (supportsTools && arg.tools && arg.tools.length > 0)
         ? arg.tools.map(toAdapterToolDef)
         : undefined

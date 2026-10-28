@@ -2021,6 +2021,10 @@ export interface character{
     nodeOnlyIllustration?: import('../process/illustration').IllustrationBotSettings
     /** PocketRisu: how this bot's 🌙 entries are worked (auxLorebook.ts, the sidebar's ⚙). */
     nodeOnlyAuxAsset?: import('../process/auxLorebook').AuxAssetBotSettings
+    /** PocketRisu: a backup the bot edit mode made of another bot (editBackup.ts): whose, when, and the name to put back. */
+    nodeOnlyEditBackupOf?: string
+    nodeOnlyEditBackupAt?: number
+    nodeOnlyEditBackupName?: string
     reloadKeys?:number
     backgroundCSS?:string
     license?:string
@@ -2536,6 +2540,8 @@ export interface Chat{
     modelBinding?: ModelBindingSet
     /** PocketRisu: this chat's main requests carry MCP tools whatever the model preset's "도구 사용" (toolGate.ts). */
     nodeOnlyToolUse?: boolean
+    /** PocketRisu: the bot edit mode's approval and this sitting's backups (editSession.ts). */
+    nodeOnlyEditSession?: import('../process/mcp/editSession').EditSession
     /** Per-chat opt-in: when this chat's MAIN request goes through a ModelPreset,
      * override the preset's sampling parameters with the active prompt preset's
      * (temperature, top_p, penalties, ...). Off (or absent) => preset params only.

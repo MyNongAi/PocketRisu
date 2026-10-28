@@ -2,11 +2,13 @@
     // An MCP module on in this chat while its main requests go without tools
     // (toolGate.ts): said in the sidebar, with the chat's own switch that
     // turns tools on for it without changing the model preset (the user's
-    // report and choice, 2026-10-28).
+    // report and choice, 2026-10-28). The Risu Access MCP is the bot edit
+    // mode's (EditModeToggle.svelte), which turns tools on by itself: one row,
+    // not two.
     import { language } from 'src/lang'
     import type { Chat, character as Bot } from 'src/ts/storage/database.svelte'
     import { captureModuleRuntimeContext, getModuleMcps } from 'src/ts/process/modules'
-    import { chatToolBlock, toolBlockText } from 'src/ts/process/mcp/toolGate'
+    import { RISU_ACCESS_URL, chatToolBlock, toolBlockText } from 'src/ts/process/mcp/toolGate'
     import ShSwitch from '../UI/GUI/ShSwitch.svelte'
 
     interface Props {
@@ -16,11 +18,12 @@
 
     let { character, chat }: Props = $props()
 
-    let mcpOn = $derived(getModuleMcps(captureModuleRuntimeContext(character, chat)).length > 0)
-    let block = $derived(chatToolBlock(chat))
+    let mcps = $derived(getModuleMcps(captureModuleRuntimeContext(character, chat)))
+    let others = $derived(mcps.filter((url) => url !== RISU_ACCESS_URL).length > 0)
+    let block = $derived(chatToolBlock(chat, mcps.includes(RISU_ACCESS_URL)))
 </script>
 
-{#if mcpOn && (block || chat.nodeOnlyToolUse)}
+{#if others && (block || chat.nodeOnlyToolUse)}
     <div
         class="mt-2 flex w-full flex-col gap-2 rounded-md border p-2 text-sm {block ? 'border-yellow-600/50 bg-yellow-500/10' : 'border-darkborderc'}"
         data-mcp-tool-notice

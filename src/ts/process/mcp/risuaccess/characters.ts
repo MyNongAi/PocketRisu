@@ -1,15 +1,15 @@
-import { language } from 'src/lang'
-import { alertConfirm } from 'src/ts/alert'
 import { type character, type loreBook } from 'src/ts/storage/database.svelte'
 import { DBState } from 'src/ts/stores.svelte'
 import { pickHashRand } from 'src/ts/util'
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
 import { getCharacter } from './utils'
+import { mcpWriteAccess } from './writeAccess'
 import { editAssetManifest, loadAssetManifestItems } from 'src/ts/globalApi.svelte'
 
 export class CharacterHandler extends MCPToolHandler {
-  private promptAccess(tool: string, action: string) {
-    return alertConfirm(language.mcpAccessPrompt.replace('{{tool}}', tool).replace('{{action}}', action))
+  // Asks, or not in the bot edit mode's auto, and copies the bot first there (writeAccess.ts).
+  private promptAccess(tool: string, action: string, char?: character) {
+    return mcpWriteAccess(tool, action, char ? { kind: 'character', value: char } : undefined)
   }
 
   getTools(): MCPTool[] {
@@ -505,7 +505,7 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
-    if (!(await this.promptAccess('risu-set-character-info', `modify character (${char.name}) information`))) {
+    if (!(await this.promptAccess('risu-set-character-info', `modify character (${char.name}) information`, char))) {
       return [
         {
           type: 'text',
@@ -566,7 +566,8 @@ export class CharacterHandler extends MCPToolHandler {
     if (
       !(await this.promptAccess(
         'risu-set-character-lorebook',
-        `add/modify character (${char.name}) global lorebook (${name})`
+        `add/modify character (${char.name}) global lorebook (${name})`,
+        char
       ))
     ) {
       return [
@@ -640,7 +641,8 @@ export class CharacterHandler extends MCPToolHandler {
     if (
       !(await this.promptAccess(
         'risu-delete-character-lorebook',
-        `delete character (${char.name}) global lorebook (${name})`
+        `delete character (${char.name}) global lorebook (${name})`,
+        char
       ))
     ) {
       return [
@@ -725,7 +727,8 @@ export class CharacterHandler extends MCPToolHandler {
     if (
       !(await this.promptAccess(
         'risu-set-character-regex-scripts',
-        `add/modify character (${char.name}) regex script (${name})`
+        `add/modify character (${char.name}) regex script (${name})`,
+        char
       ))
     ) {
       return [
@@ -793,7 +796,8 @@ export class CharacterHandler extends MCPToolHandler {
     if (
       !(await this.promptAccess(
         'risu-delete-character-regex-scripts',
-        `delete character (${char.name}) regex script (${name})`
+        `delete character (${char.name}) regex script (${name})`,
+        char
       ))
     ) {
       return [
@@ -869,7 +873,8 @@ export class CharacterHandler extends MCPToolHandler {
     if (
       !(await this.promptAccess(
         'risu-delete-character-additional-assets',
-        `delete character (${char.name}) additional asset (${assetName})`
+        `delete character (${char.name}) additional asset (${assetName})`,
+        char
       ))
     ) {
       return [
@@ -964,7 +969,7 @@ export class CharacterHandler extends MCPToolHandler {
         },
       ]
     }
-    if (!(await this.promptAccess('risu-set-character-lua-script', `modify character (${char.name}) lua script`))) {
+    if (!(await this.promptAccess('risu-set-character-lua-script', `modify character (${char.name}) lua script`, char))) {
       return [
         {
           type: 'text',

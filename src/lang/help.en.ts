@@ -324,6 +324,16 @@ export const helpEn = {
             "- Use the main model: the main model places the tags instead of the auxiliary one.\n" +
             "- 🌙 'tag again' in the message menu: a reply's menu (☰) gets a 🌙 that takes the reply's earlier tags out and places them afresh. Drawn illustrations stay.\n" +
             "- Saved per bot. A bot with no 🌙 entry is left alone.",
+        editMode:
+            "Lets the AI (the main model) edit bots and modules through the chat, with Risu's built-in Risu Access MCP.\n\n" +
+            "- The edit mode is the Risu Access MCP module being on for this chat (like 🎨 and its module): this switch turns the module on and off, and turning the module on or off in the module menu moves the switch.\n" +
+            "- Turning it on asks: a new edit chat, or this chat. The module is added when there is none.\n" +
+            "- With it on, the chat's main replies carry tools without changing the model preset's 'Tool use'.\n" +
+            "- When the AI edits: Auto writes without asking; Manual asks for every write.\n" +
+            "- Right before the AI's first change, a bot is copied into its folder as 'name [backup time]' (without chats; its 3 newest kept, older ones to the trash). A module is recorded in this chat. 'Undo the edits' puts back what was changed this time.\n" +
+            "- Turning it off asks whether to keep or undo the edits.\n" +
+            "- Replies that use tools arrive whole, without streaming. A yellow note says when the model cannot use tools.\n" +
+            "- Prompt bodies (prompt presets, templates) are not handled by these tools.",
         toggleHypaMemory:
             "Whether to use HypaMemory (long-term memory) for this chat.\n\n" +
             "- When on, past messages are automatically summarized into long-term memory once the context fills up, and relevant summaries are pulled back into later responses.\n" +

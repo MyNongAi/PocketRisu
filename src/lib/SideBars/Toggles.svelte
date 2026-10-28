@@ -14,6 +14,7 @@
     import IllustrationSettings from "./IllustrationSettings.svelte";
     import AuxAssetSettings from "./AuxAssetSettings.svelte";
     import McpToolNotice from "./McpToolNotice.svelte";
+    import EditModeToggle from "./EditModeToggle.svelte";
     import ShAccordion from '../UI/GUI/ShAccordion.svelte'
     import ShButton from "../UI/GUI/ShButton.svelte";
     import ShSwitch from "../UI/GUI/ShSwitch.svelte";
@@ -346,6 +347,8 @@
     <!-- An MCP module on while this chat's model goes without tools (toolGate.ts). -->
     {#if view.character && view.chat}
         <McpToolNotice character={view.character} chat={view.chat} />
+        <!-- The AI edits bots through the Risu Access MCP (editMode.ts). -->
+        <EditModeToggle character={view.character} chat={view.chat} />
     {/if}
     <div class="w-full flex mt-2 items-center justify-between gap-2 min-h-10 rounded-md px-1">
         <span class="flex items-center gap-1 min-w-0">
