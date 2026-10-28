@@ -381,7 +381,7 @@
         { "file": "src/ts/process/moduleOnWatch.svelte.ts", "contains": "const now = modulesOnNow(db, selIdState.selId)" },
         { "file": "src/App.svelte", "contains": "return startModuleOnWatch()" },
         { "file": "src/ts/process/moduleOnWatch.svelte.ts", "contains": "const illustration = character?.nodeOnlyIllustration?.enabled" },
-        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "|| isIllustrationOn(rmodule) ? 'text-amber-500 hover:text-primary'" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "|| isIllustrationOn(rmodule) || isEditModeOn(rmodule) ? 'text-amber-500 hover:text-primary'" },
         { "file": "src/lib/UI/GUI/ShContextMenu.svelte", "contains": "touchHold = event.pointerType === 'touch' && !disabled && dragsOnTouch(event)" },
         { "file": "src/ts/gui/sortableTouchHold.ts", "contains": "sortable.options.touchStartThreshold = touchHoldThreshold(window.devicePixelRatio)" },
         { "file": "src/ts/gui/sortableTouchHold.ts", "contains": "sortable._onDrop()" },
@@ -2367,7 +2367,8 @@
         "src/ts/process/mcp/risuaccess/modules.ts",
         "src/ts/process/mcp/mcp.ts",
         "src/lib/SideBars/EditModeToggle.svelte",
-        "src/lib/SideBars/Toggles.svelte"
+        "src/lib/SideBars/Toggles.svelte",
+        "src/lib/Setting/Pages/Module/ModuleSettings.svelte"
       ],
       "requiredMarkers": [
         { "file": "src/ts/process/mcp/editMode.ts", "contains": "return getModuleMcps(captureModuleRuntimeContext(char, chat)).includes(RISU_ACCESS_URL)" },
@@ -2377,7 +2378,8 @@
         { "file": "src/ts/process/mcp/editBackup.ts", "contains": "await removeChar(old.chaId, (old as character).name, 'normal', { skipConfirm: true })" },
         { "file": "src/ts/process/mcp/risuaccess/characters.ts", "contains": "return mcpWriteAccess(tool, action, char ? { kind: 'character', value: char } : undefined)" },
         { "file": "src/ts/process/mcp/risuaccess/modules.ts", "contains": "return mcpWriteAccess(tool, action, module ? { kind: 'module', value: module } : undefined)" },
-        { "file": "src/lib/SideBars/Toggles.svelte", "contains": "<EditModeToggle character={view.character} chat={view.chat} />" }
+        { "file": "src/lib/SideBars/Toggles.svelte", "contains": "<EditModeToggle character={view.character} chat={view.chat} />" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "return rmodule.mcp?.url === RISU_ACCESS_URL && !!char?.chats?.[char.chatPage]?.modules?.includes(rmodule.id)" }
       ],
       "regressionTests": [
         "src/ts/process/mcp/editMode.test.ts",

@@ -17,6 +17,7 @@
     import { onDestroy, onMount, tick, untrack } from "svelte";
     import { addModulePanelFinder, findBotsOfModule, moduleFindRequest } from "src/ts/gui/pairFinder";
     import { importMCPModule } from "src/ts/process/mcp/mcp";
+    import { RISU_ACCESS_URL } from "src/ts/process/mcp/toolGate";
     import { convertModuleToCharacter } from "src/ts/interchangeability";
     import { checkCharOrder } from "src/ts/globalApi.svelte";
     import { dissolveShrunkenModuleFolders, synchronizeModuleFolderMembership } from "src/ts/process/moduleFolders";
@@ -148,6 +149,13 @@
     // 2026-10-27); moduleOnWatch lifts it when the toggle comes on.
     function isIllustrationOn(rmodule: RisuModule) {
         return !!rmodule.nodeOnlyIllustrationModule && !!DBState.db.characters[$selectedCharID]?.nodeOnlyIllustration?.enabled
+    }
+
+    // The Risu Access module while the open chat's bot edit mode is on
+    // (editMode.ts): in use, drawn orange like 🎨 (the user's request, 2026-10-28).
+    function isEditModeOn(rmodule: RisuModule) {
+        const char = DBState.db.characters[$selectedCharID]
+        return rmodule.mcp?.url === RISU_ACCESS_URL && !!char?.chats?.[char.chatPage]?.modules?.includes(rmodule.id)
     }
 
     function isIntegrated(rmodule: RisuModule) {
@@ -546,7 +554,7 @@
                  globe is drawn, unless one is global (the user's request, 2026-10-28). -->
             {@const autoCount = indexes.filter((index) => {
                 const rmodule = displayModules[index]
-                return !!rmodule && !isGlobal(rmodule) && (isIntegrated(rmodule) || isBotModule(rmodule) || isIllustrationOn(rmodule))
+                return !!rmodule && !isGlobal(rmodule) && (isIntegrated(rmodule) || isBotModule(rmodule) || isIllustrationOn(rmodule) || isEditModeOn(rmodule))
             }).length}
             {@const folderGlobeLabel = `폴더 모듈 전체 활성화 (${activeCount}/${indexes.length})${autoCount > 0 ? ` · 자동으로 켜짐 ${autoCount}개` : ''}`}
             <button
@@ -586,8 +594,8 @@
                     · 에셋 {moduleAssetCount(rmodule)}개{#if isColdModule(rmodule)} · {language.moduleColdBadge}{/if} · {rmodule.description || 'No description provided'}
                 </span>
             </div>
-            <button class="no-sort shrink-0 p-1 cursor-pointer {isGlobal(rmodule) ? 'text-blue-500' : isIntegrated(rmodule) || isBotModule(rmodule) || isIllustrationOn(rmodule) ? 'text-amber-500 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
-                use:tooltip={isGlobal(rmodule) ? language.enableGlobal : isBotModule(rmodule) ? language.moduleAutoForBot : isIllustrationOn(rmodule) ? language.moduleAutoForIllustration : language.enableGlobal}
+            <button class="no-sort shrink-0 p-1 cursor-pointer {isGlobal(rmodule) ? 'text-blue-500' : isIntegrated(rmodule) || isBotModule(rmodule) || isIllustrationOn(rmodule) || isEditModeOn(rmodule) ? 'text-amber-500 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
+                use:tooltip={isGlobal(rmodule) ? language.enableGlobal : isBotModule(rmodule) ? language.moduleAutoForBot : isIllustrationOn(rmodule) ? language.moduleAutoForIllustration : isEditModeOn(rmodule) ? language.moduleAutoForEditMode : language.enableGlobal}
                 onclick={(e) => { e.stopPropagation(); toggleGlobal(rmodule) }}>
                 <Globe size={18}/>
             </button>

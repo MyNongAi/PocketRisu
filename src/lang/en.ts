@@ -1258,6 +1258,7 @@ export const languageEnglish = {
     enableGlobal: "Enable Globally",
     moduleAutoForBot: "On by itself in this bot's chats: it is this bot's own module. Clicking turns it on globally, in every chat.",
     moduleAutoForIllustration: "In use: this bot's illustration toggle is on and draws with this module's presets. Clicking turns it on globally, in every chat.",
+    moduleAutoForEditMode: "In use: this chat's bot edit mode is on. Clicking turns it on globally, in every chat.",
     moduleBotLink: "Link to the open bot ({})",
     pairFindModule: "Find its modules",
     splitPaneEmpty: "Tap here, then pick a bot or chat in the sidebar, or drag a chat from the chat list here",
