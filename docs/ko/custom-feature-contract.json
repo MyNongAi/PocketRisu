@@ -2391,6 +2391,23 @@
       ]
     },
     {
+      "id": "MCP-FOLDER-TOOLS",
+      "title": "Risu Access MCP 폴더 도구 (폴더 안 봇·로어북 한꺼번에, 읽기 전용)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/process/mcp/risuaccess/folders.ts",
+        "src/ts/process/mcp/risuaccess/client.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/mcp/risuaccess/client.ts", "contains": "this.handlers = [new CharacterHandler(), new ChatHandler(), new ModuleHandler(), new FolderHandler()]" },
+        { "file": "src/ts/process/mcp/risuaccess/folders.ts", "contains": "name: 'risu-list-folder-characters'," },
+        { "file": "src/ts/process/mcp/risuaccess/folders.ts", "contains": ".filter((c) => c.nodeOnlyEditBackupOf === chaId)" }
+      ],
+      "regressionTests": [
+        "src/ts/process/mcp/risuaccess/folders.test.ts"
+      ]
+    },
+    {
       "id": "ILLUSTRATION",
       "title": "🎨 삽화: 보조모델이 장면을 고르고 NovelAI로 그려 답에 넣음",
       "criticality": "core-ux",

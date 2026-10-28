@@ -3,6 +3,7 @@ import type { MCPTool, MCPToolHandler, RPCToolCallContent } from '../mcplib'
 import { CharacterHandler } from './characters'
 import { ChatHandler } from './chats'
 import { ModuleHandler } from './modules'
+import { FolderHandler } from './folders'
 
 export class RisuAccessClient extends MCPClientLike {
   private handlers: MCPToolHandler[]
@@ -61,6 +62,8 @@ Lorebooks are texts containing various information about the character with cond
 - 'content': The content of the entry.
 - 'name': The name of the lorebook. Used for identifying the entry in the list.
 
+Folders group characters in the character list. List them with 'risu-list-character-folders', then read a whole folder's characters or lorebooks at once. A character whose 'backupOf' is set is a backup of that character, made right before an edit; compare the two to see what changed.
+
 backgroundEmbedding is an HTML string mainly for custom styling. It can, and mostly include <style> tags with CSS. Note that all selectors will be prefixed with '.chattext ' so they cannot escape the chat boundary - No html, body, :root access.
 `
     super('internal:risuai')
@@ -70,7 +73,8 @@ backgroundEmbedding is an HTML string mainly for custom styling. It can, and mos
       "Risuai Access MCP provides access to Risuai's features and tools, which is the software currently running on. Use the available tools to interact with Risuai's functionalities." +
       additionalServerInfo
 
-    this.handlers = [new CharacterHandler(), new ChatHandler(), new ModuleHandler()]
+    // PocketRisu: the character list's folders (folders.ts), read only.
+    this.handlers = [new CharacterHandler(), new ChatHandler(), new ModuleHandler(), new FolderHandler()]
   }
 
   async getToolList(): Promise<MCPTool[]> {
