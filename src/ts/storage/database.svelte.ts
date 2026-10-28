@@ -2015,6 +2015,8 @@ export interface character{
     backgroundHTML?:string
     /** NodeOnly: hide this bot's small launchers fixed to the screen (floatingBotControls.ts). */
     nodeOnlyHideFloatingButtons?:boolean
+    /** NodeOnly: show the pictures this bot's CSS crops in messages whole (wholeAssets.ts). */
+    nodeOnlyWholeAssets?:boolean
     /** PocketRisu: draw illustrations into this bot's replies (illustration.ts). */
     nodeOnlyIllustration?: import('../process/illustration').IllustrationBotSettings
     reloadKeys?:number

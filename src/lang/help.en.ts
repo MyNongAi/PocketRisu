@@ -306,6 +306,12 @@ export const helpEn = {
             "- Saved per bot.\n" +
             "- Buttons in the message text and an open, larger popup are left as they are.\n" +
             "- Turn it off and they show again at once.",
+        wholeBotAssets:
+            "When this bot's (or a module's) styling crops the pictures in its messages, shows them whole at their own ratio. For example, an asset picture cut into a flat strip on a phone, showing only its top.\n\n" +
+            "- Saved per bot.\n" +
+            "- Narrow pictures (status-window icons, round portraits) keep the bot's design.\n" +
+            "- The background outside the messages is left as it is.\n" +
+            "- Turn it off and they are cropped again at once.",
         toggleHypaMemory:
             "Whether to use HypaMemory (long-term memory) for this chat.\n\n" +
             "- When on, past messages are automatically summarized into long-term memory once the context fills up, and relevant summaries are pulled back into later responses.\n" +

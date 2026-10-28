@@ -356,6 +356,24 @@
             }}
         />
     </div>
+    <!-- Per bot (the user's request, 2026-10-28): pictures the bot's CSS crops
+         in messages are shown whole (wholeAssets.ts). -->
+    <div class="w-full flex mt-2 items-center justify-between gap-2 min-h-10 rounded-md px-1">
+        <span class="flex items-center gap-1 min-w-0">
+            <span class="break-words">{language.wholeBotAssets}</span>
+            <Help key="wholeBotAssets" />
+        </span>
+        <ShSwitch
+            className="shrink-0"
+            checked={!!view.character?.nodeOnlyWholeAssets}
+            onCheckedChange={(checked) => {
+                const char = view.character
+                if (!char) return
+                if (checked) char.nodeOnlyWholeAssets = true
+                else delete char.nodeOnlyWholeAssets
+            }}
+        />
+    </div>
     <!-- Per bot: draw illustrations into the replies (illustration.ts). -->
     <div class="w-full flex mt-2 items-center justify-between gap-2 min-h-10 rounded-md px-1">
         <span class="flex items-center gap-1 min-w-0">

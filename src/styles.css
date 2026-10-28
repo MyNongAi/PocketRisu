@@ -784,3 +784,14 @@ annotation {
 [data-pr-float-hidden] {
   display: none !important;
 }
+
+/* A bot's cropped picture, shown whole by its "show assets whole" switch (wholeAssets.ts). */
+[data-pr-whole-asset] {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  aspect-ratio: var(--pr-whole-ratio) !important;
+  background-size: contain !important;
+  background-position: center !important;
+  object-fit: contain !important;
+}

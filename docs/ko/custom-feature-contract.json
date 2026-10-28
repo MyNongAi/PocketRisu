@@ -2265,6 +2265,26 @@
       ]
     },
     {
+      "id": "WHOLE-BOT-ASSETS",
+      "title": "봇마다 에셋 전체로 보기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/wholeAssets.ts",
+        "src/lib/SideBars/Toggles.svelte",
+        "src/lib/ChatScreens/ChatScreen.svelte",
+        "src/styles.css"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/ChatScreen.svelte", "contains": "use:wholeBotAssets={!!view.character?.nodeOnlyWholeAssets}" },
+        { "file": "src/lib/SideBars/Toggles.svelte", "contains": "<Help key=\"wholeBotAssets\" />" },
+        { "file": "src/styles.css", "contains": "[data-pr-whole-asset] {" },
+        { "file": "src/ts/gui/wholeAssets.ts", "contains": "export const MIN_WIDTH = 160" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/wholeAssets.test.ts"
+      ]
+    },
+    {
       "id": "MUSIC-AUTOPLAY-PLUGIN",
       "title": "답변의 곡 표시를 재생하는 배포용 플러그인",
       "criticality": "core-ux",

@@ -1119,6 +1119,7 @@ export const languageKorean = {
   HypaMemory: "하이파메모리",
   ToggleHypaMemory: "하이파 메모리 켜기",
   hideFloatingBotButtons: "떠 있는 버튼 숨기기",
+  wholeBotAssets: "에셋 전체로 보기",
   loreAuxModel: "보조모델로",
   loreAuxModelIcon: "보조모델로 보냄 (우클릭·길게 눌러 해제)",
   loreAuxModelSet: "우클릭·길게 눌러 보조모델로",

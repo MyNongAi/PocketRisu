@@ -14,6 +14,7 @@
     import ModuleChatMenu from "../Setting/Pages/Module/ModuleChatMenu.svelte";
     import { BackLayerRank, useBackLayer } from 'src/ts/gui/backLayers.svelte';
     import { hideFloatingBotControls } from 'src/ts/gui/floatingBotControls';
+    import { wholeBotAssets } from 'src/ts/gui/wholeAssets';
     import { paneView, setPaneContext, type PaneId } from 'src/ts/chatPanes.svelte';
     import { activatePane } from 'src/ts/paneActivation';
     import { setPaneOverlayOpen } from 'src/ts/splitLayout.svelte';
@@ -69,7 +70,7 @@
 <!-- `isolate` keeps bot HTML/CSS z-index inside the chat layer. The PC
      split's second workspace sits beside the whole left side now
      (SplitWorkspace in App), so settings no longer unmount it. -->
-<div class="grow h-full min-w-0 flex relative" data-chat-pane={view.pane} onpointerdowncapture={takeSelection} onfocusincapture={takeSelection} use:hideFloatingBotControls={!!view.character?.nodeOnlyHideFloatingButtons}>
+<div class="grow h-full min-w-0 flex relative" data-chat-pane={view.pane} onpointerdowncapture={takeSelection} onfocusincapture={takeSelection} use:hideFloatingBotControls={!!view.character?.nodeOnlyHideFloatingButtons} use:wholeBotAssets={!!view.character?.nodeOnlyWholeAssets}>
 <section
     class="grow h-full min-w-0 relative"
 >
