@@ -2320,6 +2320,7 @@
         { "file": "src/lib/SideBars/Toggles.svelte", "contains": "<AuxAssetSettings character={view.character} chat={view.chat} />" },
         { "file": "src/lib/SideBars/AuxAssetSettings.svelte", "contains": "character.nodeOnlyAuxAsset = { ...(character.nodeOnlyAuxAsset ?? {}), [key]: value }" },
         { "file": "src/ts/process/auxLorebookRun.ts", "contains": "}, settings.mainModel ? 'model' : 'otherAx', arg.signal)" },
+        { "file": "src/ts/process/auxLorebookRun.ts", "contains": "if (!auxAssetSettings(arg.character.nodeOnlyAuxAsset).auto) return false" },
         { "file": "src/ts/process/auxLorebookRun.ts", "contains": "const pictures = new Set(Object.keys(message.nodeOnlyIllustrations ?? {}).map(inlayLine))" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "void retagReplyByAuxLorebook({" },
         { "file": "src/ts/process/index.svelte.ts", "contains": "await tagReplyByAuxLorebook({" },

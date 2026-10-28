@@ -1126,6 +1126,8 @@ export const languageKorean = {
   auxLorebookFailed: "보조모델 로어북 처리 실패",
   auxAssetToggle: "🌙 보조모델 에셋",
   auxAssetSettings: "보조모델 에셋 설정",
+  auxAssetAuto: "답마다 자동으로 넣기",
+  auxAssetAutoOff: "답이 와도 보조모델을 부르지 않아요. 규칙은 그대로 두고, 메시지 메뉴(☰)의 🌙 에셋 다시 넣기로만 넣어요.",
   auxAssetContextCount: "같이 보낼 최근 메시지 수",
   auxAssetSkipUser: "유저 메시지 빼기",
   auxAssetDescription: "봇 설명 같이 보내기",

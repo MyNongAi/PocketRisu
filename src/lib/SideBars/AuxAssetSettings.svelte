@@ -42,6 +42,16 @@
     {#if !hasRules}
         <p class="text-textcolor2">{language.auxAssetNoRules}</p>
     {/if}
+    <!-- Off: the rules stay, only the reply menu's 🌙 tags (the user's request, 2026-10-28). -->
+    <div class="flex flex-col gap-1" data-aux-asset-auto>
+        <div class="flex min-h-10 items-center justify-between gap-2">
+            <span class="min-w-0 break-words">{language.auxAssetAuto}</span>
+            <ShSwitch className="shrink-0" checked={settings.auto} onCheckedChange={(checked) => set('auto', checked)} />
+        </div>
+        {#if !settings.auto}
+            <span class="text-xs text-textcolor2">{language.auxAssetAutoOff}</span>
+        {/if}
+    </div>
     <div class="flex flex-col gap-1">
         <span>{language.auxAssetContextCount}</span>
         <SelectInput value={String(settings.contextCount)} onchange={(e) => set('contextCount', Number(e.currentTarget.value))}>

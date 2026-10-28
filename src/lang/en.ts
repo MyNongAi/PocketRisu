@@ -1037,6 +1037,8 @@ export const languageEnglish = {
     auxLorebookFailed: "Auxiliary model lorebook failed",
     auxAssetToggle: "🌙 Auxiliary model assets",
     auxAssetSettings: "Auxiliary model asset settings",
+    auxAssetAuto: "Tag every reply automatically",
+    auxAssetAutoOff: "Replies no longer call the auxiliary model. The rules stay; only 🌙 'tag again' in the message menu (☰) tags.",
     auxAssetContextCount: "Recent messages sent along",
     auxAssetSkipUser: "Leave out the user's messages",
     auxAssetDescription: "Send the bot's description",

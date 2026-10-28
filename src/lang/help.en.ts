@@ -318,6 +318,7 @@ export const helpEn = {
             "- Turn it off and they are cropped again at once.",
         auxAsset:
             "Sets how this bot's 🌙 (to the auxiliary model) lorebook entries are worked. After a reply the auxiliary model reads the 🌙 instructions and places asset tags; ⚙ picks what goes along and which model does it.\n\n" +
+            "- Tag every reply automatically: off, replies no longer call the auxiliary model and only 🌙 'tag again' in the message menu tags; the 🌙 rules stay. On by default.\n" +
             "- Recent messages sent along: how many messages before the reply go as context (1–8, 2 by default).\n" +
             "- Leave out the user's messages: the context skips them.\n" +
             "- Send the bot's description / the persona: they go along as context.\n" +

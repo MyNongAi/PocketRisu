@@ -95,8 +95,9 @@ describe('the lines the auxiliary model added', () => {
 describe("a bot's 🌙 settings", () => {
     it('defaults to two messages with everything off', () => {
         expect(auxAssetSettings(undefined)).toEqual({
-            contextCount: 2, skipUser: false, description: false, persona: false, mainModel: false, rerollButton: false,
+            auto: true, contextCount: 2, skipUser: false, description: false, persona: false, mainModel: false, rerollButton: false,
         })
+        expect(auxAssetSettings({ auto: false }).auto).toBe(false)
     })
 
     it('keeps 1–8 messages and only true switches', () => {

@@ -16,6 +16,12 @@ const MAX_PROFILE_CHARS = 4000
  * what the community "보조모델 에셋모듈" set with its toggles.
  */
 export interface AuxAssetBotSettings {
+    /**
+     * Tag every reply as it comes (on unless set false). Off, the rules stay
+     * and only the reply menu's 🌙 tags (the user's request, 2026-10-28, from
+     * the community module's manual-only mode).
+     */
+    auto?: boolean
     /** Earlier messages sent along, 1–8. */
     contextCount?: number
     /** Leave the user's messages out of them. */
@@ -36,6 +42,7 @@ const DEFAULT_AUX_CONTEXT_COUNT = 2
 export function auxAssetSettings(settings: AuxAssetBotSettings | null | undefined): Required<AuxAssetBotSettings> {
     const count = Number(settings?.contextCount)
     return {
+        auto: settings?.auto !== false,
         contextCount: (AUX_CONTEXT_COUNTS as readonly number[]).includes(count) ? count : DEFAULT_AUX_CONTEXT_COUNT,
         skipUser: settings?.skipUser === true,
         description: settings?.description === true,

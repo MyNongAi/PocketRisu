@@ -135,6 +135,8 @@ export async function tagReplyByAuxLorebook(arg: {
     userName: string
     signal: AbortSignal
 }): Promise<boolean> {
+    // The bot's ⚙ can leave it to the reply menu's 🌙.
+    if (!auxAssetSettings(arg.character.nodeOnlyAuxAsset).auto) return false
     const found = newestReply(arg.chat.message ?? [])
     if (!found) return false
     return tagReply({

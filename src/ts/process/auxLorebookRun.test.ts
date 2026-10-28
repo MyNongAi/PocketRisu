@@ -89,6 +89,13 @@ describe('tagging the newest reply by the marked entries', () => {
         expect(chat.message[1].swipes).toEqual(['Older swipe', 'She laughs.\n<img="a">\n"Really?"'])
     })
 
+    it("leaves the reply to the menu's 🌙 when the bot's automatic tagging is off", async () => {
+        const { character, chat } = setup()
+        character.nodeOnlyAuxAsset = { auto: false }
+        expect(await run(character, chat)).toBe(false)
+        expect(requestChatData).not.toHaveBeenCalled()
+    })
+
     it('does nothing without a marked entry', async () => {
         moduleLore.value = [{ comment: 'asset rules', content: 'Tag', alwaysActive: true }]
         const { character, chat } = setup()

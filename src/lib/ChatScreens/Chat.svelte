@@ -368,8 +368,13 @@
         void illustrateReply({ chaId: chara.chaId, chatId: chat.id, messageId: message.chatId, moduleContext: captureModuleRuntimeContext(chara, chat), manual: true })
     }
 
-    // 🌙 in the message menu, when the bot's ⚙ turns it on (auxLorebookRun.ts).
-    let auxRetagButton = $derived(role === 'char' && auxAssetSettings(DBState.db.characters[view.characterIndex]?.nodeOnlyAuxAsset).rerollButton)
+    // 🌙 in the message menu, when the bot's ⚙ turns it on, or leaves tagging
+    // to it with the automatic tagging off (auxLorebookRun.ts).
+    let auxRetagButton = $derived.by(() => {
+        if (role !== 'char') return false
+        const settings = auxAssetSettings(DBState.db.characters[view.characterIndex]?.nodeOnlyAuxAsset)
+        return settings.rerollButton || !settings.auto
+    })
     let auxRetagBusy = $derived(!!illustrationMessage?.chatId && $auxRetagging.has(illustrationMessage.chatId))
 
     function retagAuxAssets() {
