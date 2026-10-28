@@ -474,12 +474,14 @@ export async function alertPluginConfirm(msg:string){
     return answer === 'yes'
 }
 
-export async function alertCardExport(type:string = ''){
+/** `license`: the bot's own, preselected for a Risu-only (RCC) card. */
+export async function alertCardExport(type:string = '', license:string = ''){
 
     alertStoreImported.set({
         'type': 'cardexport',
         'msg': '',
-        'submsg': type
+        'submsg': type,
+        'defaultValue': license
     })
 
     await waitAlert()
@@ -487,6 +489,8 @@ export async function alertCardExport(type:string = ''){
     return JSON.parse(get(alertStoreImported).msg) as {
         type: string,
         type2: string,
+        password?: string,
+        license?: string,
     }
 }
 

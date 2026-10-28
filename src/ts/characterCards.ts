@@ -25,6 +25,7 @@ import { organizeImportedCharacterSimilarity } from "./process/similarityFolders
 import { creatorsOf, placeImportedByCreator } from "./creatorFolders"
 import { filterBlockedRealmBots, filterBlockedRealmCards, isRealmCreatorBlocked } from "./realmBlocking"
 import { normalizeOnboarding } from "./onboarding"
+import { encodeRccCard } from "./rccCard"
 
 
 const EXTERNAL_HUB_URL = 'https://sv.risuai.xyz';
@@ -806,7 +807,7 @@ export async function exportChar(charaID:number):Promise<string> {
         char.image = await saveAsset(data)
     }
 
-    const option = await alertCardExport()
+    const option = await alertCardExport('', char.license ?? '')
     // Without an onProgress the exporter drives a blocking modal; reporting into
     // the background task toast keeps the app usable while assets are written.
     if(option.type === ''){
@@ -815,6 +816,13 @@ export async function exportChar(charaID:number):Promise<string> {
     }
     else if(option.type === 'ccv2'){
         void runExportTask(char.name, (report) => exportCharacterCard(char, 'png', {spec: 'v2', onProgress: adaptLegacyProgress(report)}))
+    }
+    else if(option.type === 'rcc'){
+        // A Risu-only card (rccCard.ts). The license chosen for it rides inside
+        // the encrypted card, so it cannot be cut out before import; the bot
+        // here keeps its own (char is a copy).
+        char.license = option.license ?? ''
+        void runExportTask(char.name, (report) => exportCharacterCard(char, 'png', {spec: 'v3', rcc: {password: option.password ?? ''}, onProgress: adaptLegacyProgress(report)}))
     }
     else if(option.type !== ''){
         return option.type
@@ -1411,6 +1419,8 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
     password?:string
     writer?:LocalWriter|VirtualWriter,
     spec?:'v2'|'v3'
+    /** A V3 PNG whose card is Risu's encrypted rccv1 (rccCard.ts). */
+    rcc?:{password?:string}
     onProgress?:(msg:string, pct:number) => void
 } = {}) {
     char = await hydrateCharacterAssets(safeStructuredClone(char))
@@ -1658,7 +1668,9 @@ export async function exportCharacterCard(char:character, type:'png'|'json'|'cha
                 await writer.write("card.json", Buffer.from(JSON.stringify(card, null, 4)))
             }
             else{
-                await writer.write("ccv3", Buffer.from(JSON.stringify(card)).toString('base64'))
+                await writer.write("ccv3", arg.rcc
+                    ? await encodeRccCard(card, arg.rcc.password)
+                    : Buffer.from(JSON.stringify(card)).toString('base64'))
             }
         }
         await writer.end()

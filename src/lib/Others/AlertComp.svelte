@@ -40,6 +40,8 @@
     import { selectSingleFile } from "src/ts/util";
     import { translateStackTrace } from "../../ts/sourcemap";
     import { getDetailedOSLabel, getFallbackOSLabel, getRisuEnvironmentLabel } from "src/ts/platform";
+    import { CCLicenseData } from "src/ts/licenses";
+    import { licenseEffect } from "src/ts/rccCard";
 
     let showDetails = $state(false);
     let translatedStackTrace = $state('');
@@ -75,6 +77,9 @@
     let cardExportType = $state('realm')
     let cardExportType2 = $state('')
     let cardLicense = $state('')
+    // A Risu-only (RCC) card: the password is optional (the user's request, 2026-10-28).
+    let cardExportUsePassword = $state(false)
+    let cardExportPassword = $state('')
     let generationInfoMenuIndex = $state(0)
     // The branch graph is large and rarely opened: load it on demand.
     const loadBranchGraphModal = () => import('./BranchGraphModal.svelte').then(m => m.default)
@@ -124,6 +129,10 @@
             cardExportType = ''
             cardExportType2 = ''
             cardLicense = ''
+            cardExportUsePassword = false
+            cardExportPassword = ''
+        } else {
+            cardLicense = $alertStore.defaultValue ?? ''
         }
     });
 
@@ -559,8 +568,10 @@
             {:else if cardExportType === 'ccv2'}
                 <span class="text-textcolor2 text-sm">{language.ccv2Desc}</span>
                 <span class="text-red-500 text-sm">{language.v2Warning}</span>
+            {:else if cardExportType === 'rcc'}
+                <span class="text-textcolor2 text-sm">{language.rccDesc}</span>
             {/if}
-            <div class="flex items-center flex-wrap mt-2">
+            <div class="flex items-center flex-wrap gap-2 mt-2">
                 {#if $alertStore.submsg === 'preset'}
                     <button class="bg-bgcolor px-2 py-4 rounded-lg flex-1" class:ring-1={cardExportType === ''} onclick={() => {cardExportType = ''}}>Risupreset</button>
                 {:else if $alertStore.submsg === 'module'}
@@ -570,9 +581,28 @@
                         cardExportType = ''
                         cardExportType2 = 'charxJpeg'
                     }}>Character Card V3</button>
-                    <button class="bg-bgcolor px-2 py-4 rounded-lg ml-2 flex-1" class:ring-1={cardExportType === 'ccv2'} onclick={() => {cardExportType = 'ccv2'}}>Character Card V2</button>
+                    <button class="bg-bgcolor px-2 py-4 rounded-lg flex-1" class:ring-1={cardExportType === 'ccv2'} onclick={() => {cardExportType = 'ccv2'}}>Character Card V2</button>
+                    <button class="bg-bgcolor px-2 py-4 rounded-lg flex-1" class:ring-1={cardExportType === 'rcc'} onclick={() => {cardExportType = 'rcc'}}>{language.rccExport}</button>
                 {/if}
             </div>
+            {#if $alertStore.submsg === '' && cardExportType === 'rcc'}
+                <label class="flex items-center gap-2 mt-4 text-textcolor">
+                    <ShSwitch bind:checked={cardExportUsePassword} />
+                    {language.rccUsePassword}
+                </label>
+                {#if cardExportUsePassword}
+                    <span class="text-textcolor2 text-sm mt-1">{language.rccPasswordDesc}</span>
+                    <TextInput className="mt-2" placeholder={language.password} bind:value={cardExportPassword} />
+                {/if}
+                <span class="text-textcolor mt-4">{language.license}</span>
+                <SelectInput bind:value={cardLicense} className="mt-2">
+                    <OptionInput value="">{language.licenseNone}</OptionInput>
+                    {#each Object.keys(CCLicenseData) as ccl}
+                        <OptionInput value={ccl}>{CCLicenseData[ccl][2]}</OptionInput>
+                    {/each}
+                </SelectInput>
+                <span class="text-textcolor2 text-sm mt-1">{language.rccLicenseEffect[licenseEffect(cardLicense)]}</span>
+            {/if}
             {#if $alertStore.submsg === '' && cardExportType === ''}
                 <span class="text-textcolor mt-4">{language.format}</span>
                 <SelectInput bind:value={cardExportType2} className="mt-2">
@@ -582,12 +612,14 @@
                     <OptionInput value="json">JSON</OptionInput>
                 </SelectInput>
             {/if}
-            <Button className="mt-4" onclick={() => {
+            <Button className="mt-4" disabled={cardExportType === 'rcc' && cardExportUsePassword && !cardExportPassword} onclick={() => {
                 alertStore.set({
                     type: 'none',
                     msg: JSON.stringify({
                         type: cardExportType,
-                        type2: cardExportType2
+                        type2: cardExportType2,
+                        password: cardExportType === 'rcc' && cardExportUsePassword ? cardExportPassword : '',
+                        license: cardLicense
                     })
                 })
             }}>{language.export}</Button>
