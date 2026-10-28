@@ -33,18 +33,22 @@
         "src/ts/storage/externalAssets.ts",
         "src/lib/Setting/Pages/Advanced/ExternalAssetSettings.svelte",
         "server/node/external-assets.cjs",
-        "server/node/external-asset-migration-journal.cjs"
+        "server/node/external-asset-migration-journal.cjs",
+        "src/ts/assetHealthSort.ts"
       ],
       "requiredMarkers": [
         { "file": "src/ts/storage/externalAssets.ts", "contains": "export const EXTERNAL_ASSET_PREFIX = 'external://'" },
         { "file": "server/node/external-assets.cjs", "contains": "createExternalAssetService" },
-        { "file": "server/node/external-asset-migration-journal.cjs", "contains": "invalidateStagedVerifications" }
+        { "file": "server/node/external-asset-migration-journal.cjs", "contains": "invalidateStagedVerifications" },
+        { "file": "src/lib/Setting/Pages/Advanced/ExternalAssetSettings.svelte", "contains": "const health = await countAssetHealth([...cards, ...moduleOwners]" },
+        { "file": "src/ts/assetHealthSort.ts", "contains": "if (count.unknown > 0 && count.missing === 0) return module" }
       ],
       "regressionTests": [
         "src/ts/storage/externalAssets.test.ts",
         "server/node/external-assets.test.ts",
         "server/node/external-asset-migration-journal.test.ts",
-        "test/compat/external-asset-staged-verify.test.ts"
+        "test/compat/external-asset-staged-verify.test.ts",
+        "src/ts/assetHealthSort.test.ts"
       ]
     },
     {

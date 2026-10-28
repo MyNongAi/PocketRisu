@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { folder } from './storage/database.svelte'
-import { characterAssetReferences, countAssetHealth, planSourceSort, sourceSortFolders, type AssetHealthCount } from './assetHealthSort'
+import { applyModuleAssetHealth, characterAssetReferences, countAssetHealth, moduleAssetOwners, moduleHealthKey, planSourceSort, sourceSortFolders, type AssetHealthCount } from './assetHealthSort'
 
 const folder = (name: string, data: string[]): folder => ({ id: name, name, data, color: '' })
 const health = (missing: number, total: number, unknown = 0): AssetHealthCount => ({ missing, total, unknown })
@@ -113,5 +113,56 @@ describe('planSourceSort', () => {
             health: new Map([['card', health(0, 4, 2)]]), hasRealmId: () => true,
         })
         expect(plan.assignments.size).toBe(0)
+    })
+})
+
+describe('module asset health', () => {
+    type TestModule = { id: string, name: string, assets?: unknown, assetManifest?: unknown, sourceInfo?: { label?: string, missingAssetCount?: number, assetReferenceCount?: number } }
+    const mod = (id: string, extra: Partial<TestModule> = {}): TestModule => ({ id, name: id, ...extra })
+    const info = (missingAssetCount: number, assetReferenceCount = missingAssetCount) => ({ label: '모바일웹리스', missingAssetCount, assetReferenceCount })
+
+    it('counts the modules that carry an import record, by their asset list or its manifest', () => {
+        const owners = moduleAssetOwners([
+            mod('plain', { sourceInfo: info(1), assets: [['a', 'assets/a.png', 'png']] }),
+            mod('lazy', { sourceInfo: info(0), assetManifest: { id: 'm' } }),
+            mod('unsourced', { assets: [['a', 'assets/a.png', 'png']] }),
+            null,
+        ])
+        expect(owners.map((owner) => owner.chaId)).toEqual([moduleHealthKey('plain'), moduleHealthKey('lazy')])
+        expect(owners[0].additionalAssets).toEqual([['a', 'assets/a.png', 'png']])
+        expect(owners[1]).toMatchObject({ additionalAssets: undefined, additionalAssetManifest: { id: 'm' } })
+    })
+
+    it('writes the recount: a module with no assets loses its red, one whose files are gone keeps it at the real number', async () => {
+        const inspect = vi.fn(async (paths: string[]) => paths.map((path) => ({ path, status: path.includes('gone') ? 'missing' : 'exists' })))
+        const modules = [
+            mod('empty', { sourceInfo: info(1, 1) }),
+            mod('broken', { sourceInfo: info(1, 1), assets: [['a', 'assets/gone-a.png', 'png'], ['b', 'assets/gone-b.png', 'png']] }),
+            mod('fine', { sourceInfo: info(0, 1), assets: [['a', 'external://main-assets/ok', 'png']] }),
+            mod('unsourced', { assets: [['a', 'assets/gone-c.png', 'png']] }),
+        ]
+        const counts = await countAssetHealth(moduleAssetOwners(modules), inspect)
+        const result = applyModuleAssetHealth(modules, counts)
+        expect(result).toMatchObject({ checked: 3, changed: 2, unknown: 0 })
+        expect(result.modules.map((module) => module.sourceInfo?.missingAssetCount)).toEqual([0, 2, 0, undefined])
+        expect(result.modules[1].sourceInfo).toMatchObject({ label: '모바일웹리스', assetReferenceCount: 2 })
+        // Only the changed modules are new objects.
+        expect(result.modules[0]).not.toBe(modules[0])
+        expect(result.modules[2]).toBe(modules[2])
+        expect(result.modules[3]).toBe(modules[3])
+    })
+
+    it('keeps the old record when a check failed and nothing is surely missing', () => {
+        const modules = [mod('a', { sourceInfo: info(5, 5) })]
+        const result = applyModuleAssetHealth(modules, new Map([[moduleHealthKey('a'), health(0, 5, 5)]]))
+        expect(result).toMatchObject({ checked: 1, changed: 0, unknown: 5 })
+        expect(result.modules[0]).toBe(modules[0])
+    })
+
+    it('never takes a card count for a module of the same id', () => {
+        const modules = [mod('same', { sourceInfo: info(3, 3) })]
+        const result = applyModuleAssetHealth(modules, new Map([['same', health(0, 3)]]))
+        expect(result.checked).toBe(0)
+        expect(result.modules[0]).toBe(modules[0])
     })
 })

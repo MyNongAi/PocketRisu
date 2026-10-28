@@ -18,7 +18,7 @@
         type RealmFolderRecoveryResult,
     } from 'src/ts/realmAssetRecovery'
     import { assignCharactersToFolders } from 'src/ts/characterRecoveryFolders'
-    import { countAssetHealth, planSourceSort, sourceSortFolders, type AssetHealthCount } from 'src/ts/assetHealthSort'
+    import { applyModuleAssetHealth, countAssetHealth, moduleAssetOwners, planSourceSort, sourceSortFolders, type AssetHealthCount } from 'src/ts/assetHealthSort'
     import { getDatabase } from 'src/ts/storage/database.svelte'
     import { v4 as uuidv4 } from 'uuid'
 
@@ -364,22 +364,23 @@
         }
     }
 
-    // Count every imported card's missing assets again from the files that
-    // exist (assetHealthSort.ts), and write the counts the red titles and the
-    // sidebar's ❗ count read. Returns null when canceled or failed.
-    async function recountAssetHealth(): Promise<{ health: Map<string, AssetHealthCount>, cards: number, changed: number, unknown: number, unread: number } | null> {
+    // Count every imported card's and module's missing assets again from the
+    // files that exist (assetHealthSort.ts), and write the counts the red
+    // titles and the ❗ counts read. Returns null when canceled or failed.
+    async function recountAssetHealth(): Promise<{ health: Map<string, AssetHealthCount>, cards: number, changed: number, unknown: number, unread: number, modules: number, modulesChanged: number } | null> {
         const db = getDatabase()
         const cards = (db.characters ?? []).filter((character) => character?.chaId && !character.trashTime && character.sourceInfo)
+        const moduleOwners = moduleAssetOwners(db.modules ?? [])
         healthController = new AbortController()
         healthProgress = { checked: 0, total: 0 }
         try {
-            const health = await countAssetHealth(cards, (paths) => forageStorage.inspectAssetReferences(paths), {
+            const health = await countAssetHealth([...cards, ...moduleOwners], (paths) => forageStorage.inspectAssetReferences(paths), {
                 signal: healthController.signal,
                 // The additional-asset list is lazy in the app; count from the full list.
                 loadAdditionalAssets: (character) => loadAssetManifestItems((character as { additionalAssetManifest?: Parameters<typeof loadAssetManifestItems>[0] }).additionalAssetManifest),
                 onListProgress: (loaded, total) => {
                     healthProgress = { checked: loaded, total }
-                    message = `봇 에셋 목록 읽는 중… ${loaded.toLocaleString()} / ${total.toLocaleString()}`
+                    message = `봇·모듈 에셋 목록 읽는 중… ${loaded.toLocaleString()} / ${total.toLocaleString()}`
                 },
                 onProgress: (checked, total) => {
                     healthProgress = { checked, total }
@@ -400,7 +401,17 @@
                     changed++
                 }
             }
-            return { health, cards: cards.length, changed, unknown, unread: cards.length - health.size }
+            const modules = applyModuleAssetHealth(db.modules ?? [], health)
+            if (modules.changed > 0) db.modules = modules.modules
+            return {
+                health,
+                cards: cards.length,
+                changed,
+                unknown: unknown + modules.unknown,
+                unread: cards.filter((character) => !health.has(character.chaId)).length,
+                modules: modules.checked,
+                modulesChanged: modules.changed,
+            }
         } catch (error) {
             const text = error instanceof DOMException && error.name === 'AbortError' ? '깨진 에셋 세기를 멈췄습니다.' : (error instanceof Error ? error.message : String(error))
             message = text
@@ -417,8 +428,9 @@
         try {
             const result = await recountAssetHealth()
             if (!result) return
-            if (result.changed > 0) await requestImmediateSave()
+            if (result.changed > 0 || result.modulesChanged > 0) await requestImmediateSave()
             message = `봇 ${result.cards.toLocaleString()}개 점검 · 기록이 바뀐 봇 ${result.changed.toLocaleString()}개`
+                + ` · 모듈 ${result.modules.toLocaleString()}개 점검 · 기록이 바뀐 모듈 ${result.modulesChanged.toLocaleString()}개`
                 + (result.unknown > 0 ? ` · 확인 실패 에셋 ${result.unknown.toLocaleString()}개(기존 기록 유지)` : '')
                 + (result.unread > 0 ? ` · 에셋 목록을 못 읽은 봇 ${result.unread.toLocaleString()}개(그대로 둠)` : '')
             notifySuccess(message)
@@ -450,7 +462,7 @@
             if (plan.assignments.size > 0) {
                 db.characterOrder = assignCharactersToFolders(db.characterOrder ?? [], plan.assignments, () => uuidv4())
             }
-            if (plan.assignments.size > 0 || recount.changed > 0) await requestImmediateSave()
+            if (plan.assignments.size > 0 || recount.changed > 0 || recount.modulesChanged > 0) await requestImmediateSave()
             message = `정리 완료: 정상 ${plan.counts.healthy} · 복구 ${plan.counts.recovered} · 에셋 누락 ${plan.counts.missing} · 빈 봇 ${plan.counts.empty} (옮긴 봇 ${plan.assignments.size}) · 깨진 에셋 기록이 바뀐 봇 ${recount.changed}`
                 + (recount.unread > 0 ? ` · 에셋 목록을 못 읽은 봇 ${recount.unread}개(그대로 둠)` : '')
                 + (plan.counts.missing > 0 ? ` · 이제 'Recover mobile-web missing folder'로 ${folders.missing}의 봇을 Realm에서 복구할 수 있습니다.` : '')
@@ -661,7 +673,7 @@
             {/if}
         </div>
         <p class="mt-1 text-xs text-textcolor2">
-            빨간 제목과 ❗ 옆 숫자는 봇에 기록된 깨진 에셋 수를 보여줍니다. 가져올 때나 복구할 때 한 번 적힌 값이라, 실제 파일 기준으로 다시 세면 맞아집니다.
+            빨간 제목과 ❗ 옆 숫자는 봇과 모듈에 기록된 깨진 에셋 수를 보여줍니다. 가져올 때나 복구할 때 한 번 적힌 값이라, 실제 파일 기준으로 다시 세면 맞아집니다. 다시 세기는 봇과 모듈을 함께 셉니다.
         </p>
         {#if healthProgress}
             <div class="mt-2 h-2 overflow-hidden rounded bg-darkborderc">

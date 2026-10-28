@@ -223,3 +223,56 @@ export function planSourceSort(args: {
     }
     return plan
 }
+
+// Modules carry the same record (sourceInfo.missingAssetCount) behind their
+// red title and ❗, also written once at import. A check on 2026-10-28 found
+// it off for 3 of the 24 flagged modules, one with no assets at all still
+// red, and the user asked for the recount to cover modules too. A module's
+// asset list counts as a card's additional assets; its key cannot meet a
+// card's id in the same count.
+const MODULE_HEALTH_KEY = 'module:'
+
+interface HealthModule {
+    id: string
+    assets?: unknown
+    assetManifest?: unknown
+    sourceInfo?: { missingAssetCount?: number, assetReferenceCount?: number }
+}
+
+export function moduleHealthKey(id: string): string {
+    return MODULE_HEALTH_KEY + id
+}
+
+/** The modules with an import record (only they show red), as owners countAssetHealth reads. */
+export function moduleAssetOwners(modules: readonly (HealthModule | null | undefined)[]): AssetOwner[] {
+    return modules
+        .filter((module): module is HealthModule => !!module?.id && !!module.sourceInfo)
+        .map((module) => ({
+            chaId: moduleHealthKey(module.id),
+            additionalAssets: Array.isArray(module.assets) ? module.assets as AssetTuple[] : undefined,
+            additionalAssetManifest: module.assetManifest,
+        }))
+}
+
+/** The modules with their counts written, as for cards; a changed module is a new object. */
+export function applyModuleAssetHealth<T extends HealthModule>(
+    modules: readonly T[],
+    health: ReadonlyMap<string, AssetHealthCount>,
+): { modules: T[], checked: number, changed: number, unknown: number } {
+    let checked = 0
+    let changed = 0
+    let unknown = 0
+    const next = modules.map((module) => {
+        const count = module?.sourceInfo ? health.get(moduleHealthKey(module.id)) : undefined
+        if (!count) return module
+        checked++
+        unknown += count.unknown
+        // A check that failed proves nothing: keep the old record unless something is surely missing.
+        if (count.unknown > 0 && count.missing === 0) return module
+        const info = module.sourceInfo!
+        if (info.missingAssetCount === count.missing && info.assetReferenceCount === count.total) return module
+        changed++
+        return { ...module, sourceInfo: { ...info, missingAssetCount: count.missing, assetReferenceCount: count.total } }
+    })
+    return { modules: next, checked, changed, unknown }
+}
