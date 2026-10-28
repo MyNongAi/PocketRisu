@@ -10,6 +10,7 @@
     import SecretInput from "src/lib/UI/GUI/SecretInput.svelte";
     import SelectInput from "src/lib/UI/GUI/SelectInput.svelte";
     import OptionInput from "src/lib/UI/GUI/OptionInput.svelte";
+    import CopyKeyButton from "src/lib/UI/GUI/CopyKeyButton.svelte";
 
     // Read straight off the reactive pool so the list reflects add/edit/delete.
     const entries = $derived(
@@ -121,7 +122,8 @@
                             {#if entry.provider}{providerLabel(entry.provider)} · {/if}••••{entry.key.slice(-4)}
                         </span>
                     </div>
-                    <div class="flex gap-2 shrink-0">
+                    <div class="flex items-center gap-2 shrink-0">
+                        <CopyKeyButton text={entry.key} className="p-0" />
                         <button class="text-textcolor2 hover:text-primary" title={language.edit} onclick={() => openEdit(entry.id)}>
                             <PencilIcon size={18} />
                         </button>

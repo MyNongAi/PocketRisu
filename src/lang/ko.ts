@@ -1666,6 +1666,8 @@ export const languageKorean = {
   apiKeyDeletedOption: "삭제된 키",
   apiKeyShowAll: "모든 키 보기",
   apiKeySave: "이 키 저장",
+  apiKeyCopy: "키 복사",
+  apiKeyCopied: "키를 복사했어요",
   apiKeyFormSave: "저장",
   apiKeyNamePrompt: "저장할 키 이름을 입력하세요",
   parameters: "파라미터",

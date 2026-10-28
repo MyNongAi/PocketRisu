@@ -1553,6 +1553,8 @@ export const languageEnglish = {
     apiKeyDeletedOption: "Deleted key",
     apiKeyShowAll: "Show all keys",
     apiKeySave: "Save this key",
+    apiKeyCopy: "Copy key",
+    apiKeyCopied: "Key copied",
     apiKeyFormSave: "Save",
     apiKeyNamePrompt: "Enter a name for this key",
     parameters: "Parameters",

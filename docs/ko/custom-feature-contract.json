@@ -2112,6 +2112,25 @@
       ]
     },
     {
+      "id": "MODEL-PRESET-KEY-COPY",
+      "title": "모델 프리셋 API 키 복사 버튼",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/UI/GUI/CopyKeyButton.svelte",
+        "src/lib/Setting/Pages/Model/CredentialField.svelte",
+        "src/lib/Setting/Pages/Model/ApiKeyPoolManager.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/UI/GUI/CopyKeyButton.svelte", "contains": "await navigator.clipboard.writeText(text)" },
+        { "file": "src/lib/Setting/Pages/Model/CredentialField.svelte", "contains": "<CopyKeyButton text={hasDirectKey ? directKey as string : undefined} />" },
+        { "file": "src/lib/Setting/Pages/Model/CredentialField.svelte", "contains": "<CopyKeyButton text={preset.apiKeyRef ? getApiKey(preset.apiKeyRef)?.key : undefined} />" },
+        { "file": "src/lib/Setting/Pages/Model/ApiKeyPoolManager.svelte", "contains": "<CopyKeyButton text={entry.key} className=\"p-0\" />" }
+      ],
+      "regressionTests": [
+        "src/lib/UI/GUI/CopyKeyButton.test.ts"
+      ]
+    },
+    {
       "id": "MODULE-FOLDER-DEPTH",
       "title": "모듈 폴더 속 폴더 여러 단계",
       "criticality": "core-ux",

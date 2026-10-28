@@ -11,6 +11,7 @@
     import ShButton from "src/lib/UI/GUI/ShButton.svelte";
     import ShDialog from "src/lib/UI/GUI/ShDialog.svelte";
     import SegmentedControl from "src/lib/UI/GUI/SegmentedControl.svelte";
+    import CopyKeyButton from "src/lib/UI/GUI/CopyKeyButton.svelte";
 
     interface Props {
         preset: ModelPreset;
@@ -101,23 +102,33 @@
         {#if poolEntries.length === 0 && !danglingRef}
             <span class="text-xs text-textcolor2 py-1">{language.apiKeyPoolEmpty}</span>
         {:else}
-            <SelectInput bind:value={preset.apiKeyRef as string}>
-                <OptionInput value="">{language.apiKeySelectNone}</OptionInput>
-                {#if danglingRef}
-                    <OptionInput value={preset.apiKeyRef as string}>{language.apiKeyDeletedOption}</OptionInput>
-                {/if}
-                {#each poolEntries as entry (entry.id)}
-                    <OptionInput value={entry.id}>{entry.name}{showAll && entry.provider ? ` (${entry.provider})` : ''}</OptionInput>
-                {/each}
-            </SelectInput>
+            <div class="flex items-center gap-1">
+                <div class="min-w-0 grow">
+                    <SelectInput bind:value={preset.apiKeyRef as string}>
+                        <OptionInput value="">{language.apiKeySelectNone}</OptionInput>
+                        {#if danglingRef}
+                            <OptionInput value={preset.apiKeyRef as string}>{language.apiKeyDeletedOption}</OptionInput>
+                        {/if}
+                        {#each poolEntries as entry (entry.id)}
+                            <OptionInput value={entry.id}>{entry.name}{showAll && entry.provider ? ` (${entry.provider})` : ''}</OptionInput>
+                        {/each}
+                    </SelectInput>
+                </div>
+                <CopyKeyButton text={preset.apiKeyRef ? getApiKey(preset.apiKeyRef)?.key : undefined} />
+            </div>
         {/if}
         <CheckInput bind:check={showAll} name={language.apiKeyShowAll} className="text-xs mt-1" />
     {:else}
-        <SecretInput
-            bind:value={userValues[fieldKey] as string}
-            placeholder={uiField.placeholder ?? ''}
-            fullwidth
-        />
+        <div class="flex items-center gap-1">
+            <div class="min-w-0 grow">
+                <SecretInput
+                    bind:value={userValues[fieldKey] as string}
+                    placeholder={uiField.placeholder ?? ''}
+                    fullwidth
+                />
+            </div>
+            <CopyKeyButton text={hasDirectKey ? directKey as string : undefined} />
+        </div>
         {#if hasDirectKey}
             <div class="flex justify-end mt-1">
                 <ShButton variant="ghost" size="sm" onclick={openSaveDialog}>
