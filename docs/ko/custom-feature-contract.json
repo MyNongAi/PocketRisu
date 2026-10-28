@@ -385,6 +385,7 @@
         { "file": "src/ts/gui/sortableTouchHold.ts", "contains": "sortable.options.touchStartThreshold = touchHoldThreshold(window.devicePixelRatio)" },
         { "file": "src/ts/gui/sortableTouchHold.ts", "contains": "sortable._onDrop()" },
         { "file": "src/main.ts", "contains": "initSortableTouchHold()" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "autoCount > 0 ? 'text-amber-500 bg-amber-500/15 hover:text-primary'" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "recordModuleFolderActivation" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "sortModulesByActivation" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "getLatestModuleCatalogPromotion" },

@@ -541,10 +541,18 @@
         {/snippet}
         {#snippet folderActions(_folder, indexes)}
             {@const activeCount = indexes.filter((index) => DBState.db.enabledModules.includes(displayModules[index]?.id)).length}
+            <!-- Orange when a module inside is on by itself (the open bot's own, an
+                 integrated one, or 🎨 with the bot's illustration on) the way its own
+                 globe is drawn, unless one is global (the user's request, 2026-10-28). -->
+            {@const autoCount = indexes.filter((index) => {
+                const rmodule = displayModules[index]
+                return !!rmodule && !isGlobal(rmodule) && (isIntegrated(rmodule) || isBotModule(rmodule) || isIllustrationOn(rmodule))
+            }).length}
+            {@const folderGlobeLabel = `폴더 모듈 전체 활성화 (${activeCount}/${indexes.length})${autoCount > 0 ? ` · 자동으로 켜짐 ${autoCount}개` : ''}`}
             <button
-                class="no-sort shrink-0 rounded-sm p-1 cursor-pointer {activeCount > 0 ? 'text-emerald-500 bg-emerald-500/15' : 'text-textcolor2 hover:text-primary'}"
-                title={`폴더 모듈 전체 활성화 (${activeCount}/${indexes.length})`}
-                aria-label={`폴더 모듈 전체 활성화 (${activeCount}/${indexes.length})`}
+                class="no-sort shrink-0 rounded-sm p-1 cursor-pointer {activeCount > 0 ? 'text-emerald-500 bg-emerald-500/15' : autoCount > 0 ? 'text-amber-500 bg-amber-500/15 hover:text-primary' : 'text-textcolor2 hover:text-primary'}"
+                title={folderGlobeLabel}
+                aria-label={folderGlobeLabel}
                 onclick={(event) => { event.stopPropagation(); toggleFolderGlobal(indexes) }}
             ><Globe size={17}/></button>
         {/snippet}
