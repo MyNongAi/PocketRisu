@@ -9,6 +9,41 @@ import { CCardLib } from '@risuai/ccardlib'
 export const MAX_AUX_TAGS_PER_REPLY = 20
 const MAX_REMEMBERED_AUX_LINES = 200
 const MAX_CONTEXT_CHARS = 3000
+const MAX_PROFILE_CHARS = 4000
+
+/**
+ * A bot's 🌙 settings, under the sidebar's ⚙ (the user's choice, 2026-10-28):
+ * what the community "보조모델 에셋모듈" set with its toggles.
+ */
+export interface AuxAssetBotSettings {
+    /** Earlier messages sent along, 1–8. */
+    contextCount?: number
+    /** Leave the user's messages out of them. */
+    skipUser?: boolean
+    /** Send the bot's description along. */
+    description?: boolean
+    /** Send the user's persona along. */
+    persona?: boolean
+    /** Ask the main model instead of the auxiliary one. */
+    mainModel?: boolean
+    /** A 🌙 button in each reply's menu tags it again. */
+    rerollButton?: boolean
+}
+
+export const AUX_CONTEXT_COUNTS = [1, 2, 3, 4, 5, 6, 7, 8] as const
+const DEFAULT_AUX_CONTEXT_COUNT = 2
+
+export function auxAssetSettings(settings: AuxAssetBotSettings | null | undefined): Required<AuxAssetBotSettings> {
+    const count = Number(settings?.contextCount)
+    return {
+        contextCount: (AUX_CONTEXT_COUNTS as readonly number[]).includes(count) ? count : DEFAULT_AUX_CONTEXT_COUNT,
+        skipUser: settings?.skipUser === true,
+        description: settings?.description === true,
+        persona: settings?.persona === true,
+        mainModel: settings?.mainModel === true,
+        rerollButton: settings?.rerollButton === true,
+    }
+}
 
 export interface AuxMarkedEntry {
     comment?: string
@@ -143,12 +178,19 @@ function clip(text: string, max: number): string {
     return text.length <= max ? text : `…${text.slice(text.length - max)}`
 }
 
-/** The request to the auxiliary model. */
+/** A profile keeps its start (a message, its end). */
+function clipHead(text: string, max: number): string {
+    return text.length <= max ? text : `${text.slice(0, max)}…`
+}
+
+/** The request to the auxiliary model; the bot's description and the persona only when the bot's ⚙ sends them. */
 export function buildAuxTagPrompt(arg: {
     rules: readonly string[]
     lines: readonly string[]
     context: readonly { name: string, text: string }[]
     charName: string
+    description?: string
+    persona?: { name: string, text: string }
 }): { role: 'system' | 'user', content: string }[] {
     const system = [
         'You place image/asset tags into a finished roleplay reply.',
@@ -161,10 +203,14 @@ export function buildAuxTagPrompt(arg: {
         .map((message) => `${message.name}: ${clip(message.text.trim(), MAX_CONTEXT_CHARS)}`)
         .join('\n\n---\n\n')
     const numbered = arg.lines.map((line, index) => `[${index + 1}] ${line}`).join('\n')
+    const description = arg.description?.trim()
+    const persona = arg.persona?.text.trim()
     const user = [
         '# Rules',
         arg.rules.join('\n\n---\n\n'),
         '',
+        ...(description ? [`# ${arg.charName} (context only)`, clipHead(description, MAX_PROFILE_CHARS), ''] : []),
+        ...(persona ? [`# ${arg.persona!.name}, the user (context only)`, clipHead(persona, MAX_PROFILE_CHARS), ''] : []),
         ...(context ? ['# Earlier in the chat (context only, do not tag)', context, ''] : []),
         `# Reply of ${arg.charName} (numbered lines)`,
         numbered,

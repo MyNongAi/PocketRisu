@@ -12,6 +12,7 @@
     import { tooltip } from "src/ts/gui/tooltip";
     import { PinIcon, SaveIcon, FolderHeartIcon, SettingsIcon } from "@lucide/svelte";
     import IllustrationSettings from "./IllustrationSettings.svelte";
+    import AuxAssetSettings from "./AuxAssetSettings.svelte";
     import ShAccordion from '../UI/GUI/ShAccordion.svelte'
     import ShButton from "../UI/GUI/ShButton.svelte";
     import ShSwitch from "../UI/GUI/ShSwitch.svelte";
@@ -42,8 +43,9 @@
         }
         return paneToggles[chat.id] ?? pinnedToggleValues(chat, snapshotToggleValues())
     })
-    // The ⚙ beside the 🎨 switch (IllustrationSettings.svelte).
+    // The ⚙ beside the 🎨 switch (IllustrationSettings.svelte), and the 🌙 one (AuxAssetSettings.svelte).
     let illustrationSettingsOpen = $state(false)
+    let auxAssetSettingsOpen = $state(false)
     let isPinned = $derived(!DBState.db.disableToggleBinding && !!currentChat?.savedToggleValues)
     let toggleTemplate = $derived.by(() => {
         // Track chat/module changes so the toggle list re-derives on chat switch
@@ -401,6 +403,23 @@
     </div>
     {#if illustrationSettingsOpen}
         <IllustrationSettings />
+    {/if}
+    <!-- Per bot: how its 🌙 entries are worked (auxLorebook.ts; the user's choice, 2026-10-28). -->
+    <div class="w-full flex mt-2 items-center justify-between gap-2 min-h-10 rounded-md px-1">
+        <span class="flex items-center gap-1 min-w-0">
+            <span class="break-words">{language.auxAssetToggle}</span>
+            <Help key="auxAsset" />
+        </span>
+        <button
+            class="p-1 shrink-0 text-textcolor2 hover:text-textcolor"
+            title={language.auxAssetSettings}
+            aria-label={language.auxAssetSettings}
+            aria-expanded={auxAssetSettingsOpen}
+            onclick={() => { auxAssetSettingsOpen = !auxAssetSettingsOpen }}
+        ><SettingsIcon size={18} /></button>
+    </div>
+    {#if auxAssetSettingsOpen && view.character && view.chat}
+        <AuxAssetSettings character={view.character} chat={view.chat} />
     {/if}
 {/if}
 

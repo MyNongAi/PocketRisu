@@ -1,9 +1,11 @@
 <script lang="ts">
     import { reissueMessageIds, retitleChatFromLastInput } from "src/ts/chatClone";
     import { chatTitleState } from "src/ts/chatTitleState";
-    import { ArrowLeft, ArrowLeftRightIcon, ArrowRight, BookmarkIcon, BotIcon, CopyIcon, PowerOff, GitBranch, HamburgerIcon, LanguagesIcon, MenuIcon, PencilIcon, RefreshCcwIcon, SplitIcon, TrashIcon, UserIcon, Volume2Icon, Scissors, EyeOff, PaletteIcon } from "@lucide/svelte"
+    import { ArrowLeft, ArrowLeftRightIcon, ArrowRight, BookmarkIcon, BotIcon, CopyIcon, PowerOff, GitBranch, HamburgerIcon, LanguagesIcon, MenuIcon, PencilIcon, RefreshCcwIcon, SplitIcon, TrashIcon, UserIcon, Volume2Icon, Scissors, EyeOff, PaletteIcon, MoonIcon } from "@lucide/svelte"
     import { illustrateReply, illustratingReplies, removeIllustrations } from "src/ts/process/illustrationRun"
     import { captureModuleRuntimeContext } from "src/ts/process/modules"
+    import { auxAssetSettings } from "src/ts/process/auxLorebook"
+    import { auxRetagging, retagReplyByAuxLorebook } from "src/ts/process/auxLorebookRun"
     import { aiLawApplies, changeChatTo, foldChatToMessage, getFileSrc, createChatCopyName } from "src/ts/globalApi.svelte"
     import { ColorSchemeTypeStore } from "src/ts/gui/colorscheme"
     import { MediaQuery } from "svelte/reactivity"
@@ -364,6 +366,19 @@
         message.chatId ??= v4()
         removeIllustrations(message)
         void illustrateReply({ chaId: chara.chaId, chatId: chat.id, messageId: message.chatId, moduleContext: captureModuleRuntimeContext(chara, chat), manual: true })
+    }
+
+    // 🌙 in the message menu, when the bot's ⚙ turns it on (auxLorebookRun.ts).
+    let auxRetagButton = $derived(role === 'char' && auxAssetSettings(DBState.db.characters[view.characterIndex]?.nodeOnlyAuxAsset).rerollButton)
+    let auxRetagBusy = $derived(!!illustrationMessage?.chatId && $auxRetagging.has(illustrationMessage.chatId))
+
+    function retagAuxAssets() {
+        const chara = DBState.db.characters[view.characterIndex]
+        const chat = chara?.chats?.[view.chatIndex]
+        const message = chat?.message?.[idx]
+        if (!chara || !chat || !message || message.role !== 'char') return
+        message.chatId ??= v4()
+        void retagReplyByAuxLorebook({ chaId: chara.chaId, chatId: chat.id, messageId: message.chatId, moduleContext: captureModuleRuntimeContext(chara, chat) })
     }
 
     // The same version arrows on the input itself, where a reply has its
@@ -1383,6 +1398,18 @@
             <PaletteIcon size={20}/>
             {#if showNames}
                 <span class="ml-1">{illustrationBusy ? language.illustrationDrawing : hasIllustrations ? language.illustrationRedraw : language.illustrationDraw}</span>
+            {/if}
+        </button>
+    {/if}
+    {#if auxRetagButton && !placeholder}
+        <!-- 🌙 Tag this reply's assets again (auxLorebookRun.ts). -->
+        <button class="flex items-center hover:text-primary transition-colors button-icon-auxasset" disabled={auxRetagBusy} onclick={async () => {
+            await sleep(1)
+            retagAuxAssets()
+        }}>
+            <MoonIcon size={20}/>
+            {#if showNames}
+                <span class="ml-1">{auxRetagBusy ? language.auxAssetRetagging : language.auxAssetRetag}</span>
             {/if}
         </button>
     {/if}

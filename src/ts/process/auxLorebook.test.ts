@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
     MAX_AUX_TAGS_PER_REPLY,
+    auxAssetSettings,
     auxEntryText,
     auxLorebookEntries,
     buildAuxTagPrompt,
@@ -91,6 +92,21 @@ describe('the lines the auxiliary model added', () => {
     })
 })
 
+describe("a bot's 🌙 settings", () => {
+    it('defaults to two messages with everything off', () => {
+        expect(auxAssetSettings(undefined)).toEqual({
+            contextCount: 2, skipUser: false, description: false, persona: false, mainModel: false, rerollButton: false,
+        })
+    })
+
+    it('keeps 1–8 messages and only true switches', () => {
+        expect(auxAssetSettings({ contextCount: 8, skipUser: true, mainModel: true }).contextCount).toBe(8)
+        expect(auxAssetSettings({ contextCount: 1 }).contextCount).toBe(1)
+        for (const bad of [0, 9, 2.5, NaN]) expect(auxAssetSettings({ contextCount: bad }).contextCount).toBe(2)
+        expect(auxAssetSettings({ persona: 'yes' as any, rerollButton: 1 as any })).toMatchObject({ persona: false, rerollButton: false })
+    })
+})
+
 describe('tagging a reply', () => {
     it('keeps the reasoning block out of the numbered lines', () => {
         expect(splitReplyForTags('<Thoughts>\nplan\n</Thoughts>\nLine one\nLine two')).toEqual({
@@ -112,6 +128,22 @@ describe('tagging a reply', () => {
         expect(user.content).toContain('Use <img="name">\n\n---\n\nNames: happy, sad')
         expect(user.content).toContain('User: Tell me a joke')
         expect(user.content).toContain('[1] She laughs.\n[2] "Really?"')
+        expect(user.content).not.toContain('(context only)\n')
+    })
+
+    it('sends the bot and the persona along only when given', () => {
+        const [, user] = buildAuxTagPrompt({
+            rules: ['Use <img="name">'],
+            lines: ['She laughs.'],
+            context: [],
+            charName: 'Maah',
+            description: 'A cheerful fox girl.',
+            persona: { name: 'Jin', text: 'A traveller.' },
+        })
+        expect(user.content).toContain('# Maah (context only)\nA cheerful fox girl.')
+        expect(user.content).toContain('# Jin, the user (context only)\nA traveller.')
+        const [, blank] = buildAuxTagPrompt({ rules: ['r'], lines: ['l'], context: [], charName: 'Maah', description: '  ', persona: { name: 'Jin', text: '' } })
+        expect(blank.content).not.toContain('context only)\n')
     })
 
     it('reads the edits from a fenced or bare answer and drops what does not fit', () => {

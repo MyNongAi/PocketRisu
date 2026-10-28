@@ -2019,6 +2019,8 @@ export interface character{
     nodeOnlyWholeAssets?:boolean
     /** PocketRisu: draw illustrations into this bot's replies (illustration.ts). */
     nodeOnlyIllustration?: import('../process/illustration').IllustrationBotSettings
+    /** PocketRisu: how this bot's 🌙 entries are worked (auxLorebook.ts, the sidebar's ⚙). */
+    nodeOnlyAuxAsset?: import('../process/auxLorebook').AuxAssetBotSettings
     reloadKeys?:number
     backgroundCSS?:string
     license?:string

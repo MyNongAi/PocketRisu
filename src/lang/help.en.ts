@@ -316,6 +316,14 @@ export const helpEn = {
             "- Narrow pictures (status-window icons, round portraits) keep the bot's design.\n" +
             "- The background outside the messages is left as it is.\n" +
             "- Turn it off and they are cropped again at once.",
+        auxAsset:
+            "Sets how this bot's 🌙 (to the auxiliary model) lorebook entries are worked. After a reply the auxiliary model reads the 🌙 instructions and places asset tags; ⚙ picks what goes along and which model does it.\n\n" +
+            "- Recent messages sent along: how many messages before the reply go as context (1–8, 2 by default).\n" +
+            "- Leave out the user's messages: the context skips them.\n" +
+            "- Send the bot's description / the persona: they go along as context.\n" +
+            "- Use the main model: the main model places the tags instead of the auxiliary one.\n" +
+            "- 🌙 'tag again' in the message menu: a reply's menu (☰) gets a 🌙 that takes the reply's earlier tags out and places them afresh. Drawn illustrations stay.\n" +
+            "- Saved per bot. A bot with no 🌙 entry is left alone.",
         toggleHypaMemory:
             "Whether to use HypaMemory (long-term memory) for this chat.\n\n" +
             "- When on, past messages are automatically summarized into long-term memory once the context fills up, and relevant summaries are pulled back into later responses.\n" +
