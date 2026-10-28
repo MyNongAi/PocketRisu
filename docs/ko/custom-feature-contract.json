@@ -2064,6 +2064,8 @@
       "requiredMarkers": [
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "maxFolderDepth={5}" },
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "folderDepth(folder, folders) < maxFolderDepth" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "<div class=\"@container/folders flex flex-col gap-2\" bind:this={rootEl}>" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "<FolderIcon size={16} class=\"shrink-0 text-textcolor2 @max-xs/folders:hidden\"/>" },
         { "file": "src/ts/process/linkedModuleFolder.ts", "contains": "!(folder.duplicateCandidate && holdsLinked.has(folder.id))" }
       ],
       "regressionTests": [

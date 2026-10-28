@@ -430,7 +430,8 @@
     }
 </script>
 
-<div class="flex flex-col gap-2" bind:this={rootEl}>
+<!-- @container/folders: a narrow list (a phone's side panel) packs its folder rows tighter, below. -->
+<div class="@container/folders flex flex-col gap-2" bind:this={rootEl}>
     <!-- flex-wrap: with 3+ actions the toolbar overflowed 360px phones -->
     <div class="flex flex-wrap items-center gap-2">
         {@render actions?.()}
@@ -512,22 +513,27 @@
         {@const children = (childGroupsByParent.get(folder.id) ?? []).filter((child) => !query || groupHasMatches(child))}
         <!-- A folder shown inside another has no data-folder-key: only top-level folders drag. -->
         <div data-folder-key={nested ? undefined : folder.id} data-nested-folder={nested ? folder.id : undefined} class="rounded-md border border-darkborderc bg-darkbg">
-            <div class="flex items-center gap-2 px-2 py-2 text-textcolor cursor-pointer select-none"
+            <!-- In a list under 20rem the row icons, gaps and the name took ~155px,
+                 which left a folder inside another about 10px of name ("붕." for
+                 붕괴; the user's report, 2026-10-28). There the folder icon goes
+                 (the chevron and the box show it is a folder), the gaps halve, and
+                 a long name takes a second line instead of an ellipsis. -->
+            <div class="flex items-center gap-2 px-2 py-2 text-textcolor cursor-pointer select-none @max-xs/folders:gap-1 @max-xs/folders:px-1"
                 role="button" tabindex="0"
                 onclick={() => toggleCollapsed(folder.id)}
                 onkeydown={(e) => { if (e.key === 'Enter') toggleCollapsed(folder.id) }}>
                 {#if isCollapsed}<ChevronRightIcon size={16} class="shrink-0 text-textcolor2"/>{:else}<ChevronDownIcon size={16} class="shrink-0 text-textcolor2"/>{/if}
-                <FolderIcon size={16} class="shrink-0 text-textcolor2"/>
+                <FolderIcon size={16} class="shrink-0 text-textcolor2 @max-xs/folders:hidden"/>
                 {#if folder.favorite}<StarIcon size={14} class="shrink-0 text-amber-400"/>{/if}
                 {@render folderLeadingActions?.(folder, group.indexes)}
-                <span class="truncate grow" style:color={folderTitleColor(folder, group.indexes)}>{folder.name}</span>
+                <span class="truncate grow @max-xs/folders:line-clamp-2 @max-xs/folders:whitespace-normal @max-xs/folders:break-keep @max-xs/folders:[overflow-wrap:anywhere]" style:color={folderTitleColor(folder, group.indexes)}>{folder.name}</span>
                 {@render folderActions?.(folder, group.indexes)}
                 <span class="text-xs text-textcolor2">{groupItemCount(group)}</span>
                 {@render folderMenu(folder, group.indexes)}
             </div>
             <div data-folder-container={folder.id} class:hidden={isCollapsed}>
                 <ShSortableList
-                    className="flex flex-col px-2 pb-2 gap-0.5 min-h-8"
+                    className="flex flex-col px-2 pb-2 gap-0.5 min-h-8 @max-xs/folders:px-0.5"
                     disabled={dragDisabled}
                     options={{ group: { name: 'foldered-list-items', pull: true, put: true }, emptyInsertThreshold: 32 }}
                     onReorder={onItemDrop}
@@ -541,7 +547,7 @@
             </div>
             {#if children.length > 0}
                 <!-- Outside the parent's item container, so a drop reads each folder's own rows. -->
-                <div class="flex flex-col gap-2 pl-4 pr-2 pb-2" class:hidden={isCollapsed}>
+                <div class="flex flex-col gap-2 pl-4 pr-2 pb-2 @max-xs/folders:pl-1.5 @max-xs/folders:pr-1" class:hidden={isCollapsed}>
                     {#each children as child (child.folder?.id)}
                         {@render folderGroup(child, true)}
                     {/each}
@@ -581,7 +587,7 @@
             </div>
             <div data-folder-container="" class:hidden={isCollapsed}>
                 <ShSortableList
-                    className="flex flex-col px-2 pb-2 gap-0.5 min-h-8"
+                    className="flex flex-col px-2 pb-2 gap-0.5 min-h-8 @max-xs/folders:px-0.5"
                     disabled={dragDisabled}
                     options={{ group: { name: 'foldered-list-items', pull: true, put: true }, emptyInsertThreshold: 32 }}
                     onReorder={onItemDrop}
