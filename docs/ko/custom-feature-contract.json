@@ -2306,6 +2306,27 @@
       "regressionTests": []
     },
     {
+      "id": "SCENE-FOLD-MODULE",
+      "title": "끝난 장면을 요약으로 접는 배포용 모듈 (📁 장면 접기)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "modules/scene-fold/scene-fold.lua",
+        "modules/scene-fold/build.mjs",
+        "modules/scene-fold/README.ko.md",
+        "modules/scene-fold/dist/scene-fold-0.1.0.risum"
+      ],
+      "requiredMarkers": [
+        { "file": "modules/scene-fold/scene-fold.lua", "contains": "listenEdit('editRequest', function(tid, request, meta)" },
+        { "file": "modules/scene-fold/scene-fold.lua", "contains": "function SF.rewriteRequest(messages, folded, settings, instruction)" },
+        { "file": "modules/scene-fold/scene-fold.lua", "contains": "onButtonClick = async(function(tid, data)" },
+        { "file": "modules/scene-fold/build.mjs", "contains": "lowLevelAccess: true," },
+        { "file": "modules/scene-fold/build.mjs", "contains": "'scenefold.nsfw=🔞 NSFW=select=끔,켬'," }
+      ],
+      "regressionTests": [
+        "src/ts/process/sceneFoldModule.test.ts"
+      ]
+    },
+    {
       "id": "AUX-MODEL-LOREBOOK",
       "title": "로어북을 보조모델로 (🌙): 답이 끝나면 보조모델이 에셋 태그를 넣음",
       "criticality": "core-ux",
