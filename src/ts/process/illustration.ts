@@ -45,6 +45,9 @@ export interface IllustrationBotSettings {
 }
 
 export type IllustrationLore = 'scene' | 'all'
+
+/** The title Lightboard's illustrations read on every request (its "lb-xnai.lb.extra" lorebook). */
+export const LIGHTBOARD_EXTRA_TITLE = 'lb-xnai.lb.extra'
 const MAX_CONTEXT_COUNT = 5
 const DEFAULT_CONTEXT_COUNT = 2
 

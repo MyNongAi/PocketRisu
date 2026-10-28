@@ -216,4 +216,19 @@ describe('what lorebook and how many messages go along', () => {
         expect(prompt()).toContain('# Directions\nsoft colors\n\nfaces first\n')
         expect(prompt()).not.toContain('the chat note')
     })
+
+    // Lightboard's illustration lorebook goes by its title, keys or not (2026-10-28).
+    it('sends the "lb-xnai.lb.extra" entries every time, once', async () => {
+        const { character } = setup({ enabled: true })
+        character.globalLore.push(
+            { comment: 'lb-xnai.lb.extra', content: 'Mira: red hair, green eyes' },
+            { comment: '[other] lb-xnai.lb.extra', content: 'not Lightboard' },
+            { comment: 'mira', key: 'hello', content: 'Mira: red hair, green eyes' },
+        )
+        requestChatData.mockResolvedValue({ type: 'success', result: '[]' })
+        await run()
+        expect(prompt()).toContain('# Rules\nMaah: silver hair\n\n---\n\nMira: red hair, green eyes\n')
+        expect(prompt().split('Mira: red hair, green eyes').length - 1).toBe(1)
+        expect(prompt()).not.toContain('not Lightboard')
+    })
 })
