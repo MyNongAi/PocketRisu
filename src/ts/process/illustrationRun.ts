@@ -8,7 +8,8 @@ import { DBState } from '../stores.svelte'
 import { risuChatParser } from '../parser/parser.svelte'
 import { notifyError, notifyInfo } from '../alert'
 import { language } from '../../lang'
-import { getModuleLorebooks, getModules, type ModuleRuntimeContext, type RisuModule } from './modules'
+import { captureModuleRuntimeContext, getModuleLorebooks, getModules, type ModuleRuntimeContext, type RisuModule } from './modules'
+import { loadLoreBookV3Prompt } from './lorebook.svelte'
 import { requestChatData } from './request/request'
 import { collectStreamingText } from './request/shared'
 import { generateAIImage } from './stableDiff'
@@ -45,7 +46,28 @@ import {
     type PresetSections,
 } from './illustration'
 
-const CONTEXT_MESSAGES = 2
+/** As many as Lightboard's illustrations send (its manifest's maxLogs, 2026-10-28). */
+const CONTEXT_MESSAGES = 5
+
+/**
+ * The lorebook entries on for this chat now, as the main model gets them
+ * (Lightboard's loadLoreBooks; the user's request, 2026-10-28): a side
+ * character's looks reach the auxiliary model without a 🎨 mark. 🎨 and 🌙
+ * entries are never among them. Nothing when the lorebook cannot be read.
+ */
+async function activeLore(
+    character: character, chat: Chat, moduleContext: ModuleRuntimeContext | undefined, parse: (text: string) => string,
+): Promise<string[]> {
+    const context = moduleContext?.character === character && moduleContext?.chat === chat
+        ? moduleContext
+        : captureModuleRuntimeContext(character, chat)
+    try {
+        return (await loadLoreBookV3Prompt(context)).actives.map((book) => parse(book.prompt)).filter(Boolean)
+    } catch (error) {
+        console.warn('[illustration] lorebook not read', error)
+        return []
+    }
+}
 
 /** Replies being illustrated, by message id (one pass at a time per reply). */
 export const illustratingReplies = writable<ReadonlySet<string>>(new Set())
@@ -208,6 +230,7 @@ export async function illustrateReply(arg: {
         const original = message.data ?? ''
         const { head, lines } = splitReplyForTags(original)
         if (!lines.some((line) => line.trim())) return 0
+        const lore = await activeLore(character, chat, arg.moduleContext, parse)
         const context = chat.message.slice(0, found.index)
             .filter((m) => !m.isComment && !m.disabled)
             .slice(-CONTEXT_MESSAGES)
@@ -219,6 +242,8 @@ export async function illustrateReply(arg: {
             formated: buildScenePrompt({
                 lines,
                 rules,
+                lore,
+                authorsNote: parse(chat.note ?? ''),
                 context,
                 character: { name: character.name, description: parse(character.desc ?? '') },
                 user: { name: arg.moduleContext?.userName ?? DBState.db.username ?? 'User', description: parse(arg.moduleContext?.personaPrompt ?? '') },

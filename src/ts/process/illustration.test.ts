@@ -65,6 +65,20 @@ describe('the scene request and answer', () => {
         expect(buildScenePrompt({ ...base, nsfw: true })[0].content).toContain('tagged explicitly')
     })
 
+    // Like Lightboard's illustrations (2026-10-28): the lorebook entries on now
+    // and the author's note, before the 🎨 rules.
+    it('carries the lorebook entries on now and the author\'s note', () => {
+        const base = { lines: ['a'], rules: ['soft light'], context: [], character: { name: 'M', description: '' }, user: { name: 'U', description: '' }, count: '1' as const }
+        const user = buildScenePrompt({ ...base, lore: ['Rin: black hair', ' ', 'The castle'], authorsNote: 'Rainy night.' })[1].content
+        expect(user).toContain('# Lorebook (world and character information)\nRin: black hair\n\n---\n\nThe castle\n\n# Author\'s note\nRainy night.\n\n# Rules\nsoft light')
+        // Whole entries only, up to the cap; the rest are left out.
+        const big = 'x'.repeat(20000)
+        const capped = buildScenePrompt({ ...base, lore: [big, big, 'small'] })[1].content
+        expect(capped.split(big).length - 1).toBe(1)
+        expect(capped).not.toContain('small')
+        expect(buildScenePrompt(base)[1].content).not.toContain('# Lorebook')
+    })
+
     it('puts every picture at a fixed place when asked', () => {
         const scenes = [{ line: 2 }, { line: 5 }]
         expect(placeScenes(scenes, 'auto', 6)).toEqual(scenes)

@@ -102,6 +102,8 @@ export interface IllustrationPrompt {
 const MAX_CHARACTERS = 3
 const MAX_INFO_CHARS = 6000
 const MAX_CONTEXT_CHARS = 2000
+/** All the lorebook text sent; the lorebook's own token budget usually stops well before. */
+const MAX_LORE_CHARS = 30000
 
 export function illustrationSettings(settings: IllustrationBotSettings | null | undefined): Required<Omit<IllustrationBotSettings, 'preset'>> & { preset?: string } {
     const maxCharacters = Number(settings?.maxCharacters)
@@ -148,10 +150,32 @@ function clip(text: string, max: number): string {
     return trimmed.length <= max ? trimmed : `${trimmed.slice(0, max)}…`
 }
 
-/** The request to the auxiliary model that picks the scenes. */
+/** Lorebook texts in order, as many whole ones as fit in `max` characters. */
+function fitLore(texts: readonly string[], max: number): string[] {
+    const kept: string[] = []
+    let used = 0
+    for (const text of texts) {
+        const trimmed = (text ?? '').trim()
+        if (!trimmed) continue
+        if (used + trimmed.length > max) break
+        kept.push(trimmed)
+        used += trimmed.length
+    }
+    return kept
+}
+
+/**
+ * The request to the auxiliary model that picks the scenes. Like Lightboard's
+ * illustrations (the user's request, 2026-10-28) it carries the bot and the
+ * persona, the lorebook entries on for this chat, the author's note and the
+ * last messages, with the 🎨 entries as rules.
+ */
 export function buildScenePrompt(arg: {
     lines: readonly string[]
     rules: readonly string[]
+    /** The lorebook entries on for this chat, as the main model gets them. */
+    lore?: readonly string[]
+    authorsNote?: string
     context: readonly { name: string, text: string }[]
     character: { name: string, description: string }
     user: { name: string, description: string }
@@ -174,7 +198,7 @@ export function buildScenePrompt(arg: {
         `Pick ${howMany} moment(s) of the reply worth a picture${min === 0 ? ' (none when nothing is visual)' : ''}${place ? `; the picture is shown ${place}, so pick what fits there` : ''}, and describe each with Danbooru-style English tags, comma separated, no sentences:`,
         '- camera: shot and angle (e.g. "cowboy shot, from side").',
         '- scene: the count of people (e.g. "1girl, 1boy"), place, background, lighting, mood.',
-        `- characters: each visible character (at most ${people}): their name, positive tags (looks from the information given: hair, eyes, body, clothes; then expression, pose, action) and negative tags if needed.`,
+        `- characters: each visible character (at most ${people}): their name, positive tags (looks from the information given, the lorebook included: hair, eyes, body, clothes; then expression, pose, action) and negative tags if needed.`,
         arg.nsfw
             ? 'Explicit moments may be tagged explicitly.'
             : 'Keep the tags non-explicit: no nudity or sexual acts; frame such moments so they are implied.',
@@ -184,12 +208,15 @@ export function buildScenePrompt(arg: {
     const context = arg.context
         .map((message) => `${message.name}: ${clip(message.text, MAX_CONTEXT_CHARS)}`)
         .join('\n\n---\n\n')
+    const lore = fitLore(arg.lore ?? [], MAX_LORE_CHARS)
     const user = [
         '# Characters',
         `## ${arg.character.name}`,
         clip(arg.character.description, MAX_INFO_CHARS) || '(no description)',
         ...(arg.user.description.trim() ? [`## ${arg.user.name} (the user)`, clip(arg.user.description, MAX_INFO_CHARS)] : []),
         '',
+        ...(lore.length ? ['# Lorebook (world and character information)', lore.join('\n\n---\n\n'), ''] : []),
+        ...(arg.authorsNote?.trim() ? ['# Author\'s note', clip(arg.authorsNote, MAX_INFO_CHARS), ''] : []),
         ...(arg.rules.length ? ['# Rules', arg.rules.join('\n\n---\n\n'), ''] : []),
         ...(arg.direction?.trim() ? ['# Directions', arg.direction.trim(), ''] : []),
         ...(context ? ['# Earlier in the chat (context only)', context, ''] : []),

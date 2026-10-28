@@ -6,10 +6,12 @@ const generateAIImage = vi.hoisted(() => vi.fn())
 const writeInlayImage = vi.hoisted(() => vi.fn())
 const notifyError = vi.hoisted(() => vi.fn())
 const notifyInfo = vi.hoisted(() => vi.fn())
+const loadLoreBookV3Prompt = vi.hoisted(() => vi.fn(async (_context?: any) => ({ actives: [] as any[] })))
 
 vi.mock('../stores.svelte', () => ({ DBState: { get db() { return db.value } } }))
 vi.mock('../parser/parser.svelte', () => ({ risuChatParser: (text: string) => text }))
-vi.mock('./modules', () => ({ getModuleLorebooks: () => [], getModules: () => [] }))
+vi.mock('./modules', () => ({ getModuleLorebooks: () => [], getModules: () => [], captureModuleRuntimeContext: (character: any, chat: any) => ({ character, chat, modules: [] }) }))
+vi.mock('./lorebook.svelte', () => ({ loadLoreBookV3Prompt }))
 vi.mock('./request/request', () => ({ requestChatData }))
 vi.mock('./request/shared', () => ({ collectStreamingText: vi.fn() }))
 vi.mock('./stableDiff', () => ({ generateAIImage }))
@@ -26,7 +28,9 @@ function setup(settings: any = { enabled: true }) {
     const reply = { role: 'char', data: 'She smiles.\n"Hello."', chatId: 'r1' } as any
     const chat = { id: 'c1', localLore: [], message: [{ role: 'user', data: 'Hi', chatId: 'u1' }, reply] } as any
     const character = { chaId: 'ch1', name: 'Maah', desc: 'A demon princess.', globalLore: [{ comment: 'looks', content: 'Maah: silver hair', nodeOnlyIllustration: true }, { comment: 'story', content: 'The world', alwaysActive: true }, { comment: '프리셋 P', content: '[Positive]\nartist:a, {prompt}\n[Negative]\nlowres\n[NAI]\nsteps: 20' }], chats: [chat], nodeOnlyIllustration: settings } as any
+    chat.note = 'Keep it rainy.'
     db.value = { characters: [character], sdProvider: 'novelai', username: 'User' }
+    loadLoreBookV3Prompt.mockResolvedValue({ actives: [{ prompt: 'The world', role: 'system' }, { prompt: '  ', role: 'system' }, { prompt: 'Rin: black hair, red eyes', role: 'system' }] })
     return { character, chat, reply }
 }
 
@@ -38,6 +42,7 @@ beforeEach(() => {
     writeInlayImage.mockReset()
     notifyError.mockReset()
     notifyInfo.mockReset()
+    loadLoreBookV3Prompt.mockClear()
 })
 
 describe('the 🎨 module in a run', () => {
@@ -95,9 +100,13 @@ describe('drawing the illustrations of a reply', () => {
         expect(mode).toBe('otherAx')
         const prompt = request.formated[1].content
         expect(prompt).toContain('Maah: silver hair')
-        expect(prompt).not.toContain('The world')
         expect(prompt).not.toContain('artist:a')
         expect(prompt).toContain('A demon princess.')
+        // Like Lightboard (2026-10-28): the lorebook entries on for this chat,
+        // read for the reply's own chat, and the author's note.
+        expect(loadLoreBookV3Prompt.mock.calls[0][0]).toMatchObject({ character, chat: character.chats[0] })
+        expect(prompt).toContain('# Lorebook (world and character information)\nThe world\n\n---\n\nRin: black hair, red eyes')
+        expect(prompt).toContain("# Author's note\nKeep it rainy.")
         expect(generateAIImage).toHaveBeenCalledWith('artist:a, cowboy shot, 1girl', character, 'lowres', 'inlay', {
             width: 1216, height: 832, characters: [{ positive: 'silver hair', negative: '' }], nai: { steps: 20 },
         })
@@ -149,17 +158,22 @@ describe('drawing the illustrations of a reply', () => {
         expect(reply.nodeOnlyIllustrations).toBeUndefined()
     })
 
-    it('starts on its own only when the bot draws after every reply and the reply has no pictures', () => {
+    it('starts on its own only when the bot draws after every reply and the reply has no pictures', async () => {
+        // The lorebook is read first, so the request goes out a moment later.
+        const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
         const { character, chat, reply } = setup({ enabled: true, trigger: 'button' })
         requestChatData.mockResolvedValue({ type: 'success', result: '[]' })
         startAutoIllustration({ character, chat })
+        await settle()
         expect(requestChatData).not.toHaveBeenCalled()
         character.nodeOnlyIllustration = { enabled: true }
         reply.nodeOnlyIllustrations = { x: { positive: '', negative: '', characters: [] } }
         startAutoIllustration({ character, chat })
+        await settle()
         expect(requestChatData).not.toHaveBeenCalled()
         delete reply.nodeOnlyIllustrations
         startAutoIllustration({ character, chat })
+        await settle()
         expect(requestChatData).toHaveBeenCalledTimes(1)
     })
 })
