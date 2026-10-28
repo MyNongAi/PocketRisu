@@ -34,7 +34,19 @@ export interface IllustrationBotSettings {
     direction?: string
     /** The style preset's name: the X of a "프리셋 X" lorebook entry. */
     preset?: string
+    /**
+     * Which lorebook goes along (the user's toggle, 2026-10-28): 'scene' the
+     * entries whose keys the last messages name, 'all' every active entry
+     * as the main model gets it (Lightboard's way).
+     */
+    lore?: IllustrationLore
+    /** Earlier messages sent along and scanned for keys, 0–5. */
+    contextCount?: number
 }
+
+export type IllustrationLore = 'scene' | 'all'
+const MAX_CONTEXT_COUNT = 5
+const DEFAULT_CONTEXT_COUNT = 2
 
 /** NovelAI settings a preset can change (its [NAI] section). */
 export interface NaiParams {
@@ -117,6 +129,10 @@ export function illustrationSettings(settings: IllustrationBotSettings | null | 
         nsfw: settings?.nsfw === true,
         direction: typeof settings?.direction === 'string' ? settings.direction : '',
         preset: settings?.preset || undefined,
+        lore: settings?.lore === 'all' ? 'all' : 'scene',
+        contextCount: Number.isInteger(settings?.contextCount) && settings!.contextCount! >= 0 && settings!.contextCount! <= MAX_CONTEXT_COUNT
+            ? settings!.contextCount!
+            : DEFAULT_CONTEXT_COUNT,
     }
 }
 

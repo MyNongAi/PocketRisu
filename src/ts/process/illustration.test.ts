@@ -22,11 +22,12 @@ import {
 
 describe('illustration settings', () => {
     it('fills in what is missing or unknown', () => {
-        expect(illustrationSettings(undefined)).toEqual({ enabled: false, trigger: 'auto', count: '0-1', ratio: 'portrait', position: 'auto', maxCharacters: 3, nsfw: false, direction: '', preset: undefined })
-        expect(illustrationSettings({ enabled: true, trigger: 'button', count: '1-3', ratio: 'square', position: 'bottom', maxCharacters: 1, nsfw: true, direction: 'faces', preset: '도트' }))
-            .toEqual({ enabled: true, trigger: 'button', count: '1-3', ratio: 'square', position: 'bottom', maxCharacters: 1, nsfw: true, direction: 'faces', preset: '도트' })
-        expect(illustrationSettings({ count: 'many' as any, ratio: 'wide' as any, position: 'left' as any, maxCharacters: 9 }))
-            .toMatchObject({ count: '0-1', ratio: 'portrait', position: 'auto', maxCharacters: 3 })
+        expect(illustrationSettings(undefined)).toEqual({ enabled: false, trigger: 'auto', count: '0-1', ratio: 'portrait', position: 'auto', maxCharacters: 3, nsfw: false, direction: '', preset: undefined, lore: 'scene', contextCount: 2 })
+        expect(illustrationSettings({ enabled: true, trigger: 'button', count: '1-3', ratio: 'square', position: 'bottom', maxCharacters: 1, nsfw: true, direction: 'faces', preset: '도트', lore: 'all', contextCount: 0 }))
+            .toEqual({ enabled: true, trigger: 'button', count: '1-3', ratio: 'square', position: 'bottom', maxCharacters: 1, nsfw: true, direction: 'faces', preset: '도트', lore: 'all', contextCount: 0 })
+        expect(illustrationSettings({ count: 'many' as any, ratio: 'wide' as any, position: 'left' as any, maxCharacters: 9, lore: 'some' as any, contextCount: 9 }))
+            .toMatchObject({ count: '0-1', ratio: 'portrait', position: 'auto', maxCharacters: 3, lore: 'scene', contextCount: 2 })
+        expect(illustrationSettings({ contextCount: 1.5 }).contextCount).toBe(2)
     })
 
     it('maps counts and ratios (sizes NovelAI draws free on Opus)', () => {

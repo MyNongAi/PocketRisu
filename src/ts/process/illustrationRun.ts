@@ -8,7 +8,8 @@ import { DBState } from '../stores.svelte'
 import { risuChatParser } from '../parser/parser.svelte'
 import { notifyError, notifyInfo } from '../alert'
 import { language } from '../../lang'
-import { getModuleLorebooks, getModules, type ModuleRuntimeContext, type RisuModule } from './modules'
+import { captureModuleRuntimeContext, getModuleLorebooks, getModules, type ModuleRuntimeContext, type RisuModule } from './modules'
+import { loadLoreBookV3Prompt } from './lorebook.svelte'
 import { requestChatData } from './request/request'
 import { collectStreamingText } from './request/shared'
 import { generateAIImage } from './stableDiff'
@@ -46,13 +47,11 @@ import {
     type PresetSections,
 } from './illustration'
 
-const CONTEXT_MESSAGES = 2
-
 /**
- * The lorebook entries this reply names, as the scene's information (the
- * user's choice, 2026-10-28): a side character's looks reach the auxiliary
- * model without a 🎨 mark, and nothing else of the active lorebook does
- * (Lightboard sends it all; too costly). 🎨 and 🌙 entries go their own way.
+ * The lorebook entries the last messages name, as the scene's information
+ * (⚙ "로어북: 최근 메시지에서 걸린 것만", the default; 2026-10-28): a side
+ * character's looks reach the auxiliary model without a 🎨 mark, and the
+ * rest of the active lorebook stays home. 🎨 and 🌙 entries go their own way.
  */
 function sceneLore(character: character, chat: Chat, moduleContext: ModuleRuntimeContext | undefined, reply: string, parse: (text: string) => string): string[] {
     const entries = [character.globalLore, chat.localLore, getModuleLorebooks(moduleContext)]
@@ -61,6 +60,25 @@ function sceneLore(character: character, chat: Chat, moduleContext: ModuleRuntim
     return sceneLoreEntries(entries, reply, character.loreSettings?.fullWordMatching ?? false)
         .map((entry) => parse(auxEntryText(entry.content)))
         .filter(Boolean)
+}
+
+/**
+ * Every lorebook entry on for this chat now, as the main model gets it
+ * (⚙ "로어북: 메인 모델처럼 전부", Lightboard's loadLoreBooks). 🎨 and 🌙
+ * entries are never among them. Nothing when the lorebook cannot be read.
+ */
+async function activeLore(
+    character: character, chat: Chat, moduleContext: ModuleRuntimeContext | undefined, parse: (text: string) => string,
+): Promise<string[]> {
+    const context = moduleContext?.character === character && moduleContext?.chat === chat
+        ? moduleContext
+        : captureModuleRuntimeContext(character, chat)
+    try {
+        return (await loadLoreBookV3Prompt(context)).actives.map((book) => parse(book.prompt)).filter(Boolean)
+    } catch (error) {
+        console.warn('[illustration] lorebook not read', error)
+        return []
+    }
 }
 
 /** Replies being illustrated, by message id (one pass at a time per reply). */
@@ -224,14 +242,15 @@ export async function illustrateReply(arg: {
         const original = message.data ?? ''
         const { head, lines } = splitReplyForTags(original)
         if (!lines.some((line) => line.trim())) return 0
-        const lore = sceneLore(character, chat, arg.moduleContext, lines.join('\n'), parse)
-        const context = chat.message.slice(0, found.index)
-            .filter((m) => !m.isComment && !m.disabled)
-            .slice(-CONTEXT_MESSAGES)
+        const earlier = chat.message.slice(0, found.index).filter((m) => !m.isComment && !m.disabled)
+        const context = (settings.contextCount > 0 ? earlier.slice(-settings.contextCount) : [])
             .map((m) => ({
                 name: m.role === 'user' ? (arg.moduleContext?.userName ?? DBState.db.username ?? 'User') : character.name,
                 text: withoutAuxLines(m.data ?? '', m.nodeOnlyAuxLines),
             }))
+        const lore = settings.lore === 'all'
+            ? await activeLore(character, chat, arg.moduleContext, parse)
+            : sceneLore(character, chat, arg.moduleContext, [...context.map((m) => m.text), lines.join('\n')].join('\n'), parse)
         const response = await requestChatData({
             formated: buildScenePrompt({
                 lines,

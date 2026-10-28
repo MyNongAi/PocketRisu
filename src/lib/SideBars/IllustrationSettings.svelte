@@ -210,6 +210,22 @@
                     <OptionInput value="3">3</OptionInput>
                 </SelectInput>
             </div>
+            <!-- What goes along to the auxiliary model (the user's toggle, 2026-10-28). -->
+            <div class="flex flex-col gap-1" data-illustration-lore>
+                <span>{language.illustrationLore}</span>
+                <SelectInput value={settings.lore} onchange={(e) => set('lore', e.currentTarget.value as any)}>
+                    <OptionInput value="scene">{language.illustrationLoreScene}</OptionInput>
+                    <OptionInput value="all">{language.illustrationLoreAll}</OptionInput>
+                </SelectInput>
+            </div>
+            <div class="flex flex-col gap-1">
+                <span>{language.illustrationContextCount}</span>
+                <SelectInput value={String(settings.contextCount)} onchange={(e) => set('contextCount', Number(e.currentTarget.value))}>
+                    {#each [0, 1, 2, 3, 4, 5] as count (count)}
+                        <OptionInput value={String(count)}>{count}</OptionInput>
+                    {/each}
+                </SelectInput>
+            </div>
             <div class="flex items-center justify-between gap-2 min-h-10">
                 <span>{language.illustrationNsfw}</span>
                 <ShSwitch checked={settings.nsfw} onCheckedChange={(checked) => set('nsfw', checked)} />

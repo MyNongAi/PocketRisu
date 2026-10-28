@@ -6,10 +6,12 @@ const generateAIImage = vi.hoisted(() => vi.fn())
 const writeInlayImage = vi.hoisted(() => vi.fn())
 const notifyError = vi.hoisted(() => vi.fn())
 const notifyInfo = vi.hoisted(() => vi.fn())
+const loadLoreBookV3Prompt = vi.hoisted(() => vi.fn(async (_context?: any) => ({ actives: [] as any[] })))
 
 vi.mock('../stores.svelte', () => ({ DBState: { get db() { return db.value } } }))
 vi.mock('../parser/parser.svelte', () => ({ risuChatParser: (text: string) => text }))
-vi.mock('./modules', () => ({ getModuleLorebooks: () => [], getModules: () => [] }))
+vi.mock('./modules', () => ({ getModuleLorebooks: () => [], getModules: () => [], captureModuleRuntimeContext: (character: any, chat: any) => ({ character, chat, modules: [] }) }))
+vi.mock('./lorebook.svelte', () => ({ loadLoreBookV3Prompt }))
 vi.mock('./request/request', () => ({ requestChatData }))
 vi.mock('./request/shared', () => ({ collectStreamingText: vi.fn() }))
 vi.mock('./stableDiff', () => ({ generateAIImage }))
@@ -169,5 +171,37 @@ describe('drawing the illustrations of a reply', () => {
         startAutoIllustration({ character, chat })
         await settle()
         expect(requestChatData).toHaveBeenCalledTimes(1)
+    })
+})
+
+// ⚙ "로어북" and "참고할 앞 메시지 수" (the user's toggle, 2026-10-28).
+describe('what lorebook and how many messages go along', () => {
+    const prompt = () => requestChatData.mock.calls[0][0].formated[1].content as string
+
+    it('scans the earlier messages it sends, and only those', async () => {
+        const { character } = setup({ enabled: true })
+        character.globalLore.push({ comment: 'kai', key: 'hi', content: 'Kai: green coat' })
+        requestChatData.mockResolvedValue({ type: 'success', result: '[]' })
+        await run()
+        expect(prompt()).toContain('Kai: green coat')
+        expect(prompt()).toContain('User: Hi')
+        expect(loadLoreBookV3Prompt).not.toHaveBeenCalled()
+
+        requestChatData.mockReset()
+        character.nodeOnlyIllustration = { enabled: true, contextCount: 0 }
+        requestChatData.mockResolvedValue({ type: 'success', result: '[]' })
+        await run()
+        expect(prompt()).not.toContain('Kai: green coat')
+        expect(prompt()).not.toContain('# Earlier in the chat')
+    })
+
+    it('sends every active entry, as the main model gets them, when asked', async () => {
+        const { character } = setup({ enabled: true, lore: 'all' })
+        loadLoreBookV3Prompt.mockResolvedValueOnce({ actives: [{ prompt: 'The world', role: 'system' }, { prompt: ' ', role: 'system' }] })
+        requestChatData.mockResolvedValue({ type: 'success', result: '[]' })
+        await run()
+        expect(loadLoreBookV3Prompt.mock.calls.at(-1)?.[0]).toMatchObject({ character, chat: character.chats[0] })
+        expect(prompt()).toContain('# Lorebook (world and character information)\nThe world\n')
+        expect(prompt()).not.toContain('Rin: black hair')
     })
 })
