@@ -36,32 +36,6 @@
         hideAutoComplete()
     }}
 >
-    {#if findOpen}
-        <div class="shrink-0 flex items-center gap-0.5 px-1.5 py-1 border-b border-darkborderc text-textcolor2" data-field-find>
-            <SearchIcon size={14} class="shrink-0 ml-1" />
-            <input
-                bind:this={findInput}
-                bind:value={findQuery}
-                class="min-w-0 flex-1 bg-transparent px-1.5 py-0.5 text-sm text-textcolor outline-hidden"
-                placeholder={language.findInField}
-                aria-label={language.findInField}
-                onkeydown={(e) => {
-                    if (e.key === 'Enter') {
-                        e.preventDefault()
-                        stepFind(e.shiftKey ? -1 : 1)
-                    } else if (e.key === 'Escape') {
-                        e.preventDefault()
-                        e.stopPropagation()
-                        closeFind()
-                    }
-                }}
-            />
-            <span class="shrink-0 px-1 text-xs tabular-nums" aria-live="polite">{findCount}</span>
-            <button type="button" class="p-1 rounded hover:text-textcolor transition-colors disabled:opacity-40" title={language.findPrevMatch} aria-label={language.findPrevMatch} disabled={matches.length === 0} onclick={() => stepFind(-1)}><ChevronUpIcon size={16} /></button>
-            <button type="button" class="p-1 rounded hover:text-textcolor transition-colors disabled:opacity-40" title={language.findNextMatch} aria-label={language.findNextMatch} disabled={matches.length === 0} onclick={() => stepFind(1)}><ChevronDownIcon size={16} /></button>
-            <button type="button" class="p-1 rounded hover:text-textcolor transition-colors" title={language.close} aria-label={language.close} onclick={closeFind}><XIcon size={16} /></button>
-        </div>
-    {/if}
     <div class="relative flex-1 min-h-0 w-full">
     {#if !highlight || $disableHighlight}
         {#if matches.length > 0}
@@ -186,14 +160,46 @@
         translate="no"
     >{value ?? ''}</div>
 {/if}
+    {#if resizable}
+        <!-- In the text's own corner, not the button row (the user's request, 2026-10-28). -->
+        <ResizeCorner target={highlightDom ?? null} storageKey={resizeKey} class="z-60" />
+    {/if}
     </div>
     {#if showActionBar}
-        <div class="shrink-0 flex items-center justify-end gap-0.5 py-1 border-t border-darkborderc text-textcolor2 {resizable ? 'pl-1.5 pr-8' : 'px-1.5'}">
+        <div class="shrink-0 flex items-center gap-0.5 px-1.5 py-1 border-t border-darkborderc text-textcolor2">
             {#if findable}
-                <button type="button" class="p-1 rounded hover:text-textcolor transition-colors" class:text-textcolor={findOpen} title={language.findInField} aria-label={language.findInField} aria-pressed={findOpen} onclick={toggleFind}>
-                    <SearchIcon size={16} />
-                </button>
+                <!-- Find in this field: typed straight into, in the bar's empty left (the user's request, 2026-10-28). -->
+                <label class="flex min-w-0 flex-1 items-center gap-1 rounded px-1 focus-within:text-textcolor" data-field-find>
+                    <SearchIcon size={14} class="shrink-0" />
+                    <input
+                        bind:this={findInput}
+                        bind:value={findQuery}
+                        class="min-w-0 flex-1 bg-transparent py-0.5 text-sm text-textcolor outline-hidden placeholder:text-textcolor2"
+                        placeholder={language.findInField}
+                        aria-label={language.findInField}
+                        onkeydown={(e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault()
+                                stepFind(e.shiftKey ? -1 : 1)
+                            } else if (e.key === 'Escape') {
+                                e.preventDefault()
+                                e.stopPropagation()
+                                closeFind()
+                                findInput?.blur()
+                            }
+                        }}
+                    />
+                    {#if findOpen}
+                        <span class="shrink-0 px-0.5 text-xs tabular-nums" aria-live="polite">{findCount}</span>
+                        <button type="button" class="p-1 rounded hover:text-textcolor transition-colors disabled:opacity-40" title={language.findPrevMatch} aria-label={language.findPrevMatch} disabled={matches.length === 0} onclick={() => stepFind(-1)}><ChevronUpIcon size={16} /></button>
+                        <button type="button" class="p-1 rounded hover:text-textcolor transition-colors disabled:opacity-40" title={language.findNextMatch} aria-label={language.findNextMatch} disabled={matches.length === 0} onclick={() => stepFind(1)}><ChevronDownIcon size={16} /></button>
+                        <button type="button" class="p-1 rounded hover:text-textcolor transition-colors" title={language.close} aria-label={language.close} onclick={closeFind}><XIcon size={16} /></button>
+                    {/if}
+                </label>
             {/if}
+            <!-- Set aside while finding, so the find field keeps room in a narrow panel. -->
+            {#if !findOpen}
+            <div class="ml-auto flex shrink-0 items-center gap-0.5" data-field-actions>
             <button type="button" class="p-1 rounded hover:text-textcolor transition-colors" title={language.copy} aria-label={language.copy} onclick={copyValue}>
                 {#if copied}
                     <CheckIcon size={16} class="text-green-500" />
@@ -207,6 +213,8 @@
             <button type="button" class="p-1 rounded hover:text-textcolor transition-colors" title={language.hotkeyDesc.popupEditor} aria-label={language.hotkeyDesc.popupEditor} onclick={openPopupEditor}>
                 <Maximize2 size={16} />
             </button>
+            </div>
+            {/if}
         </div>
     {/if}
     <div class="hidden absolute z-100 bg-bgcolor border border-darkborderc p-2 flex-col" bind:this={autoCompleteDom}>
@@ -216,9 +224,6 @@
             }}>{content}</button>
         {/each}
     </div>
-    {#if resizable}
-        <ResizeCorner target={highlightDom ?? null} storageKey={resizeKey} class="z-60" />
-    {/if}
 </div>
 
 <script lang="ts">
@@ -353,8 +358,8 @@
     let textareaDom = $state<HTMLTextAreaElement>()
     let marks = $state<TextareaMarks>()
     let findInput = $state<HTMLInputElement>()
-    let findOpen = $state(false)
     let findQuery = $state('')
+    const findOpen = $derived(findQuery.trim().length > 0)
     let findIndex = $state(-1)
     const markedText = $derived(findOpen && findQuery.trim() ? findQuery : searchText)
     const matches = $derived(findTextMatches(draft, markedText))
@@ -366,18 +371,8 @@
         await tick()
         marks?.reveal(index)
     }
-    async function toggleFind() {
-        if (findOpen) {
-            closeFind()
-            return
-        }
-        findOpen = true
-        await tick()
-        findInput?.focus()
-        findInput?.select()
-    }
     function closeFind() {
-        findOpen = false
+        findQuery = ''
         findIndex = -1
     }
     function stepFind(step: 1 | -1) {

@@ -1961,13 +1961,15 @@
         { "file": "src/lib/UI/GUI/TextareaMarks.svelte", "contains": "style:overflow-y={scrolls ? 'scroll' : 'hidden'}" },
         { "file": "src/lib/UI/GUI/TextAreaInput.svelte", "contains": "const matches = $derived(findTextMatches(draft, markedText))" },
         { "file": "src/lib/UI/GUI/TextAreaInput.svelte", "contains": "data-field-find" },
+        { "file": "src/lib/UI/GUI/TextAreaInput.svelte", "contains": "const findOpen = $derived(findQuery.trim().length > 0)" },
         { "file": "src/lib/SideBars/LoreBook/LoreBookList.svelte", "contains": "<LoreBookData idgroup={idgroup} searchText={needle} " },
         { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "resizeKey=\"lorebook\" {searchText} findable />" },
         { "file": "src/lib/SideBars/CharConfig.svelte", "contains": "<TextAreaInput highlight findable margin=\"both\" autocomplete=\"off\" bind:value={(DBState.db.characters[charIndex] as character).desc}>" },
         { "file": "src/lib/SideBars/CharConfig.svelte", "contains": "<TextAreaInput highlight findable margin=\"both\" autocomplete=\"off\" bind:value={DBState.db.characters[charIndex].replaceGlobalNote}>" }
       ],
       "regressionTests": [
-        "src/ts/gui/textMatches.test.ts"
+        "src/ts/gui/textMatches.test.ts",
+        "src/lib/UI/GUI/TextAreaInput.find.test.ts"
       ]
     },
     {
