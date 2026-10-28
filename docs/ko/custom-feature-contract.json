@@ -229,6 +229,7 @@
         { "file": "src/ts/hotkey.ts", "contains": "let ele = queryInActivePane<HTMLElement>(query)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if(triggerResult && setTriggerOriginChat(triggerOrigin, triggerResult.chat)) {" },
         { "file": "src/ts/process/scriptings.ts", "contains": "const getVar = arg.getVar ?? ((key: string) => getChatVar(key, varScope))" },
+        { "file": "src/ts/process/scriptings.ts", "contains": "const byId = value.chaId ? getDatabase().characters.find((c) => c?.chaId === value.chaId) : undefined" },
         { "file": "src/ts/parser/chatVar.svelte.ts", "contains": "const state = chat.scriptstate?.['$' + key]" },
         { "file": "src/lib/SideBars/PromptBind.svelte", "contains": "if (!view.active) return" },
         { "file": "src/ts/globalApi.svelte.ts", "contains": "followChatFold(chatFoldedState, chatFoldedStateMessageIndex, () => DBState?.db?.characters?.[selIdState?.selId])" },

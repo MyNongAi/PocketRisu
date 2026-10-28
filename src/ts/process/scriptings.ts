@@ -105,7 +105,18 @@ export async function runScripted(code:string, arg:{
         ScriptingEngineState.getVar = getVar
         const runtimeCharacter = (): character | null => {
             const value = ScriptingEngineState.char
-            return value && value.type !== 'simple' ? value as character : null
+            if (value && value.type !== 'simple') return value as character
+            // A display hands the bot over as a simple argument (its scripts
+            // and assets only). The bot itself is the pane's, or the one with
+            // that id, or the selected one, as upstream reads it. Without
+            // this getLoreBooksMain and the other bot reads gave nothing, and
+            // a bot drawing its screen from its lorebook showed "null"
+            // (월천킥 작가가 되자, the user's report, 2026-10-28).
+            if (!value) return null
+            const own = ScriptingEngineState.moduleContext?.character
+            if (own && (!value.chaId || own.chaId === value.chaId)) return own
+            const byId = value.chaId ? getDatabase().characters.find((c) => c?.chaId === value.chaId) : undefined
+            return (byId as character | undefined) ?? getCurrentCharacter() ?? null
         }
         const runtimeChat = (): Chat | null => ScriptingEngineState.chat ?? null
         const runtimeParserArgs = () => ({

@@ -374,3 +374,29 @@ test.each(['button', 'form'] as const)('keeps a %s script on the chat it started
   expect(opened).toEqual({ message: [], scriptstate: {} })
   expect(result.chat).toBe(started)
 })
+
+// A display hands the bot over as a simple argument; its Lua still reads the
+// bot's lorebook (월천킥 작가가 되자 drew "null" without it, 2026-10-28).
+test('a simple character argument still reads its own bot', async () => {
+  const database = await import('../storage/database.svelte')
+  const bot = { chaId: 'B', type: 'character', chatPage: 0, chats: [{ id: 'c', message: [] }], globalLore: [{ comment: 'CHR', content: 'rows' }, { comment: 'other', content: 'x' }] }
+  vi.mocked(database.getDatabase).mockReturnValue({ characters: [{ chaId: 'A', type: 'character', globalLore: [] }, bot] } as never)
+  const set: Record<string, string> = {}
+  await runScripted(
+    `
+      function onStart(id)
+        local raw = getLoreBooksMain(id, 'CHR')
+        setChatVar(id, 'got', type(raw) == 'string' and tostring(#json.decode(raw)) or 'nothing')
+      end
+    `,
+    {
+      char: { type: 'simple', chaId: 'B', customscript: [] } as never,
+      chat: bot.chats[0] as never,
+      setVar: (key: string, value: string) => { set[key] = value },
+      getVar: () => 'null',
+      mode: 'start',
+    },
+  )
+  expect(set.got).toBe('1')
+  vi.mocked(database.getDatabase).mockReturnValue({ characters: [] } as never)
+})
