@@ -11,6 +11,7 @@ import { v4 as uuidv4 } from "uuid";
 import { simplifySchema, sleep } from "../../util";
 import type { OpenAIChat } from "../index.svelte";
 import { getTools, callTool, encodeToolCall, decodeToolCall } from "../mcp/mcp";
+import { presetSendsTools } from "../mcp/toolGate";
 import type { MCPTool, RPCToolCallContent } from "../mcp/mcplib";
 import { NovelAIBadWordIds, stringlizeNAIChat } from "../models/nai";
 import { OobaParams } from "../prompt";
@@ -33,7 +34,7 @@ import {
     type AdapterToolCall, type AdapterToolDef, type AdapterUsage,
 } from "src/ts/preset/adapter";
 import { formatReasoningParts } from "src/ts/preset/adapter/reasoning";
-import { TOOL_CAPABLE_ADAPTER_KINDS, type AdapterKind, type ModelPreset } from "src/ts/preset/types";
+import type { AdapterKind, ModelPreset } from "src/ts/preset/types";
 import { resolveWireModelId } from "src/ts/preset/adapter/wireInvariants";
 import { pumpPresetStream } from "./presetStreamPump";
 import { makeJobFetch, ModelJobBusyError, ModelJobConnectionLostError } from "./jobFetch";
@@ -785,10 +786,10 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
     //     than the streaming convention (no `!caps` shortcut) so it matches the
     //     editor toggle's visibility — a capability-less custom profile (e.g.
     //     after a profile swap that kept toolUse) can never activate tools.
+    // A chat can turn guard 1 on for its own main requests (toolGate.ts,
+    // the sidebar's switch and the bot edit mode).
     const caps = preset.profileSnapshot.capabilities
-    const supportsTools = preset.toolUse === true
-        && TOOL_CAPABLE_ADAPTER_KINDS.includes(kind)
-        && (caps?.includes('tools') ?? false)
+    const supportsTools = presetSendsTools(preset, arg.currentChat ?? getCurrentChat(), mode)
     const tools = (supportsTools && arg.tools && arg.tools.length > 0)
         ? arg.tools.map(toAdapterToolDef)
         : undefined

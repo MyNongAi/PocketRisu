@@ -4,6 +4,7 @@ import { DBState } from '../stores.svelte';
 import { requestInputText, type SentInput } from '../inputVersions';
 import { withoutAuxLines } from './auxLorebook';
 import { tagReplyByAuxLorebook } from './auxLorebookRun';
+import { warnBlockedTools } from './mcp/toolGate';
 import { startAutoIllustration } from './illustrationRun';
 import { CharEmotion, selectedCharID } from "../stores.svelte";
 import { ChatTokenizer, tokenize, tokenizeNum } from "../tokenizer";
@@ -394,6 +395,8 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         }
         moduleContext = captureModuleRuntimeContext(currentChar, currentChat)
     }
+    // An MCP module on while this chat's requests go without tools (toolGate.ts).
+    if (!arg.preview && !arg.previewPrompt) warnBlockedTools(currentChat, moduleContext)
 
     // Resumable-send tombstone (pendingSends.ts): registered BEFORE the
     // pipeline so a tab death anywhere in it (translate → memory → request)

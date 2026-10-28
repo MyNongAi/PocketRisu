@@ -13,6 +13,7 @@
     import { PinIcon, SaveIcon, FolderHeartIcon, SettingsIcon } from "@lucide/svelte";
     import IllustrationSettings from "./IllustrationSettings.svelte";
     import AuxAssetSettings from "./AuxAssetSettings.svelte";
+    import McpToolNotice from "./McpToolNotice.svelte";
     import ShAccordion from '../UI/GUI/ShAccordion.svelte'
     import ShButton from "../UI/GUI/ShButton.svelte";
     import ShSwitch from "../UI/GUI/ShSwitch.svelte";
@@ -342,6 +343,10 @@
 <!-- Per bot, where the HypaMemory switch used to be (the user's request,
      2026-10-19): hides the bot's always-on-screen launcher buttons. -->
 {#if chara && currentChat}
+    <!-- An MCP module on while this chat's model goes without tools (toolGate.ts). -->
+    {#if view.character && view.chat}
+        <McpToolNotice character={view.character} chat={view.chat} />
+    {/if}
     <div class="w-full flex mt-2 items-center justify-between gap-2 min-h-10 rounded-md px-1">
         <span class="flex items-center gap-1 min-w-0">
             <span class="break-words">{language.hideFloatingBotButtons}</span>

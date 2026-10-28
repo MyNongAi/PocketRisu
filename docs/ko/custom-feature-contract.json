@@ -2334,6 +2334,27 @@
       ]
     },
     {
+      "id": "MCP-TOOL-GATE",
+      "title": "MCP 도구 막힘 알림과 채팅별 도구 사용",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/process/mcp/toolGate.ts",
+        "src/ts/process/request/request.ts",
+        "src/ts/process/index.svelte.ts",
+        "src/lib/SideBars/McpToolNotice.svelte",
+        "src/lib/SideBars/Toggles.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/request/request.ts", "contains": "const supportsTools = presetSendsTools(preset, arg.currentChat ?? getCurrentChat(), mode)" },
+        { "file": "src/ts/process/mcp/toolGate.ts", "contains": "const on = preset.toolUse === true || (mode === 'model' && chat?.nodeOnlyToolUse === true)" },
+        { "file": "src/ts/process/index.svelte.ts", "contains": "if (!arg.preview && !arg.previewPrompt) warnBlockedTools(currentChat, moduleContext)" },
+        { "file": "src/lib/SideBars/Toggles.svelte", "contains": "<McpToolNotice character={view.character} chat={view.chat} />" }
+      ],
+      "regressionTests": [
+        "src/ts/process/mcp/toolGate.test.ts"
+      ]
+    },
+    {
       "id": "ILLUSTRATION",
       "title": "🎨 삽화: 보조모델이 장면을 고르고 NovelAI로 그려 답에 넣음",
       "criticality": "core-ux",
