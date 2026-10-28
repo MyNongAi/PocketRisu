@@ -18,11 +18,20 @@ export const LOG_IMAGE_HEIGHT_STEPS = [32000, 28000, 24000, 20000] as const
  * killed for memory well below the browser's own canvas limits.
  */
 export const LOG_IMAGE_MAX_PIXELS = 40_000_000
+/**
+ * The tallest image a board takes (pixels). Arca refuses a pasted image
+ * taller than about 17,500 px whatever its size in bytes ("Error during
+ * file upload.", or it never finishes): measured with synthetic PNGs on
+ * 2026-10-28, 641x17000 went and 641x18500 did not, while an 18 MB
+ * 1600x12000 went. Long logs failed on any board until images were capped
+ * here (the user's report: a PicPick 641x11367 capture pastes, ours did not).
+ */
+export const LOG_IMAGE_BOARD_MAX_HEIGHT = 16000
 
-/** The tallest step a `width` px canvas takes, by `works`; LOG_IMAGE_MAX_HEIGHT when none does. */
+/** The tallest step a `width` px canvas takes and a board accepts, by `works`; LOG_IMAGE_MAX_HEIGHT when none does. */
 export function pickLogImageHeight(width: number, works: (width: number, height: number) => boolean): number {
     for (const height of LOG_IMAGE_HEIGHT_STEPS) {
-        if (width * height > LOG_IMAGE_MAX_PIXELS) continue
+        if (height > LOG_IMAGE_BOARD_MAX_HEIGHT || width * height > LOG_IMAGE_MAX_PIXELS) continue
         if (works(width, height)) return height
     }
     return LOG_IMAGE_MAX_HEIGHT

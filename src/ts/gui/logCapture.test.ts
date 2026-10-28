@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { blockSliceInPart, clampLogImageScale, clampLogImageWidth, findLogCutRow, formatLogRange, logCaptureRange, logImageFileName, LOG_IMAGE_MAX_HEIGHT, nextLogPartEnd, pickLogImageDensity, pickLogImageHeight, planLogImageParts } from './logCapture'
+import { blockSliceInPart, clampLogImageScale, clampLogImageWidth, findLogCutRow, formatLogRange, logCaptureRange, logImageFileName, LOG_IMAGE_BOARD_MAX_HEIGHT, LOG_IMAGE_MAX_HEIGHT, nextLogPartEnd, pickLogImageDensity, pickLogImageHeight, planLogImageParts } from './logCapture'
 
 describe('logCaptureRange', () => {
     it('orders the two marked messages, either way round', () => {
@@ -109,16 +109,12 @@ describe('file names and width', () => {
 })
 
 describe('pickLogImageHeight', () => {
-    it('takes the tallest height the browser holds', () => {
+    it('never makes an image taller than a board takes, however tall the browser goes', () => {
         const tried: number[] = []
-        expect(pickLogImageHeight(900, (_w, h) => { tried.push(h); return h <= 24000 })).toBe(24000)
-        expect(tried).toEqual([32000, 28000, 24000])
-    })
-
-    it('skips heights over the pixel budget without trying them', () => {
-        const tried: number[] = []
-        expect(pickLogImageHeight(1600, (_w, h) => { tried.push(h); return true })).toBe(24000)
-        expect(tried).toEqual([24000])
+        expect(pickLogImageHeight(900, (_w, h) => { tried.push(h); return true })).toBe(LOG_IMAGE_MAX_HEIGHT)
+        expect(LOG_IMAGE_MAX_HEIGHT).toBeLessThanOrEqual(LOG_IMAGE_BOARD_MAX_HEIGHT)
+        // the taller steps are skipped without drawing a canvas for them
+        expect(tried).toEqual([])
         expect(pickLogImageHeight(10000, () => true)).toBe(LOG_IMAGE_MAX_HEIGHT)
     })
 })

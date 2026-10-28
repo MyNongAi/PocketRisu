@@ -1144,7 +1144,6 @@
                 const currentCharacter = getCurrentCharacter()
                 const isUserMessage = role === 'user'
                 const displayName = isUserMessage ? getUserName() : name
-                const modelInfo = messageGenerationInfo ? capitalize(getModelInfo(messageGenerationInfo.model).shortName) : (isUserMessage ? 'User' : 'AI')
                 const iconPath = isUserMessage ? getUserIcon() : currentCharacter?.image
                 const escapeHtml = (text: string) => {
                     const span = document.createElement('span')
@@ -1211,30 +1210,31 @@
                 try {
                     if (iconPath) {
                         const iconImage = await getFileSrc(iconPath)
-                        // Drawn at 80 px: the full portrait made the copy megabytes larger.
+                        // Drawn at the size shown: the full portrait made the copy megabytes larger.
                         // Cropped square as shown, since a board drops the width and object-fit
                         // and drew it as a tall oval at twice the size (Arca, 2026-10-26).
                         if (iconImage) {
                             const embedded = await fetchClipboardDataUrl(iconImage)
-                            finalIconDataUrl = await rasterizeCoverImage(embedded, 80, 80, 'center').catch(() => shrinkClipboardImage(embedded, 80, 80))
+                            finalIconDataUrl = await rasterizeCoverImage(embedded, 40, 40, 'center').catch(() => shrinkClipboardImage(embedded, 40, 40))
                         }
                     }
                 } catch (error) {
                     console.error('Icon error:', error)
                 }
 
-                const html = `<div style="font-family: 'Segoe UI', Roboto, Arial, sans-serif; color: ${root.getPropertyValue('--risu-theme-textcolor')}; line-height: 1.6; max-width: 600px; margin: 1rem auto; background: ${root.getPropertyValue('--risu-theme-bgcolor')}; border-radius: 12px; box-shadow: 0px 4px 12px rgba(0,0,0,0.15); overflow: hidden;">
-<div style="padding: 20px;">
-<div style="display: flex; flex-direction: column; align-items: center; margin-bottom: 1rem; text-align: center;">
-    ${finalIconDataUrl ? `<img style="width: 80px; height: 80px; max-width: min(100%, 80px); border-radius: 50%; border: 3px solid ${root.getPropertyValue('--risu-theme-darkborderc')}; margin-bottom: 0.75rem; object-fit: cover;" src="${finalIconDataUrl}" alt="profile">` : ''}
-    <h3 style="color: ${root.getPropertyValue('--risu-theme-textcolor')}; font-weight: 600; font-size: 1.5rem; margin: 0 0 0.5rem 0;">${escapeHtml(displayName)}</h3>
-    ${!isUserMessage ? `<span style="display: inline-block; border-radius: 16px; font-size: 0.8rem; padding: 0.25rem 0.75rem; background: ${root.getPropertyValue('--risu-theme-darkbg')}; color: ${root.getPropertyValue('--risu-theme-textcolor')}; border: 1px solid ${root.getPropertyValue('--risu-theme-darkborderc')};">${escapeHtml(modelInfo)}</span>` : ''}
+                // As the chat shows it, without the buttons: a small portrait and the
+                // name on one line, then the reply. The big centered card (80 px
+                // portrait, title, model badge) took a screen per copy and made
+                // several single replies in a row awkward to post (the user's
+                // request, 2026-10-28).
+                const html = `<div style="font-family: 'Segoe UI', Roboto, Arial, sans-serif; color: ${root.getPropertyValue('--risu-theme-textcolor')}; line-height: 1.6; max-width: 600px; margin: 0.5rem auto; background: ${root.getPropertyValue('--risu-theme-bgcolor')}; border-radius: 8px; overflow: hidden;">
+<div style="padding: 12px 16px;">
+<div style="display: flex; flex-direction: row; align-items: center; gap: 8px; margin-bottom: 0.5rem;">
+    ${finalIconDataUrl ? `<img style="width: 40px; height: 40px; max-width: 40px; border-radius: 50%; object-fit: cover;" src="${finalIconDataUrl}" alt="profile">` : ''}
+    <span style="color: ${root.getPropertyValue('--risu-theme-textcolor')}; font-weight: 600; font-size: 1rem;">${escapeHtml(displayName)}</span>
 </div>
-<div style="border-top: 1px solid ${root.getPropertyValue('--risu-theme-darkborderc')}; padding-top: 1rem;">
+<div>
     ${doc.body.innerHTML}
-</div>
-<div style="text-align: center; margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid ${root.getPropertyValue('--risu-theme-darkborderc')};">
-    <span style="font-size: 0.75rem; color: ${root.getPropertyValue('--risu-theme-textcolor2')}; opacity: 0.7;">From PocketRisu</span>
 </div>
 </div>
 </div>`
