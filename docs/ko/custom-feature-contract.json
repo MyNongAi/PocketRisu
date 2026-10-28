@@ -2339,7 +2339,7 @@
         { "file": "src/ts/process/illustrationModule.ts", "contains": "export function folderIllustrationPresetsOnce(db: IllustrationModuleDb, make: IllustrationModuleMake): number {" },
         { "file": "src/ts/process/illustrationRun.ts", "contains": "folderIllustrationPresetsOnce(DBState.db, illustrationModuleMake())" },
         { "file": "src/ts/process/stableDiff.ts", "contains": "const naiModel = naiOwn.model ?? db.NAIImgModel" },
-        { "file": "src/ts/process/illustrationRun.ts", "contains": "const lore = settings.lore === 'all'" },
+        { "file": "src/ts/process/illustrationRun.ts", "contains": "const lore = (settings.lore === 'all'" },
         { "file": "src/lib/SideBars/IllustrationSettings.svelte", "contains": "data-illustration-lore" },
         { "file": "src/lib/SideBars/IllustrationSettings.svelte", "contains": "data-illustration-common-note" },
         { "file": "src/ts/process/illustration.ts", "contains": "export const LIGHTBOARD_EXTRA_TITLE = 'lb-xnai.lb.extra'" },
