@@ -267,6 +267,13 @@ import ShButton from "../UI/GUI/ShButton.svelte";
         if (!currentCharacter) return
         licensed = (DBState.db.characters[charIndex].type === 'character') ? (DBState.db.characters[charIndex] as character).license : ''
     });
+    // A private-licensed bot shows only the first tab. The template used to
+    // reset the tab while rendering, which Svelte 5 rejects
+    // (state_unsafe_mutation): opening such a bot on another tab threw and left
+    // the previous bot's tab on screen (found 2026-10-28).
+    $effect.pre(() => {
+        if (licensed === 'private' && $CharConfigSubMenu !== 0) $CharConfigSubMenu = 0
+    });
     $effect.pre(() => {
         if (!currentCharacter) return
         if (DBState.db.characters[charIndex].ttsMode === 'novelai' && (DBState.db.characters[charIndex] as character).naittsConfig === undefined) {
@@ -455,9 +462,6 @@ import ShButton from "../UI/GUI/ShButton.svelte";
 
 {:else if licensed === 'private'}
     <span>You are not allowed</span>
-    {(() => {
-        $CharConfigSubMenu = 0
-    })()}
 {:else if $CharConfigSubMenu === 1}
     {#if !$MobileGUI}
         <h2 class="mb-2 text-2xl font-bold mt-2">{language.characterDisplay}</h2>

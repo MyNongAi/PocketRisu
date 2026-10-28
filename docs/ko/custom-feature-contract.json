@@ -2598,9 +2598,11 @@
         "src/ts/rccCard.ts",
         "src/ts/characterCards.ts",
         "src/ts/alert.ts",
-        "src/lib/Others/AlertComp.svelte"
+        "src/lib/Others/AlertComp.svelte",
+        "src/lib/SideBars/CharConfig.svelte"
       ],
       "requiredMarkers": [
+        { "file": "src/lib/SideBars/CharConfig.svelte", "contains": "if (licensed === 'private' && $CharConfigSubMenu !== 0) $CharConfigSubMenu = 0" },
         { "file": "src/ts/rccCard.ts", "contains": "return ['rcc', 'rccv1', encrypted.toString('base64'), hashed, Buffer.from(JSON.stringify(meta)).toString('base64')].join('||')" },
         { "file": "src/ts/characterCards.ts", "contains": "? await encodeRccCard(card, arg.rcc.password)" },
         { "file": "src/ts/characterCards.ts", "contains": "char.license = option.license ?? ''" },
@@ -2608,7 +2610,8 @@
         { "file": "src/lib/Others/AlertComp.svelte", "contains": "password: cardExportType === 'rcc' && cardExportUsePassword ? cardExportPassword : ''" }
       ],
       "regressionTests": [
-        "src/ts/rccCard.test.ts"
+        "src/ts/rccCard.test.ts",
+        "src/lib/SideBars/CharConfig.private.test.ts"
       ]
     },
     {
