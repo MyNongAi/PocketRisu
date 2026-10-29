@@ -2396,7 +2396,10 @@
         { "file": "modules/scene-fold/build.mjs", "contains": "const ACTIVE = '(?={{#when::{{getglobalvar::toggle_scenefold.cut}}::is::2}}(?!){{/when}})'" },
         { "file": "modules/scene-fold/scene-fold.lua", "contains": "function SF.markFolded(tid, messages, scene, folded, settings, number)" },
         { "file": "modules/scene-fold/scene-fold.lua", "contains": "local function endRun(tid, messages, index)" },
-        { "file": "modules/scene-fold/scene-fold.lua", "contains": "if settings.early then out = SF.withoutEmpty(out) end" }
+        { "file": "modules/scene-fold/scene-fold.lua", "contains": "if settings.early then out = SF.withoutEmpty(out) end" },
+        { "file": "modules/scene-fold/scene-fold.lua", "contains": "local answer = ask(tid, single and SF.combinedPrompt(judge, single) or judge, false)" },
+        { "file": "modules/scene-fold/scene-fold.lua", "contains": "if SF.foldReady(tid, messages, settings, allowAsk) then changed = true end" },
+        { "file": "modules/scene-fold/scene-fold.lua", "contains": "elseif action == 'n' or action == 'b' then" }
       ],
       "regressionTests": [
         "src/ts/process/sceneFoldModule.test.ts",

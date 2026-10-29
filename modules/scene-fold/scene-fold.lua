@@ -117,9 +117,14 @@ function SF.repliesAfter(messages, index)
     return count
 end
 
---- Whether a closed scene has waited its grace replies.
-function SF.graceDone(messages, scene, grace)
-    return scene.e ~= nil and SF.repliesAfter(messages, scene.e) >= grace
+--- Whether a closed scene has waited its grace replies, or 지금 접기 skipped them.
+function SF.graceDone(messages, scene, grace, tid)
+    if scene.e == nil then return false end
+    if tid then
+        local ok, now = pcall(getState, tid, 'sf_now_' .. scene.id)
+        if ok and now == true then return true end
+    end
+    return SF.repliesAfter(messages, scene.e) >= grace
 end
 
 --- The runs that are over, in order: { id, s, e }. A run cut from the chat
@@ -598,6 +603,45 @@ function SF.makeSummary(tid, messages, scene, scenes, settings)
     return ask(tid, SF.summaryPrompt(messages, scene, settings), settings.mainSummary)
 end
 
+--- The one request that writes a scene's summary, or nil when it takes
+--- several (a run noted part by part).
+function SF.summaryRequest(tid, messages, scene, scenes, settings)
+    if scene.kind ~= 'loop' then return SF.summaryPrompt(messages, scene, settings) end
+    local log = table.concat(SF.runEntries(tid, messages, scene, scenes), '\n\n')
+    if #log > SF.RUN_PART then return nil end
+    local number = SF.runNumbers(messages, scenes)[scene.id] or 1
+    return SF.runPrompt(log, number, SF.earlierRuns(tid, messages, scenes, scene), settings, false)
+end
+
+--- The first folded-to-be scene whose summary is due: ended, past its grace, none yet.
+function SF.dueScene(tid, messages, scenes, settings)
+    for _, scene in ipairs(SF.foldOrder(scenes)) do
+        if scene.e and SF.graceDone(messages, scene, settings.grace, tid) and not SF.summaryOf(tid, scene.id) then return scene end
+    end
+    return nil
+end
+
+--- The judgement and a due summary as one request (the user's request,
+--- 2026-10-30: the auxiliary model once a reply). The answer is the JSON
+--- line, then the record between <record> tags.
+function SF.combinedPrompt(judge, summary)
+    local judgeTask = judge[2].content:gsub('Answer with one line of JSON and nothing else:', 'Answer of job 1, one line of JSON:')
+    return {
+        { role = 'system', content = 'You do two jobs on a role-play log. Job 1: label scenes, answered with one line of JSON. Job 2: ' .. summary[1].content .. ' Answer with the JSON line of job 1 first, then the record of job 2 between <record> and </record>, and nothing else.' },
+        { role = 'user', content = 'JOB 1\n' .. judgeTask .. '\n\nJOB 2\n' .. summary[2].content },
+    }
+end
+
+--- The record in a combined answer, or nil.
+function SF.parseRecord(answer)
+    if type(answer) ~= 'string' then return nil end
+    local record = answer:match('<record>(.-)</record>') or answer:match('<record>(.*)$')
+    if not record then return nil end
+    record = SF.trim(record)
+    if record == '' then return nil end
+    return record
+end
+
 ------------------------------------------------------------------------------
 -- Folding
 ------------------------------------------------------------------------------
@@ -665,12 +709,13 @@ end
 --- Summarize closed scenes past their grace (one summary per call, inner
 --- scenes before the run over them), mark every folded scene for the request
 --- regex, and cut one when 원문 잘라내기 is chosen. True when anything changed.
-function SF.foldReady(tid, messages, settings)
+function SF.foldReady(tid, messages, settings, allowAsk)
     local scenes = SF.scenes(messages)
     local order = SF.foldOrder(scenes)
-    local folded, asked, changed = {}, false, false
+    -- allowAsk false: this reply already asked the model; a summary waits for the next.
+    local folded, asked, changed = {}, allowAsk == false, false
     for _, scene in ipairs(order) do
-        if scene.e and SF.graceDone(messages, scene, settings.grace) then
+        if scene.e and SF.graceDone(messages, scene, settings.grace, tid) then
             local summary = SF.summaryOf(tid, scene.id)
             if not summary and not asked then
                 asked = true
@@ -717,6 +762,9 @@ onOutput = async(function(tid)
     if changed then scenes = SF.scenes(messages) end
     local open = SF.openScene(scenes)
     local died = false
+    -- Whether foldReady may ask for a summary: not after this reply asked the
+    -- auxiliary model already (one request a reply, the user's request, 2026-10-30).
+    local allowAsk = true
 
     if settings.mainAnchors then
         local cleaned, marks, wrote = SF.convertTokens(last.data or '', open, kinds)
@@ -731,6 +779,7 @@ onOutput = async(function(tid)
         open = SF.openScene(scenes)
         if open and SF.repliesAfter(messages, open.s - 1) > SF.LONG_OPEN and not stateGet(tid, 'sf_asked_' .. open.id) then
             setState(tid, 'sf_asked_' .. open.id, true)
+            allowAsk = settings.mainSummary
             local event = SF.parseJudge(ask(tid, SF.judgePrompt(messages, open, settings, { open.kind }, false), false))
             if event == 'end' or event == 'both' then
                 appendMarks(tid, messages, #messages, SF.endMark(open.id))
@@ -738,7 +787,24 @@ onOutput = async(function(tid)
             end
         end
     elseif #kinds > 0 or settings.loop then
-        local event, kind, loop = SF.parseJudge(ask(tid, SF.judgePrompt(messages, open, settings, kinds, settings.loop), false))
+        -- A summary due now goes with the judgement when the auxiliary model
+        -- writes both. A scene that ends in this reply is summarized with the
+        -- next one; a run noted part by part, or summaries by the main model,
+        -- are asked for apart.
+        local judge = SF.judgePrompt(messages, open, settings, kinds, settings.loop)
+        local due = not settings.mainSummary and SF.dueScene(tid, messages, scenes, settings) or nil
+        local single = due and SF.summaryRequest(tid, messages, due, scenes, settings) or nil
+        local answer = ask(tid, single and SF.combinedPrompt(judge, single) or judge, false)
+        if single then
+            local record = SF.parseRecord(answer)
+            setState(tid, 'sf_fail_' .. due.id, record == nil)
+            if record then
+                setState(tid, 'sf_sum_' .. due.id, record)
+                changed = true
+            end
+        end
+        allowAsk = settings.mainSummary or (due ~= nil and single == nil)
+        local event, kind, loop = SF.parseJudge(answer)
         local marks = SF.marksForEvent(event, kind, open, kinds)
         if marks ~= '' then
             appendMarks(tid, messages, #messages, marks)
@@ -748,7 +814,7 @@ onOutput = async(function(tid)
     end
 
     if died and endRun(tid, messages, #messages) then changed = true end
-    if SF.foldReady(tid, messages, settings) then changed = true end
+    if SF.foldReady(tid, messages, settings, allowAsk) then changed = true end
     if changed then
         bumpVersion(tid)
         reloadDisplay(tid)
@@ -825,7 +891,7 @@ function SF.foldedScenes(tid, messages, settings)
     local scenes = SF.scenes(messages)
     local numbers = SF.runNumbers(messages, scenes)
     for _, scene in ipairs(scenes) do
-        if SF.graceDone(messages, scene, settings.grace) then
+        if SF.graceDone(messages, scene, settings.grace, tid) then
             local summary = SF.summaryOf(tid, scene.id)
             if summary then folded[scene.id] = { kind = scene.kind, text = summary, number = numbers[scene.id] } end
         end
@@ -887,10 +953,14 @@ function SF.note(text)
     return '<div style="opacity:.6;font-size:.8em;margin:2px 0">' .. text .. '</div>'
 end
 
-function SF.buttonBar(index, settings)
+function SF.buttonBar(index, settings, open)
     local bar = '<div style="opacity:.45;font-size:.75em;margin-top:2px;display:flex;gap:12px;flex-wrap:wrap">'
         .. '<span risu-btn="sf|s|' .. index .. '" style="cursor:pointer">▶ 여기부터 장면</span>'
         .. '<span risu-btn="sf|e|' .. index .. '" style="cursor:pointer">■ 여기까지 장면</span>'
+    -- A scene open above: end it here and fold it now, in one press (the user's request, 2026-10-30).
+    if open and open.s <= index + 1 then
+        bar = bar .. '<span risu-btn="sf|b|' .. index .. '" style="cursor:pointer">📁 여기까지 바로 접기</span>'
+    end
     if settings and settings.loop then
         bar = bar .. '<span risu-btn="sf|d|' .. index .. '" style="cursor:pointer">🔁 여기서 회차 끝</span>'
     end
@@ -919,14 +989,16 @@ function SF.displayInfo(tid, settings)
     local messages = getFullChat(tid) or {}
     local info = { at = {}, messages = #messages }
     local scenes = SF.scenes(messages)
+    info.open = SF.openScene(scenes)
     local numbers = SF.runNumbers(messages, scenes)
     for _, scene in ipairs(SF.foldOrder(scenes)) do
-        local summary = scene.e and SF.graceDone(messages, scene, settings.grace) and SF.summaryOf(tid, scene.id) or nil
+        local summary = scene.e and SF.graceDone(messages, scene, settings.grace, tid) and SF.summaryOf(tid, scene.id) or nil
         local entry = {
             scene = scene,
             summary = summary,
             number = numbers[scene.id],
             waiting = scene.e and not summary and SF.repliesAfter(messages, scene.e) or nil,
+            now = scene.e and not summary and stateGet(tid, 'sf_now_' .. scene.id) == true or false,
             failed = scene.e and not summary and stateGet(tid, 'sf_fail_' .. scene.id) == true or false,
         }
         for i = scene.s, scene.e or scene.s do
@@ -973,12 +1045,13 @@ listenEdit('editDisplay', function(tid, text, meta)
             if scene.kind == 'loop' then return SF.note('🔁 지나간 회차의 일부 · 위 카드에서 펼치기') end
             return SF.note('📁 접힌 장면의 일부 · 위 카드에서 펼치기')
         end
+        local foldNow = ' · <span risu-btn="sf|n|' .. scene.id .. '" style="' .. LINK .. '">지금 접기</span>'
         if not scene.e and position == scene.s then
-            return clean .. '\n\n' .. SF.note('📁 ' .. label .. ' 진행 중 · 끝나면 접힙니다')
+            return clean .. '\n\n' .. SF.note('📁 ' .. label .. ' 진행 중 · 끝나면 접힙니다' .. foldNow)
         end
         if scene.e and position == scene.e then
-            local left = math.max(0, settings.grace - (entry.waiting or 0))
-            local status = left > 0 and ('답 ' .. left .. '개 뒤 접힘') or '요약을 만드는 중'
+            local left = entry.now and 0 or math.max(0, settings.grace - (entry.waiting or 0))
+            local status = left > 0 and ('답 ' .. left .. '개 뒤 접힘' .. foldNow) or '요약을 만드는 중'
             if left == 0 and entry.failed then
                 status = '요약을 못 만들었습니다 · <span risu-btn="sf|r|' .. scene.id .. '" style="' .. LINK .. '">다시 요약</span>'
             end
@@ -987,7 +1060,7 @@ listenEdit('editDisplay', function(tid, text, meta)
         end
     end
     if settings.buttons then
-        return clean .. '\n\n' .. SF.buttonBar(index, settings)
+        return clean .. '\n\n' .. SF.buttonBar(index, settings, info.open)
     end
     return clean
 end)
@@ -1061,6 +1134,39 @@ onButtonClick = async(function(tid, data)
         if not endRun(tid, messages, position) then
             alertNormal(tid, '이 메시지는 이미 지난 회차에 들어 있습니다.')
             return
+        end
+    elseif action == 'n' or action == 'b' then
+        -- 지금 접기 (a scene's note) / 여기까지 바로 접기 (a message's bar): the
+        -- scene ends (an open one at the last message, or at this one), skips
+        -- its grace and is summarized now.
+        local scene
+        if action == 'n' then
+            scene = byId[argument]
+            if scene and not scene.e then
+                appendMarks(tid, messages, #messages, SF.endMark(scene.id))
+                scene.e = #messages
+            end
+        else
+            local position = (tonumber(argument) or -1) + 1
+            if not messages[position] or not open or open.s > position then
+                alertNormal(tid, '여기보다 앞에서 시작한 장면이 없습니다. 먼저 "여기부터 장면"을 눌러 주세요.')
+                return
+            end
+            appendMarks(tid, messages, position, SF.endMark(open.id))
+            scene = open
+            scene.e = position
+        end
+        if not scene then return end
+        setState(tid, 'sf_now_' .. scene.id, true)
+        if not SF.summaryOf(tid, scene.id) then
+            messages = getFullChat(tid) or messages
+            local summary = SF.makeSummary(tid, messages, scene, SF.scenes(messages), settings)
+            setState(tid, 'sf_fail_' .. scene.id, summary == nil)
+            if summary then
+                setState(tid, 'sf_sum_' .. scene.id, summary)
+            else
+                alertNormal(tid, '요약을 만들지 못했습니다. 모듈의 저수준 접근이 켜져 있는지, 보조 모델 설정을 확인해 주세요.')
+            end
         end
     elseif action == 'x' then
         setState(tid, 'sf_exp_' .. argument, not (stateGet(tid, 'sf_exp_' .. argument) == true))

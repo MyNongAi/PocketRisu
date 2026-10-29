@@ -174,9 +174,14 @@ describe('after a reply (auxiliary model)', () => {
         await run('output')
         expect(vars[`__sf_sum_${id}`]).toBeUndefined()
 
+        // One request: the judgement and the due summary (the user's request, 2026-10-30).
         chat.message.push({ role: 'char', data: 'They reach town.', time: 6 })
-        llmAnswers.push('{"event":"none"}', 'Pikachu beat the rival.\nGot 300P.')
+        const before = llmPrompts.length
+        llmAnswers.push('{"event":"none"}\n<record>Pikachu beat the rival.\nGot 300P.</record>')
         await run('output')
+        expect(llmPrompts.length - before).toBe(1)
+        expect(llmPrompts.at(-1)![0].content).toContain('You do two jobs')
+        expect(llmPrompts.at(-1)![1].content).toContain('JOB 1')
         expect(JSON.parse(vars[`__sf_sum_${id}`])).toBe('Pikachu beat the rival.\nGot 300P.')
         expect(marks(chat.message[2].data)).toEqual([`<!--sf:m:${id}-->`])
         expect(llmPrompts.at(-1)![1].content).toContain('Keep: who took part and why')
@@ -197,6 +202,54 @@ describe('after a reply (auxiliary model)', () => {
         llmPrompts.length = 0
         await run('output')
         expect(llmPrompts).toHaveLength(0)
+    })
+
+    test('a scene that ends in this reply waits for the next one to be summarized: one request a reply', async () => {
+        toggles.set('toggle_scenefold.grace', '1')
+        const { chat, run, vars } = makeChat([
+            { role: 'char', data: 'fight<!--sf:s:battle:g1-->' },
+            { role: 'char', data: 'Pikachu wins.' },
+        ])
+        llmAnswers.push('{"event":"end","kind":"battle"}')
+        await run('output')
+        expect(llmPrompts).toHaveLength(1)
+        expect(vars.__sf_sum_g1).toBeUndefined()
+
+        chat.message.push({ role: 'char', data: 'They rest.', time: 3 })
+        llmAnswers.push('{"event":"none"}\n<record>Pikachu won.</record>')
+        await run('output')
+        expect(llmPrompts).toHaveLength(2)
+        expect(JSON.parse(vars.__sf_sum_g1)).toBe('Pikachu won.')
+    })
+
+    test('지금 접기 ends an open scene at the last message and folds it at once; 여기까지 바로 접기 ends it at a message', async () => {
+        const { chat, run, vars } = makeChat([
+            { role: 'char', data: 'fight<!--sf:s:battle:n1-->' },
+            { role: 'user', data: 'go' },
+            { role: 'char', data: 'still fighting' },
+        ])
+        const note = (await run('editDisplay', { data: chat.message[0].data, meta: { index: 0 } })).res as string
+        expect(note).toContain('risu-btn="sf|n|n1"')
+        const bar = (await run('editDisplay', { data: chat.message[2].data, meta: { index: 2 } })).res as string
+        expect(bar).toContain('risu-btn="sf|b|2"')
+
+        llmAnswers.push('The fight went on.')
+        await run('onButtonClick', { data: 'sf|n|n1' })
+        expect(marks(chat.message[2].data)).toEqual(['<!--sf:e:n1-->', '<!--sf:m:n1-->'])
+        expect(JSON.parse(vars.__sf_sum_n1)).toBe('The fight went on.')
+        const card = (await run('editDisplay', { data: chat.message[0].data, meta: { index: 0 } })).res as string
+        expect(card).toContain('📁 접힌 장면')
+
+        const second = makeChat([
+            { role: 'char', data: 'fight<!--sf:s:battle:n2-->' },
+            { role: 'char', data: 'won' },
+            { role: 'char', data: 'after' },
+        ])
+        llmAnswers.push('Won.')
+        await second.run('onButtonClick', { data: 'sf|b|1' })
+        expect(marks(second.chat.message[1].data)).toEqual(['<!--sf:e:n2-->', '<!--sf:m:n2-->'])
+        expect(marks(second.chat.message[2].data)).toEqual([])
+        expect(JSON.parse(second.vars.__sf_sum_n2)).toBe('Won.')
     })
 
     test('keeps a failed summary unfolded and remembers the failure', async () => {
@@ -226,7 +279,7 @@ describe('원문 잘라내기 (off by default, 비권장)', () => {
 
     test('stays off unless chosen: the chat keeps every message', async () => {
         const { chat, run } = makeChat(closed())
-        llmAnswers.push('{"event":"none"}', 'Won.')
+        llmAnswers.push('{"event":"none"}\n<record>Won.</record>')
         await run('output')
         expect(chat.message).toHaveLength(6)
     })
@@ -234,7 +287,7 @@ describe('원문 잘라내기 (off by default, 비권장)', () => {
     test('replaces the folded scene with one summary message, sends it as the summary, and 되돌리기 brings the originals back', async () => {
         toggles.set('toggle_scenefold.cut', '1')
         const { run, vars } = makeChat(closed())
-        llmAnswers.push('{"event":"none"}', 'Won the fight.')
+        llmAnswers.push('{"event":"none"}\n<record>Won the fight.</record>')
         let chat = (await run('output')).chat as any
         expect(chat.message.map((m: Message) => m.data)).toEqual(['hi', 'Won the fight.\n<!--sf:c:battle:c1-->', 'a', 'b'])
         expect(JSON.parse(vars.__sf_cut_c1)).toEqual([
@@ -421,7 +474,7 @@ describe('🔁 회차 (a time-loop run)', () => {
         await run('output')
         chat.message.push({ role: 'char', data: 'He meets Emilia again.', time: 6 })
         // grace done for both: the battle inside is summarized first
-        llmAnswers.push(none, 'Elsa ambushed Subaru.')
+        llmAnswers.push(`${none}\n<record>Elsa ambushed Subaru.</record>`)
         await run('output')
         expect(JSON.parse(vars.__sf_sum_b1)).toBe('Elsa ambushed Subaru.')
         expect(vars[`__sf_sum_${runId}`]).toBeUndefined()
@@ -429,7 +482,7 @@ describe('🔁 회차 (a time-loop run)', () => {
         expect(marks(chat.message[3].data)).toEqual(['<!--sf:e:b1-->', `<!--sf:e:${runId}-->`])
 
         chat.message.push({ role: 'char', data: 'Day two.', time: 7 })
-        llmAnswers.push(none, 'Run 1: Elsa killed Subaru at the loot house.')
+        llmAnswers.push(`${none}\n<record>Run 1: Elsa killed Subaru at the loot house.</record>`)
         await run('output')
         const prompt = llmPrompts.at(-1)![1].content
         expect(prompt).toContain('This is run 1 of a time-loop story')
@@ -447,7 +500,7 @@ describe('🔁 회차 (a time-loop run)', () => {
         const second = (marks(chat.message[4].data) as string[]).find((m) => m.startsWith('<!--sf:s:loop:'))!.match(/:(\w+)-->$/)![1]
         expect(marks(chat.message[7].data)).toEqual([`<!--sf:e:${second}-->`])
         chat.message.push({ role: 'char', data: 'a', time: 9 }, { role: 'char', data: 'b', time: 10 })
-        llmAnswers.push(none, 'Run 2 record.')
+        llmAnswers.push(`${none}\n<record>Run 2 record.</record>`)
         await run('output')
         expect(llmPrompts.at(-1)![1].content).toContain('This is run 2')
         expect(llmPrompts.at(-1)![1].content).toContain('Run 1:\nRun 1: Elsa killed Subaru at the loot house.')
