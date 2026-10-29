@@ -62,10 +62,13 @@
         if (phase === 'stalled' || phase === 'aborted') return 'rs-accent-muted'
         return 'rs-accent-primary'
     }
-    function phaseColor(phase: RequestPhase): string {
+    // A memory (HypaV3) summary reads in red, told apart from the reply at a
+    // glance (the user's request, 2026-10-29).
+    function phaseColor(phase: RequestPhase, kind: RequestKind): string {
         if (phase === 'done') return 'text-success'
         if (phase === 'failed') return 'text-draculared'
         if (phase === 'stalled' || phase === 'aborted') return 'text-textcolor2'
+        if (kind === 'memory') return 'text-draculared'
         return 'text-primary'
     }
 
@@ -148,8 +151,8 @@
                     <RotateCwIcon size={14} class="text-primary rs-spin shrink-0" />
                 {/if}
 
-                <span class="rs-phase {phaseColor(entry.phase)}">{PHASE_LABEL[entry.phase]}</span>
-                <span class="rs-chip">{KIND_LABEL[entry.kind]}</span>
+                <span class="rs-phase {phaseColor(entry.phase, entry.kind)}">{PHASE_LABEL[entry.phase]}</span>
+                <span class="rs-chip" class:rs-chip-memory={entry.kind === 'memory'}>{KIND_LABEL[entry.kind]}</span>
                 <span class="rs-elapsed">{elapsedStr(entry)}</span>
 
                 {#if entry.retryAttempt}
@@ -248,6 +251,7 @@
         font-size: 11px; padding: 1px 7px; border-radius: 999px; flex-shrink: 0;
         background: var(--risu-theme-selected); color: var(--risu-theme-textcolor);
     }
+    .rs-chip-memory { color: var(--risu-theme-draculared); font-weight: 600; }
     .rs-elapsed { font-size: 12px; color: var(--risu-theme-textcolor2); font-variant-numeric: tabular-nums; }
     .rs-retry { font-size: 12px; color: var(--risu-theme-textcolor2); }
     .rs-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }

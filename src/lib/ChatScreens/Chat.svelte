@@ -34,6 +34,7 @@
     import { isMobile } from "src/ts/platform"
     import { inputEchoDraft, inputEchoKey, inputEditRequest, nextReplyIndex } from "src/ts/gui/inputEcho"
     import { inputVersionIndex, isRequestInput, recordInputEdit, stepInputVersion } from "src/ts/inputVersions"
+    import { recordReplyEdit } from "src/ts/chatSwipes"
     import { getRequestPairing } from "src/ts/gui/requestPairing"
     import { isLogCapturePickingHere, isLogCaptureStart, logCaptureMarkFor, markLogCapture } from "src/ts/gui/logCaptureState.svelte"
     import { keepInnerScroll } from "src/ts/gui/innerScrollKeeper"
@@ -293,12 +294,16 @@
 
     async function edit(){
         const msg = DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx]
-        if (msg.role === 'user') recordInputEdit(msg, message)
-        else msg.data = message
+        // A reply keeps the text it had as a page; the edit is a new swipe.
+        if (msg.role !== 'user') {
+            recordReplyEdit(msg, message)
+            return
+        }
+        recordInputEdit(msg, message)
         if (msg.swipes && msg.swipeId !== undefined) {
             msg.swipes[msg.swipeId] = message
         }
-        if (msg.role === 'user') retitleCurrentChat()
+        retitleCurrentChat()
     }
 
     // ── Input echo ──────────────────────────────────────────────────────────
@@ -536,12 +541,14 @@
 
         message = e.detail.newData
         const msg = DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx]
-        if (msg.role === 'user') recordInputEdit(msg, e.detail.newData)
-        else msg.data = e.detail.newData
-        if (msg.swipes && msg.swipeId !== undefined) {
-            msg.swipes[msg.swipeId] = e.detail.newData
+        if (msg.role !== 'user') recordReplyEdit(msg, e.detail.newData)
+        else {
+            recordInputEdit(msg, e.detail.newData)
+            if (msg.swipes && msg.swipeId !== undefined) {
+                msg.swipes[msg.swipeId] = e.detail.newData
+            }
+            retitleCurrentChat()
         }
-        if (msg.role === 'user') retitleCurrentChat()
         displaya(e.detail.newData)
     }
 

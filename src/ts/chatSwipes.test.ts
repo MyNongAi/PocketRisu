@@ -11,6 +11,7 @@ import {
     hasBrowsableSwipes,
     hasUnseenSwipe,
     markNewSwipe,
+    recordReplyEdit,
     seeShownSwipe,
     shiftNewMarkAfterDelete,
     showSwipe,
@@ -24,6 +25,31 @@ import {
 
 const user = (data = 'u'): SwipeMessage => ({ role: 'user', data })
 const char = (data = 'c', extra: Partial<SwipeMessage> = {}): SwipeMessage => ({ role: 'char', data, ...extra })
+
+describe('recordReplyEdit', () => {
+    it('keeps the reply as it was and shows the edit as a new last page', () => {
+        const message = char('original')
+        expect(recordReplyEdit(message, 'edited')).toBe(true)
+        expect(message).toMatchObject({ data: 'edited', swipes: ['original', 'edited'], swipeId: 1 })
+        expect(hasBrowsableSwipes(message)).toBe(true)
+        expect(stepSwipe(message, -1)).toBe(true)
+        expect(message.data).toBe('original')
+    })
+
+    it('adds after the rerolls without moving their pages, and finds a text a page holds', () => {
+        const message = char('b', { swipes: ['a', 'b', 'c'], swipeId: 1, nodeOnlyNewSwipe: 2 })
+        recordReplyEdit(message, 'b2')
+        expect(message).toMatchObject({ data: 'b2', swipes: ['a', 'b', 'c', 'b2'], swipeId: 3, nodeOnlyNewSwipe: 2 })
+        recordReplyEdit(message, 'a')
+        expect(message).toMatchObject({ data: 'a', swipes: ['a', 'b', 'c', 'b2'], swipeId: 0 })
+    })
+
+    it('changes nothing when the text is the same', () => {
+        const message = char('same')
+        expect(recordReplyEdit(message, 'same')).toBe(false)
+        expect(message.swipes).toBeUndefined()
+    })
+})
 
 describe('findRerollTargetIndex', () => {
     it('is the last reply when the chat ends on it', () => {

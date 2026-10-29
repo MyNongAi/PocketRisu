@@ -115,6 +115,26 @@ export function findLastReplyIndex(messages: readonly (SwipeMessage | null | und
     return -1
 }
 
+/**
+ * Save `next` as the reply, keeping the text it replaces as a page: an edit
+ * is a new swipe at the end, as a reroll is, so the arrows go back to the
+ * reply as it was (the user's request, 2026-10-29). An edit back to a text a
+ * page already holds shows that page. False when nothing changed.
+ */
+export function recordReplyEdit(message: SwipeMessage, next: string): boolean {
+    if (message.data === next) return false
+    const swipes = Array.isArray(message.swipes) && message.swipes.length > 0 ? message.swipes : [message.data]
+    let at = swipes.indexOf(next)
+    if (at < 0) {
+        swipes.push(next)
+        at = swipes.length - 1
+    }
+    message.swipes = swipes
+    message.swipeId = at
+    message.data = next
+    return true
+}
+
 /** Number of swipes the message can be browsed through (0 or 1 = none). */
 export function swipeCount(message: SwipeMessage | null | undefined): number {
     return Array.isArray(message?.swipes) ? message.swipes.length : 0

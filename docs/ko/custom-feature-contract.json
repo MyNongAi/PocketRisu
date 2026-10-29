@@ -1640,11 +1640,30 @@
         { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "export const REQUEST_TOAST_CLASS = 'rs-toast'" },
         { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "width: fit-content;" },
         { "file": "src/lib/UI/GUI/RequestStatusToaster.svelte", "contains": "scheduleDismiss(id, leavesAtOnce(entry) ? 0 : RETENTION_MS)" },
+        { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "if (kind === 'memory') return 'text-draculared'" },
         { "file": "src/ts/status/requestStatusDock.ts", "contains": "return entry.phase === 'done' && entry.kind !== 'main'" }
       ],
       "regressionTests": [
         "src/ts/status/requestStatusDock.test.ts",
-        "src/ts/status/requestStop.test.ts"
+        "src/ts/status/requestStop.test.ts",
+        "src/lib/UI/GUI/RequestStatusToast.test.ts"
+      ]
+    },
+    {
+      "id": "REPLY-EDIT-KEEPS-ORIGINAL",
+      "title": "답변을 고치면 원래 답이 페이지로 남고 화살표로 오감",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/chatSwipes.ts",
+        "src/lib/ChatScreens/Chat.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/chatSwipes.ts", "contains": "export function recordReplyEdit(message: SwipeMessage, next: string): boolean {" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "recordReplyEdit(msg, message)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (msg.role !== 'user') recordReplyEdit(msg, e.detail.newData)" }
+      ],
+      "regressionTests": [
+        "src/ts/chatSwipes.test.ts"
       ]
     },
     {
