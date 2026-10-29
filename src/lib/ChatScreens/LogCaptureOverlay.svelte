@@ -40,9 +40,13 @@
     )
 
     let copiedIndex = $state(-1)
+    // Images copied from this result (by URL, so a new capture starts clean):
+    // the numbered row keeps a ✓ on each, to paste them in order.
+    let copiedUrls = $state<string[]>([])
     async function copyOne(image: LogCaptureImage, index: number) {
         if (await copyLogImage(image)) {
             copiedIndex = index
+            if (!copiedUrls.includes(image.url)) copiedUrls = [...copiedUrls, image.url]
             setTimeout(() => { if (copiedIndex === index) copiedIndex = -1 }, 1800)
         }
     }
@@ -162,7 +166,21 @@
                             </figure>
                         {/each}
                     </div>
-                    <footer class="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-darkborderc px-4 py-3">
+                    {#if logCapture.images.length > 1}
+                        <!-- Several images: a numbered copy button each, top to bottom, always
+                             in view, so they go into a post in order (the user's request,
+                             2026-10-30); a copied one keeps its ✓. -->
+                        <div class="flex shrink-0 flex-wrap items-center gap-1.5 border-t border-darkborderc px-4 pt-3" data-log-copy-order>
+                            <span class="mr-1 text-xs text-textcolor2">{language.logCapture.copyInOrder}</span>
+                            {#each logCapture.images as image, i (image.url)}
+                                {@const done = copiedUrls.includes(image.url)}
+                                <button type="button" class="flex items-center gap-1 rounded-lg px-2.5 py-1 text-sm transition-colors {done ? 'border border-green-500/60 text-green-400 hover:bg-selected' : 'bg-primary text-white hover:bg-primary/85'}" aria-label={language.logCapture.copyNumber.replace('{}', String(i + 1))} onclick={() => copyOne(image, i)}>
+                                    {#if done}<CheckIcon size={14} />{:else}<CopyIcon size={14} />{/if}{i + 1}
+                                </button>
+                            {/each}
+                        </div>
+                    {/if}
+                    <footer class="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-darkborderc px-4 py-3" class:border-t-0={logCapture.images.length > 1}>
                         {#if logCapture.images.length === 1}
                             <button type="button" class="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm text-white transition-colors hover:bg-primary/85" onclick={() => copyOne(logCapture.images[0], 0)}>
                                 {#if copiedIndex === 0}<CheckIcon size={16} />{:else}<CopyIcon size={16} />{/if}{language.logCapture.copy}
