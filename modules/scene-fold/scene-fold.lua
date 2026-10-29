@@ -953,14 +953,12 @@ function SF.note(text)
     return '<div style="opacity:.6;font-size:.8em;margin:2px 0">' .. text .. '</div>'
 end
 
-function SF.buttonBar(index, settings, open)
+function SF.buttonBar(index, settings)
+    -- ■ ends the open scene here and folds it at once: the grace replies are
+    -- for a scene the model found ended (the user's request, 2026-10-30).
     local bar = '<div style="opacity:.45;font-size:.75em;margin-top:2px;display:flex;gap:12px;flex-wrap:wrap">'
         .. '<span risu-btn="sf|s|' .. index .. '" style="cursor:pointer">▶ 여기부터 장면</span>'
-        .. '<span risu-btn="sf|e|' .. index .. '" style="cursor:pointer">■ 여기까지 장면</span>'
-    -- A scene open above: end it here and fold it now, in one press (the user's request, 2026-10-30).
-    if open and open.s <= index + 1 then
-        bar = bar .. '<span risu-btn="sf|b|' .. index .. '" style="cursor:pointer">📁 여기까지 바로 접기</span>'
-    end
+        .. '<span risu-btn="sf|e|' .. index .. '" style="cursor:pointer">■ 여기까지 접기</span>'
     if settings and settings.loop then
         bar = bar .. '<span risu-btn="sf|d|' .. index .. '" style="cursor:pointer">🔁 여기서 회차 끝</span>'
     end
@@ -989,7 +987,6 @@ function SF.displayInfo(tid, settings)
     local messages = getFullChat(tid) or {}
     local info = { at = {}, messages = #messages }
     local scenes = SF.scenes(messages)
-    info.open = SF.openScene(scenes)
     local numbers = SF.runNumbers(messages, scenes)
     for _, scene in ipairs(SF.foldOrder(scenes)) do
         local summary = scene.e and SF.graceDone(messages, scene, settings.grace, tid) and SF.summaryOf(tid, scene.id) or nil
@@ -1060,7 +1057,7 @@ listenEdit('editDisplay', function(tid, text, meta)
         end
     end
     if settings.buttons then
-        return clean .. '\n\n' .. SF.buttonBar(index, settings, info.open)
+        return clean .. '\n\n' .. SF.buttonBar(index, settings)
     end
     return clean
 end)
@@ -1113,20 +1110,12 @@ onButtonClick = async(function(tid, data)
         local position = (tonumber(argument) or -1) + 1
         if not messages[position] then return end
         if open then
-            alertNormal(tid, '이미 진행 중인 장면이 있습니다. 먼저 "여기까지 장면"으로 끝을 정해 주세요.')
+            alertNormal(tid, '이미 진행 중인 장면이 있습니다. 먼저 "여기까지 접기"로 끝을 정해 주세요.')
             return
         end
         local kind = pickKind(tid, settings)
         if not kind then return end
         appendMarks(tid, messages, position, SF.startMark(kind, newId()))
-    elseif action == 'e' then
-        local position = (tonumber(argument) or -1) + 1
-        if not messages[position] then return end
-        if not open or open.s > position then
-            alertNormal(tid, '여기보다 앞에서 시작한 장면이 없습니다. 먼저 "여기부터 장면"을 눌러 주세요.')
-            return
-        end
-        appendMarks(tid, messages, position, SF.endMark(open.id))
     elseif action == 'd' then
         -- 여기서 회차 끝: the hero died here.
         local position = (tonumber(argument) or -1) + 1
@@ -1135,10 +1124,10 @@ onButtonClick = async(function(tid, data)
             alertNormal(tid, '이 메시지는 이미 지난 회차에 들어 있습니다.')
             return
         end
-    elseif action == 'n' or action == 'b' then
-        -- 지금 접기 (a scene's note) / 여기까지 바로 접기 (a message's bar): the
-        -- scene ends (an open one at the last message, or at this one), skips
-        -- its grace and is summarized now.
+    elseif action == 'n' or action == 'e' or action == 'b' then
+        -- 지금 접기 (a scene's note) / ■ 여기까지 접기 (a message's bar; 'b' is
+        -- 0.3.0's name for it): the scene ends (an open one at the last
+        -- message, or at this one), skips its grace and is summarized now.
         local scene
         if action == 'n' then
             scene = byId[argument]

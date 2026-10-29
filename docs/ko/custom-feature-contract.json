@@ -2399,7 +2399,7 @@
         { "file": "modules/scene-fold/scene-fold.lua", "contains": "if settings.early then out = SF.withoutEmpty(out) end" },
         { "file": "modules/scene-fold/scene-fold.lua", "contains": "local answer = ask(tid, single and SF.combinedPrompt(judge, single) or judge, false)" },
         { "file": "modules/scene-fold/scene-fold.lua", "contains": "if SF.foldReady(tid, messages, settings, allowAsk) then changed = true end" },
-        { "file": "modules/scene-fold/scene-fold.lua", "contains": "elseif action == 'n' or action == 'b' then" }
+        { "file": "modules/scene-fold/scene-fold.lua", "contains": "elseif action == 'n' or action == 'e' or action == 'b' then" }
       ],
       "regressionTests": [
         "src/ts/process/sceneFoldModule.test.ts",

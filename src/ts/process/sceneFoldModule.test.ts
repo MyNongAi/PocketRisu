@@ -222,7 +222,7 @@ describe('after a reply (auxiliary model)', () => {
         expect(JSON.parse(vars.__sf_sum_g1)).toBe('Pikachu won.')
     })
 
-    test('지금 접기 ends an open scene at the last message and folds it at once; 여기까지 바로 접기 ends it at a message', async () => {
+    test('지금 접기 ends an open scene at the last message and folds it at once; ■ 여기까지 접기 ends it at a message', async () => {
         const { chat, run, vars } = makeChat([
             { role: 'char', data: 'fight<!--sf:s:battle:n1-->' },
             { role: 'user', data: 'go' },
@@ -231,7 +231,8 @@ describe('after a reply (auxiliary model)', () => {
         const note = (await run('editDisplay', { data: chat.message[0].data, meta: { index: 0 } })).res as string
         expect(note).toContain('risu-btn="sf|n|n1"')
         const bar = (await run('editDisplay', { data: chat.message[2].data, meta: { index: 2 } })).res as string
-        expect(bar).toContain('risu-btn="sf|b|2"')
+        expect(bar).toContain('risu-btn="sf|e|2"')
+        expect(bar).toContain('■ 여기까지 접기')
 
         llmAnswers.push('The fight went on.')
         await run('onButtonClick', { data: 'sf|n|n1' })
@@ -246,7 +247,7 @@ describe('after a reply (auxiliary model)', () => {
             { role: 'char', data: 'after' },
         ])
         llmAnswers.push('Won.')
-        await second.run('onButtonClick', { data: 'sf|b|1' })
+        await second.run('onButtonClick', { data: 'sf|e|1' })
         expect(marks(second.chat.message[1].data)).toEqual(['<!--sf:e:n2-->', '<!--sf:m:n2-->'])
         expect(marks(second.chat.message[2].data)).toEqual([])
         expect(JSON.parse(second.vars.__sf_sum_n2)).toBe('Won.')
