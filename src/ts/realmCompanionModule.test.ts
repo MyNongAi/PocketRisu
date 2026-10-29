@@ -53,7 +53,7 @@ vi.mock('./process/modules', () => ({ importModuleFile: (...a: unknown[]) => imp
 
 const {
     findProtonShareLinks, isCompanionModuleFile, pairModulesWithCharacter, importRealmCompanionModules,
-    openBotNotesProtonLink, protonShareLinkOf, protonLinkChoices, importRealmDescriptionModules, compareShareModules,
+    openBotNotesProtonLink, protonShareLinkOf, protonLinkChoices, importRealmDescriptionModules, compareShareModules, linkBareProtonShares,
 } = await import('./realmCompanionModule')
 
 const LINK = 'https://drive.proton.me/urls/ABC123#keyPart_-9'
@@ -282,6 +282,19 @@ describe('a folder share', () => {
         await importRealmCompanionModules('c1', [LINK])
         expect(db.characters[0].modules).toEqual([])
         expect(notifySuccess).not.toHaveBeenCalled()
+    })
+})
+
+describe('bare share links in creator notes', () => {
+    // The user's report, 2026-10-30: a pasted address in the notes was not a link.
+    test('become markdown links; links already written are left alone', () => {
+        expect(linkBareProtonShares(`에셋 모듈\n${LINK}\n끝`)).toBe(`에셋 모듈\n[${LINK}](${LINK})\n끝`)
+        expect(linkBareProtonShares(`모듈:${LINK}.`)).toBe(`모듈:[${LINK}](${LINK}).`)
+        for (const written of [`[모듈](${LINK})`, `[${LINK}](${LINK})`, `<a href="${LINK}">모듈</a>`, `<${LINK}>`, `\`${LINK}\``]) {
+            expect(linkBareProtonShares(written)).toBe(written)
+        }
+        // Without the key after '#' the share cannot be opened: left as text.
+        expect(linkBareProtonShares('https://drive.proton.me/urls/ABC123')).toBe('https://drive.proton.me/urls/ABC123')
     })
 })
 

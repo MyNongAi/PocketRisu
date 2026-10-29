@@ -1232,6 +1232,8 @@
         { "file": "src/ts/realmCompanionModule.ts", "contains": "await importProtonShare(link, password, share, 'module', keep, { browse: true, taskName: companionTaskName })" },
         { "file": "src/ts/realmCompanionModule.ts", "contains": "const modules = await downloadShareModules(link, { browse: true, label: language.botNotesModuleTask })" },
         { "file": "src/lib/ChatScreens/CreatorQuote.svelte", "contains": "void openBotNotesProtonLink(chaId, link)" },
+        { "file": "src/lib/ChatScreens/CreatorQuote.svelte", "contains": "<MultiLangDisplay value={linkBareProtonShares(quote)} markdown={true} />" },
+        { "file": "src/ts/realmCompanionModule.ts", "contains": "export function linkBareProtonShares(" },
         { "file": "src/ts/realmCompanionModule.ts", "contains": "const modules = await downloadShareModules(link, { browse: true })" },
         { "file": "src/lib/UI/Realm/RealmPopUp.svelte", "contains": "await importRealmDescriptionModules(openedData.desc ?? '', () =>" },
         { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "forgetModulePair(DBState.db.modules, moduleId, character.chaId)" },

@@ -366,6 +366,20 @@ export async function importRealmDescriptionModules(
     }
 }
 
+/**
+ * Bare Proton share links in a bot's creator notes, as markdown links (the
+ * user's report, 2026-10-30: clicking one did nothing). The app's markdown
+ * does not turn a bare address into a link (linkify is off, as in RisuAI),
+ * so notes that only paste the address had nothing to click. One already in
+ * a markdown link, an HTML attribute, <…> or code is left alone.
+ */
+export function linkBareProtonShares(text: string): string {
+    return text.replace(
+        /(^|[^\w"'(=[\]\/<`])(https:\/\/drive\.proton\.(?:me|ch)\/urls\/[A-Za-z0-9]+\/?#[A-Za-z0-9_-]+)/g,
+        (_whole, before: string, url: string) => `${before}[${url}](${url})`,
+    )
+}
+
 /** The Proton share an anchor in rendered notes points at, or null. */
 export function protonShareLinkOf(anchor: Element | null): string | null {
     const href = anchor?.getAttribute('href')

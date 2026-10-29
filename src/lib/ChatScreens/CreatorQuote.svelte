@@ -6,14 +6,14 @@
                 <XIcon />
             </button>
         </h1>
-        <MultiLangDisplay value={quote} markdown={true} />
+        <MultiLangDisplay value={linkBareProtonShares(quote)} markdown={true} />
     </div>
 </div>
 <script lang="ts">
     import { XIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import MultiLangDisplay from "../UI/GUI/MultiLangDisplay.svelte";
-    import { openBotNotesProtonLink, protonShareLinkOf } from "src/ts/realmCompanionModule";
+    import { linkBareProtonShares, openBotNotesProtonLink, protonShareLinkOf } from "src/ts/realmCompanionModule";
 
     interface Props {
         onRemove: () => void;
@@ -26,7 +26,8 @@
 
     // A Proton share link in the notes opens the Proton browser in the app
     // instead of the site; what is imported from it is paired with this bot
-    // (the user's request, 2026-10-22). Other links behave as before.
+    // (the user's request, 2026-10-22). Other links behave as before. A bare
+    // share address is made a link first (linkBareProtonShares).
     function openProtonLink(event: MouseEvent) {
         if (!chaId || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey) return
         const link = protonShareLinkOf((event.target as Element | null)?.closest('a[href]') ?? null)
