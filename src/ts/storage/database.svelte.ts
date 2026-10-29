@@ -1739,6 +1739,8 @@ export interface Database{
     nodeOnlyRealmRelay?: string
     /** A message body changes only where its HTML changed (gui/morphHtml.ts), keeping panel scroll, <details>, tabs and animations; off = the upstream {@html} swap. */
     nodeOnlyChatBodyInPlace?: boolean
+    /** The 文A translate button on each message (Chat.svelte); true hides it, and it moves into the message's ☰ menu. Undefined means shown. */
+    nodeOnlyHideMessageTranslateButton?: boolean
     /** ✂️ log image capture (gui/logCaptureState.svelte.ts): the button and the image options. */
     nodeOnlyLogCaptureButton?: boolean
     nodeOnlyLogImageWidth?: number
@@ -2290,6 +2292,8 @@ export interface themePreset{
     nodeOnlyRealmRelay?: string
     /** A message body changes only where its HTML changed (gui/morphHtml.ts), keeping panel scroll, <details>, tabs and animations; off = the upstream {@html} swap. */
     nodeOnlyChatBodyInPlace?: boolean
+    /** The 文A translate button on each message (Chat.svelte); true hides it, and it moves into the message's ☰ menu. Undefined means shown. */
+    nodeOnlyHideMessageTranslateButton?: boolean
     /** ✂️ log image capture (gui/logCaptureState.svelte.ts): the button and the image options. */
     nodeOnlyLogCaptureButton?: boolean
     nodeOnlyLogImageWidth?: number

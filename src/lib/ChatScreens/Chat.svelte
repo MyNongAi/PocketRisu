@@ -1082,7 +1082,10 @@
                         onclick={() => markLogCapture(idx)}
                     ><span class="text-[17px]" aria-hidden="true">{logCaptureGlyph}</span></button>
                 {/if}
-                {@render translationButton()}
+                <!-- Hidden from the button row by the input menu's toggle, it is in the ☰ menu instead. -->
+                {#if !DBState.db.nodeOnlyHideMessageTranslateButton}
+                    {@render translationButton()}
+                {/if}
                 {#if wide640.current}
                     {@render majorIconButtonsBody(false)}
                     {#if DBState.db.characters[view.characterIndex] && idx > -1}
@@ -1311,7 +1314,8 @@
         >
             <LanguagesIcon />
             {#if showNames}
-                <span class="ml-1">{language.translate}</span>
+                <!-- language.translate reads "코드 주소 번역하기" in Korean (another use upstream). -->
+                <span class="ml-1">{language.messageTranslateMenu}</span>
             {/if}
         </button>
     {/if}
@@ -1407,6 +1411,9 @@
 
 {#snippet minorIconButtonsBody(showNames:boolean)}
     {#if idx > -1}
+    {#if DBState.db.nodeOnlyHideMessageTranslateButton}
+        {@render translationButton(showNames)}
+    {/if}
     {#if role === 'char' && !placeholder && DBState.db.characters[view.characterIndex]?.nodeOnlyIllustration?.enabled}
         <!-- 🎨 Draw this reply's illustrations, or draw them again (illustration.ts). -->
         <button class="flex items-center hover:text-primary transition-colors button-icon-illustration" disabled={illustrationBusy} onclick={async () => {

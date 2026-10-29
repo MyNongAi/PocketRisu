@@ -1690,6 +1690,11 @@ import { isMobile } from 'src/ts/platform'
                                 <ShDropdownMenuItem class={DBState.db.useAutoTranslateInput ? 'text-green-500' : ''} onSelect={() => { DBState.db.useAutoTranslateInput = !DBState.db.useAutoTranslateInput }}>
                                     <GlobeIcon /><span>{language.autoTranslateInput}</span>
                                 </ShDropdownMenuItem>
+                                <!-- The 文A button on each message (the user's request, 2026-10-30), green while shown;
+                                     hidden, it moves into each message's ☰ menu (Chat.svelte). -->
+                                <ShDropdownMenuItem class={DBState.db.nodeOnlyHideMessageTranslateButton ? '' : 'text-green-500'} onSelect={() => { DBState.db.nodeOnlyHideMessageTranslateButton = !DBState.db.nodeOnlyHideMessageTranslateButton }}>
+                                    <LanguagesIcon /><span>{language.messageTranslateButton}</span>
+                                </ShDropdownMenuItem>
                             {/if}
                             {#if currentChatReady && chatSendsToNativeGemini(currentChatSlot)}
                                 <!-- The Gemini PDF input switch (Chat bot > Model), green while on. -->

@@ -889,6 +889,8 @@ export const languageEnglish = {
     useChatSticker: "Use Chat Sticker",
     useAdditionalAssetsPreview: "Use Additional Assets Preview",
     autoTranslateInput: "Auto Translate Input",
+    messageTranslateButton: "Show the translate button on messages",
+    messageTranslateMenu: "Translate",
     enterMessageForTranslateToEnglish: "Enter Message for Translate to English",
     recent: "Recent",
     downloads: "Downloads",

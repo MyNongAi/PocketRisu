@@ -1126,6 +1126,23 @@
       ]
     },
     {
+      "id": "MESSAGE-TRANSLATE-TOGGLE",
+      "title": "메시지 번역 버튼 보이기 토글 (입력창 ☰ 메뉴)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/ChatScreens/Chat.svelte",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/ts/storage/database.svelte.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "onSelect={() => { DBState.db.nodeOnlyHideMessageTranslateButton = !DBState.db.nodeOnlyHideMessageTranslateButton }}" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "{#if !DBState.db.nodeOnlyHideMessageTranslateButton}" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "<span class=\"ml-1\">{language.messageTranslateMenu}</span>" },
+        { "file": "src/ts/storage/database.svelte.ts", "contains": "nodeOnlyHideMessageTranslateButton?: boolean" }
+      ],
+      "regressionTests": []
+    },
+    {
       "id": "CHAT-LOG-IMAGE",
       "title": "✂️ 로그 이미지 캡처 (두 메시지 사이를 긴 이미지로 복사)",
       "criticality": "core-ux",
