@@ -64,6 +64,29 @@ describe('interleaved module catalog', () => {
         ])
     })
 
+    // The user's request, 2026-10-30: "new에 안밀리고 항상 최상단, 즐찾보다는
+    // 아래"; [링크]·[프롬]·[유사 후보] still follow the order.
+    it('holds the ★ folder first, then the modules on now and the folders of the user holding one, above the newest entry', () => {
+        expect(interleaveModuleCatalogGroups([
+            { folder: { id: 'plainFav', favorite: true }, indexes: [1] },
+            { folder: { id: 'star', favorite: true, nodeOnlyFavoritesFolder: true }, indexes: [6] },
+            { folder: { id: 'mine' }, indexes: [5] },
+            { folder: { id: 'link', nodeOnlyLinkFolder: true }, indexes: [3] },
+            { folder: { id: 'prom', nodeOnlyPresetFolder: 'root' }, indexes: [], nestedIndexes: [7] },
+            { folder: { id: 'similar', duplicateCandidate: { kind: 'module', key: 'x' } }, indexes: [8] },
+            { folder: null, indexes: [0, 2, 4, 9] },
+        ], 0, '', new Set(), new Set([3, 4, 5, 7, 8, 9]))).toEqual([
+            { kind: 'folder', folderId: 'star' },
+            { kind: 'folder', folderId: 'plainFav' },
+            { kind: 'root', indexes: [4] },
+            { kind: 'folder', folderId: 'mine' },
+            { kind: 'root', indexes: [9, 0, 2] },
+            { kind: 'folder', folderId: 'link' },
+            { kind: 'folder', folderId: 'prom' },
+            { kind: 'folder', folderId: 'similar' },
+        ])
+    })
+
     it('promotes only the active folder and leaves the remaining entries interleaved', () => {
         expect(interleaveModuleCatalogGroups(groups, -1, 'second')).toEqual([
             { kind: 'folder', folderId: 'second' },

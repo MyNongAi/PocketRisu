@@ -1157,6 +1157,8 @@ export interface PromptPresetFolder {
     /** The [프롬] folder, a preset's folder in it, or its 프롬 없음 folder (presetModuleFolder.ts). */
     nodeOnlyPresetFolder?: 'root' | 'preset' | 'orphans'
     nodeOnlyPresetName?: string
+    /** The ★ folder of favorite modules (moduleFavoritesFolder.ts). */
+    nodeOnlyFavoritesFolder?: boolean
 }
 
 export interface Database{

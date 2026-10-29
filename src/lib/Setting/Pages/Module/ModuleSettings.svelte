@@ -9,7 +9,8 @@
     import ShDropdownMenuItem from "src/lib/UI/GUI/ShDropdownMenuItem.svelte";
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
     import ModuleMenu from "src/lib/Setting/Pages/Module/ModuleMenu.svelte";
-    import { addModuleToDatabase, exportModule, exportModuleLegacy, hydrateModuleAssets, importModule, importModuleFromProtonDrive, refreshModules, rerenderChatForModules, syncLinkedFolders, type RisuModule } from "src/ts/process/modules";
+    import { addModuleToDatabase, exportModule, exportModuleLegacy, hydrateModuleAssets, importModule, importModuleFromProtonDrive, refreshModules, rerenderChatForModules, syncFavoriteModules, syncLinkedFolders, type RisuModule } from "src/ts/process/modules";
+    import { favoriteAfterMove, isModuleFavoritesFolder } from "src/ts/process/moduleFavoritesFolder";
     import { Clock3Icon, SquarePen, Globe, Share2Icon, PlusIcon, HardDriveUpload, ListOrderedIcon, PaletteIcon, StarIcon, Waypoints, CloudDownloadIcon, LinkIcon, Link2Icon, UnlinkIcon, UserSearchIcon } from "@lucide/svelte";
     import { v4 } from "uuid";
     import { tooltip } from "src/ts/gui/tooltip";
@@ -63,10 +64,9 @@
             ? 'registered'
             : 'recent',
     )
-    // 최근순 follows the activations and the drags only. The modules on now
-    // ([링크]·[프롬], 🎨, the blue and orange ones) were lifted above the rest;
-    // only favorites hold the top now (the user's rule, 2026-10-27: "즐찾만
-    // 고정"; interleaveModuleCatalogGroups).
+    // 최근순 follows the activations and the drags. Above it the favorites
+    // hold the top (the user's rule, 2026-10-27: "즐찾만 고정"), and under
+    // them the modules on now (2026-10-30; interleaveModuleCatalogGroups).
     let recencyOptions = $derived({
         fallbackOrders: [DBState.db.enabledModules],
         activationHistory: DBState.db.moduleActivationHistory,
@@ -75,6 +75,9 @@
         ? [...DBState.db.modules]
         : sortModulesByActivation(DBState.db.modules, '', recencyOptions))
     let favoriteModuleIndexes = $derived(new Set(displayModules.flatMap((module, index) => module?.favorite ? [index] : [])))
+    // The blue and orange ones, 🎨 with the bot's illustration toggle on too.
+    let activeModuleIndexes = $derived(new Set(displayModules.flatMap((module, index) => module
+        && (isGlobal(module) || isIntegrated(module) || isBotModule(module) || isIllustrationOn(module) || isEditModeOn(module)) ? [index] : [])))
     let displayFolders = $derived(moduleCatalogSort === 'registered'
         ? [...(DBState.db.moduleFolders ?? [])]
         : sortModuleFoldersByActivation(
@@ -364,10 +367,14 @@
             .map(({ index, folderId }) => ({ id: displayModules[index]?.id, folderId }))
             .filter((item): item is { id: string, folderId: string | undefined } => !!item.id)
         // Only a module whose folder changed gets a new object: the save
-        // tracker compares every replaced module again on the next save.
+        // tracker compares every replaced module again on the next save. One
+        // moved into the ★ folder is a favorite, one moved out of it is not.
+        const favoritesId = currentFolders.find(isModuleFavoritesFolder)?.id
         DBState.db.modules = DBState.db.modules.map((module) => {
             const folderId = folderById.get(module.id)
-            return module.folderId === folderId ? module : { ...module, folderId }
+            if (module.folderId === folderId) return module
+            const favorite = favoriteAfterMove(!!module.favorite, module.folderId, folderId, favoritesId)
+            return favorite === !!module.favorite ? { ...module, folderId } : { ...module, folderId, favorite }
         })
         const synchronized = synchronizeModuleFolderMembership(
             DBState.db.modules,
@@ -377,6 +384,8 @@
         const dissolved = dissolveShrunkenModuleFolders(DBState.db.modules, synchronized, currentFolders)
         DBState.db.modules = dissolved.modules
         DBState.db.moduleFolders = dissolved.folders
+        // A favorite left loose goes into the ★ folder; an emptied ★ folder goes.
+        syncFavoriteModules()
         if (moduleCatalogSort === 'registered') {
             return
         }
@@ -406,6 +415,8 @@
             next,
             { importLegacyWhenFolderIdsEmpty: false },
         ))
+        // A folder delete hands over the folders from before its module moves.
+        syncFavoriteModules()
     }
 
     async function changeModuleColor(rmodule: RisuModule) {
@@ -498,6 +509,7 @@
         promotedItemIndex={promotedModuleIndex}
         promotedFolderId={promotedFolderId}
         favoriteItemIndexes={favoriteModuleIndexes}
+        activeItemIndexes={activeModuleIndexes}
         selectedIndex={foundModuleIndex}
         reorderDisabled={moduleCatalogSort !== 'recent'}
         folderTitleColor={folderColor}
@@ -620,7 +632,7 @@
                 <ShDropdownMenuItem onSelect={() => copyProtonLink(protonLinkOf(rmodule))}><LinkIcon /><span>{language.protonLinkCopy}</span></ShDropdownMenuItem>
             {/if}
             <ShDropdownMenuItem onSelect={() => changeModuleColor(rmodule)}><PaletteIcon /><span>색변경</span></ShDropdownMenuItem>
-            <ShDropdownMenuItem onSelect={() => { rmodule.favorite = !rmodule.favorite; if (rmodule.favorite) rememberActivation(rmodule.id) }}><StarIcon /><span>{rmodule.favorite ? '즐겨찾기 해제' : '즐겨찾기 (맨위로)'}</span></ShDropdownMenuItem>
+            <ShDropdownMenuItem onSelect={() => { rmodule.favorite = !rmodule.favorite; if (rmodule.favorite) rememberActivation(rmodule.id); syncLinkedFolders() }}><StarIcon /><span>{rmodule.favorite ? '즐겨찾기 해제' : '즐겨찾기 (★ 폴더로)'}</span></ShDropdownMenuItem>
         {/snippet}
     </FolderedList>
     {#if DBState.db.modules.length === 0}

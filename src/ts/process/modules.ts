@@ -17,6 +17,7 @@ import { collectModuleRuntimeIds, collectModuleRuntimeUi } from "./moduleRuntime
 import { recordModuleFolderActivation, recordNewModules } from "./moduleSort"
 import { organizeImportedModuleSimilarity } from "./similarityFolders"
 import { gatherLinkedModules, linkedModuleIds } from "./linkedModuleFolder"
+import { gatherFavoriteModules } from "./moduleFavoritesFolder"
 import { gatherPresetModules, recordPresetLinks } from "./presetModuleFolder"
 import { applyModuleLayout, isModuleLayoutFile } from "./moduleLayoutImport"
 import { botsWithOwnModules, gatherLinkedBots } from "../linkedBotFolder"
@@ -125,15 +126,26 @@ export function rerenderChatForModules(): void {
     ReloadGUIPointer.set(get(ReloadGUIPointer) + 1)
 }
 
+/** The ★ folder of favorite modules (moduleFavoritesFolder.ts). True when it changed. */
+export function syncFavoriteModules(db = getDatabase()): boolean {
+    const gathered = gatherFavoriteModules(db.modules, db.moduleFolders ?? [], v4)
+    if (!gathered) return false
+    db.modules = gathered.modules
+    db.moduleFolders = gathered.folders
+    return true
+}
+
 /**
  * The [링크] folders, after a module link changed or on load: modules bots
  * carry as their own in the module catalog's (linkedModuleFolder.ts), and the
  * bots that carry them in the bot list's (linkedBotFolder.ts). Before them the
  * [프롬] folder of modules prompt presets turn on (presetModuleFolder.ts), so
- * one a bot carries is left loose for [링크]. True when any changed.
+ * one a bot carries is left loose for [링크], and before that the ★ folder,
+ * so a favorite stays in it. True when any changed.
  */
 export function syncLinkedFolders(db = getDatabase()): boolean {
-    let changed = recordPresetLinks(db.modules, db.botPresets)
+    let changed = syncFavoriteModules(db)
+    changed = recordPresetLinks(db.modules, db.botPresets) || changed
     const presetGathered = gatherPresetModules(db.modules, db.moduleFolders ?? [], db.botPresets, linkedModuleIds(db.characters), v4)
     if (presetGathered) {
         db.modules = presetGathered.modules

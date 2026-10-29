@@ -16,12 +16,16 @@ export interface ModuleFolder {
     nodeOnlyLinkKind?: 'manual'
     /** Explicit visual order (moduleSort.ts). */
     sortOrder?: number
+    /** Held at the top of the catalog (moduleSort.ts). */
+    favorite?: boolean
     /** Shown inside this folder (display-only nesting, as on the bot list). */
     nodeOnlyParentFolderId?: string
     /** The [프롬] folder, a preset's folder in it, or its 프롬 없음 folder (presetModuleFolder.ts). */
     nodeOnlyPresetFolder?: 'root' | 'preset' | 'orphans'
     /** The prompt preset a 'preset' folder holds the modules of. */
     nodeOnlyPresetName?: string
+    /** The ★ folder of favorite modules (moduleFavoritesFolder.ts). */
+    nodeOnlyFavoritesFolder?: boolean
 }
 
 export interface FolderableModule {
@@ -176,7 +180,8 @@ export function dissolveShrunkenModuleFolders<T extends FolderableModule>(
     const dissolveIds = new Set(current
         .filter((folder) => {
             const before = previousCounts.get(folder.id) ?? 0
-            return !parents.has(folder.id) && before > folder.moduleIds.length && folder.moduleIds.length <= 1
+            // The ★ folder stays at one favorite (moduleFavoritesFolder.ts).
+            return !parents.has(folder.id) && !folder.nodeOnlyFavoritesFolder && before > folder.moduleIds.length && folder.moduleIds.length <= 1
         })
         .map((folder) => folder.id))
 

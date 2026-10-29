@@ -111,8 +111,20 @@ export interface ModuleCatalogPromotion {
     folderId?: string
 }
 
+/** What the catalog's order reads of a folder. */
+export interface ModuleCatalogFolder {
+    id: string
+    name?: string
+    favorite?: boolean
+    /** The ★ folder (moduleFavoritesFolder.ts): first of all. */
+    nodeOnlyFavoritesFolder?: boolean
+    nodeOnlyLinkFolder?: boolean
+    nodeOnlyPresetFolder?: string
+    duplicateCandidate?: unknown
+}
+
 export interface ModuleCatalogDisplayGroup {
-    folder: { id: string; favorite?: boolean } | null
+    folder: ModuleCatalogFolder | null
     indexes: ReadonlyArray<number>
     /** Items in the folders shown inside this one: they place it too. */
     nestedIndexes?: ReadonlyArray<number>
@@ -122,13 +134,21 @@ export type ModuleCatalogDisplayBlock =
     | { kind: 'folder'; folderId: string }
     | { kind: 'root'; indexes: number[] }
 
+/** [링크], [프롬] and [유사 후보] folders follow the order even with a module on now. */
+function holdsModulesOnNow(folder: ModuleCatalogFolder | null | undefined): boolean {
+    return !!folder && !folder.nodeOnlyLinkFolder && !folder.nodeOnlyPresetFolder && !folder.duplicateCandidate
+        && !folder.name?.trimStart().startsWith('[유사 후보]')
+}
+
 /** Keep standalone modules and folders interleaved at the first visible member.
- * Promoting one entry must never hoist every other folder as a block. */
+ * Promoting one entry must never hoist every other folder as a block.
+ * `activeIndexes`: the items on now (any depth), held under the favorites. */
 export function interleaveModuleCatalogGroups(
     groups: ReadonlyArray<ModuleCatalogDisplayGroup>,
     promotedRootIndex = -1,
     promotedFolderId = '',
     favoriteRootIndexes: ReadonlySet<number> = new Set(),
+    activeIndexes: ReadonlySet<number> = new Set(),
 ): ModuleCatalogDisplayBlock[] {
     const folders = groups.filter((group) => !!group.folder)
     const root = groups.find((group) => !group.folder)
@@ -156,10 +176,12 @@ export function interleaveModuleCatalogGroups(
     }
 
     const orderedIndexes = [...rootIndexes, ...folderByIndex.keys()].sort((a, b) => a - b)
-    // Only favorites hold the top (the user's rule, 2026-10-27: "즐찾만
-    // 고정"): ★ modules outside folders and ★ folders, among themselves in
-    // the order of their items, so a drag between them stays. Modules on
-    // now, [링크]·[프롬] and 🎨 follow the order like any other.
+    // Favorites hold the top (the user's rule, 2026-10-27: "즐찾만 고정"):
+    // the ★ folder first (2026-10-30), then ★ modules outside folders and ★
+    // folders, among themselves in the order of their items, so a drag
+    // between them stays.
+    const favoritesFolder = folders.find((group) => group.folder?.nodeOnlyFavoritesFolder)
+    if (favoritesFolder) emitFolder(favoritesFolder.folder!.id)
     const favoriteFolderIds = new Set(folders.filter((group) => group.folder?.favorite).map((group) => group.folder!.id))
     for (const index of orderedIndexes) {
         if (rootIndexes.has(index)) {
@@ -170,11 +192,23 @@ export function interleaveModuleCatalogGroups(
     }
     for (const id of favoriteFolderIds) emitFolder(id)
 
+    // Then the modules on now, the blue and orange ones, so a new module does
+    // not push them down (the user's request, 2026-10-30: "new에 안밀리고 항상
+    // 최상단, 즐찾보다는 아래"): one outside folders, or the folder of the
+    // user's it is in, in the order of their items.
+    const folderById = new Map(folders.map((group) => [group.folder!.id, group.folder]))
+    for (const index of orderedIndexes) {
+        if (!activeIndexes.has(index)) continue
+        if (rootIndexes.has(index)) emitRoot(index)
+        else if (holdsModulesOnNow(folderById.get(folderByIndex.get(index)!))) emitFolder(folderByIndex.get(index)!)
+    }
+
     if (rootIndexes.has(promotedRootIndex)) emitRoot(promotedRootIndex)
     else if (promotedFolderId && folders.some((group) => group.folder?.id === promotedFolderId)) emitFolder(promotedFolderId)
 
-    // A newly made empty folder shows under the favorites. A folder holding
-    // only folders (as [프롬] does) is placed by the newest item in them.
+    // A newly made empty folder shows under the favorites and the modules on
+    // now. A folder holding only folders (as [프롬] does) is placed by the
+    // newest item in them.
     for (const group of folders) if (group.indexes.length === 0 && !group.nestedIndexes?.length) emitFolder(group.folder!.id)
 
     for (const index of orderedIndexes) {

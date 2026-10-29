@@ -68,6 +68,8 @@
         promotedFolderId?: string;
         /** Items outside folders that hold the top with the favorite folders (interleaveItems). */
         favoriteItemIndexes?: ReadonlySet<number>;
+        /** Items on now: they, or the folder they are in, come right under the favorites (interleaveItems). */
+        activeItemIndexes?: ReadonlySet<number>;
         /** Disable drag reordering while the parent is showing a derived sort. */
         reorderDisabled?: boolean;
         folderTitleColor?: (folder: PromptPresetFolder, indexes: number[]) => string | undefined;
@@ -123,6 +125,7 @@
         promotedItemIndex = -1,
         promotedFolderId = '',
         favoriteItemIndexes = new Set<number>(),
+        activeItemIndexes = new Set<number>(),
         reorderDisabled = false,
         folderTitleColor = () => undefined,
         onFolderColor,
@@ -217,7 +220,7 @@
     const remainingRootIndexes = $derived(rootIndexes.filter((index) => index !== promotedRootIndex));
     const remainingFolderGroups = $derived(displayGroups.filter((group) => group.folder?.id !== promotedFolderGroup?.folder?.id && !!group.folder));
     const interleavedBlocks = $derived(interleaveItems
-        ? interleaveModuleCatalogGroups(displayGroups.map((group) => group.folder ? { ...group, nestedIndexes: nestedIndexesOf(group) } : group), promotedRootIndex, promotedFolderId, favoriteItemIndexes)
+        ? interleaveModuleCatalogGroups(displayGroups.map((group) => group.folder ? { ...group, nestedIndexes: nestedIndexesOf(group) } : group), promotedRootIndex, promotedFolderId, favoriteItemIndexes, activeItemIndexes)
         : []);
     const displayItemCount = $derived(filteredGroups.reduce((count, group) => count + group.indexes.length, 0));
 
@@ -331,14 +334,14 @@
 
     // Folders in folders (the user's request, 2026-10-09), maxFolderDepth deep.
     // [링크] gathers its folders itself, so it takes none from the user and
-    // the ones in it stay there.
+    // the ones in it stay there. The ★ folder of modules holds modules only.
     function inLinkFolder(folder: PromptPresetFolder) {
         const parentId = parentOf(folder);
         return !!parentId && !!folders.find(f => f.id === parentId)?.nodeOnlyLinkFolder;
     }
 
     function canHoldFolders(folder: PromptPresetFolder) {
-        return !folder.nodeOnlyLinkFolder && folderDepth(folder, folders) < maxFolderDepth;
+        return !folder.nodeOnlyLinkFolder && !folder.nodeOnlyFavoritesFolder && folderDepth(folder, folders) < maxFolderDepth;
     }
 
     /** The folders shown inside `folder`, at any depth. */
@@ -365,7 +368,7 @@
 
     /** Folders `folder` can be moved inside: not itself or its own, and within maxFolderDepth with what it holds. */
     function nestTargets(folder: PromptPresetFolder) {
-        if (folder.nodeOnlyLinkFolder || inLinkFolder(folder)) return [];
+        if (folder.nodeOnlyLinkFolder || folder.nodeOnlyFavoritesFolder || inLinkFolder(folder)) return [];
         const parentId = parentOf(folder);
         const below = descendantsOf(folder);
         const height = heightOf(folder);
@@ -678,7 +681,7 @@
             <ShDropdownMenuItem disabled={!canMoveFolder(folder, -1)} onSelect={() => moveFolder(folder, -1)}><span>{language.moveUp}</span></ShDropdownMenuItem>
             <ShDropdownMenuItem disabled={!canMoveFolder(folder, 1)} onSelect={() => moveFolder(folder, 1)}><span>{language.moveDown}</span></ShDropdownMenuItem>
             {#if onFolderColor}<ShDropdownMenuItem onSelect={() => onFolderColor(folder)}><PaletteIcon /><span>색변경</span></ShDropdownMenuItem>{/if}
-            {#if onFolderFavorite}<ShDropdownMenuItem onSelect={() => onFolderFavorite(folder)}><StarIcon /><span>{folder.favorite ? '즐겨찾기 해제' : '즐겨찾기 (맨위로)'}</span></ShDropdownMenuItem>{/if}
+            {#if onFolderFavorite && !folder.nodeOnlyFavoritesFolder}<ShDropdownMenuItem onSelect={() => onFolderFavorite(folder)}><StarIcon /><span>{folder.favorite ? '즐겨찾기 해제' : '즐겨찾기 (맨위로)'}</span></ShDropdownMenuItem>{/if}
             {#if canHoldFolders(folder)}<ShDropdownMenuItem onSelect={() => createSubfolder(folder)}><FolderPlusIcon /><span>하위 폴더 만들기</span></ShDropdownMenuItem>{/if}
             {#if nestTargets(folder).length > 0}<ShDropdownMenuItem onSelect={() => moveFolderInto(folder)}><FolderInputIcon /><span>다른 폴더 안으로</span></ShDropdownMenuItem>{/if}
             {#if parentOf(folder) && !inLinkFolder(folder)}<ShDropdownMenuItem onSelect={() => moveFolderOut(folder)}><FolderOutputIcon /><span>폴더 밖으로 꺼내기</span></ShDropdownMenuItem>{/if}

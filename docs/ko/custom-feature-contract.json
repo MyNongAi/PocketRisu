@@ -366,6 +366,7 @@
       "ownerFiles": [
         "src/ts/process/moduleFolders.ts",
         "src/ts/process/moduleSort.ts",
+        "src/ts/process/moduleFavoritesFolder.ts",
         "src/ts/process/moduleDraft.ts",
         "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
         "src/lib/Setting/Pages/Module/ModuleMenu.svelte",
@@ -412,7 +413,15 @@
         { "file": "src/ts/process/moduleSort.ts", "contains": "export function unpinModuleFavoritesOnce(" },
         { "file": "src/ts/process/moduleSort.ts", "contains": "if (favoriteRootIndexes.has(index)) emitRoot(index)" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "favoriteItemIndexes={favoriteModuleIndexes}" },
-        { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "interleaveModuleCatalogGroups(grouped, promotedIndex, catalogPromotion?.folderId, favorites)" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "interleaveModuleCatalogGroups(grouped, promotedIndex, catalogPromotion?.folderId, favorites, active)" },
+        { "file": "src/ts/process/moduleSort.ts", "contains": "else if (holdsModulesOnNow(folderById.get(folderByIndex.get(index)!))) emitFolder(folderByIndex.get(index)!)" },
+        { "file": "src/ts/process/moduleSort.ts", "contains": "if (favoritesFolder) emitFolder(favoritesFolder.folder!.id)" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "activeItemIndexes={activeModuleIndexes}" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "const favorite = favoriteAfterMove(!!module.favorite, module.folderId, folderId, favoritesId)" },
+        { "file": "src/ts/process/moduleFavoritesFolder.ts", "contains": "export function gatherFavoriteModules<T extends FavoriteModule>(" },
+        { "file": "src/ts/process/moduleFolders.ts", "contains": "!folder.nodeOnlyFavoritesFolder && before > folder.moduleIds.length" },
+        { "file": "src/ts/process/modules.ts", "contains": "let changed = syncFavoriteModules(db)" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "{#if onFolderFavorite && !folder.nodeOnlyFavoritesFolder}" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "unpinModuleFavoritesOnce(DBState.db)" },
         { "file": "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte", "contains": "unpinModuleFavoritesOnce(DBState.db)" },
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "if (placed) onItemsChange(placed, true);" },
@@ -423,6 +432,7 @@
         "src/ts/gui/sortableTouchHold.test.ts",
         "src/ts/process/moduleFolders.test.ts",
         "src/ts/process/moduleSort.test.ts",
+        "src/ts/process/moduleFavoritesFolder.test.ts",
         "src/ts/process/moduleDraft.test.ts",
         "src/lib/UI/FolderedList.test.ts"
       ]
@@ -2801,7 +2811,7 @@
         "src/lib/Setting/Pages/Module/ModuleSettings.svelte"
       ],
       "requiredMarkers": [
-        { "file": "src/ts/process/modules.ts", "contains": "let changed = recordPresetLinks(db.modules, db.botPresets)" },
+        { "file": "src/ts/process/modules.ts", "contains": "changed = recordPresetLinks(db.modules, db.botPresets) || changed" },
         { "file": "src/ts/process/modules.ts", "contains": "const presetGathered = gatherPresetModules(db.modules, db.moduleFolders ?? [], db.botPresets, linkedModuleIds(db.characters), v4)" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "{:else if folder.nodeOnlyPresetFolder === 'orphans'}" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "onMount(() => { syncLinkedFolders() })" }

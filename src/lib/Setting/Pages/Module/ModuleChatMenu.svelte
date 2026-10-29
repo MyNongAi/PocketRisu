@@ -24,7 +24,7 @@
     import { restoreIllustrationPresets } from "src/ts/process/illustrationRun";
     import PairedModuleMark from "src/lib/UI/GUI/PairedModuleMark.svelte";
     import { forgetModulePair, moduleLinks, recordModulePair } from "src/ts/gui/pairedModules";
-    import { syncLinkedFolders } from "src/ts/process/modules";
+    import { syncFavoriteModules, syncLinkedFolders } from "src/ts/process/modules";
     import { isColdModule, wakeModules } from "src/ts/process/moduleCold.svelte";
     interface Props {
         close?: any;
@@ -81,9 +81,14 @@
         const promotedIndex = catalogPromotion && !catalogPromotion.folderId
             ? sortedModules.findIndex((module) => module.id === catalogPromotion.moduleId)
             : -1
-        // Only favorites hold the top, as in the module page.
+        // Favorites hold the top, and under them the modules lit here (on
+        // everywhere, in this chat or for this bot), as in the module page.
         const favorites = new Set(sortedModules.flatMap((module, index) => module?.favorite ? [index] : []))
-        const order = interleaveModuleCatalogGroups(grouped, promotedIndex, catalogPromotion?.folderId, favorites)
+        const chat = currentChat()
+        const bot = DBState.db.characters[$selectedCharID]
+        const active = new Set(sortedModules.flatMap((module, index) => module
+            && (DBState.db.enabledModules.includes(module.id) || !!chat?.modules?.includes(module.id) || !!bot?.modules?.includes(module.id)) ? [index] : []))
+        const order = interleaveModuleCatalogGroups(grouped, promotedIndex, catalogPromotion?.folderId, favorites, active)
         const result: ModuleMenuGroup[] = []
         for (const block of order) {
             if (block.kind === 'root') {
@@ -196,6 +201,7 @@
 
     onMount(() => {
         unpinModuleFavoritesOnce(DBState.db)
+        syncFavoriteModules()
         restoreIllustrationPresets()
         const frame = requestAnimationFrame(() => {
             if (!alertMode && listEl) listEl.scrollTop = rememberedModuleMenuScrollTop
