@@ -929,10 +929,19 @@
   let touchDragTimer = 0
   let touchStartPos = { x: 0, y: 0 }
   let suppressNextClick = false
+  // The phone's own long press opened the bot's menu at about 500ms, over a
+  // drag lifted at 400ms (the user's report, 2026-10-30: "홀드와 드래그 겹치니
+  // 불편"). As on the module list (ShContextMenu), the menu now waits: a
+  // lifted bot let go where it was opens it, a move drags.
+  let touchPressTarget: EventTarget | null = null
+  let touchDragMoved = false
+  let touchMenuPass = false
 
   function onTouchDragStart(data: DragData, e: TouchEvent & { currentTarget: HTMLElement }) {
     const touch = e.touches[0]
     touchStartPos = { x: touch.clientX, y: touch.clientY }
+    touchPressTarget = e.target
+    touchDragMoved = false
     const el = e.currentTarget
 
     if (touchDragTimer) clearTimeout(touchDragTimer)
@@ -962,6 +971,7 @@
     }
 
     e.preventDefault()
+    if (Math.abs(touch.clientX - touchStartPos.x) > 8 || Math.abs(touch.clientY - touchStartPos.y) > 8) touchDragMoved = true
 
     if (touchDragState.ghost) {
       const rect = touchDragState.element.getBoundingClientRect()
@@ -1010,6 +1020,19 @@
 
     const touch = e.changedTouches[0]
 
+    if (!touchDragMoved) {
+      cleanupTouchDrag()
+      touchMenuPass = true
+      try {
+        touchPressTarget?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: touch.clientX, clientY: touch.clientY }))
+      } finally {
+        touchMenuPass = false
+      }
+      suppressNextClick = true
+      requestAnimationFrame(() => { suppressNextClick = false })
+      return
+    }
+
     if (touchDragState.ghost) touchDragState.ghost.style.display = 'none'
     const el = document.elementFromPoint(touch.clientX, touch.clientY)
 
@@ -1033,15 +1056,24 @@
     cleanupTouchDrag()
   }
 
+  // The phone's own long-press menu, while the press may still turn into a drag.
+  function holdBackTouchMenu(e: Event) {
+    if (touchMenuPass || (!touchDragTimer && !touchDragState)) return
+    e.preventDefault()
+    e.stopPropagation()
+  }
+
   function touchDragContainer(node: HTMLElement) {
     node.addEventListener('touchmove', onTouchDragMove, { passive: false })
     node.addEventListener('touchend', onTouchDragEnd)
     node.addEventListener('touchcancel', onTouchDragCancel)
+    node.addEventListener('contextmenu', holdBackTouchMenu, true)
     return {
       destroy() {
         node.removeEventListener('touchmove', onTouchDragMove)
         node.removeEventListener('touchend', onTouchDragEnd)
         node.removeEventListener('touchcancel', onTouchDragCancel)
+        node.removeEventListener('contextmenu', holdBackTouchMenu, true)
       }
     }
   }

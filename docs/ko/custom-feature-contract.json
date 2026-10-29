@@ -1876,6 +1876,19 @@
       ]
     },
     {
+      "id": "SIDEBAR-BOT-HOLD-DRAG",
+      "title": "폰 사이드바 봇: 들어 올린 채 떼면 메뉴, 움직이면 끌기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/SideBars/Sidebar.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "node.addEventListener('contextmenu', holdBackTouchMenu, true)" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "touchPressTarget?.dispatchEvent(new MouseEvent('contextmenu'" }
+      ],
+      "regressionTests": []
+    },
+    {
       "id": "CHAT-REDRAW-ON-SCREEN-ONLY",
       "title": "다른 채팅의 화면 다시 그리기 신호는 보고 있는 채팅을 건드리지 않음",
       "criticality": "core-ux",
