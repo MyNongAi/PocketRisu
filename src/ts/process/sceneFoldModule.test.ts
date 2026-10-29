@@ -180,6 +180,10 @@ describe('after a reply (auxiliary model)', () => {
         expect(JSON.parse(vars[`__sf_sum_${id}`])).toBe('Pikachu beat the rival.\nGot 300P.')
         expect(marks(chat.message[2].data)).toEqual([`<!--sf:m:${id}-->`])
         expect(llmPrompts.at(-1)![1].content).toContain('Keep: who took part and why')
+        // for the request regex: the summary goes where the fold mark is, the rest go
+        expect(marks(chat.message[1].data)).toEqual([`<!--sf:s:battle:${id}-->`, `<!--sf:f:battle:${id}-->`])
+        expect(marks(chat.message[3].data)).toEqual([`<!--sf:e:${id}-->`, `<!--sf:m:${id}-->`])
+        expect(vars[`sf_text_${id}`]).toBe('[Folded scene · battle] The full text of this finished scene was left out; this is what happened:\nPikachu beat the rival.\nGot 300P.')
     })
 
     test('does nothing for a kind that is off, and asks nothing with every kind off', async () => {
@@ -234,9 +238,9 @@ describe('원문 잘라내기 (off by default, 비권장)', () => {
         let chat = (await run('output')).chat as any
         expect(chat.message.map((m: Message) => m.data)).toEqual(['hi', 'Won the fight.\n<!--sf:c:battle:c1-->', 'a', 'b'])
         expect(JSON.parse(vars.__sf_cut_c1)).toEqual([
-            { role: 'char', data: 'fight<!--sf:s:battle:c1-->' },
+            { role: 'char', data: 'fight<!--sf:s:battle:c1-->\n<!--sf:f:battle:c1-->' },
             { role: 'user', data: 'hit\n<!--sf:m:c1-->' },
-            { role: 'char', data: 'won<!--sf:e:c1-->' },
+            { role: 'char', data: 'won<!--sf:e:c1-->\n<!--sf:m:c1-->' },
         ])
 
         const request = (await run('editRequest', { data: chat.message.map((m: Message) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.data })) })).res as { role: string, content: string }[]
@@ -250,7 +254,7 @@ describe('원문 잘라내기 (off by default, 비권장)', () => {
         expect(card).toContain('risu-btn="sf|v|c1"')
 
         chat = (await run('onButtonClick', { data: 'sf|v|c1' })).chat as any
-        expect(chat.message.map((m: Message) => m.data)).toEqual(['hi', 'fight<!--sf:s:battle:c1-->', 'hit\n<!--sf:m:c1-->', 'won<!--sf:e:c1-->', 'a', 'b'])
+        expect(chat.message.map((m: Message) => m.data)).toEqual(['hi', 'fight<!--sf:s:battle:c1-->\n<!--sf:f:battle:c1-->', 'hit\n<!--sf:m:c1-->', 'won<!--sf:e:c1-->\n<!--sf:m:c1-->', 'a', 'b'])
         // not cut again on the next reply; still folded in requests
         llmAnswers.push('{"event":"none"}')
         chat = (await run('output')).chat as any
@@ -380,11 +384,138 @@ describe('display and buttons', () => {
         await run('onButtonClick', { data: 'sf|s|1' })
         const id = marks(chat.message[1].data)[0].match(/:(\w+)-->/)![1]
         await run('onButtonClick', { data: 'sf|e|2' })
-        expect(marks(chat.message[2].data)).toEqual([`<!--sf:e:${id}-->`])
+        // folded at once, so the end message also carries a member mark
+        expect(marks(chat.message[2].data)).toEqual([`<!--sf:e:${id}-->`, `<!--sf:m:${id}-->`])
         // two replies after the end already: folded at once
         expect(JSON.parse(vars[`__sf_sum_${id}`])).toBe('Manual summary.')
 
         await run('onButtonClick', { data: `sf|u|${id}` })
         expect(chat.message.map((m: Message) => marks(m.data).length)).toEqual([0, 0, 0, 0, 0])
+    })
+})
+
+describe('🔁 회차 (a time-loop run)', () => {
+    beforeEach(() => {
+        toggles.set('toggle_scenefold.loop', '1')
+        toggles.set('toggle_scenefold.loopHero', 'Subaru')
+    })
+
+    const none = '{"event":"none","loop":false}'
+
+    test('a death closes the run from its start, ends an open battle there, and the run folds over its battle', async () => {
+        const { chat, run, vars } = makeChat([
+            { role: 'user', data: 'hi' },
+            { role: 'char', data: 'Elsa attacks.<!--sf:s:battle:b1-->' },
+            { role: 'user', data: 'run' },
+            { role: 'char', data: 'Subaru is killed. He wakes at the apple stand.' },
+        ])
+        llmAnswers.push('{"event":"none","kind":"battle","loop":true}')
+        await run('output')
+        expect(llmPrompts[0][1].content).toContain('Time loop: Subaru dies')
+        expect(llmPrompts[0][1].content).toContain('"loop":false')
+        const runId = marks(chat.message[0].data)[0].match(/^<!--sf:s:loop:(\w+)-->$/)![1]
+        expect(marks(chat.message[3].data)).toEqual(['<!--sf:e:b1-->', `<!--sf:e:${runId}-->`])
+
+        chat.message.push({ role: 'char', data: 'He is confused.', time: 5 })
+        llmAnswers.push(none)
+        await run('output')
+        chat.message.push({ role: 'char', data: 'He meets Emilia again.', time: 6 })
+        // grace done for both: the battle inside is summarized first
+        llmAnswers.push(none, 'Elsa ambushed Subaru.')
+        await run('output')
+        expect(JSON.parse(vars.__sf_sum_b1)).toBe('Elsa ambushed Subaru.')
+        expect(vars[`__sf_sum_${runId}`]).toBeUndefined()
+        // the death message is also in the run, not folded yet: it keeps its text
+        expect(marks(chat.message[3].data)).toEqual(['<!--sf:e:b1-->', `<!--sf:e:${runId}-->`])
+
+        chat.message.push({ role: 'char', data: 'Day two.', time: 7 })
+        llmAnswers.push(none, 'Run 1: Elsa killed Subaru at the loot house.')
+        await run('output')
+        const prompt = llmPrompts.at(-1)![1].content
+        expect(prompt).toContain('This is run 1 of a time-loop story')
+        expect(prompt).toContain('[folded battle] Elsa ambushed Subaru.')
+        expect(prompt).not.toContain('Elsa attacks.')
+        expect(marks(chat.message[0].data)).toEqual([`<!--sf:s:loop:${runId}-->`, `<!--sf:f:loop:${runId}-->`])
+        for (const i of [1, 2, 3]) expect(marks(chat.message[i].data)).toContain(`<!--sf:m:${runId}-->`)
+        expect(vars[`sf_text_${runId}`]).toContain('[Undone run 1 · only Subaru remembers]')
+        expect(vars[`sf_text_${runId}`]).toContain('Run 1: Elsa killed Subaru at the loot house.')
+
+        // the next death starts run 2 after it, with run 1 as context
+        chat.message.push({ role: 'char', data: 'Subaru dies again.', time: 8 })
+        llmAnswers.push('{"event":"none","loop":true}')
+        await run('output')
+        const second = (marks(chat.message[4].data) as string[]).find((m) => m.startsWith('<!--sf:s:loop:'))!.match(/:(\w+)-->$/)![1]
+        expect(marks(chat.message[7].data)).toEqual([`<!--sf:e:${second}-->`])
+        chat.message.push({ role: 'char', data: 'a', time: 9 }, { role: 'char', data: 'b', time: 10 })
+        llmAnswers.push(none, 'Run 2 record.')
+        await run('output')
+        expect(llmPrompts.at(-1)![1].content).toContain('This is run 2')
+        expect(llmPrompts.at(-1)![1].content).toContain('Run 1:\nRun 1: Elsa killed Subaru at the loot house.')
+
+        const card = (await run('editDisplay', { data: chat.message[0].data, meta: { index: 0 } })).res as string
+        expect(card).toContain('🔁 지나간 회차 · 🔁 1회차 · 메시지 4개')
+        const inside = (await run('editDisplay', { data: chat.message[2].data, meta: { index: 2 } })).res as string
+        expect(inside).toContain('지나간 회차의 일부')
+    })
+
+    test('a long run is noted part by part, then recorded from the notes', async () => {
+        const long = 'x'.repeat(40)
+        const { run } = makeChat([
+            { role: 'user', data: long + '<!--sf:s:loop:r1-->' },
+            { role: 'char', data: long },
+            { role: 'char', data: long + '<!--sf:e:r1-->' },
+            { role: 'char', data: 'a' },
+            { role: 'char', data: 'b' },
+        ])
+        llmAnswers.push(none, 'note one', 'note two', 'note three', 'The record.')
+        await run('output', { probe: 'SF.RUN_PART = 60' })
+        const asked = llmPrompts.map((p) => p[1].content)
+        expect(asked.filter((c) => c.startsWith('Part '))).toHaveLength(3)
+        expect(asked.at(-1)).toContain('Notes on this run, part by part:\n(1) note one')
+    })
+
+    test('여기서 회차 끝 ends the run at a message; a message of an earlier run says so', async () => {
+        const { chat, run } = makeChat([
+            { role: 'user', data: 'u1' },
+            { role: 'char', data: 'c1' },
+            { role: 'char', data: 'c2' },
+            { role: 'char', data: 'c3' },
+        ])
+        await run('onButtonClick', { data: 'sf|d|2' })
+        const id = marks(chat.message[0].data)[0].match(/^<!--sf:s:loop:(\w+)-->$/)![1]
+        expect(marks(chat.message[2].data)).toEqual([`<!--sf:e:${id}-->`])
+        await run('onButtonClick', { data: 'sf|d|1' })
+        expect(marks(chat.message[1].data)).toEqual([])
+        const bar = (await run('editDisplay', { data: 'c3', meta: { index: 3 } })).res as string
+        expect(bar).toContain('risu-btn="sf|d|3"')
+    })
+
+    test('a run whose death reply was rerolled away loses its start mark', async () => {
+        const { chat, run } = makeChat([
+            { role: 'user', data: 'u1<!--sf:s:loop:zz-->' },
+            { role: 'char', data: 'c1' },
+        ])
+        llmAnswers.push(none)
+        await run('output')
+        expect(chat.message[0].data).toBe('u1')
+    })
+})
+
+describe('the request without long-term memory reading folded scenes', () => {
+    test('drops the messages the request regex emptied, unless 요청에서만 접기 is chosen', async () => {
+        const { run } = makeChat([{ role: 'user', data: 'x' }])
+        const request = [{ role: 'user', content: 'x' }, { role: 'assistant', content: '' }, { role: 'assistant', content: 'y' }]
+        let result = (await run('editRequest', { data: request })).res as { content: string }[]
+        expect(result.map((m) => m.content)).toEqual(['x', 'y'])
+        toggles.set('toggle_scenefold.cut', '2')
+        result = (await run('editRequest', { data: [{ role: 'user', content: 'x' }, { role: 'assistant', content: '' }] })).res as { content: string }[]
+        expect(result.map((m) => m.content)).toEqual(['x', ''])
+    })
+
+    test('ships the two request regexes, and the choice that turns them off', () => {
+        const json = buildModuleJson(code)
+        expect(json.module.regex.map((r: { type: string, flag: string }) => [r.type, r.flag])).toEqual([['editprocess', 'g<cbs>'], ['editprocess', 'g<cbs>']])
+        expect(TOGGLES).toContain('scenefold.cut=접은 장면 처리=select=요청에서 빼기 (장기 기억 전),원문 잘라내기 (비권장·렉 감소),요청에서만 접기 (장기 기억은 원문)')
+        expect(TOGGLES).toContain('scenefold.loop=🔁 회차 (죽으면 시간이 되돌아가는 회귀물)=select=끔,켬')
     })
 })

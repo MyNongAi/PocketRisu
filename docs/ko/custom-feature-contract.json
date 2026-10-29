@@ -2311,7 +2311,7 @@
     },
     {
       "id": "SCENE-FOLD-MODULE",
-      "title": "끝난 장면을 요약으로 접는 배포용 모듈 (📁 장면 접기)",
+      "title": "끝난 장면과 회귀물의 지난 회차를 요약으로 접는 배포용 모듈 (📁 장면 접기), 장기 기억 전에 요청에서 뺌",
       "criticality": "core-ux",
       "ownerFiles": [
         "modules/scene-fold/scene-fold.lua",
@@ -2323,10 +2323,16 @@
         { "file": "modules/scene-fold/scene-fold.lua", "contains": "function SF.rewriteRequest(messages, folded, settings, instruction)" },
         { "file": "modules/scene-fold/scene-fold.lua", "contains": "onButtonClick = async(function(tid, data)" },
         { "file": "modules/scene-fold/build.mjs", "contains": "lowLevelAccess: true," },
-        { "file": "modules/scene-fold/build.mjs", "contains": "'scenefold.nsfw=🔞 NSFW=select=끔,켬'," }
+        { "file": "modules/scene-fold/build.mjs", "contains": "'scenefold.nsfw=🔞 NSFW=select=끔,켬'," },
+        { "file": "modules/scene-fold/build.mjs", "contains": "export const REQUEST_REGEX = [" },
+        { "file": "modules/scene-fold/build.mjs", "contains": "const ACTIVE = '(?={{#when::{{getglobalvar::toggle_scenefold.cut}}::is::2}}(?!){{/when}})'" },
+        { "file": "modules/scene-fold/scene-fold.lua", "contains": "function SF.markFolded(tid, messages, scene, folded, settings, number)" },
+        { "file": "modules/scene-fold/scene-fold.lua", "contains": "local function endRun(tid, messages, index)" },
+        { "file": "modules/scene-fold/scene-fold.lua", "contains": "if settings.early then out = SF.withoutEmpty(out) end" }
       ],
       "regressionTests": [
-        "src/ts/process/sceneFoldModule.test.ts"
+        "src/ts/process/sceneFoldModule.test.ts",
+        "src/ts/process/sceneFoldRegex.test.ts"
       ]
     },
     {

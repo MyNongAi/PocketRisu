@@ -4,6 +4,15 @@
 -- chat keeps every message: a scene is marked by hidden markers in the
 -- messages themselves, so rerolls and deletes keep the marks in step, and
 -- folding only changes the request and how the scene is shown.
+--
+-- A run of a time-loop story (🔁 회차: one life, until the hero dies and
+-- time goes back) folds the same way, as an outer layer: battles inside it
+-- fold on their own, and the run folds over them once it is over.
+--
+-- The module's request-editing regex (build.mjs) takes a folded scene out of
+-- each message before long-term memory reads the chat, in every Risu, so
+-- memory sees the summary and not the full text. It goes by the marks a fold
+-- adds to every message wholly inside the scene.
 
 local SF = {}
 
@@ -19,12 +28,16 @@ SF.END_PATTERN = '<!%-%-sf:e:(%w+)%-%->'
 SF.MEMBER_PATTERN = '<!%-%-sf:m:(%w+)%-%->'
 -- The one message a cut scene leaves in the chat ("원문 잘라내기").
 SF.CUT_PATTERN = '<!%-%-sf:c:(%w+):(%w+)%-%->'
-SF.ANY_PATTERN = '\n?<!%-%-sf:[semc]:[%w:]+%-%->'
+-- The first message of a folded scene: the request regex puts the summary
+-- there, and drops the messages with member marks.
+SF.FOLD_PATTERN = '<!%-%-sf:f:(%w+):(%w+)%-%->'
+SF.ANY_PATTERN = '\n?<!%-%-sf:[semcf]:[%w:]+%-%->'
 
 function SF.startMark(kind, id) return '<!--sf:s:' .. kind .. ':' .. id .. '-->' end
 function SF.endMark(id) return '<!--sf:e:' .. id .. '-->' end
 function SF.memberMark(id) return '<!--sf:m:' .. id .. '-->' end
 function SF.cutMark(kind, id) return '<!--sf:c:' .. kind .. ':' .. id .. '-->' end
+function SF.foldMark(kind, id) return '<!--sf:f:' .. kind .. ':' .. id .. '-->' end
 
 -- The tokens the main model writes in its anchor mode.
 local function caseless(word)
@@ -33,6 +46,8 @@ end
 SF.TOKEN_START_PATTERN = '%[%[%s*' .. caseless('scene') .. '%s+' .. caseless('start') .. '%s*:?%s*([%a_]*)%s*%]%]'
 SF.TOKEN_END_PATTERN = '%[%[%s*' .. caseless('scene') .. '%s+' .. caseless('end') .. '%s*%]%]'
 SF.TOKEN_ANY_PATTERN = '%[%[%s*' .. caseless('scene') .. '%s+%a+[^%]]*%]%]'
+-- The hero died and time went back (the 🔁 회차 kind).
+SF.TOKEN_LOOP_PATTERN = '%[%[%s*' .. caseless('loop') .. '%s+' .. caseless('end') .. '%s*%]%]'
 
 function SF.trim(s)
     return (tostring(s or ''):gsub('^%s+', ''):gsub('%s+$', ''))
@@ -41,17 +56,18 @@ end
 --- The message text without any of this module's marks or tokens.
 function SF.strip(text)
     if type(text) ~= 'string' then return text end
-    local out = text:gsub(SF.ANY_PATTERN, ''):gsub('\n?' .. SF.TOKEN_ANY_PATTERN, '')
+    local out = text:gsub(SF.ANY_PATTERN, ''):gsub('\n?' .. SF.TOKEN_ANY_PATTERN, ''):gsub('\n?' .. SF.TOKEN_LOOP_PATTERN, '')
     return out
 end
 
---- Every scene id a message is marked with (start, end or member).
+--- Every scene id a message is marked with (start, end, member or fold).
 function SF.markedIds(text)
     local ids = {}
     if type(text) ~= 'string' then return ids end
     for _, id in text:gmatch(SF.START_PATTERN) do ids[id] = true end
     for id in text:gmatch(SF.END_PATTERN) do ids[id] = true end
     for id in text:gmatch(SF.MEMBER_PATTERN) do ids[id] = true end
+    for _, id in text:gmatch(SF.FOLD_PATTERN) do ids[id] = true end
     return ids
 end
 
@@ -83,10 +99,11 @@ function SF.scenes(messages)
     return list, byId
 end
 
---- The open scene (the latest one when several are), or nil.
+--- The open scene (the latest one when several are), or nil. A run is not
+--- one: it is marked only once it is over.
 function SF.openScene(scenes)
     for i = #scenes, 1, -1 do
-        if not scenes[i].e then return scenes[i] end
+        if not scenes[i].e and scenes[i].kind ~= 'loop' then return scenes[i] end
     end
     return nil
 end
@@ -103,6 +120,46 @@ end
 --- Whether a closed scene has waited its grace replies.
 function SF.graceDone(messages, scene, grace)
     return scene.e ~= nil and SF.repliesAfter(messages, scene.e) >= grace
+end
+
+--- The runs that are over, in order: { id, s, e }. A run cut from the chat
+--- (원문 잘라내기) is its one summary message.
+function SF.runs(messages, scenes)
+    local list = {}
+    for _, scene in ipairs(scenes) do
+        if scene.kind == 'loop' and scene.e then list[#list + 1] = { id = scene.id, s = scene.s, e = scene.e } end
+    end
+    for i, message in ipairs(messages or {}) do
+        local text = type(message) == 'table' and message.data or ''
+        local kind, id = (type(text) == 'string' and text or ''):match(SF.CUT_PATTERN)
+        if kind == 'loop' then list[#list + 1] = { id = id, s = i, e = i } end
+    end
+    table.sort(list, function(a, b) return a.s < b.s end)
+    return list
+end
+
+--- Where the current run began: the message after the last run's end, or the first one.
+function SF.runStart(messages, scenes)
+    local from = 1
+    for _, run in ipairs(SF.runs(messages, scenes)) do
+        if run.e + 1 > from then from = run.e + 1 end
+    end
+    return from
+end
+
+--- Each run's number (1 for the first), by scene id.
+function SF.runNumbers(messages, scenes)
+    local numbers = {}
+    for k, run in ipairs(SF.runs(messages, scenes)) do numbers[run.id] = k end
+    return numbers
+end
+
+--- Inner scenes first, then the runs over them.
+function SF.foldOrder(scenes)
+    local order = {}
+    for _, scene in ipairs(scenes) do if scene.kind ~= 'loop' then order[#order + 1] = scene end end
+    for _, scene in ipairs(scenes) do if scene.kind == 'loop' then order[#order + 1] = scene end end
+    return order
 end
 
 ------------------------------------------------------------------------------
@@ -123,21 +180,28 @@ end
 
 SF.GRACE_BY_CHOICE = { [0] = 2, [1] = 0, [2] = 1, [3] = 3, [4] = 4, [5] = 6 }
 
-SF.KIND_LABEL = { battle = '⚔️ 배틀', nsfw = '🔞 NSFW', custom = '✏️ 사용자 정의', scene = '📄 장면' }
+SF.KIND_LABEL = { battle = '⚔️ 배틀', nsfw = '🔞 NSFW', custom = '✏️ 사용자 정의', loop = '🔁 회차', scene = '📄 장면' }
 
 function SF.settings(tid)
     local customName = SF.trim(option(tid, 'customName'))
+    -- 요청에서 빼기, 원문 잘라내기 (비권장), 요청에서만 접기
+    local handling = choice(tid, 'cut')
     return {
         battle = choice(tid, 'battle') == 0,   -- 켬, 끔
         nsfw = choice(tid, 'nsfw') == 1,       -- 끔, 켬
         custom = choice(tid, 'custom') == 1,   -- 끔, 켬
         customName = customName ~= '' and customName or '사용자 정의',
         customRule = SF.trim(option(tid, 'customRule')),
+        loop = choice(tid, 'loop') == 1,       -- 끔, 켬
+        hero = SF.trim(option(tid, 'loopHero')),
         mainAnchors = choice(tid, 'mode') == 1,       -- 보조 모델이 판단, 메인 모델이 표시
         grace = SF.GRACE_BY_CHOICE[choice(tid, 'grace')] or 2,
         mainSummary = choice(tid, 'summary') == 1,    -- 보조 모델, 메인 모델
         buttons = choice(tid, 'buttons') == 0,        -- 보이기, 숨기기
-        cut = choice(tid, 'cut') == 1,                -- 끔, 켬 (비권장)
+        cut = handling == 1,
+        -- The request regex takes folded scenes out before long-term memory
+        -- reads the chat (build.mjs reads the same toggle).
+        early = handling ~= 2,
     }
 end
 
@@ -149,9 +213,16 @@ function SF.enabledKinds(settings)
     return kinds
 end
 
-function SF.kindLabel(kind, settings)
+function SF.kindLabel(kind, settings, number)
     if kind == 'custom' and settings then return '✏️ ' .. settings.customName end
+    if kind == 'loop' and number then return '🔁 ' .. number .. '회차' end
     return SF.KIND_LABEL[kind] or SF.KIND_LABEL.scene
+end
+
+--- Who loops, in the prompts.
+function SF.hero(settings)
+    if settings and settings.hero and settings.hero ~= '' then return settings.hero end
+    return 'the protagonist'
 end
 
 ------------------------------------------------------------------------------
@@ -179,6 +250,15 @@ function SF.kindKeep(kind, settings)
     return SF.KIND_KEEP[kind] or SF.KIND_KEEP.scene
 end
 
+function SF.loopRule(settings)
+    return SF.hero(settings) .. ' dies (or is otherwise sent back) and time goes back to an earlier point, so the story starts over from there'
+end
+
+function SF.loopKeep(settings)
+    local hero = SF.hero(settings)
+    return 'the key events of this run in order, briefly; what ' .. hero .. ' learned that matters next time (clues, who is hostile or can be trusted, conditions and timings); what ' .. hero .. ' tried against the crisis and whether it worked: compared with the earlier runs, what is now solved and how, and what is still unsolved; how, where and by whom ' .. hero .. ' died'
+end
+
 ------------------------------------------------------------------------------
 -- Asking the auxiliary model whether a scene starts or ends
 ------------------------------------------------------------------------------
@@ -191,16 +271,24 @@ local function clip(text, limit)
     return text:sub(1, limit) .. ' …'
 end
 
-function SF.judgePrompt(messages, open, settings, kinds)
-    local lines = { 'Scene kinds to watch:' }
-    for _, kind in ipairs(kinds) do
-        local name = kind == 'custom' and ('custom (' .. settings.customName .. ')') or kind
-        lines[#lines + 1] = '- ' .. name .. ': ' .. SF.kindRule(kind, settings)
+--- The judge's question about the latest reply. `withLoop` adds whether the
+--- hero died and time went back (the 🔁 회차 kind).
+function SF.judgePrompt(messages, open, settings, kinds, withLoop)
+    local lines = {}
+    if #kinds > 0 then
+        lines[#lines + 1] = 'Scene kinds to watch:'
+        for _, kind in ipairs(kinds) do
+            local name = kind == 'custom' and ('custom (' .. settings.customName .. ')') or kind
+            lines[#lines + 1] = '- ' .. name .. ': ' .. SF.kindRule(kind, settings)
+        end
+        if open then
+            lines[#lines + 1] = 'Open scene: ' .. open.kind .. ' (since ' .. SF.repliesAfter(messages, open.s - 1) .. ' replies)'
+        else
+            lines[#lines + 1] = 'Open scene: none'
+        end
     end
-    if open then
-        lines[#lines + 1] = 'Open scene: ' .. open.kind .. ' (since ' .. SF.repliesAfter(messages, open.s - 1) .. ' replies)'
-    else
-        lines[#lines + 1] = 'Open scene: none'
+    if withLoop then
+        lines[#lines + 1] = 'Time loop: ' .. SF.loopRule(settings) .. '.'
     end
     lines[#lines + 1] = ''
     lines[#lines + 1] = 'Recent log (oldest first):'
@@ -212,22 +300,31 @@ function SF.judgePrompt(messages, open, settings, kinds)
         lines[#lines + 1] = '[' .. who .. tag .. '] ' .. clip(message.data, MAX_LINE)
     end
     lines[#lines + 1] = ''
-    lines[#lines + 1] = 'For the LATEST character reply only: does a watched scene start in it, end in it (its outcome is decided or it clearly stops), or both (it starts and is already over within it)? With an open scene, answer "end" or "none".'
-    lines[#lines + 1] = 'Answer with one line of JSON and nothing else: {"event":"none|start|end|both","kind":"' .. table.concat(kinds, '|') .. '"}'
+    local fields = {}
+    if #kinds > 0 then
+        lines[#lines + 1] = 'For the LATEST character reply only: does a watched scene start in it, end in it (its outcome is decided or it clearly stops), or both (it starts and is already over within it)? With an open scene, answer "end" or "none".'
+        fields[#fields + 1] = '"event":"none|start|end|both","kind":"' .. table.concat(kinds, '|') .. '"'
+    end
+    if withLoop then
+        lines[#lines + 1] = 'Does ' .. SF.hero(settings) .. ' die and time go back in the LATEST reply? "loop" is true only then.'
+        fields[#fields + 1] = '"loop":false'
+    end
+    lines[#lines + 1] = 'Answer with one line of JSON and nothing else: {' .. table.concat(fields, ',') .. '}'
     return {
         { role = 'system', content = 'You label scenes in a role-play log. You only answer with the requested JSON.' },
         { role = 'user', content = table.concat(lines, '\n') },
     }
 end
 
---- The event and kind in a judge answer; event 'none' when it cannot be read.
+--- The event, kind and loop flag in a judge answer; event 'none' when it cannot be read.
 function SF.parseJudge(answer)
-    if type(answer) ~= 'string' then return 'none', nil end
+    if type(answer) ~= 'string' then return 'none', nil, false end
     local event = answer:match('"event"%s*:%s*"(%a+)"')
     local kind = answer:match('"kind"%s*:%s*"([%a_]+)"')
+    local loop = answer:match('"loop"%s*:%s*true') ~= nil
     event = event and event:lower() or 'none'
     if event ~= 'start' and event ~= 'end' and event ~= 'both' then event = 'none' end
-    return event, kind and kind:lower() or nil
+    return event, kind and kind:lower() or nil, loop
 end
 
 local function contains(list, value)
@@ -252,11 +349,13 @@ function SF.marksForEvent(event, kind, open, kinds)
     return ''
 end
 
---- The reply with the main model's visible tokens turned into hidden marks.
+--- The reply with the main model's visible tokens turned into hidden marks,
+--- and whether it wrote that the hero died and time went back.
 function SF.convertTokens(text, open, kinds)
     local marks = ''
     local current = open
-    local cleaned = text:gsub('\n?' .. SF.TOKEN_ANY_PATTERN, function(token)
+    local died = text:find(SF.TOKEN_LOOP_PATTERN) ~= nil
+    local cleaned = text:gsub('\n?' .. SF.TOKEN_LOOP_PATTERN, ''):gsub('\n?' .. SF.TOKEN_ANY_PATTERN, function(token)
         local kind = token:match(SF.TOKEN_START_PATTERN)
         if kind ~= nil then
             kind = kind:lower()
@@ -271,7 +370,7 @@ function SF.convertTokens(text, open, kinds)
         end
         return ''
     end)
-    return cleaned, marks
+    return cleaned, marks, died
 end
 
 ------------------------------------------------------------------------------
@@ -305,8 +404,34 @@ function SF.summaryPrompt(messages, scene, settings)
     }
 end
 
-function SF.summaryBlock(kind, text, settings)
+--- What the request carries in place of a folded scene.
+function SF.summaryBlock(kind, text, settings, number)
+    if kind == 'loop' then
+        local hero = SF.hero(settings)
+        return '[Undone run' .. (number and (' ' .. number) or '') .. ' · only ' .. hero .. ' remembers] ' .. hero .. ' died and time went back: for everyone else none of this happened. What ' .. hero .. ' lived through and remembers:\n' .. text
+    end
     return '[Folded scene · ' .. (kind == 'custom' and settings and settings.customName or kind) .. '] The full text of this finished scene was left out; this is what happened:\n' .. text
+end
+
+-- A run longer than this is noted part by part, then recorded from the notes.
+SF.RUN_PART = 40000
+
+function SF.runPrompt(log, number, earlier, settings, fromNotes)
+    local hero = SF.hero(settings)
+    local user = 'This is run ' .. number .. ' of a time-loop story: one life of ' .. hero .. ', from where it began until ' .. hero .. ' died and time went back. Only ' .. hero .. ' remembers it.\n'
+    if earlier ~= '' then user = user .. '\nEarlier runs, already recorded:\n' .. earlier .. '\n' end
+    user = user .. '\nWrite 6 to 14 short lines. Keep: ' .. SF.loopKeep(settings) .. '\n\n' .. (fromNotes and 'Notes on this run, part by part:\n' or 'Run log:\n') .. log
+    return {
+        { role = 'system', content = 'You keep the record of a time-loop role-play. Write in the same language as the log. Plain lines, no headings, no commentary.' },
+        { role = 'user', content = user },
+    }
+end
+
+function SF.partPrompt(part, k, count, settings)
+    return {
+        { role = 'system', content = 'You take notes on a long role-play log. Write in the same language as the log. Plain lines, no headings, no commentary.' },
+        { role = 'user', content = 'Part ' .. k .. ' of ' .. count .. ' of one run of a time-loop story. In 5 to 12 short lines, note what happens in this part and anything that matters later: clues, who is hostile or can be trusted, what ' .. SF.hero(settings) .. ' tries and how it goes.\n\nLog:\n' .. part },
+    }
 end
 
 ------------------------------------------------------------------------------
@@ -354,6 +479,129 @@ local function appendMarks(tid, messages, index, marks)
     setMessage(tid, index, text)
 end
 
+--- The hero died in reply `index`: the run from its start to there closes,
+--- and so does a scene still open. False when that message already belongs
+--- to an earlier run.
+local function endRun(tid, messages, index)
+    local scenes = SF.scenes(messages)
+    local from = SF.runStart(messages, scenes)
+    if from > index then return false end
+    local open = SF.openScene(scenes)
+    local marks = ''
+    if open and open.s <= index then marks = SF.endMark(open.id) end
+    local id = newId()
+    if from == index then
+        marks = marks .. SF.startMark('loop', id) .. SF.endMark(id)
+    else
+        appendMarks(tid, messages, from, SF.startMark('loop', id))
+        marks = marks .. SF.endMark(id)
+    end
+    appendMarks(tid, messages, index, marks)
+    return true
+end
+
+--- A run whose end is gone (its death reply rerolled away) is no run: its
+--- start mark goes. A run is only ever marked whole, so an open one is that.
+local function dropDanglingRuns(tid, messages, scenes)
+    local changed = false
+    for _, scene in ipairs(scenes) do
+        local message = messages[scene.s]
+        if scene.kind == 'loop' and not scene.e and message then
+            local text = message.data or ''
+            local cleaned = text:gsub('\n?<!%-%-sf:s:loop:' .. scene.id .. '%-%->', '')
+            if cleaned ~= text then
+                message.data = cleaned
+                setMessage(tid, scene.s, cleaned)
+                changed = true
+            end
+        end
+    end
+    return changed
+end
+
+------------------------------------------------------------------------------
+-- Runs (🔁 회차)
+------------------------------------------------------------------------------
+
+--- A run's log, entry by entry: a folded scene inside it as its summary, the rest as written.
+function SF.runEntries(tid, messages, run, scenes)
+    local inner = {}
+    for _, scene in ipairs(scenes) do
+        if scene.kind ~= 'loop' and scene.e and scene.s >= run.s and scene.e <= run.e then
+            local summary = SF.summaryOf(tid, scene.id)
+            if summary then
+                for i = scene.s, scene.e do inner[i] = inner[i] or { scene = scene, summary = summary } end
+            end
+        end
+    end
+    local entries, placed = {}, {}
+    for i = run.s, run.e do
+        local message = messages[i]
+        local hit = inner[i]
+        if hit then
+            if not placed[hit.scene.id] then
+                placed[hit.scene.id] = true
+                entries[#entries + 1] = '[folded ' .. hit.scene.kind .. '] ' .. hit.summary
+            end
+        elseif message then
+            local who = message.role == 'user' and 'user' or 'character'
+            entries[#entries + 1] = '[' .. who .. '] ' .. SF.strip(message.data or '')
+        end
+    end
+    return entries
+end
+
+--- The records of the runs before `run`, the latest ones kept when they are long.
+function SF.earlierRuns(tid, messages, scenes, run)
+    local parts = {}
+    for number, earlier in ipairs(SF.runs(messages, scenes)) do
+        if earlier.e < run.s then
+            local summary = SF.summaryOf(tid, earlier.id)
+            if summary then parts[#parts + 1] = 'Run ' .. number .. ':\n' .. summary end
+        end
+    end
+    local text = table.concat(parts, '\n\n')
+    if #text > 8000 then text = '[…]\n' .. text:sub(#text - 8000) end
+    return text
+end
+
+function SF.runSummary(tid, messages, run, scenes, settings)
+    local entries = SF.runEntries(tid, messages, run, scenes)
+    local earlier = SF.earlierRuns(tid, messages, scenes, run)
+    local number = SF.runNumbers(messages, scenes)[run.id] or 1
+    local log = table.concat(entries, '\n\n')
+    if #log <= SF.RUN_PART then
+        return ask(tid, SF.runPrompt(log, number, earlier, settings, false), settings.mainSummary)
+    end
+    local parts, current, size = {}, {}, 0
+    for _, entry in ipairs(entries) do
+        if #entry > SF.RUN_PART then entry = entry:sub(1, SF.RUN_PART) end
+        if size > 0 and size + #entry > SF.RUN_PART then
+            parts[#parts + 1] = table.concat(current, '\n\n')
+            current, size = {}, 0
+        end
+        current[#current + 1] = entry
+        size = size + #entry + 2
+    end
+    if #current > 0 then parts[#parts + 1] = table.concat(current, '\n\n') end
+    local notes = {}
+    for k, part in ipairs(parts) do
+        local note = ask(tid, SF.partPrompt(part, k, #parts, settings), settings.mainSummary)
+        if not note then return nil end
+        notes[#notes + 1] = '(' .. k .. ') ' .. note
+    end
+    return ask(tid, SF.runPrompt(table.concat(notes, '\n\n'), number, earlier, settings, true), settings.mainSummary)
+end
+
+function SF.makeSummary(tid, messages, scene, scenes, settings)
+    if scene.kind == 'loop' then return SF.runSummary(tid, messages, scene, scenes, settings) end
+    return ask(tid, SF.summaryPrompt(messages, scene, settings), settings.mainSummary)
+end
+
+------------------------------------------------------------------------------
+-- Folding
+------------------------------------------------------------------------------
+
 -- 원문 잘라내기 keeps the cut originals in chat state for 되돌리기; past
 -- this size it leaves the scene folded but uncut.
 SF.MAX_CUT_CHARS = 300000
@@ -378,33 +626,77 @@ function SF.cutScene(tid, messages, scene, summary)
     return true
 end
 
---- Summarize and mark the members of closed scenes past their grace, and
---- cut them when 원문 잘라내기 is on (one change per call).
-function SF.foldReady(tid, messages, settings)
-    local scenes = SF.scenes(messages)
-    for _, scene in ipairs(scenes) do
-        if scene.e and SF.graceDone(messages, scene, settings.grace) then
-            local summary = SF.summaryOf(tid, scene.id)
-            local made = false
-            if not summary then
-                summary = ask(tid, SF.summaryPrompt(messages, scene, settings), settings.mainSummary)
-                setState(tid, 'sf_fail_' .. scene.id, summary == nil)
-                if not summary then return false end
-                setState(tid, 'sf_sum_' .. scene.id, summary)
-                for i = scene.s + 1, scene.e - 1 do
-                    if messages[i] and not SF.markedIds(messages[i].data)[scene.id] then
-                        appendMarks(tid, messages, i, SF.memberMark(scene.id))
-                    end
+--- The text the request regex puts in place of a folded scene: a chat
+--- variable, so the regex can read it by the scene id. True when it changed.
+function SF.setFoldText(tid, scene, summary, settings, number)
+    local text = SF.summaryBlock(scene.kind, summary, settings, number)
+    local key = 'sf_text_' .. scene.id
+    if getChatVar(tid, key) == text then return false end
+    setChatVar(tid, key, text)
+    return true
+end
+
+--- Marks every message wholly inside a folded scene for the request regex:
+--- the first gets the fold mark (the summary goes there), the others member
+--- marks. A message also in a scene not folded (one ends and the next starts
+--- in it) keeps its text. Idempotent; true when something changed.
+function SF.markFolded(tid, messages, scene, folded, settings, number)
+    local changed = SF.setFoldText(tid, scene, folded[scene.id], settings, number)
+    for i = scene.s, scene.e do
+        local message = messages[i]
+        if message then
+            local text = message.data or ''
+            local whole = true
+            for id in pairs(SF.markedIds(text)) do
+                if id ~= scene.id and not folded[id] then whole = false break end
+            end
+            if whole then
+                local mark = i == scene.s and SF.foldMark(scene.kind, scene.id) or SF.memberMark(scene.id)
+                if not text:find(mark, 1, true) then
+                    appendMarks(tid, messages, i, mark)
+                    changed = true
                 end
-                made = true
             end
-            if settings.cut and stateGet(tid, 'sf_nocut_' .. scene.id) ~= true and stateGet(tid, 'sf_cutskip_' .. scene.id) ~= true then
-                if SF.cutScene(tid, messages, scene, summary) then return true end
-            end
-            if made then return true end
         end
     end
-    return false
+    return changed
+end
+
+--- Summarize closed scenes past their grace (one summary per call, inner
+--- scenes before the run over them), mark every folded scene for the request
+--- regex, and cut one when 원문 잘라내기 is chosen. True when anything changed.
+function SF.foldReady(tid, messages, settings)
+    local scenes = SF.scenes(messages)
+    local order = SF.foldOrder(scenes)
+    local folded, asked, changed = {}, false, false
+    for _, scene in ipairs(order) do
+        if scene.e and SF.graceDone(messages, scene, settings.grace) then
+            local summary = SF.summaryOf(tid, scene.id)
+            if not summary and not asked then
+                asked = true
+                summary = SF.makeSummary(tid, messages, scene, scenes, settings)
+                setState(tid, 'sf_fail_' .. scene.id, summary == nil)
+                if summary then
+                    setState(tid, 'sf_sum_' .. scene.id, summary)
+                    changed = true
+                end
+            end
+            if summary then folded[scene.id] = summary end
+        end
+    end
+    local numbers = SF.runNumbers(messages, scenes)
+    for _, scene in ipairs(order) do
+        if folded[scene.id] and SF.markFolded(tid, messages, scene, folded, settings, numbers[scene.id]) then changed = true end
+    end
+    if settings.cut then
+        for _, scene in ipairs(order) do
+            if folded[scene.id] and stateGet(tid, 'sf_nocut_' .. scene.id) ~= true and stateGet(tid, 'sf_cutskip_' .. scene.id) ~= true then
+                -- One cut per call: the positions after it move.
+                if SF.cutScene(tid, messages, scene, folded[scene.id]) then return true end
+            end
+        end
+    end
+    return changed
 end
 
 ------------------------------------------------------------------------------
@@ -421,36 +713,41 @@ onOutput = async(function(tid)
     local last = messages[#messages]
     if last.role == 'user' then return end
     local scenes = SF.scenes(messages)
+    local changed = dropDanglingRuns(tid, messages, scenes)
+    if changed then scenes = SF.scenes(messages) end
     local open = SF.openScene(scenes)
-    local changed = false
+    local died = false
 
     if settings.mainAnchors then
-        local cleaned, marks = SF.convertTokens(last.data or '', open, kinds)
+        local cleaned, marks, wrote = SF.convertTokens(last.data or '', open, kinds)
         if cleaned ~= last.data or marks ~= '' then
             last.data = marks ~= '' and (cleaned .. '\n' .. marks) or cleaned
             setMessage(tid, #messages, last.data)
             changed = true
         end
+        died = wrote and settings.loop
         -- A scene left open too long: ask the auxiliary model once whether it ended.
         scenes = SF.scenes(messages)
         open = SF.openScene(scenes)
         if open and SF.repliesAfter(messages, open.s - 1) > SF.LONG_OPEN and not stateGet(tid, 'sf_asked_' .. open.id) then
             setState(tid, 'sf_asked_' .. open.id, true)
-            local event = SF.parseJudge(ask(tid, SF.judgePrompt(messages, open, settings, { open.kind }), false))
+            local event = SF.parseJudge(ask(tid, SF.judgePrompt(messages, open, settings, { open.kind }, false), false))
             if event == 'end' or event == 'both' then
                 appendMarks(tid, messages, #messages, SF.endMark(open.id))
                 changed = true
             end
         end
-    elseif #kinds > 0 then
-        local event, kind = SF.parseJudge(ask(tid, SF.judgePrompt(messages, open, settings, kinds), false))
+    elseif #kinds > 0 or settings.loop then
+        local event, kind, loop = SF.parseJudge(ask(tid, SF.judgePrompt(messages, open, settings, kinds, settings.loop), false))
         local marks = SF.marksForEvent(event, kind, open, kinds)
         if marks ~= '' then
             appendMarks(tid, messages, #messages, marks)
             changed = true
         end
+        died = loop and settings.loop
     end
 
+    if died and endRun(tid, messages, #messages) then changed = true end
     if SF.foldReady(tid, messages, settings) then changed = true end
     if changed then
         bumpVersion(tid)
@@ -463,14 +760,20 @@ end)
 ------------------------------------------------------------------------------
 
 function SF.mainInstruction(kinds, open, settings)
-    local lines = { '[Scene markers] Mark these scenes in your replies:' }
-    for _, kind in ipairs(kinds) do
-        local name = kind == 'custom' and ('custom (' .. settings.customName .. ')') or kind
-        lines[#lines + 1] = '- ' .. name .. ': ' .. SF.kindRule(kind, settings)
+    local lines = {}
+    if #kinds > 0 then
+        lines[#lines + 1] = '[Scene markers] Mark these scenes in your replies:'
+        for _, kind in ipairs(kinds) do
+            local name = kind == 'custom' and ('custom (' .. settings.customName .. ')') or kind
+            lines[#lines + 1] = '- ' .. name .. ': ' .. SF.kindRule(kind, settings)
+        end
+        lines[#lines + 1] = 'When one begins in your reply, write [[SCENE START: kind]] on its own line right before it; when its outcome is decided or it stops, write [[SCENE END]] on its own line right after. Write nothing else about the markers.'
+        if open then
+            lines[#lines + 1] = 'A ' .. open.kind .. ' scene is open now: do not start another; write [[SCENE END]] when it ends.'
+        end
     end
-    lines[#lines + 1] = 'When one begins in your reply, write [[SCENE START: kind]] on its own line right before it; when its outcome is decided or it stops, write [[SCENE END]] on its own line right after. Write nothing else about the markers.'
-    if open then
-        lines[#lines + 1] = 'A ' .. open.kind .. ' scene is open now: do not start another; write [[SCENE END]] when it ends.'
+    if settings.loop then
+        lines[#lines + 1] = '[Time loop] When ' .. SF.hero(settings) .. ' dies and time goes back, write [[LOOP END]] on its own line right after the death.'
     end
     return table.concat(lines, '\n')
 end
@@ -491,9 +794,13 @@ function SF.rewriteRequest(messages, folded, settings, instruction)
                 if folded[id] then hit = hit or id else keep = true end
             end
             if hit and not keep then
+                -- The outer run when a battle inside it is folded too.
+                for id in pairs(SF.markedIds(message.content)) do
+                    if folded[id].kind == 'loop' then hit = id end
+                end
                 if not placed[hit] then
                     placed[hit] = true
-                    out[#out + 1] = { role = 'system', content = SF.summaryBlock(folded[hit].kind, folded[hit].text, settings) }
+                    out[#out + 1] = { role = 'system', content = SF.summaryBlock(folded[hit].kind, folded[hit].text, settings, folded[hit].number) }
                 end
             else
                 message.content = SF.strip(message.content)
@@ -503,7 +810,7 @@ function SF.rewriteRequest(messages, folded, settings, instruction)
             out[#out + 1] = message
         end
     end
-    if instruction then
+    if instruction and instruction ~= '' then
         local at = #out + 1
         for i = #out, 1, -1 do
             if type(out[i]) == 'table' and out[i].role == 'user' then at = i break end
@@ -515,13 +822,27 @@ end
 
 function SF.foldedScenes(tid, messages, settings)
     local folded = {}
-    for _, scene in ipairs(SF.scenes(messages)) do
+    local scenes = SF.scenes(messages)
+    local numbers = SF.runNumbers(messages, scenes)
+    for _, scene in ipairs(scenes) do
         if SF.graceDone(messages, scene, settings.grace) then
             local summary = SF.summaryOf(tid, scene.id)
-            if summary then folded[scene.id] = { kind = scene.kind, text = summary } end
+            if summary then folded[scene.id] = { kind = scene.kind, text = summary, number = numbers[scene.id] } end
         end
     end
     return folded
+end
+
+--- The request without the messages the request regex emptied (a folded
+--- scene's other messages): some providers refuse an empty message.
+function SF.withoutEmpty(messages)
+    local out = {}
+    for _, message in ipairs(messages) do
+        local empty = type(message) == 'table' and message.content == ''
+            and not (type(message.multimodals) == 'table' and #message.multimodals > 0)
+        if not empty then out[#out + 1] = message end
+    end
+    return out
 end
 
 listenEdit('editRequest', function(tid, request, meta)
@@ -531,9 +852,11 @@ listenEdit('editRequest', function(tid, request, meta)
     local instruction = nil
     if settings.mainAnchors then
         local kinds = SF.enabledKinds(settings)
-        if #kinds > 0 then instruction = SF.mainInstruction(kinds, SF.openScene(SF.scenes(messages)), settings) end
+        if #kinds > 0 or settings.loop then instruction = SF.mainInstruction(kinds, SF.openScene(SF.scenes(messages)), settings) end
     end
-    return SF.rewriteRequest(request, SF.foldedScenes(tid, messages, settings), settings, instruction)
+    local out = SF.rewriteRequest(request, SF.foldedScenes(tid, messages, settings), settings, instruction)
+    if settings.early then out = SF.withoutEmpty(out) end
+    return out
 end)
 
 ------------------------------------------------------------------------------
@@ -546,10 +869,12 @@ end
 
 local LINK = 'cursor:pointer;text-decoration:underline;opacity:.85'
 
-function SF.card(scene, summary, count, expanded, settings)
+function SF.card(scene, summary, count, expanded, settings, number)
     local body = escapeHtml(summary):gsub('\r?\n', '<br>')
+    local title = scene.kind == 'loop' and ('🔁 지나간 회차 · ' .. escapeHtml(SF.kindLabel(scene.kind, settings, number)))
+        or ('📁 접힌 장면 · ' .. escapeHtml(SF.kindLabel(scene.kind, settings)))
     return '<div style="border:1px solid rgba(127,127,127,.45);border-radius:8px;padding:8px 10px;margin:4px 0;font-size:.92em">'
-        .. '<div style="opacity:.75;font-size:.85em">📁 접힌 장면 · ' .. escapeHtml(SF.kindLabel(scene.kind, settings)) .. ' · 메시지 ' .. count .. '개</div>'
+        .. '<div style="opacity:.75;font-size:.85em">' .. title .. ' · 메시지 ' .. count .. '개</div>'
         .. '<div style="margin-top:4px">' .. body .. '</div>'
         .. '<div style="margin-top:6px;display:flex;gap:12px;flex-wrap:wrap;font-size:.82em">'
         .. '<span risu-btn="sf|x|' .. scene.id .. '" style="' .. LINK .. '">' .. (expanded and '접기' or '펼치기') .. '</span>'
@@ -562,11 +887,14 @@ function SF.note(text)
     return '<div style="opacity:.6;font-size:.8em;margin:2px 0">' .. text .. '</div>'
 end
 
-function SF.buttonBar(index)
-    return '<div style="opacity:.45;font-size:.75em;margin-top:2px;display:flex;gap:12px">'
+function SF.buttonBar(index, settings)
+    local bar = '<div style="opacity:.45;font-size:.75em;margin-top:2px;display:flex;gap:12px;flex-wrap:wrap">'
         .. '<span risu-btn="sf|s|' .. index .. '" style="cursor:pointer">▶ 여기부터 장면</span>'
         .. '<span risu-btn="sf|e|' .. index .. '" style="cursor:pointer">■ 여기까지 장면</span>'
-        .. '</div>'
+    if settings and settings.loop then
+        bar = bar .. '<span risu-btn="sf|d|' .. index .. '" style="cursor:pointer">🔁 여기서 회차 끝</span>'
+    end
+    return bar .. '</div>'
 end
 
 -- Scene lookups for display, kept until the chat or the module's marks change.
@@ -583,21 +911,26 @@ local function displayKey(tid, settings)
     }, ':')
 end
 
+--- Which scene each message shows as. A folded run covers everything in it;
+--- a run not folded yet shows its inner scenes and its own end.
 function SF.displayInfo(tid, settings)
     local key = displayKey(tid, settings)
     if displayCache.key == key and displayCache.info then return displayCache.info end
     local messages = getFullChat(tid) or {}
     local info = { at = {}, messages = #messages }
-    for _, scene in ipairs(SF.scenes(messages)) do
+    local scenes = SF.scenes(messages)
+    local numbers = SF.runNumbers(messages, scenes)
+    for _, scene in ipairs(SF.foldOrder(scenes)) do
         local summary = scene.e and SF.graceDone(messages, scene, settings.grace) and SF.summaryOf(tid, scene.id) or nil
         local entry = {
             scene = scene,
             summary = summary,
+            number = numbers[scene.id],
             waiting = scene.e and not summary and SF.repliesAfter(messages, scene.e) or nil,
             failed = scene.e and not summary and stateGet(tid, 'sf_fail_' .. scene.id) == true or false,
         }
         for i = scene.s, scene.e or scene.s do
-            info.at[i] = entry
+            if scene.kind ~= 'loop' or summary or not info.at[i] or i == scene.e then info.at[i] = entry end
         end
     end
     displayCache.key = key
@@ -629,17 +962,19 @@ listenEdit('editDisplay', function(tid, text, meta)
     local entry = info.at[position]
     if entry then
         local scene = entry.scene
+        local label = escapeHtml(SF.kindLabel(scene.kind, settings, entry.number))
         if entry.summary then
             local expanded = stateGet(tid, 'sf_exp_' .. scene.id) == true
             if position == scene.s then
-                local card = SF.card(scene, entry.summary, scene.e - scene.s + 1, expanded, settings)
+                local card = SF.card(scene, entry.summary, scene.e - scene.s + 1, expanded, settings, entry.number)
                 return expanded and (card .. '\n\n' .. clean) or card
             end
             if expanded then return clean end
+            if scene.kind == 'loop' then return SF.note('🔁 지나간 회차의 일부 · 위 카드에서 펼치기') end
             return SF.note('📁 접힌 장면의 일부 · 위 카드에서 펼치기')
         end
         if not scene.e and position == scene.s then
-            return clean .. '\n\n' .. SF.note('📁 ' .. escapeHtml(SF.kindLabel(scene.kind, settings)) .. ' 진행 중 · 끝나면 접힙니다')
+            return clean .. '\n\n' .. SF.note('📁 ' .. label .. ' 진행 중 · 끝나면 접힙니다')
         end
         if scene.e and position == scene.e then
             local left = math.max(0, settings.grace - (entry.waiting or 0))
@@ -647,11 +982,12 @@ listenEdit('editDisplay', function(tid, text, meta)
             if left == 0 and entry.failed then
                 status = '요약을 못 만들었습니다 · <span risu-btn="sf|r|' .. scene.id .. '" style="' .. LINK .. '">다시 요약</span>'
             end
-            return clean .. '\n\n' .. SF.note('📁 ' .. escapeHtml(SF.kindLabel(scene.kind, settings)) .. ' 끝 · ' .. status)
+            local icon = scene.kind == 'loop' and '' or '📁 '
+            return clean .. '\n\n' .. SF.note(icon .. label .. ' 끝 · ' .. status)
         end
     end
     if settings.buttons then
-        return clean .. '\n\n' .. SF.buttonBar(index)
+        return clean .. '\n\n' .. SF.buttonBar(index, settings)
     end
     return clean
 end)
@@ -661,7 +997,7 @@ end)
 ------------------------------------------------------------------------------
 
 local function removeMarks(tid, messages, id)
-    local pattern = '\n?<!%-%-sf:[sem]:[%w:]*' .. id .. '%-%->'
+    local pattern = '\n?<!%-%-sf:[semf]:[%w:]*' .. id .. '%-%->'
     for i, message in ipairs(messages) do
         local text = message.data or ''
         local cleaned = text:gsub(pattern, '')
@@ -672,6 +1008,7 @@ local function removeMarks(tid, messages, id)
     end
     setState(tid, 'sf_sum_' .. id, '')
     setState(tid, 'sf_exp_' .. id, false)
+    setChatVar(tid, 'sf_text_' .. id, '')
 end
 
 local function pickKind(tid, settings)
@@ -717,12 +1054,20 @@ onButtonClick = async(function(tid, data)
             return
         end
         appendMarks(tid, messages, position, SF.endMark(open.id))
+    elseif action == 'd' then
+        -- 여기서 회차 끝: the hero died here.
+        local position = (tonumber(argument) or -1) + 1
+        if not messages[position] then return end
+        if not endRun(tid, messages, position) then
+            alertNormal(tid, '이 메시지는 이미 지난 회차에 들어 있습니다.')
+            return
+        end
     elseif action == 'x' then
         setState(tid, 'sf_exp_' .. argument, not (stateGet(tid, 'sf_exp_' .. argument) == true))
     elseif action == 'r' then
         local scene = byId[argument]
         if not scene or not scene.e then return end
-        local summary = ask(tid, SF.summaryPrompt(messages, scene, settings), settings.mainSummary)
+        local summary = SF.makeSummary(tid, messages, scene, scenes, settings)
         if not summary then
             alertNormal(tid, '요약을 만들지 못했습니다. 모듈의 저수준 접근이 켜져 있는지, 보조 모델 설정을 확인해 주세요.')
             return
