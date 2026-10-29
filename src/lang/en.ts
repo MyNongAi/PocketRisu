@@ -1032,7 +1032,6 @@ export const languageEnglish = {
     ToggleHypaMemory: "Toggle HypaMemory",
     hideFloatingBotButtons: "Hide floating buttons",
     wholeBotAssets: "Show assets whole",
-    hypaReadsFoldedScenes: "Read folded scenes as their summary",
     loreAuxModel: "To the auxiliary model",
     loreAuxModelIcon: "Sent to the auxiliary model (right-click or hold to undo)",
     loreAuxModelSet: "Right-click or hold: to the auxiliary model",

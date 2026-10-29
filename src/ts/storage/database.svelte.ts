@@ -1810,9 +1810,6 @@ export interface Database{
     nodeOnlyGeminiPdfInput?:boolean
     // Media resolution asked for that PDF; 'default' sends none.
     nodeOnlyGeminiPdfMediaResolution?:'default'|'low'|'medium'|'high'
-    // Long-term memory reads a scene the 장면 접기 module folded as its
-    // summary (process/memory/foldedScenes.ts). Default ON: only false turns it off.
-    nodeOnlyHypaReadsFoldedScenes?:boolean
     seperateParametersByModel?:boolean
     disableSeperateParameterChangeOnPresetChange?:boolean
     saveSignatures?:boolean

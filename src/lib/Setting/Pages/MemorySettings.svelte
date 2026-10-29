@@ -390,10 +390,6 @@
             <SettingRowLayout item={field('noUserSummary', language.hypaV3Settings.doNotSummarizeUserMessageLabel, 'hypaV3DoNotSummarizeUserMessage')}>
                 {#snippet control()}<ShSwitch checked={!!settings.doNotSummarizeUserMessage} onCheckedChange={(v) => settings.doNotSummarizeUserMessage = v} />{/snippet}
             </SettingRowLayout>
-            <!-- Every preset, not this one: a setting of the app (foldedScenes.ts). -->
-            <SettingRowLayout item={field('readsFoldedScenes', language.hypaReadsFoldedScenes, 'hypaReadsFoldedScenes')}>
-                {#snippet control()}<ShSwitch checked={DBState.db.nodeOnlyHypaReadsFoldedScenes !== false} onCheckedChange={(v) => DBState.db.nodeOnlyHypaReadsFoldedScenes = v} />{/snippet}
-            </SettingRowLayout>
             <div class="pt-3 border-t border-darkborderc">
             <ShAccordion name="Advanced Settings" variant="card">
                 <div class="flex flex-col [&>*:first-child]:border-t-0">

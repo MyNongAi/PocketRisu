@@ -165,7 +165,6 @@ export const helpKo = {
         "hypaV3PreserveOrphanedMemory": "활성화 시 삭제된 채팅 메시지를 참조하는 요약본이 보존됩니다. 비활성화하면 원본 메시지가 없어진 요약본이 자동으로 제거됩니다.",
         "hypaV3ProcessRegexScript": "활성화 시 HypaV3 모달에서 요약을 재생성할 때 입력되는 원본 채팅에 정규식 스크립트가 적용됩니다.",
         "hypaV3DoNotSummarizeUserMessage": "활성화 시 요약본당 최대 메시지 수에서 유저 메시지를 제외한 나머지만 요약에 사용됩니다.",
-        "hypaReadsFoldedScenes": "📁 장면 접기 모듈이 접은 장면을 장기기억이 원문 대신 모듈의 요약 한 덩어리로 읽습니다. 같은 장면을 두 번 요약하지 않고, 장기기억이 길이를 셀 때도 실제로 보내는 길이(요약)로 셉니다.\n\n- 모든 장기기억 프리셋에 적용됩니다.\n- 장면 접기 모듈이 켜져 있을 때만 동작합니다.\n- 장기기억이 이미 일부를 요약한 장면은 그대로 둡니다.\n- 끄면 순정처럼 원문을 읽습니다(비교 시험용).",
         "hypaV3EnableSimilarityCorrection": "활성화 시 최근 채팅 원문의 전체 요약본을 추가로 유사도 분석에 사용합니다. 실험적 하이파메모리 V3에서는 작동하지 않습니다.",
         "hypaV3SummaryChunkSeparator": "요약본을 청크 단위로 분리할 때 사용되는 구분자입니다.",
         "hypaV3UseExperimentalImpl": "실험적 하이파메모리 V3으로 전환합니다. Rate limit 설정이 가능해지고 쿼리 방식이 변경됩니다.",

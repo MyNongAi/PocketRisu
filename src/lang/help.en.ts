@@ -268,12 +268,6 @@ export const helpEn = {
             "If enabled, regex scripts will be applied to the input chat messages when regenerating summaries in the HypaV3 modal.",
         hypaV3DoNotSummarizeUserMessage:
             "If enabled, user messages are excluded from the max messages per summary count.",
-        hypaReadsFoldedScenes:
-            "Long-term memory reads a scene the 📁 Scene Fold module folded as the module's summary of it, one block in place of the full text. The scene is not summarized twice, and memory counts the length the request really carries.\n\n" +
-            "- Applies to every long-term memory preset.\n" +
-            "- Works only while the Scene Fold module is on.\n" +
-            "- A scene memory already summarized in part is left as it is.\n" +
-            "- Turn it off and memory reads the full text, as without it (for comparing).",
         hypaV3EnableSimilarityCorrection:
             "If enabled, a summary of recent chats is additionally used as a query. Does not work with the experimental HypaMemory V3.",
         hypaV3SummaryChunkSeparator:
