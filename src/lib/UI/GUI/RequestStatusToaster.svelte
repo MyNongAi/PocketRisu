@@ -15,7 +15,7 @@
     import { toast } from 'svelte-sonner'
     import { requestStatuses, isTerminalPhase, clearStatus } from 'src/ts/status/requestStatus'
     import RequestStatusToast, { REQUEST_TOAST_CLASS } from './RequestStatusToast.svelte'
-    import { dismissRequestToast, keepsDoneButton, minimizedRequests, requestToastDismissed, requestToastShown, staysOpenUnseen, unminimizeRequest } from 'src/ts/status/requestStatusDock'
+    import { dismissRequestToast, keepsDoneButton, leavesAtOnce, minimizedRequests, requestToastDismissed, requestToastShown, staysOpenUnseen, unminimizeRequest } from 'src/ts/status/requestStatusDock'
     import { DBState, selIdState } from 'src/ts/stores.svelte'
     import { paneToasterFor } from 'src/ts/status/requestToastPane'
 
@@ -38,7 +38,7 @@
         return `req:${id}`
     }
 
-    function scheduleDismiss(id: string): void {
+    function scheduleDismiss(id: string, delayMs = RETENTION_MS): void {
         if (dismissTimers.has(id)) return
         const t = setTimeout(() => {
             dismissTimers.delete(id)
@@ -47,7 +47,7 @@
             unminimizeRequest(id)
             // Drop the store entry too so the map doesn't grow unbounded.
             clearStatus(id)
-        }, RETENTION_MS)
+        }, delayMs)
         dismissTimers.set(id, t)
     }
 
@@ -80,7 +80,8 @@
                     keptUnseen.add(id)
                     continue
                 }
-                scheduleDismiss(id)
+                // A memory summary or translation that went well shows no "Done".
+                scheduleDismiss(id, leavesAtOnce(entry) ? 0 : RETENTION_MS)
             } else if (dismissTimers.has(id)) {
                 // Revived (e.g. fallback/retry reuses the same generationId): the
                 // entry went terminal, scheduled a dismiss, then restarted. Cancel

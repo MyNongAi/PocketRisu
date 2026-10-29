@@ -1622,7 +1622,7 @@
     },
     {
       "id": "REQUEST-STATUS-DOCK",
-      "title": "요청 상태 창 접기: 생성 중 원형 버튼, 완료 시 체크로 채팅 이동",
+      "title": "요청 상태 창 접기: 생성 중 원형 버튼, 완료 시 체크로 채팅 이동 · 성공한 보조 요청은 바로 사라짐",
       "criticality": "core-ux",
       "ownerFiles": [
         "src/ts/status/requestStatusDock.ts",
@@ -1638,7 +1638,9 @@
         { "file": "src/lib/UI/GUI/RequestStatusDock.svelte", "contains": "function openChat(id: string, chatId: string | undefined): void {" },
         { "file": "src/App.svelte", "contains": "<RequestStatusDock />" },
         { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "export const REQUEST_TOAST_CLASS = 'rs-toast'" },
-        { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "width: fit-content;" }
+        { "file": "src/lib/UI/GUI/RequestStatusToast.svelte", "contains": "width: fit-content;" },
+        { "file": "src/lib/UI/GUI/RequestStatusToaster.svelte", "contains": "scheduleDismiss(id, leavesAtOnce(entry) ? 0 : RETENTION_MS)" },
+        { "file": "src/ts/status/requestStatusDock.ts", "contains": "return entry.phase === 'done' && entry.kind !== 'main'" }
       ],
       "regressionTests": [
         "src/ts/status/requestStatusDock.test.ts",
@@ -2491,13 +2493,14 @@
     },
     {
       "id": "HYPA-PREFILL-RETRY",
-      "title": "장기기억 요약: 프리필 거절 시 사용자 차례로 끝내 한 번 더(재시도 없이) · Gemini 요청은 늘 사용자 차례로 끝냄 · 보내는 채팅의 프리셋 · 중지를 들음",
+      "title": "장기기억 요약: 프리필 거절 시 사용자 차례로 끝내 한 번 더(재시도 없이) · Gemini 요청은 늘 사용자 차례로 끝냄 · 보내는 채팅의 프리셋 · 중지를 들음 · 만든 요약이 저장됨",
       "criticality": "core-ux",
       "ownerFiles": [
         "src/ts/process/memory/trailingPrefill.ts",
         "src/ts/process/memory/hypav3.ts",
         "src/ts/process/request/request.ts",
         "src/ts/process/index.svelte.ts",
+        "src/ts/process/generationTarget.ts",
         "src/ts/process/request/google.ts",
         "src/ts/preset/adapter/googleGemini.ts"
       ],
@@ -2510,14 +2513,17 @@
         { "file": "src/ts/process/index.svelte.ts", "contains": "// Stopped while summarizing: the summaries made so far are kept, no error." },
         { "file": "src/ts/preset/adapter/googleGemini.ts", "contains": "contents.at(-1)?.role === 'model' && !acceptsTrailingModelTurn(modelId)" },
         { "file": "src/ts/process/request/google.ts", "contains": "reformatedChat.push({ role: 'user', parts: [{ text: CONTINUE_FROM_PREFILL }] })" },
-        { "file": "src/ts/process/request/google.ts", "contains": "!acceptsTrailingModelTurn(arg.modelInfo.internalID ?? arg.modelInfo.id)" }
+        { "file": "src/ts/process/request/google.ts", "contains": "!acceptsTrailingModelTurn(arg.modelInfo.internalID ?? arg.modelInfo.id)" },
+        { "file": "src/ts/process/index.svelte.ts", "contains": "const placed = placeChat(attached.character.chats, attached.chatIndex, nextChat)" },
+        { "file": "src/ts/process/generationTarget.ts", "contains": "export function placeChat(chats: Chat[], index: number, next: Chat): Chat {" }
       ],
       "regressionTests": [
         "src/ts/process/memory/trailingPrefill.test.ts",
         "src/ts/process/request/prefillRefusalRetry.test.ts",
         "src/ts/process/memory/hypav3PresetOfRequest.test.ts",
         "src/ts/process/request/geminiTrailingModelTurn.test.ts",
-        "src/ts/preset/adapter/googleGemini.test.ts"
+        "src/ts/preset/adapter/googleGemini.test.ts",
+        "src/ts/process/generationTarget.svelte.test.ts"
       ]
     },
     {

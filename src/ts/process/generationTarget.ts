@@ -39,6 +39,19 @@ function uniqueIndex<T>(items: readonly T[], predicate: (item: T) => boolean): n
 }
 
 /**
+ * Puts `next` in the chat slot and returns what the slot now holds. In the
+ * live database that is a reactive proxy over `next`, not `next` itself, and
+ * a write to `next` is lost once the proxy has read that field (a save reads
+ * every field): the long-term memory summaries of each send were written to
+ * `next` after the start trigger swapped the chat, and none was ever kept
+ * (2026-10-29: every send summarized the same messages again).
+ */
+export function placeChat(chats: Chat[], index: number, next: Chat): Chat {
+    chats[index] = next
+    return chats[index]
+}
+
+/**
  * Puts `next` (a trigger's resulting chat) in place of the chat `identity`
  * names, wherever that chat is now. Null, writing nothing, when it is gone or
  * only a placeholder: a button's result was written into whichever chat was

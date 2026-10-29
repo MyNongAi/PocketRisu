@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { get } from 'svelte/store'
-import { dismissRequestToast, staysOpenUnseen, dockState, isMinimizedRequest, keepsDoneButton, minimizedRequests, minimizeRequest, requestToastDismissed, requestToastShown, unminimizeRequest } from './requestStatusDock'
+import { dismissRequestToast, staysOpenUnseen, dockState, isMinimizedRequest, keepsDoneButton, leavesAtOnce, minimizedRequests, minimizeRequest, requestToastDismissed, requestToastShown, unminimizeRequest } from './requestStatusDock'
 import { requestStatuses } from './requestStatus'
 
 afterEach(() => {
@@ -62,5 +62,13 @@ describe('requestStatusDock', () => {
         expect(staysOpenUnseen(done, 'other')).toBe(false)
         expect(staysOpenUnseen({ ...done, kind: 'translate' }, 'here')).toBe(false)
         expect(staysOpenUnseen({ ...done, phase: 'aborted' }, 'here')).toBe(false)
+    })
+
+    it('lets a finished auxiliary card go at once, a failed one or a reply as before', () => {
+        expect(leavesAtOnce({ phase: 'done', kind: 'memory' })).toBe(true)
+        expect(leavesAtOnce({ phase: 'done', kind: 'translate' })).toBe(true)
+        expect(leavesAtOnce({ phase: 'failed', kind: 'memory' })).toBe(false)
+        expect(leavesAtOnce({ phase: 'aborted', kind: 'memory' })).toBe(false)
+        expect(leavesAtOnce({ phase: 'done', kind: 'main' })).toBe(false)
     })
 })

@@ -42,7 +42,7 @@ import { pluginV2 } from "../plugins/plugins.svelte";
 import { abortGeneration, chatGenKey, chatProcessStage, endGeneration, getGenerationAdmission, onDatabaseRebased, registerAbort, setGenerationStage, tryStartGeneration } from "./generationState";
 import { clearPendingSend, registerPendingSend } from "./request/pendingSends";
 import { pruneScriptstateCheckpoints, recordScriptstateCheckpoint, snapshotScriptstate } from "../chatScriptstateCheckpoint";
-import { captureGenerationTarget, resolveGenerationTarget, type GenerationTargetIdentity } from './generationTarget';
+import { captureGenerationTarget, placeChat, resolveGenerationTarget, type GenerationTargetIdentity } from './generationTarget';
 
 export interface OpenAIChat{
     role: 'system'|'user'|'assistant'|'function'
@@ -313,12 +313,13 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     const replaceGenerationChat = (nextChat: Chat): boolean => {
         const attached = resolveGenerationTarget(DBState.db.characters, generationTarget)
         if (!attached) return false
-        attached.character.chats[attached.chatIndex] = nextChat
+        // Later writes (the memory summaries) go to the chat the database holds.
+        const placed = placeChat(attached.character.chats, attached.chatIndex, nextChat)
         selectedChar = attached.characterIndex
         selectedChat = attached.chatIndex
         nowChatroom = attached.character
         currentChar = attached.character
-        currentChat = nextChat
+        currentChat = placed
         generationTarget = captureGenerationTarget(currentChar, currentChat)
         return true
     }

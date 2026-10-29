@@ -73,3 +73,13 @@ export function staysOpenUnseen(entry: Pick<RequestStatusEntry, 'phase' | 'chatI
 export function keepsDoneButton(entry: Pick<RequestStatusEntry, 'phase' | 'chatId' | 'kind'>, currentChatId: string | null | undefined): boolean {
     return entry.phase === 'done' && entry.kind === 'main' && !!entry.chatId && entry.chatId !== currentChatId
 }
+
+/**
+ * Whether a finished card leaves at once instead of showing "Done" for a
+ * while: an auxiliary request (a memory summary, a translation) that went
+ * well. Its "Done" was taken for the reply being done (the user's report,
+ * 2026-10-29). A failed or cancelled one still shows.
+ */
+export function leavesAtOnce(entry: Pick<RequestStatusEntry, 'phase' | 'kind'>): boolean {
+    return entry.phase === 'done' && entry.kind !== 'main'
+}
