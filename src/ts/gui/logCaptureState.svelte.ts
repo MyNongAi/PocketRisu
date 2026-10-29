@@ -2,15 +2,21 @@
 // starts, the second where it ends (the same message again: just that one);
 // the messages between them are rendered as images (logCaptureRender.ts) and copied to the
 // clipboard when the browser allows it, with copy, save and share buttons
-// in the result window (LogCaptureOverlay.svelte).
+// in the result window (LogCaptureOverlay.svelte). 📝 picks a range the same
+// way for the text log: one HTML post (logTextRender.ts), copied the same way
+// (the user's request, 2026-10-30).
 
 import { DBState, selIdState } from '../stores.svelte'
 import { language } from 'src/lang'
 import { logCaptureRange, logImageFileName } from './logCapture'
 import { fitPngToBytes } from './logImageFit'
 import type { LogCaptureStage } from './logCaptureRender'
+import type { RenderedLogText } from './logTextRender'
+import { writeChatClipboard } from '../chatClipboard'
 
 export type LogCapturePhase = 'idle' | 'picking' | 'rendering' | 'done' | 'error'
+/** ✂️ images or 📝 one text post. */
+export type LogCaptureMode = 'image' | 'text'
 export type LogCaptureCopyState = 'none' | 'pending' | 'copied' | 'failed'
 /** Which piece of the dashed box a message draws. */
 export type LogCaptureMark = 'single' | 'top' | 'middle' | 'bottom'
@@ -30,6 +36,7 @@ interface ChatIdentity {
 
 export const logCapture = $state({
     phase: 'idle' as LogCapturePhase,
+    mode: 'image' as LogCaptureMode,
     start: null as (ChatIdentity & { index: number }) | null,
     range: null as { from: number; to: number } | null,
     rangeChat: null as ChatIdentity | null,
@@ -37,6 +44,8 @@ export const logCapture = $state({
     done: 0,
     total: 0,
     images: [] as LogCaptureImage[],
+    /** The text log made (mode 'text'). */
+    text: null as RenderedLogText | null,
     copy: 'none' as LogCaptureCopyState,
     /** Bytes of the PNG last copied, when it was scaled down to fit a post (logImageFit.ts); else 0. */
     copiedSmaller: 0,
@@ -86,6 +95,7 @@ function releaseImages() {
 
 function reset() {
     releaseImages()
+    logCapture.text = null
     logCapture.phase = 'idle'
     logCapture.start = null
     logCapture.range = null
@@ -105,21 +115,98 @@ export function cancelLogCapture() {
 }
 
 /**
- * A ✂️ press. Must run inside the click: the clipboard write that delivers
- * the image later is started here, while the press still counts as one.
+ * A ✂️ or 📝 press. Must run inside the click: the clipboard write that
+ * delivers the image or text later is started here, while the press still
+ * counts as one. `mode` is the kind a first press starts; the end press
+ * finishes the kind started.
  */
-export function markLogCapture(index: number) {
+export function markLogCapture(index: number, mode: LogCaptureMode = 'image') {
     if (logCapture.phase === 'rendering') return
     const here = currentChatIdentity()
     if (!here) return
     const start = logCapture.start
     if (logCapture.phase !== 'picking' || !start || !sameChat(start, here)) {
         reset()
+        logCapture.mode = mode
         logCapture.start = { ...here, index }
         logCapture.phase = 'picking'
         return
     }
-    void runCapture(logCaptureRange(start.index, index), here)
+    const range = logCaptureRange(start.index, index)
+    if (logCapture.mode === 'text') void runTextLog(range, here)
+    else void runCapture(range, here)
+}
+
+async function runTextLog(range: { from: number; to: number }, chat: ChatIdentity) {
+    const run = ++runId
+    controller?.abort()
+    controller = new AbortController()
+    const signal = controller.signal
+    releaseImages()
+    logCapture.phase = 'rendering'
+    logCapture.start = null
+    logCapture.range = range
+    logCapture.rangeChat = chat
+    logCapture.stage = 'render'
+    logCapture.done = 0
+    logCapture.total = 0
+    logCapture.error = ''
+    logCapture.text = null
+    logCapture.copiedSmaller = 0
+
+    // The clipboard write starts in this click, with the post promised.
+    let deliver: (text: RenderedLogText) => void = () => {}
+    let refuse: (reason: unknown) => void = () => {}
+    const made = new Promise<RenderedLogText>((resolve, reject) => { deliver = resolve; refuse = reject })
+    made.catch(() => {})
+    logCapture.copy = 'pending'
+    writeChatClipboard(made.then((text) => text.text), made.then((text) => text.html)).then(
+        () => { if (run === runId) logCapture.copy = 'copied' },
+        () => { if (run === runId) logCapture.copy = 'failed' },
+    )
+
+    try {
+        const { renderLogText } = await import('./logTextRender')
+        const text = await renderLogText({
+            from: range.from,
+            to: range.to,
+            signal,
+            onProgress: (stage, done, total) => {
+                if (run !== runId) return
+                logCapture.stage = stage
+                logCapture.done = done
+                logCapture.total = total
+            },
+        })
+        if (run !== runId) return
+        logCapture.text = text
+        logCapture.phase = 'done'
+        deliver(text)
+    } catch (error) {
+        refuse(error)
+        if (run !== runId) return
+        if ((error as DOMException)?.name === 'AbortError') {
+            reset()
+            return
+        }
+        console.error('[LogCapture]', error)
+        logCapture.phase = 'error'
+        logCapture.error = (error as Error)?.message || String(error)
+    }
+}
+
+/** The text log's copy button: copies the post made again. */
+export async function copyLogText(): Promise<boolean> {
+    const text = logCapture.text
+    if (!text) return false
+    try {
+        await writeChatClipboard(text.text, Promise.resolve(text.html))
+        logCapture.copy = 'copied'
+        return true
+    } catch {
+        logCapture.copy = 'failed'
+        return false
+    }
 }
 
 function startClipboardWrite(image: Promise<Blob>): Promise<void> | null {

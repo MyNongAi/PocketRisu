@@ -1133,6 +1133,8 @@
         "src/ts/gui/logCapture.ts",
         "src/ts/gui/logCaptureState.svelte.ts",
         "src/ts/gui/logCaptureRender.ts",
+        "src/ts/gui/logTextRender.ts",
+        "src/ts/chatClipboard.ts",
         "src/lib/ChatScreens/LogCaptureOverlay.svelte",
         "src/lib/ChatScreens/Chat.svelte",
         "src/lib/ChatScreens/ChatBody.svelte",
@@ -1149,10 +1151,17 @@
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "data-log-mark={logCaptureMark ?? undefined}" },
         { "file": "src/ts/gui/logCaptureRender.ts", "contains": "pixelRatio: ratio," },
         { "file": "src/ts/gui/logCaptureRender.ts", "contains": "pickLogImageDensity(layoutWidth * scale, totalHeight * scale, tallestLogImageHeight)" },
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "{#if showLogCaptureButton && (idx < 0 || logCapturePicking)}" }
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "{#if showLogCaptureButton && (idx < 0 || logCapturePicking)}" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "onclick={() => markLogCapture(idx, 'text')}" },
+        { "file": "src/ts/gui/logCaptureState.svelte.ts", "contains": "if (logCapture.mode === 'text') void runTextLog(range, here)" },
+        { "file": "src/ts/gui/logCaptureState.svelte.ts", "contains": "writeChatClipboard(made.then((text) => text.text), made.then((text) => text.html))" },
+        { "file": "src/ts/gui/logCaptureRender.ts", "contains": "export async function mountLogRange(options: RenderLogOptions, header: boolean): Promise<MountedLogRange> {" },
+        { "file": "src/ts/gui/logTextRender.ts", "contains": "const doc = new DOMParser().parseFromString(await buildPortableChatFragment(body), 'text/html')" },
+        { "file": "src/lib/ChatScreens/LogCaptureOverlay.svelte", "contains": "{#if logCapture.text && logCapture.text.bytes > BOARD_POST_SAFE_BYTES}" }
       ],
       "regressionTests": [
-        "src/ts/gui/logCapture.test.ts"
+        "src/ts/gui/logCapture.test.ts",
+        "src/ts/chatClipboard.test.ts"
       ]
     },
     {

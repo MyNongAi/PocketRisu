@@ -1,15 +1,18 @@
 <script lang="ts">
     // ✂️ log capture: the "pick the end" bar, the progress bar and the result
-    // window with the images (src/ts/gui/logCaptureState.svelte.ts).
+    // window with the images, or with the 📝 text log's copy button
+    // (src/ts/gui/logCaptureState.svelte.ts).
     import { CheckIcon, CopyIcon, DownloadIcon, Share2Icon, XIcon } from '@lucide/svelte'
     import { language } from 'src/lang'
     import Portal from '../UI/GUI/Portal.svelte'
     import { BackLayerRank, useBackLayer } from 'src/ts/gui/backLayers.svelte'
     import { formatLogRange, logMessageNumber } from 'src/ts/gui/logCapture'
+    import { BOARD_POST_SAFE_BYTES, clipboardSizeLabel } from 'src/ts/chatClipboard'
     import {
         canShareLogImages,
         cancelLogCapture,
         copyLogImage,
+        copyLogText,
         isLogCapturePickingHere,
         logCapture,
         saveLogImage,
@@ -18,6 +21,9 @@
     } from 'src/ts/gui/logCaptureState.svelte'
 
     const picking = $derived(isLogCapturePickingHere())
+    const isText = $derived(logCapture.mode === 'text')
+    const glyph = $derived(isText ? '📝' : '✂️')
+    const textSize = $derived(logCapture.text ? clipboardSizeLabel(logCapture.text.bytes) : '')
     const resultOpen = $derived(logCapture.phase === 'done' || logCapture.phase === 'error')
     const canShare = canShareLogImages()
 
@@ -29,6 +35,7 @@
     const stageText = $derived(
         logCapture.stage === 'render' ? language.logCapture.stageRender
         : logCapture.stage === 'images' ? language.logCapture.stageImages
+        : logCapture.stage === 'text' ? language.logCapture.stageText
         : language.logCapture.stageDraw
     )
 
@@ -42,6 +49,14 @@
 
     function saveAll() {
         logCapture.images.forEach((image, i) => setTimeout(() => saveLogImage(image), i * 400))
+    }
+
+    let textCopied = $state(false)
+    async function copyText() {
+        if (await copyLogText()) {
+            textCopied = true
+            setTimeout(() => { textCopied = false }, 1800)
+        }
     }
 
     const sizeText = (image: LogCaptureImage) => `${image.width}×${image.height} · ${(image.blob.size / 1024 / 1024).toFixed(1)}MB`
@@ -67,8 +82,8 @@
 {#if picking && logCapture.start}
     <div class="pointer-events-none absolute inset-x-0 top-2 z-[45] flex justify-center px-3" data-log-capture-bar>
         <div class="pointer-events-auto flex max-w-full items-center gap-2 rounded-full border border-primary/60 bg-bgcolor/95 py-1.5 pl-3 pr-1.5 text-sm text-textcolor shadow-lg">
-            <span aria-hidden="true">✂️</span>
-            <span class="min-w-0 truncate">{language.logCapture.pickEnd.replace('{}', messageLabel(logCapture.start.index))}</span>
+            <span aria-hidden="true">{glyph}</span>
+            <span class="min-w-0 truncate">{(isText ? language.logCapture.textPickEnd : language.logCapture.pickEnd).replace('{}', messageLabel(logCapture.start.index))}</span>
             <button type="button" class="shrink-0 rounded-full border border-darkborderc px-2.5 py-0.5 text-xs text-textcolor2 transition-colors hover:bg-selected hover:text-textcolor" onclick={cancelLogCapture}>{language.cancel}</button>
         </div>
     </div>
@@ -90,11 +105,11 @@
 {#if resultOpen}
     <Portal>
         <div class="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 sm:items-center sm:p-4" role="presentation" onclick={(e) => { if (e.target === e.currentTarget) cancelLogCapture() }}>
-            <div class="flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-2xl border border-darkborderc bg-bgcolor text-textcolor shadow-2xl sm:rounded-2xl" role="dialog" aria-modal="true" aria-label={language.logCapture.title} data-log-capture-result>
+            <div class="flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-2xl border border-darkborderc bg-bgcolor text-textcolor shadow-2xl sm:rounded-2xl" role="dialog" aria-modal="true" aria-label={isText ? language.logCapture.textTitle : language.logCapture.title} data-log-capture-result>
                 <header class="flex shrink-0 items-center gap-2 border-b border-darkborderc px-4 py-3">
-                    <span aria-hidden="true">✂️</span>
+                    <span aria-hidden="true">{glyph}</span>
                     <div class="min-w-0 flex-1">
-                        <h2 class="text-sm font-semibold">{language.logCapture.title}</h2>
+                        <h2 class="text-sm font-semibold">{isText ? language.logCapture.textTitle : language.logCapture.title}</h2>
                         {#if logCapture.range}
                             <p class="text-xs text-textcolor2">{formatLogRange(logCapture.range.from, logCapture.range.to, { greeting: language.logCapture.greeting, range: language.logCapture.rangeLabel, single: language.logCapture.singleLabel })}</p>
                         {/if}
@@ -103,7 +118,27 @@
                 </header>
 
                 {#if logCapture.phase === 'error'}
-                    <p class="px-4 py-6 text-sm text-red-400" role="alert">{language.logCapture.failed}: {logCapture.error}</p>
+                    <p class="px-4 py-6 text-sm text-red-400" role="alert">{isText ? language.logCapture.textFailed : language.logCapture.failed}: {logCapture.error}</p>
+                {:else if isText}
+                    <!-- The text log: one post, copied in the click that ended the range;
+                         over a board's limit it says so (BOARD_POST_SAFE_BYTES). -->
+                    <div class="px-4 py-4 text-sm" aria-live="polite" data-log-capture-status>
+                        {#if logCapture.copy === 'copied'}
+                            <p class="text-green-400">{language.logCapture.textCopied.replace('{}', textSize)}</p>
+                        {:else if logCapture.copy === 'pending'}
+                            <p class="text-textcolor2">{language.logCapture.copying}</p>
+                        {:else}
+                            <p class="text-textcolor2">{language.logCapture.textCopyManually.replace('{}', textSize)}</p>
+                        {/if}
+                        {#if logCapture.text && logCapture.text.bytes > BOARD_POST_SAFE_BYTES}
+                            <p class="mt-2 text-amber-400">{language.copiedOverBoardLimit}</p>
+                        {/if}
+                    </div>
+                    <footer class="flex shrink-0 items-center justify-end gap-2 border-t border-darkborderc px-4 py-3">
+                        <button type="button" class="flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm text-white transition-colors hover:bg-primary/85" onclick={copyText}>
+                            {#if textCopied}<CheckIcon size={16} />{:else}<CopyIcon size={16} />{/if}{language.logCapture.copy}
+                        </button>
+                    </footer>
                 {:else}
                     <p class="shrink-0 px-4 pt-3 text-xs" class:text-green-400={logCapture.copy === 'copied'} class:text-textcolor2={logCapture.copy !== 'copied'} aria-live="polite" data-log-capture-status>
                         {#if logCapture.copy === 'copied' && logCapture.copiedSmaller > 0}

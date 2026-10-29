@@ -55,7 +55,7 @@ function tallestLogImageHeight(width: number): number {
     return height
 }
 
-export type LogCaptureStage = 'render' | 'images' | 'draw'
+export type LogCaptureStage = 'render' | 'images' | 'draw' | 'text'
 
 export interface RenderedLogImage {
     blob: Blob
@@ -134,7 +134,8 @@ function ensureCaptureStyle() {
     document.head.appendChild(style)
 }
 
-function personaFor(chatBindedPersona: string | undefined) {
+/** The user's name and portrait in a chat: its bound persona, else the selected one. */
+export function personaFor(chatBindedPersona: string | undefined) {
     const db = DBState.db
     if (chatBindedPersona) {
         const persona = db.personas.find((p) => p.id === chatBindedPersona)
@@ -187,11 +188,26 @@ async function waitForImages(root: HTMLElement, signal: AbortSignal) {
     }
 }
 
+/** Messages mounted in the hidden capture box (mountLogRange). */
+export interface MountedLogRange {
+    root: HTMLElement
+    background: string
+    layoutWidth: number
+    scale: number
+    /** One block per message drawn, top to bottom (index -1: the greeting). */
+    blocks: { index: number; block: HTMLElement }[]
+    /** Unmounts the messages and removes the box. */
+    cleanup: () => void
+}
+
 /**
- * Renders messages `from`..`to` of the open chat (-1 is the greeting) and
- * returns them as PNG images, top to bottom.
+ * Mounts messages `from`..`to` of the open chat (-1 is the greeting) in a
+ * hidden box at the log image's width, with every asset resolved, and waits
+ * until they are drawn and their images loaded. `header`: the log image's
+ * title block above them. Shared by the log image and the text log
+ * (logTextRender.ts); the caller calls cleanup().
  */
-export async function renderLogImages(options: RenderLogOptions): Promise<RenderedLogImage[]> {
+export async function mountLogRange(options: RenderLogOptions, header: boolean): Promise<MountedLogRange> {
     const { from, to, signal, onProgress } = options
     const db = DBState.db
     const character = db.characters[selIdState.selId]
@@ -219,8 +235,15 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
     document.body.appendChild(root)
 
     const instances: Record<string, unknown>[] = []
+    const cleanup = () => {
+        for (const instance of instances) {
+            try { unmount(instance) } catch { /* already gone */ }
+        }
+        root.remove()
+    }
+    const blocks: { index: number; block: HTMLElement }[] = []
     try {
-        if (db.nodeOnlyLogImageHeader !== false) {
+        if (header) {
             root.appendChild(await buildHeader(character.name, character.image ?? '', chat.name ?? '', from, to))
         }
 
@@ -255,6 +278,7 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
             container.className = 'chat-message-container'
             block.appendChild(container)
             root.appendChild(block)
+            blocks.push({ index, block })
             const onBodyRendered = () => markRendered(index)
             if (index < 0) {
                 instances.push(mount(Chat, {
@@ -311,7 +335,21 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
         await nextFrame()
         await nextFrame()
         throwIfAborted(signal)
+        return { root, background, layoutWidth, scale, blocks, cleanup }
+    } catch (error) {
+        cleanup()
+        throw error
+    }
+}
 
+/**
+ * Renders messages `from`..`to` of the open chat (-1 is the greeting) and
+ * returns them as PNG images, top to bottom.
+ */
+export async function renderLogImages(options: RenderLogOptions): Promise<RenderedLogImage[]> {
+    const { signal, onProgress } = options
+    const { root, background, layoutWidth, scale, cleanup } = await mountLogRange(options, DBState.db.nodeOnlyLogImageHeader !== false)
+    try {
         const blockElements = Array.from(root.querySelectorAll<HTMLElement>(':scope > .log-capture-block'))
         const rootRect = root.getBoundingClientRect()
         const blocks = blockElements.map((el) => {
@@ -464,9 +502,6 @@ export async function renderLogImages(options: RenderLogOptions): Promise<Render
         }
         return images
     } finally {
-        for (const instance of instances) {
-            try { unmount(instance) } catch { /* already gone */ }
-        }
-        root.remove()
+        cleanup()
     }
 }

@@ -36,7 +36,7 @@
     import { inputVersionIndex, isRequestInput, recordInputEdit, stepInputVersion } from "src/ts/inputVersions"
     import { recordReplyEdit } from "src/ts/chatSwipes"
     import { getRequestPairing } from "src/ts/gui/requestPairing"
-    import { isLogCapturePickingHere, isLogCaptureStart, logCaptureMarkFor, markLogCapture } from "src/ts/gui/logCaptureState.svelte"
+    import { isLogCapturePickingHere, isLogCaptureStart, logCapture, logCaptureMarkFor, markLogCapture } from "src/ts/gui/logCaptureState.svelte"
     import { keepInnerScroll } from "src/ts/gui/innerScrollKeeper"
     import { closeTogglePanels, looksLikeCloseControl } from "src/ts/gui/closeTogglePanels"
     import ChatBody from './ChatBody.svelte'
@@ -649,11 +649,14 @@
     let logCapturePicking = $derived(isLogCapturePickingHere())
     // Dashed box around the marked start, then around the range being captured.
     let logCaptureMark = $derived(logCaptureMarkFor(idx))
+    // While a 📝 text log is being picked, the button ends that one.
+    let logCaptureText = $derived(logCapturePicking && logCapture.mode === 'text')
     let logCaptureMenuLabel = $derived(
-        logCaptureStart ? language.logCapture.menuSingle
-        : isLogCapturePickingHere() ? language.logCapture.menuEnd
+        logCaptureStart ? (logCaptureText ? language.logCapture.textMenuSingle : language.logCapture.menuSingle)
+        : logCapturePicking ? (logCaptureText ? language.logCapture.textMenuEnd : language.logCapture.menuEnd)
         : language.logCapture.menuStart
     )
+    let logCaptureGlyph = $derived(logCaptureText ? '📝' : '✂️')
     let displayMessage = $derived(isOptimizedStreamingMessage ? rawStreamingText : message)
     // A reply being written (streamed as is or optimized) cannot be edited
     // yet: its edit controls wait for the end (the user's report, 2026-10-26).
@@ -1077,7 +1080,7 @@
                         aria-label={logCaptureMenuLabel}
                         aria-pressed={logCaptureStart}
                         onclick={() => markLogCapture(idx)}
-                    ><span class="text-[17px]" aria-hidden="true">✂️</span></button>
+                    ><span class="text-[17px]" aria-hidden="true">{logCaptureGlyph}</span></button>
                 {/if}
                 {@render translationButton()}
                 {#if wide640.current}
@@ -1430,12 +1433,21 @@
     {/if}
     {#if showLogCaptureButton}
         <!-- ✂️ log image: first press marks the start, the next the end (the same message: just it). -->
-        <button type="button" class="flex items-center hover:text-primary transition-colors button-icon-logcapture" title={logCaptureMenuLabel} aria-label={logCaptureMenuLabel} onclick={() => markLogCapture(idx)}>
-            <span class="w-5 text-center text-[17px] leading-none" aria-hidden="true">✂️</span>
+        <button type="button" class="flex items-center hover:text-primary transition-colors button-icon-logcapture" title={logCaptureMenuLabel} aria-label={logCaptureMenuLabel} onclick={() => markLogCapture(idx, 'image')}>
+            <span class="w-5 text-center text-[17px] leading-none" aria-hidden="true">{logCaptureGlyph}</span>
             {#if showNames}
                 <span class="ml-1">{logCaptureMenuLabel}</span>
             {/if}
         </button>
+        {#if !logCapturePicking}
+            <!-- 📝 text log: a range picked the same way, copied as one post (logTextRender.ts). -->
+            <button type="button" class="flex items-center hover:text-primary transition-colors button-icon-logcapture" title={language.logCapture.textMenuStart} aria-label={language.logCapture.textMenuStart} onclick={() => markLogCapture(idx, 'text')}>
+                <span class="w-5 text-center text-[17px] leading-none" aria-hidden="true">📝</span>
+                {#if showNames}
+                    <span class="ml-1">{language.logCapture.textMenuStart}</span>
+                {/if}
+            </button>
+        {/if}
     {/if}
     {#if DBState.db.enableBookmark}
         <button class="flex items-center hover:text-primary transition-colors button-icon-bookmark {isBookmarked ? 'text-yellow-400' : ''}" onclick={async () => {

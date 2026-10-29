@@ -211,6 +211,25 @@ describe('clipboard focus and promised HTML', () => {
         await pending
     })
 
+    // The text log (logCaptureState.svelte.ts): its plain text is made with the HTML, after the click.
+    it('takes promised plain text too, registered in the same write', async () => {
+        vi.spyOn(document, 'hasFocus').mockReturnValue(true)
+        let content!: Record<string, Blob | Promise<Blob>>
+        vi.stubGlobal('ClipboardItem', class {
+            constructor(data: Record<string, Blob | Promise<Blob>>) { content = data }
+        })
+        const write = vi.spyOn(navigator.clipboard, 'write').mockResolvedValue(undefined)
+        let resolveText!: (text: string) => void
+        const text = new Promise<string>(resolve => { resolveText = resolve })
+        const pending = writeChatClipboard(text, text.then((value) => `<p>${value}</p>`))
+        expect(write).toHaveBeenCalledTimes(1)
+        expect(content['text/plain']).toBeInstanceOf(Promise)
+        resolveText('log')
+        expect(await (await content['text/plain']).text()).toBe('log')
+        expect(await (await content['text/html']).text()).toBe('<p>log</p>')
+        await pending
+    })
+
     it('does not retry writeText or report success when the page is unfocused', async () => {
         vi.spyOn(document, 'hasFocus').mockReturnValue(false)
         const writeText = vi.spyOn(navigator.clipboard, 'writeText')

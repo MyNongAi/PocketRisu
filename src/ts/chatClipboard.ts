@@ -50,10 +50,13 @@ type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Respo
  * accepts a promised Blob, so the browser can authorize the write while the
  * click still has focus/user activation. Never silently downgrade image logs
  * to text or retry writeText after a focus failure. */
-export function writeChatClipboard(text: string, html: Promise<string>): Promise<void> {
+export function writeChatClipboard(text: string | Promise<string>, html: Promise<string>): Promise<void> {
     const content = html.then(value => new Blob([value], { type: 'text/html' }))
+    // The text log's plain text comes with its HTML, after the click (logCaptureState.svelte.ts).
+    const plain = typeof text === 'string' ? new Blob([text], { type: 'text/plain' }) : text.then(value => new Blob([value], { type: 'text/plain' }))
     // The browser may reject before it ever consumes the promised HTML.
     void content.catch(() => {})
+    if (plain instanceof Promise) void plain.catch(() => {})
     if (!document.hasFocus()) {
         return Promise.reject(new Error('리스 창으로 돌아온 뒤 복사 버튼을 다시 눌러 주세요. 클립보드에는 아직 복사되지 않았습니다.'))
     }
@@ -62,7 +65,7 @@ export function writeChatClipboard(text: string, html: Promise<string>): Promise
     }
     try {
         return navigator.clipboard.write([new ClipboardItem({
-            'text/plain': new Blob([text], { type: 'text/plain' }),
+            'text/plain': plain,
             'text/html': content,
         })])
     } catch (error) {
