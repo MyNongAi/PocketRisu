@@ -144,7 +144,10 @@ export async function processScriptFull(
         modules: context?.modules,
         ...parserArg,
     })
-    data = await runLuaEditTrigger(char, mode, data, { index:chatID }, targetChat, context)
+    // A log being drawn (logCaptureRender.ts) says so, so a module can show the
+    // text instead of a screen-only view (the user's report, 2026-10-30: a log
+    // image showed 장면 접기's folded stubs).
+    data = await runLuaEditTrigger(char, mode, data, cbsConditions.logCapture ? { index:chatID, logCapture:true } : { index:chatID }, targetChat, context)
 
     if(mode === 'editdisplay'){
         const currentChar = targetCharacter

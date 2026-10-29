@@ -1502,6 +1502,8 @@ export async function hasher(data:Uint8Array){
 export type CbsConditions = {
     firstmsg?:boolean
     chatRole?:string
+    /** Drawn for a log image or text log (logCaptureRender.ts): Lua editDisplay gets meta.logCapture. */
+    logCapture?:boolean
 }
 
 let matcherInitialized = false

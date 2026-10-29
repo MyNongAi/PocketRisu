@@ -33,6 +33,8 @@
         resolveAssets?: boolean
         /** Called each time the parsed body is in the DOM (log image capture waits on it). */
         onRendered?: () => void
+        /** Drawn for a log (logCaptureRender.ts): display scripts get meta.logCapture. */
+        forLog?: boolean
     }
 
     let {
@@ -51,6 +53,7 @@
         rawStreamingText = '',
         resolveAssets = true,
         onRendered,
+        forLog = false,
     }: Props =  $props()
     // Display scripts run against the chat drawn (chatPanes.svelte.ts): in the
     // split's other pane that is not the selected chat.
@@ -227,6 +230,7 @@
             const cbsConditions:CbsConditions = {
                 firstmsg: firstMessage ?? false,
                 chatRole: role,
+                ...(forLog ? { logCapture: true } : {}),
             }
             return cbsConditions
         }
@@ -234,6 +238,7 @@
             return {
                 firstmsg: firstMessage ?? false,
                 chatRole: null,
+                ...(forLog ? { logCapture: true } : {}),
             }
         }
     }

@@ -102,6 +102,8 @@
         resolveChatAssets?: boolean;
         resolveSenderIcon?: boolean;
         allowViewportAssetActivation?: boolean;
+        /** Drawn for a log (logCaptureRender.ts): display scripts are told (meta.logCapture), so a module can show the text instead of its screen-only view. */
+        forLog?: boolean;
         /** The body is in the DOM (log image capture, logCaptureRender.ts). */
         onBodyRendered?: () => void;
         /** The old reply shown while it is rerolled (gui/rerollPlaceholder.ts):
@@ -146,6 +148,7 @@
         resolveChatAssets,
         resolveSenderIcon,
         allowViewportAssetActivation = true,
+        forLog = false,
         onBodyRendered,
         placeholder = false,
     }: Props = $props();
@@ -580,6 +583,7 @@
             const cbsConditions:CbsConditions = {
                 firstmsg: firstMessage ?? false,
                 chatRole: DBState.db.characters[view.characterIndex].chats[view.chatIndex]?.message?.[idx]?.role ?? null,
+                ...(forLog ? { logCapture: true } : {}),
             }
             return cbsConditions
         }
@@ -587,6 +591,7 @@
             return {
                 firstmsg: firstMessage ?? false,
                 chatRole: null,
+                ...(forLog ? { logCapture: true } : {}),
             }
         }
     }
@@ -981,6 +986,7 @@
                     {character}
                     {firstMessage}
                     {idx}
+                    {forLog}
                     {msgDisplay}
                     {name}
                     {bodyRoot}

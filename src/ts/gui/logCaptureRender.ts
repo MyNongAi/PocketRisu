@@ -292,6 +292,7 @@ export async function mountLogRange(options: RenderLogOptions, header: boolean):
                         resolveChatAssets: true,
                         resolveSenderIcon: true,
                         allowViewportAssetActivation: false,
+                        forLog: true,
                         idx: -1,
                         altGreeting: true,
                         largePortrait: character.largePortrait,
@@ -320,6 +321,7 @@ export async function mountLogRange(options: RenderLogOptions, header: boolean):
                     resolveChatAssets: true,
                     resolveSenderIcon: true,
                     allowViewportAssetActivation: false,
+                    forLog: true,
                     onBodyRendered,
                 },
             }))

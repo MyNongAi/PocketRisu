@@ -7,7 +7,7 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-export const VERSION = '0.3.1'
+export const VERSION = '0.3.2'
 export const MODULE_ID = '5c3e1f0a-7d2b-4e9c-9a41-2f6b8d0e5a17'
 
 const here = dirname(fileURLToPath(import.meta.url))

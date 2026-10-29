@@ -1018,6 +1018,13 @@ end
 
 listenEdit('editDisplay', function(tid, text, meta)
     local clean = SF.strip(text)
+    -- A log image or text log (PocketRisu says so in meta.logCapture): the
+    -- text as written, without cards, notes or buttons (the user's report,
+    -- 2026-10-30: a log image showed the folded stubs). A cut scene's message
+    -- is its summary.
+    if type(meta) == 'table' and meta.logCapture then
+        return SF.trim(clean)
+    end
     local settings = SF.settings(tid)
     local cutKind, cutId = (type(text) == 'string' and text or ''):match(SF.CUT_PATTERN)
     if cutId then

@@ -416,6 +416,16 @@ describe('display and buttons', () => {
         expect(outside.startsWith('a')).toBe(true)
     })
 
+    // The user's report, 2026-10-30: a log image showed the folded stubs.
+    test('a log (meta.logCapture) gets the text as written: no card, stub, note or buttons', async () => {
+        const { run, vars } = makeChat(scene())
+        vars.__sf_sum_d1 = JSON.stringify('Won.')
+        const log = async (data: string, index: number) => (await run('editDisplay', { data, meta: { index, logCapture: true } })).res as string
+        expect(await log('fight<!--sf:s:battle:d1-->', 1)).toBe('fight')
+        expect(await log('hit<!--sf:m:d1-->', 2)).toBe('hit')
+        expect(await log('a', 4)).toBe('a')
+    })
+
     test('펼치기 shows the original under the card', async () => {
         const { run, vars } = makeChat(scene())
         vars.__sf_sum_d1 = JSON.stringify('Won.')
