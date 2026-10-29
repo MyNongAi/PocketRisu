@@ -2330,6 +2330,26 @@
       ]
     },
     {
+      "id": "HYPA-READS-FOLDED-SCENES",
+      "title": "장기기억이 장면 접기 모듈의 접은 장면을 요약으로 읽음 (설정으로 끔)",
+      "criticality": "cost",
+      "ownerFiles": [
+        "src/ts/process/memory/foldedScenes.ts",
+        "src/ts/process/index.svelte.ts",
+        "src/lib/Setting/Pages/MemorySettings.svelte",
+        "src/ts/storage/database.svelte.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/index.svelte.ts", "contains": "({ chats, currentTokens } = await foldScenesForMemory(chats, currentTokens, currentChat, (message) => tokenizer.tokenizeChat(message)))" },
+        { "file": "src/ts/process/index.svelte.ts", "contains": "DBState.db.nodeOnlyHypaReadsFoldedScenes !== false && getModules(getRuntimeModuleContext()).some((module) => module?.namespace === SCENE_FOLD_NAMESPACE)" },
+        { "file": "src/ts/process/memory/foldedScenes.ts", "contains": "export function foldScenes(" },
+        { "file": "src/lib/Setting/Pages/MemorySettings.svelte", "contains": "DBState.db.nodeOnlyHypaReadsFoldedScenes = v" }
+      ],
+      "regressionTests": [
+        "src/ts/process/memory/foldedScenes.test.ts"
+      ]
+    },
+    {
       "id": "AUX-MODEL-LOREBOOK",
       "title": "로어북을 보조모델로 (🌙): 답이 끝나면 보조모델이 에셋 태그를 넣음",
       "criticality": "core-ux",

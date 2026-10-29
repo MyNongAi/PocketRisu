@@ -32,6 +32,7 @@ import { getFirstMessageAtIndex } from "../firstMessage";
 import { getModelInfo, LLMFlags } from "../model/modellist";
 import { captureChatModelRoute, resolvePresetMaxOutputTokens, presetSupportsVision, type RequestModelRouteSnapshot } from "./request/modelPresetBinding";
 import { hypaMemoryV3 } from "./memory/hypav3";
+import { SCENE_FOLD_NAMESPACE, foldScenesForMemory } from "./memory/foldedScenes";
 import { getActiveHypaV3Preset } from "./memory/memoryPresets"
 import { resolveModelPresetContextBudget } from "./request/contextBudget"
 import { captureModuleRuntimeContext, getModuleAssets, getModuleLorebooks, getModules, getModuleToggles, getModuleTriggers, type ModuleRuntimeContext } from "./modules";
@@ -1267,6 +1268,10 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         setGenerationStage(genKey, 2)
         stageTimings.stage2Start = Date.now()
         console.log("Current chat's hypaV3 Data: ", currentChat.hypaV3Data)
+        // A scene the 장면 접기 module folded reaches memory as its summary.
+        if (DBState.db.nodeOnlyHypaReadsFoldedScenes !== false && getModules(getRuntimeModuleContext()).some((module) => module?.namespace === SCENE_FOLD_NAMESPACE)) {
+            ({ chats, currentTokens } = await foldScenesForMemory(chats, currentTokens, currentChat, (message) => tokenizer.tokenizeChat(message)))
+        }
         const sp = await hypaMemoryV3(
             chats,
             currentTokens,
