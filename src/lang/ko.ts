@@ -1207,6 +1207,7 @@ export const languageKorean = {
   illustrationNaiLinked: "설정 › 기타 봇 › 이미지 생성과 같은 값이에요. 어느 쪽에서 바꿔도 함께 바뀝니다. 화풍 프리셋을 고르면 여기서 바꾸는 값은 그 프리셋에 적힙니다.",
   illustrationNaiPresetLinked: "노란 '프리셋' 표시가 있는 값은 이 프리셋의 NAI 항목에 적힌 값이에요. 표시가 없는 값은 설정 › 기타 봇 › 이미지 생성 값을 그대로 쓰는 중이고, 여기서 바꾸면 이 프리셋에만 적힙니다. Decrisp, Legacy UC, API 키는 늘 설정 값이에요.",
   illustrationNaiSavesTo: "고른 프리셋 '{name}'에 저장돼요",
+  illustrationNaiAssetMaid: "에셋메이드 화풍이에요. 노란 '프리셋' 표시가 있는 값은 이 봇의 에셋메이드 설정을 따라서 여기서는 바꿀 수 없어요. 고치려면 '프리셋 X' 로어북에 사본을 만들어 쓰세요.",
   illustrationNaiFromPreset: "프리셋",
   illustrationNaiApiKey: "API 키",
   illustrationNaiModel: "모델",

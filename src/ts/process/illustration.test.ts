@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+    assetMaidPreset,
     buildScenePrompt,
     composeImagePrompt,
     countRange,
@@ -251,5 +252,47 @@ describe('placing the pictures', () => {
         expect(replaceReplyLine(message, '{{inlay::x}}', null)).toBe(true)
         expect(message.data).toBe('a\nb')
         expect(replaceReplyLine(message, 'missing', null)).toBe(false)
+    })
+})
+
+// A bot made for the Asset Maid plugin keeps its art style in that plugin's
+// lorebook entry (YariPoké, 2026-10-30). Synthetic data in the plugin's shape.
+describe('the Asset Maid style as a preset', () => {
+    const data = (novelai: unknown) => ({
+        comment: '__ASSET_MAID_DATA__',
+        content: '@@dont_activate ' + JSON.stringify({
+            schema: 'asset-maid.portable', version: 1,
+            features: { artistSelection: { novelai }, characters: { entries: [] } },
+        }),
+    })
+    const style = {
+        id: 'artist_1', title: 'mint',
+        prompt: '2::1girl ::, 0.6::painter a ::, 0.7::painter b, ::, solo, masterpiece, best quality',
+        negativePrompt: 'lowres, 3::signature, artist name ::',
+        novelAIOverrides: { steps: 23, scale: 4, cfgRescale: 0, sampler: 'k_euler_ancestral', noiseSchedule: 'karras', unknown: 1 },
+    }
+
+    it('reads its style, without the counts the scene gives, and its NovelAI values', () => {
+        expect(assetMaidPreset(data(style))).toEqual({
+            name: '에셋메이드 mint',
+            positive: '0.6::painter a ::, 0.7::painter b, ::, masterpiece, best quality',
+            negative: 'lowres, 3::signature, artist name ::',
+            nai: { steps: 23, scale: 4, cfg_rescale: 0, sampler: 'k_euler_ancestral', noise_schedule: 'karras' },
+            assetMaid: true,
+        })
+    })
+
+    it('is listed with the presets of the bot, with no place to write to', () => {
+        const presets = lorebookPresets([{ label: '봇', entries: [{ comment: '프리셋 새 화풍', content: '[Positive]\n{prompt}' }, data(style)], target: { kind: 'bot' } }])
+        expect(presets.map((p) => [p.name, p.source, p.place?.index])).toEqual([['새 화풍', '봇', 0], ['에셋메이드 mint', '봇', undefined]])
+        const scene = { line: 0, camera: 'cowboy shot', scene: '1girl, 1boy, forest', characters: [] }
+        expect(composeImagePrompt(presets[1], scene).positive).toBe('cowboy shot, 1girl, 1boy, forest, 0.6::painter a ::, 0.7::painter b, ::, masterpiece, best quality')
+    })
+
+    it('gives nothing for other entries, broken data or no style', () => {
+        expect(assetMaidPreset({ comment: 'story', content: '{}' })).toBeNull()
+        expect(assetMaidPreset({ comment: '__ASSET_MAID_DATA__', content: '@@dont_activate {broken' })).toBeNull()
+        expect(assetMaidPreset(data({ title: 'x', prompt: '  ' }))).toBeNull()
+        expect(assetMaidPreset(data(undefined))).toBeNull()
     })
 })

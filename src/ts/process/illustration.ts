@@ -82,6 +82,8 @@ export interface IllustrationPreset {
     /** Where it was found: 봇, 채팅, or the module's name. */
     source?: string
     place?: PresetPlace
+    /** The style the Asset Maid plugin keeps for the bot: read here, never written. */
+    assetMaid?: true
 }
 
 /** A preset's three entries, as written into a folder. */
@@ -498,9 +500,70 @@ export function presetFolderContent(folderKey: string, entries: readonly (Preset
         .join('\n\n')
 }
 
+/** The lorebook entry the Asset Maid plugin keeps a bot's data in. */
+export const ASSET_MAID_DATA_ENTRY = '__ASSET_MAID_DATA__'
+
+const ASSET_MAID_NAI_KEYS: Record<string, keyof NaiParams> = {
+    steps: 'steps', scale: 'scale', cfgRescale: 'cfg_rescale', sampler: 'sampler', noiseSchedule: 'noise_schedule',
+    sm: 'sm', smea: 'sm', smDyn: 'sm_dyn', dyn: 'sm_dyn', variety: 'variety', seed: 'seed',
+}
+
+// Who is in the picture is the scene's to say: Asset Maid writes its style
+// for one girl's portrait ("2::1girl ::"), which would pull every scene to one.
+const COUNT_TAG = /^(\d+\+?(girl|boy|other)s?|solo|multiple (girls|boys|others))$/i
+
+/** A prompt without its subject-count tags, plain or a whole weighted group. */
+function withoutCountTags(prompt: string): string {
+    return prompt.split(',').filter((part) => {
+        const match = /^\s*(?:(-?[\d.]+)::)?\s*(.*?)\s*(::)?\s*$/.exec(part)
+        return !match || !!match[1] !== !!match[3] || !COUNT_TAG.test(match[2])
+    }).join(',').replace(/^\s*,\s*/, '').trim()
+}
+
+let lastAssetMaid: { content: string, preset: IllustrationPreset | null } | undefined
+
+/**
+ * The art style the Asset Maid plugin keeps in a bot's lorebook (its
+ * __ASSET_MAID_DATA__ entry, "artistSelection"), as a preset: bots made for
+ * it carry their style there, not as "프리셋 X" (YariPoké, the user's
+ * request 2026-10-30). Read-only, it follows the plugin's data.
+ */
+export function assetMaidPreset(entry: PresetLorebookEntry): IllustrationPreset | null {
+    if ((entry.comment ?? '').trim() !== ASSET_MAID_DATA_ENTRY) return null
+    const content = entry.content ?? ''
+    // The entry is large and the list is rebuilt on every settings change.
+    if (lastAssetMaid?.content === content) return lastAssetMaid.preset
+    let preset: IllustrationPreset | null = null
+    try {
+        const style = JSON.parse(content.slice(content.indexOf('{')))?.features?.artistSelection?.novelai
+        if (style && typeof style.prompt === 'string' && style.prompt.trim()) {
+            const nai: Record<string, unknown> = {}
+            for (const [key, value] of Object.entries(style.novelAIOverrides ?? {})) {
+                const to = ASSET_MAID_NAI_KEYS[key]
+                if (!to) continue
+                if (to === 'sampler' || to === 'noise_schedule' ? typeof value === 'string' && value
+                    : to === 'sm' || to === 'sm_dyn' || to === 'variety' ? typeof value === 'boolean'
+                    : typeof value === 'number' && Number.isFinite(value)) nai[to] = value
+            }
+            preset = {
+                name: `에셋메이드 ${String(style.title ?? '').trim() || '화풍'}`,
+                positive: withoutCountTags(style.prompt),
+                negative: String(style.negativePrompt ?? '').trim(),
+                ...(Object.keys(nai).length ? { nai: nai as NaiParams } : {}),
+                assetMaid: true,
+            }
+        }
+    } catch {
+        preset = null
+    }
+    lastAssetMaid = { content, preset }
+    return preset
+}
+
 /**
  * The presets in the given lorebooks, the first of each name winning (a bot's
- * own over a module's): "프리셋 X" folders and one-entry presets.
+ * own over a module's): "프리셋 X" folders and one-entry presets, and the
+ * style of the Asset Maid plugin's data.
  */
 export function lorebookPresets(sources: readonly { label: string, entries: readonly (PresetLorebookEntry | null | undefined)[] | null | undefined, target?: PresetTarget }[]): IllustrationPreset[] {
     const found = new Map<string, IllustrationPreset>()
@@ -512,6 +575,9 @@ export function lorebookPresets(sources: readonly { label: string, entries: read
             const preset = folder
                 ? parsePresetEntry(entry.comment ?? '', presetFolderContent(folder, entries))
                 : parsePresetEntry(entry.comment ?? '', entry.content ?? '')
+            // no place: its values are the plugin's, not written back
+            const assetMaid = preset || folder ? null : assetMaidPreset(entry)
+            if (assetMaid && !found.has(assetMaid.name)) found.set(assetMaid.name, { ...assetMaid, source: source.label })
             if (!preset || found.has(preset.name)) return
             const place = source.target ? { target: source.target, ...(folder ? { folder } : { index }) } : undefined
             found.set(preset.name, { ...preset, source: source.label, ...(place ? { place } : {}) })

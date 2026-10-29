@@ -1118,6 +1118,7 @@ export const languageEnglish = {
     illustrationNaiLinked: "The same values as Settings › Other bots › Image generation: a change on either side shows on the other. With a style preset picked, a change here is written into that preset.",
     illustrationNaiPresetLinked: "Values marked 'preset' are written in this preset's NAI entry. Unmarked ones follow Settings › Image generation; changing one here writes it into this preset only. Decrisp, Legacy UC and the API key are always the settings' own.",
     illustrationNaiSavesTo: "Saved to the picked preset '{name}'",
+    illustrationNaiAssetMaid: "This is the bot's Asset Maid style. Values marked 'preset' follow its Asset Maid settings and can't be changed here; to edit them, copy the style into a '프리셋 X' lorebook entry.",
     illustrationNaiFromPreset: "preset",
     illustrationNaiApiKey: "API key",
     illustrationNaiModel: "Model",

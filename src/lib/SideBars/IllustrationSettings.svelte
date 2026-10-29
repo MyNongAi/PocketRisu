@@ -89,7 +89,15 @@
     function naiValue(key: Exclude<NaiField, 'model'>) {
         return presetNai[key] ?? DBState.db.NAIImgConfig?.[CONFIG_KEYS[key]]
     }
+    // The Asset Maid style's own values are the plugin's to change.
+    function locked(key: NaiField) {
+        return !!chosen?.assetMaid && presetNai[key] !== undefined
+    }
     function setNai<K extends NaiField>(key: K, value: NaiParams[K]) {
+        if (locked(key)) {
+            notifyError(language.illustrationNaiAssetMaid)
+            return
+        }
         if (chosen?.place && char) {
             if (!setPresetNai(chosen, char, chat, key, value)) notifyError(language.illustrationPresetMissing)
             return
@@ -310,6 +318,8 @@
             <ShAccordion bind:open={naiOpen} trigger={naiTitle} class="w-full" bodyClass="flex flex-col gap-1.5 text-xs">
                 {#if chosen?.place}
                     <span class="text-yellow-500" data-nai-saves-to>{language.illustrationNaiSavesTo.replace('{name}', chosen.name)}</span>
+                {:else if chosen?.assetMaid}
+                    <span class="text-yellow-500" data-nai-asset-maid>{language.illustrationNaiAssetMaid}</span>
                 {/if}
                 <div class="flex flex-col gap-1">
                     {@render label(language.illustrationNaiApiKey, false)}
@@ -325,25 +335,33 @@
                 </div>
                 <div class="flex flex-col gap-1">
                     {@render label(language.illustrationNaiSampler, presetNai.sampler !== undefined)}
-                    <SelectInput size="sm" value={naiSampler} onchange={(e) => setNai('sampler', e.currentTarget.value)}>
-                        {#each naiSamplers(naiModel) as sampler (sampler.value)}
-                            <OptionInput value={sampler.value}>{sampler.label}</OptionInput>
-                        {/each}
-                    </SelectInput>
+                    {#if locked('sampler')}
+                        <span class="px-1 text-textcolor2">{naiSamplers(naiModel).find((s) => s.value === naiSampler)?.label ?? naiSampler}</span>
+                    {:else}
+                        <SelectInput size="sm" value={naiSampler} onchange={(e) => setNai('sampler', e.currentTarget.value)}>
+                            {#each naiSamplers(naiModel) as sampler (sampler.value)}
+                                <OptionInput value={sampler.value}>{sampler.label}</OptionInput>
+                            {/each}
+                        </SelectInput>
+                    {/if}
                 </div>
                 <div class="flex flex-col gap-1">
                     {@render label(language.illustrationNaiSchedule, presetNai.noise_schedule !== undefined)}
-                    <SelectInput size="sm" value={naiSchedule} onchange={(e) => setNai('noise_schedule', e.currentTarget.value)}>
-                        {#each NAI_NOISE_SCHEDULES as schedule (schedule)}
-                            <OptionInput value={schedule}>{schedule}</OptionInput>
-                        {/each}
-                    </SelectInput>
+                    {#if locked('noise_schedule')}
+                        <span class="px-1 text-textcolor2">{naiSchedule}</span>
+                    {:else}
+                        <SelectInput size="sm" value={naiSchedule} onchange={(e) => setNai('noise_schedule', e.currentTarget.value)}>
+                            {#each NAI_NOISE_SCHEDULES as schedule (schedule)}
+                                <OptionInput value={schedule}>{schedule}</OptionInput>
+                            {/each}
+                        </SelectInput>
+                    {/if}
                 </div>
                 {#each NUMBER_FIELDS as field (field.key)}
                     <div class="flex items-center justify-between gap-2">
                         {@render label(language[field.label], presetNai[field.key] !== undefined)}
                         <div class="shrink-0">
-                            <NumberInput size="sm" padding className="w-20" min={0} max={field.max} value={Number(naiValue(field.key))}
+                            <NumberInput size="sm" padding className="w-20" min={0} max={field.max} value={Number(naiValue(field.key))} disabled={locked(field.key)}
                                 onChange={(e) => { const n = Number(e.currentTarget.value); if (Number.isFinite(n)) setNai(field.key, n) }} />
                         </div>
                     </div>
@@ -353,7 +371,7 @@
                         <div class="flex min-h-8 items-center justify-between gap-2">
                             {@render label(field.text, presetNai[field.key] !== undefined)}
                             <div class="shrink-0">
-                                <ShSwitch checked={!!naiValue(field.key)} onCheckedChange={(v) => setNai(field.key, v)} />
+                                <ShSwitch checked={!!naiValue(field.key)} disabled={locked(field.key)} onCheckedChange={(v) => setNai(field.key, v)} />
                             </div>
                         </div>
                     {/if}
@@ -378,7 +396,9 @@
                     <span class="text-textcolor2">{language.illustrationNaiSize}</span>
                     <span class="text-right text-textcolor2">{size.width}×{size.height} · {language.illustrationNaiSizeHint}</span>
                 </div>
-                <span class="text-textcolor2">{chosen?.place ? language.illustrationNaiPresetLinked : language.illustrationNaiLinked}</span>
+                {#if !chosen?.assetMaid}
+                    <span class="text-textcolor2">{chosen?.place ? language.illustrationNaiPresetLinked : language.illustrationNaiLinked}</span>
+                {/if}
             </ShAccordion>
             </div>
         {/if}

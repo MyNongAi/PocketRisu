@@ -2554,6 +2554,9 @@
         "src/lib/SideBars/LoreBook/LoreBookData.svelte"
       ],
       "requiredMarkers": [
+        { "file": "src/ts/process/illustration.ts", "contains": "export function assetMaidPreset(entry: PresetLorebookEntry): IllustrationPreset | null {" },
+        { "file": "src/ts/process/illustration.ts", "contains": "const assetMaid = preset || folder ? null : assetMaidPreset(entry)" },
+        { "file": "src/lib/SideBars/IllustrationSettings.svelte", "contains": "return !!chosen?.assetMaid && presetNai[key] !== undefined" },
         { "file": "src/ts/process/index.svelte.ts", "contains": "startAutoIllustration({ character: currentChar, chat: currentChat, moduleContext: getRuntimeModuleContext() })" },
         { "file": "src/ts/process/lorebook.svelte.ts", "contains": "if(loreRole(fullLore[i]) !== 'main'){" },
         { "file": "src/ts/process/stableDiff.ts", "contains": "char_captions: naiCharCaptions" },
