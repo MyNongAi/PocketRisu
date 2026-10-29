@@ -400,3 +400,66 @@ test('a simple character argument still reads its own bot', async () => {
   expect(set.got).toBe('1')
   vi.mocked(database.getDatabase).mockReturnValue({ characters: [] } as never)
 })
+
+// Each trigger code keeps its own engine, so a bot's Lua and the modules' Lua
+// taking turns no longer rebuild the engine for every message on screen.
+describe('an engine per trigger code', () => {
+  const counter = (name: string) => `
+    -- ${name}
+    listenEdit('editDisplay', function() calls = (calls or 0) + 1 return tostring(calls) end)
+  `
+  const display = async (code: string) => (await runScripted(code, {
+    char: {} as never,
+    chat: { message: [] } as never,
+    data: 'x',
+    mode: 'editDisplay',
+  })).res
+
+  test('two codes taking turns each keep their globals, as a lone one does', async () => {
+    const first = counter('turns first')
+    const second = counter('turns second')
+    expect([await display(first), await display(second), await display(first), await display(second)])
+      .toEqual(['1', '1', '2', '2'])
+  })
+
+  test('the least recently used of more than six goes, and starts again when it comes back', async () => {
+    const kept = Array.from({ length: 6 }, (_, index) => counter(`kept ${index}`))
+    const oldest = counter('oldest')
+    expect(await display(oldest)).toBe('1')
+    for (const code of kept) expect(await display(code)).toBe('1')
+    expect(await display(oldest)).toBe('1')
+    // the code run last before it stays
+    expect(await display(kept[5])).toBe('2')
+  })
+
+  test('stopChat stops every send, not only the first after the engine is made', async () => {
+    const code = `function onStart(id) if getChatVar(id, 'stop') == '1' then stopChat(id) end end`
+    const send = async (stop: string) => (await runScripted(code, {
+      char: {} as never,
+      chat: { message: [] } as never,
+      getVar: () => stop,
+      mode: 'start',
+    })).stopSending
+    expect([await send('1'), await send('1'), await send('0'), await send('1')]).toEqual([true, true, false, true])
+  })
+
+  test("generateImage draws for the running script's bot", async () => {
+    const stableDiff = await import('./stableDiff')
+    vi.mocked(stableDiff.generateAIImage).mockClear()
+    const code = `
+      onStart = async(function(id)
+        generateImage(id, 'prompt'):await()
+      end)
+    `
+    for (const chaId of ['first', 'second']) {
+      await runScripted(code, {
+        char: { type: 'character', chaId } as never,
+        chat: { message: [] } as never,
+        lowLevelAccess: true,
+        mode: 'start',
+      })
+    }
+    expect(vi.mocked(stableDiff.generateAIImage).mock.calls.map((call) => (call[1] as { chaId: string }).chaId))
+      .toEqual(['first', 'second'])
+  })
+})

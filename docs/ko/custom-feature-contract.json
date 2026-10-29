@@ -1839,6 +1839,24 @@
       ]
     },
     {
+      "id": "LUA-ENGINE-PER-CODE",
+      "title": "루아 엔진을 트리거 코드마다 따로 두기(여러 루아가 번갈아 돌 때 다시 만들지 않음)",
+      "criticality": "performance",
+      "ownerFiles": [
+        "src/ts/process/scriptings.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/scriptings.ts", "contains": "const ScriptingEngineState = engineForCode(mode, code, type, modeEngineState.mutex)" },
+        { "file": "src/ts/process/scriptings.ts", "contains": "const ENGINES_PER_MODE = 6" },
+        { "file": "src/ts/process/scriptings.ts", "contains": "ScriptingEngineState.stopSending = true" },
+        { "file": "src/ts/process/scriptings.ts", "contains": "const gen = await generateAIImage(value, ScriptingEngineState.char as character, negValue, 'inlay', options)" }
+      ],
+      "regressionTests": [
+        "src/ts/process/scriptings.test.ts",
+        "src/ts/process/sceneFoldModule.test.ts"
+      ]
+    },
+    {
       "id": "CHAT-REDRAW-ON-SCREEN-ONLY",
       "title": "다른 채팅의 화면 다시 그리기 신호는 보고 있는 채팅을 건드리지 않음",
       "criticality": "core-ux",

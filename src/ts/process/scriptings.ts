@@ -35,11 +35,16 @@ interface BasicScriptingEngineState {
     getVar?: (key:string) => string,
     /**
      * Module that owns the currently running script, for per-module model
-     * binding (db.moduleModelBindings). Engines are cached per `mode`, so this
+     * binding (db.moduleModelBindings). Engines are cached per `mode` and code, so this
      * is re-assigned on every run alongside chat/setVar/getVar — safe because
      * the whole run is held under `mutex.runExclusive`.
      */
     moduleId?: string,
+    /**
+     * Set by stopChat for the run in progress. The API is declared by the run
+     * that made the engine, so it cannot reach a later run's own flag.
+     */
+    stopSending?: boolean,
 }
 
 interface LuaScriptingEngineState extends BasicScriptingEngineState {
@@ -58,6 +63,40 @@ type ScriptingEngineState = LuaScriptingEngineState | PythonScriptingEngineState
 let ScriptingEngines = new Map<string, ScriptingEngineState>()
 let luaFactoryPromise: Promise<void> | null = null;
 let pendingEngineCreations = new Map<string, Promise<ScriptingEngineState>>();
+
+// Each mode keeps an engine per trigger code, the most recently used last.
+// With one engine per mode, a bot's Lua and the modules' Lua tore it down and
+// re-read their whole script each time they took turns, which was every
+// message on screen once two Lua triggers were on (about 17x the display time
+// with the scene fold module, 2026-10-30). Every code now keeps its globals
+// between runs, as a lone Lua trigger's always did; the mode's runs still go
+// one at a time, in the same order, under the mode's mutex.
+const ENGINES_PER_MODE = 6
+let ScriptingEnginesByCode = new Map<string, Map<string, ScriptingEngineState>>()
+
+function engineForCode(mode: string, code: string, type: 'lua'|'py', mutex: Mutex): ScriptingEngineState {
+    let engines = ScriptingEnginesByCode.get(mode)
+    if (!engines) {
+        engines = new Map()
+        ScriptingEnginesByCode.set(mode, engines)
+    }
+    let engineState = engines.get(code)
+    if (engineState) {
+        engines.delete(code)
+    } else {
+        engineState = { mutex, type }
+        // The least recently used goes; the mode's mutex is held, so none of
+        // its engines is running.
+        for (const [oldCode, old] of engines) {
+            if (engines.size < ENGINES_PER_MODE) break
+            engines.delete(oldCode)
+            if (old.type === 'lua') old.engine?.global.close()
+            else old.pyodide?.close()
+        }
+    }
+    engines.set(code, engineState)
+    return engineState
+}
 
 export async function runScripted(code:string, arg:{
     char?:character|simpleCharacterArgument,
@@ -94,9 +133,11 @@ export async function runScripted(code:string, arg:{
     if(type === 'lua'){
         await ensureLuaFactory()
     }
-    let ScriptingEngineState = await getOrCreateEngineState(mode, type);
+    const modeEngineState = await getOrCreateEngineState(mode, type);
 
-    return await ScriptingEngineState.mutex.runExclusive(async () => {
+    return await modeEngineState.mutex.runExclusive(async () => {
+        const ScriptingEngineState = engineForCode(mode, code, type, modeEngineState.mutex)
+        ScriptingEngineState.stopSending = false
         ScriptingEngineState.moduleId = arg.moduleId
         ScriptingEngineState.moduleContext = arg.moduleContext
         ScriptingEngineState.char = char
@@ -178,7 +219,7 @@ export async function runScripted(code:string, arg:{
                 if(!ScriptingSafeIds.has(id)){
                     return
                 }
-                stopSending = true
+                ScriptingEngineState.stopSending = true
             })
             declareAPI('alertError', (id:string, value:string) => {
                 if(!ScriptingSafeIds.has(id)){
@@ -451,7 +492,8 @@ export async function runScripted(code:string, arg:{
                     return 'Error: Image orientation must be landscape or portrait, received ' + orientation
                 }
 
-                const gen = await generateAIImage(value, char as character, negValue, 'inlay', options)
+                // The running script's bot, not the one of the run that made the engine.
+                const gen = await generateAIImage(value, ScriptingEngineState.char as character, negValue, 'inlay', options)
                 if(!gen){
                     return 'Error: Image generation failed'
                 }
@@ -1223,6 +1265,9 @@ export async function runScripted(code:string, arg:{
         ScriptingSafeIds.delete(accessKey)
         ScriptingLowLevelIds.delete(accessKey)
         chat = ScriptingEngineState.chat
+        if(ScriptingEngineState.stopSending){
+            stopSending = true
+        }
 
         return {
             stopSending, chat, res
