@@ -317,6 +317,10 @@
     let echoText = $state('')
     let showInputEcho = $derived(role === 'char' && previousInputIndex >= 0 && DBState.db.nodeOnlyShowInputEcho !== false)
     let echoShown = $derived($inputEchoDraft && $inputEchoDraft.key === previousInputKey ? $inputEchoDraft.text : previousInput)
+    // Shown and copied without HTML comments, which the message itself never
+    // shows: a module's hidden marks (장면 접기's <!--sf:…-->) read as text
+    // here (2026-10-30). Editing keeps them, so the module's ranges hold.
+    let echoVisible = $derived((echoShown ?? '').replace(/\n?<!--[\s\S]*?-->/g, ''))
 
     $effect(() => {
         if (echoEditing) inputEchoDraft.set({ key: previousInputKey, text: echoText })
@@ -438,7 +442,7 @@
 
     async function copyInputEcho() {
         try {
-            await navigator.clipboard.writeText(echoShown ?? '')
+            await navigator.clipboard.writeText(echoVisible)
             notifyInfo(language.copied)
         } catch (error) {
             notifyError(chatClipboardErrorMessage(error))
@@ -1025,7 +1029,7 @@
                     <AutoresizeArea bind:value={echoText} onkeydown={finishInputEchoOnSendKey} />
                 </span>
             {:else}
-                <span class="min-w-0 grow whitespace-pre-wrap wrap-break-word line-clamp-3" title={echoShown}>{echoShown}</span>
+                <span class="min-w-0 grow whitespace-pre-wrap wrap-break-word line-clamp-3" title={echoVisible}>{echoVisible}</span>
             {/if}
             {#if echoVersionCount >= 2 && !echoEditing}
                 <span class="input-echo-versions flex shrink-0 items-center gap-0.5">

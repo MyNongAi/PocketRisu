@@ -940,13 +940,22 @@ function SF.card(scene, summary, count, expanded, settings, number)
     local title = scene.kind == 'loop' and ('🔁 지나간 회차 · ' .. escapeHtml(SF.kindLabel(scene.kind, settings, number)))
         or ('📁 접힌 장면 · ' .. escapeHtml(SF.kindLabel(scene.kind, settings)))
     return '<div style="border:1px solid rgba(127,127,127,.45);border-radius:8px;padding:8px 10px;margin:4px 0;font-size:.92em">'
-        .. '<div style="opacity:.75;font-size:.85em">' .. title .. ' · 메시지 ' .. count .. '개</div>'
+        .. '<div style="opacity:.75;font-size:.85em">' .. title .. ' · 메시지 ' .. count .. '개 · 요약</div>'
         .. '<div style="margin-top:4px">' .. body .. '</div>'
         .. '<div style="margin-top:6px;display:flex;gap:12px;flex-wrap:wrap;font-size:.82em">'
-        .. '<span risu-btn="sf|x|' .. scene.id .. '" style="' .. LINK .. '">' .. (expanded and '접기' or '펼치기') .. '</span>'
+        .. '<span risu-btn="sf|x|' .. scene.id .. '" style="' .. LINK .. '">' .. (expanded and '모두 접기' or '모두 펼치기') .. '</span>'
         .. '<span risu-btn="sf|r|' .. scene.id .. '" style="' .. LINK .. '">다시 요약</span>'
         .. '<span risu-btn="sf|u|' .. scene.id .. '" style="' .. LINK .. '">접기 해제</span>'
         .. '</div></div>'
+end
+
+--- A folded message: one line that opens to its text in place (<details>,
+--- as 컨텍스트 폴드 does; the user's request, 2026-10-30: "원문도 클릭하면").
+--- The blank lines let the text inside be read as markdown.
+function SF.foldedText(kind, k, total, text)
+    local label = kind == 'loop' and '🔁 지나간 회차' or '📁 접힌 장면'
+    return '<details style="margin:2px 0"><summary style="opacity:.6;font-size:.8em;cursor:pointer">'
+        .. label .. ' ' .. k .. '/' .. total .. ' · 눌러서 원문 보기</summary>\n\n' .. text .. '\n\n</details>'
 end
 
 function SF.note(text)
@@ -1040,14 +1049,17 @@ listenEdit('editDisplay', function(tid, text, meta)
         local scene = entry.scene
         local label = escapeHtml(SF.kindLabel(scene.kind, settings, entry.number))
         if entry.summary then
+            -- The summary card sits at the scene's last message, the first one
+            -- met reading back up from the latest (the user's request,
+            -- 2026-10-30); each folded message opens on its own, 모두 펼치기
+            -- opens them all.
             local expanded = stateGet(tid, 'sf_exp_' .. scene.id) == true
-            if position == scene.s then
-                local card = SF.card(scene, entry.summary, scene.e - scene.s + 1, expanded, settings, entry.number)
-                return expanded and (card .. '\n\n' .. clean) or card
+            local total = scene.e - scene.s + 1
+            local shown = expanded and clean or SF.foldedText(scene.kind, position - scene.s + 1, total, clean)
+            if position == scene.e then
+                return shown .. '\n\n' .. SF.card(scene, entry.summary, total, expanded, settings, entry.number)
             end
-            if expanded then return clean end
-            if scene.kind == 'loop' then return SF.note('🔁 지나간 회차의 일부 · 위 카드에서 펼치기') end
-            return SF.note('📁 접힌 장면의 일부 · 위 카드에서 펼치기')
+            return shown
         end
         local foldNow = ' · <span risu-btn="sf|n|' .. scene.id .. '" style="' .. LINK .. '">지금 접기</span>'
         if not scene.e and position == scene.s then

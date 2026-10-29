@@ -238,8 +238,8 @@ describe('after a reply (auxiliary model)', () => {
         await run('onButtonClick', { data: 'sf|n|n1' })
         expect(marks(chat.message[2].data)).toEqual(['<!--sf:e:n1-->', '<!--sf:m:n1-->'])
         expect(JSON.parse(vars.__sf_sum_n1)).toBe('The fight went on.')
-        const card = (await run('editDisplay', { data: chat.message[0].data, meta: { index: 0 } })).res as string
-        expect(card).toContain('📁 접힌 장면')
+        const card = (await run('editDisplay', { data: chat.message[2].data, meta: { index: 2 } })).res as string
+        expect(card).toContain('📁 접힌 장면 · ⚔️ 배틀')
 
         const second = makeChat([
             { role: 'char', data: 'fight<!--sf:s:battle:n2-->' },
@@ -401,16 +401,23 @@ describe('display and buttons', () => {
         { role: 'char', data: 'b' },
     ]
 
-    test('shows a summary card on the first folded message and a stub on the rest', async () => {
+    // The user's requests, 2026-10-30: the summary below the scene, and each
+    // folded message opening to its text with a click.
+    test('folds every message into a line that opens to its text, with the summary card on the last', async () => {
         const { run, vars } = makeChat(scene())
         vars.__sf_sum_d1 = JSON.stringify('Won <the> battle.\nGot 300P.')
         const first = (await run('editDisplay', { data: 'fight<!--sf:s:battle:d1-->', meta: { index: 1 } })).res as string
-        expect(first).toContain('📁 접힌 장면 · ⚔️ 배틀 · 메시지 3개')
-        expect(first).toContain('Won &lt;the&gt; battle.<br>Got 300P.')
-        expect(first).toContain('risu-btn="sf|x|d1"')
-        expect(first).not.toContain('fight')
+        expect(first.startsWith('<details')).toBe(true)
+        expect(first).toContain('📁 접힌 장면 1/3 · 눌러서 원문 보기</summary>\n\nfight\n\n</details>')
         const middle = (await run('editDisplay', { data: 'hit<!--sf:m:d1-->', meta: { index: 2 } })).res as string
-        expect(middle).toContain('접힌 장면의 일부')
+        expect(middle).toContain('📁 접힌 장면 2/3')
+        expect(middle).toContain('hit')
+        expect(middle).not.toContain('risu-btn')
+        const last = (await run('editDisplay', { data: 'won<!--sf:e:d1-->', meta: { index: 3 } })).res as string
+        expect(last).toContain('📁 접힌 장면 3/3')
+        expect(last.indexOf('won')).toBeLessThan(last.indexOf('📁 접힌 장면 · ⚔️ 배틀 · 메시지 3개 · 요약'))
+        expect(last).toContain('Won &lt;the&gt; battle.<br>Got 300P.')
+        expect(last).toContain('risu-btn="sf|x|d1"')
         const outside = (await run('editDisplay', { data: 'a', meta: { index: 4 } })).res as string
         expect(outside).toContain('risu-btn="sf|s|4"')
         expect(outside.startsWith('a')).toBe(true)
@@ -426,14 +433,16 @@ describe('display and buttons', () => {
         expect(await log('a', 4)).toBe('a')
     })
 
-    test('펼치기 shows the original under the card', async () => {
+    test('모두 펼치기 shows every message as it was, the card staying under the last', async () => {
         const { run, vars } = makeChat(scene())
         vars.__sf_sum_d1 = JSON.stringify('Won.')
         await run('onButtonClick', { data: 'sf|x|d1' })
         const first = (await run('editDisplay', { data: 'fight<!--sf:s:battle:d1-->', meta: { index: 1 } })).res as string
-        expect(first).toContain('>접기<')
-        expect(first).toContain('fight')
-        expect(first).not.toContain('<!--sf')
+        expect(first).toBe('fight')
+        const last = (await run('editDisplay', { data: 'won<!--sf:e:d1-->', meta: { index: 3 } })).res as string
+        expect(last.startsWith('won')).toBe(true)
+        expect(last).toContain('>모두 접기<')
+        expect(last).not.toContain('<!--sf')
     })
 
     test('manual start and end mark the chosen messages; 접기 해제 removes the scene', async () => {
@@ -516,10 +525,10 @@ describe('🔁 회차 (a time-loop run)', () => {
         expect(llmPrompts.at(-1)![1].content).toContain('This is run 2')
         expect(llmPrompts.at(-1)![1].content).toContain('Run 1:\nRun 1: Elsa killed Subaru at the loot house.')
 
-        const card = (await run('editDisplay', { data: chat.message[0].data, meta: { index: 0 } })).res as string
+        const card = (await run('editDisplay', { data: chat.message[3].data, meta: { index: 3 } })).res as string
         expect(card).toContain('🔁 지나간 회차 · 🔁 1회차 · 메시지 4개')
         const inside = (await run('editDisplay', { data: chat.message[2].data, meta: { index: 2 } })).res as string
-        expect(inside).toContain('지나간 회차의 일부')
+        expect(inside).toContain('🔁 지나간 회차 3/4 · 눌러서 원문 보기')
     })
 
     test('a long run is noted part by part, then recorded from the notes', async () => {

@@ -1179,7 +1179,8 @@
         { "file": "src/ts/process/scripts.ts", "contains": "cbsConditions.logCapture ? { index:chatID, logCapture:true } : { index:chatID }" },
         { "file": "src/lib/ChatScreens/ChatBody.svelte", "contains": "...(forLog ? { logCapture: true } : {})," },
         { "file": "src/ts/gui/logCaptureRender.ts", "contains": "forLog: true," },
-        { "file": "modules/scene-fold/scene-fold.lua", "contains": "if type(meta) == 'table' and meta.logCapture then" }
+        { "file": "modules/scene-fold/scene-fold.lua", "contains": "if type(meta) == 'table' and meta.logCapture then" },
+        { "file": "modules/scene-fold/scene-fold.lua", "contains": "function SF.foldedText(kind, k, total, text)" }
       ],
       "regressionTests": [
         "src/ts/gui/logCapture.test.ts",
@@ -1973,6 +1974,7 @@
         "src/ts/process/index.svelte.ts"
       ],
       "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "title={echoVisible}>{echoVisible}</span>" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (!target || !stepInputVersion(target, step)) return" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "requestPairing?.showSwipeRequestedWith(idx, target.data)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "class:text-primary={ownIsRequestInput}" },
