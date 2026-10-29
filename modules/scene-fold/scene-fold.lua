@@ -1049,16 +1049,16 @@ listenEdit('editDisplay', function(tid, text, meta)
         local scene = entry.scene
         local label = escapeHtml(SF.kindLabel(scene.kind, settings, entry.number))
         if entry.summary then
-            -- The summary card sits at the scene's last message, the first one
-            -- met reading back up from the latest (the user's request,
-            -- 2026-10-30); each folded message opens on its own, 모두 펼치기
-            -- opens them all.
+            -- The summary card at both ends of the scene: above its first
+            -- message and under its last, met first whichever way it is read
+            -- (the user's requests, 2026-10-30); each folded message opens on
+            -- its own, 모두 펼치기 opens them all.
             local expanded = stateGet(tid, 'sf_exp_' .. scene.id) == true
             local total = scene.e - scene.s + 1
             local shown = expanded and clean or SF.foldedText(scene.kind, position - scene.s + 1, total, clean)
-            if position == scene.e then
-                return shown .. '\n\n' .. SF.card(scene, entry.summary, total, expanded, settings, entry.number)
-            end
+            local card = SF.card(scene, entry.summary, total, expanded, settings, entry.number)
+            if position == scene.e then return shown .. '\n\n' .. card end
+            if position == scene.s then return card .. '\n\n' .. shown end
             return shown
         end
         local foldNow = ' · <span risu-btn="sf|n|' .. scene.id .. '" style="' .. LINK .. '">지금 접기</span>'

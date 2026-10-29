@@ -407,7 +407,8 @@ describe('display and buttons', () => {
         const { run, vars } = makeChat(scene())
         vars.__sf_sum_d1 = JSON.stringify('Won <the> battle.\nGot 300P.')
         const first = (await run('editDisplay', { data: 'fight<!--sf:s:battle:d1-->', meta: { index: 1 } })).res as string
-        expect(first.startsWith('<details')).toBe(true)
+        // the card above the scene's first message as well as under its last
+        expect(first.indexOf('📁 접힌 장면 · ⚔️ 배틀 · 메시지 3개 · 요약')).toBeLessThan(first.indexOf('<details'))
         expect(first).toContain('📁 접힌 장면 1/3 · 눌러서 원문 보기</summary>\n\nfight\n\n</details>')
         const middle = (await run('editDisplay', { data: 'hit<!--sf:m:d1-->', meta: { index: 2 } })).res as string
         expect(middle).toContain('📁 접힌 장면 2/3')
@@ -433,12 +434,13 @@ describe('display and buttons', () => {
         expect(await log('a', 4)).toBe('a')
     })
 
-    test('모두 펼치기 shows every message as it was, the card staying under the last', async () => {
+    test('모두 펼치기 shows every message as it was, the cards staying at both ends', async () => {
         const { run, vars } = makeChat(scene())
         vars.__sf_sum_d1 = JSON.stringify('Won.')
         await run('onButtonClick', { data: 'sf|x|d1' })
         const first = (await run('editDisplay', { data: 'fight<!--sf:s:battle:d1-->', meta: { index: 1 } })).res as string
-        expect(first).toBe('fight')
+        expect(first.endsWith('\n\nfight')).toBe(true)
+        expect(first).toContain('>모두 접기<')
         const last = (await run('editDisplay', { data: 'won<!--sf:e:d1-->', meta: { index: 3 } })).res as string
         expect(last.startsWith('won')).toBe(true)
         expect(last).toContain('>모두 접기<')
