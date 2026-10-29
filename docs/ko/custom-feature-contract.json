@@ -1857,6 +1857,25 @@
       ]
     },
     {
+      "id": "BOT-VISIT-BUTTONS",
+      "title": "마우스 뒤로·앞으로 버튼으로 방금 본 봇 오가기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/botVisitHistory.ts",
+        "src/ts/gui/botVisitButtons.ts",
+        "src/ts/characters.ts",
+        "src/main.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/characters.ts", "contains": "botVisits.record(nextCharacterId)" },
+        { "file": "src/main.ts", "contains": "initBotVisitButtons()" },
+        { "file": "src/ts/gui/botVisitHistory.ts", "contains": "const STEP_BY_BUTTON: Record<number, -1 | 1> = { 3: -1, 4: 1 }" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/botVisitHistory.test.ts"
+      ]
+    },
+    {
       "id": "CHAT-REDRAW-ON-SCREEN-ONLY",
       "title": "다른 채팅의 화면 다시 그리기 신호는 보고 있는 채팅을 건드리지 않음",
       "criticality": "core-ux",

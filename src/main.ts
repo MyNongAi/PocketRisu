@@ -8,6 +8,7 @@ import { initHotkey } from "./ts/hotkey";
 import { initScrollbarAutoHide } from "./ts/gui/scrollbarAutoHide";
 import { initMobileBackNavigation } from "./ts/gui/mobileBackNavigation.svelte";
 import { initSortableTouchHold } from "./ts/gui/sortableTouchHold";
+import { initBotVisitButtons } from "./ts/gui/botVisitButtons";
 import { preLoadCheck } from "./preload";
 import { mount } from "svelte";
 import { toast } from "svelte-sonner";
@@ -36,6 +37,7 @@ loadData()
 initHotkey()
 initScrollbarAutoHide()
 initMobileBackNavigation()
+initBotVisitButtons()
 document.getElementById('preloading').remove()
 
 export default app;

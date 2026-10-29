@@ -23,6 +23,7 @@ import { promoteDepartedCharacter, promoteRecentlyViewedCharacter } from "./char
 import { BoundedObjectUrlCache, createDeduplicatedImageLoader } from "./storage/boundedObjectUrlCache";
 import { getFirstMessageAtIndex } from "./firstMessage";
 import { needsCharacterRuntimeNormalization } from "./characterRuntime";
+import { botVisits } from "./gui/botVisitHistory";
 
 const CHAT_HYDRATION_INDICATOR_DELAY_MS = 180
 const CHAT_PREFETCH_DELAY_MS = 110
@@ -1092,6 +1093,7 @@ export function changeChar(index: number, arg:{
         selectedCharacter.lastInteraction = Date.now()
     }
     recordCharacterOpened(nextCharacterId)
+    botVisits.record(nextCharacterId)
     const db = getDatabase()
     selectedCharID.set(index);
 
