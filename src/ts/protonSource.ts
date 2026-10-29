@@ -13,6 +13,8 @@ export interface ProtonSourceRecord {
     /** For a folder share: the file's link id and the folder link ids above it, outermost first. */
     linkId?: string
     path?: string[]
+    /** Its size in the share's listing then: a different size later is a new version (realmCompanionModule.ts). */
+    size?: number
     /** When it was downloaded. */
     at: number
 }

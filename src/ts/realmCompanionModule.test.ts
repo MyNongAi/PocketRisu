@@ -7,6 +7,10 @@ vi.mock('src/lang', () => ({
         realmCompanionModuleTask: 'task',
         realmCompanionModulePaired: (n: number) => `paired ${n}`,
         realmCompanionModuleFailed: 'failed',
+        realmCompanionModuleUpdated: (n: number) => `updated ${n}`,
+        realmModuleUnsure: (names: string) => `unsure ${names}`,
+        realmModuleRedownload: 'redownload',
+        realmModuleKeepCurrent: 'keep',
         botNotesModuleTask: 'notes',
         botNotesModuleFailed: 'notes failed',
         botNotesModulePaired: (n: number) => `notes paired ${n}`,
@@ -49,7 +53,7 @@ vi.mock('./process/modules', () => ({ importModuleFile: (...a: unknown[]) => imp
 
 const {
     findProtonShareLinks, isCompanionModuleFile, pairModulesWithCharacter, importRealmCompanionModules,
-    openBotNotesProtonLink, protonShareLinkOf, protonLinkChoices, importRealmDescriptionModules,
+    openBotNotesProtonLink, protonShareLinkOf, protonLinkChoices, importRealmDescriptionModules, compareShareModules,
 } = await import('./realmCompanionModule')
 
 const LINK = 'https://drive.proton.me/urls/ABC123#keyPart_-9'
@@ -105,10 +109,83 @@ describe('importRealmCompanionModules', () => {
         expect(rerenderChatForModules).toHaveBeenCalled()
     })
 
-    test('a module already downloaded from the link is paired without downloading again', async () => {
-        db.modules = [{ id: 'old', nodeOnlyProtonShare: LINK }]
+    test('records the file size it downloaded', async () => {
+        inspectProtonShare.mockResolvedValue({ kind: 'file', name: 'assets.risum', entries: [{ size: 500 }], trail: [] })
+        fetchProtonFile.mockResolvedValue({ name: 'assets.risum', data: new Uint8Array([1]) })
+        importModuleFile.mockImplementation(async () => { const m = { id: 'm1', name: 'assets' }; db.modules.push(m); return m })
         await importRealmCompanionModules('c1', [LINK])
-        expect(inspectProtonShare).not.toHaveBeenCalled()
+        expect(db.modules[0].nodeOnlyProtonSource).toMatchObject({ link: LINK, file: 'assets.risum', size: 500 })
+    })
+
+    test('a module downloaded from the link before is paired again while the link holds the same file', async () => {
+        db.modules = [{ id: 'old', nodeOnlyProtonShare: LINK, nodeOnlyProtonSource: { link: LINK, file: 'assets.risum', size: 500, at: 1 } }]
+        inspectProtonShare.mockResolvedValue({ kind: 'file', name: 'assets.risum', entries: [{ size: 500 }], trail: [] })
+        await importRealmCompanionModules('c1', [LINK])
+        expect(fetchProtonFile).not.toHaveBeenCalled()
+        expect(alertSelect).not.toHaveBeenCalled()
+        expect(db.characters[0].modules).toEqual(['old'])
+        expect(notifySuccess).toHaveBeenCalledWith('paired 1')
+    })
+
+    // The user's report, 2026-10-30: a bot downloaded again kept its old asset
+    // module although the link held a new one.
+    test('a new version on the same link is downloaded and paired instead of the old module', async () => {
+        db.modules = [{ id: 'old', nodeOnlyProtonShare: LINK, nodeOnlyProtonSource: { link: LINK, file: 'assets.risum', size: 500, at: 1 } }]
+        inspectProtonShare.mockResolvedValue({ kind: 'file', name: 'assets.risum', entries: [{ size: 640 }], trail: [] })
+        fetchProtonFile.mockResolvedValue({ name: 'assets.risum', data: new Uint8Array([1]) })
+        importModuleFile.mockImplementation(async () => { const m = { id: 'new', name: 'assets' }; db.modules.push(m); return m })
+        await importRealmCompanionModules('c1', [LINK])
+        expect(fetchProtonFile).toHaveBeenCalledTimes(1)
+        expect(db.characters[0].modules).toEqual(['new'])
+        // The old module stays in the catalog.
+        expect(db.modules.map((m) => m.id)).toEqual(['old', 'new'])
+        expect(notifySuccess).toHaveBeenCalledWith('updated 1')
+
+        // Next time the newest download is the one compared and paired.
+        vi.clearAllMocks()
+        db.characters.push({ chaId: 'c2', modules: [] })
+        await importRealmCompanionModules('c2', [LINK])
+        expect(fetchProtonFile).not.toHaveBeenCalled()
+        expect(db.characters[1].modules).toEqual(['new'])
+    })
+
+    test('a renamed file on the link is a new version too', async () => {
+        db.modules = [{ id: 'old', nodeOnlyProtonShare: LINK, nodeOnlyProtonSource: { link: LINK, file: 'assets v1.risum', size: 500, at: 1 } }]
+        inspectProtonShare.mockResolvedValue({ kind: 'file', name: 'assets v2.risum', entries: [{ size: 500 }], trail: [] })
+        fetchProtonFile.mockResolvedValue({ name: 'assets v2.risum', data: new Uint8Array([1]) })
+        importModuleFile.mockImplementation(async () => { const m = { id: 'new', name: 'assets' }; db.modules.push(m); return m })
+        await importRealmCompanionModules('c1', [LINK])
+        expect(db.characters[0].modules).toEqual(['new'])
+    })
+
+    test('an older download without a size asks; keeping it pairs it and records the size', async () => {
+        db.modules = [{ id: 'old', name: 'Assets', nodeOnlyProtonShare: LINK, nodeOnlyProtonSource: { link: LINK, file: 'assets.risum', at: 1 } }]
+        inspectProtonShare.mockResolvedValue({ kind: 'file', name: 'assets.risum', entries: [{ size: 500 }], trail: [] })
+        alertSelect.mockResolvedValue('1')
+        await importRealmCompanionModules('c1', [LINK])
+        expect(alertSelect).toHaveBeenCalledWith(['redownload', 'keep'], 'unsure Assets')
+        expect(fetchProtonFile).not.toHaveBeenCalled()
+        expect(db.characters[0].modules).toEqual(['old'])
+        expect(db.modules[0].nodeOnlyProtonSource.size).toBe(500)
+    })
+
+    test('an older download without a record asks; downloading again pairs the new one', async () => {
+        db.modules = [{ id: 'old', nodeOnlyProtonShare: LINK }]
+        inspectProtonShare.mockResolvedValue({ kind: 'file', name: 'assets.risum', entries: [{ size: 500 }], trail: [] })
+        alertSelect.mockResolvedValue('0')
+        fetchProtonFile.mockResolvedValue({ name: 'assets.risum', data: new Uint8Array([1]) })
+        importModuleFile.mockImplementation(async () => { const m = { id: 'new', name: 'assets' }; db.modules.push(m); return m })
+        await importRealmCompanionModules('c1', [LINK])
+        expect(fetchProtonFile).toHaveBeenCalledTimes(1)
+        expect(db.characters[0].modules).toEqual(['new'])
+    })
+
+    test('a password on the link cannot be checked without it: the user is asked first', async () => {
+        db.modules = [{ id: 'old', name: 'Assets', nodeOnlyProtonShare: LINK, nodeOnlyProtonSource: { link: LINK, file: 'assets.risum', size: 500, at: 1 } }]
+        inspectProtonShare.mockRejectedValue(Object.assign(new Error('needs password'), { status: 401 }))
+        alertSelect.mockResolvedValue('1')
+        await importRealmCompanionModules('c1', [LINK])
+        expect(openProtonShare).not.toHaveBeenCalled()
         expect(db.characters[0].modules).toEqual(['old'])
     })
 
@@ -205,6 +282,38 @@ describe('a folder share', () => {
         await importRealmCompanionModules('c1', [LINK])
         expect(db.characters[0].modules).toEqual([])
         expect(notifySuccess).not.toHaveBeenCalled()
+    })
+})
+
+describe('compareShareModules on a folder', () => {
+    const entry = (linkId: string, name: string, size: number | null) => ({ linkId, name, size, type: 2, mediaType: null })
+    const folder = (...entries: ReturnType<typeof entry>[]) => ({ kind: 'folder' as const, name: 'pack', trail: [], entries })
+    const picked = (id: string, linkId: string, file: string, size?: number, path?: string[]) =>
+        ({ id, nodeOnlyProtonSource: { link: LINK, file, linkId, ...(size != null ? { size } : {}), ...(path ? { path } : {}), at: 1 } })
+
+    test('the same files keep their modules; the bot card beside them is not a module file', () => {
+        expect(compareShareModules([picked('a', 'L1', 'assets.risum', 10)], folder(entry('L1', 'assets.risum', 10), entry('B', 'bot.charx', 99))))
+            .toEqual({ status: 'current', ids: ['a'] })
+    })
+
+    test('a resized or renamed file, a new module file, or none left is a change', () => {
+        const old = [picked('a', 'L1', 'assets.risum', 10)]
+        expect(compareShareModules(old, folder(entry('L1', 'assets.risum', 12))).status).toBe('changed')
+        expect(compareShareModules(old, folder(entry('L1', 'assets v2.risum', 10))).status).toBe('changed')
+        expect(compareShareModules(old, folder(entry('L1', 'assets.risum', 10), entry('L2', 'assets v2.risum', 11))).status).toBe('changed')
+        expect(compareShareModules(old, folder(entry('L2', 'Image Module.charx', 11))).status).toBe('changed')
+    })
+
+    test('a module whose file left the folder is an older version, left unpaired', () => {
+        expect(compareShareModules([picked('v1', 'L1', 'a v1.risum', 10), picked('v2', 'L2', 'a v2.risum', 11)], folder(entry('L2', 'a v2.risum', 11))))
+            .toEqual({ status: 'current', ids: ['v2'] })
+    })
+
+    test('no size on record is unknown; a file in a subfolder counts as kept', () => {
+        expect(compareShareModules([picked('a', 'L1', 'assets.risum')], folder(entry('L1', 'assets.risum', 10))))
+            .toEqual({ status: 'unknown', ids: ['a'] })
+        expect(compareShareModules([picked('a', 'L9', 'deep.risum', 10, ['F'])], folder(entry('F0', 'other.png', 1))))
+            .toEqual({ status: 'current', ids: ['a'] })
     })
 })
 

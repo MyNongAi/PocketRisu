@@ -267,6 +267,7 @@ export async function importProtonShare(
                 link: url,
                 file: item.pick.entry.name,
                 ...(info.kind === 'folder' ? { linkId: item.pick.entry.linkId, path: item.pick.path } : {}),
+                ...(item.pick.entry.size != null ? { size: item.pick.entry.size } : {}),
                 at: Date.now(),
             })
             if (!kind) {

@@ -7,7 +7,8 @@
 // file, opens the same Proton browser a pasted folder link does, and the
 // modules picked there are paired.
 // A module already downloaded from the same link is paired again instead of
-// being downloaded twice.
+// being downloaded twice, while the link still holds the file it came from;
+// a link whose file changed since is downloaded again (compareShareModules).
 // The same pairing runs for a Proton link clicked in a bot's creator notes
 // (openBotNotesProtonLink), always through the browser.
 import { recordModulePair } from './gui/pairedModules'
@@ -17,6 +18,7 @@ import { runImportTask, type ImportProgressReporter } from './importProgress'
 import { isImportCancelled } from './importTransaction'
 import { importModuleFile, rerenderChatForModules, syncLinkedFolders, type RisuModule } from './process/modules'
 import { inspectProtonShare, isProtonPasswordRequired, type ProtonInspectResult } from './protonShareClient'
+import type { ProtonSourceRecord } from './protonSource'
 import { getDatabase } from './storage/database.svelte'
 
 const PROTON_HOSTS = new Set(['drive.proton.me', 'drive.proton.ch'])
@@ -118,32 +120,119 @@ async function downloadShareModules(link: string, options: ShareDownload = {}): 
     })
     if (module) {
         // The browser path records this itself (importProtonShare).
-        module.nodeOnlyProtonSource ??= { link, file: share.name, at: Date.now() }
+        const size = share.entries[0]?.size
+        module.nodeOnlyProtonSource ??= { link, file: share.name, ...(size != null ? { size } : {}), at: Date.now() }
         keep(module)
     }
     return modules
 }
 
+type SourcedModule = { id: string, name?: string, nodeOnlyProtonSource?: ProtonSourceRecord }
+
+/**
+ * Whether the modules downloaded from a share are what it still holds (the
+ * user's report, 2026-10-30: a bot downloaded again kept its old asset module
+ * although the link held a new one). `ids`: the modules to pair when they are
+ * kept. A file share: its newest download, by the file's name and size. A
+ * folder: the modules whose files are still in it, by link id, name and size;
+ * a module file no download came from, or none left, is a change too.
+ * `unknown`: a download recorded before sizes were (or with no record) left
+ * nothing to compare. A file in a subfolder is not listed, so it counts as kept.
+ */
+export function compareShareModules(existing: readonly SourcedModule[], share: ProtonInspectResult): { status: 'current' | 'changed' | 'unknown', ids: string[] } {
+    if (share.kind === 'file') {
+        const newest = [...existing].sort((a, b) => (a.nodeOnlyProtonSource?.at ?? 0) - (b.nodeOnlyProtonSource?.at ?? 0)).at(-1)!
+        const record = newest.nodeOnlyProtonSource
+        const size = share.entries[0]?.size
+        const ids = [newest.id]
+        if (record && record.file !== share.name) return { status: 'changed', ids }
+        if (!record || record.size == null || size == null) return { status: 'unknown', ids }
+        return { status: record.size === size ? 'current' : 'changed', ids }
+    }
+    const files = share.entries.filter((entry) => entry.type === 2)
+    const byLinkId = new Map(files.map((entry) => [entry.linkId, entry]))
+    const ids: string[] = []
+    let changed = false
+    let unknown = false
+    for (const module of existing) {
+        const record = module.nodeOnlyProtonSource
+        if (!record?.linkId) { unknown = true; ids.push(module.id); continue }
+        if (record.path?.length) { ids.push(module.id); continue }
+        const entry = byLinkId.get(record.linkId)
+        // Its file left the folder: an older version, left unpaired.
+        if (!entry) continue
+        if (entry.name !== record.file) { changed = true; continue }
+        if (record.size == null || entry.size == null) unknown = true
+        else if (record.size !== entry.size) { changed = true; continue }
+        ids.push(module.id)
+    }
+    const recorded = new Set(existing.map((module) => module.nodeOnlyProtonSource?.linkId).filter(Boolean))
+    if (changed || ids.length === 0 || files.some((entry) => isCompanionModuleFile(entry.name) && !recorded.has(entry.linkId))) {
+        return { status: 'changed', ids }
+    }
+    return { status: unknown ? 'unknown' : 'current', ids }
+}
+
+/** Records the share's sizes on the downloads that had none, so a later change shows. */
+function recordShareSizes(existing: readonly SourcedModule[], share: ProtonInspectResult) {
+    for (const module of existing) {
+        const record = module.nodeOnlyProtonSource
+        if (!record || record.size != null || record.path?.length) continue
+        const entry = share.kind === 'file' ? share.entries[0] : share.entries.find((item) => item.linkId === record.linkId)
+        const name = share.kind === 'file' ? share.name : entry?.name
+        if (entry?.size != null && name === record.file) record.size = entry.size
+    }
+}
+
+/**
+ * The modules downloaded from `link` before, to pair again, or null to
+ * download from it again: its file changed, or it cannot tell (an older
+ * download, a password on the link) and the user chose to.
+ */
+async function reusableShareModules(link: string, existing: readonly SourcedModule[]): Promise<string[] | null> {
+    let share: ProtonInspectResult | null = null
+    try {
+        share = await inspectProtonShare(link, '')
+    } catch (error) {
+        if (!isProtonPasswordRequired(error)) throw error
+    }
+    const check = share ? compareShareModules(existing, share) : { status: 'unknown' as const, ids: existing.map((module) => module.id) }
+    if (check.status === 'changed') return null
+    if (check.status === 'unknown') {
+        const names = existing.filter((module) => check.ids.includes(module.id)).map((module) => module.name || module.id).join(', ')
+        const choice = await alertSelect([language.realmModuleRedownload, language.realmModuleKeepCurrent], language.realmModuleUnsure(names))
+        if (choice === '0') return null
+    }
+    if (share) recordShareSizes(existing, share)
+    return check.ids
+}
+
 /**
  * Imports the modules behind `links` (reusing ones already downloaded from the
- * same share) and pairs them with the characters `pairWith(chaIds)` returns,
- * looked up after the downloads. Returns the module ids, and how many pairings
- * were added. Each module file shows its own import card.
+ * same share while it holds the same files) and pairs them with the
+ * characters `pairWith(chaIds)` returns, looked up after the downloads.
+ * Returns the module ids, how many pairings were added, and how many links
+ * gave a new version of a module downloaded before (that one stays in the
+ * catalog, unpaired here). Each module file shows its own import card.
  */
 async function importCompanionModules(
     links: readonly string[],
     pairWith: () => readonly { chaId?: string, modules?: string[] }[],
-): Promise<{ moduleIds: string[], paired: number }> {
+): Promise<{ moduleIds: string[], paired: number, updated: number }> {
     const moduleIds: string[] = []
+    let updated = 0
     for (const link of links) {
         const existing = getDatabase().modules.filter((module) => module.nodeOnlyProtonShare === link)
-        if (existing.length > 0) {
-            moduleIds.push(...existing.map((module) => module.id))
+        const reused = existing.length > 0 ? await reusableShareModules(link, existing) : null
+        if (reused) {
+            moduleIds.push(...reused)
             continue
         }
-        moduleIds.push(...(await downloadShareModules(link)).map((module) => module.id))
+        const fresh = (await downloadShareModules(link)).map((module) => module.id)
+        if (fresh.length > 0 && existing.length > 0) updated++
+        moduleIds.push(...fresh)
     }
-    return { moduleIds, paired: pairWithBots(moduleIds, pairWith()) }
+    return { moduleIds, paired: pairWithBots(moduleIds, pairWith()), updated }
 }
 
 /** Pairs `moduleIds` with `characters`; returns how many pairings were added. */
@@ -175,8 +264,9 @@ export async function importRealmCompanionModules(chaId: string, texts: readonly
     if (links.length === 0 || links.length > MAX_LINKS) return
     try {
         // Look the character up after the downloads: the list may have changed.
-        const { paired } = await importCompanionModules(links, () => getDatabase().characters.filter((c) => c?.chaId === chaId))
-        if (paired > 0) notifySuccess(language.realmCompanionModulePaired(paired))
+        const { paired, updated } = await importCompanionModules(links, () => getDatabase().characters.filter((c) => c?.chaId === chaId))
+        if (updated > 0) notifySuccess(language.realmCompanionModuleUpdated(paired))
+        else if (paired > 0) notifySuccess(language.realmCompanionModulePaired(paired))
     } catch (error) {
         // The user cancelled a large module from its progress card.
         if (!isImportCancelled(error)) reportFailure(error)

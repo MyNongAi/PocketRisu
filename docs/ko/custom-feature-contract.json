@@ -305,15 +305,23 @@
         "src/ts/importProgress.ts",
         "src/ts/characterCards.ts",
         "src/lib/UI/GUI/ImportProgressToaster.svelte",
-        "src/lib/UI/GUI/ImportProgressToast.svelte"
+        "src/lib/UI/GUI/ImportProgressToast.svelte",
+        "src/ts/realmCompanionModule.ts",
+        "src/ts/protonSource.ts",
+        "src/ts/protonImport.ts"
       ],
       "requiredMarkers": [
         { "file": "src/ts/importProgress.ts", "contains": "runImportBatch" },
         { "file": "src/ts/importProgress.ts", "contains": "importTasks" },
-        { "file": "src/ts/characterCards.ts", "contains": "runImportTask(`Realm ${id}`" }
+        { "file": "src/ts/characterCards.ts", "contains": "runImportTask(`Realm ${id}`" },
+        { "file": "src/ts/realmCompanionModule.ts", "contains": "export function compareShareModules(" },
+        { "file": "src/ts/realmCompanionModule.ts", "contains": "const reused = existing.length > 0 ? await reusableShareModules(link, existing) : null" },
+        { "file": "src/ts/realmCompanionModule.ts", "contains": "module.nodeOnlyProtonSource ??= { link, file: share.name, ...(size != null ? { size } : {}), at: Date.now() }" },
+        { "file": "src/ts/protonImport.ts", "contains": "...(item.pick.entry.size != null ? { size: item.pick.entry.size } : {})," }
       ],
       "regressionTests": [
-        "src/ts/importProgress.test.ts"
+        "src/ts/importProgress.test.ts",
+        "src/ts/realmCompanionModule.test.ts"
       ]
     },
     {
