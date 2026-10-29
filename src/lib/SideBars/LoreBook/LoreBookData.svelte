@@ -18,6 +18,9 @@
     import type { LoreComparisonStatus } from "src/ts/gui/loreBookComparison";
     import { findTextMatches, splitAtMatches } from "src/ts/gui/textMatches";
     import { countChars } from "src/ts/gui/charCount";
+    import { untrack } from "svelte";
+    import { isPresetFolderPart } from "src/ts/process/illustration";
+    import { syncPresetFolder } from "src/ts/process/illustrationModule";
 
     interface Props {
         value: loreBook;
@@ -94,6 +97,17 @@
             tokenizeAccurate(content).then(result => { if (seq === tokenSeq) tokens = result })
         }, 400)
         return () => { if (tokenTimer) clearTimeout(tokenTimer) }
+    })
+    // A "프리셋 X" folder's 전체 entry and its Positive/Negative/NAI entries
+    // follow each other as they are edited (the user's request, 2026-10-30).
+    $effect(() => {
+        void value.content
+        const folder = value.folder
+        if (!open || !folder || !externalLoreBooks || !isPresetFolderPart(value.comment)) return
+        const timer = setTimeout(() => untrack(() => {
+            if (externalLoreBooks) syncPresetFolder(externalLoreBooks, folder)
+        }), 400)
+        return () => clearTimeout(timer)
     })
     // Live, unlike the tokens: counting is cheap, and it is read only while open.
     let chars = $derived(countChars(value.content))

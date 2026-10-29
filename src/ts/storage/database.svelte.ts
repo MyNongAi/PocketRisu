@@ -1876,6 +1876,8 @@ export interface loreBook{
     nodeOnlyAuxModel?:boolean
     /** PocketRisu: sent with the illustration request, never to the main model (illustration.ts). */
     nodeOnlyIllustration?:boolean
+    /** PocketRisu, on a "프리셋 X" folder: its 전체 entry and section entries as last made to agree (illustration.ts). */
+    nodeOnlyPresetSync?:{ whole: string, parts: string }
 }
 
 /** Stub kept in `nodeOnlyArchivedCharacters` for a deactivated character. Built by the server (/api/characters/:chaId/archive). */

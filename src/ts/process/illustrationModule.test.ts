@@ -8,6 +8,8 @@ import {
     presetLorebookEntry,
     presetLorebookFolder,
     restoreIllustrationPresetsOnce,
+    syncPresetFolder,
+    syncPresetFolders,
     type IllustrationModuleDb,
 } from './illustrationModule'
 
@@ -44,15 +46,17 @@ describe('the 🎨 illustration module', () => {
     })
 
     // The user's choice (2026-10-28): a folder with one entry per section.
-    it('writes a preset folder of Positive, Negative and NAI entries that never fire', () => {
+    it('writes a preset folder of 전체, Positive, Negative and NAI entries that never fire', () => {
         const entries = presetLorebookFolder('Soft', { positive: 'a, {prompt}', negative: 'bad', nai: 'steps: 20' }, 'F')
         expect(entries.map((e) => [e.mode, e.comment, e.key, e.folder ?? null])).toEqual([
             ['folder', '프리셋 Soft', 'F', null],
+            ['normal', '전체', '', 'F'],
             ['normal', 'Positive', '', 'F'],
             ['normal', 'Negative', '', 'F'],
             ['normal', 'NAI', '', 'F'],
         ])
         expect(entries.every((e) => !e.alwaysActive && !e.selective)).toBe(true)
+        expect(entries[1].content).toBe('[Positive]\na, {prompt}\n\n[Negative]\nbad\n\n[NAI]\nsteps: 20')
         expect(lorebookPresets([{ label: 'm', entries }])).toEqual([
             { name: 'Soft', positive: 'a, {prompt}', negative: 'bad', nai: { steps: 20 }, source: 'm' },
         ])
@@ -82,7 +86,7 @@ describe('restoring the old app-wide presets', () => {
 
         expect(restoreIllustrationPresetsOnce(db, make())).toBe(0)
         expect(module.lorebook!.filter((e) => e.mode === 'folder').map((e) => e.comment)).toEqual(['프리셋 Soft', '프리셋 Ink'])
-        expect(module.lorebook).toHaveLength(8)
+        expect(module.lorebook).toHaveLength(10)
     })
 
     it('skips a name the module already has, and lifts the module to the top', () => {
@@ -122,13 +126,13 @@ describe('one-entry presets of the 🎨 module into folders', () => {
         expect(folderIllustrationPresetsOnce(db, make())).toBe(2)
         const book = module.lorebook!
         expect(book.map((e) => e.comment)).toEqual([
-            '프리셋 Soft', 'Positive', 'Negative', 'NAI', '(폴더로 옮김) 프리셋 Soft',
+            '프리셋 Soft', '전체', 'Positive', 'Negative', 'NAI', '(폴더로 옮김) 프리셋 Soft',
             'story',
-            '프리셋 Light', 'Positive', 'Negative', 'NAI', '(폴더로 옮김) 프리셋 Light',
-            '프리셋 Kept', 'Positive', 'Negative', 'NAI', '프리셋 Kept',
+            '프리셋 Light', '전체', 'Positive', 'Negative', 'NAI', '(폴더로 옮김) 프리셋 Light',
+            '프리셋 Kept', '전체', 'Positive', 'Negative', 'NAI', '프리셋 Kept',
         ])
-        expect(book[5]).toBe(story)
-        expect(book[3].content).toBe('# from sample.png\nsteps: 20')
+        expect(book[6]).toBe(story)
+        expect(book[4].content).toBe('# from sample.png\nsteps: 20')
         const presets = lorebookPresets([{ label: '', entries: book }])
         expect(presets.map((p) => [p.name, p.positive, p.negative, p.nai ?? null])).toEqual([
             ['Soft', 'artist:a, {prompt}', 'lowres', { steps: 20 }],
@@ -147,5 +151,62 @@ describe('one-entry presets of the 🎨 module into folders', () => {
         expect(folderIllustrationPresetsOnce(db, make())).toBe(0)
         expect(illustrationModuleOf(db)).toBeUndefined()
         expect(db.nodeOnlyIllustrationPresetsFoldered).toBe(true)
+    })
+})
+
+// A shared style is one entry, pasted whole into 전체; its sections follow,
+// and editing a section rewrites 전체 (the user's request, 2026-10-30).
+describe('a preset folder\'s 전체 entry and its sections', () => {
+    const folder = () => presetLorebookFolder('Soft', { positive: 'a, {prompt}', negative: 'bad', nai: '# hint' }, 'F')
+    const comments = (book: { comment: string }[]) => book.map((e) => e.comment)
+    const content = (book: { comment: string, content: string }[], name: string) => book.find((e) => e.comment === name)?.content
+
+    it('pasted into 전체, a shared style fills the sections and is read', () => {
+        const book = folder()
+        book[1].content = '[Author]\nartist:x\n[Quality]\nbest quality\n[Negative]\nlowres'
+        // read before the sections are synced: 전체 was edited last
+        expect(lorebookPresets([{ label: '', entries: book }])[0].positive).toBe('artist:x, {prompt}, best quality')
+        expect(syncPresetFolder(book, 'F')).toBe(true)
+        expect(content(book, 'Positive')).toBe('artist:x, {prompt}, best quality')
+        expect(content(book, 'Negative')).toBe('lowres')
+        expect(content(book, 'NAI')).toBe(PRESET_NAI_HINT)
+        expect(syncPresetFolder(book, 'F')).toBe(false)
+        expect(lorebookPresets([{ label: '', entries: book }])[0]).toMatchObject({ positive: 'artist:x, {prompt}, best quality', negative: 'lowres' })
+    })
+
+    it('a section edited rewrites 전체, and is what is read', () => {
+        const book = folder()
+        book.find((e) => e.comment === 'Negative')!.content = 'worse'
+        expect(lorebookPresets([{ label: '', entries: book }])[0].negative).toBe('worse')
+        syncPresetFolder(book, 'F')
+        expect(content(book, '전체')).toBe('[Positive]\na, {prompt}\n\n[Negative]\nworse\n\n[NAI]\n# hint')
+        expect(lorebookPresets([{ label: '', entries: book }])[0].negative).toBe('worse')
+    })
+
+    it('tags alone in 전체 are its Positive', () => {
+        const book = folder()
+        book[1].content = 'artist:y, soft light'
+        syncPresetFolder(book, 'F')
+        expect(content(book, 'Positive')).toBe('artist:y, soft light')
+        expect(content(book, 'Negative')).toBe('bad')
+        expect(lorebookPresets([{ label: '', entries: book }])[0].positive).toBe('artist:y, soft light')
+    })
+
+    it('a folder from before gets its 전체; one with only 전체 gets its sections', () => {
+        const old = folder().filter((e) => e.comment !== '전체').map((e) => ({ ...e, nodeOnlyPresetSync: undefined }))
+        expect(syncPresetFolder(old, 'F')).toBe(true)
+        expect(comments(old)).toEqual(['프리셋 Soft', '전체', 'Positive', 'Negative', 'NAI'])
+        expect(content(old, '전체')).toBe('[Positive]\na, {prompt}\n\n[Negative]\nbad\n\n[NAI]\n# hint')
+
+        const pasted = [folder()[0], { ...folder()[1], content: '[Positive]\nz, {prompt}\n[Negative]\nn' }].map((e) => ({ ...e, nodeOnlyPresetSync: undefined }))
+        syncPresetFolder(pasted, 'F')
+        expect(comments(pasted)).toEqual(['프리셋 Soft', '전체', 'Positive', 'Negative', 'NAI'])
+        expect(content(pasted, 'Positive')).toBe('z, {prompt}')
+    })
+
+    it('leaves folders that are not presets alone', () => {
+        const book = [{ ...folder()[0], comment: 'notes' }, { ...folder()[1], content: 'x' }]
+        expect(syncPresetFolder(book, 'F')).toBe(false)
+        expect(syncPresetFolders(book)).toBe(false)
     })
 })

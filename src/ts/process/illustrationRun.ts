@@ -19,7 +19,7 @@ import { rekeyRequestMark } from '../inputVersions'
 import { v4 } from 'uuid'
 import {
     ensureIllustrationModule, folderIllustrationPresetsOnce, illustrationModuleOf, presetFolderKey,
-    presetLorebookFolder, restoreIllustrationPresetsOnce,
+    presetLorebookFolder, restoreIllustrationPresetsOnce, syncPresetFolder, syncPresetFolders,
 } from './illustrationModule'
 import {
     buildScenePrompt,
@@ -113,6 +113,9 @@ function illustrationModuleMake() {
 export function restoreIllustrationPresets(): void {
     restoreIllustrationPresetsOnce(DBState.db, illustrationModuleMake())
     folderIllustrationPresetsOnce(DBState.db, illustrationModuleMake())
+    // Its folders get their 전체 entry, and agree with it (2026-10-30).
+    const lorebook = illustrationModuleOf(DBState.db)?.lorebook
+    if (lorebook) syncPresetFolders(lorebook)
 }
 
 /** The 🎨 module to write a preset into, made when there is none. */
@@ -148,18 +151,23 @@ export function setPresetNai<K extends keyof NaiParams>(
     if (!place || !book) return false
     const entries = book.entries
     if (place.folder !== undefined) {
-        const nai = entries.find((e) => e?.folder === place.folder && e.mode !== 'folder' && /^(nai|settings)$/i.test((e.comment ?? '').trim()))
-        if (nai) {
-            book.write(entries.map((e) => (e === nai ? { ...e, content: setNaiLine(e.content ?? '', key, value) } : e)))
-            return true
-        }
         if (!entries.some((e) => e?.mode === 'folder' && e.key === place.folder)) return false
-        const last = entries.reduce((at, e, i) => (e?.key === place.folder || e?.folder === place.folder ? i : at), -1)
-        const added: loreBook = {
-            key: '', secondkey: '', insertorder: 100, comment: 'NAI', content: setNaiLine(PRESET_NAI_HINT, key, value),
-            mode: 'normal', alwaysActive: false, selective: false, folder: place.folder,
+        // A 전체 edited last is the preset: into the sections first, then the
+        // value into NAI, then the sections back into 전체.
+        const next = [...entries]
+        syncPresetFolder(next, place.folder)
+        const nai = next.find((e) => e?.folder === place.folder && e.mode !== 'folder' && /^(nai|settings)$/i.test((e.comment ?? '').trim()))
+        if (nai) {
+            next[next.indexOf(nai)] = { ...nai, content: setNaiLine(nai.content ?? '', key, value) }
+        } else {
+            const last = next.reduce((at, e, i) => (e?.key === place.folder || e?.folder === place.folder ? i : at), -1)
+            next.splice(last + 1, 0, {
+                key: '', secondkey: '', insertorder: 100, comment: 'NAI', content: setNaiLine(PRESET_NAI_HINT, key, value),
+                mode: 'normal', alwaysActive: false, selective: false, folder: place.folder,
+            })
         }
-        book.write([...entries.slice(0, last + 1), added, ...entries.slice(last + 1)])
+        syncPresetFolder(next, place.folder)
+        book.write(next)
         return true
     }
     const entry = place.index !== undefined ? entries[place.index] : undefined

@@ -2573,6 +2573,10 @@
         "src/lib/SideBars/LoreBook/LoreBookData.svelte"
       ],
       "requiredMarkers": [
+        { "file": "src/ts/process/illustration.ts", "contains": "export const PRESET_WHOLE_ENTRY = '전체'" },
+        { "file": "src/ts/process/illustrationModule.ts", "contains": "export function syncPresetFolder(entries: loreBook[], folderKey: string): boolean {" },
+        { "file": "src/lib/SideBars/LoreBook/LoreBookData.svelte", "contains": "if (externalLoreBooks) syncPresetFolder(externalLoreBooks, folder)" },
+        { "file": "src/ts/process/illustrationRun.ts", "contains": "if (lorebook) syncPresetFolders(lorebook)" },
         { "file": "src/ts/process/illustration.ts", "contains": "export function assetMaidPreset(entry: PresetLorebookEntry): IllustrationPreset | null {" },
         { "file": "src/ts/process/illustration.ts", "contains": "const assetMaid = preset || folder ? null : assetMaidPreset(entry)" },
         { "file": "src/lib/SideBars/IllustrationSettings.svelte", "contains": "return !!chosen?.assetMaid && presetNai[key] !== undefined" },

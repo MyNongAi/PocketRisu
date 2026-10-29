@@ -7,7 +7,10 @@
 // it once. Found by its marker, so renaming it is fine.
 import type { loreBook } from '../storage/database.svelte'
 import type { RisuModule } from './modules'
-import { lorebookPresets, parsePresetEntry, presetFolderContent, presetSectionsOf, PRESET_NAI_HINT, type PresetSections } from './illustration'
+import {
+    hasPresetSections, lorebookPresets, parsePresetEntry, presetFolderContent, presetPartsText, presetSectionsOf, presetSyncHash,
+    presetWholeEntry, presetWholeLeads, PRESET_NAI_HINT, PRESET_WHOLE_ENTRY, type PresetSections,
+} from './illustration'
 import { recordModuleActivation, seedModuleActivationHistory } from './moduleSort'
 
 /** An entry of the old app-wide preset list. */
@@ -52,21 +55,97 @@ export function presetFolderKey(id: string): string {
     return 'folder:' + id
 }
 
-/**
- * A "프리셋 X" folder (the user's choice, 2026-10-28): the folder, then its
- * Positive, Negative and NAI entries, none ever active in the main prompt.
- */
-export function presetLorebookFolder(name: string, sections: PresetSections, folderKey: string): loreBook[] {
-    const inside = (comment: string, content: string): loreBook => ({
+function presetFolderEntry(comment: string, content: string, folderKey: string): loreBook {
+    return {
         key: '', secondkey: '', insertorder: 100, comment, content,
         mode: 'normal', alwaysActive: false, selective: false, folder: folderKey,
-    })
-    return [
-        { key: folderKey, secondkey: '', insertorder: 100, comment: `프리셋 ${name}`, content: '', mode: 'folder', alwaysActive: false, selective: false },
-        inside('Positive', sections.positive),
-        inside('Negative', sections.negative),
-        inside('NAI', sections.nai),
+    }
+}
+
+/**
+ * A "프리셋 X" folder (the user's choice, 2026-10-28): the folder, then its
+ * 전체 entry (2026-10-30) and its Positive, Negative and NAI entries, none
+ * ever active in the main prompt.
+ */
+export function presetLorebookFolder(name: string, sections: PresetSections, folderKey: string): loreBook[] {
+    const parts = [
+        presetFolderEntry('Positive', sections.positive, folderKey),
+        presetFolderEntry('Negative', sections.negative, folderKey),
+        presetFolderEntry('NAI', sections.nai, folderKey),
     ]
+    const whole = presetPartsText(folderKey, parts)
+    const sync = { whole: presetSyncHash(whole), parts: presetSyncHash(whole) }
+    return [
+        { key: folderKey, secondkey: '', insertorder: 100, comment: `프리셋 ${name}`, content: '', mode: 'folder', alwaysActive: false, selective: false, nodeOnlyPresetSync: sync },
+        presetFolderEntry(PRESET_WHOLE_ENTRY, whole, folderKey),
+        ...parts,
+    ]
+}
+
+const SECTION_ENTRIES = { positive: 'Positive', negative: 'Negative', nai: 'NAI' } as const
+
+/**
+ * Make a "프리셋 X" folder's 전체 entry and its sections agree (the user's
+ * request, 2026-10-30: a shared style is one entry, pasted whole, and editing
+ * either side changes the other). The side edited since they last agreed
+ * wins (presetWholeLeads); tags alone in 전체 are its Positive; a folder
+ * without 전체 gets one from its sections. Changes `entries` in place and
+ * says whether anything changed.
+ */
+export function syncPresetFolder(entries: loreBook[], folderKey: string): boolean {
+    const folder = entries.find((entry) => entry?.mode === 'folder' && entry.key === folderKey)
+    if (!folder || !/^\s*프리셋\s*\S/.test(folder.comment ?? '')) return false
+    const sync = folder.nodeOnlyPresetSync
+    let whole = presetWholeEntry(folderKey, entries)
+    let parts = presetPartsText(folderKey, entries)
+    let changed = false
+    if (!whole) {
+        whole = presetFolderEntry(PRESET_WHOLE_ENTRY, parts, folderKey)
+        entries.splice(entries.indexOf(folder) + 1, 0, whole)
+        changed = true
+    } else if (presetWholeLeads(sync, whole.content ?? '', parts)) {
+        const text = whole.content ?? ''
+        const edited = !sync || presetSyncHash(text) !== sync.whole || presetSyncHash(parts) !== sync.parts
+        const sections: Partial<PresetSections> | null = !edited ? null
+            : hasPresetSections(text) ? presetSectionsOf(text)
+            : text.trim() ? { positive: text.trim() } : null
+        for (const [key, comment] of Object.entries(SECTION_ENTRIES)) {
+            let value = sections?.[key as keyof PresetSections]
+            if (value === undefined) continue
+            // A style shared without [NAI] leaves the hint of what NAI can hold.
+            if (key === 'nai' && !value.trim()) value = PRESET_NAI_HINT
+            const entry = entries.find((e) => e?.folder === folderKey && e.mode !== 'folder' && (e.comment ?? '').trim().toLowerCase() === comment.toLowerCase())
+            if (entry) {
+                if (entry.content !== value) {
+                    entry.content = value
+                    changed = true
+                }
+            } else {
+                const last = entries.reduce((at, e, i) => (e?.key === folderKey || e?.folder === folderKey ? i : at), -1)
+                entries.splice(last + 1, 0, presetFolderEntry(comment, value, folderKey))
+                changed = true
+            }
+        }
+        parts = presetPartsText(folderKey, entries)
+    } else if (whole.content !== parts) {
+        whole.content = parts
+        changed = true
+    }
+    const next = { whole: presetSyncHash(whole.content ?? ''), parts: presetSyncHash(parts) }
+    if (sync?.whole !== next.whole || sync?.parts !== next.parts) {
+        folder.nodeOnlyPresetSync = next
+        changed = true
+    }
+    return changed
+}
+
+/** Every "프리셋 X" folder of a lorebook made to agree (syncPresetFolder); whether any changed. */
+export function syncPresetFolders(entries: loreBook[]): boolean {
+    let changed = false
+    for (const key of entries.filter((entry) => entry?.mode === 'folder').map((entry) => entry.key)) {
+        if (syncPresetFolder(entries, key)) changed = true
+    }
+    return changed
 }
 
 /** An old app-wide preset as a folder's entries; {prompt} stays where it was (none: the scene goes first). */

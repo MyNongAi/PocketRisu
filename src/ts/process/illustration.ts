@@ -489,15 +489,76 @@ export interface PresetLorebookEntry {
     mode?: string
     key?: string
     folder?: string
+    nodeOnlyPresetSync?: PresetSync
 }
 
-/** A "프리셋 X" folder's entries named for sections (Positive, Negative, NAI…), as one preset text. */
-export function presetFolderContent(folderKey: string, entries: readonly (PresetLorebookEntry | null | undefined)[]): string {
+/** A folder's 전체 entry and section entries as they last agreed (presetSyncHash of each). */
+export interface PresetSync {
+    whole: string
+    parts: string
+}
+
+/**
+ * The entry of a "프리셋 X" folder holding the whole preset in one text, the
+ * way styles are shared (the user's request, 2026-10-30).
+ */
+export const PRESET_WHOLE_ENTRY = '전체'
+
+/** An entry a "프리셋 X" folder reads: 전체 or a section (Positive, Negative, NAI…). */
+export function isPresetFolderPart(comment: string | undefined): boolean {
+    const name = (comment ?? '').trim()
+    return name === PRESET_WHOLE_ENTRY || PRESET_SECTIONS.includes(name.toLowerCase())
+}
+
+/** A folder's entries named for sections, as one preset text. */
+export function presetPartsText(folderKey: string, entries: readonly (PresetLorebookEntry | null | undefined)[]): string {
     return entries
         .filter((entry) => !!entry && entry.folder === folderKey && entry.mode !== 'folder'
             && PRESET_SECTIONS.includes((entry.comment ?? '').trim().toLowerCase()))
         .map((entry) => `[${entry!.comment!.trim()}]\n${entry!.content ?? ''}`)
         .join('\n\n')
+}
+
+export function presetWholeEntry<E extends PresetLorebookEntry>(folderKey: string, entries: readonly (E | null | undefined)[]): E | undefined {
+    return entries.find((entry): entry is E => !!entry && entry.folder === folderKey && entry.mode !== 'folder'
+        && (entry.comment ?? '').trim() === PRESET_WHOLE_ENTRY)
+}
+
+/** A short fingerprint of a preset text (FNV-1a), to tell which side was edited. */
+export function presetSyncHash(text: string): string {
+    let hash = 0x811c9dc5
+    for (let i = 0; i < text.length; i++) {
+        hash ^= text.charCodeAt(i)
+        hash = Math.imul(hash, 0x01000193)
+    }
+    return (hash >>> 0).toString(16)
+}
+
+/** Whether a text has preset sections ([Positive], [Author]…), not tags alone. */
+export function hasPresetSections(text: string): boolean {
+    return /\[(Positive|Negative|Author|Quality|NAI|Settings)\]/i.test(text ?? '')
+}
+
+/**
+ * Whether a folder's 전체 entry leads its sections: unless only the sections
+ * were edited since the two last agreed. A side left empty never leads.
+ */
+export function presetWholeLeads(sync: PresetSync | undefined, whole: string, parts: string): boolean {
+    if (!parts.trim()) return true
+    if (!whole.trim()) return false
+    const wholeEdited = !sync || presetSyncHash(whole) !== sync.whole
+    const partsEdited = !sync || presetSyncHash(parts) !== sync.parts
+    return !(partsEdited && !wholeEdited)
+}
+
+/** A "프리셋 X" folder as one preset text: its 전체 entry or its sections, whichever leads. */
+export function presetFolderContent(folderKey: string, entries: readonly (PresetLorebookEntry | null | undefined)[]): string {
+    const parts = presetPartsText(folderKey, entries)
+    const whole = presetWholeEntry(folderKey, entries)?.content
+    if (whole === undefined) return parts
+    const folder = entries.find((entry) => entry?.mode === 'folder' && entry.key === folderKey)
+    // Tags alone in 전체 are its Positive, which the sync wrote into the sections.
+    return presetWholeLeads(folder?.nodeOnlyPresetSync, whole, parts) && hasPresetSections(whole) ? whole : parts
 }
 
 /** The lorebook entry the Asset Maid plugin keeps a bot's data in. */
