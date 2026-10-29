@@ -94,6 +94,24 @@ export function moduleLinks(
     return links
 }
 
+/**
+ * A module linked to the bot (the user's report, 2026-10-30: the new version
+ * of a deleted asset module was linked, and the bot's chain stayed red): the
+ * ids of its own modules that no longer exist go too, so the chain shows the
+ * pairs it has now. True when any went.
+ */
+export function dropMissingBotModules(
+    character: { modules?: string[] } | null | undefined,
+    modules: readonly ({ id?: string } | null | undefined)[],
+): boolean {
+    if (!character?.modules?.length) return false
+    const existing = new Set(modules.map((module) => module?.id).filter(Boolean))
+    const kept = character.modules.filter((id) => existing.has(id))
+    if (kept.length === character.modules.length) return false
+    character.modules = kept
+    return true
+}
+
 /** The bot's own modules that still exist, in its order (its menu's "연결된 모듈 찾기"). */
 export function modulesOfBot<M extends { id: string }>(
     character: PairCharacter | null | undefined,

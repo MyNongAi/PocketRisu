@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { backfillModulePairs, botsOfModule, characterModuleLink, folderBotLinkChange, charactersByPairedModule, forgetModulePair, moduleLinks, modulesOfBot, recordModulePair } from './pairedModules'
+import { backfillModulePairs, botsOfModule, characterModuleLink, dropMissingBotModules, folderBotLinkChange, charactersByPairedModule, forgetModulePair, moduleLinks, modulesOfBot, recordModulePair } from './pairedModules'
 
 describe('charactersByPairedModule', () => {
     test('maps each module to the bots that have it as their own module', () => {
@@ -72,6 +72,20 @@ describe('chain states', () => {
         expect(backfillModulePairs(modules, [{ chaId: 'b', modules: ['m2', 'missing'] }])).toBe(true)
         expect(modules[1].nodeOnlyPairedCharacterIds).toEqual(['b'])
         expect(backfillModulePairs(modules, [{ chaId: 'b', modules: ['m2'] }])).toBe(false)
+    })
+})
+
+describe('linking a module again', () => {
+    // The user's report, 2026-10-30: the new version of a deleted asset
+    // module was linked and the bot's chain stayed red.
+    test('drops the ids of deleted modules, so the chain turns green', () => {
+        const modules = [{ id: 'new' }, { id: 'lore' }]
+        const bot = { chaId: 'b', modules: ['old', 'lore', 'new'] }
+        expect(characterModuleLink(bot, new Set(modules.map((m) => m.id)))).toBe('broken')
+        expect(dropMissingBotModules(bot, modules)).toBe(true)
+        expect(bot.modules).toEqual(['lore', 'new'])
+        expect(characterModuleLink(bot, new Set(modules.map((m) => m.id)))).toBe('linked')
+        expect(dropMissingBotModules(bot, modules)).toBe(false)
     })
 })
 

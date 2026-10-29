@@ -11,7 +11,7 @@
 // a link whose file changed since is downloaded again (compareShareModules).
 // The same pairing runs for a Proton link clicked in a bot's creator notes
 // (openBotNotesProtonLink), always through the browser.
-import { recordModulePair } from './gui/pairedModules'
+import { dropMissingBotModules, recordModulePair } from './gui/pairedModules'
 import { language } from 'src/lang'
 import { alertSelect, notifyError, notifySuccess } from './alert'
 import { runImportTask, type ImportProgressReporter } from './importProgress'
@@ -241,6 +241,7 @@ function pairWithBots(moduleIds: readonly string[], characters: readonly { chaId
     for (const character of characters) {
         paired += pairModulesWithCharacter(character, moduleIds)
         recordModulePair(getDatabase().modules, moduleIds, character.chaId)
+        if (moduleIds.length > 0) dropMissingBotModules(character, getDatabase().modules)
     }
     if (paired > 0) {
         syncLinkedFolders()

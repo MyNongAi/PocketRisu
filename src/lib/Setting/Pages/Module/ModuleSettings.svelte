@@ -35,7 +35,7 @@
     import { FileDropSurface } from "src/ts/gui/fileDropSurface.svelte";
     import FileDropIndicator from "src/lib/UI/GUI/FileDropIndicator.svelte";
     import PairedModuleMark from "src/lib/UI/GUI/PairedModuleMark.svelte";
-    import { folderBotLinkChange, forgetModulePair, moduleLinks, recordModulePair } from "src/ts/gui/pairedModules";
+    import { dropMissingBotModules, folderBotLinkChange, forgetModulePair, moduleLinks, recordModulePair } from "src/ts/gui/pairedModules";
     let tempModule:RisuModule = $state({
         name: '',
         description: '',
@@ -246,6 +246,7 @@
         } else {
             character.modules = [...current, rmodule.id]
             recordModulePair(DBState.db.modules, [rmodule.id], character.chaId)
+            dropMissingBotModules(character, DBState.db.modules)
             void wakeModules([rmodule.id])
             notifySuccess(language.moduleBotLinked.replace('{}', character.name || 'Unnamed'))
         }
@@ -276,6 +277,7 @@
             return
         }
         recordModulePair(DBState.db.modules, change.linked, character.chaId)
+        dropMissingBotModules(character, DBState.db.modules)
         for (const id of change.linked) rememberActivation(id)
         void wakeModules(change.linked)
         notifySuccess(language.moduleFolderBotLinked.replace('{}', name).replace('{n}', String(change.linked.length)))

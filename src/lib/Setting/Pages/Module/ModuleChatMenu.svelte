@@ -23,7 +23,7 @@
     import { listTitleColor } from "src/ts/gui/titleColors";
     import { restoreIllustrationPresets } from "src/ts/process/illustrationRun";
     import PairedModuleMark from "src/lib/UI/GUI/PairedModuleMark.svelte";
-    import { forgetModulePair, moduleLinks, recordModulePair } from "src/ts/gui/pairedModules";
+    import { dropMissingBotModules, forgetModulePair, moduleLinks, recordModulePair } from "src/ts/gui/pairedModules";
     import { syncFavoriteModules, syncLinkedFolders } from "src/ts/process/modules";
     import { isColdModule, wakeModules } from "src/ts/process/moduleCold.svelte";
     interface Props {
@@ -164,6 +164,7 @@
         else {
             character.modules.push(moduleId)
             recordModulePair(DBState.db.modules, [moduleId], character.chaId)
+            dropMissingBotModules(character, DBState.db.modules)
         }
         // Gathered first, so 최근순 lifts the folder the module ends up in.
         syncLinkedFolders()
