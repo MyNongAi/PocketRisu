@@ -20,6 +20,7 @@ import {
     swipeCount,
     unseenSwipeIsShort,
     wrapSwipeIndex,
+    writeShownSwipe,
     type SwipeMessage,
 } from './chatSwipes'
 
@@ -164,6 +165,26 @@ describe('showSwipe', () => {
         expect(showSwipe(message, 0.5)).toBe(false)
         expect(showSwipe(char('a'), 0)).toBe(false)
         expect(message).toMatchObject({ swipeId: 0, data: 'a' })
+    })
+})
+
+describe('writeShownSwipe', () => {
+    it('rewrites the shown page in place, so moving off it and back keeps the text', () => {
+        const message = char('b', { swipes: ['a', 'b'], swipeId: 1 })
+        writeShownSwipe(message, 'b<!--mark-->')
+        expect(message).toMatchObject({ data: 'b<!--mark-->', swipes: ['a', 'b<!--mark-->'], swipeId: 1 })
+        stepSwipe(message, -1)
+        stepSwipe(message, 1)
+        expect(message.data).toBe('b<!--mark-->')
+    })
+
+    it('only sets the text of a message without pages', () => {
+        const message = char('a')
+        writeShownSwipe(message, 'z')
+        expect(message).toEqual({ role: 'char', data: 'z' })
+        const broken = char('a', { swipes: ['a'], swipeId: 3 })
+        writeShownSwipe(broken, 'z')
+        expect(broken.swipes).toEqual(['a'])
     })
 })
 

@@ -12,11 +12,15 @@
 -- auxiliary model, the main model (in its next reply) or the module's own
 -- pool, to pick one or skip.
 --
--- Everything lives in chat state: the run (level, hit points, deck) in
--- cb_run, the fight in cb_battle, a fight waiting to start in cb_pending.
+-- Everything lives in hidden marks on the messages, not in chat variables:
+-- the fight on the message that started it, the run (level, hit points,
+-- deck) on the message whose fight last changed it. A reroll, a deleted
+-- message or another swipe takes its marks along, so the numbers go back to
+-- what the chat still holds. Chat state keeps only where the fight was last
+-- seen (cb_live), to find it without reading the whole chat.
 
 local CB = {}
-CB.VERSION = '0.2.0'
+CB.VERSION = '0.3.0'
 
 ------------------------------------------------------------------------------
 -- Small helpers
@@ -343,27 +347,125 @@ function CB.newRun(seed)
     return run
 end
 
+------------------------------------------------------------------------------
+-- State in the messages
+------------------------------------------------------------------------------
+
+-- A mark is an HTML comment at the end of a message, invisible wherever this
+-- module does not run:
+--   <!--cb:b:…-->  the fight this message holds: waiting to start, going on,
+--                  or its end screen until that is closed
+--   <!--cb:r:…-->  the run after this message's fight
+-- The body is JSON with every character that could end the comment, start a
+-- template ({{…}}) or need escaping inside a JSON string written as %XX, so
+-- a mark reads the same in a message's text and in getChatMain's JSON.
+CB.MARK_PATTERN = '<!%-%-cb:(%a):([^>]*)%-%->'
+CB.ANY_MARK_PATTERN = '\n?<!%-%-cb:[^>]*%-%->'
+
+function CB.packMark(kind, value)
+    local body = json.encode(value):gsub('[%%%-<>{}"\\]', function(c) return string.format('%%%02X', c:byte()) end)
+    return '<!--cb:' .. kind .. ':' .. body .. '-->'
+end
+
+function CB.unpackMark(body)
+    local text = tostring(body or ''):gsub('%%(%x%x)', function(hex) return string.char(tonumber(hex, 16)) end)
+    local ok, value = pcall(json.decode, text)
+    if ok and type(value) == 'table' then return value end
+    return nil
+end
+
+--- The value of the last mark of this kind in a text, or nil.
+function CB.readMark(text, kind)
+    if type(text) ~= 'string' then return nil end
+    local found = nil
+    for k, body in text:gmatch(CB.MARK_PATTERN) do
+        if k == kind then found = body end
+    end
+    return found and CB.unpackMark(found) or nil
+end
+
+--- The text with its marks of this kind replaced by one holding value, or
+--- with none when value is nil.
+function CB.writeMark(text, kind, value)
+    text = tostring(text or ''):gsub('\n?<!%-%-cb:' .. kind .. ':[^>]*%-%->', ''):gsub('%s+$', '')
+    if value == nil then return text end
+    return text .. '\n' .. CB.packMark(kind, value)
+end
+
+--- A message as getChatMain gives it (JSON text): enough to look for marks
+--- without decoding every message.
+local function rawMessage(tid, index)
+    local ok, raw = pcall(getChatMain, tid, index)
+    if ok and type(raw) == 'string' then return raw end
+    return nil
+end
+
+local function messageText(tid, index)
+    local ok, message = pcall(getChat, tid, index)
+    if ok and type(message) == 'table' and type(message.data) == 'string' then return message.data end
+    return nil
+end
+
+--- The run: the newest r mark in the chat, or a new run when there is none
+--- (0.2.0 kept it in chat state; that is the start for its chats).
 function CB.loadRun(tid)
-    local run = tableState(tid, 'cb_run')
-    if not run or type(run.deck) ~= 'table' then run = CB.newRun() end
-    return run
+    for i = getChatLength(tid) - 1, 0, -1 do
+        local raw = rawMessage(tid, i)
+        if raw and raw:find('<!--cb:r:', 1, true) then
+            local run = CB.readMark(raw, 'r')
+            if run and type(run.deck) == 'table' then return run end
+        end
+    end
+    local old = tableState(tid, 'cb_run')
+    if old and type(old.deck) == 'table' then return old end
+    return CB.newRun()
+end
+
+--- The fight and the index of its message, or nil. The last message is
+--- read first (given as lastText when the caller has it), then the message
+--- the fight was last seen on; deep also reads the whole chat back from the
+--- end when that one no longer holds it (a message before it was deleted).
+function CB.findFight(tid, deep, lastText)
+    local len = getChatLength(tid)
+    if len == 0 then return nil end
+    local b = CB.readMark(lastText or rawMessage(tid, len - 1), 'b')
+    if b then return b, len - 1 end
+    local live = tableState(tid, 'cb_live')
+    if not live then return nil end
+    local at = tonumber(live.at)
+    if at and at >= 0 and at < len - 1 then
+        b = CB.readMark(rawMessage(tid, at), 'b')
+        if b and b.id == live.id then return b, at end
+    end
+    if not deep then return nil end
+    for i = len - 2, 0, -1 do
+        local raw = rawMessage(tid, i)
+        if raw and raw:find('<!--cb:b:', 1, true) then
+            b = CB.readMark(raw, 'b')
+            if b then return b, i end
+        end
+    end
+    return nil
+end
+
+--- Put the fight on message at (nil takes it off) and remember where.
+function CB.saveFight(tid, at, b)
+    local text = messageText(tid, at)
+    if not text then return end
+    setChat(tid, at, CB.writeMark(text, 'b', b))
+    setState(tid, 'cb_live', b and { id = b.id, at = at } or false)
 end
 
 ------------------------------------------------------------------------------
--- The battle tag and marks
+-- The battle tag
 ------------------------------------------------------------------------------
 
--- The tag the main model ends a reply with when a fight starts, and the
--- hidden mark it becomes (an HTML comment, invisible wherever this module
--- does not run).
+-- The tag the main model ends a reply with when a fight starts. It becomes
+-- the fight's b mark, waiting to start.
 CB.TAG_PATTERN = '<[Bb][Aa][Tt][Tt][Ll][Ee]%f[%s/>]([^>]*)>'
 CB.CLOSE_TAG_PATTERN = '</[Bb][Aa][Tt][Tt][Ll][Ee]>'
-CB.START_PATTERN = '<!%-%-cb:s:(%w+)%-%->'
-CB.ANY_MARK_PATTERN = '\n?<!%-%-cb:[%w:]+%-%->'
 CB.CARDS_PATTERN = '<cards>(.-)</cards>'
 CB.LOG_PATTERN = '<battle%-log>(.-)</battle%-log>'
-
-function CB.startMark(id) return '<!--cb:s:' .. id .. '-->' end
 
 local function attributes(text)
     local out = {}
@@ -372,23 +474,25 @@ local function attributes(text)
     return out
 end
 
-local function newId(run)
-    return string.format('%x%x', CB.rand(run, 65535), CB.rand(run, 65535))
+-- Not from the run's generator: a fight told again after a reroll starts
+-- from the same run, and must not take the old fight's id.
+local function newId()
+    return string.format('%04x%04x', math.random(0, 65535), math.random(0, 65535))
 end
 
---- The text with its last battle tag turned into a start mark (other tags
---- dropped), and that fight: { id, name, tier }; or the text as it was.
-function CB.takeBattleTag(text, run)
+--- The text without battle tags, and the fight its last one asks for (to
+--- start: { id, name, tier, phase = 'pending' }); or the text as it was.
+function CB.takeBattleTag(text)
     if type(text) ~= 'string' or not text:find(CB.TAG_PATTERN) then return text, nil end
     local found = nil
     for attrs in text:gmatch(CB.TAG_PATTERN) do found = attrs end
     local attrs = attributes(found)
     local tier = tostring(attrs.tier or ''):lower()
     if not CB.TIER_LABEL[tier] then tier = 'normal' end
-    local spec = { id = newId(run), name = CB.clip(CB.trim(attrs.name), 24), tier = tier }
+    local spec = { id = newId(), name = CB.clip(CB.trim(attrs.name), 24), tier = tier, phase = 'pending' }
     local cleaned = text:gsub('\n?' .. CB.TAG_PATTERN, ''):gsub('\n?' .. CB.CLOSE_TAG_PATTERN, '')
     cleaned = cleaned:gsub('%s+$', '')
-    return cleaned .. '\n' .. CB.startMark(spec.id), spec
+    return cleaned, spec
 end
 
 --- The text without a <cards> block, and the block's body.
@@ -410,13 +514,14 @@ end
 -- The fight
 ------------------------------------------------------------------------------
 
-function CB.drawCards(run, b, n)
+-- A fight draws from its own generator (b.seed), started from the run's.
+function CB.drawCards(b, n)
     for _ = 1, n do
         if #b.hand >= 10 then return end
         if #b.draw == 0 then
             if #b.discard == 0 then return end
             b.draw, b.discard = b.discard, {}
-            CB.shuffle(run, b.draw)
+            CB.shuffle(b, b.draw)
         end
         b.hand[#b.hand + 1] = table.remove(b.draw)
     end
@@ -441,9 +546,10 @@ function CB.hit(target, amount)
 end
 
 function CB.newBattle(run, spec, settings)
+    local rng = { seed = CB.rand(run, 2147483646) }
     local tier = CB.TIER_LABEL[spec.tier] and spec.tier or 'normal'
     local list = CB.ENEMIES[tier]
-    local template = list[CB.rand(run, #list)]
+    local template = list[CB.rand(rng, #list)]
     local hp = math.floor(template.hp * (1 + 0.2 * (run.level - 1)))
     if settings.healEach then run.hp = run.maxHp end
     local cards = {}
@@ -453,9 +559,9 @@ function CB.newBattle(run, spec, settings)
     end
     local draw = {}
     for i = 1, #cards do draw[i] = i end
-    CB.shuffle(run, draw)
+    CB.shuffle(rng, draw)
     local b = {
-        id = spec.id, at = spec.at,
+        id = spec.id, level = run.level,
         name = (spec.name and spec.name ~= '') and spec.name or template.name,
         tier = tier, phase = 'fight', open = true, turn = 1,
         energy = 3, maxEnergy = 3,
@@ -463,7 +569,7 @@ function CB.newBattle(run, spec, settings)
         hp = run.hp, maxHp = run.maxHp, block = 0, str = 0, weak = 0, vuln = 0,
         enemy = {
             hp = hp, maxHp = hp, block = 0, str = 0, weak = 0, vuln = 0,
-            moves = CB.copy(template.moves), step = CB.rand(run, #template.moves), bonus = run.level - 1,
+            moves = CB.copy(template.moves), step = CB.rand(rng, #template.moves), bonus = run.level - 1,
         },
         log = {}, played = {}, note = '',
         -- What the next drawing animates (cleared at the next tap, so a
@@ -471,7 +577,8 @@ function CB.newBattle(run, spec, settings)
         -- dealt, a hit on the enemy or the player and the number it shows.
         anim = { open = true, deal = true },
     }
-    CB.drawCards(run, b, 5)
+    b.seed = rng.seed
+    CB.drawCards(b, 5)
     return b
 end
 
@@ -490,7 +597,7 @@ function CB.intentText(b)
 end
 
 --- Play hand card k. False (with a note) when it cannot be played.
-function CB.play(run, b, k)
+function CB.play(b, k)
     local id = b.hand[k]
     local card = id and b.cards[id]
     if not card then return false end
@@ -531,7 +638,7 @@ function CB.play(run, b, k)
     b.anim = anim
     if fx.energy then b.energy = b.energy + fx.energy parts[#parts + 1] = '에너지 +' .. fx.energy end
     b.discard[#b.discard + 1] = id
-    if fx.draw then CB.drawCards(run, b, fx.draw) parts[#parts + 1] = fx.draw .. '장 뽑음' end
+    if fx.draw then CB.drawCards(b, fx.draw) parts[#parts + 1] = fx.draw .. '장 뽑음' end
     local what = table.concat(parts, ', ')
     b.played[#b.played + 1] = card.name .. '(' .. what .. ')'
     b.note = card.name .. ' → ' .. what
@@ -576,7 +683,7 @@ end
 -- the player's weak and the enemy's vulnerable on the player's turn, the
 -- enemy's weak and the player's vulnerable on the enemy's (vulnerable the
 -- enemy put on the player this turn waits for its next one).
-function CB.endTurn(run, b)
+function CB.endTurn(b)
     for _, id in ipairs(b.hand) do b.discard[#b.discard + 1] = id end
     b.hand, b.selected = {}, nil
     if b.weak > 0 then b.weak = b.weak - 1 end
@@ -599,7 +706,7 @@ function CB.endTurn(run, b)
     b.turn = b.turn + 1
     b.block = 0
     b.energy = b.maxEnergy
-    CB.drawCards(run, b, 5)
+    CB.drawCards(b, 5)
 end
 
 CB.OUTCOME_LABEL = { won = '승리', lost = '패배', fled = '도망' }
@@ -625,7 +732,9 @@ function CB.settle(run, b)
             b.levelUp = true
         end
     end
-    b.hp, b.maxHp = run.hp, run.maxHp
+    -- The run's generator goes on from where the fight's stopped.
+    run.seed = b.seed or run.seed
+    b.hp, b.maxHp, b.level = run.hp, run.maxHp, run.level
 end
 
 --- The block the next reply reads.
@@ -697,18 +806,19 @@ local function ask(tid, prompt)
     return response.result
 end
 
---- The note asking the main model for cards in its next reply.
-function CB.mainCardNote(run, slots, user)
-    return '[Card Battle] ' .. user .. ' reached level ' .. run.level .. '. After the story in this reply, at the very end, write the three new cards '
+--- The note asking the main model for cards in its next reply (the reward
+--- keeps the level and the deck's names from the fight's end).
+function CB.mainCardNote(reward, user)
+    return '[Card Battle] ' .. user .. ' reached level ' .. tostring(reward.level or '') .. '. After the story in this reply, at the very end, write the three new cards '
         .. 'as a JSON array between <cards> and </cards>; it is hidden from the reader.\n' .. CB.CARD_RULES
-        .. '\n' .. CB.slotText(slots) .. '\nCards the player already has: ' .. CB.deckNames(run)
+        .. '\n' .. CB.slotText(reward.slots) .. '\nCards the player already has: ' .. tostring(reward.deck or '')
 end
 
 ------------------------------------------------------------------------------
 -- The request
 ------------------------------------------------------------------------------
 
-function CB.instruction(b, run, settings, user)
+function CB.instruction(b, settings, user)
     local lines = {
         '[Card Battle] Fights in this story are played as a card game outside the text. When ' .. user .. ' is about to fight (an enemy attacks, a duel is accepted, combat cannot be avoided), stop the reply at the moment the fight begins and end it with one tag on its own line:',
         '<battle tier="normal" name="enemy name">',
@@ -719,7 +829,7 @@ function CB.instruction(b, run, settings, user)
         lines[#lines + 1] = 'A fight against ' .. b.name .. ' is going on in the game right now: do not tell how it ends.'
     end
     if b and type(b.reward) == 'table' and b.reward.waiting and settings.cards == 'main' then
-        lines[#lines + 1] = CB.mainCardNote(run, b.reward.slots, user)
+        lines[#lines + 1] = CB.mainCardNote(b.reward, user)
     end
     return table.concat(lines, '\n')
 end
@@ -732,7 +842,7 @@ listenEdit('editRequest', function(tid, request, meta)
         end
     end
     local settings = CB.settings(tid)
-    local note = CB.instruction(tableState(tid, 'cb_battle'), CB.loadRun(tid), settings, getPersonaName(tid) or 'the player')
+    local note = CB.instruction(CB.findFight(tid), settings, getPersonaName(tid) or 'the player')
     local at = #request + 1
     for i = #request, 1, -1 do
         if type(request[i]) == 'table' and request[i].role == 'user' then at = i break end
@@ -927,9 +1037,9 @@ local function float(text, good)
     return '<div class="cbx-float' .. (good and ' cbx-good' or '') .. '">' .. escapeHtml(text) .. '</div>'
 end
 
-function CB.fightView(b, run, user)
+function CB.fightView(b, user)
     local e, anim = b.enemy, b.anim or {}
-    local out = { header('<span class="cbx-turn">⚔️ ' .. b.turn .. '턴</span> · Lv.' .. run.level,
+    local out = { header('<span class="cbx-turn">⚔️ ' .. b.turn .. '턴</span> · Lv.' .. (b.level or 1),
         '<span risu-btn="cb|deck" class="cbx-ic">🂠 ' .. #b.cards .. '</span><span risu-btn="cb|flee" class="cbx-ic">💨 도망</span>') }
     out[#out + 1] = '<div class="cbx-arena cbx-' .. b.tier .. '">'
         .. '<div class="cbx-intentrow"><div class="cbx-intent">' .. CB.intentText(b) .. '</div></div>'
@@ -984,12 +1094,12 @@ function CB.deckView(b)
         .. '<div style="display:flex;margin-top:14px"><span risu-btn="cb|back" class="cbx-btn cbx-dark" style="flex:1">돌아가기</span></div>')
 end
 
-function CB.endView(b, run, settings)
+function CB.endView(b)
     local title = ({ won = '🏆 승리', lost = '💀 패배', fled = '💨 도망' })[b.phase]
     local out = { header(escapeHtml(b.name) .. ' · ' .. CB.TIER_LABEL[b.tier]) }
     out[#out + 1] = '<div class="cbx-title">' .. title .. '</div>'
-    out[#out + 1] = '<div class="cbx-sub">' .. b.turn .. '턴 · 체력 ' .. run.hp .. ' / ' .. run.maxHp
-        .. (b.levelUp and ('<span class="cbx-lvl">LEVEL UP · Lv.' .. run.level .. '</span>') or '') .. '</div>'
+    out[#out + 1] = '<div class="cbx-sub">' .. b.turn .. '턴 · 체력 ' .. b.hp .. ' / ' .. b.maxHp
+        .. (b.levelUp and ('<span class="cbx-lvl">LEVEL UP · Lv.' .. (b.level or 1) .. '</span>') or '') .. '</div>'
     local reward = b.reward
     if type(reward) == 'table' and reward.choices then
         local faces = {}
@@ -1009,7 +1119,7 @@ function CB.endView(b, run, settings)
         out[#out + 1] = '<div class="cbx-note" style="margin-top:16px">다음 답에서 메인 모델이 새 카드 3장을 씁니다.<br>창을 닫고 보내기를 누르세요.</div>'
         out[#out + 1] = '<div style="display:flex"><span risu-btn="cb|close" class="cbx-btn cbx-gold" style="flex:1">닫기</span></div>'
     else
-        out[#out + 1] = '<div class="cbx-note" style="margin-top:16px">전투 기록을 마지막 메시지에 붙였습니다.<br>창을 닫고 보내기를 누르면 이야기가 이어집니다.</div>'
+        out[#out + 1] = '<div class="cbx-note" style="margin-top:16px">전투 기록을 이 전투의 메시지에 붙였습니다.<br>창을 닫고 보내기를 누르면 이야기가 이어집니다.</div>'
         out[#out + 1] = '<div style="display:flex"><span risu-btn="cb|done" class="cbx-btn cbx-gold" style="flex:1">닫기</span></div>'
     end
     return frame(table.concat(out), { open = true }, 'cbx-' .. b.phase)
@@ -1054,23 +1164,22 @@ function CB.logCard(body)
 end
 
 --- What is still to see of the fight on the chat's last message.
-function CB.lastExtras(tid, text, b, run, settings)
-    local pending = tableState(tid, 'cb_pending')
-    if pending then return startCard(pending, 'start') end
+function CB.lastExtras(tid, text, b)
+    if b and b.phase == 'pending' then return startCard(b, 'start') end
     -- A tag nobody turned into a fight (written by hand, or the module was
     -- off when the reply came): start it from here.
     if type(text) == 'string' and text:find(CB.TAG_PATTERN) then
-        local _, spec = CB.takeBattleTag(text, { seed = 1 })
+        local _, spec = CB.takeBattleTag(text)
         if spec then return startCard(spec, 'tag') end
     end
-    if not b or b.done then return '' end
+    if not b then return '' end
     local user = getPersonaName(tid) or ''
     if b.open then
         if b.phase == 'fight' then
             if b.view == 'deck' then return CB.deckView(b) end
-            return CB.fightView(b, run, user)
+            return CB.fightView(b, user)
         end
-        return CB.endView(b, run, settings)
+        return CB.endView(b)
     end
     if b.phase == 'fight' then return pill('open', '⚔️ 전투로 돌아가기 · ' .. escapeHtml(b.name)) end
     if type(b.reward) == 'table' and b.reward.choices then return pill('open', '🎁 새 카드 고르기') end
@@ -1091,14 +1200,13 @@ listenEdit('editDisplay', function(tid, text, meta)
     local isLast = index == getChatLength(tid) - 1
     if not isLast then
         clean = clean:gsub('\n?' .. CB.TAG_PATTERN, '')
-        local id = text:match(CB.START_PATTERN)
-        local b = id and tableState(tid, 'cb_battle') or nil
-        if b and b.id == id and b.phase == 'fight' then
+        local b = CB.readMark(text, 'b')
+        if b and b.phase == 'fight' then
             clean = clean .. '\n\n' .. pill('open', '⚔️ ' .. escapeHtml(b.name) .. ' · 전투 중')
         end
         return clean
     end
-    local extra = CB.lastExtras(tid, text, tableState(tid, 'cb_battle'), CB.loadRun(tid), CB.settings(tid))
+    local extra = CB.lastExtras(tid, text, CB.findFight(tid, false, text))
     clean = clean:gsub('\n?' .. CB.TAG_PATTERN, '')
     if extra ~= '' then clean = clean .. '\n\n' .. extra end
     return clean
@@ -1108,74 +1216,77 @@ end)
 -- Starting, ending
 ------------------------------------------------------------------------------
 
-local function lastIndex(tid)
-    return getChatLength(tid) - 1
-end
-
-function CB.begin(tid, run, spec, settings)
-    local b = CB.newBattle(run, spec, settings)
-    setState(tid, 'cb_pending', false)
-    setState(tid, 'cb_battle', b)
-    setState(tid, 'cb_run', run)
+--- Start the fight spec on message at, from the run as the chat holds it.
+function CB.begin(tid, at, spec, settings)
+    local b = CB.newBattle(CB.loadRun(tid), spec, settings)
+    CB.saveFight(tid, at, b)
     return b
 end
 
---- After the last move: settle the run, put the log on the last message,
---- and on a level up get three new cards (or wait for the main model's).
-function CB.finish(tid, run, b, settings)
+--- After the last move: settle the run and put it, the log and the fight's
+--- end screen on the fight's message; on a level up get three new cards (or
+--- wait for the main model's).
+function CB.finish(tid, at, b, settings)
+    local text = messageText(tid, at)
+    if not text then return end
+    local run = CB.loadRun(tid)
     CB.settle(run, b)
-    local messages = getFullChat(tid) or {}
-    local last = messages[#messages]
-    if last then
-        local text = (last.data or ''):gsub('%s+$', '') .. '\n\n' .. CB.logBlock(run, b, getPersonaName(tid) or '', settings.fullLog)
-        setChat(tid, #messages - 1, text)
-    end
-    if not b.levelUp then return end
-    local slots = CB.rollSlots(run)
-    if settings.cards == 'main' then
-        b.reward = { slots = slots, waiting = true }
-    elseif settings.cards == 'pool' then
-        b.reward = { slots = slots, choices = CB.parseCards(run, nil, slots) }
-    else
-        b.reward = { slots = slots, making = true }
-        setState(tid, 'cb_battle', b)
-        setState(tid, 'cb_run', run)
-        reloadDisplay(tid)
-        local cards, written = CB.parseCards(run, ask(tid, CB.cardPrompt(tid, run, slots)), slots)
-        b.reward = { slots = slots, choices = cards }
-        if written < #slots then
-            b.reward.note = written == 0 and '보조 모델이 카드를 쓰지 못해 기본 카드에서 골랐습니다 (모듈의 저수준 접근과 보조 모델 설정을 확인해 주세요)'
-                or '보조 모델이 쓰지 못한 자리는 기본 카드로 채웠습니다'
+    local log = CB.logBlock(run, b, getPersonaName(tid) or '', settings.fullLog)
+    -- What the end screen does not need.
+    b.cards, b.draw, b.hand, b.discard, b.enemy, b.log, b.played, b.view = nil, nil, nil, nil, nil, nil, nil, nil
+    if b.levelUp then
+        local slots = CB.rollSlots(run)
+        if settings.cards == 'main' then
+            b.reward = { slots = slots, waiting = true, level = run.level, deck = CB.deckNames(run) }
+        elseif settings.cards == 'pool' then
+            b.reward = { slots = slots, choices = CB.parseCards(run, nil, slots) }
+        else
+            b.reward = { slots = slots, making = true }
         end
     end
+    text = CB.writeMark(CB.writeMark(text, 'b', nil) .. '\n\n' .. log, 'r', run)
+    setChat(tid, at, CB.writeMark(text, 'b', b))
+    setState(tid, 'cb_live', { id = b.id, at = at })
+    if not (b.reward and b.reward.making) then return end
+    reloadDisplay(tid)
+    local slots = b.reward.slots
+    local cards, written = CB.parseCards(run, ask(tid, CB.cardPrompt(tid, run, slots)), slots)
+    b.reward = { slots = slots, choices = cards }
+    if written < #slots then
+        b.reward.note = written == 0 and '보조 모델이 카드를 쓰지 못해 기본 카드에서 골랐습니다 (모듈의 저수준 접근과 보조 모델 설정을 확인해 주세요)'
+            or '보조 모델이 쓰지 못한 자리는 기본 카드로 채웠습니다'
+    end
+    CB.saveFight(tid, at, b)
 end
 
 onOutput = async(function(tid)
-    local messages = getFullChat(tid)
-    if type(messages) ~= 'table' or #messages == 0 then return end
-    local last = messages[#messages]
-    if last.role == 'user' then return end
+    local len = getChatLength(tid)
+    if len == 0 then return end
+    local last = getChat(tid, len - 1)
+    if type(last) ~= 'table' or last.role == 'user' then return end
     local settings = CB.settings(tid)
-    local run = CB.loadRun(tid)
-    local b = tableState(tid, 'cb_battle')
+    local b, at = CB.findFight(tid, true)
     local text, cardsBody = CB.takeCards(last.data or '')
     local spec
-    text, spec = CB.takeBattleTag(text, run)
-    if text ~= last.data then setChat(tid, #messages - 1, text) end
+    text, spec = CB.takeBattleTag(text)
 
     -- The main model's cards, asked for in this reply.
     if b and type(b.reward) == 'table' and b.reward.waiting then
-        local cards, written = CB.parseCards(run, cardsBody, b.reward.slots)
+        local cards, written = CB.parseCards(b, cardsBody, b.reward.slots)
         b.reward = { slots = b.reward.slots, choices = cards }
         if written < #cards then
             b.reward.note = written == 0 and '메인 모델이 카드를 쓰지 않아 기본 카드에서 골랐습니다' or '메인 모델이 쓰지 못한 자리는 기본 카드로 채웠습니다'
         end
         b.open = true
-        setState(tid, 'cb_battle', b)
+        if at == len - 1 then text = CB.writeMark(text, 'b', b) else CB.saveFight(tid, at, b) end
     end
 
     if spec then
-        spec.at = #messages
+        -- One fight at a time: a new one takes the place of one still on
+        -- (or of an end screen still open).
+        if b and at ~= len - 1 then CB.saveFight(tid, at, nil) end
+        setChat(tid, len - 1, CB.writeMark(text, 'b', spec))
+        setState(tid, 'cb_live', { id = spec.id, at = len - 1 })
         local start = not settings.popup
         if settings.popup then
             local ok, picked = pcall(function()
@@ -1183,13 +1294,10 @@ onOutput = async(function(tid)
             end)
             start = ok and tonumber(picked) == 0
         end
-        if start then
-            CB.begin(tid, run, spec, settings)
-        else
-            setState(tid, 'cb_pending', spec)
-        end
+        if start then CB.begin(tid, len - 1, spec, settings) end
+    elseif text ~= last.data then
+        setChat(tid, len - 1, text)
     end
-    setState(tid, 'cb_run', run)
     reloadDisplay(tid)
 end)
 
@@ -1201,33 +1309,35 @@ onButtonClick = async(function(tid, data)
     local action, argument = tostring(data or ''):match('^cb|(%a+)|?(.*)$')
     if not action then return end
     local settings = CB.settings(tid)
-    local run = CB.loadRun(tid)
-    local b = tableState(tid, 'cb_battle')
+    local len = getChatLength(tid)
+    local b, at = CB.findFight(tid, true)
     if b then b.anim = nil end
-    local whole = false
+    local whole, saved = false, false
     local k = tonumber(argument)
 
-    if action == 'start' or action == 'tag' then
-        local spec
-        if action == 'tag' then
-            local messages = getFullChat(tid) or {}
-            local last = messages[#messages]
-            if not last then return end
-            local text
-            text, spec = CB.takeBattleTag(last.data or '', run)
-            if not spec then return end
-            setChat(tid, #messages - 1, text)
-            spec.at = #messages
-        else
-            spec = tableState(tid, 'cb_pending')
-            if not spec then return end
-        end
-        b = CB.begin(tid, run, spec, settings)
-        whole = true
-    elseif action == 'later' then
-        setState(tid, 'cb_pending', false)
+    if action == 'tag' then
+        local text, spec = CB.takeBattleTag(messageText(tid, len - 1))
+        if not spec then return end
+        if b and at ~= len - 1 then CB.saveFight(tid, at, nil) end
+        setChat(tid, len - 1, text)
+        b, at = CB.begin(tid, len - 1, spec, settings), len - 1
+        whole, saved = true, true
     elseif not b then
         return
+    elseif action == 'start' or action == 'later' then
+        if b.phase ~= 'pending' then return end
+        if action == 'later' then
+            CB.saveFight(tid, at, nil)
+        else
+            -- Started from a later message: it is fought (and logged) there.
+            if at ~= len - 1 then
+                CB.saveFight(tid, at, nil)
+                at = len - 1
+            end
+            b = CB.begin(tid, at, b, settings)
+            whole = true
+        end
+        saved = true
     elseif action == 'open' then
         b.open = true
         b.anim = { open = true }
@@ -1248,30 +1358,29 @@ onButtonClick = async(function(tid, data)
         elseif action == 'unsel' then
             b.selected = nil
         elseif action == 'play' and k then
-            CB.play(run, b, k)
+            CB.play(b, k)
         elseif action == 'end' then
-            CB.endTurn(run, b)
+            CB.endTurn(b)
         elseif action == 'flee' then
             local ok, sure = pcall(function() return alertConfirm(tid, '도망칠까요? 경험치 없이 전투가 끝납니다.'):await() end)
             if ok and sure then b.phase = 'fled' end
         end
         if b.phase ~= 'fight' then
-            CB.finish(tid, run, b, settings)
-            whole = true
+            CB.finish(tid, at, b, settings)
+            whole, saved = true, true
         end
     elseif action == 'pick' and k and type(b.reward) == 'table' and b.reward.choices and b.reward.choices[k] then
+        -- The new card goes into the run this fight left, on its message.
+        local run = CB.loadRun(tid)
         run.deck[#run.deck + 1] = CB.copy(b.reward.choices[k])
-        b.reward, b.done, b.open = nil, true, false
-        whole = true
-    elseif action == 'skip' then
-        b.reward, b.done, b.open = nil, true, false
-        whole = true
-    elseif action == 'done' then
-        b.done, b.open = true, false
-        whole = true
+        setChat(tid, at, CB.writeMark(CB.writeMark(messageText(tid, at), 'r', run), 'b', nil))
+        setState(tid, 'cb_live', false)
+        whole, saved = true, true
+    elseif action == 'skip' or action == 'done' then
+        CB.saveFight(tid, at, nil)
+        whole, saved = true, true
     end
 
-    if b then setState(tid, 'cb_battle', b) end
-    setState(tid, 'cb_run', run)
-    if whole then reloadDisplay(tid) else reloadChat(tid, lastIndex(tid)) end
+    if not saved then CB.saveFight(tid, at, b) end
+    if whole then reloadDisplay(tid) else reloadChat(tid, len - 1) end
 end)

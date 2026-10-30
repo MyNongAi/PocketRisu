@@ -17,6 +17,7 @@ import { writeInlayImage } from "./files/inlays";
 import { runScripted } from "./scriptings";
 import { calcString } from "./infunctions";
 import { getFirstMessageAtIndex } from "../firstMessage";
+import { writeShownSwipe } from "../chatSwipes";
 
 
 export interface triggerscript{
@@ -1436,7 +1437,7 @@ export async function runTrigger(char:character,mode:triggerMode, arg:{
                     const index = Number(risuChatParser(effect.index,{chara:char}))
                     const value = risuChatParser(effect.value,{chara:char})
                     if(chat.message[index]){
-                        chat.message[index].data = value
+                        writeShownSwipe(chat.message[index], value)
                     }
                     break
                 }
@@ -1859,7 +1860,7 @@ export async function runTrigger(char:character,mode:triggerMode, arg:{
                     let index = effect.indexType === 'value' ? Number(risuChatParser(effect.index,{chara:char})) : Number(getVar(risuChatParser(effect.index,{chara:char})))
                     let value = effect.valueType === 'value' ? risuChatParser(effect.value,{chara:char}) : getVar(risuChatParser(effect.value,{chara:char}))
                     if(chat.message[index]){
-                        chat.message[index].data = value
+                        writeShownSwipe(chat.message[index], value)
                     }
                     break
                 }

@@ -18,6 +18,7 @@ import { tokenize } from "../tokenizer";
 import { fetchNative, readImage } from "../globalApi.svelte";
 import { loadLoreBookV3Prompt } from './lorebook.svelte';
 import { getPersonaPrompt, getUserName, getUserIcon } from '../util';
+import { writeShownSwipe } from '../chatSwipes';
 let luaFactory:LuaFactory
 let ScriptingSafeIds = new Set<string>()
 let ScriptingEditDisplayIds = new Set<string>()
@@ -292,7 +293,7 @@ export async function runScripted(code:string, arg:{
                 }
                 const message = ScriptingEngineState.chat.message?.at(index)
                 if(message){
-                    message.data = value ?? ''
+                    writeShownSwipe(message, value ?? '')
                 }
             })
             declareAPI('setChatRole', (id:string, index:number, value:string) => {

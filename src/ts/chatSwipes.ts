@@ -135,6 +135,19 @@ export function recordReplyEdit(message: SwipeMessage, next: string): boolean {
     return true
 }
 
+/**
+ * A script rewriting a message (Lua setChat, a modify-chat trigger) changes
+ * the page it shows, not a new one: the shown swipe takes the text too, so
+ * moving off the page and back keeps what the script wrote (a module's
+ * hidden marks, a battle log) instead of the text the page was generated with.
+ */
+export function writeShownSwipe(message: SwipeMessage, value: string): void {
+    message.data = value
+    const swipes = message.swipes
+    const at = message.swipeId
+    if (Array.isArray(swipes) && typeof at === 'number' && at >= 0 && at < swipes.length) swipes[at] = value
+}
+
 /** Number of swipes the message can be browsed through (0 or 1 = none). */
 export function swipeCount(message: SwipeMessage | null | undefined): number {
     return Array.isArray(message?.swipes) ? message.swipes.length : 0

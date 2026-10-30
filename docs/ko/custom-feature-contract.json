@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.16.1",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-10-27",
+  "updatedAt": "2026-10-30",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
@@ -2484,7 +2484,8 @@
       "ownerFiles": [
         "modules/card-battle/card-battle.lua",
         "modules/card-battle/build.mjs",
-        "modules/card-battle/README.ko.md"
+        "modules/card-battle/README.ko.md",
+        "src/ts/chatSwipes.ts"
       ],
       "requiredMarkers": [
         {
@@ -2510,10 +2511,35 @@
         {
           "file": "modules/card-battle/build.mjs",
           "contains": "'cardbattle.cards=레벨업 카드 만드는 모델=select=보조 모델,메인 모델,기본 카드만',"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "CB.MARK_PATTERN = '<!%-%-cb:(%a):([^>]*)%-%->'"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "function CB.findFight(tid, deep, lastText)"
+        },
+        {
+          "file": "modules/card-battle/build.mjs",
+          "contains": "in: String.raw`\\n?<!--cb:[^>]*-->`,"
+        },
+        {
+          "file": "src/ts/chatSwipes.ts",
+          "contains": "export function writeShownSwipe(message: SwipeMessage, value: string): void {"
+        },
+        {
+          "file": "src/ts/process/scriptings.ts",
+          "contains": "writeShownSwipe(message, value ?? '')"
+        },
+        {
+          "file": "src/ts/process/triggers.ts",
+          "contains": "writeShownSwipe(chat.message[index], value)"
         }
       ],
       "regressionTests": [
-        "src/ts/process/cardBattleModule.test.ts"
+        "src/ts/process/cardBattleModule.test.ts",
+        "src/ts/chatSwipes.test.ts"
       ]
     },
     {
