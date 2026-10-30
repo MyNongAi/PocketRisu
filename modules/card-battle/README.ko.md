@@ -6,9 +6,9 @@
 
 ## 설치
 
-모듈 파일(.risum)은 저장소에 들어 있지 않습니다. 저장소에서 `node modules/card-battle/build.mjs`를 실행하면 `modules/card-battle/dist/card-battle-0.1.0.risum`이 만들어집니다.
+모듈 파일(.risum)은 저장소에 들어 있지 않습니다. 저장소에서 `node modules/card-battle/build.mjs`를 실행하면 `modules/card-battle/dist/card-battle-0.2.0.risum`이 만들어집니다.
 
-1. 설정 → 모듈 → **임포트**에서 `card-battle-0.1.0.risum`을 고릅니다.
+1. 설정 → 모듈 → **임포트**에서 `card-battle-0.2.0.risum`을 고릅니다.
 2. "이 모듈은 저수준 접근을 사용합니다" 창이 뜨면 **허용**을 누릅니다. 보조 모델로 레벨업 카드를 쓰려면 필요합니다.
 3. 쓰고 싶은 봇이나 채팅에서 모듈을 켭니다.
 

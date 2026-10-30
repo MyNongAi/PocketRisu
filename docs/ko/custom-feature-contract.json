@@ -2483,7 +2483,7 @@
         },
         {
           "file": "modules/card-battle/card-battle.lua",
-          "contains": "local step = n > 1 and math.min(50, math.floor(220 / (n - 1))) or 0"
+          "contains": "local step = n > 1 and math.min(54, math.floor(216 / (n - 1))) or 0"
         },
         {
           "file": "modules/card-battle/card-battle.lua",

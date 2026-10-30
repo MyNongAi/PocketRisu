@@ -16,7 +16,7 @@
 -- cb_run, the fight in cb_battle, a fight waiting to start in cb_pending.
 
 local CB = {}
-CB.VERSION = '0.1.0'
+CB.VERSION = '0.2.0'
 
 ------------------------------------------------------------------------------
 -- Small helpers
@@ -87,7 +87,7 @@ CB.RARITY_SCALE = { basic = 1, common = 1, rare = 1.3, epic = 1.6 }
 CB.SLACK = 1.15
 
 CB.RARITY_LABEL = { basic = '기본', common = '일반', rare = '희귀', epic = '영웅' }
-CB.RARITY_COLOR = { basic = '#8a8f98', common = '#5aa0e6', rare = '#e6b450', epic = '#c77dff' }
+CB.RARITY_COLOR = { basic = '#9a9184', common = '#6fa8dc', rare = '#e6b450', epic = '#c77dff' }
 
 function CB.points(fx)
     local total = 0
@@ -466,6 +466,10 @@ function CB.newBattle(run, spec, settings)
             moves = CB.copy(template.moves), step = CB.rand(run, #template.moves), bonus = run.level - 1,
         },
         log = {}, played = {}, note = '',
+        -- What the next drawing animates (cleared at the next tap, so a
+        -- redraw does not play it again): the window opening, a new hand
+        -- dealt, a hit on the enemy or the player and the number it shows.
+        anim = { open = true, deal = true },
     }
     CB.drawCards(run, b, 5)
     return b
@@ -498,6 +502,7 @@ function CB.play(run, b, k)
     table.remove(b.hand, k)
     b.selected = nil
     local fx, e, parts = card.fx or {}, b.enemy, {}
+    local anim = {}
     if fx.dmg then
         local blocked, lost = 0, 0
         for _ = 1, (fx.hits or 1) do
@@ -505,16 +510,25 @@ function CB.play(run, b, k)
             blocked, lost = blocked + a, lost + l
         end
         parts[#parts + 1] = '피해 ' .. lost .. (blocked > 0 and (' (막힘 ' .. blocked .. ')') or '')
+        anim.enemy, anim.enemyText = 'hit', lost > 0 and ('-' .. lost) or '막힘'
     end
     if fx.block then b.block = b.block + fx.block parts[#parts + 1] = '방어 ' .. fx.block end
     if fx.weak then e.weak = e.weak + fx.weak parts[#parts + 1] = '약화 ' .. fx.weak end
     if fx.vuln then e.vuln = e.vuln + fx.vuln parts[#parts + 1] = '취약 ' .. fx.vuln end
     if fx.str then b.str = b.str + fx.str parts[#parts + 1] = '힘 +' .. fx.str end
+    local healed = 0
     if fx.heal then
         local before = b.hp
         b.hp = math.min(b.maxHp, b.hp + fx.heal)
-        parts[#parts + 1] = '회복 ' .. (b.hp - before)
+        healed = b.hp - before
+        parts[#parts + 1] = '회복 ' .. healed
     end
+    if healed > 0 then
+        anim.player, anim.playerText = 'buff', '+' .. healed
+    elseif fx.block then
+        anim.player, anim.playerText = 'buff', '🛡️+' .. fx.block
+    end
+    b.anim = anim
     if fx.energy then b.energy = b.energy + fx.energy parts[#parts + 1] = '에너지 +' .. fx.energy end
     b.discard[#b.discard + 1] = id
     if fx.draw then CB.drawCards(run, b, fx.draw) parts[#parts + 1] = fx.draw .. '장 뽑음' end
@@ -525,11 +539,13 @@ function CB.play(run, b, k)
     return true
 end
 
---- The enemy's move: defend, attack, then grow or weaken. Returns its log text.
+--- The enemy's move: defend, attack, then grow or weaken. Returns its log
+--- text, and when it attacked, what got through and what was blocked.
 function CB.enemyAct(b)
     local e = b.enemy
     local move = e.moves[e.step] or {}
     local parts = {}
+    local lostTotal, blockedTotal = nil, nil
     if move.def then
         e.block = e.block + move.def + e.bonus
         parts[#parts + 1] = '방어 ' .. (move.def + e.bonus)
@@ -543,6 +559,7 @@ function CB.enemyAct(b)
         end
         parts[#parts + 1] = '공격 ' .. per .. ((move.n or 1) > 1 and ('×' .. move.n) or '')
             .. ' (막음 ' .. blocked .. ', 받은 피해 ' .. lost .. ')'
+        lostTotal, blockedTotal = lost, blocked
     end
     if move.str then e.str = e.str + move.str parts[#parts + 1] = '힘 +' .. move.str end
     if move.weak then b.weak = b.weak + move.weak parts[#parts + 1] = '약화 ' .. move.weak end
@@ -552,7 +569,7 @@ function CB.enemyAct(b)
         parts[#parts + 1] = '취약 ' .. move.vuln
     end
     e.step = e.step % #e.moves + 1
-    return table.concat(parts, ', ')
+    return table.concat(parts, ', '), lostTotal, blockedTotal
 end
 
 -- A turn of weak or vulnerable is spent at the end of the turn it counts in:
@@ -566,7 +583,9 @@ function CB.endTurn(run, b)
     if b.enemy.vuln > 0 then b.enemy.vuln = b.enemy.vuln - 1 end
     local e = b.enemy
     e.block = 0
-    local acted = CB.enemyAct(b)
+    local acted, lost = CB.enemyAct(b)
+    b.anim = { deal = true }
+    if lost then b.anim.player, b.anim.playerText = 'hurt', lost > 0 and ('-' .. lost) or '막음' end
     if e.weak > 0 then e.weak = e.weak - 1 end
     if b.vulnFresh then b.vulnFresh = nil elseif b.vuln > 0 then b.vuln = b.vuln - 1 end
     local mine = #b.played > 0 and table.concat(b.played, ', ') or '카드 없음'
@@ -726,154 +745,299 @@ end)
 -- Display
 ------------------------------------------------------------------------------
 
-local BTN = 'display:inline-block;cursor:pointer;user-select:none;text-align:center;border-radius:9px;font-weight:700;padding:9px 12px;'
-local PRIMARY = BTN .. 'background:#2f6fd6;color:#fff;'
-local SECONDARY = BTN .. 'background:#333a52;color:#dfe4f2;'
-local BAR = 'flex:1;height:9px;background:#11141f;border-radius:5px;overflow:hidden'
+-- The window's look: one <style> block (Risu scopes it to the chat and
+-- prefixes its classes, as it does the class attributes), so the markup
+-- stays small. Layout that must hold even without it (the full-screen
+-- window, the fan) stays inline.
+CB.CSS = ([[
+.cbx-root{--g:#e3bd72;--gd:#8a6a35;--ink:#f1e6cf;--mute:#a99c86;color:var(--ink)}
+.cbx-panel{background:linear-gradient(180deg,#2c2333 0%,#1d1723 52%,#130f18 100%);border:2px solid var(--gd);border-radius:16px;box-shadow:0 0 0 1px #000,inset 0 1px 0 rgba(255,235,190,.1),inset 0 0 40px rgba(0,0,0,.55),0 18px 50px rgba(0,0,0,.7)}
+.cbx-in{animation:cbIn .28s ease-out both}
+.cbx-head{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:var(--mute)}
+.cbx-turn{color:var(--g);font-weight:800;letter-spacing:.03em}
+.cbx-ic{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:999px;background:rgba(255,255,255,.05);border:1px solid rgba(227,189,114,.28);color:var(--ink);cursor:pointer;white-space:nowrap}
+.cbx-arena{position:relative;margin-top:16px;padding:24px 12px 10px;border-radius:14px;border:1px solid rgba(255,255,255,.07);background:radial-gradient(ellipse at 50% 0%,rgba(120,90,140,.28),rgba(0,0,0,0) 70%),rgba(0,0,0,.28)}
+.cbx-elite{background:radial-gradient(ellipse at 50% 0%,rgba(170,50,40,.38),rgba(0,0,0,0) 70%),rgba(0,0,0,.3);border-color:rgba(192,69,60,.35)}
+.cbx-boss{background:radial-gradient(ellipse at 50% 0%,rgba(150,90,200,.4),rgba(0,0,0,0) 72%),rgba(0,0,0,.32);border-color:rgba(227,189,114,.45)}
+.cbx-intentrow{position:absolute;top:-13px;left:0;right:0;display:flex;justify-content:center}
+.cbx-intent{display:flex;align-items:center;gap:6px;padding:3px 12px;border-radius:999px;background:linear-gradient(180deg,#45171a,#220a0c);border:1px solid #c0453c;color:#ffd9d0;font-weight:800;font-size:14px;white-space:nowrap;box-shadow:0 4px 12px rgba(0,0,0,.55);animation:cbBob 2.4s ease-in-out infinite}
+.cbx-foe{display:flex;flex-direction:column;align-items:center;gap:6px}
+.cbx-medal{position:relative;width:74px;height:74px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:36px;background:radial-gradient(circle at 35% 30%,#5d4b66,#221a28 70%);border:2px solid var(--gd);box-shadow:0 0 0 3px rgba(0,0,0,.45),0 6px 18px rgba(0,0,0,.6)}
+.cbx-elite .cbx-medal{background:radial-gradient(circle at 35% 30%,#8f3d37,#2a1012 70%);border-color:#c0453c}
+.cbx-boss .cbx-medal{background:radial-gradient(circle at 35% 30%,#6e4392,#1d0f29 70%);border-color:var(--g);box-shadow:0 0 0 3px rgba(0,0,0,.45),0 0 22px rgba(227,189,114,.5)}
+.cbx-name{font-size:16px;font-weight:800;color:#fff3dc;text-shadow:0 1px 0 #000;text-align:center}
+.cbx-tier{display:inline-block;font-size:10px;font-weight:700;padding:0 7px;margin-left:6px;border-radius:999px;border:1px solid currentColor;color:var(--mute);vertical-align:2px}
+.cbx-elite .cbx-tier{color:#ff8a7a}
+.cbx-boss .cbx-tier{color:var(--g)}
+.cbx-barrow{display:flex;align-items:center;gap:6px;width:100%}
+.cbx-bar{position:relative;flex:1;height:16px;border-radius:9px;overflow:hidden;background:#0b0810;border:1px solid rgba(255,255,255,.09);box-shadow:inset 0 2px 4px rgba(0,0,0,.8)}
+.cbx-fill{height:100%}
+.cbx-red{background:linear-gradient(180deg,#ff7d6d,#c0281f)}
+.cbx-green{background:linear-gradient(180deg,#93e27c,#3a9628)}
+.cbx-bartext{position:absolute;left:0;top:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#fff;text-shadow:0 1px 2px #000}
+.cbx-block{flex:none;display:flex;align-items:center;justify-content:center;gap:1px;min-width:30px;height:22px;padding:0 5px;border-radius:7px;background:linear-gradient(180deg,#5f93dc,#2c579c);border:1px solid #a7c9ff;color:#fff;font-weight:800;font-size:12px;box-shadow:0 2px 4px rgba(0,0,0,.5)}
+.cbx-chips{display:flex;gap:5px;flex-wrap:wrap;justify-content:center;min-height:18px}
+.cbx-chip{font-size:11px;padding:1px 7px;border-radius:999px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.13);color:#eadfca;white-space:nowrap}
+.cbx-note{margin:10px 2px 8px;min-height:18px;text-align:center;font-size:12px;color:#f3d79b;font-style:italic}
+.cbx-me{position:relative;display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:14px;background:rgba(0,0,0,.28);border:1px solid rgba(255,255,255,.07)}
+.cbx-who{display:flex;justify-content:space-between;align-items:center;gap:6px;font-size:12px}
+.cbx-orb{flex:none;width:54px;height:54px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:17px;color:#3a1d00;background:radial-gradient(circle at 35% 30%,#fff3b8,#f6b23c 45%,#a85406 100%);border:2px solid #ffe08a;box-shadow:0 0 14px rgba(255,180,60,.55),inset 0 -3px 6px rgba(0,0,0,.3)}
+.cbx-spent{filter:grayscale(.85) brightness(.7);box-shadow:none}
+.cbx-card{position:relative;box-sizing:border-box;border-radius:10px;padding:3px;box-shadow:0 4px 10px rgba(0,0,0,.65)}
+.cbx-atk{background:linear-gradient(160deg,#d1584b,#6a1d18)}
+.cbx-skl{background:linear-gradient(160deg,#4f9fbd,#1b4557)}
+.cbx-pow{background:linear-gradient(160deg,#a97ada,#45276b)}
+.cbx-inner{height:100%;box-sizing:border-box;border-radius:8px;overflow:hidden;display:flex;flex-direction:column;background:#efe4cc;border:2px solid #9a9184}
+.cbx-art{display:flex;align-items:center;justify-content:center}
+.cbx-atk .cbx-art{background:radial-gradient(circle at 50% 35%,#f6c1b6,#b9473c)}
+.cbx-skl .cbx-art{background:radial-gradient(circle at 50% 35%,#c4e6f2,#3f87a3)}
+.cbx-pow .cbx-art{background:radial-gradient(circle at 50% 35%,#e3cff7,#7c4fb0)}
+.cbx-cname{position:relative;margin:-8px 4px 0;padding:2px 3px;text-align:center;font-weight:800;line-height:1.15;color:#2b1d10;word-break:keep-all;background:linear-gradient(180deg,#f8e9c0,#d9b26a);border:1px solid #8a6a35;border-radius:4px;box-shadow:0 2px 3px rgba(0,0,0,.35)}
+.cbx-desc{flex:1;display:flex;align-items:center;justify-content:center;padding:2px 4px;text-align:center;line-height:1.25;color:#3b2e22;font-weight:600}
+.cbx-cost{position:absolute;top:-8px;left:-8px;z-index:2;width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:14px;color:#fff;text-shadow:0 1px 1px #000;background:radial-gradient(circle at 35% 30%,#9ccaff,#2c62c9 60%,#163a80);border:2px solid #f8e9c0;box-shadow:0 2px 4px rgba(0,0,0,.6)}
+.cbx-gem{position:absolute;bottom:-5px;left:50%;margin-left:-5px;width:10px;height:10px;transform:rotate(45deg);border:1px solid #2b1d10}
+.cbx-poor{filter:grayscale(.75) brightness(.72)}
+.cbx-picked .cbx-card{box-shadow:0 0 0 2px #ffe08a,0 0 18px rgba(255,214,110,.85),0 8px 18px rgba(0,0,0,.6)}
+.cbx-deal{animation:cbDeal .38s cubic-bezier(.2,.8,.3,1) both}
+.cbx-btn{display:flex;align-items:center;justify-content:center;gap:6px;padding:11px 14px;border-radius:12px;font-weight:800;text-align:center;cursor:pointer;user-select:none}
+.cbx-gold{background:linear-gradient(180deg,#ffe49c,#d9a441 55%,#a8731f);color:#3a2205;border:1px solid #fff0bf;box-shadow:0 3px 0 #6b4510,0 6px 14px rgba(0,0,0,.45)}
+.cbx-gold:active{transform:translateY(2px);box-shadow:0 1px 0 #6b4510}
+.cbx-dark{background:linear-gradient(180deg,#3d3345,#251e2a);color:#eadfca;border:1px solid rgba(227,189,114,.35)}
+.cbx-pile{flex:none;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:10px;color:var(--mute)}
+.cbx-pilen{min-width:30px;height:30px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff;background:linear-gradient(180deg,#3a3042,#211a26);border:1px solid rgba(255,255,255,.16)}
+.cbx-detail{margin-top:6px;padding:7px 10px;border-radius:10px;text-align:center;font-size:12px;background:rgba(0,0,0,.3);border:1px solid rgba(227,189,114,.25)}
+.cbx-flavour{color:var(--mute);font-style:italic}
+.cbx-shake{animation:cbShake .42s ease}
+.cbx-float{position:absolute;left:50%;top:6px;z-index:5;font-size:22px;font-weight:900;color:#ff6b5b;white-space:nowrap;pointer-events:none;text-shadow:0 2px 0 #000,0 0 8px rgba(0,0,0,.8);animation:cbFloat 1.15s ease-out forwards}
+.cbx-good{color:#9fd8ff}
+.cbx-title{text-align:center;font-size:28px;font-weight:900;margin-top:10px;color:#ffe49c;text-shadow:0 0 18px rgba(255,200,90,.55),0 2px 0 #000;animation:cbPop .5s ease-out both}
+.cbx-lost .cbx-title{color:#ff9d8d;text-shadow:0 0 18px rgba(255,80,60,.5),0 2px 0 #000}
+.cbx-fled .cbx-title{color:#cfd6e6;text-shadow:0 2px 0 #000}
+.cbx-sub{text-align:center;font-size:12px;color:var(--mute);margin-top:4px}
+.cbx-lvl{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;font-weight:800;color:#3a2205;background:linear-gradient(180deg,#ffe49c,#d9a441)}
+.cbx-pulse{animation:cbPulse 1.2s ease-in-out infinite}
+@keyframes cbIn{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
+@keyframes cbBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+@keyframes cbDeal{from{opacity:0;transform:translateY(70px)}to{opacity:1;transform:none}}
+@keyframes cbShake{0%,100%{transform:translateX(0)}20%{transform:translateX(-7px)}40%{transform:translateX(6px)}60%{transform:translateX(-4px)}80%{transform:translateX(3px)}}
+@keyframes cbFloat{0%{opacity:0;transform:translate(-50%,6px) scale(.8)}15%{opacity:1;transform:translate(-50%,-4px) scale(1.15)}100%{opacity:0;transform:translate(-50%,-40px) scale(1)}}
+@keyframes cbPop{from{opacity:0;transform:scale(.6)}70%{transform:scale(1.08)}to{opacity:1;transform:none}}
+@keyframes cbPulse{0%,100%{opacity:.55}50%{opacity:1}}
+@media (prefers-reduced-motion:reduce){.cbx-in,.cbx-intent,.cbx-deal,.cbx-shake,.cbx-float,.cbx-title,.cbx-pulse{animation:none}}
+]]):gsub('%s*\n%s*', '')
 
-local function bar(value, max, color)
-    local pct = max > 0 and math.floor(value / max * 100) or 0
-    return '<div style="' .. BAR .. '"><div style="width:' .. pct .. '%;height:100%;background:' .. color .. '"></div></div>'
+
+-- A face for the enemy from its name: Korean words anywhere, English ones
+-- as whole words ("bat" is not in "combat"). Longer words first, so 뱀파이어
+-- is not a 뱀.
+CB.FOE_GLYPHS = {
+    { '뱀파이어', '🧛' }, { '흡혈귀', '🧛' }, { 'vampire', '🧛' },
+    { '늑대', '🐺' }, { 'wolf', '🐺' }, { '고블린', '👺' }, { 'goblin', '👺' }, { '오크', '👹' }, { 'orc', '👹' },
+    { '슬라임', '🟢' }, { 'slime', '🟢' }, { '드래곤', '🐉' }, { '와이번', '🐉' }, { 'dragon', '🐉' },
+    { '스켈레톤', '💀' }, { '해골', '💀' }, { 'skeleton', '💀' }, { '유령', '👻' }, { 'ghost', '👻' },
+    { '좀비', '🧟' }, { 'zombie', '🧟' }, { '거미', '🕷️' }, { 'spider', '🕷️' }, { '뱀', '🐍' }, { 'snake', '🐍' },
+    { '곰', '🐻' }, { 'bear', '🐻' }, { '박쥐', '🦇' }, { 'bat', '🦇' }, { '멧돼지', '🐗' }, { 'boar', '🐗' },
+    { '도적', '🗡️' }, { '산적', '🗡️' }, { 'bandit', '🗡️' }, { 'thief', '🗡️' }, { '기사', '🛡️' }, { 'knight', '🛡️' },
+    { '마법사', '🧙' }, { '마녀', '🧙' }, { 'mage', '🧙' }, { 'witch', '🧙' }, { '악마', '😈' }, { 'demon', '😈' },
+    { '마왕', '😈' }, { '골렘', '🗿' }, { 'golem', '🗿' }, { '로봇', '🤖' }, { 'robot', '🤖' }, { '닌자', '🥷' }, { 'ninja', '🥷' },
+    { '요정', '🧚' }, { 'fairy', '🧚' }, { '상어', '🦈' }, { 'shark', '🦈' }, { '괴물', '👾' }, { 'monster', '👾' },
+}
+CB.TIER_GLYPH = { normal = '⚔️', elite = '🔥', boss = '👑' }
+
+function CB.foeGlyph(name, tier)
+    local text = tostring(name or '')
+    local lower = text:lower()
+    for _, pair in ipairs(CB.FOE_GLYPHS) do
+        local word = pair[1]
+        if word:find('^%a+$') then
+            if lower:find('%f[%a]' .. word .. '%f[%A]') then return pair[2] end
+        elseif text:find(word, 1, true) then
+            return pair[2]
+        end
+    end
+    return CB.TIER_GLYPH[tier] or '⚔️'
 end
 
-local function statuses(who)
-    local parts = {}
-    if (who.block or 0) > 0 then parts[#parts + 1] = '🛡️ 방어 ' .. who.block end
-    if (who.str or 0) > 0 then parts[#parts + 1] = '💪 힘 ' .. who.str end
-    if (who.weak or 0) > 0 then parts[#parts + 1] = '약화 ' .. who.weak end
-    if (who.vuln or 0) > 0 then parts[#parts + 1] = '취약 ' .. who.vuln end
-    return table.concat(parts, ' · ')
-end
-
-local function icon(card)
+function CB.cardType(card)
     local fx = card.fx or {}
+    if fx.dmg then return 'atk' end
+    if (fx.str or fx.energy) and not fx.block and not fx.heal then return 'pow' end
+    return 'skl'
+end
+
+function CB.cardIcon(card)
+    local fx = card.fx or {}
+    if fx.dmg and (fx.hits or 1) > 1 then return '🗡️' end
+    if fx.dmg and (fx.vuln or fx.weak) then return '🎯' end
     if fx.dmg then return '⚔️' end
     if fx.block then return '🛡️' end
     if fx.heal then return '💚' end
+    if fx.str then return '💪' end
+    if fx.energy then return '⚡' end
+    if fx.draw then return '📜' end
+    if fx.weak or fx.vuln then return '☠️' end
     return '✨'
 end
 
---- One card face. size: 1 in the hand, larger on the reward screen.
-function CB.cardFace(card, extra, size)
-    size = size or 1
-    local w, h = math.floor(78 * size), math.floor(112 * size)
-    return '<div style="position:relative;width:' .. w .. 'px;height:' .. h .. 'px;box-sizing:border-box;border:2px solid ' .. (CB.RARITY_COLOR[card.rarity] or '#8a8f98')
-        .. ';border-radius:9px;background:#f4eedf;color:#2b241c;padding:4px;box-shadow:0 2px 6px rgba(0,0,0,.5);' .. (extra or '') .. '">'
-        .. '<div style="position:absolute;top:-9px;left:-9px;width:24px;height:24px;border-radius:50%;background:#2f6fd6;color:#fff;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;border:2px solid #f4eedf">' .. card.cost .. '</div>'
-        .. '<div style="height:5px;border-radius:3px;background:' .. (CB.isAttack(card) and '#d9534f' or '#3c9a5f') .. ';margin:3px 4px 0 14px"></div>'
-        .. '<div style="text-align:center;font-size:' .. math.floor(17 * size) .. 'px;margin-top:3px">' .. icon(card) .. '</div>'
-        .. '<div style="font-size:' .. math.floor(11 * size) .. 'px;font-weight:700;text-align:center;margin-top:2px;line-height:1.2;word-break:keep-all">' .. escapeHtml(card.name) .. '</div>'
-        .. '<div style="font-size:' .. math.floor(10 * size) .. 'px;text-align:center;margin-top:3px;line-height:1.3;color:#4a4036">' .. escapeHtml(CB.effectText(card)) .. '</div>'
-        .. '</div>'
+local function px(value)
+    return string.format('%.1f', value):gsub('%.0$', '') .. 'px'
 end
 
-local function frame(inner)
-    return '<div style="position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483000;background:rgba(8,10,18,.86);display:flex;align-items:center;justify-content:center;padding:10px;box-sizing:border-box;font-size:14px;line-height:1.35">'
-        .. '<div style="width:100%;max-width:420px;max-height:100%;overflow-y:auto;background:#1b1f2e;color:#e9ecf5;border:1px solid #3a4160;border-radius:14px;padding:12px;box-sizing:border-box;text-align:left">'
-        .. inner .. '</div></div>'
+--- One card face. scale: 1 in the hand, larger on the reward screen.
+function CB.cardFace(card, scale, poor)
+    scale = scale or 1
+    local rarity = CB.RARITY_COLOR[card.rarity] or CB.RARITY_COLOR.basic
+    return '<div class="cbx-card cbx-' .. CB.cardType(card) .. (poor and ' cbx-poor' or '') .. '" style="width:' .. px(84 * scale) .. ';height:' .. px(120 * scale) .. '">'
+        .. '<div class="cbx-cost">' .. card.cost .. '</div>'
+        .. '<div class="cbx-inner" style="border-color:' .. rarity .. '">'
+        .. '<div class="cbx-art" style="height:' .. px(42 * scale) .. ';font-size:' .. px(22 * scale) .. '">' .. CB.cardIcon(card) .. '</div>'
+        .. '<div class="cbx-cname" style="font-size:' .. px(10.5 * scale) .. '">' .. escapeHtml(card.name) .. '</div>'
+        .. '<div class="cbx-desc" style="font-size:' .. px(10 * scale) .. '">' .. escapeHtml(CB.effectText(card)) .. '</div>'
+        .. '</div><div class="cbx-gem" style="background:' .. rarity .. '"></div></div>'
 end
 
-local function header(left, b)
-    return '<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#aab2cc">'
-        .. '<span>' .. left .. '</span><span style="display:flex;gap:14px">'
-        .. (b and ('<span risu-btn="cb|deck" style="cursor:pointer">🂠 덱 ' .. #b.cards .. '</span>') or '')
-        .. '<span risu-btn="cb|close" style="cursor:pointer">✕ 닫기</span></span></div>'
+local function frame(inner, anim, extraClass)
+    return '<div><style>' .. CB.CSS .. '</style>'
+        .. '<div class="cbx-root" style="position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:10px;box-sizing:border-box;font-size:14px;line-height:1.35;background:rgba(6,4,10,.88)">'
+        .. '<div class="cbx-panel' .. ((anim or {}).open and ' cbx-in' or '') .. (extraClass and (' ' .. extraClass) or '') .. '" style="width:100%;max-width:420px;max-height:100%;overflow-y:auto;padding:12px;box-sizing:border-box;text-align:left;color:#f1e6cf">'
+        .. inner .. '</div></div></div>'
+end
+
+local function header(left, right)
+    return '<div class="cbx-head"><span>' .. left .. '</span><span style="display:flex;gap:6px">' .. (right or '')
+        .. '<span risu-btn="cb|close" class="cbx-ic">✕</span></span></div>'
+end
+
+local function hpBar(hp, max, colour, block)
+    local pct = max > 0 and math.floor(hp / max * 100) or 0
+    return '<div class="cbx-barrow">' .. ((block or 0) > 0 and ('<div class="cbx-block">🛡️' .. block .. '</div>') or '')
+        .. '<div class="cbx-bar"><div class="cbx-fill ' .. colour .. '" style="width:' .. pct .. '%"></div><div class="cbx-bartext">' .. hp .. ' / ' .. max .. '</div></div></div>'
+end
+
+local function chips(who)
+    local parts = {}
+    if (who.str or 0) > 0 then parts[#parts + 1] = '<span class="cbx-chip">💪 힘 ' .. who.str .. '</span>' end
+    if (who.weak or 0) > 0 then parts[#parts + 1] = '<span class="cbx-chip">🌀 약화 ' .. who.weak .. '</span>' end
+    if (who.vuln or 0) > 0 then parts[#parts + 1] = '<span class="cbx-chip">💔 취약 ' .. who.vuln .. '</span>' end
+    return '<div class="cbx-chips">' .. table.concat(parts) .. '</div>'
+end
+
+local function float(text, good)
+    if not text then return '' end
+    return '<div class="cbx-float' .. (good and ' cbx-good' or '') .. '">' .. escapeHtml(text) .. '</div>'
 end
 
 function CB.fightView(b, run, user)
-    local e = b.enemy
-    local out = { header('⚔️ ' .. b.turn .. '턴 · Lv.' .. run.level, b) }
-    out[#out + 1] = '<div style="margin-top:10px;background:#262b3d;border-radius:10px;padding:10px">'
-        .. '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font-size:15px">' .. escapeHtml(b.name) .. '</b>'
-        .. '<span style="font-size:12px;background:#4a1f24;color:#ffb3b3;padding:2px 8px;border-radius:6px;white-space:nowrap">다음: ' .. CB.intentText(b) .. '</span></div>'
-        .. '<div style="display:flex;align-items:center;gap:8px;margin-top:8px">' .. bar(e.hp, e.maxHp, '#e0524f')
-        .. '<span style="font-size:12px;color:#c9cfdf">' .. e.hp .. '/' .. e.maxHp .. '</span></div>'
-        .. '<div style="font-size:11px;color:#aab2cc;margin-top:5px;min-height:14px">' .. statuses(e) .. '</div></div>'
-    out[#out + 1] = '<div style="margin:8px 0;min-height:18px;font-size:12px;color:#ffd98a;text-align:center">' .. escapeHtml(b.note or '') .. '</div>'
-    out[#out + 1] = '<div style="display:flex;align-items:center;gap:10px">'
-        .. '<div style="width:46px;height:46px;border-radius:50%;background:#f0a830;color:#3a2400;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;flex:none">' .. b.energy .. '/' .. b.maxEnergy .. '</div>'
-        .. '<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;font-size:12px"><b>' .. escapeHtml(user) .. '</b>'
-        .. '<span style="color:#c9cfdf">❤️ ' .. b.hp .. '/' .. b.maxHp .. '</span></div>'
-        .. '<div style="display:flex;margin-top:5px">' .. bar(b.hp, b.maxHp, '#5fbf4a') .. '</div>'
-        .. '<div style="font-size:11px;color:#aab2cc;margin-top:4px;min-height:14px">' .. statuses(b) .. '</div></div></div>'
+    local e, anim = b.enemy, b.anim or {}
+    local out = { header('<span class="cbx-turn">⚔️ ' .. b.turn .. '턴</span> · Lv.' .. run.level,
+        '<span risu-btn="cb|deck" class="cbx-ic">🂠 ' .. #b.cards .. '</span><span risu-btn="cb|flee" class="cbx-ic">💨 도망</span>') }
+    out[#out + 1] = '<div class="cbx-arena cbx-' .. b.tier .. '">'
+        .. '<div class="cbx-intentrow"><div class="cbx-intent">' .. CB.intentText(b) .. '</div></div>'
+        .. '<div class="cbx-foe"><div class="cbx-medal' .. (anim.enemy and ' cbx-shake' or '') .. '">' .. CB.foeGlyph(b.name, b.tier) .. float(anim.enemyText, false) .. '</div>'
+        .. '<div class="cbx-name">' .. escapeHtml(b.name) .. '<span class="cbx-tier">' .. CB.TIER_LABEL[b.tier] .. '</span></div>'
+        .. hpBar(e.hp, e.maxHp, 'cbx-red', e.block) .. chips(e) .. '</div></div>'
+    out[#out + 1] = '<div class="cbx-note">' .. escapeHtml(b.note or '') .. '</div>'
+    out[#out + 1] = '<div class="cbx-me' .. (anim.player == 'hurt' and ' cbx-shake' or '') .. '">'
+        .. '<div class="cbx-orb' .. (b.energy == 0 and ' cbx-spent' or '') .. '">' .. b.energy .. '/' .. b.maxEnergy .. '</div>'
+        .. '<div style="flex:1;min-width:0"><div class="cbx-who"><b>' .. escapeHtml(user) .. '</b>' .. chips(b) .. '</div>'
+        .. '<div style="margin-top:5px">' .. hpBar(b.hp, b.maxHp, 'cbx-green', b.block) .. '</div></div>'
+        .. float(anim.playerText, anim.player ~= 'hurt') .. '</div>'
     -- The hand, fanned: one tap lifts a card, a second plays it. The fan is
-    -- at most 220px between the outer cards' centres, so with their tilt it
-    -- fits a 375px phone (a wider spread cut the outer cards off).
+    -- at most 216px between the outer cards' centres, tilted 4deg a card, so
+    -- it fits a 375px phone (58px and 6deg cut the outer cards off).
     local n = #b.hand
-    local step = n > 1 and math.min(50, math.floor(220 / (n - 1))) or 0
+    local step = n > 1 and math.min(54, math.floor(216 / (n - 1))) or 0
     local cards = {}
     for k, id in ipairs(b.hand) do
         local card = b.cards[id]
         local off = k - (n + 1) / 2
         local selected = b.selected == k
         local transform = selected and 'translateY(-30px) scale(1.15)'
-            or ('rotate(' .. string.format('%.1f', off * 6) .. 'deg) translateY(' .. math.floor(math.abs(off) * 5) .. 'px)')
-        local style = 'position:absolute;bottom:0;left:calc(50% - 39px + ' .. math.floor(off * step) .. 'px);transform:' .. transform
-            .. ';transform-origin:50% 120%;z-index:' .. (selected and 50 or k) .. ';cursor:pointer;' .. (card.cost > b.energy and 'opacity:.55;' or '')
-        cards[#cards + 1] = '<div risu-btn="cb|' .. (selected and 'play' or 'sel') .. '|' .. k .. '" style="' .. style .. '">' .. CB.cardFace(card) .. '</div>'
+            or ('rotate(' .. string.format('%.1f', off * 4) .. 'deg) translateY(' .. math.floor(math.abs(off) * 4) .. 'px)')
+        local style = 'position:absolute;bottom:0;left:calc(50% - 42px + ' .. math.floor(off * step) .. 'px);transform:' .. transform
+            .. ';transform-origin:50% 120%;z-index:' .. (selected and 50 or k) .. ';cursor:pointer'
+        local face = CB.cardFace(card, 1, card.cost > b.energy)
+        if anim.deal then face = '<div class="cbx-deal" style="animation-delay:' .. string.format('%.2f', (k - 1) * 0.06) .. 's">' .. face .. '</div>' end
+        cards[#cards + 1] = '<div risu-btn="cb|' .. (selected and 'play' or 'sel') .. '|' .. k .. '"' .. (selected and ' class="cbx-picked"' or '') .. ' style="' .. style .. '">' .. face .. '</div>'
     end
-    out[#out + 1] = '<div style="position:relative;height:150px;margin-top:16px">' .. table.concat(cards) .. '</div>'
+    out[#out + 1] = '<div style="position:relative;height:160px;margin-top:14px">' .. table.concat(cards) .. '</div>'
     local picked = b.selected and b.cards[b.hand[b.selected]]
     if picked then
-        out[#out + 1] = '<div style="font-size:12px;color:#c9cfdf;text-align:center;margin-top:6px">' .. escapeHtml(picked.name) .. ' — ' .. escapeHtml(CB.effectText(picked))
-            .. (picked.desc ~= '' and ('<br><i style="color:#8d96b3">' .. escapeHtml(picked.desc) .. '</i>') or '') .. '</div>'
-        out[#out + 1] = '<div style="display:flex;gap:8px;margin-top:8px"><span risu-btn="cb|play|' .. b.selected .. '" style="' .. PRIMARY .. 'flex:2">▶ 사용</span>'
-            .. '<span risu-btn="cb|unsel" style="' .. SECONDARY .. 'flex:1">취소</span></div>'
+        out[#out + 1] = '<div class="cbx-detail"><b>' .. escapeHtml(picked.name) .. '</b> — ' .. escapeHtml(CB.effectText(picked))
+            .. (picked.desc ~= '' and ('<br><span class="cbx-flavour">' .. escapeHtml(picked.desc) .. '</span>') or '') .. '</div>'
+        out[#out + 1] = '<div style="display:flex;gap:8px;margin-top:8px"><span risu-btn="cb|play|' .. b.selected .. '" class="cbx-btn cbx-gold" style="flex:2">▶ 사용</span>'
+            .. '<span risu-btn="cb|unsel" class="cbx-btn cbx-dark" style="flex:1">취소</span></div>'
     else
-        out[#out + 1] = '<div style="display:flex;gap:8px;margin-top:8px"><span risu-btn="cb|end" style="' .. PRIMARY .. 'flex:2">턴 종료</span>'
-            .. '<span risu-btn="cb|flee" style="' .. SECONDARY .. 'flex:1">도망</span></div>'
+        out[#out + 1] = '<div style="display:flex;align-items:center;gap:10px;margin-top:10px">'
+            .. '<div class="cbx-pile"><div class="cbx-pilen">' .. #b.draw .. '</div>뽑을 더미</div>'
+            .. '<span risu-btn="cb|end" class="cbx-btn cbx-gold" style="flex:1">턴 종료</span>'
+            .. '<div class="cbx-pile"><div class="cbx-pilen">' .. #b.discard .. '</div>버린 더미</div></div>'
     end
-    out[#out + 1] = '<div style="display:flex;justify-content:space-between;font-size:11px;color:#8d96b3;margin-top:8px"><span>뽑을 더미 ' .. #b.draw .. '</span><span>버린 더미 ' .. #b.discard .. '</span></div>'
-    return frame(table.concat(out))
+    return frame(table.concat(out), anim)
 end
 
 function CB.deckView(b)
     local faces = {}
-    for _, card in ipairs(b.cards) do faces[#faces + 1] = '<div style="margin:10px 6px 0 10px">' .. CB.cardFace(card) .. '</div>' end
-    return frame(header('🂠 덱 ' .. #b.cards .. '장', nil)
-        .. '<div style="display:flex;flex-wrap:wrap;justify-content:center;margin-top:6px">' .. table.concat(faces) .. '</div>'
-        .. '<div style="display:flex;margin-top:12px"><span risu-btn="cb|back" style="' .. SECONDARY .. 'flex:1">돌아가기</span></div>')
+    for _, card in ipairs(b.cards) do faces[#faces + 1] = '<div style="margin:12px 5px 0 9px">' .. CB.cardFace(card) .. '</div>' end
+    return frame(header('<span class="cbx-turn">🂠 덱 ' .. #b.cards .. '장</span>')
+        .. '<div style="display:flex;flex-wrap:wrap;justify-content:center;margin-top:4px">' .. table.concat(faces) .. '</div>'
+        .. '<div style="display:flex;margin-top:14px"><span risu-btn="cb|back" class="cbx-btn cbx-dark" style="flex:1">돌아가기</span></div>')
 end
 
 function CB.endView(b, run, settings)
     local title = ({ won = '🏆 승리', lost = '💀 패배', fled = '💨 도망' })[b.phase]
-    local out = { header(title .. ' · ' .. escapeHtml(b.name), nil) }
-    out[#out + 1] = '<div style="text-align:center;font-size:22px;font-weight:700;margin-top:12px">' .. title .. '</div>'
-    out[#out + 1] = '<div style="text-align:center;font-size:12px;color:#aab2cc;margin-top:4px">' .. b.turn .. '턴 · 체력 ' .. run.hp .. '/' .. run.maxHp
-        .. (b.levelUp and (' · 레벨 업! Lv.' .. run.level) or '') .. '</div>'
+    local out = { header(escapeHtml(b.name) .. ' · ' .. CB.TIER_LABEL[b.tier]) }
+    out[#out + 1] = '<div class="cbx-title">' .. title .. '</div>'
+    out[#out + 1] = '<div class="cbx-sub">' .. b.turn .. '턴 · 체력 ' .. run.hp .. ' / ' .. run.maxHp
+        .. (b.levelUp and ('<span class="cbx-lvl">LEVEL UP · Lv.' .. run.level .. '</span>') or '') .. '</div>'
     local reward = b.reward
     if type(reward) == 'table' and reward.choices then
         local faces = {}
         for k, card in ipairs(reward.choices) do
             -- The flavour line grows, so the three 고르기 buttons line up.
-            local flavour = '<div style="flex:1;width:94px;font-size:11px;line-height:1.3;color:#8d96b3;text-align:center;font-style:italic">' .. escapeHtml(card.desc) .. '</div>'
-            faces[#faces + 1] = '<div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:12px">' .. CB.cardFace(card, '', 1.2)
-                .. flavour .. '<span risu-btn="cb|pick|' .. k .. '" style="' .. PRIMARY .. 'padding:6px 12px">고르기</span></div>'
+            faces[#faces + 1] = '<div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:14px">' .. CB.cardFace(card, 1.2)
+                .. '<div class="cbx-flavour" style="flex:1;width:96px;font-size:11px;line-height:1.3;text-align:center">' .. escapeHtml(card.desc) .. '</div>'
+                .. '<span risu-btn="cb|pick|' .. k .. '" class="cbx-btn cbx-gold" style="padding:6px 14px">고르기</span></div>'
         end
-        out[#out + 1] = '<div style="text-align:center;margin-top:14px;font-size:13px">새 카드 하나를 고르세요' .. (reward.note and ('<br><span style="font-size:11px;color:#8d96b3">' .. escapeHtml(reward.note) .. '</span>') or '') .. '</div>'
+        out[#out + 1] = '<div style="text-align:center;margin-top:16px;font-size:13px;font-weight:700;color:#f3d79b">새 카드 하나를 고르세요</div>'
+            .. (reward.note and ('<div class="cbx-sub">' .. escapeHtml(reward.note) .. '</div>') or '')
         out[#out + 1] = '<div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap">' .. table.concat(faces) .. '</div>'
-        out[#out + 1] = '<div style="display:flex;margin-top:12px"><span risu-btn="cb|skip" style="' .. SECONDARY .. 'flex:1">건너뛰기</span></div>'
+        out[#out + 1] = '<div style="display:flex;margin-top:14px"><span risu-btn="cb|skip" class="cbx-btn cbx-dark" style="flex:1">건너뛰기</span></div>'
     elseif type(reward) == 'table' and reward.making then
-        out[#out + 1] = '<div style="text-align:center;margin-top:14px;font-size:13px">보조 모델이 새 카드를 쓰는 중…</div>'
+        out[#out + 1] = '<div class="cbx-note cbx-pulse" style="margin-top:18px">보조 모델이 새 카드를 쓰는 중…</div>'
     elseif type(reward) == 'table' and reward.waiting then
-        out[#out + 1] = '<div style="text-align:center;margin-top:14px;font-size:13px">다음 답에서 메인 모델이 새 카드 3장을 씁니다.<br>창을 닫고 보내기를 누르세요.</div>'
-        out[#out + 1] = '<div style="display:flex;margin-top:12px"><span risu-btn="cb|close" style="' .. PRIMARY .. 'flex:1">닫기</span></div>'
+        out[#out + 1] = '<div class="cbx-note" style="margin-top:16px">다음 답에서 메인 모델이 새 카드 3장을 씁니다.<br>창을 닫고 보내기를 누르세요.</div>'
+        out[#out + 1] = '<div style="display:flex"><span risu-btn="cb|close" class="cbx-btn cbx-gold" style="flex:1">닫기</span></div>'
     else
-        out[#out + 1] = '<div style="text-align:center;margin-top:14px;font-size:13px">전투 기록을 마지막 메시지에 붙였습니다.<br>창을 닫고 보내기를 누르면 이야기가 이어집니다.</div>'
-        out[#out + 1] = '<div style="display:flex;margin-top:12px"><span risu-btn="cb|done" style="' .. PRIMARY .. 'flex:1">닫기</span></div>'
+        out[#out + 1] = '<div class="cbx-note" style="margin-top:16px">전투 기록을 마지막 메시지에 붙였습니다.<br>창을 닫고 보내기를 누르면 이야기가 이어집니다.</div>'
+        out[#out + 1] = '<div style="display:flex"><span risu-btn="cb|done" class="cbx-btn cbx-gold" style="flex:1">닫기</span></div>'
     end
-    return frame(table.concat(out))
+    return frame(table.concat(out), { open = true }, 'cbx-' .. b.phase)
 end
 
+-- In the chat itself (no <style> there): inline styles only.
+local CHAT_GOLD = 'display:inline-block;cursor:pointer;user-select:none;padding:7px 16px;border-radius:10px;font-weight:800;color:#3a2205;'
+    .. 'background:linear-gradient(180deg,#ffe49c,#d9a441 55%,#a8731f);border:1px solid #fff0bf;box-shadow:0 2px 0 #6b4510'
+local CHAT_DARK = 'display:inline-block;cursor:pointer;user-select:none;padding:7px 14px;border-radius:10px;font-weight:700;color:#eadfca;'
+    .. 'background:linear-gradient(180deg,#3d3345,#251e2a);border:1px solid rgba(227,189,114,.35)'
+
 local function pill(action, text)
-    return '<div style="margin:6px 0"><span risu-btn="cb|' .. action .. '" style="display:inline-block;cursor:pointer;border:1px solid rgba(224,82,79,.6);border-radius:999px;padding:5px 12px;font-size:.9em">' .. text .. '</span></div>'
+    return '<div style="margin:8px 0"><span risu-btn="cb|' .. action .. '" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;'
+        .. 'padding:6px 14px;border-radius:999px;font-size:.9em;font-weight:700;color:#f1e6cf;background:linear-gradient(180deg,#3a2a35,#1f1720);'
+        .. 'border:1px solid #8a6a35;box-shadow:0 2px 8px rgba(0,0,0,.35)">' .. text .. '</span></div>'
 end
 
 local function startCard(spec, action)
-    return '<div style="border:1px solid rgba(224,82,79,.6);border-radius:10px;padding:10px 12px;margin:6px 0">'
-        .. '<div>⚔️ 전투 · <b>' .. escapeHtml(spec.name ~= '' and spec.name or '적') .. '</b> (' .. (CB.TIER_LABEL[spec.tier] or '일반') .. ')</div>'
-        .. '<div style="display:flex;gap:8px;margin-top:8px"><span risu-btn="cb|' .. action .. '" style="' .. PRIMARY .. 'padding:6px 14px">전투 시작</span>'
-        .. '<span risu-btn="cb|later" style="' .. SECONDARY .. 'padding:6px 14px">무시</span></div></div>'
+    local tier = CB.TIER_LABEL[spec.tier] and spec.tier or 'normal'
+    local name = spec.name ~= '' and spec.name or '적'
+    return '<div style="margin:8px 0;padding:12px 14px;border-radius:14px;color:#f1e6cf;border:2px solid #8a6a35;'
+        .. 'background:radial-gradient(ellipse at 20% 0%,rgba(170,50,40,.35),rgba(0,0,0,0) 60%),linear-gradient(180deg,#2c2333,#16111b);box-shadow:0 6px 18px rgba(0,0,0,.35)">'
+        .. '<div style="display:flex;align-items:center;gap:12px"><div style="flex:none;width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:24px;'
+        .. 'background:radial-gradient(circle at 35% 30%,#8f3d37,#2a1012 70%);border:2px solid #c0453c">' .. CB.foeGlyph(name, tier) .. '</div>'
+        .. '<div style="min-width:0"><div style="font-size:11px;color:#e3bd72;font-weight:800;letter-spacing:.05em">⚔️ 전투 · ' .. CB.TIER_LABEL[tier] .. '</div>'
+        .. '<div style="font-size:16px;font-weight:800">' .. escapeHtml(name) .. '</div></div></div>'
+        .. '<div style="display:flex;gap:8px;margin-top:10px"><span risu-btn="cb|' .. action .. '" style="' .. CHAT_GOLD .. '">전투 시작</span>'
+        .. '<span risu-btn="cb|later" style="' .. CHAT_DARK .. '">무시</span></div></div>'
 end
 
 --- A <battle-log> block shown folded.
@@ -884,9 +1048,9 @@ function CB.logCard(body)
         if line ~= '' then lines[#lines + 1] = escapeHtml(line) end
     end
     local title = table.remove(lines, 1) or '⚔️ 전투'
-    return '<details style="border:1px solid rgba(127,127,127,.45);border-radius:8px;padding:6px 10px;margin:6px 0;font-size:.9em">'
-        .. '<summary style="cursor:pointer">' .. title .. ' · 전투 기록</summary>'
-        .. '<div style="margin-top:6px;opacity:.85">' .. table.concat(lines, '<br>') .. '</div></details>'
+    return '<details style="margin:8px 0;padding:7px 12px;border-radius:10px;font-size:.9em;border:1px solid rgba(227,189,114,.45);background:rgba(227,189,114,.07)">'
+        .. '<summary style="cursor:pointer;font-weight:700">' .. title .. ' · 전투 기록</summary>'
+        .. '<div style="margin-top:6px;opacity:.85;line-height:1.5">' .. table.concat(lines, '<br>') .. '</div></details>'
 end
 
 --- What is still to see of the fight on the chat's last message.
@@ -1039,6 +1203,7 @@ onButtonClick = async(function(tid, data)
     local settings = CB.settings(tid)
     local run = CB.loadRun(tid)
     local b = tableState(tid, 'cb_battle')
+    if b then b.anim = nil end
     local whole = false
     local k = tonumber(argument)
 
@@ -1065,6 +1230,7 @@ onButtonClick = async(function(tid, data)
         return
     elseif action == 'open' then
         b.open = true
+        b.anim = { open = true }
         whole = true
     elseif action == 'close' then
         b.open = false
