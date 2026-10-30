@@ -2521,6 +2521,14 @@
           "contains": "function CB.findFight(tid, deep, lastText)"
         },
         {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "{ key = 'exhaust', flag = true },"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "function CB.tickPoison(who)"
+        },
+        {
           "file": "modules/card-battle/build.mjs",
           "contains": "in: String.raw`\\n?<!--cb:[^>]*-->`,"
         },

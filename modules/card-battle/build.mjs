@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { decodeRisum, encodeRisum, readMaps } from '../scene-fold/build.mjs'
 
-export const VERSION = '0.3.0'
+export const VERSION = '0.4.0'
 export const MODULE_ID = '5dc65ab5-ed92-484d-b4c9-84940df8f952'
 
 const here = dirname(fileURLToPath(import.meta.url))

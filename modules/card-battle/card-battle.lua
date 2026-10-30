@@ -20,7 +20,7 @@
 -- seen (cb_live), to find it without reading the whole chat.
 
 local CB = {}
-CB.VERSION = '0.3.0'
+CB.VERSION = '0.4.0'
 
 ------------------------------------------------------------------------------
 -- Small helpers
@@ -72,7 +72,10 @@ end
 ------------------------------------------------------------------------------
 
 -- What a card can do, with the most of each one card may have and its worth
--- in budget points (a point is one damage or one block).
+-- in budget points (a point is one damage or one block). A flag is on or
+-- off; ofDamage is worth that share of the card's damage. Each one is played
+-- by CB.play and the turn code below: a model can only combine these, never
+-- make up a rule the module does not have.
 CB.EFFECTS = {
     { key = 'dmg', max = 40, points = 1 },
     { key = 'hits', max = 4 },
@@ -83,7 +86,19 @@ CB.EFFECTS = {
     { key = 'draw', max = 3, points = 4 },
     { key = 'energy', max = 2, points = 5 },
     { key = 'heal', max = 12, points = 1.5 },
+    { key = 'poison', max = 12, points = 2 },     -- the enemy loses that much at its turn's start, one less each turn
+    { key = 'thorns', max = 5, points = 3 },      -- whoever hits the player takes that much a hit, all fight
+    { key = 'armor', max = 6, points = 4 },       -- that much block at the end of each of the player's turns
+    { key = 'dex', max = 3, points = 6 },         -- every block card blocks that much more, all fight
+    { key = 'charge', max = 2, points = 3.5 },    -- energy next turn
+    { key = 'prepare', max = 3, points = 3 },     -- cards drawn next turn
+    { key = 'hpCost', max = 12, points = -0.8 },  -- hit points paid to play it, which pay for the rest
+    { key = 'pierce', flag = true, ofDamage = 0.25 }, -- its damage goes through block
+    { key = 'drain', flag = true, ofDamage = 0.5 },   -- heals the damage that got through
+    { key = 'retain', flag = true, points = 2 },      -- stays in hand at the end of the turn
+    { key = 'exhaust', flag = true },                 -- gone for the fight once played: worth a third more
 }
+CB.EXHAUST_BONUS = 1.35
 
 -- Points a card may carry by its cost, scaled by rarity, plus a little slack.
 CB.BUDGET = { [0] = 5, [1] = 9, [2] = 16, [3] = 23 }
@@ -93,20 +108,32 @@ CB.SLACK = 1.15
 CB.RARITY_LABEL = { basic = '기본', common = '일반', rare = '희귀', epic = '영웅' }
 CB.RARITY_COLOR = { basic = '#9a9184', common = '#6fa8dc', rare = '#e6b450', epic = '#c77dff' }
 
+--- All the damage a card deals (before strength and the rest).
+function CB.damageTotal(fx)
+    return (fx.dmg or 0) * (fx.hits or 1)
+end
+
 function CB.points(fx)
     local total = 0
     for _, effect in ipairs(CB.EFFECTS) do
         local value = fx[effect.key]
-        if value and effect.points then
-            if effect.key == 'dmg' then value = value * (fx.hits or 1) end
-            total = total + value * effect.points
+        if value then
+            if effect.ofDamage then
+                total = total + CB.damageTotal(fx) * effect.ofDamage
+            elseif effect.points then
+                if effect.key == 'dmg' then value = CB.damageTotal(fx) end
+                total = total + value * effect.points
+            end
         end
     end
     return total
 end
 
-function CB.budget(cost, rarity)
-    return (CB.BUDGET[cost] or CB.BUDGET[1]) * (CB.RARITY_SCALE[rarity] or 1) * CB.SLACK
+--- What a card may carry; fx (optional) adds what exhaust pays for.
+function CB.budget(cost, rarity, fx)
+    local budget = (CB.BUDGET[cost] or CB.BUDGET[1]) * (CB.RARITY_SCALE[rarity] or 1) * CB.SLACK
+    if fx and fx.exhaust then budget = budget * CB.EXHAUST_BONUS end
+    return budget
 end
 
 function CB.isAttack(card)
@@ -115,18 +142,48 @@ end
 
 function CB.effectText(card)
     local fx, parts = card.fx or {}, {}
+    if fx.hpCost then parts[#parts + 1] = '체력 ' .. fx.hpCost .. ' 소모' end
     if fx.dmg then
         local hits = fx.hits or 1
-        parts[#parts + 1] = hits > 1 and ('피해 ' .. fx.dmg .. '×' .. hits) or ('피해 ' .. fx.dmg)
+        parts[#parts + 1] = (hits > 1 and ('피해 ' .. fx.dmg .. '×' .. hits) or ('피해 ' .. fx.dmg))
+            .. (fx.pierce and ' (방어 무시)' or '') .. (fx.drain and ' (흡혈)' or '')
     end
     if fx.block then parts[#parts + 1] = '방어 ' .. fx.block end
     if fx.weak then parts[#parts + 1] = '약화 ' .. fx.weak end
     if fx.vuln then parts[#parts + 1] = '취약 ' .. fx.vuln end
+    if fx.poison then parts[#parts + 1] = '독 ' .. fx.poison end
     if fx.str then parts[#parts + 1] = '힘 +' .. fx.str end
+    if fx.dex then parts[#parts + 1] = '민첩 +' .. fx.dex end
+    if fx.thorns then parts[#parts + 1] = '가시 ' .. fx.thorns end
+    if fx.armor then parts[#parts + 1] = '매 턴 방어 ' .. fx.armor end
     if fx.draw then parts[#parts + 1] = fx.draw .. '장 뽑기' end
     if fx.energy then parts[#parts + 1] = '에너지 +' .. fx.energy end
+    if fx.charge then parts[#parts + 1] = '다음 턴 에너지 +' .. fx.charge end
+    if fx.prepare then parts[#parts + 1] = '다음 턴 ' .. fx.prepare .. '장 더' end
     if fx.heal then parts[#parts + 1] = '체력 ' .. fx.heal .. ' 회복' end
+    if fx.retain then parts[#parts + 1] = '보존' end
+    if fx.exhaust then parts[#parts + 1] = '소멸' end
     return table.concat(parts, ', ')
+end
+
+-- What the card window explains when a card with these is lifted.
+CB.KEYWORD_HELP = {
+    poison = '독: 적이 자기 턴을 시작할 때 그만큼 체력을 잃고, 독은 1 줄어듭니다.',
+    thorns = '가시: 이번 전투 동안 나를 때릴 때마다 그만큼 되돌려 줍니다.',
+    armor = '매 턴 방어: 이번 전투 동안 내 턴이 끝날 때마다 방어를 얻습니다.',
+    dex = '민첩: 이번 전투 동안 방어 카드마다 방어가 그만큼 늘어납니다.',
+    pierce = '방어 무시: 적의 방어를 뚫고 들어갑니다.',
+    drain = '흡혈: 들어간 피해만큼 체력을 회복합니다.',
+    retain = '보존: 턴이 끝나도 버리지 않고 손에 남습니다.',
+    exhaust = '소멸: 한 번 쓰면 이번 전투에서 빠집니다.',
+}
+
+function CB.keywordHelp(card)
+    local lines = {}
+    for _, key in ipairs({ 'poison', 'thorns', 'armor', 'dex', 'pierce', 'drain', 'retain', 'exhaust' }) do
+        if (card.fx or {})[key] then lines[#lines + 1] = CB.KEYWORD_HELP[key] end
+    end
+    return lines
 end
 
 --- A card made safe: known effects only, whole numbers in range, a cost of
@@ -141,37 +198,46 @@ function CB.cleanCard(raw, slot)
     local source = type(raw.effects) == 'table' and raw.effects or (type(raw.fx) == 'table' and raw.fx or {})
     local fx = {}
     for _, effect in ipairs(CB.EFFECTS) do
-        local value = tonumber(source[effect.key])
-        if value then
-            value = math.floor(value)
-            if value >= 1 then fx[effect.key] = math.min(value, effect.max) end
+        local value = source[effect.key]
+        if effect.flag then
+            if value == true or (tonumber(value) or 0) >= 1 or value == 'true' then fx[effect.key] = 1 end
+        else
+            value = tonumber(value)
+            if value then
+                value = math.floor(value)
+                if value >= 1 then fx[effect.key] = math.min(value, effect.max) end
+            end
         end
     end
     if fx.hits and (not fx.dmg or fx.hits == 1) then fx.hits = nil end
-    if next(fx) == nil then return nil end
+    if not fx.dmg then fx.pierce, fx.drain = nil, nil end
+    if not CB.hasEffect(fx) then return nil end
     local rarity = (slot and slot.rarity) or raw.rarity
     if not CB.RARITY_SCALE[rarity] then rarity = 'common' end
     local cost = math.floor(tonumber((slot and slot.cost) or raw.cost) or 1)
     cost = math.max(0, math.min(3, cost))
-    while CB.points(fx) > CB.budget(cost, rarity) and cost < 3 do cost = cost + 1 end
-    local over = CB.points(fx) / CB.budget(cost, rarity)
+    while CB.points(fx) > CB.budget(cost, rarity, fx) and cost < 3 do cost = cost + 1 end
+    local over = CB.points(fx) / CB.budget(cost, rarity, fx)
     if over > 1 then
-        for key, value in pairs(fx) do
-            if key ~= 'hits' then fx[key] = math.max(1, math.floor(value / over)) end
+        for _, effect in ipairs(CB.EFFECTS) do
+            local value = fx[effect.key]
+            if value and (effect.points or 0) > 0 and not effect.flag then fx[effect.key] = math.max(1, math.floor(value / over)) end
         end
     end
     -- What rounding left over: the effect worth most loses one at a time (a
-    -- many-hit attack loses a hit once each hit is small).
+    -- many-hit attack loses a hit once each hit is small). What pays (hit
+    -- points) and keywords stay as they are.
     for _ = 1, 200 do
-        if CB.points(fx) <= CB.budget(cost, rarity) then break end
+        if CB.points(fx) <= CB.budget(cost, rarity, fx) then break end
         local top, worth = nil, -1
         for _, effect in ipairs(CB.EFFECTS) do
             local value = fx[effect.key]
-            if value and effect.points then
+            if value and (effect.points or 0) > 0 and not effect.flag then
                 local w = value * effect.points * (effect.key == 'dmg' and (fx.hits or 1) or 1)
                 if w > worth then top, worth = effect.key, w end
             end
         end
+        if not top then break end
         if top == 'dmg' and (fx.hits or 1) > 1 and fx.dmg <= 3 then
             fx.hits = fx.hits - 1
         else
@@ -180,8 +246,17 @@ function CB.cleanCard(raw, slot)
         end
     end
     if fx.hits and (not fx.dmg or fx.hits <= 1) then fx.hits = nil end
-    if next(fx) == nil then return nil end
+    if not fx.dmg then fx.pierce, fx.drain = nil, nil end
+    if not CB.hasEffect(fx) or CB.points(fx) > CB.budget(cost, rarity, fx) then return nil end
     return { name = name, cost = cost, fx = fx, rarity = rarity, desc = CB.clip(CB.trim(raw.desc), 60) }
+end
+
+--- Whether a card does something: keywords and a hit point cost alone do not.
+function CB.hasEffect(fx)
+    for _, effect in ipairs(CB.EFFECTS) do
+        if fx[effect.key] and (effect.points or 0) > 0 and not effect.flag then return true end
+    end
+    return false
 end
 
 CB.STRIKE = { name = '공격', cost = 1, fx = { dmg = 6 }, rarity = 'basic', desc = '' }
@@ -199,17 +274,28 @@ CB.POOL = {
         { name = '위협', cost = 1, fx = { weak = 2, block = 3 }, desc = '기세로 누른다.' },
         { name = '응급 처치', cost = 1, fx = { heal = 6 }, desc = '급한 대로 상처를 싸맨다.' },
         { name = '자세 잡기', cost = 1, fx = { block = 5, draw = 1 }, desc = '물러서며 다음을 준비한다.' },
+        { name = '독 바르기', cost = 1, fx = { poison = 5 }, desc = '칼날에 독을 먹인다.' },
+        { name = '가시 갑옷', cost = 1, fx = { thorns = 3 }, desc = '건드리면 다친다.' },
+        { name = '피의 일격', cost = 1, fx = { dmg = 12, hpCost = 3 }, desc = '내 피로 값을 치른다.' },
+        { name = '꿰뚫기', cost = 1, fx = { dmg = 7, pierce = 1 }, desc = '방패 틈으로 찔러 넣는다.' },
     },
     rare = {
         { name = '회오리 베기', cost = 2, fx = { dmg = 6, hits = 3 }, desc = '몸을 돌려 연달아 벤다.' },
         { name = '전투의 함성', cost = 1, fx = { str = 2 }, desc = '피가 끓어오른다.' },
         { name = '반격 태세', cost = 1, fx = { block = 8, draw = 1 }, desc = '막고, 노린다.' },
         { name = '급소 공격', cost = 1, fx = { dmg = 7, vuln = 2 }, desc = '정확히 그곳을.' },
+        { name = '흡혈 베기', cost = 1, fx = { dmg = 7, drain = 1 }, desc = '벤 만큼 되찾는다.' },
+        { name = '철갑 두르기', cost = 1, fx = { armor = 3 }, desc = '한 겹씩 단단해진다.' },
+        { name = '숨겨 둔 수', cost = 1, fx = { block = 6, charge = 1 }, desc = '지금은 막고, 다음에 몰아친다.' },
+        { name = '맹독', cost = 2, fx = { poison = 9 }, desc = '천천히, 그러나 확실하게.' },
     },
     epic = {
         { name = '결전', cost = 2, fx = { dmg = 18, vuln = 2 }, desc = '모든 것을 건 일격.' },
         { name = '각성', cost = 1, fx = { energy = 1, draw = 2 }, desc = '시야가 맑아진다.' },
         { name = '불굴', cost = 2, fx = { block = 14, str = 1 }, desc = '쓰러지지 않는다.' },
+        { name = '최후의 일격', cost = 1, fx = { dmg = 22, exhaust = 1 }, desc = '두 번은 없다.' },
+        { name = '날렵한 몸놀림', cost = 1, fx = { dex = 2 }, desc = '흘려 넘기는 법을 안다.' },
+        { name = '반격의 가시', cost = 2, fx = { thorns = 4, block = 10 }, desc = '막는 순간이 곧 반격이다.' },
     },
 }
 
@@ -249,7 +335,13 @@ CB.CARD_RULES = table.concat({
     'Each card is JSON: {"name": short name in the story\'s language (12 characters at most), "effects": {...}, "desc": one short line of flavour}.',
     'Effects (points per unit): dmg = damage to the enemy (1), hits = how many times dmg lands (multiplies dmg), block = blocks damage this turn (1),',
     'weak = enemy deals 25% less for that many turns (3), vuln = enemy takes 50% more for that many turns (3), str = +1 damage per hit for the rest of the fight (6),',
-    'draw = draw cards (4), energy = gain energy this turn (5), heal = restore hit points (1.5).',
+    'draw = draw cards (4), energy = gain energy this turn (5), heal = restore hit points (1.5),',
+    'poison = the enemy loses that many hit points at the start of its turn, one less each turn (2), thorns = whoever hits the player takes that much per hit for the rest of the fight (3),',
+    'armor = the player gains that much block at the end of each turn for the rest of the fight (4), dex = every block card blocks that much more for the rest of the fight (6),',
+    'charge = energy next turn (3.5), prepare = draw that many more cards next turn (3), hpCost = the player loses that many hit points to play it (-0.8: it pays for the rest).',
+    'Keywords, written as true: pierce = its damage ignores block (a quarter of its damage), drain = heals the damage that got through (half of its damage),',
+    'retain = stays in hand at the end of the turn (2), exhaust = gone for the rest of the fight once played (the card may carry a third more points).',
+    'Use only these; anything else is dropped. A card can combine a few of them.',
     'Keep each card near its points. Make them fit this story: its people, their skills, items, moments and relationships.',
 }, '\n')
 
@@ -287,10 +379,12 @@ CB.ENEMIES = {
         { name = '적', hp = 42, moves = { { atk = 7 }, { atk = 4, n = 2 }, { def = 6, atk = 5 } } },
         { name = '적', hp = 46, moves = { { def = 8 }, { atk = 9 }, { weak = 2, atk = 4 } } },
         { name = '적', hp = 38, moves = { { str = 2 }, { atk = 6 }, { atk = 6 } } },
+        { name = '적', hp = 40, moves = { { poison = 3 }, { atk = 6 }, { atk = 5, poison = 1 } } },
     },
     elite = {
         { name = '강적', hp = 72, moves = { { atk = 12 }, { atk = 5, n = 3 }, { str = 3, def = 8 }, { vuln = 2, atk = 6 } } },
         { name = '강적', hp = 80, moves = { { def = 12, atk = 6 }, { atk = 15 }, { weak = 2, vuln = 1 } } },
+        { name = '강적', hp = 76, moves = { { thorns = 3, def = 10 }, { atk = 11 }, { atk = 4, n = 3 } } },
     },
     boss = {
         { name = '우두머리', hp = 130, moves = { { str = 2, def = 12 }, { atk = 16 }, { atk = 6, n = 3 }, { weak = 2, vuln = 2 }, { atk = 22 } } },
@@ -536,9 +630,10 @@ function CB.attackDamage(base, attacker, target)
     return math.max(0, damage)
 end
 
---- Block takes it first. Returns what was blocked and what was lost.
-function CB.hit(target, amount)
-    local blocked = math.min(target.block or 0, amount)
+--- Block takes it first (not when it pierces). Returns what was blocked and
+--- what was lost.
+function CB.hit(target, amount, pierce)
+    local blocked = pierce and 0 or math.min(target.block or 0, amount)
     target.block = (target.block or 0) - blocked
     local lost = amount - blocked
     target.hp = math.max(0, target.hp - lost)
@@ -567,8 +662,9 @@ function CB.newBattle(run, spec, settings)
         energy = 3, maxEnergy = 3,
         cards = cards, draw = draw, hand = {}, discard = {},
         hp = run.hp, maxHp = run.maxHp, block = 0, str = 0, weak = 0, vuln = 0,
+        poison = 0, thorns = 0, armor = 0, dex = 0, nextEnergy = 0, nextDraw = 0, exhausted = {},
         enemy = {
-            hp = hp, maxHp = hp, block = 0, str = 0, weak = 0, vuln = 0,
+            hp = hp, maxHp = hp, block = 0, str = 0, weak = 0, vuln = 0, poison = 0, thorns = 0,
             moves = CB.copy(template.moves), step = CB.rand(rng, #template.moves), bonus = run.level - 1,
         },
         log = {}, played = {}, note = '',
@@ -592,8 +688,20 @@ function CB.intentText(b)
     end
     if move.def then parts[#parts + 1] = '🛡️' end
     if move.str then parts[#parts + 1] = '💪' end
+    if move.thorns then parts[#parts + 1] = '🌵' end
+    if move.poison then parts[#parts + 1] = '🧪' end
     if move.weak or move.vuln then parts[#parts + 1] = '☠️' end
     return table.concat(parts, ' ')
+end
+
+--- Poison at the start of who's turn: that much hit points, then one less.
+--- Returns what it took.
+function CB.tickPoison(who)
+    local poison = who.poison or 0
+    if poison <= 0 then return 0 end
+    who.hp = math.max(0, who.hp - poison)
+    who.poison = poison - 1
+    return poison
 end
 
 --- Play hand card k. False (with a note) when it cannot be played.
@@ -610,39 +718,74 @@ function CB.play(b, k)
     b.selected = nil
     local fx, e, parts = card.fx or {}, b.enemy, {}
     local anim = {}
+    if fx.hpCost then
+        -- It never takes the last hit point.
+        local paid = math.max(0, math.min(fx.hpCost, b.hp - 1))
+        b.hp = b.hp - paid
+        parts[#parts + 1] = '체력 -' .. paid
+    end
+    local healed = 0
     if fx.dmg then
-        local blocked, lost = 0, 0
+        local blocked, lost, pricked = 0, 0, 0
         for _ = 1, (fx.hits or 1) do
-            local a, l = CB.hit(e, CB.attackDamage(fx.dmg, b, e))
+            local a, l = CB.hit(e, CB.attackDamage(fx.dmg, b, e), fx.pierce)
             blocked, lost = blocked + a, lost + l
+            if (e.thorns or 0) > 0 then
+                local _, t = CB.hit(b, e.thorns)
+                pricked = pricked + t
+            end
+            if e.hp <= 0 then break end
         end
         parts[#parts + 1] = '피해 ' .. lost .. (blocked > 0 and (' (막힘 ' .. blocked .. ')') or '')
+        if pricked > 0 then parts[#parts + 1] = '가시에 ' .. pricked end
         anim.enemy, anim.enemyText = 'hit', lost > 0 and ('-' .. lost) or '막힘'
+        if fx.drain and lost > 0 then
+            local before = b.hp
+            b.hp = math.min(b.maxHp, b.hp + lost)
+            healed = healed + (b.hp - before)
+            parts[#parts + 1] = '흡혈 ' .. (b.hp - before)
+        end
     end
-    if fx.block then b.block = b.block + fx.block parts[#parts + 1] = '방어 ' .. fx.block end
+    local blockGain = fx.block and (fx.block + (b.dex or 0)) or nil
+    if blockGain then b.block = b.block + blockGain parts[#parts + 1] = '방어 ' .. blockGain end
     if fx.weak then e.weak = e.weak + fx.weak parts[#parts + 1] = '약화 ' .. fx.weak end
     if fx.vuln then e.vuln = e.vuln + fx.vuln parts[#parts + 1] = '취약 ' .. fx.vuln end
+    if fx.poison then e.poison = (e.poison or 0) + fx.poison parts[#parts + 1] = '독 ' .. fx.poison end
     if fx.str then b.str = b.str + fx.str parts[#parts + 1] = '힘 +' .. fx.str end
-    local healed = 0
+    if fx.dex then b.dex = (b.dex or 0) + fx.dex parts[#parts + 1] = '민첩 +' .. fx.dex end
+    if fx.thorns then b.thorns = (b.thorns or 0) + fx.thorns parts[#parts + 1] = '가시 +' .. fx.thorns end
+    if fx.armor then b.armor = (b.armor or 0) + fx.armor parts[#parts + 1] = '매 턴 방어 +' .. fx.armor end
+    if fx.charge then b.nextEnergy = (b.nextEnergy or 0) + fx.charge parts[#parts + 1] = '다음 턴 에너지 +' .. fx.charge end
+    if fx.prepare then b.nextDraw = (b.nextDraw or 0) + fx.prepare parts[#parts + 1] = '다음 턴 ' .. fx.prepare .. '장 더' end
     if fx.heal then
         local before = b.hp
         b.hp = math.min(b.maxHp, b.hp + fx.heal)
-        healed = b.hp - before
-        parts[#parts + 1] = '회복 ' .. healed
+        healed = healed + (b.hp - before)
+        parts[#parts + 1] = '회복 ' .. (b.hp - before)
     end
     if healed > 0 then
         anim.player, anim.playerText = 'buff', '+' .. healed
-    elseif fx.block then
-        anim.player, anim.playerText = 'buff', '🛡️+' .. fx.block
+    elseif blockGain then
+        anim.player, anim.playerText = 'buff', '🛡️+' .. blockGain
     end
     b.anim = anim
     if fx.energy then b.energy = b.energy + fx.energy parts[#parts + 1] = '에너지 +' .. fx.energy end
-    b.discard[#b.discard + 1] = id
+    if fx.exhaust then
+        b.exhausted = b.exhausted or {}
+        b.exhausted[#b.exhausted + 1] = id
+        parts[#parts + 1] = '소멸'
+    else
+        b.discard[#b.discard + 1] = id
+    end
     if fx.draw then CB.drawCards(b, fx.draw) parts[#parts + 1] = fx.draw .. '장 뽑음' end
     local what = table.concat(parts, ', ')
     b.played[#b.played + 1] = card.name .. '(' .. what .. ')'
     b.note = card.name .. ' → ' .. what
-    if e.hp <= 0 then b.phase = 'won' end
+    if e.hp <= 0 then
+        b.phase = 'won'
+    elseif b.hp <= 0 then
+        b.phase = 'lost'
+    end
     return true
 end
 
@@ -659,16 +802,24 @@ function CB.enemyAct(b)
     end
     if move.atk then
         local per = CB.attackDamage(move.atk + e.bonus, e, b)
-        local blocked, lost = 0, 0
+        local blocked, lost, pricked = 0, 0, 0
         for _ = 1, (move.n or 1) do
             local a, l = CB.hit(b, per)
             blocked, lost = blocked + a, lost + l
+            if (b.thorns or 0) > 0 then
+                local _, t = CB.hit(e, b.thorns)
+                pricked = pricked + t
+            end
+            if e.hp <= 0 or b.hp <= 0 then break end
         end
         parts[#parts + 1] = '공격 ' .. per .. ((move.n or 1) > 1 and ('×' .. move.n) or '')
             .. ' (막음 ' .. blocked .. ', 받은 피해 ' .. lost .. ')'
+        if pricked > 0 then parts[#parts + 1] = '가시에 ' .. pricked end
         lostTotal, blockedTotal = lost, blocked
     end
     if move.str then e.str = e.str + move.str parts[#parts + 1] = '힘 +' .. move.str end
+    if move.thorns then e.thorns = (e.thorns or 0) + move.thorns parts[#parts + 1] = '가시 +' .. move.thorns end
+    if move.poison then b.poison = (b.poison or 0) + move.poison parts[#parts + 1] = '독 ' .. move.poison end
     if move.weak then b.weak = b.weak + move.weak parts[#parts + 1] = '약화 ' .. move.weak end
     if move.vuln then
         b.vuln = b.vuln + move.vuln
@@ -682,31 +833,65 @@ end
 -- A turn of weak or vulnerable is spent at the end of the turn it counts in:
 -- the player's weak and the enemy's vulnerable on the player's turn, the
 -- enemy's weak and the player's vulnerable on the enemy's (vulnerable the
--- enemy put on the player this turn waits for its next one).
+-- enemy put on the player this turn waits for its next one). Poison takes
+-- its due at the start of its bearer's turn; armor is block for the enemy's.
 function CB.endTurn(b)
-    for _, id in ipairs(b.hand) do b.discard[#b.discard + 1] = id end
-    b.hand, b.selected = {}, nil
+    local kept = {}
+    for _, id in ipairs(b.hand) do
+        local card = b.cards[id]
+        if card and (card.fx or {}).retain then kept[#kept + 1] = id else b.discard[#b.discard + 1] = id end
+    end
+    b.hand, b.selected = kept, nil
+    if (b.armor or 0) > 0 then b.block = b.block + b.armor end
     if b.weak > 0 then b.weak = b.weak - 1 end
     if b.enemy.vuln > 0 then b.enemy.vuln = b.enemy.vuln - 1 end
     local e = b.enemy
     e.block = 0
-    local acted, lost = CB.enemyAct(b)
     b.anim = { deal = true }
+    local mine = #b.played > 0 and table.concat(b.played, ', ') or '카드 없음'
+    b.played = {}
+    local poisoned = CB.tickPoison(e)
+    if e.hp <= 0 then
+        b.log[#b.log + 1] = b.turn .. '턴: ' .. mine .. ' / 적: 독 ' .. poisoned .. '에 쓰러짐'
+        b.note = '적이 독에 쓰러졌습니다'
+        b.anim.enemy, b.anim.enemyText = 'hit', '-' .. poisoned
+        b.phase = 'won'
+        return
+    end
+    local acted, lost = CB.enemyAct(b)
+    if poisoned > 0 then
+        acted = '독 ' .. poisoned .. ', ' .. acted
+        b.anim.enemy, b.anim.enemyText = 'hit', '-' .. poisoned
+    end
     if lost then b.anim.player, b.anim.playerText = 'hurt', lost > 0 and ('-' .. lost) or '막음' end
     if e.weak > 0 then e.weak = e.weak - 1 end
     if b.vulnFresh then b.vulnFresh = nil elseif b.vuln > 0 then b.vuln = b.vuln - 1 end
-    local mine = #b.played > 0 and table.concat(b.played, ', ') or '카드 없음'
     b.log[#b.log + 1] = b.turn .. '턴: ' .. mine .. ' / 적: ' .. acted
-    b.played = {}
     b.note = '적: ' .. acted
     if b.hp <= 0 then
         b.phase = 'lost'
         return
     end
+    if e.hp <= 0 then
+        b.phase = 'won'
+        return
+    end
     b.turn = b.turn + 1
     b.block = 0
-    b.energy = b.maxEnergy
-    CB.drawCards(b, 5)
+    local hurt = CB.tickPoison(b)
+    if hurt > 0 then
+        b.note = b.note .. ' / 독 ' .. hurt
+        b.anim.player, b.anim.playerText = 'hurt', '-' .. hurt
+        if b.hp <= 0 then
+            b.log[#b.log + 1] = b.turn .. '턴: 독 ' .. hurt .. '에 쓰러짐'
+            b.phase = 'lost'
+            return
+        end
+    end
+    b.energy = b.maxEnergy + (b.nextEnergy or 0)
+    b.nextEnergy = 0
+    CB.drawCards(b, 5 + (b.nextDraw or 0))
+    b.nextDraw = 0
 end
 
 CB.OUTCOME_LABEL = { won = '승리', lost = '패배', fled = '도망' }
@@ -971,20 +1156,28 @@ end
 function CB.cardType(card)
     local fx = card.fx or {}
     if fx.dmg then return 'atk' end
-    if (fx.str or fx.energy) and not fx.block and not fx.heal then return 'pow' end
+    if (fx.str or fx.dex or fx.thorns or fx.armor or fx.energy or fx.charge) and not fx.block and not fx.heal then return 'pow' end
     return 'skl'
 end
 
 function CB.cardIcon(card)
     local fx = card.fx or {}
+    if fx.dmg and fx.drain then return '🩸' end
+    if fx.dmg and fx.poison then return '🧪' end
+    if fx.dmg and fx.pierce then return '🏹' end
     if fx.dmg and (fx.hits or 1) > 1 then return '🗡️' end
     if fx.dmg and (fx.vuln or fx.weak) then return '🎯' end
+    if fx.dmg and fx.exhaust then return '💥' end
     if fx.dmg then return '⚔️' end
+    if fx.thorns then return '🌵' end
+    if fx.armor then return '🔰' end
     if fx.block then return '🛡️' end
+    if fx.poison then return '🧪' end
     if fx.heal then return '💚' end
     if fx.str then return '💪' end
-    if fx.energy then return '⚡' end
-    if fx.draw then return '📜' end
+    if fx.dex then return '🤸' end
+    if fx.energy or fx.charge then return '⚡' end
+    if fx.draw or fx.prepare then return '📜' end
     if fx.weak or fx.vuln then return '☠️' end
     return '✨'
 end
@@ -1029,6 +1222,12 @@ local function chips(who)
     if (who.str or 0) > 0 then parts[#parts + 1] = '<span class="cbx-chip">💪 힘 ' .. who.str .. '</span>' end
     if (who.weak or 0) > 0 then parts[#parts + 1] = '<span class="cbx-chip">🌀 약화 ' .. who.weak .. '</span>' end
     if (who.vuln or 0) > 0 then parts[#parts + 1] = '<span class="cbx-chip">💔 취약 ' .. who.vuln .. '</span>' end
+    if (who.poison or 0) > 0 then parts[#parts + 1] = '<span class="cbx-chip">🧪 독 ' .. who.poison .. '</span>' end
+    if (who.thorns or 0) > 0 then parts[#parts + 1] = '<span class="cbx-chip">🌵 가시 ' .. who.thorns .. '</span>' end
+    if (who.armor or 0) > 0 then parts[#parts + 1] = '<span class="cbx-chip">🔰 매 턴 방어 ' .. who.armor .. '</span>' end
+    if (who.dex or 0) > 0 then parts[#parts + 1] = '<span class="cbx-chip">🤸 민첩 ' .. who.dex .. '</span>' end
+    if (who.nextEnergy or 0) > 0 then parts[#parts + 1] = '<span class="cbx-chip">⚡ 다음 턴 +' .. who.nextEnergy .. '</span>' end
+    if (who.nextDraw or 0) > 0 then parts[#parts + 1] = '<span class="cbx-chip">📜 다음 턴 +' .. who.nextDraw .. '장</span>' end
     return '<div class="cbx-chips">' .. table.concat(parts) .. '</div>'
 end
 
@@ -1073,8 +1272,10 @@ function CB.fightView(b, user)
     out[#out + 1] = '<div style="position:relative;height:160px;margin-top:14px">' .. table.concat(cards) .. '</div>'
     local picked = b.selected and b.cards[b.hand[b.selected]]
     if picked then
+        local help = CB.keywordHelp(picked)
         out[#out + 1] = '<div class="cbx-detail"><b>' .. escapeHtml(picked.name) .. '</b> — ' .. escapeHtml(CB.effectText(picked))
-            .. (picked.desc ~= '' and ('<br><span class="cbx-flavour">' .. escapeHtml(picked.desc) .. '</span>') or '') .. '</div>'
+            .. ((picked.desc or '') ~= '' and ('<br><span class="cbx-flavour">' .. escapeHtml(picked.desc) .. '</span>') or '')
+            .. (#help > 0 and ('<br><span style="font-size:11px;opacity:.75">' .. escapeHtml(table.concat(help, ' ')) .. '</span>') or '') .. '</div>'
         out[#out + 1] = '<div style="display:flex;gap:8px;margin-top:8px"><span risu-btn="cb|play|' .. b.selected .. '" class="cbx-btn cbx-gold" style="flex:2">▶ 사용</span>'
             .. '<span risu-btn="cb|unsel" class="cbx-btn cbx-dark" style="flex:1">취소</span></div>'
     else
@@ -1112,6 +1313,16 @@ function CB.endView(b)
         out[#out + 1] = '<div style="text-align:center;margin-top:16px;font-size:13px;font-weight:700;color:#f3d79b">새 카드 하나를 고르세요</div>'
             .. (reward.note and ('<div class="cbx-sub">' .. escapeHtml(reward.note) .. '</div>') or '')
         out[#out + 1] = '<div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap">' .. table.concat(faces) .. '</div>'
+        -- The words the three cards use, once each.
+        local seen, help = {}, {}
+        for _, card in ipairs(reward.choices) do
+            for _, line in ipairs(CB.keywordHelp(card)) do
+                if not seen[line] then seen[line] = true help[#help + 1] = escapeHtml(line) end
+            end
+        end
+        if #help > 0 then
+            out[#out + 1] = '<div style="margin-top:12px;font-size:11px;line-height:1.5;opacity:.75">' .. table.concat(help, '<br>') .. '</div>'
+        end
         out[#out + 1] = '<div style="display:flex;margin-top:14px"><span risu-btn="cb|skip" class="cbx-btn cbx-dark" style="flex:1">건너뛰기</span></div>'
     elseif type(reward) == 'table' and reward.making then
         out[#out + 1] = '<div class="cbx-note cbx-pulse" style="margin-top:18px">보조 모델이 새 카드를 쓰는 중…</div>'

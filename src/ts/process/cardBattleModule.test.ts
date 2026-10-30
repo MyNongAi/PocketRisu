@@ -253,6 +253,134 @@ describe('the fight', () => {
     })
 })
 
+describe('more effects', () => {
+    // A fight against a dummy that only defends, and a hand of given cards.
+    const setup = `
+        local function fresh()
+            local b = CB.newBattle(CB.newRun(3), { id = 'x', name = '', tier = 'normal' }, { healEach = true })
+            b.enemy.hp, b.enemy.maxHp, b.enemy.block, b.enemy.bonus = 100, 100, 0, 0
+            b.enemy.moves, b.enemy.step = { { def = 1 } }, 1
+            return b
+        end
+        local function deal(b, cards)
+            b.cards = cards
+            b.hand, b.draw, b.discard, b.energy = {}, {}, {}, 3
+            for i = 1, #cards do b.hand[i] = i end
+        end`
+
+    test('cards keep only what the module plays: keywords need a real effect, exhaust and hit points pay, every pool card fits its cost', async () => {
+        const result = await probe(`
+            local flagsOnly = CB.cleanCard({ name = '말뿐', effects = { retain = true, exhaust = true, pierce = true } }, { rarity = 'common', cost = 1 })
+            local noDamage = CB.cleanCard({ name = '방패 찌르기', effects = { block = 5, pierce = true, drain = 'true' } }, { rarity = 'common', cost = 1 })
+            local last = CB.cleanCard({ name = '최후', effects = { dmg = 22, exhaust = 1 } }, { rarity = 'epic', cost = 1 })
+            local notLast = CB.cleanCard({ name = '최후', effects = { dmg = 22 } }, { rarity = 'epic', cost = 1 })
+            local paid = CB.cleanCard({ name = '피값', effects = { dmg = 40, hpCost = 12 } }, { rarity = 'common', cost = 0 })
+            local changed = {}
+            for rarity, list in pairs(CB.POOL) do
+                for _, card in ipairs(list) do
+                    local c = CB.cleanCard(card, { rarity = rarity, cost = card.cost })
+                    if not c or c.cost ~= card.cost or CB.effectText(c) ~= CB.effectText(card) then changed[#changed + 1] = card.name end
+                end
+            end
+            return json.encode({
+                flagsOnly = flagsOnly == nil, noDamage = noDamage.fx, last = { cost = last.cost, dmg = last.fx.dmg }, notLast = notLast.cost,
+                paid = { cost = paid.cost, dmg = paid.fx.dmg, hpCost = paid.fx.hpCost }, changed = changed, rules = CB.CARD_RULES,
+                text = CB.effectText({ fx = { hpCost = 3, dmg = 12, pierce = 1, drain = 1, retain = 1, exhaust = 1 } }),
+                more = CB.effectText({ fx = { poison = 5, thorns = 2, armor = 3, dex = 1, charge = 1, prepare = 2 } }),
+            })`)
+        expect(result.flagsOnly).toBe(true)
+        expect(result.noDamage).toEqual({ block: 5 })
+        expect(result.last).toEqual({ cost: 1, dmg: 22 })
+        expect(result.notLast).toBe(2)
+        expect(result.paid).toEqual({ cost: 3, dmg: 34, hpCost: 12 })
+        expect(result.changed).toEqual([])
+        expect(result.rules).toContain('poison =')
+        expect(result.rules).toContain('exhaust =')
+        expect(result.text).toBe('체력 3 소모, 피해 12 (방어 무시) (흡혈), 보존, 소멸')
+        expect(result.more).toBe('독 5, 민첩 +1, 가시 2, 매 턴 방어 3, 다음 턴 에너지 +1, 다음 턴 2장 더')
+    })
+
+    test('poison takes its due at the start of its bearer\'s turn, thorns prick every hit, armor blocks the enemy\'s turn', async () => {
+        const result = await probe(`${setup}
+            local p = fresh() p.enemy.poison = 4 CB.endTurn(p)
+            local k = fresh() k.enemy.hp = 3 k.enemy.poison = 5 CB.endTurn(k)
+            local q = fresh() q.enemy.moves = { { poison = 3 } } CB.endTurn(q)
+            local t = fresh() t.thorns = 3 t.enemy.moves = { { atk = 2, n = 3 } } CB.endTurn(t)
+            local a = fresh() a.armor = 5 a.enemy.moves = { { atk = 7 } } CB.endTurn(a)
+            return json.encode({
+                poisoned = { hp = p.enemy.hp, left = p.enemy.poison, log = p.log[1] },
+                killed = { phase = k.phase, log = k.log[1] },
+                onMe = { hp = q.hp, left = q.poison },
+                thorned = { enemyHp = t.enemy.hp, hp = t.hp },
+                armored = a.hp,
+            })`)
+        expect(result.poisoned).toEqual({ hp: 96, left: 3, log: '1턴: 카드 없음 / 적: 독 4, 방어 1' })
+        expect(result.killed).toEqual({ phase: 'won', log: '1턴: 카드 없음 / 적: 독 5에 쓰러짐' })
+        expect(result.onMe).toEqual({ hp: 57, left: 2 })
+        expect(result.thorned).toEqual({ enemyHp: 91, hp: 54 })
+        expect(result.armored).toBe(58)
+    })
+
+    test('dex, pierce, drain, the enemy\'s thorns and a hit point cost play as written', async () => {
+        const result = await probe(`${setup}
+            local d = fresh() deal(d, { CB.copy(CB.DEFEND) }) d.dex = 2 CB.play(d, 1)
+            local x = fresh()
+            deal(x, { { name = '꿰뚫기', cost = 1, fx = { dmg = 6, pierce = 1 } }, { name = '흡혈', cost = 1, fx = { dmg = 8, drain = 1 } } })
+            x.enemy.block, x.hp = 10, 50
+            CB.play(x, 1)
+            local pierced = { enemyHp = x.enemy.hp, block = x.enemy.block }
+            x.enemy.block = 3
+            CB.play(x, 1)
+            local y = fresh() deal(y, { { name = '연타', cost = 1, fx = { dmg = 3, hits = 3 } } }) y.enemy.thorns = 2 CB.play(y, 1)
+            local h = fresh() deal(h, { { name = '피', cost = 0, fx = { dmg = 5, hpCost = 5 } } }) h.hp = 2 CB.play(h, 1)
+            return json.encode({
+                dexBlock = d.block, pierced = pierced, drained = { hp = x.hp, enemyHp = x.enemy.hp, note = x.note },
+                pricked = { hp = y.hp, enemyHp = y.enemy.hp }, lastPoint = { hp = h.hp, phase = h.phase },
+            })`)
+        expect(result.dexBlock).toBe(7)
+        expect(result.pierced).toEqual({ enemyHp: 94, block: 10 })
+        expect(result.drained).toMatchObject({ hp: 55, enemyHp: 89 })
+        expect(result.drained.note).toContain('흡혈 5')
+        expect(result.pricked).toEqual({ hp: 54, enemyHp: 91 })
+        expect(result.lastPoint).toEqual({ hp: 1, phase: 'fight' })
+    })
+
+    test('retain keeps a card, exhaust takes one out of the fight, charge and prepare land next turn', async () => {
+        const result = await probe(`${setup}
+            local r = fresh()
+            deal(r, { { name = '버티기', cost = 1, fx = { block = 3, retain = 1 } }, { name = '마지막 수', cost = 0, fx = { dmg = 5, exhaust = 1 } }, { name = '준비', cost = 0, fx = { charge = 1, prepare = 2 } } })
+            for i = 4, 12 do r.cards[i] = CB.copy(CB.STRIKE) r.draw[#r.draw + 1] = i end
+            CB.play(r, 2)
+            CB.play(r, 2)
+            local before = { nextEnergy = r.nextEnergy, nextDraw = r.nextDraw }
+            CB.endTurn(r)
+            return json.encode({ before = before, kept = r.cards[r.hand[1]].name, hand = #r.hand, energy = r.energy,
+                exhausted = r.exhausted, discard = r.discard, nextEnergy = r.nextEnergy, nextDraw = r.nextDraw })`)
+        expect(result.before).toEqual({ nextEnergy: 1, nextDraw: 2 })
+        expect(result.kept).toBe('버티기')
+        expect(result.hand).toBe(8)
+        expect(result.energy).toBe(4)
+        expect(result.exhausted).toEqual([2])
+        expect(result.discard).toEqual([3])
+        expect(result).toMatchObject({ nextEnergy: 0, nextDraw: 0 })
+    })
+
+    test('a lifted card explains its keywords, and the bars show the new states', async () => {
+        const result = await probe(`${setup}
+            local b = fresh()
+            deal(b, { { name = '독 바르기', cost = 1, fx = { poison = 5 }, rarity = 'common', desc = '' } })
+            b.selected = 1
+            b.enemy.poison, b.thorns, b.armor = 3, 2, 4
+            b.enemy.moves = { { atk = 5, poison = 2 } }
+            return json.encode({ view = CB.fightView(b, '레이') })`)
+        expect(result.view).toContain('독: 적이 자기 턴을 시작할 때')
+        expect(result.view).toContain('🧪 독 3')
+        expect(result.view).toContain('🌵 가시 2')
+        expect(result.view).toContain('🔰 매 턴 방어 4')
+        expect(result.view).toContain('⚔️ 5 🧪')
+    })
+})
+
 describe('after a reply', () => {
     test('a battle tag asks to fight and, on yes, opens the fight on that message', async () => {
         const { chat, run, state } = makeChat([
