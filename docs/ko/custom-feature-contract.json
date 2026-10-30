@@ -2464,6 +2464,45 @@
       ]
     },
     {
+      "id": "CARD-BATTLE-MODULE",
+      "title": "어느 봇에나 붙이는 덱빌딩 카드 전투 배포용 모듈 (🃏 카드 전투), 전투 기록이 이야기로 이어지고 레벨업 카드는 AI가 씀",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "modules/card-battle/card-battle.lua",
+        "modules/card-battle/build.mjs",
+        "modules/card-battle/README.ko.md"
+      ],
+      "requiredMarkers": [
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "function CB.cleanCard(raw, slot)"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "CB.TAG_PATTERN = '<[Bb][Aa][Tt][Tt][Ll][Ee]%f[%s/>]([^>]*)>'"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "local step = n > 1 and math.min(50, math.floor(220 / (n - 1))) or 0"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "listenEdit('editRequest', function(tid, request, meta)"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "onButtonClick = async(function(tid, data)"
+        },
+        {
+          "file": "modules/card-battle/build.mjs",
+          "contains": "'cardbattle.cards=레벨업 카드 만드는 모델=select=보조 모델,메인 모델,기본 카드만',"
+        }
+      ],
+      "regressionTests": [
+        "src/ts/process/cardBattleModule.test.ts"
+      ]
+    },
+    {
       "id": "AUX-MODEL-LOREBOOK",
       "title": "로어북을 보조모델로 (🌙): 답이 끝나면 보조모델이 에셋 태그를 넣음",
       "criticality": "core-ux",
