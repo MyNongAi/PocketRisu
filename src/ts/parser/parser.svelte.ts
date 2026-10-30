@@ -1206,6 +1206,16 @@ export async function ParseMarkdown(
         }, options.context)
         firstParsed = data
     }
+    else{
+        // Without assets nothing above awaits, and the display scripts would
+        // start in the caller's turn: a body parsed inside a $derived
+        // (ChatBody) then threw state_unsafe_mutation where runLuaEditTrigger
+        // marks the bot's triggers, and the Lua display (a status panel,
+        // 장면 접기's folds) was dropped for messages drawn without assets
+        // until they came near the screen (the user's report, 2026-10-30: the
+        // view flickered scrolling up). Upstream always awaits the assets here.
+        await Promise.resolve()
+    }
 
     if(char){
         data = (await processScriptFull(char, data, 'editdisplay', chatID, cbsConditions, options.context)).data
