@@ -119,6 +119,11 @@ function isUserActive(): boolean {
     return Date.now() - lastUserGestureAt < USER_GESTURE_WINDOW_MS
 }
 
+const WRITER_SESSION_ID_KEY = 'risu-writer-session-id'
+function mintWriterSessionId(): string {
+    return crypto?.randomUUID?.() ?? (Date.now().toString(36) + Math.random().toString(36).slice(2))
+}
+
 // Custom error class for database conflict detection
 /**
  * Thrown from a conflict copy hook (ChatSaveOptions.preserveServerCopy) when
@@ -581,12 +586,11 @@ export class NodeStorage{
     // mid-session). Still per-tab: a genuinely new tab gets a new id, and
     // same-device multi-tab is handled by the BroadcastChannel lock.
     private static sessionId: string = (() => {
-        const KEY = 'risu-writer-session-id'
-        const minted = crypto?.randomUUID?.() ?? (Date.now().toString(36) + Math.random().toString(36).slice(2))
+        const minted = mintWriterSessionId()
         try {
-            const stored = sessionStorage.getItem(KEY)
+            const stored = sessionStorage.getItem(WRITER_SESSION_ID_KEY)
             if (stored) return stored
-            sessionStorage.setItem(KEY, minted)
+            sessionStorage.setItem(WRITER_SESSION_ID_KEY, minted)
         } catch { /* storage unavailable (rare privacy modes) — per-load id */ }
         return minted
     })()
