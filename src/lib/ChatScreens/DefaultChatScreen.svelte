@@ -9,7 +9,7 @@
     import { setRequestPairing } from 'src/ts/gui/requestPairing';
     import { mergeAuxLines } from 'src/ts/process/auxLorebook';
     import { clearRerollPlaceholder, heldRerollSwipe, setRerollPlaceholder } from 'src/ts/gui/rerollPlaceholder';
-    import { CameraIcon, ChevronUpIcon, ChevronDownIcon, DatabaseIcon, GlobeIcon, FileTextIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ZapIcon, Maximize2, Minimize2, GitBranch } from "@lucide/svelte";
+    import { CameraIcon, ChevronUpIcon, ChevronDownIcon, DatabaseIcon, GlobeIcon, FileTextIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ArrowLeft, ArrowRight, ZapIcon, Maximize2, Minimize2, GitBranch } from "@lucide/svelte";
     import ShDropdownMenu from 'src/lib/UI/GUI/ShDropdownMenu.svelte';
     import ShDropdownMenuTrigger from 'src/lib/UI/GUI/ShDropdownMenuTrigger.svelte';
     import ShDropdownMenuContent from 'src/lib/UI/GUI/ShDropdownMenuContent.svelte';
@@ -43,6 +43,7 @@ import { isMobile } from 'src/ts/platform'
     import MainMenu from '../UI/MainMenu.svelte';
     import AssetInput from './AssetInput.svelte';
     import { scrollWithinContainer } from './scrollWithin';
+    import { REPLY_ROW_BUTTONS, floatingSwipeBottom, floatingSwipeShows, type NewestReplyControls } from './floatingSwipe';
     import { isAtTail, shouldLoadOlderPages } from './chatViewport';
     import { aiLawApplies, chatFoldedState, chatFoldedStateMessageIndex, downloadFile, forageStorage, requestImmediateSave } from 'src/ts/globalApi.svelte';
     import { runTrigger } from 'src/ts/process/triggers';
@@ -433,6 +434,65 @@ import { isMobile } from 'src/ts/platform'
             return
         }
         navigateMessage(direction)
+    }
+
+    // The newest reply's ‹ page › ↻ row, floated at the bottom right while the
+    // reader is below it in a long reply (floatingSwipe.ts; the user's
+    // request, 2026-10-31). Chats.svelte says what the row does.
+    let newestReplyControls = $state<NewestReplyControls | null>(null)
+    let floatingSwipeShown = $state(false)
+    // Px of the view the composer covers when it is on screen: the copy sits above it.
+    let floatingSwipeCover = $state(0)
+    let floatingSwipeFrame = 0
+
+    function updateFloatingSwipe() {
+        floatingSwipeFrame = 0
+        const controls = newestReplyControls
+        const container = screenRoot as HTMLElement | null
+        const reply = controls && container && DBState.db.nodeOnlyFloatingSwipe
+            ? container.querySelector<HTMLElement>(`.chat-message-container[data-chat-slot="${controls.slot}"]`)
+            : null
+        if (!reply || !container) {
+            floatingSwipeShown = false
+            return
+        }
+        const viewRect = container.getBoundingClientRect()
+        const composer = container.querySelector<HTMLElement>(':scope > [data-chat-composer]')
+        const cover = composer ? Math.min(viewRect.height, Math.max(0, viewRect.bottom - composer.getBoundingClientRect().top)) : 0
+        const rows = Array.from(reply.querySelectorAll<HTMLElement>(REPLY_ROW_BUTTONS))
+            .filter((button) => button.getClientRects().length > 0)
+            .map((button) => button.getBoundingClientRect())
+        floatingSwipeCover = cover
+        floatingSwipeShown = floatingSwipeShows(rows, reply.getBoundingClientRect(), { top: viewRect.top, bottom: viewRect.bottom - cover })
+    }
+
+    function scheduleFloatingSwipe() {
+        if (floatingSwipeFrame) return
+        floatingSwipeFrame = requestAnimationFrame(updateFloatingSwipe)
+    }
+
+    $effect(() => {
+        void newestReplyControls
+        void DBState.db.nodeOnlyFloatingSwipe
+        scheduleFloatingSwipe()
+    })
+
+    /** ‹ or ›: another page is another text, so it shows from its start, where its own row is. */
+    function floatingSwipe(direction: 'prev' | 'next') {
+        const controls = newestReplyControls
+        if (!controls) return
+        if (direction === 'prev' ? controls.currentPage <= 1 : controls.currentPage >= controls.totalPages) return
+        if (direction === 'prev') controls.prev()
+        else controls.next()
+        // Still the old page's element: the redraw takes its place.
+        chatsInstance?.showMessageStart?.(controls.slot)
+    }
+
+    /** ↻ asks first when the row's ↻ does ("confirm reroll"). */
+    async function floatingReroll() {
+        const reroll = newestReplyControls?.reroll
+        if (!reroll) return
+        if (!DBState.db.confirmReroll || await alertConfirm(language.rerollConfirm)) reroll()
     }
 
     function navigateMessage(direction: 'prev' | 'next') {
@@ -1571,6 +1631,39 @@ import { isMobile } from 'src/ts/platform'
         </div>
     {/if}
 
+    {#if floatingSwipeShown && newestReplyControls}
+        {@const controls = newestReplyControls}
+        {@const floatingButton = 'w-9 h-9 text-textcolor2 hover:text-textcolor hover:bg-darkbg/50 flex items-center justify-center transition-colors select-none'}
+        <!-- The newest reply's ‹ page › ↻ while its own row is scrolled away (floatingSwipe.ts). -->
+        <div
+            class="absolute z-40 right-3 flex flex-row rounded-lg bg-bgcolor/70 backdrop-blur-sm border border-darkborderc border-opacity-30 shadow-lg overflow-hidden"
+            style:bottom={`${floatingSwipeBottom(DBState.db.nodeOnlyScrollButtonType, DBState.db.nodeOnlyScrollButtonPosition, floatingSwipeCover)}px`}
+            data-floating-swipe
+        >
+            <button class={floatingButton} class:opacity-40={controls.currentPage <= 1}
+                title={language.floatingSwipePrev} aria-label={language.floatingSwipePrev}
+                onclick={() => floatingSwipe('prev')}>
+                <ArrowLeft size={18} />
+            </button>
+            {#if !DBState.db.hideMessagePageCount}
+                <div class="border-l border-darkborderc border-opacity-30"></div>
+                <span class="flex items-center px-1.5 text-xs text-textcolor2 select-none">{controls.currentPage}/{controls.totalPages}</span>
+            {/if}
+            <div class="border-l border-darkborderc border-opacity-30"></div>
+            <button class={floatingButton} class:opacity-40={controls.currentPage >= controls.totalPages}
+                title={language.floatingSwipeNext} aria-label={language.floatingSwipeNext}
+                onclick={() => floatingSwipe('next')}>
+                <ArrowRight size={18} />
+            </button>
+            {#if controls.reroll}
+                <div class="border-l border-darkborderc border-opacity-30"></div>
+                <button class={floatingButton} title={language.reroll} aria-label={language.reroll} onclick={floatingReroll}>
+                    <RefreshCcwIcon size={17} />
+                </button>
+            {/if}
+        </div>
+    {/if}
+
     {#if showNewMessageButton}
         {#if (DBState.db.newMessageButtonStyle === 'bottom-center' || !DBState.db.newMessageButtonStyle)}
             <button class="absolute bottom-16 left-1/2 -translate-x-1/2 bg-primary text-white px-4 py-2 rounded-full shadow-lg z-50 flex items-center gap-2 hover:bg-primary/90 transition-colors" onclick={scrollToBottom}>
@@ -1977,6 +2070,7 @@ import { isMobile } from 'src/ts/platform'
             if (DBState.db.nodeOnlyScrollButtonType !== 'off') {
                 bumpScrollNav()
             }
+            scheduleFloatingSwipe()
             const chatTarget = e.currentTarget
             if(shouldLoadOlderPages(chatTarget, loadPages, currentChat.length)){
                 loadPages += getAdditionalChatLoadPages(DBState.db)
@@ -2065,6 +2159,7 @@ import { isMobile } from 'src/ts/platform'
                 userIcon={userIcon}
                 userIconPortrait={userIconPortrait}
                 bind:hasNewUnreadMessage={showNewMessageButton}
+                bind:newestReplyControls
             />
 
             <!-- The fold is the selected chat's: not in the pane beside it. -->

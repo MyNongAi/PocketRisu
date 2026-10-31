@@ -15,6 +15,7 @@
     import { chatGenKey, isChatGenerating } from 'src/ts/process/generationState';
     import { rerollPlaceholderPages, rerollPlaceholderShows, rerollPlaceholders, stepRerollPlaceholderSwipe, type RerollPlaceholder } from 'src/ts/gui/rerollPlaceholder';
     import { SWIPE_ROW_BUTTONS, buttonRows, rowAt, rowFromBottom } from 'src/ts/gui/swipeAnchor';
+    import type { NewestReplyControls } from './floatingSwipe';
     
     // The pane this list draws (chatPanes.svelte.ts). Messages are mounted
     // by hand below; they get this component's context so they know it too.
@@ -33,7 +34,8 @@
         userIcon,
         loadPages,
         userIconPortrait,
-        hasNewUnreadMessage = $bindable(false)
+        hasNewUnreadMessage = $bindable(false),
+        newestReplyControls = $bindable(null)
     }:{
         messages: Message[]
         currentCharacter: character
@@ -46,6 +48,8 @@
         loadPages: number
         userIconPortrait?: boolean
         hasNewUnreadMessage?: boolean
+        /** The newest reply's ‹ page › ↻ row, for its floating copy (floatingSwipe.ts). */
+        newestReplyControls?: NewestReplyControls | null
     } = $props();
 
     let chatBody: HTMLDivElement;
@@ -131,6 +135,33 @@
             totalPages: pages.total,
             unseenPage: false,
             unseenPageShort: false,
+        }
+    };
+
+    /** The newest reply's ‹ page › ↻ row: what its floating copy does (floatingSwipe.ts). */
+    const newestControls = (placeholder: RerollPlaceholder<any> | undefined, placeholderIndex: number, lastRealCharIdx: number): NewestReplyControls | null => {
+        if (placeholder && placeholderIndex >= 0) {
+            const pages = rerollPlaceholderPages(placeholder, newReplyHasText(placeholder))
+            return {
+                slot: placeholderIndex,
+                currentPage: pages.current,
+                totalPages: pages.total,
+                prev: () => { stepRerollPlaceholderSwipe(placeholder.chatId, -1, newReplyHasText(placeholder)) },
+                next: () => { stepRerollPlaceholderSwipe(placeholder.chatId, 1, newReplyHasText(placeholder)) },
+                reroll: null,
+            }
+        }
+        if (lastRealCharIdx < 0) return null
+        const state = placeholder?.hold && placeholder.showingNew && lastRealCharIdx === placeholder.index
+            ? newReplyPageState(placeholder)
+            : rerollTargetState(messages[lastRealCharIdx], true, lastRealCharIdx)
+        return {
+            slot: lastRealCharIdx,
+            currentPage: state.currentPage,
+            totalPages: state.totalPages,
+            prev: state.unReroll,
+            next: state.onNextSwipe,
+            reroll: state.swipeOnly ? null : onReroll,
         }
     };
 
@@ -377,6 +408,7 @@
         });
 
         hashes = currentHashes;
+        newestReplyControls = newestControls(placeholder, placeholderIndex, lastRealCharIdx);
     };
 
     onDestroy(() => {
@@ -771,6 +803,22 @@
         pinnedToTail = false;
         viewportIntent++;
         viewportRestoreRevision++;
+    }
+
+    /**
+     * Show a message from its start and make that the reader's place, before
+     * it is redrawn (a floating swipe arrow, floatingSwipe.ts): kept to the
+     * line read before, the redraw put the view back there.
+     */
+    export const showMessageStart = (slot: number) => {
+        const sc = getScroller()
+        const element = chatBody?.querySelector<HTMLElement>(`:scope > [data-chat-slot="${slot}"]`)
+        if (!sc || !element) return
+        releaseViewport()
+        swipeAnchor = null
+        sc.scrollTop += element.getBoundingClientRect().top - sc.getBoundingClientRect().top
+        readerAtTail = isAtTail(sc)
+        recordReaderAnchor()
     }
 
     /** After a size change: follow the tail if the reader asked for that, else keep their line. */

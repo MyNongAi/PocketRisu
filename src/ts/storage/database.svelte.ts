@@ -814,6 +814,7 @@ export function normalizeDatabase(data:Database){
     // 'four' (separate top/bottom buttons) became the two buttons' hold.
     if (data.nodeOnlyScrollButtonType !== 'off') data.nodeOnlyScrollButtonType = 'two'
     data.nodeOnlyScrollButtonPosition ??= 'right-center'
+    data.nodeOnlyFloatingSwipe ??= true
     data.nodeOnlyHideRecentChats ??= false
     data.nodeOnlyArchivedCharacters ??= []
     data.nodeOnlyHideArchivedCharacters ??= false
@@ -1763,6 +1764,8 @@ export interface Database{
     nodeOnlyScrollButtonType?:'two'|'off'|'four'
     /** Where the chat scroll buttons appear while scrolling. */
     nodeOnlyScrollButtonPosition?:'right-center'|'right-bottom'|'bottom-center'
+    /** The newest reply's ‹ page › ↻, floated while its row is scrolled away (floatingSwipe.ts). */
+    nodeOnlyFloatingSwipe?:boolean
     nodeOnlyHideRecentChats?:boolean
     // Deactivated characters (src/ts/characterArchive.ts). Their bodies live
     // server-side in kv archive/<chaId>/<archivedAt>; only these stubs stay in the database

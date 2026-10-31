@@ -2765,6 +2765,29 @@
       ]
     },
     {
+      "id": "FLOATING-SWIPE",
+      "title": "리롤 플로팅 버튼(‹ 페이지 › ↻)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/ChatScreens/floatingSwipe.ts",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/lib/ChatScreens/Chats.svelte",
+        "src/ts/setting/accessibilitySettingsData.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "bind:newestReplyControls" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "data-floating-swipe" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "chatsInstance?.showMessageStart?.(controls.slot)" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "newestReplyControls = newestControls(placeholder, placeholderIndex, lastRealCharIdx);" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "export const showMessageStart = (slot: number) =>" },
+        { "file": "src/ts/storage/database.svelte.ts", "contains": "data.nodeOnlyFloatingSwipe ??= true" },
+        { "file": "src/ts/setting/accessibilitySettingsData.ts", "contains": "'acc.nodeOnlyFloatingSwipe'," }
+      ],
+      "regressionTests": [
+        "src/lib/ChatScreens/floatingSwipe.test.ts"
+      ]
+    },
+    {
       "id": "UNIFIED-ASSETS",
       "title": "🖼️ 에셋 통일 (봇+히로인 모듈 그림 규칙 하나로)",
       "criticality": "core-ux",

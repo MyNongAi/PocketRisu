@@ -387,6 +387,14 @@ export const accessibilitySettingsItems: SettingItem[] = [
         keywords: ['scroll', 'button', 'position', 'center', '위치'],
     },
     {
+        id: 'acc.nodeOnlyFloatingSwipe',
+        type: 'check',
+        labelKey: 'nodeOnlyFloatingSwipe',
+        bindKey: 'nodeOnlyFloatingSwipe',
+        helpKey: 'nodeOnlyFloatingSwipe',
+        keywords: ['reroll', 'swipe', 'page', 'floating', 'button', '리롤', '스와이프', '페이지'],
+    },
+    {
         id: 'acc.showModelInSidebar',
         type: 'check',
         labelKey: 'showModelInSidebar',
@@ -462,6 +470,7 @@ export const accessibilityScrollItems = pick([
     'acc.newMessageButtonStyle',
     'acc.nodeOnlyScrollButtonType',
     'acc.nodeOnlyScrollButtonPosition',
+    'acc.nodeOnlyFloatingSwipe',
     'acc.chatLoadInitialPages',
     'acc.chatLoadAdditionalPages',
 ]);
