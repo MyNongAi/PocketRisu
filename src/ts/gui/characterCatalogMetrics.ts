@@ -166,3 +166,41 @@ export function buildCharacterNameSimilarityCounts(
     similarityCache = { key, counts }
     return counts
 }
+
+let trashSimilarityCache: { key: string, counts: Map<string, number> } | null = null
+
+/** The trash's "유사 N" tooltip. */
+export const TRASH_SIMILARITY_TITLE = '휴지통 밖에 이름 유사도 90% 이상인 봇'
+
+/**
+ * "유사 N" in the trash: for a bot in the trash, how many bots outside it
+ * (live or deactivated) have a name 90% or more alike, grouped as above, so
+ * the trash shows whether a near copy is kept before a bot is deleted for
+ * good (the user's request, 2026-10-31). Other bots in the trash are not
+ * counted: a copy that is also on its way out keeps nothing.
+ */
+export function buildTrashNameSimilarityCounts(
+    characters: readonly SimilarityCatalogEntry[],
+    archived: readonly SimilarityCatalogEntry[] = [],
+): Map<string, number> {
+    const bots: Array<{ chaId: string, name: unknown, trashed: boolean }> = []
+    for (const character of characters) {
+        if (character?.chaId && !character.chaId.startsWith('§')) bots.push({ chaId: character.chaId, name: character.name, trashed: !!character.trashTime })
+    }
+    for (const stub of archived) {
+        if (stub?.chaId) bots.push({ chaId: stub.chaId, name: stub.name, trashed: !!stub.trashedAt })
+    }
+    if (!bots.some((bot) => bot.trashed)) return new Map()
+    const key = bots.map((bot) => `${bot.chaId}${bot.trashed ? 1 : 0}${typeof bot.name === 'string' ? bot.name : ''}`).join('')
+    if (trashSimilarityCache?.key === key) return trashSimilarityCache.counts
+    const counts = new Map<string, number>()
+    for (const group of findHighSimilarityNameGroups(bots)) {
+        const kept = new Set(group.members.filter((bot) => !bot.trashed).map((bot) => bot.chaId)).size
+        if (kept === 0) continue
+        for (const bot of group.members) {
+            if (bot.trashed) counts.set(bot.chaId, kept)
+        }
+    }
+    trashSimilarityCache = { key, counts }
+    return counts
+}

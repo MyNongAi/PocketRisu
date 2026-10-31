@@ -27,7 +27,7 @@
     import { isRealmAssetRecoveryAvailable, isRedListTitle, listTitleColor } from "src/ts/gui/titleColors";
     import VirtualGrid from "../UI/Virtual/VirtualGrid.svelte";
     import VirtualList from "../UI/Virtual/VirtualList.svelte";
-    import { buildCharacterNameSimilarityCounts, buildExactCharacterDuplicateCounts, countCatalogCharacters } from "src/ts/gui/characterCatalogMetrics";
+    import { buildCharacterNameSimilarityCounts, buildExactCharacterDuplicateCounts, buildTrashNameSimilarityCounts, countCatalogCharacters, TRASH_SIMILARITY_TITLE } from "src/ts/gui/characterCatalogMetrics";
     import { formatImportedDate } from "src/ts/gui/importedDate";
     import { characterRings } from "src/ts/gui/characterRings.svelte";
 
@@ -213,6 +213,7 @@
     const trashedCharacters = $derived(formatChars(search, DBState.db, true))
     const redTrashCount = $derived(formatChars('', DBState.db, true).filter((char) => isRedListTitle(char.titleColor, char.missingAssetCount > 0)).length)
     const similarityCounts = $derived(buildCharacterNameSimilarityCounts(DBState.db.characters, DBState.db.nodeOnlyArchivedCharacters ?? []))
+    const trashSimilarityCounts = $derived(selected === 2 ? buildTrashNameSimilarityCounts(DBState.db.characters, DBState.db.nodeOnlyArchivedCharacters ?? []) : new Map<string, number>())
 
     onMount(() => {
         const generation = ++duplicateScanGeneration
@@ -361,6 +362,7 @@
                             </div>
                             <div class="mt-1 flex items-center text-sm text-textcolor2">
                                 <span class="mr-1">{char.chats}</span><MessageSquareIcon size={14}/><span class="mx-1">|</span><span>{char.agoText}</span><span class="mx-1">|</span><span>에셋 {char.assetCount.toLocaleString()}개</span>
+                                {#if (trashSimilarityCounts.get(char.chaId) ?? 0) > 0}<span class="mx-1">|</span><span title={TRASH_SIMILARITY_TITLE}>{language.characterSimilarityCountLabel(trashSimilarityCounts.get(char.chaId) ?? 0)}</span>{/if}
                             </div>
                         </div>
                     </div>

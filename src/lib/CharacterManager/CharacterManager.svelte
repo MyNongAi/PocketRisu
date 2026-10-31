@@ -50,7 +50,7 @@
         canMoveOrderEntry, deactivatedCharacterIds, isDeactivatedGroupingEnabled, isDeactivatedSystemFolder,
     } from "src/ts/deactivatedCharacterFolders";
     import { language } from "src/lang";
-    import { buildCharacterNameSimilarityCounts, buildExactCharacterDuplicateCounts } from "src/ts/gui/characterCatalogMetrics";
+    import { buildCharacterNameSimilarityCounts, buildExactCharacterDuplicateCounts, buildTrashNameSimilarityCounts, TRASH_SIMILARITY_TITLE } from "src/ts/gui/characterCatalogMetrics";
     import { isRedListTitle, listTitleColor } from "src/ts/gui/titleColors";
 
     interface Props {
@@ -79,6 +79,7 @@
     let liveEntries = $derived([...entries.values()].filter((e) => !e.trashed));
     let similarityCounts = $derived(buildCharacterNameSimilarityCounts(DBState.db.characters, DBState.db.nodeOnlyArchivedCharacters ?? []));
     let allTrashEntries = $derived([...entries.values()].filter((e) => e.trashed));
+    let trashSimilarityCounts = $derived(tab === 1 ? buildTrashNameSimilarityCounts(DBState.db.characters, DBState.db.nodeOnlyArchivedCharacters ?? []) : new Map<string, number>());
     let trashEntries = $derived(allTrashEntries.filter((e) => matchesSearch(e.name, search)));
     let redTrashEntries = $derived(allTrashEntries.filter((e) => isRedListTitle(e.titleColor, e.missingAssetCount > 0)));
     // A folder whose name matches the search shows all of its characters (the filter still applies).
@@ -758,7 +759,7 @@
         <div class="flex-1 min-h-0 overflow-y-auto px-4 pb-4">
             <div class="flex flex-col gap-1">
                 {#each trashEntries as entry (entry.chaId)}
-                    <CharacterRow {entry} duplicateCount={duplicateCount(entry.chaId)} onOpen={() => {}} menu={trashMenu} />
+                    <CharacterRow {entry} similarityCount={trashSimilarityCounts.get(entry.chaId) ?? 0} similarityTitle={TRASH_SIMILARITY_TITLE} duplicateCount={duplicateCount(entry.chaId)} onOpen={() => {}} menu={trashMenu} />
                 {:else}
                     <div class="py-8 text-center text-sm text-textcolor2">{language.noCharactersFound}</div>
                 {/each}
