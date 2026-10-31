@@ -602,6 +602,7 @@ export async function characterURLImport() {
         const data = hash.replace('#import_module=', '')
         const importData = JSON.parse(Buffer.from(decodeURIComponent(data), 'base64').toString('utf-8'))
         importData.id = v4()
+        delete importData.mcp
 
         // Asked only when "allow low-level access on import" is turned off (on by default).
         if(importData.lowLevelAccess && getDatabase().nodeOnlyAutoAllowLowLevelImport === false){

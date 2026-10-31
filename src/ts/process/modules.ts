@@ -434,6 +434,7 @@ export async function readModule(
     }
 
     module.id = v4()
+    delete module.mcp
     return module
 }
 
@@ -566,6 +567,7 @@ export async function importModuleFile(
             throw new Error(language.errors.noData)
         }
         importData.id = v4()
+        delete importData.mcp
 
         // Imported modules must own their asset list. Keeping another module's
         // lazy manifest descriptor would make later edits mutate the source.
