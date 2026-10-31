@@ -2661,6 +2661,30 @@
       ]
     },
     {
+      "id": "UNIFIED-ASSETS",
+      "title": "🖼️ 에셋 통일 (봇+히로인 모듈 그림 규칙 하나로)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/process/unifiedAssets.ts",
+        "src/ts/process/unifiedAssetsRuntime.ts",
+        "src/ts/process/scripts.ts",
+        "src/ts/process/lorebook.svelte.ts",
+        "src/ts/process/index.svelte.ts",
+        "src/lib/SideBars/Toggles.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/scripts.ts", "contains": ".concat(withoutImageScripts(char.customscript, unifiedAssets))" },
+        { "file": "src/ts/process/scripts.ts", "contains": "data = await unifyImageTags(data, mode === 'editdisplay' ? 'display' : 'request', targetCharacter, targetChat, context, String(chatID))" },
+        { "file": "src/ts/process/lorebook.svelte.ts", "contains": "for (const lore of fullLore) lore.content = stripImageInstructionLines(lore.content) ?? lore.content" },
+        { "file": "src/ts/process/index.svelte.ts", "contains": "const guide = await unifiedAssetGuide(currentChar, getRuntimeModuleContext())" },
+        { "file": "src/ts/process/index.svelte.ts", "contains": "charText(currentChar.desc)" },
+        { "file": "src/lib/SideBars/Toggles.svelte", "contains": "if (checked) chat.nodeOnlyUnifiedAssets = true" }
+      ],
+      "regressionTests": [
+        "src/ts/process/unifiedAssets.test.ts"
+      ]
+    },
+    {
       "id": "MENU-HOLD-DRAG",
       "title": "목록 오른쪽 ⋮를 길게 눌러 끌기",
       "criticality": "core-ux",

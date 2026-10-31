@@ -14,6 +14,7 @@ import { pluginV2 } from "../plugins/plugins.svelte";
 import { runTrigger } from "./triggers";
 import { getFirstMessageAtIndex } from "../firstMessage";
 import { LruMap } from "../util/lruMap";
+import { unifiedAssetsOn, unifyImageTags, withoutImageScripts } from "./unifiedAssetsRuntime";
 
 const dreg = /{{data}}/g
 const randomness = /\|\|\|/g
@@ -181,7 +182,15 @@ export async function processScriptFull(
         }
     }
 
-    const scripts = (db.presetRegex ?? []).concat(char.customscript).concat(getModuleRegexScripts(context))
+    // 에셋 통일 (unifiedAssetsRuntime.ts): the bot's and modules' image regexes
+    // stay out, and every image tag goes through the one lookup instead.
+    const unifiedAssets = unifiedAssetsOn(targetChat) && !!targetCharacter
+    if(unifiedAssets && (mode === 'editdisplay' || mode === 'editprocess')){
+        data = await unifyImageTags(data, mode === 'editdisplay' ? 'display' : 'request', targetCharacter, targetChat, context, String(chatID))
+    }
+    const scripts = (db.presetRegex ?? [])
+        .concat(withoutImageScripts(char.customscript, unifiedAssets))
+        .concat(withoutImageScripts(getModuleRegexScripts(context), unifiedAssets))
     // Script templates can introduce asset-list tokens after the initial
     // parse, so hydrate only the manifests referenced by this request.
     await hydrateAssetListsForCbs(char, [

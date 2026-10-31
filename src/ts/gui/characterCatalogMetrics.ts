@@ -191,7 +191,7 @@ export function buildTrashNameSimilarityCounts(
         if (stub?.chaId) bots.push({ chaId: stub.chaId, name: stub.name, trashed: !!stub.trashedAt })
     }
     if (!bots.some((bot) => bot.trashed)) return new Map()
-    const key = bots.map((bot) => `${bot.chaId}${bot.trashed ? 1 : 0}${typeof bot.name === 'string' ? bot.name : ''}`).join('')
+    const key = bots.map((bot) => `${bot.chaId}\u0001${bot.trashed ? 1 : 0}\u0001${typeof bot.name === 'string' ? bot.name : ''}`).join('\u0002')
     if (trashSimilarityCache?.key === key) return trashSimilarityCache.counts
     const counts = new Map<string, number>()
     for (const group of findHighSimilarityNameGroups(bots)) {

@@ -1,6 +1,6 @@
 <script lang="ts">
     import { getModuleToggles } from "src/ts/process/modules";
-    import { DBState } from "src/ts/stores.svelte";
+    import { DBState, ReloadGUIPointer } from "src/ts/stores.svelte";
     import { getPaneView, paneToggles, pinnedToggleValues, shownBesideSelection } from "src/ts/chatPanes.svelte";
     import { parseToggleSyntax, type sidebarToggle, type sidebarToggleGroup } from "src/ts/util";
     import { language } from "src/lang";
@@ -363,6 +363,26 @@
                 if (!char) return
                 if (checked) char.nodeOnlyHideFloatingButtons = true
                 else delete char.nodeOnlyHideFloatingButtons
+            }}
+        />
+    </div>
+    <!-- Per chat (the user's request, 2026-10-31): one image rule and lookup
+         for the bot and its modules (unifiedAssets.ts). -->
+    <div class="w-full flex mt-2 items-center justify-between gap-2 min-h-10 rounded-md px-1">
+        <span class="flex items-center gap-1 min-w-0">
+            <span class="break-words">{language.unifiedAssets}</span>
+            <Help key="unifiedAssets" />
+        </span>
+        <ShSwitch
+            className="shrink-0"
+            checked={!!view.chat?.nodeOnlyUnifiedAssets}
+            onCheckedChange={(checked) => {
+                const chat = view.chat
+                if (!chat) return
+                if (checked) chat.nodeOnlyUnifiedAssets = true
+                else delete chat.nodeOnlyUnifiedAssets
+                // The messages on screen are drawn again with or without it.
+                ReloadGUIPointer.update((value) => value + 1)
             }}
         />
     </div>

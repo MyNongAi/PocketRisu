@@ -310,6 +310,13 @@ export const helpEn = {
             "- Saved per bot.\n" +
             "- Buttons in the message text and an open, larger popup are left as they are.\n" +
             "- Turn it off and they show again at once.",
+        unifiedAssets:
+            "For a bot played with several heroine modules whose images go missing. On, in this chat:\n\n" +
+            "- The bot's and modules' image regexes (the ones that catch an image tag) are skipped; status panels, text fixes and the rest still run.\n" +
+            "- Whatever shape the AI writes an image tag in (`<img=\"..\">`, `<img cmd=..>`, `{{img::..}}`, ...), it is looked up in the bot's and modules' asset names and shown with the official output, sized by the asset width setting.\n" +
+            "- The AI gets one image rule listing every character's names; the lines of the bot's and modules' text that show an image tag are left out. The prompt preset is not touched.\n" +
+            "- A keyword without its outfit or character prefix takes the one that character used last (or its most common one).\n" +
+            "- Saved per chat; turn it off and everything is as before.",
         wholeBotAssets:
             "When this bot's (or a module's) styling crops the pictures in its messages, shows them whole at their own ratio. For example, an asset picture cut into a flat strip on a phone, showing only its top.\n\n" +
             "- Saved per bot.\n" +

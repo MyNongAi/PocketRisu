@@ -10,6 +10,7 @@ import { alertError, notifySuccess } from "../alert";
 import { language } from "../../lang";
 import { downloadFile } from "../globalApi.svelte";
 import { getModuleLorebooks, type ModuleRuntimeContext } from "./modules";
+import { stripImageInstructionLines } from "./unifiedAssets";
 import { CCardLib } from "@risuai/ccardlib";
 import { v4 } from "uuid";
 
@@ -113,6 +114,10 @@ export async function loadLoreBookV3Prompt(context?: ModuleRuntimeContext){
     const moduleLorebook = getModuleLorebooks(context)
     const generationUserName = context?.userName ?? DBState.db.username
     const fullLore = safeStructuredClone(characterLore.concat(chatLore).concat(moduleLorebook))
+    // 에셋 통일: the bot's and modules' own image instructions stay out (unifiedAssets.ts).
+    if (targetChat.nodeOnlyUnifiedAssets) {
+        for (const lore of fullLore) lore.content = stripImageInstructionLines(lore.content) ?? lore.content
+    }
     const currentChat = targetChat.message
     const loreDepth = char.loreSettings?.scanDepth ?? DBState.db.loreBookDepth
     const loreToken = char.loreSettings?.tokenBudget ?? DBState.db.loreBookToken

@@ -12,6 +12,8 @@ import { language } from "../../lang";
 import { alertError, notifyError } from "../alert";
 import { parseChatML } from "../parser/chatML";
 import { loadLoreBookV3Prompt } from "./lorebook.svelte";
+import { stripImageInstructionLines } from "./unifiedAssets";
+import { unifiedAssetGuide, unifiedAssetsOn } from "./unifiedAssetsRuntime";
 import { findCharacterbyId, getPersonaPrompt, isLastCharPunctuation, trimUntilPunctuation, parseToggleSyntax, prebuiltAssetCommand } from "../util";
 import { requestChatData } from "./request/request";
 import { hasRenderableMainOutput, shouldRunAuxiliaryModel } from './auxiliaryOutput';
@@ -169,6 +171,8 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     let generationTarget:GenerationTargetIdentity|undefined = arg.generationTarget
     let moduleContext:ModuleRuntimeContext|undefined = arg.moduleContext
 
+    // 에셋 통일: the bot's own image instructions stay out of its text (unifiedAssets.ts).
+    const charText = (text:string|undefined) => unifiedAssetsOn(currentChat) ? stripImageInstructionLines(text) : text
     const getRuntimeModuleContext = ():ModuleRuntimeContext => {
         moduleContext ??= captureModuleRuntimeContext(currentChar, currentChat)
         // Character/chat objects can be replaced by a trigger. Keep the
@@ -624,7 +628,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
             unformated.jailbreak.push(...formatPrompt(risuChatParser(DBState.db.jailbreak, {chara: currentChar})))
         }
     
-        unformated.globalNote.push(...formatPrompt(risuChatParser(currentChar.replaceGlobalNote?.replaceAll('{{original}}', DBState.db.globalNote) || DBState.db.globalNote, {chara:currentChar})))
+        unformated.globalNote.push(...formatPrompt(risuChatParser(charText(currentChar.replaceGlobalNote)?.replaceAll('{{original}}', DBState.db.globalNote) || DBState.db.globalNote, {chara:currentChar})))
     }
 
     let baseDescriptionPrompt:OpenAIChat|null = null
@@ -652,7 +656,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
     }
 
     {
-        let description = risuChatParser((DBState.db.promptPreprocess ? DBState.db.descriptionPrefix: '') + currentChar.desc, {chara: currentChar})
+        let description = risuChatParser((DBState.db.promptPreprocess ? DBState.db.descriptionPrefix: '') + charText(currentChar.desc), {chara: currentChar})
 
         const additionalInfo = await additionalInformations(currentChar, currentChat)
 
@@ -758,6 +762,14 @@ export async function sendChat(chatProcessIndex = -1,arg:{
                 role: 'system',
                 content: currentChar.newGenData.instructions
             })
+        }
+    }
+
+    // 에셋 통일: one image rule for the bot and its modules, after the rest.
+    if(unifiedAssetsOn(currentChat)){
+        const guide = await unifiedAssetGuide(currentChar, getRuntimeModuleContext())
+        if(guide){
+            unformated.postEverything.push({ role: 'system', content: guide })
         }
     }
 
@@ -931,7 +943,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 
                     if(card.type2 === 'globalNote'){
                         if(currentChar.replaceGlobalNote){
-                            content = positionParser(currentChar.replaceGlobalNote, posType).replaceAll('{{original}}', content)
+                            content = positionParser(charText(currentChar.replaceGlobalNote), posType).replaceAll('{{original}}', content)
                         }
                         
                         if(currentChar.prebuiltAssetCommand && !card.text.includes('{{//@customimageinstruction}}')){
@@ -1514,7 +1526,7 @@ export async function sendChat(chatProcessIndex = -1,arg:{
 
                     if(card.type2 === 'globalNote'){
                         if(currentChar.replaceGlobalNote){
-                            content = positionParser(currentChar.replaceGlobalNote, posType).replaceAll('{{original}}', content)
+                            content = positionParser(charText(currentChar.replaceGlobalNote), posType).replaceAll('{{original}}', content)
                         }
                         if(currentChar.prebuiltAssetCommand && !card.text.includes('{{//@customimageinstruction}}')){
                             content += prebuiltAssetCommand

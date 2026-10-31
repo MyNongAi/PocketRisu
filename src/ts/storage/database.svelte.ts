@@ -2552,6 +2552,8 @@ export interface Chat{
     nodeOnlyToolUse?: boolean
     /** PocketRisu: the bot edit mode's approval and this sitting's backups (editSession.ts). */
     nodeOnlyEditSession?: import('../process/mcp/editSession').EditSession
+    /** PocketRisu: 에셋 통일, one image rule and lookup for the bot and its modules (unifiedAssets.ts). */
+    nodeOnlyUnifiedAssets?: boolean
     /** Per-chat opt-in: when this chat's MAIN request goes through a ModelPreset,
      * override the preset's sampling parameters with the active prompt preset's
      * (temperature, top_p, penalties, ...). Off (or absent) => preset params only.
