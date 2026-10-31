@@ -24,6 +24,7 @@ import { BoundedObjectUrlCache, createDeduplicatedImageLoader } from "./storage/
 import { getFirstMessageAtIndex } from "./firstMessage";
 import { needsCharacterRuntimeNormalization } from "./characterRuntime";
 import { botVisits } from "./gui/botVisitHistory";
+import { characterIdsBefore, characterToOpenAfterImport } from "./importNavigation";
 
 const CHAT_HYDRATION_INDICATOR_DELAY_MS = 180
 const CHAT_PREFETCH_DELAY_MS = 110
@@ -909,7 +910,7 @@ export async function addCharacter(arg:{
         return
     }
     reseter();
-    const countBefore = getDatabase().characters.length
+    const before = characterIdsBefore(getDatabase().characters)
     switch(r){
         case 'createfromScratch':
             createNewCharacter()
@@ -935,14 +936,32 @@ export async function addCharacter(arg:{
             return
     }
     let db = getDatabase()
+    // A bot made from scratch opens; an imported one only when "go to the
+    // character on import" is on (importNavigation.ts).
+    const added = characterToOpenAfterImport(db.characters, before, r === 'createfromScratch' || !!db.goCharacterOnImport)
     if(arg.stay){
-        if(db.characters.length === countBefore) return
+        if(added === -1) return
         arg.stay.onLeave()
     }
-    if(db.characters[db.characters.length-1]){
-        changeChar(db.characters.length-1)
+    if(added !== -1){
+        changeChar(added)
     }
     MobileGUIStack.set(1)
+}
+
+/** The bots there now, for openImportedCharacter once an import is done. */
+export function characterIdsNow() {
+    return characterIdsBefore(getDatabase().characters)
+}
+
+/**
+ * After an import outside the add menu (a dropped file or link): opens the
+ * bot it added when "go to the character on import" is on.
+ */
+export function openImportedCharacter(before: ReadonlySet<string | undefined>) {
+    const db = getDatabase()
+    const added = characterToOpenAfterImport(db.characters, before, !!db.goCharacterOnImport)
+    if(added !== -1) changeChar(added)
 }
 
 /**

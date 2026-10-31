@@ -8,9 +8,13 @@ import { language } from 'src/lang'
 import { notifyWarning } from './alert'
 
 export async function importDroppedLink(url: string, destination: 'character' | 'module'): Promise<boolean> {
-    const imported = destination === 'module'
-        ? await (await import('./process/modules')).importModuleLink(url)
-        : await (await import('./characters')).importCharacterLink(url)
+    const characters = destination === 'character' ? await import('./characters') : null
+    const before = characters?.characterIdsNow()
+    const imported = characters
+        ? await characters.importCharacterLink(url)
+        : await (await import('./process/modules')).importModuleLink(url)
     if (!imported) notifyWarning(language.linkDropUnsupported)
+    // The bot it brought opens only when "go to the character on import" is on.
+    else if (characters && before) characters.openImportedCharacter(before)
     return imported
 }

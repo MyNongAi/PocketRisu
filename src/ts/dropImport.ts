@@ -12,6 +12,8 @@ export async function importDroppedFiles(
     destination: DropImportDestination = 'default',
 ) {
     let importedCharacter = false
+    const characters = await import('./characters')
+    const before = characters.characterIdsNow()
     const result = await runImportBatch(files, async (file, report) => {
         const kind = classifyDroppedImport(file.name, destination)
 
@@ -45,7 +47,11 @@ export async function importDroppedFiles(
         importedCharacter = true
     })
 
-    if(importedCharacter) checkCharOrder()
+    if(importedCharacter){
+        checkCharOrder()
+        // The bot it brought opens only when "go to the character on import" is on.
+        characters.openImportedCharacter(before)
+    }
     if(result.completed > 0){
         notifySuccess(`${result.completed}/${result.total} ${language.successImport}`)
     }

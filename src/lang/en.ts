@@ -1512,7 +1512,7 @@ export const languageEnglish = {
     end: "End",
     index: "Index",
     search: "Search",
-    goCharacterOnImport: "Go to Character on Realm Import",
+    goCharacterOnImport: "Go to Character on Import",
     format: "Format",
     v2Warning: "Warning: V2 card is no longer supported. it may not contain all the data.",
     applyModule: "Apply Module",

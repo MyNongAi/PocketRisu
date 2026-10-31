@@ -2702,6 +2702,26 @@
       ]
     },
     {
+      "id": "IMPORT-GO-TO-CHARACTER",
+      "title": "가져온 봇으로 이동은 토글을 따름",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/importNavigation.ts",
+        "src/ts/characters.ts",
+        "src/ts/dropImport.ts",
+        "src/ts/linkDropImport.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/characters.ts", "contains": "const added = characterToOpenAfterImport(db.characters, before, r === 'createfromScratch' || !!db.goCharacterOnImport)" },
+        { "file": "src/ts/dropImport.ts", "contains": "characters.openImportedCharacter(before)" },
+        { "file": "src/ts/linkDropImport.ts", "contains": "else if (characters && before) characters.openImportedCharacter(before)" }
+      ],
+      "regressionTests": [
+        "src/ts/importNavigation.test.ts",
+        "src/ts/linkDropImport.test.ts"
+      ]
+    },
+    {
       "id": "UNIFIED-ASSETS",
       "title": "🖼️ 에셋 통일 (봇+히로인 모듈 그림 규칙 하나로)",
       "criticality": "core-ux",
@@ -2936,7 +2956,7 @@
       ],
       "requiredMarkers": [
         { "file": "src/ts/characters.ts", "contains": "stay?:{ onLeave:()=>void }," },
-        { "file": "src/ts/characters.ts", "contains": "if(db.characters.length === countBefore) return" },
+        { "file": "src/ts/characters.ts", "contains": "if(added === -1) return" },
         { "file": "src/lib/CharacterManager/CharacterManager.svelte", "contains": "await addCharacter({ stay: { onLeave: close } });" }
       ]
     },
