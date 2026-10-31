@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
     distanceFromTail,
     isAtTail,
+    lineKey,
+    matchingLineIndex,
     revealScrollTop,
     shouldFollowTail,
     shouldLoadOlderPages,
@@ -59,5 +61,23 @@ describe('chat viewport (top-origin scroller)', () => {
         expect(shouldLoadOlderPages(box(40), 20, 100)).toBe(true)
         expect(shouldLoadOlderPages(box(40), 100, 100)).toBe(false)
         expect(shouldLoadOlderPages(box(4400), 20, 100)).toBe(false)
+    })
+
+    it('finds the line being read in its redrawn message by its text, the nearest of equals', () => {
+        // A rerolled reply's old page, drawn again with a taller header: every line 24px lower.
+        const redrawn = [
+            { text: 'header', top: 0 },
+            { text: 'first paragraph', top: 64 },
+            { text: 'same words', top: 224 },
+            { text: 'the line being read', top: 424 },
+            { text: 'same words', top: 624 },
+        ]
+        expect(matchingLineIndex(redrawn, 'the line being read', 400)).toBe(3)
+        expect(matchingLineIndex(redrawn, 'same words', 600)).toBe(4)
+        expect(matchingLineIndex(redrawn, 'same words', 210)).toBe(2)
+        expect(matchingLineIndex(redrawn, 'a line no longer there', 400)).toBe(-1)
+        expect(matchingLineIndex(redrawn, '', 0)).toBe(-1)
+        expect(lineKey('x'.repeat(500))).toHaveLength(200)
+        expect(lineKey(null)).toBe('')
     })
 })
