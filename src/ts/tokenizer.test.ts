@@ -40,9 +40,12 @@ vi.mock("./storage/persistentKv", () => ({
 
 // The UMD bundle exports nothing when Node loads it as an ES module; it
 // attaches itself to globalThis.tokenizers instead, and needs a file URL
-// location to find its wasm binding.
+// location to find its wasm binding. The location must be an absolute file
+// URL on every platform: on Windows "file:///" has no drive and Node's
+// createRequire rejects it.
 vi.mock("@mlc-ai/web-tokenizers", async (importOriginal) => {
-    vi.stubGlobal("location", { href: "file:///" });
+    const { pathToFileURL } = await import("node:url");
+    vi.stubGlobal("location", { href: pathToFileURL(process.cwd() + "/").href });
     await importOriginal();
     return (globalThis as unknown as { tokenizers: unknown }).tokenizers;
 });
