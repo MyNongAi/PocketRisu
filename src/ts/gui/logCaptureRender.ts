@@ -11,6 +11,7 @@ import { mount, unmount } from 'svelte'
 import type { Message } from '../storage/database.svelte'
 import Chat from 'src/lib/ChatScreens/Chat.svelte'
 import { getCharImage } from '../characters'
+import { boundPersona } from '../nameOnlyPersona'
 import { createSimpleCharacter, DBState, selIdState } from '../stores.svelte'
 import { getFirstMessageAtIndex } from '../firstMessage'
 import { resolveAllInlayPlaceholders } from '../parser/parser.svelte'
@@ -138,7 +139,7 @@ function ensureCaptureStyle() {
 export function personaFor(chatBindedPersona: string | undefined) {
     const db = DBState.db
     if (chatBindedPersona) {
-        const persona = db.personas.find((p) => p.id === chatBindedPersona)
+        const persona = boundPersona(db, chatBindedPersona)
         if (persona) return { name: persona.name, icon: persona.icon, largePortrait: persona.largePortrait }
     }
     const persona = db.personas[db.selectedPersona]

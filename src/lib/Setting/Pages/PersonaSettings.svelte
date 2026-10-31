@@ -7,10 +7,12 @@
     import ShInput from "src/lib/UI/GUI/ShInput.svelte";
     import TextAreaInput from "src/lib/UI/GUI/TextAreaInput.svelte";
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
-    import { Clock3Icon, CornerDownRightIcon, FolderPlusIcon, Grid3X3Icon, GripHorizontalIcon, HardDriveUploadIcon, ListIcon, ListOrderedIcon, PlusIcon, SearchIcon, StarIcon } from "@lucide/svelte";
+    import { Clock3Icon, CornerDownRightIcon, EraserIcon, FolderPlusIcon, Grid3X3Icon, GripHorizontalIcon, HardDriveUploadIcon, ListIcon, ListOrderedIcon, PlusIcon, SearchIcon, StarIcon } from "@lucide/svelte";
     import { alertConfirm, alertInput, notifyError, notifySuccess } from "src/ts/alert";
     import { getCharImage } from "src/ts/characters";
-    import { changeUserPersona, compareRecentlyApplied, exportUserPersona, importUserPersona, importUserPersonaImage, personaAppliedAt, removePersona, saveUserPersona, selectUserImg, setUserPersonaImage } from "src/ts/persona";
+    import { changeUserPersona, compareRecentlyApplied, exportUserPersona, importUserPersona, importUserPersonaImage, removePersona, saveUserPersona, selectUserImg, setUserPersonaImage } from "src/ts/persona";
+    import { loadPersonaSort, savePersonaSort, sortPersonaGroups, type PersonaSortMode } from "src/ts/personaSort";
+    import { nameOnlyPersonaCount, retireNameOnlyPersonas } from "src/ts/nameOnlyPersona";
     import { onDestroy } from "svelte";
     import { DBState } from 'src/ts/stores.svelte';
     import { requestImmediateSave } from "src/ts/globalApi.svelte";
@@ -52,44 +54,28 @@
         try { localStorage.setItem('risu-persona-settings-view', next) } catch {}
     }
 
-    type PersonaSortMode = 'registered' | 'recent'
     let personaSearch = $state('')
-    let personaSort = $state<PersonaSortMode>(
-        typeof localStorage !== 'undefined' && localStorage.getItem('risu-persona-sort') === 'recent'
-            ? 'recent'
-            : 'registered',
-    )
+    let personaSort = $state<PersonaSortMode>(loadPersonaSort())
     let detailHeight = $state(loadDetailHeight())
     let stopDetailResize: (() => void) | null = null
 
     const folders = $derived(DBState.db.personaFolders ?? [])
     const personaGroups = $derived.by(() => {
         const query = personaSearch.trim().toLocaleLowerCase().replace(/\s+/g, '')
-        const groups = groupByFolder(DBState.db.personas.map((persona) => persona.folderId), folders)
+        const groups = sortPersonaGroups(groupByFolder(DBState.db.personas.map((persona) => persona.folderId), folders)
             .map((group) => ({
                 ...group,
-                indexes: group.indexes
-                    .filter((index) => {
-                        if (!query) return true
-                        const persona = DBState.db.personas[index]
-                        const source = resolveCharacterSourceBadge(persona?.sourceInfo?.label, localOriginOf(persona)).label
-                        return `${persona?.name ?? ''}\n${persona?.note ?? ''}\n${persona?.personaPrompt ?? ''}\n${source}`
-                            .replace(/\s+/g, '')
-                            .toLocaleLowerCase()
-                            .includes(query)
-                    })
-                    .sort(personaSort === 'recent' ? compareRecentlyApplied(DBState.db.personas) : (left, right) => left - right),
-            }))
+                indexes: group.indexes.filter((index) => {
+                    if (!query) return true
+                    const persona = DBState.db.personas[index]
+                    const source = resolveCharacterSourceBadge(persona?.sourceInfo?.label, localOriginOf(persona)).label
+                    return `${persona?.name ?? ''}\n${persona?.note ?? ''}\n${persona?.personaPrompt ?? ''}\n${source}`
+                        .replace(/\s+/g, '')
+                        .toLocaleLowerCase()
+                        .includes(query)
+                }),
+            })), DBState.db.personas, folders, personaSort)
         const keyOf = (group: { folder: { id: string } | null }) => group.folder?.id ?? ''
-        if (personaSort === 'recent') {
-            // A folder is as recent as the folders inside it.
-            const latest = new Map(groups.map((group) => [keyOf(group), Math.max(0, ...group.indexes.map((index) => personaAppliedAt(DBState.db.personas[index])))]))
-            for (const group of groups) {
-                const parentId = shownInside(group.folder, folders)
-                if (parentId && latest.has(parentId)) latest.set(parentId, Math.max(latest.get(parentId) ?? 0, latest.get(keyOf(group)) ?? 0))
-            }
-            groups.sort((left, right) => (latest.get(keyOf(right)) ?? 0) - (latest.get(keyOf(left)) ?? 0))
-        }
         // Folders in folders (made in the list view's folder menu): each
         // folder, then the ones shown inside it, indented; a folder counts
         // their personas too.
@@ -116,7 +102,7 @@
 
     function setPersonaSort(next: PersonaSortMode) {
         personaSort = next
-        try { localStorage.setItem('risu-persona-sort', next) } catch {}
+        savePersonaSort(next)
     }
 
     function ensureId(persona: typeof DBState.db.personas[number]) {
@@ -353,6 +339,20 @@
         if (DBState.db.personas[DBState.db.selectedPersona] !== selected) expanded = false
     }
 
+    // Personas with nothing but a name (the chat popup made them before
+    // 2026-10-31) leave the list; a chat bound to one keeps the name as a
+    // name-only binding (nameOnlyPersona.ts).
+    const nameOnlyCount = $derived(nameOnlyPersonaCount(DBState.db))
+    async function retireNameOnly() {
+        const count = nameOnlyPersonaCount(DBState.db)
+        if (count === 0) return
+        if (!await alertConfirm(`설명·메모·이미지 없이 이름만 있는 페르소나 ${count}개를 목록에서 지웁니다. 이 페르소나를 바인딩한 채팅은 그 이름을 그대로 씁니다.`)) return
+        saveUserPersona()
+        const retired = retireNameOnlyPersonas(DBState.db)
+        void requestImmediateSave()
+        notifySuccess(`빈 페르소나 ${retired}개를 정리했습니다.`)
+    }
+
     onDestroy(() => {
         stopDetailResize?.()
         saveUserPersona()
@@ -476,6 +476,11 @@
         <ShButton size="sm" variant={personaSort === 'recent' ? 'default' : 'outline'} onclick={() => setPersonaSort('recent')}>
             <Clock3Icon />최근 적용순
         </ShButton>
+        {#if nameOnlyCount > 0}
+            <ShButton size="sm" variant="outline" onclick={retireNameOnly} title="설명·메모·이미지 없이 이름만 있는 페르소나를 목록에서 지웁니다">
+                <EraserIcon />빈 페르소나 정리 {nameOnlyCount}
+            </ShButton>
+        {/if}
         <span class="grow"></span>
         <ShButton
             size="sm"

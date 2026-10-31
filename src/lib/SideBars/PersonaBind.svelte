@@ -10,18 +10,16 @@
     import ShButton from "../UI/GUI/ShButton.svelte";
     import { markPersonaApplied } from "src/ts/persona";
     import { requestImmediateSave } from "src/ts/globalApi.svelte";
+    import { boundPersona } from "src/ts/nameOnlyPersona";
     // The pane this is drawn in (chatPanes.svelte.ts): its chat, not only the selected one.
     const view = getPaneView()
 
     let currentChat = $derived(view.chat)
 
-    let boundPersona = $derived.by(() => {
-        const id = currentChat?.bindedPersona
-        if (!id) return null
-        return DBState.db.personas.find(p => p.id === id) ?? null
-    })
-    let displayPersona = $derived(boundPersona ?? DBState.db.personas[DBState.db.selectedPersona])
-    let isPersonaBound = $derived(!!boundPersona)
+    // A name-only binding (nameOnlyPersona.ts) shows as its name.
+    let bound = $derived(boundPersona(DBState.db, currentChat?.bindedPersona) ?? null)
+    let displayPersona = $derived(bound ?? DBState.db.personas[DBState.db.selectedPersona])
+    let isPersonaBound = $derived(!!bound)
 
     function bindPersona(personaIndex: number) {
         const chat = getCurrentChat()

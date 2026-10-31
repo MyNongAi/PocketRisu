@@ -17,6 +17,7 @@ import { getInlayMeta, setInlayMeta, type InlayAssetMeta } from './process/files
 import { PngChunk } from './pngChunk'
 import { reencodeImage } from './process/files/inlays'
 import { promoteNewlyImportedCharacter } from './characterRecentOrder'
+import { addNameOnlyNames, nameOnlyNamesFor } from './nameOnlyPersona'
 
 // ── Types ──
 
@@ -277,6 +278,7 @@ function importChatsToCharacter(
     if (chatsJson.type !== 'risuAllChats' || chatsJson.ver !== 2 || !Array.isArray(chatsJson.data)) return
 
     const importedChats: Chat[] = chatsJson.data
+    addNameOnlyNames(getDatabase(), chatsJson.nodeOnlyPersonaNames)
 
     for (const chat of importedChats) {
         if (chat.bindedPersona && personaIdMap[chat.bindedPersona]) {
@@ -510,7 +512,9 @@ export async function exportCharacterPackage(
                 type: 'risuAllChats',
                 ver: 2,
                 data: char.chats,
-                folders: char.chatFolders ?? []
+                folders: char.chatFolders ?? [],
+                // Names the chats bind with no persona behind them (nameOnlyPersona.ts).
+                ...(options.includePersona ? { nodeOnlyPersonaNames: nameOnlyNamesFor(getDatabase(), char.chats) } : {}),
             }, null, 2)
             const chatsPath = 'chats/chats.json'
             await zipWriter.write(chatsPath, chatsData, 6)

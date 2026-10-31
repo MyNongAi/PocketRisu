@@ -26,6 +26,7 @@ import type { CharxDestination } from "../charxPreflight"
 import { planLargeCharxImport } from "../largeCharxImport"
 import { ImportCancelledError, isImportCancelled, runImportTransaction, type ImportWriteScope } from "../importTransaction"
 import { requestModuleWake, wholeModule } from "./moduleCold.svelte"
+import { boundPersona } from "../nameOnlyPersona"
 
 export interface MCPModule{
     url: string
@@ -742,7 +743,7 @@ export function getModules(context?:ModuleRuntimeContext){
     const persona = context
         ? (context.persona !== undefined
             ? context.persona
-            : (currentChat.bindedPersona ? db.personas.find((value) => value.id === currentChat.bindedPersona) : null))
+            : (boundPersona(db, currentChat.bindedPersona) ?? null))
         : checkPersonaBinded()
     const ids = collectModuleRuntimeIds({
         enabledModules: db.enabledModules,
@@ -779,7 +780,7 @@ export function getModules(context?:ModuleRuntimeContext){
 export function captureModuleRuntimeContext(character:character, chat:Chat):ModuleRuntimeContext {
     const db = getDatabase()
     const persona = chat.bindedPersona
-        ? db.personas.find((value) => value.id === chat.bindedPersona) ?? null
+        ? boundPersona(db, chat.bindedPersona) ?? null
         : db.personas?.[db.selectedPersona] ?? null
     const context:ModuleRuntimeContext = {
         character,

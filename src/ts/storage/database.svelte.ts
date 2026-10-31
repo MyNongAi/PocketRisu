@@ -1352,6 +1352,8 @@ export interface Database{
     openrouterFallback:boolean
     selectedPersona:number
     personas:RisuPersona[]
+    /** PocketRisu: names a chat binds by id with no persona behind them (nameOnlyPersona.ts). */
+    nodeOnlyPersonaNames?:Record<string, string>
     /** User-defined groups for organizing personas. */
     personaFolders?:PromptPresetFolder[]
     assetWidth:number

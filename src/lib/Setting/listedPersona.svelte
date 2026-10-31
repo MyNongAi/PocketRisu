@@ -1,9 +1,12 @@
 <script lang="ts">
-    import { ChevronDownIcon, ChevronRightIcon, CornerDownRightIcon, FolderIcon, ImageIcon, SearchIcon, SettingsIcon, StarIcon, Trash2Icon, UserRoundIcon, XIcon } from "@lucide/svelte";
+    import { ChevronDownIcon, ChevronRightIcon, Clock3Icon, CornerDownRightIcon, FolderIcon, ImageIcon, SearchIcon, SettingsIcon, StarIcon, Trash2Icon, UserRoundIcon, XIcon } from "@lucide/svelte";
     import { language } from "../../lang";
     import { DBState, selectedCharID } from 'src/ts/stores.svelte';
     import { changeUserPersona, ensureBlankPersonaIndex, personaFromBlank, removePersona, setUserPersonaImage, updatePersonaText, type PersonaTextFields } from "src/ts/persona";
     import { PERSONA_IMAGE_EXTENSIONS } from "src/ts/personaImage";
+    import { boundPersona, keepsNameOnly, nameOnlyName, personaFromNameOnly, setNameOnlyName } from "src/ts/nameOnlyPersona";
+    import { compareRecentlyApplied, loadPersonaSort, savePersonaSort, sortPersonaGroups, type PersonaSortMode } from "src/ts/personaSort";
+    import { v4 } from "uuid";
     import { selectSingleFile } from "src/ts/util";
     import { alertError } from "src/ts/alert";
     import { groupByFolder, nestGroups, shownInside } from "src/ts/folders";
@@ -24,17 +27,26 @@
 
     const query = $derived(searchQuery.trim().toLocaleLowerCase());
     const bindingMode = $derived(onSelect !== null);
-    const boundIndex = $derived.by(() => {
-        if (!bindingMode) return -1;
+    const boundId = $derived.by(() => {
+        if (!bindingMode) return '';
         const char = DBState.db.characters?.[$selectedCharID];
-        const id = char?.chats?.[char?.chatPage]?.bindedPersona;
-        return id ? DBState.db.personas.findIndex((persona) => persona.id === id) : -1;
+        return char?.chats?.[char?.chatPage]?.bindedPersona ?? '';
     });
+    const boundIndex = $derived(boundId ? DBState.db.personas.findIndex((persona) => persona.id === boundId) : -1);
+    // The chat binds a name with no persona behind it (nameOnlyPersona.ts):
+    // no card in the list is it, and neither is "default".
+    const boundNameOnly = $derived(boundIndex < 0 && nameOnlyName(DBState.db, boundId) !== undefined);
     const highlightIndex = $derived(bindingMode ? boundIndex : DBState.db.selectedPersona);
-    const groups = $derived(groupByFolder(
+    // Registered or last applied first; the persona tab shares the choice.
+    let sortMode = $state<PersonaSortMode>(loadPersonaSort());
+    function toggleSort() {
+        sortMode = sortMode === 'recent' ? 'registered' : 'recent';
+        savePersonaSort(sortMode);
+    }
+    const groups = $derived(sortPersonaGroups(groupByFolder(
         DBState.db.personas.map((persona) => persona.folderId),
         DBState.db.personaFolders ?? [],
-    ));
+    ), DBState.db.personas, DBState.db.personaFolders ?? [], sortMode));
     // A folder shown inside another (made in the persona tab) sits under it,
     // indented, and opens and closes with it.
     const nestedGroups = $derived(nestGroups(groups, DBState.db.personaFolders ?? []));
@@ -51,7 +63,8 @@
     // the favorited personas.
     const favorites = $derived(DBState.db.personas
         .map((persona, index) => ({ persona, index }))
-        .filter(({ persona }) => persona.favorite && !persona.nodeOnlyBlank && matches(DBState.db.personas.indexOf(persona))));
+        .filter(({ persona }) => persona.favorite && !persona.nodeOnlyBlank && matches(DBState.db.personas.indexOf(persona)))
+        .sort(sortMode === 'recent' ? (left, right) => compareRecentlyApplied(DBState.db.personas)(left.index, right.index) : () => 0));
     const blankIndex = $derived(DBState.db.personas.findIndex((persona) => persona.nodeOnlyBlank));
 
     function selectBlank() {
@@ -85,14 +98,17 @@
     // null: the chat uses the default; the edit tab edits the global persona.
     let editId = $state<string | null>(null);
     $effect.pre(() => {
-        if (!bindingMode || editId !== null || boundIndex < 0) return;
-        editId = DBState.db.personas[boundIndex]?.id ?? null;
+        if (!bindingMode || editId !== null) return;
+        if (boundIndex >= 0) editId = DBState.db.personas[boundIndex]?.id ?? null;
+        else if (boundNameOnly) editId = boundId;
     });
     const editIndex = $derived(editId
         ? DBState.db.personas.findIndex((persona) => persona.id === editId)
         : bindingMode ? DBState.db.selectedPersona : -1);
     const editingDefault = $derived(bindingMode && editId === null);
-    const editPersona = $derived(editIndex >= 0 ? DBState.db.personas[editIndex] : null);
+    // Editing the chat's name-only binding: a name and nothing else.
+    const editNameOnly = $derived(!!editId && editIndex < 0 && nameOnlyName(DBState.db, editId) !== undefined);
+    const editPersona = $derived(editIndex >= 0 ? DBState.db.personas[editIndex] : editNameOnly ? boundPersona(DBState.db, editId) ?? null : null);
     const globalPersonaName = $derived(DBState.db.personas[DBState.db.selectedPersona]?.name || 'User');
 
     // In the folder grid; the blank persona has its own button above it.
@@ -111,8 +127,21 @@
         tab = 'edit';
     }
 
-    /** The persona the edit goes to: a new one in place of the blank persona. */
+    /** Binds the chat to the name-only binding `id`; the edit tab stays on it. */
+    function bindNameOnly(id: string) {
+        const char = DBState.db.characters?.[$selectedCharID];
+        const chat = char?.chats?.[char?.chatPage];
+        if (!chat) return;
+        chat.bindedPersona = id;
+        editId = id;
+    }
+
+    /**
+     * The persona the edit goes to: a new one in place of the blank persona,
+     * or the name-only binding become a persona under its id.
+     */
     function editTarget(patch: PersonaTextFields = {}): { index: number; created: boolean } {
+        if (editNameOnly && editId) return { index: personaFromNameOnly(DBState.db, editId, patch), created: true };
         const index = editIndex;
         if (index < 0 || !DBState.db.personas[index]?.nodeOnlyBlank) return { index, created: false };
         const created = personaFromBlank(index, patch);
@@ -127,13 +156,29 @@
         return { index: created, created: true };
     }
 
+    // A name alone is no persona (the user's request, 2026-10-31): typed on
+    // the blank persona the chat binds, it becomes the chat's name-only
+    // binding, out of every persona list; a description, note or image
+    // makes it a persona.
     function editText(patch: PersonaTextFields) {
+        if (keepsNameOnly(patch) && patch.name !== undefined) {
+            if (editNameOnly && editId) {
+                setNameOnlyName(DBState.db, editId, patch.name);
+                return;
+            }
+            if (!editingDefault && DBState.db.personas[editIndex]?.nodeOnlyBlank) {
+                const id = v4();
+                setNameOnlyName(DBState.db, id, patch.name);
+                bindNameOnly(id);
+                return;
+            }
+        }
         const { index, created } = editTarget(patch);
         if (index >= 0 && !created) updatePersonaText(index, patch);
     }
 
     async function changeIcon() {
-        if (editIndex < 0) return;
+        if (editIndex < 0 && !editNameOnly) return;
         const picked = await selectSingleFile([...PERSONA_IMAGE_EXTENSIONS]);
         if (!picked) return;
         const { index } = editTarget();
@@ -238,13 +283,26 @@
                 </label>
                 <p class="mt-2 text-xs text-textcolor2">{editingDefault
                     ? (editPersona.nodeOnlyBlank ? language.personaBindEditDefaultBlank : language.personaBindEditDefault)
+                    : editNameOnly ? language.personaBindEditNameOnly
                     : (editPersona.nodeOnlyBlank ? language.personaBindEditBlank : language.personaBindEditShared)}</p>
             {/if}
         </div>
         {:else}
-        <div class="risu-field-border mx-4 mt-3 flex shrink-0 items-center gap-2 rounded-md px-3">
-            <SearchIcon size={16} class="shrink-0 text-textcolor2"/>
-            <input bind:value={searchQuery} placeholder={language.personaSearch} class="w-full bg-transparent py-1.5 text-sm text-textcolor outline-none"/>
+        <div class="mx-4 mt-3 flex shrink-0 items-center gap-2">
+            <div class="risu-field-border flex min-w-0 grow items-center gap-2 rounded-md px-3">
+                <SearchIcon size={16} class="shrink-0 text-textcolor2"/>
+                <input bind:value={searchQuery} placeholder={language.personaSearch} class="w-full bg-transparent py-1.5 text-sm text-textcolor outline-none"/>
+            </div>
+            <button
+                type="button"
+                aria-pressed={sortMode === 'recent'}
+                title={language.personaSortRecent}
+                onclick={toggleSort}
+                class="flex shrink-0 items-center gap-1 rounded-md border px-2 py-1.5 text-xs {sortMode === 'recent' ? 'border-primary bg-primary/15 text-textcolor' : 'border-darkborderc text-textcolor2 hover:text-textcolor'}"
+                data-persona-sort
+            >
+                <Clock3Icon size={14}/><span>{language.personaSortRecent}</span>
+            </button>
         </div>
 
         <div class="min-h-0 flex-1 overflow-y-auto p-4">
@@ -253,10 +311,10 @@
                     <button
                         type="button"
                         aria-label={language.memoryPresetInherit}
-                        aria-pressed={boundIndex < 0}
+                        aria-pressed={boundIndex < 0 && !boundNameOnly}
                         onclick={() => select(-1)}
                         class={`flex min-h-20 w-20 items-center justify-center rounded-md border p-2 text-center text-xs font-semibold text-textcolor shadow-lg hover:border-primary hover:bg-primary/10
-                            ${boundIndex < 0 ? 'border-primary ring-2 ring-primary/40' : 'border-darkborderc bg-selected/20'}`}
+                            ${boundIndex < 0 && !boundNameOnly ? 'border-primary ring-2 ring-primary/40' : 'border-darkborderc bg-selected/20'}`}
                     >
                         {language.memoryPresetInherit}
                     </button>

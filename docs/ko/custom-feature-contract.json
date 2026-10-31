@@ -550,7 +550,7 @@
         { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "risu-persona-detail-height" },
         { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "최근 적용순" },
         { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "compareRecentlyApplied(DBState.db.personas)" },
-        { "file": "src/ts/persona.ts", "contains": "return Number(persona?.lastAppliedAt) || 0" },
+        { "file": "src/ts/personaSort.ts", "contains": "return Number(persona?.lastAppliedAt) || 0" },
         { "file": "src/ts/blankPersona.ts", "contains": "export const BLANK_PERSONA_NAME = ''" },
         { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "// No made-up name: it would reach the AI as {{user}}" },
         { "file": "src/ts/storage/database.svelte.ts", "contains": "clearLegacyBlankName(data)" },
@@ -2785,6 +2785,36 @@
       ],
       "regressionTests": [
         "src/lib/ChatScreens/floatingSwipe.test.ts"
+      ]
+    },
+    {
+      "id": "PERSONA-NAME-ONLY",
+      "title": "이름만 있는 페르소나는 채팅 바인딩으로만, 팝업 최근 적용순",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/nameOnlyPersona.ts",
+        "src/ts/personaSort.ts",
+        "src/lib/Setting/listedPersona.svelte",
+        "src/lib/Setting/Pages/PersonaSettings.svelte",
+        "src/lib/SideBars/PersonaBind.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/nameOnlyPersona.ts", "contains": "export function boundPersona(db: NameRoot, id: string | null | undefined): RisuPersona | undefined" },
+        { "file": "src/ts/nameOnlyPersona.ts", "contains": "export function retireNameOnlyPersonas(db: PersonaRoot): number" },
+        { "file": "src/ts/util.ts", "contains": "return boundPersona(db, chat.bindedPersona)" },
+        { "file": "src/ts/process/modules.ts", "contains": "? boundPersona(db, chat.bindedPersona) ?? null" },
+        { "file": "src/ts/gui/logCaptureRender.ts", "contains": "const persona = boundPersona(db, chatBindedPersona)" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const persona = boundPersona(DBState.db, bindedPersona)" },
+        { "file": "src/lib/SideBars/PersonaBind.svelte", "contains": "let bound = $derived(boundPersona(DBState.db, currentChat?.bindedPersona) ?? null)" },
+        { "file": "src/lib/Setting/listedPersona.svelte", "contains": "if (keepsNameOnly(patch) && patch.name !== undefined) {" },
+        { "file": "src/lib/Setting/listedPersona.svelte", "contains": "data-persona-sort" },
+        { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "retireNameOnlyPersonas(DBState.db)" },
+        { "file": "src/ts/characterPackage.ts", "contains": "addNameOnlyNames(getDatabase(), chatsJson.nodeOnlyPersonaNames)" }
+      ],
+      "regressionTests": [
+        "src/ts/nameOnlyPersona.test.ts",
+        "src/ts/personaSort.test.ts",
+        "src/lib/Setting/listedPersona.test.ts"
       ]
     },
     {

@@ -38,6 +38,7 @@ vi.mock('src/ts/globalApi.svelte', () => ({
 }))
 
 import ListedPersona from './listedPersona.svelte'
+import { language } from 'src/lang'
 
 class TestIntersectionObserver {
     static instances: TestIntersectionObserver[] = []
@@ -146,6 +147,79 @@ describe('persona image picker', () => {
             expect(target.querySelector('button[aria-label="Beta"]')).not.toBeNull()
         } finally {
             chat.bindedPersona = 'beta'
+        }
+    })
+
+    it('binds a name typed on the blank persona as the chat\'s name only, and a description makes it a persona', async () => {
+        vi.stubGlobal('IntersectionObserver', TestIntersectionObserver)
+        const db = mocks.db as typeof mocks.db & { nodeOnlyPersonaNames?: Record<string, string> }
+        const chat = db.characters[0].chats[0]
+        const personas = db.personas
+        db.personas = [...personas, { id: 'blank', name: '', note: '빈 페르소나', icon: '', personaPrompt: '', nodeOnlyBlank: true } as never]
+        chat.bindedPersona = 'blank'
+        try {
+            const target = document.createElement('div')
+            document.body.appendChild(target)
+            const onSelect = vi.fn()
+            mounted.push(mount(ListedPersona, { target, props: { onSelect, close: vi.fn() } }))
+            await tick()
+            const name = target.querySelector<HTMLInputElement>('[data-persona-bind-edit] input')!
+            name.value = '김'
+            name.dispatchEvent(new Event('input', { bubbles: true }))
+            await tick()
+            // No persona: the chat binds a new id that only names it.
+            const id = chat.bindedPersona
+            expect(id).not.toBe('blank')
+            expect(db.nodeOnlyPersonaNames).toEqual({ [id]: '김' })
+            expect(db.personas).toHaveLength(4)
+            expect(onSelect).not.toHaveBeenCalled()
+            expect(target.querySelector('[data-persona-bind-edit] p')?.textContent).toBe(language.personaBindEditNameOnly)
+
+            const renamed = target.querySelector<HTMLInputElement>('[data-persona-bind-edit] input')!
+            renamed.value = '김철수'
+            renamed.dispatchEvent(new Event('input', { bubbles: true }))
+            expect(db.nodeOnlyPersonaNames).toEqual({ [id]: '김철수' })
+            expect(chat.bindedPersona).toBe(id)
+
+            // A description makes it a persona under the same id.
+            const description = target.querySelector<HTMLTextAreaElement>('[data-persona-bind-edit] textarea')!
+            description.value = 'tall'
+            description.dispatchEvent(new Event('input', { bubbles: true }))
+            expect(db.personas).toHaveLength(5)
+            expect(db.personas[4]).toMatchObject({ id, name: '김철수', personaPrompt: 'tall' })
+            expect(db.nodeOnlyPersonaNames).toEqual({})
+            expect(chat.bindedPersona).toBe(id)
+        } finally {
+            db.personas = personas
+            delete db.nodeOnlyPersonaNames
+            chat.bindedPersona = 'beta'
+        }
+    })
+
+    it('puts the last applied first while the recent toggle is on, and remembers it', async () => {
+        vi.stubGlobal('IntersectionObserver', TestIntersectionObserver)
+        const empty = mocks.db.personas[2] as typeof mocks.db.personas[number] & { lastAppliedAt?: number }
+        empty.lastAppliedAt = 100
+        try {
+            localStorage.removeItem('risu-persona-sort')
+            const target = document.createElement('div')
+            document.body.appendChild(target)
+            mounted.push(mount(ListedPersona, { target, props: { close: vi.fn() } }))
+            await tick()
+            const cards = () => [...target.querySelectorAll<HTMLButtonElement>('button[aria-label][aria-pressed]')]
+                .map((button) => button.getAttribute('aria-label'))
+                .filter((label) => ['Alpha', 'Beta', 'No Image'].includes(label ?? ''))
+            expect(cards()).toEqual(['Alpha', 'Beta', 'No Image'])
+            const toggle = target.querySelector<HTMLButtonElement>('[data-persona-sort]')!
+            expect(toggle.getAttribute('aria-pressed')).toBe('false')
+            toggle.click()
+            await tick()
+            expect(toggle.getAttribute('aria-pressed')).toBe('true')
+            expect(cards()).toEqual(['No Image', 'Alpha', 'Beta'])
+            expect(localStorage.getItem('risu-persona-sort')).toBe('recent')
+        } finally {
+            delete empty.lastAppliedAt
+            localStorage.removeItem('risu-persona-sort')
         }
     })
 

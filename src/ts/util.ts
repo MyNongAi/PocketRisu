@@ -6,6 +6,7 @@ import { createBlankChar, getCharImage } from "./characters"
 import { isIOS } from "src/ts/platform"
 import PopupList from "src/lib/UI/PopupList.svelte"
 import { sortableFilter } from "./gui/holdDrag"
+import { boundPersona } from "./nameOnlyPersona"
 
 export interface Messagec extends Message{
     index: number
@@ -81,8 +82,7 @@ export function checkPersonaBinded(){
         if(!chat.bindedPersona){
             return null
         }
-        const persona = db.personas.find(v => v.id === chat.bindedPersona)
-        return persona 
+        return boundPersona(db, chat.bindedPersona)
     } catch (error) {
         return null
     }

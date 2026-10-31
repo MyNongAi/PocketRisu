@@ -5,6 +5,7 @@
     import { copyScriptstateCheckpoint, mergeRerollCheckpoint, removeSwipeCheckpoint, restoreScriptstateBeforeReroll, restoreScriptstateSnapshot, restoreShownSwipeScriptstate, snapshotScriptstate } from 'src/ts/chatScriptstateCheckpoint';
     import { deleteShownSwipe, dropShownSwipe, findLastReplyIndex, markErrorLikeReply, markNewSwipe, seeShownSwipe, shiftErrorMarkAfterDelete, shiftNewMarkAfterDelete, showSwipe, shownSwipeIsErrorLike, stepSwipe } from 'src/ts/chatSwipes';
     import { previousInputIndex } from 'src/ts/gui/inputEcho';
+    import { boundPersona } from 'src/ts/nameOnlyPersona';
     import { pressedInput, recordSentRequestInput, requestedInputVersion, swipeRequestedWith, type SentInput } from 'src/ts/inputVersions';
     import { setRequestPairing } from 'src/ts/gui/requestPairing';
     import { mergeAuxLines } from 'src/ts/process/auxLorebook';
@@ -1294,7 +1295,7 @@ import { isMobile } from 'src/ts/platform'
         const bindedPersona = view.chat?.bindedPersona
 
         if(bindedPersona){
-            const persona = DBState.db.personas.find((p) => p.id === bindedPersona)
+            const persona = boundPersona(DBState.db, bindedPersona)
             if(persona){
                 return {
                     currentUsername: persona.name,
@@ -1331,7 +1332,7 @@ import { isMobile } from 'src/ts/platform'
     // Effective persona name for the input placeholder (chat-bound persona overrides the selected one).
     let activePersonaName = $derived.by(() => {
         const chat = view.chat
-        const bound = chat?.bindedPersona ? DBState.db.personas.find(p => p.id === chat.bindedPersona) : null
+        const bound = boundPersona(DBState.db, chat?.bindedPersona)
         return (bound ?? DBState.db.personas[DBState.db.selectedPersona])?.name || 'User'
     })
 
