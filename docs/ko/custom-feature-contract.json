@@ -2483,7 +2483,7 @@
     },
     {
       "id": "CARD-BATTLE-MODULE",
-      "title": "어느 봇에나 붙이는 덱빌딩 카드 전투 배포용 모듈 (🃏 카드 전투), 전투 기록이 이야기로 이어지고 레벨업 카드는 AI가 씀",
+      "title": "어느 봇에나 붙이는 덱빌딩 카드 전투 배포용 모듈 (🃏 카드 전투), 전투 기록이 턴마다 이야기로 이어지고 레벨업 카드는 AI가 씀, 장면 연출·대표 카드·이긴 적 카드",
       "criticality": "core-ux",
       "ownerFiles": [
         "modules/card-battle/card-battle.lua",
@@ -2541,8 +2541,48 @@
           "contains": "function CB.closedMark(b)"
         },
         {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "function CB.turnScenes(b, scene)"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "pcall(function() return sleep(tid, ms):await() end)"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "local tag = (n or 0) % 2 == 1 and 'section' or 'div'"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "if b.cards and b.enemy then return CB.fightView(b, user, fx) end"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "function CB.handCard(raw)"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "function CB.foeCard(name, tier, moves)"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "onFormSubmit = async(function(tid, event, meta)"
+        },
+        {
           "file": "modules/card-battle/build.mjs",
-          "contains": "'cardbattle.story=전투 이야기=select=끝나고 한 번에,턴마다',"
+          "contains": "'cardbattle.fx=전투 연출=select=보통,빠르게,끄기',"
+        },
+        {
+          "file": "modules/card-battle/build.mjs",
+          "contains": "'cardbattle.sig=대표 카드=select=AI가 만들기,직접 만들기,없음',"
+        },
+        {
+          "file": "modules/card-battle/build.mjs",
+          "contains": "'cardbattle.capture=이긴 적 카드=select=받을지 고르기,안 받기',"
+        },
+        {
+          "file": "modules/card-battle/build.mjs",
+          "contains": "'cardbattle.tell=전투 이야기=select=턴마다,끝나고 한 번에',"
         },
         {
           "file": "modules/card-battle/build.mjs",

@@ -18,9 +18,15 @@
 -- message or another swipe takes its marks along, so the numbers go back to
 -- what the chat still holds. Chat state keeps only where the fight was last
 -- seen (cb_live), to find it without reading the whole chat.
+--
+-- The window plays each tap as a scene (CSS only: messages run no script):
+-- a card flies to the enemy and hits, and the enemy's turn comes as scenes
+-- of their own, the button handler pausing between them. The first fight
+-- puts a signature card in the deck, written by the auxiliary model or made
+-- by hand in the window; a beaten enemy can be taken as a card.
 
 local CB = {}
-CB.VERSION = '0.5.0'
+CB.VERSION = '0.6.0'
 
 ------------------------------------------------------------------------------
 -- Small helpers
@@ -251,6 +257,16 @@ function CB.cleanCard(raw, slot)
     return { name = name, cost = cost, fx = fx, rarity = rarity, desc = CB.clip(CB.trim(raw.desc), 60) }
 end
 
+--- What a card keeps through cleanCard, which only knows effects: whether it
+--- is the signature card, and the face of the enemy it was taken from.
+function CB.keepTags(card, from)
+    if not card or type(from) ~= 'table' then return card end
+    card.sig = from.sig == true or nil
+    card.foe = from.foe == true or nil
+    if type(from.glyph) == 'string' and from.glyph ~= '' then card.glyph = CB.clip(from.glyph, 4) end
+    return card
+end
+
 --- Whether a card does something: keywords and a hit point cost alone do not.
 function CB.hasEffect(fx)
     for _, effect in ipairs(CB.EFFECTS) do
@@ -325,7 +341,14 @@ end
 function CB.slotText(slots)
     local lines = {}
     for i, slot in ipairs(slots) do
-        lines[i] = string.format('card %d: rarity %s, cost %d, about %d points', i, slot.rarity, slot.cost,
+        local what = ''
+        if slot.sig then
+            what = 'the signature card of this story, the one move that most belongs to it (the player\'s own skill, weapon or power, or what the story\'s main character does for them); '
+        elseif slot.foe then
+            what = string.format('the enemy just beaten, "%s", turned into a card the player can now use: its own signature move (in the fight it did: %s); ',
+                slot.foe.name, slot.foe.moves or '')
+        end
+        lines[i] = string.format('card %d: %srarity %s, cost %d, about %d points', i, what, slot.rarity, slot.cost,
             math.floor(CB.budget(slot.cost, slot.rarity) / CB.SLACK))
     end
     return table.concat(lines, '\n')
@@ -346,7 +369,9 @@ CB.CARD_RULES = table.concat({
 }, '\n')
 
 --- The cards in an answer: the first [...] in it, one per slot, each made
---- safe; a slot the answer does not fill takes a pool card.
+--- safe; a slot the answer does not fill takes a pool card (a beaten
+--- enemy's, the card the module made of it). An enemy's card keeps its name
+--- and face. Also returns how many were written, and which.
 function CB.parseCards(run, text, slots)
     local list = nil
     local body = type(text) == 'string' and text:match('%b[]') or nil
@@ -354,13 +379,123 @@ function CB.parseCards(run, text, slots)
         local ok, decoded = pcall(json.decode, body)
         if ok and type(decoded) == 'table' then list = decoded end
     end
-    local cards, written = {}, 0
+    local cards, written, wrote = {}, 0, {}
     for i, slot in ipairs(slots) do
         local card = list and CB.cleanCard(list[i], slot) or nil
-        if card then written = written + 1 else card = CB.poolCard(run, slot) end
+        wrote[i] = card ~= nil
+        if card then
+            written = written + 1
+        elseif slot.foe and slot.foe.card then
+            card = CB.copy(slot.foe.card)
+        else
+            card = CB.poolCard(run, slot)
+        end
+        if slot.foe then card.name, card.glyph, card.foe = CB.clip(slot.foe.name, 14), slot.foe.glyph, true end
+        if slot.sig then card.sig = true end
         cards[i] = card
     end
-    return cards, written
+    return cards, written, wrote
+end
+
+------------------------------------------------------------------------------
+-- The signature card and a beaten enemy's card
+------------------------------------------------------------------------------
+
+--- The run's signature card, or nil.
+function CB.sigCard(run)
+    for _, card in ipairs(run.deck or {}) do
+        if card.sig then return card end
+    end
+    return nil
+end
+
+-- A beaten enemy's card is as rare as the enemy was strong.
+CB.FOE_RARITY = { normal = 'common', elite = 'rare', boss = 'epic' }
+
+--- An enemy's move as card effects: what it did to the player, the card
+--- does to the enemy.
+function CB.moveEffects(move)
+    return { dmg = move.atk, hits = (move.n or 1) > 1 and move.n or nil, block = move.def, str = move.str,
+        weak = move.weak, vuln = move.vuln, poison = move.poison, thorns = move.thorns }
+end
+
+function CB.movesText(moves)
+    local list = {}
+    for _, move in ipairs(moves or {}) do
+        local parts = {}
+        if move.def then parts[#parts + 1] = 'defend ' .. move.def end
+        if move.atk then parts[#parts + 1] = 'attack ' .. move.atk .. ((move.n or 1) > 1 and (' x' .. move.n) or '') end
+        if move.str then parts[#parts + 1] = 'strength +' .. move.str end
+        if move.thorns then parts[#parts + 1] = 'thorns ' .. move.thorns end
+        if move.poison then parts[#parts + 1] = 'poison ' .. move.poison end
+        if move.weak then parts[#parts + 1] = 'weak ' .. move.weak end
+        if move.vuln then parts[#parts + 1] = 'vulnerable ' .. move.vuln end
+        list[#list + 1] = table.concat(parts, ' + ')
+    end
+    return table.concat(list, '; ')
+end
+
+--- A beaten enemy as a card the module makes itself: its strongest move,
+--- named after it, with its face.
+function CB.foeCard(name, tier, moves)
+    local best, worth = nil, -1
+    for _, move in ipairs(moves or {}) do
+        local fx = CB.moveEffects(move)
+        local w = CB.points(fx)
+        if w > worth then best, worth = fx, w end
+    end
+    local card = CB.cleanCard({ name = name, effects = best or { dmg = 6 }, desc = '쓰러뜨린 적이 이제 내 편에서 싸운다.' },
+        { rarity = CB.FOE_RARITY[tier] or 'common', cost = 1 })
+    if not card then return nil end
+    card.foe, card.glyph = true, CB.foeGlyph(name, tier)
+    return card
+end
+
+--- A card as the signature form holds it.
+function CB.rawCard(card)
+    return { name = card.name, cost = card.cost, effects = CB.copy(card.fx or {}), desc = card.desc }
+end
+
+-- What the signature form calls each effect, in its menus.
+CB.EFFECT_LABEL = {
+    dmg = '피해', hits = '타수 (피해 횟수)', block = '방어', weak = '약화', vuln = '취약', str = '힘', draw = '카드 뽑기',
+    energy = '에너지', heal = '회복', poison = '독', thorns = '가시', armor = '매 턴 방어', dex = '민첩',
+    charge = '다음 턴 에너지', prepare = '다음 턴 카드', hpCost = '체력 소모',
+}
+CB.FLAG_LABEL = { pierce = '방어 무시', drain = '흡혈', retain = '보존', exhaust = '소멸' }
+CB.FLAG_ORDER = { 'pierce', 'drain', 'retain', 'exhaust' }
+
+--- The card a submitted signature form describes, before cleanCard. field
+--- reads one of its values as text.
+function CB.formCard(field)
+    local raw = { name = CB.trim(field('cname')), cost = math.floor(tonumber(field('cost')) or 1), effects = {}, desc = CB.trim(field('cdesc')) }
+    for i = 1, 3 do
+        local key, value = field('k' .. i), tonumber(field('v' .. i))
+        if CB.EFFECT_LABEL[key] and value then raw.effects[key] = (raw.effects[key] or 0) + math.floor(value) end
+    end
+    for _, key in ipairs(CB.FLAG_ORDER) do
+        if field(key) ~= '' then raw.effects[key] = true end
+    end
+    return raw
+end
+
+--- The signature card made by hand (a rare card), and what the module had
+--- to change so it fits; nil and why when nothing usable is left.
+function CB.handCard(raw)
+    local card = CB.cleanCard(raw, { rarity = 'rare', cost = raw.cost })
+    if not card then return nil, '이름과 피해·방어 같은 효과가 하나는 있어야 합니다.' end
+    card.sig = true
+    local notes = {}
+    local asked = math.max(0, math.min(3, raw.cost or 1))
+    if card.cost ~= asked then notes[#notes + 1] = '비용 ' .. asked .. ' → ' .. card.cost end
+    for _, effect in ipairs(CB.EFFECTS) do
+        local value = raw.effects[effect.key]
+        if not effect.flag and type(value) == 'number' and value >= 1 and (card.fx[effect.key] or 0) < value then
+            notes[#notes + 1] = '담을 수 있는 양을 넘어 숫자를 줄였습니다'
+            break
+        end
+    end
+    return card, #notes > 0 and table.concat(notes, ', ') or nil
 end
 
 ------------------------------------------------------------------------------
@@ -408,6 +543,10 @@ local function choice(tid, key)
 end
 
 CB.CARD_WRITERS = { [0] = 'aux', [1] = 'main', [2] = 'pool' }
+-- How long the scenes stay (a share of CB.HOLD), and who makes the
+-- signature card.
+CB.PACES = { [0] = 1, [1] = 0.55, [2] = 0 }
+CB.SIG_MAKERS = { [0] = 'ai', [1] = 'hand', [2] = 'none' }
 
 function CB.settings(tid)
     return {
@@ -415,7 +554,13 @@ function CB.settings(tid)
         popup = choice(tid, 'popup') == 0,                      -- 띄우기, 바로 전투 화면
         healEach = choice(tid, 'hp') == 0,                      -- 전투마다 회복, 이어짐
         fullLog = choice(tid, 'log') == 0,                      -- 턴마다 요약, 결과만
-        perTurn = choice(tid, 'story') == 1,                    -- 끝나고 한 번에, 턴마다
+        -- 턴마다, 끝나고 한 번에. 0.5 asked this as cardbattle.story with
+        -- 끝나고 한 번에 first; a new key starts everyone turn by turn
+        -- without reading a saved 턴마다 as the other one.
+        perTurn = choice(tid, 'tell') == 0,
+        pace = CB.PACES[choice(tid, 'fx')] or 1,                -- 보통, 빠르게, 끄기
+        sig = CB.SIG_MAKERS[choice(tid, 'sig')] or 'ai',        -- AI가 만들기, 직접 만들기, 없음
+        capture = choice(tid, 'capture') == 0,                  -- 받을지 고르기, 안 받기
     }
 end
 
@@ -664,7 +809,7 @@ function CB.newBattle(run, spec, settings)
     if settings.healEach then run.hp = run.maxHp end
     local cards = {}
     for _, card in ipairs(run.deck) do
-        local checked = card.rarity == 'basic' and CB.copy(card) or CB.cleanCard(card, { rarity = card.rarity, cost = card.cost })
+        local checked = card.rarity == 'basic' and CB.copy(card) or CB.keepTags(CB.cleanCard(card, { rarity = card.rarity, cost = card.cost }), card)
         if checked then cards[#cards + 1] = checked end
     end
     local draw = {}
@@ -685,8 +830,11 @@ function CB.newBattle(run, spec, settings)
         log = {}, played = {}, note = '',
         -- What the next drawing animates (cleared at the next tap, so a
         -- redraw does not play it again): the window opening, a new hand
-        -- dealt, a hit on the enemy or the player and the number it shows.
+        -- dealt, a hit on the enemy or the player and the number it shows,
+        -- and the rest of a scene (CB.play, CB.endTurn).
         anim = { open = true, deal = true },
+        -- Counts the window's drawings (taps and scenes), see frame.
+        n = 0,
     }
     b.seed = rng.seed
     CB.drawCards(b, 5)
@@ -732,19 +880,22 @@ function CB.play(b, k)
     table.remove(b.hand, k)
     b.selected = nil
     local fx, e, parts = card.fx or {}, b.enemy, {}
-    local anim = {}
+    -- The card flies to the enemy when it attacks, else rises from the player.
+    local anim = { cast = id, castAt = fx.dmg and 'foe' or 'me', enemyFrom = e.hp, playerFrom = b.hp }
+    local paid = 0
     if fx.hpCost then
         -- It never takes the last hit point.
-        local paid = math.max(0, math.min(fx.hpCost, b.hp - 1))
+        paid = math.max(0, math.min(fx.hpCost, b.hp - 1))
         b.hp = b.hp - paid
         parts[#parts + 1] = '체력 -' .. paid
     end
-    local healed = 0
+    local healed, pricked = 0, 0
     if fx.dmg then
-        local blocked, lost, pricked = 0, 0, 0
+        local blocked, lost, landed = 0, 0, 0
+        local shield = e.block or 0
         for _ = 1, (fx.hits or 1) do
             local a, l = CB.hit(e, CB.attackDamage(fx.dmg, b, e), fx.pierce)
-            blocked, lost = blocked + a, lost + l
+            blocked, lost, landed = blocked + a, lost + l, landed + 1
             if (e.thorns or 0) > 0 then
                 local _, t = CB.hit(b, e.thorns)
                 pricked = pricked + t
@@ -754,6 +905,11 @@ function CB.play(b, k)
         parts[#parts + 1] = '피해 ' .. lost .. (blocked > 0 and (' (막힘 ' .. blocked .. ')') or '')
         if pricked > 0 then parts[#parts + 1] = '가시에 ' .. pricked end
         anim.enemy, anim.enemyText = 'hit', lost > 0 and ('-' .. lost) or '막힘'
+        anim.hits = landed
+        -- A hit worth a quarter of the enemy shakes the whole window.
+        anim.big = lost >= 15 or lost * 4 >= e.maxHp or nil
+        anim.enemyBreak = (shield > 0 and blocked > 0 and e.block == 0) or nil
+        anim.playerSpark = pricked > 0 or nil
         if fx.drain and lost > 0 then
             local before = b.hp
             b.hp = math.min(b.maxHp, b.hp + lost)
@@ -779,10 +935,17 @@ function CB.play(b, k)
         parts[#parts + 1] = '회복 ' .. (b.hp - before)
     end
     if healed > 0 then
-        anim.player, anim.playerText = 'buff', '+' .. healed
+        anim.player, anim.playerText, anim.heal = 'buff', '+' .. healed, true
     elseif blockGain then
         anim.player, anim.playerText = 'buff', '🛡️+' .. blockGain
+    elseif pricked + paid > 0 then
+        anim.player, anim.playerText = 'hurt', '-' .. (pricked + paid)
     end
+    if blockGain then anim.playerBlock = 'pop' end
+    anim.enemyPoison = fx.poison and true or nil
+    anim.enemyCurse = (fx.weak or fx.vuln) and true or nil
+    anim.thornsUp = fx.thorns and true or nil
+    if fx.str or fx.dex or fx.armor or fx.energy or fx.charge or fx.prepare or fx.draw then anim.playerGlow = true end
     b.anim = anim
     if fx.energy then b.energy = b.energy + fx.energy parts[#parts + 1] = '에너지 +' .. fx.energy end
     if fx.exhaust then
@@ -805,12 +968,13 @@ function CB.play(b, k)
 end
 
 --- The enemy's move: defend, attack, then grow or weaken. Returns its log
---- text, and when it attacked, what got through and what was blocked.
+--- text, when it attacked what got through and what was blocked, and what
+--- the player's thorns gave back.
 function CB.enemyAct(b)
     local e = b.enemy
     local move = e.moves[e.step] or {}
     local parts = {}
-    local lostTotal, blockedTotal = nil, nil
+    local lostTotal, blockedTotal, prickedTotal = nil, nil, 0
     if move.def then
         e.block = e.block + move.def + e.bonus
         parts[#parts + 1] = '방어 ' .. (move.def + e.bonus)
@@ -830,7 +994,7 @@ function CB.enemyAct(b)
         parts[#parts + 1] = '공격 ' .. per .. ((move.n or 1) > 1 and ('×' .. move.n) or '')
             .. ' (막음 ' .. blocked .. ', 받은 피해 ' .. lost .. ')'
         if pricked > 0 then parts[#parts + 1] = '가시에 ' .. pricked end
-        lostTotal, blockedTotal = lost, blocked
+        lostTotal, blockedTotal, prickedTotal = lost, blocked, pricked
     end
     if move.str then e.str = e.str + move.str parts[#parts + 1] = '힘 +' .. move.str end
     if move.thorns then e.thorns = (e.thorns or 0) + move.thorns parts[#parts + 1] = '가시 +' .. move.thorns end
@@ -842,7 +1006,7 @@ function CB.enemyAct(b)
         parts[#parts + 1] = '취약 ' .. move.vuln
     end
     e.step = e.step % #e.moves + 1
-    return table.concat(parts, ', '), lostTotal, blockedTotal
+    return table.concat(parts, ', '), lostTotal, blockedTotal, prickedTotal
 end
 
 -- A turn of weak or vulnerable is spent at the end of the turn it counts in:
@@ -850,63 +1014,115 @@ end
 -- enemy's weak and the player's vulnerable on the enemy's (vulnerable the
 -- enemy put on the player this turn waits for its next one). Poison takes
 -- its due at the start of its bearer's turn; armor is block for the enemy's.
-function CB.endTurn(b)
-    local kept = {}
+--
+-- How long each scene stays on screen (ms, before the pace setting): the
+-- enemy's turn coming, its move, a scene that ends the fight.
+CB.HOLD = { foe = 950, act = 900, over = 1000 }
+
+--- The player's turn ends; the enemy's comes, then the player's next. It
+--- goes in three scenes: the hand goes and the enemy's poison bites, the
+--- enemy moves, the new hand comes. scene(n, anim, hold) is called at each
+--- with what it animates and how long it wants on screen; a scene that ends
+--- the fight is the last.
+function CB.turnScenes(b, scene)
+    local kept, tossed = {}, {}
     for _, id in ipairs(b.hand) do
         local card = b.cards[id]
-        if card and (card.fx or {}).retain then kept[#kept + 1] = id else b.discard[#b.discard + 1] = id end
+        if card and (card.fx or {}).retain then
+            kept[#kept + 1] = id
+        else
+            b.discard[#b.discard + 1] = id
+            tossed[#tossed + 1] = id
+        end
     end
     b.hand, b.selected = kept, nil
-    if (b.armor or 0) > 0 then b.block = b.block + b.armor end
+    local armored = (b.armor or 0) > 0
+    if armored then b.block = b.block + b.armor end
     if b.weak > 0 then b.weak = b.weak - 1 end
     if b.enemy.vuln > 0 then b.enemy.vuln = b.enemy.vuln - 1 end
     local e = b.enemy
     e.block = 0
-    b.anim = { deal = true }
     local mine = #b.played > 0 and table.concat(b.played, ', ') or '카드 없음'
     b.played = {}
+
+    local first = { banner = 'foe', foeTurn = true, toss = tossed, playerBlock = armored and 'pop' or nil }
+    local before = e.hp
     local poisoned = CB.tickPoison(e)
+    if poisoned > 0 then first.enemy, first.enemyText, first.enemyFrom, first.enemyPoison = 'hit', '-' .. poisoned, before, true end
     if e.hp <= 0 then
         b.log[#b.log + 1] = b.turn .. '턴: ' .. mine .. ' / 적: 독 ' .. poisoned .. '에 쓰러짐'
         b.note = '적이 독에 쓰러졌습니다'
-        b.anim.enemy, b.anim.enemyText = 'hit', '-' .. poisoned
         b.phase = 'won'
-        return
+        return scene(1, first, CB.HOLD.over)
     end
-    local acted, lost = CB.enemyAct(b)
-    if poisoned > 0 then
-        acted = '독 ' .. poisoned .. ', ' .. acted
-        b.anim.enemy, b.anim.enemyText = 'hit', '-' .. poisoned
+    scene(1, first, CB.HOLD.foe)
+
+    local move = e.moves[e.step] or {}
+    local second = { foeTurn = true, enemyFrom = e.hp, playerFrom = b.hp }
+    local shield = b.block
+    local acted, lost, blocked, pricked = CB.enemyAct(b)
+    if poisoned > 0 then acted = '독 ' .. poisoned .. ', ' .. acted end
+    if lost then
+        second.lunge = math.min(move.n or 1, 4)
+        second.player, second.playerText = 'hurt', lost > 0 and ('-' .. lost) or '막음'
+        second.flash = lost > 0 or nil
+        second.big = (lost >= 15 or lost * 4 >= b.maxHp) or nil
+        second.playerBreak = (shield > 0 and blocked > 0 and b.block == 0) or nil
     end
-    if lost then b.anim.player, b.anim.playerText = 'hurt', lost > 0 and ('-' .. lost) or '막음' end
+    if pricked > 0 then second.enemy, second.enemyText, second.enemySpark = 'hit', '-' .. pricked, true end
+    if move.def then second.enemyBlock = 'pop' end
+    if move.str or move.thorns then second.enemyGlow = true end
+    if move.poison then second.playerPoison = true end
+    if move.weak or move.vuln then second.playerCurse = true end
     if e.weak > 0 then e.weak = e.weak - 1 end
     if b.vulnFresh then b.vulnFresh = nil elseif b.vuln > 0 then b.vuln = b.vuln - 1 end
     b.log[#b.log + 1] = b.turn .. '턴: ' .. mine .. ' / 적: ' .. acted
     b.note = '적: ' .. acted
     if b.hp <= 0 then
         b.phase = 'lost'
-        return
-    end
-    if e.hp <= 0 then
+    elseif e.hp <= 0 then
         b.phase = 'won'
-        return
     end
+    if b.phase ~= 'fight' then return scene(2, second, CB.HOLD.over) end
+    scene(2, second, CB.HOLD.act + 280 * ((second.lunge or 1) - 1))
+
     b.turn = b.turn + 1
     b.block = 0
+    local third = { banner = 'mine', deal = true, refill = true }
+    local hpBefore = b.hp
     local hurt = CB.tickPoison(b)
     if hurt > 0 then
         b.note = b.note .. ' / 독 ' .. hurt
-        b.anim.player, b.anim.playerText = 'hurt', '-' .. hurt
+        third.player, third.playerText, third.playerFrom, third.playerPoison = 'hurt', '-' .. hurt, hpBefore, true
         if b.hp <= 0 then
             b.log[#b.log + 1] = b.turn .. '턴: 독 ' .. hurt .. '에 쓰러짐'
             b.phase = 'lost'
-            return
+            third.banner, third.deal, third.refill = nil, nil, nil
+            return scene(3, third, CB.HOLD.over)
         end
     end
     b.energy = b.maxEnergy + (b.nextEnergy or 0)
     b.nextEnergy = 0
     CB.drawCards(b, 5 + (b.nextDraw or 0))
     b.nextDraw = 0
+    scene(3, third, 0)
+end
+
+--- End the player's turn (CB.turnScenes). show(n, hold), when given, is
+--- called at each scene with b.anim set to it; without it b.anim ends as
+--- the scenes put together, for one drawing.
+function CB.endTurn(b, show)
+    if show then
+        return CB.turnScenes(b, function(n, anim, hold)
+            b.anim = anim
+            show(n, hold)
+        end)
+    end
+    local merged = {}
+    CB.turnScenes(b, function(_, anim)
+        for key, value in pairs(anim) do merged[key] = value end
+    end)
+    b.anim = merged
 end
 
 CB.OUTCOME_LABEL = { won = '승리', lost = '패배', fled = '도망' }
@@ -974,7 +1190,8 @@ function CB.deckNames(run)
 end
 
 --- The request for the auxiliary model: the bot, the last few messages, the
---- deck so far and the three slots; the answer is a JSON array.
+--- deck so far and the slots (a level up's three, a beaten enemy, the
+--- signature card); the answer is a JSON array.
 function CB.cardPrompt(tid, run, slots)
     local name = getName(tid) or ''
     local okDesc, desc = pcall(getDescription, tid)
@@ -994,11 +1211,23 @@ function CB.cardPrompt(tid, run, slots)
         '# Cards the player already has',
         CB.deckNames(run),
     }, '\n')
+    local why = {}
+    for i, slot in ipairs(slots) do
+        if slot.sig then
+            why[#why + 1] = 'Card ' .. i .. ' is ' .. user .. '\'s signature card: it goes into the deck before the first fight.'
+        elseif slot.foe then
+            why[#why + 1] = user .. ' just beat ' .. slot.foe.name .. '; card ' .. i .. ' is that enemy itself, now on ' .. user .. '\'s side.'
+        elseif not why.level then
+            why.level = true
+            why[#why + 1] = user .. ' just reached level ' .. run.level .. '.'
+        end
+    end
+    why[#why + 1] = 'Avoid repeating the cards above.'
     return {
         { role = 'system', content = 'You design cards for a deck-building card battle game played inside a role-play story. '
             .. 'Answer with a JSON array of exactly ' .. #slots .. ' cards and nothing else.\n' .. CB.CARD_RULES },
         { role = 'user', content = context .. '\n\n# Write these cards\n' .. CB.slotText(slots)
-            .. '\n\n' .. user .. ' just reached level ' .. run.level .. '. Avoid repeating the cards above.' },
+            .. '\n\n' .. table.concat(why, ' ') },
     }
 end
 
@@ -1028,7 +1257,7 @@ function CB.instruction(b, settings, user)
         'A <battle-turn> block is a turn of a fight the player just played: tell that turn as story, the moves and hits as the block has them, keep every number, and stop as the next turn begins. Never finish the fight yourself and never tell turns that have not been played.',
         'A <battle-log> block at the end of a message is a fight that already happened: tell it from the log, keep its outcome, then go on with the story.',
     }
-    if b and b.phase == 'fight' then
+    if b and (b.phase == 'fight' or b.phase == 'sig') then
         if b.awaitStory then
             lines[#lines + 1] = 'The fight against ' .. b.name .. ' goes on: tell the turn in the <battle-turn> block at the end of the chat, then stop; the next turn is played in the game. Do not start a new fight.'
         else
@@ -1068,7 +1297,7 @@ end)
 -- window, the fan) stays inline.
 CB.CSS = ([[
 .cbx-root{--g:#e3bd72;--gd:#8a6a35;--ink:#f1e6cf;--mute:#a99c86;color:var(--ink)}
-.cbx-panel{background:linear-gradient(180deg,#2c2333 0%,#1d1723 52%,#130f18 100%);border:2px solid var(--gd);border-radius:16px;box-shadow:0 0 0 1px #000,inset 0 1px 0 rgba(255,235,190,.1),inset 0 0 40px rgba(0,0,0,.55),0 18px 50px rgba(0,0,0,.7)}
+.cbx-panel{position:relative;background:linear-gradient(180deg,#2c2333 0%,#1d1723 52%,#130f18 100%);border:2px solid var(--gd);border-radius:16px;box-shadow:0 0 0 1px #000,inset 0 1px 0 rgba(255,235,190,.1),inset 0 0 40px rgba(0,0,0,.55),0 18px 50px rgba(0,0,0,.7)}
 .cbx-in{animation:cbIn .28s ease-out both}
 .cbx-head{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;color:var(--mute)}
 .cbx-turn{color:var(--g);font-weight:800;letter-spacing:.03em}
@@ -1092,7 +1321,7 @@ CB.CSS = ([[
 .cbx-red{background:linear-gradient(180deg,#ff7d6d,#c0281f)}
 .cbx-green{background:linear-gradient(180deg,#93e27c,#3a9628)}
 .cbx-bartext{position:absolute;left:0;top:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#fff;text-shadow:0 1px 2px #000}
-.cbx-block{flex:none;display:flex;align-items:center;justify-content:center;gap:1px;min-width:30px;height:22px;padding:0 5px;border-radius:7px;background:linear-gradient(180deg,#5f93dc,#2c579c);border:1px solid #a7c9ff;color:#fff;font-weight:800;font-size:12px;box-shadow:0 2px 4px rgba(0,0,0,.5)}
+.cbx-block{position:relative;flex:none;display:flex;align-items:center;justify-content:center;gap:1px;min-width:30px;height:22px;padding:0 5px;border-radius:7px;background:linear-gradient(180deg,#5f93dc,#2c579c);border:1px solid #a7c9ff;color:#fff;font-weight:800;font-size:12px;box-shadow:0 2px 4px rgba(0,0,0,.5)}
 .cbx-chips{display:flex;gap:5px;flex-wrap:wrap;justify-content:center;min-height:18px}
 .cbx-chip{font-size:11px;padding:1px 7px;border-radius:999px;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.13);color:#eadfca;white-space:nowrap}
 .cbx-note{margin:10px 2px 8px;min-height:18px;text-align:center;font-size:12px;color:#f3d79b;font-style:italic}
@@ -1125,14 +1354,73 @@ CB.CSS = ([[
 .cbx-detail{margin-top:6px;padding:7px 10px;border-radius:10px;text-align:center;font-size:12px;background:rgba(0,0,0,.3);border:1px solid rgba(227,189,114,.25)}
 .cbx-flavour{color:var(--mute);font-style:italic}
 .cbx-shake{animation:cbShake .42s ease}
-.cbx-float{position:absolute;left:50%;top:6px;z-index:5;font-size:22px;font-weight:900;color:#ff6b5b;white-space:nowrap;pointer-events:none;text-shadow:0 2px 0 #000,0 0 8px rgba(0,0,0,.8);animation:cbFloat 1.15s ease-out forwards}
+.cbx-float{position:absolute;left:50%;top:6px;z-index:5;font-size:22px;font-weight:900;color:#ff6b5b;white-space:nowrap;pointer-events:none;text-shadow:0 2px 0 #000,0 0 8px rgba(0,0,0,.8);animation:cbFloat 1.15s ease-out both}
 .cbx-good{color:#9fd8ff}
-.cbx-title{text-align:center;font-size:28px;font-weight:900;margin-top:10px;color:#ffe49c;text-shadow:0 0 18px rgba(255,200,90,.55),0 2px 0 #000;animation:cbPop .5s ease-out both}
+.cbx-title{position:relative;text-align:center;font-size:28px;font-weight:900;margin-top:10px;color:#ffe49c;text-shadow:0 0 18px rgba(255,200,90,.55),0 2px 0 #000;animation:cbPop .5s ease-out both}
 .cbx-lost .cbx-title{color:#ff9d8d;text-shadow:0 0 18px rgba(255,80,60,.5),0 2px 0 #000}
 .cbx-fled .cbx-title{color:#cfd6e6;text-shadow:0 2px 0 #000}
 .cbx-sub{text-align:center;font-size:12px;color:var(--mute);margin-top:4px}
 .cbx-lvl{display:inline-block;margin-left:6px;padding:1px 8px;border-radius:999px;font-weight:800;color:#3a2205;background:linear-gradient(180deg,#ffe49c,#d9a441)}
 .cbx-pulse{animation:cbPulse 1.2s ease-in-out infinite}
+.cbx-medalw{position:relative}
+.cbx-lunge{animation:cbLunge .5s ease-in-out both}
+.cbx-act{animation:cbAct .45s ease-in-out 3}
+.cbx-crit{font-size:36px;color:#ffd04d;text-shadow:0 2px 0 #000,0 0 14px rgba(255,90,40,.95)}
+.cbx-heal{color:#8dff9a}
+.cbx-ghost{position:absolute;left:50%;top:14px;margin-left:-34px;z-index:7;pointer-events:none;animation:cbFly .42s cubic-bezier(.35,.1,.45,1) both}
+.cbx-ghostme{position:absolute;left:50%;top:-30px;margin-left:-34px;z-index:7;pointer-events:none;animation:cbCast .6s ease-out both}
+.cbx-slashw{position:absolute;left:-22px;top:34px;width:118px;height:6px;z-index:6;pointer-events:none}
+.cbx-slash{display:block;width:100%;height:100%;border-radius:6px;background:linear-gradient(90deg,rgba(255,255,255,0),#fff 40%,#ffd7c9 62%,rgba(255,80,60,0));box-shadow:0 0 12px rgba(255,140,100,.95);transform-origin:0 50%;animation:cbSlash .32s ease-out both}
+.cbx-impact{position:absolute;left:-14px;top:-14px;right:-14px;bottom:-14px;border-radius:50%;z-index:5;pointer-events:none;background:radial-gradient(circle,rgba(255,255,240,.95),rgba(255,170,120,.5) 40%,rgba(255,80,60,0) 70%);animation:cbImpact .4s ease-out both}
+.cbx-quake{animation:cbQuake .75s ease both}
+.cbx-flash{position:absolute;left:0;top:0;right:0;bottom:0;z-index:8;pointer-events:none;border-radius:14px;background:rgba(255,0,0,.12);box-shadow:inset 0 0 70px rgba(255,20,20,.85);animation:cbFlash .5s ease-out both}
+.cbx-banner{position:absolute;left:0;right:0;top:36%;z-index:9;pointer-events:none;padding:12px 0;text-align:center;font-size:24px;font-weight:900;letter-spacing:.12em;color:#ffe2dc;background:linear-gradient(90deg,rgba(150,20,20,0),rgba(150,20,20,.92) 18%,rgba(150,20,20,.92) 82%,rgba(150,20,20,0));text-shadow:0 2px 0 #000,0 0 14px rgba(255,80,60,.8);animation:cbBanner 1s ease-in-out both}
+.cbx-mine{color:#3a2205;background:linear-gradient(90deg,rgba(240,196,96,0),rgba(240,196,96,.95) 18%,rgba(240,196,96,.95) 82%,rgba(240,196,96,0));text-shadow:0 1px 0 rgba(255,255,255,.6)}
+.cbx-burst{position:absolute;left:50%;top:50%;width:0;height:0;z-index:7;pointer-events:none}
+.cbx-pt{position:absolute;left:-6px;top:-6px;width:12px;height:12px;display:flex;align-items:center;justify-content:center;font-size:13px;font-style:normal;line-height:1;animation:cbOut .6s ease-out both}
+.cbx-spark{color:#e6ff8a;text-shadow:0 0 6px #8dff5a}
+.cbx-star{color:#ffe49c;text-shadow:0 0 8px #ffb84d;font-size:16px}
+.cbx-shard{width:7px;height:7px;left:-3px;top:-3px;background:#cfe3ff;border:1px solid #fff;box-shadow:0 0 6px #7fb2ff}
+.cbx-bub{position:absolute;bottom:10px;width:9px;height:9px;border-radius:50%;z-index:6;pointer-events:none;background:radial-gradient(circle at 35% 30%,#e9ffd0,#6ee05a 55%,#2f8a25);box-shadow:0 0 6px rgba(120,255,90,.8);animation:cbBubble .9s ease-out both}
+.cbx-ring{position:absolute;left:50%;top:50%;width:80px;height:80px;margin:-40px 0 0 -40px;box-sizing:border-box;border-radius:50%;border:3px solid #b07cff;z-index:6;pointer-events:none;box-shadow:0 0 14px #8a4dff;animation:cbRing .7s ease-out both}
+.cbx-aura{position:absolute;left:-3px;top:-3px;right:-3px;bottom:-3px;border-radius:inherit;z-index:4;pointer-events:none;animation:cbGlow .9s ease-out both}
+.cbx-healaura{animation-name:cbHeal}
+.cbx-trail{position:absolute;top:0;bottom:0;background:#fff1b8;transform-origin:0 50%;animation:cbTrail .7s ease-in both}
+.cbx-pop{animation:cbPopIn .42s cubic-bezier(.2,1.6,.4,1) both}
+.cbx-break{animation:cbBreak .55s ease-out both}
+.cbx-toss{animation:cbToss .45s ease-in both}
+.cbx-drift{position:absolute;top:-6px;z-index:9;pointer-events:none;font-style:normal;color:#ffe49c;text-shadow:0 0 8px #ffb84d;animation:cbDrift 2.4s ease-in both}
+.cbx-reveal{animation:cbReveal .7s cubic-bezier(.2,1.2,.3,1) both}
+.cbx-showcase{position:relative;display:inline-block}
+.cbx-badge{position:absolute;top:-9px;right:-9px;z-index:3;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:900;color:#3a2205;background:linear-gradient(180deg,#ffe49c,#d9a441);border:1px solid #fff0bf;box-shadow:0 2px 4px rgba(0,0,0,.6)}
+.cbx-sigcard .cbx-inner{box-shadow:0 0 10px rgba(255,214,110,.85)}
+.cbx-form{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.cbx-row{display:flex;gap:6px;align-items:center}
+.cbx-lab{flex:none;width:44px;font-size:12px;color:var(--mute)}
+.cbx-field{flex:1;min-width:0;box-sizing:border-box;padding:7px 8px;border-radius:8px;border:1px solid rgba(227,189,114,.4);background:#130f18;color:#f1e6cf;font-size:16px}
+.cbx-num{flex:none;width:62px}
+.cbx-check{display:inline-flex;align-items:center;gap:4px;font-size:13px;margin:0 10px 4px 0}
+.cbx-hint{font-size:11px;line-height:1.5;color:var(--mute)}
+@keyframes cbLunge{0%,100%{transform:none}35%{transform:translateY(30px) scale(1.2)}55%{transform:translateY(22px) scale(1.12)}}
+@keyframes cbAct{0%,100%{transform:none}50%{transform:scale(1.12)}}
+@keyframes cbFly{0%{opacity:1;transform:translateY(280px) scale(1.1) rotate(-6deg)}75%{opacity:1;transform:translateY(0) scale(.8) rotate(5deg)}100%{opacity:0;transform:scale(.45) rotate(10deg)}}
+@keyframes cbCast{0%{opacity:0;transform:translateY(40px) scale(.9)}35%{opacity:1}100%{opacity:0;transform:translateY(-36px) scale(1.05)}}
+@keyframes cbSlash{0%{opacity:0;transform:scaleX(0)}25%{opacity:1}70%{opacity:1;transform:scaleX(1)}100%{opacity:0;transform:scaleX(1.05)}}
+@keyframes cbImpact{0%{opacity:0;transform:scale(.4)}30%{opacity:1}100%{opacity:0;transform:scale(1.35)}}
+@keyframes cbQuake{0%,40%,100%{transform:none}50%{transform:translate(-7px,3px) rotate(-.6deg)}60%{transform:translate(6px,-4px) rotate(.5deg)}70%{transform:translate(-5px,2px)}80%{transform:translate(4px,-2px)}90%{transform:translate(-2px,1px)}}
+@keyframes cbFlash{0%{opacity:0}25%{opacity:1}100%{opacity:0}}
+@keyframes cbBanner{0%{opacity:0;transform:translateX(30%) scaleY(.6)}18%{opacity:1;transform:none}80%{opacity:1;transform:none}100%{opacity:0;transform:translateX(-20%)}}
+@keyframes cbOut{0%{opacity:0;transform:translateX(0) scale(.4)}20%{opacity:1}100%{opacity:0;transform:translateX(40px) scale(1)}}
+@keyframes cbBubble{0%{opacity:0;transform:translateY(0) scale(.4)}20%{opacity:1}100%{opacity:0;transform:translateY(-46px) scale(1.15)}}
+@keyframes cbRing{0%{opacity:0;transform:scale(1.6)}30%{opacity:1}100%{opacity:0;transform:scale(.5) rotate(90deg)}}
+@keyframes cbGlow{0%{opacity:0;box-shadow:0 0 0 0 rgba(255,214,110,0)}35%{opacity:1;box-shadow:0 0 0 3px rgba(255,214,110,.8),0 0 26px rgba(255,200,90,.75)}100%{opacity:0;box-shadow:0 0 0 0 rgba(255,214,110,0)}}
+@keyframes cbHeal{0%{opacity:0;box-shadow:0 0 0 0 rgba(120,255,140,0)}35%{opacity:1;box-shadow:0 0 0 3px rgba(120,255,140,.8),0 0 26px rgba(90,240,120,.75)}100%{opacity:0;box-shadow:0 0 0 0 rgba(120,255,140,0)}}
+@keyframes cbTrail{0%,35%{opacity:1;transform:none}100%{opacity:0;transform:scaleX(0)}}
+@keyframes cbPopIn{0%{opacity:0;transform:scale(.4)}100%{opacity:1;transform:none}}
+@keyframes cbBreak{0%{opacity:1;transform:none}30%{opacity:1;transform:scale(1.25) rotate(-8deg)}100%{opacity:0;transform:scale(1.6) rotate(14deg)}}
+@keyframes cbToss{0%{opacity:1;transform:none}100%{opacity:0;transform:translateY(40px) rotate(10deg) scale(.7)}}
+@keyframes cbDrift{0%{opacity:0;transform:translateY(0) rotate(0)}12%{opacity:1}100%{opacity:0;transform:translateY(190px) rotate(200deg)}}
+@keyframes cbReveal{0%{opacity:0;transform:perspective(600px) rotateY(90deg) scale(.6)}60%{opacity:1;transform:perspective(600px) rotateY(-12deg) scale(1.06)}100%{opacity:1;transform:none}}
 @keyframes cbIn{from{opacity:0;transform:scale(.96)}to{opacity:1;transform:none}}
 @keyframes cbBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
 @keyframes cbDeal{from{opacity:0;transform:translateY(70px)}to{opacity:1;transform:none}}
@@ -1140,7 +1428,7 @@ CB.CSS = ([[
 @keyframes cbFloat{0%{opacity:0;transform:translate(-50%,6px) scale(.8)}15%{opacity:1;transform:translate(-50%,-4px) scale(1.15)}100%{opacity:0;transform:translate(-50%,-40px) scale(1)}}
 @keyframes cbPop{from{opacity:0;transform:scale(.6)}70%{transform:scale(1.08)}to{opacity:1;transform:none}}
 @keyframes cbPulse{0%,100%{opacity:.55}50%{opacity:1}}
-@media (prefers-reduced-motion:reduce){.cbx-in,.cbx-intent,.cbx-deal,.cbx-shake,.cbx-float,.cbx-title,.cbx-pulse{animation:none}}
+@media (prefers-reduced-motion:reduce){.cbx-in,.cbx-intent,.cbx-deal,.cbx-shake,.cbx-float,.cbx-title,.cbx-pulse,.cbx-lunge,.cbx-act,.cbx-quake,.cbx-pop,.cbx-reveal{animation:none}.cbx-ghost,.cbx-ghostme,.cbx-slashw,.cbx-impact,.cbx-flash,.cbx-banner,.cbx-burst,.cbx-bub,.cbx-ring,.cbx-aura,.cbx-trail,.cbx-break,.cbx-toss,.cbx-drift{display:none}}
 ]]):gsub('%s*\n%s*', '')
 
 
@@ -1208,24 +1496,73 @@ local function px(value)
     return string.format('%.1f', value):gsub('%.0$', '') .. 'px'
 end
 
---- One card face. scale: 1 in the hand, larger on the reward screen.
+local function fmt(seconds)
+    return string.format('%.2f', seconds)
+end
+
+--- An animation delay as a style attribute (nothing for none).
+local function at(seconds)
+    if not seconds or seconds <= 0 then return '' end
+    return ' style="animation-delay:' .. fmt(seconds) .. 's"'
+end
+
+--- One card face. scale: 1 in the hand, larger on the reward screen. The
+--- signature card has a gold frame; a beaten enemy's card shows its face.
 function CB.cardFace(card, scale, poor)
     scale = scale or 1
-    local rarity = CB.RARITY_COLOR[card.rarity] or CB.RARITY_COLOR.basic
-    return '<div class="cbx-card cbx-' .. CB.cardType(card) .. (poor and ' cbx-poor' or '') .. '" style="width:' .. px(84 * scale) .. ';height:' .. px(120 * scale) .. '">'
+    local rarity = card.sig and '#ffd56b' or (CB.RARITY_COLOR[card.rarity] or CB.RARITY_COLOR.basic)
+    return '<div class="cbx-card cbx-' .. CB.cardType(card) .. (card.sig and ' cbx-sigcard' or '') .. (poor and ' cbx-poor' or '') .. '" style="width:' .. px(84 * scale) .. ';height:' .. px(120 * scale) .. '">'
         .. '<div class="cbx-cost">' .. card.cost .. '</div>'
+        .. (card.sig and '<div class="cbx-badge">대표</div>' or '')
         .. '<div class="cbx-inner" style="border-color:' .. rarity .. '">'
-        .. '<div class="cbx-art" style="height:' .. px(42 * scale) .. ';font-size:' .. px(22 * scale) .. '">' .. CB.cardIcon(card) .. '</div>'
+        .. '<div class="cbx-art" style="height:' .. px(42 * scale) .. ';font-size:' .. px(22 * scale) .. '">' .. escapeHtml(card.glyph or CB.cardIcon(card)) .. '</div>'
         .. '<div class="cbx-cname" style="font-size:' .. px(10.5 * scale) .. '">' .. escapeHtml(card.name) .. '</div>'
         .. '<div class="cbx-desc" style="font-size:' .. px(10 * scale) .. '">' .. escapeHtml(CB.effectText(card)) .. '</div>'
         .. '</div><div class="cbx-gem" style="background:' .. rarity .. '"></div></div>'
 end
 
-local function frame(inner, anim, extraClass)
-    return '<div><style>' .. CB.CSS .. '</style>'
+--- n particles flying out from the middle of the box they are in, each
+--- turned its own way (kind: cbx-spark, cbx-star or cbx-shard).
+local function burst(n, kind, glyph, wait)
+    local out = {}
+    for i = 1, n do
+        local turn = math.floor(360 / n * (i - 1) + (i % 2) * 17)
+        out[i] = '<i class="cbx-burst" style="transform:rotate(' .. turn .. 'deg)"><i class="cbx-pt ' .. kind .. '"'
+            .. at((wait or 0) + (i % 3) * 0.04) .. '>' .. (glyph or '') .. '</i></i>'
+    end
+    return table.concat(out)
+end
+
+--- Poison bubbles rising in the box they are in.
+local function bubbles(wait)
+    local out = {}
+    for i, left in ipairs({ 18, 38, 58, 74, 30 }) do
+        out[i] = '<i class="cbx-bub" style="left:' .. left .. '%;animation-delay:' .. fmt((wait or 0) + (i - 1) * 0.12) .. 's"></i>'
+    end
+    return table.concat(out)
+end
+
+--- Stars drifting down the window, for a win.
+local function confetti()
+    local out = {}
+    for i, left in ipairs({ 8, 22, 37, 51, 66, 80, 93, 15, 44, 72, 58, 29 }) do
+        out[i] = '<i class="cbx-drift" style="left:' .. left .. '%;animation-delay:' .. fmt((i - 1) * 0.13) .. 's;font-size:' .. (10 + (i * 7) % 9) .. 'px">'
+            .. (i % 3 == 0 and '★' or '✦') .. '</i>'
+    end
+    return table.concat(out)
+end
+
+-- The window's outer tag takes turns between div and section with each
+-- drawing (n, b.n): PocketRisu changes a message in place, and an element
+-- left from the last drawing would not play its animation again. A new tag
+-- is drawn fresh, as official Risu draws every message. overlay is what
+-- lies over the whole panel (a flash, a banner, stars).
+local function frame(inner, anim, extraClass, n, overlay)
+    local tag = (n or 0) % 2 == 1 and 'section' or 'div'
+    return '<' .. tag .. '><style>' .. CB.CSS .. '</style>'
         .. '<div class="cbx-root" style="position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:10px;box-sizing:border-box;font-size:14px;line-height:1.35;background:rgba(6,4,10,.88)">'
-        .. '<div class="cbx-panel' .. ((anim or {}).open and ' cbx-in' or '') .. (extraClass and (' ' .. extraClass) or '') .. '" style="width:100%;max-width:420px;max-height:100%;overflow-y:auto;padding:12px;box-sizing:border-box;text-align:left;color:#f1e6cf">'
-        .. inner .. '</div></div></div>'
+        .. '<div class="cbx-panel' .. ((anim or {}).open and ' cbx-in' or '') .. (extraClass and (' ' .. extraClass) or '') .. '" style="width:100%;max-width:420px;max-height:100%;overflow-y:auto;overflow-x:hidden;padding:12px;box-sizing:border-box;text-align:left;color:#f1e6cf">'
+        .. (overlay or '') .. inner .. '</div></div></' .. tag .. '>'
 end
 
 local function header(left, right)
@@ -1233,10 +1570,27 @@ local function header(left, right)
         .. '<span risu-btn="cb|close" class="cbx-ic">✕</span></span></div>'
 end
 
-local function hpBar(hp, max, colour, block)
+--- A hit point bar with its block. fx (optional): from = the hit points
+--- before this scene (the part lost flashes, then drains), wait = when it
+--- lands, block = 'pop' (block gained) or 'break' (block broken).
+local function hpBar(hp, max, colour, block, fx)
+    fx = fx or {}
     local pct = max > 0 and math.floor(hp / max * 100) or 0
-    return '<div class="cbx-barrow">' .. ((block or 0) > 0 and ('<div class="cbx-block">🛡️' .. block .. '</div>') or '')
-        .. '<div class="cbx-bar"><div class="cbx-fill ' .. colour .. '" style="width:' .. pct .. '%"></div><div class="cbx-bartext">' .. hp .. ' / ' .. max .. '</div></div></div>'
+    local badge = ''
+    if (block or 0) > 0 then
+        badge = '<div class="cbx-block' .. (fx.block == 'pop' and ' cbx-pop' or '') .. '"' .. at(fx.block == 'pop' and fx.wait) .. '>🛡️' .. block .. '</div>'
+    elseif fx.block == 'break' then
+        badge = '<div class="cbx-block cbx-break"' .. at(fx.wait) .. '>🛡️' .. burst(5, 'cbx-shard', '', fx.wait) .. '</div>'
+    end
+    local trail = ''
+    if fx.from and fx.from > hp and max > 0 then
+        local was = math.min(100, math.floor(fx.from / max * 100))
+        if was > pct then
+            trail = '<div class="cbx-trail" style="left:' .. pct .. '%;width:' .. (was - pct) .. '%;animation-delay:' .. fmt(fx.wait or 0) .. 's"></div>'
+        end
+    end
+    return '<div class="cbx-barrow">' .. badge
+        .. '<div class="cbx-bar"><div class="cbx-fill ' .. colour .. '" style="width:' .. pct .. '%"></div>' .. trail .. '<div class="cbx-bartext">' .. hp .. ' / ' .. max .. '</div></div></div>'
 end
 
 local function chips(who)
@@ -1253,60 +1607,142 @@ local function chips(who)
     return '<div class="cbx-chips">' .. table.concat(parts) .. '</div>'
 end
 
-local function float(text, good)
+--- The number a hit or a gain shows. kind: nil (damage), 'good' (block) or
+--- 'heal'; big makes it a critical one.
+local function float(text, kind, wait, big)
     if not text then return '' end
-    return '<div class="cbx-float' .. (good and ' cbx-good' or '') .. '">' .. escapeHtml(text) .. '</div>'
+    return '<div class="cbx-float' .. (kind and (' cbx-' .. kind) or '') .. (big and ' cbx-crit' or '') .. '"' .. at(wait) .. '>' .. escapeHtml(text) .. '</div>'
 end
 
-function CB.fightView(b, user)
-    local e, anim = b.enemy, b.anim or {}
+--- Where hand card k of n sits in the fan: at most 216px between the outer
+--- cards' centres, tilted 4deg a card, so it fits a 375px phone (58px and
+--- 6deg cut the outer cards off). A lifted card stands up.
+local function fanStyle(k, n, selected)
+    local step = n > 1 and math.min(54, math.floor(216 / (n - 1))) or 0
+    local off = k - (n + 1) / 2
+    local transform = selected and 'translateY(-30px) scale(1.15)'
+        or ('rotate(' .. string.format('%.1f', off * 4) .. 'deg) translateY(' .. math.floor(math.abs(off) * 4) .. 'px)')
+    return 'position:absolute;bottom:0;left:calc(50% - 42px + ' .. math.floor(off * step) .. 'px);transform:' .. transform
+        .. ';transform-origin:50% 120%;z-index:' .. (selected and 50 or k)
+end
+
+-- What a drawing keeps of a scene with 전투 연출 off: 0.5's numbers.
+CB.PLAIN_ANIM = { open = true, deal = true, enemy = true, enemyText = true, player = true, playerText = true, heal = true }
+
+--- The fight. fx false draws numbers only, as 0.5 did (전투 연출: 끄기).
+function CB.fightView(b, user, fx)
+    if fx == nil then fx = true end
+    local e, anim = b.enemy, {}
+    for key, value in pairs(b.anim or {}) do
+        if fx or CB.PLAIN_ANIM[key] then anim[key] = value end
+    end
+    local foeTurn = anim.foeTurn
+    -- Nothing is tapped on the enemy's turn, nor in the blow that ends it.
+    local idle = foeTurn or b.phase ~= 'fight'
+    -- When things land: after the card's flight, the enemy's lunge or the
+    -- turn's banner.
+    local foeWait = (anim.castAt == 'foe' and 0.3) or (anim.lunge and 0.2) or (anim.banner == 'foe' and 0.35) or 0
+    local meWait = (anim.lunge and 0.2) or (anim.castAt == 'me' and 0.2) or (anim.banner == 'mine' and 0.3) or 0
+    local lunge = anim.lunge
     local out = { header('<span class="cbx-turn">⚔️ ' .. b.turn .. '턴</span> · Lv.' .. (b.level or 1),
         '<span risu-btn="cb|deck" class="cbx-ic">🂠 ' .. #b.cards .. '</span><span risu-btn="cb|flee" class="cbx-ic">💨 도망</span>') }
+
+    -- The enemy: slashes and a flash where the card lands, bubbles, sparks,
+    -- a ring for a curse, a glow when it grows stronger.
+    local medal = { CB.foeGlyph(b.name, b.tier) }
+    if anim.hits then
+        for i = 1, anim.hits do
+            medal[#medal + 1] = '<i class="cbx-slashw" style="transform:rotate(' .. (i % 2 == 1 and -32 or 28) .. 'deg)"><i class="cbx-slash"' .. at(foeWait + (i - 1) * 0.12) .. '></i></i>'
+        end
+        medal[#medal + 1] = '<i class="cbx-impact"' .. at(foeWait) .. '></i>'
+    end
+    if anim.enemyPoison then medal[#medal + 1] = bubbles(foeWait) end
+    if anim.enemySpark then medal[#medal + 1] = burst(6, 'cbx-spark', '✦', foeWait) end
+    if anim.enemyCurse then medal[#medal + 1] = '<i class="cbx-ring"' .. at(foeWait) .. '></i>' end
+    if anim.enemyGlow then medal[#medal + 1] = '<i class="cbx-aura"' .. at(foeWait) .. '></i>' end
+    medal[#medal + 1] = float(anim.enemyText, nil, foeWait, anim.big and anim.castAt == 'foe')
+    local ghost = (anim.castAt == 'foe' and b.cards[anim.cast]) and ('<div class="cbx-ghost">' .. CB.cardFace(b.cards[anim.cast], 0.8) .. '</div>') or ''
     out[#out + 1] = '<div class="cbx-arena cbx-' .. b.tier .. '">'
-        .. '<div class="cbx-intentrow"><div class="cbx-intent">' .. CB.intentText(b) .. '</div></div>'
-        .. '<div class="cbx-foe"><div class="cbx-medal' .. (anim.enemy and ' cbx-shake' or '') .. '">' .. CB.foeGlyph(b.name, b.tier) .. float(anim.enemyText, false) .. '</div>'
+        .. '<div class="cbx-intentrow"><div class="cbx-intent' .. (foeTurn and ' cbx-act' or '') .. '">' .. CB.intentText(b) .. '</div></div>' .. ghost
+        .. '<div class="cbx-foe"><div class="cbx-medalw' .. (lunge and ' cbx-lunge' or '') .. '"'
+        .. ((lunge or 1) > 1 and (' style="animation-duration:.36s;animation-iteration-count:' .. lunge .. '"') or '') .. '>'
+        .. '<div class="cbx-medal' .. (anim.enemy and ' cbx-shake' or '') .. '"' .. (anim.enemy and at(foeWait) or '') .. '>' .. table.concat(medal) .. '</div></div>'
         .. '<div class="cbx-name">' .. escapeHtml(b.name) .. '<span class="cbx-tier">' .. CB.TIER_LABEL[b.tier] .. '</span></div>'
-        .. hpBar(e.hp, e.maxHp, 'cbx-red', e.block) .. chips(e) .. '</div></div>'
+        .. hpBar(e.hp, e.maxHp, 'cbx-red', e.block, { from = anim.enemyFrom, wait = foeWait, block = anim.enemyBreak and 'break' or anim.enemyBlock })
+        .. chips(e) .. '</div></div>'
     out[#out + 1] = '<div class="cbx-note">' .. escapeHtml(b.note or '') .. '</div>'
-    out[#out + 1] = '<div class="cbx-me' .. (anim.player == 'hurt' and ' cbx-shake' or '') .. '">'
-        .. '<div class="cbx-orb' .. (b.energy == 0 and ' cbx-spent' or '') .. '">' .. b.energy .. '/' .. b.maxEnergy .. '</div>'
+
+    -- The player.
+    local me = {}
+    if anim.castAt == 'me' and b.cards[anim.cast] then me[#me + 1] = '<div class="cbx-ghostme">' .. CB.cardFace(b.cards[anim.cast], 0.8) .. '</div>' end
+    if anim.playerPoison then me[#me + 1] = bubbles(meWait) end
+    if anim.playerSpark or anim.thornsUp then me[#me + 1] = burst(6, 'cbx-spark', '✦', meWait) end
+    if anim.playerCurse then me[#me + 1] = '<i class="cbx-ring"' .. at(meWait) .. '></i>' end
+    if anim.playerGlow then me[#me + 1] = '<i class="cbx-aura"' .. at(meWait) .. '></i>' end
+    if anim.heal and fx then me[#me + 1] = '<i class="cbx-aura cbx-healaura"' .. at(meWait) .. '></i>' end
+    local hurt = anim.player == 'hurt'
+    local meStyle = ''
+    if hurt and fx then
+        meStyle = ' style="animation-delay:' .. fmt(meWait) .. 's' .. ((lunge or 1) > 1 and (';animation-duration:.36s;animation-iteration-count:' .. lunge) or '') .. '"'
+    end
+    out[#out + 1] = '<div class="cbx-me' .. (hurt and ' cbx-shake' or '') .. '"' .. meStyle .. '>'
+        .. '<div class="cbx-orb' .. (b.energy == 0 and ' cbx-spent' or '') .. (anim.refill and ' cbx-pop' or '') .. '"' .. (anim.refill and at(0.3) or '') .. '>' .. b.energy .. '/' .. b.maxEnergy .. '</div>'
         .. '<div style="flex:1;min-width:0"><div class="cbx-who"><b>' .. escapeHtml(user) .. '</b>' .. chips(b) .. '</div>'
-        .. '<div style="margin-top:5px">' .. hpBar(b.hp, b.maxHp, 'cbx-green', b.block) .. '</div></div>'
-        .. float(anim.playerText, anim.player ~= 'hurt') .. '</div>'
-    -- The hand, fanned: one tap lifts a card, a second plays it. The fan is
-    -- at most 216px between the outer cards' centres, tilted 4deg a card, so
-    -- it fits a 375px phone (58px and 6deg cut the outer cards off).
+        .. '<div style="margin-top:5px">' .. hpBar(b.hp, b.maxHp, 'cbx-green', b.block, { from = anim.playerFrom, wait = meWait, block = anim.playerBreak and 'break' or anim.playerBlock }) .. '</div></div>'
+        .. float(anim.playerText, (not hurt) and (anim.heal and 'heal' or 'good') or nil, meWait, anim.big and lunge) .. table.concat(me) .. '</div>'
+
+    -- The hand, fanned: one tap lifts a card, a second plays it. Play and
+    -- 턴 종료 carry the drawing they were in (b.n), so a tap left over from
+    -- an older one is dropped. On the enemy's turn nothing is tapped, and
+    -- the cards just played fall away.
     local n = #b.hand
-    local step = n > 1 and math.min(54, math.floor(216 / (n - 1))) or 0
     local cards = {}
+    local dealWait = anim.banner == 'mine' and 0.3 or 0
     for k, id in ipairs(b.hand) do
         local card = b.cards[id]
-        local off = k - (n + 1) / 2
-        local selected = b.selected == k
-        local transform = selected and 'translateY(-30px) scale(1.15)'
-            or ('rotate(' .. string.format('%.1f', off * 4) .. 'deg) translateY(' .. math.floor(math.abs(off) * 4) .. 'px)')
-        local style = 'position:absolute;bottom:0;left:calc(50% - 42px + ' .. math.floor(off * step) .. 'px);transform:' .. transform
-            .. ';transform-origin:50% 120%;z-index:' .. (selected and 50 or k) .. ';cursor:pointer'
+        local selected = b.selected == k and not idle
         local face = CB.cardFace(card, 1, card.cost > b.energy)
-        if anim.deal then face = '<div class="cbx-deal" style="animation-delay:' .. string.format('%.2f', (k - 1) * 0.06) .. 's">' .. face .. '</div>' end
-        cards[#cards + 1] = '<div risu-btn="cb|' .. (selected and 'play' or 'sel') .. '|' .. k .. '"' .. (selected and ' class="cbx-picked"' or '') .. ' style="' .. style .. '">' .. face .. '</div>'
+        if anim.deal then face = '<div class="cbx-deal" style="animation-delay:' .. fmt(dealWait + (k - 1) * 0.06) .. 's">' .. face .. '</div>' end
+        if idle then
+            cards[#cards + 1] = '<div style="' .. fanStyle(k, n) .. '">' .. face .. '</div>'
+        else
+            cards[#cards + 1] = '<div risu-btn="cb|' .. (selected and ('play|' .. k .. '|' .. (b.n or 0)) or ('sel|' .. k)) .. '"'
+                .. (selected and ' class="cbx-picked"' or '') .. ' style="' .. fanStyle(k, n, selected) .. ';cursor:pointer">' .. face .. '</div>'
+        end
+    end
+    for k, id in ipairs(anim.toss or {}) do
+        local card = b.cards[id]
+        if card then
+            cards[#cards + 1] = '<div style="' .. fanStyle(k, #anim.toss) .. '"><div class="cbx-toss"' .. at((k - 1) * 0.04) .. '>' .. CB.cardFace(card, 1) .. '</div></div>'
+        end
     end
     out[#out + 1] = '<div style="position:relative;height:160px;margin-top:14px">' .. table.concat(cards) .. '</div>'
-    local picked = b.selected and b.cards[b.hand[b.selected]]
+    local picked = (not idle) and b.selected and b.cards[b.hand[b.selected]]
+    local piles = function(middle)
+        return '<div style="display:flex;align-items:center;gap:10px;margin-top:10px">'
+            .. '<div class="cbx-pile"><div class="cbx-pilen">' .. #b.draw .. '</div>뽑을 더미</div>' .. middle
+            .. '<div class="cbx-pile"><div class="cbx-pilen">' .. #b.discard .. '</div>버린 더미</div></div>'
+    end
     if picked then
         local help = CB.keywordHelp(picked)
         out[#out + 1] = '<div class="cbx-detail"><b>' .. escapeHtml(picked.name) .. '</b> — ' .. escapeHtml(CB.effectText(picked))
             .. ((picked.desc or '') ~= '' and ('<br><span class="cbx-flavour">' .. escapeHtml(picked.desc) .. '</span>') or '')
             .. (#help > 0 and ('<br><span style="font-size:11px;opacity:.75">' .. escapeHtml(table.concat(help, ' ')) .. '</span>') or '') .. '</div>'
-        out[#out + 1] = '<div style="display:flex;gap:8px;margin-top:8px"><span risu-btn="cb|play|' .. b.selected .. '" class="cbx-btn cbx-gold" style="flex:2">▶ 사용</span>'
+        out[#out + 1] = '<div style="display:flex;gap:8px;margin-top:8px"><span risu-btn="cb|play|' .. b.selected .. '|' .. (b.n or 0) .. '" class="cbx-btn cbx-gold" style="flex:2">▶ 사용</span>'
             .. '<span risu-btn="cb|unsel" class="cbx-btn cbx-dark" style="flex:1">취소</span></div>'
+    elseif idle then
+        out[#out + 1] = piles('<div class="cbx-btn cbx-dark cbx-pulse" style="flex:1">' .. (foeTurn and '적의 차례…' or '…') .. '</div>')
     else
-        out[#out + 1] = '<div style="display:flex;align-items:center;gap:10px;margin-top:10px">'
-            .. '<div class="cbx-pile"><div class="cbx-pilen">' .. #b.draw .. '</div>뽑을 더미</div>'
-            .. '<span risu-btn="cb|end" class="cbx-btn cbx-gold" style="flex:1">턴 종료</span>'
-            .. '<div class="cbx-pile"><div class="cbx-pilen">' .. #b.discard .. '</div>버린 더미</div></div>'
+        out[#out + 1] = piles('<span risu-btn="cb|end||' .. (b.n or 0) .. '" class="cbx-btn cbx-gold" style="flex:1">턴 종료</span>')
     end
-    return frame(table.concat(out), anim)
+
+    local overlay = {}
+    if anim.flash then overlay[#overlay + 1] = '<div class="cbx-flash"' .. at(0.2) .. '></div>' end
+    if anim.banner then
+        overlay[#overlay + 1] = '<div class="cbx-banner' .. (anim.banner == 'mine' and ' cbx-mine' or '') .. '">'
+            .. (anim.banner == 'mine' and (b.turn .. '턴 · 내 차례') or '적의 차례') .. '</div>'
+    end
+    return frame(table.concat(out), anim, anim.big and 'cbx-quake' or nil, b.n, table.concat(overlay))
 end
 
 function CB.deckView(b)
@@ -1314,48 +1750,143 @@ function CB.deckView(b)
     for _, card in ipairs(b.cards) do faces[#faces + 1] = '<div style="margin:12px 5px 0 9px">' .. CB.cardFace(card) .. '</div>' end
     return frame(header('<span class="cbx-turn">🂠 덱 ' .. #b.cards .. '장</span>')
         .. '<div style="display:flex;flex-wrap:wrap;justify-content:center;margin-top:4px">' .. table.concat(faces) .. '</div>'
-        .. '<div style="display:flex;margin-top:14px"><span risu-btn="cb|back" class="cbx-btn cbx-dark" style="flex:1">돌아가기</span></div>')
+        .. '<div style="display:flex;margin-top:14px"><span risu-btn="cb|back" class="cbx-btn cbx-dark" style="flex:1">돌아가기</span></div>', nil, nil, b.n)
 end
 
-function CB.endView(b)
+--- A card shown large with its flavour and keywords, turning in with stars.
+local function showcase(card, fx)
+    local help = CB.keywordHelp(card)
+    return '<div style="display:flex;justify-content:center;margin-top:18px"><div class="cbx-showcase' .. (fx and ' cbx-reveal' or '') .. '">'
+        .. CB.cardFace(card, 1.4) .. (fx and burst(8, 'cbx-star', '✦', 0.45) or '') .. '</div></div>'
+        .. ((card.desc or '') ~= '' and ('<div class="cbx-sub cbx-flavour" style="margin-top:12px">' .. escapeHtml(card.desc) .. '</div>') or '')
+        .. (#help > 0 and ('<div class="cbx-sub" style="margin-top:6px;opacity:.85">' .. escapeHtml(table.concat(help, ' ')) .. '</div>') or '')
+end
+
+--- Whether a beaten enemy's card waits to be taken or let go.
+function CB.capturePending(b)
+    return type(b.capture) == 'table' and type(b.capture.card) == 'table' and not b.capture.done and not b.capture.making
+end
+
+function CB.endView(b, fx)
     local title = ({ won = '🏆 승리', lost = '💀 패배', fled = '💨 도망' })[b.phase]
+    local cheer = fx and b.phase == 'won'
     local out = { header(escapeHtml(b.name) .. ' · ' .. CB.TIER_LABEL[b.tier]) }
-    out[#out + 1] = '<div class="cbx-title">' .. title .. '</div>'
+    out[#out + 1] = '<div class="cbx-title">' .. title .. (cheer and burst(10, 'cbx-star', '✦', 0.2) or '') .. '</div>'
     out[#out + 1] = '<div class="cbx-sub">' .. b.turn .. '턴 · 체력 ' .. b.hp .. ' / ' .. b.maxHp
         .. (b.levelUp and ('<span class="cbx-lvl">LEVEL UP · Lv.' .. (b.level or 1) .. '</span>') or '') .. '</div>'
-    local reward = b.reward
-    if type(reward) == 'table' and reward.choices then
-        local faces = {}
-        for k, card in ipairs(reward.choices) do
-            -- The flavour line grows, so the three 고르기 buttons line up.
-            faces[#faces + 1] = '<div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:14px">' .. CB.cardFace(card, 1.2)
-                .. '<div class="cbx-flavour" style="flex:1;width:96px;font-size:11px;line-height:1.3;text-align:center">' .. escapeHtml(card.desc) .. '</div>'
-                .. '<span risu-btn="cb|pick|' .. k .. '" class="cbx-btn cbx-gold" style="padding:6px 14px">고르기</span></div>'
+    local reward, capture = b.reward, b.capture
+    if (type(reward) == 'table' and reward.making) or (type(capture) == 'table' and capture.making) then
+        out[#out + 1] = '<div class="cbx-note cbx-pulse" style="margin-top:18px">보조 모델이 새 카드를 쓰는 중…</div>'
+    elseif CB.capturePending(b) then
+        -- The beaten enemy first, then the level up's cards.
+        out[#out + 1] = '<div style="text-align:center;margin-top:16px;font-size:13px;font-weight:700;color:#f3d79b">🎴 쓰러뜨린 적이 카드가 되었습니다</div>'
+            .. showcase(capture.card, fx)
+            .. '<div style="display:flex;gap:8px;margin-top:14px"><span risu-btn="cb|take" class="cbx-btn cbx-gold" style="flex:2">🎴 덱에 넣기</span>'
+            .. '<span risu-btn="cb|free" class="cbx-btn cbx-dark" style="flex:1">보내 주기</span></div>'
+    else
+        if type(capture) == 'table' and capture.done == 'take' then
+            out[#out + 1] = '<div class="cbx-sub" style="margin-top:10px">🎴 ' .. escapeHtml(capture.card.name) .. ' 카드를 덱에 넣었습니다</div>'
         end
-        out[#out + 1] = '<div style="text-align:center;margin-top:16px;font-size:13px;font-weight:700;color:#f3d79b">새 카드 하나를 고르세요</div>'
-            .. (reward.note and ('<div class="cbx-sub">' .. escapeHtml(reward.note) .. '</div>') or '')
-        out[#out + 1] = '<div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap">' .. table.concat(faces) .. '</div>'
-        -- The words the three cards use, once each.
-        local seen, help = {}, {}
-        for _, card in ipairs(reward.choices) do
-            for _, line in ipairs(CB.keywordHelp(card)) do
-                if not seen[line] then seen[line] = true help[#help + 1] = escapeHtml(line) end
+        if type(reward) == 'table' and reward.choices then
+            local faces = {}
+            for k, card in ipairs(reward.choices) do
+                -- The flavour line grows, so the three 고르기 buttons line up.
+                faces[#faces + 1] = '<div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin-top:14px">' .. CB.cardFace(card, 1.2)
+                    .. '<div class="cbx-flavour" style="flex:1;width:96px;font-size:11px;line-height:1.3;text-align:center">' .. escapeHtml(card.desc) .. '</div>'
+                    .. '<span risu-btn="cb|pick|' .. k .. '" class="cbx-btn cbx-gold" style="padding:6px 14px">고르기</span></div>'
+            end
+            out[#out + 1] = '<div style="text-align:center;margin-top:16px;font-size:13px;font-weight:700;color:#f3d79b">새 카드 하나를 고르세요</div>'
+                .. (reward.note and ('<div class="cbx-sub">' .. escapeHtml(reward.note) .. '</div>') or '')
+            out[#out + 1] = '<div style="display:flex;justify-content:center;gap:10px;flex-wrap:wrap">' .. table.concat(faces) .. '</div>'
+            -- The words the three cards use, once each.
+            local seen, help = {}, {}
+            for _, card in ipairs(reward.choices) do
+                for _, line in ipairs(CB.keywordHelp(card)) do
+                    if not seen[line] then seen[line] = true help[#help + 1] = escapeHtml(line) end
+                end
+            end
+            if #help > 0 then
+                out[#out + 1] = '<div style="margin-top:12px;font-size:11px;line-height:1.5;opacity:.75">' .. table.concat(help, '<br>') .. '</div>'
+            end
+            out[#out + 1] = '<div style="display:flex;margin-top:14px"><span risu-btn="cb|skip" class="cbx-btn cbx-dark" style="flex:1">건너뛰기</span></div>'
+        elseif type(reward) == 'table' and reward.waiting then
+            out[#out + 1] = '<div class="cbx-note" style="margin-top:16px">다음 답에서 메인 모델이 새 카드 3장을 씁니다.<br>창을 닫고 보내기를 누르세요.</div>'
+            out[#out + 1] = '<div style="display:flex"><span risu-btn="cb|close" class="cbx-btn cbx-gold" style="flex:1">닫기</span></div>'
+        else
+            out[#out + 1] = '<div class="cbx-note" style="margin-top:16px">전투 기록을 이 전투의 메시지에 붙였습니다.<br>창을 닫고 보내기를 누르면 이야기가 이어집니다.</div>'
+            out[#out + 1] = '<div style="display:flex"><span risu-btn="cb|done" class="cbx-btn cbx-gold" style="flex:1">닫기</span></div>'
+        end
+    end
+    return frame(table.concat(out), { open = true }, 'cbx-' .. b.phase, b.n, cheer and confetti() or nil)
+end
+
+--- The form that makes the signature card by hand (risu-form, read by
+--- onFormSubmit). Its fields are not called name or title: the sanitizer
+--- drops a name a form already has as a property.
+function CB.sigForm(draft)
+    local raw = draft.raw or { name = '', cost = 1, effects = { dmg = 8 }, desc = '' }
+    local effects = raw.effects or {}
+    local picks = {}
+    for _, effect in ipairs(CB.EFFECTS) do
+        local value = effects[effect.key]
+        if not effect.flag and type(value) == 'number' and #picks < 3 then picks[#picks + 1] = { effect.key, value } end
+    end
+    local function menu(name, chosen)
+        local options = { '<option value=""' .. (chosen and '' or ' selected') .. '>없음</option>' }
+        for _, effect in ipairs(CB.EFFECTS) do
+            if not effect.flag then
+                options[#options + 1] = '<option value="' .. effect.key .. '"' .. (chosen == effect.key and ' selected' or '') .. '>' .. CB.EFFECT_LABEL[effect.key] .. '</option>'
             end
         end
-        if #help > 0 then
-            out[#out + 1] = '<div style="margin-top:12px;font-size:11px;line-height:1.5;opacity:.75">' .. table.concat(help, '<br>') .. '</div>'
-        end
-        out[#out + 1] = '<div style="display:flex;margin-top:14px"><span risu-btn="cb|skip" class="cbx-btn cbx-dark" style="flex:1">건너뛰기</span></div>'
-    elseif type(reward) == 'table' and reward.making then
-        out[#out + 1] = '<div class="cbx-note cbx-pulse" style="margin-top:18px">보조 모델이 새 카드를 쓰는 중…</div>'
-    elseif type(reward) == 'table' and reward.waiting then
-        out[#out + 1] = '<div class="cbx-note" style="margin-top:16px">다음 답에서 메인 모델이 새 카드 3장을 씁니다.<br>창을 닫고 보내기를 누르세요.</div>'
-        out[#out + 1] = '<div style="display:flex"><span risu-btn="cb|close" class="cbx-btn cbx-gold" style="flex:1">닫기</span></div>'
-    else
-        out[#out + 1] = '<div class="cbx-note" style="margin-top:16px">전투 기록을 이 전투의 메시지에 붙였습니다.<br>창을 닫고 보내기를 누르면 이야기가 이어집니다.</div>'
-        out[#out + 1] = '<div style="display:flex"><span risu-btn="cb|done" class="cbx-btn cbx-gold" style="flex:1">닫기</span></div>'
+        return '<select name="' .. name .. '" class="cbx-field">' .. table.concat(options) .. '</select>'
     end
-    return frame(table.concat(out), { open = true }, 'cbx-' .. b.phase)
+    local costs, budget = {}, {}
+    for c = 0, 3 do
+        costs[#costs + 1] = '<option value="' .. c .. '"' .. (c == (raw.cost or 1) and ' selected' or '') .. '>' .. c .. '</option>'
+        budget[#budget + 1] = c .. ': ' .. math.floor(CB.budget(c, 'rare') / CB.SLACK) .. '점'
+    end
+    local rows = {
+        '<div class="cbx-row"><span class="cbx-lab">이름</span><input name="cname" maxlength="14" class="cbx-field" value="' .. escapeHtml(raw.name or '') .. '" placeholder="카드 이름"></div>',
+        '<div class="cbx-row"><span class="cbx-lab">비용</span><select name="cost" class="cbx-field">' .. table.concat(costs) .. '</select></div>',
+    }
+    for i = 1, 3 do
+        local pick = picks[i] or {}
+        rows[#rows + 1] = '<div class="cbx-row"><span class="cbx-lab">효과 ' .. i .. '</span>' .. menu('k' .. i, pick[1])
+            .. '<input name="v' .. i .. '" type="number" min="1" max="40" inputmode="numeric" class="cbx-field cbx-num" value="' .. (pick[2] or '') .. '"></div>'
+    end
+    local flags = {}
+    for _, key in ipairs(CB.FLAG_ORDER) do
+        flags[#flags + 1] = '<label class="cbx-check"><input type="checkbox" name="' .. key .. '" value="1"' .. (effects[key] and ' checked' or '') .. '>' .. CB.FLAG_LABEL[key] .. '</label>'
+    end
+    rows[#rows + 1] = '<div>' .. table.concat(flags) .. '</div>'
+    rows[#rows + 1] = '<div class="cbx-row"><span class="cbx-lab">설명</span><input name="cdesc" maxlength="60" class="cbx-field" value="' .. escapeHtml(raw.desc or '') .. '" placeholder="한 줄 설명 (안 써도 됨)"></div>'
+    rows[#rows + 1] = '<div class="cbx-hint">비용마다 담을 수 있는 점수 — ' .. table.concat(budget, ' · ') .. '. 피해·방어 1이 1점, 독 2점, 약화·취약·가시 3점, 카드 뽑기 4점, 에너지 5점, 힘·민첩 6점이고, 체력 소모는 점수를 덜어 줍니다. 넘치면 비용이 먼저 오르고, 그래도 넘치면 숫자가 줄어듭니다.</div>'
+    if draft.note then rows[#rows + 1] = '<div class="cbx-note">' .. escapeHtml(draft.note) .. '</div>' end
+    rows[#rows + 1] = '<div style="display:flex;gap:8px"><button type="submit" class="cbx-btn cbx-gold" style="flex:2;font:inherit;font-weight:800">만들기</button>'
+        .. (draft.card and '<span risu-btn="cb|sigback" class="cbx-btn cbx-dark" style="flex:1">취소</span>' or '') .. '</div>'
+    return '<form risu-form="cb|sig" class="cbx-form">' .. table.concat(rows) .. '</form>'
+end
+
+--- The step before the first fight: the model writing the signature card,
+--- the card to start with (or to write again, or make by hand), or the form.
+function CB.sigView(b, fx)
+    local draft = b.sigDraft or {}
+    local out = { header('<span class="cbx-turn">★ 대표 카드</span> · ' .. escapeHtml(b.name ~= '' and b.name or '적')) }
+    out[#out + 1] = '<div class="cbx-sub" style="margin-top:10px;line-height:1.5">전투에 앞서 이 이야기의 대표 카드 한 장을 덱에 넣습니다.<br>한 번 정하면 이 채팅에서 계속 씁니다.</div>'
+    if draft.making then
+        out[#out + 1] = '<div class="cbx-note cbx-pulse" style="margin-top:18px">보조 모델이 대표 카드를 쓰는 중…</div>'
+    elseif draft.form or not draft.card then
+        out[#out + 1] = CB.sigForm(draft)
+    else
+        out[#out + 1] = showcase(draft.card, fx)
+            .. (draft.note and ('<div class="cbx-note">' .. escapeHtml(draft.note) .. '</div>') or '')
+        out[#out + 1] = '<div style="display:flex;margin-top:12px"><span risu-btn="cb|sigok" class="cbx-btn cbx-gold" style="flex:1">⚔️ 이 카드로 전투 시작</span></div>'
+        local more = draft.hand and '<span risu-btn="cb|sigform" class="cbx-btn cbx-dark" style="flex:1">✏️ 고치기</span>'
+            or ('<span risu-btn="cb|sigredo" class="cbx-btn cbx-dark" style="flex:1">🔄 다시 쓰기</span>'
+                .. '<span risu-btn="cb|sigform" class="cbx-btn cbx-dark" style="flex:1">✏️ 직접 만들기</span>')
+        out[#out + 1] = '<div style="display:flex;gap:8px;margin-top:8px">' .. more .. '</div>'
+    end
+    return frame(table.concat(out), b.anim, nil, b.n)
 end
 
 -- In the chat itself (no <style> there): inline styles only.
@@ -1430,21 +1961,27 @@ function CB.lastExtras(tid, text, b)
     if b and b.phase == 'pending' then return startCard(b, 'start') end
     -- A tag nobody turned into a fight (written by hand, or the module was
     -- off when the reply came): start it from here. Not in the middle of one.
-    if type(text) == 'string' and text:find(CB.TAG_PATTERN) and not (b and b.phase == 'fight') then
+    if type(text) == 'string' and text:find(CB.TAG_PATTERN) and not (b and (b.phase == 'fight' or b.phase == 'sig')) then
         local _, spec = CB.takeBattleTag(text)
         if spec then return startCard(spec, 'tag') end
     end
     if not b then return '' end
     local user = getPersonaName(tid) or ''
+    local fx = CB.settings(tid).pace > 0
     if b.open then
+        if b.phase == 'sig' then return CB.sigView(b, fx) end
         if b.phase == 'fight' then
             if b.view == 'deck' then return CB.deckView(b) end
-            return CB.fightView(b, user)
+            return CB.fightView(b, user, fx)
         end
-        return CB.endView(b)
+        -- The blow that ended it, on screen before CB.finish clears the
+        -- fight away for its end screen.
+        if b.cards and b.enemy then return CB.fightView(b, user, fx) end
+        return CB.endView(b, fx)
     end
     if b.phase == 'fight' and b.awaitStory then return waitCard(b) end
-    if b.phase == 'fight' then return pill('open', '⚔️ 전투로 돌아가기 · ' .. escapeHtml(b.name)) end
+    if b.phase == 'fight' or b.phase == 'sig' then return pill('open', '⚔️ 전투로 돌아가기 · ' .. escapeHtml(b.name ~= '' and b.name or '적')) end
+    if CB.capturePending(b) then return pill('open', '🎴 ' .. escapeHtml(b.capture.card.name) .. ' 카드 받기') end
     if type(b.reward) == 'table' and b.reward.choices then return pill('open', '🎁 새 카드 고르기') end
     return ''
 end
@@ -1484,9 +2021,48 @@ end)
 -- Starting, ending
 ------------------------------------------------------------------------------
 
+-- Tests set this to 0, so scenes do not wait.
+CB.PACE_SCALE = 1
+
+--- Wait ms before the next scene (Risu's sleep; no wait where it is missing).
+function CB.pause(tid, ms)
+    ms = math.floor((ms or 0) * CB.PACE_SCALE)
+    if ms <= 0 then return end
+    pcall(function() return sleep(tid, ms):await() end)
+end
+
+--- The signature card the auxiliary model writes for this story, on the
+--- fight waiting for it: a card from the module's pool when the module
+--- writes no cards or the model could not. The caller saves the fight.
+function CB.writeSig(tid, at, b, settings)
+    local run = CB.loadRun(tid)
+    -- Not the run's own generator: writing it again picks another.
+    run.seed = math.random(1, 2147483646)
+    local slots = { { rarity = 'rare', cost = CB.rand(run, 2), sig = true } }
+    if settings.cards == 'pool' then
+        b.sigDraft = { card = CB.parseCards(run, nil, slots)[1], note = '레벨업 카드가 \'기본 카드만\'이라 모듈의 카드에서 골랐습니다.' }
+        return
+    end
+    b.sigDraft = { making = true }
+    CB.saveFight(tid, at, b)
+    reloadDisplay(tid)
+    local cards, written = CB.parseCards(run, ask(tid, CB.cardPrompt(tid, run, slots)), slots)
+    b.sigDraft = { card = cards[1], note = written == 0 and '보조 모델이 쓰지 못해 모듈의 카드에서 골랐습니다. 다시 쓰거나 직접 만들 수 있어요.' or nil }
+end
+
 --- Start the fight spec on message at, from the run as the chat holds it.
+--- While the run has no signature card (and 대표 카드 is not off), the
+--- fight waits at the signature card's step first (phase 'sig').
 function CB.begin(tid, at, spec, settings)
-    local b = CB.newBattle(CB.loadRun(tid), spec, settings)
+    local run = CB.loadRun(tid)
+    if settings.sig ~= 'none' and not CB.sigCard(run) then
+        local b = { id = spec.id, name = spec.name, tier = spec.tier, phase = 'sig', open = true, n = 0,
+            anim = { open = true }, sigDraft = { hand = settings.sig == 'hand' or nil } }
+        if settings.sig == 'ai' then CB.writeSig(tid, at, b, settings) end
+        CB.saveFight(tid, at, b)
+        return b
+    end
+    local b = CB.newBattle(run, spec, settings)
     CB.saveFight(tid, at, b)
     return b
 end
@@ -1526,18 +2102,29 @@ function CB.tellTurn(tid, b)
 end
 
 --- After the last move: settle the run and put it, the log and the fight's
---- end screen on the fight's message (turn by turn, on the turn message);
---- on a level up get three new cards (or wait for the main model's).
+--- end screen on the fight's message (turn by turn, on the turn message).
+--- The signature card joins the run with the first fight it was in. A win
+--- turns the beaten enemy into a card to take or let go; a level up offers
+--- three new cards (or waits for the main model's). What the auxiliary
+--- model writes, it writes in one request.
 function CB.finish(tid, at, b, settings)
     if b.perTurn then at = CB.turnMessage(tid) end
     local text = messageText(tid, at)
     if not text then return end
     local run = CB.loadRun(tid)
+    if b.sigCard and not CB.sigCard(run) then run.deck[#run.deck + 1] = CB.copy(b.sigCard) end
+    local foe = nil
+    if b.phase == 'won' and settings.capture and b.enemy then
+        local card = CB.foeCard(b.name, b.tier, b.enemy.moves)
+        if card then foe = { name = card.name, glyph = card.glyph, moves = CB.movesText(b.enemy.moves), card = card } end
+    end
     CB.settle(run, b)
     local log = CB.logBlock(run, b, getPersonaName(tid) or '', settings.fullLog)
     -- What the end screen does not need.
     b.cards, b.draw, b.hand, b.discard, b.enemy, b.log, b.played, b.view = nil, nil, nil, nil, nil, nil, nil, nil
-    b.awaitStory = nil
+    b.awaitStory, b.sigCard, b.anim = nil, nil, nil
+    local writeFoe = foe and settings.cards == 'aux'
+    if foe then b.capture = { card = foe.card, making = writeFoe or nil } end
     if b.levelUp then
         local slots = CB.rollSlots(run)
         if settings.cards == 'main' then
@@ -1552,16 +2139,38 @@ function CB.finish(tid, at, b, settings)
     text = CB.writeMark((text ~= '' and (text .. '\n\n') or '') .. log, 'r', run)
     setChat(tid, at, CB.writeMark(text, 'b', b))
     setState(tid, 'cb_live', { id = b.id, at = at })
-    if not (b.reward and b.reward.making) then return end
+    local making = b.reward and b.reward.making
+    if not (making or writeFoe) then return end
     reloadDisplay(tid)
-    local slots = b.reward.slots
-    local cards, written = CB.parseCards(run, ask(tid, CB.cardPrompt(tid, run, slots)), slots)
-    b.reward = { slots = slots, choices = cards }
-    if written < #slots then
-        b.reward.note = written == 0 and '보조 모델이 카드를 쓰지 못해 기본 카드에서 골랐습니다 (모듈의 저수준 접근과 보조 모델 설정을 확인해 주세요)'
-            or '보조 모델이 쓰지 못한 자리는 기본 카드로 채웠습니다'
+    local slots = {}
+    if making then
+        for _, slot in ipairs(b.reward.slots) do slots[#slots + 1] = slot end
+    end
+    if writeFoe then slots[#slots + 1] = { rarity = foe.card.rarity, cost = foe.card.cost, foe = foe } end
+    local cards, _, wrote = CB.parseCards(run, ask(tid, CB.cardPrompt(tid, run, slots)), slots)
+    if writeFoe then
+        b.capture = { card = table.remove(cards) }
+        table.remove(wrote)
+    end
+    if making then
+        local written = 0
+        for _, ok in ipairs(wrote) do
+            if ok then written = written + 1 end
+        end
+        b.reward = { slots = b.reward.slots, choices = cards }
+        if written < #b.reward.slots then
+            b.reward.note = written == 0 and '보조 모델이 카드를 쓰지 못해 기본 카드에서 골랐습니다 (모듈의 저수준 접근과 보조 모델 설정을 확인해 주세요)'
+                or '보조 모델이 쓰지 못한 자리는 기본 카드로 채웠습니다'
+        end
     end
     CB.saveFight(tid, at, b)
+end
+
+--- The text with one more line at the end of its last battle log.
+function CB.logLine(text, line)
+    local head, tail = tostring(text or ''):match('^(.*)\n(</battle%-log>.*)$')
+    if not head then return text end
+    return head .. '\n' .. line .. '\n' .. tail
 end
 
 onOutput = async(function(tid)
@@ -1575,7 +2184,7 @@ onOutput = async(function(tid)
     local spec
     text, spec = CB.takeBattleTag(text)
     -- One fight at a time: a tag in the middle of one is dropped.
-    if b and b.phase == 'fight' then spec = nil end
+    if b and (b.phase == 'fight' or b.phase == 'sig') then spec = nil end
 
     local changed = false
     -- The main model's cards, asked for in this reply.
@@ -1590,10 +2199,11 @@ onOutput = async(function(tid)
     end
     -- Turn by turn: this reply told the last turn, so the next one opens.
     if b and b.phase == 'fight' and b.awaitStory then
-        b.awaitStory, b.open, b.anim = nil, true, { open = true }
+        b.awaitStory, b.open, b.anim = nil, true, { open = true, deal = true, banner = 'mine' }
         changed = true
     end
     if changed then
+        b.n = (b.n or 0) + 1
         if at == len - 1 then text = CB.writeMark(text, 'b', b) else CB.saveFight(tid, at, b) end
     end
 
@@ -1622,18 +2232,33 @@ end)
 ------------------------------------------------------------------------------
 
 onButtonClick = async(function(tid, data)
-    local action, argument = tostring(data or ''):match('^cb|(%a+)|?(.*)$')
+    local action, rest = tostring(data or ''):match('^cb|(%a+)|?(.*)$')
     if not action then return end
+    local first, drawnIn = rest:match('^([^|]*)|?(.*)$')
+    local k, drawing = tonumber(first), tonumber(drawnIn)
     local settings = CB.settings(tid)
     local len = getChatLength(tid)
     local b, at = CB.findFight(tid, true)
-    if b then b.anim = nil end
-    local whole, saved = false, false
-    local k = tonumber(argument)
+    -- Play and 턴 종료 carry the drawing they were tapped in: one left over
+    -- from an older drawing (a double tap, taps while the enemy moved)
+    -- would play another card or end the next turn.
+    if b and drawing and (action == 'play' or action == 'end') and drawing ~= (b.n or 0) then return end
+    if b then b.anim, b.n = nil, (b.n or 0) + 1 end
+    local whole, saved, shown = false, false, false
+    -- The window is drawn on the last message.
+    local function redraw() reloadChat(tid, getChatLength(tid) - 1) end
+    -- A scene on screen for hold ms (at the 전투 연출 pace); what comes
+    -- next is a new drawing.
+    local function show(hold)
+        CB.saveFight(tid, at, b)
+        redraw()
+        CB.pause(tid, (hold or 0) * settings.pace)
+        b.n = b.n + 1
+    end
 
     if action == 'tag' then
         local text, spec = CB.takeBattleTag(messageText(tid, len - 1))
-        if not spec or (b and b.phase == 'fight') then return end
+        if not spec or (b and (b.phase == 'fight' or b.phase == 'sig')) then return end
         if b and at ~= len - 1 then CB.saveFight(tid, at, CB.closedMark(b)) end
         setChat(tid, len - 1, text)
         b, at = CB.begin(tid, len - 1, spec, settings), len - 1
@@ -1666,6 +2291,26 @@ onButtonClick = async(function(tid, data)
         b.view = 'deck'
     elseif action == 'back' then
         b.view = nil
+    elseif b.phase == 'sig' then
+        local draft = b.sigDraft or {}
+        if action == 'sigok' and draft.card then
+            -- The fight starts with the card in its deck; the run takes it
+            -- when the fight ends (CB.finish).
+            local run = CB.loadRun(tid)
+            local card = CB.copy(draft.card)
+            card.sig = true
+            run.deck[#run.deck + 1] = card
+            local n = b.n
+            b = CB.newBattle(run, { id = b.id, name = b.name, tier = b.tier }, settings)
+            b.sigCard, b.n, b.anim = card, n, { open = true, deal = true, banner = 'mine' }
+            whole = true
+        elseif action == 'sigredo' and draft.card and not draft.hand then
+            CB.writeSig(tid, at, b, settings)
+        elseif action == 'sigform' then
+            b.sigDraft = { hand = draft.hand, raw = draft.raw or (draft.card and CB.rawCard(draft.card)) or nil, card = draft.card, form = true }
+        elseif action == 'sigback' and draft.card then
+            draft.form, draft.note = nil, nil
+        end
     elseif b.phase == 'fight' then
         if action == 'sel' and k then
             b.selected = k
@@ -1675,8 +2320,21 @@ onButtonClick = async(function(tid, data)
             b.selected = nil
         elseif action == 'play' and k then
             CB.play(b, k)
+            -- The last blow lands on screen before the end screen comes.
+            if b.phase ~= 'fight' and settings.pace > 0 then show(CB.HOLD.over) end
         elseif action == 'end' then
-            CB.endTurn(b)
+            if settings.pace > 0 then
+                CB.endTurn(b, function(scene, hold)
+                    -- Turn by turn the new hand waits for the story.
+                    if scene == 3 and b.perTurn and b.phase == 'fight' then return end
+                    show(hold)
+                end)
+                -- The last scene is on screen already.
+                shown = b.phase == 'fight' and not b.perTurn
+                saved = shown
+            else
+                CB.endTurn(b)
+            end
             -- Turn by turn: the turn goes to the story, and the window waits.
             if b.perTurn and b.phase == 'fight' then
                 CB.tellTurn(tid, b)
@@ -1688,20 +2346,52 @@ onButtonClick = async(function(tid, data)
         end
         if b.phase ~= 'fight' then
             CB.finish(tid, at, b, settings)
-            whole, saved = true, true
+            whole, saved, shown = true, true, false
         end
-    elseif action == 'pick' and k and type(b.reward) == 'table' and b.reward.choices and b.reward.choices[k] then
+    elseif (action == 'take' or action == 'free') and CB.capturePending(b) then
+        -- The beaten enemy's card goes into the run this fight left, and
+        -- the log says so for the story.
+        if action == 'take' then
+            local run = CB.loadRun(tid)
+            run.deck[#run.deck + 1] = CB.copy(b.capture.card)
+            setChat(tid, at, CB.logLine(CB.writeMark(messageText(tid, at), 'r', run), '카드로 얻음: ' .. b.capture.card.name))
+        end
+        b.capture.done = action
+        whole = true
+    elseif action == 'pick' and k and not CB.capturePending(b) and type(b.reward) == 'table' and b.reward.choices and b.reward.choices[k] then
         -- The new card goes into the run this fight left, on its message.
         local run = CB.loadRun(tid)
         run.deck[#run.deck + 1] = CB.copy(b.reward.choices[k])
         setChat(tid, at, CB.writeMark(CB.writeMark(messageText(tid, at), 'r', run), 'b', CB.closedMark(b)))
         setState(tid, 'cb_live', false)
         whole, saved = true, true
-    elseif action == 'skip' or action == 'done' then
+    elseif (action == 'skip' or action == 'done') and not CB.capturePending(b) then
         CB.saveFight(tid, at, CB.closedMark(b))
         whole, saved = true, true
     end
 
     if not saved then CB.saveFight(tid, at, b) end
-    if whole then reloadDisplay(tid) else reloadChat(tid, len - 1) end
+    if shown then return end
+    if whole then reloadDisplay(tid) else redraw() end
+end)
+
+--- The signature card form (CB.sigForm), sent.
+onFormSubmit = async(function(tid, event, meta)
+    if event ~= 'cb|sig' then return end
+    local ok, decoded = pcall(json.decode, tostring(meta or ''))
+    local data = (ok and type(decoded) == 'table' and type(decoded.data) == 'table') and decoded.data or {}
+    local function field(key)
+        local value = data[key]
+        if type(value) == 'table' then value = value[1] end
+        return type(value) == 'string' and value or ''
+    end
+    local b, at = CB.findFight(tid, true)
+    if not b or b.phase ~= 'sig' then return end
+    local draft = b.sigDraft or {}
+    local raw = CB.formCard(field)
+    local card, note = CB.handCard(raw)
+    b.anim, b.n = nil, (b.n or 0) + 1
+    b.sigDraft = { hand = true, raw = raw, card = card or draft.card, note = note, form = (card == nil) or nil }
+    CB.saveFight(tid, at, b)
+    reloadChat(tid, getChatLength(tid) - 1)
 end)

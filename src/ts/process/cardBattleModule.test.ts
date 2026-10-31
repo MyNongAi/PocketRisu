@@ -7,6 +7,7 @@ import { resolve } from 'node:path'
 import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
 import { buildModuleJson, readSource, TOGGLES } from '../../../modules/card-battle/build.mjs'
 import { decodeRisum, encodeRisum, readMaps } from '../../../modules/scene-fold/build.mjs'
+import { ReloadChatPointer } from '../stores.svelte'
 
 const toggles = new Map<string, string>()
 const llmAnswers: string[] = []
@@ -74,8 +75,9 @@ type Message = { role: 'user' | 'char', data: string, time?: number, swipes?: st
 function makeChat(messages: Message[]) {
     const vars: Record<string, string> = {}
     const chat = { message: messages.map((m, i) => ({ time: i + 1, ...m })), scriptstate: {} } as any
-    const run = (mode: string, extra: { data?: any, meta?: object, probe?: string } = {}) => runScripted(
-        extra.probe ? `${code}\n${extra.probe}` : code,
+    // Scenes do not wait here (CB.pause), unless a test asks for a pace.
+    const run = (mode: string, extra: { data?: any, meta?: object, probe?: string, pace?: number } = {}) => runScripted(
+        `${code}\nCB.PACE_SCALE = ${extra.pace ?? 0}${extra.probe ? `\n${extra.probe}` : ''}`,
         {
             char: { type: 'character', chaId: 'c1', name: '세라', desc: '검사 세라.', chats: [chat], chatPage: 0 } as any,
             chat,
@@ -118,10 +120,16 @@ function mark(text: string, kind: string) {
 
 beforeEach(() => {
     toggles.clear()
+    // The tests from before 0.6 play as 0.5 did: the fight told once at the
+    // end, no signature card, no enemy taken. Those that need them set them.
+    toggles.set('toggle_cardbattle.tell', '1')
+    toggles.set('toggle_cardbattle.sig', '2')
+    toggles.set('toggle_cardbattle.capture', '1')
     llmAnswers.length = 0
     llmPrompts.length = 0
     alerts.select = '0'
     alerts.confirm = true
+    vi.mocked(ReloadChatPointer.update).mockReset()
 })
 
 describe('the module file', () => {
@@ -133,6 +141,16 @@ describe('the module file', () => {
         expect(back.module.lowLevelAccess).toBe(true)
         expect(back.module.trigger[0].effect[0].type).toBe('triggerlua')
         expect(TOGGLES).toContain('cardbattle.cards=레벨업 카드 만드는 모델=select=보조 모델,메인 모델,기본 카드만')
+        // Turn by turn comes first (the default), under a key 0.5 did not use.
+        expect(TOGGLES).toContain('cardbattle.tell=전투 이야기=select=턴마다,끝나고 한 번에')
+        expect(TOGGLES).not.toContain('cardbattle.story')
+        expect(TOGGLES).toContain('cardbattle.fx=전투 연출=select=보통,빠르게,끄기')
+        expect(TOGGLES).toContain('cardbattle.sig=대표 카드=select=AI가 만들기,직접 만들기,없음')
+        expect(TOGGLES).toContain('cardbattle.capture=이긴 적 카드=select=받을지 고르기,안 받기')
+        // Every caption and option list parses: no '=' inside a text.
+        for (const line of TOGGLES.split('\n')) {
+            if (line.endsWith('=caption')) expect(line.slice(1, -'=caption'.length)).not.toContain('=')
+        }
     })
 
     test('its request regex takes the hidden marks out of every message before long-term memory reads them', () => {
@@ -448,7 +466,7 @@ describe('the window', () => {
 
         await run('onButtonClick', { data: 'cb|sel|1' })
         expect(mark(chat.message[1].data, 'b').selected).toBe(1)
-        expect(await shown(1)).toContain('risu-btn="cb|play|1"')
+        expect(await shown(1)).toContain('risu-btn="cb|play|1|')
         await run('onButtonClick', { data: 'cb|play|1' })
         const b = mark(chat.message[1].data, 'b')
         expect(b.energy).toBe(2)
@@ -555,13 +573,64 @@ describe('the end of a fight', () => {
         expect(capture).toContain('⚔️ 고블린 (일반) — 도망, 3턴')
         expect(capture).not.toContain('<')
     })
+
+    test('a beaten enemy becomes a card before the level up\'s: taken, it joins the run and the log says so', async () => {
+        toggles.set('toggle_cardbattle.capture', '0')
+        toggles.set('toggle_cardbattle.cards', '2')
+        const { chat, run, shown, lua } = nearlyWon()
+        await run('onButtonClick', { data: 'cb|play|1' })
+        expect(llmPrompts).toHaveLength(0)
+        // The module's own card of it: its strongest move, its name and face.
+        expect(mark(chat.message[2].data, 'b').capture.card).toMatchObject({ name: '고블린', foe: true, glyph: '👺', rarity: 'common', cost: 1, fx: { dmg: 7 } })
+        const end = await shown(2)
+        expect(end).toContain('risu-btn="cb|take"')
+        expect(end).toContain('risu-btn="cb|free"')
+        expect(end).not.toContain('cb|pick')
+
+        // The level up's cards wait for it.
+        await run('onButtonClick', { data: 'cb|pick|1' })
+        expect(mark(chat.message[2].data, 'r').deck).toHaveLength(1)
+        await run('onButtonClick', { data: 'cb|take' })
+        const text = chat.message[2].data
+        expect(mark(text, 'r').deck.at(-1)).toMatchObject({ name: '고블린', foe: true })
+        expect(text).toContain('카드로 얻음: 고블린\n</battle-log>')
+        expect(mark(text, 'b').capture.done).toBe('take')
+        expect(await shown(2)).toContain('risu-btn="cb|pick|1"')
+
+        await run('onButtonClick', { data: 'cb|pick|1' })
+        const deck = mark(chat.message[2].data, 'r').deck
+        expect(deck).toHaveLength(3)
+        expect(deck[1].name).toBe('고블린')
+        // Its face is kept into the next fight.
+        expect(await lua('return json.encode(CB.newBattle(CB.loadRun(id), { id = "n", name = "", tier = "normal" }, { healEach = true }).cards[2])')).toMatchObject({ name: '고블린', glyph: '👺', foe: true })
+    })
+
+    test('with the auxiliary model, one request writes the level up\'s cards and the beaten enemy\'s, which keeps its name; let go, it stays out', async () => {
+        toggles.set('toggle_cardbattle.capture', '0')
+        const { chat, run } = nearlyWon()
+        llmAnswers.push('[{"name":"하나","effects":{"dmg":5}},{"name":"둘","effects":{"block":5}},{"name":"셋","effects":{"draw":1}},{"name":"고블린 왕","effects":{"dmg":5,"weak":1},"desc":"작지만 끈질기다."}]')
+        await run('onButtonClick', { data: 'cb|play|1' })
+        expect(llmPrompts).toHaveLength(1)
+        expect(llmPrompts[0][1].content).toContain('card 4: the enemy just beaten, "고블린"')
+        expect(llmPrompts[0][1].content).toContain('attack 7')
+        const b = mark(chat.message[2].data, 'b')
+        expect(b.reward.choices.map((c: { name: string }) => c.name)).toEqual(['하나', '둘', '셋'])
+        expect(b.reward.note).toBeUndefined()
+        expect(b.capture.card).toMatchObject({ name: '고블린', foe: true, glyph: '👺', fx: { dmg: 5, weak: 1 }, desc: '작지만 끈질기다.' })
+
+        await run('onButtonClick', { data: 'cb|free' })
+        const text = chat.message[2].data
+        expect(mark(text, 'b').capture.done).toBe('free')
+        expect(mark(text, 'r').deck.some((c: { foe?: boolean }) => c.foe)).toBe(false)
+        expect(text).not.toContain('카드로 얻음')
+    })
 })
 
 describe('turn by turn', () => {
     const asRequest = (messages: Message[]) => messages.map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.data }))
 
     test('ending a turn closes the window and puts the turn on a user message; the reply that tells it opens the next turn', async () => {
-        toggles.set('toggle_cardbattle.story', '1')
+        toggles.set('toggle_cardbattle.tell', '0')
         const { chat, run, state, shown } = makeChat([
             { role: 'user', data: '덤빈다' },
             { role: 'char', data: '고블린이 덤벼든다.\n<battle name="고블린">' },
@@ -600,7 +669,7 @@ describe('turn by turn', () => {
     })
 
     test('rerolling the telling reply keeps the turn; deleting the turn message takes it back', async () => {
-        toggles.set('toggle_cardbattle.story', '1')
+        toggles.set('toggle_cardbattle.tell', '0')
         const { chat, run, shown } = makeChat([
             { role: 'user', data: '덤빈다' },
             { role: 'char', data: '고블린이 덤벼든다.\n<battle name="고블린">' },
@@ -621,7 +690,7 @@ describe('turn by turn', () => {
     })
 
     test('the end goes on the turn message with only the turns not yet told, and closing it covers the older marks', async () => {
-        toggles.set('toggle_cardbattle.story', '1')
+        toggles.set('toggle_cardbattle.tell', '0')
         const fight = (over: object) => ({
             id: 'w1', level: 1, name: '고블린', tier: 'normal', phase: 'fight', open: true, turn: 2, energy: 3, maxEnergy: 3, seed: 9, perTurn: true, told: 1,
             cards: [{ name: '공격', cost: 1, fx: { dmg: 6 }, rarity: 'basic', desc: '' }], draw: [], hand: [1], discard: [],
@@ -656,11 +725,18 @@ describe('turn by turn', () => {
         expect(await shown(1)).not.toContain('전투 중')
     })
 
-    test('the default still tells the fight once at the end: ending a turn adds no message', async () => {
-        const { chat, run } = makeChat([
+    test('by default a fight is told turn by turn; 끝나고 한 번에 adds no message when a turn ends', async () => {
+        const start = () => makeChat([
             { role: 'user', data: '덤빈다' },
             { role: 'char', data: '고블린이 덤벼든다.\n<battle name="고블린">' },
         ])
+        toggles.delete('toggle_cardbattle.tell')
+        const fresh = start()
+        await fresh.run('output')
+        expect(mark(fresh.chat.message[1].data, 'b').perTurn).toBe(true)
+
+        toggles.set('toggle_cardbattle.tell', '1')
+        const { chat, run } = start()
         await run('output')
         await run('onButtonClick', { data: 'cb|end' })
         expect(chat.message).toHaveLength(2)
@@ -734,5 +810,201 @@ describe('rerolls and deletions', () => {
         expect(await shown(0)).toBe('조용한 길이다.')
         await run('onButtonClick', { data: 'cb|start' })
         expect(chat.message[0].data).toBe('조용한 길이다.')
+    })
+})
+
+describe('scenes', () => {
+    const goblinFight = () => makeChat([
+        { role: 'user', data: '덤빈다' },
+        { role: 'char', data: '고블린이 덤벼든다.\n<battle name="고블린">' },
+    ])
+
+    test('a played card flies to the enemy and lands: a slash a hit, a big hit shakes the window, broken block shatters', async () => {
+        const result = await probe(`
+            local b = CB.newBattle(CB.newRun(3), { id = 'x', name = '늑대', tier = 'normal' }, { healEach = true })
+            b.cards[b.hand[1]] = { name = '연타', cost = 1, fx = { dmg = 9, hits = 2 }, rarity = 'common', desc = '' }
+            b.enemy.block, b.n = 5, 3
+            CB.play(b, 1)
+            local on, off = CB.fightView(b, '레이'), CB.fightView(b, '레이', false)
+            b.n = 4
+            return json.encode({ anim = b.anim, on = on, off = off, next = CB.fightView(b, '레이') })`)
+        expect(result.anim).toMatchObject({ castAt: 'foe', hits: 2, big: true, enemyBreak: true, enemy: 'hit', enemyText: '-13' })
+        expect(result.on).toContain('class="cbx-ghost"')
+        expect(result.on.match(/class="cbx-slash"/g)).toHaveLength(2)
+        expect(result.on).toContain('class="cbx-panel cbx-quake"')
+        expect(result.on).toContain('class="cbx-block cbx-break"')
+        expect(result.on).toContain('class="cbx-trail"')
+        expect(result.on).toContain('class="cbx-float cbx-crit"')
+        // Drawings take turns between two outer tags, so each one is drawn fresh.
+        expect(result.on.startsWith('<section>')).toBe(true)
+        expect(result.next.startsWith('<div>')).toBe(true)
+        // 전투 연출 off: the number only (the style block names every class,
+        // so the markup is what is looked at).
+        expect(result.off).not.toContain('class="cbx-ghost"')
+        expect(result.off).not.toContain('class="cbx-slash"')
+        expect(result.off).not.toContain('cbx-quake"')
+        expect(result.off).toContain('class="cbx-float">-13<')
+    })
+
+    test('ending a turn plays the enemy\'s turn as three drawings, each on screen before the next', async () => {
+        toggles.delete('toggle_cardbattle.fx')
+        const { chat, run, shown } = goblinFight()
+        await run('output')
+        // A poisoned enemy that hits twice, against block from armor.
+        const b = mark(chat.message[1].data, 'b')
+        Object.assign(b.enemy, { poison: 3, moves: [{ atk: 6, n: 2 }], step: 1 })
+        b.armor = 4
+        chat.message[1].data = `고블린이 덤벼든다.\n${packMark('b', b)}`
+        const scenes: any[] = []
+        vi.mocked(ReloadChatPointer.update).mockImplementation(() => { scenes.push(mark(chat.message[1].data, 'b')) })
+        // Waits for real, a hundredth of the time.
+        await run('onButtonClick', { data: `cb|end||${b.n}`, pace: 0.01 })
+
+        expect(scenes.map((s) => s.anim.banner ?? null)).toEqual(['foe', null, 'mine'])
+        expect(scenes[0].anim).toMatchObject({ foeTurn: true, enemy: 'hit', enemyText: '-3', enemyPoison: true, playerBlock: 'pop' })
+        expect(scenes[0].hand).toHaveLength(0)
+        expect(scenes[0].anim.toss).toHaveLength(5)
+        expect(scenes[1].anim).toMatchObject({ foeTurn: true, lunge: 2, player: 'hurt', playerText: '-8', flash: true, playerBreak: true })
+        expect(scenes[2].anim).toMatchObject({ deal: true, refill: true })
+        expect(scenes[2].hand).toHaveLength(5)
+        expect(new Set(scenes.map((s) => s.n % 2))).toEqual(new Set([0, 1]))
+        const now = await shown(1)
+        expect(now).toContain('2턴 · 내 차례')
+        expect(now).toContain(`risu-btn="cb|end||${scenes[2].n}"`)
+
+        // A 턴 종료 left over from before is dropped.
+        await run('onButtonClick', { data: `cb|end||${b.n}` })
+        expect(mark(chat.message[1].data, 'b').turn).toBe(2)
+    })
+
+    test('the enemy\'s scene shows its move while nothing can be tapped', async () => {
+        const result = await probe(`
+            local b = CB.newBattle(CB.newRun(3), { id = 'x', name = '늑대', tier = 'elite' }, { healEach = true })
+            b.enemy.moves, b.enemy.step = { { atk = 5, poison = 2 } }, 1
+            local views = {}
+            CB.endTurn(b, function(n) views[n] = CB.fightView(b, '레이') end)
+            return json.encode(views)`)
+        // The three scenes, in order (a Lua list comes back as an array).
+        const [coming, moving, mine] = result as string[]
+        expect(coming).toContain('class="cbx-banner"')
+        expect(coming).toContain('적의 차례')
+        expect(coming).not.toContain('cb|end')
+        expect(coming).not.toContain('cb|sel')
+        expect(coming).toContain('class="cbx-toss"')
+        expect(moving).toContain('class="cbx-medalw cbx-lunge"')
+        expect(moving).toContain('class="cbx-flash"')
+        expect(moving).toContain('class="cbx-bub"')
+        expect(moving).toContain('class="cbx-intent cbx-act"')
+        expect(mine).toContain('class="cbx-banner cbx-mine"')
+        expect(mine).toContain('risu-btn="cb|sel|1"')
+    })
+
+    test('the blow that ends a fight is drawn as a hit with nothing to tap, not as the end screen', async () => {
+        const result = await probe(`
+            local b = CB.newBattle(CB.newRun(3), { id = 'x', name = '늑대', tier = 'normal' }, { healEach = true })
+            b.cards[b.hand[1]] = CB.copy(CB.STRIKE)
+            b.enemy.hp = 2
+            CB.play(b, 1)
+            return json.encode({ phase = b.phase, view = CB.lastExtras(id, '', b) })`)
+        expect(result.phase).toBe('won')
+        expect(result.view).toContain('class="cbx-slash"')
+        expect(result.view).not.toContain('class="cbx-title"')
+        expect(result.view).not.toContain('risu-btn="cb|sel')
+        expect(result.view).not.toContain('cb|end')
+    })
+})
+
+describe('the signature card', () => {
+    const goblinFight = () => makeChat([
+        { role: 'user', data: '덤빈다' },
+        { role: 'char', data: '고블린이 덤벼든다.\n<battle name="고블린">' },
+    ])
+
+    test('the auxiliary model writes it at the first fight; the fight starts with it, and the run keeps it after', async () => {
+        toggles.set('toggle_cardbattle.sig', '0')
+        llmAnswers.push('[{"name":"세라의 검기","effects":{"dmg":9,"vuln":1},"desc":"세라가 가르친 일격."}]')
+        const { chat, run, shown } = goblinFight()
+        await run('output')
+        const waiting = mark(chat.message[1].data, 'b')
+        expect(waiting).toMatchObject({ phase: 'sig', name: '고블린', open: true })
+        expect(waiting.sigDraft.card).toMatchObject({ name: '세라의 검기', rarity: 'rare', sig: true, fx: { dmg: 9, vuln: 1 } })
+        expect(llmPrompts[0][1].content).toContain('the signature card of this story')
+        const view = await shown(1)
+        expect(view).toContain('★ 대표 카드')
+        expect(view).toContain('cbx-badge">대표')
+        expect(view).toContain('risu-btn="cb|sigok"')
+        expect(view).toContain('risu-btn="cb|sigredo"')
+        const request = (await run('editRequest', { data: [{ role: 'user', content: '싸운다' }] })).res as { role: string, content: string }[]
+        expect(request[0].content).toContain('A fight against 고블린 is going on')
+
+        await run('onButtonClick', { data: 'cb|sigok' })
+        const b = mark(chat.message[1].data, 'b')
+        expect(b).toMatchObject({ phase: 'fight', turn: 1, name: '고블린' })
+        expect(b.cards).toHaveLength(11)
+        expect(b.cards.filter((c: { sig?: boolean }) => c.sig).map((c: { name: string }) => c.name)).toEqual(['세라의 검기'])
+        expect(b.anim).toMatchObject({ deal: true, banner: 'mine' })
+
+        // However the fight ends, the run keeps the card, and the next fight asks for none.
+        await run('onButtonClick', { data: 'cb|flee' })
+        expect(mark(chat.message[1].data, 'r').deck.filter((c: { sig?: boolean }) => c.sig)).toHaveLength(1)
+        await run('onButtonClick', { data: 'cb|done' })
+        chat.message.push({ role: 'user', data: '간다', time: 3 }, { role: 'char', data: '늑대다.\n<battle name="늑대">', time: 4 })
+        await run('output')
+        const next = mark(chat.message[3].data, 'b')
+        expect(next.phase).toBe('fight')
+        expect(next.cards.filter((c: { sig?: boolean }) => c.sig)).toHaveLength(1)
+        expect(llmPrompts).toHaveLength(1)
+    })
+
+    test('when the model writes nothing, a module card stands in, and it can be made by hand instead', async () => {
+        toggles.set('toggle_cardbattle.sig', '0')
+        const { chat, run, shown } = goblinFight()
+        await run('output')
+        const draft = mark(chat.message[1].data, 'b').sigDraft
+        expect(draft.card).toMatchObject({ rarity: 'rare', sig: true })
+        expect(draft.note).toContain('보조 모델이 쓰지 못해')
+        await run('onButtonClick', { data: 'cb|sigform' })
+        expect(await shown(1)).toContain('risu-form="cb|sig"')
+        expect(await shown(1)).toContain(`value="${draft.card.name}"`)
+    })
+
+    test('made by hand: the form keeps the card within what its cost pays, and 고치기 brings the form back', async () => {
+        toggles.set('toggle_cardbattle.sig', '1')
+        const { chat, run, shown, lua } = goblinFight()
+        await run('output')
+        expect(mark(chat.message[1].data, 'b').sigDraft).toEqual({ hand: true })
+        expect(llmPrompts).toHaveLength(0)
+        const form = await shown(1)
+        expect(form).toContain('risu-form="cb|sig"')
+        expect(form).toContain('name="cname"')
+        expect(form).not.toContain('name="name"')
+        expect(form).toContain('<option value="poison">독</option>')
+
+        const send = (data: Record<string, string>) => run('onFormSubmit', { data: 'cb|sig', meta: { data } })
+        await send({ cname: '', cost: '1', k1: 'dmg', v1: '8' })
+        expect(mark(chat.message[1].data, 'b').sigDraft).toMatchObject({ form: true, note: expect.stringContaining('이름과') })
+
+        await send({ cname: '불꽃 검', cost: '0', k1: 'dmg', v1: '30', k2: 'poison', v2: '4', k3: '', v3: '', pierce: '1', cdesc: '타오른다' })
+        const made = mark(chat.message[1].data, 'b').sigDraft
+        expect(made.form).toBeUndefined()
+        expect(made.card).toMatchObject({ name: '불꽃 검', rarity: 'rare', sig: true, cost: 3, desc: '타오른다' })
+        expect(made.card.fx.pierce).toBe(1)
+        expect(made.card.fx.dmg).toBeLessThan(30)
+        expect(made.note).toContain('비용 0 → 3')
+        expect(made.note).toContain('숫자를 줄였습니다')
+        expect(await lua(`local d = CB.findFight(id, true).sigDraft.card return json.encode({ fits = CB.points(d.fx) <= CB.budget(d.cost, 'rare', d.fx) })`)).toEqual({ fits: true })
+        const shownCard = await shown(1)
+        expect(shownCard).toContain('risu-btn="cb|sigform"')
+        expect(shownCard).not.toContain('cb|sigredo')
+
+        await run('onButtonClick', { data: 'cb|sigform' })
+        const again = await shown(1)
+        expect(again).toContain('value="불꽃 검"')
+        expect(again).toContain('risu-btn="cb|sigback"')
+        await run('onButtonClick', { data: 'cb|sigback' })
+        await run('onButtonClick', { data: 'cb|sigok' })
+        const b = mark(chat.message[1].data, 'b')
+        expect(b.phase).toBe('fight')
+        expect(b.sigCard.name).toBe('불꽃 검')
     })
 })
