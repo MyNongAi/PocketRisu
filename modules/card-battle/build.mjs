@@ -1,12 +1,13 @@
 // Builds the distributable 🃏 카드 전투 module (.risum) from card-battle.lua.
-// usage: node modules/card-battle/build.mjs
+// usage: node modules/card-battle/build.mjs [--out <folder>]
+// (default modules/card-battle/dist, which git ignores)
 // The .risum container is the scene-fold module's (encodeRisum there).
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { decodeRisum, encodeRisum, readMaps } from '../scene-fold/build.mjs'
 
-export const VERSION = '0.4.0'
+export const VERSION = '0.5.0'
 export const MODULE_ID = '5dc65ab5-ed92-484d-b4c9-84940df8f952'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -18,6 +19,8 @@ export const TOGGLES = [
     'cardbattle.popup=전투 시작 확인창=select=띄우기,바로 전투 화면',
     'cardbattle.hp=전투 사이 체력=select=전투마다 회복,이어짐',
     'cardbattle.log=이야기로 보낼 전투 기록=select=턴마다 요약,결과만',
+    'cardbattle.story=전투 이야기=select=끝나고 한 번에,턴마다',
+    '=끝나고 한 번에: 전투를 끝까지 한 뒤 다음 답 하나가 전투 전체를 이야기로 씁니다. 턴마다: 턴이 끝날 때마다 그 턴 기록이 내 메시지로 붙고, 아무것도 안 쓰고 보내기를 누르면 그 턴이 이야기가 되며 답이 오면 다음 턴 창이 열립니다(답이 턴 수만큼 늘어납니다)=caption',
     '==groupEnd',
 ].join('\n')
 
@@ -69,10 +72,15 @@ export function readSource() {
     return readFileSync(join(here, 'card-battle.lua'), 'utf-8')
 }
 
+function outFolder() {
+    const at = process.argv.indexOf('--out')
+    return at > 0 && process.argv[at + 1] ? resolve(process.argv[at + 1]) : join(here, 'dist')
+}
+
 function main() {
     const json = buildModuleJson(readSource())
     const maps = readMaps()
-    const out = join(here, 'dist', `card-battle-${VERSION}.risum`)
+    const out = join(outFolder(), `card-battle-${VERSION}.risum`)
     mkdirSync(dirname(out), { recursive: true })
     const buffer = encodeRisum(json, maps.encode)
     // Read it back before calling it done.

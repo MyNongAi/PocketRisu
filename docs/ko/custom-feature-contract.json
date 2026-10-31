@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.16.1",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-10-30",
+  "updatedAt": "2026-10-31",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
@@ -2531,6 +2531,18 @@
         {
           "file": "modules/card-battle/card-battle.lua",
           "contains": "function CB.tickPoison(who)"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "function CB.tellTurn(tid, b)"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "function CB.closedMark(b)"
+        },
+        {
+          "file": "modules/card-battle/build.mjs",
+          "contains": "'cardbattle.story=전투 이야기=select=끝나고 한 번에,턴마다',"
         },
         {
           "file": "modules/card-battle/build.mjs",

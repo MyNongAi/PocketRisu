@@ -557,6 +557,131 @@ describe('the end of a fight', () => {
     })
 })
 
+describe('turn by turn', () => {
+    const asRequest = (messages: Message[]) => messages.map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.data }))
+
+    test('ending a turn closes the window and puts the turn on a user message; the reply that tells it opens the next turn', async () => {
+        toggles.set('toggle_cardbattle.story', '1')
+        const { chat, run, state, shown } = makeChat([
+            { role: 'user', data: '덤빈다' },
+            { role: 'char', data: '고블린이 덤벼든다.\n<battle name="고블린">' },
+        ])
+        await run('output')
+        const b0 = mark(chat.message[1].data, 'b')
+        expect(b0).toMatchObject({ perTurn: true, told: 0, turn: 1 })
+
+        await run('onButtonClick', { data: 'cb|end' })
+        expect(chat.message).toHaveLength(3)
+        const turn = chat.message[2]
+        expect(turn.role).toBe('user')
+        expect(turn.data).toMatch(/^<battle-turn>\n⚔️ 고블린 \(일반\)\n1턴: 카드 없음 \/ 적: [^\n]+\n지금: 레이 체력 \d+\/60, 고블린 체력 \d+\/\d+\n<\/battle-turn>\n<!--cb:b:[^>]+-->$/)
+        expect(mark(turn.data, 'b')).toMatchObject({ phase: 'fight', turn: 2, open: false, awaitStory: true, told: 1 })
+        // The start message keeps the fight as it stood, and says nothing of it.
+        expect(mark(chat.message[1].data, 'b').turn).toBe(1)
+        expect(await shown(1)).toBe('고블린이 덤벼든다.')
+        const waiting = await shown(2)
+        expect(waiting).toContain('보내기를 누르면 이 턴이 이야기로')
+        expect(waiting).toContain('<details')
+        expect(waiting).not.toContain('position:fixed')
+
+        const request = (await run('editRequest', { data: asRequest(chat.message) })).res as { role: string, content: string }[]
+        expect(request.map((m) => m.role)).toEqual(['user', 'assistant', 'system', 'user'])
+        expect(request[2].content).toContain('tell the turn in the <battle-turn> block')
+        expect(request[3].content).toContain('<battle-turn>')
+        expect(request[3].content).not.toContain('<!--cb:')
+
+        chat.message.push({ role: 'char', data: '고블린의 몽둥이가 어깨를 스친다.', time: 4 })
+        await run('output')
+        const b2 = mark(chat.message[2].data, 'b')
+        expect(b2).toMatchObject({ open: true, turn: 2 })
+        expect(b2.awaitStory).toBeUndefined()
+        expect(await shown(3)).toContain('position:fixed')
+        expect(state('cb_live')).toEqual({ id: b0.id, at: 2 })
+    })
+
+    test('rerolling the telling reply keeps the turn; deleting the turn message takes it back', async () => {
+        toggles.set('toggle_cardbattle.story', '1')
+        const { chat, run, shown } = makeChat([
+            { role: 'user', data: '덤빈다' },
+            { role: 'char', data: '고블린이 덤벼든다.\n<battle name="고블린">' },
+        ])
+        await run('output')
+        await run('onButtonClick', { data: 'cb|end' })
+        chat.message.push({ role: 'char', data: '첫 이야기.', time: 4 })
+        await run('output')
+        chat.message[3].data = '다른 이야기.'
+        await run('output')
+        expect(mark(chat.message[2].data, 'b')).toMatchObject({ turn: 2, open: true })
+        expect(await shown(3)).toContain('2턴')
+
+        chat.message.splice(2, 2)
+        await run('onButtonClick', { data: 'cb|sel|1' })
+        expect(mark(chat.message[1].data, 'b')).toMatchObject({ turn: 1, selected: 1 })
+        expect(await shown(1)).toContain('1턴')
+    })
+
+    test('the end goes on the turn message with only the turns not yet told, and closing it covers the older marks', async () => {
+        toggles.set('toggle_cardbattle.story', '1')
+        const fight = (over: object) => ({
+            id: 'w1', level: 1, name: '고블린', tier: 'normal', phase: 'fight', open: true, turn: 2, energy: 3, maxEnergy: 3, seed: 9, perTurn: true, told: 1,
+            cards: [{ name: '공격', cost: 1, fx: { dmg: 6 }, rarity: 'basic', desc: '' }], draw: [], hand: [1], discard: [],
+            hp: 53, maxHp: 60, block: 0, str: 0, weak: 0, vuln: 0,
+            enemy: { hp: 3, maxHp: 42, block: 0, str: 0, weak: 0, vuln: 0, moves: [{ atk: 7 }], step: 1, bonus: 0 },
+            log: ['1턴: 공격(피해 6) / 적: 공격 7 (막음 0, 받은 피해 7)'], played: [], note: '', ...over,
+        })
+        const { chat, run, state, setState, shown, lua } = makeChat([
+            { role: 'char', data: `고블린이 덤벼든다.\n${packMark('b', fight({ turn: 1, told: 0, log: [], enemy: undefined }))}` },
+            { role: 'user', data: `<battle-turn>\n⚔️ 고블린 (일반)\n1턴: 공격(피해 6) / 적: 공격 7\n지금: 레이 체력 53/60, 고블린 체력 9/42\n</battle-turn>\n${packMark('b', fight({}))}` },
+            { role: 'char', data: '세라가 숨을 고른다.' },
+        ])
+        setState('cb_live', { id: 'w1', at: 1 })
+        await run('onButtonClick', { data: 'cb|play|1' })
+
+        expect(chat.message).toHaveLength(4)
+        const end = chat.message[3]
+        expect(end.role).toBe('user')
+        expect(end.data).toContain('<battle-log>\n⚔️ 고블린 (일반) — 승리, 2턴\n2턴: 공격(피해 6)\n결과: 레이 체력 53/60')
+        expect(end.data).not.toContain('1턴:')
+        expect(mark(end.data, 'b').phase).toBe('won')
+        expect(mark(end.data, 'r')).toMatchObject({ xp: 1 })
+
+        await run('onButtonClick', { data: 'cb|done' })
+        expect(mark(chat.message[3].data, 'b')).toEqual({ id: 'w1', phase: 'done' })
+        expect(state('cb_live')).toBe(false)
+        expect(await lua('return json.encode({ none = CB.findFight(id, true) == nil })')).toEqual({ none: true })
+        const shownEnd = await shown(3)
+        expect(shownEnd).toContain('<details')
+        expect(shownEnd).not.toContain('position:fixed')
+        expect(shownEnd).not.toContain('cb|open')
+        expect(await shown(1)).not.toContain('전투 중')
+    })
+
+    test('the default still tells the fight once at the end: ending a turn adds no message', async () => {
+        const { chat, run } = makeChat([
+            { role: 'user', data: '덤빈다' },
+            { role: 'char', data: '고블린이 덤벼든다.\n<battle name="고블린">' },
+        ])
+        await run('output')
+        await run('onButtonClick', { data: 'cb|end' })
+        expect(chat.message).toHaveLength(2)
+        expect(mark(chat.message[1].data, 'b')).toMatchObject({ turn: 2, open: true })
+        expect(mark(chat.message[1].data, 'b').perTurn).toBeUndefined()
+    })
+
+    test('a battle tag in the middle of a fight is dropped, and the fight goes on', async () => {
+        const { chat, run } = makeChat([
+            { role: 'user', data: '덤빈다' },
+            { role: 'char', data: '고블린이 덤벼든다.\n<battle name="고블린">' },
+        ])
+        await run('output')
+        const id = mark(chat.message[1].data, 'b').id
+        chat.message.push({ role: 'user', data: '계속', time: 3 }, { role: 'char', data: '또 다른 적이 나타난다.\n<battle tier="boss" name="마왕">', time: 4 })
+        await run('output')
+        expect(chat.message[3].data).toBe('또 다른 적이 나타난다.')
+        expect(mark(chat.message[1].data, 'b')).toMatchObject({ id, phase: 'fight' })
+    })
+})
+
 describe('rerolls and deletions', () => {
     const strike = { name: '공격', cost: 1, fx: { dmg: 6 }, rarity: 'basic', desc: '' }
 
