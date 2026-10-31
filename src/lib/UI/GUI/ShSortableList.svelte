@@ -2,6 +2,7 @@
     import type { Snippet } from 'svelte';
     import Sortable, { type Options, type SortableEvent } from 'sortablejs';
     import { sortableOptions } from 'src/ts/util';
+    import { markSortableDrag } from 'src/ts/gui/holdDrag';
 
     interface Props {
         children: Snippet;
@@ -110,6 +111,7 @@
             ...(handle ? { handle } : {}),
             setData: setDragData,
             onStart: (event) => {
+                markSortableDrag(true);
                 keysBeforeDrag = currentKeys();
                 dragOrigin = {
                     parent: event.item.parentElement ?? event.from,
@@ -118,6 +120,7 @@
                 onDragStart(itemKey(event.item), event);
             },
             onEnd: (event) => {
+                markSortableDrag(false);
                 const key = itemKey(event.item);
                 const orderedKeys = [...keysBeforeDrag];
                 const sourceIndex = orderedKeys.indexOf(key);

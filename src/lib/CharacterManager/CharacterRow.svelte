@@ -3,6 +3,7 @@
     // the ⋯ menu content comes from the parent (order-mode items differ).
     import type { Snippet } from "svelte";
     import { ArchiveIcon, EllipsisVerticalIcon, EyeOffIcon, MessageSquareIcon } from "@lucide/svelte";
+    import { menuTriggerProps } from "src/ts/gui/holdDrag";
     import ShDropdownMenu from "src/lib/UI/GUI/ShDropdownMenu.svelte";
     import ShDropdownMenuTrigger from "src/lib/UI/GUI/ShDropdownMenuTrigger.svelte";
     import ShDropdownMenuContent from "src/lib/UI/GUI/ShDropdownMenuContent.svelte";
@@ -136,7 +137,7 @@
         <ShDropdownMenu>
             <ShDropdownMenuTrigger>
                 {#snippet child({ props })}
-                    <button {...props} class="no-sort shrink-0 p-1 rounded text-textcolor2 risu-interactive-accent" aria-label="menu"
+                    <button {...menuTriggerProps(props)} data-hold-drag class="no-sort shrink-0 p-1 rounded text-textcolor2 risu-interactive-accent" aria-label="menu"
                         onclick={(e) => { e.stopPropagation(); (props as { onclick?: (e: MouseEvent) => void }).onclick?.(e) }}>
                         <EllipsisVerticalIcon size={16} />
                     </button>

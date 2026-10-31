@@ -2661,6 +2661,28 @@
       ]
     },
     {
+      "id": "MENU-HOLD-DRAG",
+      "title": "목록 오른쪽 ⋮를 길게 눌러 끌기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/holdDrag.ts",
+        "src/ts/util.ts",
+        "src/lib/UI/GUI/ShSortableList.svelte",
+        "src/lib/UI/FolderedList.svelte",
+        "src/lib/CharacterManager/CharacterRow.svelte",
+        "src/lib/CharacterManager/CharacterOrderList.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/util.ts", "contains": "filter: sortableFilter," },
+        { "file": "src/lib/UI/GUI/ShSortableList.svelte", "contains": "markSortableDrag(true);" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "{...menuTriggerProps(props)} data-hold-drag" },
+        { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "{...menuTriggerProps(props)} data-hold-drag" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/holdDrag.test.ts"
+      ]
+    },
+    {
       "id": "EXTERNAL-MCP-SERVER",
       "title": "외부 AI 연결 (포켓리스 MCP 서버: Claude Code·Codex·Gemini CLI·반중력)",
       "criticality": "data-safety",

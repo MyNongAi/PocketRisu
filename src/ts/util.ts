@@ -5,6 +5,7 @@ import { selectedCharID } from "./stores.svelte"
 import { createBlankChar, getCharImage } from "./characters"
 import { isIOS } from "src/ts/platform"
 import PopupList from "src/lib/UI/PopupList.svelte"
+import { sortableFilter } from "./gui/holdDrag"
 
 export interface Messagec extends Message{
     index: number
@@ -1017,7 +1018,8 @@ export function parseToggleSyntax(template:string){
 export const sortableOptions = {
 	delay: 300, // time in milliseconds to define when the sorting should start
 	delayOnTouchOnly: true,
-    filter: '.no-sort',
+    // '.no-sort', except a row's ⋮ held on a touch screen (gui/holdDrag.ts).
+    filter: sortableFilter,
     // Sortable's default preventOnFilter calls preventDefault() on the
     // pointerdown of filtered elements, which blocks input focus by mouse and
     // cancels the synthetic click on iOS — the .no-sort areas hold the plugin
