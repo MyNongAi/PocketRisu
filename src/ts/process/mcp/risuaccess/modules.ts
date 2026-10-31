@@ -3,7 +3,7 @@ import { pickHashRand } from 'src/ts/util'
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
 import { recordModuleActivation, recordModuleFolderActivation, seedModuleActivationHistory } from '../../moduleSort'
 import { wakeModules } from '../../moduleCold.svelte'
-import { mcpWriteAccess } from './writeAccess'
+import { mcpWriteAccess, type WriteAccess } from './writeAccess'
 
 const moduleNotFound = (id: string): RPCToolCallContent[] => [
   {
@@ -13,9 +13,13 @@ const moduleNotFound = (id: string): RPCToolCallContent[] => [
 ]
 
 export class ModuleHandler extends MCPToolHandler {
+  constructor(private readonly writeAccess: WriteAccess = mcpWriteAccess) {
+    super()
+  }
+
   // Asks, or not in the bot edit mode's auto, and copies the module first there (writeAccess.ts).
   private promptAccess(tool: string, action: string, module?: { id: string }) {
-    return mcpWriteAccess(tool, action, module ? { kind: 'module', value: module } : undefined)
+    return this.writeAccess(tool, action, module ? { kind: 'module', value: module } : undefined)
   }
 
   getTools(): MCPTool[] {

@@ -190,6 +190,10 @@ const databasePatchHashCache = createPatchHashCache(calculateHash);
 // Live change feed for other devices; see sync-hub.cjs and /api/sync/events.
 const { createSyncHub } = require('./sync-hub.cjs');
 const syncHub = createSyncHub();
+// PocketRisu as an MCP server for Claude Code, Codex, Gemini CLI, Antigravity;
+// see mcp-bridge.cjs and /mcp below.
+const { createMcpBridge } = require('./mcp-bridge.cjs');
+const mcpBridge = createMcpBridge({ dir: path.join(process.cwd(), 'save'), logger });
 
 // ETag for database.bin
 let dbEtag = null;
@@ -9606,6 +9610,44 @@ app.post('/api/sync/presence', async (req, res) => {
         return;
     }
     res.send({ ok: true });
+});
+
+// ─── MCP server ─────────────────────────────────────────────────────────────
+// External MCP clients call the Risu Access tools of the open page with the
+// token from save/__mcp_token (mcp-bridge.cjs); the settings page turns it on
+// (src/lib/Setting/Pages/ExternalMcpSettings.svelte).
+app.post('/mcp', (req, res, next) => {
+    mcpBridge.handleHttp(req, res).catch(next);
+});
+app.all('/mcp', (req, res) => {
+    res.status(405).set('Allow', 'POST').send({ error: 'POST JSON-RPC to this address' });
+});
+// With the relay script's place on this computer, for Claude Desktop's setup.
+const mcpStatus = (page) => ({
+    ...mcpBridge.status(typeof page === 'string' ? page : ''),
+    stdioScript: path.join(__dirname, 'mcp-stdio.cjs'),
+});
+app.get('/api/mcp/status', async (req, res) => {
+    if (!await checkAuth(req, res)) { return; }
+    res.send(mcpStatus(req.query.page));
+});
+app.post('/api/mcp/:action(enable|rotate|disable)', async (req, res) => {
+    if (!await checkAuth(req, res)) { return; }
+    mcpBridge[req.params.action]();
+    res.send(mcpStatus(req.body?.page));
+});
+app.get('/api/mcp/bridge', async (req, res) => {
+    if (!await checkAuth(req, res)) { return; }
+    if (!mcpBridge.status('').enabled) { res.status(404).send({ error: 'off' }); return; }
+    mcpBridge.attach(res, req.query.page);
+});
+app.post('/api/mcp/bridge/active', async (req, res) => {
+    if (!await checkAuth(req, res)) { return; }
+    res.send({ ok: mcpBridge.markActive(req.body?.page) });
+});
+app.post('/api/mcp/bridge/result', async (req, res) => {
+    if (!await checkAuth(req, res)) { return; }
+    res.send({ ok: mcpBridge.settle(req.body?.page, req.body) });
 });
 
 app.post('/api/chat-content/:chaId/:chatIndex', rejectDuringExclusiveStorage, async (req, res, next) => {

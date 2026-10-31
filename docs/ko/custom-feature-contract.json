@@ -2627,8 +2627,8 @@
         { "file": "src/ts/process/mcp/risuaccess/writeAccess.ts", "contains": "if (target.kind === 'character') backupCharacterOnce(session, target.value)" },
         { "file": "src/ts/process/mcp/editBackup.ts", "contains": "DBState.db.characterOrder = placeBackup(DBState.db.characterOrder ?? [], original.chaId, backup.chaId)" },
         { "file": "src/ts/process/mcp/editBackup.ts", "contains": "await removeChar(old.chaId, (old as character).name, 'normal', { skipConfirm: true })" },
-        { "file": "src/ts/process/mcp/risuaccess/characters.ts", "contains": "return mcpWriteAccess(tool, action, char ? { kind: 'character', value: char } : undefined)" },
-        { "file": "src/ts/process/mcp/risuaccess/modules.ts", "contains": "return mcpWriteAccess(tool, action, module ? { kind: 'module', value: module } : undefined)" },
+        { "file": "src/ts/process/mcp/risuaccess/characters.ts", "contains": "return this.writeAccess(tool, action, char ? { kind: 'character', value: char } : undefined)" },
+        { "file": "src/ts/process/mcp/risuaccess/modules.ts", "contains": "return this.writeAccess(tool, action, module ? { kind: 'module', value: module } : undefined)" },
         { "file": "src/lib/SideBars/Toggles.svelte", "contains": "<EditModeToggle character={view.character} chat={view.chat} />" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "return rmodule.mcp?.url === RISU_ACCESS_URL && !!char?.chats?.[char.chatPage]?.modules?.includes(rmodule.id)" }
       ],
@@ -2649,12 +2649,42 @@
         "src/ts/process/mcp/risuaccess/client.ts"
       ],
       "requiredMarkers": [
-        { "file": "src/ts/process/mcp/risuaccess/client.ts", "contains": "this.handlers = [new CharacterHandler(), new ChatHandler(), new ModuleHandler(), new FolderHandler()]" },
+        { "file": "src/ts/process/mcp/risuaccess/client.ts", "contains": "this.handlers = [new CharacterHandler(options.writeAccess), new ChatHandler(), new ModuleHandler(options.writeAccess), new FolderHandler()]" },
         { "file": "src/ts/process/mcp/risuaccess/folders.ts", "contains": "name: 'risu-list-folder-characters'," },
         { "file": "src/ts/process/mcp/risuaccess/folders.ts", "contains": ".filter((c) => c.nodeOnlyEditBackupOf === chaId)" }
       ],
       "regressionTests": [
         "src/ts/process/mcp/risuaccess/folders.test.ts"
+      ]
+    },
+    {
+      "id": "EXTERNAL-MCP-SERVER",
+      "title": "외부 AI 연결 (포켓리스 MCP 서버: Claude Code·Codex·Gemini CLI·반중력)",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "server/node/mcp-bridge.cjs",
+        "server/node/mcp-stdio.cjs",
+        "server/node/server.cjs",
+        "src/ts/process/mcp/externalBridge.ts",
+        "src/ts/process/mcp/externalMcpSetup.ts",
+        "src/ts/process/mcp/risuaccess/writeAccess.ts",
+        "src/ts/process/mcp/risuaccess/client.ts",
+        "src/lib/Setting/Pages/ExternalMcpSettings.svelte",
+        "src/ts/globalApi.svelte.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "server/node/mcp-bridge.cjs", "contains": "return given.length === expected.length && timingSafeEqual(given, expected);" },
+        { "file": "server/node/server.cjs", "contains": "mcpBridge.handleHttp(req, res).catch(next);" },
+        { "file": "src/ts/process/mcp/externalBridge.ts", "contains": "if (typeof call.name !== 'string' || !EXTERNAL_TOOLS.has(call.name)) {" },
+        { "file": "src/ts/process/mcp/externalBridge.ts", "contains": "return new RisuAccessClient({ writeAccess: externalWriteAccess })" },
+        { "file": "src/ts/process/mcp/risuaccess/writeAccess.ts", "contains": "const allowed = DBState.db.nodeOnlyExternalEditSession?.approval === 'auto'" },
+        { "file": "src/ts/globalApi.svelte.ts", "contains": "void import('./process/mcp/externalBridge').then((bridge) => bridge.startExternalMcpBridge())" }
+      ],
+      "regressionTests": [
+        "server/node/mcp-bridge.test.ts",
+        "src/ts/process/mcp/externalBridge.test.ts",
+        "src/ts/process/mcp/externalMcpSetup.test.ts",
+        "src/ts/process/mcp/risuaccess/writeAccess.test.ts"
       ]
     },
     {

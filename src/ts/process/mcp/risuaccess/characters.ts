@@ -3,13 +3,17 @@ import { DBState } from 'src/ts/stores.svelte'
 import { pickHashRand } from 'src/ts/util'
 import { type MCPTool, MCPToolHandler, type RPCToolCallContent } from '../mcplib'
 import { getCharacter } from './utils'
-import { mcpWriteAccess } from './writeAccess'
+import { mcpWriteAccess, type WriteAccess } from './writeAccess'
 import { editAssetManifest, loadAssetManifestItems } from 'src/ts/globalApi.svelte'
 
 export class CharacterHandler extends MCPToolHandler {
+  constructor(private readonly writeAccess: WriteAccess = mcpWriteAccess) {
+    super()
+  }
+
   // Asks, or not in the bot edit mode's auto, and copies the bot first there (writeAccess.ts).
   private promptAccess(tool: string, action: string, char?: character) {
-    return mcpWriteAccess(tool, action, char ? { kind: 'character', value: char } : undefined)
+    return this.writeAccess(tool, action, char ? { kind: 'character', value: char } : undefined)
   }
 
   getTools(): MCPTool[] {

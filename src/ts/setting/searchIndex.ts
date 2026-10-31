@@ -152,6 +152,7 @@ function routeLabel(route: SettingsRouteValue): string {
         case SettingsRoute.ModelPreset: return language.modelPresetMenu;
         case SettingsRoute.PromptPreset: return language.promptPresetMenu;
         case SettingsRoute.RemoteAccess: return language.remoteAccess;
+        case SettingsRoute.ExternalMcp: return language.externalMcp;
         case SettingsRoute.System: return language.system;
         case SettingsRoute.InlayImageGallery: return language.playground.inlayImageGallery;
         default: return '';

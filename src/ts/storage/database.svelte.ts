@@ -1786,6 +1786,8 @@ export interface Database{
     nodeOnlyFavoritesFolder?:boolean
     /** Import cards and modules that use low-level access without the confirmation; undefined = on. */
     nodeOnlyAutoAllowLowLevelImport?:boolean
+    /** PocketRisu: what MCP clients outside PocketRisu (Claude Code, Codex, ...) changed, and their approval (externalBridge.ts). */
+    nodeOnlyExternalEditSession?: import('../process/mcp/editSession').EditSession
     // Characters hidden from the sidebar rail (display only, no data impact;
     // the character manager still lists them). chaIds, kept at DB level so
     // the flag survives deactivation and never rides along in .charx exports.

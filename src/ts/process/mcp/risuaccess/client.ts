@@ -4,11 +4,13 @@ import { CharacterHandler } from './characters'
 import { ChatHandler } from './chats'
 import { ModuleHandler } from './modules'
 import { FolderHandler } from './folders'
+import type { WriteAccess } from './writeAccess'
 
 export class RisuAccessClient extends MCPClientLike {
   private handlers: MCPToolHandler[]
 
-  constructor() {
+  /** `writeAccess`: how a write is allowed and backed up (writeAccess.ts); the chat's edit mode by default. */
+  constructor(options: { writeAccess?: WriteAccess } = {}) {
     const additionalServerInfo = `
 <About Risuai Features>
 Characters are the AI personas that Risuai users chat with. Fields:
@@ -74,7 +76,7 @@ backgroundEmbedding is an HTML string mainly for custom styling. It can, and mos
       additionalServerInfo
 
     // PocketRisu: the character list's folders (folders.ts), read only.
-    this.handlers = [new CharacterHandler(), new ChatHandler(), new ModuleHandler(), new FolderHandler()]
+    this.handlers = [new CharacterHandler(options.writeAccess), new ChatHandler(), new ModuleHandler(options.writeAccess), new FolderHandler()]
   }
 
   async getToolList(): Promise<MCPTool[]> {

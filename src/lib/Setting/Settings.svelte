@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, CodeIcon, CogIcon, ContactIcon, FlaskConicalIcon, GripVerticalIcon, ImageIcon, LanguagesIcon, MonitorIcon, MonitorSmartphoneIcon, Sailboat, ScrollTextIcon, SearchIcon, CircleXIcon, KeyboardIcon, TruckIcon, FileBoxIcon, Volume2Icon, HeartIcon, BrainIcon } from "@lucide/svelte";
+    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, CodeIcon, CogIcon, ContactIcon, FlaskConicalIcon, GripVerticalIcon, ImageIcon, LanguagesIcon, MonitorIcon, MonitorSmartphoneIcon, Sailboat, ScrollTextIcon, SearchIcon, CircleXIcon, KeyboardIcon, TruckIcon, FileBoxIcon, Volume2Icon, HeartIcon, BrainIcon, PlugZapIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import { supportDialogOpen, supportEnabled } from "src/ts/support";
     import DisplaySettings from "./Pages/DisplaySettings.svelte";
@@ -28,6 +28,7 @@
     import HotkeySettings from "./Pages/HotkeySettings.svelte";
     import InlayImageGallery from "./Pages/InlayImageGallery.svelte";
     import RemoteAccessSettings from "./Pages/RemoteAccessSettings.svelte";
+    import ExternalMcpSettings from "./Pages/ExternalMcpSettings.svelte";
     import PluginDefinedIcon from "../Others/PluginDefinedIcon.svelte";
     import DevPanel from "src/lib/_dev/DevPanel.svelte";
     import SettingsSearch from "./SettingsSearch.svelte";
@@ -92,6 +93,7 @@
         { id: 'hotkeys', index: 15, label: () => language.hotkey, icon: KeyboardIcon },
         { id: 'inlay-gallery', index: 23, label: () => language.playground.inlayImageGallery, icon: ImageIcon, fullOnly: true },
         { id: 'remote-access', index: 21, label: () => language.remoteAccess, icon: MonitorSmartphoneIcon, fullOnly: true },
+        { id: 'external-mcp', index: 25, label: () => language.externalMcp, icon: PlugZapIcon, fullOnly: true },
         { id: 'advanced', index: 6, label: () => language.advancedSettings, icon: ActivityIcon, fullOnly: true },
         { id: 'system', index: 22, label: () => language.system, icon: CogIcon, fullOnly: true },
         { id: 'dev-panel', index: 99, label: () => 'Dev Panel', icon: FlaskConicalIcon, fullOnly: true, devOnly: true },
@@ -358,6 +360,8 @@
                             <InlayImageGallery/>
                         {:else if $SettingsMenuIndex === 21}
                             <RemoteAccessSettings/>
+                        {:else if $SettingsMenuIndex === 25}
+                            <ExternalMcpSettings/>
                         {:else if $SettingsMenuIndex === 22}
                             <SystemSettings/>
                         {:else if $SettingsMenuIndex === 99 && devPanelEnabled}

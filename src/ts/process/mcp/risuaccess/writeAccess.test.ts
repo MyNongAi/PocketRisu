@@ -4,16 +4,18 @@ const chat = vi.hoisted(() => ({ value: null as any }))
 const alertConfirm = vi.hoisted(() => vi.fn())
 const backupCharacterCopy = vi.hoisted(() => vi.fn((char: any) => `backup-of-${char.chaId}`))
 
-vi.mock('src/lang', () => ({ language: { mcpAccessPrompt: 'Allow {{tool}}: {{action}}?' } }))
+vi.mock('src/lang', () => ({ language: { mcpAccessPrompt: 'Allow {{tool}}: {{action}}?', mcpExternalAccessPrompt: 'Outside wants {{tool}}: {{action}}?' } }))
 vi.mock('src/ts/alert', () => ({ alertConfirm }))
 vi.mock('src/ts/storage/database.svelte', () => ({ getCurrentChat: () => chat.value }))
 vi.mock('src/ts/stores.svelte', () => ({ DBState: { db: { enabledModules: [] } } }))
 vi.mock('../editBackup', () => ({ backupCharacterCopy }))
 
-const { mcpWriteAccess } = await import('./writeAccess')
+const { mcpWriteAccess, externalWriteAccess } = await import('./writeAccess')
+const { DBState } = await import('src/ts/stores.svelte') as any
 
 beforeEach(() => {
     chat.value = { id: 'c' }
+    delete DBState.db.nodeOnlyExternalEditSession
     alertConfirm.mockReset()
     backupCharacterCopy.mockClear()
 })
@@ -48,5 +50,27 @@ describe('a Risu Access write', () => {
         chat.value.nodeOnlyEditSession = { approval: 'auto', startedAt: 1 }
         await mcpWriteAccess('t', 'a', { kind: 'module', value: { id: 'm1', name: 'Assets' } as any })
         expect(chat.value.nodeOnlyEditSession.modules.m1).toMatchObject({ name: 'Assets', enabled: false })
+    })
+})
+
+describe('a write from an MCP app outside PocketRisu', () => {
+    it('asks as from outside, and backs up into the database, not the open chat', async () => {
+        alertConfirm.mockResolvedValue(true)
+        chat.value.nodeOnlyEditSession = { approval: 'auto', startedAt: 1 }
+        expect(await externalWriteAccess('risu-set-character-info', 'modify', { kind: 'character', value: { chaId: 'b1' } as any })).toBe(true)
+        expect(alertConfirm).toHaveBeenCalledWith('Outside wants risu-set-character-info: modify?')
+        expect(DBState.db.nodeOnlyExternalEditSession).toMatchObject({ approval: 'ask', characters: { b1: 'backup-of-b1' } })
+        expect(chat.value.nodeOnlyEditSession.characters).toBeUndefined()
+    })
+
+    it('writes without asking in its own auto, and backs nothing up when refused', async () => {
+        alertConfirm.mockResolvedValue(false)
+        expect(await externalWriteAccess('t', 'a', { kind: 'module', value: { id: 'm1' } })).toBe(false)
+        expect(DBState.db.nodeOnlyExternalEditSession).toBeUndefined()
+        DBState.db.nodeOnlyExternalEditSession = { approval: 'auto', startedAt: 1 }
+        expect(await externalWriteAccess('t', 'a', { kind: 'module', value: { id: 'm1', name: 'Assets' } as any })).toBe(true)
+        // Asked only the first time.
+        expect(alertConfirm).toHaveBeenCalledTimes(1)
+        expect(DBState.db.nodeOnlyExternalEditSession.modules.m1).toMatchObject({ name: 'Assets' })
     })
 })

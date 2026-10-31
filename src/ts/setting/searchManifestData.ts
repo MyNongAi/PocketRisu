@@ -226,6 +226,12 @@ export const searchManifestEntries: ManualSearchEntry[] = [
         keywords: ['remote', 'network', 'share', 'tailscale', 'lan', '원격', '원격 접속', '공유'],
         route: SettingsRoute.RemoteAccess,
     },
+    {
+        id: 'manual.page.externalMcp',
+        label: () => language.externalMcp,
+        keywords: ['mcp', 'claude code', 'codex', 'gemini', 'antigravity', 'claude desktop', 'subscription', 'token', '외부 ai', '반중력', '구독', 'mcp 서버', '봇 편집'],
+        route: SettingsRoute.ExternalMcp,
+    },
 
     // ── System page sub-tabs
     {

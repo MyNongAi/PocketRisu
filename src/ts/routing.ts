@@ -42,6 +42,7 @@ export const SettingsRoute = {
     System: 22 as const,
     InlayImageGallery: 23 as const,
     LongTermMemory: 24 as const,
+    ExternalMcp: 25 as const,
     DevPanel: 99 as const,
 } as const;
 

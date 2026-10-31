@@ -1,7 +1,9 @@
 // Every write of the Risu Access MCP asks first, as it always did, unless the
 // chat's bot edit mode is set to 'auto' (editSession.ts). An approved write
 // backs its bot or module up first, once per edit sitting: a write through
-// this MCP is the edit mode, however the module was turned on.
+// this MCP is the edit mode, however the module was turned on. A write from
+// an MCP client outside PocketRisu (externalBridge.ts) is the same, with the
+// database's own sitting in place of a chat's.
 import { language } from 'src/lang'
 import { alertConfirm } from 'src/ts/alert'
 import { getCurrentChat, type character } from 'src/ts/storage/database.svelte'
@@ -20,6 +22,13 @@ function backupCharacterOnce(session: EditSession, char: character & BackupMarks
     session.characters[char.chaId] = backupCharacterCopy(char)
 }
 
+function backUp(session: EditSession, target: WriteTarget): void {
+    if (target.kind === 'character') backupCharacterOnce(session, target.value)
+    else backupModule(session, target.value, DBState.db.enabledModules)
+}
+
+export type WriteAccess = (tool: string, action: string, target?: WriteTarget) => Promise<boolean>
+
 export async function mcpWriteAccess(tool: string, action: string, target?: WriteTarget): Promise<boolean> {
     const chat = getCurrentChat()
     const allowed = chat?.nodeOnlyEditSession?.approval === 'auto'
@@ -27,9 +36,18 @@ export async function mcpWriteAccess(tool: string, action: string, target?: Writ
     if (allowed && chat && target) {
         chat.nodeOnlyEditSession ??= { approval: 'ask', startedAt: Date.now() }
         // Read back: the stored object is the reactive one.
-        const session = chat.nodeOnlyEditSession
-        if (target.kind === 'character') backupCharacterOnce(session, target.value)
-        else backupModule(session, target.value, DBState.db.enabledModules)
+        backUp(chat.nodeOnlyEditSession, target)
+    }
+    return allowed
+}
+
+/** A write from Claude Code, Codex, ... through the PocketRisu MCP server; no chat is its. */
+export async function externalWriteAccess(tool: string, action: string, target?: WriteTarget): Promise<boolean> {
+    const allowed = DBState.db.nodeOnlyExternalEditSession?.approval === 'auto'
+        || await alertConfirm(language.mcpExternalAccessPrompt.replace('{{tool}}', tool).replace('{{action}}', action))
+    if (allowed && target) {
+        DBState.db.nodeOnlyExternalEditSession ??= { approval: 'ask', startedAt: Date.now() }
+        backUp(DBState.db.nodeOnlyExternalEditSession, target)
     }
     return allowed
 }

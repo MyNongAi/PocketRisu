@@ -2654,6 +2654,8 @@ export async function saveDb() {
                 statusCards: () => getDatabase()?.showRequestStatus !== false,
             })
         }
+        // And its bot edit tools, for Claude Code, Codex, ... once the MCP server is on.
+        void import('./process/mcp/externalBridge').then((bridge) => bridge.startExternalMcpBridge())
     }
 
     // A save attempt started after the caller's changes, and it succeeded.
