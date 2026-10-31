@@ -31,6 +31,8 @@
     import { createKeepAliveAudio } from './ts/keepAliveAudio';
     import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_CHAT_ROOM_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from './ts/dragTypes';
     import { importDroppedFiles } from './ts/dropImport';
+    import { droppedLink, isExternalLinkDrag, isExternalTextIntoTextBox } from './ts/gui/fileDropSurface.svelte';
+    import { importDroppedLink } from './ts/linkDropImport';
     import { isEmbeddedRisuPane, parseChatRoomDragPayload, splitChatOpen } from './ts/chatSplitPane';
     import { changeChatTo } from './ts/globalApi.svelte';
     import { BackLayerRank, useBackLayer } from './ts/gui/backLayers.svelte';
@@ -93,7 +95,7 @@
         if(types.includes(RISU_APP_INTERNAL_DRAG_TYPE)){
             return 'none'
         }
-        return types.includes('Files') ? 'copy' : 'none'
+        return types.includes('Files') || isExternalLinkDrag(e) ? 'copy' : 'none'
     }
 
     const markAppInternalDrag = (e:DragEvent) => {
@@ -136,14 +138,23 @@
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <main class="flex bg-bg w-full h-full max-w-100vw text-textcolor" ondropcapture={captureLegacyModuleDrop} ondragover={(e) => {
+    // The browser drops outside text into a text box itself.
+    if (isExternalTextIntoTextBox(e)) return
     const dropEffect = getMainDropEffect(e)
     e.preventDefault()
     e.dataTransfer.dropEffect = dropEffect
 }} ondragstart={markAppInternalDrag} ondrop={async (e) => {
+    if (isExternalTextIntoTextBox(e)) return
     e.preventDefault()
     if (openDroppedChatRoom(e)) return
     const types = Array.from(e.dataTransfer.types ?? [])
     if (types.includes(RISU_APP_INTERNAL_DRAG_TYPE) || types.includes(RISU_SIDEBAR_DRAG_TYPE)) {
+        return
+    }
+    // A link from another page imports as the Proton box would import it.
+    if (isExternalLinkDrag(e)) {
+        const link = droppedLink(e)
+        if (link) await importDroppedLink(link, 'character')
         return
     }
     if (e.dataTransfer.files.length === 0) {

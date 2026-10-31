@@ -1550,6 +1550,8 @@ export const languageKorean = {
     plugin: "플러그인",
   },
   protonNoImportableFiles: "이 링크에 임포트할 수 있는 파일이 없습니다.",
+  linkDropUnsupported: "끌어 놓은 링크는 가져올 수 없어요. 렐름 주소나 프로톤 드라이브 공유 링크만 돼요.",
+  linkDropLabel: "링크",
   protonUnsupportedFile: "지원하지 않는 형식이라 건너뛴 파일:",
   protonImportFailed: "프로톤 링크에서 가져오지 못했습니다.",
   protonPasswordPrompt: "비밀번호가 걸린 프로톤 링크입니다. 링크 주인이 정한 비밀번호를 입력하세요.",

@@ -32,6 +32,7 @@
     import { isColdModule, keepModuleWhole, wakeModules, wholeModule } from "src/ts/process/moduleCold.svelte";
     import type { PromptPresetFolder } from "src/ts/storage/database.svelte";
     import { importDroppedFiles } from "src/ts/dropImport";
+    import { importDroppedLink } from "src/ts/linkDropImport";
     import { FileDropSurface } from "src/ts/gui/fileDropSurface.svelte";
     import FileDropIndicator from "src/lib/UI/GUI/FileDropIndicator.svelte";
     import PairedModuleMark from "src/lib/UI/GUI/PairedModuleMark.svelte";
@@ -466,10 +467,12 @@
     let pairedModules = $derived(moduleLinks(DBState.db.modules, DBState.db.characters, DBState.db.nodeOnlyArchivedCharacters ?? []))
 
     // Files dragged in from outside onto the catalog import as modules, a CHARX
-    // too (anywhere else it imports as a character).
+    // too (anywhere else it imports as a character). A link imports as this
+    // page's Proton box imports it.
     const moduleFileDrop = new FileDropSurface({
         accepts: () => mode === 0,
         onDrop: (files) => importDroppedFiles(files, 'module'),
+        onLink: (url) => importDroppedLink(url, 'module'),
     })
     $effect(() => moduleFileDrop.attachWindowReset())
 
@@ -494,7 +497,7 @@
             <ShButton size="sm" variant="outline" onclick={() => importModuleFromProtonDrive()}><CloudDownloadIcon />{language.importFromProton}</ShButton>
         {/snippet}
 
-    <FileDropIndicator active={moduleFileDrop.active} icon={HardDriveUpload} label={`${language.importModule} · CHARX / RISUM`} />
+    <FileDropIndicator active={moduleFileDrop.active} icon={HardDriveUpload} label={`${language.importModule} · CHARX / RISUM / ${language.linkDropLabel}`} />
 
     <FolderedList
         bind:searchQuery={moduleSearchQuery}

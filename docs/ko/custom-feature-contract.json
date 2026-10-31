@@ -2674,6 +2674,28 @@
       ]
     },
     {
+      "id": "LINK-DROP-IMPORT",
+      "title": "렐름·프로톤 링크 끌어 놓아 가져오기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/linkDropImport.ts",
+        "src/ts/gui/fileDropSurface.svelte.ts",
+        "src/App.svelte",
+        "src/lib/Setting/Pages/Module/ModuleSettings.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/App.svelte", "contains": "if (link) await importDroppedLink(link, 'character')" },
+        { "file": "src/App.svelte", "contains": "if (isExternalTextIntoTextBox(e)) return" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "onLink: (url) => importDroppedLink(url, 'module')," },
+        { "file": "src/ts/characters.ts", "contains": "if (await importCharacterLink(url)) return" },
+        { "file": "src/ts/process/modules.ts", "contains": "if (await importModuleLink(url)) return" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/fileDropSurface.svelte.test.ts",
+        "src/ts/linkDropImport.test.ts"
+      ]
+    },
+    {
       "id": "UNIFIED-ASSETS",
       "title": "🖼️ 에셋 통일 (봇+히로인 모듈 그림 규칙 하나로)",
       "criticality": "core-ux",

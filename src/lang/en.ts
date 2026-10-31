@@ -1444,6 +1444,8 @@ export const languageEnglish = {
         plugin: "Plugin",
     },
     protonNoImportableFiles: "This link has no files that can be imported.",
+    linkDropUnsupported: "That link can't be imported. Only a Realm address or a Proton Drive share link can be dropped.",
+    linkDropLabel: "Link",
     protonUnsupportedFile: "Skipped — unsupported format:",
     protonImportFailed: "Could not import from that Proton link.",
     protonPasswordPrompt: "This Proton link is password-protected. Enter the password its owner set.",

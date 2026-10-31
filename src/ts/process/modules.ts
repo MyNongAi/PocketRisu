@@ -637,11 +637,11 @@ export async function importModule(){
     return result
 }
 
-export async function importModuleFromProtonDrive() {
-    const url = (await alertInput(language.protonDriveUrlPrompt))?.trim()
-    // Cancel or an empty box imports nothing; local files have their own button.
-    if (!url) return
-
+/**
+ * The module page's Proton box import of a link, pasted there or dropped on
+ * the page (linkDropImport.ts). False when this build cannot import it itself.
+ */
+export async function importModuleLink(url: string): Promise<boolean> {
     // A Realm address here: the card comes in as a module, converted the way
     // "Convert to module" converts a bot, without adding the bot.
     const { parseRealmReference } = await import('../realmLink')
@@ -649,16 +649,22 @@ export async function importModuleFromProtonDrive() {
     if (realmId) {
         const { downloadRisuHubAsModule } = await import('../characterCards')
         await downloadRisuHubAsModule(realmId)
-        return
+        return true
     }
 
     // Same server-side path as the character import. It routes each file by
     // extension, and from this page a .charx or .json is a module, as it is
     // for this page's own file picker below.
-    if (isNodeServer && url) {
-        const { importFromProtonLink } = await import('../protonImport')
-        if (await importFromProtonLink(url, '', 'module')) return
-    }
+    if (!isNodeServer) return false
+    const { importFromProtonLink } = await import('../protonImport')
+    return importFromProtonLink(url, '', 'module')
+}
+
+export async function importModuleFromProtonDrive() {
+    const url = (await alertInput(language.protonDriveUrlPrompt))?.trim()
+    // Cancel or an empty box imports nothing; local files have their own button.
+    if (!url) return
+    if (await importModuleLink(url)) return
 
     if (url && url.includes('drive.proton.me/urls/')) {
         window.open(url, '_blank')

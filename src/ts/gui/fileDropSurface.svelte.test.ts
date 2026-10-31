@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from 'vitest'
-import { FileDropSurface, draggedItemsAreImages, isExternalFileDrag } from './fileDropSurface.svelte'
+import { FileDropSurface, draggedItemsAreImages, droppedLink, isExternalFileDrag, isExternalLinkDrag, isExternalTextIntoTextBox } from './fileDropSurface.svelte'
 import { RISU_APP_INTERNAL_DRAG_TYPE, RISU_SIDEBAR_DRAG_TYPE } from '../dragTypes'
 
 type FakeItem = { kind: string, type: string }
@@ -8,6 +8,8 @@ function dragEvent(opts: {
     types?: string[]
     items?: FakeItem[]
     files?: File[]
+    data?: Record<string, string>
+    target?: EventTarget | null
     currentTarget?: Node
     relatedTarget?: Node | null
 } = {}) {
@@ -17,9 +19,11 @@ function dragEvent(opts: {
         items: opts.items ?? files.map((f) => ({ kind: 'file', type: f.type })),
         files,
         dropEffect: 'none',
+        getData: (type: string) => opts.data?.[type] ?? '',
     }
     return {
         dataTransfer,
+        target: opts.target ?? document.body,
         currentTarget: opts.currentTarget ?? null,
         relatedTarget: opts.relatedTarget ?? null,
         preventDefault: vi.fn(),
@@ -38,6 +42,46 @@ describe('isExternalFileDrag', () => {
         expect(isExternalFileDrag(dragEvent({ types: ['Files', RISU_APP_INTERNAL_DRAG_TYPE] }))).toBe(false)
         expect(isExternalFileDrag(dragEvent({ types: ['Files', RISU_SIDEBAR_DRAG_TYPE] }))).toBe(false)
         expect(isExternalFileDrag(dragEvent({ types: ['text/plain'] }))).toBe(false)
+    })
+})
+
+const LINK_TYPES = ['text/uri-list', 'text/plain', 'text/html']
+const shareLink = 'https://drive.proton.me/urls/ABC123#key456'
+
+function linkDrag(opts: { types?: string[], target?: EventTarget | null, list?: string } = {}) {
+    return dragEvent({
+        types: opts.types ?? LINK_TYPES,
+        target: opts.target,
+        data: { 'text/uri-list': opts.list ?? shareLink, 'text/plain': opts.list ?? shareLink },
+    })
+}
+
+describe('link drags', () => {
+    test('a link from another page or app', () => {
+        expect(isExternalLinkDrag(linkDrag())).toBe(true)
+        expect(isExternalLinkDrag(linkDrag({ types: ['text/plain'] }))).toBe(false)
+        expect(isExternalLinkDrag(linkDrag({ types: [...LINK_TYPES, 'Files'] }))).toBe(false)
+        expect(isExternalLinkDrag(linkDrag({ types: [...LINK_TYPES, RISU_APP_INTERNAL_DRAG_TYPE] }))).toBe(false)
+        expect(isExternalLinkDrag(linkDrag({ types: [...LINK_TYPES, RISU_SIDEBAR_DRAG_TYPE] }))).toBe(false)
+    })
+
+    test('over a text box the text goes into the box, not to an import', () => {
+        const box = document.createElement('textarea')
+        const inBox = document.createElement('div')
+        inBox.setAttribute('contenteditable', 'true')
+        const child = document.createElement('span')
+        inBox.appendChild(child)
+        expect(isExternalLinkDrag(linkDrag({ target: box }))).toBe(false)
+        expect(isExternalTextIntoTextBox(linkDrag({ target: box }))).toBe(true)
+        expect(isExternalTextIntoTextBox(linkDrag({ target: child, types: ['text/plain'] }))).toBe(true)
+        expect(isExternalTextIntoTextBox(linkDrag())).toBe(false)
+        expect(isExternalTextIntoTextBox(dragEvent({ target: box }))).toBe(false)
+        expect(isExternalTextIntoTextBox(linkDrag({ target: box, types: [...LINK_TYPES, RISU_APP_INTERNAL_DRAG_TYPE] }))).toBe(false)
+    })
+
+    test('the first link of a uri-list, past its comment lines', () => {
+        expect(droppedLink(linkDrag({ list: `# from a page\r\n${shareLink}\r\nhttps://example.com/` }))).toBe(shareLink)
+        expect(droppedLink(linkDrag({ list: '' }))).toBeNull()
     })
 })
 
@@ -102,6 +146,29 @@ describe('FileDropSurface', () => {
         surface.drop(event)
         expect(onDrop).not.toHaveBeenCalled()
         expect(event.stopPropagation).not.toHaveBeenCalled()
+    })
+
+    test('a link goes to onLink, and without onLink it falls through to the app', () => {
+        const onDrop = vi.fn()
+        const onLink = vi.fn()
+        const surface = new FileDropSurface({ onDrop, onLink })
+        const over = linkDrag()
+        surface.over(over)
+        expect(surface.active).toBe(true)
+        expect(over.dataTransfer!.dropEffect).toBe('copy')
+        const event = linkDrag()
+        surface.drop(event)
+        expect(onLink).toHaveBeenCalledWith(shareLink)
+        expect(onDrop).not.toHaveBeenCalled()
+        expect(event.stopPropagation).toHaveBeenCalled()
+
+        const filesOnly = new FileDropSurface({ onDrop })
+        const passing = linkDrag()
+        filesOnly.over(passing)
+        filesOnly.drop(passing)
+        expect(filesOnly.active).toBe(false)
+        expect(passing.preventDefault).not.toHaveBeenCalled()
+        expect(passing.stopPropagation).not.toHaveBeenCalled()
     })
 
     test('any drop in the window ends the preview, and the listener can be removed', () => {

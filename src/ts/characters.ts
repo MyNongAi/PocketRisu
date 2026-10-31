@@ -945,11 +945,11 @@ export async function addCharacter(arg:{
     MobileGUIStack.set(1)
 }
 
-async function importFromProtonDrive() {
-    const url = (await alertInput(language.protonDriveUrlPrompt))?.trim()
-    // Cancel or an empty box imports nothing; local files have their own button.
-    if (!url) return
-
+/**
+ * The Proton box's import of a link, pasted there or dropped on the app
+ * (linkDropImport.ts). False when this build cannot import the link itself.
+ */
+export async function importCharacterLink(url: string): Promise<boolean> {
     // A Realm address in the Proton box: the bot comes from Realm (and with
     // it the companion module its description links, see downloadRisuHub).
     const { parseRealmReference } = await import('./realmLink')
@@ -957,17 +957,24 @@ async function importFromProtonDrive() {
     if (realmId) {
         const { downloadRisuHub } = await import('./characterCards')
         await downloadRisuHub(realmId)
-        return
+        return true
     }
 
     // The server decrypts the share, so a valid link needs no download at all.
     // Only the node build has that endpoint; everywhere else, and whenever the
-    // link is not a share link, fall through to picking files by hand.
-    if (isNodeServer && url) {
-        const { importFromProtonLink } = await import('./protonImport')
-        if (await importFromProtonLink(url)) return
-    }
+    // link is not a share link, the caller falls back.
+    if (!isNodeServer) return false
+    const { importFromProtonLink } = await import('./protonImport')
+    return importFromProtonLink(url)
+}
 
+async function importFromProtonDrive() {
+    const url = (await alertInput(language.protonDriveUrlPrompt))?.trim()
+    // Cancel or an empty box imports nothing; local files have their own button.
+    if (!url) return
+    if (await importCharacterLink(url)) return
+
+    // Fall through to picking files by hand.
     if (url && url.includes('drive.proton.me/urls/')) {
         window.open(url, '_blank')
     }
