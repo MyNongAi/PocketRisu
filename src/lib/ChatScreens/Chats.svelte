@@ -11,7 +11,7 @@
     import { chatFoldedState, chatFoldedStateMessageIndex } from 'src/ts/globalApi.svelte';
     import { foldStartFor } from 'src/ts/chatFold.svelte';
     import { getChatAssetRenderWindow } from '../../ts/chatAssetWindow';
-    import { isAtTail, revealScrollTop, shouldFollowTail, shouldRevealAddedMessage } from './chatViewport';
+    import { isAtTail, lineKey, matchingLineIndex, revealScrollTop, shouldFollowTail, shouldRevealAddedMessage } from './chatViewport';
     import { chatGenKey, isChatGenerating } from 'src/ts/process/generationState';
     import { rerollPlaceholderPages, rerollPlaceholderShows, rerollPlaceholders, stepRerollPlaceholderSwipe, type RerollPlaceholder } from 'src/ts/gui/rerollPlaceholder';
     import { SWIPE_ROW_BUTTONS, buttonRows, rowAt, rowFromBottom } from 'src/ts/gui/swipeAnchor';
@@ -437,6 +437,8 @@
     function holdHeight(el: HTMLElement, height: number): () => void {
         if (height <= 0) return () => {}
         el.style.minHeight = `${height}px`
+        // Not yet the place to read a line from (recordReaderAnchor).
+        el.dataset.redrawing = ''
         let released = false
         const contentHeight = () => {
             let total = 0
@@ -449,6 +451,11 @@
             observer.disconnect()
             clearTimeout(timer)
             el.style.minHeight = ''
+            delete el.dataset.redrawing
+            // Settle the view now, before this frame is drawn: the transcript
+            // observer would see the new height a frame later, and the text
+            // being read showed displaced meanwhile.
+            if (el.isConnected) followOrKeepReader(true)
         }
         const observer = new ResizeObserver(() => {
             if (contentHeight() >= height - 1) release()
@@ -470,6 +477,21 @@
         const chat = currentCharacter?.chats?.[view.chatIndex]
         return !!chat?.isStreaming || isChatGenerating(chatGenKey(chat?.id))
     }
+
+    /**
+     * The reply being written is on screen: not behind a rerolled reply's old
+     * page, the copy's or, once the copy goes, the message's own. Following
+     * the tail for a reply out of sight moved the old page being read as the
+     * reroll ended (the user's report, 2026-10-31).
+     */
+    function writingInView(): boolean {
+        if (!generatingHere()) return false
+        const chat = currentCharacter?.chats?.[view.chatIndex]
+        const placeholder = chat?.id ? get(rerollPlaceholders).get(chat.id) : undefined
+        if (placeholder) return !!placeholder.hold && !!placeholder.showingNew
+        const newest = messages[messages.length - 1]
+        return !(newest?.role === 'char' && (newest.swipes?.length ?? 0) > 1 && (newest.swipeId ?? 0) < newest.swipes.length - 1)
+    }
     // The message at the top of the view and how far its top sits from the
     // view's top, as of the reader's last scroll. A message whose content
     // changes after it rendered (a late image inlay, a trigger from an HTML
@@ -482,8 +504,12 @@
     // above it, in the same message, must not move it either. Anchored to
     // the message's top, an animated banner shook the text being read by
     // its full height change on every frame. When a re-render replaces it,
-    // the message's top is the fallback.
-    type ReaderAnchor = { chatId: string | null, slot: string, offsetTop: number, roomId: string | null, line: HTMLElement | null, lineOffsetTop: number }
+    // the line with the same text in the redrawn message stands in for it:
+    // a rerolled reply's old page, drawn from a copy while the new one is
+    // written, is drawn again from the message when it ends, with another
+    // header, and anchored to the message's top the text being read jumped
+    // (the user's report, 2026-10-31). The message's top is the last resort.
+    type ReaderAnchor = { chatId: string | null, slot: string, offsetTop: number, roomId: string | null, line: HTMLElement | null, lineOffsetTop: number, lineText: string, lineInMessage: number }
     let readerAnchor: ReaderAnchor | null = null
     let readerAnchorFrame = 0
 
@@ -545,6 +571,21 @@
             }
         }
         const slot = best && best === greeting ? GREETING_SLOT : best?.dataset.chatSlot
+        // A message being redrawn has no lines yet: the last line read in
+        // its slot stays the anchor, expected where it sat in the message and
+        // found again once it is drawn (redrawnLine). Recorded now, the view
+        // following the tail as a rerolled reply ended kept only the
+        // message's top.
+        if (best && best !== greeting && best.dataset.redrawing !== undefined && readerAnchor?.slot === slot && readerAnchor.lineText) {
+            readerAnchor = {
+                ...readerAnchor,
+                chatId: best.dataset.chatId ?? null,
+                offsetTop: bestTop - top,
+                roomId: getCurrentChatRoomId(),
+                lineOffsetTop: bestTop - top + readerAnchor.lineInMessage,
+            }
+            return
+        }
         const line = best && slot ? readingLine(best, top) : null
         readerAnchor = best && slot
             ? {
@@ -554,8 +595,28 @@
                 roomId: getCurrentChatRoomId(),
                 line,
                 lineOffsetTop: line ? line.getBoundingClientRect().top - top : 0,
+                lineText: line ? lineKey(line.textContent) : '',
+                lineInMessage: line ? line.getBoundingClientRect().top - bestTop : 0,
             }
             : null
+    }
+
+    /** The reader's line in its message as redrawn (ReaderAnchor), or null. */
+    function redrawnLine(anchor: ReaderAnchor): HTMLElement | null {
+        if (!anchor.line || !anchor.lineText) return null
+        const container = containerOf(anchor)
+        if (!container) return null
+        const containerTop = container.getBoundingClientRect().top
+        const candidates = Array.from(container.querySelectorAll<HTMLElement>(anchor.line.tagName))
+            .filter((element) => element.getClientRects().length > 0)
+        const index = matchingLineIndex(
+            candidates.map((element) => ({ text: lineKey(element.textContent), top: element.getBoundingClientRect().top - containerTop })),
+            anchor.lineText,
+            anchor.lineInMessage,
+        )
+        if (index === -1) return null
+        anchor.line = candidates[index]
+        return anchor.line
     }
 
     function scheduleReaderAnchor() {
@@ -568,8 +629,9 @@
         const anchor = readerAnchor
         const sc = getScroller()
         if (!anchor || !sc || anchor.roomId !== getCurrentChatRoomId()) return false
-        // The reader's line while it is still on the page; else the message's top.
-        const line = anchor.line?.isConnected && anchor.line.getClientRects().length > 0 ? anchor.line : null
+        // The reader's line while it is still on the page, then the same line
+        // in its redrawn message; else the message's top.
+        const line = anchor.line?.isConnected && anchor.line.getClientRects().length > 0 ? anchor.line : redrawnLine(anchor)
         const element = line ?? containerOf(anchor)
         if (!element) return false
         const delta = element.getBoundingClientRect().top - sc.getBoundingClientRect().top - (line ? anchor.lineOffsetTop : anchor.offsetTop)
@@ -711,6 +773,29 @@
         viewportRestoreRevision++;
     }
 
+    /** After a size change: follow the tail if the reader asked for that, else keep their line. */
+    function followOrKeepReader(onlyTranscriptResized: boolean) {
+        const sc = getScroller()
+        if (!sc) return
+        if (pinnedToTail && performance.now() - pinnedAt > OPEN_PIN_MS) pinnedToTail = false
+        const follow = shouldFollowTail({
+            pinnedToTail,
+            readerAtTail,
+            onlyTranscriptResized,
+            // Auto-scroll follows a reply as it is written. Once it is
+            // done, a reader at the tail keeps their line: following the
+            // tail then made an animated panel in the reply shake the
+            // text up and down.
+            autoScroll: DBState.db.autoScrollToNewMessage && writingInView(),
+        })
+        if (follow) {
+            scrollToTail()
+        } else {
+            if (pendingTailMove === null && !keepSwipeRow()) keepReaderAnchor()
+            readerAtTail = isAtTail(sc)
+        }
+    }
+
     $effect(() => {
         const sc = getScroller()
         if (!sc) return
@@ -731,23 +816,7 @@
             // greeting re-rendering or opening a panel) only drags the view
             // along when the reader asked for that.
             const greeting = greetingElement()
-            if (pinnedToTail && performance.now() - pinnedAt > OPEN_PIN_MS) pinnedToTail = false
-            const follow = shouldFollowTail({
-                pinnedToTail,
-                readerAtTail,
-                onlyTranscriptResized: !viewportResized && entries.every((entry) => entry.target === chatBody || entry.target === greeting),
-                // Auto-scroll follows a reply as it is written. Once it is
-                // done, a reader at the tail keeps their line: following the
-                // tail then made an animated panel in the reply shake the
-                // text up and down.
-                autoScroll: DBState.db.autoScrollToNewMessage && generatingHere(),
-            })
-            if (follow) {
-                scrollToTail()
-            } else {
-                if (pendingTailMove === null && !keepSwipeRow()) keepReaderAnchor()
-                readerAtTail = isAtTail(sc)
-            }
+            followOrKeepReader(!viewportResized && entries.every((entry) => entry.target === chatBody || entry.target === greeting))
         })
         const observeChildren = () => {
             observer.disconnect()

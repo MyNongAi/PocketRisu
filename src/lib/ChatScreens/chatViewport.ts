@@ -60,3 +60,23 @@ export function shouldRevealAddedMessage(state: {
 export function shouldLoadOlderPages(box: ScrollBox, loaded: number, total: number, threshold = 100): boolean {
     return box.scrollTop < threshold && total > loaded
 }
+
+/** What identifies the reader's line once its message is redrawn: its text's start. */
+export function lineKey(text: string | null | undefined): string {
+    return (text ?? '').slice(0, 200)
+}
+
+/**
+ * The reader's line in its redrawn message: among `candidates` (elements of
+ * the line's kind, `top` from the message's top), the one with the same text
+ * nearest to where the line was. -1 when none has that text.
+ */
+export function matchingLineIndex(candidates: readonly { text: string, top: number }[], text: string, top: number): number {
+    if (!text) return -1
+    let best = -1
+    for (let i = 0; i < candidates.length; i++) {
+        if (candidates[i].text !== text) continue
+        if (best === -1 || Math.abs(candidates[i].top - top) < Math.abs(candidates[best].top - top)) best = i
+    }
+    return best
+}
