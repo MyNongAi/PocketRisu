@@ -47,7 +47,7 @@ vi.mock('./process/modules', () => ({ importModuleFile: vi.fn() }))
 vi.mock('./storage/database.svelte', () => ({ importPreset: vi.fn() }))
 
 const { ProtonRequestError } = await import('./protonShareClient')
-const { openProtonShare, fetchProtonFile, importProtonFile, discardProtonFile } = await import('./protonImport')
+const { openProtonShare, importFromProtonLink, fetchProtonFile, importProtonFile, discardProtonFile } = await import('./protonImport')
 const { stagedAssetRef } = await import('./stagedAssets')
 
 const LINK = 'https://drive.proton.me/urls/ABC123#key'
@@ -101,6 +101,21 @@ describe('openProtonShare', () => {
         alertInput.mockResolvedValueOnce('pw')
         await openProtonShare(LINK, '', 'Companion module\nlink')
         expect(alertInput.mock.calls[0][0]).toBe('Companion module\nlink\n\nenter password')
+    })
+})
+
+describe('importFromProtonLink', () => {
+    beforeEach(() => vi.clearAllMocks())
+
+    test('a link from an arca.live post opens the share inside its unsafelink wrapper', async () => {
+        inspectProtonShare.mockRejectedValueOnce(new ProtonRequestError('Proton has no such link', 404))
+        await expect(importFromProtonLink(`https://unsafelink.com/${LINK}`)).resolves.toBe(true)
+        expect(inspectProtonShare).toHaveBeenCalledWith(LINK, '')
+    })
+
+    test('a link that is no Proton share is left to the caller', async () => {
+        await expect(importFromProtonLink('https://unsafelink.com/https://example.com/file')).resolves.toBe(false)
+        expect(inspectProtonShare).not.toHaveBeenCalled()
     })
 })
 

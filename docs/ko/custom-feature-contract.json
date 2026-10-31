@@ -2681,9 +2681,12 @@
         "src/ts/linkDropImport.ts",
         "src/ts/gui/fileDropSurface.svelte.ts",
         "src/App.svelte",
-        "src/lib/Setting/Pages/Module/ModuleSettings.svelte"
+        "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
+        "src/ts/redirectLink.ts"
       ],
       "requiredMarkers": [
+        { "file": "src/ts/realmLink.ts", "contains": "const text = unwrapRedirectLink(input)" },
+        { "file": "src/ts/protonImport.ts", "contains": "const url = unwrapRedirectLink(link)" },
         { "file": "src/App.svelte", "contains": "if (link) await importDroppedLink(link, 'character')" },
         { "file": "src/App.svelte", "contains": "if (isExternalTextIntoTextBox(e)) return" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "onLink: (url) => importDroppedLink(url, 'module')," },
@@ -2692,7 +2695,10 @@
       ],
       "regressionTests": [
         "src/ts/gui/fileDropSurface.svelte.test.ts",
-        "src/ts/linkDropImport.test.ts"
+        "src/ts/linkDropImport.test.ts",
+        "src/ts/redirectLink.test.ts",
+        "src/ts/realmLink.test.ts",
+        "src/ts/protonImport.test.ts"
       ]
     },
     {

@@ -18,6 +18,7 @@ import { getDatabase, importPreset } from './storage/database.svelte'
 import { snapshotImportedIds, stampProtonSource, type ProtonSourceRecord } from './protonSource'
 import { trackCharacterForSave } from './globalApi.svelte'
 import { isNodeServer } from './platform'
+import { unwrapRedirectLink } from './redirectLink'
 
 // Downloads of a multi-file pick that run at once, and the bytes downloaded
 // files may hold before their turn to import (the laptop server keeps a
@@ -209,7 +210,9 @@ export async function openProtonShare(url: string, password = '', subject?: stri
  * `origin` is the page the link was opened from; a module exported as a
  * .charx is only a module to the module page (see classifySharedImport).
  */
-export async function importFromProtonLink(url: string, password = '', origin: ImportOrigin = 'character'): Promise<boolean> {
+export async function importFromProtonLink(link: string, password = '', origin: ImportOrigin = 'character'): Promise<boolean> {
+    // A link from an arca.live post comes wrapped in its warning page.
+    const url = unwrapRedirectLink(link)
     if (!isProtonShareUrl(url)) return false
 
     const opened = await openProtonShare(url, password)

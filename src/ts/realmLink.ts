@@ -1,6 +1,8 @@
 // Realm character references a user pastes: a page URL
 // (https://realm.risuai.net/character/<id>, scheme optional), any link that
-// carries ?realm= or ?code= (the app's own share links), or a bare id.
+// carries ?realm= or ?code= (the app's own share links), or a bare id. A link
+// behind a site's redirect wrapper counts as the link inside (redirectLink.ts).
+import { unwrapRedirectLink } from './redirectLink'
 
 const REALM_HOSTS = /(^|\.)risuai\.(net|xyz)$/i
 const SCHEMELESS_REALM = /^(realm\.)?risuai\.(net|xyz)\//i
@@ -14,7 +16,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
  * word is a search and only an id-shaped value is taken as an id.
  */
 export function parseRealmReference(input: string, bareIds: 'any' | 'uuid' = 'any'): string | null {
-    const text = input.trim()
+    const text = unwrapRedirectLink(input)
     if (!text) return null
     const link = /^[a-z][a-z0-9+.-]*:\/\//i.test(text)
         ? text

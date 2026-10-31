@@ -16,6 +16,13 @@ describe('parseRealmReference', () => {
         expect(parseRealmReference(`http://localhost:6001/?code=abc123`)).toBe('abc123')
     })
 
+    test('a Realm link inside arca.live\'s unsafelink wrapper, as copied or dragged from a post', () => {
+        expect(parseRealmReference(`https://unsafelink.com/https://realm.risuai.net/character/${ID}`)).toBe(ID)
+        expect(parseRealmReference(`https://unsafelink.com/https://realm.risuai.net/character/${ID}`, 'uuid')).toBe(ID)
+        expect(parseRealmReference(`https://unsafelink.com/https%3A%2F%2Frealm.risuai.net%2Fcharacter%2F${ID}`)).toBe(ID)
+        expect(parseRealmReference('https://unsafelink.com/http://realm.risuai.net')).toBeNull()
+    })
+
     test('other links are not Realm references', () => {
         expect(parseRealmReference('https://example.com/character/abc')).toBeNull()
         expect(parseRealmReference('https://realm.risuai.net/')).toBeNull()
