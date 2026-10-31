@@ -26,6 +26,8 @@ const storage = {
     archiveCharacters: vi.fn(),
 }
 const overlay = vi.fn()
+const loading = vi.fn()
+const loadingDone = vi.fn()
 const deselectCharacter = vi.fn()
 const changeChar = vi.fn()
 const alertConfirm = vi.fn(async (..._args: unknown[]) => true)
@@ -55,6 +57,7 @@ vi.mock('./alert', () => ({
     alertConfirm: (...args: unknown[]) => alertConfirm(...args),
     alertError: (...args: unknown[]) => alertError(...args),
     notifyError: () => {},
+    notifyLoading: (message: string) => { loading(message); return () => loadingDone() },
     notifySuccess: () => {},
 }))
 vi.mock('./characters', () => ({ changeChar: (...args: unknown[]) => changeChar(...args), deselectCharacter: () => deselectCharacter() }))
@@ -140,6 +143,42 @@ describe('activateCharacter', () => {
         expect(await promptActivateCharacter('c1')).toBe(true)
         expect(alertConfirm).not.toHaveBeenCalled()
         expect(changeChar).toHaveBeenCalledWith(0, {})
+    })
+
+    test('loads behind a toast, leaving the screen usable, and a second click waits for the first', async () => {
+        state.db = { characters: [], characterOrder: [], nodeOnlyArchivedCharacters: [{ ...stub, autoDeactivatedAt: 5 }] }
+        overlay.mockClear()
+        loading.mockClear()
+        loadingDone.mockClear()
+        storage.activateCharacter.mockClear()
+        let release: (value: unknown) => void = () => {}
+        storage.activateCharacter.mockReturnValueOnce(new Promise((resolve) => { release = resolve }))
+        const first = promptActivateCharacter('c1')
+        const second = promptActivateCharacter('c1')
+        expect(second).toBe(first)
+        await Promise.resolve()
+        expect(loading).toHaveBeenCalledTimes(1)
+        release(restored())
+        expect(await first).toBe(true)
+        expect(storage.activateCharacter).toHaveBeenCalledTimes(1)
+        expect(overlay).not.toHaveBeenCalled()
+        expect(loadingDone).toHaveBeenCalledTimes(1)
+    })
+
+    test('does not take the screen from a bot opened while it loaded', async () => {
+        state.db = { characters: [], characterOrder: [], nodeOnlyArchivedCharacters: [{ ...stub, autoDeactivatedAt: 5 }] }
+        changeChar.mockClear()
+        selectedCharID.set(-1)
+        let release: (value: unknown) => void = () => {}
+        storage.activateCharacter.mockReturnValueOnce(new Promise((resolve) => { release = resolve }))
+        const opening = promptActivateCharacter('c1')
+        await Promise.resolve()
+        selectedCharID.set(3)
+        release(restored())
+        expect(await opening).toBe(false)
+        expect(changeChar).not.toHaveBeenCalled()
+        expect(state.db.characters.map((c: any) => c.chaId)).toEqual(['c1'])
+        selectedCharID.set(-1)
     })
 })
 

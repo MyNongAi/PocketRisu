@@ -576,6 +576,8 @@ export const languageEnglish = {
     rebaseSkippedArchived: (names: string) =>
         `"${names}" was deactivated on another device, so this device's unsaved edits to it were discarded.`,
     activateCharacterConfirm: (name: string) => `"${name}" is deactivated. Activate it?`,
+    activateCharacterLoading: 'Loading "{name}"…',
+    activateCharacterReady: '"{name}" is active again.',
     activateCharacterMissing: "The stored character data could not be found, so it cannot be activated. Check the server log and the storage dashboard.",
     activateCharacterFailed: "Activation failed: ",
     activateCharacterAlreadyActive: "the server already has this character active. Reload the page.",

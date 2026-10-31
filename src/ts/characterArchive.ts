@@ -15,7 +15,7 @@
  */
 import { get } from "svelte/store"
 import { language } from "src/lang"
-import { alertConfirm, alertError, notifyError, notifySuccess } from "./alert"
+import { alertConfirm, alertError, notifyError, notifyLoading, notifySuccess } from "./alert"
 import { changeChar, deselectCharacter } from "./characters"
 import { checkCharOrder, flushSaves, forageStorage, requestImmediateSave, requiresFullEncoderReload, trackCharacterForSave } from "./globalApi.svelte"
 import { DBState, loadingOverlayStore, selectedCharID } from "./stores.svelte"
@@ -460,17 +460,38 @@ export function removeArchivedStub(chaId: string): boolean {
     return true
 }
 
+// A bot being activated: a second click on it while it loads waits for the first.
+const activating = new Map<string, Promise<boolean>>()
+
 /**
  * List-click entry point: "This character is deactivated. Activate it?" →
  * activate → open it like a normal selection.
  */
-export async function promptActivateCharacter(chaId: string, arg: { reseter?: () => any } = {}): Promise<boolean> {
+export function promptActivateCharacter(chaId: string, arg: { reseter?: () => any } = {}): Promise<boolean> {
+    const running = activating.get(chaId)
+    if (running) return running
+    const run = promptActivateCharacterOnce(chaId, arg).finally(() => activating.delete(chaId))
+    activating.set(chaId, run)
+    return run
+}
+
+async function promptActivateCharacterOnce(chaId: string, arg: { reseter?: () => any }): Promise<boolean> {
     const stub = findArchivedStub(chaId)
     if (!stub) return false
-    if (!stub.autoDeactivatedAt && !await alertConfirm(language.activateCharacterConfirm(stub.name || 'Unnamed'))) return false
+    const name = stub.name || 'Unnamed'
+    if (!stub.autoDeactivatedAt && !await alertConfirm(language.activateCharacterConfirm(name))) return false
+    // A toast, not the overlay over the whole app, while the body comes back
+    // from the server (the user's report, 2026-10-31: the lock got in the way).
+    const selectedBefore = get(selectedCharID)
+    const loaded = notifyLoading(language.activateCharacterLoading.replace('{name}', name))
     try {
-        const index = await withOverlay(() => activateCharacter(chaId))
+        const index = await activateCharacter(chaId)
         if (index < 0) return false
+        // Another bot was opened meanwhile: that one stays on screen.
+        if (get(selectedCharID) !== selectedBefore) {
+            notifySuccess(language.activateCharacterReady.replace('{name}', name))
+            return false
+        }
         changeChar(index, arg)
         return true
     } catch (error) {
@@ -485,6 +506,8 @@ export async function promptActivateCharacter(chaId: string, arg: { reseter?: ()
             alertError(language.activateCharacterFailed + (error instanceof Error ? error.message : String(error)))
         }
         return false
+    } finally {
+        loaded()
     }
 }
 

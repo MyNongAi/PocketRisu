@@ -641,6 +641,8 @@ export const languageKorean = {
   rebaseSkippedArchived: (names: string) =>
     `"${names}" 캐릭터가 다른 기기에서 비활성화되어 이 기기의 저장되지 않은 변경을 반영하지 못했습니다.`,
   activateCharacterConfirm: (name: string) => `"${name}" 캐릭터가 비활성화되어 있습니다. 활성화할까요?`,
+  activateCharacterLoading: '"{name}" 불러오는 중…',
+  activateCharacterReady: '"{name}" 활성화했어요.',
   activateCharacterMissing: "보관된 캐릭터 데이터를 찾을 수 없어 활성화할 수 없습니다. 서버 로그와 스토리지 대시보드를 확인하세요.",
   activateCharacterFailed: "활성화에 실패했습니다: ",
   activateCharacterAlreadyActive: "서버에서 이 캐릭터가 이미 활성 상태입니다. 페이지를 새로고침하세요.",
