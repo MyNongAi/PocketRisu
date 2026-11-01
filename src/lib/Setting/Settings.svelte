@@ -1,7 +1,8 @@
 <script lang="ts">
-    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, CodeIcon, CogIcon, ContactIcon, FlaskConicalIcon, GripVerticalIcon, ImageIcon, LanguagesIcon, MonitorIcon, MonitorSmartphoneIcon, Sailboat, ScrollTextIcon, SearchIcon, CircleXIcon, KeyboardIcon, TruckIcon, FileBoxIcon, Volume2Icon, HeartIcon, BrainIcon, PlugZapIcon } from "@lucide/svelte";
+    import { AccessibilityIcon, ActivityIcon, PackageIcon, BotIcon, CodeIcon, CogIcon, ContactIcon, FlaskConicalIcon, GripVerticalIcon, ImageIcon, LanguagesIcon, MonitorIcon, MonitorSmartphoneIcon, Sailboat, ScrollTextIcon, SearchIcon, CircleXIcon, KeyboardIcon, TruckIcon, FileBoxIcon, Volume2Icon, HeartIcon, BrainIcon, PlugZapIcon, ChartBarDecreasingIcon } from "@lucide/svelte";
     import { language } from "src/lang";
     import { supportDialogOpen, supportEnabled } from "src/ts/support";
+    import { inputWordRankOpen } from "src/ts/inputWordRank";
     import DisplaySettings from "./Pages/DisplaySettings.svelte";
     import NotificationSoundSettings from "./Pages/NotificationSoundSettings.svelte";
     import MigrationSettings from "./Pages/MigrationSettings.svelte";
@@ -277,6 +278,11 @@
                             <span>{language.support}</span>
                         </button>
                     {/if}
+                    <button class="flex gap-2 items-center hover:text-textcolor text-textcolor2" data-input-word-rank-open
+                        onclick={() => inputWordRankOpen.set(true)}>
+                        <ChartBarDecreasingIcon />
+                        <span>{language.inputWordRank}</span>
+                    </button>
                     {#if additionalSettingsMenu.length > 0}
                         <div class="border-t border-selected mt-2 pt-2">
                             <span class="text-textcolor2 text-xs ml-1">{language.plugin}</span>

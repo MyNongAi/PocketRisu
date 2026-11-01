@@ -10702,6 +10702,55 @@ app.get('/api/inlays/references', async (req, res, next) => {
     }
 });
 
+const { rankInputWords } = require('./input-word-rank.cjs');
+
+// A chat as the input word rank reads it: a cold-stored chat's messages come
+// from cold storage, read only (no restore, no legacy migration).
+function chatWithColdMessages(chat) {
+    if (!isColdStorageChat(chat)) return chat;
+    let entry = null;
+    try { entry = readColdStorageJsonEntry(chat.message[0].data.slice(COLD_STORAGE_HEADER.length)); } catch { entry = null; }
+    const cold = entry?.coldData;
+    const message = Array.isArray(cold) ? cold : cold?.message;
+    return Array.isArray(message) ? { ...chat, message } : null;
+}
+
+// Input word rank popup (server/node/input-word-rank.cjs): the user's own
+// messages counted here, deactivated bots included on request (trashed ones
+// are not). Only the lists are taken inside the storage queue; the bodies are
+// read bot by bot after it, and a client that leaves stops the count.
+app.post('/api/input-word-rank', async (req, res, next) => {
+    if (!await checkAuth(req, res)) return;
+    let gone = false;
+    res.on('close', () => { gone = !res.writableEnded; });
+    try {
+        const lists = await queueStorageOperation(async () => {
+            await ensureChatStore();
+            if (!(await loadDbCacheIfMissing())) return null;
+            const db = dbCache[DB_HEX_KEY];
+            return {
+                characters: (Array.isArray(db.characters) ? db.characters : [])
+                    .filter((c) => typeof c?.chaId === 'string')
+                    .map((c) => ({ chaId: c.chaId, chats: (Array.isArray(c.chats) ? c.chats : []).map((chat) => ({ id: chat?.id })) })),
+                archived: archivedStubsOf(db).filter((s) => !isValidArchivedAt(s.trashedAt)).map((s) => ({ chaId: s.chaId, archivedAt: s.archivedAt })),
+            };
+        });
+        if (!lists) return res.status(404).json({ error: 'No database' });
+        const result = await rankInputWords({
+            ...lists,
+            readChat: (chaId, chatId) => (chatBodyStore.has(chaId, chatId) ? chatWithColdMessages(chatBodyStore.getChat(chaId, chatId)) : null),
+            readArchivedChats: async ({ chaId, archivedAt }) => (await decodeArchivePayload(chaId, archivedAt))?.payload.character.chats.map(chatWithColdMessages) ?? null,
+            body: req.body,
+            shouldStop: () => gone,
+        });
+        if (gone) return;
+        if (!result) return res.status(404).json({ error: 'Chat not found', code: 'INPUT_WORD_RANK_NOT_FOUND' });
+        res.json(result);
+    } catch (err) {
+        next(err);
+    }
+});
+
 // Write the archive row (and index row) for one live character of `db`,
 // verified by reading it back. The database itself is left alone: the client
 // moves the character to its stub list and saves. Caller holds the storage

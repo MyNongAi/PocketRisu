@@ -17,6 +17,7 @@ import { BootAuthError, BootFallback, loadDatabaseViaBoot } from './bootPayload'
 import { BootCacheController, browserBootCacheEnv } from './bootPayloadCache'
 import { addBuildIdHeader, readStaleBuildRefusal, readStaleBuildRefusalXhr, reportStaleBuild, setXhrBuildIdHeader, StaleBuildError } from './buildFence'
 import { bootReason } from '../bootReason'
+import type { InputWordRankRequest, InputWordRankResult } from '../inputWordRank'
 
 /** How the last database.bin read went (the [Boot] log line, storage settings). */
 export interface DbLoadInfo {
@@ -2478,6 +2479,22 @@ export class NodeStorage{
         if (da.status < 200 || da.status >= 300) {
             const body = await da.json().catch(() => ({})) as { error?: string }
             throw new Error(body?.error ?? `inlay reference scan error: ${da.status}`)
+        }
+        return await da.json()
+    }
+
+    /** Input word rank counted on the server (server/node/input-word-rank.cjs); null when the chat or bot is gone. */
+    async rankInputWords(request: InputWordRankRequest, signal?: AbortSignal): Promise<InputWordRankResult | null> {
+        const da = await this.authFetch('/api/input-word-rank', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(request),
+            signal,
+        })
+        if (da.status === 404) return null
+        if (da.status < 200 || da.status >= 300) {
+            const body = await da.json().catch(() => ({})) as { error?: string }
+            throw new Error(body?.error ?? `input word rank error: ${da.status}`)
         }
         return await da.json()
     }

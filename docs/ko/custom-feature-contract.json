@@ -2456,6 +2456,26 @@
       "regressionTests": []
     },
     {
+      "id": "INPUT-WORD-RANK-POPUP",
+      "title": "입력 단어 순위 팝업: 서버가 비활성 봇까지 세는 앱 기능",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "server/node/input-word-rank.cjs",
+        "src/ts/inputWordRank.ts",
+        "src/lib/Others/InputWordRankDialog.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "server/node/input-word-rank.cjs", "contains": "// ---------- SHARED with plugins/input-word-rank (keep identical) ----------" },
+        { "file": "server/node/input-word-rank.cjs", "contains": "if (request.scope === 'all' && request.deactivated) {" },
+        { "file": "server/node/server.cjs", "contains": "app.post('/api/input-word-rank', async (req, res, next) => {" },
+        { "file": "server/node/server.cjs", "contains": "archived: archivedStubsOf(db).filter((s) => !isValidArchivedAt(s.trashedAt))" },
+        { "file": "src/ts/storage/nodeStorage.ts", "contains": "async rankInputWords(request: InputWordRankRequest, signal?: AbortSignal)" },
+        { "file": "src/lib/Setting/Settings.svelte", "contains": "onclick={() => inputWordRankOpen.set(true)}" },
+        { "file": "src/App.svelte", "contains": "<InputWordRankDialog />" }
+      ],
+      "regressionTests": ["server/node/input-word-rank.test.ts", "test/compat/input-word-rank.test.ts", "src/lib/Others/InputWordRankDialog.test.ts"]
+    },
+    {
       "id": "INPUT-WORD-RANK-PLUGIN",
       "title": "내 입력의 단어·표현·문장 순위를 매기는 배포용 플러그인",
       "criticality": "core-ux",

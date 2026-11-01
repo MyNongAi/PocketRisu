@@ -19,6 +19,7 @@
     import LazyComponent from './lib/Others/LazyComponent.svelte';
     import UpdatePopup from './lib/Others/UpdatePopup.svelte';
     import SupportDialog from './lib/Others/SupportDialog.svelte';
+    import InputWordRankDialog from './lib/Others/InputWordRankDialog.svelte';
     import ProtonImportDialog from './lib/Others/ProtonImportDialog.svelte';
     import BootBackupPrompt from './lib/Others/BootBackupPrompt.svelte';
     import StaleBuildNotice from './lib/Others/StaleBuildNotice.svelte';
@@ -376,6 +377,7 @@
     <LoadingOverlay />
     <UpdatePopup />
     <SupportDialog />
+    <InputWordRankDialog />
     <ProtonImportDialog />
     <BootBackupPrompt />
     <StaleBuildNotice />
