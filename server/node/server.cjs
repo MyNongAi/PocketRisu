@@ -4892,26 +4892,25 @@ async function hubProxyFunc(req, res) {
     ];
 
     try {
-        let externalURL = '';
-
-        const pathHeader = req.headers['x-risu-node-path'];
-        if (pathHeader) {
-            const decodedPath = decodeURIComponent(pathHeader);
-            externalURL = decodedPath;
-        } else {
-            const pathAndQuery = req.originalUrl.replace(/^\/hub-proxy/, '');
-            // A Realm search can go out through the reader's relay (realmRelay.cjs).
-            externalURL = realmRelayTarget(req.headers[REALM_RELAY_HEADER], pathAndQuery) ?? (hubURL + pathAndQuery);
+        const hubOrigin = new URL(hubURL).origin;
+        const pathAndQuery = req.originalUrl.replace(/^\/hub-proxy/, '');
+        // A Realm search can go out through the reader's relay (realmRelay.cjs).
+        const relayURL = realmRelayTarget(req.headers[REALM_RELAY_HEADER], pathAndQuery);
+        const externalURL = new URL(relayURL ?? (hubURL + pathAndQuery));
+        if (!relayURL && externalURL.origin !== hubOrigin) {
+            res.status(400).send({ error: 'Invalid hub path' });
+            return;
         }
-        
+
         const headersToSend = { ...req.headers };
         delete headersToSend.host;
         delete headersToSend.connection;
         delete headersToSend['content-length'];
         delete headersToSend['x-risu-node-path'];
         delete headersToSend[REALM_RELAY_HEADER];
+        delete headersToSend['risu-auth'];
+        delete headersToSend.cookie;
 
-        const hubOrigin = new URL(hubURL).origin;
         headersToSend.origin = hubOrigin;
 
         //if Authorization header is "Server-Auth, set the token to be Server-Auth
@@ -4944,7 +4943,12 @@ async function hubProxyFunc(req, res) {
         res.status(response.status);
 
         if (response.status >= 300 && response.status < 400 && response.headers.get('location')) {
-            const redirectUrl = response.headers.get('location');
+            const redirectUrl = new URL(response.headers.get('location'), externalURL);
+            if (redirectUrl.origin !== hubOrigin) {
+                res.removeHeader('location');
+                res.status(502).send({ error: 'Hub redirected to a different origin' });
+                return;
+            }
             const newHeaders = { ...headersToSend };
             const redirectResponse = await fetch(redirectUrl, {
                 method: req.method,
