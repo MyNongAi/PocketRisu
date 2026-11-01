@@ -28,7 +28,7 @@ vi.mock('./mcp', () => ({
 }))
 vi.mock('./toolGate', () => ({ RISU_ACCESS_URL: 'internal:risuai' }))
 
-const { editModeOn, setEditApproval, startEditMode, stopEditMode } = await import('./editMode')
+const { chooseEditMode, editModeChoice, editModeOn, externalEditRefusal, setEditApproval, startEditMode, stopEditMode } = await import('./editMode')
 
 function bot() {
     const chat: any = { id: 'c1', name: 'Chat 1', message: [], modules: ['other'] }
@@ -118,5 +118,56 @@ describe('the bot edit mode follows the Risu Access module', () => {
         expect(await startEditMode(char, chat)).toBe(false)
         expect(db.value.modules).toHaveLength(0)
         expect(chat.modules).toEqual(['other'])
+    })
+})
+
+describe('the dropdown picks one: off, built-in, or an app outside', () => {
+    it('is off by default, and the apps outside are refused then', () => {
+        const { char, chat } = bot()
+        expect(editModeChoice(char, chat)).toBe('off')
+        expect(externalEditRefusal()).toBe('externalMcpEditModeOff')
+    })
+
+    it('an app turns the server on, then lets that app edit; off refuses again', async () => {
+        const { char, chat } = bot()
+        const enable = vi.fn(async () => true)
+        expect(await chooseEditMode(char, chat, 'codex', enable)).toBe(true)
+        expect(enable).toHaveBeenCalledOnce()
+        expect(editModeChoice(char, chat)).toBe('codex')
+        expect(externalEditRefusal()).toBeNull()
+
+        expect(await chooseEditMode(char, chat, 'off', enable)).toBe(true)
+        expect(enable).toHaveBeenCalledOnce()
+        expect(editModeChoice(char, chat)).toBe('off')
+        expect(externalEditRefusal()).toBe('externalMcpEditModeOff')
+    })
+
+    it('built-in ends the apps’ turn, and an app ends this chat’s built-in mode', async () => {
+        const { char, chat } = bot()
+        const enable = vi.fn(async () => true)
+        await chooseEditMode(char, chat, 'antigravity', enable)
+
+        alertSelect.mockResolvedValueOnce('1')
+        expect(await chooseEditMode(char, chat, 'builtin', enable)).toBe(true)
+        expect(editModeChoice(char, chat)).toBe('builtin')
+        expect(externalEditRefusal()).toBe('externalMcpEditModeOff')
+
+        expect(await chooseEditMode(char, chat, 'claude-code', enable)).toBe(true)
+        expect(editModeOn(char, chat)).toBe(false)
+        expect(editModeChoice(char, chat)).toBe('claude-code')
+    })
+
+    it('changes nothing when the server cannot be turned on or a question is cancelled', async () => {
+        const { char, chat } = bot()
+        expect(await chooseEditMode(char, chat, 'codex', async () => false)).toBe(false)
+        expect(editModeChoice(char, chat)).toBe('off')
+
+        db.value.modules.push({ id: 'ra', mcp: { url: 'internal:risuai' } })
+        chat.modules.push('ra')
+        chat.nodeOnlyEditSession = { approval: 'ask', startedAt: 1, characters: { b1: 'k1' } }
+        alertSelect.mockResolvedValueOnce('2')
+        expect(await chooseEditMode(char, chat, 'codex', async () => true)).toBe(false)
+        expect(editModeChoice(char, chat)).toBe('builtin')
+        expect((db.value as any).nodeOnlyExternalEditApp).toBeUndefined()
     })
 })

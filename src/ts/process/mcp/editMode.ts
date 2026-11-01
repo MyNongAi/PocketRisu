@@ -7,6 +7,13 @@
 // switch asks where (a new edit chat or this one), and makes the module when
 // there is none; off, it asks whether to keep what the AI changed or put it
 // back (editSession.ts).
+//
+// The sidebar shows it as a dropdown (the user's choice, 2026-11-01): off by
+// default, built-in (the above), or Codex, Claude Code or Antigravity editing
+// from their own app through the PocketRisu MCP server (externalBridge.ts).
+// One at a time: built-in here ends the apps' turn, an app ends this chat's
+// built-in mode. The app is the database's, like the apps' own edit sitting,
+// since an app can edit any bot.
 import { get } from 'svelte/store'
 import { v4 } from 'uuid'
 import { language } from 'src/lang'
@@ -22,6 +29,51 @@ import { RISU_ACCESS_URL } from './toolGate'
 /** The mode is on: the Risu Access module is on for this chat (here, the bot's, everywhere, ...). */
 export function editModeOn(char: character, chat: Chat): boolean {
     return getModuleMcps(captureModuleRuntimeContext(char, chat)).includes(RISU_ACCESS_URL)
+}
+
+export type ExternalEditApp = 'codex' | 'claude-code' | 'antigravity'
+export type EditModeChoice = 'off' | 'builtin' | ExternalEditApp
+export const EXTERNAL_EDIT_APPS: readonly ExternalEditApp[] = ['codex', 'claude-code', 'antigravity']
+
+export function externalEditAppLabel(app: ExternalEditApp): string {
+    if (app === 'codex') return language.editModeChoiceCodex
+    if (app === 'claude-code') return language.editModeChoiceClaudeCode
+    return language.editModeChoiceAntigravity
+}
+
+/** What the dropdown shows for this chat. */
+export function editModeChoice(char: character, chat: Chat): EditModeChoice {
+    if (editModeOn(char, chat)) return 'builtin'
+    return DBState.db.nodeOnlyExternalEditApp ?? 'off'
+}
+
+/** Why a call from an app outside may not run now: no app is chosen. */
+export function externalEditRefusal(): string | null {
+    return DBState.db.nodeOnlyExternalEditApp ? null : language.externalMcpEditModeOff
+}
+
+/**
+ * The dropdown picked `next`. `enable` turns the MCP server on (its token
+ * kept), for an app. False when a question was cancelled or the server could
+ * not be turned on: nothing changes then.
+ */
+export async function chooseEditMode(char: character, chat: Chat, next: EditModeChoice, enable: () => Promise<boolean>): Promise<boolean> {
+    if (next === editModeChoice(char, chat)) return true
+    if (next === 'builtin') {
+        if (!await startEditMode(char, chat)) return false
+        delete DBState.db.nodeOnlyExternalEditApp
+        return true
+    }
+    // The server first: on alone, it still refuses every call (externalEditRefusal).
+    if (next !== 'off' && !await enable()) {
+        notifyError(language.editModeExternalFailed)
+        return false
+    }
+    if (editModeOn(char, chat) && !await stopEditMode(char, chat)) return false
+    if (next === 'off') delete DBState.db.nodeOnlyExternalEditApp
+    else DBState.db.nodeOnlyExternalEditApp = next
+    changed()
+    return true
 }
 
 function risuAccessIds(): Set<string> {

@@ -14,6 +14,7 @@
     import { editBackupCount, restoreEdits, type EditApproval } from "src/ts/process/mcp/editSession";
     import { mcpBridgePageId, mcpServerFetch, wakeExternalMcpBridge } from "src/ts/process/mcp/externalBridge";
     import { mcpClientSetups } from "src/ts/process/mcp/externalMcpSetup";
+    import { externalEditAppLabel } from "src/ts/process/mcp/editMode";
 
     type Status = {
         enabled: boolean
@@ -154,6 +155,12 @@
 
         <span class="text-sm" class:text-textcolor2={!status.receiving}>
             {status.receiving ? language.externalMcpReceivingHere : status.receiverConnected ? language.externalMcpReceivingOther : language.externalMcpNoPage}
+        </span>
+        <!-- The calls run only while the bot edit mode names an app (editMode.ts). -->
+        <span class="text-sm break-words" class:text-yellow-500={!DBState.db.nodeOnlyExternalEditApp} data-external-edit-app>
+            {DBState.db.nodeOnlyExternalEditApp
+                ? language.externalMcpEditModeOn.replace('{app}', externalEditAppLabel(DBState.db.nodeOnlyExternalEditApp))
+                : language.externalMcpEditModeOffHint}
         </span>
 
         <div class="flex flex-col gap-2 rounded-md border border-darkborderc p-2 text-sm">

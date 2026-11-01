@@ -44,6 +44,18 @@ describe('the tools PocketRisu offers MCP apps outside', () => {
         expect(await answerCall(host, { id: '3', kind: 'call', name: 'risu-list-modules', arguments: { count: 2 } })).toEqual({ content: [{ type: 'text', text: 'ran' }] })
         expect(callTool).toHaveBeenCalledWith('risu-list-modules', { count: 2 })
     })
+
+    it('runs no call while the edit mode is off, but still lists the tools', async () => {
+        const callTool = vi.fn(async () => [{ type: 'text' as const, text: 'ran' }])
+        const host = {
+            serverInfo: {},
+            getToolList: async () => [{ name: 'risu-list-modules', description: '', inputSchema: {} }] as any,
+            callTool,
+        }
+        expect(await answerCall(host, { id: '1', kind: 'list' }, 'off')).toMatchObject({ tools: [{ name: 'risu-list-modules' }] })
+        expect(await answerCall(host, { id: '2', kind: 'call', name: 'risu-list-modules' }, 'Edit mode is off')).toEqual({ content: [{ type: 'text', text: 'Edit mode is off' }], isError: true })
+        expect(callTool).not.toHaveBeenCalled()
+    })
 })
 
 const jsonResponse = (value: unknown) => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } })

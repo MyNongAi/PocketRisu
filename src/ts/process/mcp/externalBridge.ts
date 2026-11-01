@@ -7,6 +7,11 @@
 // approval is 'auto', and backs its bot or module up into the database's own
 // sitting (risuaccess/writeAccess.ts), which the settings page puts back.
 //
+// A call runs only while the bot edit mode's dropdown names an app outside
+// (editMode.ts; off by default): otherwise the app is told where to turn it
+// on. The tool list always goes out, so an app that connected while it was
+// off sees the tools once it is on.
+//
 // Only the bot, module, folder and chat-history tools listed here go out.
 // None of them reads a prompt preset, a prompt or toggle template, a
 // long-term memory summary prompt or a model preset (the promise of
@@ -67,11 +72,13 @@ export type BridgeAnswer =
     | { tools: MCPTool[], instructions?: string }
     | { content: RPCToolCallContent[], isError?: boolean }
 
-export async function answerCall(host: ToolHost, call: BridgeCall): Promise<BridgeAnswer> {
+/** `refusal`: why calls may not run now (the edit mode is off), or null. */
+export async function answerCall(host: ToolHost, call: BridgeCall, refusal: string | null = null): Promise<BridgeAnswer> {
     if (call.kind === 'list') {
         const tools = (await host.getToolList()).filter((tool) => EXTERNAL_TOOLS.has(tool.name))
         return { tools, instructions: host.serverInfo.instructions }
     }
+    if (refusal) return { content: [{ type: 'text', text: refusal }], isError: true }
     if (typeof call.name !== 'string' || !EXTERNAL_TOOLS.has(call.name)) {
         return { content: [{ type: 'text', text: `Tool ${String(call.name)} is not available.` }], isError: true }
     }
@@ -82,6 +89,8 @@ export interface BridgeDeps {
     /** An authenticated request to this server. */
     fetch: (path: string, init?: RequestInit) => Promise<Response>
     host: () => Promise<ToolHost>
+    /** Why calls may not run now, asked after `host` (answerCall). */
+    refusal?: () => string | null
     pageId: string
     /** Waits `ms`, or less when woken. */
     wait?: (ms: number, wake: Promise<void>) => Promise<void>
@@ -133,7 +142,8 @@ export function startMcpBridge(deps: BridgeDeps): BridgeConnection {
 
     async function run(call: BridgeCall) {
         try {
-            const result = await answerCall(await deps.host(), call)
+            const host = await deps.host()
+            const result = await answerCall(host, call, deps.refusal?.() ?? null)
             await post('/api/mcp/bridge/result', { page: deps.pageId, id: call.id, result })
         } catch (error) {
             await post('/api/mcp/bridge/result', { page: deps.pageId, id: call.id, error: String((error as Error)?.message ?? error) }).catch(() => {})
@@ -229,22 +239,55 @@ export async function mcpServerFetch(path: string, init: RequestInit = {}): Prom
     return fetch(path, { ...init, headers })
 }
 
+/** What the server says about itself (GET /api/mcp/status). */
+export interface ExternalMcpStatus {
+    enabled: boolean
+    token: string | null
+    pages: number
+    receiving: boolean
+    receiverConnected: boolean
+    stdioScript?: string
+}
+
+export async function externalMcpStatus(): Promise<ExternalMcpStatus> {
+    const res = await mcpServerFetch(`/api/mcp/status?page=${encodeURIComponent(mcpBridgePageId)}`, { cache: 'no-store' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.json()
+}
+
+/** Turn the server on: a token the first time, the same one after that. */
+export async function enableExternalMcp(): Promise<ExternalMcpStatus> {
+    const res = await mcpServerFetch('/api/mcp/enable', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ page: mcpBridgePageId }),
+    })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const status: ExternalMcpStatus = await res.json()
+    wakeExternalMcpBridge()
+    return status
+}
+
 let connection: BridgeConnection | null = null
 
 /** Start offering this page's tools (node server pages). */
 export function startExternalMcpBridge(): void {
     if (connection) return
     let host: Promise<ToolHost> | null = null
+    let refusal: () => string | null = () => null
     connection = startMcpBridge({
         fetch: mcpServerFetch,
         pageId: mcpBridgePageId,
         host: () => host ??= (async () => {
-            const [{ RisuAccessClient }, { externalWriteAccess }] = await Promise.all([
+            const [{ RisuAccessClient }, { externalWriteAccess }, { externalEditRefusal }] = await Promise.all([
                 import('./risuaccess'),
                 import('./risuaccess/writeAccess'),
+                import('./editMode'),
             ])
+            refusal = externalEditRefusal
             return new RisuAccessClient({ writeAccess: externalWriteAccess })
         })(),
+        refusal: () => refusal(),
     })
     const active = () => connection?.markActive()
     window.addEventListener('pointerdown', active, { passive: true })

@@ -333,9 +333,14 @@ export const helpEn = {
             "- 🌙 'tag again' in the message menu: a reply's menu (☰) gets a 🌙 that takes the reply's earlier tags out and places them afresh. Drawn illustrations stay.\n" +
             "- Saved per bot. A bot with no 🌙 entry is left alone.",
         editMode:
-            "Lets the AI (the main model) edit bots and modules through the chat, with Risu's built-in Risu Access MCP.\n\n" +
-            "- The edit mode is the Risu Access MCP module being on for this chat (like 🎨 and its module): this switch turns the module on and off, and turning the module on or off in the module menu moves the switch.\n" +
-            "- Turning it on asks: a new edit chat, or this chat. The module is added when there is none.\n" +
+            "Lets an AI edit bots and modules. Pick who edits; off by default.\n\n" +
+            "- Off: nobody edits. A connected app outside that calls the tools is told the edit mode is off.\n" +
+            "- Built-in: this chat's model edits through the chat, with Risu's built-in Risu Access MCP (below).\n" +
+            "- Codex / Claude Code / Antigravity: talk to that app in the app itself, and it edits through the PocketRisu MCP server. Put the setting shown below into the app once. The server's token stays when you pick Off. While this is on, any app connected to the server can edit. The apps' backups and undo are one for all of Risu, not this chat's.\n" +
+            "- One at a time: Built-in turns the apps off, and an app turns this chat's built-in mode off.\n\n" +
+            "Built-in:\n" +
+            "- The edit mode is the Risu Access MCP module being on for this chat (like 🎨 and its module): picking it here turns the module on and off, and turning the module on or off in the module menu moves this too.\n" +
+            "- Picking it asks: a new edit chat, or this chat. The module is added when there is none.\n" +
             "- With it on, the chat's main replies carry tools without changing the model preset's 'Tool use'.\n" +
             "- When the AI edits: Auto writes without asking; Manual asks for every write.\n" +
             "- Right before the AI's first change, a bot is copied into its folder as 'name [backup time]' (without chats; its 3 newest kept, older ones to the trash). A module is recorded in this chat. 'Undo the edits' puts back what was changed this time.\n" +
