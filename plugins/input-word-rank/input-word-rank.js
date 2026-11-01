@@ -1,7 +1,7 @@
 //@name input_word_rank
 //@display-name 입력 단어 순위
 //@api 3.0
-//@version 1.2.0
+//@version 1.2.1
 
 // Ranks what the user writes most: words, phrases (2 to 4 words in a row)
 // and whole sentences, counted over the user's messages in the open chat,
@@ -47,6 +47,8 @@
     const PARENS = /\([^()]*\)|（[^（）]*）|\[[^[\]]*\]/g
     const MARKER = /\[[!-Z\\^-~]*\]/g // ASCII with no space or bracket inside
     const JSON_OBJECT = /\{[^{}]*"\s*:[^{}]*\}/g
+    // Math letters (𝑎, 𝐛, 𝟏) and full-width ones (Ａ, １) are read as the plain letter.
+    const STYLED = /[\u{1D400}-\u{1D7FF}ℂℊℋℌℍℎℐℑℒℓℕℙℚℛℜℝℤℨℬℭℯℰℱℳℴ０-９Ａ-Ｚａ-ｚ]/gu
     const LATIN = /[a-z]/i
     const mostlyLatin = (sentence) => (sentence.match(/[a-z]/gi)?.length ?? 0) > (sentence.match(/[가-힣]/g)?.length ?? 0)
     const SENTENCE_BREAK = /\n+|(?<=[.!?…。！？])\s+/
@@ -79,7 +81,7 @@
     }
 
     function cleanText(text, dropParens) {
-        let t = String(text ?? '').replace(MACRO, ' ').replace(TAG, ' ').replace(URL_RE, ' ')
+        let t = String(text ?? '').replace(STYLED, (c) => c.normalize('NFKC')).replace(MACRO, ' ').replace(TAG, ' ').replace(URL_RE, ' ')
         let before
         // Inside out: [ACT:{"id":1}] loses its object, then the marker left.
         do { before = t; t = t.replace(JSON_OBJECT, '').replace(MARKER, ' ') } while (t !== before)
