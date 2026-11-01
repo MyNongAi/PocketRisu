@@ -1,7 +1,7 @@
 //@name input_word_rank
 //@display-name 입력 단어 순위
 //@api 3.0
-//@version 1.1.0
+//@version 1.2.0
 
 // Ranks what the user writes most: words, phrases (2 to 4 words in a row)
 // and whole sentences, counted over the user's messages in the open chat,
@@ -20,8 +20,11 @@
 // does not fit that syllable (누군가). Phrases and sentences keep the words
 // as written.
 //
-// A message met again in a copied or branched chat (the same send time, or
-// id, and text) is counted once.
+// A message met again in a copied or branched chat (the same text and send
+// time, or the last send time before it, or id) is counted once. "봇이 넣은 입력 빼기" (on by default) leaves
+// out the user messages with no send time in a chat that has them: the input
+// box always stamps one, a bot's Lua addChat/insertChat (a clicked choice)
+// does not.
 //
 // Markers a bot or a module puts in the user's message are not counted: a
 // bracket of ASCII with no space ([SCENE_START], [ACT:card_1], [1-2]) and a
@@ -33,7 +36,7 @@
 
 (async () => {
     const OPTIONS_KEY = 'input_word_rank_options'
-    const DEFAULTS = { scope: 'char', particles: true, parens: false, english: false, exclude: '', limit: 100 }
+    const DEFAULTS = { scope: 'char', particles: true, parens: false, english: false, botInputs: true, exclude: '', limit: 100 }
     const MAX_ENTRIES = 400000 // per table; singletons are dropped past it, and the counts say "대략"
     const PHRASE_POOL = 1500
 
@@ -129,7 +132,7 @@
         const words = new Map()
         const phrases = new Map()
         const sentences = new Map()
-        const totals = { bots: 0, chats: 0, inputs: 0, copies: 0, words: 0, failed: 0, approximate: false }
+        const totals = { bots: 0, chats: 0, inputs: 0, copies: 0, botInputs: 0, words: 0, failed: 0, approximate: false }
         // A copied or branched chat keeps its messages' send times (official
         // RisuAI also their ids): the same message met again in another chat
         // is counted once. In its own chat a message is always counted.
@@ -179,15 +182,22 @@
 
         function addChat(chat) {
             const self = ++totals.chats
+            // The input box stamps a send time; a message a bot's Lua or
+            // trigger adds (a clicked choice) has none. Such a message is
+            // placed by the last send time before it, which a copy keeps too.
+            let anchor = 0
+            let gap = 0
             for (const message of Array.isArray(chat?.message) ? chat.message : []) {
+                if (message?.time) { anchor = message.time; gap = 0 } else gap++
                 if (message?.role !== 'user' || typeof message.data !== 'string' || !message.data.trim()) continue
-                const stamp = message.time ? `t${message.time}` : message.chatId ? `i${message.chatId}` : ''
+                const stamp = message.time ? `t${message.time}` : anchor ? `a${anchor}+${gap}` : message.chatId ? `i${message.chatId}` : ''
                 if (stamp) {
                     const key = `${stamp}|${hash(message.data)}`
                     const first = seen.get(key)
                     if (first !== undefined && first !== self) { totals.copies++; continue }
                     seen.set(key, self)
                 }
+                if (options.botInputs && !message.time && anchor) { totals.botInputs++; continue }
                 addMessage(message.data)
             }
         }
@@ -303,7 +313,7 @@
   <div class="head"><h2>입력 단어 순위</h2><button id="close">닫기</button></div>
   <p>내가 보낸 메시지에서 자주 쓴 단어, 표현(2~4단어), 문장을 셉니다. 채팅은 읽기만 합니다.</p>
   <div class="row">${pick('scope', 'chat', '지금 채팅')}${pick('scope', 'char', '지금 봇의 모든 채팅')}${pick('scope', 'all', '모든 봇')}</div>
-  <div class="row">${check('particles', '조사 떼기 (대략)')}${check('parens', '괄호 속 빼기 (OOC)')}${check('english', '영어 빼기')}</div>
+  <div class="row">${check('particles', '조사 떼기 (대략)')}${check('parens', '괄호 속 빼기 (OOC)')}${check('english', '영어 빼기')}${check('botInputs', '봇이 넣은 입력 빼기 (선택지)')}</div>
   <input type="text" id="exclude" placeholder="빼고 셀 단어 (쉼표나 띄어쓰기로 구분)">
   <div class="row"><button id="run" class="main">세기</button><button id="stop" disabled>멈추기</button><span id="status" class="muted"></span></div>
   <div id="out"></div>
@@ -320,6 +330,7 @@
             particles: document.querySelector('input[name=particles]').checked,
             parens: document.querySelector('input[name=parens]').checked,
             english: document.querySelector('input[name=english]').checked,
+            botInputs: document.querySelector('input[name=botInputs]').checked,
             exclude: $('exclude').value,
         })
 
@@ -350,7 +361,7 @@
             $('stop').disabled = true
             if (!counter) return
             const t = counter.totals
-            status(`${stop ? '멈춤: ' : ''}${describe(t)} · 단어 ${t.words.toLocaleString()}개${t.copies ? ` · 복사한 채팅에서 겹친 입력 ${t.copies.toLocaleString()}개는 한 번만 셈` : ''}${t.failed ? ` · 못 읽은 채팅 ${t.failed}개` : ''}${t.approximate ? ' · 양이 많아 한 번만 나온 것은 덜 셌습니다(대략)' : ''}`)
+            status(`${stop ? '멈춤: ' : ''}${describe(t)} · 단어 ${t.words.toLocaleString()}개${t.copies ? ` · 복사한 채팅에서 겹친 입력 ${t.copies.toLocaleString()}개는 한 번만 셈` : ''}${t.botInputs ? ` · 봇이 넣은 입력 ${t.botInputs.toLocaleString()}개 뺌` : ''}${t.failed ? ` · 못 읽은 채팅 ${t.failed}개` : ''}${t.approximate ? ' · 양이 많아 한 번만 나온 것은 덜 셌습니다(대략)' : ''}`)
             render(counter.results(current.limit))
         }
 

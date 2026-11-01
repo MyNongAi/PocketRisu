@@ -2470,6 +2470,7 @@
         { "file": "plugins/input-word-rank/input-word-rank.js", "contains": "if (first !== undefined && first !== self) { totals.copies++; continue }" },
         { "file": "plugins/input-word-rank/input-word-rank.js", "contains": "t.replace(JSON_OBJECT, '').replace(MARKER, ' ')" },
         { "file": "plugins/input-word-rank/input-word-rank.js", "contains": "check('english', '영어 빼기')" },
+        { "file": "plugins/input-word-rank/input-word-rank.js", "contains": "if (options.botInputs && !message.time && anchor) { totals.botInputs++; continue }" },
         { "file": "plugins/input-word-rank/input-word-rank.js", "contains": "await risuai.registerSetting('입력 단어 순위', open, '📊', 'html', 'input-word-rank')" }
       ],
       "regressionTests": []
