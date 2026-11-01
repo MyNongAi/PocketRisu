@@ -1,4 +1,4 @@
-import { allowedDbKeys, customProviderStore, getV2PluginAPIs, handlePluginInstallViaPlugin, pluginV2, type PluginV2ProviderArgument, type PluginV2ProviderOptions, type RisuPlugin } from "../plugins.svelte";
+import { allowedDbKeys, customProviderStore, getV2PluginAPIs, handlePluginInstallViaPlugin, pluginV2, type EditFunction, type PluginV2ProviderArgument, type PluginV2ProviderOptions, type RisuPlugin } from "../plugins.svelte";
 import { createPluginDigestBytes, createPluginSecureRandomBytes, SandboxHost } from "./factory";
 import { hmacSha256Portable, parseRsaPrivateKeyPkcs8Portable, signRsaPkcs1Sha256Portable, type PortableRsaPrivateKey } from "../../cryptoFallback";
 import { getCurrentChat, getDatabase, normalizeChat } from "src/ts/storage/database.svelte";
@@ -25,7 +25,7 @@ import { readPersistentJson, removePersistentKey, writePersistentJson } from "sr
 import { createPluginPermissionGate, createPluginScriptHashGetter, type PluginPermission, type PluginPermissionState } from "./pluginPermissionCache";
 import { endAllGenerations } from "src/ts/process/generationState";
 import { sendChat as processSendChat, doingChat } from "src/ts/process/index.svelte";
-import { processScriptFull } from "src/ts/process/scripts";
+import { processScriptFull, type ScriptMode } from "src/ts/process/scripts";
 import { getModelInfo } from "src/ts/model/modellist";
 import type { ModelModeExtended } from "src/ts/process/request/shared";
 import { requestChatDataMain } from "src/ts/process/request/request";
@@ -806,7 +806,10 @@ const makeRisuaiAPIV3 = (iframe:HTMLIFrameElement,plugin:RisuPlugin) => {
             registerTTSPostprocessor(func);
             addPluginUnloadCallback(plugin.name, () => unregisterTTSPostprocessor(func));
         },
-        addRisuScriptHandler: oldApis.addRisuScriptHandler,
+        addRisuScriptHandler: (name: ScriptMode, func: EditFunction) => {
+            oldApis.addRisuScriptHandler(name, func);
+            addPluginUnloadCallback(plugin.name, () => oldApis.removeRisuScriptHandler(name, func));
+        },
         removeRisuScriptHandler: oldApis.removeRisuScriptHandler,
         addRisuReplacer: async (name:string,func:Function) => {
             //permission check for replacer
