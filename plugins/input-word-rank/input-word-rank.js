@@ -1,7 +1,7 @@
 //@name input_word_rank
 //@display-name 입력 단어 순위
 //@api 3.0
-//@version 1.0.0
+//@version 1.1.0
 
 // Ranks what the user writes most: words, phrases (2 to 4 words in a row)
 // and whole sentences, counted over the user's messages in the open chat,
@@ -20,11 +20,20 @@
 // does not fit that syllable (누군가). Phrases and sentences keep the words
 // as written.
 //
+// A message met again in a copied or branched chat (the same send time, or
+// id, and text) is counted once.
+//
+// Markers a bot or a module puts in the user's message are not counted: a
+// bracket of ASCII with no space ([SCENE_START], [ACT:card_1], [1-2]) and a
+// JSON object. "영어 빼기" leaves out the words with Latin letters
+// (a phrase does not run across one) and the sentences with more Latin
+// letters than Hangul.
+//
 // The options are kept on this device (getLocalPluginStorage).
 
 (async () => {
     const OPTIONS_KEY = 'input_word_rank_options'
-    const DEFAULTS = { scope: 'char', particles: true, parens: false, exclude: '', limit: 100 }
+    const DEFAULTS = { scope: 'char', particles: true, parens: false, english: false, exclude: '', limit: 100 }
     const MAX_ENTRIES = 400000 // per table; singletons are dropped past it, and the counts say "대략"
     const PHRASE_POOL = 1500
 
@@ -33,6 +42,10 @@
     const TAG = /<[^>]*>/g
     const URL_RE = /\bhttps?:\/\/\S+/g
     const PARENS = /\([^()]*\)|（[^（）]*）|\[[^[\]]*\]/g
+    const MARKER = /\[[!-Z\\^-~]*\]/g // ASCII with no space or bracket inside
+    const JSON_OBJECT = /\{[^{}]*"\s*:[^{}]*\}/g
+    const LATIN = /[a-z]/i
+    const mostlyLatin = (sentence) => (sentence.match(/[a-z]/gi)?.length ?? 0) > (sentence.match(/[가-힣]/g)?.length ?? 0)
     const SENTENCE_BREAK = /\n+|(?<=[.!?…。！？])\s+/
     const EDGE = /^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu
     const LAUGH = /([ㅋㅎㅠㅜㄷ])\1{2,}/g
@@ -64,8 +77,10 @@
 
     function cleanText(text, dropParens) {
         let t = String(text ?? '').replace(MACRO, ' ').replace(TAG, ' ').replace(URL_RE, ' ')
+        let before
+        // Inside out: [ACT:{"id":1}] loses its object, then the marker left.
+        do { before = t; t = t.replace(JSON_OBJECT, '').replace(MARKER, ' ') } while (t !== before)
         if (dropParens) {
-            let before
             do { before = t; t = t.replace(PARENS, ' ') } while (t !== before)
         }
         return t.replace(/[*_~`#>|]+/g, ' ')
@@ -89,9 +104,22 @@
         const out = []
         for (const raw of sentence.split(/\s+/)) {
             const word = raw.replace(EDGE, '').replace(LAUGH, '$1$1$1').toLowerCase()
-            if (word && !/^\p{N}+$/u.test(word)) out.push(word)
+            if (/\p{L}/u.test(word)) out.push(word) // not 12, 1-2 or 3:00
         }
         return out
+    }
+
+    // cyrb53, a 53-bit string hash: two messages sent at the same moment are told apart by it.
+    function hash(text) {
+        let h1 = 0xdeadbeef, h2 = 0x41c6ce57
+        for (let i = 0; i < text.length; i++) {
+            const c = text.charCodeAt(i)
+            h1 = Math.imul(h1 ^ c, 2654435761)
+            h2 = Math.imul(h2 ^ c, 1597334677)
+        }
+        h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909)
+        h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909)
+        return 4294967296 * (2097151 & h2) + (h1 >>> 0)
     }
 
     const sentenceKey = (sentence) => sentence.toLowerCase().replace(LAUGH, '$1$1$1').replace(/[^\p{L}\p{N}\s]/gu, '').replace(/\s+/g, ' ').trim()
@@ -101,7 +129,11 @@
         const words = new Map()
         const phrases = new Map()
         const sentences = new Map()
-        const totals = { bots: 0, chats: 0, inputs: 0, words: 0, failed: 0, approximate: false }
+        const totals = { bots: 0, chats: 0, inputs: 0, copies: 0, words: 0, failed: 0, approximate: false }
+        // A copied or branched chat keeps its messages' send times (official
+        // RisuAI also their ids): the same message met again in another chat
+        // is counted once. In its own chat a message is always counted.
+        const seen = new Map()
 
         function prune(map, single) {
             if (map.size <= MAX_ENTRIES) return
@@ -114,19 +146,27 @@
             totals.inputs++
             for (const part of cleanText(text, options.parens).split(SENTENCE_BREAK)) {
                 const sentence = part.replace(/\s+/g, ' ').trim()
-                if (!sentence) continue
-                const tokens = tokensOf(sentence)
+                if (!sentence || (options.english && mostlyLatin(sentence))) continue
+                // Runs of words a phrase may span; with 영어 빼기 an English word ends one.
+                const runs = [[]]
+                for (const token of tokensOf(sentence)) {
+                    if (options.english && LATIN.test(token)) runs.push([])
+                    else runs.at(-1).push(token)
+                }
+                const tokens = runs.flat()
                 if (tokens.length === 0) continue
                 totals.words += tokens.length
                 for (const token of tokens) {
                     const word = options.particles ? stripParticle(token) : token
                     if (!exclude.has(word) && !exclude.has(token)) bump(words, word)
                 }
-                for (let n = 2; n <= 4; n++) {
-                    for (let i = 0; i + n <= tokens.length; i++) bump(phrases, tokens.slice(i, i + n).join(' '))
+                for (const run of runs) {
+                    for (let n = 2; n <= 4; n++) {
+                        for (let i = 0; i + n <= run.length; i++) bump(phrases, run.slice(i, i + n).join(' '))
+                    }
                 }
                 const key = sentenceKey(sentence)
-                if (key.length >= 2) {
+                if (key.length >= 2 && /\p{L}/u.test(key)) {
                     const entry = sentences.get(key)
                     if (entry) entry.n++
                     else sentences.set(key, { n: 1, text: sentence })
@@ -138,9 +178,17 @@
         }
 
         function addChat(chat) {
-            totals.chats++
+            const self = ++totals.chats
             for (const message of Array.isArray(chat?.message) ? chat.message : []) {
-                if (message?.role === 'user' && typeof message.data === 'string' && message.data.trim()) addMessage(message.data)
+                if (message?.role !== 'user' || typeof message.data !== 'string' || !message.data.trim()) continue
+                const stamp = message.time ? `t${message.time}` : message.chatId ? `i${message.chatId}` : ''
+                if (stamp) {
+                    const key = `${stamp}|${hash(message.data)}`
+                    const first = seen.get(key)
+                    if (first !== undefined && first !== self) { totals.copies++; continue }
+                    seen.set(key, self)
+                }
+                addMessage(message.data)
             }
         }
 
@@ -255,7 +303,7 @@
   <div class="head"><h2>입력 단어 순위</h2><button id="close">닫기</button></div>
   <p>내가 보낸 메시지에서 자주 쓴 단어, 표현(2~4단어), 문장을 셉니다. 채팅은 읽기만 합니다.</p>
   <div class="row">${pick('scope', 'chat', '지금 채팅')}${pick('scope', 'char', '지금 봇의 모든 채팅')}${pick('scope', 'all', '모든 봇')}</div>
-  <div class="row">${check('particles', '조사 떼기 (대략)')}${check('parens', '괄호 속 빼기 (OOC)')}</div>
+  <div class="row">${check('particles', '조사 떼기 (대략)')}${check('parens', '괄호 속 빼기 (OOC)')}${check('english', '영어 빼기')}</div>
   <input type="text" id="exclude" placeholder="빼고 셀 단어 (쉼표나 띄어쓰기로 구분)">
   <div class="row"><button id="run" class="main">세기</button><button id="stop" disabled>멈추기</button><span id="status" class="muted"></span></div>
   <div id="out"></div>
@@ -271,6 +319,7 @@
             scope: document.querySelector('input[name=scope]:checked')?.value ?? 'char',
             particles: document.querySelector('input[name=particles]').checked,
             parens: document.querySelector('input[name=parens]').checked,
+            english: document.querySelector('input[name=english]').checked,
             exclude: $('exclude').value,
         })
 
@@ -301,7 +350,7 @@
             $('stop').disabled = true
             if (!counter) return
             const t = counter.totals
-            status(`${stop ? '멈춤: ' : ''}${describe(t)} · 단어 ${t.words.toLocaleString()}개${t.failed ? ` · 못 읽은 채팅 ${t.failed}개` : ''}${t.approximate ? ' · 양이 많아 한 번만 나온 것은 덜 셌습니다(대략)' : ''}`)
+            status(`${stop ? '멈춤: ' : ''}${describe(t)} · 단어 ${t.words.toLocaleString()}개${t.copies ? ` · 복사한 채팅에서 겹친 입력 ${t.copies.toLocaleString()}개는 한 번만 셈` : ''}${t.failed ? ` · 못 읽은 채팅 ${t.failed}개` : ''}${t.approximate ? ' · 양이 많아 한 번만 나온 것은 덜 셌습니다(대략)' : ''}`)
             render(counter.results(current.limit))
         }
 
