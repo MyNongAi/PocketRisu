@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { inputVersionIndex, isRequestInput, pressedInput, recordInputEdit, recordRequestInput, recordSentRequestInput, rekeyRequestMark, requestedInputVersion, requestInputText, stepInputVersion, swipeRequestedWith, textHash } from './inputVersions'
+import { inputVersionIndex, isRequestInput, pressedInput, recordInputEdit, recordRequestInput, recordSentRequestInput, rekeyRequestMark, requestedInputVersion, requestInputText, stepInputVersion, textHash } from './inputVersions'
+import { stepSwipe } from './chatSwipes'
 
 describe('input versions', () => {
     it('keeps the sent input and each saved edit, in order', () => {
@@ -147,10 +148,26 @@ describe('a reply and its input as pairs', () => {
         expect(requestedInputVersion(reply(), { data: 'v1', nodeOnlyInputVersions: ['v1', 'v3'] })).toBeNull()
     })
 
-    it('finds the newest swipe requested with an input version', () => {
-        expect(swipeRequestedWith(reply(), 'v1')).toBe(0)
-        expect(swipeRequestedWith(reply(), 'v2')).toBe(1)
-        expect(swipeRequestedWith(reply(), 'v3')).toBe(-1)
-        expect(swipeRequestedWith({ data: 'x' }, 'v1')).toBe(-1)
+    it('follows marked reply swipes to their requested input versions', () => {
+        const r = reply()
+        const i = { ...input }
+        expect(stepSwipe(r, -1)).toBe(true)
+        i.data = requestedInputVersion(r, i) ?? i.data
+        expect([r.data, i.data]).toEqual(['first', 'v1'])
+        expect(stepSwipe(r, 1)).toBe(true)
+        i.data = requestedInputVersion(r, i) ?? i.data
+        expect([r.data, i.data]).toEqual(['second', 'v2'])
+        expect(stepSwipe(r, 1)).toBe(true)
+        i.data = requestedInputVersion(r, i) ?? i.data
+        expect([r.data, i.data]).toEqual(['third', 'v2'])
+    })
+
+    it('changes only the input when its version arrows are used', () => {
+        const r = reply()
+        const i = { ...input }
+        const shown = { data: r.data, swipeId: r.swipeId }
+        expect(stepInputVersion(i, 1)).toBe(true)
+        expect(i.data).toBe('v2')
+        expect(r).toMatchObject(shown)
     })
 })

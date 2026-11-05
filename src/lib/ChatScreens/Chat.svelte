@@ -35,7 +35,6 @@
     import { inputEchoDraft, inputEchoKey, inputEditRequest, nextReplyIndex } from "src/ts/gui/inputEcho"
     import { inputVersionIndex, isRequestInput, recordInputEdit, stepInputVersion } from "src/ts/inputVersions"
     import { recordReplyEdit } from "src/ts/chatSwipes"
-    import { getRequestPairing } from "src/ts/gui/requestPairing"
     import { isLogCapturePickingHere, isLogCaptureStart, logCapture, logCaptureMarkFor, markLogCapture } from "src/ts/gui/logCaptureState.svelte"
     import { keepInnerScroll } from "src/ts/gui/innerScrollKeeper"
     import { closeTogglePanels, looksLikeCloseControl } from "src/ts/gui/closeTogglePanels"
@@ -420,16 +419,11 @@
         return isRequestInput(reply, ownInputMessage?.data)
     })
 
-    // Turning the input's version brings its reply to the swipe requested
-    // with it (inputVersions.ts; the user's request, 2026-10-21).
-    const requestPairing = getRequestPairing()
-
     function stepOwnVersion(step: -1 | 1) {
         if (editMode) return
         const target = ownInputMessage
         if (!target || !stepInputVersion(target, step)) return
         retitleCurrentChat()
-        if (ownReplyIndex >= 0) requestPairing?.showSwipeRequestedWith(ownReplyIndex, target.data)
     }
 
     function stepEchoVersion(step: -1 | 1) {
@@ -437,7 +431,6 @@
         const target = echoTarget()
         if (!target || !stepInputVersion(target, step)) return
         retitleCurrentChat()
-        requestPairing?.showSwipeRequestedWith(idx, target.data)
     }
 
     async function copyInputEcho() {

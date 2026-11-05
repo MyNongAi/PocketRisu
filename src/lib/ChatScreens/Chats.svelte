@@ -13,7 +13,7 @@
     import { getChatAssetRenderWindow } from '../../ts/chatAssetWindow';
     import { isAtTail, lineKey, matchingLineIndex, revealScrollTop, shouldFollowTail, shouldRevealAddedMessage } from './chatViewport';
     import { chatGenKey, isChatGenerating } from 'src/ts/process/generationState';
-    import { rerollPlaceholderPages, rerollPlaceholderShows, rerollPlaceholders, stepRerollPlaceholderSwipe, type RerollPlaceholder } from 'src/ts/gui/rerollPlaceholder';
+    import { rerollPlaceholderPages, rerollPlaceholderShows, rerollPlaceholders, type RerollPlaceholder } from 'src/ts/gui/rerollPlaceholder';
     import { SWIPE_ROW_BUTTONS, buttonRows, rowAt, rowFromBottom } from 'src/ts/gui/swipeAnchor';
     import type { NewestReplyControls } from './floatingSwipe';
     
@@ -28,6 +28,7 @@
         currentCharacter,
         onReroll,
         onNextSwipe = () => {},
+        onPlaceholderSwipe = () => {},
         unReroll,
         onDeleteSwipe = () => {},
         currentUsername,
@@ -41,6 +42,7 @@
         currentCharacter: character
         onReroll: () => void
         onNextSwipe?: (index?: number) => void
+        onPlaceholderSwipe?: (chatId: string, step: -1 | 1, newHasText: boolean) => void
         unReroll: (index?: number) => void
         onDeleteSwipe?: (index?: number) => void
         currentUsername: string
@@ -128,9 +130,9 @@
         return {
             rerollIcon: 'force' as const,
             swipeOnly: true,
-            onNextSwipe: () => { stepRerollPlaceholderSwipe(placeholder.chatId, 1, newReplyHasText(placeholder)) },
+            onNextSwipe: () => { onPlaceholderSwipe(placeholder.chatId, 1, newReplyHasText(placeholder)) },
             onDeleteSwipe: () => {},
-            unReroll: () => { stepRerollPlaceholderSwipe(placeholder.chatId, -1, newReplyHasText(placeholder)) },
+            unReroll: () => { onPlaceholderSwipe(placeholder.chatId, -1, newReplyHasText(placeholder)) },
             currentPage: pages.current,
             totalPages: pages.total,
             unseenPage: false,
@@ -146,8 +148,8 @@
                 slot: placeholderIndex,
                 currentPage: pages.current,
                 totalPages: pages.total,
-                prev: () => { stepRerollPlaceholderSwipe(placeholder.chatId, -1, newReplyHasText(placeholder)) },
-                next: () => { stepRerollPlaceholderSwipe(placeholder.chatId, 1, newReplyHasText(placeholder)) },
+                prev: () => { onPlaceholderSwipe(placeholder.chatId, -1, newReplyHasText(placeholder)) },
+                next: () => { onPlaceholderSwipe(placeholder.chatId, 1, newReplyHasText(placeholder)) },
                 reroll: null,
             }
         }
@@ -265,8 +267,8 @@
                         onReroll: () => {},
                         rerollIcon: browsable ? 'force' : false,
                         swipeOnly: true,
-                        onNextSwipe: () => { stepRerollPlaceholderSwipe(placeholderChatId, 1, newReplyHasText(placeholder)) },
-                        unReroll: () => { stepRerollPlaceholderSwipe(placeholderChatId, -1, newReplyHasText(placeholder)) },
+                        onNextSwipe: () => { onPlaceholderSwipe(placeholderChatId, 1, newReplyHasText(placeholder)) },
+                        unReroll: () => { onPlaceholderSwipe(placeholderChatId, -1, newReplyHasText(placeholder)) },
                         onDeleteSwipe: () => {},
                         currentPage: pages.current,
                         totalPages: pages.total,

@@ -6,10 +6,9 @@
     import { deleteShownSwipe, dropShownSwipe, findLastReplyIndex, markErrorLikeReply, markNewSwipe, seeShownSwipe, shiftErrorMarkAfterDelete, shiftNewMarkAfterDelete, showSwipe, shownSwipeIsErrorLike, stepSwipe } from 'src/ts/chatSwipes';
     import { previousInputIndex } from 'src/ts/gui/inputEcho';
     import { boundPersona } from 'src/ts/nameOnlyPersona';
-    import { pressedInput, recordSentRequestInput, requestedInputVersion, swipeRequestedWith, type SentInput } from 'src/ts/inputVersions';
-    import { setRequestPairing } from 'src/ts/gui/requestPairing';
+    import { pressedInput, recordSentRequestInput, requestedInputVersion, type SentInput } from 'src/ts/inputVersions';
     import { mergeAuxLines } from 'src/ts/process/auxLorebook';
-    import { clearRerollPlaceholder, heldRerollSwipe, setRerollPlaceholder } from 'src/ts/gui/rerollPlaceholder';
+    import { clearRerollPlaceholder, heldRerollSwipe, rerollPlaceholders, setRerollPlaceholder, stepRerollPlaceholderSwipe } from 'src/ts/gui/rerollPlaceholder';
     import { CameraIcon, Volume2Icon, ChevronUpIcon, ChevronDownIcon, DatabaseIcon, GlobeIcon, FileTextIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ArrowLeft, ArrowRight, ZapIcon, Maximize2, Minimize2, GitBranch } from "@lucide/svelte";
     import ShDropdownMenu from 'src/lib/UI/GUI/ShDropdownMenu.svelte';
     import ShDropdownMenuTrigger from 'src/lib/UI/GUI/ShDropdownMenuTrigger.svelte';
@@ -1069,12 +1068,10 @@ import { isMobile } from 'src/ts/platform'
         DBState.db.characters[view.characterIndex].reloadKeys += 1
     }
 
-    // A reply's swipes and its input's versions go in pairs (inputVersions.ts;
-    // the user's request, 2026-10-21): the input shown is the version the
-    // shown swipe was requested with, and turning the input's version shows
-    // the newest swipe requested with it.
-    function followRequestedInput(chat: ChatData, reply: Message) {
-        const input = chat.message[previousInputIndex(chat.message, chat.message.indexOf(reply))]
+    // Browsing a marked reply swipe shows the input version used to request it.
+    // An input version arrow never moves the reply (2026-11-05).
+    function followRequestedInput(chat: ChatData, reply: Message, replyIndex = chat.message.indexOf(reply)) {
+        const input = chat.message[previousInputIndex(chat.message, replyIndex)]
         const version = requestedInputVersion(reply, input)
         if (!input || version === null || version === input.data) return
         input.data = version
@@ -1082,17 +1079,14 @@ import { isMobile } from 'src/ts/platform'
         if (character && chatTitleState(character, chat.id) === 'auto') retitleChatFromLastInput(character.chats, view.chatIndex)
     }
 
-    setRequestPairing({
-        showSwipeRequestedWith(replyIndex, input) {
-            const { chat, msg, isTarget } = swipeContext(replyIndex)
-            if (!chat || !msg || msg.role !== 'char') return
-            const page = swipeRequestedWith(msg, input)
-            if (page < 0 || page === (msg.swipeId ?? 0) || !showSwipe(msg, page)) return
-            seeShownSwipe(msg)
-            if (isTarget && !currentChatGenerating) restoreShownSwipeScriptstate(chat, msg)
-            DBState.db.characters[view.characterIndex].reloadKeys += 1
-        },
-    })
+    function switchPlaceholderSwipe(chatId: string, step: -1 | 1, newHasText: boolean) {
+        if (!stepRerollPlaceholderSwipe(chatId, step, newHasText)) return
+        const placeholder = get(rerollPlaceholders).get(chatId)
+        const chat = DBState.db.characters[view.characterIndex]?.chats?.[view.chatIndex]
+        if (placeholder && chat?.id === chatId && !placeholder.showingNew) {
+            followRequestedInput(chat, placeholder.message, placeholder.index)
+        }
+    }
 
     /** After a send: mark its reply when it looks like an error (chatSwipes.ts). */
     function markGeneratedReply(target: GenerationTargetIdentity, startedAt: number) {
@@ -2160,6 +2154,7 @@ import { isMobile } from 'src/ts/platform'
                 loadPages={loadPages}
                 onReroll={reroll}
                 onNextSwipe={nextSwipe}
+                onPlaceholderSwipe={switchPlaceholderSwipe}
                 onDeleteSwipe={deleteSwipe}
                 unReroll={unReroll}
                 currentCharacter={currentCharacter}
