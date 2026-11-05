@@ -333,7 +333,7 @@ export const helpEn = {
             "- 🌙 'tag again' in the message menu: a reply's menu (☰) gets a 🌙 that takes the reply's earlier tags out and places them afresh. Drawn illustrations stay.\n" +
             "- Saved per bot. A bot with no 🌙 entry is left alone.",
         editMode:
-            "Lets an AI edit bots and modules. Pick who edits; off by default.\n\n" +
+            "Lets an AI edit bots and modules. Open the row for an on switch and who edits (built-in / Codex / Claude Code / Antigravity). Off by default; a choice made while off is used when it is switched on.\n\n" +
             "- Off: nobody edits. A connected app outside that calls the tools is told the edit mode is off.\n" +
             "- Built-in: this chat's model edits through the chat, with Risu's built-in Risu Access MCP (below).\n" +
             "- Codex / Claude Code / Antigravity: talk to that app in the app itself, and it edits through the PocketRisu MCP server. Put the setting shown below into the app once. The server's token stays when you pick Off. While this is on, any app connected to the server can edit. The apps' backups and undo are one for all of Risu, not this chat's.\n" +

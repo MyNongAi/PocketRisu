@@ -1,13 +1,14 @@
 <script lang="ts">
     // The bot edit mode's row in the sidebar (editMode.ts; the user's choices,
-    // 2026-10-28 and 2026-11-01). The dropdown picks who edits: nobody (the
-    // default), this chat's model through the Risu Access module, which the
-    // module menu moves too, as 🎨 and its module, or Codex, Claude Code or
-    // Antigravity from their own app through the PocketRisu MCP server. Below
-    // it: whether a write is asked for, what can be undone, the undo, and for
-    // an app what to put into it.
+    // 2026-10-28, 2026-11-01 and 2026-11-05). The row opens like a dropdown:
+    // inside, an on switch (off by default) and who edits: this chat's model
+    // through the Risu Access module, which the module menu moves too, as 🎨
+    // and its module, or Codex, Claude Code or Antigravity from their own app
+    // through the PocketRisu MCP server. Picked while off, the choice waits for
+    // the switch. Below them: whether a write is asked for, what can be
+    // undone, the undo, and for an app what to put into it.
     import { untrack } from 'svelte'
-    import { CopyIcon } from '@lucide/svelte'
+    import { ChevronDownIcon, CopyIcon } from '@lucide/svelte'
     import { language } from 'src/lang'
     import type { Chat, character as Bot } from 'src/ts/storage/database.svelte'
     import { DBState } from 'src/ts/stores.svelte'
@@ -25,7 +26,24 @@
     import SelectInput from '../UI/GUI/SelectInput.svelte'
     import OptionInput from '../UI/GUI/OptionInput.svelte'
     import ShButton from '../UI/GUI/ShButton.svelte'
+    import ShSwitch from '../UI/GUI/ShSwitch.svelte'
     import Help from '../Others/Help.svelte'
+
+    type Engine = Exclude<EditModeChoice, 'off'>
+    // The choice made while the switch is off, kept on this device.
+    const ENGINE_KEY = 'risu-edit-mode-engine'
+
+    function loadEngine(): Engine {
+        try {
+            const saved = localStorage.getItem(ENGINE_KEY)
+            if (saved === 'builtin' || (EXTERNAL_EDIT_APPS as readonly string[]).includes(saved ?? '')) return saved as Engine
+        } catch { /* storage off */ }
+        return 'builtin'
+    }
+
+    function saveEngine(next: Engine) {
+        try { localStorage.setItem(ENGINE_KEY, next) } catch { /* storage off */ }
+    }
 
     interface Props {
         character: Bot
@@ -55,9 +73,16 @@
         antigravity: () => language.externalMcpAntigravityHint,
     }
 
+    let open = $state(false)
+    let engine = $state<Engine>(loadEngine())
+    let shownEngine = $derived<Engine>(choice === 'off' ? engine : choice)
+
+    function engineLabel(value: Engine): string {
+        return value === 'builtin' ? language.editModeChoiceBuiltin : externalEditAppLabel(value)
+    }
+
     // Read when shown: the sidebar can mount before the app language is set.
-    const choices = (): { value: EditModeChoice, label: string }[] => [
-        { value: 'off', label: language.editModeChoiceOff },
+    const engines = (): { value: Engine, label: string }[] => [
         { value: 'builtin', label: language.editModeChoiceBuiltin },
         // The MCP server is the node server's.
         ...(isNodeServer || app ? EXTERNAL_EDIT_APPS.map((value) => ({ value, label: externalEditAppLabel(value) })) : []),
@@ -129,22 +154,54 @@
         }
     }
 
+    /** The switch: on runs the chosen way, off stops whichever is on and keeps it chosen. */
+    function toggle(checked: boolean) {
+        if (!checked && choice !== 'off') {
+            engine = choice
+            saveEngine(choice)
+        }
+        void pick(checked ? engine : 'off')
+    }
+
+    /** Who edits: on, it switches right away; off, it waits for the switch. */
+    function pickEngine(next: Engine) {
+        engine = next
+        saveEngine(next)
+        if (choice !== 'off') void pick(next)
+    }
 </script>
 
 <div class="w-full flex mt-2 flex-col gap-1 rounded-md px-1">
-    <span class="flex items-center gap-1 min-w-0">
-        <span class="break-words">{language.editModeToggle}</span>
+    <div class="flex items-center gap-1 min-w-0 min-h-10">
+        <button type="button" class="flex min-w-0 grow items-center gap-1 text-left" aria-expanded={open} data-edit-mode-open onclick={() => { open = !open }}>
+            <ChevronDownIcon size={16} class={'shrink-0 transition-transform ' + (open ? '' : '-rotate-90')} />
+            <span class="shrink-0 whitespace-nowrap">{language.editModeToggle}</span>
+            <span class="ml-1 min-w-0 truncate text-xs" class:text-textcolor2={choice === 'off'} class:text-primary={choice !== 'off'}>
+                {choice === 'off' ? language.editModeChoiceOff : choice === 'builtin' ? language.editModeBuiltinShort : engineLabel(choice)}
+            </span>
+        </button>
         <Help key="editMode" />
-    </span>
-    {#key selectKey}
-        <SelectInput className="w-full" value={choice} onchange={(e) => { void pick(e.currentTarget.value as EditModeChoice) }}>
-            {#each choices() as option (option.value)}
-                <OptionInput value={option.value}>{option.label}</OptionInput>
-            {/each}
-        </SelectInput>
-    {/key}
+    </div>
+    {#if open}
+        <div class="flex items-center justify-between gap-2 pl-5">
+            <span>{language.editModeEnabled}</span>
+            {#key selectKey}
+                <ShSwitch className="shrink-0" checked={choice !== 'off'} disabled={busy} onCheckedChange={toggle} />
+            {/key}
+        </div>
+        <div class="flex flex-col gap-1 pl-5 text-sm">
+            <span class="text-textcolor2">{language.editModeEngine}</span>
+            {#key selectKey}
+                <SelectInput className="w-full" value={shownEngine} onchange={(e) => pickEngine(e.currentTarget.value as Engine)}>
+                    {#each engines() as option (option.value)}
+                        <OptionInput value={option.value}>{option.label}</OptionInput>
+                    {/each}
+                </SelectInput>
+            {/key}
+        </div>
+    {/if}
 </div>
-{#if on || app}
+{#if open && (on || app)}
     <div class="flex w-full flex-col gap-2 rounded-md border border-darkborderc p-2 text-sm" data-edit-mode={choice}>
         {#if block}
             <span class="break-words text-yellow-500">{toolBlockText(block)}</span>
