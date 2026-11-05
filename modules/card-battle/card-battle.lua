@@ -24,9 +24,15 @@
 -- of their own, the button handler pausing between them. The first fight
 -- puts a signature card in the deck, written by the auxiliary model or made
 -- by hand in the window; a beaten enemy can be taken as a card.
+--
+-- 1.0 puts creatures on a field of three lanes a side. A creature card (a
+-- summon card, the signature card, a beaten enemy's card) stays in a lane,
+-- standing on its card, and fights until its health runs out; the enemy
+-- calls creatures of its own and looks a couple of rounds ahead before it
+-- picks its next move and its creatures' targets.
 
 local CB = {}
-CB.VERSION = '0.7.0'
+CB.VERSION = '1.0.0'
 
 ------------------------------------------------------------------------------
 -- Small helpers
@@ -98,6 +104,10 @@ CB.EFFECTS = {
     { key = 'dex', max = 3, points = 6 },         -- every block card blocks that much more, all fight
     { key = 'charge', max = 2, points = 3.5 },    -- energy next turn
     { key = 'prepare', max = 3, points = 3 },     -- cards drawn next turn
+    -- A creature: summon is its health, power its attack (only with summon).
+    -- It stays in a lane and attacks every turn, so attack costs most.
+    { key = 'summon', max = 30, points = 1, creature = true },
+    { key = 'power', max = 12, points = 3.5, creature = true },
     { key = 'hpCost', max = 12, points = -0.8 },  -- hit points paid to play it, which pay for the rest
     { key = 'pierce', flag = true, ofDamage = 0.25 }, -- its damage goes through block
     { key = 'drain', flag = true, ofDamage = 0.5 },   -- heals the damage that got through
@@ -146,7 +156,13 @@ function CB.isAttack(card)
     return (card.fx or {}).dmg ~= nil
 end
 
-function CB.effectText(card)
+--- Whether a card puts a creature on the field.
+function CB.isCreature(card)
+    return type(card) == 'table' and (card.fx or {}).summon ~= nil
+end
+
+--- What a card does, the creature left out (its face shows that apart).
+function CB.arrivalText(card)
     local fx, parts = card.fx or {}, {}
     if fx.hpCost then parts[#parts + 1] = '체력 ' .. fx.hpCost .. ' 소모' end
     if fx.dmg then
@@ -172,8 +188,16 @@ function CB.effectText(card)
     return table.concat(parts, ', ')
 end
 
+function CB.effectText(card)
+    local fx = card.fx or {}
+    local rest = CB.arrivalText(card)
+    if not fx.summon then return rest end
+    return '생물 ' .. (fx.power or 0) .. '/' .. fx.summon .. (rest ~= '' and (', ' .. rest) or '')
+end
+
 -- What the card window explains when a card with these is lifted.
 CB.KEYWORD_HELP = {
+    summon = '생물: 비어 있는 내 레인에 남아 싸웁니다(앞 숫자는 공격력, 뒤는 체력). 체력이 0이 되면 버린 더미로 가고, 전투가 끝나면 덱으로 돌아옵니다.',
     poison = '독: 적이 자기 턴을 시작할 때 그만큼 체력을 잃고, 독은 1 줄어듭니다.',
     thorns = '가시: 이번 전투 동안 나를 때릴 때마다 그만큼 되돌려 줍니다.',
     armor = '매 턴 방어: 이번 전투 동안 내 턴이 끝날 때마다 방어를 얻습니다.',
@@ -186,7 +210,7 @@ CB.KEYWORD_HELP = {
 
 function CB.keywordHelp(card)
     local lines = {}
-    for _, key in ipairs({ 'poison', 'thorns', 'armor', 'dex', 'pierce', 'drain', 'retain', 'exhaust' }) do
+    for _, key in ipairs({ 'summon', 'poison', 'thorns', 'armor', 'dex', 'pierce', 'drain', 'retain', 'exhaust' }) do
         if (card.fx or {})[key] then lines[#lines + 1] = CB.KEYWORD_HELP[key] end
     end
     return lines
@@ -202,6 +226,14 @@ function CB.cleanCard(raw, slot)
     local name = CB.clip(CB.trim(raw.name), 14)
     if name == '' then return nil end
     local source = type(raw.effects) == 'table' and raw.effects or (type(raw.fx) == 'table' and raw.fx or {})
+    -- A creature comes as summon = { atk, hp } (how the writers are asked
+    -- for it) or as the two numbers the module keeps.
+    if type(source.summon) == 'table' then
+        local creature = source.summon
+        source = CB.copy(source)
+        source.summon = creature.hp or creature.health
+        source.power = source.power or creature.atk or creature.attack
+    end
     local fx = {}
     for _, effect in ipairs(CB.EFFECTS) do
         local value = source[effect.key]
@@ -217,6 +249,8 @@ function CB.cleanCard(raw, slot)
     end
     if fx.hits and (not fx.dmg or fx.hits == 1) then fx.hits = nil end
     if not fx.dmg then fx.pierce, fx.drain = nil, nil end
+    -- Attack needs a creature; a creature leaves the fight only by falling.
+    if not fx.summon then fx.power = nil else fx.exhaust = nil end
     if not CB.hasEffect(fx) then return nil end
     local rarity = (slot and slot.rarity) or raw.rarity
     if not CB.RARITY_SCALE[rarity] then rarity = 'common' end
@@ -253,8 +287,11 @@ function CB.cleanCard(raw, slot)
     end
     if fx.hits and (not fx.dmg or fx.hits <= 1) then fx.hits = nil end
     if not fx.dmg then fx.pierce, fx.drain = nil, nil end
+    if not fx.summon then fx.power = nil end
     if not CB.hasEffect(fx) or CB.points(fx) > CB.budget(cost, rarity, fx) then return nil end
-    return { name = name, cost = cost, fx = fx, rarity = rarity, desc = CB.clip(CB.trim(raw.desc), 60) }
+    -- A creature card may name the figure it stands as (CB.ART).
+    local art = fx.summon and CB.artKey(raw.art) or nil
+    return { name = name, cost = cost, fx = fx, rarity = rarity, desc = CB.clip(CB.trim(raw.desc), 60), art = art }
 end
 
 --- What a card keeps through cleanCard, which only knows effects: whether it
@@ -295,6 +332,9 @@ CB.POOL = {
         { name = '가시 갑옷', cost = 1, fx = { thorns = 3 }, desc = '건드리면 다친다.' },
         { name = '피의 일격', cost = 1, fx = { dmg = 12, hpCost = 3 }, desc = '내 피로 값을 치른다.' },
         { name = '꿰뚫기', cost = 1, fx = { dmg = 7, pierce = 1 }, desc = '방패 틈으로 찔러 넣는다.' },
+        { name = '새싹 기사', cost = 1, fx = { summon = 3, power = 2 }, art = 'sprout', desc = '작은 잎 방패를 들고 앞에 선다.' },
+        { name = '불도마뱀', cost = 2, fx = { summon = 5, power = 3, dmg = 2 }, art = 'salamander', desc = '나오자마자 불을 뿜는다.' },
+        { name = '돌방패 거북', cost = 1, fx = { summon = 6, power = 1 }, art = 'turtle', desc = '느리지만 무엇이든 받아 낸다.' },
     },
     rare = {
         { name = '회오리 베기', cost = 2, fx = { dmg = 6, hits = 3 }, desc = '몸을 돌려 연달아 벤다.' },
@@ -305,6 +345,8 @@ CB.POOL = {
         { name = '철갑 두르기', cost = 1, fx = { armor = 3 }, desc = '한 겹씩 단단해진다.' },
         { name = '숨겨 둔 수', cost = 1, fx = { block = 6, charge = 1 }, desc = '지금은 막고, 다음에 몰아친다.' },
         { name = '맹독', cost = 2, fx = { poison = 9 }, desc = '천천히, 그러나 확실하게.' },
+        { name = '수정 여우', cost = 1, fx = { summon = 5, power = 2 }, art = 'fox', desc = '푸른 결정 꼬리가 길을 밝힌다.' },
+        { name = '폭풍 올빼미', cost = 2, fx = { summon = 7, power = 4 }, art = 'owl', desc = '바람을 타고 내리꽂힌다.' },
     },
     epic = {
         { name = '결전', cost = 2, fx = { dmg = 18, vuln = 2 }, desc = '모든 것을 건 일격.' },
@@ -313,18 +355,29 @@ CB.POOL = {
         { name = '최후의 일격', cost = 1, fx = { dmg = 22, exhaust = 1 }, desc = '두 번은 없다.' },
         { name = '날렵한 몸놀림', cost = 1, fx = { dex = 2 }, desc = '흘려 넘기는 법을 안다.' },
         { name = '반격의 가시', cost = 2, fx = { thorns = 4, block = 10 }, desc = '막는 순간이 곧 반격이다.' },
+        { name = '달빛 해파리', cost = 2, fx = { summon = 9, power = 3, heal = 5 }, art = 'jelly', desc = '은은한 빛이 상처를 감싼다.' },
     },
 }
 
+--- A card from the pool; a slot that asks for a creature (or the signature
+--- card, always one) takes one of the pool's creatures.
 function CB.poolCard(run, slot)
     local list = CB.POOL[slot.rarity] or CB.POOL.common
+    if slot.creature or slot.sig then
+        local creatures = {}
+        for _, card in ipairs(list) do
+            if card.fx.summon then creatures[#creatures + 1] = card end
+        end
+        if #creatures > 0 then list = creatures end
+    end
     local card = CB.copy(list[CB.rand(run, #list)])
     card.rarity = slot.rarity
     return CB.cleanCard(card, { rarity = slot.rarity, cost = card.cost })
 end
 
 --- The three cards a level up offers: a rarity (heroic from level 3) and a
---- cost for each, which the writer fills in.
+--- cost for each, which the writer fills in. Half the time one of them is
+--- asked as a creature card.
 function CB.rollSlots(run)
     local slots = {}
     for i = 1, 3 do
@@ -336,6 +389,11 @@ function CB.rollSlots(run)
         if rarity == 'epic' and cost == 0 then cost = 1 end
         slots[i] = { rarity = rarity, cost = cost }
     end
+    if CB.rand(run) < 0.5 then
+        local slot = slots[CB.rand(run, 3)]
+        slot.creature = true
+        if slot.cost == 0 then slot.cost = 1 end
+    end
     return slots
 end
 
@@ -345,9 +403,12 @@ function CB.slotText(slots)
         local what = ''
         if slot.sig then
             what = 'the signature card of this story, the one move that most belongs to it (the player\'s own skill, weapon or power, or what the story\'s main character does for them); '
+                .. 'it is a creature card: summon is the player\'s own figure on the field, and it may have other effects too; '
         elseif slot.foe then
-            what = string.format('the enemy just beaten, "%s", turned into a card the player can now use: its own signature move (in the fight it did: %s); ',
+            what = string.format('the enemy just beaten, "%s", turned into a creature card the player can now summon: summon with its attack and health, and it may add a small effect of its own (in the fight it did: %s); ',
                 slot.foe.name, slot.foe.moves or '')
+        elseif slot.creature then
+            what = 'a creature card (with summon, and an art key); '
         end
         lines[i] = string.format('card %d: %srarity %s, cost %d, about %d points', i, what, slot.rarity, slot.cost,
             math.floor(CB.budget(slot.cost, slot.rarity) / CB.SLACK))
@@ -356,7 +417,7 @@ function CB.slotText(slots)
 end
 
 CB.CARD_RULES = table.concat({
-    'Each card is JSON: {"name": short name in the story\'s language (12 characters at most), "effects": {...}, "desc": one short line of flavour}.',
+    'Each card is JSON: {"name": short name in the story\'s language (12 characters at most), "effects": {...}, "desc": one short line of flavour, "art": only for a creature card}.',
     'Effects (points per unit): dmg = damage to the enemy (1), hits = how many times dmg lands (multiplies dmg), block = blocks damage this turn (1),',
     'weak = enemy deals 25% less for that many turns (3), vuln = enemy takes 50% more for that many turns (3), str = +1 damage per hit for the rest of the fight (6),',
     'draw = draw cards (4), energy = gain energy this turn (5), heal = restore hit points (1.5),',
@@ -368,6 +429,18 @@ CB.CARD_RULES = table.concat({
     'Use only these; anything else is dropped. A card can combine a few of them.',
     'Keep each card near its points. Make them fit this story: its people, their skills, items, moments and relationships.',
 }, '\n')
+
+--- The rules with creature cards: what summon is, and the figures a
+--- creature card may stand as (only those the module has art for).
+function CB.cardRules()
+    local figures = {}
+    for _, row in ipairs(CB.artRows('ally')) do figures[#figures + 1] = row.key .. ' (' .. row.about .. ')' end
+    return CB.CARD_RULES .. '\n' .. table.concat({
+        'Creature cards: "summon": {"atk": attack, "hp": health} puts a creature on an empty lane of the player\'s field (three lanes); it stays, attacks every turn and fights until its health runs out (attack 3.5 points each, health 1 point each).',
+        'A creature card may have other effects too, which happen when it is played. Give a creature card "art", the figure it stands as: '
+            .. table.concat(figures, ', ') .. '; leave art out when none fits.',
+    }, '\n')
+end
 
 --- The cards in an answer: the first [...] in it, one per slot, each made
 --- safe; a slot the answer does not fill takes a pool card (a beaten
@@ -396,6 +469,8 @@ function CB.parseCards(run, text, slots)
             card.art = slot.foe.card and slot.foe.card.art
         end
         if slot.sig then card.sig = true end
+        -- The signature card and a beaten enemy always stand on the field.
+        if slot.sig or slot.foe then card = CB.asCreature(card) end
         cards[i] = card
     end
     return cards, written, wrote
@@ -416,13 +491,7 @@ end
 -- A beaten enemy's card is as rare as the enemy was strong.
 CB.FOE_RARITY = { normal = 'common', elite = 'rare', boss = 'epic' }
 
---- An enemy's move as card effects: what it did to the player, the card
---- does to the enemy.
-function CB.moveEffects(move)
-    return { dmg = move.atk, hits = (move.n or 1) > 1 and move.n or nil, block = move.def, str = move.str,
-        weak = move.weak, vuln = move.vuln, poison = move.poison, thorns = move.thorns }
-end
-
+--- What an enemy did, for a card writer making its card.
 function CB.movesText(moves)
     local list = {}
     for _, move in ipairs(moves or {}) do
@@ -434,26 +503,64 @@ function CB.movesText(moves)
         if move.poison then parts[#parts + 1] = 'poison ' .. move.poison end
         if move.weak then parts[#parts + 1] = 'weak ' .. move.weak end
         if move.vuln then parts[#parts + 1] = 'vulnerable ' .. move.vuln end
+        if move.summon then parts[#parts + 1] = 'calls a creature (' .. tostring(move.summon) .. ')' end
         list[#list + 1] = table.concat(parts, ' + ')
     end
     return table.concat(list, '; ')
 end
 
---- A beaten enemy as a card the module makes itself: its strongest move,
---- named after it, with its face.
-function CB.foeCard(name, tier, moves, art)
-    local best, worth = nil, -1
-    for _, move in ipairs(moves or {}) do
-        local fx = CB.moveEffects(move)
-        local w = CB.points(fx)
-        if w > worth then best, worth = fx, w end
-    end
-    local card = CB.cleanCard({ name = name, effects = best or { dmg = 6 }, desc = '쓰러뜨린 적이 이제 내 편에서 싸운다.' },
-        { rarity = CB.FOE_RARITY[tier] or 'common', cost = 1 })
+-- What a beaten enemy's creature costs at level 1; every three levels it
+-- costs one more (to 3), and its attack and health are what that pays for.
+CB.FOE_COST = { normal = 1, elite = 2, boss = 2 }
+
+--- A beaten enemy's creature by its tier and the level it was beaten at:
+--- the effects (about seven parts of ten in attack), the cost, the rarity.
+function CB.foeStats(tier, level)
+    local rarity = CB.FOE_RARITY[tier] or 'common'
+    local cost = math.min(3, (CB.FOE_COST[tier] or 1) + math.floor((math.max(1, level or 1) - 1) / 3))
+    local room = math.floor(CB.budget(cost, rarity))
+    local power = math.max(1, math.floor(room * 0.7 / 3.5))
+    local summon = math.max(1, math.floor(room - power * 3.5))
+    return { summon = summon, power = power }, cost, rarity
+end
+
+--- A beaten enemy as a card the module makes itself: a creature as strong
+--- as the enemy's tier and level, named after it, with its face. moves are
+--- what it did (for a card writer, CB.movesText).
+function CB.foeCard(name, tier, moves, art, level)
+    local fx, cost, rarity = CB.foeStats(tier, level)
+    local card = CB.cleanCard({ name = name, effects = fx, desc = '쓰러뜨린 적이 이제 내 편에서 싸운다.' }, { rarity = rarity, cost = cost })
     if not card then return nil end
     card.foe, card.glyph = true, CB.foeGlyph(name, tier)
     card.art = CB.foeArt(name, art) or CB.artKey(art)
     return card
+end
+
+--- A card made a creature (a signature or enemy card written without
+--- summon, or one from before 1.0): at the same cost, three fifths of what
+--- it may carry go to the creature and its other effects shrink to the
+--- rest. A card that has a creature already comes back as it is.
+function CB.asCreature(card)
+    if type(card) ~= 'table' or CB.isCreature(card) then return card end
+    local room = CB.budget(card.cost or 1, card.rarity)
+    local share = room * 0.6
+    local power = math.max(1, math.floor(share * 0.5 / 3.5))
+    local summon = math.max(2, math.floor(share - power * 3.5))
+    local fx = CB.copy(card.fx or {})
+    fx.exhaust = nil
+    local left, rest = room - (power * 3.5 + summon), CB.points(fx)
+    if rest > left then
+        for _, effect in ipairs(CB.EFFECTS) do
+            local value = fx[effect.key]
+            if value and (effect.points or 0) > 0 and not effect.flag then
+                value = math.floor(value * math.max(0, left) / rest)
+                fx[effect.key] = value >= 1 and value or nil
+            end
+        end
+    end
+    fx.summon, fx.power = summon, power
+    local made = CB.cleanCard({ name = card.name, effects = fx, desc = card.desc, art = card.art }, { rarity = card.rarity, cost = card.cost })
+    return CB.keepTags(made, card) or card
 end
 
 --- A card as the signature form holds it.
@@ -465,7 +572,7 @@ end
 CB.EFFECT_LABEL = {
     dmg = '피해', hits = '타수 (피해 횟수)', block = '방어', weak = '약화', vuln = '취약', str = '힘', draw = '카드 뽑기',
     energy = '에너지', heal = '회복', poison = '독', thorns = '가시', armor = '매 턴 방어', dex = '민첩',
-    charge = '다음 턴 에너지', prepare = '다음 턴 카드', hpCost = '체력 소모',
+    charge = '다음 턴 에너지', prepare = '다음 턴 카드', hpCost = '체력 소모', summon = '생물 체력', power = '생물 공격력',
 }
 CB.FLAG_LABEL = { pierce = '방어 무시', drain = '흡혈', retain = '보존', exhaust = '소멸' }
 CB.FLAG_ORDER = { 'pierce', 'drain', 'retain', 'exhaust' }
@@ -481,16 +588,27 @@ function CB.formCard(field)
     for _, key in ipairs(CB.FLAG_ORDER) do
         if field(key) ~= '' then raw.effects[key] = true end
     end
+    -- The creature: its attack (ca) and health (ch).
+    local atk, hp = tonumber(field('ca')), tonumber(field('ch'))
+    if (hp and hp >= 1) or (atk and atk >= 1) then
+        raw.effects.summon = math.max(1, math.floor(hp or 1))
+        raw.effects.power = atk and math.floor(atk) or nil
+    end
     return raw
 end
 
---- The signature card made by hand (a rare card), and what the module had
---- to change so it fits; nil and why when nothing usable is left.
+--- The signature card made by hand (a rare creature card), and what the
+--- module had to change so it fits; nil and why when nothing usable is left.
+--- Left without attack and health, the creature gets what the cost pays for.
 function CB.handCard(raw)
     local card = CB.cleanCard(raw, { rarity = 'rare', cost = raw.cost })
     if not card then return nil, '이름과 피해·방어 같은 효과가 하나는 있어야 합니다.' end
     card.sig = true
     local notes = {}
+    if not CB.isCreature(card) then
+        card = CB.asCreature(card)
+        notes[#notes + 1] = '생물 능력치를 정했습니다 (공격 ' .. (card.fx.power or 0) .. ' · 체력 ' .. card.fx.summon .. ')'
+    end
     local asked = math.max(0, math.min(3, raw.cost or 1))
     if card.cost ~= asked then notes[#notes + 1] = '비용 ' .. asked .. ' → ' .. card.cost end
     for _, effect in ipairs(CB.EFFECTS) do
@@ -511,25 +629,113 @@ CB.TIER_LABEL = { normal = '일반', elite = '정예', boss = '보스' }
 CB.XP = { normal = 1, elite = 2, boss = 3 }
 CB.XP_PER_LEVEL = 2
 
--- Each enemy repeats its moves in order, from a random first one. A move
--- may defend (def), attack (atk, n times), grow stronger (str) and weaken
--- (weak) or expose (vuln) the player. The numbers grow with the level.
+-- Each enemy goes through its moves in order, from a random first one (it
+-- may make the next one first, see CB.planMove). A move may defend (def),
+-- attack (atk, n times), grow stronger (str), weaken (weak) or expose
+-- (vuln) the player, and call a creature to its lanes (summon, a minion of
+-- CB.ART). The numbers grow with the level.
 CB.ENEMIES = {
     normal = {
         { name = '적', hp = 42, moves = { { atk = 7 }, { atk = 4, n = 2 }, { def = 6, atk = 5 } } },
-        { name = '적', hp = 46, moves = { { def = 8 }, { atk = 9 }, { weak = 2, atk = 4 } } },
+        { name = '적', hp = 46, moves = { { def = 8 }, { atk = 9 }, { summon = 'moth' }, { weak = 2, atk = 4 } } },
         { name = '적', hp = 38, moves = { { str = 2 }, { atk = 6 }, { atk = 6 } } },
-        { name = '적', hp = 40, moves = { { poison = 3 }, { atk = 6 }, { atk = 5, poison = 1 } } },
+        { name = '적', hp = 40, moves = { { poison = 3 }, { summon = 'imp' }, { atk = 6 }, { atk = 5, poison = 1 } } },
     },
     elite = {
-        { name = '강적', hp = 72, moves = { { atk = 12 }, { atk = 5, n = 3 }, { str = 3, def = 8 }, { vuln = 2, atk = 6 } } },
+        { name = '강적', hp = 72, moves = { { atk = 12 }, { atk = 5, n = 3 }, { summon = 'imp' }, { str = 3, def = 8 }, { vuln = 2, atk = 6 } } },
         { name = '강적', hp = 80, moves = { { def = 12, atk = 6 }, { atk = 15 }, { weak = 2, vuln = 1 } } },
-        { name = '강적', hp = 76, moves = { { thorns = 3, def = 10 }, { atk = 11 }, { atk = 4, n = 3 } } },
+        { name = '강적', hp = 76, moves = { { thorns = 3, def = 10 }, { summon = 'golem', def = 6 }, { atk = 11 }, { atk = 4, n = 3 } } },
     },
     boss = {
-        { name = '우두머리', hp = 130, moves = { { str = 2, def = 12 }, { atk = 16 }, { atk = 6, n = 3 }, { weak = 2, vuln = 2 }, { atk = 22 } } },
+        { name = '우두머리', hp = 130, moves = { { str = 2, def = 12 }, { atk = 16 }, { summon = 'imp' }, { atk = 6, n = 3 }, { weak = 2, vuln = 2 }, { summon = 'golem', def = 8 }, { atk = 22 } } },
     },
 }
+
+-- How much stronger an elite's or a boss's minions are: health times hp,
+-- attack plus atk. Level adds a fifth of health a level and an attack
+-- every two, as it does to the enemy itself.
+CB.TIER_MINION = { normal = { hp = 1, atk = 0 }, elite = { hp = 1.4, atk = 1 }, boss = { hp = 1.8, atk = 2 } }
+
+--- The creature an enemy calls with summon = key, as strong as the enemy's
+--- tier and level. It is never the enemy's own figure: then the next
+--- minion of CB.ART comes instead.
+function CB.minion(b, key)
+    local rows = CB.artRows('minion', true)
+    local at = 1
+    for i, row in ipairs(rows) do
+        if row.key == key then at = i end
+    end
+    local row = rows[at]
+    if row and #rows > 1 and CB.foeArt(b.name, b.art, true) == row.key then row = rows[at % #rows + 1] end
+    local base = (row and row.minion) or { name = '하수인', atk = 2, hp = 6 }
+    local tier = CB.TIER_MINION[b.tier] or CB.TIER_MINION.normal
+    local level = math.max(1, b.level or 1)
+    local hp = math.max(1, math.floor(base.hp * tier.hp * (1 + 0.2 * (level - 1))))
+    return { name = base.name, art = row and row.key, atk = base.atk + tier.atk + math.floor((level - 1) / 2), hp = hp, maxHp = hp, minion = true }
+end
+
+------------------------------------------------------------------------------
+-- Art
+------------------------------------------------------------------------------
+
+-- Every figure the module knows, one row each: its key, its file in art/
+-- (shipped as the module asset cb-art-<file>), what it is (for the models),
+-- its kind (enemy: a foe the main model may name in <battle art>; minion:
+-- what an enemy may call to its lanes, with its numbers; ally: a creature
+-- card's figure), the words in an enemy's name that pick it, a glyph for
+-- when there is no picture, and the attribute its creature card shows.
+-- New art: drop the webp into art/ and add a row here. A row whose file is
+-- not in the module falls back as a missing override does (CB.hasArt).
+CB.ART = {
+    -- Checked in this order for an enemy's name: the wizard before the
+    -- magician, who also answers to wizard when there is no wizard art.
+    { key = 'wizard', file = 'foe-wizard', kind = 'enemy', about = 'robed old wizard or sorcerer', glyph = '🧙', attr = 'dark',
+        words = { 'wizard', 'sorcerer', 'warlock', '마도사', '흑마법사' } },
+    { key = 'magician', file = 'foe-magician', kind = 'enemy', about = 'apprentice magician girl', glyph = '🧙', attr = 'light',
+        words = { 'magician', 'wizard', 'mage', '마법사', '마술사' } },
+    { key = 'maid', file = 'foe-maid', kind = 'enemy', about = 'dragon maid', glyph = '🧹', attr = 'fire', words = { 'maid', '메이드', '하녀' } },
+    { key = 'pitcher', file = 'foe-pitcher', kind = 'enemy', about = 'carnivorous-plant girl', glyph = '🌺', attr = 'leaf',
+        words = { 'pitcher', 'carnivorous', '식충', '벌레잡이', '네펜데스' } },
+    { key = 'yokai', file = 'foe-yokai', kind = 'enemy', about = 'umbrella-spirit girl', glyph = '☂️', attr = 'dark', words = { 'yokai', 'umbrella', '요괴', '우산' } },
+    { key = 'golem', file = 'foe-golem', kind = 'enemy minion', about = 'moss stone golem', glyph = '🗿', attr = 'earth', words = { 'golem', '골렘' },
+        minion = { name = '이끼 골렘', atk = 1, hp = 11 } },
+    { key = 'imp', file = 'foe-imp', kind = 'enemy minion', about = 'ember imp', glyph = '👹', attr = 'fire', words = { 'imp', '임프' },
+        minion = { name = '불씨 임프', atk = 3, hp = 5 } },
+    { key = 'moth', file = 'foe-moth', kind = 'enemy minion', about = 'crystal moth', glyph = '🦋', attr = 'wind', words = { 'moth', '나방' },
+        minion = { name = '수정 나방', atk = 2, hp = 7 } },
+    { key = 'dragon', file = 'foe-dragon', kind = 'enemy', about = 'dragon', glyph = '🐉', attr = 'fire', words = { 'dragon', 'wyvern', 'drake', '드래곤', '와이번' } },
+    { key = 'warrior', file = 'foe-warrior', kind = 'enemy', about = 'armoured warrior or knight', glyph = '🛡️', attr = 'light',
+        words = { 'warrior', 'knight', 'soldier', 'swordsman', '전사', '기사', '검사', '병사' } },
+    { key = 'fiend', file = 'foe-fiend', kind = 'enemy', about = 'fiend or demon', glyph = '😈', attr = 'dark', words = { 'fiend', 'demon', 'devil', '악마', '마왕', '악귀' } },
+    { key = 'machine', file = 'foe-machine', kind = 'enemy', about = 'machine or robot', glyph = '🤖', attr = 'metal',
+        words = { 'machine', 'robot', 'automaton', '기계', '로봇', '자동인형' } },
+    { key = 'sprout', file = 'ally-sprout', kind = 'ally', about = 'plant knight', glyph = '🌱', attr = 'leaf' },
+    { key = 'salamander', file = 'ally-salamander', kind = 'ally', about = 'fire lizard', glyph = '🦎', attr = 'fire' },
+    { key = 'fox', file = 'ally-fox', kind = 'ally', about = 'crystal fox', glyph = '🦊', attr = 'light' },
+    { key = 'owl', file = 'ally-owl', kind = 'ally', about = 'storm owl', glyph = '🦉', attr = 'wind' },
+    { key = 'turtle', file = 'ally-turtle', kind = 'ally', about = 'stone shield turtle', glyph = '🐢', attr = 'earth' },
+    { key = 'jelly', file = 'ally-jelly', kind = 'ally', about = 'moon jellyfish', glyph = '🌙', attr = 'water' },
+}
+
+CB.ART_BY_KEY = {}
+for _, row in ipairs(CB.ART) do CB.ART_BY_KEY[row.key] = row end
+
+--- Whether the module carries a row's picture: its own asset list says so
+--- (CB.visuals reads it); when that list cannot be read, every row counts.
+function CB.hasArt(row)
+    if not row then return false end
+    if not CB.OWN or next(CB.OWN) == nil then return true end
+    return CB.OWN['cb-art-' .. row.file] == true
+end
+
+--- The rows of a kind, in order: those with a picture, or all with any.
+function CB.artRows(kind, any)
+    local rows = {}
+    for _, row in ipairs(CB.ART) do
+        if (' ' .. row.kind .. ' '):find(' ' .. kind .. ' ', 1, true) and (any or CB.hasArt(row)) then rows[#rows + 1] = row end
+    end
+    return rows
+end
 
 ------------------------------------------------------------------------------
 -- Settings (the module's toggle menu)
@@ -553,6 +759,7 @@ CB.CARD_WRITERS = { [0] = 'aux', [1] = 'main', [2] = 'pool' }
 CB.PACES = { [0] = 1, [1] = 0.55, [2] = 0 }
 CB.SIG_MAKERS = { [0] = 'ai', [1] = 'hand', [2] = 'none' }
 CB.VIEWS = { [0] = 'stage', [1] = 'mixed', [2] = 'board', [3] = 'simple' }
+CB.ATTACKS = { [0] = 'auto', [1] = 'chosen' }
 
 function CB.settings(tid)
     return {
@@ -568,6 +775,7 @@ function CB.settings(tid)
         view = CB.VIEWS[choice(tid, 'view')] or 'stage',        -- 무대, 합친 판, 레인 판, 간단
         sig = CB.SIG_MAKERS[choice(tid, 'sig')] or 'ai',        -- AI가 만들기, 직접 만들기, 없음
         capture = choice(tid, 'capture') == 0,                  -- 받을지 고르기, 안 받기
+        attack = CB.ATTACKS[choice(tid, 'attack')] or 'auto',   -- 자동, 직접 고르기
     }
 end
 
@@ -818,6 +1026,8 @@ function CB.newBattle(run, spec, settings)
     local cards = {}
     for _, card in ipairs(run.deck) do
         local checked = card.rarity == 'basic' and CB.copy(card) or CB.keepTags(CB.cleanCard(card, { rarity = card.rarity, cost = card.cost }), card)
+        -- A signature or enemy card from before 1.0 has no creature yet.
+        if checked and (checked.sig or checked.foe) then checked = CB.asCreature(checked) end
         if checked then cards[#cards + 1] = checked end
     end
     local draw = {}
@@ -832,9 +1042,11 @@ function CB.newBattle(run, spec, settings)
         cards = cards, draw = draw, hand = {}, discard = {},
         hp = run.hp, maxHp = run.maxHp, block = 0, str = 0, weak = 0, vuln = 0,
         poison = 0, thorns = 0, armor = 0, dex = 0, nextEnergy = 0, nextDraw = 0, exhausted = {},
+        field = { false, false, false },
         enemy = {
             hp = hp, maxHp = hp, block = 0, str = 0, weak = 0, vuln = 0, poison = 0, thorns = 0,
             moves = CB.copy(template.moves), step = CB.rand(rng, #template.moves), bonus = run.level - 1,
+            field = { false, false, false },
         },
         log = {}, played = {}, note = '',
         -- What the next drawing animates (cleared at the next tap, so a
@@ -863,6 +1075,12 @@ function CB.intentText(b)
     if move.thorns then parts[#parts + 1] = '🌵' end
     if move.poison then parts[#parts + 1] = '🧪' end
     if move.weak or move.vuln then parts[#parts + 1] = '☠️' end
+    -- A summon shows the creature's attack and health (the window puts its
+    -- picture in place of the paw).
+    if move.summon then
+        local m = CB.minion(b, move.summon)
+        parts[#parts + 1] = '🐾' .. m.atk .. '/' .. m.hp
+    end
     return table.concat(parts, ' ')
 end
 
@@ -876,8 +1094,11 @@ function CB.tickPoison(who)
     return poison
 end
 
---- Play hand card k. False (with a note) when it cannot be played.
-function CB.play(b, k)
+--- Play hand card k. target: for a creature card the lane it goes to
+--- ('L1'..'L3', else the first empty one), for an attack card an enemy
+--- creature to hit ('E1'..'E3', else the enemy itself). False (with a
+--- note) when it cannot be played.
+function CB.play(b, k, target)
     local id = b.hand[k]
     local card = id and b.cards[id]
     if not card then return false end
@@ -885,12 +1106,25 @@ function CB.play(b, k)
         b.note = '에너지가 모자랍니다'
         return false
     end
+    local fx, e, parts = card.fx or {}, b.enemy, {}
+    local lane, aim = nil, nil
+    if fx.summon then
+        lane = tonumber(tostring(target or ''):match('^L(%d)$'))
+        if not lane or CB.lanesOf(b)[lane] ~= false then lane = CB.freeLane(b) end
+        if not lane then
+            b.note = '레인이 가득 찼습니다'
+            return false
+        end
+    elseif fx.dmg then
+        aim = tonumber(tostring(target or ''):match('^E(%d)$'))
+        if aim and not CB.lanesOf(e)[aim] then aim = nil end
+    end
     b.energy = b.energy - card.cost
     table.remove(b.hand, k)
-    b.selected = nil
-    local fx, e, parts = card.fx or {}, b.enemy, {}
-    -- The card flies to the enemy when it attacks, else rises from the player.
-    local anim = { cast = id, castAt = fx.dmg and 'foe' or 'me', enemyFrom = e.hp, playerFrom = b.hp }
+    b.selected, b.aiming = nil, nil
+    -- The card flies to the enemy when it attacks it, else rises from the
+    -- player (to the lane, for a creature).
+    local anim = { cast = id, castAt = (fx.dmg and not aim) and 'foe' or 'me', enemyFrom = e.hp, playerFrom = b.hp }
     local paid = 0
     if fx.hpCost then
         -- It never takes the last hit point.
@@ -899,7 +1133,26 @@ function CB.play(b, k)
         parts[#parts + 1] = '체력 -' .. paid
     end
     local healed, pricked = 0, 0
-    if fx.dmg then
+    if fx.dmg and aim then
+        -- At a creature: no block, no thorns; what lands is what it loses.
+        local t = CB.lanesOf(e)[aim]
+        local lost, landed = 0, 0
+        for _ = 1, (fx.hits or 1) do
+            local took = math.min(t.hp, CB.attackDamage(fx.dmg, b, t))
+            t.hp, lost, landed = t.hp - took, lost + took, landed + 1
+            if t.hp <= 0 then break end
+        end
+        local fell = t.hp <= 0
+        parts[#parts + 1] = t.name .. '에게 피해 ' .. lost .. (fell and ' (쓰러뜨림)' or '')
+        anim.strikes = { { side = 'card', at = aim, dmg = lost, hits = landed, killed = fell or nil, victim = fell and CB.copy(t) or nil, wait = 0.25 } }
+        if fell then CB.remove(b, 'foe', aim) end
+        if fx.drain and lost > 0 then
+            local before = b.hp
+            b.hp = math.min(b.maxHp, b.hp + lost)
+            healed = healed + (b.hp - before)
+            if b.hp > before then parts[#parts + 1] = '흡혈 ' .. (b.hp - before) end
+        end
+    elseif fx.dmg then
         local blocked, lost, landed = 0, 0, 0
         local shield = e.block or 0
         for _ = 1, (fx.hits or 1) do
@@ -957,7 +1210,12 @@ function CB.play(b, k)
     if fx.str or fx.dex or fx.armor or fx.energy or fx.charge or fx.prepare or fx.draw then anim.playerGlow = true end
     b.anim = anim
     if fx.energy then b.energy = b.energy + fx.energy parts[#parts + 1] = '에너지 +' .. fx.energy end
-    if fx.exhaust then
+    if lane then
+        -- The card goes to the field, not the discard pile, until it falls.
+        CB.lanesOf(b)[lane] = CB.creatureOf(card, id)
+        table.insert(parts, 1, '소환 ' .. (fx.power or 0) .. '/' .. fx.summon .. ' (' .. lane .. '번 레인)')
+        anim.summon = lane
+    elseif fx.exhaust then
         b.exhausted = b.exhausted or {}
         b.exhausted[#b.exhausted + 1] = id
         parts[#parts + 1] = '소멸'
@@ -976,9 +1234,10 @@ function CB.play(b, k)
     return true
 end
 
---- The enemy's move: defend, attack, then grow or weaken. Returns its log
---- text, when it attacked what got through and what was blocked, and what
---- the player's thorns gave back.
+--- The enemy's move: defend, attack, grow or weaken, then call a creature
+--- (to the lane CB.summonLane picks). Returns its log text, when it
+--- attacked what got through and what was blocked, what the player's
+--- thorns gave back, and the lane a creature came to.
 function CB.enemyAct(b)
     local e = b.enemy
     local move = e.moves[e.step] or {}
@@ -1014,8 +1273,388 @@ function CB.enemyAct(b)
         b.vulnFresh = true
         parts[#parts + 1] = '취약 ' .. move.vuln
     end
+    local summoned = nil
+    if move.summon and b.hp > 0 and e.hp > 0 then
+        local m = CB.minion(b, move.summon)
+        summoned = CB.summonLane(b, m)
+        if summoned then
+            m.fresh = true
+            CB.lanesOf(e)[summoned] = m
+            parts[#parts + 1] = '소환 ' .. m.name .. ' ' .. m.atk .. '/' .. m.hp .. ' (' .. summoned .. '번 레인)'
+        else
+            parts[#parts + 1] = '소환할 레인 없음'
+        end
+    end
+    -- A move it put off (CB.planMove) is made now, and may be put off again.
+    if e.held == e.step then e.held = nil end
     e.step = e.step % #e.moves + 1
-    return table.concat(parts, ', '), lostTotal, blockedTotal, prickedTotal
+    return table.concat(parts, ', '), lostTotal, blockedTotal, prickedTotal, summoned
+end
+
+------------------------------------------------------------------------------
+-- The field
+------------------------------------------------------------------------------
+
+-- Each side has three lanes (b.field, b.enemy.field): a creature or false
+-- for an empty lane, so the list stays a JSON array. A creature is
+-- { name, atk, hp, maxHp }, with card (its card in b.cards) on the
+-- player's side or minion and art on the enemy's; fresh until its side's
+-- next turn, acted once it attacked this turn. A fight from before 1.0 has
+-- no field: it gets empty lanes when it is next played.
+CB.LANES = 3
+
+function CB.lanesOf(who)
+    if type(who.field) ~= 'table' then who.field = {} end
+    for i = 1, CB.LANES do
+        if type(who.field[i]) ~= 'table' then who.field[i] = false end
+    end
+    return who.field
+end
+
+function CB.freeLane(b)
+    for i, c in ipairs(CB.lanesOf(b)) do
+        if not c then return i end
+    end
+    return nil
+end
+
+function CB.anyCreature(who)
+    for _, c in ipairs(CB.lanesOf(who)) do
+        if c then return true end
+    end
+    return false
+end
+
+function CB.creatureOf(card, id)
+    local fx = card.fx or {}
+    return { card = id, name = card.name, atk = fx.power or 0, hp = fx.summon, maxHp = fx.summon, fresh = true }
+end
+
+--- A fallen creature leaves its lane; the player's card goes to the
+--- discard pile.
+function CB.remove(b, side, lane)
+    local lanes = CB.lanesOf(side == 'mine' and b or b.enemy)
+    local c = lanes[lane]
+    lanes[lane] = false
+    if c and c.card and side == 'mine' and b.discard then b.discard[#b.discard + 1] = c.card end
+    return c
+end
+
+--- What a creature is worth on the board, to the search.
+function CB.worth(c)
+    return c and ((c.atk or 0) * 2 + c.hp) or 0
+end
+
+--- One creature of side ('mine' or 'foe') in lane attacks: the other
+--- side's hero ('H'; its block and the hero's vulnerable count, its thorns
+--- prick back) or the creature in lane at. Returns what happened, for the
+--- log and the scene, or nil when there was nothing to hit.
+function CB.strike(b, side, lane, at)
+    local own, other = b, b.enemy
+    if side == 'foe' then own, other = b.enemy, b end
+    local c = CB.lanesOf(own)[lane]
+    if not c then return nil end
+    local hit = { side = side, lane = lane, at = at, name = c.name }
+    if at == 'H' then
+        local blocked, lost = CB.hit(other, CB.attackDamage(c.atk, c, other))
+        hit.dmg, hit.blocked = lost, blocked
+        if (other.thorns or 0) > 0 then
+            hit.pricked = math.min(c.hp, other.thorns)
+            c.hp = c.hp - hit.pricked
+        end
+    else
+        local t = CB.lanesOf(other)[at]
+        if not t then return nil end
+        hit.target = t.name
+        hit.dmg = math.min(t.hp, math.max(0, c.atk))
+        t.hp = t.hp - hit.dmg
+        if t.hp <= 0 then
+            hit.killed, hit.victim = true, CB.copy(t)
+            CB.remove(b, side == 'mine' and 'foe' or 'mine', at)
+        end
+    end
+    c.acted = true
+    if c.hp <= 0 then
+        hit.died, hit.self = true, CB.copy(c)
+        CB.remove(b, side, lane)
+    end
+    return hit
+end
+
+--- A hit as the log tells it: 새싹 기사 공격 → 적 3 (막힘 2).
+function CB.hitText(hit)
+    local who = hit.at == 'H' and (hit.side == 'mine' and '적' or '나') or hit.target
+    local text = hit.name .. ' 공격 → ' .. who .. ' ' .. hit.dmg
+    if (hit.blocked or 0) > 0 then text = text .. ' (막힘 ' .. hit.blocked .. ')' end
+    if hit.killed then text = text .. ', ' .. hit.target .. ' 쓰러짐' end
+    if hit.pricked then text = text .. ', 가시에 ' .. hit.pricked end
+    if hit.died then text = text .. ', ' .. hit.name .. ' 쓰러짐' end
+    return text
+end
+
+--- 자동: the creature across the lane, or the hero behind it.
+function CB.laneTarget(b, side, lane)
+    local other = side == 'mine' and b.enemy or b
+    return CB.lanesOf(other)[lane] and lane or 'H'
+end
+
+--- A quick pick of a target, for the search's own play: the hero when that
+--- ends the fight, else the creature worth most it can finish, else the
+--- hero.
+function CB.quickTarget(b, side, lane)
+    local own, other = b, b.enemy
+    if side == 'foe' then own, other = b.enemy, b end
+    local c = CB.lanesOf(own)[lane]
+    if CB.attackDamage(c.atk, c, other) >= other.hp + (other.block or 0) then return 'H' end
+    local best, worth = 'H', -1
+    for j, t in ipairs(CB.lanesOf(other)) do
+        if t and t.hp <= c.atk and CB.worth(t) > worth then best, worth = j, CB.worth(t) end
+    end
+    return best
+end
+
+--- Every creature of a side attacks, from lane 1 (at the end of its
+--- side's turn). 자동: across its lane. 직접 고르기: the player's attack
+--- by hand during the turn (the search plays them with the quick pick);
+--- the enemy's, not fresh, pick with the search. Returns the hits.
+function CB.sideAttacks(b, side)
+    local hits = {}
+    local lanes = CB.lanesOf(side == 'mine' and b or b.enemy)
+    for i = 1, CB.LANES do
+        local c = lanes[i]
+        local at = nil
+        if c and (c.atk or 0) > 0 then
+            if not b.chosen then
+                at = CB.laneTarget(b, side, i)
+            elseif not c.fresh and not c.acted and (side == 'foe' or b.sim) then
+                at = b.sim and CB.quickTarget(b, side, i) or CB.bestTarget(b, i)
+            end
+        end
+        if at then
+            local hit = CB.strike(b, side, i, at)
+            if hit then hits[#hits + 1] = hit end
+            if b.hp <= 0 or b.enemy.hp <= 0 then break end
+        end
+    end
+    return hits
+end
+
+--- 직접 고르기: the player's creature in lane attacks at ('H' or an enemy
+--- lane), once a turn and not on the turn it came. False when it cannot.
+function CB.attack(b, lane, at)
+    local c = CB.lanesOf(b)[lane]
+    if not c or c.fresh or c.acted or (c.atk or 0) <= 0 then return false end
+    if at ~= 'H' and not CB.lanesOf(b.enemy)[at] then return false end
+    local anim = { enemyFrom = b.enemy.hp, playerFrom = b.hp }
+    local hit = CB.strike(b, 'mine', lane, at)
+    b.aiming, b.selected = nil, nil
+    b.played[#b.played + 1] = CB.hitText(hit)
+    b.note = CB.hitText(hit)
+    b.anim = CB.strikeAnim({ hit }, anim)
+    if b.enemy.hp <= 0 then b.phase = 'won' end
+    return true
+end
+
+------------------------------------------------------------------------------
+-- The turn, in phases (the turn's scenes and the search both go through
+-- them)
+------------------------------------------------------------------------------
+
+--- The end of the player's turn: 자동, their creatures attack; the hand
+--- goes but for what it keeps, armor blocks, and the player's weak and the
+--- enemy's vulnerable count a turn. Returns the hits, the cards tossed and
+--- whether armor blocked.
+function CB.endOfMine(b)
+    local hits = CB.sideAttacks(b, 'mine')
+    local tossed = {}
+    if b.hand then
+        local kept = {}
+        for _, id in ipairs(b.hand) do
+            local card = b.cards[id]
+            if card and (card.fx or {}).retain then
+                kept[#kept + 1] = id
+            else
+                b.discard[#b.discard + 1] = id
+                tossed[#tossed + 1] = id
+            end
+        end
+        b.hand = kept
+    end
+    b.selected, b.aiming = nil, nil
+    local armored = (b.armor or 0) > 0
+    if armored then b.block = b.block + b.armor end
+    if b.weak > 0 then b.weak = b.weak - 1 end
+    if b.enemy.vuln > 0 then b.enemy.vuln = b.enemy.vuln - 1 end
+    b.enemy.block = 0
+    return hits, tossed, armored
+end
+
+--- The enemy's turn begins: its creatures may attack from now, and its
+--- poison bites (what it took).
+function CB.startOfTheirs(b)
+    for _, c in ipairs(CB.lanesOf(b.enemy)) do
+        if c then c.fresh = nil end
+    end
+    return CB.tickPoison(b.enemy)
+end
+
+--- The end of the enemy's turn, after its creatures: its weak and the
+--- player's vulnerable count a turn (not vulnerable it put on this turn).
+function CB.endOfTheirs(b)
+    if b.enemy.weak > 0 then b.enemy.weak = b.enemy.weak - 1 end
+    if b.vulnFresh then b.vulnFresh = nil elseif b.vuln > 0 then b.vuln = b.vuln - 1 end
+end
+
+--- The player's turn begins: a new turn, block gone, their creatures ready,
+--- and their poison bites (what it took).
+function CB.startOfMine(b)
+    b.turn = (b.turn or 1) + 1
+    b.block = 0
+    for _, c in ipairs(CB.lanesOf(b)) do
+        if c then c.fresh, c.acted = nil, nil end
+    end
+    return CB.tickPoison(b)
+end
+
+------------------------------------------------------------------------------
+-- The enemy's search
+------------------------------------------------------------------------------
+
+-- The enemy looks ahead with the module's own rules: it copies the fight
+-- (without the cards: what the player draws and plays is not known, so
+-- only their creatures answer), plays each choice out and scores the end.
+-- Nothing in it is random, so the same fight always picks the same.
+-- CB.searched counts the rounds played out (a test bounds it).
+CB.searched = 0
+
+function CB.simCopy(b)
+    local s = { sim = true }
+    for _, key in ipairs({ 'hp', 'maxHp', 'block', 'str', 'weak', 'vuln', 'poison', 'thorns', 'armor', 'dex', 'vulnFresh', 'chosen', 'tier', 'level', 'name', 'art', 'turn' }) do
+        s[key] = b[key]
+    end
+    s.field = CB.copy(CB.lanesOf(b))
+    s.enemy = CB.copy(b.enemy)
+    CB.lanesOf(s.enemy)
+    return s
+end
+
+--- How good a fight stands for the enemy: hit points on both sides and the
+--- creatures each has; the end of the fight outweighs everything. Block and
+--- the other states count only through what they did in the rounds played
+--- (scored as they stand at the end, a move made later would look better
+--- for its block or its weak not yet spent).
+function CB.score(s)
+    if s.hp <= 0 then return 1000 end
+    if s.enemy.hp <= 0 then return -1000 end
+    local e = s.enemy
+    local v = e.hp - s.hp
+    for i = 1, CB.LANES do
+        v = v + CB.worth(CB.lanesOf(e)[i] or nil) - CB.worth(CB.lanesOf(s)[i] or nil)
+    end
+    return v
+end
+
+local function over(s)
+    return s.hp <= 0 or s.enemy.hp <= 0
+end
+
+--- A round for the search, from the player's turn to the end of the
+--- enemy's, the enemy making move k.
+local function playRound(s, k)
+    CB.searched = CB.searched + 1
+    CB.startOfMine(s)
+    if over(s) then return end
+    CB.endOfMine(s)
+    if over(s) then return end
+    CB.startOfTheirs(s)
+    if over(s) then return end
+    s.enemy.step = k
+    CB.enemyAct(s)
+    if over(s) then return end
+    CB.sideAttacks(s, 'foe')
+    CB.endOfTheirs(s)
+end
+
+--- The enemy's next move, at the end of its turn (the intent shows it):
+--- it keeps to its moves in order, but may make the one after first; the
+--- one it passes over comes right after and is never passed over twice.
+--- Both orders are played out for two rounds and the better wins (ties
+--- keep the order); a win sooner counts more, a loss sooner counts worse.
+function CB.planMove(b)
+    local e = b.enemy
+    local n = #(e.moves or {})
+    if n < 2 or e.held == e.step then return end
+    local i, j = e.step, e.step % n + 1
+    local best, bestScore = i, nil
+    for _, order in ipairs({ { i, j }, { j, i } }) do
+        local s, score = CB.simCopy(b), nil
+        for round = 1, 2 do
+            playRound(s, order[round])
+            if over(s) then score = CB.score(s) / round break end
+        end
+        score = score or CB.score(s)
+        if not bestScore or score > bestScore then best, bestScore = order[1], score end
+    end
+    if best == j then
+        e.moves[i], e.moves[j] = e.moves[j], e.moves[i]
+        e.held = j
+    end
+end
+
+--- Where the enemy puts a creature it calls: each empty lane is played out
+--- (its creatures attacking this turn, the player's answering next) and the
+--- best is taken. Inside the search: the first empty lane across from a
+--- creature of the player's, else the first empty one.
+function CB.summonLane(b, minion)
+    local free = {}
+    for i, c in ipairs(CB.lanesOf(b.enemy)) do
+        if not c then free[#free + 1] = i end
+    end
+    if #free == 0 then return nil end
+    if b.sim or #free == 1 then
+        for _, i in ipairs(free) do
+            if CB.lanesOf(b)[i] then return i end
+        end
+        return free[1]
+    end
+    local best, bestScore = free[1], nil
+    for _, i in ipairs(free) do
+        local s = CB.simCopy(b)
+        local m = CB.copy(minion)
+        m.fresh = true
+        s.enemy.field[i] = m
+        CB.searched = CB.searched + 1
+        CB.sideAttacks(s, 'foe')
+        if not over(s) then CB.startOfMine(s) CB.endOfMine(s) end
+        local score = CB.score(s)
+        if not bestScore or score > bestScore then best, bestScore = i, score end
+    end
+    return best
+end
+
+--- 직접 고르기: the target an enemy creature in lane picks. Each one is
+--- played out (its attack, the rest of its side's with the quick pick, the
+--- player's creatures answering) and the best taken; the hero on a tie.
+function CB.bestTarget(b, lane)
+    local options = { 'H' }
+    for j, c in ipairs(CB.lanesOf(b)) do
+        if c then options[#options + 1] = j end
+    end
+    local best, bestScore = 'H', nil
+    for _, at in ipairs(options) do
+        local s = CB.simCopy(b)
+        CB.searched = CB.searched + 1
+        CB.strike(s, 'foe', lane, at)
+        for k = lane + 1, CB.LANES do
+            local c = s.enemy.field[k]
+            if over(s) then break end
+            if c and not c.fresh and (c.atk or 0) > 0 then CB.strike(s, 'foe', k, CB.quickTarget(s, 'foe', k)) end
+        end
+        if not over(s) then CB.startOfMine(s) CB.endOfMine(s) end
+        local score = CB.score(s)
+        if not bestScore or score > bestScore then best, bestScore = at, score end
+    end
+    return best
 end
 
 -- A turn of weak or vulnerable is spent at the end of the turn it counts in:
@@ -1025,38 +1664,41 @@ end
 -- its due at the start of its bearer's turn; armor is block for the enemy's.
 --
 -- How long each scene stays on screen (ms, before the pace setting): the
--- enemy's turn coming, its move, a scene that ends the fight.
-CB.HOLD = { foe = 950, act = 900, over = 1000 }
+-- enemy's turn coming, its move, a scene that ends the fight, and the
+-- first of a side's creature attacks (each more adds 300).
+CB.HOLD = { foe = 950, act = 900, over = 1000, strike = 850 }
 
 --- The player's turn ends; the enemy's comes, then the player's next. It
---- goes in three scenes: the hand goes and the enemy's poison bites, the
---- enemy moves, the new hand comes. scene(n, anim, hold) is called at each
---- with what it animates and how long it wants on screen; a scene that ends
---- the fight is the last.
+--- goes in three scenes: the hand goes and the enemy's poison bites (1),
+--- the enemy moves (2), the new hand comes (3). Creature attacks come as
+--- scenes of their own: 'ours' first (자동), 'theirs' after the enemy's
+--- move. scene(n, anim, hold) is called at each with what it animates and
+--- how long it wants on screen; a scene that ends the fight is the last.
 function CB.turnScenes(b, scene)
-    local kept, tossed = {}, {}
-    for _, id in ipairs(b.hand) do
-        local card = b.cards[id]
-        if card and (card.fx or {}).retain then
-            kept[#kept + 1] = id
-        else
-            b.discard[#b.discard + 1] = id
-            tossed[#tossed + 1] = id
-        end
-    end
-    b.hand, b.selected = kept, nil
-    local armored = (b.armor or 0) > 0
-    if armored then b.block = b.block + b.armor end
-    if b.weak > 0 then b.weak = b.weak - 1 end
-    if b.enemy.vuln > 0 then b.enemy.vuln = b.enemy.vuln - 1 end
     local e = b.enemy
-    e.block = 0
+    local enemyFrom, playerFrom = e.hp, b.hp
+    -- 자동: the player's creatures attack first, in a scene of their own
+    -- (the hand falls away in it).
+    local hits, tossed, armored = CB.endOfMine(b)
+    for _, hit in ipairs(hits) do b.played[#b.played + 1] = CB.hitText(hit) end
     local mine = #b.played > 0 and table.concat(b.played, ', ') or '카드 없음'
     b.played = {}
+    if #hits > 0 then
+        local strikes = CB.strikeAnim(hits, { busy = true, toss = tossed, enemyFrom = enemyFrom, playerFrom = playerFrom,
+            playerBlock = armored and 'pop' or nil })
+        tossed, armored = nil, false
+        b.note = hits[#hits] and CB.hitText(hits[#hits]) or ''
+        if e.hp <= 0 then
+            b.log[#b.log + 1] = b.turn .. '턴: ' .. mine
+            b.phase = 'won'
+            return scene('ours', strikes, CB.HOLD.over)
+        end
+        scene('ours', strikes, CB.HOLD.strike + 300 * (#hits - 1))
+    end
 
     local first = { banner = 'foe', foeTurn = true, toss = tossed, playerBlock = armored and 'pop' or nil }
     local before = e.hp
-    local poisoned = CB.tickPoison(e)
+    local poisoned = CB.startOfTheirs(b)
     if poisoned > 0 then first.enemy, first.enemyText, first.enemyFrom, first.enemyPoison = 'hit', '-' .. poisoned, before, true end
     if e.hp <= 0 then
         b.log[#b.log + 1] = b.turn .. '턴: ' .. mine .. ' / 적: 독 ' .. poisoned .. '에 쓰러짐'
@@ -1069,7 +1711,7 @@ function CB.turnScenes(b, scene)
     local move = e.moves[e.step] or {}
     local second = { foeTurn = true, enemyFrom = e.hp, playerFrom = b.hp }
     local shield = b.block
-    local acted, lost, blocked, pricked = CB.enemyAct(b)
+    local acted, lost, blocked, pricked, summoned = CB.enemyAct(b)
     if poisoned > 0 then acted = '독 ' .. poisoned .. ', ' .. acted end
     if lost then
         second.lunge = math.min(move.n or 1, 4)
@@ -1083,23 +1725,44 @@ function CB.turnScenes(b, scene)
     if move.str or move.thorns then second.enemyGlow = true end
     if move.poison then second.playerPoison = true end
     if move.weak or move.vuln then second.playerCurse = true end
-    if e.weak > 0 then e.weak = e.weak - 1 end
-    if b.vulnFresh then b.vulnFresh = nil elseif b.vuln > 0 then b.vuln = b.vuln - 1 end
-    b.log[#b.log + 1] = b.turn .. '턴: ' .. mine .. ' / 적: ' .. acted
-    b.note = '적: ' .. acted
-    if b.hp <= 0 then
-        b.phase = 'lost'
-    elseif e.hp <= 0 then
-        b.phase = 'won'
+    second.foeSummon = summoned
+    local hold = CB.HOLD.act + 280 * ((second.lunge or 1) - 1)
+    local function close(text)
+        b.log[#b.log + 1] = b.turn .. '턴: ' .. mine .. ' / 적: ' .. text
+        b.note = '적: ' .. text
     end
-    if b.phase ~= 'fight' then return scene(2, second, CB.HOLD.over) end
-    scene(2, second, CB.HOLD.act + 280 * ((second.lunge or 1) - 1))
+    if b.hp <= 0 or e.hp <= 0 then
+        CB.endOfTheirs(b)
+        close(acted)
+        b.phase = b.hp <= 0 and 'lost' or 'won'
+        return scene(2, second, CB.HOLD.over)
+    end
+    -- Its creatures attack at the end of its turn, after its move is seen.
+    local creatures = CB.anyCreature(e)
+    if creatures then
+        b.note = '적: ' .. acted
+        scene(2, second, hold)
+    end
+    enemyFrom, playerFrom = e.hp, b.hp
+    local theirs = CB.sideAttacks(b, 'foe')
+    CB.endOfTheirs(b)
+    for _, hit in ipairs(theirs) do acted = acted .. ', ' .. CB.hitText(hit) end
+    close(acted)
+    if b.hp <= 0 then b.phase = 'lost' elseif e.hp <= 0 then b.phase = 'won' end
+    if not creatures then
+        if b.phase ~= 'fight' then return scene(2, second, CB.HOLD.over) end
+        scene(2, second, hold)
+    elseif #theirs > 0 then
+        local strikes = CB.strikeAnim(theirs, { foeTurn = true, enemyFrom = enemyFrom, playerFrom = playerFrom })
+        if b.phase ~= 'fight' then return scene('theirs', strikes, CB.HOLD.over) end
+        scene('theirs', strikes, CB.HOLD.strike + 300 * (#theirs - 1))
+    end
 
-    b.turn = b.turn + 1
-    b.block = 0
+    -- What it does next, now that its turn is over (the intent shows it).
+    CB.planMove(b)
     local third = { banner = 'mine', deal = true, refill = true }
     local hpBefore = b.hp
-    local hurt = CB.tickPoison(b)
+    local hurt = CB.startOfMine(b)
     if hurt > 0 then
         b.note = b.note .. ' / 독 ' .. hurt
         third.player, third.playerText, third.playerFrom, third.playerPoison = 'hurt', '-' .. hurt, hpBefore, true
@@ -1115,6 +1778,30 @@ function CB.turnScenes(b, scene)
     CB.drawCards(b, 5 + (b.nextDraw or 0))
     b.nextDraw = 0
     scene(3, third, 0)
+end
+
+--- A scene of creature attacks: each attacker lunges in turn, a third of a
+--- second apart; its target shakes and shows the number, and the fallen
+--- fade. Hits on a hero add up on that hero.
+function CB.strikeAnim(hits, anim)
+    local onEnemy, onPlayer, enemyAt, playerAt = nil, nil, nil, nil
+    for i, hit in ipairs(hits) do
+        hit.wait = (i - 1) * 0.3
+        if hit.at == 'H' then
+            if hit.side == 'foe' then
+                onPlayer, playerAt = (onPlayer or 0) + hit.dmg, playerAt or hit.wait + 0.3
+            else
+                onEnemy, enemyAt = (onEnemy or 0) + hit.dmg, enemyAt or hit.wait + 0.3
+            end
+        end
+    end
+    anim.strikes = hits
+    if onEnemy then anim.enemy, anim.enemyText, anim.foeAt = 'hit', onEnemy > 0 and ('-' .. onEnemy) or '막힘', enemyAt end
+    if onPlayer then
+        anim.player, anim.playerText, anim.meAt = 'hurt', onPlayer > 0 and ('-' .. onPlayer) or '막음', playerAt
+        anim.flash = onPlayer > 0 or nil
+    end
+    return anim
 end
 
 --- End the player's turn (CB.turnScenes). show(n, hold), when given, is
@@ -1162,6 +1849,20 @@ function CB.settle(run, b)
     b.hp, b.maxHp, b.level = run.hp, run.maxHp, run.level
 end
 
+--- The creatures on the field, for the story: ", 내 생물: 새싹 기사 2/3,
+--- 적 생물: 불씨 임프 3/5" (nothing when the field is empty).
+function CB.fieldText(b)
+    local out = ''
+    for _, side in ipairs({ { b, '내 생물' }, { b.enemy, '적 생물' } }) do
+        local list = {}
+        for _, c in ipairs(CB.lanesOf(side[1])) do
+            if c then list[#list + 1] = c.name .. ' ' .. c.atk .. '/' .. c.hp end
+        end
+        if #list > 0 then out = out .. ', ' .. side[2] .. ': ' .. table.concat(list, ' · ') end
+    end
+    return out
+end
+
 --- The block the next reply reads.
 function CB.logBlock(run, b, user, full)
     local lines = { '⚔️ ' .. b.name .. ' (' .. CB.TIER_LABEL[b.tier] .. ') — ' .. CB.OUTCOME_LABEL[b.phase] .. ', ' .. b.turn .. '턴' }
@@ -1202,6 +1903,7 @@ end
 --- deck so far and the slots (a level up's three, a beaten enemy, the
 --- signature card); the answer is a JSON array.
 function CB.cardPrompt(tid, run, slots)
+    CB.readAssets(tid)
     local name = getName(tid) or ''
     local okDesc, desc = pcall(getDescription, tid)
     local user = getPersonaName(tid) or ''
@@ -1234,7 +1936,7 @@ function CB.cardPrompt(tid, run, slots)
     why[#why + 1] = 'Avoid repeating the cards above.'
     return {
         { role = 'system', content = 'You design cards for a deck-building card battle game played inside a role-play story. '
-            .. 'Answer with a JSON array of exactly ' .. #slots .. ' cards and nothing else.\n' .. CB.CARD_RULES },
+            .. 'Answer with a JSON array of exactly ' .. #slots .. ' cards and nothing else.\n' .. CB.cardRules() },
         { role = 'user', content = context .. '\n\n# Write these cards\n' .. CB.slotText(slots)
             .. '\n\n' .. table.concat(why, ' ') },
     }
@@ -1250,7 +1952,7 @@ end
 --- keeps the level and the deck's names from the fight's end).
 function CB.mainCardNote(reward, user)
     return '[Card Battle] ' .. user .. ' reached level ' .. tostring(reward.level or '') .. '. After the story in this reply, at the very end, write the three new cards '
-        .. 'as a JSON array between <cards> and </cards>; it is hidden from the reader.\n' .. CB.CARD_RULES
+        .. 'as a JSON array between <cards> and </cards>; it is hidden from the reader.\n' .. CB.cardRules()
         .. '\n' .. CB.slotText(reward.slots) .. '\nCards the player already has: ' .. tostring(reward.deck or '')
 end
 
@@ -1259,12 +1961,15 @@ end
 ------------------------------------------------------------------------------
 
 function CB.instruction(b, settings, user)
+    local figures = {}
+    for _, row in ipairs(CB.artRows('enemy')) do figures[#figures + 1] = row.key .. ' (' .. row.about .. ')' end
     local lines = {
         '[Card Battle] Fights in this story are played as a card game outside the text. When ' .. user .. ' is about to fight (an enemy attacks, a duel is accepted, combat cannot be avoided), stop the reply at the moment the fight begins and end it with one tag on its own line:',
         '<battle tier="normal" name="enemy name" art="magician">',
-        'art is optional: magician (apprentice magician girl), maid (dragon maid), pitcher (carnivorous-plant girl), yokai (umbrella-spirit girl), golem (moss stone golem), imp (ember imp), moth (crystal moth). Pick only when it fits the enemy; otherwise omit art.',
+        'art is optional: ' .. table.concat(figures, ', ') .. '. Pick only when it fits the enemy; otherwise omit art.',
         'tier is normal for common foes, elite for strong ones, boss for a major one; name in the story\'s language. Do not narrate the fight itself.',
         'A <battle-turn> block is a turn of a fight the player just played: tell that turn as story, the moves and hits as the block has them, keep every number, and stop as the next turn begins. Never finish the fight yourself and never tell turns that have not been played.',
+        'In these fights creatures stand on a field of three lanes a side: a block may tell of creatures summoned, their attacks and their falls; tell those as part of the fight.',
         'A <battle-log> block at the end of a message is a fight that already happened: tell it from the log, keep its outcome, then go on with the story.',
     }
     if b and (b.phase == 'fight' or b.phase == 'sig') then
@@ -1288,6 +1993,7 @@ listenEdit('editRequest', function(tid, request, meta)
         end
     end
     local settings = CB.settings(tid)
+    CB.readAssets(tid)
     local note = CB.instruction(CB.findFight(tid), settings, getPersonaName(tid) or 'the player')
     local at = #request + 1
     for i = #request, 1, -1 do
@@ -1412,6 +2118,38 @@ CB.CSS = ([[
 .cbx-num{flex:none;width:62px}
 .cbx-check{display:inline-flex;align-items:center;gap:4px;font-size:13px;margin:0 10px 4px 0}
 .cbx-hint{font-size:11px;line-height:1.5;color:var(--mute)}
+.cbx-sum{background:linear-gradient(160deg,#e2c27a,#7a5524 42%,#2c4a33)}
+.cbx-mframe{position:relative;height:100%;box-sizing:border-box;display:flex;flex-direction:column;gap:.2em;padding:.25em;border-radius:8px;border:2px solid #9a9184;background:linear-gradient(170deg,#2b4633,#14231a 70%);box-shadow:inset 0 0 0 1px rgba(232,199,122,.45)}
+.cbx-sigcard .cbx-mframe{box-shadow:inset 0 0 0 1px rgba(232,199,122,.45),0 0 10px rgba(255,214,110,.85)}
+.cbx-mname{flex:none;display:flex;align-items:center;gap:.2em;height:1.55em;padding:0 .2em 0 1.15em;box-sizing:border-box;border-radius:.4em .4em .25em .25em;background:linear-gradient(180deg,#faefcf,#d3b06f);border:1px solid #7a5a2a;box-shadow:0 1px 2px rgba(0,0,0,.6)}
+.cbx-mtitle{flex:1;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-weight:900;line-height:1;color:#2a1a0c}
+.cbx-attr{flex:none;width:1.45em;height:1.45em;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.7em;font-weight:900;line-height:1;color:#fff;text-shadow:0 1px 1px rgba(0,0,0,.7);border:1px solid rgba(255,255,255,.75);box-shadow:inset 0 -2px 3px rgba(0,0,0,.35),0 0 3px rgba(0,0,0,.6)}
+.cbx-stars{flex:none;height:1em;line-height:1em;padding-left:.35em;font-size:.75em;letter-spacing:.05em;color:#ffd76a;text-shadow:0 0 3px #ff9d2e,0 1px 0 #000}
+.cbx-mart{position:relative;flex:none;height:4.1em;border-radius:.35em;overflow:hidden;display:flex;align-items:center;justify-content:center;border:1px solid #e8c77a;background:radial-gradient(circle at 50% 38%,#6b8f70,#1d2c22 75%)}
+.cbx-mglyph{font-size:2.2em;line-height:1}
+.cbx-mtext{flex:1;min-height:0;overflow:hidden;display:flex;align-items:center;justify-content:center;padding:.1em .3em;border-radius:.3em;text-align:center;font-size:.72em;font-weight:700;line-height:1.15;color:#2b1d10;word-break:keep-all;background:linear-gradient(#f4e9cc,#dbc699);border:1px solid #8a6a35}
+.cbx-mtext.cbx-flavour{font-style:italic;font-weight:600;color:#5a4630}
+.cbx-mstats{flex:none;display:flex;justify-content:space-between;gap:.25em}
+.cbx-matk,.cbx-mhp{display:inline-flex;align-items:center;justify-content:center;gap:.1em;min-width:2.5em;height:1.45em;padding:0 .3em;box-sizing:border-box;border-radius:.4em;font-size:1em;font-weight:900;line-height:1;color:#fff;text-shadow:0 1px 1px #000,0 0 2px #000}
+.cbx-matk{background:linear-gradient(180deg,#f7c552,#a35a0c);border:1px solid #ffe7a6}
+.cbx-mhp{background:linear-gradient(180deg,#f06d7d,#8a1c31);border:1px solid #ffc6cd}
+.cbx-mhp.cbx-low{background:linear-gradient(180deg,#9e2a2a,#430812);border-color:#ff8a8a}
+.cbx-mstats .cbx-icon{width:1.1em;height:1.1em}
+.cbx-tfield{display:flex;flex-direction:column;gap:4px;margin-top:10px}
+.cbx-frow{display:flex;gap:4px;align-items:stretch}
+.cbx-flab{flex:none;width:18px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--mute)}
+.cbx-cell{position:relative;flex:1;min-width:0;padding:4px 5px;border-radius:7px;font-size:11px;line-height:1.25;text-align:center;word-break:keep-all;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.16);color:#f1e6cf}
+.cbx-empty{color:var(--mute);border-style:dashed}
+.cbx-cell.cbx-target{border-color:#9fffe0;box-shadow:0 0 8px rgba(120,255,208,.6);cursor:pointer}
+.cbx-cell.cbx-aimable{border-color:#ff8a7a;box-shadow:0 0 8px rgba(255,106,90,.6);cursor:pointer}
+.cbx-cell.cbx-ready{border-color:#ffe08a;cursor:pointer}
+.cbx-cell.cbx-aiming{border-color:#ffd04d;box-shadow:0 0 10px rgba(255,208,77,.8)}
+.cbx-cell .cbx-float{font-size:16px;top:-6px}
+.cbx-targets{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:5px;margin-top:7px;font-size:11px;color:var(--mute)}
+.cbx-tbtn{display:inline-flex;align-items:center;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:800;white-space:nowrap;cursor:pointer;color:#0f3a2e;background:linear-gradient(180deg,#c8fff0,#5fd3b0);border:1px solid #e8fff6}
+.cbx-tfoe{color:#fff;background:linear-gradient(180deg,#ff8a7a,#b8322a);border-color:#ffd0c8}
+.cbx-foe.cbx-aimable{cursor:pointer}
+.cbx-foe.cbx-aimable .cbx-medal{filter:drop-shadow(0 0 8px #ff5a4a)}
 @keyframes cbLunge{0%,100%{transform:none}35%{transform:translateY(30px) scale(1.2)}55%{transform:translateY(22px) scale(1.12)}}
 @keyframes cbAct{0%,100%{transform:none}50%{transform:scale(1.12)}}
 @keyframes cbFly{0%{opacity:1;transform:translateY(280px) scale(1.1) rotate(-6deg)}75%{opacity:1;transform:translateY(0) scale(.8) rotate(5deg)}100%{opacity:0;transform:scale(.45) rotate(10deg)}}
@@ -1439,7 +2177,7 @@ CB.CSS = ([[
 @keyframes cbFloat{0%{opacity:0;transform:translate(-50%,6px) scale(.8)}15%{opacity:1;transform:translate(-50%,-4px) scale(1.15)}100%{opacity:0;transform:translate(-50%,-40px) scale(1)}}
 @keyframes cbPop{from{opacity:0;transform:scale(.6)}70%{transform:scale(1.08)}to{opacity:1;transform:none}}
 @keyframes cbPulse{0%,100%{opacity:.55}50%{opacity:1}}
-@media (prefers-reduced-motion:reduce){.cbx-in,.cbx-intent,.cbx-deal,.cbx-shake,.cbx-float,.cbx-title,.cbx-pulse,.cbx-lunge,.cbx-act,.cbx-quake,.cbx-pop,.cbx-reveal{animation:none}.cbx-ghost,.cbx-ghostme,.cbx-slashw,.cbx-impact,.cbx-flash,.cbx-banner,.cbx-burst,.cbx-bub,.cbx-ring,.cbx-aura,.cbx-trail,.cbx-break,.cbx-toss,.cbx-drift{display:none}}
+@media (prefers-reduced-motion:reduce){.cbx-in,.cbx-intent,.cbx-deal,.cbx-shake,.cbx-float,.cbx-title,.cbx-pulse,.cbx-lunge,.cbx-act,.cbx-quake,.cbx-pop,.cbx-reveal,.cbx-cell{animation:none}.cbx-ghost,.cbx-ghostme,.cbx-slashw,.cbx-impact,.cbx-flash,.cbx-banner,.cbx-burst,.cbx-bub,.cbx-ring,.cbx-aura,.cbx-trail,.cbx-break,.cbx-toss,.cbx-drift{display:none}}
 ]]):gsub('%s*\n%s*', '')
 
 
@@ -1527,36 +2265,77 @@ CB.ART_CSS = [[
 .cbx-tray .cbx-cname{margin:-3px 0 0;font-size:10px!important;min-height:17px;z-index:1}
 .cbx-tray .cbx-art{height:51px!important}.cbx-tray .cbx-cost{-webkit-text-stroke-color:#0b2140}
 .cbx-tray .cbx-pile{font-size:9px}.cbx-tray .cbx-pilen{height:25px}
-.cbx-view-mixed{height:330px}.cbx-view-mixed .cbx-bg{filter:brightness(.78)}
+.cbx-mart .cbx-picture{position:absolute;inset:0}.cbx-mart .cbx-standee{width:70%;height:94%}
+.cbx-view-stage{height:404px}
+.cbx-view-stage .cbx-player{bottom:104px}.cbx-view-stage .cbx-foe{bottom:104px}.cbx-view-stage .cbx-companion{bottom:52%}
+.cbx-view-stage .cbx-floor{left:1%;right:1%;top:auto;bottom:10px;height:92px;perspective:600px;perspective-origin:50% -80%;z-index:4}
+.cbx-view-stage .cbx-plane{transform:rotateX(56deg)}
+.cbx-view-stage .cbx-slot{width:14%;height:82%}
+.cbx-view-stage .cbx-ours,.cbx-view-stage .cbx-theirs{background:#0a120c73;box-shadow:inset 0 0 0 1px #78e6f066}
+.cbx-view-stage .cbx-theirs{box-shadow:inset 0 0 0 1px #ff787866}
+.cbx-view-stage .cbx-stand{transform:translateX(-50%) rotateX(-56deg)}
+.cbx-view-stage .cbx-fcard{width:40px;height:56px;margin:-28px 0 0 -20px}
+.cbx-view-stage .cbx-crt{width:48px;height:60px}
+.cbx-view-stage .cbx-crt>.cbx-mstats{left:-2px;right:-2px}
+.cbx-view-mixed{height:352px}.cbx-view-mixed .cbx-bg{filter:brightness(.78)}
+.cbx-view-mixed .cbx-floor{height:220px}
 .cbx-floor{position:absolute;left:23%;right:22%;bottom:8px;height:190px;perspective:520px;perspective-origin:50% -40%;z-index:1}
-.cbx-plane{position:absolute;inset:0;transform-origin:50% 100%;transform:rotateX(50deg);transform-style:preserve-3d;display:flex;flex-direction:column;gap:10px;padding:6px 0}
-.cbx-lane{position:relative;flex:1;display:flex;gap:8px;transform-style:preserve-3d}
-.cbx-half{position:relative;flex:1;border-radius:8px;transform-style:preserve-3d}
+.cbx-plane{position:absolute;inset:0;transform-origin:50% 100%;transform:rotateX(50deg);transform-style:preserve-3d}
+.cbx-lane{position:absolute;left:1%;right:1%;height:31%;margin-top:-1%;border-radius:9px;background:linear-gradient(90deg,#28788c33,#ffffff08 50%,#8c1e2833)}
+.cbx-slot{position:absolute;width:44%;height:29%;border-radius:8px;transform-style:preserve-3d}
 .cbx-ours{background:linear-gradient(90deg,#28788c66,#3cb4be38);box-shadow:inset 0 0 0 2px #78e6f08c,0 0 12px #5adcf04d}
 .cbx-theirs{background:linear-gradient(90deg,#aa323c38,#8c1e2866);box-shadow:inset 0 0 0 2px #ff787880,0 0 12px #ff5a5a40}
-.cbx-target{box-shadow:inset 0 0 0 2px #bfffe9,0 0 18px #96ffdcbb}
+.cbx-slot.cbx-target{box-shadow:inset 0 0 0 2px #bfffe9,0 0 18px #96ffdcbb;cursor:pointer;animation:cbPulse 1.2s ease-in-out infinite}
+.cbx-slot.cbx-aimable{box-shadow:inset 0 0 0 2px #ffb0a4,0 0 16px #ff5a4abb;cursor:pointer}
+.cbx-laneno{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:13px;font-weight:900;color:#ffffff45}
 .cbx-view-mixed .cbx-player{left:0;width:24%}.cbx-view-mixed .cbx-companion{bottom:45%;width:22%}
 .cbx-view-mixed .cbx-foe{right:0;width:27%}.cbx-view-mixed .cbx-medal{height:130px}
-.cbx-spot{position:absolute;left:50%;top:65%;width:0;height:0;transform-style:preserve-3d}
+.cbx-view-mixed .cbx-fcard{width:34px;height:46px;margin:-23px 0 0 -17px}
+.cbx-view-mixed .cbx-crt{width:42px;height:52px}
+.cbx-unit,.cbx-mover{position:absolute;inset:0;transform-style:preserve-3d}
+.cbx-fcard{position:absolute;left:50%;top:50%;width:46px;height:64px;margin:-32px 0 0 -23px;box-sizing:border-box;display:flex;flex-direction:column;gap:1px;padding:2px;border-radius:5px;border:2px solid #9a9184;background:linear-gradient(170deg,#2b4633,#14231a);box-shadow:0 3px 6px #000a;font-size:8px}
+.cbx-foecard{background:linear-gradient(170deg,#4a2026,#1c0c10)}
+.cbx-fart{position:relative;flex:1;min-height:0;border-radius:3px;overflow:hidden;background:radial-gradient(circle,#6b8f70,#1d2c22)}
+.cbx-fart .cbx-picture{position:absolute;inset:0}.cbx-fart .cbx-standee{width:80%;height:94%}
+.cbx-fcard .cbx-stars{height:auto;padding:0 0 1px 2px;font-size:6px;line-height:6px}
+.cbx-crt>.cbx-mstats{position:absolute;left:-7px;right:-7px;bottom:-9px;z-index:2;gap:2px}
+.cbx-crt .cbx-matk,.cbx-crt .cbx-mhp{flex:1;min-width:0;height:14px;padding:0 1px;font-size:11px;border-radius:4px;box-shadow:0 1px 2px #000c}
+.cbx-crt .cbx-mstats .cbx-icon{width:10px;height:10px}
+.cbx-spot{position:absolute;left:50%;top:60%;width:0;height:0;transform-style:preserve-3d}
 .cbx-stand{position:absolute;left:0;bottom:0;transform-origin:50% 100%;transform:translateX(-50%) rotateX(-50deg)}
-.cbx-summon{position:relative;width:64px;height:86px;animation:cbSummon .95s ease-out both;transform-origin:50% 100%}
-.cbx-strike{position:relative;width:100%;height:100%;animation:cbStrikeR .65s .22s ease-in both}
-.cbx-hologram{filter:drop-shadow(0 0 8px #96ffdc);opacity:.88}
-.cbx-shadow{position:absolute;left:50%;top:65%;width:56px;height:22px;margin:-11px 0 0 -28px;border-radius:50%;background:radial-gradient(ellipse,#000a,transparent 70%)}
-.cbx-summonring{position:absolute;left:-10px;right:-10px;bottom:-4px;height:24px;border:3px solid #a0ffc8;border-radius:50%;box-shadow:0 0 16px #78ffb4cc,inset 0 0 12px #78ffb499;animation:cbSummonRing .7s ease-out both}
-.cbx-view-board{height:398px}.cbx-view-board .cbx-bg{filter:blur(2px) brightness(.45) saturate(.8)}
-.cbx-view-board .cbx-floor{left:50%;right:auto;top:78px;bottom:auto;width:76%;max-width:320px;height:303px;transform:translateX(-50%);perspective:760px;perspective-origin:50% 10%}
-.cbx-view-board .cbx-plane{display:block;padding:0;border-radius:12px;transform:rotateX(46deg);background:url('{{raw::cb-art-bg-board}}') center/100% 100%;box-shadow:0 0 0 3px #3a2814,0 0 0 5px #8a6430,0 22px 30px #0009}
-.cbx-slot{position:absolute;width:23%;height:27.5%;border-radius:8px;transform-style:preserve-3d}
+.cbx-crt{position:relative;width:46px;height:56px;transform-origin:50% 100%}
+.cbx-crt:before{content:"";position:absolute;left:14%;right:14%;bottom:-4px;height:8px;border-radius:50%;background:radial-gradient(ellipse,#000c,transparent 70%)}
+.cbx-crt .cbx-portrait{width:84%;padding:2px 2px 4px;border-radius:12px 12px 6px 6px}
+.cbx-crt .cbx-standee:after{display:none}
+.cbx-crt .cbx-glyph{width:92%;font-size:26px}
+.cbx-crt .cbx-float{top:-16px;font-size:22px;-webkit-text-stroke:3px #800e0a}
+.cbx-crt .cbx-impact{left:-8px;top:-8px;right:-8px;bottom:-8px}
+.cbx-crt .cbx-slashw{left:-10%;top:45%;width:120%}
+.cbx-holo{position:absolute;left:12%;right:12%;top:4%;bottom:8%;border-radius:6px;overflow:hidden;opacity:.86;border:1px solid #bfffe9;box-shadow:0 0 10px #78ffd0,inset 0 0 8px #78ffd0;background:#0b2a2a}
+.cbx-holo:after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,#9fffe026 0 2px,transparent 2px 4px)}
+.cbx-ready .cbx-crt{filter:drop-shadow(0 0 5px #ffe08a)}
+.cbx-aiming .cbx-crt{filter:drop-shadow(0 0 4px #fff) drop-shadow(0 0 8px #ffd04d)}
+.cbx-summonring{position:absolute;left:-10px;right:-10px;bottom:-6px;height:20px;border:3px solid #a0ffc8;border-radius:50%;box-shadow:0 0 16px #78ffb4cc,inset 0 0 12px #78ffb499;animation:cbSummonRing .7s .3s ease-out both}
+.cbx-new .cbx-fcard{animation:cbLand .45s cubic-bezier(.2,.9,.3,1) both}
+.cbx-new .cbx-crt{animation:cbRise .6s .3s cubic-bezier(.2,1.5,.4,1) both}
+.cbx-go{animation:cbGo .62s ease-in-out both}
+.cbx-hit{animation:cbShake .42s ease both}
+.cbx-die .cbx-crt{animation:cbFall .55s ease-in both}
+.cbx-die .cbx-fcard{animation:cbFlip .6s ease-in both}
+.cbx-view-board{height:448px}.cbx-view-board .cbx-bg{filter:blur(2px) brightness(.45) saturate(.8)}
+.cbx-view-board .cbx-floor{left:50%;right:auto;top:74px;bottom:auto;width:76%;max-width:320px;height:290px;transform:translateX(-50%);perspective:760px;perspective-origin:50% 10%}
+.cbx-view-board .cbx-plane{border-radius:12px;transform:rotateX(46deg);background:url('{{raw::cb-art-bg-board}}') center/100% 100%;box-shadow:0 0 0 3px #3a2814,0 0 0 5px #8a6430,0 22px 30px #0009}
+.cbx-view-board .cbx-slot{width:23%;height:27.5%}
 .cbx-view-board .cbx-stand{transform:translateX(-50%) rotateX(-46deg)}
-.cbx-view-board .cbx-strike{animation-name:cbStrikeU}
+.cbx-view-board .cbx-fcard{width:48px;height:66px;margin:-33px 0 0 -24px}
+.cbx-view-board .cbx-crt{width:50px;height:60px}
 .cbx-view-board .cbx-foe{left:50%;right:auto;top:5px;bottom:auto;width:49%;transform:translateX(-50%);display:grid;grid-template-columns:65px minmax(0,1fr);gap:3px}
 .cbx-view-board .cbx-medalw{grid-row:1/5;grid-column:1}.cbx-view-board .cbx-medal{height:90px}
 .cbx-view-board .cbx-intent,.cbx-view-board .cbx-name,.cbx-view-board .cbx-foe>.cbx-barrow,.cbx-view-board .cbx-foe>.cbx-chips{grid-column:2}
 .cbx-view-board .cbx-medalw.cbx-lunge{animation-name:cbBoardLunge}
-.cbx-view-board .cbx-player{left:0;bottom:5px;width:29%}.cbx-view-board .cbx-player .cbx-figure{height:95px}
-.cbx-view-board .cbx-companion{left:auto;right:0;bottom:10px;width:25%;filter:none}
-.cbx-view-board .cbx-companion .cbx-figure{height:100px;transform:scaleX(-1)}
+.cbx-view-board .cbx-player{left:0;bottom:4px;width:24%}.cbx-view-board .cbx-player .cbx-figure{height:70px}
+.cbx-view-board .cbx-companion{left:auto;right:0;bottom:4px;width:22%;filter:none}
+.cbx-view-board .cbx-companion .cbx-figure{height:74px;transform:scaleX(-1)}
 .cbx-view-board .cbx-ghost{left:50%;top:50px;animation-name:cbBoardFly}
 .cbx-still *{animation:none!important}
 .cbx-epilogue{position:relative;display:flex;align-items:flex-end;justify-content:space-around;height:120px;margin-top:12px;border-radius:12px;background-position:center;background-size:cover;overflow:hidden}
@@ -1565,21 +2344,14 @@ CB.ART_CSS = [[
 @keyframes cbBoardLunge{0%,100%{transform:none}40%{transform:translateY(75px) scale(1.08)}}
 @keyframes cbSideFly{0%{opacity:1;transform:translate(-180px,90px) rotate(-12deg)}75%{opacity:1;transform:scale(.8)}100%{opacity:0;transform:scale(.45) rotate(12deg)}}
 @keyframes cbBoardFly{0%{opacity:1;transform:translateY(260px) rotate(-6deg)}75%{opacity:1;transform:scale(.8)}100%{opacity:0;transform:scale(.45)}}
-@keyframes cbSummon{0%{opacity:0;transform:scale(.2) translateY(24px)}22%{opacity:1;transform:scale(1.15)}40%,70%{opacity:1;transform:none}100%{opacity:0;transform:translateY(-10px) scale(.8)}}
-@keyframes cbStrikeR{0%,20%{transform:none}65%{transform:translateX(110px) scale(.9)}100%{transform:translateX(115px) scale(.75);opacity:0}}
-@keyframes cbStrikeU{0%,20%{transform:none}65%{transform:translateY(-110px) scale(.85)}100%{transform:translateY(-120px) scale(.7);opacity:0}}
 @keyframes cbSummonRing{0%{opacity:1;transform:scale(.2)}100%{opacity:0;transform:scale(1.6)}}
-@media(prefers-reduced-motion:reduce){.cbx-root *{animation:none!important;transition:none!important}.cbx-summon{opacity:1}.cbx-summonring{opacity:0}}
+@keyframes cbLand{0%{opacity:0;transform:translateY(-36px) scale(1.5) rotate(-14deg)}70%{opacity:1;transform:scale(.94)}100%{opacity:1;transform:none}}
+@keyframes cbRise{0%{opacity:0;transform:scale(.15) translateY(8px)}100%{opacity:1;transform:none}}
+@keyframes cbGo{0%,100%{transform:none}45%{transform:translate(var(--tx),var(--ty))}}
+@keyframes cbFall{0%{opacity:1;transform:none;filter:none}35%{opacity:1;transform:scale(1.08) rotate(-6deg);filter:brightness(2.2)}100%{opacity:0;transform:scale(.35) rotate(20deg) translateY(10px);filter:brightness(2)}}
+@keyframes cbFlip{0%{opacity:1;transform:none}100%{opacity:0;transform:translateY(24px) rotateY(180deg) scale(.6)}}
+@media(prefers-reduced-motion:reduce){.cbx-root *{animation:none!important;transition:none!important}.cbx-summonring,.cbx-die{display:none}}
 ]]
-
-CB.FOE_ART = {
-    magician = { 'magician', 'wizard', 'mage', '마법사', '마술사' },
-    maid = { 'maid', '메이드', '하녀' },
-    pitcher = { 'pitcher', 'carnivorous', '식충', '벌레잡이', '네펜데스' },
-    yokai = { 'yokai', 'umbrella', '요괴', '우산' },
-    golem = { 'golem', '골렘' }, imp = { 'imp', '임프' }, moth = { 'moth', '나방' },
-}
-CB.ART_ORDER = { 'magician', 'maid', 'pitcher', 'yokai', 'golem', 'imp', 'moth' }
 
 function CB.artKey(key)
     key = CB.trim(key):lower()
@@ -1587,31 +2359,49 @@ function CB.artKey(key)
     return nil
 end
 
--- Read exact names, never ask the media parser to fuzzy-match an optional
--- override. A private art module may use the namespace card-battle-art.
-function CB.visuals(tid)
-    CB.VIEW, CB.ASSETS = CB.settings(tid).view, {}
-    CB.BOT = CB.clip(getName(tid) or '동료', 12)
+--- The asset names the window may use, read exactly (the media parser is
+--- never asked to fuzzy-match a name that may not be there): the bot's own
+--- (cb-...) and a private art module's (namespace card-battle-art) in
+--- CB.ASSETS, the module's own pictures (cb-art-...) in CB.OWN.
+function CB.readAssets(tid)
+    CB.ASSETS, CB.OWN = {}, {}
+    local function names(macro)
+        local ok, list = pcall(function() return json.decode(cbs(macro)) end)
+        return (ok and type(list) == 'table') and list or {}
+    end
     for _, macro in ipairs({ '{{assetlist}}', '{{moduleassetlist::card-battle-art}}' }) do
-        local ok, names = pcall(function() return json.decode(cbs(macro)) end)
-        if ok and type(names) == 'table' then
-            for _, name in ipairs(names) do
-                name = tostring(name):lower()
-                if name:match('^cb%-[a-z0-9_-]+$') then CB.ASSETS[name] = true end
-            end
+        for _, name in ipairs(names(macro)) do
+            name = tostring(name):lower()
+            if name:match('^cb%-[a-z0-9_-]+$') then CB.ASSETS[name] = true end
         end
+    end
+    for _, name in ipairs(names('{{moduleassetlist::card-battle}}')) do
+        name = tostring(name):lower()
+        if name:match('^cb%-art%-[a-z0-9_-]+$') then CB.OWN[name] = true end
     end
 end
 
-function CB.foeArt(name, art)
+function CB.visuals(tid)
+    CB.VIEW = CB.settings(tid).view
+    CB.BOT = CB.clip(getName(tid) or '동료', 12)
+    CB.readAssets(tid)
+end
+
+--- The figure an enemy stands as: its art key when there is a picture for
+--- it (a cb-foe-<key> override, or a row of CB.ART whose file the module
+--- has), else the first row whose words are in its name. any: whatever the
+--- pictures (for the rules, which must not change with the art).
+function CB.foeArt(name, art, any)
     art = CB.artKey(art)
-    if art and (CB.FOE_ART[art] or (CB.ASSETS or {})['cb-foe-' .. art]) then return art end
+    local row = art and CB.ART_BY_KEY[art]
+    local known = row and (row.kind:find('enemy', 1, true) or row.kind:find('minion', 1, true))
+    if art and ((CB.ASSETS or {})['cb-foe-' .. art] or (known and (any or CB.hasArt(row)))) then return art end
     local lower = tostring(name or ''):lower()
-    for _, key in ipairs(CB.ART_ORDER) do
-        for _, word in ipairs(CB.FOE_ART[key]) do
+    for _, entry in ipairs(CB.artRows('enemy', any)) do
+        for _, word in ipairs(entry.words or {}) do
             if word:find('^%a+$') then
-                if lower:find('%f[%a]' .. word .. '%f[%A]') then return key end
-            elseif lower:find(word, 1, true) then return key end
+                if lower:find('%f[%a]' .. word .. '%f[%A]') then return entry.key end
+            elseif lower:find(word, 1, true) then return entry.key end
         end
     end
     return nil
@@ -1620,7 +2410,21 @@ end
 function CB.foeSource(name, art)
     local key = CB.foeArt(name, art)
     if not key then return nil end
-    return '{{raw::' .. ((CB.ASSETS or {})['cb-foe-' .. key] and 'cb-foe-' or 'cb-art-foe-') .. key .. '}}'
+    if (CB.ASSETS or {})['cb-foe-' .. key] then return '{{raw::cb-foe-' .. key .. '}}' end
+    local row = CB.ART_BY_KEY[key]
+    return row and ('{{raw::cb-art-' .. row.file .. '}}') or nil
+end
+
+--- A creature card's figure: a cb-ally-<key> override, else the row's
+--- picture when the module has it, else nil (the card stands as a
+--- hologram of its art).
+function CB.allySource(key)
+    key = CB.artKey(key)
+    if not key then return nil end
+    if (CB.ASSETS or {})['cb-ally-' .. key] then return '{{raw::cb-ally-' .. key .. '}}' end
+    local row = CB.ART_BY_KEY[key]
+    if row and CB.hasArt(row) then return '{{raw::cb-art-' .. row.file .. '}}' end
+    return nil
 end
 
 function CB.icon(key, glyph)
@@ -1651,16 +2455,55 @@ function CB.hero(who)
     return '<span class="cbx-standee cbx-portrait"><span class="cbx-profile" style="background-image:url(\'{{source::' .. who .. '}}\'),url(\'{{raw::cb-art-' .. fallback .. '}}\')"></span></span>'
 end
 
+--- The card art by its main effect (a creature without a figure stands as
+--- a hologram of it).
+function CB.effectArt(card)
+    local fx = card.fx or {}
+    local art = fx.dmg and ((fx.poison or fx.exhaust) and 'fire' or 'slash') or (fx.block and 'shield') or (fx.heal and 'heal') or 'fire'
+    return '{{raw::cb-art-ca-' .. art .. '}}'
+end
+
 function CB.cardArt(card)
     if card.foe then return CB.picture(CB.foeSource(card.name, card.art), card.glyph or CB.cardIcon(card)) end
     if card.sig then return CB.hero('user') end
+    local ally = CB.isCreature(card) and CB.allySource(card.art)
+    if ally then return CB.picture(ally, CB.cardIcon(card)) end
+    return CB.picture(CB.effectArt(card), CB.cardIcon(card), 'cbx-cover')
+end
+
+--- A creature standing on the field: a beaten enemy's or a minion's figure,
+--- the persona for the signature card, a summon card's figure, else its
+--- card art as a hologram.
+function CB.creatureFigure(c, card)
+    if c.minion then return CB.picture(CB.foeSource(nil, c.art), (CB.ART_BY_KEY[c.art or ''] or {}).glyph or '👾') end
+    card = card or {}
+    if card.foe then return CB.picture(CB.foeSource(card.name, card.art), card.glyph or '👾') end
+    if card.sig then return CB.hero('user') end
+    local ally = CB.allySource(card.art)
+    if ally then return CB.picture(ally, CB.cardIcon(card)) end
+    return '<span class="cbx-holo">' .. CB.picture(CB.effectArt(card), CB.cardIcon(card), 'cbx-cover') .. '</span>'
+end
+
+-- The attribute gem a creature card wears: its colour and its mark.
+CB.ATTR = {
+    fire = { '#ff6a3d', '불' }, water = { '#3f9be8', '물' }, earth = { '#b88a4a', '흙' }, wind = { '#4fcf93', '풍' },
+    light = { '#ffd65c', '빛' }, dark = { '#9a6ad8', '암' }, leaf = { '#7cc451', '잎' }, metal = { '#a9b6c4', '철' },
+}
+-- Its level stars, by rarity.
+CB.STARS = { basic = 1, common = 2, rare = 3, epic = 4 }
+
+function CB.attrOf(card)
+    if card.sig then return 'light' end
+    local key = card.foe and CB.foeArt(card.name, card.art, true) or CB.artKey(card.art)
+    local row = key and CB.ART_BY_KEY[key]
+    if row and row.attr then return row.attr end
     local fx = card.fx or {}
-    local art = fx.dmg and ((fx.poison or fx.exhaust) and 'fire' or 'slash') or (fx.block and 'shield') or (fx.heal and 'heal') or 'fire'
-    return CB.picture('{{raw::cb-art-ca-' .. art .. '}}', CB.cardIcon(card), 'cbx-cover')
+    return (fx.dmg and 'fire') or (fx.block and 'earth') or (fx.heal and 'water') or (fx.poison and 'dark') or 'wind'
 end
 
 function CB.cardType(card)
     local fx = card.fx or {}
+    if fx.summon then return 'sum' end
     if fx.dmg then return 'atk' end
     if (fx.str or fx.dex or fx.thorns or fx.armor or fx.energy or fx.charge) and not fx.block and not fx.heal then return 'pow' end
     return 'skl'
@@ -1668,6 +2511,10 @@ end
 
 function CB.cardIcon(card)
     local fx = card.fx or {}
+    if fx.summon then
+        local row = CB.ART_BY_KEY[CB.artKey(card.art) or '']
+        return (row and row.glyph) or '🐾'
+    end
     if fx.dmg and fx.drain then return '🩸' end
     if fx.dmg and fx.poison then return '🧪' end
     if fx.dmg and fx.pierce then return '🏹' end
@@ -1702,10 +2549,62 @@ local function at(seconds)
     return ' style="animation-delay:' .. fmt(seconds) .. 's"'
 end
 
+--- A creature's attack and health boxes (a sword, a heart); health shows
+--- red once it is below max.
+local function statBoxes(atk, hp, max)
+    return '<div class="cbx-mstats"><span class="cbx-matk">' .. CB.icon('attack', '⚔') .. '<span>' .. atk .. '</span></span>'
+        .. '<span class="cbx-mhp' .. ((max and hp < max) and ' cbx-low' or '') .. '">' .. CB.icon('heal', '❤') .. '<span>' .. hp .. '</span></span></div>'
+end
+
+--- A longer name gets a smaller font, so most fit the name bar.
+local function titleSize(name)
+    local ok, n = pcall(utf8.len, name or '')
+    n = ok and n or #(name or '')
+    return n <= 4 and '.95' or (n <= 5 and '.85' or (n <= 6 and '.74' or '.64'))
+end
+
+--- A creature card's face: a name bar with its attribute gem, its level
+--- stars, the art window, a text box (what it does when it comes, else its
+--- flavour) and its attack and health at the bottom. Sizes are in em of
+--- the frame's font, so one scale sizes it all.
+function CB.creatureFace(card, scale, poor)
+    local fx = card.fx or {}
+    local rarity = card.sig and '#ffd56b' or (CB.RARITY_COLOR[card.rarity] or CB.RARITY_COLOR.basic)
+    local attr = CB.ATTR[CB.attrOf(card)] or CB.ATTR.wind
+    local text = CB.arrivalText(card)
+    return '<div class="cbx-card cbx-sum' .. (card.sig and ' cbx-sigcard' or '') .. (poor and ' cbx-poor' or '') .. '" style="width:' .. px(84 * scale) .. ';height:' .. px(120 * scale) .. '">'
+        .. '<div class="cbx-cost">' .. card.cost .. '</div>'
+        .. (card.sig and '<div class="cbx-badge">대표</div>' or '')
+        .. '<div class="cbx-mframe" style="font-size:' .. px(10 * scale) .. ';border-color:' .. rarity .. '">'
+        .. '<div class="cbx-mname"><span class="cbx-mtitle" style="font-size:' .. titleSize(card.name) .. 'em">' .. escapeHtml(card.name) .. '</span>'
+        .. '<span class="cbx-attr" style="background:' .. attr[1] .. '">' .. attr[2] .. '</span></div>'
+        .. '<div class="cbx-stars">' .. string.rep('★', CB.STARS[card.rarity] or 1) .. '</div>'
+        .. '<div class="cbx-mart">' .. (CB.VIEW == 'simple' and ('<span class="cbx-mglyph">' .. escapeHtml(card.glyph or CB.cardIcon(card)) .. '</span>') or CB.cardArt(card)) .. '</div>'
+        .. '<div class="cbx-mtext' .. (text == '' and ' cbx-flavour' or '') .. '">' .. escapeHtml(text ~= '' and text or (card.desc or '')) .. '</div>'
+        .. statBoxes(fx.power or 0, fx.summon)
+        .. '</div><div class="cbx-gem" style="background:' .. rarity .. '"></div></div>'
+end
+
+--- The card a creature lies on, face up on the field: its frame, its
+--- level stars and its picture (an enemy's minion has a red frame). Its
+--- attack and health stand up in front of it with the creature (on the
+--- tilted floor they would be too flat to read). dieAt: when it flips
+--- away with its fallen creature.
+function CB.fieldCard(c, card, dieAt)
+    local frame = c.minion and '#c0453c' or ((card and card.sig) and '#ffd56b' or CB.RARITY_COLOR[(card or {}).rarity or 'basic'] or '#9a9184')
+    local art = c.minion and CB.picture(CB.foeSource(nil, c.art), (CB.ART_BY_KEY[c.art or ''] or {}).glyph or '👾')
+        or (card and CB.cardArt(card) or '')
+    return '<div class="cbx-fcard' .. (c.minion and ' cbx-foecard' or '') .. '" style="border-color:' .. frame
+        .. (dieAt and (';animation-delay:' .. fmt(dieAt) .. 's') or '') .. '"><div class="cbx-stars">'
+        .. string.rep('★', c.minion and 1 or (CB.STARS[(card or {}).rarity or 'basic'] or 1)) .. '</div><div class="cbx-fart">' .. art .. '</div></div>'
+end
+
 --- One card face. scale: 1 in the hand, larger on the reward screen. The
---- signature card has a gold frame; a beaten enemy's card shows its face.
+--- signature card has a gold frame; a beaten enemy's card shows its face;
+--- a creature card has a frame of its own (CB.creatureFace).
 function CB.cardFace(card, scale, poor)
     scale = scale or 1
+    if CB.isCreature(card) then return CB.creatureFace(card, scale, poor) end
     local rarity = card.sig and '#ffd56b' or (CB.RARITY_COLOR[card.rarity] or CB.RARITY_COLOR.basic)
     return '<div class="cbx-card cbx-' .. CB.cardType(card) .. (card.sig and ' cbx-sigcard' or '') .. (poor and ' cbx-poor' or '') .. '" style="width:' .. px(84 * scale) .. ';height:' .. px(120 * scale) .. '">'
         .. '<div class="cbx-cost">' .. card.cost .. '</div>'
@@ -1823,32 +2722,213 @@ local function fanStyle(k, n, selected)
         .. ';transform-origin:50% 120%;z-index:' .. (selected and 50 or k)
 end
 
--- The floor is decoration, not board state. Only the current cast occupies
--- a slot; the next drawing removes it. Cycling the slot never draws RNG.
-function CB.lanes(b, anim, view)
-    local slots, card = {}, b.cards[anim.cast]
-    local lane = ((b.n or 0) % 3) + 1
-    for i = 1, 3 do
-        local summon = ''
-        if card and i == lane then
-            local figure = card.foe and CB.picture(CB.foeSource(card.name, card.art), card.glyph or CB.cardIcon(card))
-                or (card.sig and CB.hero('user')) or ('<div class="cbx-hologram">' .. CB.cardFace(card, 0.68) .. '</div>')
-            summon = '<div class="cbx-shadow"></div><div class="cbx-spot"><div class="cbx-stand"><div class="cbx-summon">'
-                .. '<i class="cbx-summonring"></i><div class="cbx-strike">' .. figure .. '</div></div></div></div>'
-        end
-        if view == 'board' then
-            local left = 10 + (i - 1) * 29
-            slots[#slots + 1] = '<div class="cbx-slot cbx-theirs" style="left:' .. left .. '%;top:12%"></div>'
-                .. '<div class="cbx-slot cbx-ours' .. (summon ~= '' and ' cbx-target' or '') .. '" style="left:' .. left .. '%;top:57%">' .. summon .. '</div>'
-        else
-            slots[#slots + 1] = '<div class="cbx-lane"><div class="cbx-half cbx-ours' .. (summon ~= '' and ' cbx-target' or '') .. '">'
-                .. summon .. '</div><div class="cbx-half cbx-theirs"></div></div>'
-        end
-    end
-    return '<div class="cbx-floor"><div class="cbx-plane">' .. table.concat(slots) .. '</div></div>'
+-- Where each lane's slot lies on the floor of each art view, in % of the
+-- floor: w and h its size, the left and top of each side's three, and
+-- where each side's hero stands (what a creature lunges at). stage: a
+-- strip of six on the ground in front, ours on the left; mixed: three
+-- lanes across the floor, ours on the left half; board: theirs on top.
+CB.FIELD = {
+    stage = { w = 14, h = 82, mine = { { 2, 9 }, { 17.5, 9 }, { 33, 9 } }, foe = { { 52, 9 }, { 67.5, 9 }, { 83, 9 } },
+        heroes = { mine = { 8, -150 }, foe = { 80, -165 } } },
+    mixed = { w = 44, h = 29, mine = { { 4, 3 }, { 4, 36 }, { 4, 69 } }, foe = { { 52, 3 }, { 52, 36 }, { 52, 69 } },
+        heroes = { mine = { -62, 36 }, foe = { 118, 36 } } },
+    board = { w = 23, h = 27.5, mine = { { 10, 57 }, { 39, 57 }, { 68, 57 } }, foe = { { 10, 12 }, { 39, 12 }, { 68, 12 } },
+        heroes = { mine = { -34, 108 }, foe = { 39, -46 } } },
+}
+
+--- How far a creature lunges at its target, in its own width and height
+--- (four fifths of the way, so it stops short).
+local function reach(view, side, lane, target)
+    local f = CB.FIELD[view] or CB.FIELD.mixed
+    local other = side == 'mine' and 'foe' or 'mine'
+    local from = f[side][lane]
+    local to = target == 'H' and f.heroes[other] or f[other][target]
+    return math.floor((to[1] - from[1]) / f.w * 80), math.floor((to[2] - from[2]) / f.h * 80)
 end
 
-function CB.stage(b, user, anim, enemy, me, meStyle, meWait, ghost)
+--- What this drawing does to each slot (side, lane): a creature come
+--- (new), one lunging (go, at goAt), hit (hurtAt, its number, the slashes
+--- of a card), fallen (dies at diesAt, drawn one last time from ghost).
+function CB.fieldMarks(anim)
+    local marks = { mine = {}, foe = {} }
+    local function mark(side, lane)
+        marks[side][lane] = marks[side][lane] or {}
+        return marks[side][lane]
+    end
+    if anim.summon then mark('mine', anim.summon).new = true end
+    if anim.foeSummon then mark('foe', anim.foeSummon).new = true end
+    for _, hit in ipairs(anim.strikes or {}) do
+        local wait = hit.wait or 0
+        if hit.side ~= 'card' then
+            local m = mark(hit.side, hit.lane)
+            m.go, m.goAt = hit.at, wait
+            if hit.died then m.dies, m.ghost, m.diesAt = true, hit.self, wait + 0.45 end
+        end
+        if hit.at ~= 'H' then
+            local t = mark(hit.side == 'foe' and 'mine' or 'foe', hit.at)
+            t.hurtAt = hit.side == 'card' and wait or (wait + 0.3)
+            t.text, t.slashes = '-' .. hit.dmg, hit.side == 'card' and (hit.hits or 1) or nil
+            if hit.killed then t.dies, t.ghost, t.diesAt = true, hit.victim, t.hurtAt + 0.25 end
+        end
+    end
+    return marks
+end
+
+--- A creature in its slot: its card lying face up, the creature standing
+--- on it (the stand turns it back up from the tilted floor), and what the
+--- scene does to it. ready: 'ready' (may attack) or 'aiming' (picked).
+local function unitHtml(b, view, side, lane, c, m, ready)
+    m = m or {}
+    local card = (side == 'mine' and c.card) and b.cards[c.card] or nil
+    local class = 'cbx-unit'
+    if m.new then class = class .. ' cbx-new' end
+    if m.dies then class = class .. ' cbx-die' end
+    if ready then class = class .. ' cbx-' .. ready end
+    -- The creature lunges (its mover, the size of the slot), not its card.
+    local mover = '<div class="cbx-mover">'
+    if m.go then
+        local tx, ty = reach(view, side, lane, m.go)
+        mover = '<div class="cbx-mover cbx-go" style="--tx:' .. tx .. '%;--ty:' .. ty .. '%;animation-delay:' .. fmt(m.goAt) .. 's">'
+    end
+    local marks = {}
+    if m.new then marks[#marks + 1] = '<i class="cbx-summonring"></i>' end
+    if m.hurtAt then
+        for i = 1, (m.slashes or 0) do
+            marks[#marks + 1] = '<i class="cbx-slashw" style="transform:rotate(' .. (i % 2 == 1 and -32 or 28) .. 'deg)"><i class="cbx-slash"' .. at(m.hurtAt + (i - 1) * 0.12) .. '></i></i>'
+        end
+        marks[#marks + 1] = '<i class="cbx-impact"' .. at(m.hurtAt) .. '></i>' .. float(m.text, nil, m.hurtAt)
+    end
+    local delay = m.dies and m.diesAt or (m.hurtAt or nil)
+    return '<div class="' .. class .. '">' .. CB.fieldCard(c, card, m.dies and m.diesAt)
+        .. mover .. '<div class="cbx-spot"><div class="cbx-stand"><div class="cbx-crt' .. (m.hurtAt and ' cbx-hit' or '') .. '"' .. at(delay) .. '>'
+        .. CB.creatureFigure(c, card) .. statBoxes(c.atk or 0, math.max(0, c.hp), c.maxHp) .. table.concat(marks) .. '</div></div></div></div></div>'
+end
+
+--- The field in the art views: each side's three slots on the floor, a
+--- creature standing on its card where one is. taps (CB.taps) makes a slot
+--- a button.
+function CB.lanes(b, anim, view, taps)
+    local marks = CB.fieldMarks(anim)
+    local f = CB.FIELD[view] or CB.FIELD.mixed
+    local out = {}
+    if view == 'mixed' then
+        for i = 1, CB.LANES do out[#out + 1] = '<div class="cbx-lane" style="top:' .. f.mine[i][2] .. '%"></div>' end
+    end
+    for _, side in ipairs({ 'foe', 'mine' }) do
+        local lanes = CB.lanesOf(side == 'mine' and b or b.enemy)
+        for i = 1, CB.LANES do
+            local m = marks[side][i]
+            local c = lanes[i] or (m and m.ghost)
+            local tap = taps[side][i]
+            out[#out + 1] = '<div class="cbx-slot cbx-' .. (side == 'mine' and 'ours' or 'theirs') .. (tap and tap[2] or '') .. '"'
+                .. (tap and (' risu-btn="' .. tap[1] .. '"') or '') .. ' style="left:' .. f[side][i][1] .. '%;top:' .. f[side][i][2] .. '%">'
+                .. (c and unitHtml(b, view, side, i, c, m, side == 'mine' and taps.ready[i] or nil) or ('<span class="cbx-laneno">' .. i .. '</span>'))
+                .. '</div>'
+        end
+    end
+    return '<div class="cbx-floor"><div class="cbx-plane">' .. table.concat(out) .. '</div></div>'
+end
+
+--- 간단: the field as two rows of text, theirs over ours.
+function CB.fieldRows(b, anim, taps)
+    local marks = CB.fieldMarks(anim)
+    local rows = {}
+    for _, side in ipairs({ 'foe', 'mine' }) do
+        local lanes = CB.lanesOf(side == 'mine' and b or b.enemy)
+        local cells = {}
+        for i = 1, CB.LANES do
+            local c, m, tap = lanes[i], marks[side][i] or {}, taps[side][i]
+            local text = i .. ' · 빈 칸'
+            if c then
+                text = i .. ' · ' .. escapeHtml(CB.clip(c.name, 6)) .. ' ⚔' .. (c.atk or 0) .. ' ❤' .. c.hp
+            elseif m.ghost then
+                text = i .. ' · ' .. escapeHtml(CB.clip(m.ghost.name, 6)) .. ' 쓰러짐'
+            end
+            local ready = side == 'mine' and taps.ready[i]
+            cells[#cells + 1] = '<span class="cbx-cell' .. (c and '' or ' cbx-empty') .. (tap and tap[2] or '') .. (ready and (' cbx-' .. ready) or '')
+                .. (m.new and ' cbx-pop' or '') .. (m.hurtAt and ' cbx-shake' or '') .. '"' .. (tap and (' risu-btn="' .. tap[1] .. '"') or '') .. '>'
+                .. text .. (m.hurtAt and float(m.text, nil, m.hurtAt) or '') .. '</span>'
+        end
+        rows[#rows + 1] = '<div class="cbx-frow"><span class="cbx-flab">' .. (side == 'mine' and '나' or '적') .. '</span>' .. table.concat(cells) .. '</div>'
+    end
+    return '<div class="cbx-tfield">' .. table.concat(rows) .. '</div>'
+end
+
+--- What each slot does when tapped now (nothing while the enemy moves):
+--- with a creature card lifted, our empty lanes take it; with an attack
+--- card, the enemy's creatures (and the enemy, once it has creatures) are
+--- its targets. 직접 고르기: our creatures that may attack are picked
+--- (cb|aim), then the enemy's creatures and the enemy are hit (cb|hit).
+--- Each tap carries the drawing (b.n), as play and 턴 종료 do.
+function CB.taps(b, idle)
+    local taps = { mine = {}, foe = {}, ready = {} }
+    if idle then return taps end
+    local n = b.n or 0
+    local mine, theirs = CB.lanesOf(b), CB.lanesOf(b.enemy)
+    local card = b.selected and b.cards[b.hand[b.selected] or 0]
+    if card and CB.isCreature(card) then
+        for i, c in ipairs(mine) do
+            if not c then taps.mine[i] = { 'cb|play|' .. b.selected .. '|' .. n .. '|L' .. i, ' cbx-target' } end
+        end
+    elseif card and (card.fx or {}).dmg and CB.anyCreature(b.enemy) then
+        for j, c in ipairs(theirs) do
+            if c then taps.foe[j] = { 'cb|play|' .. b.selected .. '|' .. n .. '|E' .. j, ' cbx-aimable' } end
+        end
+        taps.hero = 'cb|play|' .. b.selected .. '|' .. n .. '|H'
+    end
+    if b.chosen then
+        for i, c in ipairs(mine) do
+            if c and not c.fresh and not c.acted and (c.atk or 0) > 0 then
+                taps.ready[i] = b.aiming == i and 'aiming' or 'ready'
+                taps.mine[i] = taps.mine[i] or { 'cb|aim|' .. i .. '|' .. n, '' }
+            end
+        end
+        if b.aiming and taps.ready[b.aiming] and not card then
+            for j, c in ipairs(theirs) do
+                if c then taps.foe[j] = { 'cb|hit|' .. b.aiming .. '|' .. n .. '|E' .. j, ' cbx-aimable' } end
+            end
+            taps.hero = 'cb|hit|' .. b.aiming .. '|' .. n .. '|H'
+        end
+    end
+    return taps
+end
+
+--- The targets of what is lifted as plain buttons under its text, for
+--- every view (and for anyone who would rather not tap the floor): the
+--- empty lanes a creature card may go to, or the enemy and its creatures.
+function CB.targetRow(b, taps, kind)
+    local buttons = {}
+    if kind == 'lane' then
+        for i = 1, CB.LANES do
+            local tap = taps.mine[i]
+            if tap and tap[1]:find('|L%d$') then buttons[#buttons + 1] = '<span risu-btn="' .. tap[1] .. '" class="cbx-tbtn">' .. i .. '번 레인</span>' end
+        end
+    else
+        if taps.hero then buttons[#buttons + 1] = '<span risu-btn="' .. taps.hero .. '" class="cbx-tbtn">' .. escapeHtml(CB.clip(b.name, 8)) .. '</span>' end
+        for j, c in ipairs(CB.lanesOf(b.enemy)) do
+            local tap = taps.foe[j]
+            if tap and c then
+                buttons[#buttons + 1] = '<span risu-btn="' .. tap[1] .. '" class="cbx-tbtn cbx-tfoe">' .. j .. ' ' .. escapeHtml(CB.clip(c.name, 6)) .. ' ' .. (c.atk or 0) .. '/' .. c.hp .. '</span>'
+            end
+        end
+    end
+    if #buttons == 0 then return '' end
+    return '<div class="cbx-targets">' .. (kind == 'lane' and '놓을 레인' or '대상') .. table.concat(buttons) .. '</div>'
+end
+
+--- Whether this fight can have anything on its field: a creature card in
+--- the deck, or an enemy that calls creatures.
+function CB.fieldUsed(b)
+    for _, card in ipairs(b.cards or {}) do
+        if CB.isCreature(card) then return true end
+    end
+    for _, move in ipairs((b.enemy or {}).moves or {}) do
+        if move.summon then return true end
+    end
+    return false
+end
+
+function CB.stage(b, user, anim, enemy, me, meStyle, meWait, ghost, taps)
     local view = CB.VIEW or 'stage'
     local hurt = anim.player == 'hurt'
     local player = '<div class="cbx-player' .. (hurt and ' cbx-shake' or '') .. '"' .. meStyle .. '><div class="cbx-figure">' .. CB.hero('user')
@@ -1856,7 +2936,7 @@ function CB.stage(b, user, anim, enemy, me, meStyle, meWait, ghost)
         .. hpBar(b.hp, b.maxHp, 'cbx-green', b.block, { from = anim.playerFrom, wait = meWait, block = anim.playerBreak and 'break' or anim.playerBlock })
         .. '<div class="cbx-tag">' .. escapeHtml(CB.clip(user, 12)) .. '</div>' .. chips(b) .. '</div>'
     return '<div class="cbx-stage cbx-view-' .. view .. '"><div class="cbx-bg" style="background-image:url(\'{{raw::cb-art-bg-stage}}\')"></div>'
-        .. '<div class="cbx-vignette"></div>' .. (view ~= 'stage' and CB.lanes(b, anim, view) or '')
+        .. '<div class="cbx-vignette"></div>' .. CB.lanes(b, anim, view, taps)
         .. '<div class="cbx-companion"><div class="cbx-figure">' .. CB.hero('char') .. '</div><div class="cbx-tag">동료 · ' .. escapeHtml(CB.BOT or '동료') .. '</div></div>'
         .. player .. enemy .. ghost .. '</div>'
 end
@@ -1873,13 +2953,15 @@ function CB.fightView(b, user, fx)
         if fx or CB.PLAIN_ANIM[key] then anim[key] = value end
     end
     local foeTurn = anim.foeTurn
-    -- Nothing is tapped on the enemy's turn, nor in the blow that ends it.
-    local idle = foeTurn or b.phase ~= 'fight'
-    -- When things land: after the card's flight, the enemy's lunge or the
-    -- turn's banner.
-    local foeWait = (anim.castAt == 'foe' and 0.3) or (anim.lunge and 0.2) or (anim.banner == 'foe' and 0.35) or 0
-    local meWait = (anim.lunge and 0.2) or (anim.castAt == 'me' and 0.2) or (anim.banner == 'mine' and 0.3) or 0
+    -- Nothing is tapped on the enemy's turn, while the player's creatures
+    -- attack at the turn's end, nor in the blow that ends it.
+    local idle = foeTurn or anim.busy or b.phase ~= 'fight'
+    -- When things land: after the card's flight, a creature's lunge, the
+    -- enemy's lunge or the turn's banner.
+    local foeWait = anim.foeAt or (anim.castAt == 'foe' and 0.3) or (anim.lunge and 0.2) or (anim.banner == 'foe' and 0.35) or 0
+    local meWait = anim.meAt or (anim.lunge and 0.2) or (anim.castAt == 'me' and 0.2) or (anim.banner == 'mine' and 0.3) or 0
     local lunge = anim.lunge
+    local taps = CB.taps(b, idle)
     local out = { header('<span class="cbx-turn">' .. CB.icon('attack', '⚔️') .. ' ' .. b.turn .. '턴</span> · Lv.' .. (b.level or 1),
         '<span risu-btn="cb|deck" class="cbx-ic">🂠 ' .. #b.cards .. '</span><span risu-btn="cb|flee" class="cbx-ic">💨 도망</span>') }
 
@@ -1898,8 +2980,17 @@ function CB.fightView(b, user, fx)
     if anim.enemyGlow then medal[#medal + 1] = '<i class="cbx-aura"' .. at(foeWait) .. '></i>' end
     medal[#medal + 1] = float(anim.enemyText, nil, foeWait, anim.big and anim.castAt == 'foe')
     local ghost = (anim.castAt == 'foe' and b.cards[anim.cast]) and ('<div class="cbx-ghost">' .. CB.cardFace(b.cards[anim.cast], 0.8) .. '</div>') or ''
-    local intent = '<div class="cbx-intent' .. (foeTurn and ' cbx-act' or '') .. '">' .. CB.iconText(CB.intentText(b)) .. '</div>'
-    local enemy = '<div class="cbx-foe">' .. (not simple and intent or '') .. '<div class="cbx-medalw' .. (lunge and ' cbx-lunge' or '') .. '"'
+    local intentText = CB.iconText(CB.intentText(b))
+    local move = e.moves[e.step] or {}
+    if move.summon and not simple then
+        -- The creature it will call, in place of the paw.
+        local m = CB.minion(b, move.summon)
+        local src = CB.foeSource(nil, m.art)
+        if src then intentText = intentText:gsub('🐾', '<img class="cbx-icon cbx-minicon" src="' .. src .. '" alt="🐾">') end
+    end
+    local intent = '<div class="cbx-intent' .. (foeTurn and ' cbx-act' or '') .. '">' .. intentText .. '</div>'
+    local enemy = '<div class="cbx-foe' .. (taps.hero and ' cbx-aimable' or '') .. '"' .. (taps.hero and (' risu-btn="' .. taps.hero .. '"') or '') .. '>'
+        .. (not simple and intent or '') .. '<div class="cbx-medalw' .. (lunge and ' cbx-lunge' or '') .. '"'
         .. ((lunge or 1) > 1 and (' style="animation-duration:.36s;animation-iteration-count:' .. lunge .. '"') or '') .. '>'
         .. '<div class="cbx-medal' .. (anim.enemy and ' cbx-shake' or '') .. '"' .. (anim.enemy and at(foeWait) or '') .. '>' .. table.concat(medal) .. '</div></div>'
         .. '<div class="cbx-name">' .. escapeHtml(b.name) .. '<span class="cbx-tier">' .. CB.TIER_LABEL[b.tier] .. '</span></div>'
@@ -1907,6 +2998,8 @@ function CB.fightView(b, user, fx)
         .. chips(e) .. '</div>'
     if simple then
         out[#out + 1] = '<div class="cbx-arena cbx-' .. b.tier .. '"><div class="cbx-intentrow">' .. intent .. '</div>' .. ghost .. enemy .. '</div>'
+        -- The field as text, once there is anything to put on it.
+        if CB.anyCreature(b) or CB.anyCreature(e) or CB.fieldUsed(b) then out[#out + 1] = CB.fieldRows(b, anim, taps) end
         out[#out + 1] = '<div class="cbx-note">' .. escapeHtml(b.note or '') .. '</div>'
     end
 
@@ -1930,7 +3023,7 @@ function CB.fightView(b, user, fx)
         .. '<div style="margin-top:5px">' .. hpBar(b.hp, b.maxHp, 'cbx-green', b.block, { from = anim.playerFrom, wait = meWait, block = anim.playerBreak and 'break' or anim.playerBlock }) .. '</div></div>'
         .. float(anim.playerText, (not hurt) and (anim.heal and 'heal' or 'good') or nil, meWait, anim.big and lunge) .. table.concat(me) .. '</div>'
     else
-        out[#out + 1] = CB.stage(b, user, anim, enemy, me, meStyle, meWait, ghost)
+        out[#out + 1] = CB.stage(b, user, anim, enemy, me, meStyle, meWait, ghost, taps)
             .. '<div class="cbx-note">' .. escapeHtml(b.note or '') .. '</div><div class="cbx-tray">' .. orb
     end
 
@@ -1966,13 +3059,22 @@ function CB.fightView(b, user, fx)
             .. '<div class="cbx-pile"><div class="cbx-pilen">' .. #b.draw .. '</div>뽑을 더미</div>' .. middle
             .. '<div class="cbx-pile"><div class="cbx-pilen">' .. #b.discard .. '</div>버린 더미</div></div>'
     end
+    local aiming = (not idle) and b.aiming and taps.ready[b.aiming] and CB.lanesOf(b)[b.aiming]
     if picked then
         local help = CB.keywordHelp(picked)
         out[#out + 1] = '<div class="cbx-detail"><b>' .. escapeHtml(picked.name) .. '</b> — ' .. escapeHtml(CB.effectText(picked))
             .. ((picked.desc or '') ~= '' and ('<br><span class="cbx-flavour">' .. escapeHtml(picked.desc) .. '</span>') or '')
-            .. (#help > 0 and ('<br><span style="font-size:11px;opacity:.75">' .. escapeHtml(table.concat(help, ' ')) .. '</span>') or '') .. '</div>'
-        out[#out + 1] = '<div style="display:flex;gap:8px;margin-top:8px"><span risu-btn="cb|play|' .. b.selected .. '|' .. (b.n or 0) .. '" class="cbx-btn cbx-gold" style="flex:2">▶ 사용</span>'
+            .. (#help > 0 and ('<br><span style="font-size:11px;opacity:.75">' .. escapeHtml(table.concat(help, ' ')) .. '</span>') or '')
+            .. CB.targetRow(b, taps, CB.isCreature(picked) and 'lane' or 'aim') .. '</div>'
+        local full = CB.isCreature(picked) and not CB.freeLane(b)
+        out[#out + 1] = '<div style="display:flex;gap:8px;margin-top:8px">'
+            .. (full and '<span class="cbx-btn cbx-dark cbx-poor" style="flex:2">레인이 가득 참</span>'
+                or ('<span risu-btn="cb|play|' .. b.selected .. '|' .. (b.n or 0) .. '" class="cbx-btn cbx-gold" style="flex:2">▶ 사용</span>'))
             .. '<span risu-btn="cb|unsel" class="cbx-btn cbx-dark" style="flex:1">취소</span></div>'
+    elseif aiming then
+        out[#out + 1] = '<div class="cbx-detail"><b>' .. escapeHtml(aiming.name) .. '</b> — 공격 ' .. (aiming.atk or 0) .. ' · 체력 ' .. aiming.hp .. '/' .. aiming.maxHp
+            .. CB.targetRow(b, taps, 'aim') .. '</div>'
+        out[#out + 1] = '<div style="display:flex;gap:8px;margin-top:8px"><span risu-btn="cb|unsel" class="cbx-btn cbx-dark" style="flex:1">취소</span></div>'
     elseif idle then
         out[#out + 1] = piles('<div class="cbx-btn cbx-dark cbx-pulse" style="flex:1">' .. (foeTurn and '적의 차례…' or '…') .. '</div>')
     else
@@ -2076,17 +3178,17 @@ end
 --- onFormSubmit). Its fields are not called name or title: the sanitizer
 --- drops a name a form already has as a property.
 function CB.sigForm(draft)
-    local raw = draft.raw or { name = '', cost = 1, effects = { dmg = 8 }, desc = '' }
+    local raw = draft.raw or { name = '', cost = 1, effects = { summon = 4, power = 2 }, desc = '' }
     local effects = raw.effects or {}
     local picks = {}
     for _, effect in ipairs(CB.EFFECTS) do
         local value = effects[effect.key]
-        if not effect.flag and type(value) == 'number' and #picks < 3 then picks[#picks + 1] = { effect.key, value } end
+        if not effect.flag and not effect.creature and type(value) == 'number' and #picks < 3 then picks[#picks + 1] = { effect.key, value } end
     end
     local function menu(name, chosen)
         local options = { '<option value=""' .. (chosen and '' or ' selected') .. '>없음</option>' }
         for _, effect in ipairs(CB.EFFECTS) do
-            if not effect.flag then
+            if not effect.flag and not effect.creature then
                 options[#options + 1] = '<option value="' .. effect.key .. '"' .. (chosen == effect.key and ' selected' or '') .. '>' .. CB.EFFECT_LABEL[effect.key] .. '</option>'
             end
         end
@@ -2111,8 +3213,14 @@ function CB.sigForm(draft)
         flags[#flags + 1] = '<label class="cbx-check"><input type="checkbox" name="' .. key .. '" value="1"' .. (effects[key] and ' checked' or '') .. '>' .. CB.FLAG_LABEL[key] .. '</label>'
     end
     rows[#rows + 1] = '<div>' .. table.concat(flags) .. '</div>'
+    -- The signature card stands on the field as the player's own figure.
+    local number = function(name, value)
+        return '<input name="' .. name .. '" type="number" min="1" max="30" inputmode="numeric" class="cbx-field cbx-num" value="' .. (value or '') .. '">'
+    end
+    rows[#rows + 1] = '<div class="cbx-row"><span class="cbx-lab">생물</span><span class="cbx-hint">공격</span>' .. number('ca', effects.power)
+        .. '<span class="cbx-hint">체력</span>' .. number('ch', effects.summon) .. '</div>'
     rows[#rows + 1] = '<div class="cbx-row"><span class="cbx-lab">설명</span><input name="cdesc" maxlength="60" class="cbx-field" value="' .. escapeHtml(raw.desc or '') .. '" placeholder="한 줄 설명 (안 써도 됨)"></div>'
-    rows[#rows + 1] = '<div class="cbx-hint">비용마다 담을 수 있는 점수 — ' .. table.concat(budget, ' · ') .. '. 피해·방어 1이 1점, 독 2점, 약화·취약·가시 3점, 카드 뽑기 4점, 에너지 5점, 힘·민첩 6점이고, 체력 소모는 점수를 덜어 줍니다. 넘치면 비용이 먼저 오르고, 그래도 넘치면 숫자가 줄어듭니다.</div>'
+    rows[#rows + 1] = '<div class="cbx-hint">비용마다 담을 수 있는 점수 — ' .. table.concat(budget, ' · ') .. '. 피해·방어 1이 1점, 독 2점, 약화·취약·가시 3점, 카드 뽑기 4점, 에너지 5점, 힘·민첩 6점이고, 체력 소모는 점수를 덜어 줍니다. 대표 카드는 필드에 서는 생물이라 생물 공격력 1이 3.5점, 체력 1이 1점이고, 비워 두면 비용에 맞게 정해집니다. 넘치면 비용이 먼저 오르고, 그래도 넘치면 숫자가 줄어듭니다.</div>'
     if draft.note then rows[#rows + 1] = '<div class="cbx-note">' .. escapeHtml(draft.note) .. '</div>' end
     rows[#rows + 1] = '<div style="display:flex;gap:8px"><button type="submit" class="cbx-btn cbx-gold" style="flex:2;font:inherit;font-weight:800">만들기</button>'
         .. (draft.card and '<span risu-btn="cb|sigback" class="cbx-btn cbx-dark" style="flex:1">취소</span>' or '') .. '</div>'
@@ -2220,7 +3328,9 @@ function CB.lastExtras(tid, text, b)
     end
     if not b then return '' end
     local user = getPersonaName(tid) or ''
-    local fx = CB.settings(tid).pace > 0
+    local settings = CB.settings(tid)
+    local fx = settings.pace > 0
+    if b.enemy then b.chosen = settings.attack == 'chosen' or nil end
     if b.open then
         if b.phase == 'sig' then return CB.sigView(b, fx) end
         if b.phase == 'fight' then
@@ -2344,7 +3454,7 @@ function CB.tellTurn(tid, b)
     for i = first, #b.log do lines[#lines + 1] = b.log[i] end
     b.told = #b.log
     local user = getPersonaName(tid) or ''
-    lines[#lines + 1] = '지금: ' .. user .. ' 체력 ' .. b.hp .. '/' .. b.maxHp .. ', ' .. b.name .. ' 체력 ' .. b.enemy.hp .. '/' .. b.enemy.maxHp
+    lines[#lines + 1] = '지금: ' .. user .. ' 체력 ' .. b.hp .. '/' .. b.maxHp .. ', ' .. b.name .. ' 체력 ' .. b.enemy.hp .. '/' .. b.enemy.maxHp .. CB.fieldText(b)
     local block = '<battle-turn>\n⚔️ ' .. b.name .. ' (' .. CB.TIER_LABEL[b.tier] .. ')\n' .. table.concat(lines, '\n') .. '\n</battle-turn>'
     local at = CB.turnMessage(tid)
     local text = CB.writeMark(messageText(tid, at) or '', 'b', nil)
@@ -2368,14 +3478,15 @@ function CB.finish(tid, at, b, settings)
     if b.sigCard and not CB.sigCard(run) then run.deck[#run.deck + 1] = CB.copy(b.sigCard) end
     local foe = nil
     if b.phase == 'won' and settings.capture and b.enemy then
-        local card = CB.foeCard(b.name, b.tier, b.enemy.moves, b.art)
+        local card = CB.foeCard(b.name, b.tier, b.enemy.moves, b.art, b.level)
         if card then foe = { name = card.name, glyph = card.glyph, moves = CB.movesText(b.enemy.moves), card = card } end
     end
     CB.settle(run, b)
     local log = CB.logBlock(run, b, getPersonaName(tid) or '', settings.fullLog)
-    -- What the end screen does not need.
+    -- What the end screen does not need. The field's cards were never out
+    -- of the run's deck: they are back in it for the next fight.
     b.cards, b.draw, b.hand, b.discard, b.enemy, b.log, b.played, b.view = nil, nil, nil, nil, nil, nil, nil, nil
-    b.awaitStory, b.sigCard, b.anim = nil, nil, nil
+    b.awaitStory, b.sigCard, b.anim, b.field, b.aiming, b.chosen = nil, nil, nil, nil, nil, nil
     local writeFoe = foe and settings.cards == 'aux'
     if foe then b.capture = { card = foe.card, making = writeFoe or nil } end
     if b.levelUp then
@@ -2487,16 +3598,26 @@ end)
 onButtonClick = async(function(tid, data)
     local action, rest = tostring(data or ''):match('^cb|(%a+)|?(.*)$')
     if not action then return end
-    local first, drawnIn = rest:match('^([^|]*)|?(.*)$')
+    -- cb|action|k|drawing|target: target is a lane (L1), an enemy creature
+    -- (E2) or the enemy (H).
+    local first, drawnIn, target = rest:match('^([^|]*)|?([^|]*)|?(.*)$')
     local k, drawing = tonumber(first), tonumber(drawnIn)
     local settings = CB.settings(tid)
     local len = getChatLength(tid)
     local b, at = CB.findFight(tid, true)
-    -- Play and 턴 종료 carry the drawing they were tapped in: one left over
-    -- from an older drawing (a double tap, taps while the enemy moved)
-    -- would play another card or end the next turn.
-    if b and drawing and (action == 'play' or action == 'end') and drawing ~= (b.n or 0) then return end
+    -- Play, 턴 종료 and a creature's attack carry the drawing they were
+    -- tapped in: one left over from an older drawing (a double tap, taps
+    -- while the enemy moved) would play another card or end the next turn.
+    local guarded = action == 'play' or action == 'end' or action == 'aim' or action == 'hit'
+    if b and drawing and guarded and drawing ~= (b.n or 0) then return end
     if b then b.anim, b.n = nil, (b.n or 0) + 1 end
+    -- How creatures attack (생물 공격) is read at every tap, as the view is;
+    -- a fight from before 1.0 gets its empty lanes.
+    if b and b.enemy then
+        b.chosen = settings.attack == 'chosen' or nil
+        CB.lanesOf(b)
+        CB.lanesOf(b.enemy)
+    end
     local whole, saved, shown = false, false, false
     -- The window is drawn on the last message.
     local function redraw() reloadChat(tid, getChatLength(tid) - 1) end
@@ -2566,15 +3687,28 @@ onButtonClick = async(function(tid, data)
         end
     elseif b.phase == 'fight' then
         if action == 'sel' and k then
-            b.selected = k
+            b.selected, b.aiming = k, nil
             local card = b.cards[b.hand[k] or 0]
-            b.note = (card and card.cost > b.energy) and '에너지가 모자랍니다' or ''
+            b.note = (card and card.cost > b.energy) and '에너지가 모자랍니다'
+                or ((CB.isCreature(card) and not CB.freeLane(b)) and '레인이 가득 찼습니다: 내 생물이 쓰러져야 낼 수 있습니다' or '')
         elseif action == 'unsel' then
-            b.selected = nil
+            b.selected, b.aiming = nil, nil
         elseif action == 'play' and k then
-            CB.play(b, k)
+            CB.play(b, k, target)
             -- The last blow lands on screen before the end screen comes.
             if b.phase ~= 'fight' and settings.pace > 0 then show(CB.HOLD.over) end
+        elseif action == 'aim' and k and b.chosen then
+            -- 직접 고르기: pick a creature of ours, then what it attacks.
+            local c = CB.lanesOf(b)[k]
+            if c and not c.fresh and not c.acted and (c.atk or 0) > 0 then
+                b.aiming, b.selected = k, nil
+                b.note = c.name .. ': 공격할 대상을 누르세요'
+            elseif c then
+                b.note = c.fresh and (c.name .. '은(는) 이번 턴에 나와서 다음 턴부터 공격합니다') or (c.name .. '은(는) 이번 턴에 공격했습니다')
+            end
+        elseif action == 'hit' and k and b.chosen then
+            local to = target == 'H' and 'H' or tonumber(tostring(target or ''):match('^E(%d)$'))
+            if to and CB.attack(b, k, to) and b.phase ~= 'fight' and settings.pace > 0 then show(CB.HOLD.over) end
         elseif action == 'end' then
             if settings.pace > 0 then
                 CB.endTurn(b, function(scene, hold)

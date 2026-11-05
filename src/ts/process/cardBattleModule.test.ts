@@ -14,11 +14,15 @@ const llmAnswers: string[] = []
 const llmPrompts: { role: string, content: string }[][] = []
 const characterAssets: string[] = []
 const packAssets: string[] = []
+// The module's own asset names ({{moduleassetlist::card-battle}}); empty
+// reads as "cannot tell", so every art row counts as there.
+const ownAssets: string[] = []
 const alerts = vi.hoisted(() => ({ select: '0', confirm: true }))
 
 vi.mock('../parser/parser.svelte', () => ({ hasher: vi.fn(), risuChatParser: vi.fn((text: string) => {
     if (text === '{{assetlist}}') return JSON.stringify(characterAssets)
     if (text === '{{moduleassetlist::card-battle-art}}') return JSON.stringify(packAssets)
+    if (text === '{{moduleassetlist::card-battle}}') return JSON.stringify(ownAssets)
     return text
 }) }))
 vi.mock('../alert', () => ({
@@ -135,27 +139,29 @@ beforeEach(() => {
     llmPrompts.length = 0
     characterAssets.length = 0
     packAssets.length = 0
+    ownAssets.length = 0
     alerts.select = '0'
     alerts.confirm = true
     vi.mocked(ReloadChatPointer.update).mockReset()
 })
 
 describe('the module file', () => {
-    test('0.7 packs every original WebP as an ordered binary asset block', () => {
+    test('1.0 packs every original WebP, the ally figures too, as an ordered binary asset block', () => {
         const maps = readMaps()
         const json = buildModuleJson(code)
         const art = readArt()
         const packed = encodeBattleRisum(json, maps.encode, art)
         const back = decodeBattleRisum(packed, maps.decode)
-        expect(VERSION).toBe('0.7.0')
-        expect(code).toContain("CB.VERSION = '0.7.0'")
+        expect(VERSION).toBe('1.0.0')
+        expect(code).toContain("CB.VERSION = '1.0.0'")
         expect(back.json).toEqual(json)
         expect(back.assets).toEqual(art.map(({ data }) => data))
-        expect(art).toHaveLength(20)
-        expect(new Set(json.module.assets.map(([name]) => name)).size).toBe(20)
+        expect(art.length).toBeGreaterThanOrEqual(25)
+        expect(new Set(json.module.assets.map(([name]) => name)).size).toBe(art.length)
         expect(json.module.assets).toContainEqual(['cb-art-foe-magician', '', 'webp'])
         expect(json.module.assets).toContainEqual(['cb-art-bg-board', '', 'webp'])
-        expect(packed.length).toBeLessThan(1_000_000)
+        for (const ally of ['sprout', 'salamander', 'fox', 'owl', 'turtle', 'jelly']) expect(json.module.assets).toContainEqual([`cb-art-ally-${ally}`, '', 'webp'])
+        expect(packed.length).toBeLessThan(2_000_000)
         for (const bytes of back.assets) {
             expect(bytes.toString('ascii', 0, 4)).toBe('RIFF')
             expect(bytes.toString('ascii', 8, 12)).toBe('WEBP')
@@ -215,8 +221,9 @@ describe('0.7 battle art and views', () => {
                 expect(html).toContain('class="cbx-tray"')
                 expect(html).toContain('class="cbx-cost"')
                 expect(html).toContain('max-width:560px')
+                // 1.0: every art view has the field, three slots a side.
                 expect(html.match(/class="cbx-lane"/g)?.length ?? 0).toBe(view === 'mixed' ? 3 : 0)
-                expect(html.match(/class="cbx-slot /g)?.length ?? 0).toBe(view === 'board' ? 6 : 0)
+                expect(html.match(/class="cbx-slot /g)?.length ?? 0).toBe(6)
             }
             expect(html).toContain('cb|end||0')
             expect(game.chat.message[0].data).toBe(before)
@@ -274,35 +281,46 @@ describe('0.7 battle art and views', () => {
         expect(result.simple).not.toContain('<img')
     })
 
-    test.each(['mixed', 'board'])('%s summons one transient figure for a normal, signature, or captured card', async (view) => {
+    test.each(['stage', 'mixed', 'board'])('%s stands a summon, signature or captured creature on its card and keeps it there', async (view) => {
         const result = await probe(`
             CB.VIEW = '${view}'
             local views = {}
-            for _, kind in ipairs({ 'plain', 'sig', 'foe' }) do
+            for _, kind in ipairs({ 'ally', 'holo', 'sig', 'foe' }) do
                 local b = CB.newBattle(CB.newRun(3), { id = 's', name = '합성 골렘', tier = 'normal' }, { healEach = true })
-                local card = { name = '합성 카드', cost = 0, fx = { dmg = 6 }, rarity = 'common', sig = kind == 'sig', foe = kind == 'foe', art = 'imp' }
+                local card = { name = '합성 생물', cost = 0, fx = { summon = 3, power = 1 }, rarity = 'common', sig = kind == 'sig', foe = kind == 'foe',
+                    art = (kind == 'ally' and 'owl') or (kind == 'foe' and 'imp') or nil }
                 b.cards[b.hand[1]], b.n = card, 2
-                CB.play(b, 1)
+                local discard = #b.discard
+                CB.play(b, 1, 'L2')
                 local seed = b.seed
                 local cast = CB.fightView(b, '합성 인물')
                 local off = CB.fightView(b, '합성 인물', false)
                 b.anim = {}
-                views[kind] = { cast = cast, after = CB.fightView(b, '합성 인물'), off = off, seed = seed == b.seed, board = b.lanes == nil }
+                views[kind] = { cast = cast, after = CB.fightView(b, '합성 인물'), off = off, seed = seed == b.seed,
+                    lane = b.field[2], empty = b.field[1] == false and b.field[3] == false, discard = #b.discard - discard }
             end
             return json.encode(views)`)
-        for (const kind of ['plain', 'sig', 'foe']) {
+        for (const kind of ['ally', 'holo', 'sig', 'foe']) {
             const scene = result[kind]
-            expect(scene.cast.match(/class="cbx-summon"/g)).toHaveLength(1)
+            expect(scene.lane).toMatchObject({ name: '합성 생물', atk: 1, hp: 3, maxHp: 3, fresh: true })
+            expect(scene.empty).toBe(true)
+            expect(scene.discard).toBe(0)
+            expect(scene.cast.match(/class="cbx-unit cbx-new"/g)).toHaveLength(1)
             expect(scene.cast).toContain('class="cbx-summonring"')
-            expect(scene.cast).toContain('class="cbx-spot"><div class="cbx-stand">')
-            expect(scene.after).not.toContain('class="cbx-summon"')
-            expect(scene.off).not.toContain('class="cbx-summon"')
+            // The card lies on the floor, the creature stands on it, the stand turning it back up.
+            expect(scene.cast).toMatch(/class="cbx-unit cbx-new"><div class="cbx-fcard"[^>]*>.*?<\/div><div class="cbx-mover"><div class="cbx-spot"><div class="cbx-stand"><div class="cbx-crt">/)
+            expect(scene.after.match(/class="cbx-unit"/g)).toHaveLength(1)
+            expect(scene.after).not.toContain('class="cbx-unit cbx-new"')
+            expect(scene.after).toContain('class="cbx-matk"')
+            expect(scene.off).not.toContain('class="cbx-unit cbx-new"')
+            expect(scene.off).toContain('class="cbx-unit"')
             expect(scene.off).toContain('class="cbx-visual cbx-still"')
-            expect(scene.seed && scene.board).toBe(true)
+            expect(scene.seed).toBe(true)
         }
-        expect(result.plain.cast).toContain('class="cbx-hologram"')
-        expect(result.sig.cast).toContain('{{source::user}}')
-        expect(result.foe.cast).toContain('{{raw::cb-art-foe-imp}}')
+        expect(result.ally.after).toContain('{{raw::cb-art-ally-owl}}')
+        expect(result.holo.after).toContain('class="cbx-holo"')
+        expect(result.sig.after).toContain('{{source::user}}')
+        expect(result.foe.after).toContain('{{raw::cb-art-foe-imp}}')
     })
 
     test.each([0, 1, 2, 3])('view %i keeps enemy scenes, the final blow, art on capture and the end screen', async (view) => {
@@ -783,7 +801,8 @@ describe('the end of a fight', () => {
         await run('onButtonClick', { data: 'cb|play|1' })
         expect(llmPrompts).toHaveLength(0)
         // The module's own card of it: its strongest move, its name and face.
-        expect(mark(chat.message[2].data, 'b').capture.card).toMatchObject({ name: '고블린', foe: true, glyph: '👺', rarity: 'common', cost: 1, fx: { dmg: 7 } })
+        // 1.0: a creature as strong as a normal enemy at level 1.
+        expect(mark(chat.message[2].data, 'b').capture.card).toMatchObject({ name: '고블린', foe: true, glyph: '👺', rarity: 'common', cost: 1, fx: { summon: 3, power: 2 } })
         const end = await shown(2)
         expect(end).toContain('risu-btn="cb|take"')
         expect(end).toContain('risu-btn="cb|free"')
@@ -818,7 +837,10 @@ describe('the end of a fight', () => {
         const b = mark(chat.message[2].data, 'b')
         expect(b.reward.choices.map((c: { name: string }) => c.name)).toEqual(['하나', '둘', '셋'])
         expect(b.reward.note).toBeUndefined()
-        expect(b.capture.card).toMatchObject({ name: '고블린', foe: true, glyph: '👺', fx: { dmg: 5, weak: 1 }, desc: '작지만 끈질기다.' })
+        // Written without summon, it is made a creature at the same cost.
+        expect(b.capture.card).toMatchObject({ name: '고블린', foe: true, glyph: '👺', cost: 1, desc: '작지만 끈질기다.' })
+        expect(b.capture.card.fx.summon).toBeGreaterThanOrEqual(2)
+        expect(b.capture.card.fx.power).toBeGreaterThanOrEqual(1)
 
         await run('onButtonClick', { data: 'cb|free' })
         const text = chat.message[2].data
@@ -845,7 +867,8 @@ describe('turn by turn', () => {
         expect(chat.message).toHaveLength(3)
         const turn = chat.message[2]
         expect(turn.role).toBe('user')
-        expect(turn.data).toMatch(/^<battle-turn>\n⚔️ 고블린 \(일반\)\n1턴: 카드 없음 \/ 적: [^\n]+\n지금: 레이 체력 \d+\/60, 고블린 체력 \d+\/\d+\n<\/battle-turn>\n<!--cb:b:[^>]+-->$/)
+        // (an enemy that called a creature adds it to the 지금 line)
+        expect(turn.data).toMatch(/^<battle-turn>\n⚔️ 고블린 \(일반\)\n1턴: 카드 없음 \/ 적: [^\n]+\n지금: 레이 체력 \d+\/60, 고블린 체력 \d+\/\d+[^\n]*\n<\/battle-turn>\n<!--cb:b:[^>]+-->$/)
         expect(mark(turn.data, 'b')).toMatchObject({ phase: 'fight', turn: 2, open: false, awaitStory: true, told: 1 })
         // The start message keeps the fight as it stood, and says nothing of it.
         expect(mark(chat.message[1].data, 'b').turn).toBe(1)
@@ -1124,13 +1147,14 @@ describe('the signature card', () => {
 
     test('the auxiliary model writes it at the first fight; the fight starts with it, and the run keeps it after', async () => {
         toggles.set('toggle_cardbattle.sig', '0')
-        llmAnswers.push('[{"name":"세라의 검기","effects":{"dmg":9,"vuln":1},"desc":"세라가 가르친 일격."}]')
+        llmAnswers.push('[{"name":"세라의 검기","effects":{"summon":{"atk":3,"hp":5},"dmg":2},"desc":"세라가 가르친 일격."}]')
         const { chat, run, shown } = goblinFight()
         await run('output')
         const waiting = mark(chat.message[1].data, 'b')
         expect(waiting).toMatchObject({ phase: 'sig', name: '고블린', open: true })
-        expect(waiting.sigDraft.card).toMatchObject({ name: '세라의 검기', rarity: 'rare', sig: true, fx: { dmg: 9, vuln: 1 } })
+        expect(waiting.sigDraft.card).toMatchObject({ name: '세라의 검기', rarity: 'rare', sig: true, cost: 2, fx: { summon: 5, power: 3, dmg: 2 } })
         expect(llmPrompts[0][1].content).toContain('the signature card of this story')
+        expect(llmPrompts[0][1].content).toContain('it is a creature card')
         const view = await shown(1)
         expect(view).toContain('★ 대표 카드')
         expect(view).toContain('cbx-badge">대표')
@@ -1208,5 +1232,512 @@ describe('the signature card', () => {
         const b = mark(chat.message[1].data, 'b')
         expect(b.phase).toBe('fight')
         expect(b.sigCard.name).toBe('불꽃 검')
+    })
+})
+
+// A fight against a dummy that only defends, a hand of given cards, and
+// creatures put straight on the field (not fresh, so they may attack).
+const field = `
+    local function fresh()
+        local b = CB.newBattle(CB.newRun(3), { id = 'f', name = '합성 적', tier = 'normal' }, { healEach = true })
+        b.enemy.hp, b.enemy.maxHp, b.enemy.block, b.enemy.bonus = 60, 60, 0, 0
+        b.enemy.moves, b.enemy.step = { { def = 1 } }, 1
+        return b
+    end
+    local function deal(b, cards)
+        b.cards = cards
+        b.hand, b.draw, b.discard, b.energy = {}, {}, {}, 3
+        for i = 1, #cards do b.hand[i] = i end
+    end
+    local function creature(name, atk, hp, cost)
+        return { name = name, cost = cost or 1, fx = { summon = hp, power = atk }, rarity = 'common', desc = '' }
+    end
+    local function place(b, lane, card)
+        b.cards[#b.cards + 1] = card
+        b.field[lane] = CB.creatureOf(card, #b.cards)
+        b.field[lane].fresh = nil
+        return b.field[lane]
+    end
+    local function minion(b, lane, atk, hp)
+        b.enemy.field[lane] = { name = '합성 졸개', art = 'imp', atk = atk, hp = hp, maxHp = hp, minion = true }
+        return b.enemy.field[lane]
+    end`
+
+describe('1.0 creatures on the field', () => {
+    test('a creature card goes to the lane tapped or the first empty one, stays out of the piles, and full lanes refuse it', async () => {
+        const result = await probe(`${field}
+            local b = fresh()
+            deal(b, { creature('가', 2, 3), creature('나', 1, 4), creature('다', 3, 2), creature('라', 1, 1) })
+            b.energy = 10
+            CB.play(b, 1, 'L2')
+            CB.play(b, 1)
+            CB.play(b, 1, 'L2')
+            local energy = b.energy
+            local ok = CB.play(b, 1)
+            return json.encode({ lanes = { b.field[1].name, b.field[2].name, b.field[3].name }, ok = ok, note = b.note, energy = energy, after = b.energy,
+                hand = #b.hand, discard = #b.discard, played = b.played, card = b.field[2].card })`)
+        expect(result.lanes).toEqual(['나', '가', '다'])
+        expect(result.ok).toBe(false)
+        expect(result.note).toBe('레인이 가득 찼습니다')
+        expect(result.after).toBe(result.energy)
+        expect(result).toMatchObject({ hand: 1, discard: 0, card: 1 })
+        expect(result.played[0]).toBe('가(소환 2/3 (2번 레인))')
+    })
+
+    test('lifting a creature card turns our empty lanes into buttons carrying the drawing; 사용 takes the first, and a full field says so', async () => {
+        const { chat, run, shown } = makeChat([{ role: 'char', data: '합성 전투.\n<battle name="합성 적">' }])
+        await run('output')
+        const b = mark(chat.message[0].data, 'b')
+        b.cards[b.hand[0] - 1] = { name: '합성 새싹', cost: 1, fx: { summon: 3, power: 2 }, rarity: 'common', art: 'sprout', desc: '' }
+        chat.message[0].data = `합성 전투.\n${packMark('b', b)}`
+        await run('onButtonClick', { data: 'cb|sel|1' })
+        const n = mark(chat.message[0].data, 'b').n
+        const lifted = await shown(0)
+        for (const lane of [1, 2, 3]) expect(lifted).toContain(`class="cbx-slot cbx-ours cbx-target" risu-btn="cb|play|1|${n}|L${lane}"`)
+        expect(lifted).toContain('놓을 레인')
+        expect(lifted).toContain('{{raw::cb-art-ally-sprout}}')
+        // A tap from an older drawing is dropped.
+        await run('onButtonClick', { data: `cb|play|1|${n - 1}|L3` })
+        expect(mark(chat.message[0].data, 'b').field).toEqual([false, false, false])
+        await run('onButtonClick', { data: 'cb|sel|1' })
+        await run('onButtonClick', { data: `cb|play|1|${mark(chat.message[0].data, 'b').n}|L3` })
+        const after = mark(chat.message[0].data, 'b')
+        expect(after.field[2]).toMatchObject({ name: '합성 새싹', atk: 2, hp: 3, fresh: true })
+        expect(after.anim.summon).toBe(3)
+
+        after.field = [after.field[2], after.field[2], after.field[2]]
+        after.cards[after.hand[0] - 1] = { name: '합성 거북', cost: 1, fx: { summon: 6, power: 1 }, rarity: 'common', desc: '' }
+        chat.message[0].data = `합성 전투.\n${packMark('b', after)}`
+        await run('onButtonClick', { data: 'cb|sel|1' })
+        const full = await shown(0)
+        expect(full).toContain('레인이 가득 참')
+        expect(full).not.toContain('▶ 사용')
+        expect(full).not.toContain('|L1"')
+        expect(mark(chat.message[0].data, 'b').note).toContain('레인이 가득 찼습니다')
+    })
+
+    test('자동: at the end of a turn each creature hits the one across its lane or the hero behind it, block first; the enemy\'s do too', async () => {
+        const result = await probe(`${field}
+            local b = fresh()
+            deal(b, {})
+            place(b, 1, creature('가', 3, 5))
+            place(b, 2, creature('나', 4, 5))
+            minion(b, 2, 2, 3)
+            minion(b, 3, 5, 6)
+            b.enemy.block, b.hp = 2, 50
+            local scenes, holds = {}, {}
+            CB.endTurn(b, function(n, hold) scenes[#scenes + 1] = { n = n, anim = CB.copy(b.anim) } holds[#holds + 1] = hold end)
+            return json.encode({ enemyHp = b.enemy.hp, across = b.enemy.field[2], hp = b.hp, log = b.log[1], scenes = scenes, holds = holds })`)
+        expect(result.enemyHp).toBe(59)
+        expect(result.across).toBe(false)
+        expect(result.hp).toBe(45)
+        expect(result.scenes.map((s: { n: unknown }) => s.n)).toEqual(['ours', 1, 2, 'theirs', 3])
+        const [ours, , , theirs] = result.scenes
+        expect(ours.anim).toMatchObject({ busy: true, enemy: 'hit', enemyText: '-1' })
+        expect(ours.anim.strikes).toHaveLength(2)
+        expect(ours.anim.strikes[1]).toMatchObject({ side: 'mine', lane: 2, at: 2, dmg: 3, killed: true })
+        expect(theirs.anim).toMatchObject({ foeTurn: true, player: 'hurt', playerText: '-5' })
+        expect(result.holds[0]).toBe(850 + 300)
+        expect(result.log).toBe('1턴: 가 공격 → 적 1 (막힘 2), 나 공격 → 합성 졸개 3, 합성 졸개 쓰러짐 / 적: 방어 1, 합성 졸개 공격 → 나 5')
+    })
+
+    test('직접 고르기: tap a creature, then its target; not on the turn it came, once a turn, and nothing attacks by itself at the turn\'s end', async () => {
+        toggles.set('toggle_cardbattle.attack', '1')
+        const { chat, run, shown } = makeChat([{ role: 'char', data: '합성 전투.\n<battle name="합성 적">' }])
+        await run('output')
+        const b = mark(chat.message[0].data, 'b')
+        b.enemy.moves = [{ def: 1 }]
+        b.enemy.step = 1
+        b.cards.push({ name: '새 생물', cost: 1, fx: { summon: 3, power: 2 }, rarity: 'common', desc: '' }, { name: '선 생물', cost: 1, fx: { summon: 5, power: 4 }, rarity: 'common', desc: '' })
+        b.field = [{ card: b.cards.length - 1, name: '새 생물', atk: 2, hp: 3, maxHp: 3, fresh: true }, { card: b.cards.length, name: '선 생물', atk: 4, hp: 5, maxHp: 5 }, false]
+        b.enemy.field = [{ name: '합성 졸개', art: 'imp', atk: 1, hp: 6, maxHp: 6, minion: true }, false, false]
+        chat.message[0].data = `합성 전투.\n${packMark('b', b)}`
+        const tap = async (what: string) => {
+            await run('onButtonClick', { data: what.replace('#', String(mark(chat.message[0].data, 'b').n)) })
+            return mark(chat.message[0].data, 'b')
+        }
+        expect((await tap('cb|aim|1|#')).note).toContain('다음 턴부터')
+        const aiming = await tap('cb|aim|2|#')
+        expect(aiming.aiming).toBe(2)
+        const view = await shown(0)
+        expect(view).toContain(`risu-btn="cb|hit|2|${aiming.n}|E1"`)
+        expect(view).toContain(`risu-btn="cb|hit|2|${aiming.n}|H"`)
+        expect(view).toContain('class="cbx-unit cbx-aiming"')
+        // Left over from an older drawing: nothing happens.
+        await run('onButtonClick', { data: `cb|hit|2|${aiming.n - 1}|H` })
+        expect(mark(chat.message[0].data, 'b').enemy.field[0].hp).toBe(6)
+        const hit = await tap('cb|hit|2|#|E1')
+        expect(hit.enemy.field[0].hp).toBe(2)
+        expect(hit.field[1].acted).toBe(true)
+        expect(hit.anim.strikes[0]).toMatchObject({ side: 'mine', lane: 2, at: 1, dmg: 4 })
+        expect((await tap('cb|aim|2|#')).note).toContain('공격했습니다')
+        const ended = await tap('cb|end||#')
+        expect(ended.enemy.hp).toBe(ended.enemy.maxHp)
+        expect(ended.field[0].fresh).toBeUndefined()
+        expect(ended.field[1].acted).toBeUndefined()
+    })
+
+    test('an attack card may be aimed at an enemy creature (no block, no thorns), 사용 still hits the enemy, and the view offers both', async () => {
+        const result = await probe(`${field}
+            local b = fresh()
+            deal(b, { { name = '베기', cost = 1, fx = { dmg = 6, drain = 1 }, rarity = 'common', desc = '' }, { name = '베기', cost = 1, fx = { dmg = 6 }, rarity = 'common', desc = '' } })
+            minion(b, 1, 2, 10)
+            b.enemy.block, b.enemy.thorns, b.str, b.hp = 5, 3, 1, 40
+            b.selected = 1
+            local view = CB.fightView(b, '합성 인물')
+            CB.play(b, 1, 'E1')
+            local onCreature = { creature = b.enemy.field[1].hp, enemy = b.enemy.hp, block = b.enemy.block, hp = b.hp, strikes = b.anim.strikes }
+            CB.play(b, 1)
+            return json.encode({ view = view, onCreature = onCreature, enemy = b.enemy.hp, hp = b.hp })`)
+        expect(result.view).toContain('risu-btn="cb|play|1|0|E1"')
+        expect(result.view).toContain('class="cbx-foe cbx-aimable" risu-btn="cb|play|1|0|H"')
+        expect(result.view).toContain('대상')
+        expect(result.onCreature).toEqual({ creature: 3, enemy: 60, block: 5, hp: 47, strikes: [{ side: 'card', at: 1, dmg: 7, hits: 1, wait: 0.25 }] })
+        // 사용: the enemy, block and thorns as before.
+        expect(result.enemy).toBe(58)
+        expect(result.hp).toBe(44)
+    })
+
+    test('the enemy calls creatures by its moves, as strong as its tier and level, never its own figure, and the intent shows the creature', async () => {
+        const result = await probe(`${field}
+            local b = fresh()
+            b.enemy.moves, b.enemy.step = { { summon = 'imp' } }, 1
+            local intent = CB.intentText(b)
+            local acted = CB.enemyAct(b)
+            local placed = CB.copy(b.enemy.field)
+            local elite = CB.newBattle(CB.newRun(3), { id = 'e', name = '합성 강적', tier = 'elite' }, { healEach = true })
+            elite.level = 3
+            local imp = CB.newBattle(CB.newRun(3), { id = 'i', name = '합성 적', tier = 'normal', art = 'imp' }, { healEach = true })
+            minion(b, 1, 1, 1) minion(b, 2, 1, 1) minion(b, 3, 1, 1)
+            b.enemy.step = 1
+            local full = CB.enemyAct(b)
+            CB.VIEW = 'stage'
+            imp.enemy.moves, imp.enemy.step = { { summon = 'imp' } }, 1
+            return json.encode({ intent = intent, acted = acted, placed = placed, elite = CB.minion(elite, 'imp'), swapped = CB.minion(imp, 'imp'),
+                full = full, view = CB.fightView(imp, '합성 인물') })`)
+        expect(result.intent).toBe('🐾3/5')
+        expect(result.acted).toMatch(/^소환 불씨 임프 3\/5 \([123]번 레인\)$/)
+        expect(result.placed.filter((c: unknown) => c).map((c: { name: string, fresh: boolean }) => [c.name, c.fresh])).toEqual([['불씨 임프', true]])
+        expect(result.elite).toMatchObject({ name: '불씨 임프', atk: 5, hp: 9, maxHp: 9, minion: true })
+        expect(result.swapped).toMatchObject({ art: 'moth', name: '수정 나방' })
+        expect(result.full).toBe('소환할 레인 없음')
+        expect(result.view).toContain('<img class="cbx-icon cbx-minicon" src="{{raw::cb-art-foe-moth}}" alt="🐾">')
+    })
+
+    test('the enemy\'s search: it makes the lethal move first, calls a blocker when that clearly saves it, and the move it passed over comes next', async () => {
+        const result = await probe(`${field}
+            local lethal = fresh()
+            lethal.hp = 8
+            lethal.enemy.moves, lethal.enemy.step = { { def = 10 }, { atk = 9 } }, 1
+            CB.planMove(lethal)
+            local first = { intent = CB.intentText(lethal), held = lethal.enemy.held }
+            CB.enemyAct(lethal)
+            local before = CB.intentText(lethal)
+            CB.planMove(lethal)
+
+            local guard = fresh()
+            guard.enemy.hp = 5
+            guard.enemy.moves, guard.enemy.step = { { atk = 3 }, { summon = 'imp' } }, 1
+            place(guard, 2, creature('가', 3, 3))
+            CB.planMove(guard)
+
+            local calm = fresh()
+            calm.enemy.moves, calm.enemy.step = { { def = 10 }, { atk = 9 } }, 1
+            CB.planMove(calm)
+
+            local again = fresh()
+            again.hp = 8
+            again.enemy.moves, again.enemy.step = { { def = 10 }, { atk = 9 } }, 1
+            CB.planMove(again)
+            return json.encode({ first = first, before = before, after = CB.intentText(lethal), guard = CB.intentText(guard),
+                calm = CB.intentText(calm), same = CB.intentText(again) == first.intent })`)
+        expect(result.first).toEqual({ intent: '⚔️ 9', held: 2 })
+        // The defend it put off is made next, and is not put off again.
+        expect(result.before).toBe('🛡️')
+        expect(result.after).toBe('🛡️')
+        expect(result.guard).toBe('🐾3/5')
+        // Nothing to gain: it keeps its order.
+        expect(result.calm).toBe('🛡️')
+        expect(result.same).toBe(true)
+    })
+
+    test('the search puts a creature where it pays most and, 직접 고르기, finishes the player before a creature; it stays within a few hundred rounds', async () => {
+        const result = await probe(`${field}
+            local b = fresh()
+            place(b, 1, creature('약한 강타', 5, 2))
+            place(b, 3, creature('벽', 1, 9))
+            local lane = CB.summonLane(b, CB.minion(b, 'imp'))
+
+            local c = fresh()
+            c.chosen = true
+            place(c, 2, creature('가', 6, 2))
+            minion(c, 1, 4, 5)
+            local kill = CB.bestTarget(c, 1)
+            c.hp = 3
+            local finish = CB.bestTarget(c, 1)
+
+            local big = fresh()
+            big.chosen = true
+            for i = 1, 3 do place(big, i, creature('가' .. i, 2, 4)) minion(big, i, 3, 6) end
+            big.enemy.moves, big.enemy.step = { { summon = 'imp' }, { atk = 6 }, { def = 4 } }, 1
+            CB.searched = 0
+            CB.endTurn(big)
+            return json.encode({ lane = lane, kill = kill, finish = finish, rounds = CB.searched })`)
+        expect(result.lane).toBe(1)
+        expect(result.kill).toBe(2)
+        expect(result.finish).toBe('H')
+        expect(result.rounds).toBeGreaterThan(0)
+        expect(result.rounds).toBeLessThan(300)
+    })
+
+    test('a creature at 0 health leaves its lane, its card to the discard pile, drawn one last time fading; thorns can fell an attacker', async () => {
+        const result = await probe(`${field}
+            CB.VIEW = 'board'
+            local b = fresh()
+            deal(b, {})
+            local mine = place(b, 1, creature('가', 1, 2))
+            minion(b, 1, 3, 4)
+            place(b, 2, creature('나', 2, 1))
+            b.enemy.thorns = 3
+            local views = {}
+            CB.endTurn(b, function(n) views[n] = CB.fightView(b, '합성 인물') end)
+            local piles = {}
+            for _, list in ipairs({ b.discard, b.hand, b.draw }) do
+                for _, id in ipairs(list) do piles[#piles + 1] = id end
+            end
+            return json.encode({ field = b.field, piles = piles, theirs = views.theirs, ours = views.ours, log = b.log[1] })`)
+        expect(result.field).toEqual([false, false, false])
+        // Both fallen cards went to the discard pile (and the new hand drew them from it).
+        expect([...result.piles].sort()).toEqual([1, 2])
+        expect(result.ours).toContain('class="cbx-unit cbx-die"')
+        expect(result.theirs).toContain('class="cbx-unit cbx-die"')
+        expect(result.theirs).toContain('class="cbx-mover cbx-go" style="--tx:')
+        expect(result.log).toContain('나 공격 → 적 2, 가시에 1, 나 쓰러짐')
+        expect(result.log).toContain('합성 졸개 공격 → 가 2, 가 쓰러짐')
+    })
+
+    test('at the end of a fight the field\'s cards are back in the deck, and the next fight draws them again', async () => {
+        toggles.set('toggle_cardbattle.cards', '2')
+        const { chat, run, lua } = makeChat([{ role: 'char', data: '합성 전투.\n<battle name="합성 적">' }])
+        await run('output')
+        const b = mark(chat.message[0].data, 'b')
+        const deck = b.cards.length
+        // The first card in the draw pile stands on the field, the first in hand is a 0-cost blow.
+        const id = b.draw.pop()
+        b.cards[id - 1] = { name: '합성 새싹', cost: 1, fx: { summon: 3, power: 2 }, rarity: 'common', desc: '' }
+        b.field = [{ card: id, name: '합성 새싹', atk: 2, hp: 1, maxHp: 3 }, false, false]
+        b.cards[b.hand[0] - 1] = { name: '합성 일격', cost: 0, fx: { dmg: 6 }, rarity: 'basic', desc: '' }
+        b.enemy.hp = 1
+        chat.message[0].data = `합성 전투.\n${packMark('b', b)}`
+        await run('onButtonClick', { data: `cb|play|1|${b.n}` })
+        const end = mark(chat.message[0].data, 'b')
+        expect(end.phase).toBe('won')
+        expect(end.field).toBeUndefined()
+        expect(mark(chat.message[0].data, 'r').deck).toHaveLength(deck)
+        expect(await lua('local b = CB.newBattle(CB.loadRun(id), { id = "n", name = "", tier = "normal" }, { healEach = true }) return json.encode({ n = #b.draw + #b.hand, field = b.field })'))
+            .toEqual({ n: deck, field: [false, false, false] })
+    })
+
+    test('cleanCard prices a creature (attack 3.5, health 1), keeps art only for one, and the hand-made signature card is a creature', async () => {
+        const result = await probe(`
+            local nested = CB.cleanCard({ name = '여우', effects = { summon = { atk = 3, hp = 5 } }, art = 'FOX' }, { rarity = 'common', cost = 1 })
+            local alone = CB.cleanCard({ name = '공격만', effects = { power = 4 } }, { rarity = 'common', cost = 1 })
+            local gone = CB.cleanCard({ name = '소멸 생물', effects = { summon = 3, power = 1, exhaust = true } }, { rarity = 'common', cost = 1 })
+            local greedy = CB.cleanCard({ name = '거인', effects = { summon = 99, power = 99 } }, { rarity = 'common', cost = 0 })
+            local spell = CB.cleanCard({ name = '주문', effects = { dmg = 5 }, art = 'fox' }, { rarity = 'common', cost = 1 })
+            local made, note = CB.handCard(CB.formCard(function(key) return ({ cname = '레이의 분신', cost = '1', ca = '3', ch = '5' })[key] or '' end))
+            local filled, filledNote = CB.handCard(CB.formCard(function(key) return ({ cname = '레이의 검', cost = '1', k1 = 'dmg', v1 = '8' })[key] or '' end))
+            local form = CB.sigForm({})
+            return json.encode({ nested = nested, alone = alone == nil, gone = gone.fx, greedy = greedy, greedyFits = CB.points(greedy.fx) <= CB.budget(greedy.cost, 'common'),
+                spell = spell.art == nil, made = made, note = note, filled = filled, filledNote = filledNote, form = form,
+                text = CB.effectText(nested), help = CB.keywordHelp(nested) })`)
+        expect(result.nested).toEqual({ name: '여우', cost: 2, fx: { summon: 5, power: 3 }, rarity: 'common', desc: '', art: 'fox' })
+        expect(result.alone).toBe(true)
+        expect(result.gone).toEqual({ summon: 3, power: 1 })
+        expect(result.greedy.cost).toBe(3)
+        expect(result.greedy.fx.summon).toBeGreaterThanOrEqual(1)
+        expect(result.greedy.fx.power).toBeGreaterThanOrEqual(1)
+        expect(result.greedyFits).toBe(true)
+        expect(result.spell).toBe(true)
+        expect(result.made).toMatchObject({ name: '레이의 분신', sig: true, rarity: 'rare', cost: 2, fx: { summon: 5, power: 3 } })
+        expect(result.note).toBe('비용 1 → 2')
+        expect(result.filled).toMatchObject({ name: '레이의 검', sig: true, cost: 1 })
+        expect(result.filled.fx.summon).toBeGreaterThanOrEqual(2)
+        expect(result.filledNote).toContain('생물 능력치를 정했습니다')
+        expect(result.form).toContain('name="ca"')
+        expect(result.form).toContain('name="ch"')
+        expect(result.form).not.toContain('<option value="summon"')
+        expect(result.text).toBe('생물 3/5')
+        expect(result.help[0]).toContain('생물:')
+    })
+
+    test('the card writers are told about creature cards and the ally figures the module has, and a creature slot gets a creature from the pool', async () => {
+        ownAssets.push('cb-art-ally-fox', 'cb-art-ally-owl', 'cb-art-foe-imp')
+        const result = await probe(`
+            local run = CB.newRun(5)
+            local slots = { { rarity = 'common', cost = 1, creature = true }, { rarity = 'rare', cost = 1, sig = true } }
+            local prompt = CB.cardPrompt(id, run, slots)
+            local cards = CB.parseCards(run, nil, slots)
+            local some = false
+            for seed = 1, 40 do
+                for _, slot in ipairs(CB.rollSlots(CB.newRun(seed))) do if slot.creature then some = true end end
+            end
+            CB.OWN = {}
+            return json.encode({ system = prompt[1].content, user = prompt[2].content, cards = cards, some = some, all = CB.cardRules() })`)
+        expect(result.system).toContain('"summon": {"atk": attack, "hp": health}')
+        expect(result.system).toContain('fox (crystal fox)')
+        expect(result.system).toContain('owl (storm owl)')
+        expect(result.system).not.toContain('sprout (plant knight)')
+        expect(result.all).toContain('sprout (plant knight)')
+        expect(result.user).toContain('card 1: a creature card')
+        expect(result.user).toContain('it is a creature card')
+        expect(result.cards[0].fx.summon).toBeGreaterThanOrEqual(1)
+        expect(result.cards[1]).toMatchObject({ sig: true })
+        expect(result.cards[1].fx.summon).toBeGreaterThanOrEqual(1)
+        expect(result.some).toBe(true)
+    })
+
+    test('생물 공격 is a new toggle, 자동 first', async () => {
+        expect(TOGGLES).toContain('cardbattle.attack=생물 공격=select=자동,직접 고르기')
+        expect(TOGGLES).toMatch(/cardbattle\.attack=[^\n]+\n=자동: [^\n]+=caption/)
+        expect(await probe('return json.encode(CB.settings(id).attack)')).toBe('auto')
+        toggles.set('toggle_cardbattle.attack', '1')
+        expect(await probe('return json.encode(CB.settings(id).attack)')).toBe('chosen')
+    })
+
+    test('a fight from 0.7 (no field) loads and plays, and 0.7 signature and enemy cards become creatures at their cost', async () => {
+        const old = {
+            id: 'w1', level: 1, name: '고블린', tier: 'normal', phase: 'fight', open: true, turn: 1, energy: 3, maxEnergy: 3, seed: 9, n: 3,
+            cards: [{ name: '공격', cost: 1, fx: { dmg: 6 }, rarity: 'basic', desc: '' }, { name: '방어', cost: 1, fx: { block: 5 }, rarity: 'basic', desc: '' }],
+            draw: [], hand: [1, 2], discard: [], hp: 40, maxHp: 60, block: 0, str: 0, weak: 0, vuln: 0,
+            enemy: { hp: 30, maxHp: 42, block: 0, str: 0, weak: 0, vuln: 0, moves: [{ atk: 7 }], step: 1, bonus: 0 },
+            log: [], played: [], note: '',
+        }
+        const run07 = { v: 1, seed: 9, level: 2, xp: 0, maxHp: 65, hp: 65, deck: [
+            { name: '공격', cost: 1, fx: { dmg: 6 }, rarity: 'basic', desc: '' },
+            { name: '세라의 검기', cost: 1, fx: { dmg: 9, vuln: 1 }, rarity: 'rare', desc: '', sig: true },
+            { name: '고블린', cost: 1, fx: { dmg: 7 }, rarity: 'common', desc: '', foe: true, glyph: '👺' },
+        ] }
+        const { chat, run, lua, shown } = makeChat([
+            { role: 'char', data: `지난 싸움.\n${packMark('r', run07)}` },
+            { role: 'char', data: `고블린이 덤벼든다.\n${packMark('b', old)}` },
+        ])
+        expect(await shown(1)).toContain('class="cbx-slot cbx-ours"')
+        await run('onButtonClick', { data: 'cb|play|1|3' })
+        let b = mark(chat.message[1].data, 'b')
+        expect(b.enemy.hp).toBe(24)
+        expect(b.field).toEqual([false, false, false])
+        await run('onButtonClick', { data: `cb|end||${b.n}` })
+        b = mark(chat.message[1].data, 'b')
+        expect(b).toMatchObject({ turn: 2, hp: 33 })
+        const next = await lua('local b = CB.newBattle(CB.loadRun(id), { id = "n", name = "", tier = "normal" }, { healEach = true }) return json.encode(b.cards)')
+        expect(next[1]).toMatchObject({ name: '세라의 검기', sig: true, cost: 1 })
+        expect(next[1].fx.summon).toBeGreaterThanOrEqual(2)
+        expect(next[2]).toMatchObject({ name: '고블린', foe: true, cost: 1, glyph: '👺' })
+        expect(next[2].fx.summon).toBeGreaterThanOrEqual(2)
+    })
+
+    test('art keys come from one table: new rows fall back while their file is missing, overrides and ally figures by exact name', async () => {
+        ownAssets.push('cb-art-foe-magician', 'cb-art-foe-imp', 'cb-art-ally-fox', 'cb-art-bg-stage')
+        characterAssets.push('cb-ally-owl')
+        const result = await probe(`
+            CB.visuals(id)
+            local rows = {}
+            for _, row in ipairs(CB.ART) do rows[#rows + 1] = row.key .. ':' .. row.kind .. ':' .. row.file end
+            local missing = { dragon = CB.foeSource('합성 드래곤'), tagged = CB.foeSource('합성 적', 'dragon'), wizard = CB.foeSource('Old Wizard') }
+            local fox, owl, turtle = CB.allySource('fox'), CB.allySource('owl'), CB.allySource('turtle')
+            local instruction = CB.instruction(nil, {}, '합성 인물')
+            CB.OWN = { ['cb-art-foe-dragon'] = true, ['cb-art-foe-wizard'] = true }
+            return json.encode({ rows = rows, missing = missing, fox = fox, owl = owl, turtle = turtle == nil, instruction = instruction,
+                dragon = CB.foeSource('합성 드래곤'), wizard = CB.foeSource('Old Wizard'), minions = #CB.artRows('minion', true) })`)
+        for (const key of ['magician', 'maid', 'pitcher', 'yokai', 'golem', 'imp', 'moth', 'dragon', 'wizard', 'warrior', 'fiend', 'machine']) {
+            expect(result.rows.some((row: string) => row.startsWith(`${key}:enemy`))).toBe(true)
+        }
+        for (const key of ['sprout', 'salamander', 'fox', 'owl', 'turtle', 'jelly']) expect(result.rows).toContain(`${key}:ally:ally-${key}`)
+        expect(result.rows).toContain('dragon:enemy:foe-dragon')
+        expect(result.missing).toEqual({ wizard: '{{raw::cb-art-foe-magician}}' })
+        expect(result.fox).toBe('{{raw::cb-art-ally-fox}}')
+        expect(result.owl).toBe('{{raw::cb-ally-owl}}')
+        expect(result.turtle).toBe(true)
+        expect(result.instruction).toContain('magician (apprentice magician girl)')
+        expect(result.instruction).not.toContain('dragon (')
+        expect(result.dragon).toBe('{{raw::cb-art-foe-dragon}}')
+        expect(result.wizard).toBe('{{raw::cb-art-foe-wizard}}')
+        expect(result.minions).toBe(3)
+    })
+
+    test('the story hears of summons, creature attacks and falls, and the turn record lists the field', async () => {
+        toggles.set('toggle_cardbattle.tell', '0')
+        const { chat, run } = makeChat([{ role: 'user', data: '덤빈다' }, { role: 'char', data: '고블린이 덤벼든다.\n<battle name="고블린">' }])
+        await run('output')
+        const b = mark(chat.message[1].data, 'b')
+        b.enemy.moves = [{ summon: 'moth' }]
+        b.enemy.step = 1
+        b.cards[b.hand[0] - 1] = { name: '합성 새싹', cost: 1, fx: { summon: 3, power: 2 }, rarity: 'common', desc: '' }
+        chat.message[1].data = `고블린이 덤벼든다.\n${packMark('b', b)}`
+        await run('onButtonClick', { data: `cb|play|1|${b.n}|L2` })
+        await run('onButtonClick', { data: `cb|end||${mark(chat.message[1].data, 'b').n}` })
+        const turn = chat.message[2].data
+        expect(turn).toContain('합성 새싹(소환 2/3 (2번 레인))')
+        expect(turn).toContain('합성 새싹 공격 → 적 2')
+        expect(turn).toMatch(/소환 수정 나방 2\/7 \(\d번 레인\)/)
+        expect(turn).toMatch(/지금: 레이 체력 \d+\/60, 고블린 체력 \d+\/\d+, 내 생물: 합성 새싹 2\/\d, 적 생물: 수정 나방 2\/\d/)
+        const request = (await run('editRequest', { data: [{ role: 'user', content: '계속' }] })).res as { role: string, content: string }[]
+        expect(request[0].content).toContain('creatures stand on a field of three lanes')
+    })
+
+    test('a creature card wears its own frame: name bar and attribute gem, level stars, art, text box, attack and health boxes', async () => {
+        const result = await probe(`
+            CB.VIEW = 'stage'
+            local card = { name = '수정 여우', cost = 1, fx = { summon = 5, power = 2, draw = 1 }, rarity = 'rare', art = 'fox', desc = '' }
+            local art = CB.cardFace(card, 1)
+            CB.VIEW = 'simple'
+            local simple = CB.cardFace(card, 1)
+            local plain = CB.cardFace({ name = '공격', cost = 1, fx = { dmg = 6 }, rarity = 'basic', desc = '' }, 1)
+            return json.encode({ art = art, simple = simple, plain = plain })`)
+        expect(result.art).toContain('class="cbx-card cbx-sum"')
+        expect(result.art).toMatch(/class="cbx-mname"><span class="cbx-mtitle" style="font-size:[.\d]+em">수정 여우<\/span><span class="cbx-attr" style="background:#ffd65c">빛<\/span>/)
+        expect(result.art).toContain('<div class="cbx-stars">★★★</div>')
+        expect(result.art).toContain('{{raw::cb-art-ally-fox}}')
+        expect(result.art).toContain('<div class="cbx-mtext">1장 뽑기</div>')
+        expect(result.art).toContain('<span class="cbx-matk"><img class="cbx-icon" src="{{raw::cb-art-ic-attack}}" alt="⚔"><span>2</span></span>')
+        expect(result.art).toContain('<span class="cbx-mhp"><img class="cbx-icon" src="{{raw::cb-art-ic-heal}}" alt="❤"><span>5</span></span>')
+        expect(result.simple).not.toContain('<img')
+        expect(result.simple).toContain('<span class="cbx-matk">⚔<span>2</span></span>')
+        expect(result.plain).toContain('class="cbx-inner"')
+        expect(result.plain).not.toContain('cbx-mframe')
+    })
+
+    test('an enemy\'s summon is a scene: the card lands on its lane and the creature rises with its ring, then its creatures lunge', async () => {
+        const result = await probe(`${field}
+            CB.VIEW = 'mixed'
+            local b = fresh()
+            deal(b, {})
+            b.enemy.moves, b.enemy.step = { { summon = 'moth' } }, 1
+            local views, names = {}, {}
+            CB.endTurn(b, function(n) views[#views + 1] = CB.fightView(b, '합성 인물') names[#names + 1] = n end)
+            return json.encode({ views = views, names = names })`)
+        expect(result.names).toEqual([1, 2, 'theirs', 3])
+        expect(result.views[1]).toMatch(/class="cbx-slot cbx-theirs"[^>]*><div class="cbx-unit cbx-new"><div class="cbx-fcard cbx-foecard"/)
+        expect(result.views[1]).toContain('class="cbx-summonring"')
+        expect(result.views[1]).toContain('{{raw::cb-art-foe-moth}}')
+        expect(result.views[2]).toContain('class="cbx-mover cbx-go"')
+        expect(result.views[2]).not.toContain('risu-btn="cb|sel')
+        expect(result.views[3]).not.toContain('class="cbx-unit cbx-new"')
+    })
+
+    test('간단 shows the field as two rows of text, with the same buttons', async () => {
+        toggles.set('toggle_cardbattle.view', '3')
+        const result = await probe(`${field}
+            CB.VIEW = 'simple'
+            local b = fresh()
+            deal(b, { creature('가', 2, 3) })
+            minion(b, 2, 3, 5)
+            b.selected = 1
+            return json.encode({ view = CB.fightView(b, '합성 인물') })`)
+        expect(result.view).toContain('class="cbx-tfield"')
+        expect(result.view).toContain('2 · 합성 졸개 ⚔3 ❤5')
+        expect(result.view).toContain('class="cbx-cell cbx-empty cbx-target" risu-btn="cb|play|1|0|L1"')
+        expect(result.view).not.toContain('{{raw::')
     })
 })

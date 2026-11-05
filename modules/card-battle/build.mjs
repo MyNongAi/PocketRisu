@@ -7,7 +7,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { decodeRisum, encodeRisum, readMaps } from '../scene-fold/build.mjs'
 
-export const VERSION = '0.7.0'
+export const VERSION = '1.0.0'
 export const MODULE_ID = '5dc65ab5-ed92-484d-b4c9-84940df8f952'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -27,7 +27,9 @@ export const TOGGLES = [
     'cardbattle.fx=전투 연출=select=보통,빠르게,끄기',
     '=카드가 적에게 날아가 꽂히고, 적의 차례가 장면으로 이어집니다. 빠르게: 장면이 짧게 지나갑니다. 끄기: 숫자만 뜹니다=caption',
     'cardbattle.view=전투 화면=select=무대,합친 판,레인 판,간단',
-    '=무대: 옆에서 보는 숲 전투. 합친 판: 무대 바닥에 세 레인. 레인 판: 위아래로 마주 보는 판. 간단: 느린 기기를 위한 기존 화면. 레인의 소환은 카드를 내는 장면에만 보이고 남지 않습니다=caption',
+    '=무대: 옆에서 보는 숲 전투, 앞쪽 땅에 양쪽 세 칸씩. 합친 판: 무대 바닥에 세 레인. 레인 판: 위아래로 마주 보는 판. 간단: 느린 기기를 위한 글자 화면. 생물 카드는 레인에 놓인 카드 위에 서서 남아 싸웁니다=caption',
+    'cardbattle.attack=생물 공격=select=자동,직접 고르기',
+    '=자동: 턴이 끝날 때 각 생물이 맞은편 레인의 생물을, 비어 있으면 상대 본체를 칩니다. 직접 고르기: 내 턴에 생물마다 한 번, 내 생물을 누르고 대상(적 생물이나 적 본체)을 누릅니다(낸 턴에는 못 침). 적 생물은 앞을 내다보고 대상을 고릅니다=caption',
     'cardbattle.sig=대표 카드=select=AI가 만들기,직접 만들기,없음',
     '=첫 전투를 시작할 때 이 이야기의 대표 카드 한 장을 덱에 넣습니다. AI가 만들기: 보조 모델이 이 봇에 맞게 씁니다(저수준 접근 필요, 안 되면 모듈 카드에서 고름). 직접 만들기: 전투 창에서 이름과 효과를 골라 만듭니다=caption',
     'cardbattle.capture=이긴 적 카드=select=받을지 고르기,안 받기',
@@ -35,7 +37,7 @@ export const TOGGLES = [
     '==groupEnd',
 ].join('\n')
 
-export const DESCRIPTION = '어느 봇에나 붙이는 덱빌딩 카드 전투. 싸움이 시작되면 메인 모델이 표시를 남기고, 전투는 채팅 위 창에서 카드로 합니다. 카드가 적에게 날아가 꽂히고 적의 차례가 장면으로 이어지며, 첫 전투에는 이 이야기의 대표 카드가 덱에 들어가고 이긴 적은 카드로 얻을 수 있습니다. 전투 기록은 턴마다 이야기로 넘어가고, 레벨이 오르면 AI가 이 봇에 맞는 새 카드 3장을 씁니다. 보조 모델로 카드를 쓰려면 저수준 접근이 필요합니다.'
+export const DESCRIPTION = '어느 봇에나 붙이는 덱빌딩 카드 전투. 싸움이 시작되면 메인 모델이 표시를 남기고, 전투는 채팅 위 창에서 카드로 합니다. 생물 카드(대표 카드, 이긴 적, 소환 카드)는 양쪽 세 레인의 필드에 놓인 카드 위에 서서 남아 싸우고, 적도 생물을 부르며 몇 수 앞을 보고 움직입니다. 첫 전투에는 이 이야기의 대표 카드가 덱에 들어가고 이긴 적은 카드로 얻을 수 있습니다. 전투 기록은 턴마다 이야기로 넘어가고, 레벨이 오르면 AI가 이 봇에 맞는 새 카드 3장을 씁니다. 보조 모델로 카드를 쓰려면 저수준 접근이 필요합니다.'
 
 /**
  * A request-editing regex (type editprocess): Risu runs it on each message

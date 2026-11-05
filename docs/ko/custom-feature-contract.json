@@ -2561,7 +2561,7 @@
     },
     {
       "id": "CARD-BATTLE-MODULE",
-      "title": "어느 봇에나 붙이는 덱빌딩 카드 전투 배포용 모듈 (🃏 카드 전투), 턴마다 이야기·AI 카드·장면 연출·대표 카드·이긴 적 카드, 0.7 그림과 네 전투 화면",
+      "title": "어느 봇에나 붙이는 덱빌딩 카드 전투 배포용 모듈 (🃏 카드 전투), 턴마다 이야기·AI 카드·장면 연출·대표 카드·이긴 적 카드, 0.7 그림과 네 전투 화면, 1.0 세 레인 필드의 생물과 내다보는 적",
       "criticality": "core-ux",
       "ownerFiles": [
         "modules/card-battle/card-battle.lua",
@@ -2640,7 +2640,7 @@
         },
         {
           "file": "modules/card-battle/card-battle.lua",
-          "contains": "function CB.foeCard(name, tier, moves, art)"
+          "contains": "function CB.foeCard(name, tier, moves, art, level)"
         },
         {
           "file": "modules/card-battle/card-battle.lua",
@@ -2672,11 +2672,47 @@
         },
         {
           "file": "modules/card-battle/card-battle.lua",
-          "contains": "CB.VERSION = '0.7.0'"
+          "contains": "CB.VERSION = '1.0.0'"
         },
         {
           "file": "modules/card-battle/card-battle.lua",
-          "contains": "function CB.lanes(b, anim, view)"
+          "contains": "function CB.lanes(b, anim, view, taps)"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "{ key = 'summon', max = 30, points = 1, creature = true },"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "function CB.strike(b, side, lane, at)"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "function CB.planMove(b)"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "function CB.summonLane(b, minion)"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "function CB.bestTarget(b, lane)"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "function CB.creatureFace(card, scale, poor)"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "function CB.hasArt(row)"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "if checked and (checked.sig or checked.foe) then checked = CB.asCreature(checked) end"
+        },
+        {
+          "file": "modules/card-battle/build.mjs",
+          "contains": "'cardbattle.attack=생물 공격=select=자동,직접 고르기',"
         },
         {
           "file": "modules/card-battle/card-battle.lua",
