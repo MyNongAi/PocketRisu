@@ -1143,7 +1143,8 @@
       ],
       "requiredMarkers": [
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "onSelect={() => { DBState.db.nodeOnlyHideMessageTranslateButton = !DBState.db.nodeOnlyHideMessageTranslateButton }}" },
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "{#if !DBState.db.nodeOnlyHideMessageTranslateButton}" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "{@render translationButton(false, !DBState.db.nodeOnlyHideMessageTranslateButton)}" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "{@render translationButton(showNames, true, false)}" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "<span class=\"ml-1\">{language.messageTranslateMenu}</span>" },
         { "file": "src/ts/storage/database.svelte.ts", "contains": "nodeOnlyHideMessageTranslateButton?: boolean" }
       ],

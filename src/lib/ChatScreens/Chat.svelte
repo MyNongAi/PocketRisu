@@ -1092,10 +1092,9 @@
                         onclick={() => markLogCapture(idx)}
                     ><span class="text-[17px]" aria-hidden="true">{logCaptureGlyph}</span></button>
                 {/if}
-                <!-- Hidden from the button row by the input menu's toggle, it is in the ☰ menu instead. -->
-                {#if !DBState.db.nodeOnlyHideMessageTranslateButton}
-                    {@render translationButton()}
-                {/if}
+                <!-- Hidden from the button row by the input menu's toggle, the translate button is in the ☰ menu
+                     instead; the edit button it shares the snippet with stays in the row. -->
+                {@render translationButton(false, !DBState.db.nodeOnlyHideMessageTranslateButton)}
                 {#if wide640.current}
                     {@render majorIconButtonsBody(false)}
                     {#if DBState.db.characters[view.characterIndex] && idx > -1}
@@ -1311,8 +1310,8 @@
 {/if}
 {/snippet}
 
-{#snippet translationButton(showNames = false)}
-    {#if DBState.db.translator !== '' && !blankMessage && !isOptimizedStreamingMessage}
+{#snippet translationButton(showNames = false, withTranslate = true, withEdit = true)}
+    {#if withTranslate && DBState.db.translator !== '' && !blankMessage && !isOptimizedStreamingMessage}
         <button
             class={"flex items-center transition-colors button-icon-translate " + (translationViewControlsDisabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:text-primary') + (translated ? ' text-blue-400' : '')}
             class:translating={translating}
@@ -1329,6 +1328,7 @@
             {/if}
         </button>
     {/if}
+    {#if withEdit}
     {#if idx > -1 && !replyInProgress}
         <button
             class={"flex items-center transition-colors button-icon-edit " + (editMode ? 'text-blue-400 hover:text-primary' : originalEditControlDisabled ? 'opacity-50 cursor-not-allowed' : 'hover:text-primary')}
@@ -1343,6 +1343,7 @@
                 <span class="ml-1">{language.edit}</span>
             {/if}
         </button>
+    {/if}
     {/if}
 {/snippet}
 
@@ -1422,7 +1423,7 @@
 {#snippet minorIconButtonsBody(showNames:boolean)}
     {#if idx > -1}
     {#if DBState.db.nodeOnlyHideMessageTranslateButton}
-        {@render translationButton(showNames)}
+        {@render translationButton(showNames, true, false)}
     {/if}
     {#if role === 'char' && !placeholder && DBState.db.characters[view.characterIndex]?.nodeOnlyIllustration?.enabled}
         <!-- 🎨 Draw this reply's illustrations, or draw them again (illustration.ts). -->
