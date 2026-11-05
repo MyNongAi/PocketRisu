@@ -3144,14 +3144,28 @@ function saveSessions() {
 
 loadSessions()
 
+// PocketRisu: the cookie is named after this save folder and port. A browser
+// keeps cookies per host, not per port, so two servers on one host
+// (localhost:6001 and :6014, or one tailnet name on :443 and :8443) replaced
+// each other's `risu-session`, and every picture of the other tab got 401
+// ("External asset unavailable") until it reloaded (2026-11-06).
+const SESSION_COOKIE_NAME = `risu-session-${nodeCrypto.createHash('sha256')
+    .update(`${instanceId}:${process.env.PORT || 6001}`).digest('hex').slice(0, 16)}`
+const LEGACY_SESSION_COOKIE_NAME = 'risu-session'
+
 function parseSessionCookie(req) {
     const cookieHeader = req.headers.cookie || ''
+    // A tab that got its cookie before the rename keeps working until its
+    // next boot replaces it; the old name may hold another server's token.
+    let legacy = null
     for (const part of cookieHeader.split(';')) {
         const eq = part.indexOf('=')
         if (eq === -1) continue
-        if (part.slice(0, eq).trim() === 'risu-session') return part.slice(eq + 1).trim()
+        const name = part.slice(0, eq).trim()
+        if (name === SESSION_COOKIE_NAME) return part.slice(eq + 1).trim()
+        if (name === LEGACY_SESSION_COOKIE_NAME && legacy === null) legacy = part.slice(eq + 1).trim()
     }
-    return null
+    return legacy
 }
 
 function sessionAuthMiddleware(req, res, next) {
@@ -5266,7 +5280,7 @@ app.post('/api/session', async (req, res) => {
     }
     saveSessions()
     const maxAge = 7 * 24 * 60 * 60 // seconds
-    res.setHeader('Set-Cookie', `risu-session=${token}; HttpOnly; SameSite=Strict; Max-Age=${maxAge}; Path=/`)
+    res.setHeader('Set-Cookie', `${SESSION_COOKIE_NAME}=${token}; HttpOnly; SameSite=Strict; Max-Age=${maxAge}; Path=/`)
     res.json({ ok: true })
 })
 

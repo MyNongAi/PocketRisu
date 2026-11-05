@@ -2407,6 +2407,21 @@
       ]
     },
     {
+      "id": "SESSION-COOKIE-PER-SERVER",
+      "title": "그림용 세션 쿠키를 저장 폴더·포트마다 따로 (같은 호스트의 다른 서버가 덮지 않게)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "server/node/server.cjs"
+      ],
+      "regressionTests": [
+        "server/node/sessionCookieScope.test.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "server/node/server.cjs", "contains": "const SESSION_COOKIE_NAME = `risu-session-${" },
+        { "file": "server/node/server.cjs", "contains": "res.setHeader('Set-Cookie', `${SESSION_COOKIE_NAME}=${token};" }
+      ]
+    },
+    {
       "id": "MODULE-CONVERT-AS-IMPORT",
       "title": "봇 → 모듈 변환은 가져오기처럼 최근순 맨 위에",
       "criticality": "core-ux",
