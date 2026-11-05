@@ -197,6 +197,9 @@ const LIST_COLUMNS = `
     response_type, error_message, truncated, size_bytes, client_id
 `;
 
+// Gemini's long-context tier starts above 200k prompt tokens.
+const LONG_PROMPT_TOKENS = 200000;
+
 const SUMS = `
     COUNT(*) AS requests,
     SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS failed,
@@ -204,6 +207,7 @@ const SUMS = `
     SUM(output_tokens) AS outputTokens,
     SUM(cached_tokens) AS cachedTokens,
     SUM(reasoning_tokens) AS reasoningTokens,
+    SUM(CASE WHEN success = 1 AND input_tokens = 0 AND output_tokens = 0 AND cached_tokens = 0 AND reasoning_tokens = 0 THEN 1 ELSE 0 END) AS missingTokenRequests,
     AVG(duration_ms) AS avgDurationMs
 `;
 
@@ -215,6 +219,7 @@ function zeroFill(row) {
         outputTokens: row?.outputTokens ?? 0,
         cachedTokens: row?.cachedTokens ?? 0,
         reasoningTokens: row?.reasoningTokens ?? 0,
+        missingTokenRequests: row?.missingTokenRequests ?? 0,
         avgDurationMs: row?.avgDurationMs != null ? Math.round(row.avgDurationMs) : null,
     };
 }
@@ -509,7 +514,14 @@ function createRequestLogs(opts = {}) {
              GROUP BY source ORDER BY (SUM(input_tokens) + SUM(output_tokens)) DESC`
         ).all(...params).map(r => ({ source: r.source, ...zeroFill(r) }));
 
-        return { total, daily, byModel, bySource };
+        // For the estimated cost (src/ts/apiCost.ts): a long prompt is priced per
+        // request, so the requests over LONG_PROMPT_TOKENS get rows of their own.
+        const byModelDay = db.prepare(
+            `SELECT day, model, (input_tokens > ${LONG_PROMPT_TOKENS}) AS long_prompt, ${SUMS} FROM usage ${where}
+             GROUP BY day, model, long_prompt ORDER BY day ASC, model ASC`
+        ).all(...params).map(r => ({ day: r.day, model: r.model, longPrompt: r.long_prompt === 1, ...zeroFill(r) }));
+
+        return { total, daily, byModel, byModelDay, bySource };
     }
 
     // Distinct values present in the usage table — drives the filter chips

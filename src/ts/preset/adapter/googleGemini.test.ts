@@ -147,7 +147,7 @@ describe('sendGoogleChatRequest (non-stream)', () => {
                         finishReason: 'STOP',
                     },
                 ],
-                usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 2, totalTokenCount: 12 },
+                usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 2, thoughtsTokenCount: 3, totalTokenCount: 15 },
             }),
         )
         const result = await sendGoogleChatRequest(
@@ -157,7 +157,7 @@ describe('sendGoogleChatRequest (non-stream)', () => {
         )
         expect(result.text).toBe('hello')
         expect(result.finishReason).toBe('STOP')
-        expect(result.usage).toEqual({ promptTokens: 10, completionTokens: 2, totalTokens: 12 })
+        expect(result.usage).toEqual({ promptTokens: 10, completionTokens: 5, reasoningTokens: 3, totalTokens: 15 })
 
         expect(calls[0].url).toBe('https://demo.test/v1beta/models/gemini-demo:generateContent')
         expect(calls[0].headers['x-goog-api-key']).toBe('goog-test')
@@ -511,7 +511,7 @@ describe('streamGoogleChatRequest', () => {
             sseResponse([
                 'data: {"candidates":[{"content":{"parts":[{"text":"He"}],"role":"model"}}]}\n\n',
                 'data: {"candidates":[{"content":{"parts":[{"text":"llo"}],"role":"model"}}]}\n\n',
-                'data: {"candidates":[{"content":{"parts":[]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":1,"totalTokenCount":4}}\n\n',
+                'data: {"candidates":[{"content":{"parts":[]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":1,"thoughtsTokenCount":2,"totalTokenCount":6}}\n\n',
             ]),
         )
         const deltas: string[] = []
@@ -528,7 +528,7 @@ describe('streamGoogleChatRequest', () => {
         }
         expect(deltas.join('')).toBe('Hello')
         expect(finishReason).toBe('STOP')
-        expect(usage).toEqual({ promptTokens: 3, completionTokens: 1, totalTokens: 4 })
+        expect(usage).toEqual({ promptTokens: 3, completionTokens: 3, reasoningTokens: 2, totalTokens: 6 })
         expect(calls[0].url).toBe('https://demo.test/v1beta/models/gemini-demo:streamGenerateContent?alt=sse')
         expect(calls[0].headers.Accept).toBe('text/event-stream')
     })

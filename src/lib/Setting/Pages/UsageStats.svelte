@@ -5,6 +5,8 @@
     import { Collapsible } from 'bits-ui'
     import { ChevronDownIcon, FilterIcon, RefreshCwIcon, Trash2Icon, ChartColumnIcon } from '@lucide/svelte'
     import { alertConfirm, notifyError } from 'src/ts/alert'
+    import { DBState } from 'src/ts/stores.svelte'
+    import { bucketCost, costSummary, defaultCostSettings, type ModelRates } from 'src/ts/apiCost'
     import { language } from 'src/lang'
     import {
         fetchUsage, clearRequestLogs,
@@ -33,6 +35,31 @@
     ] as const
 
     let report = $state<UsageReport | null>(null)
+    let costReport = $state<UsageReport | null>(null)
+    let adjustmentDay = $state('')
+    let adjustmentAmount = $state('')
+    const settings = $derived(DBState.db.nodeOnlyCostSettings ?? defaultCostSettings())
+    const today = $derived(new Date().toLocaleDateString('en-CA'))
+    const cost = $derived(costReport ? costSummary(costReport.byModelDay, settings, today) : null)
+    const models = $derived(costReport?.dimensions.models ?? [])
+
+    function updateSettings(patch: Partial<typeof settings>) {
+        // A new budget or start date warns again from the first step.
+        const reset = 'budgetUsd' in patch || 'startDay' in patch ? { notifiedWarnings: [] } : {}
+        DBState.db.nodeOnlyCostSettings = { ...settings, ...patch, ...reset }
+    }
+    function updateRate(model: string, field: keyof ModelRates, raw: string) {
+        const value = raw.trim() === '' ? undefined : Number(raw)
+        if (value !== undefined && (!Number.isFinite(value) || value < 0)) return
+        const next = { ...settings.rates[model], [field]: value }
+        updateSettings({ rates: { ...settings.rates, [model]: next } })
+    }
+    function addAdjustment() {
+        const amountUsd = Number(adjustmentAmount)
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(adjustmentDay) || !adjustmentAmount.trim() || !Number.isFinite(amountUsd) || amountUsd < 0) return
+        updateSettings({ adjustments: [...settings.adjustments.filter(a => a.day !== adjustmentDay), { day: adjustmentDay, amountUsd }] })
+        adjustmentAmount = ''
+    }
     let loading = $state(false)
     let loadError = $state<string | null>(null)
 
@@ -74,10 +101,11 @@
         loading = true
         loadError = null
         try {
-            const data = await fetchUsage(q)
+            const [data, all] = await Promise.all([fetchUsage(q), fetchUsage({ categories: ['llm'] })])
             if (gen !== fetchGen) return
             if (!data) throw new Error('request failed')
             report = data
+            costReport = all
         } catch (err) {
             if (gen !== fetchGen) return
             loadError = err instanceof Error ? err.message : String(err)
@@ -224,6 +252,59 @@
         </Collapsible.Content>
     </Collapsible.Root>
 </div>
+
+<section class="border border-darkborderc rounded-md bg-darkbg/30 p-3 mb-4 text-textcolor text-sm min-w-0">
+    <h3 class="font-semibold mb-1">{language.apiCostTitle}</h3>
+    <p class="text-textcolor2 text-xs mb-3">{language.apiCostEstimateNote}</p>
+    <div class="grid grid-cols-2 gap-2 mb-3">
+        <label class="min-w-0">{language.apiCostBudgetUsd}<input class="w-full min-w-0 bg-darkbg border border-darkborderc rounded p-1" type="number" min="0" step="any" value={settings.budgetUsd ?? ''} onchange={(e) => updateSettings({ budgetUsd: e.currentTarget.value ? Number(e.currentTarget.value) : undefined })} /></label>
+        <label class="min-w-0">{language.apiCostStartDay}<input class="w-full min-w-0 bg-darkbg border border-darkborderc rounded p-1" type="date" value={settings.startDay ?? ''} onchange={(e) => updateSettings({ startDay: e.currentTarget.value || undefined })} /></label>
+    </div>
+    {#if cost}
+        <div class="grid grid-cols-2 gap-2 mb-2 tabular-nums">
+            <div>{language.apiCostSpent}: ${cost.spent.toFixed(4)}</div>
+            <div>{language.apiCostRemaining}: {cost.remaining === null ? '—' : `$${cost.remaining.toFixed(4)}`}</div>
+            <div>{language.apiCostPercent}: {cost.percent === null ? '—' : `${cost.percent.toFixed(1)}%`}</div>
+            <div>{language.apiCostDailyAverage}: ${cost.dailyAverage.toFixed(4)}</div>
+            <div class="col-span-2">{language.apiCostDepletionDay}: {cost.depletionDay ?? '—'}</div>
+        </div>
+        {#if cost.unpriced > 0}<p class="text-textcolor2">{language.apiCostUnpriced}: {cost.unpriced}</p>{/if}
+        {#if cost.missingTokens > 0}<p class="text-textcolor2">{language.apiCostMissingTokens}: {cost.missingTokens}</p>{/if}
+    {/if}
+    <div class="grid grid-cols-2 gap-2 my-3">
+        <label class="min-w-0">{language.apiCostWarnings}<input class="w-full min-w-0 bg-darkbg border border-darkborderc rounded p-1" value={settings.warnings.join(', ')} onchange={(e) => updateSettings({ warnings: e.currentTarget.value.split(',').map(Number).filter(n => Number.isFinite(n) && n > 0 && n < 100) })} /></label>
+        <label class="flex items-center gap-2"><input type="checkbox" checked={settings.hardStop} onchange={(e) => updateSettings({ hardStop: e.currentTarget.checked })} />{language.apiCostHardStop}</label>
+    </div>
+    <div class="mb-3">
+        <div class="font-semibold mb-1">{language.apiCostAdjustment}</div>
+        <div class="flex flex-wrap gap-2 items-end">
+            <label>{language.apiCostAdjustmentDay}<input class="block bg-darkbg border border-darkborderc rounded p-1" type="date" bind:value={adjustmentDay} /></label>
+            <label>{language.apiCostActualUsd}<input class="block w-28 bg-darkbg border border-darkborderc rounded p-1" type="text" inputmode="decimal" bind:value={adjustmentAmount} /></label>
+            <button class="border border-darkborderc rounded p-1" onclick={addAdjustment}>{language.apiCostAdd}</button>
+        </div>
+        {#each settings.adjustments as adjustment (adjustment.day)}
+            <div class="flex gap-2 items-center mt-1"><span>{adjustment.day}: ${adjustment.amountUsd.toFixed(4)}</span><button class="underline" onclick={() => updateSettings({ adjustments: settings.adjustments.filter(a => a.day !== adjustment.day) })}>{language.apiCostRemove}</button></div>
+        {/each}
+    </div>
+    <div class="font-semibold mb-1">{language.apiCostRates}</div>
+    <p class="text-textcolor2 text-xs mb-2">{language.apiCostRatesUnit}</p>
+    {#each models as model (model)}
+        {@const modelRows = costReport?.byModelDay.filter(row => row.model === model) ?? []}
+        {@const modelCost = modelRows.reduce((sum, row) => sum + (bucketCost(row, settings.rates).amount ?? 0), 0)}
+        {@const modelUnpriced = modelRows.some(row => bucketCost(row, settings.rates).unpriced)}
+        {@const modelMissing = modelRows.reduce((sum, row) => sum + row.missingTokenRequests, 0)}
+        <div class="border-t border-darkborderc py-2 min-w-0">
+            <div class="font-mono break-all">{model} · {modelUnpriced ? language.apiCostNoRate : modelMissing === modelRows.reduce((n, r) => n + r.requests, 0) ? '—' : `$${modelCost.toFixed(4)}`}</div>
+            <div class="text-xs text-textcolor2 mb-1">{language.usageInputTokens}: {formatTokens(modelRows.reduce((n, r) => n + r.inputTokens, 0))} · {language.usageOutputTokens}: {formatTokens(modelRows.reduce((n, r) => n + r.outputTokens, 0))}</div>
+            {#if modelMissing > 0}<div class="text-xs text-textcolor2">{language.apiCostMissingTokens}: {modelMissing}</div>{/if}
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {#each [['input', language.usageInputTokens], ['output', language.usageOutputTokens], ['cachedInput', language.usageCachedTokens], ['reasoning', language.apiCostReasoning], ['longInput', language.apiCostLongInput], ['longOutput', language.apiCostLongOutput], ['longCachedInput', language.apiCostLongCached], ['longReasoning', language.apiCostLongReasoning]] as field}
+                    <label class="min-w-0 text-xs">{field[1]}<input class="w-full min-w-0 bg-darkbg border border-darkborderc rounded p-1" type="number" min="0" step="any" value={settings.rates[model]?.[field[0] as keyof ModelRates] ?? ''} onchange={(e) => updateRate(model, field[0] as keyof ModelRates, e.currentTarget.value)} /></label>
+                {/each}
+            </div>
+        </div>
+    {/each}
+</section>
 
 {#if loading && !report}
     <div class="text-textcolor2 text-sm py-8 text-center">{language.usageLoading}</div>

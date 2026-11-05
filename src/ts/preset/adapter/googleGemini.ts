@@ -558,7 +558,11 @@ function parseGeminiUsage(raw: unknown): AdapterUsage | undefined {
         usage.promptTokens = raw['promptTokenCount'] as number
     }
     if (typeof raw['candidatesTokenCount'] === 'number') {
-        usage.completionTokens = raw['candidatesTokenCount'] as number
+        usage.completionTokens = (raw['candidatesTokenCount'] as number) + (typeof raw['thoughtsTokenCount'] === 'number' ? raw['thoughtsTokenCount'] as number : 0)
+    }
+    if (typeof raw['thoughtsTokenCount'] === 'number') {
+        usage.reasoningTokens = raw['thoughtsTokenCount'] as number
+        usage.completionTokens ??= usage.reasoningTokens
     }
     if (typeof raw['totalTokenCount'] === 'number') {
         usage.totalTokens = raw['totalTokenCount'] as number

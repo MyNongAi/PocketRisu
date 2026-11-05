@@ -170,7 +170,7 @@ export function extractLegacyUsage(response: unknown): RequestLogUsage | undefin
             || cachedTokens !== undefined
             || reasoningTokens !== undefined
         ) {
-            return { inputTokens, outputTokens, cachedTokens, reasoningTokens }
+            return { inputTokens, outputTokens: outputTokens === undefined ? reasoningTokens : outputTokens + (reasoningTokens ?? 0), cachedTokens, reasoningTokens }
         }
     }
 
@@ -269,6 +269,7 @@ export interface UsageBucket {
     outputTokens: number
     cachedTokens: number
     reasoningTokens: number
+    missingTokenRequests: number
     avgDurationMs: number | null
 }
 
@@ -276,6 +277,8 @@ export interface UsageReport {
     total: UsageBucket
     daily: (UsageBucket & { day: string })[]
     byModel: (UsageBucket & { model: string | null, provider: string | null })[]
+    /** `longPrompt`: the requests whose prompt is over 200k tokens (priced per request). */
+    byModelDay: (UsageBucket & { day: string, model: string | null, longPrompt?: boolean })[]
     bySource: (UsageBucket & { source: string })[]
     dimensions: { models: string[], categories: string[], sources: string[] }
 }

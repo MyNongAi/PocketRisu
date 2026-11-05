@@ -243,6 +243,28 @@ describe('rotation by byte budget', () => {
 })
 
 describe('usage aggregation', () => {
+    it('groups model by day and counts successful requests without token records', () => {
+        const t = new Date(2026, 10, 2, 10).getTime()
+        logs.addRequestLogBatch([
+            entry({ timestamp: t, model: 'model-a', provider: null, inputTokens: 20, reasoningTokens: 5 }),
+            entry({ timestamp: t, model: 'pluginmodel:::sample', provider: null, inputTokens: 0, outputTokens: 0 }),
+        ])
+        const usage = logs.queryUsage({})
+        expect(usage.byModelDay).toHaveLength(2)
+        expect(usage.byModelDay.find((row: { model: string }) => row.model === 'model-a')?.reasoningTokens).toBe(5)
+        expect(usage.byModelDay.find((row: { model: string }) => row.model === 'pluginmodel:::sample')?.missingTokenRequests).toBe(1)
+    })
+    it('keeps the requests over 200k prompt tokens in rows of their own', () => {
+        const t = new Date(2026, 10, 3, 10).getTime()
+        logs.addRequestLogBatch([
+            entry({ timestamp: t, model: 'model-a', provider: null, inputTokens: 150_000 }),
+            entry({ timestamp: t, model: 'model-a', provider: null, inputTokens: 150_000 }),
+            entry({ timestamp: t, model: 'model-a', provider: null, inputTokens: 250_000 }),
+        ])
+        const rows = logs.queryUsage({}).byModelDay.filter((row: { model: string }) => row.model === 'model-a')
+        expect(rows.map((row: { longPrompt: boolean, requests: number, inputTokens: number }) => [row.longPrompt, row.requests, row.inputTokens]).sort())
+            .toEqual([[false, 2, 300_000], [true, 1, 250_000]])
+    })
     it('groups per day using the local calendar day', () => {
         const t = new Date(2026, 6, 20, 10, 0, 0).getTime()
         logs.addRequestLogBatch([

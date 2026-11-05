@@ -46,6 +46,9 @@ import { modelPresetIdOf } from "src/ts/preset/pickerId";
 import { expandAdapterMessages, toAdapterMessage, toolResponseText } from "./modelPresetMessages";
 import { isLocalNetworkUrl } from "src/ts/network/localNetwork";
 import { createRequestLogScope, recordRequestLog, stripInlineMedia, type RequestLogRoute, type RequestLogSource, type RequestLogUsage } from "src/ts/requestLog";
+import { fetchUsage } from "src/ts/requestLog";
+import { costSummary, newWarnings, shouldHardStop } from "src/ts/apiCost";
+import { notifyInfo } from "src/ts/alert";
 import {
     startStatus, appendText, endStatus, setStatusTokenCounter, addBadge,
 } from "src/ts/status/requestStatus";
@@ -419,6 +422,24 @@ export function reformater(formated:OpenAIChat[],modelInfo:LLMModel|LLMFlags[]){
 export async function requestChatDataMain(arg:requestDataArgument, model:ModelModeExtended, abortSignal:AbortSignal=null):Promise<requestDataResponse> {
     const db = getDatabase()
     const targ:RequestDataArgumentExtended = arg
+
+    const costSettings = db.nodeOnlyCostSettings
+    if (model === 'model' && !arg.previewBody && targ.logSource !== 'test' && targ.logSource !== 'preview'
+        && costSettings?.budgetUsd && costSettings.startDay) {
+        const usage = await fetchUsage({ categories: ['llm'], since: new Date(`${costSettings.startDay}T00:00:00`).getTime() })
+        if (usage) {
+            const today = new Date().toLocaleDateString('en-CA')
+            const summary = costSummary(usage.byModelDay, costSettings, today)
+            const warnings = newWarnings(summary.percent, costSettings)
+            if (warnings.length) {
+                db.nodeOnlyCostSettings = { ...costSettings, notifiedWarnings: [...costSettings.notifiedWarnings, ...warnings] }
+                for (const threshold of warnings) notifyInfo(language.apiCostWarning(threshold))
+            }
+            if (shouldHardStop(summary.percent, costSettings)) {
+                return { type: 'fail', noRetry: true, result: language.apiCostBlocked }
+            }
+        }
+    }
 
     // P4 dual-regime dispatch (plan v6 §7). Resolve the per-chat ModelPreset
     // binding BEFORE any classic model selection so a binding chat never touches

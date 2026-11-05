@@ -3333,6 +3333,27 @@
         "src/ts/process/request/jobRecoveryProxy.test.ts",
         "src/ts/process/request/recoveryPostProcess.test.ts"
       ]
+    },
+    {
+      "id": "API-COST",
+      "title": "API 비용·예산 추정 및 메인 요청 차단",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "src/ts/apiCost.ts",
+        "src/lib/Setting/Pages/UsageStats.svelte",
+        "src/ts/process/request/request.ts",
+        "server/node/request-logs.cjs"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/apiCost.ts", "contains": "export function shouldHardStop(" },
+        { "file": "src/lib/Setting/Pages/UsageStats.svelte", "contains": "language.apiCostTitle" },
+        { "file": "src/ts/process/request/request.ts", "contains": "shouldHardStop(summary.percent, costSettings)" },
+        { "file": "server/node/request-logs.cjs", "contains": "GROUP BY day, model" }
+      ],
+      "regressionTests": [
+        "src/ts/apiCost.test.ts",
+        "server/node/request-logs.test.ts"
+      ]
     }
   ]
 }

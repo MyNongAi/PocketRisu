@@ -444,6 +444,7 @@ export function normalizeDatabase(data:Database){
     // the .bin export) under a byte budget, and the log is the only way to see
     // what a server-side job actually sent — see request-log-usage.md.
     data.requestLogEnabled ??= true
+    data.nodeOnlyCostSettings ??= { rates: {}, warnings: [50, 80, 95], hardStop: true, adjustments: [], notifiedWarnings: [] }
     // Off by default: asking for usage on a streamed request means sending
     // stream_options, which a strict OpenAI-compatible server can reject with
     // a 400 and break the generation. Opt-in, per provider tolerance.
@@ -1587,6 +1588,7 @@ export interface Database{
     // to save/request-logs.db. Default on; the token usage statistics come from
     // the same write, so turning it off stops both.
     requestLogEnabled: boolean
+    nodeOnlyCostSettings?: import('../apiCost').CostSettings
     // Send `stream_options: {include_usage: true}` on streaming OpenAI-compatible
     // requests so token counts reach the usage statistics. Default off.
     requestLogStreamUsage: boolean

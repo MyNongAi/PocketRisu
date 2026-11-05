@@ -407,7 +407,7 @@ describe('extractLegacyUsage', () => {
             },
         })).toEqual({
             inputTokens: 25,
-            outputTokens: 9,
+            outputTokens: 13,
             cachedTokens: 5,
             reasoningTokens: 4,
         })
