@@ -5,16 +5,22 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { beforeAll, beforeEach, describe, expect, test, vi } from 'vitest'
-import { buildModuleJson, readSource, TOGGLES } from '../../../modules/card-battle/build.mjs'
+import { buildModuleJson, readSource, readArt, encodeBattleRisum, decodeBattleRisum, TOGGLES, VERSION } from '../../../modules/card-battle/build.mjs'
 import { decodeRisum, encodeRisum, readMaps } from '../../../modules/scene-fold/build.mjs'
 import { ReloadChatPointer } from '../stores.svelte'
 
 const toggles = new Map<string, string>()
 const llmAnswers: string[] = []
 const llmPrompts: { role: string, content: string }[][] = []
+const characterAssets: string[] = []
+const packAssets: string[] = []
 const alerts = vi.hoisted(() => ({ select: '0', confirm: true }))
 
-vi.mock('../parser/parser.svelte', () => ({ hasher: vi.fn(), risuChatParser: vi.fn((text: string) => text) }))
+vi.mock('../parser/parser.svelte', () => ({ hasher: vi.fn(), risuChatParser: vi.fn((text: string) => {
+    if (text === '{{assetlist}}') return JSON.stringify(characterAssets)
+    if (text === '{{moduleassetlist::card-battle-art}}') return JSON.stringify(packAssets)
+    return text
+}) }))
 vi.mock('../alert', () => ({
     alertConfirm: vi.fn(async () => alerts.confirm),
     alertError: vi.fn(),
@@ -127,12 +133,36 @@ beforeEach(() => {
     toggles.set('toggle_cardbattle.capture', '1')
     llmAnswers.length = 0
     llmPrompts.length = 0
+    characterAssets.length = 0
+    packAssets.length = 0
     alerts.select = '0'
     alerts.confirm = true
     vi.mocked(ReloadChatPointer.update).mockReset()
 })
 
 describe('the module file', () => {
+    test('0.7 packs every original WebP as an ordered binary asset block', () => {
+        const maps = readMaps()
+        const json = buildModuleJson(code)
+        const art = readArt()
+        const packed = encodeBattleRisum(json, maps.encode, art)
+        const back = decodeBattleRisum(packed, maps.decode)
+        expect(VERSION).toBe('0.7.0')
+        expect(code).toContain("CB.VERSION = '0.7.0'")
+        expect(back.json).toEqual(json)
+        expect(back.assets).toEqual(art.map(({ data }) => data))
+        expect(art).toHaveLength(20)
+        expect(new Set(json.module.assets.map(([name]) => name)).size).toBe(20)
+        expect(json.module.assets).toContainEqual(['cb-art-foe-magician', '', 'webp'])
+        expect(json.module.assets).toContainEqual(['cb-art-bg-board', '', 'webp'])
+        expect(packed.length).toBeLessThan(1_000_000)
+        for (const bytes of back.assets) {
+            expect(bytes.toString('ascii', 0, 4)).toBe('RIFF')
+            expect(bytes.toString('ascii', 8, 12)).toBe('WEBP')
+        }
+        expect(() => decodeBattleRisum(packed.subarray(0, -2), maps.decode)).toThrow()
+    })
+
     test('builds a .risum that reads back to the same module, low-level access on', () => {
         const maps = readMaps()
         const json = buildModuleJson(code)
@@ -158,6 +188,178 @@ describe('the module file', () => {
         expect(regex.type).toBe('editprocess')
         const text = `이야기.\n<battle-log>\n승리\n</battle-log>\n${packMark('r', { level: 2 })}\n${packMark('b', { id: 'a', phase: 'won' })}`
         expect(text.replace(new RegExp(regex.in, regex.flag), regex.out)).toBe('이야기.\n<battle-log>\n승리\n</battle-log>')
+    })
+})
+
+describe('0.7 battle art and views', () => {
+    test('defaults to 무대 and reads all four toggle choices without changing the fight', async () => {
+        expect(TOGGLES).toContain('cardbattle.view=전투 화면=select=무대,합친 판,레인 판,간단')
+        expect(await probe('return json.encode(CB.settings(id).view)')).toBe('stage')
+        const game = makeChat([{ role: 'char', data: '합성 전투.\n<battle name="수정 나방" art="moth">' }])
+        await game.run('output')
+        const before = game.chat.message[0].data
+        for (const [index, view] of ['stage', 'mixed', 'board', 'simple'].entries()) {
+            toggles.set('toggle_cardbattle.view', String(index))
+            const html = await game.shown(0)
+            if (view === 'simple') {
+                expect(html).toContain('class="cbx-arena cbx-normal"')
+                expect(html).not.toContain('{{raw::')
+                expect(html).not.toContain('{{source::')
+                expect(html).toContain('max-width:420px')
+            } else {
+                expect(html).toContain(`class="cbx-stage cbx-view-${view}"`)
+                expect(html).toContain('{{raw::cb-art-foe-moth}}')
+                expect(html).toContain('{{raw::cb-art-bg-stage}}')
+                expect(html).toContain('{{source::user}}')
+                expect(html).toContain('{{source::char}}')
+                expect(html).toContain('class="cbx-tray"')
+                expect(html).toContain('class="cbx-cost"')
+                expect(html).toContain('max-width:560px')
+                expect(html.match(/class="cbx-lane"/g)?.length ?? 0).toBe(view === 'mixed' ? 3 : 0)
+                expect(html.match(/class="cbx-slot /g)?.length ?? 0).toBe(view === 'board' ? 6 : 0)
+            }
+            expect(html).toContain('cb|end||0')
+            expect(game.chat.message[0].data).toBe(before)
+        }
+    })
+
+    test('art is optional, bounded, and falls through to whole English words or Korean names, then a glyph standee', async () => {
+        const result = await probe(`
+            local _, explicit = CB.takeBattleTag('<battle name="합성 적" art="MAID">')
+            local _, bad = CB.takeBattleTag('<battle name="합성 적" art="../x">')
+            local b = CB.newBattle(CB.newRun(3), explicit, { healEach = true })
+            return json.encode({ art = b.art, bad = bad.art == nil, explicit = CB.foeSource(b.name, b.art),
+                korean = CB.foeSource('견습 마법사'), english = CB.foeSource('Moss Golem'),
+                missing = CB.foeSource('simple human', 'unknown') == nil,
+                glyph = CB.picture(CB.foeSource('늑대'), CB.foeGlyph('늑대', 'normal')),
+                instruction = CB.instruction(nil, {}, '합성 인물') })`)
+        expect(result).toMatchObject({ art: 'maid', bad: true, explicit: '{{raw::cb-art-foe-maid}}',
+            korean: '{{raw::cb-art-foe-magician}}', english: '{{raw::cb-art-foe-golem}}', missing: true })
+        expect(result.glyph).toContain('cbx-standee cbx-glyph">🐺')
+        for (const key of ['magician', 'maid', 'pitcher', 'yokai', 'golem', 'imp', 'moth']) expect(result.instruction).toContain(key)
+    })
+
+    test('uses exact character and private-pack overrides, including new keys and transparent hero sprites', async () => {
+        characterAssets.push('cb-foe-magician', 'cb-foe-clockwork', 'cb-sd-user', 'cb-sd-char')
+        packAssets.push('cb-foe-moth')
+        const result = await probe(`
+            CB.visuals(id)
+            return json.encode({ foe = CB.foeSource('합성 마법사'), custom = CB.foeSource('합성 적', 'clockwork'),
+                pack = CB.foeSource('합성 나방'), noFuzzy = CB.foeSource('합성 임프'),
+                user = CB.hero('user'), bot = CB.hero('char') })`)
+        expect(result.foe).toBe('{{raw::cb-foe-magician}}')
+        expect(result.custom).toBe('{{raw::cb-foe-clockwork}}')
+        expect(result.pack).toBe('{{raw::cb-foe-moth}}')
+        expect(result.noFuzzy).toBe('{{raw::cb-art-foe-imp}}')
+        expect(result.user).toContain('{{raw::cb-sd-user}}')
+        expect(result.bot).toContain('{{raw::cb-sd-char}}')
+        expect(result.user).not.toContain('cbx-portrait')
+    })
+
+    test('chooses card art by the main effect and keeps image-free fallbacks', async () => {
+        const result = await probe(`
+            local arts = {}
+            for key, fx in pairs({ slash = { dmg = 6, block = 2 }, shield = { block = 5 }, fire = { dmg = 8, exhaust = 1 }, heal = { heal = 3 } }) do
+                arts[key] = CB.cardArt({ name = '합성 카드', fx = fx })
+            end
+            arts.profile = CB.hero('user')
+            arts.missing = CB.picture('', '★')
+            CB.VIEW = 'simple'
+            arts.simple = CB.cardFace({ name = '합성 카드', cost = 1, fx = { dmg = 6 }, rarity = 'basic' })
+            return json.encode(arts)`)
+        for (const key of ['slash', 'shield', 'fire', 'heal']) expect(result[key]).toContain(`{{raw::cb-art-ca-${key}}}`)
+        expect(result.profile).toContain('{{source::user}}')
+        expect(result.profile).toContain('{{raw::cb-art-hero-persona}}')
+        expect(result.missing).toContain('<img src="" alt="★"><span class="cbx-fallback">★</span>')
+        expect(result.simple).not.toContain('<img')
+    })
+
+    test.each(['mixed', 'board'])('%s summons one transient figure for a normal, signature, or captured card', async (view) => {
+        const result = await probe(`
+            CB.VIEW = '${view}'
+            local views = {}
+            for _, kind in ipairs({ 'plain', 'sig', 'foe' }) do
+                local b = CB.newBattle(CB.newRun(3), { id = 's', name = '합성 골렘', tier = 'normal' }, { healEach = true })
+                local card = { name = '합성 카드', cost = 0, fx = { dmg = 6 }, rarity = 'common', sig = kind == 'sig', foe = kind == 'foe', art = 'imp' }
+                b.cards[b.hand[1]], b.n = card, 2
+                CB.play(b, 1)
+                local seed = b.seed
+                local cast = CB.fightView(b, '합성 인물')
+                local off = CB.fightView(b, '합성 인물', false)
+                b.anim = {}
+                views[kind] = { cast = cast, after = CB.fightView(b, '합성 인물'), off = off, seed = seed == b.seed, board = b.lanes == nil }
+            end
+            return json.encode(views)`)
+        for (const kind of ['plain', 'sig', 'foe']) {
+            const scene = result[kind]
+            expect(scene.cast.match(/class="cbx-summon"/g)).toHaveLength(1)
+            expect(scene.cast).toContain('class="cbx-summonring"')
+            expect(scene.cast).toContain('class="cbx-spot"><div class="cbx-stand">')
+            expect(scene.after).not.toContain('class="cbx-summon"')
+            expect(scene.off).not.toContain('class="cbx-summon"')
+            expect(scene.off).toContain('class="cbx-visual cbx-still"')
+            expect(scene.seed && scene.board).toBe(true)
+        }
+        expect(result.plain.cast).toContain('class="cbx-hologram"')
+        expect(result.sig.cast).toContain('{{source::user}}')
+        expect(result.foe.cast).toContain('{{raw::cb-art-foe-imp}}')
+    })
+
+    test.each([0, 1, 2, 3])('view %i keeps enemy scenes, the final blow, art on capture and the end screen', async (view) => {
+        toggles.set('toggle_cardbattle.view', String(view))
+        toggles.set('toggle_cardbattle.capture', '0')
+        toggles.set('toggle_cardbattle.cards', '2')
+        const game = makeChat([{ role: 'char', data: '합성 전투.\n<battle name="합성 적" art="yokai">' }])
+        await game.run('output')
+        const scenes = await game.lua(`
+            local b = CB.findFight(id, true)
+            b.enemy.moves, b.enemy.step = { { atk = 2 } }, 1
+            local scenes = {}
+            CB.endTurn(b, function(n) scenes[n] = CB.lastExtras(id, '', b) end)
+            b.cards[b.hand[1]], b.enemy.hp = CB.copy(CB.STRIKE), 1
+            CB.play(b, 1)
+            scenes[4] = CB.lastExtras(id, '', b)
+            return json.encode(scenes)`)
+        expect(scenes[0]).toContain('class="cbx-banner"')
+        expect(scenes[0]).toContain('class="cbx-toss"')
+        expect(scenes[1]).toContain('class="cbx-medalw cbx-lunge"')
+        expect(scenes[1]).toContain('class="cbx-flash"')
+        expect(scenes[2]).toContain('class="cbx-banner cbx-mine"')
+        expect(scenes[3]).toContain('class="cbx-slash"')
+        expect(scenes[3]).not.toContain('cb|end')
+        const b = mark(game.chat.message[0].data, 'b')
+        b.cards[b.hand[0] - 1] = { name: '합성 일격', cost: 0, fx: { dmg: 6 }, rarity: 'basic' }
+        b.enemy.hp = 1
+        game.chat.message[0].data = `합성 전투.\n${packMark('b', b)}`
+        await game.run('onButtonClick', { data: `cb|play|1|${b.n}` })
+        expect(mark(game.chat.message[0].data, 'b').capture.card.art).toBe('yokai')
+        const end = await game.shown(0)
+        expect(end).toContain('🏆 승리')
+        expect(end).toContain('cb|take')
+        if (view !== 3) {
+            expect(end).toContain('cbx-epilogue')
+            expect(end).toContain('{{raw::cb-art-foe-yokai}}')
+        } else expect(end).not.toContain('{{raw::')
+        await game.run('onButtonClick', { data: 'cb|take' })
+        expect(mark(game.chat.message[0].data, 'r').deck.at(-1)).toMatchObject({ art: 'yokai', foe: true })
+    })
+
+    test('art survives the signature setup and auxiliary rewrite of a capture', async () => {
+        toggles.set('toggle_cardbattle.sig', '1')
+        toggles.set('toggle_cardbattle.capture', '0')
+        const game = makeChat([{ role: 'char', data: '합성 전투.\n<battle name="합성 적" art="pitcher">' }])
+        await game.run('output')
+        expect(mark(game.chat.message[0].data, 'b').art).toBe('pitcher')
+        await game.run('onFormSubmit', { data: 'cb|sig', meta: { data: { cname: '합성 검', cost: '1', k1: 'dmg', v1: '8' } } })
+        await game.run('onButtonClick', { data: 'cb|sigok' })
+        const b = mark(game.chat.message[0].data, 'b')
+        expect(b.art).toBe('pitcher')
+        b.cards[b.hand[0] - 1] = { name: '합성 일격', cost: 0, fx: { dmg: 6 }, rarity: 'basic' }
+        b.enemy.hp = 1
+        game.chat.message[0].data = `합성 전투.\n${packMark('b', b)}`
+        llmAnswers.push('[{"name":"모델 이름","effects":{"dmg":7},"desc":"합성 설명"}]')
+        await game.run('onButtonClick', { data: `cb|play|1|${b.n}` })
+        expect(mark(game.chat.message[0].data, 'b').capture.card).toMatchObject({ art: 'pitcher', foe: true, name: '합성 적' })
     })
 })
 
@@ -392,10 +594,10 @@ describe('more effects', () => {
             b.enemy.moves = { { atk = 5, poison = 2 } }
             return json.encode({ view = CB.fightView(b, '레이') })`)
         expect(result.view).toContain('독: 적이 자기 턴을 시작할 때')
-        expect(result.view).toContain('🧪 독 3')
+        expect(result.view).toContain('src="{{raw::cb-art-ic-poison}}" alt="🧪"> 독 3')
         expect(result.view).toContain('🌵 가시 2')
         expect(result.view).toContain('🔰 매 턴 방어 4')
-        expect(result.view).toContain('⚔️ 5 🧪')
+        expect(result.view).toContain('alt="⚔️"> 5 <img class="cbx-icon" src="{{raw::cb-art-ic-poison}}"')
     })
 })
 

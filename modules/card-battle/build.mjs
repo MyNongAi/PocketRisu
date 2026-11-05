@@ -2,12 +2,12 @@
 // usage: node modules/card-battle/build.mjs [--out <folder>]
 // (default modules/card-battle/dist, which git ignores)
 // The .risum container is the scene-fold module's (encodeRisum there).
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { decodeRisum, encodeRisum, readMaps } from '../scene-fold/build.mjs'
 
-export const VERSION = '0.6.0'
+export const VERSION = '0.7.0'
 export const MODULE_ID = '5dc65ab5-ed92-484d-b4c9-84940df8f952'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -26,6 +26,8 @@ export const TOGGLES = [
     '=턴마다: 턴이 끝날 때마다 그 턴 기록이 내 메시지로 붙고, 아무것도 안 쓰고 보내기를 누르면 그 턴이 이야기가 되며 답이 오면 다음 턴 창이 열립니다(답이 턴 수만큼 늘어납니다). 끝나고 한 번에: 전투를 끝까지 한 뒤 다음 답 하나가 전투 전체를 이야기로 씁니다=caption',
     'cardbattle.fx=전투 연출=select=보통,빠르게,끄기',
     '=카드가 적에게 날아가 꽂히고, 적의 차례가 장면으로 이어집니다. 빠르게: 장면이 짧게 지나갑니다. 끄기: 숫자만 뜹니다=caption',
+    'cardbattle.view=전투 화면=select=무대,합친 판,레인 판,간단',
+    '=무대: 옆에서 보는 숲 전투. 합친 판: 무대 바닥에 세 레인. 레인 판: 위아래로 마주 보는 판. 간단: 느린 기기를 위한 기존 화면. 레인의 소환은 카드를 내는 장면에만 보이고 남지 않습니다=caption',
     'cardbattle.sig=대표 카드=select=AI가 만들기,직접 만들기,없음',
     '=첫 전투를 시작할 때 이 이야기의 대표 카드 한 장을 덱에 넣습니다. AI가 만들기: 보조 모델이 이 봇에 맞게 씁니다(저수준 접근 필요, 안 되면 모듈 카드에서 고름). 직접 만들기: 전투 창에서 이름과 효과를 골라 만듭니다=caption',
     'cardbattle.capture=이긴 적 카드=select=받을지 고르기,안 받기',
@@ -71,7 +73,7 @@ export function buildModuleJson(code) {
             }],
             customModuleToggle: TOGGLES,
             backgroundEmbedding: '',
-            assets: [],
+            assets: readArt().map(({ name }) => [name, '', 'webp']),
         },
         type: 'risuModule',
     }
@@ -79,6 +81,46 @@ export function buildModuleJson(code) {
 
 export function readSource() {
     return readFileSync(join(here, 'card-battle.lua'), 'utf-8')
+}
+
+export function readArt() {
+    return readdirSync(join(here, 'art')).filter((name) => name.endsWith('.webp')).sort().map((file) => ({
+        name: `cb-art-${file.slice(0, -5)}`,
+        data: readFileSync(join(here, 'art', file)),
+    }))
+}
+
+// Legacy .risum stores asset names in JSON and rpack-encoded bytes in
+// sequential type-1 blocks (exportModuleLegacy), not base64 in the JSON.
+export function encodeBattleRisum(json, encodeMap, art = readArt()) {
+    if (json.module.assets.length !== art.length) throw new Error('asset count mismatch')
+    const chunks = [encodeRisum(json, encodeMap).subarray(0, -1)]
+    art.forEach(({ name, data }, index) => {
+        if (json.module.assets[index][0] !== name) throw new Error('asset order mismatch')
+        const packed = Buffer.from(data.map((byte) => encodeMap[byte]))
+        const head = Buffer.alloc(5)
+        head[0] = 1
+        head.writeUInt32LE(packed.length, 1)
+        chunks.push(head, packed)
+    })
+    return Buffer.concat([...chunks, Buffer.from([0])])
+}
+
+export function decodeBattleRisum(buffer, decodeMap) {
+    const end = 6 + buffer.readUInt32LE(2)
+    const json = decodeRisum(Buffer.concat([buffer.subarray(0, end), Buffer.from([0])]), decodeMap)
+    const assets = []
+    let at = end
+    while (buffer[at] === 1) {
+        if (at + 5 > buffer.length) throw new Error('truncated asset header')
+        const length = buffer.readUInt32LE(at + 1)
+        at += 5
+        if (at + length >= buffer.length) throw new Error('truncated asset')
+        assets.push(Buffer.from(buffer.subarray(at, at + length).map((byte) => decodeMap[byte])))
+        at += length
+    }
+    if (buffer[at] !== 0 || at !== buffer.length - 1 || assets.length !== json.module.assets.length) throw new Error('invalid asset blocks')
+    return { json, assets }
 }
 
 function outFolder() {
@@ -91,10 +133,11 @@ function main() {
     const maps = readMaps()
     const out = join(outFolder(), `card-battle-${VERSION}.risum`)
     mkdirSync(dirname(out), { recursive: true })
-    const buffer = encodeRisum(json, maps.encode)
+    const art = readArt()
+    const buffer = encodeBattleRisum(json, maps.encode, art)
     // Read it back before calling it done.
-    const back = decodeRisum(buffer, maps.decode)
-    if (JSON.stringify(back) !== JSON.stringify(json)) throw new Error('round trip mismatch')
+    const back = decodeBattleRisum(buffer, maps.decode)
+    if (JSON.stringify(back.json) !== JSON.stringify(json) || back.assets.some((data, index) => !data.equals(art[index].data))) throw new Error('round trip mismatch')
     writeFileSync(out, buffer)
     console.log(`wrote ${out} (${buffer.length} bytes)`)
 }

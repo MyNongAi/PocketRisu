@@ -26,7 +26,7 @@
 -- by hand in the window; a beaten enemy can be taken as a card.
 
 local CB = {}
-CB.VERSION = '0.6.0'
+CB.VERSION = '0.7.0'
 
 ------------------------------------------------------------------------------
 -- Small helpers
@@ -263,6 +263,7 @@ function CB.keepTags(card, from)
     if not card or type(from) ~= 'table' then return card end
     card.sig = from.sig == true or nil
     card.foe = from.foe == true or nil
+    card.art = CB.artKey(from.art)
     if type(from.glyph) == 'string' and from.glyph ~= '' then card.glyph = CB.clip(from.glyph, 4) end
     return card
 end
@@ -390,7 +391,10 @@ function CB.parseCards(run, text, slots)
         else
             card = CB.poolCard(run, slot)
         end
-        if slot.foe then card.name, card.glyph, card.foe = CB.clip(slot.foe.name, 14), slot.foe.glyph, true end
+        if slot.foe then
+            card.name, card.glyph, card.foe = CB.clip(slot.foe.name, 14), slot.foe.glyph, true
+            card.art = slot.foe.card and slot.foe.card.art
+        end
         if slot.sig then card.sig = true end
         cards[i] = card
     end
@@ -437,7 +441,7 @@ end
 
 --- A beaten enemy as a card the module makes itself: its strongest move,
 --- named after it, with its face.
-function CB.foeCard(name, tier, moves)
+function CB.foeCard(name, tier, moves, art)
     local best, worth = nil, -1
     for _, move in ipairs(moves or {}) do
         local fx = CB.moveEffects(move)
@@ -448,6 +452,7 @@ function CB.foeCard(name, tier, moves)
         { rarity = CB.FOE_RARITY[tier] or 'common', cost = 1 })
     if not card then return nil end
     card.foe, card.glyph = true, CB.foeGlyph(name, tier)
+    card.art = CB.foeArt(name, art) or CB.artKey(art)
     return card
 end
 
@@ -547,6 +552,7 @@ CB.CARD_WRITERS = { [0] = 'aux', [1] = 'main', [2] = 'pool' }
 -- signature card.
 CB.PACES = { [0] = 1, [1] = 0.55, [2] = 0 }
 CB.SIG_MAKERS = { [0] = 'ai', [1] = 'hand', [2] = 'none' }
+CB.VIEWS = { [0] = 'stage', [1] = 'mixed', [2] = 'board', [3] = 'simple' }
 
 function CB.settings(tid)
     return {
@@ -559,6 +565,7 @@ function CB.settings(tid)
         -- without reading a saved 턴마다 as the other one.
         perTurn = choice(tid, 'tell') == 0,
         pace = CB.PACES[choice(tid, 'fx')] or 1,                -- 보통, 빠르게, 끄기
+        view = CB.VIEWS[choice(tid, 'view')] or 'stage',        -- 무대, 합친 판, 레인 판, 간단
         sig = CB.SIG_MAKERS[choice(tid, 'sig')] or 'ai',        -- AI가 만들기, 직접 만들기, 없음
         capture = choice(tid, 'capture') == 0,                  -- 받을지 고르기, 안 받기
     }
@@ -744,6 +751,7 @@ function CB.takeBattleTag(text)
     local tier = tostring(attrs.tier or ''):lower()
     if not CB.TIER_LABEL[tier] then tier = 'normal' end
     local spec = { id = newId(), name = CB.clip(CB.trim(attrs.name), 24), tier = tier, phase = 'pending' }
+    spec.art = CB.artKey(attrs.art)
     local cleaned = text:gsub('\n?' .. CB.TAG_PATTERN, ''):gsub('\n?' .. CB.CLOSE_TAG_PATTERN, '')
     cleaned = cleaned:gsub('%s+$', '')
     return cleaned, spec
@@ -818,6 +826,7 @@ function CB.newBattle(run, spec, settings)
     local b = {
         id = spec.id, level = run.level, perTurn = settings.perTurn or nil, told = 0,
         name = (spec.name and spec.name ~= '') and spec.name or template.name,
+        art = CB.artKey(spec.art),
         tier = tier, phase = 'fight', open = true, turn = 1,
         energy = 3, maxEnergy = 3,
         cards = cards, draw = draw, hand = {}, discard = {},
@@ -1252,7 +1261,8 @@ end
 function CB.instruction(b, settings, user)
     local lines = {
         '[Card Battle] Fights in this story are played as a card game outside the text. When ' .. user .. ' is about to fight (an enemy attacks, a duel is accepted, combat cannot be avoided), stop the reply at the moment the fight begins and end it with one tag on its own line:',
-        '<battle tier="normal" name="enemy name">',
+        '<battle tier="normal" name="enemy name" art="magician">',
+        'art is optional: magician (apprentice magician girl), maid (dragon maid), pitcher (carnivorous-plant girl), yokai (umbrella-spirit girl), golem (moss stone golem), imp (ember imp), moth (crystal moth). Pick only when it fits the enemy; otherwise omit art.',
         'tier is normal for common foes, elite for strong ones, boss for a major one; name in the story\'s language. Do not narrate the fight itself.',
         'A <battle-turn> block is a turn of a fight the player just played: tell that turn as story, the moves and hits as the block has them, keep every number, and stop as the next turn begins. Never finish the fight yourself and never tell turns that have not been played.',
         'A <battle-log> block at the end of a message is a fight that already happened: tell it from the log, keep its outcome, then go on with the story.',
@@ -1334,6 +1344,7 @@ CB.CSS = ([[
 .cbx-skl{background:linear-gradient(160deg,#4f9fbd,#1b4557)}
 .cbx-pow{background:linear-gradient(160deg,#a97ada,#45276b)}
 .cbx-inner{height:100%;box-sizing:border-box;border-radius:8px;overflow:hidden;display:flex;flex-direction:column;background:#efe4cc;border:2px solid #9a9184}
+.cbx-root img{margin:0!important}
 .cbx-art{display:flex;align-items:center;justify-content:center}
 .cbx-atk .cbx-art{background:radial-gradient(circle at 50% 35%,#f6c1b6,#b9473c)}
 .cbx-skl .cbx-art{background:radial-gradient(circle at 50% 35%,#c4e6f2,#3f87a3)}
@@ -1463,6 +1474,191 @@ function CB.foeGlyph(name, tier)
     return CB.TIER_GLYPH[tier] or '⚔️'
 end
 
+CB.ART_CSS = [[
+.cbx-root{font-family:system-ui,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;font-weight:700}
+.cbx-icon{display:inline-block;width:20px;height:20px;object-fit:contain;vertical-align:middle;flex:none}
+.cbx-bartext,.cbx-cost,.cbx-orb,.cbx-block,.cbx-float,.cbx-intent,.cbx-pilen{font-weight:1000;-webkit-text-stroke:2.5px #241008;paint-order:stroke fill;letter-spacing:.3px}
+.cbx-float{font-size:34px;color:#fff;-webkit-text-stroke:4px #800e0a}
+.cbx-crit{font-size:44px;color:#ffd45b}.cbx-good{color:#bce7ff}.cbx-heal{color:#b0ffa0}
+.cbx-picture{position:relative;display:block;width:100%;height:100%;min-width:0;min-height:0}
+.cbx-picture>img{display:block;width:100%;height:100%;max-width:100%;object-fit:contain;filter:drop-shadow(0 4px 5px #0009)}
+.cbx-picture>img[src=""],.cbx-picture>img:not([src]){display:none}.cbx-fallback{display:none}
+.cbx-picture>img[src=""]+.cbx-fallback,.cbx-picture>img:not([src])+.cbx-fallback{display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:38px}
+.cbx-cover>img{object-fit:cover;filter:none}
+.cbx-standee{position:relative;display:block;box-sizing:border-box;height:100%;max-width:100%;margin:auto;filter:drop-shadow(0 5px 5px #0009)}
+.cbx-standee:after{content:"";position:absolute;left:12%;right:12%;bottom:-5px;height:9px;border-radius:50%;background:linear-gradient(#d6b579,#72532e);border:1px solid #332215;box-shadow:0 5px 5px #0009}
+.cbx-portrait{width:76%;padding:3px 3px 7px;border:2px solid #e6c178;border-radius:20px 20px 9px 9px;background:linear-gradient(#806341,#2e2119)}
+.cbx-profile{display:block;height:100%;border-radius:15px 15px 5px 5px;background-size:cover;background-position:50% 28%;background-color:#352b35}
+.cbx-glyph{display:flex;align-items:center;justify-content:center;width:76%;border:2px solid #b99254;border-radius:18px;background:radial-gradient(circle at 40% 30%,#645068,#241b2e);font-size:48px}
+.cbx-stage{position:relative;height:306px;margin-top:10px;overflow:hidden;border-radius:14px;background:#182022;isolation:isolate}
+.cbx-bg,.cbx-vignette{position:absolute;inset:0;pointer-events:none}
+.cbx-bg{background-size:cover;background-position:50% 72%}
+.cbx-vignette{z-index:2;background:radial-gradient(ellipse at 50% 45%,transparent 42%,#070510b8 100%)}
+.cbx-stage .cbx-foe,.cbx-player,.cbx-companion{position:absolute;display:flex;flex-direction:column;align-items:center;gap:4px;z-index:3;min-width:0}
+.cbx-stage .cbx-foe{right:2%;bottom:10px;width:34%}
+.cbx-player{left:17%;bottom:10px;width:30%}
+.cbx-companion{left:1%;bottom:37%;width:25%;z-index:2;filter:brightness(.76) saturate(.85)}
+.cbx-figure{position:relative;width:100%;height:140px;transform-origin:50% 100%}
+.cbx-companion .cbx-figure{height:105px}
+.cbx-figure:after,.cbx-stage .cbx-medalw:after{content:"";position:absolute;left:10%;right:10%;bottom:-8px;height:15px;z-index:-1;border-radius:50%;background:radial-gradient(ellipse,#0009,transparent 70%)}
+.cbx-stage .cbx-medal{width:100%;height:142px;border:0;border-radius:0;background:none;box-shadow:none}
+.cbx-stage .cbx-medalw{width:100%;transform-origin:50% 100%}
+.cbx-stage .cbx-medalw.cbx-lunge{animation-name:cbSideLunge}
+.cbx-stage .cbx-name{max-width:100%;font-size:11px;line-height:1.2;overflow-wrap:anywhere}
+.cbx-stage .cbx-tier{font-size:9px;margin-left:3px;padding:0 3px}
+.cbx-stage .cbx-barrow{gap:1px}.cbx-stage .cbx-bar{height:15px;border:2px solid #190b08;box-shadow:0 2px 3px #0008}
+.cbx-stage .cbx-bartext{font-size:10px}
+.cbx-stage .cbx-block{padding:0;min-width:24px;background:none;border:0;box-shadow:none;font-size:12px}
+.cbx-stage .cbx-block .cbx-icon{width:24px;height:24px;margin-right:-17px}
+.cbx-stage .cbx-intent{font-size:16px;padding:1px 5px;border-color:#e27669;background:#200c12b8;gap:2px;max-width:100%;flex-wrap:wrap;justify-content:center;white-space:normal;text-align:center}
+.cbx-stage .cbx-intent .cbx-icon{width:27px;height:27px}
+.cbx-stage .cbx-chips{gap:2px;min-height:0}.cbx-stage .cbx-chip{font-size:9px;padding:0 3px;background:#0c0b12c9}
+.cbx-stage .cbx-chip .cbx-icon{width:17px;height:17px}
+.cbx-tag{box-sizing:border-box;max-width:100%;font-size:10px;color:#f7e5c2;border-radius:7px;padding:1px 5px;border:1px solid #b08a4b99;background:#160d09b8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
+.cbx-visual>.cbx-note:empty{display:none}
+.cbx-stage .cbx-slashw{left:0;top:50%;width:100%}.cbx-stage .cbx-float{top:25%;left:35%}
+.cbx-stage .cbx-ghost{left:74%;top:100px;animation-name:cbSideFly}
+.cbx-tray{position:relative;border-top:2px solid #5c4328;border-radius:10px;padding:3px 2px 8px;background:linear-gradient(#191320,#0e0b12);box-shadow:inset 0 10px 18px #0006}
+.cbx-tray>.cbx-orb{position:absolute;left:3px;top:7px;z-index:4;width:44px;height:44px;font-size:17px;color:#fff}
+.cbx-tray .cbx-hand{margin-top:0!important;height:153px!important}
+.cbx-tray .cbx-card{box-shadow:inset 0 0 0 2px #35200c,0 6px 10px #000a}
+.cbx-art{position:relative;overflow:hidden}.cbx-art .cbx-picture{position:absolute;inset:0}.cbx-art .cbx-standee{width:70%;height:94%}
+.cbx-tray .cbx-inner{background:linear-gradient(#38291c,#211710);border-color:#d5ae68}.cbx-tray .cbx-desc{color:#efe3c8;font-size:9px!important}
+.cbx-tray .cbx-cname{margin:-3px 0 0;font-size:10px!important;min-height:17px;z-index:1}
+.cbx-tray .cbx-art{height:51px!important}.cbx-tray .cbx-cost{-webkit-text-stroke-color:#0b2140}
+.cbx-tray .cbx-pile{font-size:9px}.cbx-tray .cbx-pilen{height:25px}
+.cbx-view-mixed{height:330px}.cbx-view-mixed .cbx-bg{filter:brightness(.78)}
+.cbx-floor{position:absolute;left:23%;right:22%;bottom:8px;height:190px;perspective:520px;perspective-origin:50% -40%;z-index:1}
+.cbx-plane{position:absolute;inset:0;transform-origin:50% 100%;transform:rotateX(50deg);transform-style:preserve-3d;display:flex;flex-direction:column;gap:10px;padding:6px 0}
+.cbx-lane{position:relative;flex:1;display:flex;gap:8px;transform-style:preserve-3d}
+.cbx-half{position:relative;flex:1;border-radius:8px;transform-style:preserve-3d}
+.cbx-ours{background:linear-gradient(90deg,#28788c66,#3cb4be38);box-shadow:inset 0 0 0 2px #78e6f08c,0 0 12px #5adcf04d}
+.cbx-theirs{background:linear-gradient(90deg,#aa323c38,#8c1e2866);box-shadow:inset 0 0 0 2px #ff787880,0 0 12px #ff5a5a40}
+.cbx-target{box-shadow:inset 0 0 0 2px #bfffe9,0 0 18px #96ffdcbb}
+.cbx-view-mixed .cbx-player{left:0;width:24%}.cbx-view-mixed .cbx-companion{bottom:45%;width:22%}
+.cbx-view-mixed .cbx-foe{right:0;width:27%}.cbx-view-mixed .cbx-medal{height:130px}
+.cbx-spot{position:absolute;left:50%;top:65%;width:0;height:0;transform-style:preserve-3d}
+.cbx-stand{position:absolute;left:0;bottom:0;transform-origin:50% 100%;transform:translateX(-50%) rotateX(-50deg)}
+.cbx-summon{position:relative;width:64px;height:86px;animation:cbSummon .95s ease-out both;transform-origin:50% 100%}
+.cbx-strike{position:relative;width:100%;height:100%;animation:cbStrikeR .65s .22s ease-in both}
+.cbx-hologram{filter:drop-shadow(0 0 8px #96ffdc);opacity:.88}
+.cbx-shadow{position:absolute;left:50%;top:65%;width:56px;height:22px;margin:-11px 0 0 -28px;border-radius:50%;background:radial-gradient(ellipse,#000a,transparent 70%)}
+.cbx-summonring{position:absolute;left:-10px;right:-10px;bottom:-4px;height:24px;border:3px solid #a0ffc8;border-radius:50%;box-shadow:0 0 16px #78ffb4cc,inset 0 0 12px #78ffb499;animation:cbSummonRing .7s ease-out both}
+.cbx-view-board{height:398px}.cbx-view-board .cbx-bg{filter:blur(2px) brightness(.45) saturate(.8)}
+.cbx-view-board .cbx-floor{left:50%;right:auto;top:78px;bottom:auto;width:76%;max-width:320px;height:303px;transform:translateX(-50%);perspective:760px;perspective-origin:50% 10%}
+.cbx-view-board .cbx-plane{display:block;padding:0;border-radius:12px;transform:rotateX(46deg);background:url('{{raw::cb-art-bg-board}}') center/100% 100%;box-shadow:0 0 0 3px #3a2814,0 0 0 5px #8a6430,0 22px 30px #0009}
+.cbx-slot{position:absolute;width:23%;height:27.5%;border-radius:8px;transform-style:preserve-3d}
+.cbx-view-board .cbx-stand{transform:translateX(-50%) rotateX(-46deg)}
+.cbx-view-board .cbx-strike{animation-name:cbStrikeU}
+.cbx-view-board .cbx-foe{left:50%;right:auto;top:5px;bottom:auto;width:49%;transform:translateX(-50%);display:grid;grid-template-columns:65px minmax(0,1fr);gap:3px}
+.cbx-view-board .cbx-medalw{grid-row:1/5;grid-column:1}.cbx-view-board .cbx-medal{height:90px}
+.cbx-view-board .cbx-intent,.cbx-view-board .cbx-name,.cbx-view-board .cbx-foe>.cbx-barrow,.cbx-view-board .cbx-foe>.cbx-chips{grid-column:2}
+.cbx-view-board .cbx-medalw.cbx-lunge{animation-name:cbBoardLunge}
+.cbx-view-board .cbx-player{left:0;bottom:5px;width:29%}.cbx-view-board .cbx-player .cbx-figure{height:95px}
+.cbx-view-board .cbx-companion{left:auto;right:0;bottom:10px;width:25%;filter:none}
+.cbx-view-board .cbx-companion .cbx-figure{height:100px;transform:scaleX(-1)}
+.cbx-view-board .cbx-ghost{left:50%;top:50px;animation-name:cbBoardFly}
+.cbx-still *{animation:none!important}
+.cbx-epilogue{position:relative;display:flex;align-items:flex-end;justify-content:space-around;height:120px;margin-top:12px;border-radius:12px;background-position:center;background-size:cover;overflow:hidden}
+.cbx-epilogue .cbx-figure{width:23%;height:105px;margin-bottom:7px}.cbx-epilogue .cbx-fallen{filter:brightness(.55);opacity:.6;transform:rotate(12deg)}
+@keyframes cbSideLunge{0%,100%{transform:none}40%{transform:translateX(-65px) scale(1.06)}}
+@keyframes cbBoardLunge{0%,100%{transform:none}40%{transform:translateY(75px) scale(1.08)}}
+@keyframes cbSideFly{0%{opacity:1;transform:translate(-180px,90px) rotate(-12deg)}75%{opacity:1;transform:scale(.8)}100%{opacity:0;transform:scale(.45) rotate(12deg)}}
+@keyframes cbBoardFly{0%{opacity:1;transform:translateY(260px) rotate(-6deg)}75%{opacity:1;transform:scale(.8)}100%{opacity:0;transform:scale(.45)}}
+@keyframes cbSummon{0%{opacity:0;transform:scale(.2) translateY(24px)}22%{opacity:1;transform:scale(1.15)}40%,70%{opacity:1;transform:none}100%{opacity:0;transform:translateY(-10px) scale(.8)}}
+@keyframes cbStrikeR{0%,20%{transform:none}65%{transform:translateX(110px) scale(.9)}100%{transform:translateX(115px) scale(.75);opacity:0}}
+@keyframes cbStrikeU{0%,20%{transform:none}65%{transform:translateY(-110px) scale(.85)}100%{transform:translateY(-120px) scale(.7);opacity:0}}
+@keyframes cbSummonRing{0%{opacity:1;transform:scale(.2)}100%{opacity:0;transform:scale(1.6)}}
+@media(prefers-reduced-motion:reduce){.cbx-root *{animation:none!important;transition:none!important}.cbx-summon{opacity:1}.cbx-summonring{opacity:0}}
+]]
+
+CB.FOE_ART = {
+    magician = { 'magician', 'wizard', 'mage', '마법사', '마술사' },
+    maid = { 'maid', '메이드', '하녀' },
+    pitcher = { 'pitcher', 'carnivorous', '식충', '벌레잡이', '네펜데스' },
+    yokai = { 'yokai', 'umbrella', '요괴', '우산' },
+    golem = { 'golem', '골렘' }, imp = { 'imp', '임프' }, moth = { 'moth', '나방' },
+}
+CB.ART_ORDER = { 'magician', 'maid', 'pitcher', 'yokai', 'golem', 'imp', 'moth' }
+
+function CB.artKey(key)
+    key = CB.trim(key):lower()
+    if #key > 0 and #key <= 32 and key:match('^[a-z0-9][a-z0-9_-]*$') then return key end
+    return nil
+end
+
+-- Read exact names, never ask the media parser to fuzzy-match an optional
+-- override. A private art module may use the namespace card-battle-art.
+function CB.visuals(tid)
+    CB.VIEW, CB.ASSETS = CB.settings(tid).view, {}
+    CB.BOT = CB.clip(getName(tid) or '동료', 12)
+    for _, macro in ipairs({ '{{assetlist}}', '{{moduleassetlist::card-battle-art}}' }) do
+        local ok, names = pcall(function() return json.decode(cbs(macro)) end)
+        if ok and type(names) == 'table' then
+            for _, name in ipairs(names) do
+                name = tostring(name):lower()
+                if name:match('^cb%-[a-z0-9_-]+$') then CB.ASSETS[name] = true end
+            end
+        end
+    end
+end
+
+function CB.foeArt(name, art)
+    art = CB.artKey(art)
+    if art and (CB.FOE_ART[art] or (CB.ASSETS or {})['cb-foe-' .. art]) then return art end
+    local lower = tostring(name or ''):lower()
+    for _, key in ipairs(CB.ART_ORDER) do
+        for _, word in ipairs(CB.FOE_ART[key]) do
+            if word:find('^%a+$') then
+                if lower:find('%f[%a]' .. word .. '%f[%A]') then return key end
+            elseif lower:find(word, 1, true) then return key end
+        end
+    end
+    return nil
+end
+
+function CB.foeSource(name, art)
+    local key = CB.foeArt(name, art)
+    if not key then return nil end
+    return '{{raw::' .. ((CB.ASSETS or {})['cb-foe-' .. key] and 'cb-foe-' or 'cb-art-foe-') .. key .. '}}'
+end
+
+function CB.icon(key, glyph)
+    if CB.VIEW == 'simple' then return glyph end
+    return '<img class="cbx-icon" src="{{raw::cb-art-ic-' .. key .. '}}" alt="' .. glyph .. '">'
+end
+
+function CB.iconText(text)
+    if CB.VIEW == 'simple' then return text end
+    for _, pair in ipairs({ { '⚔️', 'attack' }, { '🛡️', 'block' }, { '🧪', 'poison' }, { '💚', 'heal' } }) do
+        text = text:gsub(pair[1], function() return CB.icon(pair[2], pair[1]) end)
+    end
+    return text
+end
+
+function CB.picture(src, glyph, class)
+    if not src then return '<span class="cbx-standee cbx-glyph">' .. escapeHtml(glyph) .. '</span>' end
+    return '<span class="cbx-picture' .. (class and (' ' .. class) or '') .. '"><img src="' .. src .. '" alt="' .. escapeHtml(glyph) .. '">'
+        .. '<span class="cbx-fallback">' .. escapeHtml(glyph) .. '</span></span>'
+end
+
+-- Portraits stay framed: most user images have a background. Only the
+-- explicit cb-sd assets are treated as transparent full-body figures.
+function CB.hero(who)
+    local asset = who == 'user' and 'cb-sd-user' or 'cb-sd-char'
+    if (CB.ASSETS or {})[asset] then return CB.picture('{{raw::' .. asset .. '}}', who == 'user' and '♟' or '♙') end
+    local fallback = who == 'user' and 'hero-persona' or 'hero-bot'
+    return '<span class="cbx-standee cbx-portrait"><span class="cbx-profile" style="background-image:url(\'{{source::' .. who .. '}}\'),url(\'{{raw::cb-art-' .. fallback .. '}}\')"></span></span>'
+end
+
+function CB.cardArt(card)
+    if card.foe then return CB.picture(CB.foeSource(card.name, card.art), card.glyph or CB.cardIcon(card)) end
+    if card.sig then return CB.hero('user') end
+    local fx = card.fx or {}
+    local art = fx.dmg and ((fx.poison or fx.exhaust) and 'fire' or 'slash') or (fx.block and 'shield') or (fx.heal and 'heal') or 'fire'
+    return CB.picture('{{raw::cb-art-ca-' .. art .. '}}', CB.cardIcon(card), 'cbx-cover')
+end
+
 function CB.cardType(card)
     local fx = card.fx or {}
     if fx.dmg then return 'atk' end
@@ -1515,7 +1711,8 @@ function CB.cardFace(card, scale, poor)
         .. '<div class="cbx-cost">' .. card.cost .. '</div>'
         .. (card.sig and '<div class="cbx-badge">대표</div>' or '')
         .. '<div class="cbx-inner" style="border-color:' .. rarity .. '">'
-        .. '<div class="cbx-art" style="height:' .. px(42 * scale) .. ';font-size:' .. px(22 * scale) .. '">' .. escapeHtml(card.glyph or CB.cardIcon(card)) .. '</div>'
+        .. '<div class="cbx-art" style="height:' .. px(42 * scale) .. ';font-size:' .. px(22 * scale) .. '">'
+        .. (CB.VIEW == 'simple' and escapeHtml(card.glyph or CB.cardIcon(card)) or CB.cardArt(card)) .. '</div>'
         .. '<div class="cbx-cname" style="font-size:' .. px(10.5 * scale) .. '">' .. escapeHtml(card.name) .. '</div>'
         .. '<div class="cbx-desc" style="font-size:' .. px(10 * scale) .. '">' .. escapeHtml(CB.effectText(card)) .. '</div>'
         .. '</div><div class="cbx-gem" style="background:' .. rarity .. '"></div></div>'
@@ -1559,9 +1756,9 @@ end
 -- lies over the whole panel (a flash, a banner, stars).
 local function frame(inner, anim, extraClass, n, overlay)
     local tag = (n or 0) % 2 == 1 and 'section' or 'div'
-    return '<' .. tag .. '><style>' .. CB.CSS .. '</style>'
+    return '<' .. tag .. '><style>' .. CB.CSS .. (CB.VIEW ~= 'simple' and CB.ART_CSS or '') .. '</style>'
         .. '<div class="cbx-root" style="position:fixed;left:0;top:0;right:0;bottom:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;padding:10px;box-sizing:border-box;font-size:14px;line-height:1.35;background:rgba(6,4,10,.88)">'
-        .. '<div class="cbx-panel' .. ((anim or {}).open and ' cbx-in' or '') .. (extraClass and (' ' .. extraClass) or '') .. '" style="width:100%;max-width:420px;max-height:100%;overflow-y:auto;overflow-x:hidden;padding:12px;box-sizing:border-box;text-align:left;color:#f1e6cf">'
+        .. '<div class="cbx-panel' .. ((anim or {}).open and ' cbx-in' or '') .. (extraClass and (' ' .. extraClass) or '') .. '" style="width:100%;max-width:' .. (CB.VIEW == 'simple' and '420' or '560') .. 'px;max-height:100%;overflow-y:auto;overflow-x:hidden;padding:12px;box-sizing:border-box;text-align:left;color:#f1e6cf">'
         .. (overlay or '') .. inner .. '</div></div></' .. tag .. '>'
 end
 
@@ -1578,9 +1775,9 @@ local function hpBar(hp, max, colour, block, fx)
     local pct = max > 0 and math.floor(hp / max * 100) or 0
     local badge = ''
     if (block or 0) > 0 then
-        badge = '<div class="cbx-block' .. (fx.block == 'pop' and ' cbx-pop' or '') .. '"' .. at(fx.block == 'pop' and fx.wait) .. '>🛡️' .. block .. '</div>'
+        badge = '<div class="cbx-block' .. (fx.block == 'pop' and ' cbx-pop' or '') .. '"' .. at(fx.block == 'pop' and fx.wait) .. '>' .. CB.icon('block', '🛡️') .. block .. '</div>'
     elseif fx.block == 'break' then
-        badge = '<div class="cbx-block cbx-break"' .. at(fx.wait) .. '>🛡️' .. burst(5, 'cbx-shard', '', fx.wait) .. '</div>'
+        badge = '<div class="cbx-block cbx-break"' .. at(fx.wait) .. '>' .. CB.icon('block', '🛡️') .. burst(5, 'cbx-shard', '', fx.wait) .. '</div>'
     end
     local trail = ''
     if fx.from and fx.from > hp and max > 0 then
@@ -1604,14 +1801,14 @@ local function chips(who)
     if (who.dex or 0) > 0 then parts[#parts + 1] = '<span class="cbx-chip">🤸 민첩 ' .. who.dex .. '</span>' end
     if (who.nextEnergy or 0) > 0 then parts[#parts + 1] = '<span class="cbx-chip">⚡ 다음 턴 +' .. who.nextEnergy .. '</span>' end
     if (who.nextDraw or 0) > 0 then parts[#parts + 1] = '<span class="cbx-chip">📜 다음 턴 +' .. who.nextDraw .. '장</span>' end
-    return '<div class="cbx-chips">' .. table.concat(parts) .. '</div>'
+    return '<div class="cbx-chips">' .. CB.iconText(table.concat(parts)) .. '</div>'
 end
 
 --- The number a hit or a gain shows. kind: nil (damage), 'good' (block) or
 --- 'heal'; big makes it a critical one.
 local function float(text, kind, wait, big)
     if not text then return '' end
-    return '<div class="cbx-float' .. (kind and (' cbx-' .. kind) or '') .. (big and ' cbx-crit' or '') .. '"' .. at(wait) .. '>' .. escapeHtml(text) .. '</div>'
+    return '<div class="cbx-float' .. (kind and (' cbx-' .. kind) or '') .. (big and ' cbx-crit' or '') .. '"' .. at(wait) .. '>' .. CB.iconText(escapeHtml(text)) .. '</div>'
 end
 
 --- Where hand card k of n sits in the fan: at most 216px between the outer
@@ -1626,6 +1823,44 @@ local function fanStyle(k, n, selected)
         .. ';transform-origin:50% 120%;z-index:' .. (selected and 50 or k)
 end
 
+-- The floor is decoration, not board state. Only the current cast occupies
+-- a slot; the next drawing removes it. Cycling the slot never draws RNG.
+function CB.lanes(b, anim, view)
+    local slots, card = {}, b.cards[anim.cast]
+    local lane = ((b.n or 0) % 3) + 1
+    for i = 1, 3 do
+        local summon = ''
+        if card and i == lane then
+            local figure = card.foe and CB.picture(CB.foeSource(card.name, card.art), card.glyph or CB.cardIcon(card))
+                or (card.sig and CB.hero('user')) or ('<div class="cbx-hologram">' .. CB.cardFace(card, 0.68) .. '</div>')
+            summon = '<div class="cbx-shadow"></div><div class="cbx-spot"><div class="cbx-stand"><div class="cbx-summon">'
+                .. '<i class="cbx-summonring"></i><div class="cbx-strike">' .. figure .. '</div></div></div></div>'
+        end
+        if view == 'board' then
+            local left = 10 + (i - 1) * 29
+            slots[#slots + 1] = '<div class="cbx-slot cbx-theirs" style="left:' .. left .. '%;top:12%"></div>'
+                .. '<div class="cbx-slot cbx-ours' .. (summon ~= '' and ' cbx-target' or '') .. '" style="left:' .. left .. '%;top:57%">' .. summon .. '</div>'
+        else
+            slots[#slots + 1] = '<div class="cbx-lane"><div class="cbx-half cbx-ours' .. (summon ~= '' and ' cbx-target' or '') .. '">'
+                .. summon .. '</div><div class="cbx-half cbx-theirs"></div></div>'
+        end
+    end
+    return '<div class="cbx-floor"><div class="cbx-plane">' .. table.concat(slots) .. '</div></div>'
+end
+
+function CB.stage(b, user, anim, enemy, me, meStyle, meWait, ghost)
+    local view = CB.VIEW or 'stage'
+    local hurt = anim.player == 'hurt'
+    local player = '<div class="cbx-player' .. (hurt and ' cbx-shake' or '') .. '"' .. meStyle .. '><div class="cbx-figure">' .. CB.hero('user')
+        .. table.concat(me) .. float(anim.playerText, (not hurt) and (anim.heal and 'heal' or 'good') or nil, meWait, anim.big and anim.lunge) .. '</div>'
+        .. hpBar(b.hp, b.maxHp, 'cbx-green', b.block, { from = anim.playerFrom, wait = meWait, block = anim.playerBreak and 'break' or anim.playerBlock })
+        .. '<div class="cbx-tag">' .. escapeHtml(CB.clip(user, 12)) .. '</div>' .. chips(b) .. '</div>'
+    return '<div class="cbx-stage cbx-view-' .. view .. '"><div class="cbx-bg" style="background-image:url(\'{{raw::cb-art-bg-stage}}\')"></div>'
+        .. '<div class="cbx-vignette"></div>' .. (view ~= 'stage' and CB.lanes(b, anim, view) or '')
+        .. '<div class="cbx-companion"><div class="cbx-figure">' .. CB.hero('char') .. '</div><div class="cbx-tag">동료 · ' .. escapeHtml(CB.BOT or '동료') .. '</div></div>'
+        .. player .. enemy .. ghost .. '</div>'
+end
+
 -- What a drawing keeps of a scene with 전투 연출 off: 0.5's numbers.
 CB.PLAIN_ANIM = { open = true, deal = true, enemy = true, enemyText = true, player = true, playerText = true, heal = true }
 
@@ -1633,6 +1868,7 @@ CB.PLAIN_ANIM = { open = true, deal = true, enemy = true, enemyText = true, play
 function CB.fightView(b, user, fx)
     if fx == nil then fx = true end
     local e, anim = b.enemy, {}
+    local simple = CB.VIEW == 'simple'
     for key, value in pairs(b.anim or {}) do
         if fx or CB.PLAIN_ANIM[key] then anim[key] = value end
     end
@@ -1644,12 +1880,12 @@ function CB.fightView(b, user, fx)
     local foeWait = (anim.castAt == 'foe' and 0.3) or (anim.lunge and 0.2) or (anim.banner == 'foe' and 0.35) or 0
     local meWait = (anim.lunge and 0.2) or (anim.castAt == 'me' and 0.2) or (anim.banner == 'mine' and 0.3) or 0
     local lunge = anim.lunge
-    local out = { header('<span class="cbx-turn">⚔️ ' .. b.turn .. '턴</span> · Lv.' .. (b.level or 1),
+    local out = { header('<span class="cbx-turn">' .. CB.icon('attack', '⚔️') .. ' ' .. b.turn .. '턴</span> · Lv.' .. (b.level or 1),
         '<span risu-btn="cb|deck" class="cbx-ic">🂠 ' .. #b.cards .. '</span><span risu-btn="cb|flee" class="cbx-ic">💨 도망</span>') }
 
     -- The enemy: slashes and a flash where the card lands, bubbles, sparks,
     -- a ring for a curse, a glow when it grows stronger.
-    local medal = { CB.foeGlyph(b.name, b.tier) }
+    local medal = { simple and CB.foeGlyph(b.name, b.tier) or CB.picture(CB.foeSource(b.name, b.art), CB.foeGlyph(b.name, b.tier)) }
     if anim.hits then
         for i = 1, anim.hits do
             medal[#medal + 1] = '<i class="cbx-slashw" style="transform:rotate(' .. (i % 2 == 1 and -32 or 28) .. 'deg)"><i class="cbx-slash"' .. at(foeWait + (i - 1) * 0.12) .. '></i></i>'
@@ -1662,15 +1898,17 @@ function CB.fightView(b, user, fx)
     if anim.enemyGlow then medal[#medal + 1] = '<i class="cbx-aura"' .. at(foeWait) .. '></i>' end
     medal[#medal + 1] = float(anim.enemyText, nil, foeWait, anim.big and anim.castAt == 'foe')
     local ghost = (anim.castAt == 'foe' and b.cards[anim.cast]) and ('<div class="cbx-ghost">' .. CB.cardFace(b.cards[anim.cast], 0.8) .. '</div>') or ''
-    out[#out + 1] = '<div class="cbx-arena cbx-' .. b.tier .. '">'
-        .. '<div class="cbx-intentrow"><div class="cbx-intent' .. (foeTurn and ' cbx-act' or '') .. '">' .. CB.intentText(b) .. '</div></div>' .. ghost
-        .. '<div class="cbx-foe"><div class="cbx-medalw' .. (lunge and ' cbx-lunge' or '') .. '"'
+    local intent = '<div class="cbx-intent' .. (foeTurn and ' cbx-act' or '') .. '">' .. CB.iconText(CB.intentText(b)) .. '</div>'
+    local enemy = '<div class="cbx-foe">' .. (not simple and intent or '') .. '<div class="cbx-medalw' .. (lunge and ' cbx-lunge' or '') .. '"'
         .. ((lunge or 1) > 1 and (' style="animation-duration:.36s;animation-iteration-count:' .. lunge .. '"') or '') .. '>'
         .. '<div class="cbx-medal' .. (anim.enemy and ' cbx-shake' or '') .. '"' .. (anim.enemy and at(foeWait) or '') .. '>' .. table.concat(medal) .. '</div></div>'
         .. '<div class="cbx-name">' .. escapeHtml(b.name) .. '<span class="cbx-tier">' .. CB.TIER_LABEL[b.tier] .. '</span></div>'
         .. hpBar(e.hp, e.maxHp, 'cbx-red', e.block, { from = anim.enemyFrom, wait = foeWait, block = anim.enemyBreak and 'break' or anim.enemyBlock })
-        .. chips(e) .. '</div></div>'
-    out[#out + 1] = '<div class="cbx-note">' .. escapeHtml(b.note or '') .. '</div>'
+        .. chips(e) .. '</div>'
+    if simple then
+        out[#out + 1] = '<div class="cbx-arena cbx-' .. b.tier .. '"><div class="cbx-intentrow">' .. intent .. '</div>' .. ghost .. enemy .. '</div>'
+        out[#out + 1] = '<div class="cbx-note">' .. escapeHtml(b.note or '') .. '</div>'
+    end
 
     -- The player.
     local me = {}
@@ -1685,11 +1923,16 @@ function CB.fightView(b, user, fx)
     if hurt and fx then
         meStyle = ' style="animation-delay:' .. fmt(meWait) .. 's' .. ((lunge or 1) > 1 and (';animation-duration:.36s;animation-iteration-count:' .. lunge) or '') .. '"'
     end
-    out[#out + 1] = '<div class="cbx-me' .. (hurt and ' cbx-shake' or '') .. '"' .. meStyle .. '>'
-        .. '<div class="cbx-orb' .. (b.energy == 0 and ' cbx-spent' or '') .. (anim.refill and ' cbx-pop' or '') .. '"' .. (anim.refill and at(0.3) or '') .. '>' .. b.energy .. '/' .. b.maxEnergy .. '</div>'
+    local orb = '<div class="cbx-orb' .. (b.energy == 0 and ' cbx-spent' or '') .. (anim.refill and ' cbx-pop' or '') .. '"' .. (anim.refill and at(0.3) or '') .. '>' .. b.energy .. '/' .. b.maxEnergy .. '</div>'
+    if simple then
+        out[#out + 1] = '<div class="cbx-me' .. (hurt and ' cbx-shake' or '') .. '"' .. meStyle .. '>' .. orb
         .. '<div style="flex:1;min-width:0"><div class="cbx-who"><b>' .. escapeHtml(user) .. '</b>' .. chips(b) .. '</div>'
         .. '<div style="margin-top:5px">' .. hpBar(b.hp, b.maxHp, 'cbx-green', b.block, { from = anim.playerFrom, wait = meWait, block = anim.playerBreak and 'break' or anim.playerBlock }) .. '</div></div>'
         .. float(anim.playerText, (not hurt) and (anim.heal and 'heal' or 'good') or nil, meWait, anim.big and lunge) .. table.concat(me) .. '</div>'
+    else
+        out[#out + 1] = CB.stage(b, user, anim, enemy, me, meStyle, meWait, ghost)
+            .. '<div class="cbx-note">' .. escapeHtml(b.note or '') .. '</div><div class="cbx-tray">' .. orb
+    end
 
     -- The hand, fanned: one tap lifts a card, a second plays it. Play and
     -- 턴 종료 carry the drawing they were in (b.n), so a tap left over from
@@ -1716,7 +1959,7 @@ function CB.fightView(b, user, fx)
             cards[#cards + 1] = '<div style="' .. fanStyle(k, #anim.toss) .. '"><div class="cbx-toss"' .. at((k - 1) * 0.04) .. '>' .. CB.cardFace(card, 1) .. '</div></div>'
         end
     end
-    out[#out + 1] = '<div style="position:relative;height:160px;margin-top:14px">' .. table.concat(cards) .. '</div>'
+    out[#out + 1] = '<div class="cbx-hand" style="position:relative;height:160px;margin-top:14px">' .. table.concat(cards) .. '</div>'
     local picked = (not idle) and b.selected and b.cards[b.hand[b.selected]]
     local piles = function(middle)
         return '<div style="display:flex;align-items:center;gap:10px;margin-top:10px">'
@@ -1736,13 +1979,16 @@ function CB.fightView(b, user, fx)
         out[#out + 1] = piles('<span risu-btn="cb|end||' .. (b.n or 0) .. '" class="cbx-btn cbx-gold" style="flex:1">턴 종료</span>')
     end
 
+    if not simple then out[#out + 1] = '</div>' end
     local overlay = {}
     if anim.flash then overlay[#overlay + 1] = '<div class="cbx-flash"' .. at(0.2) .. '></div>' end
     if anim.banner then
         overlay[#overlay + 1] = '<div class="cbx-banner' .. (anim.banner == 'mine' and ' cbx-mine' or '') .. '">'
             .. (anim.banner == 'mine' and (b.turn .. '턴 · 내 차례') or '적의 차례') .. '</div>'
     end
-    return frame(table.concat(out), anim, anim.big and 'cbx-quake' or nil, b.n, table.concat(overlay))
+    local inner = table.concat(out)
+    if not simple then inner = '<div class="cbx-visual' .. (not fx and ' cbx-still' or '') .. '">' .. inner .. '</div>' end
+    return frame(inner, anim, anim.big and 'cbx-quake' or nil, b.n, table.concat(overlay))
 end
 
 function CB.deckView(b)
@@ -1771,6 +2017,12 @@ function CB.endView(b, fx)
     local title = ({ won = '🏆 승리', lost = '💀 패배', fled = '💨 도망' })[b.phase]
     local cheer = fx and b.phase == 'won'
     local out = { header(escapeHtml(b.name) .. ' · ' .. CB.TIER_LABEL[b.tier]) }
+    if CB.VIEW ~= 'simple' then
+        out[#out + 1] = '<div class="cbx-epilogue cbx-view-' .. (CB.VIEW or 'stage') .. '" style="background-image:url(\'{{raw::cb-art-bg-'
+            .. (CB.VIEW == 'board' and 'board' or 'stage') .. '}}\')"><div class="cbx-figure">' .. CB.hero('user') .. '</div><div class="cbx-figure">'
+            .. CB.hero('char') .. '</div><div class="cbx-figure' .. (b.phase == 'won' and ' cbx-fallen' or '') .. '">'
+            .. CB.picture(CB.foeSource(b.name, b.art), CB.foeGlyph(b.name, b.tier)) .. '</div></div>'
+    end
     out[#out + 1] = '<div class="cbx-title">' .. title .. (cheer and burst(10, 'cbx-star', '✦', 0.2) or '') .. '</div>'
     out[#out + 1] = '<div class="cbx-sub">' .. b.turn .. '턴 · 체력 ' .. b.hp .. ' / ' .. b.maxHp
         .. (b.levelUp and ('<span class="cbx-lvl">LEVEL UP · Lv.' .. (b.level or 1) .. '</span>') or '') .. '</div>'
@@ -1958,6 +2210,7 @@ end
 
 --- What is still to see of the fight on the chat's last message.
 function CB.lastExtras(tid, text, b)
+    CB.visuals(tid)
     if b and b.phase == 'pending' then return startCard(b, 'start') end
     -- A tag nobody turned into a fight (written by hand, or the module was
     -- off when the reply came): start it from here. Not in the middle of one.
@@ -2056,7 +2309,7 @@ end
 function CB.begin(tid, at, spec, settings)
     local run = CB.loadRun(tid)
     if settings.sig ~= 'none' and not CB.sigCard(run) then
-        local b = { id = spec.id, name = spec.name, tier = spec.tier, phase = 'sig', open = true, n = 0,
+        local b = { id = spec.id, name = spec.name, tier = spec.tier, art = spec.art, phase = 'sig', open = true, n = 0,
             anim = { open = true }, sigDraft = { hand = settings.sig == 'hand' or nil } }
         if settings.sig == 'ai' then CB.writeSig(tid, at, b, settings) end
         CB.saveFight(tid, at, b)
@@ -2115,7 +2368,7 @@ function CB.finish(tid, at, b, settings)
     if b.sigCard and not CB.sigCard(run) then run.deck[#run.deck + 1] = CB.copy(b.sigCard) end
     local foe = nil
     if b.phase == 'won' and settings.capture and b.enemy then
-        local card = CB.foeCard(b.name, b.tier, b.enemy.moves)
+        local card = CB.foeCard(b.name, b.tier, b.enemy.moves, b.art)
         if card then foe = { name = card.name, glyph = card.glyph, moves = CB.movesText(b.enemy.moves), card = card } end
     end
     CB.settle(run, b)
@@ -2301,7 +2554,7 @@ onButtonClick = async(function(tid, data)
             card.sig = true
             run.deck[#run.deck + 1] = card
             local n = b.n
-            b = CB.newBattle(run, { id = b.id, name = b.name, tier = b.tier }, settings)
+            b = CB.newBattle(run, { id = b.id, name = b.name, tier = b.tier, art = b.art }, settings)
             b.sigCard, b.n, b.anim = card, n, { open = true, deal = true, banner = 'mine' }
             whole = true
         elseif action == 'sigredo' and draft.card and not draft.hand then

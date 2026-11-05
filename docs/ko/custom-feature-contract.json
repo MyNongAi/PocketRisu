@@ -2546,7 +2546,7 @@
     },
     {
       "id": "CARD-BATTLE-MODULE",
-      "title": "어느 봇에나 붙이는 덱빌딩 카드 전투 배포용 모듈 (🃏 카드 전투), 전투 기록이 턴마다 이야기로 이어지고 레벨업 카드는 AI가 씀, 장면 연출·대표 카드·이긴 적 카드",
+      "title": "어느 봇에나 붙이는 덱빌딩 카드 전투 배포용 모듈 (🃏 카드 전투), 턴마다 이야기·AI 카드·장면 연출·대표 카드·이긴 적 카드, 0.7 그림과 네 전투 화면",
       "criticality": "core-ux",
       "ownerFiles": [
         "modules/card-battle/card-battle.lua",
@@ -2625,7 +2625,7 @@
         },
         {
           "file": "modules/card-battle/card-battle.lua",
-          "contains": "function CB.foeCard(name, tier, moves)"
+          "contains": "function CB.foeCard(name, tier, moves, art)"
         },
         {
           "file": "modules/card-battle/card-battle.lua",
@@ -2649,6 +2649,30 @@
         },
         {
           "file": "modules/card-battle/build.mjs",
+          "contains": "'cardbattle.view=전투 화면=select=무대,합친 판,레인 판,간단',"
+        },
+        {
+          "file": "modules/card-battle/build.mjs",
+          "contains": "export function encodeBattleRisum(json, encodeMap, art = readArt())"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "CB.VERSION = '0.7.0'"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "function CB.lanes(b, anim, view)"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "function CB.visuals(tid)"
+        },
+        {
+          "file": "modules/card-battle/card-battle.lua",
+          "contains": "function CB.foeSource(name, art)"
+        },
+        {
+          "file": "modules/card-battle/build.mjs",
           "contains": "in: String.raw`\\n?<!--cb:[^>]*-->`,"
         },
         {
@@ -2666,6 +2690,7 @@
       ],
       "regressionTests": [
         "src/ts/process/cardBattleModule.test.ts",
+        "src/ts/parser/tests/cardBattleDisplay.test.ts",
         "src/ts/chatSwipes.test.ts"
       ]
     },
