@@ -3191,8 +3191,22 @@ function detectMime(buf) {
     if (buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
         buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return 'image/webp'
     if (buf[0] === 0x1a && buf[1] === 0x45) return 'video/webm'
-    if (buf.length >= 8 && buf[4] === 0x66 && buf[5] === 0x74 && buf[6] === 0x79 && buf[7] === 0x70) return 'video/mp4'
+    if (buf.length >= 8 && buf[4] === 0x66 && buf[5] === 0x74 && buf[6] === 0x79 && buf[7] === 0x70) {
+        // ISO-BMFF: AVIF shares the ftyp box with MP4 and differs by brand.
+        const brand = buf.toString('latin1', 8, 12)
+        if (brand === 'avif' || brand === 'avis') return 'image/avif'
+        return 'video/mp4'
+    }
     return 'application/octet-stream'
+}
+// The type a stored asset is served as. Risu names asset files .png whatever
+// they hold, and the external manifest copies that, so a WebP went out as
+// image/png. A signature detectMime knows wins; the stored type covers the
+// rest (audio, SVG).
+function servedAssetContentType(binary, storedType) {
+    const sniffed = detectMime(binary)
+    if (sniffed !== 'application/octet-stream') return sniffed
+    return storedType || sniffed
 }
 const ASSET_EXT_MIME = {
     png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
@@ -5367,7 +5381,7 @@ async function readMigratedInternalAssetFallback(internalKey) {
     const result = await runtime.service.readWithMeta(record.uri);
     return {
         binary: result.data,
-        contentType: record.mimeType || detectMime(result.data),
+        contentType: servedAssetContentType(result.data, record.mimeType),
         source: result.source,
         hash: record.hash,
     };
@@ -5625,7 +5639,7 @@ app.get('/api/asset/:hexKey', sessionAuthMiddleware, async (req, res) => {
 
         const { binary, contentType } = resolveAssetPayload(key, data)
         res.set({
-            'Content-Type': contentType,
+            'Content-Type': servedAssetContentType(binary, contentType),
             'Cache-Control': REVALIDATING_ASSET_CACHE_CONTROL,
             'ETag': etag,
         })
@@ -5636,9 +5650,16 @@ app.get('/api/asset/:hexKey', sessionAuthMiddleware, async (req, res) => {
     }
 })
 
-// External asset URLs are authenticated like ordinary <img src> assets. The
-// response is deliberately `private, no-store`: the bounded server LRU is the
-// cache budget, so a browser disk cache cannot silently rebuild the full store.
+// External asset URLs are authenticated like ordinary <img src> assets. A URL
+// names the SHA-256 of its bytes and every read is checked against it
+// (verifyContent in external-assets.cjs), so the bytes behind a URL never
+// change and the hash is a strong ETag. `private, no-cache` lets the browser
+// keep a copy in its own size-capped cache but ask before each reuse, through
+// the session check, so an expired session cannot show it from cache; the
+// answer is a 304 with no body. A message drawn again on the same page reuses
+// the copy without asking: browsers reuse an image already validated for the
+// page, which they never do for no-store. With no-store, a card battle that
+// redraws its window every scene downloaded every picture again each time.
 app.get('/api/external-assets/content/:hexUri', sessionAuthMiddleware, async (req, res) => {
     try {
         const uri = Buffer.from(req.params.hexUri, 'hex').toString('utf-8');
@@ -5646,15 +5667,21 @@ app.get('/api/external-assets/content/:hexUri', sessionAuthMiddleware, async (re
         const runtime = await getExternalAssetRuntime();
         const entry = await runtime.manifestStore.get(uri);
         if (!entry) return res.status(404).json({ error: 'External asset is missing from manifest' });
+        res.set({
+            'Cache-Control': REVALIDATING_ASSET_CACHE_CONTROL,
+            'ETag': `"${entry.hash}"`,
+        });
+        // The ETag is known before any byte is read, so a match reads nothing.
+        if (req.fresh) return res.status(304).end();
         const result = await runtime.service.readWithMeta(uri);
         res.set({
-            'Content-Type': entry.mimeType || detectMime(result.data),
-            'Cache-Control': 'private, no-store',
+            'Content-Type': servedAssetContentType(result.data, entry.mimeType),
             'X-PocketRisu-Asset-Source': result.source,
         });
         res.send(result.data);
     } catch (error) {
         logger.error('[ExternalAssets] Content read failed', error);
+        if (!res.headersSent) res.removeHeader('ETag');
         res.status(502).set('Cache-Control', 'no-store').json({
             error: error?.message || 'External asset unavailable',
             code: error?.code || 'EXTERNAL_ASSET_ERROR',

@@ -67,3 +67,5 @@ Only an upstream-compatible RisuAI export downloads the external files at export
 External requests are retried according to the configured retry count. If the external provider fails, PocketRisu checks the retained trash copy and any remaining internal file in turn. If every source fails, chat rendering shows a load error.
 
 The server byte cache is a size-bounded in-memory LRU. Older entries are evicted automatically, and the cache does not rebuild the whole external store locally. Its limit and the retry count are configurable in the same Advanced Settings section.
+
+External asset responses (`/api/external-assets/content/…`) use ETag revalidation. The URL names the SHA-256 of the bytes and the server checks that hash on every read, so the hash is the ETag. The browser keeps a picture in its own cache (within the browser's size limit) and asks the server before reusing it, which answers `304`. That check goes through the login session cookie, so a browser whose session has ended cannot show cached pictures again. When a message is drawn again on the same page, the browser reuses a picture it has already checked without asking.

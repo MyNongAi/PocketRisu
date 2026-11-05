@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.16.1",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-10-31",
+  "updatedAt": "2026-11-06",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
@@ -2419,6 +2419,23 @@
       "requiredMarkers": [
         { "file": "server/node/server.cjs", "contains": "const SESSION_COOKIE_NAME = `risu-session-${" },
         { "file": "server/node/server.cjs", "contains": "res.setHeader('Set-Cookie', `${SESSION_COOKIE_NAME}=${token};" }
+      ]
+    },
+    {
+      "id": "EXTERNAL-ASSET-CACHE",
+      "title": "외부 에셋 그림을 브라우저가 해시 ETag로 재검증해 다시 쓰기 (다시 그릴 때 재다운로드 없음)",
+      "criticality": "performance",
+      "ownerFiles": [
+        "server/node/server.cjs"
+      ],
+      "regressionTests": [
+        "server/node/externalAssetCache.test.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "server/node/server.cjs", "contains": "'ETag': `\"${entry.hash}\"`," },
+        { "file": "server/node/server.cjs", "contains": "if (req.fresh) return res.status(304).end();" },
+        { "file": "server/node/server.cjs", "contains": "function servedAssetContentType(binary, storedType) {" },
+        { "file": "server/node/server.cjs", "contains": "'Content-Type': servedAssetContentType(result.data, entry.mimeType)," }
       ]
     },
     {
