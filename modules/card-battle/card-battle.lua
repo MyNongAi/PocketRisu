@@ -2298,7 +2298,7 @@ CB.ART_CSS = [[
 .cbx-fart{position:relative;flex:1;min-height:0;border-radius:3px;overflow:hidden;background:radial-gradient(circle,#6b8f70,#1d2c22)}
 .cbx-fart .cbx-picture{position:absolute;inset:0}.cbx-fart .cbx-standee{width:80%;height:94%}
 .cbx-fcard .cbx-stars{height:auto;padding:0 0 1px 2px;font-size:6px;line-height:6px}
-.cbx-crt>.cbx-mstats{position:absolute;left:-7px;right:-7px;bottom:-9px;z-index:2;gap:2px}
+.cbx-crt>.cbx-mstats{position:absolute;left:-7px;right:-7px;bottom:3px;z-index:2;gap:2px}
 .cbx-crt .cbx-matk,.cbx-crt .cbx-mhp{flex:1;min-width:0;height:14px;padding:0 1px;font-size:11px;border-radius:4px;box-shadow:0 1px 2px #000c}
 .cbx-crt .cbx-mstats .cbx-icon{width:10px;height:10px}
 .cbx-spot{position:absolute;left:50%;top:60%;width:0;height:0;transform-style:preserve-3d}
