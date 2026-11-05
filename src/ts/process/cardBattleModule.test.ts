@@ -167,7 +167,9 @@ describe('the module file', () => {
             expect(bytes.toString('ascii', 8, 12)).toBe('WEBP')
         }
         expect(() => decodeBattleRisum(packed.subarray(0, -2), maps.decode)).toThrow()
-    })
+        // Byte-mapping 1.5 MB of art twice takes a few seconds when the whole
+        // suite runs in parallel.
+    }, 30000)
 
     test('builds a .risum that reads back to the same module, low-level access on', () => {
         const maps = readMaps()
