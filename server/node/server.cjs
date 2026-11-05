@@ -3168,17 +3168,20 @@ function parseSessionCookie(req) {
     return legacy
 }
 
-function sessionAuthMiddleware(req, res, next) {
+function hasLiveSession(req) {
     const token = parseSessionCookie(req)
-    if (token && (sessions.get(token) ?? 0) > Date.now()) return next()
+    return Boolean(token && (sessions.get(token) ?? 0) > Date.now())
+}
+
+function sessionAuthMiddleware(req, res, next) {
+    if (hasLiveSession(req)) return next()
     res.status(401).end()
 }
 
 // Backup GETs are also opened as plain browser downloads (<a download>), which
 // carry the session cookie (HttpOnly, SameSite=Strict) but no risu-auth header.
 async function checkBackupDownloadAuth(req, res) {
-    const token = parseSessionCookie(req)
-    if (token && (sessions.get(token) ?? 0) > Date.now()) return true
+    if (hasLiveSession(req)) return true
     return checkAuth(req, res)
 }
 
@@ -4895,7 +4898,14 @@ async function hubProxyFunc(req, res) {
         const hubOrigin = new URL(hubURL).origin;
         const pathAndQuery = req.originalUrl.replace(/^\/hub-proxy/, '');
         // A Realm search can go out through the reader's relay (realmRelay.cjs).
+        // The relay is the one target off the hub and the request names it,
+        // while /hub-proxy takes no auth, so only a logged-in page (its
+        // session cookie, sent with the app's own fetch) may use it.
         const relayURL = realmRelayTarget(req.headers[REALM_RELAY_HEADER], pathAndQuery);
+        if (relayURL && !hasLiveSession(req)) {
+            res.status(401).send({ error: 'The Realm relay needs a logged-in session' });
+            return;
+        }
         const externalURL = new URL(relayURL ?? (hubURL + pathAndQuery));
         if (!relayURL && externalURL.origin !== hubOrigin) {
             res.status(400).send({ error: 'Invalid hub path' });

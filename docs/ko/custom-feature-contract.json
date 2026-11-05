@@ -1462,13 +1462,16 @@
       ],
       "requiredMarkers": [
         { "file": "server/node/realmRelay.cjs", "contains": "function realmRelayTarget(relay, pathAndQuery)" },
-        { "file": "server/node/server.cjs", "contains": "externalURL = realmRelayTarget(req.headers[REALM_RELAY_HEADER], pathAndQuery) ?? (hubURL + pathAndQuery);" },
+        { "file": "server/node/server.cjs", "contains": "const relayURL = realmRelayTarget(req.headers[REALM_RELAY_HEADER], pathAndQuery);" },
+        { "file": "server/node/server.cjs", "contains": "if (relayURL && !hasLiveSession(req)) {" },
+        { "file": "server/node/server.cjs", "contains": "if (!relayURL && externalURL.origin !== hubOrigin) {" },
         { "file": "server/node/server.cjs", "contains": "delete headersToSend[REALM_RELAY_HEADER];" },
         { "file": "src/ts/characterCards.ts", "contains": "headers['x-risu-realm-relay'] = relay" },
         { "file": "src/ts/setting/advancedSettingsData.ts", "contains": "bindKey: 'nodeOnlyRealmRelay'" }
       ],
       "regressionTests": [
-        "server/node/realmRelay.test.ts"
+        "server/node/realmRelay.test.ts",
+        "server/node/realmRelayProxy.test.ts"
       ]
     },
     {
