@@ -8,7 +8,7 @@
 
 ## 설치
 
-모듈 파일(.risum)은 저장소에 들어 있지 않습니다. 저장소에서 `node modules/card-battle/build.mjs`를 실행하면 `modules/card-battle/art/`의 그림을 모두 포함한 `modules/card-battle/dist/card-battle-1.0.0.risum`이 만들어집니다(그림 25개, 약 1.2MB). 그림을 따로 설치할 필요는 없습니다.
+모듈 파일(.risum)은 저장소에 들어 있지 않습니다. 저장소에서 `node modules/card-battle/build.mjs`를 실행하면 `modules/card-battle/art/`의 그림을 모두 포함한 `modules/card-battle/dist/card-battle-1.0.0.risum`이 만들어집니다(그림 30개, 약 1.5MB). 그림을 따로 설치할 필요는 없습니다.
 
 1. 설정 → 모듈 → **임포트**에서 `card-battle-1.0.0.risum`을 고릅니다.
 2. "이 모듈은 저수준 접근을 사용합니다" 창이 뜨면 **허용**을 누릅니다. 보조 모델로 레벨업 카드·대표 카드·적 카드를 쓰려면 필요합니다.
