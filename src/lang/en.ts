@@ -892,6 +892,7 @@ export const languageEnglish = {
     useAdditionalAssetsPreview: "Use Additional Assets Preview",
     autoTranslateInput: "Auto Translate Input",
     messageTranslateButton: "Show the translate button on messages",
+    messageTtsButton: "Show the voice (TTS) button on messages",
     messageTranslateMenu: "Translate",
     enterMessageForTranslateToEnglish: "Enter Message for Translate to English",
     recent: "Recent",

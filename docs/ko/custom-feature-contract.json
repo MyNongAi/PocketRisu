@@ -1151,6 +1151,23 @@
       "regressionTests": []
     },
     {
+      "id": "MESSAGE-TTS-TOGGLE",
+      "title": "메시지 음성(TTS) 버튼 보이기 토글 (입력창 ☰ 메뉴)",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/ChatScreens/Chat.svelte",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/ts/storage/database.svelte.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "onSelect={() => { DBState.db.nodeOnlyHideMessageTtsButton = !DBState.db.nodeOnlyHideMessageTtsButton }}" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "&& (showNames || !DBState.db.nodeOnlyHideMessageTtsButton)}" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "{#if wide640.current && DBState.db.nodeOnlyHideMessageTtsButton && DBState.db.characters[view.characterIndex].ttsMode" },
+        { "file": "src/ts/storage/database.svelte.ts", "contains": "nodeOnlyHideMessageTtsButton?: boolean" }
+      ],
+      "regressionTests": []
+    },
+    {
       "id": "CHAT-LOG-IMAGE",
       "title": "✂️ 로그 이미지 캡처 (두 메시지 사이를 긴 이미지로 복사)",
       "criticality": "core-ux",

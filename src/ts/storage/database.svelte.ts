@@ -1746,6 +1746,8 @@ export interface Database{
     nodeOnlyChatBodyInPlace?: boolean
     /** The 文A translate button on each message (Chat.svelte); true hides it, and it moves into the message's ☰ menu. Undefined means shown. */
     nodeOnlyHideMessageTranslateButton?: boolean
+    /** The 🔊 TTS button on each message (Chat.svelte); true hides it from the button row, and it moves into the message's ☰ menu. Undefined means shown. */
+    nodeOnlyHideMessageTtsButton?: boolean
     /** ✂️ log image capture (gui/logCaptureState.svelte.ts): the button and the image options. */
     nodeOnlyLogCaptureButton?: boolean
     nodeOnlyLogImageWidth?: number
@@ -2307,6 +2309,8 @@ export interface themePreset{
     nodeOnlyChatBodyInPlace?: boolean
     /** The 文A translate button on each message (Chat.svelte); true hides it, and it moves into the message's ☰ menu. Undefined means shown. */
     nodeOnlyHideMessageTranslateButton?: boolean
+    /** The 🔊 TTS button on each message (Chat.svelte); true hides it from the button row, and it moves into the message's ☰ menu. Undefined means shown. */
+    nodeOnlyHideMessageTtsButton?: boolean
     /** ✂️ log image capture (gui/logCaptureState.svelte.ts): the button and the image options. */
     nodeOnlyLogCaptureButton?: boolean
     nodeOnlyLogImageWidth?: number

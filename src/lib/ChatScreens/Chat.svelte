@@ -1286,7 +1286,8 @@
     </button>    
 {/if}
 {#if idx > -1}
-    {#if DBState.db.characters[view.characterIndex].ttsMode !== 'none' && (DBState.db.characters[view.characterIndex].ttsMode)}
+    <!-- Hidden from the button row by the input menu's toggle, it stays in the ☰ menu (showNames). -->
+    {#if DBState.db.characters[view.characterIndex].ttsMode !== 'none' && (DBState.db.characters[view.characterIndex].ttsMode) && (showNames || !DBState.db.nodeOnlyHideMessageTtsButton)}
         <button class="flex items-center hover:text-primary transition-colors button-icon-tts" onclick={async () => {
             await sleep(1)
             return sayTTS(null, isOptimizedStreamingMessage ? rawStreamingText : message)
@@ -1424,6 +1425,19 @@
     {#if idx > -1}
     {#if DBState.db.nodeOnlyHideMessageTranslateButton}
         {@render translationButton(showNames, true, false)}
+    {/if}
+    {#if wide640.current && DBState.db.nodeOnlyHideMessageTtsButton && DBState.db.characters[view.characterIndex].ttsMode && DBState.db.characters[view.characterIndex].ttsMode !== 'none'}
+        <!-- The 🔊 button the input menu's toggle took off the wide button row; a narrow
+             screen already has it here with the other major buttons. -->
+        <button class="flex items-center hover:text-primary transition-colors button-icon-tts" onclick={async () => {
+            await sleep(1)
+            return sayTTS(null, isOptimizedStreamingMessage ? rawStreamingText : message)
+        }}>
+            <Volume2Icon size={20}/>
+            {#if showNames}
+                <span class="ml-1">TTS</span>
+            {/if}
+        </button>
     {/if}
     {#if role === 'char' && !placeholder && DBState.db.characters[view.characterIndex]?.nodeOnlyIllustration?.enabled}
         <!-- 🎨 Draw this reply's illustrations, or draw them again (illustration.ts). -->

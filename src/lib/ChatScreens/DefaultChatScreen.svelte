@@ -10,7 +10,7 @@
     import { setRequestPairing } from 'src/ts/gui/requestPairing';
     import { mergeAuxLines } from 'src/ts/process/auxLorebook';
     import { clearRerollPlaceholder, heldRerollSwipe, setRerollPlaceholder } from 'src/ts/gui/rerollPlaceholder';
-    import { CameraIcon, ChevronUpIcon, ChevronDownIcon, DatabaseIcon, GlobeIcon, FileTextIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ArrowLeft, ArrowRight, ZapIcon, Maximize2, Minimize2, GitBranch } from "@lucide/svelte";
+    import { CameraIcon, Volume2Icon, ChevronUpIcon, ChevronDownIcon, DatabaseIcon, GlobeIcon, FileTextIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ArrowLeft, ArrowRight, ZapIcon, Maximize2, Minimize2, GitBranch } from "@lucide/svelte";
     import ShDropdownMenu from 'src/lib/UI/GUI/ShDropdownMenu.svelte';
     import ShDropdownMenuTrigger from 'src/lib/UI/GUI/ShDropdownMenuTrigger.svelte';
     import ShDropdownMenuContent from 'src/lib/UI/GUI/ShDropdownMenuContent.svelte';
@@ -1792,6 +1792,13 @@ import { isMobile } from 'src/ts/platform'
                                      hidden, it moves into each message's ☰ menu (Chat.svelte). -->
                                 <ShDropdownMenuItem class={DBState.db.nodeOnlyHideMessageTranslateButton ? '' : 'text-green-500'} onSelect={() => { DBState.db.nodeOnlyHideMessageTranslateButton = !DBState.db.nodeOnlyHideMessageTranslateButton }}>
                                     <LanguagesIcon /><span>{language.messageTranslateButton}</span>
+                                </ShDropdownMenuItem>
+                            {/if}
+                            {#if DBState.db.characters[view.characterIndex]?.ttsMode && DBState.db.characters[view.characterIndex].ttsMode !== 'none'}
+                                <!-- The 🔊 button on each message (the user's request, 2026-11-05), green while shown;
+                                     hidden, it moves into each message's ☰ menu (Chat.svelte). -->
+                                <ShDropdownMenuItem class={DBState.db.nodeOnlyHideMessageTtsButton ? '' : 'text-green-500'} onSelect={() => { DBState.db.nodeOnlyHideMessageTtsButton = !DBState.db.nodeOnlyHideMessageTtsButton }}>
+                                    <Volume2Icon /><span>{language.messageTtsButton}</span>
                                 </ShDropdownMenuItem>
                             {/if}
                             {#if currentChatReady && chatSendsToNativeGemini(currentChatSlot)}

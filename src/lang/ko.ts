@@ -970,6 +970,7 @@ export const languageKorean = {
   useAdditionalAssetsPreview: "추가 에셋 미리보기 사용",
   autoTranslateInput: "입력 자동 번역",
   messageTranslateButton: "메시지 번역 버튼 보이기",
+  messageTtsButton: "메시지 음성(TTS) 버튼 보이기",
   messageTranslateMenu: "번역",
   enterMessageForTranslateToEnglish: "영어로 번역할 메시지를 입력해주세요",
   recent: "최근",
