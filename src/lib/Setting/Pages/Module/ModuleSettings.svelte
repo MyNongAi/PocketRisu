@@ -497,11 +497,12 @@
 {#if mode === 0}
     {#snippet sortActions()}
         <div class="flex shrink-0 items-center gap-2">
-            <ShButton size="sm" variant={moduleCatalogSort === 'registered' ? 'default' : 'outline'} onclick={() => setModuleCatalogSort('registered')} title="등록순">
-                <ListOrderedIcon />등록순
+            <!-- In a narrow list (the sidebar panel on a phone) the labels hide so the row fits. -->
+            <ShButton size="sm" variant={moduleCatalogSort === 'registered' ? 'default' : 'outline'} onclick={() => setModuleCatalogSort('registered')} title="등록순" aria-label="등록순">
+                <ListOrderedIcon /><span class="hidden @[20rem]/folders:inline">등록순</span>
             </ShButton>
-            <ShButton size="sm" variant={moduleCatalogSort === 'recent' ? 'default' : 'outline'} onclick={() => setModuleCatalogSort('recent')} title="최근 활성화순">
-                <Clock3Icon />최근순
+            <ShButton size="sm" variant={moduleCatalogSort === 'recent' ? 'default' : 'outline'} onclick={() => setModuleCatalogSort('recent')} title="최근 활성화순" aria-label="최근순">
+                <Clock3Icon /><span class="hidden @[20rem]/folders:inline">최근순</span>
             </ShButton>
         </div>
     {/snippet}
@@ -547,8 +548,8 @@
                 rememberListScroll()
                 tempModule = { name: '', description: '', id: v4() }
                 mode = 1
-            }}><PlusIcon />{language.createModule}</ShButton>
-            <ShButton size="sm" variant="outline" onclick={() => importModuleFiles()}><HardDriveUpload />{language.importModule}</ShButton>
+            }} title={language.createModule} aria-label={language.createModule}><PlusIcon /><span class="hidden @[20rem]/folders:inline">{language.createModule}</span></ShButton>
+            <ShButton size="sm" variant="outline" onclick={() => importModuleFiles()} title={language.importModule} aria-label={language.importModule}><HardDriveUpload /><span class="hidden @[20rem]/folders:inline">{language.importModule}</span></ShButton>
             <ShButton size="sm" variant="outline" onclick={() => importModuleFromProtonDrive()} title={language.importFromProtonAsModule} aria-label={language.importFromProtonAsModule}><CloudDownloadIcon /></ShButton>
             <ShButton size="sm" variant="outline" onclick={() => importMCPModule()} title="MCP" aria-label="MCP"><Waypoints /></ShButton>
             </div>
