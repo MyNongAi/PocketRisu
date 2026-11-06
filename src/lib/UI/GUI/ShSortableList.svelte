@@ -161,6 +161,15 @@
 </div>
 
 <style>
+    /* A touch drag moves Sortable's floating copy of the row under the finger and
+       looks for the list below with elementFromPoint, so no part of the copy may
+       take the hit. bits-ui's context-menu trigger around a row sets
+       pointer-events: auto inline, which made the copy the target and no list
+       ever saw the move (the user's phone, 2026-11-07: rows never swapped). */
+    :global(.sortable-fallback), :global(.sortable-fallback *) {
+        pointer-events: none !important;
+    }
+
     :global(.risu-ghost-item) {
         opacity: 0.45;
     }
