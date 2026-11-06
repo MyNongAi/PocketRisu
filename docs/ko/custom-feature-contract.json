@@ -393,6 +393,7 @@
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "folderToolbarActions={sidePanel ? sortActions : undefined}" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "searchActions={sidePanel ? undefined : sortActions}" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "title=\"MCP\" aria-label=\"MCP\"><Waypoints /></ShButton>" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "{displayItemCount}/{itemSearchTexts.length}" },
         { "file": "src/lib/Others/QuickSettingsGUI.svelte", "contains": "<ModuleSettings sidePanel />" },
         { "file": "src/ts/process/moduleFolders.ts", "contains": "moveModuleFolderByDrop" },
         { "file": "src/ts/process/moduleOnWatch.svelte.ts", "contains": "export function startModuleOnWatch(): () => void" },
@@ -811,7 +812,7 @@
       ],
       "regressionTests": [
         "src/ts/cryptoFallback.test.ts",
-        "src/ts/plugins/apiV3/factory.test.ts"
+        "src/ts/plugins/apiV3/factory.cryptoFallback.test.ts"
       ]
     },
     {
@@ -1097,7 +1098,7 @@
         { "file": "src/ts/charxPreflight.ts", "contains": "export const LARGE_CHARX_BYTES = 150_000_000" },
         { "file": "src/ts/charxPreflight.ts", "contains": "export const LARGE_CHARX_ASSETS = 5_000" },
         { "file": "src/ts/characterCards.ts", "contains": "planLargeCharxImport(f.name, f.data, 'character')" },
-        { "file": "src/ts/process/modules.ts", "contains": "planLargeCharxImport(file.name, file.data, 'module')" },
+        { "file": "src/ts/process/moduleImport.ts", "contains": "planLargeCharxImport(file.name, file.data, 'module')" },
         { "file": "src/ts/globalApi.svelte.ts", "contains": "importScope.track(forageStorage.setItem(form, data, undefined, { importId: importScope.id }))" },
         { "file": "src/ts/importProgress.ts", "contains": "export function cancelImportTask(id: string)" },
         { "file": "server/node/server.cjs", "contains": "app.post('/api/import-journal/rollback'" },
@@ -1255,7 +1256,7 @@
       "requiredMarkers": [
         { "file": "src/ts/characterCards.ts", "contains": "risuext?.lowLevelAccess && getDatabase().nodeOnlyAutoAllowLowLevelImport === false" },
         { "file": "src/ts/characterCards.ts", "contains": "importData.lowLevelAccess && getDatabase().nodeOnlyAutoAllowLowLevelImport === false" },
-        { "file": "src/ts/process/modules.ts", "contains": "importData.lowLevelAccess && getDatabase().nodeOnlyAutoAllowLowLevelImport === false" },
+        { "file": "src/ts/process/moduleImport.ts", "contains": "importData.lowLevelAccess && getDatabase().nodeOnlyAutoAllowLowLevelImport === false" },
         { "file": "src/ts/setting/advancedSettingsData.ts", "contains": "getValue: (db) => db.nodeOnlyAutoAllowLowLevelImport !== false" }
       ],
       "regressionTests": []
@@ -1468,16 +1469,18 @@
       ],
       "requiredMarkers": [
         { "file": "server/node/realmRelay.cjs", "contains": "function realmRelayTarget(relay, pathAndQuery)" },
-        { "file": "server/node/server.cjs", "contains": "const relayURL = realmRelayTarget(req.headers[REALM_RELAY_HEADER], pathAndQuery);" },
-        { "file": "server/node/server.cjs", "contains": "if (relayURL && !hasLiveSession(req)) {" },
-        { "file": "server/node/server.cjs", "contains": "if (!relayURL && externalURL.origin !== hubOrigin) {" },
-        { "file": "server/node/server.cjs", "contains": "delete headersToSend[REALM_RELAY_HEADER];" },
+        { "file": "server/node/realmRelay.cjs", "contains": "const relayURL = realmRelayTarget(req.headers[REALM_RELAY_HEADER], pathAndQuery);" },
+        { "file": "server/node/server.cjs", "contains": "app.get('/api/realm-relay/*', sessionAuthMiddleware, (req, res) => {" },
+        { "file": "server/node/realmRelay.cjs", "contains": "if (redirectURL.origin !== relayOrigin) {" },
+        { "file": "server/node/realmRelay.cjs", "contains": "delete headersToSend[REALM_RELAY_HEADER];" },
+        { "file": "src/ts/characterCards.ts", "contains": "const searchURL = useRelay ? '/api/realm-relay' : hubURL" },
         { "file": "src/ts/characterCards.ts", "contains": "headers['x-risu-realm-relay'] = relay" },
         { "file": "src/ts/setting/advancedSettingsData.ts", "contains": "bindKey: 'nodeOnlyRealmRelay'" }
       ],
       "regressionTests": [
         "server/node/realmRelay.test.ts",
-        "server/node/realmRelayProxy.test.ts"
+        "server/node/realmRelayProxy.test.ts",
+        "src/ts/characterCards.realm.test.ts"
       ]
     },
     {
@@ -2233,13 +2236,14 @@
         "src/ts/process/modules.ts"
       ],
       "requiredMarkers": [
-        { "file": "src/ts/process/modules.ts", "contains": "if(isModuleLayoutFile(importData)){" },
+        { "file": "src/ts/process/moduleImport.ts", "contains": "if(isModuleLayoutFile(importData)){" },
         { "file": "src/ts/process/moduleLayoutImport.ts", "contains": "export const MODULE_LAYOUT_TYPE = 'pocketrisuModuleLayout'" },
         { "file": "src/ts/process/moduleLayoutImport.ts", "contains": "&& !isManagedFolder(folder)" },
         { "file": "src/ts/process/moduleLayoutImport.ts", "contains": "const dissolved = dissolveShrunkenModuleFolders(nextModules, synchronized, previous)" }
       ],
       "regressionTests": [
-        "src/ts/process/moduleLayoutImport.test.ts"
+        "src/ts/process/moduleLayoutImport.test.ts",
+        "src/ts/process/moduleImport.test.ts"
       ]
     },
     {
@@ -2293,7 +2297,7 @@
         { "file": "src/ts/protonLinkPrompt.svelte.ts", "contains": "export function askProtonLink(destination: ProtonLinkDestination): Promise<string | null>" },
         { "file": "src/lib/Others/ProtonLinkDialog.svelte", "contains": "className=\"flex-1 min-w-0\"" },
         { "file": "src/ts/characters.ts", "contains": "const url = await askProtonLink('character')" },
-        { "file": "src/ts/process/modules.ts", "contains": "const url = await askProtonLink('module')" }
+        { "file": "src/ts/process/moduleImport.ts", "contains": "const url = await askProtonLink('module')" }
       ],
       "regressionTests": [
         "src/ts/protonLinkPrompt.test.ts"
@@ -2930,7 +2934,7 @@
         { "file": "src/App.svelte", "contains": "if (isExternalTextIntoTextBox(e)) return" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "onLink: (url) => importDroppedLink(url, 'module')," },
         { "file": "src/ts/characters.ts", "contains": "if (await importCharacterLink(url)) return" },
-        { "file": "src/ts/process/modules.ts", "contains": "if (await importModuleLink(url)) return" }
+        { "file": "src/ts/process/moduleImport.ts", "contains": "if (await importModuleLink(url)) return" }
       ],
       "regressionTests": [
         "src/ts/gui/fileDropSurface.svelte.test.ts",
