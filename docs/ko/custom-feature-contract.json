@@ -3059,9 +3059,11 @@
         { "file": "src/lib/UI/GUI/ShSortableList.svelte", "contains": "markSortableDrag(true);" },
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "{...menuTriggerProps(props)} data-hold-drag" },
         { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "{...menuTriggerProps(props)} data-hold-drag" },
-        { "file": "src/ts/gui/holdDrag.ts", "contains": "if (!isHoldDragTouch(event)) pointerDown?.(event)" },
+        { "file": "src/ts/gui/holdDrag.ts", "contains": "if (isHoldDragTouch(event) || event.pointerType === 'mouse') return" },
         { "file": "src/ts/gui/holdDrag.ts", "contains": "touch-action: none;" },
-        { "file": "src/lib/UI/GUI/ShContextMenu.svelte", "contains": "if (touchMenuPress) return" }
+        { "file": "src/lib/UI/GUI/ShContextMenu.svelte", "contains": "if (touchMenuPress) return" },
+        { "file": "src/ts/gui/holdDrag.ts", "contains": "export function menuTriggerClick(" },
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "onclick={(e) => menuTriggerClick(props, e)}" }
       ],
       "regressionTests": [
         "src/ts/gui/holdDrag.test.ts",

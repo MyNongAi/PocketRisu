@@ -10,7 +10,7 @@
     // and the folder array via `onFoldersChange`.
     import type { Snippet } from "svelte";
     import { ChevronDownIcon, ChevronRightIcon, EllipsisVerticalIcon, FolderIcon, FolderInputIcon, FolderOutputIcon, FolderPlusIcon, PaletteIcon, SearchIcon, StarIcon, XIcon } from "@lucide/svelte";
-    import { menuTriggerProps } from "src/ts/gui/holdDrag";
+    import { menuTriggerClick, menuTriggerProps } from "src/ts/gui/holdDrag";
     import type { SortableEvent } from "sortablejs";
     import { v4 as uuidv4 } from "uuid";
     import { language } from "src/lang";
@@ -676,7 +676,7 @@
             <ShDropdownMenuTrigger>
                 {#snippet child({ props })}
                     <button {...menuTriggerProps(props)} data-hold-drag class="no-sort shrink-0 p-1 rounded text-textcolor2 risu-interactive-accent" aria-label="menu"
-                        onclick={(e) => { e.stopPropagation(); (props as { onclick?: (e: MouseEvent) => void }).onclick?.(e) }}>
+                        onclick={(e) => menuTriggerClick(props, e)}>
                         <EllipsisVerticalIcon size={16}/>
                     </button>
                 {/snippet}
@@ -693,7 +693,7 @@
         <ShDropdownMenuTrigger>
             {#snippet child({ props })}
                 <button {...menuTriggerProps(props)} data-hold-drag class="no-sort shrink-0 p-1 rounded text-textcolor2 risu-interactive-accent" aria-label="menu"
-                    onclick={(e) => { e.stopPropagation(); (props as { onclick?: (e: MouseEvent) => void }).onclick?.(e) }}>
+                    onclick={(e) => menuTriggerClick(props, e)}>
                     <EllipsisVerticalIcon size={16}/>
                 </button>
             {/snippet}

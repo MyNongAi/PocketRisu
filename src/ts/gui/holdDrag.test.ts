@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { isHoldDragTouch, markSortableDrag, menuTriggerProps, sortableDragActive, sortableFilter } from './holdDrag'
+import { isHoldDragTouch, markSortableDrag, menuTriggerClick, menuTriggerProps, sortableDragActive, sortableFilter } from './holdDrag'
 
 function press(html: string, selector: string, pointerType: string) {
     document.body.innerHTML = html
@@ -24,10 +24,11 @@ afterEach(() => {
 })
 
 describe('a held ⋮ drags its row', () => {
-    it('lets a touch on the ⋮ (or its icon) drag, but not a mouse', () => {
+    it('lets a touch or a mouse on the ⋮ (or its icon) drag the row', () => {
         expect(sortableFilter(press(row, '.icon', 'touch'))).toBe(false)
         expect(sortableFilter(press(row, 'button', 'touch'))).toBe(false)
-        expect(sortableFilter(press(row, 'button', 'mouse'))).toBe(true)
+        expect(sortableFilter(press(row, 'button', 'mouse'))).toBe(false)
+        expect(sortableFilter(press(row, '.icon', 'mouse'))).toBe(false)
     })
 
     it('gives only marked touch presses to the menu, not the row context menu', () => {
@@ -62,27 +63,78 @@ describe('a held ⋮ drags its row', () => {
         expect(button.style.color).toBe('red')
         expect(props['aria-label']).toBe('menu')
 
+        // A mouse press may start a drag too; the menu opens on its click.
         const mouse = new PointerEvent('pointerdown', { pointerType: 'mouse', bubbles: true, cancelable: true })
         button.dispatchEvent(mouse)
+        expect(down).not.toHaveBeenCalled()
+        expect(mouse.defaultPrevented).toBe(false)
+        expect(bubbled).toHaveBeenCalledTimes(2)
+
+        const pen = new PointerEvent('pointerdown', { pointerType: 'pen', bubbles: true, cancelable: true })
+        button.dispatchEvent(pen)
         expect(down).toHaveBeenCalledOnce()
-        expect(mouse.defaultPrevented).toBe(true)
-        expect(bubbled).toHaveBeenCalledOnce()
     })
 
-    it('suppresses native touch context menus, while leaving mouse right-clicks alone', () => {
+    it('suppresses native touch context menus; a mouse right-click opens this menu only', () => {
         press(row, 'button', 'touch')
         const context = vi.fn()
-        const props = menuTriggerProps({ oncontextmenu: context })
+        const open = vi.fn()
+        const rowMenu = vi.fn()
+        const props = menuTriggerProps({ oncontextmenu: context, onpointerdown: open })
         const button = document.querySelector('button')!
+        button.addEventListener('pointerdown', props.onpointerdown)
         button.addEventListener('contextmenu', props.oncontextmenu)
+        button.parentElement!.addEventListener('contextmenu', rowMenu)
         const touch = new PointerEvent('contextmenu', { pointerType: 'touch', bubbles: true, cancelable: true })
         document.querySelector('.icon')!.dispatchEvent(touch)
         expect(touch.defaultPrevented).toBe(true)
         expect(context).not.toHaveBeenCalled()
+        // The row ignores a touch contextmenu on ⋮ itself (ShContextMenu).
+        rowMenu.mockClear()
+
+        button.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'mouse', bubbles: true, cancelable: true, button: 2 }))
         const mouse = new PointerEvent('contextmenu', { pointerType: 'mouse', bubbles: true, cancelable: true, button: 2 })
         button.dispatchEvent(mouse)
-        expect(mouse.defaultPrevented).toBe(false)
-        expect(context).toHaveBeenCalledOnce()
+        expect(mouse.defaultPrevented).toBe(true)
+        expect(rowMenu).not.toHaveBeenCalled()
+        expect(context).not.toHaveBeenCalled()
+        expect(open).toHaveBeenCalledOnce()
+        expect(open.mock.calls[0][0]).toMatchObject({ pointerType: 'mouse', button: 0 })
+    })
+
+    it('opens on a mouse click, not on the press, and keeps keyboard and touch clicks with bits-ui', () => {
+        press(row, 'button', 'mouse')
+        const open = vi.fn()
+        const click = vi.fn()
+        const raw = { onpointerdown: open, onclick: click }
+        const props = menuTriggerProps(raw)
+        const button = document.querySelector('button')!
+        const rowClick = vi.fn()
+        button.parentElement!.addEventListener('click', rowClick)
+        button.addEventListener('pointerdown', props.onpointerdown)
+        button.addEventListener('click', (e) => menuTriggerClick(raw, e))
+
+        button.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'mouse', bubbles: true, cancelable: true }))
+        expect(open).not.toHaveBeenCalled()
+        button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
+        expect(open).toHaveBeenCalledOnce()
+        expect(click).not.toHaveBeenCalled()
+        expect(rowClick).not.toHaveBeenCalled()
+
+        // The click that ends a mouse drag opens nothing.
+        markSortableDrag(true)
+        button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
+        expect(open).toHaveBeenCalledOnce()
+        markSortableDrag(false)
+        vi.advanceTimersByTime(400)
+
+        // Keyboard (detail 0) and touch clicks stay with bits-ui's own handlers.
+        button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 0 }))
+        expect(click).toHaveBeenCalledOnce()
+        button.dispatchEvent(new PointerEvent('pointerdown', { pointerType: 'touch', bubbles: true, cancelable: true }))
+        button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, detail: 1 }))
+        expect(click).toHaveBeenCalledTimes(2)
+        expect(open).toHaveBeenCalledOnce()
     })
 
     it('keeps other .no-sort parts out of a drag, and the row itself draggable', () => {

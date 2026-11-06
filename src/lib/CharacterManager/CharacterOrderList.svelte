@@ -7,7 +7,7 @@
     // (src/ts/characterOrder.ts), mirroring FolderedList's approach.
     import type { Snippet } from "svelte";
     import { ArchiveIcon, ChevronDownIcon, ChevronRightIcon, EllipsisVerticalIcon, FolderIcon } from "@lucide/svelte";
-    import { menuTriggerProps } from "src/ts/gui/holdDrag";
+    import { menuTriggerClick, menuTriggerProps } from "src/ts/gui/holdDrag";
     import ShSortableList from "src/lib/UI/GUI/ShSortableList.svelte";
     import ShDropdownMenu from "src/lib/UI/GUI/ShDropdownMenu.svelte";
     import ShDropdownMenuTrigger from "src/lib/UI/GUI/ShDropdownMenuTrigger.svelte";
@@ -192,7 +192,7 @@
                             <ShDropdownMenuTrigger>
                                 {#snippet child({ props })}
                                     <button {...menuTriggerProps(props)} data-hold-drag class="no-sort shrink-0 p-1 rounded text-textcolor2 risu-interactive-accent" aria-label="menu"
-                                        onclick={(e) => { e.stopPropagation(); (props as { onclick?: (e: MouseEvent) => void }).onclick?.(e) }}>
+                                        onclick={(e) => menuTriggerClick(props, e)}>
                                         <EllipsisVerticalIcon size={16}/>
                                     </button>
                                 {/snippet}

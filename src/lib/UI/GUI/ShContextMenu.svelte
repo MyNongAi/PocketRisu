@@ -8,7 +8,7 @@
     import Sortable from 'sortablejs';
     import type { Snippet } from 'svelte';
     import { cn } from 'src/lib/utils';
-    import { isHoldDragTouch } from 'src/ts/gui/holdDrag';
+    import { isHoldDragTouch, onHoldDragButton } from 'src/ts/gui/holdDrag';
 
     interface Props {
         trigger: Snippet<[Record<string, unknown>]>;
@@ -74,9 +74,10 @@
                 cancelPress()
                 lastPointerType = event.pointerType
                 touchHold = false
-                touchMenuPress = isHoldDragTouch(event)
-                // The nested menu button owns both a tap and a still hold; neither should
-                // also arm the row's release menu or bits-ui's long-press timer.
+                touchMenuPress = onHoldDragButton(event)
+                // The nested menu button owns a tap, a click and a hold (which drags);
+                // none of them arms the row's release menu, its left-button hold timer
+                // or bits-ui's long-press timer.
                 if (touchMenuPress) return
                 // No hold menu: neither the release menu nor bits-ui's long-press timer.
                 if (!holdOpens && event.pointerType === 'touch') return
