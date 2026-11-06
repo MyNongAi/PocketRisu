@@ -1,5 +1,5 @@
 import { importCharacterProcess } from "./characterCards"
-import { importModuleFile } from "./process/modules"
+import { importModuleFile } from "./process/moduleImport"
 import { notifyError, notifySuccess } from "./alert"
 import { language } from "src/lang"
 import { selectMultipleFile } from "./util"

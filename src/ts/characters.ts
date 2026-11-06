@@ -927,7 +927,7 @@ export async function addCharacter(arg:{
             break
         case 'importFromProtonModule': {
             // Modules, as from the module page: nothing to select afterwards.
-            const { importModuleFromProtonDrive } = await import('./process/modules')
+            const { importModuleFromProtonDrive } = await import('./process/moduleImport')
             await importModuleFromProtonDrive()
             if(!arg.stay) MobileGUIStack.set(1)
             return
@@ -1058,7 +1058,7 @@ async function watchDownloadsAndImport(mode: 'character' | 'module') {
                     alertWait(`${language.protonImporting} ${msg.filename}`)
 
                     if (mode === 'module') {
-                        const { importModuleFile } = await import('./process/modules')
+                        const { importModuleFile } = await import('./process/moduleImport')
                         await importModuleFile(imported)
                     } else {
                         await importCharacterProcess(imported)
@@ -1080,7 +1080,7 @@ async function watchDownloadsAndImport(mode: 'character' | 'module') {
             if (files && files.length > 0) {
                 for (const file of files) {
                     if (mode === 'module') {
-                        const { importModuleFile } = await import('./process/modules')
+                        const { importModuleFile } = await import('./process/moduleImport')
                         await importModuleFile(file)
                     } else {
                         await importCharacterProcess(file)

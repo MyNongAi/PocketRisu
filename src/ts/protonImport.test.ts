@@ -43,7 +43,7 @@ vi.mock('./importProgress', () => ({ runPrefetchedImportBatch: vi.fn() }))
 vi.mock('./protonBrowser.svelte', () => ({ openProtonBrowser: vi.fn() }))
 vi.mock('./shareTargetRouting', () => ({ classifySharedImport: vi.fn() }))
 vi.mock('./characterCards', () => ({ importCharacterProcess: vi.fn() }))
-vi.mock('./process/modules', () => ({ importModuleFile: vi.fn() }))
+vi.mock('./process/moduleImport', () => ({ importModuleFile: vi.fn() }))
 vi.mock('./storage/database.svelte', () => ({ importPreset: vi.fn() }))
 
 const { ProtonRequestError } = await import('./protonShareClient')

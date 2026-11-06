@@ -9,7 +9,8 @@
     import ShDropdownMenuItem from "src/lib/UI/GUI/ShDropdownMenuItem.svelte";
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
     import ModuleMenu from "src/lib/Setting/Pages/Module/ModuleMenu.svelte";
-    import { addModuleToDatabase, exportModule, exportModuleLegacy, hydrateModuleAssets, importModule, importModuleFromProtonDrive, refreshModules, rerenderChatForModules, syncFavoriteModules, syncLinkedFolders, type RisuModule } from "src/ts/process/modules";
+    import { addModuleToDatabase, exportModule, exportModuleLegacy, hydrateModuleAssets, refreshModules, rerenderChatForModules, syncFavoriteModules, syncLinkedFolders, type RisuModule } from "src/ts/process/modules";
+    import { importModuleFiles, importModuleFromProtonDrive } from "src/ts/process/moduleImport";
     import { favoriteAfterMove, isModuleFavoritesFolder } from "src/ts/process/moduleFavoritesFolder";
     import { Clock3Icon, SquarePen, Globe, Share2Icon, PlusIcon, HardDriveUpload, ListOrderedIcon, PaletteIcon, StarIcon, Waypoints, CloudDownloadIcon, LinkIcon, Link2Icon, UnlinkIcon, UserSearchIcon } from "@lucide/svelte";
     import { v4 } from "uuid";
@@ -547,7 +548,7 @@
                 tempModule = { name: '', description: '', id: v4() }
                 mode = 1
             }}><PlusIcon />{language.createModule}</ShButton>
-            <ShButton size="sm" variant="outline" onclick={() => importModule()}><HardDriveUpload />{language.importModule}</ShButton>
+            <ShButton size="sm" variant="outline" onclick={() => importModuleFiles()}><HardDriveUpload />{language.importModule}</ShButton>
             <ShButton size="sm" variant="outline" onclick={() => importModuleFromProtonDrive()} title={language.importFromProtonAsModule} aria-label={language.importFromProtonAsModule}><CloudDownloadIcon /></ShButton>
             <ShButton size="sm" variant="outline" onclick={() => importMCPModule()} title="MCP" aria-label="MCP"><Waypoints /></ShButton>
             </div>

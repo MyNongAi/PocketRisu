@@ -11,7 +11,7 @@ vi.mock('./characters', () => ({
     characterIdsNow: () => BEFORE,
     openImportedCharacter: (before: unknown) => openImportedCharacter(before),
 }))
-vi.mock('./process/modules', () => ({ importModuleLink: (url: string) => importModuleLink(url) }))
+vi.mock('./process/moduleImport', () => ({ importModuleLink: (url: string) => importModuleLink(url) }))
 vi.mock('./alert', () => ({ notifyWarning: (msg: unknown) => notifyWarning(msg) }))
 vi.mock('src/lang', () => ({ language: { linkDropUnsupported: 'unsupported link' } }))
 

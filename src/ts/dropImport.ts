@@ -4,7 +4,7 @@ import { importCharacterProcess } from './characterCards'
 import { classifyDroppedImport, type DropImportDestination } from './dropImportRouting'
 import { checkCharOrder } from './globalApi.svelte'
 import { runImportBatch } from './importProgress'
-import { importModuleFile } from './process/modules'
+import { importModuleFile } from './process/moduleImport'
 import { importPreset } from './storage/database.svelte'
 
 export async function importDroppedFiles(

@@ -12,7 +12,7 @@ export async function importDroppedLink(url: string, destination: 'character' | 
     const before = characters?.characterIdsNow()
     const imported = characters
         ? await characters.importCharacterLink(url)
-        : await (await import('./process/modules')).importModuleLink(url)
+        : await (await import('./process/moduleImport')).importModuleLink(url)
     if (!imported) notifyWarning(language.linkDropUnsupported)
     // The bot it brought opens only when "go to the character on import" is on.
     else if (characters && before) characters.openImportedCharacter(before)
