@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.17.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-11-06",
+  "updatedAt": "2026-11-07",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
@@ -3068,6 +3068,26 @@
       "regressionTests": [
         "src/ts/gui/holdDrag.test.ts",
         "src/ts/gui/sortableTouchHold.test.ts"
+      ]
+    },
+    {
+      "id": "DRAG-DEBUG",
+      "title": "목록 끌기 진단 표시(임시, 기기 플래그로만)",
+      "criticality": "core-ux",
+      "notes": "2026-11-07 사용자 선택(폰에서 모듈이 폴더를 못 넘는 문제, 화면 진단 1번). localStorage risu-debug-drag=1인 기기에서만 끄는 동안 왼쪽 위에 진단 상자를 띄웁니다. 원인을 찾아 고치면 지웁니다.",
+      "ownerFiles": [
+        "src/ts/gui/dragDebug.ts",
+        "src/lib/UI/GUI/ShSortableList.svelte",
+        "src/main.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/gui/dragDebug.ts", "contains": "export const DRAG_DEBUG_KEY = 'risu-debug-drag'" },
+        { "file": "src/ts/gui/dragDebug.ts", "contains": "if (installed || !dragDebugOn()) return" },
+        { "file": "src/lib/UI/GUI/ShSortableList.svelte", "contains": "Sortable.create(element, withDragDebug({" },
+        { "file": "src/main.ts", "contains": "initDragDebug()" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/dragDebug.test.ts"
       ]
     },
     {

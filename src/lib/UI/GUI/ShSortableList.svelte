@@ -3,6 +3,7 @@
     import Sortable, { type Options, type SortableEvent } from 'sortablejs';
     import { sortableOptions } from 'src/ts/util';
     import { markSortableDrag } from 'src/ts/gui/holdDrag';
+    import { withDragDebug } from 'src/ts/gui/dragDebug';
 
     interface Props {
         children: Snippet;
@@ -100,7 +101,7 @@
     $effect(() => {
         if (!element || disabled) return;
 
-        const sortable = Sortable.create(element, {
+        const sortable = Sortable.create(element, withDragDebug({
             ...sortableOptions,
             animation: 150,
             chosenClass: 'risu-chosen-item',
@@ -145,7 +146,7 @@
                     dragOrigin = null;
                 }
             },
-        });
+        }));
 
         return () => {
             try {
