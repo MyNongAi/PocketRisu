@@ -13,6 +13,7 @@ vi.mock('src/ts/util', () => ({ sortableOptions: {} }))
 vi.mock('src/lang', () => ({ language: {
     search: 'Search', folderNew: 'New folder', folderNameInput: 'Name', folderUncategorized: 'Uncategorized',
     renameFolder: 'Rename', moveUp: 'Up', moveDown: 'Down', cancel: 'Cancel', remove: 'Delete', folderMoveTo: 'Move to',
+    storageShowingOf: (shown: number, total: number) => `${shown} of ${total} shown`,
 } }))
 vi.mock('sortablejs', () => ({ default: { create: mocks.sortableCreate } }))
 // Test the list's own state transitions without transforming the entire icon/menu library.
@@ -56,8 +57,9 @@ afterEach(async () => {
 describe('module folder display interactions', () => {
     it('filters Korean initials without exposing unrelated folders or rewriting membership', async () => {
         const onItemsChange = vi.fn()
-        const { target, onFoldersChange } = await renderList({ itemSearchTexts: ['넬리 섬', '다른 모듈'], onItemsChange })
+        const { target, onFoldersChange } = await renderList({ itemSearchTexts: ['넬리 섬', '다른 모듈'], onItemsChange, showItemCount: true })
         const input = target.querySelector<HTMLInputElement>('input')!
+        expect(input.parentElement?.textContent).toContain('2/2')
         input.value = 'ㄴㄹㅅ'
         input.dispatchEvent(new Event('input', { bubbles: true }))
         await tick()
@@ -65,12 +67,15 @@ describe('module folder display interactions', () => {
         expect(target.textContent).not.toContain('Beta')
         expect(target.textContent).toContain('Module 0')
         expect(target.textContent).not.toContain('Module 1')
+        expect(input.parentElement?.textContent).toContain('1/2')
+        expect(input.parentElement?.textContent).toContain('1 of 2 shown')
         expect(onItemsChange).not.toHaveBeenCalled()
         expect(onFoldersChange).not.toHaveBeenCalled()
     })
 
     it('starts collapsed and remembers an explicit expansion on the next mount', async () => {
         const first = await renderList()
+        expect(first.target.querySelector('.risu-field-border span')).toBeNull()
         expect(first.target.querySelector('[data-folder-container="a"]')?.classList.contains('hidden')).toBe(true)
         first.target.querySelector<HTMLElement>('[data-folder-key="a"] > [role="button"]')!.click()
         await tick()

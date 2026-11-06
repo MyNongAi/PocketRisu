@@ -102,7 +102,7 @@
         searchActions?: Snippet;
         /** Optional secondary toolbar row, kept separate from create/import actions. */
         subActions?: Snippet;
-        /** Show filtered and total item counts under the search field. */
+        /** Show filtered and total item counts inside the search field. */
         showItemCount?: boolean;
         /** Optional controls rendered in a folder header before its count/menu. */
         folderActions?: Snippet<[PromptPresetFolder, number[]]>;
@@ -466,14 +466,16 @@
             {/if}
             <input bind:this={searchInput} bind:value={searchQuery} placeholder={searchPlaceholder}
                 class="min-w-0 w-full py-2 bg-transparent text-textcolor outline-none"/>
+            {#if showItemCount}
+                <!-- Compact counts leave typing room beside the sort controls on phones. -->
+                <span class="shrink-0 whitespace-nowrap text-xs text-textcolor2" title={language.storageShowingOf(displayItemCount, itemSearchTexts.length)}>
+                    <span class="@[32rem]/folders:hidden" aria-label={language.storageShowingOf(displayItemCount, itemSearchTexts.length)}>{displayItemCount}/{itemSearchTexts.length}</span>
+                    <span class="hidden @[32rem]/folders:inline">{language.storageShowingOf(displayItemCount, itemSearchTexts.length)}</span>
+                </span>
+            {/if}
         </div>
         {@render searchActions?.()}
     </div>
-    {#if showItemCount}
-        <div class="text-right text-xs text-textcolor2">
-            {language.storageShowingOf(displayItemCount, itemSearchTexts.length)}
-        </div>
-    {/if}
 
     <ShSortableList
         className="flex flex-col gap-2"
