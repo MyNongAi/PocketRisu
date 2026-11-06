@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "upstreamBaseline": "PocketRisu v1.16.1",
+  "upstreamBaseline": "PocketRisu v1.17.0",
   "branch": "feature/external-assets",
   "updatedAt": "2026-11-06",
   "features": [
