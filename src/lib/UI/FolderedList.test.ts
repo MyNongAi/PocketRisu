@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createRawSnippet, mount, tick, unmount } from 'svelte'
+import type Sortable from 'sortablejs'
 import FolderedList from './FolderedList.svelte'
 
 const mocks = vi.hoisted(() => ({
     input: vi.fn(),
     select: vi.fn(),
     confirm: vi.fn(),
-    sortableCreate: vi.fn((_element: HTMLElement, _options: unknown) => ({ destroy: vi.fn() })),
+    sortableCreate: vi.fn((_element: HTMLElement, _options: Sortable.Options): Pick<Sortable, 'destroy'> => ({ destroy: vi.fn() })),
 }))
 vi.mock('src/ts/alert', () => ({ alertInput: mocks.input, alertSelect: mocks.select, alertConfirm: mocks.confirm }))
 vi.mock('src/ts/util', () => ({ sortableOptions: {} }))
@@ -48,13 +49,33 @@ async function renderList(overrides: Record<string, unknown> = {}) {
     return { target, onFoldersChange }
 }
 
-beforeEach(() => { localStorage.clear(); vi.clearAllMocks() })
+beforeEach(() => {
+    localStorage.clear(); vi.clearAllMocks()
+    mocks.sortableCreate.mockImplementation(() => ({ destroy: vi.fn() }))
+})
 afterEach(async () => {
     await Promise.all(mounted.splice(0).map((instance) => unmount(instance)))
+    vi.useRealTimers()
     document.body.replaceChildren()
 })
 
 describe('module folder display interactions', () => {
+    it('keeps touch previews outside the nested item lists and their containing blocks', async () => {
+        const { default: RealSortable } = await vi.importActual<{ default: typeof Sortable }>('sortablejs')
+        mocks.sortableCreate.mockImplementation((element, options) => RealSortable.create(element, options))
+        const { target } = await renderList({ defaultCollapsed: false })
+        const row = target.querySelector<HTMLElement>('[data-sortable-key="0"]')!
+        vi.useFakeTimers()
+        for (const type of ['pointerdown', 'pointermove']) {
+            row.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, pointerType: 'touch', button: 0, clientX: 10, clientY: 10 }))
+        }
+        vi.advanceTimersByTime(0)
+        expect(RealSortable.ghost?.parentElement).toBe(document.body)
+        row.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch' }))
+        vi.advanceTimersByTime(400)
+        document.body.click() // Consume Sortable's synthetic-click suppression before the next test.
+    })
+
     it('filters Korean initials without exposing unrelated folders or rewriting membership', async () => {
         const onItemsChange = vi.fn()
         const { target, onFoldersChange } = await renderList({ itemSearchTexts: ['넬리 섬', '다른 모듈'], onItemsChange, showItemCount: true })
@@ -130,7 +151,7 @@ describe('module folder display interactions', () => {
         const destination = target.querySelector<HTMLElement>('[data-folder-container=""] [data-risu-sortable-list]')!
         const item = source.querySelector<HTMLElement>('[data-sortable-key="0"]')!
         const sourceCall = mocks.sortableCreate.mock.calls.find(([element]) => element === source)
-        const options = sourceCall?.[1] as {
+        const options = sourceCall?.[1] as unknown as {
             onStart: (event: Record<string, unknown>) => void
             onEnd: (event: Record<string, unknown>) => void
         }

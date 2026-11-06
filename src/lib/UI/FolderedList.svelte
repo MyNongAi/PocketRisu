@@ -555,10 +555,12 @@
                 {@render folderMenu(folder, group.indexes)}
             </div>
             <div data-folder-container={folder.id} class:hidden={isCollapsed}>
+                <!-- Touch uses a DOM fallback preview rather than the mouse's native drag image.
+                     Keep it outside nested lists and CSS containing blocks while crossing folders. -->
                 <ShSortableList
                     className="flex flex-col px-2 pb-2 gap-0.5 min-h-8 @max-xs/folders:px-0.5"
                     disabled={dragDisabled}
-                    options={{ group: { name: 'foldered-list-items', pull: true, put: true }, emptyInsertThreshold: 32 }}
+                    options={{ group: { name: 'foldered-list-items', pull: true, put: true }, emptyInsertThreshold: 32, fallbackOnBody: true }}
                     onReorder={onItemDrop}
                 >
                     {#each group.indexes as index (index)}
@@ -586,7 +588,7 @@
             <ShSortableList
                 className="flex min-h-8 flex-col gap-0.5"
                 disabled={dragDisabled}
-                options={{ group: { name: 'foldered-list-items', pull: true, put: true }, emptyInsertThreshold: 32 }}
+                options={{ group: { name: 'foldered-list-items', pull: true, put: true }, emptyInsertThreshold: 32, fallbackOnBody: true }}
                 onReorder={onItemDrop}
             >
                 {#each indexes as index (index)}
@@ -612,7 +614,7 @@
                 <ShSortableList
                     className="flex flex-col px-2 pb-2 gap-0.5 min-h-8 @max-xs/folders:px-0.5"
                     disabled={dragDisabled}
-                    options={{ group: { name: 'foldered-list-items', pull: true, put: true }, emptyInsertThreshold: 32 }}
+                    options={{ group: { name: 'foldered-list-items', pull: true, put: true }, emptyInsertThreshold: 32, fallbackOnBody: true }}
                     onReorder={onItemDrop}
                 >
                     {#each indexes as index (index)}
