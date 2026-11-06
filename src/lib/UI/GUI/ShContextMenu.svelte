@@ -8,6 +8,7 @@
     import Sortable from 'sortablejs';
     import type { Snippet } from 'svelte';
     import { cn } from 'src/lib/utils';
+    import { isHoldDragTouch } from 'src/ts/gui/holdDrag';
 
     interface Props {
         trigger: Snippet<[Record<string, unknown>]>;
@@ -41,6 +42,7 @@
     // phone). On such a row the menu waits until the finger lets go without
     // having moved; a move drags.
     let touchHold = false
+    let touchMenuPress = false
     let touchMoved = false
     let touchAt = 0
 
@@ -64,6 +66,11 @@
             onpointerdown: (event: PointerEvent) => {
                 swallowClick = false
                 cancelPress()
+                touchHold = false
+                touchMenuPress = isHoldDragTouch(event)
+                // The nested menu button owns both a tap and a still hold; neither should
+                // also arm the row's release menu or bits-ui's long-press timer.
+                if (touchMenuPress) return
                 touchHold = event.pointerType === 'touch' && !disabled && dragsOnTouch(event)
                 if (touchHold) {
                     // bits-ui's own long-press timer stays off.
@@ -93,6 +100,7 @@
             onpointerup: (event: PointerEvent) => {
                 call(props.onpointerup, event)
                 cancelPress()
+                touchMenuPress = false
                 if (!touchHold) return
                 touchHold = false
                 if (touchMoved || event.timeStamp - touchAt < LONG_PRESS_MS) return
@@ -100,10 +108,10 @@
                 swallowClick = true
                 target.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: event.clientX, clientY: event.clientY }))
             },
-            onpointercancel: (event: PointerEvent) => { call(props.onpointercancel, event); touchHold = false },
+            onpointercancel: (event: PointerEvent) => { call(props.onpointercancel, event); touchHold = false; touchMenuPress = false },
             oncontextmenu: (event: MouseEvent) => {
                 // The phone's own long press (Android) while the row may be dragged.
-                if (touchHold) {
+                if (touchHold || touchMenuPress || isHoldDragTouch(event)) {
                     event.preventDefault()
                     return
                 }

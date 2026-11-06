@@ -10,12 +10,18 @@
 
 export const HOLD_DRAG_ATTRIBUTE = 'data-hold-drag'
 
+/** The marked button owns a touch press, including one on its nested icon. */
+export function isHoldDragTouch(event: Event): boolean {
+    const touch = (event as PointerEvent).pointerType === 'touch' || event.type === 'touchstart'
+    const target = event.target as Element | null
+    return touch && !!target?.closest?.(`[${HOLD_DRAG_ATTRIBUTE}]`)
+}
+
 /** Sortable's filter: `.no-sort` stays put, but a touch on a hold-drag ⋮ may drag. */
 export function sortableFilter(event: Event): boolean {
     const target = event.target as Element | null
     if (!target?.closest?.('.no-sort')) return false
-    const touch = (event as PointerEvent).pointerType === 'touch' || event.type === 'touchstart'
-    return !(touch && target.closest(`[${HOLD_DRAG_ATTRIBUTE}]`))
+    return !isHoldDragTouch(event)
 }
 
 let dragging = false
@@ -38,9 +44,26 @@ export function sortableDragActive(): boolean {
 
 /** A menu trigger's props that do not open the menu on the release of a drag. */
 export function menuTriggerProps<T extends Record<string, unknown>>(props: T): T {
+    const pointerDown = props.onpointerdown as ((event: PointerEvent) => void) | undefined
     const pointerUp = props.onpointerup as ((event: PointerEvent) => void) | undefined
+    const contextMenu = props.oncontextmenu as ((event: MouseEvent) => void) | undefined
     return {
         ...props,
+        // This must be set before contact: changing it on pointerdown is too late
+        // to keep the browser from taking over a held finger as a pan/cancel.
+        style: `${props.style ?? ''}; touch-action: none;`,
+        onpointerdown: (event: PointerEvent) => {
+            // bits-ui prevents the touch pointerdown's default. Leave the press
+            // to Sortable and keep bits-ui's touch pointerup for taps/still holds.
+            if (!isHoldDragTouch(event)) pointerDown?.(event)
+        },
+        oncontextmenu: (event: MouseEvent) => {
+            if (isHoldDragTouch(event)) {
+                event.preventDefault()
+                return
+            }
+            contextMenu?.(event)
+        },
         onpointerup: (event: PointerEvent) => {
             if (dragging) {
                 event.preventDefault()
