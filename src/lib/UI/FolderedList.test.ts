@@ -175,6 +175,82 @@ describe('module folder display interactions', () => {
         ])
     })
 
+    it('a folder dropped among loose items counts as moved though it passed no other folder', async () => {
+        // The user's report, 2026-11-07: in 최근순 a folder put between single
+        // modules went back; only a move past another folder stayed.
+        const onItemsChange = vi.fn()
+        const { target, onFoldersChange } = await renderList({
+            folders: [{ id: 'a', name: 'Alpha' }],
+            itemFolderIds: [undefined, 'a', undefined],
+            itemSearchTexts: ['root-0', 'in-a', 'root-2'],
+            interleaveItems: true,
+            onItemsChange,
+            defaultCollapsed: false,
+        })
+        const outer = target.querySelector<HTMLElement>('[data-risu-sortable-list]')!
+        const folder = outer.querySelector<HTMLElement>(':scope > [data-folder-key="a"]')!
+        const blocks = () => Array.from(outer.children).map((child) => child.getAttribute('data-folder-key') ?? 'root')
+        expect(blocks()).toEqual(['root', 'a', 'root'])
+        const options = mocks.sortableCreate.mock.calls.find(([element]) => element === outer)?.[1] as unknown as {
+            onStart: (event: Record<string, unknown>) => void
+            onEnd: (event: Record<string, unknown>) => void
+        }
+
+        options.onStart({ item: folder, from: outer })
+        outer.append(folder)
+        options.onEnd({ item: folder, from: outer, to: outer, oldIndex: 1, newIndex: 2, oldDraggableIndex: 0, newDraggableIndex: 0 })
+
+        expect(onFoldersChange).toHaveBeenCalledOnce()
+        expect(onItemsChange).toHaveBeenCalledOnce()
+        expect(onItemsChange.mock.calls[0]).toEqual([[
+            { index: 0, folderId: undefined },
+            { index: 2, folderId: undefined },
+            { index: 1, folderId: 'a' },
+        ], true])
+    })
+
+    it('a folder held over single items and dropped inside their list is placed between them', async () => {
+        // What the touch drag did (trace, 2026-11-07): over single modules the
+        // folder lands inside their list, which counted its items twice (82 of
+        // 80), so nothing was saved and the folder went back.
+        const onItemsChange = vi.fn()
+        const { target, onFoldersChange } = await renderList({
+            folders: [{ id: 'a', name: 'Alpha' }, { id: 'b', name: 'Beta' }],
+            itemFolderIds: ['a', undefined, undefined, 'b'],
+            itemSearchTexts: ['in-a', 'root-1', 'root-2', 'in-b'],
+            interleaveItems: true,
+            rootItemsStandalone: true,
+            onItemsChange,
+            defaultCollapsed: false,
+        })
+        const outer = target.querySelector<HTMLElement>('[data-risu-sortable-list]')!
+        const blocks = Array.from(outer.children).map((child) => child.getAttribute('data-folder-key') ?? 'root')
+        expect(blocks).toEqual(['a', 'root', 'b'])
+        const folder = outer.querySelector<HTMLElement>(':scope > [data-folder-key="b"]')!
+        const rootList = outer.querySelector<HTMLElement>(':scope > [data-folder-container=""] [data-risu-sortable-list]')!
+        const rowTwo = rootList.querySelector<HTMLElement>('[data-sortable-key="2"]')!
+        const options = mocks.sortableCreate.mock.calls.find(([element]) => element === outer)?.[1] as unknown as {
+            onStart: (event: Record<string, unknown>) => void
+            onEnd: (event: Record<string, unknown>) => void
+        }
+
+        options.onStart({ item: folder, from: outer })
+        rootList.insertBefore(folder, rowTwo)
+        options.onEnd({ item: folder, from: outer, to: rootList, oldIndex: 2, newIndex: 1, oldDraggableIndex: 1, newDraggableIndex: 0 })
+
+        expect(onItemsChange).toHaveBeenCalledOnce()
+        expect(onItemsChange.mock.calls[0]).toEqual([[
+            { index: 0, folderId: 'a' },
+            { index: 1, folderId: undefined },
+            { index: 3, folderId: 'b' },
+            { index: 2, folderId: undefined },
+        ], true])
+        // The folders keep the order they show in.
+        expect(onFoldersChange.mock.calls[0][0].map((f: { id: string }) => f.id)).toEqual(['a', 'b'])
+        // The page is handed back as it was (Svelte redraws it from the data).
+        expect(Array.from(outer.children).map((child) => child.getAttribute('data-folder-key') ?? 'root')).toEqual(['a', 'root', 'b'])
+    })
+
     it('can render standalone root items before real folders for recent ordering', async () => {
         const { target } = await renderList({
             itemFolderIds: [undefined, 'a'],

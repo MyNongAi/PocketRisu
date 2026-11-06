@@ -390,6 +390,7 @@
         "src/ts/process/moduleOnWatch.svelte.ts"
       ],
       "requiredMarkers": [
+        { "file": "src/lib/UI/FolderedList.svelte", "contains": "folderId: item.closest<HTMLElement>('[data-folder-container]')?.dataset.folderContainer || undefined," },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "folderToolbarActions={sidePanel ? sortActions : undefined}" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "searchActions={sidePanel ? undefined : sortActions}" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "title=\"MCP\" aria-label=\"MCP\"><Waypoints /></ShButton>" },
@@ -3058,6 +3059,7 @@
         { "file": "src/ts/util.ts", "contains": "filter: sortableFilter," },
         { "file": "src/lib/UI/GUI/ShSortableList.svelte", "contains": "markSortableDrag(true);" },
         { "file": "src/lib/UI/GUI/ShSortableList.svelte", "contains": ":global(.sortable-fallback), :global(.sortable-fallback *) {" },
+        { "file": "src/lib/UI/GUI/ShSortableList.svelte", "contains": "const moved = event.from !== event.to || oldDraggableIndex !== targetIndex || event.oldIndex !== event.newIndex;" },
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "{...menuTriggerProps(props)} data-hold-drag" },
         { "file": "src/lib/CharacterManager/CharacterRow.svelte", "contains": "{...menuTriggerProps(props)} data-hold-drag" },
         { "file": "src/ts/gui/holdDrag.ts", "contains": "if (isHoldDragTouch(event) || event.pointerType === 'mouse') return" },

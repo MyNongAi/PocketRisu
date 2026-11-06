@@ -133,7 +133,12 @@
 
                 const oldDraggableIndex = event.oldDraggableIndex ?? event.oldIndex;
                 try {
-                    if (event.from !== event.to || oldDraggableIndex !== targetIndex) onReorder(orderedKeys, event);
+                    // The draggable index counts only the draggable rows. A folder put among
+                    // the single items between folders (FolderedList's interleaved list)
+                    // keeps it, so the place among all children decides too (the user's
+                    // report, 2026-11-07: such a folder went back where it was).
+                    const moved = event.from !== event.to || oldDraggableIndex !== targetIndex || event.oldIndex !== event.newIndex;
+                    if (moved) onReorder(orderedKeys, event);
                     onDragEnd(key, event);
                 } finally {
                     // Sortable mutates the DOM before Svelte updates the keyed list. Restore Svelte's

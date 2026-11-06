@@ -257,15 +257,14 @@
 
     /** Current placements as rendered in the DOM (source of truth right after a drop). */
     function placementsFromDom(): FolderedItemPlacement[] {
-        const out: FolderedItemPlacement[] = [];
-        rootEl.querySelectorAll<HTMLElement>('[data-folder-container]').forEach(container => {
-            const folderId = container.dataset.folderContainer || undefined;
-            // Items sit one level down inside the ShSortableList wrapper div.
-            container.querySelectorAll<HTMLElement>('[data-sortable-key]').forEach(item => {
-                out.push({ index: Number(item.dataset.sortableKey), folderId });
-            });
-        });
-        return out;
+        // Every item once, in page order, in the folder nearest to it. A folder
+        // dragged over single items can land inside their list (the item lists
+        // take it), and reading container by container then counted its items
+        // twice, so the drop was not saved (the user's report, 2026-11-07).
+        return Array.from(rootEl.querySelectorAll<HTMLElement>('[data-folder-container] [data-sortable-key]')).map(item => ({
+            index: Number(item.dataset.sortableKey),
+            folderId: item.closest<HTMLElement>('[data-folder-container]')?.dataset.folderContainer || undefined,
+        }));
     }
 
     /** Current placements from data (for menu-driven edits). */
@@ -281,10 +280,15 @@
         // In the interleaved list a folder is placed among single items too:
         // read where it landed before the folder change re-renders the list.
         const placed = interleaveItems ? placementsFromDom() : null;
+        // There the folders' order is the page's too: one dropped among single
+        // items is not in the folder list's own order.
+        const shownIds = interleaveItems
+            ? Array.from(rootEl.querySelectorAll<HTMLElement>('[data-folder-key]')).map(element => element.dataset.folderKey ?? '')
+            : orderedIds;
         const byId = new Map(folders.map(folder => [folder.id, folder]));
-        const ordered = orderedIds.map(id => byId.get(id)).filter((folder): folder is PromptPresetFolder => !!folder);
+        const ordered = shownIds.map(id => byId.get(id)).filter((folder): folder is PromptPresetFolder => !!folder);
         // Folders shown inside another are not in the dragged list: keep them.
-        const rest = folders.filter(folder => !orderedIds.includes(folder.id));
+        const rest = folders.filter(folder => !shownIds.includes(folder.id));
         onFoldersChange([...ordered, ...rest]);
         if (placed) onItemsChange(placed, true);
     }
