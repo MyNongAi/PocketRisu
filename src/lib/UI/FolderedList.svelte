@@ -112,6 +112,8 @@
         folderMenuItems?: Snippet<[PromptPresetFolder, number[]]>;
         /** A right-click (long press on touch) on a row opens its ⋮ menu's entries there. */
         rowContextMenu?: boolean;
+        /** False: holding a row (touch long press, left-button hold) opens no menu; right-click still does. */
+        rowHoldMenu?: boolean;
     }
 
     let {
@@ -157,6 +159,7 @@
         folderLeadingActions,
         folderMenuItems,
         rowContextMenu = false,
+        rowHoldMenu = true,
         maxFolderDepth = 1,
     }: Props = $props();
 
@@ -447,7 +450,10 @@
         {@render actions?.()}
         <div class="grow"></div>
         <ShButton size="sm" variant="outline" onclick={createFolder}><FolderPlusIcon />{language.folderNew}</ShButton>
-        {@render folderToolbarActions?.()}
+        {#if folderToolbarActions}
+            <!-- Pushed to the right end of the line 새 폴더 sits on. -->
+            <div class="ml-auto">{@render folderToolbarActions()}</div>
+        {/if}
     </div>
     {#if subActions}
         <div class="flex flex-wrap items-center gap-2">
@@ -621,7 +627,7 @@
 {#snippet row(index)}
     <div data-sortable-key={String(index)} data-sortable-no-scale>
     {#if rowContextMenu}
-        <ShContextMenu>
+        <ShContextMenu holdOpens={rowHoldMenu}>
             {#snippet trigger(props)}{@render rowHeader(index, props)}{/snippet}
             {#snippet items()}{@render rowMenuItems(index)}{/snippet}
         </ShContextMenu>

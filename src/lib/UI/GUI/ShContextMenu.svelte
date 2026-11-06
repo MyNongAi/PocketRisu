@@ -15,9 +15,15 @@
         items: Snippet;
         disabled?: boolean;
         class?: string;
+        /**
+         * False: holding opens nothing (a long press on touch, a left-button hold
+         * with a mouse); a right-click still opens the menu.
+         */
+        holdOpens?: boolean;
     }
 
-    let { trigger, items, disabled = false, class: className }: Props = $props();
+    let { trigger, items, disabled = false, class: className, holdOpens = true }: Props = $props();
+    let lastPointerType = ''
 
     // Holding the left mouse button opens the menu too (the user's request,
     // 2026-10-20), as a long press does on touch: after LONG_PRESS_MS without
@@ -66,11 +72,14 @@
             onpointerdown: (event: PointerEvent) => {
                 swallowClick = false
                 cancelPress()
+                lastPointerType = event.pointerType
                 touchHold = false
                 touchMenuPress = isHoldDragTouch(event)
                 // The nested menu button owns both a tap and a still hold; neither should
                 // also arm the row's release menu or bits-ui's long-press timer.
                 if (touchMenuPress) return
+                // No hold menu: neither the release menu nor bits-ui's long-press timer.
+                if (!holdOpens && event.pointerType === 'touch') return
                 touchHold = event.pointerType === 'touch' && !disabled && dragsOnTouch(event)
                 if (touchHold) {
                     // bits-ui's own long-press timer stays off.
@@ -81,7 +90,7 @@
                     return
                 }
                 call(props.onpointerdown, event)
-                if (disabled || event.pointerType !== 'mouse' || event.button !== 0) return
+                if (!holdOpens || disabled || event.pointerType !== 'mouse' || event.button !== 0) return
                 const target = event.currentTarget as HTMLElement
                 pressX = event.clientX
                 pressY = event.clientY
@@ -110,8 +119,9 @@
             },
             onpointercancel: (event: PointerEvent) => { call(props.onpointercancel, event); touchHold = false; touchMenuPress = false },
             oncontextmenu: (event: MouseEvent) => {
-                // The phone's own long press (Android) while the row may be dragged.
-                if (touchHold || touchMenuPress || isHoldDragTouch(event)) {
+                // The phone's own long press (Android) while the row may be dragged,
+                // or anywhere when a hold opens nothing.
+                if (touchHold || touchMenuPress || isHoldDragTouch(event) || (!holdOpens && lastPointerType === 'touch')) {
                     event.preventDefault()
                     return
                 }
