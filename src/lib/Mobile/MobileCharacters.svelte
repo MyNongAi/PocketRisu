@@ -7,11 +7,11 @@
     import { promptActivateCharacter } from "src/ts/characterArchive";
     import { makeAgoText } from "src/ts/util";
     import { language } from "src/lang";
-    import { MessageSquareIcon, PaletteIcon, PlusIcon, SquareMousePointer, TrashIcon } from "@lucide/svelte";
+    import { MessageSquareIcon, InfoIcon, PlusIcon, SquareMousePointer, TrashIcon } from "@lucide/svelte";
     import { getCharacterAssetCount } from "src/ts/gui/characterAssetCount";
     import { localOriginOf, resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
-    import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
-    import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
+    import { openItemInfo } from "src/ts/gui/itemInfo";
+    import { isRealmAssetRecoveryAvailable, listTitleColor, shownMissingAssetCount } from "src/ts/gui/titleColors";
     import VirtualList from "../UI/Virtual/VirtualList.svelte";
     import { characterRings } from "src/ts/gui/characterRings.svelte";
 
@@ -40,7 +40,7 @@
                 assetCount: getCharacterAssetCount(c),
                 sourceBadge: source.label,
                 sourceRecorded: source.recorded,
-                missingAssetCount: c.sourceInfo?.missingAssetCount ?? 0,
+                missingAssetCount: shownMissingAssetCount(c.sourceInfo),
                 realmRecoveryAvailable: isRealmAssetRecoveryAvailable(c),
                 titleColor: c.titleColor,
             }
@@ -60,7 +60,7 @@
                     assetCount: stub.assetCount ?? 0,
                     sourceBadge: resolveCharacterSourceBadge(stub.sourceInfo?.label, localOriginOf(stub)).label,
                     sourceRecorded: resolveCharacterSourceBadge(stub.sourceInfo?.label, localOriginOf(stub)).recorded,
-                    missingAssetCount: stub.sourceInfo?.missingAssetCount ?? 0,
+                    missingAssetCount: shownMissingAssetCount(stub.sourceInfo),
                     realmRecoveryAvailable: isRealmAssetRecoveryAvailable(stub),
                     titleColor: stub.titleColor,
                 })
@@ -146,7 +146,7 @@
                 </div>
             </button>
             {#if !char.archived}
-                <button class="rounded-md p-2 text-textcolor2 transition-colors hover:bg-selected hover:text-textcolor" title="제목 색변경" aria-label="제목 색변경" onclick={() => editCharacterTitleColor(char.chaId)}><PaletteIcon size={20}/></button>
+                <button class="rounded-md p-2 text-textcolor2 transition-colors hover:bg-selected hover:text-textcolor" title="정보 (색·표시)" aria-label="정보 (색·표시)" onclick={() => openItemInfo('character', char.chaId)}><InfoIcon size={20}/></button>
             {/if}
             {#if gridMode}
                 <div class="flex shrink-0 items-center gap-1 pr-2">

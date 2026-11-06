@@ -87,7 +87,8 @@
     import { setSidebarCatalogSplit, sidebarCatalog } from "src/ts/gui/sidebarCatalogLayout.svelte";
     import { removeBotWithModules } from "src/ts/gui/botModuleRemoval";
     import { characterMenuInfo } from "src/ts/gui/sidebarMenuInfo";
-    import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
+    import { openItemInfo } from "src/ts/gui/itemInfo";
+    import { shownMissingAssetCount } from "src/ts/gui/titleColors";
     import { isRealmAssetRecoveryAvailable, listTitleColor } from "src/ts/gui/titleColors";
     import { localOriginOf, resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
     import { copyProtonLink, protonLinkOf } from "src/ts/protonSource";
@@ -701,7 +702,7 @@
         changeChar(index, { reseter })
         botMakerMode.set(true)
       })],
-      ['제목 색변경', () => editCharacterTitleColor(character.chaId)],
+      ['정보 (색·표시)', () => openItemInfo('character', character.chaId)],
       [character.favorite ? '즐겨찾기 해제' : DBState.db.nodeOnlyFavoritesFolder !== false ? '즐겨찾기 (★ 폴더로)' : '즐겨찾기 (맨위로)',
         atNow((index) => toggleSidebarCharacterFavorite(index))],
       ...(protonLink ? [[language.protonLinkCopy, () => copyProtonLink(protonLink)] as [string, () => unknown]] : []),
@@ -1195,9 +1196,9 @@
           rounded={IconRounded}
           name={member.name}
           favorite={member.favorite}
-          titleColor={listTitleColor(DBState.db.characters[member.index]?.titleColor, Number(DBState.db.characters[member.index]?.sourceInfo?.missingAssetCount) > 0)}
-          missingAssets={Number(DBState.db.characters[member.index]?.sourceInfo?.missingAssetCount) > 0}
-          missingAssetCount={Number(DBState.db.characters[member.index]?.sourceInfo?.missingAssetCount) || 0}
+          titleColor={listTitleColor(DBState.db.characters[member.index]?.titleColor, shownMissingAssetCount(DBState.db.characters[member.index]?.sourceInfo) > 0)}
+          missingAssets={shownMissingAssetCount(DBState.db.characters[member.index]?.sourceInfo) > 0}
+          missingAssetCount={shownMissingAssetCount(DBState.db.characters[member.index]?.sourceInfo) || 0}
           moduleLink={characterModuleLink(DBState.db.characters[member.index])}
           realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[member.index])}
           chaId={DBState.db.characters[member.index]?.chaId}
@@ -1474,9 +1475,9 @@
                       rounded={IconRounded}
                       name={folderChar.name}
                       favorite={folderChar.favorite}
-                      titleColor={listTitleColor(DBState.db.characters[folderChar.index]?.titleColor, Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) > 0)}
-                      missingAssets={Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) > 0}
-                      missingAssetCount={Number(DBState.db.characters[folderChar.index]?.sourceInfo?.missingAssetCount) || 0}
+                      titleColor={listTitleColor(DBState.db.characters[folderChar.index]?.titleColor, shownMissingAssetCount(DBState.db.characters[folderChar.index]?.sourceInfo) > 0)}
+                      missingAssets={shownMissingAssetCount(DBState.db.characters[folderChar.index]?.sourceInfo) > 0}
+                      missingAssetCount={shownMissingAssetCount(DBState.db.characters[folderChar.index]?.sourceInfo) || 0}
                       moduleLink={characterModuleLink(DBState.db.characters[folderChar.index])}
                       realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[folderChar.index])}
                       chaId={DBState.db.characters[folderChar.index]?.chaId}
@@ -1608,9 +1609,9 @@
               rounded={IconRounded}
               name={normalChar.name}
               favorite={normalChar.favorite}
-              titleColor={listTitleColor(DBState.db.characters[normalChar.index]?.titleColor, Number(DBState.db.characters[normalChar.index]?.sourceInfo?.missingAssetCount) > 0)}
-              missingAssets={Number(DBState.db.characters[normalChar.index]?.sourceInfo?.missingAssetCount) > 0}
-              missingAssetCount={Number(DBState.db.characters[normalChar.index]?.sourceInfo?.missingAssetCount) || 0}
+              titleColor={listTitleColor(DBState.db.characters[normalChar.index]?.titleColor, shownMissingAssetCount(DBState.db.characters[normalChar.index]?.sourceInfo) > 0)}
+              missingAssets={shownMissingAssetCount(DBState.db.characters[normalChar.index]?.sourceInfo) > 0}
+              missingAssetCount={shownMissingAssetCount(DBState.db.characters[normalChar.index]?.sourceInfo) || 0}
               moduleLink={characterModuleLink(DBState.db.characters[normalChar.index])}
               realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[normalChar.index])}
               chaId={DBState.db.characters[normalChar.index]?.chaId}
@@ -1955,9 +1956,9 @@
               rounded={IconRounded} 
               name={char.name}
               favorite={char.favorite}
-              titleColor={listTitleColor(DBState.db.characters[char.index]?.titleColor, Number(DBState.db.characters[char.index]?.sourceInfo?.missingAssetCount) > 0)}
-              missingAssets={Number(DBState.db.characters[char.index]?.sourceInfo?.missingAssetCount) > 0}
-              missingAssetCount={Number(DBState.db.characters[char.index]?.sourceInfo?.missingAssetCount) || 0}
+              titleColor={listTitleColor(DBState.db.characters[char.index]?.titleColor, shownMissingAssetCount(DBState.db.characters[char.index]?.sourceInfo) > 0)}
+              missingAssets={shownMissingAssetCount(DBState.db.characters[char.index]?.sourceInfo) > 0}
+              missingAssetCount={shownMissingAssetCount(DBState.db.characters[char.index]?.sourceInfo) || 0}
               moduleLink={characterModuleLink(DBState.db.characters[char.index])}
               realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[char.index])}
               chaId={DBState.db.characters[char.index]?.chaId}
@@ -2122,9 +2123,9 @@
                     rounded={IconRounded}
                     name={char2.name}
                     favorite={char2.favorite}
-                    titleColor={listTitleColor(DBState.db.characters[char2.index]?.titleColor, Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) > 0)}
-                    missingAssets={Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) > 0}
-                    missingAssetCount={Number(DBState.db.characters[char2.index]?.sourceInfo?.missingAssetCount) || 0}
+                    titleColor={listTitleColor(DBState.db.characters[char2.index]?.titleColor, shownMissingAssetCount(DBState.db.characters[char2.index]?.sourceInfo) > 0)}
+                    missingAssets={shownMissingAssetCount(DBState.db.characters[char2.index]?.sourceInfo) > 0}
+                    missingAssetCount={shownMissingAssetCount(DBState.db.characters[char2.index]?.sourceInfo) || 0}
                     moduleLink={characterModuleLink(DBState.db.characters[char2.index])}
                     realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[char2.index])}
                     chaId={DBState.db.characters[char2.index]?.chaId}
@@ -2386,9 +2387,9 @@
                   rounded={IconRounded}
                   name={rc.name}
                   favorite={rc.favorite}
-                  titleColor={listTitleColor(DBState.db.characters[rc.index]?.titleColor, Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0)}
-                  missingAssets={Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0}
-                  missingAssetCount={Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) || 0}
+                  titleColor={listTitleColor(DBState.db.characters[rc.index]?.titleColor, shownMissingAssetCount(DBState.db.characters[rc.index]?.sourceInfo) > 0)}
+                  missingAssets={shownMissingAssetCount(DBState.db.characters[rc.index]?.sourceInfo) > 0}
+                  missingAssetCount={shownMissingAssetCount(DBState.db.characters[rc.index]?.sourceInfo) || 0}
                   moduleLink={characterModuleLink(DBState.db.characters[rc.index])}
                   realmRecoveryAvailable={isRealmAssetRecoveryAvailable(DBState.db.characters[rc.index])}
                   chaId={DBState.db.characters[rc.index]?.chaId}
@@ -2397,7 +2398,7 @@
                 />
               </div>
               <div class="flex-1 min-w-0">
-                <div class="text-sm font-semibold text-textcolor leading-tight truncate" style:color={listTitleColor(DBState.db.characters[rc.index]?.titleColor, Number(DBState.db.characters[rc.index]?.sourceInfo?.missingAssetCount) > 0)}>{#if hasNewMark(DBState.db.characters[rc.index])}<NewMark class="mr-1" />{/if}{rc.name || "Unnamed"}</div>
+                <div class="text-sm font-semibold text-textcolor leading-tight truncate" style:color={listTitleColor(DBState.db.characters[rc.index]?.titleColor, shownMissingAssetCount(DBState.db.characters[rc.index]?.sourceInfo) > 0)}>{#if hasNewMark(DBState.db.characters[rc.index])}<NewMark class="mr-1" />{/if}{rc.name || "Unnamed"}</div>
                 <div class="text-xs text-textcolor2 leading-tight truncate">{makeAgoText(rc.lastInteraction)}</div>
               </div>
             </button>

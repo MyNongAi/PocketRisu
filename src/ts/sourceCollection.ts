@@ -25,6 +25,8 @@ export interface SourceImportInfo {
     missingAssetCount?: number
     /** Total asset references checked when missingAssetCount was produced. */
     assetReferenceCount?: number
+    /** PocketRisu: the missing count at which the user turned the list's missing mark off (ItemInfoDialog). */
+    nodeOnlyMissingMarkHidden?: number
     /** Last conclusive Realm lookup for missing-asset recovery. */
     realmAssetRecoveryAvailable?: boolean
     /** Realm source selected by the conclusive lookup, when available. */

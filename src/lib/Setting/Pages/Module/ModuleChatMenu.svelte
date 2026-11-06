@@ -20,7 +20,7 @@
     import { openSettings, SettingsRoute } from "src/ts/routing";
     import { onDestroy, onMount, untrack } from "svelte";
     import { getLatestModuleCatalogPromotion, interleaveModuleCatalogGroups, recordModuleActivation, recordModuleFolderActivation, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation, unpinModuleFavoritesOnce } from "src/ts/process/moduleSort";
-    import { listTitleColor } from "src/ts/gui/titleColors";
+    import { listTitleColor, shownMissingAssetCount } from "src/ts/gui/titleColors";
     import { restoreIllustrationPresets } from "src/ts/process/illustrationRun";
     import PairedModuleMark from "src/lib/UI/GUI/PairedModuleMark.svelte";
     import { dropMissingBotModules, forgetModulePair, moduleLinks, recordModulePair } from "src/ts/gui/pairedModules";
@@ -118,7 +118,7 @@
     }
 
     function hasMissingAssets(index: number) {
-        return Number(sortedModules[index]?.sourceInfo?.missingAssetCount) > 0
+        return shownMissingAssetCount(sortedModules[index]?.sourceInfo) > 0
     }
 
     function rememberActivation(moduleId: string) {

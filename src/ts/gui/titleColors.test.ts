@@ -1,9 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { chooseTitleColor, isRealmAssetRecoveryAvailable, isRedListTitle, listTitleColor, normalizeTitleColor, TITLE_COLOR_OPTIONS } from './titleColors'
-
-const prompts = vi.hoisted(() => ({ select: vi.fn(), input: vi.fn() }))
-vi.mock('../alert', () => ({ alertSelect: prompts.select, alertInput: prompts.input }))
-beforeEach(() => { vi.resetAllMocks() })
+import { describe, expect, it } from 'vitest'
+import { isRealmAssetRecoveryAvailable, isRedListTitle, listTitleColor, normalizeTitleColor, shownMissingAssetCount, TITLE_COLOR_OPTIONS } from './titleColors'
+import { setMissingMarkHidden, withoutMissingModules } from './itemInfo'
 
 describe('title colors', () => {
     it('accepts only a complete hex color and normalizes it', () => {
@@ -38,21 +35,26 @@ describe('title colors', () => {
         expect(isRealmAssetRecoveryAvailable({ sourceInfo: { realmAssetRecoveryAvailable: false } })).toBe(false)
         expect(isRealmAssetRecoveryAvailable({ realmId: '   ' })).toBe(false)
     })
-    it('does not confuse cancelled/null responses with the default selection', async () => {
-        for (const value of ['', 'null', 'cancel', '-1', '2abc', null, undefined]) {
-            prompts.select.mockResolvedValueOnce(value)
-            expect(await chooseTitleColor('#4ade80')).toBeNull()
-        }
+    it('offers white among the swatches', () => {
+        expect(TITLE_COLOR_OPTIONS.some((option) => option.value === '#ffffff')).toBe(true)
     })
-    it('returns a reset only when the default is explicitly selected', async () => {
-        prompts.select.mockResolvedValueOnce('0')
-        expect(await chooseTitleColor('#4ade80')).toBe('')
+    it('hides the missing mark at the count it was turned off at, and shows it again when more go missing', () => {
+        expect(shownMissingAssetCount({ missingAssetCount: 3 })).toBe(3)
+        expect(shownMissingAssetCount(undefined)).toBe(0)
+        const owner = { sourceInfo: { missingAssetCount: 3 } as { missingAssetCount: number, nodeOnlyMissingMarkHidden?: number } }
+        setMissingMarkHidden(owner, true)
+        expect(owner.sourceInfo.nodeOnlyMissingMarkHidden).toBe(3)
+        expect(shownMissingAssetCount(owner.sourceInfo)).toBe(0)
+        owner.sourceInfo.missingAssetCount = 2
+        expect(shownMissingAssetCount(owner.sourceInfo)).toBe(0)
+        owner.sourceInfo.missingAssetCount = 5
+        expect(shownMissingAssetCount(owner.sourceInfo)).toBe(5)
+        setMissingMarkHidden(owner, false)
+        expect(owner.sourceInfo.nodeOnlyMissingMarkHidden).toBeUndefined()
+        setMissingMarkHidden({}, true) // no source info: nothing to hide
     })
-    it('validates custom input instead of saving arbitrary CSS', async () => {
-        prompts.select.mockResolvedValue(String(TITLE_COLOR_OPTIONS.length))
-        prompts.input.mockResolvedValueOnce('#ABC123')
-        expect(await chooseTitleColor()).toBe('#abc123')
-        prompts.input.mockResolvedValueOnce('red;display:none')
-        expect(await chooseTitleColor()).toBeNull()
+    it('clears only the modules that no longer exist from a bot', () => {
+        expect(withoutMissingModules(['a', 'gone', 'b'], new Set(['a', 'b']))).toEqual(['a', 'b'])
+        expect(withoutMissingModules(undefined, new Set(['a']))).toEqual([])
     })
 })

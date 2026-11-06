@@ -8,6 +8,7 @@
     import LaptopRestartOverlay from './lib/Others/LaptopRestartOverlay.svelte';
     import RealmPopUp from './lib/UI/Realm/RealmPopUp.svelte';
     import FolderSettingsDialog from './lib/CharacterManager/FolderSettingsDialog.svelte';
+    import ItemInfoDialog from './lib/Others/ItemInfoDialog.svelte';
     import RisuAccountImportScreen from './lib/Setting/RisuAccountImportScreen.svelte';
     import { showRealmInfoStore } from './ts/characterCards';
     import SavePopupIconComp from './lib/Others/SavePopupIcon.svelte';
@@ -346,6 +347,7 @@
         <RealmPopUp bind:openedData={$showRealmInfoStore} />
     {/if}
     <FolderSettingsDialog />
+    <ItemInfoDialog />
     {#if $openPresetList}
         <LazyComponent overlay loader={botPresetLoader} props={{ close: () => {$openPresetList = false} }} />
     {/if}

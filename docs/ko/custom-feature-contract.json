@@ -1263,6 +1263,35 @@
       "regressionTests": []
     },
     {
+      "id": "ITEM-INFO",
+      "title": "봇·모듈 정보창 (제목 색 칸·흰색, 누락 표시 끄기, 끊긴 연결 지우기)",
+      "criticality": "core-ux",
+      "notes": "2026-11-07 사용자 요청. 봇 우클릭·그리드·모바일 목록의 제목 색변경, 모듈 ⋮의 색변경, 모듈 폴더 색변경이 한 정보창을 엽니다. 누락 표시는 sourceInfo.nodeOnlyMissingMarkHidden(끈 때의 누락 개수)로 숨기고 더 늘면 다시 보입니다.",
+      "ownerFiles": [
+        "src/ts/gui/itemInfo.ts",
+        "src/lib/Others/ItemInfoDialog.svelte",
+        "src/ts/gui/titleColors.ts",
+        "src/App.svelte",
+        "src/lib/SideBars/Sidebar.svelte",
+        "src/lib/Others/GridCatalog.svelte",
+        "src/lib/Mobile/MobileCharacters.svelte",
+        "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
+        "src/ts/characterManager.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/gui/titleColors.ts", "contains": "export function shownMissingAssetCount(" },
+        { "file": "src/ts/gui/titleColors.ts", "contains": "{ label: '흰색', value: '#ffffff' }," },
+        { "file": "src/ts/gui/itemInfo.ts", "contains": "export const itemInfoTarget = writable<ItemInfoTarget | null>(null)" },
+        { "file": "src/App.svelte", "contains": "<ItemInfoDialog />" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "['정보 (색·표시)', () => openItemInfo('character', character.chaId)]," },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "onSelect={() => openItemInfo('module', rmodule.id)}" },
+        { "file": "src/ts/characterManager.ts", "contains": "missingAssetCount: shownMissingAssetCount(c.sourceInfo)," }
+      ],
+      "regressionTests": [
+        "src/ts/gui/titleColors.test.ts"
+      ]
+    },
+    {
       "id": "MODULE-PAIR-CHAIN",
       "title": "봇·전용 모듈 체인 (연결 초록, 끊김 빨강)",
       "criticality": "core-ux",

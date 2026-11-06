@@ -7,7 +7,7 @@
     import { DBState } from 'src/ts/stores.svelte';
     import { findCharacterIndexbyId } from "../../ts/util";
     import BarIcon from "../SideBars/BarIcon.svelte";
-    import { ArrowLeft, MessageSquareIcon, PaletteIcon, User, SquareMousePointer, TrashIcon, Undo2Icon } from "@lucide/svelte";
+    import { ArrowLeft, MessageSquareIcon, InfoIcon, User, SquareMousePointer, TrashIcon, Undo2Icon } from "@lucide/svelte";
     import { selectedCharID } from "../../ts/stores.svelte";
     import TextInput from "../UI/GUI/TextInput.svelte";
     import Button from "../UI/GUI/Button.svelte";
@@ -23,8 +23,8 @@
     import MobileCharacters from "../Mobile/MobileCharacters.svelte";
     import { getCharacterAssetCount } from "src/ts/gui/characterAssetCount";
     import { localOriginOf, resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
-    import { editCharacterTitleColor } from "src/ts/gui/characterTitleColor";
-    import { isRealmAssetRecoveryAvailable, isRedListTitle, listTitleColor } from "src/ts/gui/titleColors";
+    import { openItemInfo } from "src/ts/gui/itemInfo";
+    import { isRealmAssetRecoveryAvailable, isRedListTitle, listTitleColor, shownMissingAssetCount } from "src/ts/gui/titleColors";
     import VirtualGrid from "../UI/Virtual/VirtualGrid.svelte";
     import VirtualList from "../UI/Virtual/VirtualList.svelte";
     import { buildCharacterNameSimilarityCounts, buildExactCharacterDuplicateCounts, buildTrashNameSimilarityCounts, countCatalogCharacters, TRASH_SIMILARITY_TITLE } from "src/ts/gui/characterCatalogMetrics";
@@ -97,7 +97,7 @@
             }, 'destructive')
         }
         else{
-            add('제목 색변경', () => editCharacterTitleColor(char.chaId))
+            add('정보 (색·표시)', () => openItemInfo('character', char.chaId))
             add(language.deactivateCharacter, async () => { await archiveCharacter(char.index) })
             add(language.exportCharacter, async () => { await exportChar(char.index) })
             if(botHasModules(char.chaId)) add(language.pairFindModule, () => { endGrid(); void findModulesOfBot(char.chaId) })
@@ -169,7 +169,7 @@
                 sourceBadge: source.label, sourceRecorded: source.recorded,
                 chats: c.chats.length, interaction: c.lastInteraction ?? 0,
                 agoText: makeAgoText(c.lastInteraction ?? 0),
-                missingAssetCount: c.sourceInfo?.missingAssetCount ?? 0,
+                missingAssetCount: shownMissingAssetCount(c.sourceInfo),
                 realmRecoveryAvailable: isRealmAssetRecoveryAvailable(c),
                 titleColor: c.titleColor,
                 hidden: (db.nodeOnlyHiddenCharacterIds ?? []).includes(c.chaId),
@@ -189,7 +189,7 @@
                     sourceBadge: source.label, sourceRecorded: source.recorded,
                     chats: stub.chatCount ?? 0, interaction: stub.lastInteraction ?? 0,
                     agoText: makeAgoText(stub.lastInteraction ?? 0),
-                    missingAssetCount: stub.sourceInfo?.missingAssetCount ?? 0,
+                    missingAssetCount: shownMissingAssetCount(stub.sourceInfo),
                     realmRecoveryAvailable: isRealmAssetRecoveryAvailable(stub),
                     titleColor: stub.titleColor,
                     hidden: (db.nodeOnlyHiddenCharacterIds ?? []).includes(stub.chaId),
@@ -321,7 +321,7 @@
                                     {#if char.archived}<span class="shrink-0 rounded border border-darkborderc px-1 text-xs font-normal text-textcolor2">{language.deactivatedBadge}</span>{/if}
                                 </h4>
                                 <div class="flex shrink-0 gap-2">
-                                    {#if !char.archived}<button class="text-textcolor2 hover:text-textcolor" title="제목 색변경" aria-label="제목 색변경" onclick={() => editCharacterTitleColor(char.chaId)}><PaletteIcon/></button>{/if}
+                                    {#if !char.archived}<button class="text-textcolor2 hover:text-textcolor" title="정보 (색·표시)" aria-label="정보 (색·표시)" onclick={() => openItemInfo('character', char.chaId)}><InfoIcon/></button>{/if}
                                     <button class="text-textcolor2 hover:text-textcolor" title={language.selectChar} aria-label={language.selectChar} onclick={() => void openChar(char)}><SquareMousePointer/></button>
                                     {#if !char.archived}<button class="text-textcolor2 hover:text-textcolor" title={language.trash} aria-label={language.trash} onclick={() => removeChar(char.chaId, char.name)}><TrashIcon/></button>{/if}
                                 </div>

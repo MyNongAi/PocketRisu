@@ -6,7 +6,7 @@
 import type { Database, folder } from './storage/database.svelte'
 import { matchesCatalogText } from './gui/catalogSearch'
 import { getCharacterAssetCount } from './gui/characterAssetCount'
-import { isRealmAssetRecoveryAvailable } from './gui/titleColors'
+import { isRealmAssetRecoveryAvailable, shownMissingAssetCount } from './gui/titleColors'
 import { localOriginOf, resolveCharacterSourceBadge, type CharacterSourceBadge } from './gui/characterSourceBadge'
 import { isDeactivatedSystemFolder } from './deactivatedCharacterFolders'
 import { isFolderEntry, type OrderEntry } from './characterOrder'
@@ -53,7 +53,7 @@ export function buildManagerEntries(db: Database): Map<string, ManagerEntry> {
             assetCount: getCharacterAssetCount(c),
             sourceBadge: source.label,
             sourceRecorded: source.recorded,
-            missingAssetCount: Math.max(0, Number(c.sourceInfo?.missingAssetCount) || 0),
+            missingAssetCount: shownMissingAssetCount(c.sourceInfo),
             realmRecoveryAvailable: isRealmAssetRecoveryAvailable(c),
             titleColor: c.titleColor,
             lastInteraction: c.lastInteraction ?? 0,
@@ -76,7 +76,7 @@ export function buildManagerEntries(db: Database): Map<string, ManagerEntry> {
             assetCount: Math.max(0, Number(stub.assetCount) || 0),
             sourceBadge: source.label,
             sourceRecorded: source.recorded,
-            missingAssetCount: Math.max(0, Number(stub.sourceInfo?.missingAssetCount) || 0),
+            missingAssetCount: shownMissingAssetCount(stub.sourceInfo),
             realmRecoveryAvailable: isRealmAssetRecoveryAvailable(stub),
             titleColor: stub.titleColor,
             lastInteraction: stub.lastInteraction ?? 0,

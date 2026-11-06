@@ -5,6 +5,18 @@ export function normalizeTitleColor(value: unknown): string | undefined {
     return /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : undefined
 }
 
+/**
+ * The missing-asset count a list shows (❗, the red title, the corner count).
+ * 0 while the user turned the mark off at that count or more in the info
+ * dialog (ItemInfoDialog, the user's request 2026-11-07); more missing brings
+ * it back. Tools that manage assets read sourceInfo.missingAssetCount itself.
+ */
+export function shownMissingAssetCount(sourceInfo: { missingAssetCount?: unknown, nodeOnlyMissingMarkHidden?: unknown } | null | undefined): number {
+    const missing = Math.max(0, Number(sourceInfo?.missingAssetCount) || 0)
+    const hiddenAt = Number(sourceInfo?.nodeOnlyMissingMarkHidden)
+    return Number.isFinite(hiddenAt) && hiddenAt > 0 && missing <= hiddenAt ? 0 : missing
+}
+
 export function listTitleColor(value: unknown, missing = false): string | undefined {
     // Missing assets remain visually urgent; the adjacent badge separately
     // communicates whether a conclusive Realm recovery source is known.
@@ -35,6 +47,8 @@ export function isRealmAssetRecoveryAvailable(value: unknown): boolean {
 
 export const TITLE_COLOR_OPTIONS = [
     { label: '기본 색상', value: '' },
+    // The user's request, 2026-11-07: "흰색은 없는건가".
+    { label: '흰색', value: '#ffffff' },
     { label: '빨강', value: '#f87171' },
     { label: '주황', value: '#fb923c' },
     { label: '노랑', value: '#facc15' },
@@ -44,18 +58,3 @@ export const TITLE_COLOR_OPTIONS = [
     { label: '보라', value: '#c084fc' },
     { label: '분홍', value: '#f472b6' },
 ] as const
-
-/** null = cancel; empty string = reset to the theme's default. */
-export async function chooseTitleColor(current?: string): Promise<string | null> {
-    const { alertInput, alertSelect } = await import('../alert')
-    const selection = await alertSelect(
-        [...TITLE_COLOR_OPTIONS.map(option => option.label), '직접 입력 (#RRGGBB)', '취소'],
-        `제목 색상 · 현재 ${normalizeTitleColor(current) || '기본 색상'}`,
-    )
-    if (!/^\d+$/.test(selection)) return null
-    const index = Number(selection)
-    if (index < TITLE_COLOR_OPTIONS.length) return TITLE_COLOR_OPTIONS[index].value
-    if (index !== TITLE_COLOR_OPTIONS.length) return null
-    const value = await alertInput('제목 색상 (#RRGGBB)', [], normalizeTitleColor(current) || '#38bdf8')
-    return normalizeTitleColor(value) ?? null
-}

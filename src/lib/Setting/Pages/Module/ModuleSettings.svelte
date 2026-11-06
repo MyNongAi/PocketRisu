@@ -12,7 +12,7 @@
     import { addModuleToDatabase, exportModule, exportModuleLegacy, hydrateModuleAssets, refreshModules, rerenderChatForModules, syncFavoriteModules, syncLinkedFolders, type RisuModule } from "src/ts/process/modules";
     import { importModuleFiles, importModuleFromProtonDrive } from "src/ts/process/moduleImport";
     import { favoriteAfterMove, isModuleFavoritesFolder } from "src/ts/process/moduleFavoritesFolder";
-    import { Clock3Icon, SquarePen, Globe, Share2Icon, PlusIcon, HardDriveUpload, ListOrderedIcon, PaletteIcon, StarIcon, Waypoints, CloudDownloadIcon, LinkIcon, Link2Icon, UnlinkIcon, UserSearchIcon } from "@lucide/svelte";
+    import { Clock3Icon, SquarePen, Globe, Share2Icon, PlusIcon, HardDriveUpload, ListOrderedIcon, StarIcon, Waypoints, CloudDownloadIcon, LinkIcon, Link2Icon, UnlinkIcon, UserSearchIcon, InfoIcon } from "@lucide/svelte";
     import { v4 } from "uuid";
     import { tooltip } from "src/ts/gui/tooltip";
     import { alertConfirm, alertError, alertSelect, notifySuccess } from "src/ts/alert";
@@ -24,7 +24,8 @@
     import { checkCharOrder } from "src/ts/globalApi.svelte";
     import { dissolveShrunkenModuleFolders, synchronizeModuleFolderMembership } from "src/ts/process/moduleFolders";
     import { activationHistoryAfterPlacement, activationHistoryFromDisplay, getLatestModuleCatalogPromotion, liftModulesToNewest, unpinModuleFavoritesOnce, recordModuleActivation, recordModuleFolderActivation, recordModuleFolderOrder, seedModuleActivationHistory, sortModuleFoldersByActivation, sortModulesByActivation } from "src/ts/process/moduleSort";
-    import { chooseTitleColor, listTitleColor } from "src/ts/gui/titleColors";
+    import { listTitleColor, shownMissingAssetCount } from "src/ts/gui/titleColors";
+    import { openItemInfo } from "src/ts/gui/itemInfo";
     import { localOriginOf, resolveCharacterSourceBadge } from "src/ts/gui/characterSourceBadge";
     import { copyProtonLink, protonLinkOf } from "src/ts/protonSource";
     import { cloneModuleDraft } from "src/ts/process/moduleDraft";
@@ -172,7 +173,7 @@
     }
 
     function hasMissingAssets(rmodule: RisuModule) {
-        return Number(rmodule.sourceInfo?.missingAssetCount) > 0
+        return shownMissingAssetCount(rmodule.sourceInfo) > 0
     }
 
     function moduleAssetCount(rmodule: RisuModule) {
@@ -426,17 +427,9 @@
         syncFavoriteModules()
     }
 
-    async function changeModuleColor(rmodule: RisuModule) {
-        const color = await chooseTitleColor(rmodule.titleColor)
-        if (color === null) return
-        const current = DBState.db.modules.find((module) => module.id === rmodule.id)
-        if (current) current.titleColor = color || undefined
-    }
-
-    async function changeFolderColor(folder: PromptPresetFolder) {
-        const color = await chooseTitleColor(folder.titleColor)
-        if (color === null) return
-        applyFolders(displayFolders.map((item) => item.id === folder.id ? { ...item, titleColor: color || undefined } : item))
+    // Color, the missing mark and a broken pairing in one dialog (ItemInfoDialog).
+    function changeFolderColor(folder: PromptPresetFolder) {
+        openItemInfo('moduleFolder', folder.id)
     }
 
     function toggleFolderFavorite(folder: PromptPresetFolder) {
@@ -642,7 +635,7 @@
                 <!-- The Proton link it was downloaded from, to fetch it again if it breaks. -->
                 <ShDropdownMenuItem onSelect={() => copyProtonLink(protonLinkOf(rmodule))}><LinkIcon /><span>{language.protonLinkCopy}</span></ShDropdownMenuItem>
             {/if}
-            <ShDropdownMenuItem onSelect={() => changeModuleColor(rmodule)}><PaletteIcon /><span>색변경</span></ShDropdownMenuItem>
+            <ShDropdownMenuItem onSelect={() => openItemInfo('module', rmodule.id)}><InfoIcon /><span>정보 (색·표시)</span></ShDropdownMenuItem>
             <ShDropdownMenuItem onSelect={() => { rmodule.favorite = !rmodule.favorite; if (rmodule.favorite) rememberActivation(rmodule.id); syncLinkedFolders() }}><StarIcon /><span>{rmodule.favorite ? '즐겨찾기 해제' : '즐겨찾기 (★ 폴더로)'}</span></ShDropdownMenuItem>
         {/snippet}
     </FolderedList>
