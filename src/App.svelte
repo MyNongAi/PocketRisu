@@ -21,6 +21,7 @@
     import SupportDialog from './lib/Others/SupportDialog.svelte';
     import InputWordRankDialog from './lib/Others/InputWordRankDialog.svelte';
     import ProtonImportDialog from './lib/Others/ProtonImportDialog.svelte';
+    import ProtonLinkDialog from './lib/Others/ProtonLinkDialog.svelte';
     import BootBackupPrompt from './lib/Others/BootBackupPrompt.svelte';
     import StaleBuildNotice from './lib/Others/StaleBuildNotice.svelte';
     import PopupList from './lib/UI/PopupList.svelte';
@@ -379,6 +380,7 @@
     <SupportDialog />
     <InputWordRankDialog />
     <ProtonImportDialog />
+    <ProtonLinkDialog />
     <BootBackupPrompt />
     <StaleBuildNotice />
     {#if popupStore.children}

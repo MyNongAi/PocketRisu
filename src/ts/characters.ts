@@ -2,7 +2,8 @@ import { get, writable } from "svelte/store";
 import { saveImage, setDatabase, type character, type Chat, defaultSdDataFunc, type loreBook, getDatabase, getCharacterByIndex, setCharacterByIndex, getCurrentChat, loadTogglesFromChat, normalizeChat, newChatModelDefaults } from "./storage/database.svelte";
 import { ensureChatHydrated } from "./storage/chatStorage";
 import { markSeen } from "./newMarks.svelte";
-import { alertAddCharacter, alertConfirm, alertError, alertInput, alertSelect, alertStore, alertWait, notifySuccess, notifyInfo } from "./alert";
+import { alertAddCharacter, alertConfirm, alertError, alertSelect, alertStore, alertWait, notifySuccess, notifyInfo } from "./alert";
+import { askProtonLink } from "./protonLinkPrompt.svelte";
 import { archiveCharacter } from "./characterArchive";
 import { chatHydrationOverlayStore, chatDeselected } from "./stores.svelte";
 import { language } from "../lang";
@@ -988,7 +989,7 @@ export async function importCharacterLink(url: string): Promise<boolean> {
 }
 
 async function importFromProtonDrive() {
-    const url = (await alertInput(language.protonDriveUrlPrompt))?.trim()
+    const url = await askProtonLink('character')
     // Cancel or an empty box imports nothing; local files have their own button.
     if (!url) return
     if (await importCharacterLink(url)) return

@@ -2270,6 +2270,30 @@
       ]
     },
     {
+      "id": "PROTON-LINK-POPUP",
+      "title": "프로톤 봇·모듈 링크 입력 팝업",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/protonLinkPrompt.svelte.ts",
+        "src/lib/Others/ProtonLinkDialog.svelte",
+        "src/App.svelte",
+        "src/ts/characters.ts",
+        "src/ts/process/modules.ts",
+        "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
+        "src/lang/en.ts",
+        "src/lang/ko.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/protonLinkPrompt.svelte.ts", "contains": "export function askProtonLink(destination: ProtonLinkDestination): Promise<string | null>" },
+        { "file": "src/lib/Others/ProtonLinkDialog.svelte", "contains": "className=\"flex-1 min-w-0\"" },
+        { "file": "src/ts/characters.ts", "contains": "const url = await askProtonLink('character')" },
+        { "file": "src/ts/process/modules.ts", "contains": "const url = await askProtonLink('module')" }
+      ],
+      "regressionTests": [
+        "src/ts/protonLinkPrompt.test.ts"
+      ]
+    },
+    {
       "id": "PROTON-FOLDER-BROWSER",
       "title": "프로톤 폴더 링크 둘러보고 골라 가져오기",
       "criticality": "core-ux",

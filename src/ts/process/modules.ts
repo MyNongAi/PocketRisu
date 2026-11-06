@@ -1,5 +1,6 @@
 import { language } from "src/lang"
-import { alertClear, alertConfirm, alertError, alertInput, alertModuleSelect, alertNormal, alertStore, alertWait, notifySuccess } from "../alert"
+import { alertClear, alertConfirm, alertError, alertModuleSelect, alertNormal, alertStore, alertWait, notifySuccess } from "../alert"
+import { askProtonLink } from "../protonLinkPrompt.svelte"
 import { getCurrentCharacter, getCurrentChat, getDatabase, setCurrentCharacter, setDatabase, type Chat, type character, type customscript, type loreBook, type RisuPersona, type triggerscript } from "../storage/database.svelte"
 import { AppendableBuffer, checkCharOrder, downloadFile, forageStorage, loadAssetManifestItems, LocalWriter, readImage, saveAsset, VirtualWriter } from "../globalApi.svelte"
 import { checkPersonaBinded, selectMultipleFile, sleep } from "../util"
@@ -662,7 +663,7 @@ export async function importModuleLink(url: string): Promise<boolean> {
 }
 
 export async function importModuleFromProtonDrive() {
-    const url = (await alertInput(language.protonDriveUrlPrompt))?.trim()
+    const url = await askProtonLink('module')
     // Cancel or an empty box imports nothing; local files have their own button.
     if (!url) return
     if (await importModuleLink(url)) return

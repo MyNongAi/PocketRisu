@@ -494,7 +494,6 @@
     <SettingPage title={language.modules}>
         {#snippet titleActions()}
             <ShButton size="sm" variant="outline" onclick={() => importMCPModule()} title="MCP"><Waypoints />MCP</ShButton>
-            <ShButton size="sm" variant="outline" onclick={() => importModuleFromProtonDrive()}><CloudDownloadIcon />{language.importFromProton}</ShButton>
         {/snippet}
 
     <FileDropIndicator active={moduleFileDrop.active} icon={HardDriveUpload} label={`${language.importModule} · CHARX / RISUM / ${language.linkDropLabel}`} />
@@ -537,6 +536,7 @@
                 mode = 1
             }}><PlusIcon />{language.createModule}</ShButton>
             <ShButton size="sm" variant="outline" onclick={() => importModule()}><HardDriveUpload />{language.importModule}</ShButton>
+            <ShButton size="sm" variant="outline" onclick={() => importModuleFromProtonDrive()} title={language.importFromProtonAsModule} aria-label={language.importFromProtonAsModule}><CloudDownloadIcon /></ShButton>
             </div>
         {/snippet}
         {#snippet subActions()}
