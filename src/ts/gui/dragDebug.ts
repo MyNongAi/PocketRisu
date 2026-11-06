@@ -2,7 +2,9 @@
 // phone a module cannot leave its folder, nor enter one, while a mouse can; the
 // phone runs Sortable's touch fallback, which finds the list under the finger
 // with elementFromPoint, and the PC its native drag). Off unless this device has
-// localStorage `risu-debug-drag` = `1`; then a small box shows, while a row is
+// localStorage `risu-debug-drag` = `1` (opening the app once with
+// `?risu-debug-drag=1` in the address sets it, `=0` clears it: a phone's app
+// window has no console); then a small box shows, while a row is
 // dragged and after it is let go: the list it came from, what is under the
 // finger and which list that is, the lists Sortable offered the move to and
 // whether they took it, the last onMove answer, where the row sits now, the
@@ -214,8 +216,24 @@ export function withDragDebug<T extends { onMove?: (...args: never[]) => unknown
     } as T
 }
 
+/** `?risu-debug-drag=1` (or `0`) in the address turns the flag on (off) on this device, then leaves the address. */
+export function takeDragDebugSwitch(): void {
+    try {
+        const url = new URL(location.href)
+        const value = url.searchParams.get(DRAG_DEBUG_KEY)
+        if (value === null) return
+        if (value === '1') localStorage.setItem(DRAG_DEBUG_KEY, '1')
+        else localStorage.removeItem(DRAG_DEBUG_KEY)
+        url.searchParams.delete(DRAG_DEBUG_KEY)
+        history.replaceState(history.state, '', url.toString())
+    } catch {
+        // storage or history off
+    }
+}
+
 /** Before the app mounts (plugins reach only the lists made after), and only with the flag. */
 export function initDragDebug(): void {
+    takeDragDebugSwitch()
     if (installed || !dragDebugOn()) return
     installed = true
     Sortable.mount(Object.assign(DragDebug, { pluginName: 'dragDebug', initializeByDefault: true }) as never)

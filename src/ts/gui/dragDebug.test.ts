@@ -35,6 +35,19 @@ describe('drag diagnostics', () => {
         expect(document.querySelector('[data-drag-debug]')).toBeNull()
     })
 
+    it('turns on and off from the address, and takes the switch out of it', async () => {
+        const debug = await load()
+        history.replaceState(null, '', '/?a=1&risu-debug-drag=1#x')
+        debug.takeDragDebugSwitch()
+        expect(debug.dragDebugOn()).toBe(true)
+        expect(location.search).toBe('?a=1')
+        expect(location.hash).toBe('#x')
+        history.replaceState(null, '', '/?risu-debug-drag=0')
+        debug.takeDragDebugSwitch()
+        expect(debug.dragDebugOn()).toBe(false)
+        expect(location.search).toBe('')
+    })
+
     it('with the flag, names the list, keeps onMove answers and shows the drag', async () => {
         localStorage.setItem('risu-debug-drag', '1')
         const debug = await load()
