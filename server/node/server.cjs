@@ -56,7 +56,7 @@ const {
     logger, installProcessHandlers, expressErrorMiddleware,
 } = require('./logs.cjs');
 const { createRequestLogs } = require('./request-logs.cjs');
-const { REALM_RELAY_HEADER, realmRelayTarget } = require('./realmRelay.cjs');
+const { forwardRealmSearch } = require('./realmRelay.cjs');
 const { cacheFileName, createThumbnailCache } = require('./thumbnail-cache.cjs');
 const { validateInspectionBatch, inspectAssetReferences } = require('./plugin-asset-inspection.cjs');
 const {
@@ -4897,17 +4897,8 @@ async function hubProxyFunc(req, res) {
     try {
         const hubOrigin = new URL(hubURL).origin;
         const pathAndQuery = req.originalUrl.replace(/^\/hub-proxy/, '');
-        // A Realm search can go out through the reader's relay (realmRelay.cjs).
-        // The relay is the one target off the hub and the request names it,
-        // while /hub-proxy takes no auth, so only a logged-in page (its
-        // session cookie, sent with the app's own fetch) may use it.
-        const relayURL = realmRelayTarget(req.headers[REALM_RELAY_HEADER], pathAndQuery);
-        if (relayURL && !hasLiveSession(req)) {
-            res.status(401).send({ error: 'The Realm relay needs a logged-in session' });
-            return;
-        }
-        const externalURL = new URL(relayURL ?? (hubURL + pathAndQuery));
-        if (!relayURL && externalURL.origin !== hubOrigin) {
+        const externalURL = new URL(hubURL + pathAndQuery);
+        if (externalURL.origin !== hubOrigin) {
             res.status(400).send({ error: 'Invalid hub path' });
             return;
         }
@@ -4917,7 +4908,6 @@ async function hubProxyFunc(req, res) {
         delete headersToSend.connection;
         delete headersToSend['content-length'];
         delete headersToSend['x-risu-node-path'];
-        delete headersToSend[REALM_RELAY_HEADER];
         delete headersToSend['risu-auth'];
         delete headersToSend.cookie;
 
@@ -5533,6 +5523,11 @@ async function describeAssetThumbnail(reference) {
         loadSource: async () => fallback.binary,
     };
 }
+
+// PocketRisu: only authenticated Realm searches may use the reader's relay.
+app.get('/api/realm-relay/*', sessionAuthMiddleware, (req, res) => {
+    return forwardRealmSearch(req, res, { hubOrigin: new URL(hubURL).origin, logger });
+});
 
 let activePluginAssetInspections = 0;
 app.post('/api/assets/inspect', async (req, res, next) => {

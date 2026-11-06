@@ -1906,10 +1906,12 @@ export async function getRisuHub(arg:{
         // NSFW on, the server sends this search through the reader's relay
         // (server/node/realmRelay.cjs). Thumbnails and downloads stay direct.
         const relay = getDatabase().nodeOnlyRealmRelay?.trim()
-        if(arg.nsfw && relay){
+        const useRelay = arg.nsfw && Boolean(relay)
+        if(useRelay){
             headers['x-risu-realm-relay'] = relay
         }
-        const da = await fetch(hubURL + '/realm/' + encodeURIComponent(stringArg) + "?cache=30", {
+        const searchURL = useRelay ? '/api/realm-relay' : hubURL
+        const da = await fetch(searchURL + '/realm/' + encodeURIComponent(stringArg) + "?cache=30", {
             headers
         })
         if(da.status !== 200){

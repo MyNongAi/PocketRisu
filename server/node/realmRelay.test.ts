@@ -20,6 +20,14 @@ describe('realmRelayTarget', () => {
         expect(realmRelayTarget('http://realm-relay:8787', '/realmish')).toBeNull()
     })
 
+    it('rejects paths that normalize outside the Realm search endpoint', () => {
+        for (const relay of ['http://realm-relay:8787', 'https://relay.example/base']) {
+            expect(realmRelayTarget(relay, '/realm/../resource/secret')).toBeNull()
+            expect(realmRelayTarget(relay, '/realm/%2e%2e/resource/secret')).toBeNull()
+            expect(realmRelayTarget(relay, '/realm/..\\resource/secret')).toBeNull()
+        }
+    })
+
     it('ignores a missing or malformed relay', () => {
         expect(realmRelayTarget(undefined, search)).toBeNull()
         expect(realmRelayTarget('', search)).toBeNull()
