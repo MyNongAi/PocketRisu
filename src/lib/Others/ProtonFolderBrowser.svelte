@@ -6,12 +6,15 @@
     import { SvelteMap } from 'svelte/reactivity'
     import {
         ChevronRightIcon, FileIcon, FolderIcon, HardDriveIcon, LoaderCircleIcon,
-        PackageIcon, PuzzleIcon, SlidersHorizontalIcon, UserIcon, XIcon,
+        PackageIcon, PuzzleIcon, SearchIcon, SlidersHorizontalIcon, UserIcon, XIcon,
     } from '@lucide/svelte'
     import { language } from 'src/lang'
     import ShButton from 'src/lib/UI/GUI/ShButton.svelte'
+    import ShInput from 'src/lib/UI/GUI/ShInput.svelte'
+    import ShSwitch from 'src/lib/UI/GUI/ShSwitch.svelte'
+    import ShToggle from 'src/lib/UI/GUI/ShToggle.svelte'
     import {
-        buildProtonRows, closeProtonBrowser, formatProtonSize, protonBrowserState,
+        buildProtonRows, closeProtonBrowser, filterProtonRows, formatProtonDate, formatProtonSize, protonBrowserState,
         type ProtonPick, type ProtonRow,
     } from 'src/ts/protonBrowser.svelte'
     import {
@@ -29,6 +32,9 @@
     let trail = $state<ProtonFolderStep[]>(protonBrowserState.initial?.trail ?? [])
     let loading = $state(false)
     let error = $state('')
+    let query = $state('')
+    let onlyImportable = $state(true)
+    let newestFirst = $state(false)
     let navigation = 0
 
     const picks = new SvelteMap<string, ProtonPick>()
@@ -37,7 +43,8 @@
 
     const origin = protonBrowserState.origin
     const rows = $derived(buildProtonRows(listing?.entries ?? [], origin))
-    const pickableHere = $derived(rows.filter((row) => row.importable))
+    const filtered = $derived(filterProtonRows(rows, { query, onlyImportable, newestFirst }))
+    const pickableHere = $derived(filtered.visible.filter((row) => row.importable))
     const allHerePicked = $derived(pickableHere.length > 0 && pickableHere.every((row) => picks.has(row.entry.linkId)))
     const pathIds = $derived(trail.map((step) => step.linkId))
 
@@ -61,11 +68,13 @@
     }
 
     async function openFolder(path: string[]) {
+        if (path.join('/') !== pathIds.join('/')) query = ''
         const key = path.join('/')
         const ticket = ++navigation
         error = ''
         const cached = listings.get(key)
         if (cached) {
+            loading = false
             listing = cached
             trail = cached.trail
             return
@@ -136,20 +145,20 @@
     data-proton-backdrop
 >
     <div
-        class="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-darkborderc bg-bgcolor text-textcolor shadow-xl"
+        class="flex max-h-[85vh] min-w-0 w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-darkborderc bg-bgcolor text-textcolor shadow-xl"
         role="dialog"
         aria-modal="true"
-        aria-label={language.protonBrowserTitle}
+        aria-label={language.protonImportTitle}
     >
-        <div class="flex items-center gap-2 border-b border-darkborderc px-4 py-3">
+        <div class="flex shrink-0 items-center gap-2 border-b border-darkborderc px-4 py-3">
             <HardDriveIcon size={18} class="shrink-0 text-textcolor2" />
-            <h2 class="min-w-0 grow truncate text-base font-semibold">{language.protonBrowserTitle}</h2>
+            <h2 class="min-w-0 grow truncate text-base font-semibold">{language.protonImportTitle}</h2>
             <button class="rounded p-1 text-textcolor2 hover:text-textcolor" aria-label={language.close} onclick={() => finish(false)}>
                 <XIcon size={18} />
             </button>
         </div>
 
-        <nav class="flex min-w-0 flex-wrap items-center gap-1 border-b border-darkborderc px-4 py-2 text-sm" aria-label={language.protonBrowserTitle}>
+        <nav class="flex min-w-0 shrink-0 flex-wrap items-center gap-1 border-b border-darkborderc px-4 py-2 text-sm" aria-label={language.protonBrowserTitle}>
             <button
                 class="max-w-[12rem] truncate rounded px-1.5 py-0.5 hover:bg-selected"
                 class:font-semibold={trail.length === 0}
@@ -165,7 +174,25 @@
             {/each}
         </nav>
 
-        <div class="flex items-center gap-3 px-4 py-2 text-sm text-textcolor2">
+        <div class="flex shrink-0 flex-col gap-2 border-b border-darkborderc px-4 py-2" data-proton-toolbar>
+            <div class="flex min-w-0 flex-wrap items-center gap-2">
+                <div class="relative min-w-0 basis-full sm:basis-40 sm:grow">
+                    <SearchIcon size={16} class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-textcolor2" />
+                    <ShInput bind:value={query} className="pl-9" placeholder={language.search} aria-label={language.search} autocomplete="off" />
+                </div>
+                <div class="flex">
+                    <ShToggle size="sm" bind:pressed={() => !newestFirst, (pressed) => { if (pressed) newestFirst = false }} className="rounded-r-none">{language.protonImportSortName}</ShToggle>
+                    <ShToggle size="sm" bind:pressed={() => newestFirst, (pressed) => { if (pressed) newestFirst = true }} className="-ml-px rounded-l-none">{language.protonImportSortNewest}</ShToggle>
+                </div>
+            </div>
+            <label class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-textcolor2">
+                <ShSwitch size="sm" bind:checked={onlyImportable} />
+                <span>{language.protonImportOnlyImportable}</span>
+                {#if filtered.hiddenCount > 0}<span>({language.protonImportHidden(filtered.hiddenCount)})</span>{/if}
+            </label>
+        </div>
+
+        <div class="flex shrink-0 flex-wrap items-center gap-3 px-4 py-2 text-sm text-textcolor2">
             <label class="flex cursor-pointer items-center gap-2" class:opacity-50={pickableHere.length === 0}>
                 <input
                     type="checkbox"
@@ -179,7 +206,7 @@
             <span class="ml-auto">{language.protonBrowserSelected(picks.size)}</span>
         </div>
 
-        <div class="min-h-[12rem] grow overflow-y-auto px-2 pb-2">
+        <div class="min-h-0 grow overflow-y-auto px-2 pb-2">
             {#if loading}
                 <div class="flex items-center justify-center gap-2 py-10 text-sm text-textcolor2">
                     <LoaderCircleIcon size={16} class="animate-spin" />{language.protonBrowserLoading}
@@ -189,11 +216,11 @@
                     <span class="text-red-400">{error}</span>
                     <ShButton variant="outline" size="sm" onclick={() => openFolder([...pathIds])}>{language.protonBrowserRetry}</ShButton>
                 </div>
-            {:else if rows.length === 0}
+            {:else if filtered.visible.length === 0}
                 <div class="py-10 text-center text-sm text-textcolor2">{language.protonBrowserEmpty}</div>
             {:else}
                 <ul class="flex flex-col">
-                    {#each rows as row (row.entry.linkId)}
+                    {#each filtered.visible as row (row.entry.linkId)}
                         <li>
                             {#if row.kind === 'folder'}
                                 <button
@@ -230,8 +257,8 @@
                                     {/if}
                                     <span class="flex min-w-0 grow flex-col">
                                         <span class="truncate text-sm" title={row.entry.name}>{row.entry.name}</span>
-                                        <span class="text-xs text-textcolor2">
-                                            {[kindLabel[row.kind]?.(), formatProtonSize(row.entry.size)].filter(Boolean).join(' · ')}
+                                        <span class="break-words text-xs text-textcolor2">
+                                            {[kindLabel[row.kind]?.(), formatProtonSize(row.entry.size), formatProtonDate(row.entry.modifiedAt)].filter(Boolean).join(' · ')}
                                         </span>
                                     </span>
                                 </label>
@@ -242,7 +269,7 @@
             {/if}
         </div>
 
-        <div class="flex items-center justify-end gap-2 border-t border-darkborderc px-4 py-3">
+        <div class="flex shrink-0 items-center justify-end gap-2 border-t border-darkborderc px-4 py-3">
             <ShButton variant="outline" size="sm" onclick={() => finish(false)}>{language.cancel}</ShButton>
             <ShButton variant="primary" size="sm" disabled={picks.size === 0} onclick={() => finish(true)}>
                 {language.protonBrowserImport(picks.size)}

@@ -38059,7 +38059,8 @@ async function inspectProtonShare(url, customPassword = "", path = []) {
           type: 2,
           size: meta.Size ?? null,
           mediaType: meta.MIMEType ?? null,
-          hasThumbnail: false
+          hasThumbnail: false,
+          modifiedAt: Number.isFinite(meta.ModifyTime) && meta.ModifyTime > 0 ? meta.ModifyTime * 1000 : null
         }]
       };
     }
@@ -38087,7 +38088,8 @@ async function inspectProtonShare(url, customPassword = "", path = []) {
         type: raw.Type,
         size: item.File?.ActiveRevision?.EncryptedSize ?? null,
         mediaType: item.File?.MediaType ?? null,
-        hasThumbnail: smallThumbnail(item) !== null
+        hasThumbnail: smallThumbnail(item) !== null,
+        modifiedAt: Number.isFinite(raw.ModifyTime) && raw.ModifyTime > 0 ? raw.ModifyTime * 1000 : null
       });
     }
     return { kind: "folder", name: session.rootName, trail: folder.trail, entries };

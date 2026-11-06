@@ -47,6 +47,8 @@ export interface ProtonShareEntry {
     type: number;
     size: number | null;
     mediaType: string | null;
+    /** Modification time in milliseconds, or null when Proton does not supply it. */
+    modifiedAt: number | null;
     /** Proton generated a small preview for this file (images, mostly). */
     hasThumbnail: boolean;
 }
@@ -349,6 +351,7 @@ export async function inspectProtonShare(url: string, customPassword = "", path:
                     size: meta.Size ?? null,
                     mediaType: meta.MIMEType ?? null,
                     hasThumbnail: false,
+                    modifiedAt: Number.isFinite(meta.ModifyTime) && meta.ModifyTime > 0 ? meta.ModifyTime * 1000 : null,
                 }],
             };
         }
@@ -384,6 +387,7 @@ export async function inspectProtonShare(url: string, customPassword = "", path:
                 size: item.File?.ActiveRevision?.EncryptedSize ?? null,
                 mediaType: item.File?.MediaType ?? null,
                 hasThumbnail: smallThumbnail(item) !== null,
+                modifiedAt: Number.isFinite(raw.ModifyTime) && raw.ModifyTime > 0 ? raw.ModifyTime * 1000 : null,
             });
         }
         return { kind: "folder", name: session.rootName, trail: folder.trail, entries };

@@ -14,6 +14,8 @@ export interface ProtonEntry {
     type: number
     size: number | null
     mediaType: string | null
+    /** Modification time in milliseconds; older servers omit it. */
+    modifiedAt?: number | null
     /** Proton keeps a small preview for this file. Older servers omit it. */
     hasThumbnail?: boolean
 }

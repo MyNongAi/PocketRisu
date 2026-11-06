@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushSync, mount, tick, unmount } from 'svelte'
+import { language } from 'src/lang'
 import type { ProtonEntry, ProtonInspectResult } from 'src/ts/protonShareClient'
 
 const client = vi.hoisted(() => ({
@@ -11,7 +12,7 @@ const client = vi.hoisted(() => ({
 vi.mock('src/ts/protonShareClient', () => client)
 
 import ProtonFolderBrowser from './ProtonFolderBrowser.svelte'
-import { buildProtonRows, formatProtonSize, openProtonBrowser, protonBrowserState } from 'src/ts/protonBrowser.svelte'
+import { buildProtonRows, filterProtonRows, formatProtonDate, formatProtonSize, openProtonBrowser, protonBrowserState } from 'src/ts/protonBrowser.svelte'
 
 const file = (linkId: string, name: string, extra: Partial<ProtonEntry> = {}): ProtonEntry =>
     ({ linkId, name, type: 2, size: 2048, mediaType: null, hasThumbnail: false, ...extra })
@@ -25,7 +26,7 @@ const ROOT: ProtonInspectResult = {
     entries: [
         file('f10', 'card 10.charx'),
         folder('d1', 'Season 2'),
-        file('f2', 'card 2.png', { hasThumbnail: true }),
+        file('f2', 'card 2.png', { hasThumbnail: true, modifiedAt: new Date(2026, 10, 6, 0, 30).getTime() }),
         file('fx', 'notes.txt'),
     ],
 }
@@ -81,6 +82,82 @@ describe('buildProtonRows', () => {
     })
 })
 
+describe('filterProtonRows', () => {
+    const options = { query: '', onlyImportable: false, newestFirst: false }
+    const names = (result: ReturnType<typeof filterProtonRows>) => result.visible.map((row) => row.entry.name)
+
+    it('searches files and folders case-insensitively and trims the query', () => {
+        const rows = buildProtonRows(ROOT.entries)
+        expect(names(filterProtonRows(rows, { ...options, query: '  CARD  ' }))).toEqual(['card 2.png', 'card 10.charx'])
+        expect(names(filterProtonRows(rows, { ...options, query: 'sEAsOn' }))).toEqual(['Season 2'])
+        expect(names(filterProtonRows(rows, { ...options, query: 'missing' }))).toEqual([])
+    })
+
+    it('hides only unsupported files and counts them across the folder, independently of search', () => {
+        const rows = buildProtonRows(ROOT.entries)
+        const filtered = filterProtonRows(rows, { ...options, onlyImportable: true })
+        expect(names(filtered)).toEqual(['Season 2', 'card 2.png', 'card 10.charx'])
+        expect(filtered.hiddenCount).toBe(1)
+        expect(filterProtonRows(rows, { ...options, query: 'card', onlyImportable: true }).hiddenCount).toBe(1)
+        expect(filterProtonRows(rows, options).hiddenCount).toBe(0)
+        expect(names(filterProtonRows(rows, { ...options, query: 'notes', onlyImportable: true }))).toEqual([])
+        expect(names(filterProtonRows(rows, { ...options, query: 'notes' }))).toEqual(['notes.txt'])
+    })
+
+    const entries = [
+        file('f10', 'card 10.charx', { modifiedAt: 2000 }),
+        folder('d10', 'Season 10'),
+        file('f2', 'card 2.png', { modifiedAt: 1000 }),
+        { ...folder('d2', 'Season 2'), modifiedAt: 500 },
+        { ...folder('d20', 'Season 20'), modifiedAt: 1500 },
+        file('fu', 'card 1.charx'),
+        file('fn', 'card 3.charx', { modifiedAt: null }),
+        file('ft', 'card 11.charx', { modifiedAt: 2000 }),
+    ]
+
+    it('sorts folders first and names naturally even if the input is unsorted', () => {
+        const rows = buildProtonRows(entries).reverse()
+        const original = [...rows]
+        expect(names(filterProtonRows(rows, options))).toEqual([
+            'Season 2', 'Season 10', 'Season 20', 'card 1.charx', 'card 2.png', 'card 3.charx', 'card 10.charx', 'card 11.charx',
+        ])
+        expect(rows).toEqual(original)
+    })
+
+    it('sorts newest first within folders and files, with unknown dates last and natural tie-breaking', () => {
+        const rows = buildProtonRows(entries)
+        const original = [...rows]
+        expect(names(filterProtonRows(rows, { ...options, newestFirst: true }))).toEqual([
+            'Season 20', 'Season 2', 'Season 10', 'card 10.charx', 'card 11.charx', 'card 2.png', 'card 1.charx', 'card 3.charx',
+        ])
+        expect(rows).toEqual(original)
+    })
+
+    it('treats invalid and nonpositive timestamps as unknown', () => {
+        const rows = buildProtonRows([
+            file('zero', 'zero.png', { modifiedAt: 0 }),
+            file('negative', 'negative.png', { modifiedAt: -1 }),
+            file('nan', 'nan.png', { modifiedAt: NaN }),
+            file('infinity', 'infinity.png', { modifiedAt: Infinity }),
+            file('known', 'known.png', { modifiedAt: 1 }),
+        ])
+        expect(names(filterProtonRows(rows, { ...options, newestFirst: true }))).toEqual([
+            'known.png', 'infinity.png', 'nan.png', 'negative.png', 'zero.png',
+        ])
+    })
+})
+
+describe('formatProtonDate', () => {
+    it('formats the local calendar date with zero-padded month and day', () => {
+        expect(formatProtonDate(new Date(2026, 0, 2, 0, 30).getTime())).toBe('2026-01-02')
+        expect(formatProtonDate(new Date(2026, 10, 6, 23, 30).getTime())).toBe('2026-11-06')
+    })
+
+    it('omits missing or invalid dates', () => {
+        for (const time of [undefined, null, 0, -1, NaN, Infinity, 1e20]) expect(formatProtonDate(time)).toBe('')
+    })
+})
+
 describe('ProtonFolderBrowser', () => {
     it('browses into a subfolder and returns picks from several folders with their paths', async () => {
         client.inspectProtonShare.mockResolvedValueOnce(SEASON2)
@@ -93,6 +170,9 @@ describe('ProtonFolderBrowser', () => {
         // Previews are asked for only for files Proton has one for.
         expect(client.fetchProtonThumbnails).toHaveBeenCalledWith('https://drive.proton.me/urls/T#P', '', [], ['f2'], expect.any(Function))
         expect(rowNames(target)[0]).toContain('Season 2')
+        expect(checkboxFor(target, 'notes.txt')).toBeUndefined()
+        ;(target.querySelector('[role=switch]') as HTMLButtonElement).click()
+        await settle()
         expect(checkboxFor(target, 'notes.txt').disabled).toBe(true)
 
         checkboxFor(target, 'card 2.png').click()
@@ -126,6 +206,114 @@ describe('ProtonFolderBrowser', () => {
             ['s1', ['d1']],
         ])
         expect(protonBrowserState.open).toBe(false)
+    })
+
+    it('shows kind, size and local date in the grey line, omitting unavailable parts', async () => {
+        void openProtonBrowser('https://drive.proton.me/urls/T#P', '', {
+            ...ROOT,
+            entries: [...ROOT.entries, file('bare', 'bare.charx', { size: null })],
+        })
+        const target = document.createElement('div')
+        document.body.appendChild(target)
+        mounted.push(mount(ProtonFolderBrowser, { target }))
+        await settle()
+
+        expect(target.querySelector('h2')?.textContent).toBe(language.protonImportTitle)
+        const detail = (name: string) => checkboxFor(target, name).closest('li')?.querySelector('.text-xs')?.textContent?.trim()
+        expect(detail('card 2.png')).toBe(`${language.protonBrowserKind.character} · 2 KB · 2026-11-06`)
+        expect(detail('card 10.charx')).toBe(`${language.protonBrowserKind.character} · 2 KB`)
+        expect(detail('bare.charx')).toBe(language.protonBrowserKind.character)
+    })
+
+    it('selects only shown files and preserves hidden picks when search and the switch change', async () => {
+        const picked = openProtonBrowser('https://drive.proton.me/urls/T#P', '', ROOT)
+        const target = document.createElement('div')
+        document.body.appendChild(target)
+        mounted.push(mount(ProtonFolderBrowser, { target }))
+        await settle()
+
+        const search = target.querySelector('[data-slot=input]') as HTMLInputElement
+        const all = target.querySelector('input[type=checkbox]') as HTMLInputElement
+        const searchFor = async (text: string) => {
+            search.value = text
+            search.dispatchEvent(new Event('input', { bubbles: true }))
+            await settle()
+        }
+        expect(target.textContent).toContain(language.protonImportHidden(1))
+        await searchFor('CARD 2')
+        expect(rowNames(target)).toHaveLength(1)
+        all.click()
+        await settle()
+        expect(all.checked).toBe(true)
+        expect(checkboxFor(target, 'card 2.png').checked).toBe(true)
+
+        await searchFor('card 10')
+        expect(all.checked).toBe(false)
+        all.click()
+        await settle()
+        expect(target.textContent).toContain(language.protonBrowserSelected(2))
+
+        await searchFor('notes')
+        expect(rowNames(target)).toHaveLength(0)
+        expect(all.disabled).toBe(true)
+        expect(all.checked).toBe(false)
+        ;(target.querySelector('[role=switch]') as HTMLButtonElement).click()
+        await settle()
+        expect(checkboxFor(target, 'notes.txt').disabled).toBe(true)
+        expect(all.disabled).toBe(true)
+        expect(target.textContent).not.toContain(language.protonImportHidden(1))
+
+        await searchFor('')
+        expect(all.checked).toBe(true)
+        expect(checkboxFor(target, 'card 2.png').checked).toBe(true)
+        expect(checkboxFor(target, 'card 10.charx').checked).toBe(true)
+        ;(target.querySelector('[role=switch]') as HTMLButtonElement).click()
+        await settle()
+        await searchFor('card 2')
+        all.click()
+        await settle()
+        expect(target.textContent).toContain(language.protonBrowserSelected(1))
+        const importButton = [...target.querySelectorAll('button')].find((button) => button.textContent?.trim() === language.protonBrowserImport(1)) as HTMLButtonElement
+        importButton.click()
+        expect((await picked)?.map((pick) => pick.entry.linkId)).toEqual(['f10'])
+    })
+
+    it('resets search on folder navigation while retaining sort and switch settings', async () => {
+        client.inspectProtonShare.mockResolvedValueOnce(SEASON2)
+        void openProtonBrowser('https://drive.proton.me/urls/T#P', '', ROOT)
+        const target = document.createElement('div')
+        document.body.appendChild(target)
+        mounted.push(mount(ProtonFolderBrowser, { target }))
+        await settle()
+
+        const search = target.querySelector('[data-slot=input]') as HTMLInputElement
+        const newest = [...target.querySelectorAll('button')].find((button) => button.textContent?.trim() === language.protonImportSortNewest) as HTMLButtonElement
+        newest.click()
+        await settle()
+        expect(newest.getAttribute('aria-pressed')).toBe('true')
+        newest.click()
+        await settle()
+        expect(newest.getAttribute('aria-pressed')).toBe('true')
+        ;(target.querySelector('[role=switch]') as HTMLButtonElement).click()
+        search.value = 'season'
+        search.dispatchEvent(new Event('input', { bubbles: true }))
+        await settle()
+        ;(target.querySelector('li button') as HTMLButtonElement).click()
+        await settle()
+        expect(search.value).toBe('')
+        expect(rowNames(target)[0]).toContain('extra.risum')
+        expect(newest.getAttribute('aria-pressed')).toBe('true')
+        expect(target.querySelector('[role=switch]')?.getAttribute('aria-checked')).toBe('false')
+
+        search.value = 'extra'
+        search.dispatchEvent(new Event('input', { bubbles: true }))
+        await settle()
+        ;(target.querySelector('nav button') as HTMLButtonElement).click()
+        await settle()
+        expect(search.value).toBe('')
+        expect(rowNames(target)).toHaveLength(4)
+        expect(newest.getAttribute('aria-pressed')).toBe('true')
+        expect(target.querySelector('[role=switch]')?.getAttribute('aria-checked')).toBe('false')
     })
 
     it('resolves null when cancelled', async () => {

@@ -51,6 +51,7 @@ it, and run the command there with `--outfile` pointing back at
 fails to resolve `@protontech/crypto`.
 
 After rebuilding, restart the server: `server.cjs` caches the imported bundle.
+A later rebuild must preserve `modifiedAt` (milliseconds or null) on both single-file and folder-child entries.
 
 ## Keep the manual path
 

@@ -2309,6 +2309,14 @@
         {
           "file": "src/lib/Others/ProtonFolderBrowser.svelte",
           "contains": "if (event.key === 'Escape') {"
+        },
+        {
+          "file": "src/lib/Others/ProtonFolderBrowser.svelte",
+          "contains": "data-proton-toolbar"
+        },
+        {
+          "file": "src/ts/protonBrowser.svelte.ts",
+          "contains": "export function filterProtonRows("
         }
       ],
       "regressionTests": [

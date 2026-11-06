@@ -24,6 +24,11 @@ export interface ProtonRow {
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
+function compareProtonRowsByName(a: ProtonRow, b: ProtonRow): number {
+    const folderOrder = Number(b.kind === 'folder') - Number(a.kind === 'folder')
+    return folderOrder || collator.compare(a.entry.name, b.entry.name)
+}
+
 /** Folders first, then files, each in natural order ("2" before "10"). */
 export function buildProtonRows(entries: readonly ProtonEntry[], origin: ImportOrigin = 'character'): ProtonRow[] {
     const rows = entries.map((entry): ProtonRow => {
@@ -31,10 +36,38 @@ export function buildProtonRows(entries: readonly ProtonEntry[], origin: ImportO
         const kind = classifySharedImport(entry.name, entry.mediaType ?? '', origin)
         return kind ? { entry, kind, importable: true } : { entry, kind: 'unsupported', importable: false }
     })
-    return rows.sort((a, b) => {
+    return rows.sort(compareProtonRowsByName)
+}
+
+/** Filter this folder without changing the rows or the user's picks. */
+export function filterProtonRows(
+    rows: readonly ProtonRow[],
+    { query, onlyImportable, newestFirst }: { query: string; onlyImportable: boolean; newestFirst: boolean },
+): { visible: ProtonRow[]; hiddenCount: number } {
+    const search = query.trim().toLowerCase()
+    const hiddenCount = onlyImportable ? rows.filter((row) => row.kind !== 'folder' && !row.importable).length : 0
+    const visible = rows.filter((row) =>
+        (!onlyImportable || row.kind === 'folder' || row.importable)
+        && (!search || row.entry.name.toLowerCase().includes(search)))
+    visible.sort((a, b) => {
         const folderOrder = Number(b.kind === 'folder') - Number(a.kind === 'folder')
-        return folderOrder || collator.compare(a.entry.name, b.entry.name)
+        const timeOrder = newestFirst ? modificationTime(b.entry.modifiedAt) - modificationTime(a.entry.modifiedAt) : 0
+        return folderOrder || timeOrder || compareProtonRowsByName(a, b)
     })
+    return { visible, hiddenCount }
+}
+
+function modificationTime(ms: number | null | undefined): number {
+    return typeof ms === 'number' && Number.isFinite(ms) && ms > 0 ? ms : 0
+}
+
+/** The local YYYY-MM-DD format used by the upstream Proton import dialog. */
+export function formatProtonDate(ms: number | null | undefined): string {
+    const time = modificationTime(ms)
+    if (!time) return ''
+    const date = new Date(time)
+    if (Number.isNaN(date.getTime())) return ''
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
 export function formatProtonSize(bytes: number | null | undefined): string {
