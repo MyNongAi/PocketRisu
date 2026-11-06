@@ -37,6 +37,9 @@
     import FileDropIndicator from "src/lib/UI/GUI/FileDropIndicator.svelte";
     import PairedModuleMark from "src/lib/UI/GUI/PairedModuleMark.svelte";
     import { dropMissingBotModules, folderBotLinkChange, forgetModulePair, moduleLinks, recordModulePair } from "src/ts/gui/pairedModules";
+
+    let { sidePanel = false }: { sidePanel?: boolean } = $props();
+
     let tempModule:RisuModule = $state({
         name: '',
         description: '',
@@ -491,15 +494,24 @@
     ondrop={moduleFileDrop.drop}
 >
 {#if mode === 0}
-    <SettingPage title={language.modules}>
-        {#snippet titleActions()}
-            <ShButton size="sm" variant="outline" onclick={() => importMCPModule()} title="MCP"><Waypoints />MCP</ShButton>
-        {/snippet}
+    {#snippet sortActions()}
+        <div class="flex shrink-0 items-center gap-2">
+            <ShButton size="sm" variant={moduleCatalogSort === 'registered' ? 'default' : 'outline'} onclick={() => setModuleCatalogSort('registered')} title="등록순">
+                <ListOrderedIcon />등록순
+            </ShButton>
+            <ShButton size="sm" variant={moduleCatalogSort === 'recent' ? 'default' : 'outline'} onclick={() => setModuleCatalogSort('recent')} title="최근 활성화순">
+                <Clock3Icon />최근순
+            </ShButton>
+        </div>
+    {/snippet}
 
+    <SettingPage title={language.modules}>
     <FileDropIndicator active={moduleFileDrop.active} icon={HardDriveUpload} label={`${language.importModule} · CHARX / RISUM / ${language.linkDropLabel}`} />
 
     <FolderedList
         bind:searchQuery={moduleSearchQuery}
+        folderToolbarActions={sidePanel ? sortActions : undefined}
+        searchActions={sidePanel ? undefined : sortActions}
         maxFolderDepth={5}
         folders={displayFolders}
         itemFolderIds={displayModules.map(m => m.folderId)}
@@ -537,16 +549,7 @@
             }}><PlusIcon />{language.createModule}</ShButton>
             <ShButton size="sm" variant="outline" onclick={() => importModule()}><HardDriveUpload />{language.importModule}</ShButton>
             <ShButton size="sm" variant="outline" onclick={() => importModuleFromProtonDrive()} title={language.importFromProtonAsModule} aria-label={language.importFromProtonAsModule}><CloudDownloadIcon /></ShButton>
-            </div>
-        {/snippet}
-        {#snippet subActions()}
-            <div class="flex flex-wrap items-center gap-2">
-            <ShButton size="sm" variant={moduleCatalogSort === 'registered' ? 'default' : 'outline'} onclick={() => setModuleCatalogSort('registered')} title="등록순">
-                <ListOrderedIcon />등록순
-            </ShButton>
-            <ShButton size="sm" variant={moduleCatalogSort === 'recent' ? 'default' : 'outline'} onclick={() => setModuleCatalogSort('recent')} title="최근 활성화순">
-                <Clock3Icon />최근순
-            </ShButton>
+            <ShButton size="sm" variant="outline" onclick={() => importMCPModule()} title="MCP" aria-label="MCP"><Waypoints /></ShButton>
             </div>
         {/snippet}
         {#snippet folderLeadingActions(folder, indexes)}

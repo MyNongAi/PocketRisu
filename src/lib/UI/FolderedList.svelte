@@ -96,6 +96,10 @@
         itemMenu?: Snippet<[number]>;
         /** Toolbar content shown top-left, opposite the "new folder" button. */
         actions?: Snippet;
+        /** Optional toolbar controls immediately after the new-folder button. */
+        folderToolbarActions?: Snippet;
+        /** Optional controls beside the search field; wrap when space is limited. */
+        searchActions?: Snippet;
         /** Optional secondary toolbar row, kept separate from create/import actions. */
         subActions?: Snippet;
         /** Show filtered and total item counts under the search field. */
@@ -145,6 +149,8 @@
         isExpanded = () => false,
         itemMenu,
         actions,
+        folderToolbarActions,
+        searchActions,
         subActions,
         showItemCount = false,
         folderActions,
@@ -441,22 +447,27 @@
         {@render actions?.()}
         <div class="grow"></div>
         <ShButton size="sm" variant="outline" onclick={createFolder}><FolderPlusIcon />{language.folderNew}</ShButton>
+        {@render folderToolbarActions?.()}
     </div>
     {#if subActions}
         <div class="flex flex-wrap items-center gap-2">
             {@render subActions()}
         </div>
     {/if}
-    <div class="risu-field-border flex items-center gap-2 rounded-md px-3">
-        <!-- With text in the box the magnifier turns into X, which clears it. -->
-        {#if searchQuery}
-            <button type="button" class="shrink-0 text-textcolor2 hover:text-textcolor" aria-label={language.searchClear} title={language.searchClear}
-                onclick={() => { searchQuery = ''; searchInput?.focus() }}><XIcon size={18}/></button>
-        {:else}
-            <SearchIcon size={18} class="text-textcolor2 shrink-0"/>
-        {/if}
-        <input bind:this={searchInput} bind:value={searchQuery} placeholder={searchPlaceholder}
-            class="w-full py-2 bg-transparent text-textcolor outline-none"/>
+    <div class="flex flex-wrap items-center gap-2">
+        <!-- Keep 140px for search; extra controls wrap before squeezing it further. -->
+        <div class="risu-field-border flex min-w-0 grow shrink-0 basis-[140px] max-w-full items-center gap-2 rounded-md px-3">
+            <!-- With text in the box the magnifier turns into X, which clears it. -->
+            {#if searchQuery}
+                <button type="button" class="shrink-0 text-textcolor2 hover:text-textcolor" aria-label={language.searchClear} title={language.searchClear}
+                    onclick={() => { searchQuery = ''; searchInput?.focus() }}><XIcon size={18}/></button>
+            {:else}
+                <SearchIcon size={18} class="text-textcolor2 shrink-0"/>
+            {/if}
+            <input bind:this={searchInput} bind:value={searchQuery} placeholder={searchPlaceholder}
+                class="min-w-0 w-full py-2 bg-transparent text-textcolor outline-none"/>
+        </div>
+        {@render searchActions?.()}
     </div>
     {#if showItemCount}
         <div class="text-right text-xs text-textcolor2">

@@ -374,12 +374,14 @@
       "id": "MODULE-FOLDER",
       "title": "비파괴 모듈 폴더·최근 활성화·일괄 제어",
       "criticality": "core-ux",
+      "notes": "2026-11-06 사용자 요청: MCP는 생성줄의 프로톤 바로 뒤 아이콘 버튼으로, 등록순·최근순은 설정에서 검색창 오른쪽, 사이드 패널에서 새 폴더 오른쪽으로 옮겼으며 좁은 화면에서는 줄바꿈합니다.",
       "ownerFiles": [
         "src/ts/process/moduleFolders.ts",
         "src/ts/process/moduleSort.ts",
         "src/ts/process/moduleFavoritesFolder.ts",
         "src/ts/process/moduleDraft.ts",
         "src/lib/Setting/Pages/Module/ModuleSettings.svelte",
+        "src/lib/Others/QuickSettingsGUI.svelte",
         "src/lib/Setting/Pages/Module/ModuleMenu.svelte",
         "src/lib/Setting/Pages/Module/ModuleChatMenu.svelte",
         "src/lib/UI/FolderedList.svelte",
@@ -388,6 +390,10 @@
         "src/ts/process/moduleOnWatch.svelte.ts"
       ],
       "requiredMarkers": [
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "folderToolbarActions={sidePanel ? sortActions : undefined}" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "searchActions={sidePanel ? undefined : sortActions}" },
+        { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "title=\"MCP\" aria-label=\"MCP\"><Waypoints /></ShButton>" },
+        { "file": "src/lib/Others/QuickSettingsGUI.svelte", "contains": "<ModuleSettings sidePanel />" },
         { "file": "src/ts/process/moduleFolders.ts", "contains": "moveModuleFolderByDrop" },
         { "file": "src/ts/process/moduleOnWatch.svelte.ts", "contains": "export function startModuleOnWatch(): () => void" },
         { "file": "src/ts/process/moduleOnWatch.svelte.ts", "contains": "const now = modulesOnNow(db, selIdState.selId)" },
