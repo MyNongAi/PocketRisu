@@ -30,3 +30,13 @@ export function classifySharedImport(name: string, type = '', origin: ImportOrig
     ) return 'character'
     return null
 }
+
+/**
+ * A file the bot and the module importer both read (.charx or .json, not a
+ * module's own ".module.charx" export): which it becomes is the pressed
+ * button's choice in the Proton folder browser (2026-11-08).
+ */
+export function importableAsEither(name: string): boolean {
+    const lowerName = name.toLowerCase()
+    return (lowerName.endsWith('.charx') && !lowerName.endsWith('.module.charx')) || lowerName.endsWith('.json')
+}

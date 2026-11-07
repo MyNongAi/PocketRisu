@@ -240,10 +240,15 @@ export async function importProtonShare(
     // `browse` opens it for a single shared file too (a Realm link to a file
     // that is not plainly a module: the user picks it or closes the browser).
     let chosen: ProtonPick[]
+    // The browser's bot or module button settles how a .charx or .json is
+    // read (the user's request, 2026-11-08); a single shared file follows
+    // the page it was opened from, as before.
+    let importAs = origin
     if (info.kind === 'folder' || options.browse) {
-        const picks = await openProtonBrowser(url, password, info, origin)
-        if (!picks || picks.length === 0) return
-        chosen = picks
+        const choice = await openProtonBrowser(url, password, info, origin)
+        if (!choice || choice.picks.length === 0) return
+        chosen = choice.picks
+        importAs = choice.as
     } else {
         chosen = info.entries.map((entry) => ({ entry, path: [] }))
     }
@@ -267,7 +272,7 @@ export async function importProtonShare(
         }, report),
         async (item, file, report) => {
             report({ label: `${language.protonImporting} ${file.name}`, progress: 85 })
-            const kind = await importByKind(file, report, origin, onModule, {
+            const kind = await importByKind(file, report, importAs, onModule, {
                 link: url,
                 file: item.pick.entry.name,
                 ...(info.kind === 'folder' ? { linkId: item.pick.entry.linkId, path: item.pick.path } : {}),

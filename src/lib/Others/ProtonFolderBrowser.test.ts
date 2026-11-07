@@ -196,12 +196,14 @@ describe('ProtonFolderBrowser', () => {
         expect(client.inspectProtonShare).toHaveBeenCalledTimes(1)
         expect(checkboxFor(target, 'card 2.png').checked).toBe(true)
 
-        const importButton = [...target.querySelectorAll('button')].find((b) => /\(2\)/.test(b.textContent ?? '')) as HTMLButtonElement
-        expect(importButton).toBeTruthy()
-        importButton.click()
+        // Two import buttons (2026-11-08): as bots and as modules.
+        const importButtons = [...target.querySelectorAll('button')].filter((b) => /\(2\)/.test(b.textContent ?? '')) as HTMLButtonElement[]
+        expect(importButtons.map((b) => b.textContent?.trim())).toEqual([language.protonBrowserImportAsBot(2), language.protonBrowserImportAsModule(2)])
+        importButtons[0].click()
 
-        const picks = await picked
-        expect(picks?.map((pick) => [pick.entry.linkId, pick.path])).toEqual([
+        const choice = await picked
+        expect(choice?.as).toBe('character')
+        expect(choice?.picks.map((pick) => [pick.entry.linkId, pick.path])).toEqual([
             ['f2', []],
             ['s1', ['d1']],
         ])
@@ -221,8 +223,9 @@ describe('ProtonFolderBrowser', () => {
         expect(target.querySelector('h2')?.textContent).toBe(language.protonImportTitle)
         const detail = (name: string) => checkboxFor(target, name).closest('li')?.querySelector('.text-xs')?.textContent?.trim()
         expect(detail('card 2.png')).toBe(`${language.protonBrowserKind.character} · 2 KB · 2026-11-06`)
-        expect(detail('card 10.charx')).toBe(`${language.protonBrowserKind.character} · 2 KB`)
-        expect(detail('bare.charx')).toBe(language.protonBrowserKind.character)
+        // A .charx is a bot or a module, as the pressed button says (2026-11-08).
+        expect(detail('card 10.charx')).toBe(`${language.protonBrowserKind.either} · 2 KB`)
+        expect(detail('bare.charx')).toBe(language.protonBrowserKind.either)
     })
 
     it('selects only shown files and preserves hidden picks when search and the switch change', async () => {
@@ -273,9 +276,11 @@ describe('ProtonFolderBrowser', () => {
         all.click()
         await settle()
         expect(target.textContent).toContain(language.protonBrowserSelected(1))
-        const importButton = [...target.querySelectorAll('button')].find((button) => button.textContent?.trim() === language.protonBrowserImport(1)) as HTMLButtonElement
+        const importButton = [...target.querySelectorAll('button')].find((button) => button.textContent?.trim() === language.protonBrowserImportAsModule(1)) as HTMLButtonElement
         importButton.click()
-        expect((await picked)?.map((pick) => pick.entry.linkId)).toEqual(['f10'])
+        const choice = await picked
+        expect(choice?.as).toBe('module')
+        expect(choice?.picks.map((pick) => pick.entry.linkId)).toEqual(['f10'])
     })
 
     it('resets search on folder navigation while retaining sort and switch settings', async () => {

@@ -91,7 +91,18 @@ export const protonBrowserState = $state<{
     origin: 'character',
 })
 
-let resolvePicks: ((picks: ProtonPick[] | null) => void) | null = null
+/**
+ * The files chosen, and what the user imports them as: the browser has a
+ * bot and a module button (the user's request, 2026-11-08), and a .charx or
+ * .json is read as that. A file only one importer takes (.risum, an image
+ * card, a preset, a plugin) keeps its own kind (classifySharedImport).
+ */
+export interface ProtonBrowserChoice {
+    picks: ProtonPick[]
+    as: ImportOrigin
+}
+
+let resolvePicks: ((choice: ProtonBrowserChoice | null) => void) | null = null
 
 /** Show the browser on `initial` and resolve with the chosen files, or null on cancel. */
 export function openProtonBrowser(
@@ -99,7 +110,7 @@ export function openProtonBrowser(
     password: string,
     initial: ProtonInspectResult,
     origin: ImportOrigin = 'character',
-): Promise<ProtonPick[] | null> {
+): Promise<ProtonBrowserChoice | null> {
     // A browser that is already open gets cancelled rather than orphaned.
     resolvePicks?.(null)
     protonBrowserState.url = url
@@ -112,12 +123,13 @@ export function openProtonBrowser(
     })
 }
 
-export function closeProtonBrowser(picks: ProtonPick[] | null): void {
+/** `as`: the import button pressed; without one, the page the browser was opened from. */
+export function closeProtonBrowser(picks: ProtonPick[] | null, as: ImportOrigin = protonBrowserState.origin): void {
     const resolve = resolvePicks
     resolvePicks = null
     protonBrowserState.open = false
     protonBrowserState.initial = null
     protonBrowserState.url = ''
     protonBrowserState.password = ''
-    resolve?.(picks)
+    resolve?.(picks ? { picks, as } : null)
 }

@@ -17,6 +17,7 @@
         buildProtonRows, closeProtonBrowser, filterProtonRows, formatProtonDate, formatProtonSize, protonBrowserState,
         type ProtonPick, type ProtonRow,
     } from 'src/ts/protonBrowser.svelte'
+    import { importableAsEither, type ImportOrigin } from 'src/ts/shareTargetRouting'
     import {
         fetchProtonThumbnails, inspectProtonShare,
         type ProtonFolderStep, type ProtonInspectResult,
@@ -110,8 +111,9 @@
         }
     }
 
-    function finish(confirmed: boolean) {
-        closeProtonBrowser(confirmed ? [...picks.values()] : null)
+    /** `as`: imported as bots or as modules (protonBrowser.svelte.ts, ProtonBrowserChoice). */
+    function finish(confirmed: boolean, as?: ImportOrigin) {
+        closeProtonBrowser(confirmed ? [...picks.values()] : null, as)
     }
 
     function onKeydown(event: KeyboardEvent) {
@@ -258,7 +260,7 @@
                                     <span class="flex min-w-0 grow flex-col">
                                         <span class="truncate text-sm" title={row.entry.name}>{row.entry.name}</span>
                                         <span class="break-words text-xs text-textcolor2">
-                                            {[kindLabel[row.kind]?.(), formatProtonSize(row.entry.size), formatProtonDate(row.entry.modifiedAt)].filter(Boolean).join(' · ')}
+                                            {[(origin !== 'preset' && importableAsEither(row.entry.name) ? language.protonBrowserKind.either : kindLabel[row.kind]?.()), formatProtonSize(row.entry.size), formatProtonDate(row.entry.modifiedAt)].filter(Boolean).join(' · ')}
                                         </span>
                                     </span>
                                 </label>
@@ -269,11 +271,22 @@
             {/if}
         </div>
 
-        <div class="flex shrink-0 items-center justify-end gap-2 border-t border-darkborderc px-4 py-3">
+        <div class="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-darkborderc px-4 py-3">
             <ShButton variant="outline" size="sm" onclick={() => finish(false)}>{language.cancel}</ShButton>
-            <ShButton variant="primary" size="sm" disabled={picks.size === 0} onclick={() => finish(true)}>
-                {language.protonBrowserImport(picks.size)}
-            </ShButton>
+            {#if origin === 'preset'}
+                <ShButton variant="primary" size="sm" disabled={picks.size === 0} onclick={() => finish(true)}>
+                    {language.protonBrowserImport(picks.size)}
+                </ShButton>
+            {:else}
+                <!-- Opened from the bot or the module page alike: the user says which
+                     the picked .charx and .json files are (2026-11-08). -->
+                <ShButton variant="primary" size="sm" disabled={picks.size === 0} onclick={() => finish(true, 'character')} title={language.protonBrowserImportAsBotHint}>
+                    {language.protonBrowserImportAsBot(picks.size)}
+                </ShButton>
+                <ShButton variant="primary" size="sm" disabled={picks.size === 0} onclick={() => finish(true, 'module')} title={language.protonBrowserImportAsModuleHint}>
+                    {language.protonBrowserImportAsModule(picks.size)}
+                </ShButton>
+            {/if}
         </div>
     </div>
 </div>

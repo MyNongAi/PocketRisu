@@ -44,7 +44,8 @@ vi.mock('./protonBrowser.svelte', () => ({ openProtonBrowser: vi.fn() }))
 vi.mock('./shareTargetRouting', () => ({ classifySharedImport: vi.fn() }))
 vi.mock('./characterCards', () => ({ importCharacterProcess: vi.fn() }))
 vi.mock('./process/moduleImport', () => ({ importModuleFile: vi.fn() }))
-vi.mock('./storage/database.svelte', () => ({ importPreset: vi.fn() }))
+vi.mock('./storage/database.svelte', () => ({ importPreset: vi.fn(), getDatabase: () => ({}) }))
+vi.mock('./protonSource', () => ({ snapshotImportedIds: () => ({}), stampProtonSource: () => ({ characters: [] }) }))
 
 const { ProtonRequestError } = await import('./protonShareClient')
 const { openProtonShare, importFromProtonLink, fetchProtonFile, importProtonFile, discardProtonFile } = await import('./protonImport')
@@ -158,5 +159,28 @@ describe('a share file fetched for import (staged on the server)', () => {
         expect(closeImportJournal).toHaveBeenCalledWith(journal, true)
         await discardProtonFile({ name: 'preset.risup', data: new Uint8Array() })
         expect(closeImportJournal).toHaveBeenCalledTimes(1)
+    })
+})
+describe('the folder browser\'s bot and module buttons (2026-11-08)', () => {
+    beforeEach(() => vi.clearAllMocks())
+
+    test('the picked files are read as the pressed button says, not as the page that opened it', async () => {
+        const { openProtonBrowser } = await import('./protonBrowser.svelte')
+        const { runPrefetchedImportBatch } = await import('./importProgress')
+        const { classifySharedImport } = await import('./shareTargetRouting')
+        const { importModuleFile } = await import('./process/moduleImport')
+        const { importProtonShare } = await import('./protonImport')
+        const pick = { entry: { linkId: 'l1', name: 'pack.charx', type: 2, size: 1 }, path: ['d1'] }
+        vi.mocked(openProtonBrowser).mockResolvedValueOnce({ picks: [pick], as: 'module' } as never)
+        vi.mocked(runPrefetchedImportBatch).mockImplementationOnce((async (items: { pick: unknown }[], _fetch: unknown, run: (item: unknown, file: unknown, report: () => void) => Promise<void>) => {
+            for (const item of items) await run(item, { name: 'pack.charx', data: new Uint8Array([1]) }, () => {})
+            return { completed: items.length, total: items.length }
+        }) as never)
+        vi.mocked(classifySharedImport).mockImplementation((_name, _type, origin) => origin === 'module' ? 'module' : 'character')
+
+        // Opened from the bot page, imported with the module button.
+        await importProtonShare(LINK, '', { kind: 'folder', name: 'f', entries: [], trail: [] } as never, 'character')
+        expect(vi.mocked(classifySharedImport)).toHaveBeenCalledWith('pack.charx', '', 'module')
+        expect(vi.mocked(importModuleFile)).toHaveBeenCalledTimes(1)
     })
 })

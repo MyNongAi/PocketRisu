@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { classifySharedImport } from './shareTargetRouting'
+import { classifySharedImport, importableAsEither } from './shareTargetRouting'
 
 describe('PWA share target import routing', () => {
     test.each([
@@ -40,5 +40,18 @@ describe('PWA share target import routing', () => {
     test('unrelated shared files are rejected', () => {
         expect(classifySharedImport('archive.zip', 'application/zip')).toBeNull()
         expect(classifySharedImport('notes.txt', 'text/plain')).toBeNull()
+    })
+})
+
+describe('files either importer reads (the Proton browser\'s two buttons, 2026-11-08)', () => {
+    test('a .charx or .json is either, a module export or another type is not', () => {
+        expect(importableAsEither('Heroine.charx')).toBe(true)
+        expect(importableAsEither('card.JSON')).toBe(true)
+        expect(importableAsEither('Heroine.module.charx')).toBe(false)
+        expect(importableAsEither('extra.risum')).toBe(false)
+        expect(importableAsEither('card.png')).toBe(false)
+        // The button decides those: the same file reads as each.
+        expect(classifySharedImport('Heroine.charx', '', 'character')).toBe('character')
+        expect(classifySharedImport('Heroine.charx', '', 'module')).toBe('module')
     })
 })

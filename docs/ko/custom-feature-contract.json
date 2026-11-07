@@ -2377,7 +2377,9 @@
       "criticality": "core-ux",
       "ownerFiles": [
         "src/lib/Others/ProtonFolderBrowser.svelte",
-        "src/ts/protonBrowser.svelte.ts"
+        "src/ts/protonBrowser.svelte.ts",
+        "src/ts/protonImport.ts",
+        "src/ts/shareTargetRouting.ts"
       ],
       "requiredMarkers": [
         {
@@ -2395,10 +2397,16 @@
         {
           "file": "src/ts/protonBrowser.svelte.ts",
           "contains": "export function filterProtonRows("
-        }
+        },
+        { "file": "src/lib/Others/ProtonFolderBrowser.svelte", "contains": "onclick={() => finish(true, 'module')}" },
+        { "file": "src/ts/protonBrowser.svelte.ts", "contains": "resolve?.(picks ? { picks, as } : null)" },
+        { "file": "src/ts/protonImport.ts", "contains": "importAs = choice.as" },
+        { "file": "src/ts/shareTargetRouting.ts", "contains": "export function importableAsEither(name: string): boolean" }
       ],
       "regressionTests": [
-        "src/lib/Others/ProtonFolderBrowser.test.ts"
+        "src/lib/Others/ProtonFolderBrowser.test.ts",
+        "src/ts/protonImport.test.ts",
+        "src/ts/shareTarget.test.ts"
       ]
     },
     {
