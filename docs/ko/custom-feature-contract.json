@@ -2404,7 +2404,9 @@
         { "file": "src/lib/Others/ProtonFolderBrowser.svelte", "contains": "onclick={() => finish(true, 'module')}" },
         { "file": "src/ts/protonBrowser.svelte.ts", "contains": "resolve?.(picks ? { picks, as } : null)" },
         { "file": "src/ts/protonImport.ts", "contains": "importAs = choice.as" },
-        { "file": "src/ts/shareTargetRouting.ts", "contains": "export function importableAsEither(name: string): boolean" }
+        { "file": "src/ts/shareTargetRouting.ts", "contains": "export function importableAsEither(name: string): boolean" },
+        { "file": "src/ts/protonBrowser.svelte.ts", "contains": "return kind && kind !== 'plugin' ? { entry, kind, importable: true } : { entry, kind: 'unsupported', importable: false }" },
+        { "file": "src/ts/protonImport.ts", "contains": "// A plugin runs code in the app: it comes in only through the plugin" }
       ],
       "regressionTests": [
         "src/lib/Others/ProtonFolderBrowser.test.ts",

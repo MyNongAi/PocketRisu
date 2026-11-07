@@ -74,6 +74,13 @@ describe('buildProtonRows', () => {
         expect(rows.find((row) => row.entry.name === 'card 2.png')?.kind).toBe('character')
     })
 
+    it('never offers a plugin: the plugin page installs those, with its warning (2026-11-08)', () => {
+        for (const origin of ['character', 'module', 'preset'] as const) {
+            const rows = buildProtonRows([file('p1', 'helper.js'), file('p2', 'tool.ts'), file('f10', 'card 10.charx')], origin)
+            expect(rows.filter((row) => /\.(js|ts)$/.test(row.entry.name)).map((row) => [row.kind, row.importable])).toEqual([['unsupported', false], ['unsupported', false]])
+        }
+    })
+
     it('formats sizes compactly', () => {
         expect(formatProtonSize(null)).toBe('')
         expect(formatProtonSize(900)).toBe('900 B')

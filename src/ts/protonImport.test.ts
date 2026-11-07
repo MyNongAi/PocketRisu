@@ -184,3 +184,24 @@ describe('the folder browser\'s bot and module buttons (2026-11-08)', () => {
         expect(vi.mocked(importModuleFile)).toHaveBeenCalledTimes(1)
     })
 })
+
+describe('no plugins through the bot, module and preset pages\' Proton import (2026-11-08)', () => {
+    beforeEach(() => vi.clearAllMocks())
+
+    test('a picked .js is skipped as unsupported, not installed', async () => {
+        const { openProtonBrowser } = await import('./protonBrowser.svelte')
+        const { runPrefetchedImportBatch } = await import('./importProgress')
+        const { classifySharedImport } = await import('./shareTargetRouting')
+        const { importProtonShare } = await import('./protonImport')
+        vi.mocked(openProtonBrowser).mockResolvedValueOnce({ picks: [{ entry: { linkId: 'p', name: 'x.js', type: 2, size: 1 }, path: [] }], as: 'character' } as never)
+        let thrown: unknown = null
+        vi.mocked(runPrefetchedImportBatch).mockImplementationOnce((async (items: unknown[], _fetch: unknown, run: (item: unknown, file: unknown, report: () => void) => Promise<void>) => {
+            for (const item of items) { try { await run(item, { name: 'x.js', data: new Uint8Array([1]) }, () => {}) } catch (error) { thrown = error } }
+            return { completed: 0, total: items.length }
+        }) as never)
+        vi.mocked(classifySharedImport).mockReturnValue('plugin')
+        await importProtonShare(LINK, '', { kind: 'folder', name: 'f', entries: [], trail: [] } as never, 'character')
+        expect(thrown).toBeTruthy()
+        expect(alertError).toHaveBeenCalled()
+    })
+})

@@ -34,7 +34,9 @@ export function buildProtonRows(entries: readonly ProtonEntry[], origin: ImportO
     const rows = entries.map((entry): ProtonRow => {
         if (entry.type === 1) return { entry, kind: 'folder', importable: false }
         const kind = classifySharedImport(entry.name, entry.mediaType ?? '', origin)
-        return kind ? { entry, kind, importable: true } : { entry, kind: 'unsupported', importable: false }
+        // No plugins here: the plugin page's Proton button installs them, with
+        // its warning (protonImport.ts, 2026-11-08).
+        return kind && kind !== 'plugin' ? { entry, kind, importable: true } : { entry, kind: 'unsupported', importable: false }
     })
     return rows.sort(compareProtonRowsByName)
 }

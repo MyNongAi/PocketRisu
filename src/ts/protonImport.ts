@@ -125,14 +125,10 @@ async function importByKindOnly(
         case 'preset':
             await importPreset({ name, data })
             return kind
-        case 'plugin': {
-            const { importPlugin } = await import('./plugins/plugins.svelte')
-            await importPlugin(
-                Buffer.from(data).toString('utf-8').replace(/^﻿/, ''),
-                { isTypescript: name.toLowerCase().endsWith('.ts') },
-            )
-            return kind
-        }
+        // A plugin runs code in the app: it comes in only through the plugin
+        // page's Proton button, which warns first. From the bot, module and
+        // preset pages (and a Realm link) it was installed without a word
+        // (the user's report, 2026-11-08): it is skipped as unsupported.
         case 'character':
             await importCharacterProcess({ name, data, suppressSuccess: true, onProgress: report, importScope })
             return kind
