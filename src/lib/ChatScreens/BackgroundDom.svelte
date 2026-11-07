@@ -1,9 +1,11 @@
 <script lang="ts">
+    import { onDestroy } from "svelte";
     import { ParseMarkdown, risuChatParser } from "src/ts/parser/parser.svelte";
     import { type character } from "src/ts/storage/database.svelte";
     import { DBState } from 'src/ts/stores.svelte';
     import { moduleBackgroundEmbedding, ReloadGUIPointer } from "src/ts/stores.svelte";
     import { getPaneView } from "src/ts/chatPanes.svelte";
+    import { LatestBackground } from "src/ts/gui/backgroundRender";
 
     // The pane's bot (chatPanes.svelte.ts). The modules' background is worked
     // out for the selected chat only (moduleUpdate), so only its pane shows it.
@@ -15,17 +17,31 @@
     // The selected pane passes none, as before: reading the chat there rebuilt
     // the background each time a send replaced the chat object.
 
+    // A redraw keeps the last background of the same bot until the new one is
+    // parsed, as message bodies do: emptied meanwhile ({#key} over {#await}),
+    // panels styled by its <style> showed as plain text (backgroundRender.ts).
+    let shown = $state('')
+    const background = new LatestBackground((html) => { shown = html })
+    $effect(() => {
+        $ReloadGUIPointer
+        if (!(backgroundHTML || moduleBackground) || view.characterIndex < 0) {
+            background.clear()
+            return
+        }
+        const source = (backgroundHTML || '') + '\n' + (moduleBackground || '')
+        const char = currentChar
+        const chat = view.active ? undefined : view.chat
+        background.render(char?.chaId, () => ParseMarkdown(risuChatParser(source, {chara:char, chat}), char, 'back'))
+    })
+    onDestroy(() => background.stop())
+
 </script>
 
 
 {#if backgroundHTML || moduleBackground}
     {#if view.characterIndex > -1}
-        {#key $ReloadGUIPointer}
-            <div class="absolute top-0 left-0 w-full h-full" data-pr-bot-background>
-                {#await ParseMarkdown(risuChatParser((backgroundHTML || '') + '\n' + (moduleBackground || ''), {chara:currentChar, chat:view.active ? undefined : view.chat}), currentChar, 'back') then md} 
-                    {@html md}
-                {/await}
-            </div>
-        {/key}
+        <div class="absolute top-0 left-0 w-full h-full" data-pr-bot-background>
+            {@html shown}
+        </div>
     {/if}
 {/if}
