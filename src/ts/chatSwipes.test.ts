@@ -27,22 +27,23 @@ import {
 const user = (data = 'u'): SwipeMessage => ({ role: 'user', data })
 const char = (data = 'c', extra: Partial<SwipeMessage> = {}): SwipeMessage => ({ role: 'char', data, ...extra })
 
-describe('recordReplyEdit', () => {
-    it('keeps the reply as it was and shows the edit as a new last page', () => {
+describe('recordReplyEdit (2026-11-08: the page shown is the page edited)', () => {
+    it('edits a reply without pages in place, adding none', () => {
         const message = char('original')
         expect(recordReplyEdit(message, 'edited')).toBe(true)
-        expect(message).toMatchObject({ data: 'edited', swipes: ['original', 'edited'], swipeId: 1 })
-        expect(hasBrowsableSwipes(message)).toBe(true)
-        expect(stepSwipe(message, -1)).toBe(true)
-        expect(message.data).toBe('original')
+        expect(message.data).toBe('edited')
+        expect(message.swipes).toBeUndefined()
+        expect(hasBrowsableSwipes(message)).toBe(false)
     })
 
-    it('adds after the rerolls without moving their pages, and finds a text a page holds', () => {
+    it('edits the shown page of a rerolled reply, the other pages and marks as they were', () => {
         const message = char('b', { swipes: ['a', 'b', 'c'], swipeId: 1, nodeOnlyNewSwipe: 2 })
         recordReplyEdit(message, 'b2')
-        expect(message).toMatchObject({ data: 'b2', swipes: ['a', 'b', 'c', 'b2'], swipeId: 3, nodeOnlyNewSwipe: 2 })
-        recordReplyEdit(message, 'a')
-        expect(message).toMatchObject({ data: 'a', swipes: ['a', 'b', 'c', 'b2'], swipeId: 0 })
+        expect(message).toMatchObject({ data: 'b2', swipes: ['a', 'b2', 'c'], swipeId: 1, nodeOnlyNewSwipe: 2 })
+        // Moving off the page and back keeps the edit.
+        expect(stepSwipe(message, 1)).toBe(true)
+        expect(stepSwipe(message, -1)).toBe(true)
+        expect(message.data).toBe('b2')
     })
 
     it('changes nothing when the text is the same', () => {

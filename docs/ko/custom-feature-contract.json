@@ -1805,7 +1805,7 @@
     },
     {
       "id": "REPLY-EDIT-KEEPS-ORIGINAL",
-      "title": "답변을 고치면 원래 답이 페이지로 남고 화살표로 오감",
+      "title": "답변을 고치면 보던 페이지가 고쳐짐 (새 페이지 없음, 2026-11-08)",
       "criticality": "core-ux",
       "ownerFiles": [
         "src/ts/chatSwipes.ts",
@@ -1814,7 +1814,8 @@
       "requiredMarkers": [
         { "file": "src/ts/chatSwipes.ts", "contains": "export function recordReplyEdit(message: SwipeMessage, next: string): boolean {" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "recordReplyEdit(msg, message)" },
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (msg.role !== 'user') recordReplyEdit(msg, e.detail.newData)" }
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (msg.role !== 'user') recordReplyEdit(msg, e.detail.newData)" },
+        { "file": "src/ts/chatSwipes.ts", "contains": "writeShownSwipe(message, next)" }
       ],
       "regressionTests": [
         "src/ts/chatSwipes.test.ts"

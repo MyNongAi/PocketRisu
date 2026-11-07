@@ -116,22 +116,15 @@ export function findLastReplyIndex(messages: readonly (SwipeMessage | null | und
 }
 
 /**
- * Save `next` as the reply, keeping the text it replaces as a page: an edit
- * is a new swipe at the end, as a reroll is, so the arrows go back to the
- * reply as it was (the user's request, 2026-10-29). An edit back to a text a
- * page already holds shows that page. False when nothing changed.
+ * Save `next` as the reply: the page shown is the page edited, as upstream
+ * does. From 2026-10-29 an edit was kept as a new last page with the text it
+ * replaced left as before; the user turned that back (2026-11-08: "스와이프에
+ * 아웃풋은 수정하면 추가 페이지가 생기지 않게 하자, 그 페이지 자체가
+ * 수정된거야"). False when nothing changed.
  */
 export function recordReplyEdit(message: SwipeMessage, next: string): boolean {
     if (message.data === next) return false
-    const swipes = Array.isArray(message.swipes) && message.swipes.length > 0 ? message.swipes : [message.data]
-    let at = swipes.indexOf(next)
-    if (at < 0) {
-        swipes.push(next)
-        at = swipes.length - 1
-    }
-    message.swipes = swipes
-    message.swipeId = at
-    message.data = next
+    writeShownSwipe(message, next)
     return true
 }
 

@@ -297,7 +297,7 @@
 
     async function edit(){
         const msg = DBState.db.characters[view.characterIndex].chats[view.chatIndex].message[idx]
-        // A reply keeps the text it had as a page; the edit is a new swipe.
+        // A reply: the page shown is the page edited (chatSwipes.ts, 2026-11-08).
         if (msg.role !== 'user') {
             recordReplyEdit(msg, message)
             return
