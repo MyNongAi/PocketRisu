@@ -3637,6 +3637,26 @@
         "src/ts/apiCost.test.ts",
         "server/node/request-logs.test.ts"
       ]
+    },
+    {
+      "id": "CHAT-FILE-UPLOAD-NAMES",
+      "title": "채팅 파일 올리기: 대문자 확장자·jfif, 못 올린 파일 알림",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/process/files/chatFileName.ts",
+        "src/ts/process/files/multisend.ts",
+        "src/ts/process/files/inlays.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/files/chatFileName.ts", "contains": "export function chatFileExtension(name: string): string {" },
+        { "file": "src/ts/process/files/multisend.ts", "contains": "const extention = chatFileExtension(file.name)" },
+        { "file": "src/ts/process/files/multisend.ts", "contains": "alertError(`${language.chatFileSkipped}" },
+        { "file": "src/ts/process/files/inlays.ts", "contains": "const extention = chatFileExtension(img.name)" },
+        { "file": "src/ts/process/files/inlays.ts", "contains": "imgObj.onerror = () => reject(" }
+      ],
+      "regressionTests": [
+        "src/ts/process/files/chatFileName.test.ts"
+      ]
     }
   ]
 }

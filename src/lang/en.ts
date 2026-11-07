@@ -1453,6 +1453,7 @@ export const languageEnglish = {
     protonBrowserTitle: "Proton folder",
     protonBrowserSelectAll: "Select all in this folder",
     protonBrowserSelected: (n: number) => `${n} selected`,
+    chatFileSkipped: "These files were skipped (an unknown type, or a picture this browser cannot open):",
     protonBrowserImport: (n: number) => n > 0 ? `Import (${n})` : "Import",
     protonBrowserImportAsBot: (n: number) => n > 0 ? `Import as bot (${n})` : "Import as bot",
     protonBrowserImportAsModule: (n: number) => n > 0 ? `Import as module (${n})` : "Import as module",

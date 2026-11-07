@@ -1559,6 +1559,7 @@ export const languageKorean = {
   protonBrowserTitle: "프로톤 폴더",
   protonBrowserSelectAll: "이 폴더 전체 선택",
   protonBrowserSelected: (n: number) => `${n}개 선택됨`,
+  chatFileSkipped: "올릴 수 없는 파일이라 건너뛰었어요(형식을 모르거나 이 브라우저가 열지 못하는 그림):",
   protonBrowserImport: (n: number) => n > 0 ? `가져오기 (${n})` : "가져오기",
   protonBrowserImportAsBot: (n: number) => n > 0 ? `봇 가져오기 (${n})` : "봇 가져오기",
   protonBrowserImportAsModule: (n: number) => n > 0 ? `모듈 가져오기 (${n})` : "모듈 가져오기",

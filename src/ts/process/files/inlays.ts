@@ -5,6 +5,7 @@ import { getModelInfo, LLMFlags, LLMFormat } from "src/ts/model/modellist";
 import { asBuffer } from "../../util";
 import { NodeStorage } from "../../storage/nodeStorage";
 import { forageStorage } from "../../globalApi.svelte";
+import { chatFileExtension } from "./chatFileName";
 import {
     type InlayAssetMeta,
     buildInlayMeta,
@@ -411,7 +412,8 @@ function getSafeCharacterName(name: unknown, fallbackId: string, index: number):
 // ── Public API ──
 
 export async function postInlayAsset(img: { name: string, data: Uint8Array }) {
-    const extention = img.name.split('.').at(-1)
+    // In any case, ".jfif" as jpeg (chatFileName.ts, 2026-11-08).
+    const extention = chatFileExtension(img.name)
     const imgObj = new Image()
 
     if (inlayImageExts.includes(extention)) {
@@ -441,7 +443,10 @@ export async function writeInlayImage(imgObj: HTMLImageElement, arg: { name?: st
     let drawWidth = 0
     const canvas = document.createElement('canvas')
     const ctx = canvas.getContext('2d')
-    await new Promise((resolve) => {
+    await new Promise((resolve, reject) => {
+        // A picture the browser cannot open (a HEIC on most browsers) used to
+        // leave this waiting forever, the upload silent (2026-11-08).
+        imgObj.onerror = () => reject(new Error(`Could not open the image ${arg.name ?? ''}`.trim()))
         imgObj.onload = () => {
             drawHeight = imgObj.height
             drawWidth = imgObj.width

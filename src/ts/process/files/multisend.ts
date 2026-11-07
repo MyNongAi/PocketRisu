@@ -7,6 +7,9 @@ import { downloadFile } from 'src/ts/globalApi.svelte';
 import { HypaProcesser } from '../memory/hypamemory';
 import { BufferToText as BufferToText, selectMultipleFile } from 'src/ts/util';
 import { postInlayAsset } from './inlays';
+import { chatFileExtension } from './chatFileName';
+import { alertError } from 'src/ts/alert';
+import { language } from 'src/lang';
 
 type sendFileArg = {
     file:string
@@ -204,6 +207,7 @@ export async function postChatFile(query:string|{
         'webp',
         'gif',
         'avif',
+        'jfif',
 
         //audio format
         'wav',
@@ -229,10 +233,11 @@ export async function postChatFile(query:string|{
 
     const xquery = typeof(query) === 'string' ? query : ''
     const results: postFileResult[] = []
+    // Files that came to nothing are named, not dropped without a word (chatFileName.ts).
+    const skipped: string[] = []
 
     for(const file of files){
-        const extention = file.name.split('.').at(-1)
-        console.log(extention)
+        const extention = chatFileExtension(file.name)
 
         switch(extention){
             case 'po':{
@@ -287,8 +292,12 @@ export async function postChatFile(query:string|{
             case 'webm':
             case 'mpeg':
             case 'avi':{
-                const postData = await postInlayAsset(file)
+                const postData = await postInlayAsset(file).catch((error) => {
+                    console.error(error)
+                    return null
+                })
                 if(!postData){
+                    skipped.push(file.name)
                     continue
                 }
                 results.push({
@@ -308,7 +317,13 @@ export async function postChatFile(query:string|{
                 })
                 break
             }
+            default:
+                skipped.push(file.name)
         }
+    }
+
+    if(skipped.length > 0){
+        alertError(`${language.chatFileSkipped}\n${skipped.join('\n')}`)
     }
 
     return results
