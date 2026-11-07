@@ -142,7 +142,8 @@
         "src/lib/ChatScreens/Chat.svelte",
         "src/ts/gui/innerScrollKeeper.ts",
         "src/lib/ChatScreens/BackgroundDom.svelte",
-        "src/ts/gui/backgroundRender.ts"
+        "src/ts/gui/backgroundRender.ts",
+        "src/ts/gui/backgroundGate.svelte.ts"
       ],
       "requiredMarkers": [
         { "file": "src/lib/ChatScreens/chatViewport.ts", "contains": "shouldFollowTail" },
@@ -163,8 +164,10 @@
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "flex flex-col overflow-y-auto overscroll-y-contain relative default-chat-screen" },
         { "file": "src/ts/gui/innerScrollKeeper.ts", "contains": "export function keepInnerScroll(root: HTMLElement)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "return keepInnerScroll(bodyRoot)" },
-        { "file": "src/lib/ChatScreens/BackgroundDom.svelte", "contains": "const background = new LatestBackground((html) => { shown = html })" },
-        { "file": "src/ts/gui/backgroundRender.ts", "contains": "if (serial === this.#serial) this.show(html ?? '')" }
+        { "file": "src/lib/ChatScreens/BackgroundDom.svelte", "contains": "const background = new LatestBackground((html) => { shown = html }, " },
+        { "file": "src/ts/gui/backgroundRender.ts", "contains": "if (this.#stopped || serial < this.#ownerFrom || serial <= this.#shown) return" },
+        { "file": "src/lib/ChatScreens/BackgroundDom.svelte", "contains": "(waiting) => { gate.waiting = waiting && styled }" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "style:visibility={bodyGate.waiting && !forLog ? 'hidden' : null}" }
       ],
       "regressionTests": ["src/lib/ChatScreens/chatViewport.test.ts", "src/ts/gui/innerScrollKeeper.test.ts", "src/ts/gui/swipeAnchor.test.ts", "src/ts/gui/backgroundRender.test.ts"]
     },

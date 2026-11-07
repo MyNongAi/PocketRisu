@@ -28,6 +28,7 @@
     import { messageIndexAfterConfirm } from "src/ts/gui/afterConfirm"
     import { HideIconStore, ReloadGUIPointer } from "../../ts/stores.svelte"
     import { getPaneView } from "src/ts/chatPanes.svelte"
+    import { backgroundGate } from "src/ts/gui/backgroundGate.svelte"
     import AutoresizeArea from "../UI/GUI/TextAreaResizable.svelte"
     import { isSendKey } from "src/ts/gui/sendKey"
     import { isMobile } from "src/ts/platform"
@@ -151,6 +152,9 @@
     // The pane this message is drawn in (chatPanes.svelte.ts): its chat, which
     // in a split is not always the selected one.
     const view = getPaneView()
+    // Hidden while the bot just entered still parses its background <style>
+    // (backgroundGate.svelte.ts); a log image is drawn as it is.
+    const bodyGate = backgroundGate(view)
     /** Context for display scripts when this pane is not the selected chat. */
     const paneRenderContext = () => untrack(() => view.active || !view.character || !view.chat
         ? undefined
@@ -963,6 +967,7 @@
         <span class="text chat-width chattext prose minw-0"
             class:hidden={editTranslationMode}
             class:prose-invert={$ColorSchemeTypeStore === 'dark'}
+            style:visibility={bodyGate.waiting && !forLog ? 'hidden' : null}
             bind:this={bodyRoot}
             onclick={() => {
             if(DBState.db.clickToEdit && idx > -1 && !replyInProgress && !placeholder){

@@ -30,6 +30,38 @@ describe('LatestBackground', () => {
         expect(shown.at(-1)).toBe('<style>.pnl{}</style>A2')
     })
 
+    it('shows a parse that ends while a newer one still runs (2026-11-08)', async () => {
+        // A Lua display that writes a variable the background reads starts
+        // a new parse each time: the first to end shows, not none of them.
+        const shown: string[] = []
+        const bg = new LatestBackground((html) => shown.push(html))
+        const first = deferred()
+        const second = deferred()
+        bg.render('bot-a', () => first.promise)
+        bg.render('bot-a', () => second.promise)
+        first.resolve('<style>.pnl{}</style>1')
+        await flush()
+        expect(shown.at(-1)).toBe('<style>.pnl{}</style>1')
+        second.resolve('<style>.pnl{}</style>2')
+        await flush()
+        expect(shown.at(-1)).toBe('<style>.pnl{}</style>2')
+    })
+
+    it('never shows the last bot\'s parse after switching', async () => {
+        const shown: string[] = []
+        const bg = new LatestBackground((html) => shown.push(html))
+        const old = deferred()
+        bg.render('bot-a', () => old.promise)
+        const fresh = deferred()
+        bg.render('bot-b', () => fresh.promise)
+        old.resolve('A')
+        await flush()
+        expect(shown).not.toContain('A')
+        fresh.resolve('B')
+        await flush()
+        expect(shown.at(-1)).toBe('B')
+    })
+
     it('clears at once for another bot', async () => {
         const shown: string[] = []
         const bg = new LatestBackground((html) => shown.push(html))
@@ -94,5 +126,58 @@ describe('LatestBackground', () => {
         pending2.resolve('late2')
         await flush()
         expect(shown).not.toContain('late2')
+    })
+})
+
+describe('LatestBackground waiting (2026-11-08)', () => {
+    it('waits from a new bot until its first background shows, not on a redraw', async () => {
+        const waits: boolean[] = []
+        const bg = new LatestBackground(() => {}, (w) => waits.push(w))
+        const first = deferred()
+        bg.render('bot-a', () => first.promise)
+        expect(waits).toEqual([true])
+        first.resolve('<style></style>')
+        await flush()
+        expect(waits).toEqual([true, false])
+        bg.render('bot-a', async () => 'again')
+        await flush()
+        expect(waits).toEqual([true, false])
+    })
+
+    it('stops waiting after the limit, on a failure and on clear', async () => {
+        const waits: boolean[] = []
+        const bg = new LatestBackground(() => {}, (w) => waits.push(w), 20)
+        bg.render('bot-a', () => new Promise<string>(() => {}))
+        await new Promise((r) => setTimeout(r, 40))
+        expect(waits).toEqual([true, false])
+
+        const errors = console.error
+        console.error = () => {}
+        try {
+            const failing = deferred()
+            bg.render('bot-b', () => failing.promise)
+            failing.reject(new Error('parse failed'))
+            await flush()
+        } finally {
+            console.error = errors
+        }
+        expect(waits).toEqual([true, false, true, false])
+
+        bg.render('bot-c', () => new Promise<string>(() => {}))
+        bg.clear()
+        expect(waits).toEqual([true, false, true, false, true, false])
+    })
+
+    it('another bot\'s late parse does not end the wait', async () => {
+        const waits: boolean[] = []
+        const bg = new LatestBackground(() => {}, (w) => waits.push(w))
+        const old = deferred()
+        bg.render('bot-a', () => old.promise)
+        bg.render('bot-b', () => new Promise<string>(() => {}))
+        old.resolve('A')
+        await flush()
+        expect(waits.at(-1)).toBe(true)
+        bg.stop()
+        expect(waits.at(-1)).toBe(false)
     })
 })

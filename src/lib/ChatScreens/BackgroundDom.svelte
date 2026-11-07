@@ -6,6 +6,7 @@
     import { moduleBackgroundEmbedding, ReloadGUIPointer } from "src/ts/stores.svelte";
     import { getPaneView } from "src/ts/chatPanes.svelte";
     import { LatestBackground } from "src/ts/gui/backgroundRender";
+    import { backgroundGate } from "src/ts/gui/backgroundGate.svelte";
 
     // The pane's bot (chatPanes.svelte.ts). The modules' background is worked
     // out for the selected chat only (moduleUpdate), so only its pane shows it.
@@ -21,7 +22,11 @@
     // parsed, as message bodies do: emptied meanwhile ({#key} over {#await}),
     // panels styled by its <style> showed as plain text (backgroundRender.ts).
     let shown = $state('')
-    const background = new LatestBackground((html) => { shown = html })
+    // Entering a bot with a <style> in its background, this pane's message
+    // bodies wait for it (backgroundGate.svelte.ts).
+    const gate = backgroundGate(view)
+    let styled = false
+    const background = new LatestBackground((html) => { shown = html }, (waiting) => { gate.waiting = waiting && styled })
     $effect(() => {
         $ReloadGUIPointer
         if (!(backgroundHTML || moduleBackground) || view.characterIndex < 0) {
@@ -31,6 +36,7 @@
         const source = (backgroundHTML || '') + '\n' + (moduleBackground || '')
         const char = currentChar
         const chat = view.active ? undefined : view.chat
+        styled = /<style/i.test(source)
         background.render(char?.chaId, () => ParseMarkdown(risuChatParser(source, {chara:char, chat}), char, 'back'))
     })
     onDestroy(() => background.stop())
