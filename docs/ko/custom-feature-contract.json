@@ -554,7 +554,8 @@
       "ownerFiles": [
         "src/lib/Setting/listedPersona.svelte",
         "src/lib/Setting/Pages/PersonaSettings.svelte",
-        "src/ts/personaImage.ts"
+        "src/ts/personaImage.ts",
+        "src/ts/personaSort.ts"
       ],
       "requiredMarkers": [
         { "file": "src/ts/personaImage.ts", "contains": "validatePersonaImage" },
@@ -577,13 +578,16 @@
         { "file": "src/ts/persona.ts", "contains": "export async function removePersona(index: number): Promise<boolean>" },
         { "file": "src/lib/UI/FolderedList.svelte", "contains": "{#snippet rowMenuItems(index)}" },
         { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "        rowContextMenu" },
-        { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "<ShDropdownMenuItem variant=\"destructive\" onSelect={() => { void deletePersona(index) }}>" }
+        { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "<ShDropdownMenuItem variant=\"destructive\" onSelect={() => { void deletePersona(index) }}>" },
+        { "file": "src/ts/personaSort.ts", "contains": "export function appliedTimesAfterDrop(" },
+        { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "const appliedAt = fromDrop ? appliedTimesAfterDrop(mapped, DBState.db.personas) : new Map<number, number>()" }
       ],
       "regressionTests": [
         "src/lib/Setting/listedPersona.test.ts",
         "src/ts/persona.test.ts",
         "src/ts/blankPersona.test.ts",
-        "src/ts/personaImage.test.ts"
+        "src/ts/personaImage.test.ts",
+        "src/ts/personaSort.test.ts"
       ]
     },
     {

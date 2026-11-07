@@ -11,7 +11,7 @@
     import { alertConfirm, alertInput, notifyError, notifySuccess } from "src/ts/alert";
     import { getCharImage } from "src/ts/characters";
     import { changeUserPersona, compareRecentlyApplied, exportUserPersona, importUserPersona, importUserPersonaImage, removePersona, saveUserPersona, selectUserImg, setUserPersonaImage } from "src/ts/persona";
-    import { loadPersonaSort, savePersonaSort, sortPersonaGroups, type PersonaSortMode } from "src/ts/personaSort";
+    import { appliedTimesAfterDrop, loadPersonaSort, savePersonaSort, sortPersonaGroups, type PersonaSortMode } from "src/ts/personaSort";
     import { nameOnlyPersonaCount, retireNameOnlyPersonas } from "src/ts/nameOnlyPersona";
     import { onDestroy } from "svelte";
     import { DBState } from 'src/ts/stores.svelte';
@@ -258,7 +258,7 @@
         void requestImmediateSave()
     }
 
-    function applyListPlacements(placements: FolderedItemPlacement[]) {
+    function applyListPlacements(placements: FolderedItemPlacement[], fromDrop = false) {
         const mapped = placements.map(({ index, folderId }) => ({
             index: personaListIndexes[index],
             folderId,
@@ -267,14 +267,18 @@
             applyPlacements(mapped)
             return
         }
-        // A derived recent sort is display-only. Folder menu operations remain
-        // useful, but must not physically rewrite the registration sequence.
+        // The recent sort never rewrites the registration sequence. A drag
+        // there moves the persona by its applied time instead, so it stays
+        // where it was dropped (appliedTimesAfterDrop, the user's request,
+        // 2026-11-07); a folder menu edit only changes folders.
         saveUserPersona()
         const selectedId = ensureId(DBState.db.personas[DBState.db.selectedPersona])
         const folderByIndex = new Map(mapped.map((placement) => [placement.index, placement.folderId]))
+        const appliedAt = fromDrop ? appliedTimesAfterDrop(mapped, DBState.db.personas) : new Map<number, number>()
         DBState.db.personas = DBState.db.personas.map((persona, index) => ({
             ...persona,
             folderId: folderByIndex.get(index),
+            ...(appliedAt.has(index) ? { lastAppliedAt: appliedAt.get(index) } : {}),
         }))
         changeUserPersona(Math.max(0, DBState.db.personas.findIndex((persona) => persona.id === selectedId)), 'noSave', false)
         void requestImmediateSave()
@@ -600,7 +604,6 @@
         selectedIndex={personaListIndexes.indexOf(DBState.db.selectedPersona)}
         isExpanded={(displayIndex) => expanded && personaListIndexes[displayIndex] === DBState.db.selectedPersona}
         storageKey="risu-persona-folders-collapsed"
-        reorderDisabled={personaSort === 'recent'}
         onSelect={(displayIndex) => toggleRow(personaListIndexes[displayIndex])}
         onItemsChange={applyListPlacements}
         onFoldersChange={(next) => { DBState.db.personaFolders = next; void requestImmediateSave() }}
