@@ -4,6 +4,7 @@ import type {
     AdapterReasoningPart,
     AdapterToolCall,
 } from './types'
+import { ModelPresetAdapterError } from './error'
 
 // Outcome of executing one tool call. `text` is what the model sees as the tool
 // result; `encoded` is the optional persisted `<tool_call>` marker that lets the
@@ -32,6 +33,17 @@ export interface ToolLoopDeps {
     // Checked before EACH tool call so a parallel batch doesn't keep firing
     // write-side tools after an abort. (send() already honors abort via fetch.)
     abortSignal?: AbortSignal
+    // Optional: waits (ms) before sending a failed follow-up again, one per
+    // retry. Only a follow-up (after tools ran) whose error is retryable (a
+    // rate limit, an overloaded or failing server) is sent again, as it was:
+    // nothing ran for the failed send, so no tool runs twice.
+    retryDelaysMs?: readonly number[]
+    // Optional: how to wait (tests); setTimeout otherwise.
+    sleep?: (ms: number) => Promise<void>
+}
+
+function isRetryableSendError(err: unknown): boolean {
+    return err instanceof ModelPresetAdapterError ? err.retryable : false
 }
 
 // Drives the tool-use loop: send → if the model requested tools, execute them and
@@ -49,20 +61,31 @@ export async function runToolLoop(
     // bare concatenation.
     const parts: string[] = []
     let executedAny = false
+    const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)))
     for (let step = 0; ; step++) {
-        let response: AdapterChatResponse
-        try {
-            response = await deps.send(convo)
-        } catch (err) {
-            // A failure AFTER tools already ran must not bubble to the outer
-            // retry loop (requestChatData) — that replays the prompt from scratch
-            // and re-executes already-run, possibly write-side, tools. Return
-            // what we have as a completed result so no re-run happens. A failure
-            // on the first send (nothing executed yet) is safe to surface for
-            // normal retry/fallback.
-            if (!executedAny) throw err
-            parts.push('[ModelPreset: follow-up request failed after tool execution]')
-            return joinParts(parts)
+        let response: AdapterChatResponse | undefined
+        for (let attempt = 0; response === undefined; attempt++) {
+            try {
+                response = await deps.send(convo)
+            } catch (err) {
+                // A failure AFTER tools already ran must not bubble to the outer
+                // retry loop (requestChatData) — that replays the prompt from scratch
+                // and re-executes already-run, possibly write-side, tools. Return
+                // what we have as a completed result so no re-run happens. A failure
+                // on the first send (nothing executed yet) is safe to surface for
+                // normal retry/fallback.
+                if (!executedAny) throw err
+                // A rate limit mid-way stopped the bot edit mode after its reads,
+                // before any write (the user's report, 2026-11-08): the same
+                // follow-up is sent again after a wait, a few times.
+                const delay = deps.retryDelaysMs?.[attempt]
+                if (delay !== undefined && isRetryableSendError(err) && !deps.abortSignal?.aborted) {
+                    await sleep(delay)
+                    if (!deps.abortSignal?.aborted) continue
+                }
+                parts.push('[ModelPreset: follow-up request failed after tool execution]')
+                return joinParts(parts)
+            }
         }
         // Prepend this turn's reasoning (for display) to its text segment, matching
         // the classic path where <Thoughts> precede the visible reply.

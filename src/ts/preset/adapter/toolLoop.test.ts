@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from 'vitest'
 import { runToolLoop, type ToolLoopDeps } from './toolLoop'
+import { ModelPresetAdapterError } from './error'
 import type { AdapterChatMessage, AdapterChatResponse, AdapterToolCall } from './types'
 
 const NL2 = String.fromCharCode(10, 10) // blank-line separator the loop joins with
@@ -207,5 +208,54 @@ describe('runToolLoop', () => {
         const { send } = scriptedSend([withReasoning])
         const out = await runToolLoop(initial, { send, executeTool: vi.fn(), maxSteps: 8 })
         expect(out).toBe('visible')
+    })
+})
+
+describe('runToolLoop: a failed follow-up is sent again (2026-11-08)', () => {
+    const rateLimited = () => new ModelPresetAdapterError('rate-limit', 'quota', { status: 429 })
+
+    test('a rate-limited follow-up waits and goes again; the tool ran once', async () => {
+        const executeTool = vi.fn(async () => ({ text: 'r' }))
+        const send = vi.fn()
+            .mockResolvedValueOnce(res('reading', [call('c1', 'risu-get-character-info')]))
+            .mockRejectedValueOnce(rateLimited())
+            .mockRejectedValueOnce(rateLimited())
+            .mockResolvedValueOnce(res('done'))
+        const waits: number[] = []
+        const out = await runToolLoop(initial, {
+            send, executeTool, maxSteps: 8, retryDelaysMs: [10, 20, 30],
+            sleep: async (ms) => { waits.push(ms) },
+        })
+        expect(out).toBe(['reading', 'done'].join(NL2))
+        expect(waits).toEqual([10, 20])
+        expect(executeTool).toHaveBeenCalledTimes(1)
+        // The retried follow-ups carry the same conversation.
+        expect(send.mock.calls[1][0]).toEqual(send.mock.calls[3][0])
+    })
+
+    test('gives up after the last wait, and never retries an error that is not retryable', async () => {
+        const executeTool = vi.fn(async () => ({ text: 'r' }))
+        const send = vi.fn()
+            .mockResolvedValueOnce(res('a', [call('c1', 'x')]))
+            .mockRejectedValue(rateLimited())
+        const waits: number[] = []
+        const out = await runToolLoop(initial, { send, executeTool, maxSteps: 8, retryDelaysMs: [1, 2], sleep: async (ms) => { waits.push(ms) } })
+        expect(waits).toEqual([1, 2])
+        expect(out).toContain('follow-up request failed')
+
+        const auth = vi.fn()
+            .mockResolvedValueOnce(res('a', [call('c1', 'x')]))
+            .mockRejectedValueOnce(new ModelPresetAdapterError('auth', 'bad key', { status: 401 }))
+        const authWaits: number[] = []
+        const authOut = await runToolLoop(initial, { send: auth, executeTool, maxSteps: 8, retryDelaysMs: [1, 2], sleep: async (ms) => { authWaits.push(ms) } })
+        expect(authWaits).toEqual([])
+        expect(authOut).toContain('follow-up request failed')
+    })
+
+    test('the first send still throws for the outer retry, without waiting here', async () => {
+        const send = vi.fn().mockRejectedValueOnce(rateLimited())
+        const waits: number[] = []
+        await expect(runToolLoop(initial, { send, executeTool: vi.fn(), maxSteps: 8, retryDelaysMs: [1], sleep: async (ms) => { waits.push(ms) } })).rejects.toThrow('quota')
+        expect(waits).toEqual([])
     })
 })

@@ -2931,16 +2931,24 @@
         "src/ts/process/request/request.ts",
         "src/ts/process/index.svelte.ts",
         "src/lib/SideBars/McpToolNotice.svelte",
-        "src/lib/SideBars/Toggles.svelte"
+        "src/lib/SideBars/Toggles.svelte",
+        "src/ts/process/request/toolSteps.ts",
+        "src/ts/preset/adapter/toolLoop.ts"
       ],
       "requiredMarkers": [
         { "file": "src/ts/process/request/request.ts", "contains": "const supportsTools = presetSendsTools(preset, arg.currentChat ?? getCurrentChat(), mode, hasRisuAccessTools(arg.tools))" },
         { "file": "src/ts/process/mcp/toolGate.ts", "contains": "const on = preset.toolUse === true || (mode === 'model' && (chat?.nodeOnlyToolUse === true || editMode))" },
         { "file": "src/ts/process/index.svelte.ts", "contains": "if (!arg.preview && !arg.previewPrompt) warnBlockedTools(currentChat, moduleContext)" },
-        { "file": "src/lib/SideBars/Toggles.svelte", "contains": "<McpToolNotice character={view.character} chat={view.chat} />" }
+        { "file": "src/lib/SideBars/Toggles.svelte", "contains": "<McpToolNotice character={view.character} chat={view.chat} />" },
+        { "file": "src/ts/process/request/toolSteps.ts", "contains": "export const EDIT_MODE_MAX_TOOL_STEPS = 30" },
+        { "file": "src/ts/process/request/request.ts", "contains": "maxSteps: maxToolStepsFor(tools)," },
+        { "file": "src/ts/process/request/request.ts", "contains": "retryDelaysMs: TOOL_FOLLOW_UP_RETRY_DELAYS_MS," },
+        { "file": "src/ts/preset/adapter/toolLoop.ts", "contains": "if (delay !== undefined && isRetryableSendError(err) && !deps.abortSignal?.aborted) {" }
       ],
       "regressionTests": [
-        "src/ts/process/mcp/toolGate.test.ts"
+        "src/ts/process/mcp/toolGate.test.ts",
+        "src/ts/process/request/toolSteps.test.ts",
+        "src/ts/preset/adapter/toolLoop.test.ts"
       ]
     },
     {

@@ -21,6 +21,7 @@ import { runTransformers } from "../transformers";
 import { runTrigger } from "../triggers";
 import { requestClaude } from './anthropic';
 import { requestGoogleCloudVertex } from './google';
+import { maxToolStepsFor, TOOL_FOLLOW_UP_RETRY_DELAYS_MS } from './toolSteps';
 import { requestOpenAI, requestOpenAILegacyInstruct, requestOpenAIResponseAPI } from "./openAI/requests";
 import { applyParameters, collectStreamingText, type ModelModeExtended } from './shared';
 import {
@@ -724,11 +725,7 @@ function resolvePresetStreaming(preset: ModelPreset, arg: RequestDataArgumentExt
     return !!preset.useStreaming && (arg.useStreaming ?? true)
 }
 
-// Tool-execution rounds allowed per request before we stop and surface a
-// marker. Deliberately separate from the network retry budget (db.requestRetrys,
-// applied by the outer requestChatData loop): conflating them would let a failed
-// follow-up re-run already-executed (possibly write-side) tools.
-const MODEL_PRESET_MAX_TOOL_STEPS = 8
+// Tool rounds per request and the follow-up retries: toolSteps.ts.
 
 // How often (ms) a streaming response flushes accumulated text to the chat
 // renderer. Adapters yield one delta per token; each emitted chunk forces a full
@@ -1179,7 +1176,8 @@ async function runModelPresetToolLoop(
     // success-path retries that would otherwise re-execute side-effecting tools.
     let toolsExecuted = false
     const result = await runToolLoop(messages, {
-        maxSteps: MODEL_PRESET_MAX_TOOL_STEPS,
+        maxSteps: maxToolStepsFor(tools),
+        retryDelaysMs: TOOL_FOLLOW_UP_RETRY_DELAYS_MS,
         formatReasoning: formatPresetReasoning,
         abortSignal: abortSignal ?? undefined,
         send: (convo) => sendModelPreset(
