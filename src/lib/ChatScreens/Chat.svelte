@@ -32,6 +32,7 @@
     import { isSendKey } from "src/ts/gui/sendKey"
     import { isMobile } from "src/ts/platform"
     import { inputEchoDraft, inputEchoKey, inputEditRequest, nextReplyIndex } from "src/ts/gui/inputEcho"
+    import { withoutSystemBlocks } from "src/ts/typedInput"
     import { inputVersionIndex, isRequestInput, recordInputEdit, stepInputVersion } from "src/ts/inputVersions"
     import { recordReplyEdit } from "src/ts/chatSwipes"
     import { isLogCapturePickingHere, isLogCaptureStart, logCapture, logCaptureMarkFor, markLogCapture } from "src/ts/gui/logCaptureState.svelte"
@@ -315,7 +316,9 @@
     // Shown and copied without HTML comments, which the message itself never
     // shows: a module's hidden marks (장면 접기's <!--sf:…-->) read as text
     // here (2026-10-30). Editing keeps them, so the module's ranges hold.
-    let echoVisible = $derived((echoShown ?? '').replace(/\n?<!--[\s\S]*?-->/g, ''))
+    // The same for a block a bot's script appends to the input
+    // ([SIM_REQUEST_CONTEXT] ... [/SIM_REQUEST_CONTEXT], 2026-11-07).
+    let echoVisible = $derived(withoutSystemBlocks((echoShown ?? '').replace(/\n?<!--[\s\S]*?-->/g, '')))
 
     $effect(() => {
         if (echoEditing) inputEchoDraft.set({ key: previousInputKey, text: echoText })

@@ -72,9 +72,9 @@ describe('reissueMessageIds', () => {
 describe('chatCopyNameFromLastInput', () => {
     it('names a copy after the first line of the last user input', () => {
         const name = chatCopyNameFromLastInput([
-            { role: 'user', data: 'old question' },
+            { role: 'user', time: 1, data: 'old question' },
             { role: 'char', data: 'reply' },
-            { role: 'user', data: '\n  <b>Go</b> to   the harbor\nsecond line' },
+            { role: 'user', time: 1, data: '\n  <b>Go</b> to   the harbor\nsecond line' },
             { role: 'char', data: 'reply 2' },
         ])
         expect(name).toBe('Go to the harbor')
@@ -82,13 +82,13 @@ describe('chatCopyNameFromLastInput', () => {
 
     it('cuts a long line and keeps names unique', () => {
         const long = '가'.repeat(60)
-        expect(chatCopyNameFromLastInput([{ role: 'user', data: long }])).toBe('가'.repeat(40) + '…')
-        expect(chatCopyNameFromLastInput([{ role: 'user', data: 'hi' }], ['hi', 'hi (2)'])).toBe('hi (3)')
+        expect(chatCopyNameFromLastInput([{ role: 'user', time: 1, data: long }])).toBe('가'.repeat(40) + '…')
+        expect(chatCopyNameFromLastInput([{ role: 'user', time: 1, data: 'hi' }], ['hi', 'hi (2)'])).toBe('hi (3)')
     })
 
     it('is null without a user input, so the old (Copy) name is used', () => {
         expect(chatCopyNameFromLastInput([{ role: 'char', data: 'greeting' }])).toBeNull()
-        expect(chatCopyNameFromLastInput([{ role: 'user', data: '  <br>  ' }])).toBeNull()
+        expect(chatCopyNameFromLastInput([{ role: 'user', time: 1, data: '  <br>  ' }])).toBeNull()
         expect(chatCopyNameFromLastInput(undefined)).toBeNull()
     })
 })
@@ -96,7 +96,7 @@ describe('chatCopyNameFromLastInput', () => {
 describe('retitleChatFromLastInput', () => {
     it('names the chat after its last input, skipping empty sends and attached images', () => {
         const chats = [
-            { name: 'Chat 1', message: [{ role: 'user', data: 'first' }, { role: 'char', data: 'r' }, { role: 'user', data: '{{inlayed::abc}}\nLook at this' }, { role: 'user', data: '*says nothing*' }] },
+            { name: 'Chat 1', message: [{ role: 'user', time: 1, data: 'first' }, { role: 'char', data: 'r' }, { role: 'user', time: 1, data: '{{inlayed::abc}}\nLook at this' }, { role: 'user', time: 1, data: '*says nothing*' }] },
             { name: 'Look at this', message: [] },
         ]
         expect(retitleChatFromLastInput(chats, 0)).toBe(true)
@@ -110,5 +110,21 @@ describe('retitleChatFromLastInput', () => {
         expect(retitleChatFromLastInput(chats, 0)).toBe(false)
         expect(chats[0].name).toBe('Chat 1')
         expect(retitleChatFromLastInput(chats, 3)).toBe(false)
+    })
+
+    it('skips a request message a bot added and the block a bot appended to an input (2026-11-07)', () => {
+        const chats = [{
+            name: 'Chat 1',
+            message: [
+                { role: 'user', time: 1, data: 'Go to class\n[SIM_REQUEST_CONTEXT]\ncues\n[/SIM_REQUEST_CONTEXT]' },
+                { role: 'char', data: 'reply' },
+                // A panel's request, added by the bot's Lua: no send time.
+                { role: 'user', data: '[ACADEMY_REQUEST:2:1:19]\n## Academy Observation' },
+            ],
+        }]
+        expect(retitleChatFromLastInput(chats, 0)).toBe(true)
+        expect(chats[0].name).toBe('Go to class')
+        // Only a bot's block: nothing the user typed.
+        expect(chatCopyNameFromLastInput([{ role: 'user', time: 1, data: '[SIM_REQUEST_CONTEXT]\ncues\n[/SIM_REQUEST_CONTEXT]' }])).toBeNull()
     })
 })

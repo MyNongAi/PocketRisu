@@ -1,5 +1,6 @@
 import { v4 } from 'uuid'
 import type { Chat } from './storage/database.svelte'
+import { isTypedInput, withoutSystemBlocks } from './typedInput'
 
 /**
  * Gives a copied or branched chat its own message ids.
@@ -69,19 +70,22 @@ const COPY_NAME_MAX = 40
  * A copied chat's name: the first line of its last user input (asked for on
  * 2026-10-03, so copies read as where they left off instead of "X (Copy 3)").
  * Markup and attached images are dropped and the line is cut to 40
- * characters; an empty send ("*says nothing*") is not an input. A name another
- * chat already has gets " (2)", " (3)", ... Null when the chat has no user
- * input, and the caller keeps the old "(Copy)" name.
+ * characters; an empty send ("*says nothing*") is not an input. Only what the
+ * user sent from the input box counts, without a block a bot appended to it:
+ * a bot's own request message ("[ACADEMY_REQUEST:...]") was the title
+ * (2026-11-07, typedInput.ts). A name another chat already has gets " (2)",
+ * " (3)", ... Null when the chat has no user input, and the caller keeps the
+ * old "(Copy)" name.
  */
 export function chatCopyNameFromLastInput(
-    messages: readonly { role?: string, data?: string }[] | undefined,
+    messages: readonly { role?: string, data?: string, time?: number }[] | undefined,
     takenNames: readonly (string | undefined)[] = [],
 ): string | null {
     let line: string | undefined
     for (let index = (messages?.length ?? 0) - 1; index >= 0 && !line; index--) {
         const message = messages![index]
-        if (message?.role !== 'user' || !message.data || message.data.trim() === '*says nothing*') continue
-        line = message.data
+        if (!isTypedInput(message)) continue
+        line = withoutSystemBlocks(message.data!)
             .replace(/\{\{inlay(?:ed|eddata)?::[^}]*\}\}/g, ' ')
             .replace(/<[^>]*>/g, ' ')
             .split('\n')
@@ -104,7 +108,7 @@ export function chatCopyNameFromLastInput(
  * no input keeps its name. Returns whether the name changed.
  */
 export function retitleChatFromLastInput(
-    chats: { name?: string, message?: { role?: string, data?: string }[] }[] | undefined,
+    chats: { name?: string, message?: { role?: string, data?: string, time?: number }[] }[] | undefined,
     index: number,
 ): boolean {
     const chat = chats?.[index]

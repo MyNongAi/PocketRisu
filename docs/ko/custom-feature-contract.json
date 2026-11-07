@@ -1622,7 +1622,8 @@
       "ownerFiles": [
         "src/ts/chatClone.ts",
         "src/lib/ChatScreens/DefaultChatScreen.svelte",
-        "src/lib/ChatScreens/Chat.svelte"
+        "src/lib/ChatScreens/Chat.svelte",
+        "src/ts/typedInput.ts"
       ],
       "requiredMarkers": [
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "onchange={(e) => titleCommitted(chat, e.currentTarget.value)} onkeydown={finishTitleEdit}/>" },
@@ -1630,11 +1631,15 @@
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "function retitleCurrentChat()" },
         { "file": "src/ts/chatTitleState.ts", "contains": "export function ageManualChatTitle(holder: ChatTitleHolder, chatId: string | undefined): void {" },
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "<span class={chatTitleClass(chatTitleState(chara, chat.id))}>{chat.name}</span>" },
-        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (resolved) ageManualChatTitle(resolved.character, resolved.chat.id)" }
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (resolved) ageManualChatTitle(resolved.character, resolved.chat.id)" },
+        { "file": "src/ts/chatClone.ts", "contains": "if (!isTypedInput(message)) continue" },
+        { "file": "src/ts/chatClone.ts", "contains": "line = withoutSystemBlocks(message.data!)" },
+        { "file": "src/ts/typedInput.ts", "contains": "if (message?.role !== 'user' || !message.time || typeof message.data !== 'string') return false" }
       ],
       "regressionTests": [
         "src/ts/chatClone.test.ts",
-        "src/ts/chatTitleState.test.ts"
+        "src/ts/chatTitleState.test.ts",
+        "src/ts/typedInput.test.ts"
       ]
     },
     {
@@ -2115,7 +2120,10 @@
         "src/ts/inputVersions.ts",
         "src/lib/ChatScreens/Chat.svelte",
         "src/lib/ChatScreens/DefaultChatScreen.svelte",
-        "src/ts/process/index.svelte.ts"
+        "src/ts/process/index.svelte.ts",
+        "src/ts/gui/inputEcho.ts",
+        "src/ts/typedInput.ts",
+        "src/lib/ChatScreens/Chats.svelte"
       ],
       "requiredMarkers": [
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "title={echoVisible}>{echoVisible}</span>" },
@@ -2139,10 +2147,16 @@
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "{#if idx > -1 && !replyInProgress}" },
         { "file": "src/ts/process/index.svelte.ts", "contains": "requestInputText(msg, arg.requestInput)" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const capturedRequestInput = pressedInput(selectedChatRoom.message)" },
-        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const requestInput = pressedInput(targetChat.message)" }
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const requestInput = pressedInput(targetChat.message)" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "const echoIndex = message.role === 'char' ? echoedInputIndex(messages, i) : -1;" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "const echoIndex = echoedInputIndex(messages, Math.min(placeholderIndex, messages.length))" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "let echoVisible = $derived(withoutSystemBlocks((echoShown ?? '').replace(" },
+        { "file": "src/ts/gui/inputEcho.ts", "contains": "return input >= 0 && isTypedInput(messages[input]) ? input : -1" }
       ],
       "regressionTests": [
-        "src/ts/inputVersions.test.ts"
+        "src/ts/inputVersions.test.ts",
+        "src/ts/gui/inputEcho.test.ts",
+        "src/ts/typedInput.test.ts"
       ]
     },
     {

@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest'
-import { inputEchoKey, nextReplyIndex, previousInputIndex } from './inputEcho'
+import { echoedInputIndex, inputEchoKey, nextReplyIndex, previousInputIndex } from './inputEcho'
+
+describe('echoedInputIndex', () => {
+    it('shows only an input the user sent from the input box (2026-11-07)', () => {
+        const typed = { role: 'user', time: 1, data: 'Go to class' }
+        const botRequest = { role: 'user', data: '[ACADEMY_REQUEST:2:1:19]\n## Academy Observation' }
+        const saysNothing = { role: 'user', data: '*says nothing*' }
+        const onlyBlock = { role: 'user', time: 1, data: '[SIM_REQUEST_CONTEXT]\ncues\n[/SIM_REQUEST_CONTEXT]' }
+        const char = { role: 'char', data: 'reply' }
+        expect(echoedInputIndex([typed, char], 1)).toBe(0)
+        expect(echoedInputIndex([botRequest, char], 1)).toBe(-1)
+        expect(echoedInputIndex([saysNothing, char], 1)).toBe(-1)
+        expect(echoedInputIndex([onlyBlock, char], 1)).toBe(-1)
+        // The pairing of inputs and replies itself is unchanged.
+        expect(previousInputIndex([botRequest, char], 1)).toBe(0)
+    })
+})
 
 describe('previousInputIndex', () => {
     const user = { role: 'user' }

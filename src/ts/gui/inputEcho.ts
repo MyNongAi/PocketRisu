@@ -2,6 +2,7 @@
 // answers. Editing either the copy or the original shows every keystroke in
 // both places; the text is written to the chat once, when the edit closes.
 import { writable } from 'svelte/store'
+import { isTypedInput } from '../typedInput'
 
 export type InputEchoDraft = {
     /** The user message being edited (see inputEchoKey). */
@@ -38,6 +39,17 @@ export function previousInputIndex(messages: readonly (EchoMessage | undefined)[
         return message.role === 'user' ? i : -1
     }
     return -1
+}
+
+/**
+ * The input shown under the reply at `index`: its input (previousInputIndex)
+ * when the user sent it from the input box, else none. A bot's own request
+ * message ("[ACADEMY_REQUEST:...]", added by its script) showed there as if
+ * the user had written it (the user's request, 2026-11-07, typedInput.ts).
+ */
+export function echoedInputIndex(messages: readonly ((EchoMessage & { data?: string, time?: number }) | undefined)[], index: number): number {
+    const input = previousInputIndex(messages, index)
+    return input >= 0 && isTypedInput(messages[input]) ? input : -1
 }
 
 /** The reply that answers the user message at `index`: the next message that is not a comment, if it is the character's. */

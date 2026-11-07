@@ -1,7 +1,7 @@
 <script lang="ts">
     import type { character, Message, StreamingDisplayOptimizationMode } from 'src/ts/storage/database.svelte';
     import { hasBrowsableSwipes, hasUnseenSwipe, unseenSwipeIsShort } from 'src/ts/chatSwipes';
-    import { inputEchoKey, previousInputIndex } from 'src/ts/gui/inputEcho';
+    import { echoedInputIndex, inputEchoKey } from 'src/ts/gui/inputEcho';
     import { getAllContexts, mount, onDestroy, tick, unmount } from 'svelte';
     import { getPaneView } from 'src/ts/chatPanes.svelte';
     import { get } from 'svelte/store';
@@ -236,7 +236,7 @@
             const placeholderChatId = placeholder.chatId
             // On the new reply's page before it has text: that page, still empty.
             const message = (placeholder.showingNew ? { ...placeholder.message, data: '' } : placeholder.message) as Message
-            const echoIndex = previousInputIndex(messages, Math.min(placeholderIndex, messages.length))
+            const echoIndex = echoedInputIndex(messages, Math.min(placeholderIndex, messages.length))
             const echoText = echoIndex >= 0 ? (messages[echoIndex].data ?? '') : ''
             const pages = rerollPlaceholderPages(placeholder, newReplyHasText(placeholder))
             const currentHash = hashCode(['reroll-placeholder', placeholderChatId, placeholderIndex, pages.current, pages.total, echoText, message.data].join('\u0000'))
@@ -309,8 +309,9 @@
             const streamingMessage = i === streamingReplyIndex && message.role === 'char';
             const resolveChatAssets = assetRenderWindow.messageIndices.has(i)
             const hashMessageData = activeStreamingMessage ? '' : message.data;
-            // The input a reply answers is echoed under it; a changed input remounts the reply.
-            const echoIndex = message.role === 'char' ? previousInputIndex(messages, i) : -1;
+            // The input a reply answers is echoed under it, when the user typed it (not a
+            // bot's request message); a changed input remounts the reply.
+            const echoIndex = message.role === 'char' ? echoedInputIndex(messages, i) : -1;
             const echoText = echoIndex >= 0 ? (messages[echoIndex].data ?? '') : '';
             // A reload signal (an HTML button's trigger, reloadChat, v2UpdateChatAt)
             // is not part of the hash: the message re-renders in place
