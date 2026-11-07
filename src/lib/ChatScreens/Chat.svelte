@@ -8,7 +8,6 @@
     import { auxRetagging, retagReplyByAuxLorebook } from "src/ts/process/auxLorebookRun"
     import { aiLawApplies, changeChatTo, foldChatToMessage, getFileSrc, createChatCopyName } from "src/ts/globalApi.svelte"
     import { ColorSchemeTypeStore } from "src/ts/gui/colorscheme"
-    import { MediaQuery } from "svelte/reactivity"
     import { getModelInfo } from "src/ts/model/modellist"
     import { runLuaInteractionTrigger } from 'src/ts/process/scriptings'
     import { getTriggerOrigin, setTriggerOriginChat } from 'src/ts/process/triggerOrigin'
@@ -44,9 +43,6 @@
     import { getChatAssetRenderWindow, normalizeExternalAssetRecentOutputs, shouldResolveChatAssets, watchAssetViewport } from '../../ts/chatAssetWindow';
     import { BOARD_POST_SAFE_BYTES, boardPostBytes, boardSafeStyles, boardSafeTags, buildPortableChatFragment, chatClipboardErrorMessage, clipboardSizeLabel, embedParsedChatAssets, fetchClipboardDataUrl, hexColors, rasterizeCoverImage, replaceFormControls, shrinkClipboardImage, writeChatClipboard } from '../../ts/chatClipboard';
 
-    // Reactive breakpoint: a raw window.innerWidth read here is evaluated once
-    // at mount and never follows a resize (#79).
-    const wide640 = new MediaQuery('(min-width: 640px)')
     let translating = $state(false)
     let editMode = $state(false)
     let statusMessage:string = $state('')
@@ -1088,22 +1084,14 @@
                 <!-- Hidden from the button row by the input menu's toggle, the translate button is in the ☰ menu
                      instead; the edit button it shares the snippet with stays in the row. -->
                 {@render translationButton(false, !DBState.db.nodeOnlyHideMessageTranslateButton)}
-                {#if wide640.current}
-                    {@render majorIconButtonsBody(false)}
-                    {#if DBState.db.characters[view.characterIndex] && idx > -1}
-                        <PopupButton>
-                            {@render minorIconButtonsBody(true)}
-                        </PopupButton>
-                    {/if}
-                {:else}
-                    {#if DBState.db.characters[view.characterIndex] && idx > -1}
-                        <PopupButton>
-                            {@render majorIconButtonsBody(true)}
-                            {@render minorIconButtonsBody(true)}
-                        </PopupButton>
-                    {:else}
-                        {@render majorIconButtonsBody(false)}
-                    {/if}
+                <!-- Copy, 🔊 and delete stay in the row at every width: a narrow screen
+                     used to put them in the ☰ menu too, which left only the edit button
+                     beside it on a phone (the user's request, 2026-11-07). -->
+                {@render majorIconButtonsBody(false)}
+                {#if DBState.db.characters[view.characterIndex] && idx > -1}
+                    <PopupButton>
+                        {@render minorIconButtonsBody(true)}
+                    </PopupButton>
                 {/if}
                 {#if firstMessage}
                     <button class={"flex items-center shrink-0 transition-colors " + (disabled === true ? 'text-red-500 hover:text-red-400' : 'hover:text-primary')} onclick={async () => {
@@ -1419,9 +1407,8 @@
     {#if DBState.db.nodeOnlyHideMessageTranslateButton}
         {@render translationButton(showNames, true, false)}
     {/if}
-    {#if wide640.current && DBState.db.nodeOnlyHideMessageTtsButton && DBState.db.characters[view.characterIndex].ttsMode && DBState.db.characters[view.characterIndex].ttsMode !== 'none'}
-        <!-- The 🔊 button the input menu's toggle took off the wide button row; a narrow
-             screen already has it here with the other major buttons. -->
+    {#if DBState.db.nodeOnlyHideMessageTtsButton && DBState.db.characters[view.characterIndex].ttsMode && DBState.db.characters[view.characterIndex].ttsMode !== 'none'}
+        <!-- The 🔊 button the input menu's toggle took off the button row. -->
         <button class="flex items-center hover:text-primary transition-colors button-icon-tts" onclick={async () => {
             await sleep(1)
             return sayTTS(null, isOptimizedStreamingMessage ? rawStreamingText : message)

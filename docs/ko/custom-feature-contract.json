@@ -1170,8 +1170,21 @@
       "requiredMarkers": [
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "onSelect={() => { DBState.db.nodeOnlyHideMessageTtsButton = !DBState.db.nodeOnlyHideMessageTtsButton }}" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "&& (showNames || !DBState.db.nodeOnlyHideMessageTtsButton)}" },
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "{#if wide640.current && DBState.db.nodeOnlyHideMessageTtsButton && DBState.db.characters[view.characterIndex].ttsMode" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "{#if DBState.db.nodeOnlyHideMessageTtsButton && DBState.db.characters[view.characterIndex].ttsMode && DBState.db.characters[view.characterIndex].ttsMode !== 'none'}" },
         { "file": "src/ts/storage/database.svelte.ts", "contains": "nodeOnlyHideMessageTtsButton?: boolean" }
+      ],
+      "regressionTests": []
+    },
+    {
+      "id": "MESSAGE-ROW-NARROW",
+      "title": "폰에서도 메시지 버튼 줄에 복사·음성·삭제 (☰ 밖)",
+      "criticality": "core-ux",
+      "notes": "2026-11-07 사용자 요청. 원본은 640px 미만에서 복사·🔊·삭제를 ☰ 안에 넣었습니다. 이제 너비와 상관없이 넓은 화면과 같은 줄을 씁니다.",
+      "ownerFiles": [
+        "src/lib/ChatScreens/Chat.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "beside it on a phone (the user's request, 2026-11-07). -->" }
       ],
       "regressionTests": []
     },
