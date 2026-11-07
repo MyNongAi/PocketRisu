@@ -7,6 +7,7 @@
     import ShInput from "src/lib/UI/GUI/ShInput.svelte";
     import TextAreaInput from "src/lib/UI/GUI/TextAreaInput.svelte";
     import FolderedList, { type FolderedItemPlacement } from "src/lib/UI/FolderedList.svelte";
+    import ShSortableList from "src/lib/UI/GUI/ShSortableList.svelte";
     import { Clock3Icon, CornerDownRightIcon, EraserIcon, FolderPlusIcon, Grid3X3Icon, GripHorizontalIcon, HardDriveUploadIcon, ListIcon, ListOrderedIcon, PlusIcon, SearchIcon, StarIcon } from "@lucide/svelte";
     import { alertConfirm, alertInput, notifyError, notifySuccess } from "src/ts/alert";
     import { getCharImage } from "src/ts/characters";
@@ -267,21 +268,41 @@
             applyPlacements(mapped)
             return
         }
-        // The recent sort never rewrites the registration sequence. A drag
-        // there moves the persona by its applied time instead, so it stays
-        // where it was dropped (appliedTimesAfterDrop, the user's request,
-        // 2026-11-07); a folder menu edit only changes folders.
+        applyRecentPlacements(mapped, fromDrop)
+    }
+
+    // The recent sort never rewrites the registration sequence. A drag
+    // there moves the persona by its applied time instead, so it stays
+    // where it was dropped (appliedTimesAfterDrop, the user's request,
+    // 2026-11-07); a folder menu edit only changes folders. Personas not in
+    // `placements` keep their folder.
+    function applyRecentPlacements(placements: { index: number, folderId: string | undefined }[], fromDrop: boolean) {
         saveUserPersona()
         const selectedId = ensureId(DBState.db.personas[DBState.db.selectedPersona])
-        const folderByIndex = new Map(mapped.map((placement) => [placement.index, placement.folderId]))
-        const appliedAt = fromDrop ? appliedTimesAfterDrop(mapped, DBState.db.personas) : new Map<number, number>()
+        const folderByIndex = new Map(placements.map((placement) => [placement.index, placement.folderId]))
+        const appliedAt = fromDrop ? appliedTimesAfterDrop(placements, DBState.db.personas) : new Map<number, number>()
         DBState.db.personas = DBState.db.personas.map((persona, index) => ({
             ...persona,
-            folderId: folderByIndex.get(index),
+            folderId: folderByIndex.has(index) ? folderByIndex.get(index) : persona.folderId,
             ...(appliedAt.has(index) ? { lastAppliedAt: appliedAt.get(index) } : {}),
         }))
         changeUserPersona(Math.max(0, DBState.db.personas.findIndex((persona) => persona.id === selectedId)), 'noSave', false)
         void requestImmediateSave()
+    }
+
+    // Grid view: in the recent sort a thumbnail moves by drag, in its folder
+    // or into another one (the user's request, 2026-11-08); the registered
+    // order and a search do not move. Sortable has moved the tile already:
+    // the tiles as the drop left them are read like the list's rows.
+    let gridCatalog: HTMLElement | undefined = $state()
+    const gridDragDisabled = $derived(personaSort !== 'recent' || personaSearch.trim() !== '')
+    function onGridDrop() {
+        if (!gridCatalog || gridDragDisabled) return
+        const placements = Array.from(gridCatalog.querySelectorAll<HTMLElement>('[data-sortable-container-key] [data-sortable-key]')).map((tile) => ({
+            index: Number(tile.dataset.sortableKey),
+            folderId: tile.closest<HTMLElement>('[data-sortable-container-key]')?.dataset.sortableContainerKey || undefined,
+        }))
+        applyRecentPlacements(placements, true)
     }
 
     function createPersona() {
@@ -514,7 +535,7 @@
         </div>
 
         <div class="persona-grid-shell flex min-h-0 grow flex-col" role="region" aria-label="페르소나 그리드">
-        <div class="persona-grid-catalog min-h-0 grow rounded-md border border-darkborderc p-3">
+        <div bind:this={gridCatalog} class="persona-grid-catalog min-h-0 grow rounded-md border border-darkborderc p-3">
             {#each personaGroups as group (group.folder?.id ?? '')}
                 <div class="mb-2 mt-1 flex items-center gap-2 text-sm text-textcolor2" class:pl-4={group.depth === 1}>
                     {#if group.depth === 1}<CornerDownRightIcon size={14} class="shrink-0" />{/if}
@@ -522,11 +543,17 @@
                     <span class="text-xs">{group.total}</span>
                 </div>
                 {#if group.indexes.length > 0}
-                    <div class="mb-4 flex flex-wrap content-start gap-3" class:pl-4={group.depth === 1}>
-                        {#each group.indexes as index}
+                    <ShSortableList
+                        className={`mb-4 flex flex-wrap content-start gap-3${group.depth === 1 ? ' pl-4' : ''}`}
+                        containerKey={group.folder?.id ?? ''}
+                        disabled={gridDragDisabled}
+                        options={{ group: 'persona-grid' }}
+                        onReorder={onGridDrop}
+                    >
+                        {#each group.indexes as index (index)}
                             {@const persona = DBState.db.personas[index]}
                             {@const source = personaSource(index)}
-                            <div class="relative w-24 shrink-0">
+                            <div class="relative w-24 shrink-0" data-sortable-key={index}>
                             <!-- Right-click (long press on touch): the list view's ⋮ entries
                                  that make sense here (the user's request, 2026-10-10). -->
                             <ShContextMenu>
@@ -574,7 +601,7 @@
                             {@render favoriteStar(index, 'absolute right-2 top-1')}
                             </div>
                         {/each}
-                    </div>
+                    </ShSortableList>
                 {/if}
             {/each}
         </div>
@@ -604,6 +631,7 @@
         selectedIndex={personaListIndexes.indexOf(DBState.db.selectedPersona)}
         isExpanded={(displayIndex) => expanded && personaListIndexes[displayIndex] === DBState.db.selectedPersona}
         storageKey="risu-persona-folders-collapsed"
+        reorderDisabled={personaSort !== 'recent'}
         onSelect={(displayIndex) => toggleRow(personaListIndexes[displayIndex])}
         onItemsChange={applyListPlacements}
         onFoldersChange={(next) => { DBState.db.personaFolders = next; void requestImmediateSave() }}

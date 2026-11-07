@@ -583,7 +583,10 @@
         { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "        rowContextMenu" },
         { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "<ShDropdownMenuItem variant=\"destructive\" onSelect={() => { void deletePersona(index) }}>" },
         { "file": "src/ts/personaSort.ts", "contains": "export function appliedTimesAfterDrop(" },
-        { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "const appliedAt = fromDrop ? appliedTimesAfterDrop(mapped, DBState.db.personas) : new Map<number, number>()" }
+        { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "const appliedAt = fromDrop ? appliedTimesAfterDrop(placements, DBState.db.personas) : new Map<number, number>()" },
+        { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "const gridDragDisabled = $derived(personaSort !== 'recent' || personaSearch.trim() !== '')" },
+        { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "onReorder={onGridDrop}" },
+        { "file": "src/lib/Setting/Pages/PersonaSettings.svelte", "contains": "reorderDisabled={personaSort !== 'recent'}" }
       ],
       "regressionTests": [
         "src/lib/Setting/listedPersona.test.ts",
