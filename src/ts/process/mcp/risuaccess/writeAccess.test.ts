@@ -16,6 +16,7 @@ const { DBState } = await import('src/ts/stores.svelte') as any
 beforeEach(() => {
     chat.value = { id: 'c' }
     delete DBState.db.nodeOnlyExternalEditSession
+    delete DBState.db.nodeOnlyEditBotBackup
     alertConfirm.mockReset()
     backupCharacterCopy.mockClear()
 })
@@ -72,5 +73,19 @@ describe('a write from an MCP app outside PocketRisu', () => {
         // Asked only the first time.
         expect(alertConfirm).toHaveBeenCalledTimes(1)
         expect(DBState.db.nodeOnlyExternalEditSession.modules.m1).toMatchObject({ name: 'Assets' })
+    })
+})
+
+describe('"봇 백업 남기기" off (2026-11-08)', () => {
+    it('makes no backup bot, here or from an app; a module is still recorded', async () => {
+        DBState.db.nodeOnlyEditBotBackup = false
+        chat.value.nodeOnlyEditSession = { approval: 'auto', startedAt: 1 }
+        expect(await mcpWriteAccess('t', 'a', { kind: 'character', value: { chaId: 'b1' } as any })).toBe(true)
+        await mcpWriteAccess('t', 'a', { kind: 'module', value: { id: 'm1', name: 'Assets' } as any })
+        DBState.db.nodeOnlyExternalEditSession = { approval: 'auto', startedAt: 1 }
+        expect(await externalWriteAccess('t', 'a', { kind: 'character', value: { chaId: 'b2' } as any })).toBe(true)
+        expect(backupCharacterCopy).not.toHaveBeenCalled()
+        expect(chat.value.nodeOnlyEditSession.characters ?? {}).toEqual({})
+        expect(chat.value.nodeOnlyEditSession.modules.m1).toMatchObject({ name: 'Assets' })
     })
 })

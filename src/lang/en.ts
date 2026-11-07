@@ -1076,6 +1076,8 @@ export const languageEnglish = {
     editModeBackups: "Can be undone: {chars} bots, {modules} modules",
     editModeNoBackups: "Nothing edited yet. Right before the AI's first change, a bot gets a backup bot in its folder (its 3 newest kept), and a module is recorded here.",
     editModeRevert: "Undo the edits",
+    editModeBotBackup: "Keep bot backups",
+    editModeBotBackupOffNote: "Off: no backup bot is made before a change, so bots cannot be undone (modules still can).",
     editModeRevertConfirm: "Put the {chars} bots and {modules} modules the AI edited back as they were?",
     editModeReverted: "Put back as before the edits.",
     mcpExternalAccessPrompt: 'An AI app outside PocketRisu (Claude Code, Codex, ...) wants to "{{action}}" ({{tool}}). Allow it?',

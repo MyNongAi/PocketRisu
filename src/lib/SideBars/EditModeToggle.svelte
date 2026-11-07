@@ -228,10 +228,20 @@
                 <ShButton size="sm" variant={approval === 'ask' ? 'primary' : 'outline'} className="h-auto min-h-8 whitespace-normal px-2 py-1" onclick={() => setApproval('ask')}>{language.editModeAsk}</ShButton>
             </div>
         </div>
+        <!-- Whether a bot is copied into a backup bot before its first change
+             (the user's request, 2026-11-08); one setting for here and the apps. -->
+        <div class="flex items-center justify-between gap-2">
+            <span>{language.editModeBotBackup}</span>
+            <ShSwitch className="shrink-0" checked={DBState.db.nodeOnlyEditBotBackup !== false} onCheckedChange={(checked) => { DBState.db.nodeOnlyEditBotBackup = checked }} />
+        </div>
+        {#if DBState.db.nodeOnlyEditBotBackup === false}
+            <span class="text-xs text-textcolor2 break-words" data-edit-backup-off>{language.editModeBotBackupOffNote}</span>
+        {/if}
         {#if count.characters + count.modules > 0}
             <span>{language.editModeBackups.replace('{chars}', String(count.characters)).replace('{modules}', String(count.modules))}</span>
             <ShButton size="sm" variant="outline" className="self-start" onclick={() => { void revert() }}>{language.editModeRevert}</ShButton>
-        {:else}
+        {:else if DBState.db.nodeOnlyEditBotBackup !== false}
+            <!-- Off, the note above says what is kept instead. -->
             <span class="text-xs text-textcolor2">{app ? language.externalMcpBackupsEmpty : language.editModeNoBackups}</span>
         {/if}
         {#if app}

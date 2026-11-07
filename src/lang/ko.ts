@@ -1165,6 +1165,8 @@ export const languageKorean = {
   editModeBackups: "되돌릴 수 있는 것: 봇 {chars}개, 모듈 {modules}개",
   editModeNoBackups: "아직 AI가 고친 게 없어요. 봇은 고치기 직전에 같은 폴더에 백업 봇을 만들어 두고(봇마다 최근 3개), 모듈은 여기 기록해 둬요.",
   editModeRevert: "편집 전으로 되돌리기",
+  editModeBotBackup: "봇 백업 남기기",
+  editModeBotBackupOffNote: "꺼져 있어요: 고치기 전 봇 사본을 만들지 않아서 봇은 되돌릴 수 없어요(모듈은 되돌릴 수 있어요).",
   editModeRevertConfirm: "AI가 고친 봇 {chars}개, 모듈 {modules}개를 편집 전으로 되돌릴까요?",
   editModeReverted: "편집 전으로 되돌렸어요.",
   mcpExternalAccessPrompt: '포켓리스 밖의 AI 앱(Claude Code, Codex 등)이 "{{action}}"을(를) 하려고 해요 ({{tool}}). 허용할까요?',

@@ -17,6 +17,9 @@ export type WriteTarget =
 
 function backupCharacterOnce(session: EditSession, char: character & BackupMarks): void {
     if (char.nodeOnlyEditBackupOf) return
+    // "봇 백업 남기기" off (the edit mode's panel; the user's request,
+    // 2026-11-08): no backup bot, so the bot cannot be undone.
+    if (DBState.db.nodeOnlyEditBotBackup === false) return
     session.characters ??= {}
     if (session.characters[char.chaId]) return
     session.characters[char.chaId] = backupCharacterCopy(char)
