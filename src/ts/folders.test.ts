@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { folderDepth, folderTree, groupByFolder, isFolderCollapsed, nestGroups, shownInside } from './folders'
+import { folderDepth, folderTree, foldersMatchingByName, groupByFolder, isFolderCollapsed, nestGroups, shownInside } from './folders'
 
 const folders = [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }]
 
@@ -81,5 +81,22 @@ describe('folders in folders', () => {
         const y = { id: 'y', name: 'Y', nodeOnlyParentFolderId: 'x' }
         expect(shownInside(x, [x, y])).toBeUndefined()
         expect(folderTree([x, y]).map(({ folder, depth }) => `${folder.id}:${depth}`)).toEqual(['x:0', 'y:0'])
+    })
+})
+
+describe('foldersMatchingByName (2026-11-08)', () => {
+    const f = (id: string, name: string, parent?: string) => ({ id, name, nodeOnlyParentFolderId: parent }) as never
+    const folders = [f('h', '히로인'), f('hs', '시즌2', 'h'), f('hss', '외전', 'hs'), f('o', '기타'), f('ho', '히로인 모음2')]
+
+    it('finds a folder by its name, with the folders shown inside it at any depth', () => {
+        expect([...foldersMatchingByName(folders, '히로인')].sort()).toEqual(['h', 'ho', 'hs', 'hss'])
+        expect([...foldersMatchingByName(folders, '시즌')].sort()).toEqual(['hs', 'hss'])
+        // As item titles are matched: spaces ignored, an initial-consonant query too.
+        expect([...foldersMatchingByName(folders, 'ㅎㄹㅇ')].sort()).toEqual(['h', 'ho', 'hs', 'hss'])
+    })
+
+    it('finds nothing for an empty query or no match', () => {
+        expect(foldersMatchingByName(folders, '').size).toBe(0)
+        expect(foldersMatchingByName(folders, '없는폴더').size).toBe(0)
     })
 })

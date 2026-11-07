@@ -94,6 +94,26 @@ describe('module folder display interactions', () => {
         expect(onFoldersChange).not.toHaveBeenCalled()
     })
 
+    it('a folder found by its name shows everything in it, with the folders inside it (2026-11-08)', async () => {
+        const nested = [{ id: 'h', name: '히로인' }, { id: 'hs', name: '시즌2', nodeOnlyParentFolderId: 'h' }, { id: 'o', name: '기타' }]
+        const { target } = await renderList({
+            folders: nested,
+            itemFolderIds: ['h', 'hs', 'o', undefined],
+            itemSearchTexts: ['엘리 모듈', '외전 에셋', '다른 모듈', '루즈 모듈'],
+            showItemCount: true,
+        })
+        const input = target.querySelector<HTMLInputElement>('input')!
+        input.value = '히로인'
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        await tick()
+        expect(target.textContent).toContain('Module 0')
+        expect(target.textContent).toContain('Module 1')
+        expect(target.textContent).not.toContain('Module 2')
+        expect(target.textContent).not.toContain('Module 3')
+        expect(target.textContent).not.toContain('기타')
+        expect(input.parentElement?.textContent).toContain('2/4')
+    })
+
     it('starts collapsed and remembers an explicit expansion on the next mount', async () => {
         const first = await renderList()
         expect(first.target.querySelector('.risu-field-border span')).toBeNull()

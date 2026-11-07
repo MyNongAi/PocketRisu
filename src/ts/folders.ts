@@ -1,4 +1,5 @@
 import type { PromptPresetFolder } from './storage/database.svelte'
+import { matchesCatalogText } from './gui/catalogSearch'
 
 export interface FolderGroup {
     /** `null` for the uncategorized group. */
@@ -57,6 +58,30 @@ export function shownInside(
         cursor = next && byId.has(next) ? next : undefined
     }
     return parentId
+}
+
+/**
+ * Folders a search finds by name, with every folder shown inside one of them
+ * (any depth): their items all show (FolderedList; the user's request,
+ * 2026-11-08). The name is matched as the item titles are (catalogSearch).
+ */
+export function foldersMatchingByName(folders: readonly PromptPresetFolder[], query: string): Set<string> {
+    const found = new Set<string>()
+    if (!query.trim()) return found
+    const named = new Set(folders.filter((folder) => matchesCatalogText(folder.name, query)).map((folder) => folder.id))
+    for (const folder of folders) {
+        const seen = new Set<string>()
+        for (let current: PromptPresetFolder | undefined = folder; current && !seen.has(current.id); ) {
+            seen.add(current.id)
+            if (named.has(current.id)) {
+                found.add(folder.id)
+                break
+            }
+            const parentId = shownInside(current, folders)
+            current = parentId ? folders.find((candidate) => candidate.id === parentId) : undefined
+        }
+    }
+    return found
 }
 
 /** How many folders `folder` is shown inside (0 at the top). */

@@ -16,7 +16,7 @@
     import { language } from "src/lang";
     import { matchesCatalogText } from "src/ts/gui/catalogSearch";
     import { alertConfirm, alertInput, alertSelect } from "src/ts/alert";
-    import { folderDepth, folderTree, groupByFolder, isFolderCollapsed, shownInside } from "src/ts/folders";
+    import { folderDepth, folderTree, foldersMatchingByName, groupByFolder, isFolderCollapsed, shownInside } from "src/ts/folders";
     import { interleaveModuleCatalogGroups } from "src/ts/process/moduleSort";
     import type { PromptPresetFolder } from "src/ts/storage/database.svelte";
     import ShSortableList from "./GUI/ShSortableList.svelte";
@@ -177,12 +177,17 @@
         return matchesCatalogText(itemSearchTexts[index], query);
     }
 
+    // A folder whose name matches shows everything in it, with the folders
+    // shown inside it (the user's request, 2026-11-08: searching 히로인 on the
+    // module list found nothing though a folder has that name).
+    const folderNameMatchIds = $derived(query ? foldersMatchingByName(folders, query) : new Set<string>());
+
     // Filtering only the item rows left unrelated folder headers on screen and
     // also mounted every hidden result. Build a display-only view instead;
     // `groups` remains the complete source of truth for drag/menu operations.
     const filteredGroups = $derived(groups.map((group) => ({
         ...group,
-        indexes: query ? group.indexes.filter(matches) : group.indexes,
+        indexes: query && !(group.folder && folderNameMatchIds.has(group.folder.id)) ? group.indexes.filter(matches) : group.indexes,
     })));
     // A folder may be shown inside another (nodeOnlyParentFolderId, display
     // only, as on the bot list; as deep as maxFolderDepth lets the user nest):
