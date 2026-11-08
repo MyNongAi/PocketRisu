@@ -39,6 +39,7 @@ import { isMobile } from 'src/ts/platform'
     import { processScript } from "src/ts/process/scripts";
     import { captureModuleRuntimeContext, type ModuleRuntimeContext } from 'src/ts/process/modules';
     import { captureChatMainRoute } from 'src/ts/process/mcp/toolGate';
+    import { beginSendTurn } from 'src/ts/chatCopySnapshot';
     import CreatorQuote from "./CreatorQuote.svelte";
     import { stopTTS } from "src/ts/process/tts";
     import MainMenu from '../UI/MainMenu.svelte';
@@ -685,9 +686,11 @@ import { isMobile } from 'src/ts/platform'
         }
         preparingChatSends.add(genKey)
         let chatLease: ChatLeaseTarget | null = null
+        let endSendTurn: (() => void) | null = null
 
         try {
         const capturedInput = messageInput
+        const capturedTranslate = messageInputTranslate
         // The input versions shown now are what this send uses (inputVersions.ts).
         const capturedRequestInput = pressedInput(selectedChatRoom.message)
         const capturedFiles = [...fileInput]
@@ -698,6 +701,9 @@ import { isMobile } from 'src/ts/platform'
         generationTarget = ready.target
         const targetCharacter = ready.character
         const activeChat = ready.chat
+        // A copy taken until this send is over is the chat as it is now
+        // (chatCopySnapshot.ts); a continue keeps the copy as it was.
+        if(!continueResponse) endSendTurn = beginSendTurn(activeChat, capturedInput, capturedTranslate, v4)
         const claim = await claimChatForSend(targetCharacter.chaId, activeChat.id)
         if (claim.ok === false) {
             notifyError(chatWriterClaimMessage(claim))
@@ -814,6 +820,7 @@ import { isMobile } from 'src/ts/platform'
         if (sent && !continueResponse) markGeneratedReply(generationTarget, sendStartedAt)
         return sent
         } finally {
+            endSendTurn?.()
             preparingChatSends.delete(genKey)
             await finishChatLease(chatLease)
         }

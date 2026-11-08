@@ -25,7 +25,7 @@
     import { chatGenKey, generationStates } from "src/ts/process/generationState";
     import { rerollPlaceholders } from "src/ts/gui/rerollPlaceholder";
     import { findRerollTargetIndex, hasUnseenSwipe } from "src/ts/chatSwipes";
-    import { messagesWithoutPendingReply } from "src/ts/chatCopySnapshot";
+    import { chatAsBeforeSend, sendTurnOf } from "src/ts/chatCopySnapshot";
     import { findCharacterbyId, sleep, sortableOptions } from "src/ts/util";
 
     import { bookmarkListOpen, openModuleListStore } from "src/ts/stores.svelte";
@@ -37,7 +37,7 @@
     import { changeChatTo, createChatCopyName, requestImmediateSave } from "src/ts/globalApi.svelte";
     import { chatIndexAfterConfirm } from "src/ts/gui/afterConfirm";
     import { chatCopyNameFromLastInput, reissueMessageIds } from "src/ts/chatClone";
-    import { copyChatDraft } from "src/ts/storage/chatDraft";
+    import { copyChatDraft, seedChatDraft } from "src/ts/storage/chatDraft";
     import MemoryBind from "./MemoryBind.svelte";
     import { RISU_CHAT_ROOM_DRAG_TYPE } from "src/ts/dragTypes";
     import { serializeChatRoomDragPayload } from "src/ts/chatSplitPane";
@@ -48,18 +48,24 @@
 
     let { chara = $bindable() }: Props = $props();
 
-    // A copy taken while the chat is answering holds everything up to the
-    // last finished output, without the reply being written; a reroll's old
-    // reply goes back in its place (chatCopySnapshot.ts). It no longer waits.
-    function copyableChat(chat: Chat): Chat {
+    // A copy taken while the chat is answering is the chat right before its
+    // send: the sent input back in the input box, the variables from before
+    // it (the user's choice, 2026-11-08); a reroll's old reply goes back in
+    // its place (chatCopySnapshot.ts). It does not wait for the reply.
+    function copyableChat(chat: Chat): { chat: Chat, draft: { m: string, t: string } | null } {
         const snapshot = $state.snapshot(chat) as Chat
         const pending = get(generationStates).get(chatGenKey(chat.id))?.generationId
         const placeholder = get(rerollPlaceholders).get(chat.id)
-        if (!pending && !placeholder) return snapshot
-        snapshot.message = messagesWithoutPendingReply(snapshot.message, pending, placeholder
-            ? { index: placeholder.index, message: structuredClone($state.snapshot(placeholder.message)), trailing: placeholder.trailing ? structuredClone($state.snapshot(placeholder.trailing)) : undefined }
-            : null)
-        return snapshot
+        const turn = sendTurnOf(chat.id)
+        if (!pending && !placeholder && !turn) return { chat: snapshot, draft: null }
+        const input = chatAsBeforeSend(snapshot, {
+            pendingGenerationId: pending,
+            placeholder: placeholder
+                ? { index: placeholder.index, message: structuredClone($state.snapshot(placeholder.message)), trailing: placeholder.trailing ? structuredClone($state.snapshot(placeholder.trailing)) : undefined }
+                : null,
+            turn,
+        })
+        return { chat: snapshot, draft: input ? { m: input.input, t: input.translate } : null }
     }
     // Title colors: white automatic, green renamed, yellow renamed and answered
     // past since (chatTitleState.ts). Typing a name marks it renamed;
@@ -366,12 +372,15 @@
                                     alertError('Failed to load chat data.')
                                     return
                                 }
-                                const newChat = reissueMessageIds(copyableChat(chara.chats[chatIdx]), chara.chats[chatIdx].message.map(m => m.chatId))
+                                const copied = copyableChat(chara.chats[chatIdx])
+                                const newChat = reissueMessageIds(copied.chat, chara.chats[chatIdx].message.map(m => m.chatId))
                                 newChat.name = chatCopyNameFromLastInput(newChat.message, chara.chats.map((c) => c.name))
                                     ?? createChatCopyName(newChat.name, 'Copy')
                                 newChat.id = v4()
-                                // The unsent text in the input goes along (the user's request, 2026-10-10).
-                                copyChatDraft((chara as character).chaId, chara.chats[chatIdx].id, newChat.id)
+                                // The unsent text in the input goes along (the user's request, 2026-10-10);
+                                // mid-send, the input that was sent.
+                                if (copied.draft) seedChatDraft((chara as character).chaId, newChat.id, copied.draft)
+                                else copyChatDraft((chara as character).chaId, chara.chats[chatIdx].id, newChat.id)
                                 // Right under the chat it copies, not at the top (the user's request, 2026-10-19).
                                 chara.chats.splice(chatIdx + 1, 0, newChat)
                                 changeChatTo(chatIdx + 1)
@@ -472,12 +481,15 @@
                             alertError('Failed to load chat data.')
                             return
                         }
-                        const newChat = reissueMessageIds(copyableChat(chara.chats[i]), chara.chats[i].message.map(m => m.chatId))
+                        const copied = copyableChat(chara.chats[i])
+                        const newChat = reissueMessageIds(copied.chat, chara.chats[i].message.map(m => m.chatId))
                         newChat.name = chatCopyNameFromLastInput(newChat.message, chara.chats.map((c) => c.name))
                             ?? createChatCopyName(newChat.name, 'Copy')
                         newChat.id = v4()
-                        // The unsent text in the input goes along (the user's request, 2026-10-10).
-                        copyChatDraft((chara as character).chaId, chara.chats[i].id, newChat.id)
+                        // The unsent text in the input goes along (the user's request, 2026-10-10);
+                        // mid-send, the input that was sent.
+                        if (copied.draft) seedChatDraft((chara as character).chaId, newChat.id, copied.draft)
+                        else copyChatDraft((chara as character).chaId, chara.chats[i].id, newChat.id)
                         // Right under the chat it copies, not at the top (the user's request, 2026-10-19).
                         chara.chats.splice(i + 1, 0, newChat)
                         changeChatTo(i + 1)

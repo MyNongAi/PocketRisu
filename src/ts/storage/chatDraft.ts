@@ -223,6 +223,19 @@ export function copyChatDraft(chaId: string, fromChatId: string, toChatId: strin
 }
 
 /**
+ * A copy made while its chat answers starts with the input that was sent
+ * (chatCopySnapshot.ts chatAsBeforeSend). Call before switching to the copy,
+ * like copyChatDraft.
+ */
+export function seedChatDraft(chaId: string, chatId: string, draft: ChatDraft): void {
+    if (!chaId || !chatId || (!draft.m && !draft.t)) return
+    const key = chatDraftKey(chaId, chatId)
+    const copy = { m: draft.m, t: draft.t }
+    latest.set(key, copy)
+    enqueue(() => persistSave(key, copy))
+}
+
+/**
  * Remove drafts whose chat no longer exists. One boot pass handles every way a
  * chat can disappear (chat/character deletion, trash purge, plugin/script
  * removal), so individual delete paths need no draft-cleanup wiring. `validKeys`
