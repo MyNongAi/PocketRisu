@@ -1801,6 +1801,8 @@ export interface Database{
     nodeOnlyExternalEditApp?: import('../process/mcp/editMode').ExternalEditApp
     /** PocketRisu: the bot edit mode copies a bot into a backup bot before its first change (risuaccess/writeAccess.ts); undefined = on. */
     nodeOnlyEditBotBackup?: boolean
+    /** PocketRisu: the model the built-in bot edit mode's requests go to (toolGate.ts); undefined = the main model. */
+    nodeOnlyEditModeModel?: 'main' | 'sub'
     // Characters hidden from the sidebar rail (display only, no data impact;
     // the character manager still lists them). chaIds, kept at DB level so
     // the flag survives deactivation and never rides along in .charx exports.

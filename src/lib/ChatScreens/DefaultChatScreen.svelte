@@ -38,6 +38,7 @@
 import { isMobile } from 'src/ts/platform'
     import { processScript } from "src/ts/process/scripts";
     import { captureModuleRuntimeContext, type ModuleRuntimeContext } from 'src/ts/process/modules';
+    import { captureChatMainRoute } from 'src/ts/process/mcp/toolGate';
     import CreatorQuote from "./CreatorQuote.svelte";
     import { stopTTS } from "src/ts/process/tts";
     import MainMenu from '../UI/MainMenu.svelte';
@@ -640,7 +641,7 @@ import { isMobile } from 'src/ts/platform'
 
         let generationTarget = captureGenerationTarget(selectedCharacter, selectedChatRoom)
         const genKey = chatGenKey(generationTarget.chatId)
-        const route = captureChatModelRoute(selectedChatRoom, 'model')
+        const route = captureChatMainRoute(selectedCharacter, selectedChatRoom)
         const emotionRoute = captureChatModelRoute(selectedChatRoom, 'emotion')
         const memoryRoute = captureChatModelRoute(selectedChatRoom, 'memory')
         const admission = getGenerationAdmission(genKey, {
@@ -1162,7 +1163,7 @@ import { isMobile } from 'src/ts/platform'
             const target = resolveGenerationTarget(DBState.db.characters, generationTarget)
             if(!target) return false
             capturedModuleContext ??= captureModuleRuntimeContext(target.character, target.chat)
-            capturedRoute ??= captureChatModelRoute(target.chat, 'model')
+            capturedRoute ??= captureChatMainRoute(target.character, target.chat, capturedModuleContext)
             capturedEmotionRoute ??= captureChatModelRoute(target.chat, 'emotion')
             capturedMemoryRoute ??= captureChatModelRoute(target.chat, 'memory')
         }

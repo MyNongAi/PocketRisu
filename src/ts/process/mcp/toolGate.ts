@@ -7,12 +7,12 @@
 // touching the preset (the user's choice, 2026-10-28): by its own switch, or
 // by having the Risu Access module on, which is the bot edit mode (editMode.ts).
 import { TOOL_CAPABLE_ADAPTER_KINDS, type ModelPreset } from 'src/ts/preset/types'
-import type { Chat } from 'src/ts/storage/database.svelte'
+import { getDatabase, type Chat, type character } from 'src/ts/storage/database.svelte'
 import { language } from 'src/lang'
 import { notifyInfo } from '../../alert'
 import type { ModelModeExtended } from '../request/shared'
-import { resolveChatModelBinding } from '../request/modelPresetBinding'
-import { getModuleMcps, type ModuleRuntimeContext } from '../modules'
+import { captureChatModelRoute, resolveChatModelBinding, type RequestModelRouteSnapshot } from '../request/modelPresetBinding'
+import { captureModuleRuntimeContext, getModuleMcps, type ModuleRuntimeContext } from '../modules'
 
 /** The built-in Risu Access MCP: on for a chat, it is the bot edit mode. */
 export const RISU_ACCESS_URL = 'internal:risuai'
@@ -40,6 +40,26 @@ export function presetSendsTools(
     return on && presetToolsCapable(preset)
 }
 
+/**
+ * Where a chat's main requests go: the main model, or with the bot edit mode
+ * on the sub model when the user picked it (the user's request, 2026-11-08).
+ * The request stays a main request (its prompt, its tools, its switch for
+ * them); only the model it goes to changes.
+ */
+export function mainRouteMode(editMode: boolean): ModelModeExtended {
+    return editMode && getDatabase().nodeOnlyEditModeModel === 'sub' ? 'submodel' : 'model'
+}
+
+/** The same for a send: the edit mode is the Risu Access module on for it. */
+export function chatMainRouteMode(moduleContext: ModuleRuntimeContext): ModelModeExtended {
+    return mainRouteMode(getModuleMcps(moduleContext).includes(RISU_ACCESS_URL))
+}
+
+/** The route of a chat's main request, captured at the send (sendChat and the chat screen's send). */
+export function captureChatMainRoute(char: character, chat: Chat, moduleContext?: ModuleRuntimeContext): RequestModelRouteSnapshot {
+    return captureChatModelRoute(chat, chatMainRouteMode(moduleContext ?? captureModuleRuntimeContext(char, chat)))
+}
+
 /** The request's tools come from the Risu Access MCP, among others (getMCPTools marks each with its server). */
 export function hasRisuAccessTools(tools: readonly unknown[] | null | undefined): boolean {
     return (tools ?? []).some((tool) => !!tool && typeof tool === 'object' && (tool as { mcpURL?: unknown }).mcpURL === RISU_ACCESS_URL)
@@ -54,7 +74,7 @@ export type ToolBlock = 'off' | 'unsupported' | null
 
 export function chatToolBlock(chat: Chat | null | undefined, editMode = false): ToolBlock {
     if (!chat) return null
-    const binding = resolveChatModelBinding(chat, 'model')
+    const binding = resolveChatModelBinding(chat, mainRouteMode(editMode))
     if (binding.kind !== 'modelPreset') return null
     if (!presetToolsCapable(binding.preset)) return 'unsupported'
     return presetSendsTools(binding.preset, chat, 'model', editMode) ? null : 'off'

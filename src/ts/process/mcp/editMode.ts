@@ -1,4 +1,4 @@
-// The bot edit mode (the user's choices, 2026-10-28): the main model edits
+// The bot edit mode (the user's choices, 2026-10-28): the chat's model edits
 // bots and modules through the built-in Risu Access MCP. The mode is that
 // module being on for the chat, like 🎨 and its module: the sidebar's switch
 // turns the module on or off for the chat, and turning the module on or off
@@ -6,7 +6,8 @@
 // chat's main requests carry tools whatever the preset (toolGate.ts). On, the
 // switch asks where (a new edit chat or this one), and makes the module when
 // there is none; off, it asks whether to keep what the AI changed or put it
-// back (editSession.ts).
+// back (editSession.ts). The chat's model is the main model, or the sub
+// model when the user picked it (toolGate.ts mainRouteMode, 2026-11-08).
 //
 // The sidebar shows it as a dropdown (the user's choice, 2026-11-01): off by
 // default, built-in (the above), or Codex, Claude Code or Antigravity editing

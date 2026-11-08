@@ -2969,6 +2969,7 @@
         "src/ts/process/mcp/risuaccess/characters.ts",
         "src/ts/process/mcp/risuaccess/modules.ts",
         "src/ts/process/mcp/mcp.ts",
+        "src/ts/process/mcp/toolGate.ts",
         "src/lib/SideBars/EditModeToggle.svelte",
         "src/lib/SideBars/Toggles.svelte",
         "src/lib/Setting/Pages/Module/ModuleSettings.svelte"
@@ -2986,10 +2987,15 @@
         { "file": "src/ts/process/mcp/editMode.ts", "contains": "if (next === 'off') delete DBState.db.nodeOnlyExternalEditApp" },
         { "file": "src/lib/Setting/Pages/Module/ModuleSettings.svelte", "contains": "return rmodule.mcp?.url === RISU_ACCESS_URL && !!char?.chats?.[char.chatPage]?.modules?.includes(rmodule.id)" },
         { "file": "src/ts/process/mcp/risuaccess/writeAccess.ts", "contains": "if (DBState.db.nodeOnlyEditBotBackup === false) return" },
-        { "file": "src/lib/SideBars/EditModeToggle.svelte", "contains": "checked={DBState.db.nodeOnlyEditBotBackup !== false}" }
+        { "file": "src/lib/SideBars/EditModeToggle.svelte", "contains": "checked={DBState.db.nodeOnlyEditBotBackup !== false}" },
+        { "file": "src/ts/process/mcp/toolGate.ts", "contains": "return editMode && getDatabase().nodeOnlyEditModeModel === 'sub' ? 'submodel' : 'model'" },
+        { "file": "src/ts/process/index.svelte.ts", "contains": "const routeSnapshot = arg.routeSnapshot ?? captureChatMainRoute(initialTarget.character, initialTarget.chat, moduleContext)" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const route = captureChatMainRoute(selectedCharacter, selectedChatRoom)" },
+        { "file": "src/lib/SideBars/EditModeToggle.svelte", "contains": "onclick={() => setEditModel('sub')}" }
       ],
       "regressionTests": [
         "src/ts/process/mcp/editMode.test.ts",
+        "src/ts/process/mcp/toolGate.test.ts",
         "src/ts/process/mcp/editSession.test.ts",
         "src/ts/process/mcp/editBackup.test.ts",
         "src/ts/process/mcp/risuaccess/writeAccess.test.ts",

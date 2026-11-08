@@ -20,7 +20,9 @@
         EXTERNAL_EDIT_APPS, type EditModeChoice,
     } from 'src/ts/process/mcp/editMode'
     import { editBackupCount, restoreEdits, type EditApproval } from 'src/ts/process/mcp/editSession'
-    import { chatToolBlock, toolBlockText } from 'src/ts/process/mcp/toolGate'
+    import { chatToolBlock, mainRouteMode, toolBlockText } from 'src/ts/process/mcp/toolGate'
+    import { classicModelIdFor, resolveChatModelBinding } from 'src/ts/process/request/modelPresetBinding'
+    import { getGenerationModelString } from 'src/ts/process/models/modelString'
     import { enableExternalMcp, externalMcpStatus, type ExternalMcpStatus } from 'src/ts/process/mcp/externalBridge'
     import { mcpClientSetups } from 'src/ts/process/mcp/externalMcpSetup'
     import SelectInput from '../UI/GUI/SelectInput.svelte'
@@ -61,6 +63,16 @@
     let approval = $derived(session?.approval ?? 'ask')
     let count = $derived(editBackupCount(session))
     let block = $derived(on ? chatToolBlock(chat, true) : null)
+    // The model the built-in mode's requests go to (toolGate.ts; the user's request, 2026-11-08).
+    let editModel = $derived<'main' | 'sub'>(DBState.db.nodeOnlyEditModeModel === 'sub' ? 'sub' : 'main')
+    let routeLabel = $derived.by(() => {
+        if (!on) return null
+        const mode = mainRouteMode(true)
+        const binding = resolveChatModelBinding(chat, mode)
+        if (binding.kind === 'block') return null
+        if (binding.kind === 'modelPreset') return binding.preset.name
+        return getGenerationModelString(classicModelIdFor(binding, mode))
+    })
     let busy = $state(false)
     // The dropdown shows the mode again when a question was cancelled.
     let selectKey = $state(0)
@@ -123,6 +135,11 @@
         }
     }
 
+    function setEditModel(next: 'main' | 'sub') {
+        if (next === 'sub') DBState.db.nodeOnlyEditModeModel = 'sub'
+        else delete DBState.db.nodeOnlyEditModeModel
+    }
+
     function setApproval(next: EditApproval) {
         if (!app) {
             setEditApproval(chat, next)
@@ -177,7 +194,7 @@
             <ChevronDownIcon size={16} class={'shrink-0 transition-transform ' + (open ? '' : '-rotate-90')} />
             <span class="shrink-0 whitespace-nowrap">{language.editModeToggle}</span>
             <span class="ml-1 min-w-0 truncate text-xs" class:text-textcolor2={choice === 'off'} class:text-primary={choice !== 'off'}>
-                {choice === 'off' ? language.editModeChoiceOff : choice === 'builtin' ? language.editModeBuiltinShort : engineLabel(choice)}
+                {choice === 'off' ? language.editModeChoiceOff : choice === 'builtin' ? language.editModeBuiltinShort + (editModel === 'sub' ? ' · ' + language.editModeModelSubShort : '') : engineLabel(choice)}
             </span>
         </button>
         <Help key="editMode" />
@@ -220,6 +237,16 @@
                     {/if}
                 </div>
             {/if}
+        {/if}
+        {#if !app}
+            <div class="flex flex-col gap-1" data-edit-model={editModel}>
+                <span>{language.editModeModel}</span>
+                <div class="grid grid-cols-2 gap-2">
+                    <ShButton size="sm" variant={editModel === 'main' ? 'primary' : 'outline'} className="h-auto min-h-8 whitespace-normal px-2 py-1" onclick={() => setEditModel('main')}>{language.editModeModelMain}</ShButton>
+                    <ShButton size="sm" variant={editModel === 'sub' ? 'primary' : 'outline'} className="h-auto min-h-8 whitespace-normal px-2 py-1" onclick={() => setEditModel('sub')}>{language.editModeModelSub}</ShButton>
+                </div>
+                <span class="text-xs text-textcolor2 break-words" data-edit-model-route>{routeLabel ? language.editModeModelTo.replace('{model}', routeLabel) : language.editModeModelUnset}</span>
+            </div>
         {/if}
         <div class="flex flex-col gap-1">
             <span>{language.editModeApproval}</span>

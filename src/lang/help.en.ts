@@ -342,6 +342,7 @@ export const helpEn = {
             "- The edit mode is the Risu Access MCP module being on for this chat (like 🎨 and its module): picking it here turns the module on and off, and turning the module on or off in the module menu moves this too.\n" +
             "- Picking it asks: a new edit chat, or this chat. The module is added when there is none.\n" +
             "- With it on, the chat's main replies carry tools without changing the model preset's 'Tool use'.\n" +
+            "- Model for the edits: the main model (the default) or the sub model. With the sub model, this chat's replies go to the sub model, with the same prompt and tools: the chat's sub slot when it uses model presets, else the sub model in the settings. One choice for all of Risu; where the requests go is shown below it.\n" +
             "- When the AI edits: Auto writes without asking; Manual asks for every write.\n" +
             "- Right before the AI's first change, a bot is copied into its folder as 'name [backup time]' (without chats; its 3 newest kept, older ones to the trash). A module is recorded in this chat. 'Undo the edits' puts back what was changed this time.\n" +
             "- Turning it off asks whether to keep or undo the edits.\n" +

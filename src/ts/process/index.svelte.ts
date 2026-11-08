@@ -4,7 +4,7 @@ import { DBState } from '../stores.svelte';
 import { requestInputText, type SentInput } from '../inputVersions';
 import { withoutAuxLines } from './auxLorebook';
 import { tagReplyByAuxLorebook } from './auxLorebookRun';
-import { warnBlockedTools } from './mcp/toolGate';
+import { captureChatMainRoute, warnBlockedTools } from './mcp/toolGate';
 import { startAutoIllustration } from './illustrationRun';
 import { CharEmotion, selectedCharID } from "../stores.svelte";
 import { ChatTokenizer, tokenize, tokenizeNum } from "../tokenizer";
@@ -369,7 +369,8 @@ export async function sendChat(chatProcessIndex = -1,arg:{
         }
     }
 
-    const routeSnapshot = arg.routeSnapshot ?? captureChatModelRoute(initialTarget.chat, 'model')
+    // The main model, or the sub model for the bot edit mode set to it (toolGate.ts).
+    const routeSnapshot = arg.routeSnapshot ?? captureChatMainRoute(initialTarget.character, initialTarget.chat, moduleContext)
     const emotionRouteSnapshot = arg.emotionRouteSnapshot ?? captureChatModelRoute(initialTarget.chat, 'emotion')
     const memoryRouteSnapshot = arg.memoryRouteSnapshot ?? captureChatModelRoute(initialTarget.chat, 'memory')
     const generationId = v4()
