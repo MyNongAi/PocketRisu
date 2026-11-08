@@ -13,7 +13,8 @@ import { loadLoreBookV3Prompt } from './lorebook.svelte'
 import { requestChatData } from './request/request'
 import { collectStreamingText } from './request/shared'
 import { generateAIImage } from './stableDiff'
-import { writeInlayImage } from './files/inlays'
+import { setInlayMetaFields, writeInlayImage } from './files/inlays'
+import { inlayIdsOf } from './illustrationAlbum'
 import { auxEntryText, loreRole, markedLorebookEntries, rememberAuxLines, splitReplyForTags, withoutAuxLines } from './auxLorebook'
 import { rekeyRequestMark } from '../inputVersions'
 import { v4 } from 'uuid'
@@ -217,9 +218,15 @@ export function removeIllustrations(message: Message): void {
     delete message.nodeOnlyIllustrations
 }
 
+/** A drawn picture stays with the bot and chat it was drawn for (the album), even when another one is open by then. */
+function keepPictureOwner(inlayId: string, chaId: string, chatId: string): void {
+    void setInlayMetaFields(inlayId, { charId: chaId, chatId }).catch((error) => console.warn('[illustration] picture owner not kept', error))
+}
+
 /**
  * Draw the illustrations of one reply. `manual`: asked from the message menu
- * (says so when there is nothing to draw).
+ * (says so when there is nothing to draw). `atLeastOne`: asked for (the 🎨
+ * button, the album's batch; 2026-11-09), so "0–1 per reply" draws one.
  */
 export async function illustrateReply(arg: {
     chaId: string
@@ -227,11 +234,13 @@ export async function illustrateReply(arg: {
     messageId: string
     moduleContext?: ModuleRuntimeContext
     manual?: boolean
+    atLeastOne?: boolean
 }): Promise<number> {
     if (get(illustratingReplies).has(arg.messageId)) return 0
     const found = findReply(arg.chaId, arg.chatId, arg.messageId)
     if (!found || found.message.role !== 'char') return 0
-    const settings = illustrationSettings(found.character.nodeOnlyIllustration)
+    const own = illustrationSettings(found.character.nodeOnlyIllustration)
+    const settings = arg.atLeastOne && own.count === '0-1' ? { ...own, count: '1' as const } : own
     if (DBState.db.sdProvider === '') {
         if (arg.manual) notifyError(language.illustrationNoImageProvider)
         return 0
@@ -324,6 +333,7 @@ export async function illustrateReply(arg: {
             const img = new Image()
             img.src = image
             const inlayId = await writeInlayImage(img)
+            keepPictureOwner(inlayId, arg.chaId, arg.chatId)
             const after = findReply(arg.chaId, arg.chatId, arg.messageId)
             if (!after || !changeLine(after.message, drawing[index], inlayLine(inlayId))) continue
             rememberAuxLines(after.message, [inlayLine(inlayId)])
@@ -356,4 +366,105 @@ export function startAutoIllustration(arg: { character: character, chat: Chat, m
     }
     if (!reply?.chatId || Object.keys(reply.nodeOnlyIllustrations ?? {}).length > 0) return
     void illustrateReply({ chaId: arg.character.chaId, chatId: arg.chat.id, messageId: reply.chatId, moduleContext: arg.moduleContext })
+}
+
+/** Pictures being drawn again one at a time from the album, by picture id. */
+export const redrawingIllustrations = writable<ReadonlySet<string>>(new Set())
+
+function setRedrawing(inlayId: string, on: boolean) {
+    redrawingIllustrations.update((current) => {
+        const next = new Set(current)
+        if (on) next.add(inlayId)
+        else next.delete(inlayId)
+        return next
+    })
+}
+
+/**
+ * One picture of a reply drawn again from the scene it was drawn from, with
+ * another seed (Lightboard's per-scene 재생성; the user's request,
+ * 2026-11-09). The new picture takes its place. Its id, or null.
+ */
+export async function redrawIllustration(arg: { chaId: string, chatId: string, messageId: string, inlayId: string }): Promise<string | null> {
+    const found = findReply(arg.chaId, arg.chatId, arg.messageId)
+    const prompt = found?.message.nodeOnlyIllustrations?.[arg.inlayId]
+    if (!found || !prompt || get(redrawingIllustrations).has(arg.inlayId)) return null
+    if (DBState.db.sdProvider === '') {
+        notifyError(language.illustrationNoImageProvider)
+        return null
+    }
+    setRedrawing(arg.inlayId, true)
+    try {
+        const size = ratioSize(illustrationSettings(found.character.nodeOnlyIllustration).ratio)
+        // A preset's fixed seed would draw the same picture.
+        const nai = prompt.nai ? { ...prompt.nai, seed: undefined } : undefined
+        const image = await generateAIImage(prompt.positive, found.character, prompt.negative, 'inlay', { ...size, characters: prompt.characters, ...(nai ? { nai } : {}) })
+        if (!image) return null
+        const img = new Image()
+        img.src = image
+        const inlayId = await writeInlayImage(img)
+        keepPictureOwner(inlayId, arg.chaId, arg.chatId)
+        const after = findReply(arg.chaId, arg.chatId, arg.messageId)
+        if (!after || !changeLine(after.message, inlayLine(arg.inlayId), inlayLine(inlayId))) return null
+        while (changeLine(after.message, inlayLine(arg.inlayId), inlayLine(inlayId))) { /* every copy of the line */ }
+        rememberAuxLines(after.message, [inlayLine(inlayId)])
+        after.message.nodeOnlyIllustrations = Object.fromEntries(Object.entries(after.message.nodeOnlyIllustrations ?? {})
+            .map(([id, kept]) => (id === arg.inlayId ? [inlayId, kept] : [id, kept])))
+        return inlayId
+    } catch (error) {
+        console.error(error)
+        notifyError(`${language.illustrationFailed}: ${error}`)
+        return null
+    } finally {
+        setRedrawing(arg.inlayId, false)
+    }
+}
+
+/** One picture 🎨 drew taken out of its reply (the picture itself stays in storage). */
+export function takeOutIllustration(message: Message, inlayId: string): boolean {
+    if (!message.nodeOnlyIllustrations?.[inlayId]) return false
+    while (changeLine(message, inlayLine(inlayId), null)) { /* every copy of the line */ }
+    const rest = Object.fromEntries(Object.entries(message.nodeOnlyIllustrations).filter(([id]) => id !== inlayId))
+    if (Object.keys(rest).length > 0) message.nodeOnlyIllustrations = rest
+    else delete message.nodeOnlyIllustrations
+    return true
+}
+
+export interface IllustrationBatch {
+    chatId: string
+    done: number
+    total: number
+    drawn: number
+    stopping: boolean
+}
+
+/** The album's "draw the replies without a picture", while it runs (one at a time, app-wide). */
+export const illustrationBatch = writable<IllustrationBatch | null>(null)
+
+export function stopIllustrationBatch(): void {
+    illustrationBatch.update((batch) => (batch ? { ...batch, stopping: true } : batch))
+}
+
+/**
+ * Draw the replies one after another (NovelAI takes one picture at a time),
+ * each at least one picture. A reply that got a picture meanwhile is skipped.
+ * How many pictures were drawn.
+ */
+export async function illustrateRepliesInTurn(arg: { chaId: string, chatId: string, messageIds: readonly string[], moduleContext?: ModuleRuntimeContext }): Promise<number> {
+    if (get(illustrationBatch) || arg.messageIds.length === 0) return 0
+    illustrationBatch.set({ chatId: arg.chatId, done: 0, total: arg.messageIds.length, drawn: 0, stopping: false })
+    let drawn = 0
+    try {
+        for (let i = 0; i < arg.messageIds.length; i++) {
+            if (get(illustrationBatch)?.stopping) break
+            const found = findReply(arg.chaId, arg.chatId, arg.messageIds[i])
+            if (found && inlayIdsOf(found.message.data).length === 0) {
+                drawn += await illustrateReply({ chaId: arg.chaId, chatId: arg.chatId, messageId: arg.messageIds[i], moduleContext: arg.moduleContext, atLeastOne: true })
+            }
+            illustrationBatch.update((batch) => (batch ? { ...batch, done: i + 1, drawn } : batch))
+        }
+    } finally {
+        illustrationBatch.set(null)
+    }
+    return drawn
 }

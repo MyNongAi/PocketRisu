@@ -15,6 +15,7 @@
     import { ArrowLeft, ArrowUpIcon, GlobeIcon, PlusIcon } from '@lucide/svelte';
     import { hypaV3ModalOpen, hypaV3ProgressStore } from "./ts/stores.svelte";
     import { assetViewerStore } from './ts/assetViewer.svelte';
+    import { illustrationAlbumStore } from './ts/illustrationAlbum.svelte';
     import { protonBrowserState } from './ts/protonBrowser.svelte';
     import PluginAlertModal from './lib/Others/PluginAlertModal.svelte';
     import LazyComponent from './lib/Others/LazyComponent.svelte';
@@ -77,6 +78,7 @@
     const popupEditorLoader = () => import('./lib/Others/PopupEditor.svelte')
     const assetViewerLoader = () => import('./lib/Others/AssetViewer.svelte')
     const protonBrowserLoader = () => import('./lib/Others/ProtonFolderBrowser.svelte')
+    const illustrationAlbumLoader = () => import('./lib/Others/IllustrationAlbum.svelte')
 
     function openLegacyGrid() {
         openCharacterManager.set(false)
@@ -340,6 +342,10 @@
         {/if}
         {/if}
         </SplitWorkspace>
+    {/if}
+    <!-- Before the alerts: its confirms show above it. -->
+    {#if illustrationAlbumStore.open}
+        <LazyComponent overlay loader={illustrationAlbumLoader} />
     {/if}
     <AlertComp />
     <LaptopRestartOverlay />

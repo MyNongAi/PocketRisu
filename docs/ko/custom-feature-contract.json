@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.17.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-11-08",
+  "updatedAt": "2026-11-09",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
@@ -3708,6 +3708,39 @@
       ],
       "regressionTests": [
         "src/ts/gui/botToModule.test.ts"
+      ]
+    },
+    {
+      "id": "ILLUSTRATION-ALBUM",
+      "title": "🎨 삽화: 답 위 그리기 버튼, 삽화 앨범(이 채팅·봇 전체·화풍 샘플), 한 장 다시 그리기, 그림 없는 답 차례로 그리기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/process/illustrationAlbum.ts",
+        "src/ts/process/illustrationSamples.ts",
+        "src/ts/process/illustrationRun.ts",
+        "src/ts/illustrationAlbum.svelte.ts",
+        "src/lib/Others/IllustrationAlbum.svelte",
+        "src/lib/ChatScreens/Chat.svelte",
+        "src/lib/SideBars/Toggles.svelte",
+        "src/lib/SideBars/IllustrationSettings.svelte",
+        "src/App.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/illustrationRun.ts", "contains": "const settings = arg.atLeastOne && own.count === '0-1' ? { ...own, count: '1' as const } : own" },
+        { "file": "src/ts/process/illustrationRun.ts", "contains": "keepPictureOwner(inlayId, arg.chaId, arg.chatId)" },
+        { "file": "src/ts/process/illustrationRun.ts", "contains": "export async function redrawIllustration(" },
+        { "file": "src/ts/process/illustrationRun.ts", "contains": "export async function illustrateRepliesInTurn(" },
+        { "file": "src/ts/process/illustrationSamples.ts", "contains": "module.assetManifest = await editAssetManifest(module.assetManifest, [index >= 0 ? { type: 'replace', index, item } : { type: 'append', item }])" },
+        { "file": "src/ts/process/illustrationAlbum.ts", "contains": "export const SAMPLE_ASSET_PREFIX = '🎨 샘플 · '" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "data-illustration-draw" },
+        { "file": "src/lib/SideBars/Toggles.svelte", "contains": "data-illustration-album-open" },
+        { "file": "src/lib/SideBars/IllustrationSettings.svelte", "contains": "data-illustration-samples-open" },
+        { "file": "src/App.svelte", "contains": "<LazyComponent overlay loader={illustrationAlbumLoader} />" }
+      ],
+      "regressionTests": [
+        "src/ts/process/illustrationAlbum.test.ts",
+        "src/ts/process/illustrationSamples.test.ts",
+        "src/ts/process/illustrationRun.test.ts"
       ]
     }
   ]

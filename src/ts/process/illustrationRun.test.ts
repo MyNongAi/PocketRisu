@@ -4,6 +4,7 @@ const db = vi.hoisted(() => ({ value: {} as any }))
 const requestChatData = vi.hoisted(() => vi.fn())
 const generateAIImage = vi.hoisted(() => vi.fn())
 const writeInlayImage = vi.hoisted(() => vi.fn())
+const setInlayMetaFields = vi.hoisted(() => vi.fn(async (_id: string, _patch: any) => {}))
 const notifyError = vi.hoisted(() => vi.fn())
 const notifyInfo = vi.hoisted(() => vi.fn())
 const loadLoreBookV3Prompt = vi.hoisted(() => vi.fn(async (_context?: any) => ({ actives: [] as any[] })))
@@ -15,12 +16,16 @@ vi.mock('./lorebook.svelte', () => ({ loadLoreBookV3Prompt }))
 vi.mock('./request/request', () => ({ requestChatData }))
 vi.mock('./request/shared', () => ({ collectStreamingText: vi.fn() }))
 vi.mock('./stableDiff', () => ({ generateAIImage }))
-vi.mock('./files/inlays', () => ({ writeInlayImage }))
+vi.mock('./files/inlays', () => ({ writeInlayImage, setInlayMetaFields }))
 vi.mock('../alert', () => ({ notifyError, notifyInfo }))
 vi.mock('../../lang', () => ({ language: { illustrationFailed: 'failed', illustrationNothing: 'nothing', illustrationNoImageProvider: 'no provider', illustrationModuleName: '🎨 삽화', illustrationModuleDescription: 'presets' } }))
 vi.stubGlobal('Image', class { src = '' })
 
-const { illustrateReply, presetsFor, removeIllustrations, startAutoIllustration } = await import('./illustrationRun')
+const {
+    illustrateReply, illustrateRepliesInTurn, illustrationBatch, presetsFor, redrawIllustration, removeIllustrations,
+    startAutoIllustration, stopIllustrationBatch, takeOutIllustration,
+} = await import('./illustrationRun')
+const { get } = await import('svelte/store')
 
 const scene = (line: number) => ({ line, camera: 'cowboy shot', scene: '1girl', characters: [{ name: 'Maah', positive: 'silver hair', negative: '' }] })
 
@@ -38,6 +43,7 @@ beforeEach(() => {
     requestChatData.mockReset()
     generateAIImage.mockReset()
     writeInlayImage.mockReset()
+    setInlayMetaFields.mockClear()
     notifyError.mockReset()
     notifyInfo.mockReset()
 })
@@ -230,5 +236,98 @@ describe('what lorebook and how many messages go along', () => {
         expect(prompt()).toContain('# Rules\nMaah: silver hair\n\n---\n\nMira: red hair, green eyes\n')
         expect(prompt().split('Mira: red hair, green eyes').length - 1).toBe(1)
         expect(prompt()).not.toContain('not Lightboard')
+    })
+})
+
+// The 🎨 button above each reply, and the album (the user's request, 2026-11-09).
+describe('drawing asked for, one picture again, and replies in turn', () => {
+    const prompt = () => (requestChatData.mock.calls.at(-1)[0].formated as { content: string }[]).map((m) => m.content).join('\n')
+
+    it('asks for at least one picture when drawing is asked for, and keeps the picture with its bot and chat', async () => {
+        setup({ enabled: true })
+        requestChatData.mockResolvedValue({ type: 'success', result: JSON.stringify([scene(1)]) })
+        generateAIImage.mockResolvedValue('data:image/png;base64,AAA')
+        writeInlayImage.mockResolvedValue('inlay-1')
+        await run()
+        expect(prompt()).toContain('Pick 0 to 1 moment(s)')
+        removeIllustrations(db.value.characters[0].chats[0].message[1])
+        writeInlayImage.mockResolvedValue('inlay-2')
+        await illustrateReply({ chaId: 'ch1', chatId: 'c1', messageId: 'r1', manual: true, atLeastOne: true })
+        expect(prompt()).toContain('Pick exactly 1 moment(s)')
+        expect(setInlayMetaFields).toHaveBeenCalledWith('inlay-2', { charId: 'ch1', chatId: 'c1' })
+    })
+
+    it('draws one picture again from its scene, without a fixed seed, in its place', async () => {
+        const { character, reply } = setup({ enabled: true, ratio: 'square' })
+        reply.data = 'a\n{{inlay::old}}\nb\n{{inlay::other}}'
+        reply.swipes = ['earlier', reply.data]
+        const kept = { positive: 'scene p', negative: 'n', characters: [{ positive: 'c', negative: '' }], nai: { steps: 20, seed: 7 } }
+        reply.nodeOnlyIllustrations = { old: kept, other: { positive: 'o', negative: '', characters: [] } }
+        generateAIImage.mockResolvedValue('data:image/png;base64,BBB')
+        writeInlayImage.mockResolvedValue('new')
+        expect(await redrawIllustration({ chaId: 'ch1', chatId: 'c1', messageId: 'r1', inlayId: 'old' })).toBe('new')
+        expect(generateAIImage).toHaveBeenCalledWith('scene p', character, 'n', 'inlay', {
+            width: 1024, height: 1024, characters: [{ positive: 'c', negative: '' }], nai: { steps: 20, seed: undefined },
+        })
+        expect(reply.data).toBe('a\n{{inlay::new}}\nb\n{{inlay::other}}')
+        expect(reply.swipes[1]).toBe(reply.data)
+        expect(Object.keys(reply.nodeOnlyIllustrations)).toEqual(['new', 'other'])
+        expect(reply.nodeOnlyIllustrations.new).toEqual(kept)
+        expect(reply.nodeOnlyAuxLines).toContain('{{inlay::new}}')
+        expect(setInlayMetaFields).toHaveBeenCalledWith('new', { charId: 'ch1', chatId: 'c1' })
+    })
+
+    it('leaves a picture alone when drawing it again fails, or when it was not drawn by 🎨', async () => {
+        const { reply } = setup()
+        reply.data = 'a\n{{inlay::old}}'
+        reply.nodeOnlyIllustrations = { old: { positive: 'p', negative: '', characters: [] } }
+        generateAIImage.mockResolvedValue(false)
+        expect(await redrawIllustration({ chaId: 'ch1', chatId: 'c1', messageId: 'r1', inlayId: 'old' })).toBeNull()
+        expect(reply.data).toBe('a\n{{inlay::old}}')
+        expect(await redrawIllustration({ chaId: 'ch1', chatId: 'c1', messageId: 'r1', inlayId: 'uploaded' })).toBeNull()
+        expect(generateAIImage).toHaveBeenCalledTimes(1)
+    })
+
+    it('takes one picture out of its reply', () => {
+        const { reply } = setup()
+        reply.data = 'a\n{{inlay::x}}\nb\n{{inlay::y}}'
+        reply.nodeOnlyIllustrations = { x: { positive: 'p', negative: '', characters: [] }, y: { positive: 'q', negative: '', characters: [] } }
+        expect(takeOutIllustration(reply, 'x')).toBe(true)
+        expect(reply.data).toBe('a\nb\n{{inlay::y}}')
+        expect(Object.keys(reply.nodeOnlyIllustrations)).toEqual(['y'])
+        expect(takeOutIllustration(reply, 'x')).toBe(false)
+        takeOutIllustration(reply, 'y')
+        expect(reply.data).toBe('a\nb')
+        expect(reply.nodeOnlyIllustrations).toBeUndefined()
+    })
+
+    it('draws the replies one after another, skips one that got a picture meanwhile, and stops when asked', async () => {
+        const { chat } = setup()
+        const second = { role: 'char', data: 'Second reply.', chatId: 'r2' } as any
+        const third = { role: 'char', data: 'Third.\n{{inlay::drawn}}', chatId: 'r3' } as any
+        const fourth = { role: 'char', data: 'Fourth.', chatId: 'r4' } as any
+        chat.message.push(second, third, fourth)
+        requestChatData.mockResolvedValue({ type: 'success', result: JSON.stringify([scene(1)]) })
+        generateAIImage.mockResolvedValue('data:image/png;base64,AAA')
+        let n = 0
+        writeInlayImage.mockImplementation(async () => `p${++n}`)
+        const seen: any[] = []
+        const unsubscribe = illustrationBatch.subscribe((batch) => { if (batch) seen.push({ ...batch }) })
+        expect(await illustrateRepliesInTurn({ chaId: 'ch1', chatId: 'c1', messageIds: ['r1', 'r2', 'r3'] })).toBe(2)
+        unsubscribe()
+        expect(requestChatData).toHaveBeenCalledTimes(2)
+        expect(prompt()).toContain('Pick exactly 1 moment(s)')
+        expect(seen.at(-1)).toMatchObject({ done: 3, total: 3, drawn: 2 })
+        expect(get(illustrationBatch)).toBeNull()
+
+        // Stopped after the first: the rest wait.
+        requestChatData.mockImplementation(async () => {
+            stopIllustrationBatch()
+            return { type: 'success', result: JSON.stringify([scene(1)]) }
+        })
+        delete second.nodeOnlyIllustrations
+        second.data = 'Second reply.'
+        expect(await illustrateRepliesInTurn({ chaId: 'ch1', chatId: 'c1', messageIds: ['r2', 'r4'] })).toBe(1)
+        expect(fourth.data).toBe('Fourth.')
     })
 })

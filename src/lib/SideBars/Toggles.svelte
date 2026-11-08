@@ -10,8 +10,9 @@
     import { alertConfirm, alertConfirmMulti, alertTogglePresets, notifySuccess } from "src/ts/alert";
     import { requestImmediateSave } from "src/ts/globalApi.svelte";
     import { tooltip } from "src/ts/gui/tooltip";
-    import { PinIcon, SaveIcon, FolderHeartIcon, SettingsIcon } from "@lucide/svelte";
+    import { PinIcon, SaveIcon, FolderHeartIcon, SettingsIcon, ImagesIcon } from "@lucide/svelte";
     import IllustrationSettings from "./IllustrationSettings.svelte";
+    import { openIllustrationAlbum } from "src/ts/illustrationAlbum.svelte";
     import AuxAssetSettings from "./AuxAssetSettings.svelte";
     import McpToolNotice from "./McpToolNotice.svelte";
     import EditModeToggle from "./EditModeToggle.svelte";
@@ -411,6 +412,14 @@
             <Help key="illustration" />
         </span>
         <span class="flex items-center gap-1 shrink-0">
+            <!-- The 🎨 album: this chat's pictures, the bot's, the style samples (IllustrationAlbum.svelte). -->
+            <button
+                class="p-1 text-textcolor2 hover:text-textcolor"
+                title={language.illustrationAlbum}
+                aria-label={language.illustrationAlbum}
+                data-illustration-album-open
+                onclick={() => { if (view.character) openIllustrationAlbum(view.character.chaId, view.chat?.id ?? '') }}
+            ><ImagesIcon size={18} /></button>
             <button
                 class="p-1 text-textcolor2 hover:text-textcolor"
                 title={language.illustrationSettings}

@@ -17,7 +17,8 @@
     // (Selects sit in plain divs: a <label> around ShSelect sent its clicks to
     // the hidden native select, which closed the list at once.)
     import { onMount, untrack } from 'svelte'
-    import { PlusIcon } from '@lucide/svelte'
+    import { ImagesIcon, PlusIcon } from '@lucide/svelte'
+    import { openIllustrationAlbum } from 'src/ts/illustrationAlbum.svelte'
     import { language } from 'src/lang'
     import { DBState, selectedCharID } from 'src/ts/stores.svelte'
     import { notifyError, notifySuccess } from 'src/ts/alert'
@@ -271,7 +272,11 @@
                         <span class="min-w-0 truncate">{ownModule?.name ?? language.illustrationModuleName}</span>
                     {/if}
                 </div>
-                <ShButton size="sm" variant="outline" className="self-start" onclick={newPreset}><PlusIcon size={14}/> {language.illustrationNewPreset}</ShButton>
+                <div class="flex flex-wrap gap-2">
+                    <ShButton size="sm" variant="outline" onclick={newPreset}><PlusIcon size={14}/> {language.illustrationNewPreset}</ShButton>
+                    <!-- Each preset drawn once, to pick by the picture (the 🎨 album's 화풍 샘플). -->
+                    <ShButton size="sm" variant="outline" onclick={() => { if (char) openIllustrationAlbum(char.chaId, chat?.id ?? '', 'samples') }} data-illustration-samples-open><ImagesIcon size={14}/> {language.illustrationSamplesOpen}</ShButton>
+                </div>
                 <!-- NovelAI / WebUI images: drop (or tap to pick) to make a preset of everything they hold. -->
                 <div
                     role="button"

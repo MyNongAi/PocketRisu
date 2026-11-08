@@ -1437,6 +1437,8 @@ export interface Database{
     nodeOnlyIllustrationPresetsFoldered?: boolean
     /** The illustration author's note every bot's scene request carries (2026-10-28). */
     nodeOnlyIllustrationNote?: string
+    /** The scene every style sample of the 🎨 album is drawn from (illustrationAlbum.ts, 2026-11-09). */
+    nodeOnlyIllustrationSampleScene?: string
     /** One-shot migration marker for grouping pre-existing high-similarity names. */
     similarityFolderMigrationVersion?: number
     /** One-shot marker: the bots already here were grouped into creator folders (creatorFolders.ts). */

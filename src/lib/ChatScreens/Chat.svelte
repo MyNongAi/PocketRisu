@@ -384,14 +384,18 @@
     let hasIllustrations = $derived(Object.keys(illustrationMessage?.nodeOnlyIllustrations ?? {}).length > 0)
     let illustrationBusy = $derived(!!illustrationMessage?.chatId && $illustratingReplies.has(illustrationMessage.chatId))
 
-    function drawIllustrations() {
+    // The 🎨 in the reply's own button row (the user's request, 2026-11-09:
+    // above each reply, for one that came out without a picture). Asked for,
+    // so at least one picture; drawing again asks first.
+    async function drawIllustrations() {
         const chara = DBState.db.characters[view.characterIndex]
         const chat = chara?.chats?.[view.chatIndex]
         const message = chat?.message?.[idx]
         if (!chara || !chat || !message || message.role !== 'char') return
+        if (Object.keys(message.nodeOnlyIllustrations ?? {}).length > 0 && !await alertConfirm(language.illustrationRedrawConfirm)) return
         message.chatId ??= v4()
         removeIllustrations(message)
-        void illustrateReply({ chaId: chara.chaId, chatId: chat.id, messageId: message.chatId, moduleContext: captureModuleRuntimeContext(chara, chat), manual: true })
+        void illustrateReply({ chaId: chara.chaId, chatId: chat.id, messageId: message.chatId, moduleContext: captureModuleRuntimeContext(chara, chat), manual: true, atLeastOne: true })
     }
 
     // 🌙 in the message menu, when the bot's ⚙ turns it on, or leaves tagging
@@ -1104,6 +1108,21 @@
                 <!-- Hidden from the button row by the input menu's toggle, the translate button is in the ☰ menu
                      instead; the edit button it shares the snippet with stays in the row. -->
                 {@render translationButton(false, !DBState.db.nodeOnlyHideMessageTranslateButton)}
+                {#if role === 'char' && idx > -1 && DBState.db.characters[view.characterIndex]?.nodeOnlyIllustration?.enabled}
+                    {@const illustrationLabel = illustrationBusy ? language.illustrationDrawing : hasIllustrations ? language.illustrationRedraw : language.illustrationDraw}
+                    <!-- 🎨 Draw this reply's illustrations, or draw them again (illustration.ts); it was in the ☰ menu until 2026-11-09. -->
+                    <button
+                        class={"flex items-center shrink-0 transition-colors button-icon-illustration " + (illustrationBusy ? 'animate-pulse text-primary' : 'hover:text-primary')}
+                        disabled={illustrationBusy}
+                        title={illustrationLabel}
+                        aria-label={illustrationLabel}
+                        data-illustration-draw
+                        onclick={async () => {
+                            await sleep(1)
+                            await drawIllustrations()
+                        }}
+                    ><PaletteIcon size={20}/></button>
+                {/if}
                 <!-- Copy, 🔊 and delete stay in the row at every width: a narrow screen
                      used to put them in the ☰ menu too, which left only the edit button
                      beside it on a phone (the user's request, 2026-11-07). -->
@@ -1436,18 +1455,6 @@
             <Volume2Icon size={20}/>
             {#if showNames}
                 <span class="ml-1">TTS</span>
-            {/if}
-        </button>
-    {/if}
-    {#if role === 'char' && !placeholder && DBState.db.characters[view.characterIndex]?.nodeOnlyIllustration?.enabled}
-        <!-- 🎨 Draw this reply's illustrations, or draw them again (illustration.ts). -->
-        <button class="flex items-center hover:text-primary transition-colors button-icon-illustration" disabled={illustrationBusy} onclick={async () => {
-            await sleep(1)
-            drawIllustrations()
-        }}>
-            <PaletteIcon size={20}/>
-            {#if showNames}
-                <span class="ml-1">{illustrationBusy ? language.illustrationDrawing : hasIllustrations ? language.illustrationRedraw : language.illustrationDraw}</span>
             {/if}
         </button>
     {/if}
