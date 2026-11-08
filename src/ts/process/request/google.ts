@@ -647,31 +647,17 @@ async function requestGoogle(url:string, body:any, headers:{[key:string]:string}
     
     const db = getDatabase()
 
+    // RESOURCE_EXHAUSTED is a 429: requestChatData's retry loop waits and
+    // tries again (rateLimitRetry.ts). With "anti server overload" on, an AI
+    // Studio key used to be resent here at once, with no wait and no limit,
+    // until it went through or the user stopped it.
     const fallBackGemini = async (originalError:string):Promise<requestDataResponse> => {
-        if(!db.antiServerOverloads){
-            return {
-                type: 'fail',
-                result: originalError,
-                failByServerError: true
-            }
+        return {
+            type: 'fail',
+            result: originalError,
+            failByServerError: true,
+            rateLimited: true,
         }
-
-        if(arg?.abortSignal?.aborted){
-            return {
-                type: 'fail',
-                result: originalError,
-                failByServerError: true
-            }
-        }
-        if(arg.modelInfo.format === LLMFormat.VertexAIGemini){
-            return {
-                type: 'fail',
-                result: originalError,
-                failByServerError: true
-            }
-        }
-
-        return requestGoogle(url, body, headers, arg, logBody)
     }
 
     // process the text parts into a single text response

@@ -264,6 +264,9 @@ export function normalizeDatabase(data:Database){
     if(checkNullish(data.requestRetrys)){
         data.requestRetrys = 2
     }
+    if(checkNullish(data.nodeOnlyRateLimitWaitMinutes)){
+        data.nodeOnlyRateLimitWaitMinutes = 5
+    }
     if(checkNullish(data.useSayNothing)){
         data.useSayNothing = true
     }
@@ -1439,6 +1442,8 @@ export interface Database{
     nodeOnlyIllustrationNote?: string
     /** The scene every style sample of the 🎨 album is drawn from (illustrationAlbum.ts, 2026-11-09). */
     nodeOnlyIllustrationSampleScene?: string
+    /** Minutes a request keeps retrying after a 429, without spending requestRetrys (rateLimitRetry.ts); 0 = off. */
+    nodeOnlyRateLimitWaitMinutes?: number
     /** One-shot migration marker for grouping pre-existing high-similarity names. */
     similarityFolderMigrationVersion?: number
     /** One-shot marker: the bots already here were grouped into creator folders (creatorFolders.ts). */

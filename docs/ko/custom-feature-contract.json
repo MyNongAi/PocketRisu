@@ -3311,7 +3311,7 @@
       ],
       "requiredMarkers": [
         { "file": "src/ts/process/memory/hypav3.ts", "contains": "await sendAllowingPrefillRefusal(formated, send)" },
-        { "file": "src/ts/process/request/request.ts", "contains": "if(trys > db.requestRetrys || refusesTrailingAssistant(da.result)){" },
+        { "file": "src/ts/process/request/request.ts", "contains": "if(rateLimitSpent || trys > db.requestRetrys || refusesTrailingAssistant(da.result)){" },
         { "file": "src/ts/process/memory/hypav3.ts", "contains": "export function getCurrentHypaV3Preset(char?: character, chat?: Chat): HypaV3Preset {" },
         { "file": "src/ts/process/memory/hypav3.ts", "contains": "getCurrentHypaV3Preset(requestContext?.currentChar, requestContext?.currentChat).settings" },
         { "file": "src/ts/process/memory/hypav3.ts", "contains": "            requestContext?.abortSignal" },
@@ -3741,6 +3741,34 @@
         "src/ts/process/illustrationAlbum.test.ts",
         "src/ts/process/illustrationSamples.test.ts",
         "src/ts/process/illustrationRun.test.ts"
+      ]
+    },
+    {
+      "id": "RATE-LIMIT-RETRY",
+      "title": "429는 재요청 횟수를 쓰지 않고 간격을 늘려 가며 몇 분 동안 다시 보내기, 스트리밍 모델 프리셋도 첫 응답 전 실패를 재요청",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/process/request/rateLimitRetry.ts",
+        "src/ts/process/request/request.ts",
+        "src/ts/process/request/presetStreamPump.ts",
+        "src/ts/process/request/google.ts",
+        "src/ts/setting/advancedSettingsData.ts",
+        "src/lib/UI/GUI/RequestStatusToaster.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/process/request/rateLimitRetry.ts", "contains": "export const RATE_LIMIT_WAITS_MS = [1000, 2000, 4000, 8000, 15000, 30000] as const" },
+        { "file": "src/ts/process/request/presetStreamPump.ts", "contains": "export async function awaitFirstDelta(" },
+        { "file": "src/ts/process/request/request.ts", "contains": "const gen = await awaitFirstDelta(streamModelPreset(kind, preset, options, credential))" },
+        { "file": "src/ts/process/request/request.ts", "contains": "rateLimited: err instanceof ModelPresetAdapterError && err.kind === 'rate-limit'," },
+        { "file": "src/ts/process/request/request.ts", "contains": "if(rateLimitSpent || trys > db.requestRetrys || refusesTrailingAssistant(da.result)){" },
+        { "file": "src/ts/process/request/google.ts", "contains": "rateLimited: true," },
+        { "file": "src/ts/setting/advancedSettingsData.ts", "contains": "bindKey: 'nodeOnlyRateLimitWaitMinutes'" },
+        { "file": "src/lib/UI/GUI/RequestStatusToaster.svelte", "contains": "(a 429 waiting to retry, request.ts) is a running card again." }
+      ],
+      "regressionTests": [
+        "src/ts/process/request/rateLimitRetry.test.ts",
+        "src/ts/process/request/rateLimitRequestLoop.test.ts",
+        "src/ts/process/request/awaitFirstDelta.test.ts"
       ]
     }
   ]

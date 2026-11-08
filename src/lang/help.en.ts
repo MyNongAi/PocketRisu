@@ -119,6 +119,7 @@ export const helpEn = {
         genTimes:
             "This option is used to set the number of responses to generate on support models. other then first response will be act as cached reroll. this can reduce the cost of the model, but it can also increase the cost if you use it without reroll.",
         requestretrys: "This option is used to set the number of request retrys when request fails.",
+        rateLimitWaitMinutes: "A 429 (rate limit; Google's RESOURCE_EXHAUSTED) is a refusal that is not billed, so it does not spend the retry count: the request is sent again after 1, 2, 4, 8, 15 and 30 second waits for this long. The stop button ends the wait. 0 turns it off and retries a 429 by the retry count only.",
         chatLoadInitialPages: "Number of recent chat messages to render when a chat screen opens. Higher values show more history immediately but can make long chats heavier to open.",
         chatLoadAdditionalPages: "Number of older chat messages to render each time you scroll to the top. Higher values reduce repeated loading but can make each load heavier.",
         emotionPrompt: "This option is used to set the prompt that is used to detect emotion. if it is blank, it will use the default prompt.",

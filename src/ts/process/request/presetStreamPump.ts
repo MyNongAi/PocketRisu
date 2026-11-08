@@ -104,6 +104,23 @@ export interface PumpPresetStreamOptions {
     onFinish?: (outcome: 'done' | 'failed', lastUsage?: AdapterChatStreamDelta['usage']) => void
 }
 
+// Waits for an adapter stream's first delta and returns the stream with that
+// delta still in front. An adapter throws before its first delta when the
+// provider refuses the request (a 429, a 5xx, a bad key), so the refusal
+// rejects here, where the request's retry loop can see it, instead of later
+// inside the stream the chat is already reading.
+export async function awaitFirstDelta(
+    gen: AsyncGenerator<AdapterChatStreamDelta, void, void>,
+): Promise<AsyncGenerator<AdapterChatStreamDelta, void, void>> {
+    const first = await gen.next()
+    const head = first.done ? [] : [first.value as AdapterChatStreamDelta]
+    async function* replay(): AsyncGenerator<AdapterChatStreamDelta, void, void> {
+        yield* head
+        if (head.length > 0) yield* gen
+    }
+    return replay()
+}
+
 // Drains an adapter stream into a chunk controller, accumulating text/reasoning
 // and emitting throttled, backpressure-aware, trailing-flushed snapshots.
 export async function pumpPresetStream(

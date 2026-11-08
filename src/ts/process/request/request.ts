@@ -37,7 +37,8 @@ import {
 import { formatReasoningParts } from "src/ts/preset/adapter/reasoning";
 import type { AdapterKind, ModelPreset } from "src/ts/preset/types";
 import { resolveWireModelId } from "src/ts/preset/adapter/wireInvariants";
-import { pumpPresetStream } from "./presetStreamPump";
+import { awaitFirstDelta, pumpPresetStream } from "./presetStreamPump";
+import { isRateLimitFailure, newRateLimitState, nextRateLimitWait, rateLimitBudgetMs, waitUnlessAborted } from "./rateLimitRetry";
 import { makeJobFetch, ModelJobBusyError, ModelJobConnectionLostError } from "./jobFetch";
 import { withGeminiPdfInput } from "./geminiPdfInput";
 import { refusesTrailingAssistant } from "../memory/trailingPrefill";
@@ -138,6 +139,8 @@ export type requestDataResponse = {
         emotion?: string
     },
     failByServerError?: boolean
+    /** A 429: retried after growing waits without spending requestRetrys (rateLimitRetry.ts). */
+    rateLimited?: boolean
     model?: string
     modelLabel?: string
 }|{
@@ -179,6 +182,7 @@ export async function requestChatData(arg:requestDataArgument, model:ModelModeEx
 
     for(let fallbackIndex=0;fallbackIndex<fallBackModels.length;fallbackIndex++){
         let trys = 0
+        const rateLimit = newRateLimitState()
         arg.formated = safeStructuredClone(originalFormated)
 
         if(fallbackIndex !== 0 && !fallBackModels[fallbackIndex]){
@@ -304,19 +308,40 @@ export async function requestChatData(arg:requestDataArgument, model:ModelModeEx
                 }
             }
     
-            if(da.failByServerError){
-                await sleep(1000)
-                if(db.antiServerOverloads){
-                    trys -= 0.5 // reduce trys by 0.5, so that it will retry twice as much
+            // A 429 waits and tries again without spending the retry count,
+            // until its time budget runs out (rateLimitRetry.ts).
+            let rateLimitSpent = false
+            if(isRateLimitFailure(da)){
+                const budget = rateLimitBudgetMs(db.nodeOnlyRateLimitWaitMinutes)
+                const wait = nextRateLimitWait(rateLimit, Date.now(), budget)
+                if(wait !== null){
+                    reportRateLimitWait(arg, model, da, rateLimit.waits, wait)
+                    if(!(await waitUnlessAborted(wait, abortSignal))){
+                        return {
+                            type: 'fail',
+                            result: 'Aborted'
+                        }
+                    }
+                    continue
                 }
+                rateLimitSpent = budget > 0
             }
-            
-            trys += 1
+
+            if(!rateLimitSpent){
+                if(da.failByServerError){
+                    await sleep(1000)
+                    if(db.antiServerOverloads){
+                        trys -= 0.5 // reduce trys by 0.5, so that it will retry twice as much
+                    }
+                }
+
+                trys += 1
+            }
             // A refused trailing prefill is refused the same way every time:
             // the retries sent one summary 31 times (requestRetrys 30, the
             // user's log 2026-10-26). The caller resends it ending on a user
             // turn (memory/trailingPrefill.ts).
-            if(trys > db.requestRetrys || refusesTrailingAssistant(da.result)){
+            if(rateLimitSpent || trys > db.requestRetrys || refusesTrailingAssistant(da.result)){
                 const isPluginModel = da.model === 'custom' || da.model?.startsWith('pluginmodel:::')
                 if(fallbackIndex === fallBackModels.length-1 || isPluginModel){
                     return da
@@ -703,6 +728,21 @@ function safeStatus(fn: () => void): void {
     try { fn() } catch (e) { console.error('[ModelPreset] status publish failed', e) }
 }
 
+// The toast of a model preset request that got a 429 shows the wait before the
+// next try, instead of "failed" (requestChatData's retry loop).
+function reportRateLimitWait(arg: requestDataArgument, mode: ModelModeExtended, response: requestDataResponse, attempt: number, waitMs: number): void {
+    if (response.type !== 'fail' || !response.modelLabel || !arg.chatId || !statusEnabled()) return
+    const label = response.modelLabel
+    safeStatus(() => {
+        startStatus(arg.chatId!, { kind: toRequestKind(mode), label, chatId: arg.realChatId, phase: 'retrying', now: Date.now() })
+        addBadge(arg.chatId!, {
+            key: 'rate-limit',
+            text: language.requestStatus.rateLimitWait.replace('{s}', String(Math.round(waitMs / 1000))).replace('{n}', String(attempt)),
+            tone: 'warn',
+        })
+    })
+}
+
 function toLogUsage(usage: AdapterUsage | undefined): RequestLogUsage | undefined {
     if (!usage) return undefined
     return {
@@ -1019,7 +1059,12 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
             safeStatus(() => startStatus(genId, { kind: statusKind, label: preset.name, chatId: arg.realChatId, phase: 'connecting', now: Date.now() }))
         }
         if(useStreaming){
-            const gen = streamModelPreset(kind, preset, options, credential)
+            // A refusal before any output (a 429 at the door, a 5xx, a busy
+            // job) throws here, into the catch below, so requestChatData's
+            // retry loop sees a 'fail'. Returning the stream first left it
+            // inside the stream: no retry ever ran (2026-11-09, six 429s each
+            // sent once).
+            const gen = await awaitFirstDelta(streamModelPreset(kind, preset, options, credential))
             const stream = new ReadableStream<StreamResponseChunk>({
                 start(controller){
                     return pumpPresetStream(gen, controller, {
@@ -1119,6 +1164,7 @@ async function requestModelPreset(arg:RequestDataArgumentExtended, preset:ModelP
             // (30 retries of a 400 in a row, 2026-10-01).
             noRetry: err instanceof ModelJobBusyError || err instanceof ModelJobConnectionLostError
                 || (err instanceof ModelPresetAdapterError && (err.kind === 'invalid-request' || err.kind === 'not-found')),
+            rateLimited: err instanceof ModelPresetAdapterError && err.kind === 'rate-limit',
         }
     }
 }

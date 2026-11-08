@@ -83,6 +83,10 @@ export const advancedRequestItems: SettingItem[] = [
         helpKey: 'requestretrys', options: { min: 0, max: 20 }
     },
     {
+        id: 'adv.rateLimitWait', type: 'number', labelKey: 'rateLimitWaitMinutes', bindKey: 'nodeOnlyRateLimitWaitMinutes',
+        helpKey: 'rateLimitWaitMinutes', options: { min: 0, max: 30 }
+    },
+    {
         id: 'adv.visionQual', type: 'select', fallbackLabel: 'Vision Quality', bindKey: 'gptVisionQuality',
         helpKey: 'gptVisionQuality',
         options: {

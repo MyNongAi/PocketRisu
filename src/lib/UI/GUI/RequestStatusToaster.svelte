@@ -82,12 +82,17 @@
                 }
                 // A memory summary or translation that went well shows no "Done".
                 scheduleDismiss(id, leavesAtOnce(entry) ? 0 : RETENTION_MS)
-            } else if (dismissTimers.has(id)) {
-                // Revived (e.g. fallback/retry reuses the same generationId): the
-                // entry went terminal, scheduled a dismiss, then restarted. Cancel
-                // the pending dismiss so the now-live toast isn't cleared mid-flight.
-                clearTimeout(dismissTimers.get(id))
-                dismissTimers.delete(id)
+            } else {
+                // A failed card kept for another chat that comes back to life
+                // (a 429 waiting to retry, request.ts) is a running card again.
+                keptUnseen.delete(id)
+                if (dismissTimers.has(id)) {
+                    // Revived (e.g. fallback/retry reuses the same generationId): the
+                    // entry went terminal, scheduled a dismiss, then restarted. Cancel
+                    // the pending dismiss so the now-live toast isn't cleared mid-flight.
+                    clearTimeout(dismissTimers.get(id))
+                    dismissTimers.delete(id)
+                }
             }
         }
         // Entries removed from the store while still shown (e.g. cleared early):
