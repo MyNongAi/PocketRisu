@@ -21,6 +21,7 @@
     import Chat from "./Chat.svelte";
     import { getAdditionalChatLoadPages, getInitialChatLoadPages } from 'src/ts/chatLoadPages';
     import { type Chat as ChatData, type Message } from "../../ts/storage/database.svelte";
+    import { rememberTypedInput } from "src/ts/typedInput";
     import { applySelectedChatToggles } from "src/ts/paneActivation";
     import { DBState } from 'src/ts/stores.svelte';
     import { getCharImage } from "../../ts/characters";
@@ -765,20 +766,26 @@ import { isMobile } from 'src/ts/platform'
                     cha = triggerResult.chat.message
                 }
 
-                cha.push({
+                const sent: Message = {
                     role: 'user',
                     data: await processScript(targetCharacter,inputToSend,'editinput', {}, moduleContext),
                     time: Date.now(),
                     name: null
-                })
+                }
+                // What was typed, before the bot's regex and Lua edited it:
+                // the input under a reply and the chat title show this (typedInput.ts).
+                rememberTypedInput(sent, inputToSend)
+                cha.push(sent)
             }
             else{
-                cha.push({
+                const sent: Message = {
                     role: 'user',
                     data: inputToSend,
                     time: Date.now(),
                     name: null
-                })
+                }
+                rememberTypedInput(sent, inputToSend)
+                cha.push(sent)
             }
         }
 

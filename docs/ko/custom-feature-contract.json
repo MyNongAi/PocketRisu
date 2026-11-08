@@ -1652,7 +1652,7 @@
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "<span class={chatTitleClass(chatTitleState(chara, chat.id))}>{chat.name}</span>" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (resolved) ageManualChatTitle(resolved.character, resolved.chat.id)" },
         { "file": "src/ts/chatClone.ts", "contains": "if (!isTypedInput(message)) continue" },
-        { "file": "src/ts/chatClone.ts", "contains": "line = withoutSystemBlocks(message.data!)" },
+        { "file": "src/ts/chatClone.ts", "contains": "line = typedTextOf(message)" },
         { "file": "src/ts/typedInput.ts", "contains": "if (message?.role !== 'user' || !message.time || typeof message.data !== 'string') return false" }
       ],
       "regressionTests": [
@@ -2158,7 +2158,7 @@
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "followRequestedInput(chat, msg)" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "onPlaceholderSwipe(placeholder.chatId, 1, newReplyHasText(placeholder))" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "followRequestedInput(chat, placeholder.message, placeholder.index)" },
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (target && recordInputEdit(target, echoText)) retitleCurrentChat()" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "carryTypedInput(target, before)" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "onclick={copyInputEcho}" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "onclick={() => stepOwnVersion(-1)}" },
         { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "onclick={() => stepEchoVersion(-1)}" },
@@ -2176,7 +2176,7 @@
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const requestInput = pressedInput(targetChat.message)" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "const echoIndex = message.role === 'char' ? echoedInputIndex(messages, i) : -1;" },
         { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "const echoIndex = echoedInputIndex(messages, Math.min(placeholderIndex, messages.length))" },
-        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "let echoVisible = $derived(withoutSystemBlocks((echoShown ?? '').replace(" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "let echoVisible = $derived(typedText(echoShown ?? '', echoMessage?.nodeOnlyTypedInputs))" },
         { "file": "src/ts/gui/inputEcho.ts", "contains": "return input >= 0 && isTypedInput(messages[input]) ? input : -1" }
       ],
       "regressionTests": [
@@ -3769,6 +3769,29 @@
         "src/ts/process/request/rateLimitRetry.test.ts",
         "src/ts/process/request/rateLimitRequestLoop.test.ts",
         "src/ts/process/request/awaitFirstDelta.test.ts"
+      ]
+    },
+    {
+      "id": "TYPED-INPUT-RECORD",
+      "title": "보낼 때 입력창에 직접 쓴 글을 기록해, 답변 아래 인풋·복사·채팅방 제목은 그 글만 보이기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/typedInput.ts",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/lib/ChatScreens/Chat.svelte",
+        "src/ts/chatClone.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/typedInput.ts", "contains": "export function rememberTypedInput(" },
+        { "file": "src/ts/typedInput.ts", "contains": "export function carryTypedInput(" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "rememberTypedInput(sent, inputToSend)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "let echoVisible = $derived(typedText(echoShown ?? '', echoMessage?.nodeOnlyTypedInputs))" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (recordInputEdit(msg, message)) carryTypedInput(msg, before)" },
+        { "file": "src/ts/chatClone.ts", "contains": "line = typedTextOf(message)" }
+      ],
+      "regressionTests": [
+        "src/ts/typedInput.test.ts",
+        "src/ts/chatClone.test.ts"
       ]
     }
   ]

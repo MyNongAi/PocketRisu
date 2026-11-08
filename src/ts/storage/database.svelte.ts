@@ -2643,6 +2643,8 @@ export interface Message{
     nodeOnlyNewSwipe?: number
     /** PocketRisu: an input's text as sent and after each saved edit (inputVersions.ts). */
     nodeOnlyInputVersions?: string[]
+    /** PocketRisu: what the user typed, by the hash of the input text it became (typedInput.ts). */
+    nodeOnlyTypedInputs?: Record<string, string>
     /** PocketRisu: a reply's swipes -> the input each was requested with, as hashes (inputVersions.ts). */
     nodeOnlyRequestInputs?: Record<string, string>
     /** PocketRisu: lines the auxiliary model added to this reply (auxLorebook.ts). */

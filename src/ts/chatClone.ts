@@ -1,6 +1,6 @@
 import { v4 } from 'uuid'
 import type { Chat } from './storage/database.svelte'
-import { isTypedInput, withoutSystemBlocks } from './typedInput'
+import { isTypedInput, typedTextOf } from './typedInput'
 
 /**
  * Gives a copied or branched chat its own message ids.
@@ -78,14 +78,14 @@ const COPY_NAME_MAX = 40
  * old "(Copy)" name.
  */
 export function chatCopyNameFromLastInput(
-    messages: readonly { role?: string, data?: string, time?: number }[] | undefined,
+    messages: readonly { role?: string, data?: string, time?: number, nodeOnlyTypedInputs?: Record<string, string> }[] | undefined,
     takenNames: readonly (string | undefined)[] = [],
 ): string | null {
     let line: string | undefined
     for (let index = (messages?.length ?? 0) - 1; index >= 0 && !line; index--) {
         const message = messages![index]
         if (!isTypedInput(message)) continue
-        line = withoutSystemBlocks(message.data!)
+        line = typedTextOf(message)
             .replace(/\{\{inlay(?:ed|eddata)?::[^}]*\}\}/g, ' ')
             .replace(/<[^>]*>/g, ' ')
             .split('\n')

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { chatCopyNameFromLastInput, reissueMessageIds, retitleChatFromLastInput } from './chatClone'
 import type { Chat } from './storage/database.svelte'
+import { rememberTypedInput } from './typedInput'
 
 function makeChat(): Chat {
     return {
@@ -126,5 +127,15 @@ describe('retitleChatFromLastInput', () => {
         expect(chats[0].name).toBe('Go to class')
         // Only a bot's block: nothing the user typed.
         expect(chatCopyNameFromLastInput([{ role: 'user', time: 1, data: '[SIM_REQUEST_CONTEXT]\ncues\n[/SIM_REQUEST_CONTEXT]' }])).toBeNull()
+    })
+})
+
+describe("chatCopyNameFromLastInput with the typed-input record", () => {
+    it("names the chat by what was typed, not what the bot added on send", () => {
+        const data = '[[SIM_HSIN_GATE_INPUT:meet|k1]]' + String.fromCharCode(10) + 'hello there'
+        const message = { role: "user", time: 1, data, nodeOnlyTypedInputs: {} as Record<string, string> }
+        expect(chatCopyNameFromLastInput([message])).toBe("[[SIM_HSIN_GATE_INPUT:meet|k1]]")
+        rememberTypedInput(message, "hello there")
+        expect(chatCopyNameFromLastInput([message])).toBe("hello there")
     })
 })
