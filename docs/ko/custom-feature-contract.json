@@ -3669,6 +3669,28 @@
       "regressionTests": [
         "src/ts/process/files/chatFileName.test.ts"
       ]
+    },
+    {
+      "id": "MESSAGE-UNDO",
+      "title": "방금 지운 메시지 되돌리기 (앱을 다시 열 때까지)",
+      "criticality": "data-safety",
+      "ownerFiles": [
+        "src/ts/gui/messageUndo.ts",
+        "src/ts/gui/messageUndoRun.ts",
+        "src/lib/ChatScreens/Chat.svelte",
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/ts/alert.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "const undoId = recordMessageDeletion({ chaId, chatId: now.id, messages: removed, index: at, after })" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "action: { label: language.messageUndo, onClick: () => { undoMessageDeletion(undoId) } }," },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "<ShDropdownMenuItem onSelect={() => { if (lastDeletion) undoMessageDeletion(lastDeletion.id) }} data-message-undo>" },
+        { "file": "src/ts/gui/messageUndo.ts", "contains": "export function withDeletionRestored<M extends UndoMessage>(messages: readonly M[], deletion: MessageDeletion<M>)" },
+        { "file": "src/ts/gui/messageUndoRun.ts", "contains": "const { messages, restored } = withDeletionRestored(chat.message, deletion as MessageDeletion<Message>)" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/messageUndo.test.ts"
+      ]
     }
   ]
 }

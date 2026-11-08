@@ -26,6 +26,8 @@
     import { getLLMCache, setLLMCache } from "../../ts/translator/translator"
     import { getCurrentCharacter, getCurrentChat, type MessageGenerationInfo, type StreamingDisplayOptimizationMode } from "../../ts/storage/database.svelte"
     import { messageIndexAfterConfirm } from "src/ts/gui/afterConfirm"
+    import { recordMessageDeletion } from "src/ts/gui/messageUndo"
+    import { undoMessageDeletion } from "src/ts/gui/messageUndoRun"
     import { HideIconStore, ReloadGUIPointer } from "../../ts/stores.svelte"
     import { getPaneView } from "src/ts/chatPanes.svelte"
     import { backgroundGate } from "src/ts/gui/backgroundGate.svelte"
@@ -274,17 +276,27 @@
         const at = messageIndexAfterConfirm(now, chat, target)
         if(!now || at < 0) return
         let msg = now.message
+        // Kept in memory so it can be put back for a while (messageUndo.ts).
+        const removed = $state.snapshot(sel === 1 ? msg.slice(at) : [msg[at]])
+        const after = at > 0 ? (msg[at - 1]?.chatId ?? null) : null
         if(sel === 1){
-            const count = msg.length - at
             msg = msg.slice(0, at)
-            notifySuccess(language.messagesRemoved.replace('{}', count.toString()))
         }
         else{
             msg.splice(at, 1)
-            notifySuccess(language.messageRemoved)
         }
         now.message = msg
         retitleCurrentChat()
+        const chaId = DBState.db.characters[view.characterIndex]?.chaId
+        if(!chaId || !now.id){
+            notifySuccess(sel === 1 ? language.messagesRemoved.replace('{}', removed.length.toString()) : language.messageRemoved)
+            return
+        }
+        const undoId = recordMessageDeletion({ chaId, chatId: now.id, messages: removed, index: at, after })
+        notifySuccess(sel === 1 ? language.messagesRemoved.replace('{}', removed.length.toString()) : language.messageRemoved, {
+            action: { label: language.messageUndo, onClick: () => { undoMessageDeletion(undoId) } },
+            duration: 10_000,
+        })
     }
 
     // The chat's title is always its last input (chatClone.ts): it follows

@@ -9,7 +9,7 @@
     import { pressedInput, recordSentRequestInput, requestedInputVersion, type SentInput } from 'src/ts/inputVersions';
     import { mergeAuxLines } from 'src/ts/process/auxLorebook';
     import { clearRerollPlaceholder, heldRerollSwipe, rerollPlaceholders, setRerollPlaceholder, stepRerollPlaceholderSwipe } from 'src/ts/gui/rerollPlaceholder';
-    import { CameraIcon, Volume2Icon, ChevronUpIcon, ChevronDownIcon, DatabaseIcon, GlobeIcon, FileTextIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ArrowLeft, ArrowRight, ZapIcon, Maximize2, Minimize2, GitBranch } from "@lucide/svelte";
+    import { CameraIcon, Volume2Icon, ChevronUpIcon, ChevronDownIcon, DatabaseIcon, GlobeIcon, FileTextIcon, ImagePlusIcon, LanguagesIcon, Laugh, MenuIcon, MessageCircleQuestionMarkIcon, MicOffIcon, PackageIcon, Plus, RefreshCcwIcon, ReplyIcon, Send, StepForwardIcon, XIcon, BrainIcon, ArrowDown, ArrowLeft, ArrowRight, ZapIcon, Maximize2, Minimize2, GitBranch, Undo2Icon } from "@lucide/svelte";
     import ShDropdownMenu from 'src/lib/UI/GUI/ShDropdownMenu.svelte';
     import ShDropdownMenuTrigger from 'src/lib/UI/GUI/ShDropdownMenuTrigger.svelte';
     import ShDropdownMenuContent from 'src/lib/UI/GUI/ShDropdownMenuContent.svelte';
@@ -40,6 +40,8 @@ import { isMobile } from 'src/ts/platform'
     import { captureModuleRuntimeContext, type ModuleRuntimeContext } from 'src/ts/process/modules';
     import { captureChatMainRoute } from 'src/ts/process/mcp/toolGate';
     import { beginSendTurn } from 'src/ts/chatCopySnapshot';
+    import { lastMessageDeletion, messageDeletions } from 'src/ts/gui/messageUndo';
+    import { undoMessageDeletion } from 'src/ts/gui/messageUndoRun';
     import CreatorQuote from "./CreatorQuote.svelte";
     import { stopTTS } from "src/ts/process/tts";
     import MainMenu from '../UI/MainMenu.svelte';
@@ -154,6 +156,8 @@ import { isMobile } from 'src/ts/platform'
     // composing a long message). Keyed by character + chat id.
     let draftChaId = $derived(currentCharacter?.chaId ?? '')
     let draftChatId = $derived(currentChatSlot?.id ?? '')
+    // The newest deleted message(s) of this chat that can be put back (messageUndo.ts).
+    let lastDeletion = $derived(draftChaId && draftChatId ? lastMessageDeletion($messageDeletions, draftChaId, draftChatId) : undefined)
     let draftLoading = $state(false)
     // The composer's text as it came from elsewhere (the stored draft, or
     // another device typing): it is not passed on to the other devices again.
@@ -1755,6 +1759,11 @@ import { isMobile } from 'src/ts/platform'
                             {/snippet}
                         </ShDropdownMenuTrigger>
                         <ShDropdownMenuContent side="top" align="start" class="min-w-48 max-h-[70vh] overflow-y-auto">
+                            {#if lastDeletion}
+                                <ShDropdownMenuItem onSelect={() => { if (lastDeletion) undoMessageDeletion(lastDeletion.id) }} data-message-undo>
+                                    <Undo2Icon /><span>{language.messageUndoMenu.replace('{}', String(lastDeletion.messages.length))}</span>
+                                </ShDropdownMenuItem>
+                            {/if}
                             {#if DBState.db.characters[view.characterIndex].ttsMode === 'webspeech' || DBState.db.characters[view.characterIndex].ttsMode === 'elevenlab'}
                                 <ShDropdownMenuItem onSelect={() => stopTTS()}>
                                     <MicOffIcon /><span>{language.ttsStop}</span>

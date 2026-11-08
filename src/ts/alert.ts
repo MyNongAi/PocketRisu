@@ -389,12 +389,21 @@ export function notifyLoading(msg: string): () => void {
     return () => toast.dismiss(id)
 }
 
-export function notifySuccess(msg: unknown, opts?: Pick<NotifyOptions, 'description'>) {
+export function notifySuccess(msg: unknown, opts?: Pick<NotifyOptions, 'description'> & {
+    /** One button on the toast, e.g. the undo of a deletion (messageUndo.ts). */
+    action?: { label: string, onClick: () => void }
+    duration?: number
+}) {
     // Intentionally not logged (decision 4-2): success feedback has low timeline value.
     clearTransitionalAlert()
     const { message } = normalizeErrorMessage(msg)
     if (isEmptyNotification(msg, message)) return
-    toast.success(message, opts?.description ? { description: opts.description } : undefined)
+    const options = {
+        ...(opts?.description ? { description: opts.description } : {}),
+        ...(opts?.action ? { action: opts.action } : {}),
+        ...(opts?.duration ? { duration: opts.duration } : {}),
+    }
+    toast.success(message, Object.keys(options).length > 0 ? options : undefined)
 }
 
 export function alertWait(msg:string){
