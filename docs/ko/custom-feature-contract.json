@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.17.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-11-07",
+  "updatedAt": "2026-11-08",
   "features": [
     {
       "id": "CATALOG-KOREAN-SEARCH",
@@ -3690,6 +3690,24 @@
       ],
       "regressionTests": [
         "src/ts/gui/messageUndo.test.ts"
+      ]
+    },
+    {
+      "id": "BOT-TO-MODULE-DROP",
+      "title": "봇 목록의 봇을 사이드바 모듈 탭에 끌어 놓으면 모듈로 변환",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/gui/botToModule.ts",
+        "src/lib/SideBars/Sidebar.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/gui/botToModule.ts", "contains": "const module = convertCharacterToModule(await hydrateCharacterAssets(char))" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "void convertBotToModule(drag.id)" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "if (touchDragState.data.kind === 'character' && moduleDropTarget(el)) {" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "ondrop={moduleTabDrop}" }
+      ],
+      "regressionTests": [
+        "src/ts/gui/botToModule.test.ts"
       ]
     }
   ]

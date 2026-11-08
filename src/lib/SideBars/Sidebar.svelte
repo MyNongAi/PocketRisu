@@ -31,6 +31,7 @@
     import { syncFavoritesWithFolderMoves } from "src/ts/favoritesFolder";
     import { characterModuleLink as characterModuleLinkState } from "src/ts/gui/pairedModules";
     import { botHasModules, findModulesOfBot } from "src/ts/gui/pairFinder";
+    import { convertBotToModule } from "src/ts/gui/botToModule";
     import BarIcon from "./BarIcon.svelte";
     import SidebarIndicator from "./SidebarIndicator.svelte";
     import {
@@ -388,6 +389,11 @@
   let IconRounded = $state(false)
   let openFolders:string[] = $state([])
   let currentDrag: DragData | null = $state(null)
+  // A bot dragged onto the Module tab becomes a module (botToModule.ts):
+  // the tab is outlined while a bot is lifted and lit while one is over it.
+  let touchBotDrag = $state(false)
+  let moduleDropHover = $state(false)
+  let moduleDropArmed = $derived(currentDrag?.kind === 'character' || touchBotDrag)
   // characterOrder index of each rendered top-level entry. The sidebar skips
   // hidden, trashed and (optionally) deactivated entries, so a rendered
   // position is not a characterOrder index; root drops translate through it.
@@ -847,6 +853,7 @@
 
   const clearCurrentDrag = () => {
     currentDrag = null
+    moduleDropHover = false
   }
 
   $effect(() => {
@@ -893,6 +900,29 @@
     } finally {
       clearCurrentDrag()
     }
+  }
+
+  const moduleDropTarget = (el: Element | null | undefined) => !!el?.closest('[data-module-drop]')
+
+  const moduleTabDragOver = (e:DragEvent) => {
+    if(getCurrentSidebarDrag(e)?.kind !== 'character'){
+      return
+    }
+    e.preventDefault()
+    e.stopPropagation()
+    if(e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+    moduleDropHover = true
+  }
+
+  const moduleTabDrop = (e:DragEvent) => {
+    const drag = getCurrentSidebarDrag(e)
+    if(drag?.kind !== 'character'){
+      return
+    }
+    e.preventDefault()
+    e.stopPropagation()
+    clearCurrentDrag()
+    void convertBotToModule(drag.id)
   }
 
   const preventAll = (e:DragEvent) => {
@@ -948,6 +978,7 @@
     if (touchDragTimer) clearTimeout(touchDragTimer)
     touchDragTimer = window.setTimeout(() => {
       touchDragState = { data, element: el, ghost: null, highlighted: null }
+      touchBotDrag = data.kind === 'character'
       el.style.opacity = '0.4'
       try { navigator.vibrate?.(30) } catch {}
 
@@ -990,7 +1021,8 @@
       touchDragState.highlighted = null
     }
 
-    if (!el) return
+    moduleDropHover = touchBotDrag && moduleDropTarget(el)
+    if (!el || moduleDropHover) return
     const spacer = el.closest('[data-spacer-index]') as HTMLElement | null
     const item = el.closest('[data-drag-id]') as HTMLElement | null
 
@@ -1005,6 +1037,8 @@
 
   function cleanupTouchDrag() {
     if (touchDragTimer) { clearTimeout(touchDragTimer); touchDragTimer = 0 }
+    touchBotDrag = false
+    moduleDropHover = false
     if (!touchDragState) return false
     touchDragState.element.style.opacity = ''
     if (touchDragState.highlighted) {
@@ -1040,7 +1074,9 @@
     const spacer = el?.closest('[data-spacer-index]') as HTMLElement | null
     const item = el?.closest('[data-drag-id]') as HTMLElement | null
 
-    if (spacer) {
+    if (touchDragState.data.kind === 'character' && moduleDropTarget(el)) {
+      void convertBotToModule(touchDragState.data.id)
+    } else if (spacer) {
       const target = sidebarInsertTargetFromElement(spacer)
       if(target) inserter(touchDragState.data, target)
     } else if (item && item !== touchDragState.element) {
@@ -2339,7 +2375,13 @@
       <button
         type="button"
         onclick={openModuleTab}
-        class="grow rounded-br-md"
+        data-module-drop
+        title={moduleDropArmed ? language.botToModuleDrop : undefined}
+        ondragenter={moduleTabDragOver}
+        ondragover={moduleTabDragOver}
+        ondragleave={() => { moduleDropHover = false }}
+        ondrop={moduleTabDrop}
+        class={"grow rounded-br-md transition-colors" + (moduleDropHover ? " bg-green-500/30 ring-2 ring-inset ring-green-400" : moduleDropArmed ? " ring-1 ring-inset ring-green-400/60" : "")}
         class:text-textcolor2={panelTab !== 'module' || (hasEditableCharacter && QuickSettings.index !== 2)}
         aria-pressed={panelTab === 'module' && (!hasEditableCharacter || QuickSettings.index === 2)}
       >{language.module}</button>
