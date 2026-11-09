@@ -3793,6 +3793,21 @@
         "src/ts/typedInput.test.ts",
         "src/ts/chatClone.test.ts"
       ]
+    },
+    {
+      "id": "SEND-PREP-SPINNER",
+      "title": "보내기·다시 생성을 누르면 준비 단계부터 바로 중지 버튼(스피너)으로 바뀌고, 준비 중에 누르면 보내기를 취소",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/ChatScreens/DefaultChatScreen.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "const preparingChatSends = new SvelteSet<string>()" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "let currentChatPreparing = $derived(preparingChatSends.has(currentChatGenKey()))" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "{#if currentChatPreparing || currentChatGenerating || currentChatAuxGenerating || doingChatInputTranslate}" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "cancelledPreparingChatSends.add(currentChatGenKey())" }
+      ],
+      "regressionTests": []
     }
   ]
 }

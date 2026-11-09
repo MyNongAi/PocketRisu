@@ -16,6 +16,7 @@
     import ShDropdownMenuItem from 'src/lib/UI/GUI/ShDropdownMenuItem.svelte';
     import { selectedCharID, PlaygroundStore, createSimpleCharacter, hypaV3ModalOpen, ScrollToMessageStore, additionalChatMenu, additionalFloatingActionButtons, chatDeselected, chatHydrationOverlayStore, chatPanelStore, holdChatEditorOverlay } from "../../ts/stores.svelte";
     import { onMount, tick, untrack } from 'svelte';
+    import { SvelteSet } from 'svelte/reactivity';
     import { get } from 'svelte/store';
     import { SCROLL_CHAT_TO_END_EVENT } from 'src/ts/status/requestActions';
     import Chat from "./Chat.svelte";
@@ -97,7 +98,9 @@ import { isMobile } from 'src/ts/platform'
     let openMenu = $state(false)
     let loadPages = $state(getInitialChatLoadPages(DBState.db))
     let doingChatInputTranslate = false
-    const preparingChatSends = new Set<string>()
+    // Reactive so the composer shows Stop while a send or reroll prepares.
+    const preparingChatSends = new SvelteSet<string>()
+    const cancelledPreparingChatSends = new Set<string>()
     const BLOCKED_SEND_STOP_OFFER_MS = 180_000
     let toggleStickers:boolean = $state(false)
     let fileInput:string[] = $state([])
@@ -702,7 +705,7 @@ import { isMobile } from 'src/ts/platform'
         const capturedDraftChaId = draftChaId
         const capturedDraftChatId = draftChatId
         const ready = await ensureGenerationTargetReady(generationTarget)
-        if(!ready) return
+        if(!ready || cancelledPreparingChatSends.has(genKey)) return
         generationTarget = ready.target
         const targetCharacter = ready.character
         const activeChat = ready.chat
@@ -710,11 +713,12 @@ import { isMobile } from 'src/ts/platform'
         // (chatCopySnapshot.ts); a continue keeps the copy as it was.
         if(!continueResponse) endSendTurn = beginSendTurn(activeChat, capturedInput, capturedTranslate, v4)
         const claim = await claimChatForSend(targetCharacter.chaId, activeChat.id)
+        if (claim.ok === true) chatLease = { chaId: targetCharacter.chaId, chatId: activeChat.id }
+        if (cancelledPreparingChatSends.has(genKey)) return
         if (claim.ok === false) {
             notifyError(chatWriterClaimMessage(claim))
             return
         }
-        chatLease = { chaId: targetCharacter.chaId, chatId: activeChat.id }
         const moduleContext = captureModuleRuntimeContext(targetCharacter, activeChat)
 
         let cha = activeChat.message
@@ -742,6 +746,12 @@ import { isMobile } from 'src/ts/platform'
                 inputToSend += `{{inlayed::${file}}}`
             }
         }
+
+        // The last point a tap on the spinner can call the send off: the input
+        // trigger and editinput scripts below may change the chat and its
+        // variables, so from here the send goes through (Stop works again once
+        // the reply starts).
+        if (cancelledPreparingChatSends.has(genKey)) return
 
         if(inputToSend === ''){
             if(cha.length === 0 || cha[cha.length - 1].role !== 'user'){
@@ -833,6 +843,7 @@ import { isMobile } from 'src/ts/platform'
         } finally {
             endSendTurn?.()
             preparingChatSends.delete(genKey)
+            cancelledPreparingChatSends.delete(genKey)
             await finishChatLease(chatLease)
         }
 
@@ -923,15 +934,16 @@ import { isMobile } from 'src/ts/platform'
         let chatLease: ChatLeaseTarget | null = null
         try {
         const ready = await ensureGenerationTargetReady(generationTarget)
-        if(!ready) return
+        if(!ready || cancelledPreparingChatSends.has(genKey)) return
         generationTarget = ready.target
         const activeChat = ready.chat
         const claim = await claimChatForSend(ready.character.chaId, activeChat.id)
+        if (claim.ok === true) chatLease = { chaId: ready.character.chaId, chatId: activeChat.id }
+        if (cancelledPreparingChatSends.has(genKey)) return
         if (claim.ok === false) {
             notifyError(chatWriterClaimMessage(claim))
             return
         }
-        chatLease = { chaId: ready.character.chaId, chatId: activeChat.id }
         const lastMsg = getLastCharMsgIn(activeChat)
         if (!lastMsg) return
 
@@ -1044,6 +1056,7 @@ import { isMobile } from 'src/ts/platform'
         } finally {
             if (placeholderChatId) clearRerollPlaceholder(placeholderChatId)
             preparingChatSends.delete(genKey)
+            cancelledPreparingChatSends.delete(genKey)
             await finishChatLease(chatLease)
         }
     }
@@ -1153,6 +1166,7 @@ import { isMobile } from 'src/ts/platform'
     // Send while A (revisited) still shows a working Stop. Recomputes on chat
     // switch because currentChatGenKey reads the selected char/chatPage.
     let currentChatGenerating = $derived($generationStates.has(currentChatGenKey()))
+    let currentChatPreparing = $derived(preparingChatSends.has(currentChatGenKey()))
     let currentChatAuxGenerating = $derived($auxiliaryGenerating.has(currentChatGenKey()))
     let currentChatProcessStage = $derived($generationStates.get(currentChatGenKey())?.stage ?? 0)
     // Another device is writing a reply in this chat (remoteActivity.ts): the
@@ -1293,6 +1307,10 @@ import { isMobile } from 'src/ts/platform'
     })
 
     function abortChat(){
+        if (currentChatPreparing && !currentChatGenerating) {
+            cancelledPreparingChatSends.add(currentChatGenKey())
+            return
+        }
         stopGeneration(currentChatGenKey(), { onForceReleased: onGenerationForceReleased })
     }
 
@@ -1957,12 +1975,12 @@ import { isMobile } from 'src/ts/platform'
                     <Maximize2 size={18} />
                 </button>
 
-                {#if currentChatGenerating || currentChatAuxGenerating || doingChatInputTranslate}
+                {#if currentChatPreparing || currentChatGenerating || currentChatAuxGenerating || doingChatInputTranslate}
                     <button
                             aria-labelledby="cancel"
                             class="order-2 shrink-0 flex justify-center items-center w-9 h-9 rounded-full text-textcolor hover:bg-primary/20 transition-colors" onclick={abortChat}
                     >
-                        <div class="loadmove chat-process-stage-{currentChatProcessStage}"></div>
+                        <div class="loadmove chat-process-stage-{currentChatPreparing ? 1 : currentChatProcessStage}"></div>
                     </button>
                 {:else if remoteBusy}
                     <button
