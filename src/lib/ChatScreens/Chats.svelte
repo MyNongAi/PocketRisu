@@ -25,6 +25,7 @@
 
     let {
         messages,
+        chatBusy = false,
         currentCharacter,
         onReroll,
         onNextSwipe = () => {},
@@ -39,6 +40,8 @@
         newestReplyControls = $bindable(null)
     }:{
         messages: Message[]
+        /** The displayed chat is generating or preparing a reply. */
+        chatBusy?: boolean
         currentCharacter: character
         onReroll: () => void
         onNextSwipe?: (index?: number) => void
@@ -73,7 +76,7 @@
             totalPages: number
             unseenPage?: boolean
             unseenPageShort?: boolean
-        }) => void
+        }, busy: boolean) => void
     }
     let mountInstances: Map<number, ChatInstance> = new Map();
 
@@ -265,6 +268,7 @@
                         img: getSenderImage('char'),
                         loadSenderImage: () => getSenderImage('char'),
                         onReroll: () => {},
+                        chatBusy,
                         rerollIcon: browsable ? 'force' : false,
                         swipeOnly: true,
                         onNextSwipe: () => { onPlaceholderSwipe(placeholderChatId, 1, newReplyHasText(placeholder)) },
@@ -351,6 +355,7 @@
                         img: resolveChatAssets ? getSenderImage(message.role) : '',
                         loadSenderImage: () => getSenderImage(message.role),
                         onReroll: onReroll,
+                        chatBusy,
                         unReroll: unReroll,
                         ...targetState,
                         character: simpleChar,
@@ -390,7 +395,7 @@
                 })
                 // A message that stopped being the reroll target must also drop its
                 // swipe-delete control: onDeleteSwipe acts on the current last message.
-                inst?.updateRerollTarget?.(targetState)
+                inst?.updateRerollTarget?.(targetState, chatBusy)
             }
             nextHash = currentHash;
 

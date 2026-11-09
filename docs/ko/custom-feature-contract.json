@@ -3808,6 +3808,24 @@
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "cancelledPreparingChatSends.add(currentChatGenKey())" }
       ],
       "regressionTests": []
+    },
+    {
+      "id": "BUSY-CONTROL-NOTICE",
+      "title": "답을 쓰는 중에는 다시 생성·스와이프 삭제를 흐리게 보이고, 누르면 확인창 없이 막혔다고 알리기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/ChatScreens/DefaultChatScreen.svelte",
+        "src/lib/ChatScreens/Chats.svelte",
+        "src/lib/ChatScreens/Chat.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "chatBusy={currentChatGenerating || currentChatPreparing}" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if(currentChatGenerating) { notifyInfo(language.replyBusy); return }" },
+        { "file": "src/lib/ChatScreens/Chats.svelte", "contains": "inst?.updateRerollTarget?.(targetState, chatBusy)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "if (chatBusy) { notifyInfo(language.replyBusy); return }" },
+        { "file": "src/lang/ko.ts", "contains": "replyBusy: \"답을 쓰는 중이에요. 중지한 뒤 다시 눌러 주세요.\"" }
+      ],
+      "regressionTests": []
     }
   ]
 }

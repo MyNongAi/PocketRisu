@@ -77,6 +77,8 @@
         role?: string;
         totalLength?: number;
         onReroll?: () => void;
+        /** The displayed chat is generating or preparing a reply. */
+        chatBusy?: boolean;
         onNextSwipe?: () => void;
         unReroll?: () => void;
         onDeleteSwipe?: () => void;
@@ -127,6 +129,7 @@
         role = null,
         totalLength = 0,
         onReroll = () => {},
+        chatBusy = false,
         onNextSwipe = () => {},
         unReroll = () => {},
         onDeleteSwipe = () => {},
@@ -242,7 +245,8 @@
         totalPages: number
         unseenPage?: boolean
         unseenPageShort?: boolean
-    }){
+    }, busy: boolean){
+        chatBusy = busy
         rerollIcon = state.rerollIcon
         swipeOnly = state.swipeOnly
         onNextSwipe = state.onNextSwipe
@@ -1411,9 +1415,10 @@
             </button>
         {:else}
             <!-- Normal messages: ← counter → ↻ -->
-            <button class="flex items-center shrink-0 hover:text-primary transition-colors button-icon-unreroll" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'} onclick={async () => {
+            <button class={'flex items-center shrink-0 transition-colors button-icon-unreroll ' + (chatBusy && totalPages <= 1 ? 'opacity-50' : 'hover:text-primary')} class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'} onclick={async () => {
                 await sleep(1)
                 if (totalPages <= 1) {
+                    if (chatBusy) { notifyInfo(language.replyBusy); return }
                     if (!DBState.db.confirmReroll || await alertConfirm(language.noSwipesRerollConfirm)) onReroll()
                 } else {
                     unReroll()
@@ -1424,9 +1429,10 @@
             {#if !DBState.db.hideMessagePageCount}
                 <span class="flex items-center text-xs text-textcolor2 shrink overflow-hidden whitespace-nowrap min-w-0" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'}>{currentPage}/{totalPages}</span>
             {/if}
-            <button class="relative flex items-center shrink-0 hover:text-primary transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'} class:new-page-arrow={unseenPage} class:new-page-short={unseenPage && unseenPageShort} title={unseenPage ? (unseenPageShort ? language.shortSwipeWaiting : language.newSwipeWaiting) : undefined} onclick={async () => {
+            <button class={'relative flex items-center shrink-0 transition-colors button-icon-reroll ' + (chatBusy && totalPages <= 1 ? 'opacity-50' : 'hover:text-primary')} class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'} class:new-page-arrow={unseenPage} class:new-page-short={unseenPage && unseenPageShort} title={unseenPage ? (unseenPageShort ? language.shortSwipeWaiting : language.newSwipeWaiting) : undefined} onclick={async () => {
                 await sleep(1)
                 if (totalPages <= 1) {
+                    if (chatBusy) { notifyInfo(language.replyBusy); return }
                     if (!DBState.db.confirmReroll || await alertConfirm(language.noSwipesRerollConfirm)) onReroll()
                 } else {
                     onNextSwipe()
@@ -1435,8 +1441,9 @@
                 <ArrowRight size={22}/>
                 {#if unseenPage}<span class="new-page-dot" aria-hidden="true"></span>{/if}
             </button>
-            <button class="flex items-center shrink-0 hover:text-primary transition-colors button-icon-reroll" class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'} onclick={async () => {
+            <button class={'flex items-center shrink-0 transition-colors button-icon-reroll ' + (chatBusy ? 'opacity-50' : 'hover:text-primary')} class:dyna-icon={rerollIcon === 'dynamic' || rerollIcon === 'force'} class:force-show={rerollIcon === 'force'} onclick={async () => {
                 await sleep(1)
+                if (chatBusy) { notifyInfo(language.replyBusy); return }
                 if (!DBState.db.confirmReroll || await alertConfirm(language.rerollConfirm)) onReroll()
             }}>
                 <RefreshCcwIcon size={20}/>
@@ -1505,8 +1512,9 @@
     {/if}
 
     {#if totalPages > 1}
-        <button class="flex items-center hover:text-red-500 transition-colors" onclick={async () => {
+        <button class={'flex items-center transition-colors ' + (chatBusy ? 'opacity-50' : 'hover:text-red-500')} onclick={async () => {
             await sleep(1)
+            if (chatBusy) { notifyInfo(language.replyBusy); return }
             if(await alertConfirm(language.deleteRerollMessageConfirm)){
                 onDeleteSwipe()
             }

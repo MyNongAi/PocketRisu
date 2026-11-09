@@ -502,6 +502,7 @@ import { isMobile } from 'src/ts/platform'
     async function floatingReroll() {
         const reroll = newestReplyControls?.reroll
         if (!reroll) return
+        if (currentChatGenerating || currentChatPreparing) { notifyInfo(language.replyBusy); return }
         if (!DBState.db.confirmReroll || await alertConfirm(language.rerollConfirm)) reroll()
     }
 
@@ -919,7 +920,7 @@ import { isMobile } from 'src/ts/platform'
     }
 
     async function reroll() {
-        if(currentChatGenerating) return
+        if(currentChatGenerating) { notifyInfo(language.replyBusy); return }
         if(remoteBusy) { notifyInfo(language.remoteReplyRunning); return }
         let placeholderChatId: string | null = null
         const targetCharacter = DBState.db.characters[view.characterIndex]
@@ -927,7 +928,7 @@ import { isMobile } from 'src/ts/platform'
         if(!targetCharacter || !targetChat) return
         let generationTarget = captureGenerationTarget(targetCharacter, targetChat)
         const genKey = chatGenKey(generationTarget.chatId)
-        if(preparingChatSends.has(genKey)) return
+        if(preparingChatSends.has(genKey)) { notifyInfo(language.replyBusy); return }
         // The input version shown now is what this reroll uses (inputVersions.ts).
         const requestInput = pressedInput(targetChat.message)
         preparingChatSends.add(genKey)
@@ -1139,7 +1140,7 @@ import { isMobile } from 'src/ts/platform'
     }
 
     function deleteSwipe(index?: number) {
-        if(currentChatGenerating) return
+        if(currentChatGenerating || currentChatPreparing) { notifyInfo(language.replyBusy); return }
         const { chat, msg, isTarget } = swipeContext(index)
         if (!chat || !msg) return
         const removed = deleteShownSwipe(msg)
@@ -1689,7 +1690,7 @@ import { isMobile } from 'src/ts/platform'
             </button>
             {#if controls.reroll}
                 <div class="border-l border-darkborderc border-opacity-30"></div>
-                <button class={floatingButton} title={language.reroll} aria-label={language.reroll} onclick={floatingReroll}>
+                <button class={currentChatGenerating || currentChatPreparing ? floatingButton.replace('hover:text-textcolor hover:bg-darkbg/50', 'opacity-50') : floatingButton} title={language.reroll} aria-label={language.reroll} onclick={floatingReroll}>
                     <RefreshCcwIcon size={17} />
                 </button>
             {/if}
@@ -2193,6 +2194,7 @@ import { isMobile } from 'src/ts/platform'
             <Chats
                 bind:this={chatsInstance}
                 messages={currentChat}
+                chatBusy={currentChatGenerating || currentChatPreparing}
                 loadPages={loadPages}
                 onReroll={reroll}
                 onNextSwipe={nextSwipe}

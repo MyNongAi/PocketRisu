@@ -597,6 +597,7 @@ export const languageKorean = {
   deleteRerollMessage: "재생성된 메세지 삭제",
   deleteRerollMessageConfirm: "현재 선택된 재생성 메세지를 삭제할까요?",
   rerollConfirm: "재생성하여 신규 메세지를 목록에 추가 할까요?",
+  replyBusy: "답을 쓰는 중이에요. 중지한 뒤 다시 눌러 주세요.",
   noSwipesRerollConfirm:
     "현재는 추가 재생성된 메세지가 없습니다. 재생성하여 신규 메세지를 목록에 추가 할까요?",
   chatList: "채팅 리스트",

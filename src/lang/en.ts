@@ -533,6 +533,7 @@ export const languageEnglish = {
     deleteRerollMessage: "Delete Regenerated Message",
     deleteRerollMessageConfirm: "Delete the currently selected regenerated message?",
     rerollConfirm: "Generate a new message and add it to the list?",
+    replyBusy: "A reply is being written. Stop it first, then try again.",
     noSwipesRerollConfirm: "There are no additional regenerated messages. Generate a new message and add it to the list?",
     chatList: "Chat List",
     removeChat: "Remove this message?",
