@@ -25,7 +25,7 @@
     import { chatGenKey, generationStates } from "src/ts/process/generationState";
     import { rerollPlaceholders } from "src/ts/gui/rerollPlaceholder";
     import { findRerollTargetIndex, hasUnseenSwipe } from "src/ts/chatSwipes";
-    import { chatAsBeforeSend, sendTurnOf } from "src/ts/chatCopySnapshot";
+    import { chatAsBeforeSend, clearReplyInProgress, sendTurnOf } from "src/ts/chatCopySnapshot";
     import { findCharacterbyId, sleep, sortableOptions } from "src/ts/util";
 
     import { bookmarkListOpen, openModuleListStore } from "src/ts/stores.svelte";
@@ -53,7 +53,7 @@
     // it (the user's choice, 2026-11-08); a reroll's old reply goes back in
     // its place (chatCopySnapshot.ts). It does not wait for the reply.
     function copyableChat(chat: Chat): { chat: Chat, draft: { m: string, t: string } | null } {
-        const snapshot = $state.snapshot(chat) as Chat
+        const snapshot = clearReplyInProgress($state.snapshot(chat) as Chat)
         const pending = get(generationStates).get(chatGenKey(chat.id))?.generationId
         const placeholder = get(rerollPlaceholders).get(chat.id)
         const turn = sendTurnOf(chat.id)

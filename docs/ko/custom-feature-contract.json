@@ -1709,7 +1709,8 @@
         "src/lib/ChatScreens/DefaultChatScreen.svelte",
         "src/lib/SideBars/SideChatList.svelte",
         "src/ts/chatCopySnapshot.ts",
-        "src/ts/storage/chatDraft.ts"
+        "src/ts/storage/chatDraft.ts",
+        "src/lib/ChatScreens/Chat.svelte"
       ],
       "requiredMarkers": [
         { "file": "src/ts/process/generationConcurrency.ts", "contains": "maxConcurrentChats: Number.POSITIVE_INFINITY," },
@@ -1718,7 +1719,10 @@
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if(!continueResponse) endSendTurn = beginSendTurn(activeChat, capturedInput, capturedTranslate, v4)" },
         { "file": "src/ts/chatCopySnapshot.ts", "contains": "copy.message = copy.message.filter((message) => !!message.chatId && turn.ids.has(message.chatId))" },
         { "file": "src/ts/chatCopySnapshot.ts", "contains": "if (restored) restoreShownSwipeScriptstate(copy, restored)" },
-        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "chara.chats.splice(i + 1, 0, newChat)" }
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "chara.chats.splice(i + 1, 0, newChat)" },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "const snapshot = clearReplyInProgress($state.snapshot(chat) as Chat)" },
+        { "file": "src/lib/ChatScreens/Chat.svelte", "contains": "const newChat = clearReplyInProgress($state.snapshot(currentChat))" },
+        { "file": "src/ts/chatCopySnapshot.ts", "contains": "export function clearReplyInProgress<" }
       ],
       "regressionTests": [
         "src/ts/process/generationConcurrency.test.ts",

@@ -1,5 +1,6 @@
 <script lang="ts">
     import { reissueMessageIds, retitleChatFromLastInput } from "src/ts/chatClone";
+    import { clearReplyInProgress } from "src/ts/chatCopySnapshot";
     import { chatTitleState } from "src/ts/chatTitleState";
     import { ArrowLeft, ArrowLeftRightIcon, ArrowRight, BookmarkIcon, BotIcon, CopyIcon, PowerOff, GitBranch, HamburgerIcon, LanguagesIcon, MenuIcon, PencilIcon, RefreshCcwIcon, SplitIcon, TrashIcon, UserIcon, Volume2Icon, Scissors, EyeOff, PaletteIcon, MoonIcon } from "@lucide/svelte"
     import { illustrateReply, illustratingReplies, removeIllustrations } from "src/ts/process/illustrationRun"
@@ -1542,7 +1543,8 @@
         }
         
         const currentMessage = currentChat.message[idx]
-        const newChat = $state.snapshot(currentChat)
+        // Branched while the chat streams: the branch itself is not being answered.
+        const newChat = clearReplyInProgress($state.snapshot(currentChat))
         newChat.name = createChatCopyName(newChat.name, 'Branch')
         newChat.id = v4()
         newChat.message = newChat.message.slice(0, idx + 1)

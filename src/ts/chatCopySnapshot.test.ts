@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest'
-import { chatForSave, messagesWithoutPendingReply } from './chatCopySnapshot'
+import { chatForSave, clearReplyInProgress, messagesWithoutPendingReply } from './chatCopySnapshot'
 
 const m = (chatId: string, data = chatId) => ({ chatId, data })
+
+describe('a copy or branch is not being answered', () => {
+    it('drops the streaming flags a snapshot of a streaming chat carries', () => {
+        const copy: { message: { chatId: string }[], isStreaming?: boolean, activeStreamingDisplayOptimizationMode?: string } =
+            { message: [m('a'), m('out1')], isStreaming: true, activeStreamingDisplayOptimizationMode: 'balanced' }
+        expect(clearReplyInProgress(copy)).toBe(copy)
+        expect(copy.isStreaming).toBe(false)
+        expect(copy.activeStreamingDisplayOptimizationMode).toBeUndefined()
+        expect(copy.message.map((x) => x.chatId)).toEqual(['a', 'out1'])
+    })
+})
 
 describe('chat copy while answering', () => {
     it('leaves out the reply being written and keeps the input that asked for it', () => {

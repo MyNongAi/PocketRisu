@@ -47,6 +47,20 @@ export function chatForSave<C extends { message: M[] }, M extends CopyMessage>(
     return { ...chat, message: messagesWithoutPendingReply(chat.message, pendingGenerationId, placeholder) }
 }
 
+/**
+ * A copy or a branch is not being answered, whatever its source was doing.
+ * The streaming flags are set on the source while its reply streams in and
+ * are cleared only there, so a snapshot taken meanwhile kept them until its
+ * own next reply or a reload: its last reply was drawn as the one being
+ * written (no edit button, no tap to edit), and the copy counted as in use
+ * and was saved again on every cycle. Mutates and returns `chat`.
+ */
+export function clearReplyInProgress<C extends { isStreaming?: boolean, activeStreamingDisplayOptimizationMode?: unknown }>(chat: C): C {
+    chat.isStreaming = false
+    chat.activeStreamingDisplayOptimizationMode = undefined
+    return chat
+}
+
 // A chat copied while it answers is the chat as it was right before the send
 // (the user's choice, 2026-11-08): the input that was sent goes back into the
 // copy's input box instead of being a message, and the chat variables are the
