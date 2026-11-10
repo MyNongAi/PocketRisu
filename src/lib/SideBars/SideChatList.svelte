@@ -25,7 +25,7 @@
     import { chatGenKey, generationStates } from "src/ts/process/generationState";
     import { rerollPlaceholders } from "src/ts/gui/rerollPlaceholder";
     import { findRerollTargetIndex, hasUnseenSwipe } from "src/ts/chatSwipes";
-    import { chatAsBeforeSend, clearReplyInProgress, sendTurnOf } from "src/ts/chatCopySnapshot";
+    import { chatForCopyWhileAnswering, clearReplyInProgress, sendTurnOf } from "src/ts/chatCopySnapshot";
     import { findCharacterbyId, sleep, sortableOptions } from "src/ts/util";
 
     import { bookmarkListOpen, openModuleListStore } from "src/ts/stores.svelte";
@@ -48,17 +48,18 @@
 
     let { chara = $bindable() }: Props = $props();
 
-    // A copy taken while the chat is answering is the chat right before its
-    // send: the sent input back in the input box, the variables from before
-    // it (the user's choice, 2026-11-08); a reroll's old reply goes back in
-    // its place (chatCopySnapshot.ts). It does not wait for the reply.
+    // A copy taken while the chat is answering keeps the sent input as a
+    // message and omits the pending reply (the user's 2026-11-10 change from
+    // putting that input back in the box). Variables return to before the send
+    // so a waiting-for-reply lock cannot persist in the copy. Before the input
+    // is pushed, its text goes into the copy's box; rerolls restore the old reply.
     function copyableChat(chat: Chat): { chat: Chat, draft: { m: string, t: string } | null } {
         const snapshot = clearReplyInProgress($state.snapshot(chat) as Chat)
         const pending = get(generationStates).get(chatGenKey(chat.id))?.generationId
         const placeholder = get(rerollPlaceholders).get(chat.id)
         const turn = sendTurnOf(chat.id)
         if (!pending && !placeholder && !turn) return { chat: snapshot, draft: null }
-        const input = chatAsBeforeSend(snapshot, {
+        const input = chatForCopyWhileAnswering(snapshot, {
             pendingGenerationId: pending,
             placeholder: placeholder
                 ? { index: placeholder.index, message: structuredClone($state.snapshot(placeholder.message)), trailing: placeholder.trailing ? structuredClone($state.snapshot(placeholder.trailing)) : undefined }
@@ -378,7 +379,7 @@
                                     ?? createChatCopyName(newChat.name, 'Copy')
                                 newChat.id = v4()
                                 // The unsent text in the input goes along (the user's request, 2026-10-10);
-                                // mid-send, the input that was sent.
+                                // before a send pushes its input, that input goes too.
                                 if (copied.draft) seedChatDraft((chara as character).chaId, newChat.id, copied.draft)
                                 else copyChatDraft((chara as character).chaId, chara.chats[chatIdx].id, newChat.id)
                                 // Right under the chat it copies, not at the top (the user's request, 2026-10-19).
@@ -487,7 +488,7 @@
                             ?? createChatCopyName(newChat.name, 'Copy')
                         newChat.id = v4()
                         // The unsent text in the input goes along (the user's request, 2026-10-10);
-                        // mid-send, the input that was sent.
+                        // before a send pushes its input, that input goes too.
                         if (copied.draft) seedChatDraft((chara as character).chaId, newChat.id, copied.draft)
                         else copyChatDraft((chara as character).chaId, chara.chats[i].id, newChat.id)
                         // Right under the chat it copies, not at the top (the user's request, 2026-10-19).

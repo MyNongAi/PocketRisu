@@ -1702,7 +1702,7 @@
     },
     {
       "id": "GENERATION-NO-CAP",
-      "title": "동시 생성 개수 제한 없음 · 응답 중 복사는 보내기 직전 상태로 바로",
+      "title": "동시 생성 개수 제한 없음 · 응답 중 복사는 쓰는 중인 답만 빼고 바로",
       "criticality": "core-ux",
       "ownerFiles": [
         "src/ts/process/generationConcurrency.ts",
@@ -1717,7 +1717,12 @@
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "const newChat = reissueMessageIds(copied.chat, chara.chats[i].message.map(m => m.chatId))" },
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "if (copied.draft) seedChatDraft((chara as character).chaId, newChat.id, copied.draft)" },
         { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if(!continueResponse) endSendTurn = beginSendTurn(activeChat, capturedInput, capturedTranslate, v4)" },
-        { "file": "src/ts/chatCopySnapshot.ts", "contains": "copy.message = copy.message.filter((message) => !!message.chatId && turn.ids.has(message.chatId))" },
+        { "file": "src/ts/chatCopySnapshot.ts", "contains": "copy.message = messagesWithoutPendingReply(copy.message, pendingGenerationId, placeholder)" },
+        { "file": "src/ts/chatCopySnapshot.ts", "contains": "export function markSendInputPushed(chatId: string): void" },
+        { "file": "src/ts/chatCopySnapshot.ts", "contains": "if (last >= 0) restoreShownSwipeScriptstate(copy, kept[last])" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "markSendInputPushed(activeChat.id)" },
+        { "file": "src/lib/ChatScreens/DefaultChatScreen.svelte", "contains": "if (!continueResponse) markSendGenerationStarted(activeChat.id)" },
+        { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "const input = chatForCopyWhileAnswering(snapshot, {" },
         { "file": "src/ts/chatCopySnapshot.ts", "contains": "if (restored) restoreShownSwipeScriptstate(copy, restored)" },
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "chara.chats.splice(i + 1, 0, newChat)" },
         { "file": "src/lib/SideBars/SideChatList.svelte", "contains": "const snapshot = clearReplyInProgress($state.snapshot(chat) as Chat)" },

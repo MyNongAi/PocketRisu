@@ -223,8 +223,8 @@ export function copyChatDraft(chaId: string, fromChatId: string, toChatId: strin
 }
 
 /**
- * A copy made while its chat answers starts with the input that was sent
- * (chatCopySnapshot.ts chatAsBeforeSend). Call before switching to the copy,
+ * A copy made before a send pushes its input keeps that text in its box
+ * (chatCopySnapshot.ts chatForCopyWhileAnswering). Call before switching to the copy,
  * like copyChatDraft.
  */
 export function seedChatDraft(chaId: string, chatId: string, draft: ChatDraft): void {

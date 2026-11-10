@@ -57,45 +57,55 @@ describe('a chat saved while a reply is rerolled', () => {
     })
 })
 
-describe('a chat copied while it answers is the chat before the send (2026-11-08)', () => {
+describe('a chat copied while it answers keeps the sent input (2026-11-10)', () => {
     type Msg = { chatId?: string, role: string, data: string, swipes?: string[], swipeId?: number, scriptstateCheckpoint?: { before: Record<string, string> | null, after: (Record<string, string> | null)[] } }
     let n = 0
     const newId = () => `id-${++n}`
 
-    it('leaves out the sent input and the reply, puts the input back in the box, and the variables before the send', async () => {
-        const { beginSendTurn, sendTurnOf, chatAsBeforeSend } = await import('./chatCopySnapshot')
+    it('keeps the sent input and script messages, omits the pending reply, and restores variables', async () => {
+        const { beginSendTurn, markSendInputPushed, sendTurnOf, chatForCopyWhileAnswering } = await import('./chatCopySnapshot')
         const chat = { id: 'c1', message: [{ role: 'char', data: 'hello' }, { chatId: 'u1', role: 'user', data: 'hi' }, { chatId: 'o1', role: 'char', data: 'out' }] as Msg[], scriptstate: { $pending: '0', $turn: 3 } as Record<string, string | number> }
         const end = beginSendTurn(chat, 'next input', '', newId)
         expect(chat.message[0].chatId).toBe('id-1')
-        // The send goes on: the input, a bot's lock, the reply being written.
-        chat.message.push({ chatId: 'u2', role: 'user', data: 'next input' }, { chatId: 'gen-1', role: 'char', data: 'partial' })
+        // The send goes on: a script message, the input, a bot's lock, and the reply being written.
+        chat.message.push({ chatId: 'script', role: 'char', data: 'script output' }, { chatId: 'u2', role: 'user', data: 'next input' })
+        markSendInputPushed('c1')
+        chat.message.push({ chatId: 'gen-1', role: 'char', data: 'partial' })
         chat.scriptstate.$pending = '1'
         chat.scriptstate.$turn = 4
         const copy = structuredClone({ message: chat.message, scriptstate: chat.scriptstate })
-        const draft = chatAsBeforeSend(copy, { pendingGenerationId: 'gen-1', turn: sendTurnOf('c1') })
-        expect(copy.message.map((m) => m.chatId)).toEqual(['id-1', 'u1', 'o1'])
+        const draft = chatForCopyWhileAnswering(copy, { pendingGenerationId: 'gen-1', turn: sendTurnOf('c1') })
+        expect(copy.message.map((m) => m.chatId)).toEqual(['id-1', 'u1', 'o1', 'script', 'u2'])
         expect(copy.scriptstate).toEqual({ $pending: '0', $turn: 3 })
-        expect(draft).toEqual({ input: 'next input', translate: '' })
+        expect(draft).toBeNull()
         // The live chat is untouched.
         expect(chat.scriptstate.$pending).toBe('1')
         end()
         expect(sendTurnOf('c1')).toBeUndefined()
     })
 
-    it('is the same before the reply starts, and as it is once the reply is in', async () => {
-        const { beginSendTurn, sendTurnOf, chatAsBeforeSend } = await import('./chatCopySnapshot')
+    it('seeds the recorded input before it is pushed, then copies as it is once the reply is in', async () => {
+        const { beginSendTurn, markSendGenerationStarted, markSendInputPushed, sendTurnOf, chatForCopyWhileAnswering } = await import('./chatCopySnapshot')
         const chat = { id: 'c2', message: [{ chatId: 'o1', role: 'char', data: 'out' }] as Msg[], scriptstate: { $x: '1' } as Record<string, string> }
         const end = beginSendTurn(chat, 'typed', 'typed-ko', newId)
-        chat.message.push({ chatId: 'u2', role: 'user', data: 'typed' })
+        chat.message.push({ chatId: 'script', role: 'char', data: 'input trigger output' })
         chat.scriptstate.$x = '2'
         const early = structuredClone({ message: chat.message, scriptstate: chat.scriptstate })
-        expect(chatAsBeforeSend(early, { turn: sendTurnOf('c2') })).toEqual({ input: 'typed', translate: 'typed-ko' })
-        expect(early.message.map((m) => m.chatId)).toEqual(['o1'])
+        expect(chatForCopyWhileAnswering(early, { turn: sendTurnOf('c2') })).toEqual({ input: 'typed', translate: 'typed-ko' })
+        expect(early.message.map((m) => m.chatId)).toEqual(['o1', 'script'])
+        expect(early.scriptstate).toEqual({ $x: '1' })
+        chat.message.push({ chatId: 'u2', role: 'user', data: 'typed' })
+        markSendInputPushed('c2')
+        const pushed = structuredClone({ message: chat.message, scriptstate: chat.scriptstate })
+        expect(chatForCopyWhileAnswering(pushed, { turn: sendTurnOf('c2') })).toBeNull()
+        expect(pushed.message.map((m) => m.chatId)).toEqual(['o1', 'script', 'u2'])
+        expect(pushed.scriptstate).toEqual({ $x: '1' })
         // The reply is written and the send is only finishing up: copied as it is.
+        markSendGenerationStarted('c2')
         chat.message.push({ chatId: 'r2', role: 'char', data: 'reply' })
         const late = structuredClone({ message: chat.message, scriptstate: chat.scriptstate })
-        expect(chatAsBeforeSend(late, { turn: sendTurnOf('c2') })).toBeNull()
-        expect(late.message.map((m) => m.chatId)).toEqual(['o1', 'u2', 'r2'])
+        expect(chatForCopyWhileAnswering(late, { turn: sendTurnOf('c2') })).toBeNull()
+        expect(late.message.map((m) => m.chatId)).toEqual(['o1', 'script', 'u2', 'r2'])
         expect(late.scriptstate).toEqual({ $x: '2' })
         end()
     })
@@ -111,26 +121,37 @@ describe('a chat copied while it answers is the chat before the send (2026-11-08
         expect(sendTurnOf('c3')).toBeUndefined()
     })
 
-    it("a send the composer did not start ends at the last finished reply, with the variables it left", async () => {
-        const { chatAsBeforeSend } = await import('./chatCopySnapshot')
+    it("keeps a non-composer request after the last reply and restores that reply's variables", async () => {
+        const { chatForCopyWhileAnswering } = await import('./chatCopySnapshot')
         const out: Msg = { chatId: 'o1', role: 'char', data: 'out', scriptstateCheckpoint: { before: { $pending: '1' }, after: [{ $pending: '0' }] } }
         const copy = { message: [{ chatId: 'u1', role: 'user', data: 'hi' }, out, { chatId: 'req', role: 'user', data: '[REQUEST]' }, { chatId: 'gen-2', role: 'char', data: 'partial' }] as Msg[], scriptstate: { $pending: '1' } as Record<string, string> }
-        expect(chatAsBeforeSend(copy, { pendingGenerationId: 'gen-2' })).toBeNull()
-        expect(copy.message.map((m) => m.chatId)).toEqual(['u1', 'o1'])
+        expect(chatForCopyWhileAnswering(copy, { pendingGenerationId: 'gen-2' })).toBeNull()
+        expect(copy.message.map((m) => m.chatId)).toEqual(['u1', 'o1', 'req'])
         expect(copy.scriptstate).toEqual({ $pending: '0' })
+    })
 
-        // Without a recorded checkpoint: only the reply being written goes, as before.
+    it('restores checkpoint variables when the last finished reply is the last kept message', async () => {
+        const { chatForCopyWhileAnswering } = await import('./chatCopySnapshot')
+        const out: Msg = { chatId: 'o1', role: 'char', data: 'out', scriptstateCheckpoint: { before: { $pending: '1' }, after: [{ $pending: '0' }] } }
+        const copy = { message: [out, { chatId: 'gen-2', role: 'char', data: 'partial' }] as Msg[], scriptstate: { $pending: '1' } as Record<string, string> }
+        expect(chatForCopyWhileAnswering(copy, { pendingGenerationId: 'gen-2' })).toBeNull()
+        expect(copy.message.map((m) => m.chatId)).toEqual(['o1'])
+        expect(copy.scriptstate).toEqual({ $pending: '0' })
+    })
+
+    it('keeps variables when the last finished reply has no checkpoint', async () => {
+        const { chatForCopyWhileAnswering } = await import('./chatCopySnapshot')
         const bare = { message: [{ chatId: 'o1', role: 'char', data: 'out' }, { chatId: 'req', role: 'user', data: '[REQUEST]' }, { chatId: 'gen-3', role: 'char', data: 'p' }] as Msg[], scriptstate: { $pending: '1' } as Record<string, string> }
-        chatAsBeforeSend(bare, { pendingGenerationId: 'gen-3' })
+        chatForCopyWhileAnswering(bare, { pendingGenerationId: 'gen-3' })
         expect(bare.message.map((m) => m.chatId)).toEqual(['o1', 'req'])
         expect(bare.scriptstate).toEqual({ $pending: '1' })
     })
 
     it("a reroll's old reply goes back with the variables it left", async () => {
-        const { chatAsBeforeSend } = await import('./chatCopySnapshot')
+        const { chatForCopyWhileAnswering } = await import('./chatCopySnapshot')
         const old: Msg = { chatId: 'o1', role: 'char', data: 'b', swipes: ['a', 'b'], swipeId: 1, scriptstateCheckpoint: { before: { $pending: '1' }, after: [{ $v: 'a' }, { $v: 'b' }] } }
         const copy = { message: [{ chatId: 'u1', role: 'user', data: 'hi' }, { chatId: 'gen-4', role: 'char', data: 'new' }] as Msg[], scriptstate: { $pending: '1' } as Record<string, string> }
-        chatAsBeforeSend(copy, { pendingGenerationId: 'gen-4', placeholder: { index: 1, message: old } })
+        chatForCopyWhileAnswering(copy, { pendingGenerationId: 'gen-4', placeholder: { index: 1, message: old } })
         expect(copy.message.map((m) => m.chatId)).toEqual(['u1', 'o1'])
         expect(copy.scriptstate).toEqual({ $v: 'b' })
     })

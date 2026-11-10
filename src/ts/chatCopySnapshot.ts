@@ -61,25 +61,28 @@ export function clearReplyInProgress<C extends { isStreaming?: boolean, activeSt
     return chat
 }
 
-// A chat copied while it answers is the chat as it was right before the send
-// (the user's choice, 2026-11-08): the input that was sent goes back into the
-// copy's input box instead of being a message, and the chat variables are the
-// ones from before the send. A bot that marks "waiting for the reply" in its
-// variables when a request goes out, and clears it only when the reply comes,
-// otherwise left the copy waiting for a reply that never comes there, with its
-// input and buttons locked. (Before, the copy kept the sent input and the
-// variables as they were at the moment of the copy.)
+// A chat copied while it answers keeps every message except the reply being
+// written. At the user's request (2026-11-10), a sent input stays a message;
+// the 2026-11-08 choice to put it back in the copy's input box was reversed.
+// Before the input is pushed, its recorded text still goes into the copy's box.
+// The variables still return to before the send: a bot can mark "waiting for
+// the reply" when a request goes out and clear it only when the reply arrives.
+// The copy never receives that reply, so keeping those variables locked its
+// input and buttons.
 //
-// The composer records where its send began (beginSendTurn). A send the
-// composer did not start (a bot's own button, a script) has no such record:
-// the copy then ends at the last finished reply, with the variables that reply
-// left (its checkpoint, chatScriptstateCheckpoint.ts), when they were recorded.
+// The composer records where its send began (beginSendTurn). A send it did not
+// start (a bot's button, a script, a continue) uses the last finished reply's
+// variables (its checkpoint, chatScriptstateCheckpoint.ts), when recorded.
 // A reroll's old reply goes back with the variables it left.
 
-/** The chat right before a send from the composer. */
+/** The state recorded when a send from the composer began. */
 export type SendTurnStart = {
     /** chatIds of the messages the chat had before the send. */
     ids: ReadonlySet<string>
+    /** Whether this send pushed its input message into the chat. */
+    inputPushed: boolean
+    /** Whether reply generation has begun (script messages can precede it). */
+    generationStarted: boolean
     /** Its variables then; null when they could not be recorded (too big). */
     scriptstate: ScriptstateSnapshot | null
     /** What the composer held: the copy's input box. */
@@ -100,6 +103,8 @@ export function beginSendTurn(chat: TurnChat, input: string, translate: string, 
     for (const message of chat.message) message.chatId ??= newId()
     const start: SendTurnStart = {
         ids: new Set(chat.message.map((message) => message.chatId!)),
+        inputPushed: false,
+        generationStarted: false,
         scriptstate: snapshotScriptstate(chat.scriptstate),
         input,
         translate,
@@ -117,26 +122,38 @@ export function sendTurnOf(chatId: string): SendTurnStart | undefined {
     return sendTurns.get(chatId)?.start
 }
 
+/** Record the composer's input reaching the chat; this state is never saved. */
+export function markSendInputPushed(chatId: string): void {
+    const turn = sendTurns.get(chatId)?.start
+    if (turn) turn.inputPushed = true
+}
+
+/** Distinguish a completed reply from earlier bot script messages. */
+export function markSendGenerationStarted(chatId: string): void {
+    const turn = sendTurns.get(chatId)?.start
+    if (turn) turn.generationStarted = true
+}
+
 type TurnMessage = CopyMessage & CheckpointMessage & { role?: string }
 
 /**
- * Turn a copy (a detached snapshot of a chat that is answering) into the chat
- * before its send, in place. Returns what goes into the copy's input box, or
- * null to keep the usual draft copy (copyChatDraft).
+ * Remove the reply being written from a detached copy, and restore variables
+ * for its unfinished turn. Returns the input only before it becomes a message;
+ * null keeps the usual draft copy (copyChatDraft).
  */
-export function chatAsBeforeSend<M extends TurnMessage>(
+export function chatForCopyWhileAnswering<M extends TurnMessage>(
     copy: { message: M[], scriptstate?: ScriptstateSnapshot },
     state: { pendingGenerationId?: string | null, placeholder?: RerollRestore<M> | null, turn?: SendTurnStart | null },
 ): { input: string, translate: string } | null {
     const { pendingGenerationId, placeholder, turn } = state
-    // The composer's send: unless its reply is already in (written, and the
-    // send only finishing up), the chat as it was before it.
-    const replied = !pendingGenerationId && !!turn
+    // Once the reply is in, the send is only finishing up: copy as it is.
+    const replied = !pendingGenerationId && !!turn && turn.generationStarted
         && copy.message.some((message) => message.role === 'char' && !!message.chatId && !turn.ids.has(message.chatId))
     if (turn && !replied) {
-        copy.message = copy.message.filter((message) => !!message.chatId && turn.ids.has(message.chatId))
+        copy.message = messagesWithoutPendingReply(copy.message, pendingGenerationId, placeholder)
         if (turn.scriptstate) restoreScriptstateSnapshot(copy, turn.scriptstate)
-        return turn.input || turn.translate ? { input: turn.input, translate: turn.translate } : null
+        return !turn.inputPushed && (turn.input || turn.translate)
+            ? { input: turn.input, translate: turn.translate } : null
     }
     if (!pendingGenerationId && !placeholder) return null
     const kept = messagesWithoutPendingReply(copy.message, pendingGenerationId, placeholder)
@@ -147,15 +164,10 @@ export function chatAsBeforeSend<M extends TurnMessage>(
         if (restored) restoreShownSwipeScriptstate(copy, restored)
         return null
     }
-    // Another send (a bot's button, a script): up to the last finished reply,
-    // when the variables it left were recorded; else as before.
+    // Another send (a bot's button, a script, a continue): keep its messages
+    // and restore what the last finished reply left, if recorded.
     const last = kept.findLastIndex((message) => message.role === 'char')
-    const holder: { scriptstate?: ScriptstateSnapshot } = {}
-    if (last >= 0 && last < kept.length - 1 && restoreShownSwipeScriptstate(holder, kept[last])) {
-        copy.message = kept.slice(0, last + 1)
-        copy.scriptstate = holder.scriptstate
-        return null
-    }
     copy.message = kept
+    if (last >= 0) restoreShownSwipeScriptstate(copy, kept[last])
     return null
 }

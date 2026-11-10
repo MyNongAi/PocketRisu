@@ -41,7 +41,7 @@ import { isMobile } from 'src/ts/platform'
     import { processScript } from "src/ts/process/scripts";
     import { captureModuleRuntimeContext, type ModuleRuntimeContext } from 'src/ts/process/modules';
     import { captureChatMainRoute } from 'src/ts/process/mcp/toolGate';
-    import { beginSendTurn } from 'src/ts/chatCopySnapshot';
+    import { beginSendTurn, markSendGenerationStarted, markSendInputPushed } from 'src/ts/chatCopySnapshot';
     import { lastMessageDeletion, messageDeletions } from 'src/ts/gui/messageUndo';
     import { undoMessageDeletion } from 'src/ts/gui/messageUndoRun';
     import CreatorQuote from "./CreatorQuote.svelte";
@@ -710,8 +710,8 @@ import { isMobile } from 'src/ts/platform'
         generationTarget = ready.target
         const targetCharacter = ready.character
         const activeChat = ready.chat
-        // A copy taken until this send is over is the chat as it is now
-        // (chatCopySnapshot.ts); a continue keeps the copy as it was.
+        // Record the variables before this send and whether its input reaches
+        // the chat, so a mid-send copy keeps the input in the right place.
         if(!continueResponse) endSendTurn = beginSendTurn(activeChat, capturedInput, capturedTranslate, v4)
         const claim = await claimChatForSend(targetCharacter.chaId, activeChat.id)
         if (claim.ok === true) chatLease = { chaId: targetCharacter.chaId, chatId: activeChat.id }
@@ -762,6 +762,7 @@ import { isMobile } from 'src/ts/platform'
                         data: '*says nothing*',
                         name: null
                     })
+                    markSendInputPushed(activeChat.id)
                 }
             }
         }
@@ -787,6 +788,7 @@ import { isMobile } from 'src/ts/platform'
                 // the input under a reply and the chat title show this (typedInput.ts).
                 rememberTypedInput(sent, inputToSend)
                 cha.push(sent)
+                markSendInputPushed(activeChat.id)
             }
             else{
                 const sent: Message = {
@@ -797,6 +799,7 @@ import { isMobile } from 'src/ts/platform'
                 }
                 rememberTypedInput(sent, inputToSend)
                 cha.push(sent)
+                markSendInputPushed(activeChat.id)
             }
         }
 
@@ -830,6 +833,7 @@ import { isMobile } from 'src/ts/platform'
         // leaves no event-loop gap for a duplicate click.
         preparingChatSends.delete(genKey)
         const sendStartedAt = Date.now()
+        if (!continueResponse) markSendGenerationStarted(activeChat.id)
         const sent = await sendChatMain(
             continueResponse,
             generationTarget,
