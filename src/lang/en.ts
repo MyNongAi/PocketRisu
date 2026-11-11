@@ -1630,6 +1630,8 @@ export const languageEnglish = {
     doYouWantToBindCurrentPersona: "Do you want to bind the current persona to this chat?",
     doYouWantToUnbindCurrentPersona: "Do you want to unbind the persona from this chat?",
     personaBindingLabel: "Persona Binding",
+    personaDescriptionToggle: "Edit persona description",
+    personaDescriptionLabel: "Persona description",
     personaBindedSuccess: "Persona is successfully binded",
     personaFavorite: "Favorite",
     personaFavoriteRemove: "Unfavorite",

@@ -2,9 +2,10 @@
     import { ChevronDownIcon, ChevronRightIcon, Clock3Icon, CornerDownRightIcon, FolderIcon, ImageIcon, SearchIcon, SettingsIcon, StarIcon, Trash2Icon, UserRoundIcon, XIcon } from "@lucide/svelte";
     import { language } from "../../lang";
     import { DBState, selectedCharID } from 'src/ts/stores.svelte';
-    import { changeUserPersona, ensureBlankPersonaIndex, personaFromBlank, removePersona, setUserPersonaImage, updatePersonaText, type PersonaTextFields } from "src/ts/persona";
+    import { changeUserPersona, ensureBlankPersonaIndex, removePersona, setUserPersonaImage, type PersonaTextFields } from "src/ts/persona";
+    import { editPersonaTarget, editPersonaText } from "src/ts/personaTextEdit";
     import { PERSONA_IMAGE_EXTENSIONS } from "src/ts/personaImage";
-    import { boundPersona, keepsNameOnly, nameOnlyName, personaFromNameOnly, setNameOnlyName } from "src/ts/nameOnlyPersona";
+    import { boundPersona, keepsNameOnly, nameOnlyName, setNameOnlyName } from "src/ts/nameOnlyPersona";
     import { compareRecentlyApplied, loadPersonaSort, savePersonaSort, sortPersonaGroups, type PersonaSortMode } from "src/ts/personaSort";
     import { v4 } from "uuid";
     import { selectSingleFile } from "src/ts/util";
@@ -136,24 +137,17 @@
         editId = id;
     }
 
-    /**
-     * The persona the edit goes to: a new one in place of the blank persona,
-     * or the name-only binding become a persona under its id.
-     */
-    function editTarget(patch: PersonaTextFields = {}): { index: number; created: boolean } {
-        if (editNameOnly && editId) return { index: personaFromNameOnly(DBState.db, editId, patch), created: true };
-        const index = editIndex;
-        if (index < 0 || !DBState.db.personas[index]?.nodeOnlyBlank) return { index, created: false };
-        const created = personaFromBlank(index, patch);
-        if (created >= 0 && editingDefault) {
-            // The default is the blank persona: the edit becomes the new
-            // global persona, and the chat keeps following the default.
-            changeUserPersona(created);
-        } else if (created >= 0) {
-            onSelect?.(created);
-            editId = DBState.db.personas[created]?.id ?? null;
-        }
-        return { index: created, created: true };
+    function editContext() {
+        return {
+            db: DBState.db,
+            index: editIndex,
+            nameOnlyId: editNameOnly ? editId : null,
+            followsDefault: editingDefault,
+            onBind: (index: number) => {
+                onSelect?.(index);
+                editId = DBState.db.personas[index]?.id ?? null;
+            },
+        };
     }
 
     // A name alone is no persona (the user's request, 2026-10-31): typed on
@@ -173,15 +167,14 @@
                 return;
             }
         }
-        const { index, created } = editTarget(patch);
-        if (index >= 0 && !created) updatePersonaText(index, patch);
+        editPersonaText(editContext(), patch);
     }
 
     async function changeIcon() {
         if (editIndex < 0 && !editNameOnly) return;
         const picked = await selectSingleFile([...PERSONA_IMAGE_EXTENSIONS]);
         if (!picked) return;
-        const { index } = editTarget();
+        const { index } = editPersonaTarget(editContext());
         if (index < 0) return;
         try {
             await setUserPersonaImage(picked.data, index);

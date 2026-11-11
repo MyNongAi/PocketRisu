@@ -1743,6 +1743,8 @@ export const languageKorean = {
   doYouWantToUnbindCurrentPersona:
     "페르소나를 이 채팅에서 언바인드하시겠습니까?",
   personaBindingLabel: "페르소나 바인딩",
+  personaDescriptionToggle: "페르소나 설명 수정",
+  personaDescriptionLabel: "페르소나 설명",
   personaBindedSuccess: "페르소나가 성공적으로 바인드되었습니다.",
   personaFavorite: "즐겨찾기",
   personaFavoriteRemove: "즐겨찾기 해제",

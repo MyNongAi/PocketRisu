@@ -61,6 +61,7 @@ vi.mock(import('./pngChunk'), () => ({
 vi.mock('uuid', () => ({ v4: vi.fn(() => 'generated-persona-id') } as any))
 
 import { compareRecentlyApplied, importUserPersonaImage, markPersonaApplied, personaFromBlank, setUserPersonaImage, updatePersonaText } from './persona'
+import { editPersonaText } from './personaTextEdit'
 
 type Deferred<T> = {
     promise: Promise<T>
@@ -264,6 +265,79 @@ describe('binding popup edits', () => {
         expect(created.favorite).toBeUndefined()
         expect(mocks.dbRef.db.personas[2]).toEqual(blank)
         expect(personaFromBlank(9)).toBe(-1)
+    })
+})
+
+describe('shared persona text edits', () => {
+    it('updates the root description only when editing the selected persona', () => {
+        setupDatabase()
+        const db = mocks.dbRef.db
+        editPersonaText({ db, index: 1, followsDefault: false }, { personaPrompt: 'new beta' })
+        expect(db.personas[1].personaPrompt).toBe('new beta')
+        expect(db.personaPrompt).toBe('Alpha prompt')
+
+        editPersonaText({ db, index: 0, followsDefault: true }, { personaPrompt: 'new alpha' })
+        expect(db.personas[0].personaPrompt).toBe('new alpha')
+        expect(db.personaPrompt).toBe('new alpha')
+    })
+
+    it('makes a new global persona when the chat follows the blank default', () => {
+        setupDatabase()
+        const db = mocks.dbRef.db
+        const blank = { id: 'blank', name: '', icon: '', personaPrompt: '', note: 'Blank persona', nodeOnlyBlank: true }
+        db.personas.push(blank)
+        db.selectedPersona = 2
+        db.username = ''
+        db.userIcon = ''
+        db.personaPrompt = ''
+        db.userNote = blank.note
+        const onBind = vi.fn()
+
+        const result = editPersonaText({ db, index: 2, followsDefault: true, onBind }, { personaPrompt: 'a knight' })
+        expect(result).toEqual({ index: 3, created: true })
+        expect(db.personas[2]).toEqual(blank)
+        expect(db.selectedPersona).toBe(3)
+        expect(db.personaPrompt).toBe('a knight')
+        expect(db.personas[3]).toMatchObject({ personaPrompt: 'a knight' })
+        expect(db.personas[3]).not.toHaveProperty('nodeOnlyBlank')
+        expect(onBind).not.toHaveBeenCalled()
+    })
+
+    it('binds the new persona to the given chat when editing its blank binding', () => {
+        setupDatabase()
+        const db = mocks.dbRef.db
+        const blank = { id: 'blank', name: '', icon: '', personaPrompt: '', note: 'Blank persona', nodeOnlyBlank: true }
+        db.personas.push(blank)
+        const chat = { bindedPersona: 'blank' }
+
+        const first = editPersonaText({
+            db, index: 2, followsDefault: false,
+            onBind: (index) => { chat.bindedPersona = db.personas[index].id },
+        }, { personaPrompt: 'a knight' })
+        expect(first).toEqual({ index: 3, created: true })
+        expect(chat.bindedPersona).toBe(db.personas[3].id)
+        expect(db.personas[2]).toEqual(blank)
+        expect(db.selectedPersona).toBe(0)
+
+        editPersonaText({ db, index: first.index, followsDefault: false }, { personaPrompt: 'a taller knight' })
+        expect(db.personas).toHaveLength(4)
+        expect(db.personas[3].personaPrompt).toBe('a taller knight')
+        expect(chat.bindedPersona).toBe(db.personas[3].id)
+    })
+
+    it('promotes a name-only binding under its existing id', () => {
+        setupDatabase()
+        const db = mocks.dbRef.db
+        db.nodeOnlyPersonaNames = { named: 'Kim' }
+        const chat = { bindedPersona: 'named' }
+        const onBind = vi.fn()
+
+        expect(editPersonaText({ db, index: -1, nameOnlyId: chat.bindedPersona, followsDefault: false, onBind }, { personaPrompt: 'a knight' }))
+            .toEqual({ index: 2, created: true })
+        expect(db.personas[2]).toMatchObject({ id: 'named', name: 'Kim', personaPrompt: 'a knight' })
+        expect(db.nodeOnlyPersonaNames).toEqual({})
+        expect(chat.bindedPersona).toBe('named')
+        expect(onBind).not.toHaveBeenCalled()
     })
 })
 

@@ -3159,6 +3159,35 @@
       ]
     },
     {
+      "id": "PERSONA-BIND-DESC",
+      "title": "2026-11-12 요청: 사이드바 페르소나 바인딩 펼침 버튼과 현재 페르소나 설명 수정",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/SideBars/PersonaBind.svelte",
+        "src/lib/Setting/listedPersona.svelte",
+        "src/ts/personaTextEdit.ts",
+        "src/lang/en.ts",
+        "src/lang/ko.ts"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/SideBars/PersonaBind.svelte", "contains": "let displayPersona = $derived(bound ?? DBState.db.personas[DBState.db.selectedPersona])" },
+        { "file": "src/lib/SideBars/PersonaBind.svelte", "contains": "descriptionExpanded = !descriptionExpanded" },
+        { "file": "src/lib/SideBars/PersonaBind.svelte", "contains": "height=\"32\"" },
+        { "file": "src/lib/SideBars/PersonaBind.svelte", "contains": "onInput={() => editDescription(description)}" },
+        { "file": "src/lib/Setting/listedPersona.svelte", "contains": "editPersonaText(editContext(), patch);" },
+        { "file": "src/ts/personaTextEdit.ts", "contains": "export function editPersonaText(context: PersonaEditContext, patch: PersonaTextFields)" },
+        { "file": "src/ts/personaTextEdit.ts", "contains": "personaFromNameOnly(db, nameOnlyId, patch)" },
+        { "file": "src/ts/personaTextEdit.ts", "contains": "changeUserPersona(created)" },
+        { "file": "src/ts/personaTextEdit.ts", "contains": "onBind?.(created)" },
+        { "file": "src/ts/personaTextEdit.ts", "contains": "updatePersonaText(target.index, patch)" },
+        { "file": "src/lang/ko.ts", "contains": "personaDescriptionLabel: \"페르소나 설명\"" }
+      ],
+      "regressionTests": [
+        "src/ts/persona.test.ts",
+        "src/lib/Setting/listedPersona.test.ts"
+      ]
+    },
+    {
       "id": "UNIFIED-ASSETS",
       "title": "🖼️ 에셋 통일 (봇+히로인 모듈 그림 규칙 하나로)",
       "criticality": "core-ux",

@@ -1,14 +1,16 @@
 <script lang="ts">
     import { getPaneView } from "src/ts/chatPanes.svelte";
-    import { DBState, selectedCharID } from "src/ts/stores.svelte";
+    import { DBState } from "src/ts/stores.svelte";
     import { language } from "src/lang";
     import { getCurrentChat } from "src/ts/storage/database.svelte";
     import { notifySuccess } from "src/ts/alert";
-    import { ContactIcon } from "@lucide/svelte";
+    import { ChevronDownIcon, ContactIcon } from "@lucide/svelte";
     import { openPersonaList, personaSelectCallback } from "src/ts/stores.svelte";
     import { v4 } from "uuid";
     import ShButton from "../UI/GUI/ShButton.svelte";
+    import TextAreaInput from "../UI/GUI/TextAreaInput.svelte";
     import { markPersonaApplied } from "src/ts/persona";
+    import { editPersonaText } from "src/ts/personaTextEdit";
     import { requestImmediateSave } from "src/ts/globalApi.svelte";
     import { boundPersona } from "src/ts/nameOnlyPersona";
     // The pane this is drawn in (chatPanes.svelte.ts): its chat, not only the selected one.
@@ -20,6 +22,38 @@
     let bound = $derived(boundPersona(DBState.db, currentChat?.bindedPersona) ?? null)
     let displayPersona = $derived(bound ?? DBState.db.personas[DBState.db.selectedPersona])
     let isPersonaBound = $derived(!!bound)
+    const descriptionId = `sidebar-persona-description-${v4()}`
+    let descriptionExpanded = $state(false)
+    let description = $state('')
+
+    // Show the text a request sends (getPersonaPrompt in util.ts): the bound
+    // persona's own, else the root personaPrompt of the global persona, which
+    // its card only catches up with when the persona is saved.
+    $effect(() => {
+        description = bound ? (bound.personaPrompt ?? '') : (DBState.db.personaPrompt ?? '')
+    })
+
+    function editDescription(value: string) {
+        const chat = currentChat
+        if (!chat || !displayPersona) return
+        const boundId = chat.bindedPersona
+        const index = bound
+            ? DBState.db.personas.findIndex((persona) => persona.id === boundId)
+            : DBState.db.selectedPersona
+        editPersonaText({
+            db: DBState.db,
+            index,
+            nameOnlyId: boundId,
+            followsDefault: !bound,
+            onBind: (created) => {
+                // The editor belongs to this pane, which can show a different chat.
+                chat.bindedPersona = DBState.db.personas[created].id
+                markPersonaApplied(created)
+                void requestImmediateSave()
+                notifySuccess(language.personaBindedSuccess)
+            },
+        }, { personaPrompt: value })
+    }
 
     function bindPersona(personaIndex: number) {
         const chat = getCurrentChat()
@@ -64,4 +98,30 @@
             <span class="truncate text-xs opacity-60">({displayPersona.note})</span>
         {/if}
     </ShButton>
+    <ShButton
+        size="icon"
+        className="shrink-0"
+        onclick={() => { descriptionExpanded = !descriptionExpanded }}
+        title={language.personaDescriptionToggle}
+        aria-label={language.personaDescriptionToggle}
+        aria-expanded={descriptionExpanded}
+    >
+        <ChevronDownIcon size={16} class={`transition-transform${descriptionExpanded ? ' rotate-180' : ''}`} />
+    </ShButton>
 </div>
+{#if descriptionExpanded && currentChat && displayPersona}
+    <div class="flex flex-col gap-1 mt-1 pl-2 border-l border-selected min-w-0">
+        <label for={descriptionId} class="text-[11px] text-textcolor2 px-1">{language.personaDescriptionLabel}</label>
+        <TextAreaInput
+            id={descriptionId}
+            className="w-full min-w-0"
+            fullwidth
+            height="32"
+            autocomplete="off"
+            optimaizedInput={false}
+            bind:value={description}
+            onInput={() => editDescription(description)}
+            placeholder={`Put the description of this persona here.\nExample: [<user> is a 20 year old girl.]`}
+        />
+    </div>
+{/if}
