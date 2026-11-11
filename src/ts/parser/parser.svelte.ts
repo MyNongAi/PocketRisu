@@ -4,6 +4,7 @@ import { appVer, getCurrentCharacter, getDatabase, type Chat, type Database, typ
 import { DBState, selIdState } from '../stores.svelte';
 import { aiWatermarkingLawApplies, getFileSrc, prefetchAssetManifests, resolvePrioritizedAssetManifestNames } from '../globalApi.svelte';
 import { hydrateAssetListsForCbs } from './assetListHydration';
+import { addAssetName, normalizedAssetKey, permitsFuzzyName, trimAssetName, type AssetNameIndex } from './assetNameMatch';
 import { isNodeServer } from "src/ts/platform"
 import { getChatVar, setChatVar, getGlobalChatVar } from './chatVar.svelte';
 import { processScriptFull } from '../process/scripts';
@@ -410,7 +411,7 @@ async function renderHighlightableMarkdown(data:string) {
 
 export const assetRegex = /{{(raw|path|img|image|video|audio|bgm|bg|emotion|asset|video-img|source)::(.+?)}}/gms
 
-function getAssetSrc(assetArr: string[][], assetPaths: AssetPaths, fuzzyIndex?: FuzzyAssetIndex) {
+function getAssetSrc(assetArr: string[][], assetPaths: AssetPaths, normalizedIndex: AssetNameIndex<string>, fuzzyIndex?: FuzzyAssetIndex) {
     for (const asset of assetArr) {
         const key = asset[0].toLocaleLowerCase()
         assetPaths[key] ??= {
@@ -420,6 +421,7 @@ function getAssetSrc(assetArr: string[][], assetPaths: AssetPaths, fuzzyIndex?: 
         if(assetPaths[key].ext === asset[2]){
             assetPaths[key].srcPaths.push(asset[1])
         }
+        addAssetName(normalizedIndex, key, key)
         if(fuzzyIndex){
             const stem = trimmer(key)
             const bucket = fuzzyIndex.get(stem) ?? []
@@ -482,11 +484,13 @@ type FuzzyAssetIndex = Map<string, FuzzyAssetCandidate[]>
 let assetsCache: AssetPaths | null = null
 let emoAssetsCache: AssetPaths | null = null
 let fuzzyAssetCache: FuzzyAssetIndex | null = null
+let normalizedAssetCache: AssetNameIndex<string> | null = null
 let fuzzyAssetCount = 0
 const simpleAssetCaches = new WeakMap<object, {
     assets: AssetPaths,
     emotions: AssetPaths,
     fuzzy: FuzzyAssetIndex,
+    normalized: AssetNameIndex<string>,
     fuzzyCount: number,
     moduleKey: string,
 }>()
@@ -513,14 +517,16 @@ export function resetAssetsCache(charAssets: string[][], emoAssets: string[][], 
     const assetPaths: AssetPaths = {}
     const charEmoPaths: AssetPaths = {}
     const fuzzyIndex: FuzzyAssetIndex = new Map()
+    const normalizedIndex: AssetNameIndex<string> = { normalized: new Map(), prefixes: new Set() }
 
-    getAssetSrc(charAssets, assetPaths, fuzzyIndex)
-    getAssetSrc(moduleAssets, assetPaths)
+    getAssetSrc(charAssets, assetPaths, normalizedIndex, fuzzyIndex)
+    getAssetSrc(moduleAssets, assetPaths, normalizedIndex)
     getEmoSrc(emoAssets, charEmoPaths)
 
     assetsCache = assetPaths
     emoAssetsCache = charEmoPaths
     fuzzyAssetCache = fuzzyIndex
+    normalizedAssetCache = normalizedIndex
     fuzzyAssetCount = charAssets.length
     assetsCacheCharacterId = characterId
 }
@@ -571,6 +577,7 @@ async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|c
     let assetPaths = assetsCache ?? {}
     let emoPaths = emoAssetsCache ?? {}
     let fuzzyIndex = fuzzyAssetCache
+    let normalizedIndex = normalizedAssetCache
     let fuzzyCount = fuzzyAssetCount
     if (char.type === 'simple' || context) {
         const ownModuleAssets = char.type === 'simple' ? char.moduleAssets : undefined
@@ -580,13 +587,15 @@ async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|c
             const assets: AssetPaths = {}
             const emotions: AssetPaths = {}
             const fuzzy: FuzzyAssetIndex = new Map()
-            getAssetSrc(char.additionalAssets ?? [], assets, fuzzy)
-            getAssetSrc(ownModuleAssets ?? (moduleKey ? getModuleAssets(context) : []), assets)
+            const normalized: AssetNameIndex<string> = { normalized: new Map(), prefixes: new Set() }
+            getAssetSrc(char.additionalAssets ?? [], assets, normalized, fuzzy)
+            getAssetSrc(ownModuleAssets ?? (moduleKey ? getModuleAssets(context) : []), assets, normalized)
             getEmoSrc(char.emotionImages ?? [], emotions)
             cache = {
                 assets,
                 emotions,
                 fuzzy,
+                normalized,
                 fuzzyCount: char.additionalAssets?.length ?? 0,
                 moduleKey,
             }
@@ -595,6 +604,7 @@ async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|c
         assetPaths = cache.assets
         emoPaths = cache.emotions
         fuzzyIndex = cache.fuzzy
+        normalizedIndex = cache.normalized
         fuzzyCount = cache.fuzzyCount
     }
 
@@ -665,7 +675,9 @@ async function parseAdditionalAssets(data:string, char:simpleCharacterArgument|c
             }
 
             if(assetPaths){
-                match = getClosestMatch(char, name, assetPaths, fuzzyIndex, fuzzyCount)
+                const normalizedName = normalizedIndex?.normalized.get(normalizedAssetKey(name))
+                match = normalizedName ? assetPaths[normalizedName] : undefined
+                match ??= getClosestMatch(char, name, assetPaths, fuzzyIndex, fuzzyCount, normalizedIndex?.prefixes)
             }
 
             if(!match){
@@ -737,6 +749,7 @@ function getClosestMatch(
     assetPaths:AssetPaths,
     fuzzyIndex: FuzzyAssetIndex | null,
     fuzzyCount: number,
+    prefixes?: ReadonlySet<string>,
 ){
     if(!char.additionalAssets) return null
 
@@ -760,6 +773,7 @@ function getClosestMatch(
             : []
 
     for(const candidate of candidates) {
+        if (prefixes && !permitsFuzzyName(name, candidate.name, prefixes)) continue
         const dist = getDistance(trimmedName, trimmer(candidate.name))
         if(dist < closestDist){
             closestDist = dist
@@ -803,14 +817,7 @@ export function getDistance(a:string, b:string) {
 }
 
 function trimmer(str:string){
-    const ext = ['webp', 'png', 'jpg', 'jpeg', 'gif', 'mp4', 'webm', 'avi', 'm4p', 'm4v', 'mp3', 'wav', 'ogg']
-    for(const e of ext){
-        if(str.endsWith('.' + e)){
-            str = str.substring(0, str.length - e.length - 1)
-        }
-    }
-
-    return str.trim().replace(/[_ -.]/g, '')
+    return trimAssetName(str)
 }
 
 type InlayCacheEntry = { url: string; type: string; width?: number; height?: number }

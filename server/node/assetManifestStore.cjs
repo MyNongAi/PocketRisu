@@ -25,6 +25,48 @@ function trimAssetName(str) {
     return str.trim().replace(/[_ -.]/g, '');
 }
 
+function normalizedStem(name) {
+    let stem = name.toLocaleLowerCase().trim();
+    const first = stem[0];
+    const last = stem[stem.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'") || (first === '“' && last === '”')) {
+        stem = stem.slice(1, -1).trim();
+    }
+    for (const ext of TRIMMED_EXTENSIONS) {
+        if (stem.endsWith('.' + ext)) return stem.slice(0, -ext.length - 1);
+    }
+    return stem;
+}
+
+function normalizedAssetKey(name) {
+    return normalizedStem(name).replace(/[_ -.]/g, '');
+}
+
+function assetPrefix(name) {
+    const stem = normalizedStem(name);
+    const separator = stem.search(/[._]/);
+    return separator > 0 ? stem.slice(0, separator) : null;
+}
+
+// Normalized names and character prefixes of one loaded manifest. Loaded
+// item arrays are shared cache instances that are never handed out, so one
+// index per array is built once and reused until the cache drops the array.
+const nameIndexCache = new WeakMap();
+function nameIndexOf(items) {
+    let index = nameIndexCache.get(items);
+    if (index) return index;
+    index = { normalized: new Map(), prefixes: new Set() };
+    for (const item of items) {
+        const key = item[0].toLocaleLowerCase();
+        const normalizedKey = normalizedAssetKey(key);
+        if (!index.normalized.has(normalizedKey)) index.normalized.set(normalizedKey, item[1]);
+        const prefix = assetPrefix(key);
+        if (prefix !== null) index.prefixes.add(prefix);
+    }
+    nameIndexCache.set(items, index);
+    return index;
+}
+
 function validationError(message) {
     const error = new Error(message);
     error.code = 'MANIFEST_VALIDATION';
@@ -389,6 +431,29 @@ function createAssetManifestStore(db, options = {}) {
             }
             if (Object.keys(resolved).length >= wanted.size) break;
         }
+        // Names still missing here: every owner was loaded (the loop above
+        // stops early only when all names were found). Exact names across all
+        // owners won first; now a normalized name (quotes, extension, case and
+        // separators ignored) in owner order, character before modules. A bot
+        // converted to a module asks for "Narin.surprised" while its asset is
+        // Narin.surprised.webp.
+        const prefixes = new Set();
+        if (Object.keys(resolved).length < wanted.size) {
+            for (const loaded of loadedOwners) {
+                for (const prefix of nameIndexOf(loaded.items).prefixes) prefixes.add(prefix);
+            }
+            for (const name of wanted) {
+                if (Object.hasOwn(resolved, name)) continue;
+                const key = normalizedAssetKey(name);
+                for (const loaded of loadedOwners) {
+                    const path = nameIndexOf(loaded.items).normalized.get(key);
+                    if (path) {
+                        resolved[name] = path;
+                        break;
+                    }
+                }
+            }
+        }
         // Legacy fuzzy fallback, matching getClosestMatch in the client
         // parser: extensions are trimmed before scoring and the ceiling is
         // the user's assetMaxDifference setting, passed in as maxDistance.
@@ -397,12 +462,17 @@ function createAssetManifestStore(db, options = {}) {
         for (const name of wanted) {
             if (Object.hasOwn(resolved, name)) continue;
             const trimmedName = trimAssetName(name);
+            // A name whose character prefix belongs to some asset only matches
+            // that character's assets, so "Narin.shocked" never shows Baek.
+            const prefix = assetPrefix(name);
+            const guarded = prefix !== null && prefixes.has(prefix);
             let bestDistance = Number.POSITIVE_INFINITY;
             let bestPath = '';
             for (const loaded of loadedOwners) {
                 if (!loaded.fuzzy) continue;
                 const items = loaded.items;
                 for (const item of items) {
+                    if (guarded && assetPrefix(item[0]) !== prefix) continue;
                     const candidate = trimAssetName(item[0].toLocaleLowerCase());
                     // Length difference is a lower bound on edit distance.
                     if (Math.abs(candidate.length - trimmedName.length) > distanceCeiling) continue;

@@ -1,6 +1,7 @@
 import { getCachedFullAssetManifest } from './assetManifestCache'
 import type { AssetManifestTuple, AssetNameResolution } from './nodeStorage'
 import type { ResolveOwners } from './assetNameResolver'
+import { addAssetName, normalizedAssetKey, permitsFuzzyName, trimAssetName, type AssetNameIndex } from '../parser/assetNameMatch'
 
 // Client-side mirror of the server's resolveNames (assetManifestStore.cjs).
 //
@@ -17,18 +18,7 @@ import type { ResolveOwners } from './assetNameResolver'
 // scenarios (assetManifestStore.test.ts "resolveNames priority"). If one
 // side changes, change the other and both test files.
 
-// Mirrors trimmer() in the parser and trimAssetName() on the server.
-const TRIMMED_EXTENSIONS = ['webp', 'png', 'jpg', 'jpeg', 'gif', 'mp4', 'webm', 'avi', 'm4p', 'm4v', 'mp3', 'wav', 'ogg']
-export function trimAssetName(str: string): string {
-    for (const ext of TRIMMED_EXTENSIONS) {
-        if (str.endsWith('.' + ext)) {
-            str = str.substring(0, str.length - ext.length - 1)
-        }
-    }
-    // The character class is copied verbatim from the client parser: ` -.` is
-    // a range, so separators like "_", " ", "-" and "." all collapse away.
-    return str.trim().replace(/[_ -.]/g, '')
-}
+export { trimAssetName } from '../parser/assetNameMatch'
 
 // Levenshtein, mirroring stringDistance() on the server. Not imported from
 // parser.svelte.ts to keep this module dependency-free (the parser imports
@@ -56,6 +46,7 @@ const LARGE_MANIFEST_FUZZY_LIMIT = 2_000
 type PreparedManifest = {
     exact: Map<string, string>
     byTrimmedStem: Map<string, AssetManifestTuple[]>
+    normalized: AssetNameIndex<string>
 }
 const preparedManifestCache = new WeakMap<AssetManifestTuple[], PreparedManifest>()
 
@@ -65,15 +56,17 @@ function prepareManifest(items: AssetManifestTuple[]): PreparedManifest {
 
     const exact = new Map<string, string>()
     const byTrimmedStem = new Map<string, AssetManifestTuple[]>()
+    const normalized: AssetNameIndex<string> = { normalized: new Map(), prefixes: new Set() }
     for (const item of items) {
         const key = item[0].toLocaleLowerCase()
         if (!exact.has(key)) exact.set(key, item[1])
+        addAssetName(normalized, key, item[1])
         const stem = trimAssetName(key)
         const bucket = byTrimmedStem.get(stem) ?? []
         bucket.push(item)
         byTrimmedStem.set(stem, bucket)
     }
-    const prepared = { exact, byTrimmedStem }
+    const prepared = { exact, byTrimmedStem, normalized }
     preparedManifestCache.set(items, prepared)
     return prepared
 }
@@ -121,6 +114,19 @@ export function resolveNamesLocally(
         if (Object.keys(resolved).length >= wanted.size) break
     }
 
+    const allPrefixes = new Set<string>()
+    for (const loaded of loadedOwners) {
+        for (const prefix of loaded.prepared.normalized.prefixes) allPrefixes.add(prefix)
+    }
+    // Every owner's normalized name wins before any fuzzy candidate.
+    for (const loaded of loadedOwners) {
+        for (const name of wanted) {
+            if (Object.hasOwn(resolved, name)) continue
+            const path = loaded.prepared.normalized.normalized.get(normalizedAssetKey(name))
+            if (path) resolved[name] = path
+        }
+    }
+
     // Legacy fuzzy fallback, only for exact misses and fuzzy owners.
     const distanceCeiling = Math.max(0, Math.trunc(Number(maxDistance) || 0))
     for (const name of wanted) {
@@ -139,6 +145,7 @@ export function resolveNamesLocally(
                 ? loaded.prepared.byTrimmedStem.get(trimmedName) ?? []
                 : loaded.items
             for (const item of candidates) {
+                if (!permitsFuzzyName(name, item[0], allPrefixes)) continue
                 const candidate = trimAssetName(item[0].toLocaleLowerCase())
                 // Length difference is a lower bound on edit distance.
                 if (Math.abs(candidate.length - trimmedName.length) > distanceCeiling) continue

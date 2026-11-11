@@ -33,6 +33,33 @@ function seededOwners(): ResolveOwners {
 }
 
 describe('resolveNamesLocally priority (mirror of the server suite)', () => {
+    it('resolves converted module names and guards character fuzzy matches', () => {
+        const owners: ResolveOwners = [
+            { manifestId: seedManifest([
+                ['Baek.surprised.webp', 'assets/baek-surprised', 'webp'],
+                ['Baek.excited.webp', 'assets/baek-excited', 'webp'],
+                ['Baek.shocked.webp', 'assets/baek-shocked', 'webp'],
+                ['Elf.proud.webp', 'assets/elf-proud', 'webp'],
+            ]), fuzzy: true },
+            { manifestId: seedManifest([
+                ['Narin.surprised.webp', 'assets/narin-surprised', 'webp'],
+                ['Io.proud.webp', 'assets/io-proud', 'webp'],
+            ]), fuzzy: false },
+        ]
+        expect(resolveNamesLocally(owners, [
+            '"Narin.surprised"', '"Baek.excited"', '"Io.proud"',
+            '"Narin.shocked"', 'Baek.exited', 'Baek.surprised.webp',
+        ], 4)).toEqual({
+            resolved: {
+                '"narin.surprised"': 'assets/narin-surprised',
+                '"baek.excited"': 'assets/baek-excited',
+                '"io.proud"': 'assets/io-proud',
+                'baek.exited': 'assets/baek-excited',
+                'baek.surprised.webp': 'assets/baek-surprised',
+            },
+            fuzzy: ['baek.exited'],
+        })
+    })
     it('an exact module asset is not shadowed by a fuzzy near-miss on the character', () => {
         const owners = seededOwners()
         // Both names are within edit distance 4 of a character asset, but

@@ -2,8 +2,31 @@
   "schemaVersion": 1,
   "upstreamBaseline": "PocketRisu v1.17.0",
   "branch": "feature/external-assets",
-  "updatedAt": "2026-11-09",
+  "updatedAt": "2026-11-12",
   "features": [
+    {
+      "id": "ASSET-NAME-NORMALIZED",
+      "title": "모듈 에셋 이름 정규화와 캐릭터별 유사 검색",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/ts/parser/assetNameMatch.ts",
+        "src/ts/parser/parser.svelte.ts",
+        "src/ts/storage/assetNameLocalResolver.ts",
+        "server/node/assetManifestStore.cjs"
+      ],
+      "requiredMarkers": [
+        { "file": "src/ts/parser/assetNameMatch.ts", "contains": "normalizedAssetKey" },
+        { "file": "src/ts/parser/assetNameMatch.ts", "contains": "permitsFuzzyName" },
+        { "file": "src/ts/parser/parser.svelte.ts", "contains": "normalizedAssetCache" },
+        { "file": "src/ts/storage/assetNameLocalResolver.ts", "contains": "allPrefixes" },
+        { "file": "server/node/assetManifestStore.cjs", "contains": "normalizedAssetKey" }
+      ],
+      "regressionTests": [
+        "src/ts/parser/assetNameMatch.test.ts",
+        "src/ts/storage/assetNameLocalResolver.test.ts",
+        "server/node/assetManifestStore.test.ts"
+      ]
+    },
     {
       "id": "CATALOG-KOREAN-SEARCH",
       "title": "일관된 초성·한글 카탈로그 검색",

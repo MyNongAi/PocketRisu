@@ -325,6 +325,35 @@ describe('asset manifest store', () => {
 })
 
 describe('resolveNames priority (v1.11.1 regression)', () => {
+    it('resolves quoted extensionless module names before character fuzzy names', () => {
+        const { store } = freshStore()
+        store.putManifest('character', 'host', [
+            ['Baek.surprised.webp', 'assets/baek-surprised', 'webp'],
+            ['Baek.excited.webp', 'assets/baek-excited', 'webp'],
+            ['Baek.shocked.webp', 'assets/baek-shocked', 'webp'],
+            ['Elf.proud.webp', 'assets/elf-proud', 'webp'],
+        ])
+        store.putManifest('module', 'converted', [
+            ['Narin.surprised.webp', 'assets/narin-surprised', 'webp'],
+            ['Io.proud.webp', 'assets/io-proud', 'webp'],
+        ])
+        const owners = [
+            { kind: 'character', ownerId: 'host', fuzzy: true },
+            { kind: 'module', ownerId: 'converted', fuzzy: false },
+        ]
+        const fuzzy = new Set<string>()
+        expect(store.resolveNames(owners, [
+            '"Narin.surprised"', '"Baek.excited"', '"Io.proud"',
+            '"Narin.shocked"', 'Baek.exited', 'Baek.surprised.webp',
+        ], { maxDistance: 4, fuzzyNamesOut: fuzzy })).toEqual({
+            '"narin.surprised"': 'assets/narin-surprised',
+            '"baek.excited"': 'assets/baek-excited',
+            '"io.proud"': 'assets/io-proud',
+            'baek.exited': 'assets/baek-excited',
+            'baek.surprised.webp': 'assets/baek-surprised',
+        })
+        expect([...fuzzy]).toEqual(['baek.exited'])
+    })
     it('an exact module asset is not shadowed by a fuzzy near-miss on the character', () => {
         const { store } = freshStore()
         store.putManifest('character', 'chara', [['bg-01', 'assets/char-bg-01', 'png'], ['평온', 'assets/char-calm', 'png']])
