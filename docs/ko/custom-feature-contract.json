@@ -276,10 +276,10 @@
         { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "<Sidebar pane=\"side\" overlay hidden={false} {openLegacyGrid} />" },
         { "file": "src/lib/UI/GUI/SideBarArrow.svelte", "contains": "onclick={() => setPaneOverlayOpen(view.pane, true)}" },
         { "file": "src/ts/splitLayout.svelte.ts", "contains": "export const paneOverlayOpen = $state<Record<PaneId, boolean>>({ main: false, side: false })" },
-        { "file": "src/ts/splitLayout.svelte.ts", "contains": "splitLayout.panelOpen[otherPane(pane)] = false" },
-        { "file": "src/ts/splitLayout.svelte.ts", "contains": "paneOverlayOpen[otherPane(pane)] = false" },
+        { "file": "src/ts/splitLayout.svelte.ts", "contains": "panelOpen: { main: saved.panelOpen?.main !== false, side: saved.panelOpen?.side === true }" },
+        { "file": "src/ts/splitLayout.svelte.ts", "contains": "paneOverlayOpen[pane] = open" },
         { "file": "src/App.svelte", "contains": "{:else if $splitChatOpen && !isEmbeddedRisuPane}" },
-        { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "const railPx = $derived(mainPanelShown || sidePanelShown ? railRem * rootRem() : 0)" },
+        { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "rail: mainRailPx + sideRailPx" },
         { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "function botMenuOptions(actions: Array<[string, () => unknown, string?]>): (string | AlertAction)[] {" },
         { "file": "src/lib/Others/AlertComp.svelte", "contains": "{#each alertSelectLines(options.length, $alertStore.actions) as line (line[0])}" },
         { "file": "src/ts/status/requestToastPane.ts", "contains": "if (sidePaneView.chat?.id === chatId) return PANE_TOASTERS.side" },
@@ -333,6 +333,30 @@
         "src/ts/chatSplitPaneClose.test.ts",
         "src/ts/chatPanes.test.ts",
         "src/ts/parser/tests/chatVar.svelte.test.ts"
+      ]
+    },
+    {
+      "id": "RAIL-BOTLIST-TOGGLE",
+      "title": "봇 목록 고정 추가 버튼과 칸별 접기",
+      "criticality": "core-ux",
+      "ownerFiles": [
+        "src/lib/SideBars/Sidebar.svelte",
+        "src/ts/gui/railBotList.svelte.ts",
+        "src/ts/splitLayout.svelte.ts",
+        "src/ts/chatSplitPane.ts",
+        "src/lib/ChatScreens/SplitWorkspace.svelte"
+      ],
+      "requiredMarkers": [
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "{@render addCharacterButton('top')}" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "class:invisible={!botListShown}" },
+        { "file": "src/lib/SideBars/Sidebar.svelte", "contains": "data-spacer-index=\"0\"" },
+        { "file": "src/ts/gui/railBotList.svelte.ts", "contains": "export function setRailBotListShown(pane: PaneId, shown: boolean): void" },
+        { "file": "src/ts/splitLayout.svelte.ts", "contains": "panelOpen: { main: saved.panelOpen?.main !== false, side: saved.panelOpen?.side === true }" },
+        { "file": "src/lib/ChatScreens/SplitWorkspace.svelte", "contains": "rail: mainRailPx + sideRailPx" }
+      ],
+      "regressionTests": [
+        "src/ts/splitLayout.svelte.test.ts",
+        "src/ts/chatSplitPane.test.ts"
       ]
     },
     {

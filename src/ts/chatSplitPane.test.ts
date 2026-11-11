@@ -27,7 +27,7 @@ describe('clampSplitWidth', () => {
 })
 
 describe('docked split widths', () => {
-    // The 80px bot list between the panes (in the span) or at an end (outside it): the same room.
+    // The width helper treats a rail inside the span like the same width removed before it.
     const between = (window: number, mainPanel = true, sidePanel = true) => ({ span: window, rail: 80, mainPanel, sidePanel })
     const atEnd = (window: number, mainPanel = true, sidePanel = true) => ({ span: window - 80, rail: 0, mainPanel, sidePanel })
     const widths = (mainPanel: number, mainChat: number, sideChat: number, sidePanel: number) => ({ mainPanel, mainChat, sideChat, sidePanel })
@@ -51,6 +51,14 @@ describe('docked split widths', () => {
     test('a closed panel leaves its room to the chats', () => {
         expect(dockedSplitWidths(between(1366, false), 520)).toEqual(widths(0, 440, 520, 320))
         expect(dockedSplitWidths(between(1100, true, false), 520)).toEqual(widths(320, 320, 374, 0))
+    })
+
+    test('two open panels reserve both rails, including a wider visible list', () => {
+        expect(dockedSplitChatRoom({ span: 1920, rail: 160, mainPanel: true, sidePanel: true })).toBe(1114)
+        expect(dockedSplitWidths({ span: 1920, rail: 160, mainPanel: true, sidePanel: true }, 520)).toEqual(widths(320, 594, 520, 320))
+        expect(dockedSplitWidths({ span: 1366, rail: 320, mainPanel: true, sidePanel: true }, 520)).toEqual(widths(280, 320, 160, 280))
+        // Two-column mode: one list hidden leaves an 80px control rail.
+        expect(dockedSplitWidths({ span: 1920, rail: 240, mainPanel: true, sidePanel: true }, 520)).toEqual(widths(320, 514, 520, 320))
     })
 
     test('even halves the chats\' room, and the wide end leaves the main chat 320px', () => {
@@ -106,9 +114,11 @@ describe('paneOverlayFootprint', () => {
         // 498px pane: 160 + 290 + 48 (the panel used to stay 370 and push the strip out)
         expect(paneOverlayFootprint(498, rail, 16)).toBe(498)
         expect(paneOverlayFootprint(1200, rail, 16)).toBe(160 + 384 + 48)
+        expect(paneOverlayFootprint(1200, paneOverlayRailRem(true, false, false), 16)).toBe(80 + 384 + 48)
     })
     test('the menu sidebar rail is always one column', () => {
         expect(paneOverlayRailRem(true, true)).toBe(5)
+        expect(paneOverlayRailRem(true, false, false)).toBe(5)
     })
     test('a pane too narrow for any panel keeps the list and the strip', () => {
         expect(paneOverlayFootprint(150, 10, 16)).toBe(160 + 48)

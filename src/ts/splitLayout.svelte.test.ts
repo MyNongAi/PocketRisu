@@ -1,8 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 
-// The split's layout state: where each pane's panel comes out, one panel
-// open at a time with the bot list (2026-10-27), and the slide before a
-// panel closes (the user's requests, 2026-10-22).
+// The split's layout state: each pane may keep its panel open, and closing
+// still slides first (the user's requests, 2026-10-22 and 2026-11-12).
 const KEY = 'pocketrisu:split-layout'
 
 async function load(saved?: unknown) {
@@ -33,20 +32,20 @@ describe('panel edges', () => {
     })
 })
 
-describe('one panel at a time', () => {
-    test("the main pane's is open at first; opening the other closes it", async () => {
+describe('independent panels', () => {
+    test("the main pane's is open at first; opening the other keeps it open", async () => {
         const layout = await load()
         expect(layout.splitLayout.panelOpen).toEqual({ main: true, side: false })
         layout.setPanePanelOpen('side', true)
-        expect(layout.splitLayout.panelOpen).toEqual({ main: false, side: true })
+        expect(layout.splitLayout.panelOpen).toEqual({ main: true, side: true })
         layout.togglePanePanel('main')
-        expect(layout.splitLayout.panelOpen).toEqual({ main: true, side: false })
-        expect(JSON.parse(localStorage.getItem(KEY)!).panelOpen).toEqual({ main: true, side: false })
+        expect(layout.splitLayout.panelOpen).toEqual({ main: false, side: true })
+        expect(JSON.parse(localStorage.getItem(KEY)!).panelOpen).toEqual({ main: false, side: true })
     })
 
-    test('both open in a layout saved before keeps the main one', async () => {
+    test('a saved both-open layout stays open in both panes', async () => {
         const both = await load({ panelOpen: { main: true, side: true }, railAt: 'end', railHidden: true })
-        expect(both.splitLayout.panelOpen).toEqual({ main: true, side: false })
+        expect(both.splitLayout.panelOpen).toEqual({ main: true, side: true })
         const side = await load({ panelOpen: { main: false, side: true } })
         expect(side.splitLayout.panelOpen).toEqual({ main: false, side: true })
     })
@@ -55,7 +54,25 @@ describe('one panel at a time', () => {
         const layout = await load()
         layout.setPaneOverlayOpen('main', true)
         layout.setPaneOverlayOpen('side', true)
+        expect(layout.paneOverlayOpen).toEqual({ main: true, side: true })
+        layout.setPaneOverlayOpen('main', false)
         expect(layout.paneOverlayOpen).toEqual({ main: false, side: true })
+    })
+})
+
+describe('rail bot list toggle', () => {
+    test('defaults to shown and remembers each pane separately', async () => {
+        await load()
+        const rail = await import('./gui/railBotList.svelte')
+        expect(rail.railBotListShown).toEqual({ main: true, side: true })
+        rail.setRailBotListShown('side', false)
+        expect(rail.railBotListShown).toEqual({ main: true, side: false })
+        expect(JSON.parse(localStorage.getItem('pocketrisu:rail-bot-list')!)).toEqual({ main: true, side: false })
+        vi.resetModules()
+        const reloaded = await import('./gui/railBotList.svelte')
+        expect(reloaded.railBotListShown).toEqual({ main: true, side: false })
+        reloaded.setRailBotListShown('main', false)
+        expect(reloaded.railBotListShown).toEqual({ main: false, side: false })
     })
 })
 

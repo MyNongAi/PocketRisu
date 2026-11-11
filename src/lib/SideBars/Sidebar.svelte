@@ -51,6 +51,8 @@
     User2Icon,
     ArrowRight,
     ArrowLeft,
+    ChevronUpIcon,
+    ChevronDownIcon,
   } from "@lucide/svelte";
     import { isEmbeddedRisuPane, paneOverlayRailRem, pressSplitButton, splitChatOpen } from 'src/ts/chatSplitPane';
     // The split's open button closes it again (the user's request, 2026-10-17;
@@ -86,6 +88,7 @@
     import NewMark from "src/lib/UI/NewMark.svelte";
     import { alertConfirm, alertSelect, type AlertAction } from "src/ts/alert";
     import { setSidebarCatalogSplit, sidebarCatalog } from "src/ts/gui/sidebarCatalogLayout.svelte";
+    import { railBotListShown, setRailBotListShown } from "src/ts/gui/railBotList.svelte";
     import { removeBotWithModules } from "src/ts/gui/botModuleRemoval";
     import { characterMenuInfo } from "src/ts/gui/sidebarMenuInfo";
     import { openItemInfo } from "src/ts/gui/itemInfo";
@@ -417,6 +420,8 @@
   }
 
   let { hidden = false, openLegacyGrid = () => {}, part = 'all', pane, overlay = false }: Props = $props();
+  const railPane = $derived(pane ?? 'main')
+  const botListShown = $derived(railBotListShown[railPane])
   // svelte-ignore state_referenced_locally
   const view = pane ? paneView(pane) : getPaneView()
   // svelte-ignore state_referenced_locally
@@ -1567,7 +1572,6 @@
 {#snippet splitCharacterRow(block: splitCatalogBlock)}
   {#if block.type === 'control'}
     <div class="flex w-full flex-col items-center">
-      {@render addCharacterButton(block.position)}
       {#if block.position === 'top'}
         <div
           class="h-4 min-h-4 w-full"
@@ -1586,6 +1590,8 @@
             try { inserter(drag, { kind: 'root', index: 0 }) } finally { clearCurrentDrag() }
           }}
         ></div>
+      {:else}
+        {@render addCharacterButton('bottom')}
       {/if}
     </div>
   {:else}
@@ -1757,10 +1763,10 @@
   onpointerdowncapture={takePaneSelection}
   onfocusincapture={takePaneSelection}
   class="h-full flex-col items-center bg-bgcolor text-textcolor shadow-lg relative rs-sidebar"
-  class:w-40={splitCatalogMode}
-  class:min-w-40={splitCatalogMode}
-  class:w-20={!splitCatalogMode}
-  class:min-w-20={!splitCatalogMode}
+  class:w-40={splitCatalogMode && botListShown}
+  class:min-w-40={splitCatalogMode && botListShown}
+  class:w-20={!splitCatalogMode || !botListShown}
+  class:min-w-20={!splitCatalogMode || !botListShown}
   class:max-xs:hidden={$leftBarCollapsed}
   class:editMode
   class:risu-sub-sidebar={$sideBarClosing && !pane}
@@ -1873,7 +1879,20 @@
       }}
     ><LayoutGridIcon size={14}/></button>
   </div>
-  <div class="flex grow min-h-0 w-full" class:max-xs:hidden={$leftBarCollapsed} use:touchDragContainer>
+  <!-- These controls stay above the scrolling bot list on phones and in both split rails. -->
+  <div class="flex w-20 shrink-0 flex-col items-center py-1" class:max-xs:hidden={$leftBarCollapsed}>
+    {@render addCharacterButton('top')}
+    <button
+      type="button"
+      class="mt-2 flex h-8 min-h-8 w-14 min-w-14 cursor-pointer items-center justify-center rounded-md border border-borderc text-textcolor transition-colors hover:border-primary hover:text-primary"
+      aria-label={botListShown ? '봇 목록 접기' : '봇 목록 펼치기'}
+      title={botListShown ? '봇 목록 접기' : '봇 목록 펼치기'}
+      aria-expanded={botListShown}
+      onclick={() => setRailBotListShown(railPane, !botListShown)}
+    >{#if botListShown}<ChevronUpIcon size={18} />{:else}<ChevronDownIcon size={18} />{/if}</button>
+  </div>
+  <!-- Keep the virtual scroller mounted and measured so reopening restores its position. -->
+  <div class="flex grow min-h-0 w-full" class:max-xs:hidden={$leftBarCollapsed} class:invisible={!botListShown} class:pointer-events-none={!botListShown} class:overflow-hidden={!botListShown} aria-hidden={!botListShown} use:touchDragContainer>
   {#if splitCatalogMode}
     {@render splitFolderColumn()}
     <MeasuredVirtualList
@@ -1915,7 +1934,6 @@
     {#if block.type === 'control'}
       <div class="flex w-full flex-col items-center">
       {#if block.position === 'top'}
-      {@render addCharacterButton('top')}
     <div class="h-4 min-h-4 w-14" role="listitem" data-spacer-index="0" ondragover={(e) => {
       if(!getCurrentSidebarDrag(e)){ return }
       e.preventDefault()
@@ -2318,7 +2336,7 @@
   class:w-80={!!pane && !overlay}
   class:min-w-80={!!pane && !overlay}
   class:pane-overlay-panel={overlay}
-  style:--pane-overlay-rail={overlay ? `${paneOverlayRailRem(splitCatalogMode, !!DBState.db.menuSideBar)}rem` : undefined}
+  style:--pane-overlay-rail={overlay ? `${paneOverlayRailRem(splitCatalogMode, !!DBState.db.menuSideBar, botListShown)}rem` : undefined}
   class:px-2={$DynamicGUI}
   class:px-4={!$DynamicGUI}
   class:dynamic-sidebar={$DynamicGUI}

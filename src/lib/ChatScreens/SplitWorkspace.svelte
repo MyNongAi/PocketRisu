@@ -28,13 +28,14 @@
     import type { PaneId } from 'src/ts/chatPanes.svelte'
     import { alertSelect, type AlertAction } from 'src/ts/alert'
     import { setSidebarCatalogSplit, sidebarCatalog } from 'src/ts/gui/sidebarCatalogLayout.svelte'
+    import { railBotListShown } from 'src/ts/gui/railBotList.svelte'
     import { language } from 'src/lang'
 
     let { children, openLegacyGrid = () => {} }: { children: Snippet, openLegacyGrid?: () => void } = $props()
 
     const enabled = $derived($splitChatOpen && !$MobileGUI && !isEmbeddedRisuPane)
     // The docked layout. A narrow (DynamicGUI) window lays a pane's sidebar
-    // over that pane's chat instead (paneOverlayOpen), one at a time.
+    // over that pane's chat instead (paneOverlayOpen).
     const docked = $derived(enabled && !$DynamicGUI)
     const mainOverlayShown = $derived(enabled && !docked && paneOverlayOpen.main && !$settingsOpen)
     const sideOverlayShown = $derived(enabled && !docked && paneOverlayOpen.side)
@@ -53,9 +54,9 @@
     // A narrow window wide enough for two chats side by side follows the
     // chosen orientation too (the divider's buttons; 2026-10-22).
     const column = $derived((enabled && splitLayout.orientation === 'column') || narrowStack)
-    // The bot list's width, in an open docked panel or a narrow window's overlay.
-    const railRem = $derived(paneOverlayRailRem(sidebarCatalog.split, !!DBState.db.menuSideBar))
-    const overlayRail = $derived(`${railRem}rem`)
+    // Each open panel owns a rail; a hidden two-column list leaves a 5rem control rail.
+    const mainRailRem = $derived(paneOverlayRailRem(sidebarCatalog.split, !!DBState.db.menuSideBar, railBotListShown.main))
+    const sideRailRem = $derived(paneOverlayRailRem(sidebarCatalog.split, !!DBState.db.menuSideBar, railBotListShown.side))
     $effect(() => {
         if (!enabled) returnToMainPane()
     })
@@ -75,9 +76,9 @@
     const mainPanelShown = $derived(docked && splitLayout.panelOpen.main && !$settingsOpen)
     const sidePanelShown = $derived(docked && splitLayout.panelOpen.side)
     const rootRem = () => parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
-    // The bot list beside the open panel, in px.
-    const railPx = $derived(mainPanelShown || sidePanelShown ? railRem * rootRem() : 0)
-    const dockedRowAt = (span: number): DockedSplitRow => ({ span, rail: railPx, mainPanel: mainPanelShown, sidePanel: sidePanelShown })
+    const mainRailPx = $derived(mainPanelShown ? mainRailRem * rootRem() : 0)
+    const sideRailPx = $derived(sidePanelShown ? sideRailRem * rootRem() : 0)
+    const dockedRowAt = (span: number): DockedSplitRow => ({ span, rail: mainRailPx + sideRailPx, mainPanel: mainPanelShown, sidePanel: sidePanelShown })
     // Side by side, the widths are set here, so the main chat keeps its
     // minimum and the second pane gives way first (dockedSplitWidths).
     const dockedRow = $derived(docked && !column ? dockedSplitWidths(dockedRowAt(paneWidth || window.innerWidth), $splitChatWidth) : null)
@@ -95,7 +96,7 @@
         if (looseSide === null) return null
         const rem = rootRem()
         const main = (paneWidth || window.innerWidth) - SPLIT_DIVIDER_PX - looseSide
-        const mainOverlay = paneOverlayFootprint(main, paneOverlayRailRem(sidebarCatalog.split, !!DBState.db.menuSideBar), rem)
+        const mainOverlay = paneOverlayFootprint(main, mainRailRem, rem)
         const spare = paneOverlayOpen.main ? Math.max(0, main - mainOverlay) : main
         return Math.max(looseSide, Math.min(26 * rem, looseSide + SPLIT_DIVIDER_PX + spare))
     })
@@ -382,7 +383,7 @@
                     class:flex-row-reverse={splitLayout.panelEdge.main === 'end'}
                     class:pane-slide-from-end={splitLayout.panelEdge.main === 'end'}
                     class:pane-slide-closing={paneClosing.overlay.main}
-                    style:--pane-overlay-rail={overlayRail}
+                    style:--pane-overlay-rail={`${mainRailRem}rem`}
                 >
                     <Sidebar pane="main" overlay hidden={false} {openLegacyGrid} />
                 </div>
@@ -420,7 +421,7 @@
                 class:split-side-fixed={looseSide !== null}
                 class:split-side-docked={!!dockedRow}
                 style:height={column ? `${$splitChatHeight}px` : undefined}
-                style:width={dockedRow ? `${dockedRow.sideChat + dockedRow.sidePanel + (sidePanelShown ? railPx : 0)}px` : looseSide !== null ? `${looseSide}px` : undefined}
+                style:width={dockedRow ? `${dockedRow.sideChat + dockedRow.sidePanel + sideRailPx}px` : looseSide !== null ? `${looseSide}px` : undefined}
                 style:--split-panel={dockedRow ? `${dockedRow.sidePanel}px` : undefined}
             >
                 {#if sidePanelShown && splitLayout.panelEdge.side === 'start'}{@render panelSlot('side')}{/if}
@@ -440,7 +441,7 @@
                         class:pane-slide-from-end={splitLayout.panelEdge.side === 'end'}
                         class:pane-slide-closing={paneClosing.overlay.side}
                         style:width={sideOverlayWidth === null ? '100%' : `${sideOverlayWidth}px`}
-                        style:--pane-overlay-rail={overlayRail}
+                        style:--pane-overlay-rail={`${sideRailRem}rem`}
                     >
                         <Sidebar pane="side" overlay hidden={false} {openLegacyGrid} />
                     </div>

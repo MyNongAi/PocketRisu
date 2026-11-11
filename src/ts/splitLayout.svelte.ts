@@ -3,13 +3,9 @@
 // or one above the other. Kept per browser, like the split itself
 // (chatSplitPane.ts).
 //
-// One panel is open at a time, and the bot list comes out with it, beside
-// it (the user's request, 2026-10-27): a bot picked there opens in that
-// pane, so the list says which pane it is for, and there is never more than
-// one list. A narrow window's overlays (below) do the same. Until then the
-// list stood on its own at the start, between the panes or at the end, the
-// panels could both be open, and a narrow window could hold two lists over
-// the panes and the app's hidden sidebar: three on a phone.
+// Since 2026-10-27 each panel has brought its own bot list, so opening one
+// closed the other. Each list now has its own toggle (2026-11-12), and both
+// panels or narrow-window overlays may stay open.
 
 import type { PaneId } from './chatPanes.svelte'
 import { language } from '../lang'
@@ -22,9 +18,8 @@ const KEY = 'pocketrisu:split-layout'
 
 interface SplitLayoutState {
     orientation: SplitOrientation
-    /** At most one is true. */
     panelOpen: Record<PaneId, boolean>
-    /** The tab each pane's panel shows while the other pane holds the selection. */
+    /** The tab each pane's panel shows. */
     tab: Record<PaneId, PanelTab>
     /**
      * The edge of its pane each pane's panel comes out of (the divider's
@@ -48,10 +43,7 @@ function read(): SplitLayoutState {
         const edge = (value: unknown, fallback: PanelEdge): PanelEdge => value === 'start' || value === 'end' ? value : fallback
         return {
             orientation: saved.orientation === 'column' ? 'column' : 'row',
-            // Both open before 2026-10-27: the main pane's stays.
-            panelOpen: saved.panelOpen?.main !== false
-                ? { main: true, side: false }
-                : { main: false, side: saved.panelOpen?.side !== false },
+            panelOpen: { main: saved.panelOpen?.main !== false, side: saved.panelOpen?.side === true },
             tab: { main: tab(saved.tab?.main), side: tab(saved.tab?.side) },
             panelEdge: { main: edge(saved.panelEdge?.main, 'start'), side: edge(saved.panelEdge?.side, 'end') },
         }
@@ -74,8 +66,6 @@ export function setSplitLayout(change: Partial<Pick<SplitLayoutState, 'orientati
     if (change.orientation) splitLayout.orientation = change.orientation
     persistSplitLayout()
 }
-
-const otherPane = (pane: PaneId): PaneId => pane === 'main' ? 'side' : 'main'
 
 export function setPanelEdge(pane: PaneId, edge: PanelEdge): void {
     if (splitLayout.panelEdge[pane] === edge) return
@@ -139,13 +129,9 @@ export function closePanePanel(pane: PaneId): void {
     slideShut('panel', pane, () => setPanePanelOpen(pane, false))
 }
 
-/** At once, without the slide. Opening one closes the other pane's. */
+/** At once, without the slide. Each pane keeps its own open state. */
 export function setPanePanelOpen(pane: PaneId, open: boolean): void {
     cancelSlide('panel', pane)
-    if (open) {
-        cancelSlide('panel', otherPane(pane))
-        splitLayout.panelOpen[otherPane(pane)] = false
-    }
     if (splitLayout.panelOpen[pane] === open) {
         persistSplitLayout()
         return
@@ -156,17 +142,12 @@ export function setPanePanelOpen(pane: PaneId, open: boolean): void {
 
 // A narrow window (DynamicGUI) has no room to dock the panels: a pane's
 // character window, with the bot list, covers its own chat while open (the
-// user's request, 2026-10-21). One at a time, as the docked panels. Open
-// only on request, never kept.
+// user's request, 2026-10-21). Each pane opens on request; neither is kept.
 export const paneOverlayOpen = $state<Record<PaneId, boolean>>({ main: false, side: false })
 
-/** At once, without the slide. Opening one closes the other pane's. */
+/** At once, without the slide. Each overlay keeps its own open state. */
 export function setPaneOverlayOpen(pane: PaneId, open: boolean): void {
     cancelSlide('overlay', pane)
-    if (open) {
-        cancelSlide('overlay', otherPane(pane))
-        paneOverlayOpen[otherPane(pane)] = false
-    }
     paneOverlayOpen[pane] = open
 }
 

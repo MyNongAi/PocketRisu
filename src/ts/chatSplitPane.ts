@@ -133,10 +133,10 @@ export function looseSplitSideWidth(span: number, saved: number): number {
 
 /**
  * The bot list's width in a pane's overlay (Sidebar), in rem: two columns are
- * 10rem; the menu sidebar's rail is always 5rem.
+ * 10rem; the menu sidebar and a rail with its list hidden are 5rem.
  */
-export function paneOverlayRailRem(twoColumns: boolean, menuSideBar: boolean): number {
-    return twoColumns && !menuSideBar ? 10 : 5
+export function paneOverlayRailRem(twoColumns: boolean, menuSideBar: boolean, listShown = true): number {
+    return twoColumns && !menuSideBar && listShown ? 10 : 5
 }
 
 /**
@@ -152,9 +152,9 @@ export function paneOverlayFootprint(width: number, railRem: number, rem: number
 
 /** The docked split side by side (SplitWorkspace). */
 export interface DockedSplitRow {
-    /** Both panes, the divider, and the bot list when it sits between them. */
+    /** Both panes, their rails, and the divider. */
     span: number
-    /** The bot list's width when it sits between the panes, else 0. */
+    /** Total width of the rails attached to open panels. */
     rail: number
     mainPanel: boolean
     sidePanel: boolean
@@ -167,7 +167,7 @@ export interface DockedSplitWidths {
     sidePanel: number
 }
 
-/** The room the two chats share in the docked row: no divider, no bot list, open panels at full width. */
+/** The room the two chats share in the docked row after rails, divider, and panels. */
 export function dockedSplitChatRoom(row: DockedSplitRow): number {
     const panels = Number(row.mainPanel) + Number(row.sidePanel)
     return Math.max(0, Math.round(row.span - SPLIT_DIVIDER_PX - row.rail - panels * SPLIT_PANEL_PX))
